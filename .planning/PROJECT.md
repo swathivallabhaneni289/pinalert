@@ -25,23 +25,45 @@ output from that mechanic.
 ### Active
 
 **Base reporting loop:**
-- [ ] Location-tagged reports — pinned to a place (GPS/area), feed filtered by proximity
+- [ ] Anonymous session identity — issued on first visit (cookie/localStorage), no signup;
+      load-bearing for reliability scoring, responder-claim attribution, and rate limiting, so it
+      ships in Phase 1, not implied later
+- [ ] Location-tagged reports — pinned to a place (GPS/area), feed filtered by proximity via an
+      indexed bounding-box prefilter + Haversine (not a naive full-table scan)
 - [ ] Report categories — flooding, road blocked, power outage, shelter open, rescue needed
-- [ ] Confirm/dispute voting on each report, surfaced as "confirmed by N nearby"
-- [ ] Severity level (low/medium/critical) so urgent reports surface first
-- [ ] Auto-expiry — reports fade/archive after N hours unless re-confirmed
+- [ ] Confirm/dispute voting on each report, surfaced as "confirmed by N nearby" — append-only
+      vote log is the source of truth, with an atomic cache update in the same transaction as
+      each vote (never read-then-write), and a concurrency test as a completion criterion, not a
+      later hardening pass
+- [ ] Severity level (low/medium/critical) so urgent reports surface first — self-declared
+      severity affects triage ordering only, and must NOT by itself bypass the provisional
+      visibility gate below (that's a distinct, documented abuse vector)
+- [ ] Auto-expiry — a read-time predicate (`expires_at < now()`) checked on every read, not
+      solely a background sweep job (free-tier hosts sleep, so a ticker alone isn't reliable)
 - [ ] Map view — pins on a Leaflet/OpenStreetMap map for a quick visual scan
+- [ ] Resolved marking — reporter or nearby users close out a report once it's no longer true
+      (promoted from Stretch: cheap, complements auto-expiry, directly serves Core Value)
 
 **Trust-model hardening (research-backed, protects Core Value directly):**
+- [ ] A single `VisibilityResolver` function is the sole authority for report visibility
+      (Hidden/Provisional/Live/Retracted), called by every read path — feed, map, triage,
+      shareable cards. This is the architectural anchor of the whole trust model: every pitfall
+      research found traces back to visibility logic drifting out of sync across paths.
+- [ ] Independence predicate on votes (distinct session + distinct geohash cell) — must exist
+      before any diversity-weighting curve; a gate built on raw vote counts is trivially beaten
+      by two votes from one device, which is worse than no gate at all
 - [ ] Provisional visibility gate — new non-critical reports render dimmed until a second
       independent confirmation; critical/rescue-needed always publishes instantly, no gate
 - [ ] Diversity-weighted confirm count — "confirmed by N" computed from distinct geohash
-      cells/sessions, not raw vote count, so one location can't inflate its own tally
+      cells/sessions, not raw vote count, so one location can't inflate its own tally. How the
+      confirmer's own location is captured (GPS prompt vs. IP-derived coarse geohash) is an open
+      design decision — see Key Decisions.
 - [ ] Split confidence/reliability decay — separate fast-decaying "is this incident still real"
       score from slow-decaying "is this source trustworthy" score
-- [ ] Retraction push + live-resolving status link on shareable cards — a report later disputed
-      into hiding pushes a correction to everyone who saw it, and shared cards resolve live
-      instead of freezing a stale confirmation count
+- [ ] Live-resolving status link on shareable cards — the card carries only a status URL, never a
+      baked-in confirmation count or unqualified "verified" claim in the image itself, so a
+      report later disputed into hiding shows "since retracted" instead of a frozen stale count
+      in a forwarded screenshot (a static baked-in count would defeat the point of this feature)
 
 **Closing the information loop:**
 - [ ] "I'm safe" check-in — anyone can post/search a safety check-in for themselves or an area
@@ -54,17 +76,32 @@ output from that mechanic.
 - [ ] Structured shelter capacity status (Available/Limited/Full/Closed + optional headcount)
 - [ ] Anonymous reporter receipt code — check a submitted report's status without re-posting
 - [ ] Responder claim + coverage-gap layer — mark a report "responding" so teams don't duplicate
-      effort, and surface genuinely unclaimed active reports
+      effort, and surface genuinely unclaimed active reports. Must auto-expire and never silently
+      remove a report from the coverage-gap view — an unaccountable override on exactly the
+      reports where being wrong matters most is a documented abuse vector.
 - [ ] Human-contact verification tier — a volunteer who phoned the person can mark
-      "contacted at HH:MM" with a field-verified priority that outranks passive voting
+      "contacted at HH:MM" with a field-verified priority that outranks passive voting, subject to
+      the same expiry/reversibility requirement as the responder claim above
+- [ ] Authority badge for GDACS-sourced official pins — cheap, ships alongside the official feed
+      integration below (distinct from a verified-authority-*account* flow for municipal/NDRF
+      accounts, which stays deferred — see Out of Scope)
 
 **Robustness:**
 - [ ] Low-bandwidth / text-first fallback view (no map, no photos) for degraded networks
-- [ ] Background Sync (service worker) — queue a report offline, send once connectivity returns
-- [ ] Auto-moderation on submit — toxicity/spam text filter + image-safety check, run as a
+- [ ] Offline report queue — IndexedDB + retry-on-`online`-event is the baseline (the Background
+      Sync API has zero Safari/iOS/Firefox support as of 2026, so it can only ever be a
+      Chromium-only progressive enhancement layered on top, never the mechanism itself)
+- [ ] Auto-moderation on submit — text toxicity/spam filter only for v1, run as a
       confidence-cascade calibrated to an explicit false-positive budget, not a flat cutoff
-- [ ] Official open-data feed integration (GDACS / IMD / CWC) — background "official" pins so
-      the map is never empty, and gives the authority badge real data to badge
+      (image-safety check moves to Stretch, paired with photo attachment which doesn't exist yet)
+- [ ] Session-first, IP-secondary rate limiting — pure IP-based limiting is counterproductive in
+      India specifically: carrier-grade NAT means hundreds of real phones share one public IP, so
+      a tight per-IP limit throttles legitimate nearby reporters during the exact surge the
+      product exists for. Rate-limit per anonymous session first, with IP as a looser backstop.
+- [ ] Official open-data feed integration (GDACS) — idempotent upsert on `(source, external_id)`,
+      bypassing the trust/vote pipeline entirely (crowd disputes must not be able to hide an
+      official pin) — background "official" pins so the map is never empty. IMD/CWC bulletins are
+      a separate follow-up spike (feed format unverified), not assumed available alongside GDACS.
 - [ ] Demo/replay mode — seeded past-event timeline + "simulate a report" button, so a first-time
       visitor sees the product working immediately
 - [ ] Explicit disclaimer — not affiliated with any government agency, not a substitute for
@@ -77,10 +114,12 @@ output from that mechanic.
 **Stretch (build if core is solid and time remains):**
 - Photo attachment on a report — deferred, core loop works without it
 - Live updates without refresh (websockets) — deferred, polling is acceptable for v1
-- Resolved marking (reporter/nearby users close out a report) — deferred, auto-expiry covers the
-  core "feed reflects what's true now" need for v1
-- Authority badge for official sources (municipal corp, NDRF) — deferred until there's a real
-  verified-authority-account flow to attach it to
+- Image-safety check on photo uploads — deferred alongside photo attachment itself; nothing to
+  check against until photos exist
+- Verified-authority-*account* flow (municipal corp, NDRF posting as a badged account) — deferred;
+  the badge for GDACS-sourced official pins is Active, this is the separate account/login flow
+- Proactive retraction push notification (vs. the passive live-resolving status link, which is
+  Active) — deferred, needs Web Push/websockets infra plus a new `report_views` table
 - Alert radius via Web Push (opt-in notification near a saved location) — deferred, needs
   service-worker/VAPID setup beyond the core PWA shell
 - Structured water-depth field + graduated flood-extent overlay — deferred, valuable but a
@@ -144,6 +183,14 @@ That research is the source for most of the "trust-model hardening" and "data qu
 requirements above — they're not speculative additions, they're documented fixes for failure
 modes real deployments hit.
 
+A second, domain-ecosystem research pass (stack/features/architecture/pitfalls, full findings in
+`.planning/research/`) validated the stack and surfaced further corrections now folded into the
+Active/Out-of-Scope lists above — notably the `VisibilityResolver` architectural pattern, the
+independence-predicate-before-diversity-weighting sequencing, and the CGNAT rate-limiting issue.
+It also found that "free" Postgres hosting on Railway/Render isn't actually persistent (Render's
+free tier expires after 30 days; Railway dropped its indefinite free tier) — resolved as a Key
+Decision below.
+
 ## Constraints
 
 - **Purpose**: Coding portfolio for job applications in India, not a startup — scope decisions
@@ -152,15 +199,27 @@ modes real deployments hit.
 - **Timeline**: Core build targeted at 2-4 weeks solo; trust-model hardening and stretch items
   extend beyond that as an ongoing project, not a hard deadline.
 - **Team**: Solo developer.
-- **Tech stack**: Go backend, PostgreSQL with plain lat/lon columns (no PostGIS — unnecessary at
-  this scale), server-rendered HTML (`html/template`) + vanilla JS, Leaflet.js/OpenStreetMap for
-  the map, deployed to Railway or Render. Chosen for a clean API-first architecture that's a good
-  portfolio signal and doesn't need paid infrastructure.
-- **Budget**: Free/cheap tiers only — no paid map API, no paid SMS/WhatsApp gateway in the core
-  build.
-- **Access model**: Anonymous posting with IP rate-limiting, no signup required — a deliberate
-  choice, not a shortcut: requiring signup adds friction exactly when someone needs to report
-  something fast during an emergency.
+- **Tech stack**: Go 1.25+, PostgreSQL 16/17 with plain lat/lon columns (no PostGIS — unnecessary
+  at this scale), `go-chi/chi/v5` for routing (not `gorilla/mux` — unmaintained since Dec 2022),
+  `jackc/pgx/v5` + `sqlc` for type-safe SQL, `mmcloughlin/geohash` for diversity-weighting cell
+  computation, server-rendered HTML (`html/template`) + vanilla JS, Leaflet.js/OpenStreetMap for
+  the map. Chosen for a clean API-first architecture that's a good portfolio signal and doesn't
+  need paid infrastructure.
+- **Budget**: Free tiers only for the core build — no paid map API, no paid SMS/WhatsApp gateway.
+  Database hosting uses Neon or Supabase (genuinely persistent free Postgres, unlike Railway/
+  Render's now-limited free tiers) rather than a paid plan. Auto-moderation uses OpenAI's
+  Moderation API (`omni-moderation-latest`, free) rather than Google's Perspective API (shutting
+  down Dec 31, 2026).
+- **Access model**: Anonymous posting with session-first, IP-secondary rate limiting, no signup
+  required — a deliberate choice, not a shortcut: requiring signup adds friction exactly when
+  someone needs to report something fast during an emergency. Pure IP-based limiting was
+  reconsidered after research flagged CGNAT (shared carrier IPs) as a real India-specific
+  collateral-damage risk.
+- **Legal**: This is a public, unofficial emergency-information app — India's IT Rules 2021
+  intermediary-safe-harbor conditions apply the moment it's public, regardless of real traffic.
+  Research confidence on specific applicability is LOW; get an actual legal/mentor review before
+  any wide public promotion (not required before initial deploy, which is a portfolio artifact,
+  not a promoted public service).
 
 ## Key Decisions
 
@@ -168,10 +227,15 @@ modes real deployments hit.
 |----------|-----------|---------|
 | Verified local emergency feed over 4 other portfolio ideas | Confirm/dispute trust mechanic is a real differentiator, not just CRUD | — Pending |
 | API-first Go backend, website as first client | Enables PWA/native app later with no backend rewrite | — Pending |
-| Anonymous posting, no signup, IP rate-limited | Signup friction is unacceptable for emergency reporting | — Pending |
+| Anonymous posting, no signup, session-first/IP-secondary rate limiting | Signup friction is unacceptable for emergency reporting; pure IP limiting was reconsidered after research flagged CGNAT collateral damage in India | — Pending |
 | Plain lat/lon + Go/SQL distance calc instead of PostGIS | Sufficient accuracy at this scale, avoids infra overkill | — Pending |
 | Demo/replay mode + official open-data feed (GDACS) promoted to core, not stretch | Solves the empty-map-on-first-visit problem that would otherwise kill the demo for reviewers | — Pending |
 | Trust-model hardening (provisional gating, diversity-weighted confirms, confidence/reliability split, retraction propagation) promoted to core | These are documented fixes for real failure modes (single-source rumors, vote-stuffing, stale-info spreading via shared cards), not speculative extras — the trust mechanic is the Core Value, so it needs to hold up | — Pending |
+| Single `VisibilityResolver` function as sole authority for report visibility, called by every read path | Architecture research found every documented trust-model pitfall traces back to visibility logic drifting out of sync across feed/map/triage/share-card paths | — Pending |
+| Independence predicate (distinct session + geohash cell) built before diversity-weighting curve | A weighting scheme built on raw vote counts is trivially beaten by multiple votes from one device — the predicate must exist first, not as a later refinement | — Pending |
+| DB hosting on Neon or Supabase instead of Railway/Render free tiers | Research found Render's free Postgres expires after 30 days and Railway dropped its indefinite free tier — neither is "free and persistent," which a portfolio project needs; Neon/Supabase are | — Pending |
+| `go-chi/chi/v5` + `pgx/v5` + `sqlc`, `mmcloughlin/geohash`, OpenAI Moderation API | Chi replaces the originally-considered gorilla/mux (unmaintained since Dec 2022); pgx+sqlc gives type-safe SQL without an ORM fighting the custom geo/trust queries; OpenAI's Moderation API is free and covers text+image in one call, unlike Google's Perspective API (shutting down) | — Pending |
+| Confirmer location-capture method for diversity weighting (GPS prompt vs. IP-derived geohash) | Materially different UX/signal-quality tradeoff — flagged by research as needing an explicit decision, not left implicit | ⚠️ Unresolved — decide in Phase 2/3 planning |
 | Repo public on GitHub (`swathivallabhaneni289/pinalert`) | Portfolio project — needs to be visible to recruiters/interviewers | ✓ Good |
 
 ## Evolution
