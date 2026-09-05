@@ -30,7 +30,10 @@ output from that mechanic.
       ships in Phase 1, not implied later
 - [ ] Location-tagged reports — pinned to a place (GPS/area), feed filtered by proximity via an
       indexed bounding-box prefilter + Haversine (not a naive full-table scan)
-- [ ] Report categories — flooding, road blocked, power outage, shelter open, rescue needed
+- [ ] Report categories — flood, earthquake, fire, storm/cyclone damage, road blocked, power
+      outage, shelter open, rescue needed, other (expanded from an original flood/cyclone-only
+      5-category list during Phase 1 discussion — the product is a general local emergency feed,
+      not flood-specific)
 - [ ] Confirm/dispute voting on each report, surfaced as "confirmed by N nearby" — append-only
       vote log is the source of truth, with an atomic cache update in the same transaction as
       each vote (never read-then-write), and a concurrency test as a completion criterion, not a
