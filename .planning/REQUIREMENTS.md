@@ -172,13 +172,46 @@ Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| — | — | Pending roadmap |
+| FOUND-01 | Phase 1 | Pending |
+| FOUND-02 | Phase 1 | Pending |
+| FOUND-03 | Phase 1 | Pending |
+| FOUND-04 | Phase 1 | Pending |
+| FOUND-05 | Phase 1 | Pending |
+| FOUND-06 | Phase 1 | Pending |
+| OPS-01 | Phase 1 | Pending |
+| OPS-02 | Phase 1 | Pending |
+| TRUST-01 | Phase 2 | Pending |
+| TRUST-02 | Phase 2 | Pending |
+| TRUST-03 | Phase 2 | Pending |
+| TRUST-04 | Phase 2 | Pending |
+| TRUST-06 | Phase 2 | Pending |
+| TRUST-08 | Phase 2 | Pending |
+| TRUST-09 | Phase 2 | Pending |
+| TRUST-05 | Phase 3 | Pending |
+| TRUST-07 | Phase 3 | Pending |
+| ROBUST-01 | Phase 4 | Pending |
+| ROBUST-02 | Phase 4 | Pending |
+| ROBUST-03 | Phase 4 | Pending |
+| ROBUST-04 | Phase 4 | Pending |
+| ROBUST-08 | Phase 4 | Pending |
+| ROBUST-05 | Phase 5 | Pending |
+| ROBUST-06 | Phase 5 | Pending |
+| ROBUST-07 | Phase 5 | Pending |
+| COORD-01 | Phase 6 | Pending |
+| COORD-02 | Phase 6 | Pending |
+| COORD-03 | Phase 6 | Pending |
+| COORD-04 | Phase 6 | Pending |
+| COORD-05 | Phase 6 | Pending |
+| COORD-06 | Phase 6 | Pending |
+| COORD-07 | Phase 6 | Pending |
+| COORD-08 | Phase 6 | Pending |
 
 **Coverage:**
-- v1 requirements: 27 total
-- Mapped to phases: 0 (pending roadmap creation)
-- Unmapped: 27 ⚠️
+- v1 requirements: 33 total (corrected from a stale "27" — 33 unique requirement IDs are
+  enumerated above: Foundation 6, Trust Engine 9, Coordination 8, Robustness 8, Ops 2)
+- Mapped to phases: 33 (100%)
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-09-05*
-*Last updated: 2026-09-05 after initial definition*
+*Last updated: 2026-09-05 after roadmap creation (traceability populated, stale requirement count corrected)*
