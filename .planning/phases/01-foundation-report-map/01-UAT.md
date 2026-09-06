@@ -1,24 +1,27 @@
 ---
-status: partial
+status: testing
 phase: 01-foundation-report-map
 source: [01-VERIFICATION.md]
 started: 2026-09-06T09:55:00Z
-updated: 2026-09-06T12:05:00Z
+updated: 2026-09-06T12:22:00Z
 ---
 
 ## Current Test
 
-[session paused — 1 new blocker found on Test 1 retest (#map has no CSS height, always
-collapses to 0px; masked until now by the 01-08-fixed modal-backdrop bug), 8 tests still
-pending. Routing to gap-closure again. Resume via /gsd-verify-work 01 once the fix lands.]
+number: 1
+name: Live map tile rendering in a real browser (retest 2)
+expected: |
+  Open http://localhost:8090 and confirm the primary map (behind the "+" button, not the modal)
+  renders visible OpenStreetMap tiles filling the map pane, not a blank/black area. Centred on
+  geolocation or the Bengaluru fallback.
+awaiting: user response
 
 ## Tests
 
 ### 1. Live map tile rendering
 expected: A live OpenStreetMap tile layer is visible, centred on geolocation or the Bengaluru fallback.
-result: issue
-reported: "modal no longer auto-opens (01-08 fix confirmed working — screenshot shows the modal now only appears on '+' click, with its own map rendering correctly with real tiles). But the primary map behind it is still solid black on a fresh page load — screenshot of the base view shows only the list panel ('No reports near you yet'), no map tiles anywhere."
-severity: blocker
+result: [pending]
+retest_note: "Two blockers found and fixed in sequence: (1) modal-backdrop [hidden] guard (01-08, confirmed working), (2) #map had no CSS height at all (01-09, commit 45ab1bb — #map { height: 100vh; height: 100dvh; }). Server restarted on port 8090 serving the fixed CSS. Re-testing again."
 
 ### 2. New-pin visual rendering after submit (exercises the CR-01 icon-sizing fix)
 expected: Submit a report via the "+" button; a correctly-sized (55% of badge), non-overflowing category glyph appears on a colour-coded pin at the submitted coordinate immediately after submit, with no page reload.
@@ -60,8 +63,8 @@ result: [pending]
 
 total: 10
 passed: 1
-issues: 1
-pending: 8
+issues: 0
+pending: 9
 skipped: 0
 blocked: 0
 notes: 1 (cosmetic feedback on Test 3's severity slider styling, captured pre-emptively; Test 3 itself remains pending for its full accessibility checklist)
@@ -92,7 +95,7 @@ notes: 1 (cosmetic feedback on Test 3's severity slider styling, captured pre-em
     `display: flex` off the bare class selector.
 
 - truth: "A live OpenStreetMap tile layer is visible, centred on geolocation or the Bengaluru fallback." (retest, new root cause)
-  status: failed
+  status: fix_landed
   reason: "Retest after 01-08 landed: modal-backdrop fix confirmed working (modal only opens on '+' click, and the modal's own #modal-map renders real tiles correctly). But the PRIMARY #map (behind the modal, in .pane--map) is still solid black on a fresh page load — screenshot shows only the list panel, no map at all."
   severity: blocker
   test: 1
