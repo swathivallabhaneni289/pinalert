@@ -10,10 +10,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Foundation
 
-- [ ] **FOUND-01**: An anonymous session identity is issued to a first-time visitor (cookie/
+- [x] **FOUND-01**: An anonymous session identity is issued to a first-time visitor (cookie/
       localStorage), with no signup required
 
-- [ ] **FOUND-02**: User can submit a location-tagged report (GPS or manual area) with a category
+- [x] **FOUND-02**: User can submit a location-tagged report (GPS or manual area) with a category
       (flood/earthquake/fire/storm-cyclone damage/road blocked/power outage/shelter open/
       rescue needed/other — 9 categories, expanded from an original flood/cyclone-only 5-category
       list during Phase 1 discussion), severity (low/medium/critical), and free-text description
@@ -210,8 +210,8 @@ Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FOUND-01 | Phase 1 | Pending |
-| FOUND-02 | Phase 1 | Pending |
+| FOUND-01 | Phase 1 | Complete |
+| FOUND-02 | Phase 1 | Complete |
 | FOUND-03 | Phase 1 | Complete |
 | FOUND-04 | Phase 1 | Pending |
 | FOUND-05 | Phase 1 | Complete |
