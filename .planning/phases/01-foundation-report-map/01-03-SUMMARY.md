@@ -241,3 +241,7 @@ None beyond what plan 01-01 already covers (local Postgres). Provisioning `SESSI
 ---
 *Phase: 01-foundation-report-map*
 *Completed: 2026-09-06*
+
+## Self-Check: PASSED
+
+All 18 claimed files verified present on disk; all 7 commit hashes (28f76e1, 784c1fd, 9602adf, 75ccefd, 5abfed1, 329c792, 9885c83) verified present in `git log --all`.
