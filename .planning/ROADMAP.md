@@ -48,7 +48,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. A report stops appearing in the feed once its expiry time passes, checked live on every read — not solely dependent on a background sweep job.
   5. The JSON API is documented via a browsable OpenAPI/Swagger spec at a stable URL, and every push runs automated tests, `go vet`, and a build check via CI.
 
-**Plans**: 3/7 plans executed
+**Plans**: 4/7 plans executed
 Plans:
 **Wave 1**
 
@@ -61,7 +61,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-04-PLAN.md — Browser slice: page shell, shared client store, live Leaflet map, minimal submit — walking skeleton closes (wave 3)
+- [x] 01-04-PLAN.md — Browser slice: page shell, shared client store, live Leaflet map, minimal submit — walking skeleton closes (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -158,7 +158,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation — Report & Map | 3/7 | In Progress|  |
+| 1. Foundation — Report & Map | 4/7 | In Progress|  |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 0/TBD | Not started | - |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
