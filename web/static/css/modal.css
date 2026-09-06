@@ -1,8 +1,60 @@
 /*
- * modal.css — owned by plan 01-05 (report submission modal).
+ * modal.css — plan 01-05: the production report submission modal.
  *
- * This is a placeholder so the page shell (plan 01-04) can link a stable stylesheet set.
- * Plan 01-05 must consume design tokens and shared component classes from main.css
- * (--color-*, --space-*, --font-*, .modal-backdrop, .modal-panel, .severity-slider, .btn*,
- * .category-tile*, etc.) rather than redeclaring raw values here.
+ * Consumes main.css's design tokens (--space-*, --font-*, --color-*,
+ * --touch-target-min, --severity-current) and shared component classes
+ * (.modal-backdrop, .modal-panel, .btn*, .category-tile*, .severity-slider)
+ * exclusively. No raw hex colour is declared here — main.css is the single
+ * source of colour tokens for the whole project.
  */
+
+/* Vertical rhythm between the modal panel's direct sections — the first
+   child (the h2 title) already carries its own margin from main.css. */
+.modal-panel {
+  position: relative;
+}
+
+.modal-panel > * + * {
+  margin-top: var(--space-md);
+}
+
+/* ---- Location (D-02) ---- */
+#modal-map {
+  height: 220px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+#coord-readout {
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+#location-notice {
+  margin: 0;
+  padding: var(--space-sm);
+  border-radius: 6px;
+  background: var(--color-surface);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+/* ---- Category grid (D-01, D-04) ---- */
+#category-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-sm);
+}
+
+#category-grid .category-tile {
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+}
+
+#category-grid .category-tile img {
+  width: 24px;
+  height: 24px;
+}

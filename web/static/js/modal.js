@@ -1,11 +1,10 @@
-// modal.js — the thinnest submission modal that genuinely works end to end.
+// modal.js — the production report submission modal (plan 01-05).
 //
-// Plan 01-05 replaces this file wholesale with the full UI-SPEC version
-// (3x3 icon grid layout, animated slider ramp, discard confirmation,
-// shelter fields). This file deliberately does not build those — it uses
-// the same DOM contract ids (#category-grid, #discard-confirm,
-// #shelter-fields) as plain/minimal stand-ins so the Walking Skeleton is
-// real and demonstrable one wave earlier.
+// Replaces plan 01-04's thin stand-in wholesale. Category selection is a
+// proper 3x3 radio-group (D-01, D-04), location is a GPS-prefilled
+// draggable marker with tap-to-place fallback (D-02), severity is the
+// native accessible range input (D-05, D-11), and submission covers the
+// full shelter-capacity/validation/discard contract (FOUND-06).
 //
 // SECURITY (T-01-03): every string that reaches the DOM here — validation
 // messages included, whether client- or server-authored — is inserted as
@@ -39,19 +38,26 @@
 
   var SEVERITY_BY_VALUE = { '1': 'low', '2': 'medium', '3': 'critical' };
 
+  // buildCategoryGrid renders exactly nine tiles in Pinalert.CATEGORIES
+  // order, laid out 3x3 by modal.css's grid-template-columns. The grid is a
+  // proper radio group: role="radio"/aria-checked on every tile, a roving
+  // tabindex keeps exactly one tile in the tab order, and arrow keys move
+  // the selection (D-01, D-04).
   function buildCategoryGrid() {
     categoryGrid.textContent = '';
-    Pinalert.CATEGORIES.forEach(function (category) {
+    Pinalert.CATEGORIES.forEach(function (category, index) {
       var tile = document.createElement('button');
       tile.type = 'button';
       tile.className = 'category-tile';
       tile.setAttribute('role', 'radio');
       tile.setAttribute('aria-checked', 'false');
+      tile.tabIndex = index === 0 ? 0 : -1;
       tile.dataset.category = category;
 
       var img = document.createElement('img');
       img.src = Pinalert.iconPath(category);
       img.alt = '';
+      img.setAttribute('aria-hidden', 'true');
 
       var label = document.createElement('span');
       Pinalert.setText(label, Pinalert.CATEGORY_LABELS[category] || category);
@@ -60,13 +66,52 @@
       tile.appendChild(label);
       tile.addEventListener('click', function () {
         selectCategory(category);
+        tile.focus();
       });
+      tile.addEventListener('keydown', onCategoryTileKeydown);
 
       categoryGrid.appendChild(tile);
     });
   }
 
+  // onCategoryTileKeydown implements arrow-key navigation across the 3x3
+  // grid: Left/Right move by one, Up/Down move by a row (three), wrapping
+  // at the edges. Moving focus also selects — this is a single-select radio
+  // group, not a two-step focus-then-activate control.
+  function onCategoryTileKeydown(e) {
+    var tiles = Array.prototype.slice.call(categoryGrid.querySelectorAll('.category-tile'));
+    var currentIndex = tiles.indexOf(e.currentTarget);
+    var nextIndex = null;
+
+    switch (e.key) {
+      case 'ArrowRight':
+        nextIndex = (currentIndex + 1) % tiles.length;
+        break;
+      case 'ArrowLeft':
+        nextIndex = (currentIndex - 1 + tiles.length) % tiles.length;
+        break;
+      case 'ArrowDown':
+        nextIndex = (currentIndex + 3) % tiles.length;
+        break;
+      case 'ArrowUp':
+        nextIndex = (currentIndex - 3 + tiles.length) % tiles.length;
+        break;
+      default:
+        return;
+    }
+
+    e.preventDefault();
+    var nextTile = tiles[nextIndex];
+    selectCategory(nextTile.dataset.category);
+    nextTile.focus();
+  }
+
+  // selectCategory updates the mutually-exclusive tile state, the roving
+  // tabindex, and fires a category-change custom event whenever the
+  // selection actually changes so Task 3's shelter-capacity fieldset can
+  // react without this function knowing anything about shelter fields.
   function selectCategory(category) {
+    var changed = selectedCategory !== category;
     selectedCategory = category;
     var tiles = categoryGrid.querySelectorAll('.category-tile');
     for (var i = 0; i < tiles.length; i++) {
@@ -74,6 +119,10 @@
       var isSelected = tile.dataset.category === category;
       tile.classList.toggle('category-tile--selected', isSelected);
       tile.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+      tile.tabIndex = isSelected ? 0 : -1;
+    }
+    if (changed) {
+      categoryGrid.dispatchEvent(new CustomEvent('category-change', { detail: { category: category } }));
     }
   }
 
@@ -99,6 +148,11 @@
     updateCoordReadout(lat, lon);
   }
 
+  // initLocation centres the modal's own Leaflet instance on the visitor's
+  // GPS position at zoom 16 with a draggable marker (D-02). Submission is
+  // never blocked on geolocation — a denied prompt during an emergency must
+  // not become a dead end, so denial/timeout/insecure-context falls back to
+  // the configured centre plus tap-to-place.
   function initLocation() {
     if (!modalMap) {
       modalMap = L.map(modalMapEl);
@@ -151,6 +205,7 @@
     for (var i = 0; i < tiles.length; i++) {
       tiles[i].classList.remove('category-tile--selected');
       tiles[i].setAttribute('aria-checked', 'false');
+      tiles[i].tabIndex = i === 0 ? 0 : -1;
     }
     severityInput.value = '1';
     updateSeverityReadout();
