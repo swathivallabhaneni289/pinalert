@@ -149,6 +149,11 @@ None - no external service configuration required.
 - No blockers for OPS-02 (GitHub Actions CI) or any later phase; this plan touched only Go files and README.md, so wave 4's parallelism with plans 01-05/01-06 (frontend-only files) was preserved.
 - Future handler changes to the reports request/response shape must re-run `make swag` and recommit `docs/` — `TestSwaggerSpecCoversRoutes` will fail CI if that step is forgotten.
 
+## Self-Check: PASSED
+
+- All claimed created/modified files verified present on disk (router.go, reports.go, swagger_test.go, docs/docs.go, docs/swagger.json, docs/swagger.yaml, README.md, this SUMMARY.md).
+- All claimed commit hashes verified present in `git log`: `9c96f3d`, `19d5c2a`, `cf698bc`.
+
 ---
 *Phase: 01-foundation-report-map*
 *Completed: 2026-09-06*
