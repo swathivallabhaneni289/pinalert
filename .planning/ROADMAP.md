@@ -48,7 +48,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. A report stops appearing in the feed once its expiry time passes, checked live on every read — not solely dependent on a background sweep job.
   5. The JSON API is documented via a browsable OpenAPI/Swagger spec at a stable URL, and every push runs automated tests, `go vet`, and a build check via CI.
 
-**Plans**: 7/7 plans complete
+**Plans**: 7/8 plans complete (1 gap-closure plan added after UAT)
 Plans:
 **Wave 1**
 
@@ -68,6 +68,10 @@ Plans:
 - [x] 01-05-PLAN.md — Full submission modal: 3×3 category grid, accessible severity slider, shelter capacity, validation (wave 4)
 - [x] 01-06-PLAN.md — Feed list: severity-first ordering, age-ramp desaturation, map/list sync, view toggle, states (wave 4)
 - [x] 01-07-PLAN.md — OpenAPI/Swagger docs at a stable URL with a drift guard (wave 4)
+
+**Gap closure** *(from `01-UAT.md`; run via `/gsd-execute-phase 01 --gaps-only`)*
+
+- [ ] 01-08-PLAN.md — Guard the modal backdrop's `[hidden]` display rule (UAT Test 1 blocker) and restyle the severity slider track/thumb (wave 1)
 
 **UI hint**: yes
 
