@@ -545,8 +545,20 @@ body {
 
 /* Modal shells (D-02, D-03) — dimmed backdrop over the map; the dim uses an
    rgb() alpha channel rather than the `opacity` property (which would fade
-   the whole element tree, not just darken behind it). */
-.modal-backdrop {
+   the whole element tree, not just darken behind it).
+   The :not([hidden]) guard is required: the browser's native
+   [hidden] { display: none } rule is user-agent-origin, so an author-origin
+   `display` declaration at equal specificity defeats it and the element
+   renders even while the `hidden` attribute is set on it. #report-modal
+   carries `hidden` in the template and modal.js only clears it inside
+   openModal(), so without this guard the backdrop (and its full-viewport
+   scrim) would render open on every page load, hiding the map and list
+   underneath. Same pattern already used in modal.css for #shelter-fields
+   and #discard-confirm, and in feed.css for the empty/error/loading states —
+   see feed.css's comment block for the fuller specificity explanation.
+   TestModalBackdropHiddenGuard in web/css_contract_test.go fails the build
+   if this guard is ever removed. */
+.modal-backdrop:not([hidden]) {
   position: fixed;
   inset: 0;
   z-index: 1100;
