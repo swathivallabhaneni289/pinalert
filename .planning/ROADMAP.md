@@ -48,7 +48,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. A report stops appearing in the feed once its expiry time passes, checked live on every read — not solely dependent on a background sweep job.
   5. The JSON API is documented via a browsable OpenAPI/Swagger spec at a stable URL, and every push runs automated tests, `go vet`, and a build check via CI.
 
-**Plans**: 7/8 plans complete (1 gap-closure plan added after UAT)
+**Plans**: 8/8 plans complete
 Plans:
 **Wave 1**
 
@@ -71,7 +71,7 @@ Plans:
 
 **Gap closure** *(from `01-UAT.md`; run via `/gsd-execute-phase 01 --gaps-only`)*
 
-- [ ] 01-08-PLAN.md — Guard the modal backdrop's `[hidden]` display rule (UAT Test 1 blocker) and restyle the severity slider track/thumb (wave 1)
+- [x] 01-08-PLAN.md — Guard the modal backdrop's `[hidden]` display rule (UAT Test 1 blocker) and restyle the severity slider track/thumb (wave 1)
 
 **UI hint**: yes
 
@@ -162,7 +162,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation — Report & Map | 7/7 | Complete   | 2026-09-06 |
+| 1. Foundation — Report & Map | 8/8 | Complete   | 2026-09-06 |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 0/TBD | Not started | - |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
