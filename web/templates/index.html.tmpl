@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinalert</title>
+  <link rel="stylesheet" href="/static/css/main.css">
+  <link rel="stylesheet" href="/static/css/modal.css">
+  <link rel="stylesheet" href="/static/css/feed.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin="anonymous">
+</head>
+<body>
+  <div class="app-shell" id="app-shell" data-view="map"
+       data-fallback-lat="{{.FallbackLat}}"
+       data-fallback-lon="{{.FallbackLon}}"
+       data-default-radius-km="{{.DefaultRadiusKm}}"
+       data-poll-interval-ms="30000">
+
+    <section class="pane pane--map">
+      <div id="map"></div>
+      <button type="button" class="fab" id="fab-report" aria-label="Report an emergency">
+        <span aria-hidden="true">+</span>
+      </button>
+    </section>
+
+    <section class="pane pane--list">
+      <button type="button" class="view-toggle" id="view-toggle">List</button>
+      <ol id="report-list"></ol>
+      <div id="feed-skeleton">
+        <div class="skeleton-row"></div>
+        <div class="skeleton-row"></div>
+        <div class="skeleton-row"></div>
+        <div class="skeleton-row"></div>
+      </div>
+      <div class="empty-state" id="feed-empty" hidden>
+        <h2>No reports near you yet</h2>
+        <p>Nothing has been reported in your area recently. Tap + to report what you're seeing.</p>
+      </div>
+      <div class="error-state" id="feed-error" hidden>
+        <h2>Couldn't load reports</h2>
+        <p>Check your connection and try again.</p>
+        <button type="button" class="btn" id="feed-retry">Retry</button>
+      </div>
+    </section>
+
+    <div class="modal-backdrop" id="report-modal" hidden>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <h2 id="modal-title">Report an emergency</h2>
+
+        <div id="modal-map"></div>
+        <p id="coord-readout"></p>
+        <p id="location-notice" hidden>
+          Location access is off — drag the map to your area, or tap the map to drop a pin.
+        </p>
+
+        <div id="category-grid" role="radiogroup" aria-label="Category"></div>
+
+        <label for="severity" class="visually-hidden">Severity</label>
+        <input type="range" id="severity" min="1" max="3" step="1" value="1"
+               aria-label="Severity" aria-valuetext="1 · Low" class="severity-slider">
+        <output id="severity-readout" for="severity">1 · Low</output>
+
+        <label for="description">Description</label>
+        <textarea id="description" name="description" rows="3"></textarea>
+
+        <fieldset id="shelter-fields" hidden>
+          <legend>Shelter capacity</legend>
+          <label for="shelter-capacity-status">Capacity status</label>
+          <select id="shelter-capacity-status" name="shelter_capacity_status">
+            <option value="available">Available</option>
+            <option value="limited">Limited</option>
+            <option value="full">Full</option>
+            <option value="closed">Closed</option>
+          </select>
+          <label for="shelter-headcount">Headcount (optional)</label>
+          <input type="number" id="shelter-headcount" name="shelter_headcount" min="0">
+        </fieldset>
+
+        <p id="form-error" role="alert"></p>
+
+        <button type="button" id="submit-report" class="btn btn--primary">Post report</button>
+        <button type="button" id="cancel-report" class="btn">Cancel</button>
+
+        <div id="discard-confirm" hidden>
+          <p>Discard this report? Your description and location won't be saved.</p>
+          <button type="button" id="discard-confirm-discard" class="btn btn--destructive">Discard</button>
+          <button type="button" id="discard-confirm-keep" class="btn">Keep editing</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" role="status" aria-live="polite" hidden></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin="anonymous"></script>
+  <script src="/static/js/app.js" defer></script>
+  <script src="/static/js/map.js" defer></script>
+  <script src="/static/js/modal.js" defer></script>
+  <script src="/static/js/feed.js" defer></script>
+</body>
+</html>
