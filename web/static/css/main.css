@@ -134,3 +134,443 @@
 
   --color-age-stale: #C9CDD1;
 }
+
+/*
+ * ---------------------------------------------------------------------------
+ * Shared components & layout — consumed by plans 01-04, 01-05, 01-06.
+ * ---------------------------------------------------------------------------
+ * These class names and the custom properties they read/write are a CONTRACT:
+ * plans 01-04/01-05/01-06 build their surface using only what's below and
+ * cannot edit this file. Do not rename anything here without checking those
+ * plans first.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+/* Global keyboard focus ring — mandatory per D-05, non-negotiable accessibility. */
+:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+/* -------------------------------------------------------------------------
+ * Severity context — sets the two local custom properties every severity-
+ * aware component reads. --severity-current defaults to --severity-base here
+ * so a component works correctly even with no .age-* class applied (e.g. a
+ * bare `.icon-badge.sev-critical` with no age information yet). The .age-*
+ * rules below appear LATER in source order and override --severity-current
+ * at equal specificity (one class each) to apply the desaturation ramp.
+ * ---------------------------------------------------------------------- */
+.sev-low {
+  --severity-base: var(--color-severity-low);
+  --severity-tint: var(--color-severity-low-bg);
+  --severity-current: var(--severity-base);
+}
+
+.sev-medium {
+  --severity-base: var(--color-severity-medium);
+  --severity-tint: var(--color-severity-medium-bg);
+  --severity-current: var(--severity-base);
+}
+
+.sev-critical {
+  --severity-base: var(--color-severity-critical);
+  --severity-tint: var(--color-severity-critical-bg);
+  --severity-current: var(--severity-base);
+}
+
+/* -------------------------------------------------------------------------
+ * Age ramp (D-17) — desaturation toward gray, three discrete stages, never
+ * opacity. Must appear after .sev-* above so it can override
+ * --severity-current at equal specificity. .age-fresh is written explicitly
+ * (rather than omitted) so a report can always be given an explicit age
+ * class without relying on the .sev-* default.
+ * ---------------------------------------------------------------------- */
+.age-fresh {
+  --severity-current: var(--severity-base);
+}
+
+.age-aging {
+  --severity-current: color-mix(in srgb, var(--severity-base) 50%, var(--color-age-stale) 50%);
+}
+
+.age-stale {
+  /* Same neutral gray regardless of original severity — "about to disappear
+     regardless of urgency". */
+  --severity-current: var(--color-age-stale);
+}
+
+/* -------------------------------------------------------------------------
+ * Icon badge (D-12) — circular badge filled with the current severity
+ * color; a currentColor glyph inside renders white on light backgrounds
+ * (color set to --color-bg) per D-12's "white glyph on solid color-coded
+ * circular badge" pattern.
+ * ---------------------------------------------------------------------- */
+.icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  border-radius: 50%;
+  background: var(--severity-current, var(--severity-base));
+  color: var(--color-bg);
+}
+
+.icon-badge svg {
+  width: 55%;
+  height: 55%;
+}
+
+.icon-badge--sm {
+  width: 32px;
+  height: 32px;
+}
+
+.icon-badge--pin {
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 35%);
+}
+
+/* -------------------------------------------------------------------------
+ * Report row (D-16) — left-border accent + tinted background keyed to
+ * current severity/age-stage.
+ * ---------------------------------------------------------------------- */
+.report-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border-left: 4px solid var(--severity-current, var(--severity-base));
+  background: var(--severity-tint, transparent);
+}
+
+.report-row .report-row__title {
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  margin: 0 0 var(--space-xs) 0;
+}
+
+.report-row .report-row__meta {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.report-row--selected {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+}
+
+/* -------------------------------------------------------------------------
+ * Neutral (non-severity) interactive elements — FAB and primary submit
+ * button are deliberately NOT accent-colored (D-09, D-10): inverted
+ * neutral treatment (--color-text on --color-bg) instead.
+ * ---------------------------------------------------------------------- */
+.fab {
+  position: fixed;
+  right: var(--space-lg);
+  bottom: var(--space-lg);
+  z-index: 1000; /* above Leaflet's control panes */
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  border: none;
+  border-radius: 50%;
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-size: var(--font-size-display);
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch-target-min);
+  padding: var(--space-sm) var(--space-lg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.btn--primary {
+  background: var(--color-text);
+  color: var(--color-bg);
+  border-color: var(--color-text);
+}
+
+.btn--destructive {
+  /* Used only by the discard-draft confirmation — the phase's single data-loss path. */
+  background: var(--color-severity-critical);
+  color: var(--color-bg);
+  border-color: var(--color-severity-critical);
+}
+
+.category-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  cursor: pointer;
+}
+
+.category-tile--selected {
+  background: var(--color-text);
+  color: var(--color-bg);
+  border-color: var(--color-text);
+}
+
+/* -------------------------------------------------------------------------
+ * Layout containers (D-06 wide-screen split view, D-07 narrow-screen
+ * map-default with toggle). Plan 01-04 only sets/reads the `data-view`
+ * attribute on #app-shell; all layout behavior lives here.
+ * ---------------------------------------------------------------------- */
+.app-shell {
+  display: grid;
+  min-height: 100vh;
+  grid-template-columns: 1fr;
+}
+
+.pane {
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.view-toggle {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-xl);
+  }
+
+  .pane--map,
+  .pane--list {
+    display: block;
+  }
+}
+
+@media (max-width: 899.98px) {
+  .app-shell[data-view="map"] .pane--list {
+    display: none;
+  }
+
+  .app-shell[data-view="map"] .pane--map {
+    display: block;
+  }
+
+  .app-shell[data-view="list"] .pane--map {
+    display: none;
+  }
+
+  .app-shell[data-view="list"] .pane--list {
+    display: block;
+  }
+
+  .view-toggle {
+    display: inline-flex;
+    position: fixed;
+    left: var(--space-lg);
+    bottom: var(--space-lg);
+    z-index: 1000;
+    min-height: var(--touch-target-min);
+    padding: var(--space-sm) var(--space-md);
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-xs);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    background: var(--color-bg);
+    color: var(--color-text);
+    cursor: pointer;
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * Supporting classes: skeleton loader, empty/error states, visually-hidden
+ * utility, severity slider, modal shells.
+ * ---------------------------------------------------------------------- */
+
+/* Skeleton loader pulse animates background-color (never opacity — a faded
+   element reads as disabled, not "loading"). Honours prefers-reduced-motion
+   by dropping the animation entirely. */
+.skeleton-row {
+  height: 64px;
+  border-radius: 6px;
+  margin-bottom: var(--space-sm);
+  background-color: var(--color-surface);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    background-color: var(--color-surface);
+  }
+  50% {
+    background-color: var(--color-border);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-row {
+    animation: none;
+  }
+}
+
+.empty-state,
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-2xl) var(--space-lg);
+  text-align: center;
+}
+
+.empty-state h2,
+.error-state h2 {
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  margin: 0;
+}
+
+.empty-state p,
+.error-state p {
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Severity slider (D-05) — track fill reads from --severity-current so the
+   live color ramp animates as the value changes; thumb meets the
+   touch-target floor. */
+.severity-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-height: var(--touch-target-min);
+  height: var(--space-sm);
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--severity-current, var(--color-severity-low)) 0%,
+    var(--severity-current, var(--color-severity-low)) 100%
+  );
+  cursor: pointer;
+}
+
+.severity-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  border-radius: 50%;
+  background: var(--color-bg);
+  border: 3px solid var(--severity-current, var(--color-severity-low));
+  cursor: pointer;
+}
+
+.severity-slider::-moz-range-thumb {
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  border-radius: 50%;
+  background: var(--color-bg);
+  border: 3px solid var(--severity-current, var(--color-severity-low));
+  cursor: pointer;
+}
+
+/* Modal shells (D-02, D-03) — dimmed backdrop over the map; the dim uses an
+   rgb() alpha channel rather than the `opacity` property (which would fade
+   the whole element tree, not just darken behind it). */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgb(0 0 0 / 55%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-panel {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border-radius: 8px;
+  padding: var(--space-lg);
+  max-width: 480px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-panel h1,
+.modal-panel h2 {
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  margin: 0 0 var(--space-md) 0;
+}

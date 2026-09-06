@@ -1,0 +1,8 @@
+/*
+ * feed.css — owned by plan 01-06 (report list + map/list linkage).
+ *
+ * This is a placeholder so the page shell (plan 01-04) can link a stable stylesheet set.
+ * Plan 01-06 must consume design tokens and shared component classes from main.css
+ * (--color-*, --space-*, --font-*, .report-row*, .sev-*, .age-*, .icon-badge*, .empty-state,
+ * .error-state, .skeleton-row, etc.) rather than redeclaring raw values here.
+ */

@@ -1,0 +1,8 @@
+/*
+ * modal.css — owned by plan 01-05 (report submission modal).
+ *
+ * This is a placeholder so the page shell (plan 01-04) can link a stable stylesheet set.
+ * Plan 01-05 must consume design tokens and shared component classes from main.css
+ * (--color-*, --space-*, --font-*, .modal-backdrop, .modal-panel, .severity-slider, .btn*,
+ * .category-tile*, etc.) rather than redeclaring raw values here.
+ */
