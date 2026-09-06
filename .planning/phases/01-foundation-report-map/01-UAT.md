@@ -1,26 +1,24 @@
 ---
-status: testing
+status: partial
 phase: 01-foundation-report-map
 source: [01-VERIFICATION.md]
 started: 2026-09-06T09:55:00Z
-updated: 2026-09-06T09:55:00Z
+updated: 2026-09-06T11:16:01Z
 ---
 
 ## Current Test
 
-number: 1
-name: Live map tile rendering in a real browser
-expected: |
-  Open the app (`make migrate && make run`) and confirm the Leaflet/OSM map renders visible
-  tiles, not a blank gray #map div. A live OpenStreetMap tile layer is visible, centred on
-  geolocation or the Bengaluru fallback.
-awaiting: user response
+[session paused — 1 blocker found on Test 1 (modal-backdrop [hidden] specificity bug),
+8 tests still pending, routing to gap-closure now. Resume remaining tests via
+/gsd-verify-work 01 once the fix lands.]
 
 ## Tests
 
 ### 1. Live map tile rendering
 expected: A live OpenStreetMap tile layer is visible, centred on geolocation or the Bengaluru fallback.
-result: [pending]
+result: issue
+reported: "it looks like this and i dont see any map" (screenshot: solid black viewport with the report-submission modal already open, un-clicked)
+severity: blocker
 
 ### 2. New-pin visual rendering after submit (exercises the CR-01 icon-sizing fix)
 expected: Submit a report via the "+" button; a correctly-sized (55% of badge), non-overflowing category glyph appears on a colour-coded pin at the submitted coordinate immediately after submit, with no page reload.
@@ -48,7 +46,7 @@ result: [pending]
 
 ### 8. Live GitHub Actions CI run
 expected: Push this branch (currently 48 commits ahead of origin/main, unpushed) or open a PR, and confirm `.github/workflows/ci.yml`'s Actions run is green (build, vet, test all pass against the postgres:16 service container) on GitHub's own infrastructure, not just local reproduction.
-result: [pending]
+result: pass
 
 ### 9. Interactive Swagger UI walkthrough
 expected: Open `/swagger/index.html`, expand `POST /reports` and `GET /reports`, and use "Try it out" on `GET /reports` with real lat/lon values — the UI renders correctly, both operations show all enum values, and "Try it out" returns live data from the database.
@@ -61,10 +59,42 @@ result: [pending]
 ## Summary
 
 total: 10
-passed: 0
-issues: 0
-pending: 10
+passed: 1
+issues: 1
+pending: 8
 skipped: 0
 blocked: 0
+notes: 1 (cosmetic feedback on Test 3's severity slider styling, captured pre-emptively; Test 3 itself remains pending for its full accessibility checklist)
 
 ## Gaps
+
+- truth: "A live OpenStreetMap tile layer is visible, centred on geolocation or the Bengaluru fallback."
+  status: failed
+  reason: "User reported: it looks like this and i dont see any map (screenshot shows the report-submission modal already open on a fresh page load, covering the whole viewport in a near-black backdrop)"
+  severity: blocker
+  test: 1
+  artifacts: [web/static/css/main.css:549]
+  missing: []
+  root_cause_confirmed: |
+    `.modal-backdrop { display: flex; }` in main.css:549 has no `:not([hidden])` guard.
+    `#report-modal` (class="modal-backdrop") carries the `hidden` attribute by default
+    (web/templates/index.html.tmpl:48) and modal.js only clears it on the FAB click
+    (openModal(), web/static/js/modal.js) — but the browser's native `[hidden] { display:
+    none }` rule is user-agent-origin, so it loses to this author-origin `.modal-backdrop`
+    display rule at equal specificity regardless of hidden actually being present. The
+    modal therefore renders open (and its rgb(0 0 0 / 55%) full-viewport scrim) on every
+    page load, before the FAB is ever clicked — obscuring the map/list pane underneath it.
+    This exact bug class was already identified and fixed elsewhere in this same codebase
+    for #shelter-fields and #discard-confirm (modal.css:139,222) and for
+    #report-list/#feed-skeleton/#feed-empty/#feed-error (feed.css:13-26, with an explicit
+    comment explaining the specificity fix) — `.modal-backdrop` itself was missed.
+    Fix: add `.modal-backdrop:not([hidden])` (matching the existing pattern) or move the
+    `display: flex` off the bare class selector.
+
+- truth: "Severity slider accessibility (screen reader, keyboard, reduced motion)" (Test 3, not yet formally run)
+  status: failed
+  reason: "User reported (unprompted, from the screenshot): the severity slider look is 'too basic level' and asked for the interaction/visuals to feel smoother/more polished. This is a visual-polish note, not a functional break — full accessibility checklist for Test 3 (screen reader announcement, keyboard/Home/End, reduced-motion) is still untested and should be re-verified once restyled."
+  severity: cosmetic
+  test: 3
+  artifacts: [web/static/css/modal.css, web/static/css/main.css]
+  missing: []
