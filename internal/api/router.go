@@ -9,17 +9,19 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	sqlcgen "pinalert/internal/store/sqlc"
-
+	"pinalert/internal/api/handlers"
+	"pinalert/internal/service"
 	"pinalert/internal/session"
+	sqlcgen "pinalert/internal/store/sqlc"
 )
 
-// Deps holds every dependency a route handler needs. Task 2 of this plan
-// adds Reports; plans 01-04 and 01-07 extend this struct further (page
-// templates, swagger mount) without touching this file's shape.
+// Deps holds every dependency a route handler needs. Plans 01-04 and 01-07
+// extend this struct further (page templates, swagger mount) without
+// touching this file's shape.
 type Deps struct {
 	Session  *session.Manager
 	Sessions *sqlcgen.Queries
+	Reports  *service.ReportService
 }
 
 // NewRouter builds the chi router: request-id/real-ip/recoverer/logger
@@ -35,7 +37,8 @@ func NewRouter(deps Deps) *chi.Mux {
 	r.Use(deps.Session.Middleware(deps.persistSession))
 
 	r.Route("/api", func(r chi.Router) {
-		// Task 2/3 register POST/GET /api/reports here.
+		r.Post("/reports", handlers.SubmitReport(deps.Reports))
+		// Task 3 registers GET /api/reports here.
 	})
 
 	return r

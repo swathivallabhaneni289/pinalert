@@ -26,6 +26,11 @@ func TestValidateSubmitInput(t *testing.T) {
 		for _, c := range service.Categories {
 			in := validInput()
 			in.Category = c
+			if c == service.CategoryShelterOpen {
+				// shelter_open additionally requires a capacity status;
+				// covered on its own in TestShelterCapacityValidation.
+				in.ShelterCapacityStatus = ptrCapacity(service.CapacityAvailable)
+			}
 			if err := service.ValidateSubmitInput(in); err != nil {
 				t.Errorf("category %q: expected valid, got error %v", c, err)
 			}

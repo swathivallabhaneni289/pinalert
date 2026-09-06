@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"pinalert/internal/api"
+	"pinalert/internal/service"
 	"pinalert/internal/session"
 	"pinalert/internal/store"
 	sqlcgen "pinalert/internal/store/sqlc"
@@ -42,9 +43,11 @@ func main() {
 		log.Fatalf("constructing session manager: %v", err)
 	}
 
+	queries := sqlcgen.New(pool)
 	deps := api.Deps{
 		Session:  sessionMgr,
-		Sessions: sqlcgen.New(pool),
+		Sessions: queries,
+		Reports:  service.NewReportService(queries),
 	}
 	router := api.NewRouter(deps)
 
