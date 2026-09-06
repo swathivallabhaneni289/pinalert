@@ -189,6 +189,8 @@ Phase 1 substitutes for the reference's Phase-2 strings, plus states the referen
 
 The template's baseline sections cover tokens; this section covers the interaction contract the reference image doesn't show (Phase 1 is a submit → store → view loop, not a static screen).
 
+**Focal points:** Primary — the FAB (+ button), persistently visible over the map for one-tap report entry from anywhere in the view. Secondary — the severity slider during modal composition, since it's the one control with real-time animated feedback (color ramp + live numeric readout) and carries the report's most safety-critical field.
+
 ### Report submission modal (D-02, D-03)
 1. **Open:** FAB tap opens modal over the map (map stays visible/dimmed behind, per D-03 — visitor never loses spatial context).
 2. **Location:** GPS pre-fills a draggable marker on the modal's embedded map. Dragging updates a coordinate readout live. **If geolocation is denied/unavailable:** show the inline notice above; map centers on a sensible default (e.g. last-known IP-derived city center or a fixed fallback center) with the marker requiring a manual tap-to-place before the marker exists — do not block submission on GPS.
