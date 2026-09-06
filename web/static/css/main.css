@@ -370,7 +370,14 @@ body {
  * ---------------------------------------------------------------------- */
 .app-shell {
   display: grid;
+  /* Paired with #map's own height declarations below — both boxes must
+     state their height in the same viewport-unit family. 100vh stays as
+     the legacy fallback; 100dvh (declared second, so it wins in any engine
+     that understands it) is the effective value because the static unit
+     reports the large mobile viewport, taller than the area actually
+     visible while the browser's address bar is showing. */
   min-height: 100vh;
+  min-height: 100dvh;
   grid-template-columns: 1fr;
 }
 
@@ -378,6 +385,30 @@ body {
   min-height: 0;
   overflow: hidden;
   position: relative;
+}
+
+/* The primary Leaflet map container (the div index.html.tmpl gives id="map")
+   is the last in-flow box inside .pane--map: its only sibling, the FAB, is
+   position: fixed and so contributes no content height. With nothing else
+   giving the pane's grid row a size, the container collapses to 0px, and
+   L.map(container) in map.js's init() measures a zero-height box — Leaflet
+   then has no area to paint tiles into at all (UAT Test 1 blocker).
+   The height is declared here, in a viewport unit, on the container itself
+   rather than as a percentage of its parent, precisely so the resolution is
+   self-contained: it does not depend on .app-shell's CSS grid "stretch auto
+   tracks" step running, or on a stretched grid item's size counting as
+   definite for a percentage-sized child. Both of those hold today, but this
+   rule does not need either one to remain true. As with .app-shell above,
+   100vh is a legacy fallback and 100dvh (declared second) is the effective
+   dynamic-viewport value that keeps the map's bottom edge from rendering
+   behind mobile browser chrome — this is the same reasoning #modal-map's
+   own fixed 220px height already embodies for its own, unrelated, box.
+   TestPrimaryMapHasResolvedHeight in web/css_contract_test.go fails the
+   build if this rule is ever removed or downgraded to a value that cannot
+   resolve on its own. */
+#map {
+  height: 100vh;
+  height: 100dvh;
 }
 
 .view-toggle {
