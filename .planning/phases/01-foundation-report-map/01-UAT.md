@@ -1,24 +1,27 @@
 ---
-status: partial
+status: testing
 phase: 01-foundation-report-map
 source: [01-VERIFICATION.md]
 started: 2026-09-06T09:55:00Z
-updated: 2026-09-06T11:16:01Z
+updated: 2026-09-06T11:58:00Z
 ---
 
 ## Current Test
 
-[session paused — 1 blocker found on Test 1 (modal-backdrop [hidden] specificity bug),
-8 tests still pending, routing to gap-closure now. Resume remaining tests via
-/gsd-verify-work 01 once the fix lands.]
+number: 1
+name: Live map tile rendering in a real browser (retest)
+expected: |
+  Open the app and confirm the Leaflet/OSM map renders visible tiles, not a blank gray #map
+  div, and that the report-submission modal is NOT open on load. A live OpenStreetMap tile
+  layer is visible, centred on geolocation or the Bengaluru fallback.
+awaiting: user response
 
 ## Tests
 
 ### 1. Live map tile rendering
 expected: A live OpenStreetMap tile layer is visible, centred on geolocation or the Bengaluru fallback.
-result: issue
-reported: "it looks like this and i dont see any map" (screenshot: solid black viewport with the report-submission modal already open, un-clicked)
-severity: blocker
+result: [pending]
+retest_note: "Previously failed (blocker) — modal-backdrop covered the whole viewport on load. Fixed by plan 01-08 (commit 67c3e8f, `.modal-backdrop:not([hidden])` guard). Re-testing to confirm the map is now actually reachable and tiles render."
 
 ### 2. New-pin visual rendering after submit (exercises the CR-01 icon-sizing fix)
 expected: Submit a report via the "+" button; a correctly-sized (55% of badge), non-overflowing category glyph appears on a colour-coded pin at the submitted coordinate immediately after submit, with no page reload.
@@ -60,8 +63,8 @@ result: [pending]
 
 total: 10
 passed: 1
-issues: 1
-pending: 8
+issues: 0
+pending: 9
 skipped: 0
 blocked: 0
 notes: 1 (cosmetic feedback on Test 3's severity slider styling, captured pre-emptively; Test 3 itself remains pending for its full accessibility checklist)
@@ -69,7 +72,7 @@ notes: 1 (cosmetic feedback on Test 3's severity slider styling, captured pre-em
 ## Gaps
 
 - truth: "A live OpenStreetMap tile layer is visible, centred on geolocation or the Bengaluru fallback."
-  status: failed
+  status: fix_landed
   reason: "User reported: it looks like this and i dont see any map (screenshot shows the report-submission modal already open on a fresh page load, covering the whole viewport in a near-black backdrop)"
   severity: blocker
   test: 1
@@ -92,7 +95,7 @@ notes: 1 (cosmetic feedback on Test 3's severity slider styling, captured pre-em
     `display: flex` off the bare class selector.
 
 - truth: "Severity slider accessibility (screen reader, keyboard, reduced motion)" (Test 3, not yet formally run)
-  status: failed
+  status: fix_landed
   reason: "User reported (unprompted, from the screenshot): the severity slider look is 'too basic level' and asked for the interaction/visuals to feel smoother/more polished. This is a visual-polish note, not a functional break — full accessibility checklist for Test 3 (screen reader announcement, keyboard/Home/End, reduced-motion) is still untested and should be re-verified once restyled."
   severity: cosmetic
   test: 3
