@@ -1,27 +1,24 @@
 ---
-status: testing
+status: partial
 phase: 01-foundation-report-map
 source: [01-VERIFICATION.md]
 started: 2026-09-06T09:55:00Z
-updated: 2026-09-06T11:58:00Z
+updated: 2026-09-06T12:05:00Z
 ---
 
 ## Current Test
 
-number: 1
-name: Live map tile rendering in a real browser (retest)
-expected: |
-  Open the app and confirm the Leaflet/OSM map renders visible tiles, not a blank gray #map
-  div, and that the report-submission modal is NOT open on load. A live OpenStreetMap tile
-  layer is visible, centred on geolocation or the Bengaluru fallback.
-awaiting: user response
+[session paused — 1 new blocker found on Test 1 retest (#map has no CSS height, always
+collapses to 0px; masked until now by the 01-08-fixed modal-backdrop bug), 8 tests still
+pending. Routing to gap-closure again. Resume via /gsd-verify-work 01 once the fix lands.]
 
 ## Tests
 
 ### 1. Live map tile rendering
 expected: A live OpenStreetMap tile layer is visible, centred on geolocation or the Bengaluru fallback.
-result: [pending]
-retest_note: "Previously failed (blocker) — modal-backdrop covered the whole viewport on load. Fixed by plan 01-08 (commit 67c3e8f, `.modal-backdrop:not([hidden])` guard). Re-testing to confirm the map is now actually reachable and tiles render."
+result: issue
+reported: "modal no longer auto-opens (01-08 fix confirmed working — screenshot shows the modal now only appears on '+' click, with its own map rendering correctly with real tiles). But the primary map behind it is still solid black on a fresh page load — screenshot of the base view shows only the list panel ('No reports near you yet'), no map tiles anywhere."
+severity: blocker
 
 ### 2. New-pin visual rendering after submit (exercises the CR-01 icon-sizing fix)
 expected: Submit a report via the "+" button; a correctly-sized (55% of badge), non-overflowing category glyph appears on a colour-coded pin at the submitted coordinate immediately after submit, with no page reload.
@@ -63,8 +60,8 @@ result: [pending]
 
 total: 10
 passed: 1
-issues: 0
-pending: 9
+issues: 1
+pending: 8
 skipped: 0
 blocked: 0
 notes: 1 (cosmetic feedback on Test 3's severity slider styling, captured pre-emptively; Test 3 itself remains pending for its full accessibility checklist)
@@ -93,6 +90,37 @@ notes: 1 (cosmetic feedback on Test 3's severity slider styling, captured pre-em
     comment explaining the specificity fix) — `.modal-backdrop` itself was missed.
     Fix: add `.modal-backdrop:not([hidden])` (matching the existing pattern) or move the
     `display: flex` off the bare class selector.
+
+- truth: "A live OpenStreetMap tile layer is visible, centred on geolocation or the Bengaluru fallback." (retest, new root cause)
+  status: failed
+  reason: "Retest after 01-08 landed: modal-backdrop fix confirmed working (modal only opens on '+' click, and the modal's own #modal-map renders real tiles correctly). But the PRIMARY #map (behind the modal, in .pane--map) is still solid black on a fresh page load — screenshot shows only the list panel, no map at all."
+  severity: blocker
+  test: 1
+  artifacts: [web/static/css/main.css]
+  missing: ["a height rule for #map"]
+  root_cause_confirmed: |
+    `#map` (web/templates/index.html.tmpl:22) has NO CSS rule anywhere in main.css or
+    feed.css setting its height — confirmed via grep across both files (only `#modal-map`,
+    the SEPARATE Leaflet instance inside the report modal, has an explicit `height: 220px`
+    in modal.css:23-27, which is exactly why that map renders fine while the primary one
+    doesn't). `#map`'s only ancestor is `.pane--map` inside `.app-shell` (display: grid);
+    `.pane { min-height: 0; overflow: hidden; position: relative; }` sets no height either.
+    The FAB button (`.fab`) is `position: fixed` (main.css:292), so it's removed from normal
+    flow and contributes nothing to `.pane--map`'s content height. With no explicit height
+    anywhere in the ancestor chain and no in-flow sibling content, `#map` collapses to 0
+    height, so `L.map(container)` in map.js's `init()` initializes against a 0-height
+    viewport — Leaflet has no visible area to paint tiles into. This is a pre-existing
+    defect from plan 01-04 (walking skeleton) that has been masked the entire time by the
+    01-08-fixed modal-backdrop bug: the modal's full-viewport black scrim covered the
+    entire screen on every load, so nobody could ever see that the map behind it was
+    already broken. Fix: give `#map` (and/or `.pane--map`) an explicit height — e.g.
+    `#map { height: 100%; }` plus ensuring `.pane--map` and its `.app-shell` grid row
+    actually resolve to a non-zero height (grid rows need `align-items: stretch` — the
+    grid default — AND a definite height on some ancestor up to the viewport; `.app-shell`
+    already has `min-height: 100vh` but that's a MIN on the shell itself, not a stretch
+    target down through `.pane` to `#map` — needs verification against actual grid
+    row-sizing behavior when the only sized ancestor is `min-height` on the grid container,
+    not `height`).
 
 - truth: "Severity slider accessibility (screen reader, keyboard, reduced motion)" (Test 3, not yet formally run)
   status: fix_landed
