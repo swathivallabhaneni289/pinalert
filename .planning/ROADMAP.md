@@ -48,7 +48,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. A report stops appearing in the feed once its expiry time passes, checked live on every read — not solely dependent on a background sweep job.
   5. The JSON API is documented via a browsable OpenAPI/Swagger spec at a stable URL, and every push runs automated tests, `go vet`, and a build check via CI.
 
-**Plans**: 8/8 plans complete
+**Plans**: 8/9 plans complete
 Plans:
 **Wave 1**
 
@@ -72,6 +72,7 @@ Plans:
 **Gap closure** *(from `01-UAT.md`; run via `/gsd-execute-phase 01 --gaps-only`)*
 
 - [x] 01-08-PLAN.md — Guard the modal backdrop's `[hidden]` display rule (UAT Test 1 blocker) and restyle the severity slider track/thumb (wave 1)
+- [ ] 01-09-PLAN.md — Give the primary map container a self-resolving viewport height so Leaflet has an area to paint tiles into (UAT Test 1 retest blocker), locked by a CSS contract test (wave 1)
 
 **UI hint**: yes
 
