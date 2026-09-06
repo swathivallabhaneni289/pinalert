@@ -20,7 +20,7 @@ created: 2026-09-06
 | **Framework** | Go stdlib `testing` + `go test` (no third-party test runner — `net/http/httptest` + table-driven tests are sufficient at this scope) |
 | **Config file** | none — Wave 0 installs |
 | **Quick run command** | `go test ./... -short` |
-| **Full suite command** | `go test ./... -v` (requires `DATABASE_URL` pointing at a real Postgres for store-layer tests) |
+| **Full suite command** | `go test ./... -v -p 1` (requires `DATABASE_URL` pointing at a real Postgres for store-layer tests; `-p 1` is required — packages share one physical test DB and each calls `testutil.NewTestDB`'s `TRUNCATE ... RESTART IDENTITY` at test start, so concurrent package execution lets one package's truncate delete/recycle another's in-flight rows, discovered as a real flake in Wave 1 post-merge testing) |
 | **Estimated runtime** | ~30 seconds (quick), ~90 seconds (full, with real Postgres) |
 
 ---
