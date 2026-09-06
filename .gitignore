@@ -1,1 +1,12 @@
 .planning/research/.cache/
+
+# Compiled binaries (built via `go build`/`make run`/`make migrate`)
+/pinalert
+/migrate
+
+# Local environment files — never commit real credentials (DATABASE_URL, SESSION_SECRET)
+.env
+.env.local
+
+# internal/store/sqlc/ is intentionally NOT ignored — its generated output is
+# committed to git so CI needs no sqlc binary (see sqlc.yaml header comment).
