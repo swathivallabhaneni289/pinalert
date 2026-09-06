@@ -129,7 +129,7 @@ notes: 1 (cosmetic feedback on Test 3's severity slider styling, captured pre-em
   missing: []
 
 - truth: "A live OpenStreetMap tile layer is visible, centred on geolocation or the Bengaluru fallback." (tile quality, Test 1 passed but flagged)
-  status: pending_fix
+  status: fix_landed
   reason: "User reported: map now renders correctly (Test 1 passed) but tile text/labels look blurry on a Retina display."
   severity: cosmetic
   test: 1
