@@ -232,7 +232,8 @@ body {
   color: var(--color-bg);
 }
 
-.icon-badge svg {
+.icon-badge svg,
+.icon-badge img {
   width: 55%;
   height: 55%;
 }
