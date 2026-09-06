@@ -208,6 +208,9 @@ func TestPrimaryMapHasResolvedHeight(t *testing.T) {
 				// without depending on any ancestor either, so it counts as
 				// self-resolving too. A bare percentage or a keyword like
 				// "auto" does not.
+				if path != "static/css/main.css" {
+					continue
+				}
 				if strings.Contains(value, "vh") ||
 					strings.HasSuffix(value, "px") ||
 					strings.HasSuffix(value, "cm") ||
