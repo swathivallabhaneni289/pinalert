@@ -82,3 +82,92 @@ func (q *Queries) InsertReport(ctx context.Context, arg InsertReportParams) (Ins
 	)
 	return i, err
 }
+
+const nearbyReports = `-- name: NearbyReports :many
+SELECT id, category, severity, description, latitude, longitude, geohash,
+       shelter_capacity_status, shelter_headcount, created_at, expires_at, distance_km
+FROM (
+    SELECT id, category, severity, description, latitude, longitude, geohash,
+           shelter_capacity_status, shelter_headcount, created_at, expires_at,
+           ( 6371 * acos(
+               least(1.0,
+                 cos(radians($1::float8)) * cos(radians(latitude))
+                 * cos(radians(longitude) - radians($2::float8))
+                 + sin(radians($1::float8)) * sin(radians(latitude))
+               )
+             )
+           )::float8 AS distance_km
+    FROM reports
+    WHERE expires_at > now()
+      AND latitude  BETWEEN $3::float8 AND $4::float8
+      AND longitude BETWEEN $5::float8 AND $6::float8
+) AS candidates
+WHERE distance_km <= $7::float8
+ORDER BY distance_km ASC
+`
+
+type NearbyReportsParams struct {
+	Lat      float64
+	Lon      float64
+	LatMin   float64
+	LatMax   float64
+	LonMin   float64
+	LonMax   float64
+	RadiusKm float64
+}
+
+type NearbyReportsRow struct {
+	ID                    int64
+	Category              string
+	Severity              string
+	Description           string
+	Latitude              float64
+	Longitude             float64
+	Geohash               string
+	ShelterCapacityStatus *string
+	ShelterHeadcount      *int32
+	CreatedAt             time.Time
+	ExpiresAt             time.Time
+	DistanceKm            float64
+}
+
+func (q *Queries) NearbyReports(ctx context.Context, arg NearbyReportsParams) ([]NearbyReportsRow, error) {
+	rows, err := q.db.Query(ctx, nearbyReports,
+		arg.Lat,
+		arg.Lon,
+		arg.LatMin,
+		arg.LatMax,
+		arg.LonMin,
+		arg.LonMax,
+		arg.RadiusKm,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NearbyReportsRow
+	for rows.Next() {
+		var i NearbyReportsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Category,
+			&i.Severity,
+			&i.Description,
+			&i.Latitude,
+			&i.Longitude,
+			&i.Geohash,
+			&i.ShelterCapacityStatus,
+			&i.ShelterHeadcount,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.DistanceKm,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

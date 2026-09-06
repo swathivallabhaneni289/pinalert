@@ -12,6 +12,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
 
 	"pinalert/internal/service"
 	"pinalert/internal/session"
@@ -20,6 +21,14 @@ import (
 // maxSubmitBodyBytes caps the POST body so an unbounded request can't be
 // used as a cheap denial-of-service vector.
 const maxSubmitBodyBytes = 64 * 1024
+
+// Nearby-query radius defaults and bounds (FOUND-03): a single request must
+// never be able to demand an arbitrarily wide Haversine evaluation.
+const (
+	defaultRadiusKm = 10.0
+	minRadiusKm     = 0.1
+	maxRadiusKm     = 50.0
+)
 
 // submitReportRequest is the raw JSON shape a client posts. Every field
 // that the server itself computes (id, geohash, created_at, expires_at) is
@@ -71,6 +80,7 @@ func reportToResponse(r service.Report) reportResponse {
 		ShelterHeadcount:      r.ShelterHeadcount,
 		CreatedAt:             r.CreatedAt.Format(rfc3339Milli),
 		ExpiresAt:             r.ExpiresAt.Format(rfc3339Milli),
+		DistanceKm:            r.DistanceKm,
 	}
 }
 
@@ -135,6 +145,82 @@ func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 
 		writeJSON(w, http.StatusCreated, map[string]any{"report": reportToResponse(report)})
 	}
+}
+
+// NearbyReports handles GET /api/reports: parse lat/lon/radius_km from the
+// query string, run the indexed bbox+Haversine query via svc, and return
+// unexpired reports nearest-first. This is the one endpoint that serves
+// both the map and the list (01-RESEARCH.md Pattern 3) — there is no
+// separate map-only or list-only route.
+func NearbyReports(svc *service.ReportService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+
+		lat, ok := parseCoordinate(w, q, "lat", -90, 90)
+		if !ok {
+			return
+		}
+		lon, ok := parseCoordinate(w, q, "lon", -180, 180)
+		if !ok {
+			return
+		}
+
+		radiusKm := defaultRadiusKm
+		if raw := q.Get("radius_km"); raw != "" {
+			parsed, err := strconv.ParseFloat(raw, 64)
+			if err != nil {
+				writeFieldError(w, http.StatusBadRequest, "radius_km", "radius_km must be a number.")
+				return
+			}
+			radiusKm = parsed
+		}
+		if radiusKm < minRadiusKm || radiusKm > maxRadiusKm {
+			writeFieldError(w, http.StatusBadRequest, "radius_km",
+				"radius_km must be between 0.1 and 50.")
+			return
+		}
+
+		reports, err := svc.Nearby(r.Context(), service.NearbyQuery{
+			Latitude:  lat,
+			Longitude: lon,
+			RadiusKm:  radiusKm,
+		})
+		if err != nil {
+			log.Printf("handlers: NearbyReports: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		responses := make([]reportResponse, 0, len(reports))
+		for _, rep := range reports {
+			responses = append(responses, reportToResponse(rep))
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"reports": responses})
+	}
+}
+
+// parseCoordinate reads and range-checks a required numeric query
+// parameter, writing the 400 response itself and returning ok=false on any
+// failure so the caller can just early-return.
+func parseCoordinate(w http.ResponseWriter, q map[string][]string, name string, min, max float64) (value float64, ok bool) {
+	raw := ""
+	if vals, present := q[name]; present && len(vals) > 0 {
+		raw = vals[0]
+	}
+	if raw == "" {
+		writeFieldError(w, http.StatusBadRequest, name, name+" is required.")
+		return 0, false
+	}
+	parsed, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		writeFieldError(w, http.StatusBadRequest, name, name+" must be a number.")
+		return 0, false
+	}
+	if parsed < min || parsed > max {
+		writeFieldError(w, http.StatusBadRequest, name, name+" is out of range.")
+		return 0, false
+	}
+	return parsed, true
 }
 
 func writeFieldError(w http.ResponseWriter, status int, field, message string) {

@@ -38,7 +38,7 @@ func NewRouter(deps Deps) *chi.Mux {
 
 	r.Route("/api", func(r chi.Router) {
 		r.Post("/reports", handlers.SubmitReport(deps.Reports))
-		// Task 3 registers GET /api/reports here.
+		r.Get("/reports", handlers.NearbyReports(deps.Reports))
 	})
 
 	return r

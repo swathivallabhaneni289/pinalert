@@ -162,6 +162,18 @@ type Report struct {
 	ShelterHeadcount      *int
 	CreatedAt             time.Time
 	ExpiresAt             time.Time
+	// DistanceKm is populated by Nearby only; Submit's result leaves it nil,
+	// since a freshly submitted report has no query point to be distant from.
+	DistanceKm *float64
+}
+
+// NearbyQuery is the caller's proximity search: a center point and a
+// radius. Defaults and bounds on RadiusKm (10 default, 0.1 min, 50 max) are
+// the handler's responsibility, not this type's.
+type NearbyQuery struct {
+	Latitude  float64
+	Longitude float64
+	RadiusKm  float64
 }
 
 // ValidateSubmitInput enforces every server-side rule a report submission
@@ -259,6 +271,7 @@ func clamp(v, min, max float64) float64 {
 // needs — small enough to fake in a test without a real Postgres.
 type Querier interface {
 	InsertReport(ctx context.Context, arg sqlcgen.InsertReportParams) (sqlcgen.InsertReportRow, error)
+	NearbyReports(ctx context.Context, arg sqlcgen.NearbyReportsParams) ([]sqlcgen.NearbyReportsRow, error)
 }
 
 // ReportService validates, computes derived fields, and persists reports.
@@ -339,5 +352,62 @@ func reportFromInsertRow(row sqlcgen.InsertReportRow) Report {
 		ShelterHeadcount:      headcount,
 		CreatedAt:             row.CreatedAt,
 		ExpiresAt:             row.ExpiresAt,
+	}
+}
+
+// Nearby runs the indexed bounding-box prefilter followed by exact
+// Haversine distance (see internal/store/queries/reports.sql's
+// NearbyReports) and returns unexpired reports within q.RadiusKm, nearest
+// first. This is the one read path that serves both the map and the list
+// (01-RESEARCH.md Pattern 3) — there is no separate map-only or list-only
+// query.
+func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]Report, error) {
+	latMin, latMax, lonMin, lonMax := BoundingBox(q.Latitude, q.Longitude, q.RadiusKm)
+
+	rows, err := s.q.NearbyReports(ctx, sqlcgen.NearbyReportsParams{
+		Lat:      q.Latitude,
+		Lon:      q.Longitude,
+		LatMin:   latMin,
+		LatMax:   latMax,
+		LonMin:   lonMin,
+		LonMax:   lonMax,
+		RadiusKm: q.RadiusKm,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	reports := make([]Report, 0, len(rows))
+	for _, row := range rows {
+		reports = append(reports, reportFromNearbyRow(row))
+	}
+	return reports, nil
+}
+
+func reportFromNearbyRow(row sqlcgen.NearbyReportsRow) Report {
+	var capacityStatus *CapacityStatus
+	if row.ShelterCapacityStatus != nil {
+		cs := CapacityStatus(*row.ShelterCapacityStatus)
+		capacityStatus = &cs
+	}
+	var headcount *int
+	if row.ShelterHeadcount != nil {
+		h := int(*row.ShelterHeadcount)
+		headcount = &h
+	}
+	distance := row.DistanceKm
+	return Report{
+		ID:                    row.ID,
+		Category:              Category(row.Category),
+		Severity:              Severity(row.Severity),
+		Description:           row.Description,
+		Latitude:              row.Latitude,
+		Longitude:             row.Longitude,
+		Geohash:               row.Geohash,
+		ShelterCapacityStatus: capacityStatus,
+		ShelterHeadcount:      headcount,
+		CreatedAt:             row.CreatedAt,
+		ExpiresAt:             row.ExpiresAt,
+		DistanceKm:            &distance,
 	}
 }
