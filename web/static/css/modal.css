@@ -58,3 +58,61 @@
   width: 24px;
   height: 24px;
 }
+
+/* ---- Severity slider (D-05, D-11) ----
+ * The wrapper carries the sev-low/sev-medium/sev-critical class toggled by
+ * modal.js; those classes (defined in main.css) set --severity-current,
+ * which inherits down to the native range input and the readout below
+ * without either needing its own colour logic. */
+.severity-control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+#severity-readout {
+  display: block;
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold);
+  color: var(--severity-current, var(--color-severity-low));
+  transition: color 150ms ease;
+}
+
+/* Cross-browser thumb/track transition — the native thumb border and the
+   readout colour animate smoothly as the value moves; the track fill
+   (a linear-gradient background) is included for browsers that support
+   gradient interpolation but degrades gracefully to an instant swap where
+   they don't. */
+.severity-slider {
+  transition: background 150ms ease;
+}
+
+.severity-slider::-webkit-slider-thumb {
+  transition: border-color 150ms ease;
+}
+
+.severity-slider::-moz-range-thumb {
+  transition: border-color 150ms ease;
+}
+
+/* Motion sensitivity is a real accessibility need — the control stays fully
+   usable with the animation removed entirely. */
+@media (prefers-reduced-motion: reduce) {
+  #severity-readout,
+  .severity-slider,
+  .severity-slider::-webkit-slider-thumb,
+  .severity-slider::-moz-range-thumb {
+    transition: none;
+  }
+}
+
+/* Three static position labels beneath the track (aria-hidden in the DOM;
+   the live announcement is aria-valuetext + #severity-readout). */
+.severity-position-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}

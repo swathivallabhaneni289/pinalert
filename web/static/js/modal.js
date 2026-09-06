@@ -35,8 +35,52 @@
   var selectedCategory = null;
   var lastFocusedEl = null;
   var toastTimer = null;
+  var severityWrapper = null;
 
   var SEVERITY_BY_VALUE = { '1': 'low', '2': 'medium', '3': 'critical' };
+  var SEVERITY_POSITIONS = ['1 · Low', '2 · Medium', '3 · Critical'];
+
+  // buildSeverityControl wraps the existing native <label>/<input
+  // type="range">/<output> in a single container (once, at init) so a
+  // sev-low/sev-medium/sev-critical class on that wrapper can drive
+  // --severity-current for every descendant via CSS custom-property
+  // inheritance — the slider fill, the thumb border, and the readout text
+  // all pick up the same traffic-light colour from one class toggle (D-05,
+  // D-11). The native range input itself is left untouched: the browser
+  // already implements its correct arrow-key, Home/End, Page-Up/Down and
+  // built-in accessible-slider semantics, which a hand-built widget would
+  // have to reimplement.
+  function buildSeverityControl() {
+    if (severityWrapper) {
+      return;
+    }
+    var label = severityInput.previousElementSibling;
+    var isLabel = label && label.tagName === 'LABEL';
+
+    severityWrapper = document.createElement('div');
+    severityWrapper.className = 'severity-control';
+    severityInput.parentNode.insertBefore(severityWrapper, severityInput);
+
+    if (isLabel) {
+      severityWrapper.appendChild(label);
+    }
+    severityWrapper.appendChild(severityInput);
+    severityWrapper.appendChild(severityReadout);
+
+    // Three static position labels beneath the track so the scale is
+    // legible before the visitor ever touches it. aria-hidden because the
+    // live aria-valuetext announcement and #severity-readout already carry
+    // the accessible value — these are a purely visual affordance.
+    var positions = document.createElement('div');
+    positions.className = 'severity-position-labels';
+    positions.setAttribute('aria-hidden', 'true');
+    SEVERITY_POSITIONS.forEach(function (text) {
+      var span = document.createElement('span');
+      Pinalert.setText(span, text);
+      positions.appendChild(span);
+    });
+    severityWrapper.appendChild(positions);
+  }
 
   // buildCategoryGrid renders exactly nine tiles in Pinalert.CATEGORIES
   // order, laid out 3x3 by modal.css's grid-template-columns. The grid is a
@@ -127,9 +171,16 @@
   }
 
   function updateSeverityReadout() {
-    var label = Pinalert.SEVERITY_LABELS[SEVERITY_BY_VALUE[severityInput.value]];
+    var severityKey = SEVERITY_BY_VALUE[severityInput.value];
+    var label = Pinalert.SEVERITY_LABELS[severityKey];
+    // aria-valuetext carries the number-plus-word form to a screen reader —
+    // an announcement of only "2" does not convey "Medium" (D-05).
     severityInput.setAttribute('aria-valuetext', label);
     Pinalert.setText(severityReadout, label);
+    if (severityWrapper) {
+      severityWrapper.classList.remove('sev-low', 'sev-medium', 'sev-critical');
+      severityWrapper.classList.add('sev-' + severityKey);
+    }
   }
 
   function updateCoordReadout(lat, lon) {
@@ -327,6 +378,9 @@
       Pinalert.setText(formError, (err && err.fieldMessage) || 'Something went wrong. Try again.');
     });
   }
+
+  buildSeverityControl();
+  updateSeverityReadout();
 
   fabButton.addEventListener('click', openModal);
   cancelButton.addEventListener('click', closeModal);
