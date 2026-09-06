@@ -116,3 +116,127 @@
   line-height: var(--line-height-label);
   color: var(--color-text-muted);
 }
+
+/* ---- Description ---- */
+#description {
+  display: block;
+  width: 100%;
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: var(--space-sm);
+}
+
+/* ---- Shelter capacity fieldset (FOUND-06) ----
+ * The :not([hidden]) guard keeps the fieldset's native [hidden] behaviour
+ * intact — an #shelter-fields { display: flex } rule alone would win over
+ * the browser's [hidden] { display: none } at equal-or-lower specificity
+ * and defeat modal.js's hidden toggle. */
+#shelter-fields:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--space-md);
+}
+
+#shelter-fields legend {
+  padding: 0 var(--space-xs);
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+#shelter-capacity-status,
+#shelter-headcount {
+  min-height: var(--touch-target-min);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: var(--space-sm);
+}
+
+/* ---- Inline validation ---- */
+#form-error {
+  margin: 0;
+  /* Reserve one line's height up front so a validation message appearing
+     doesn't shift the layout of the controls below it. */
+  min-height: calc(var(--font-size-label) * var(--line-height-label));
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-severity-critical);
+}
+
+/* ---- Submit button posting state ---- */
+#submit-report:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ---- Toast (fixed, above the map) ---- */
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-2xl);
+  z-index: 1200;
+  transform: translateX(-50%);
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-size: var(--font-size-body);
+  padding: var(--space-sm) var(--space-lg);
+  border-radius: 999px;
+  animation: toast-in 200ms ease;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #toast {
+    animation: none;
+  }
+}
+
+/* ---- Discard confirmation overlay ----
+ * Covers the modal panel's own content area (the panel is already
+ * position: relative, set above) rather than the whole viewport, since
+ * #discard-confirm sits inside .modal-panel in the DOM, not beside it. The
+ * :not([hidden]) guard is required for the same specificity reason as the
+ * shelter fieldset above. */
+#discard-confirm:not([hidden]) {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  text-align: center;
+  background: var(--color-bg);
+  border-radius: 8px;
+}
+
+#discard-confirm p {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text);
+}
