@@ -29,6 +29,21 @@ type Deps struct {
 	Page     handlers.PageConfig
 }
 
+// @title        Pinalert API
+// @version      1.0
+// @description  Anonymous, crowd-reported local emergency feed for floods, cyclones, and other
+// @description  disasters. Reports are posted by nearby people and confirmed or disputed by
+// @description  other nearby people; this API is the read/write surface for that data. Pinalert
+// @description  is an unofficial, unaffiliated project and is not a substitute for contacting
+// @description  emergency services. This document is Swagger 2.0 — swag (the generator behind
+// @description  this spec) does not emit OpenAPI 3.x, so tooling that expects OpenAPI 3.x
+// @description  specifically should account for that; OPS-01's "OpenAPI/Swagger spec" requirement
+// @description  is satisfied by either format.
+// @BasePath     /api
+// @license.name Unlicensed (portfolio project, all rights reserved)
+// @contact.name Pinalert project
+// @contact.url  https://github.com/swathivallabhaneni289/pinalert
+
 // NewRouter builds the chi router: request-id/real-ip/recoverer/logger
 // middleware, then the session middleware (issuing or verifying the
 // pinalert_session cookie on every request), then the /api route group.

@@ -30,45 +30,70 @@ const (
 	maxRadiusKm     = 50.0
 )
 
-// submitReportRequest is the raw JSON shape a client posts. Every field
-// that the server itself computes (id, geohash, created_at, expires_at) is
-// deliberately absent here — decode with DisallowUnknownFields so an
-// attempt to set one of them is a loud 400, not a silently dropped field.
-type submitReportRequest struct {
-	Category              string  `json:"category"`
-	Severity              string  `json:"severity"`
-	Description           string  `json:"description"`
-	Latitude              float64 `json:"latitude"`
-	Longitude             float64 `json:"longitude"`
-	ShelterCapacityStatus *string `json:"shelter_capacity_status,omitempty"`
-	ShelterHeadcount      *int    `json:"shelter_headcount,omitempty"`
+// SubmitReportRequest is the raw JSON shape a client posts to POST
+// /api/reports. Every field that the server itself computes (id, geohash,
+// created_at, expires_at) is deliberately absent here — decode with
+// DisallowUnknownFields so an attempt to set one of them is a loud 400, not
+// a silently dropped field. Exported and hand-declared field by field (never
+// aliasing a store row) so swag can document it by name and so a column
+// added to the store later cannot silently change this contract.
+type SubmitReportRequest struct {
+	// Category is one of the nine canonical report categories (internal/service.Categories).
+	Category string `json:"category" enums:"flood,earthquake,fire,storm_cyclone,road_blocked,power_outage,shelter_open,rescue_needed,other" example:"flood"`
+	// Severity affects triage ordering only; self-declaring critical never bypasses the provisional-visibility gate (internal/service.Severities).
+	Severity string `json:"severity" enums:"low,medium,critical" example:"medium"`
+	// Description is a free-text account of the report, 10-1000 characters.
+	Description string `json:"description" example:"Water rising fast near the market bridge."`
+	// Latitude must be between -90 and 90.
+	Latitude float64 `json:"latitude" example:"13.0827"`
+	// Longitude must be between -180 and 180.
+	Longitude float64 `json:"longitude" example:"80.2707"`
+	// ShelterCapacityStatus is required when category is shelter_open and forbidden for every other category (internal/service.CapacityStatuses).
+	ShelterCapacityStatus *string `json:"shelter_capacity_status,omitempty" enums:"available,limited,full,closed" example:"available"`
+	// ShelterHeadcount is optional and only valid alongside category shelter_open.
+	ShelterHeadcount *int `json:"shelter_headcount,omitempty" example:"42"`
 }
 
-// reportResponse is the public JSON shape of a report. Declared field by
-// field rather than reusing any store row type — see package doc comment.
-// It never includes session_id.
-type reportResponse struct {
-	ID                    int64    `json:"id"`
-	Category              string   `json:"category"`
-	Severity              string   `json:"severity"`
-	Description           string   `json:"description"`
-	Latitude              float64  `json:"latitude"`
-	Longitude             float64  `json:"longitude"`
-	Geohash               string   `json:"geohash"`
-	ShelterCapacityStatus *string  `json:"shelter_capacity_status,omitempty"`
-	ShelterHeadcount      *int     `json:"shelter_headcount,omitempty"`
-	CreatedAt             string   `json:"created_at"`
-	ExpiresAt             string   `json:"expires_at"`
-	DistanceKm            *float64 `json:"distance_km,omitempty"`
+// ReportResponse is the public JSON shape of a report, returned by both
+// POST /api/reports and GET /api/reports. Declared field by field rather
+// than reusing any store row type — see package doc comment. It never
+// includes session_id (threat register T-01-02).
+type ReportResponse struct {
+	ID          int64   `json:"id" example:"42"`
+	Category    string  `json:"category" enums:"flood,earthquake,fire,storm_cyclone,road_blocked,power_outage,shelter_open,rescue_needed,other" example:"flood"`
+	Severity    string  `json:"severity" enums:"low,medium,critical" example:"critical"`
+	Description string  `json:"description" example:"Water rising fast near the market bridge."`
+	Latitude    float64 `json:"latitude" example:"13.0827"`
+	Longitude   float64 `json:"longitude" example:"80.2707"`
+	Geohash     string  `json:"geohash" example:"tdr1qgzp"`
+	// ShelterCapacityStatus is present only for shelter_open reports.
+	ShelterCapacityStatus *string `json:"shelter_capacity_status,omitempty" enums:"available,limited,full,closed" example:"available"`
+	ShelterHeadcount      *int    `json:"shelter_headcount,omitempty" example:"42"`
+	CreatedAt             string  `json:"created_at" example:"2026-09-05T14:03:00.000Z"`
+	ExpiresAt             string  `json:"expires_at" example:"2026-09-06T14:03:00.000Z"`
+	// DistanceKm is present only in GET /api/reports responses (nil on the report just submitted).
+	DistanceKm *float64 `json:"distance_km,omitempty" example:"1.42"`
 }
 
-func reportToResponse(r service.Report) reportResponse {
+// SubmitReportResponse wraps the single report created by a successful
+// POST /api/reports.
+type SubmitReportResponse struct {
+	Report ReportResponse `json:"report"`
+}
+
+// ReportListResponse wraps the unexpired, nearest-first reports returned by
+// GET /api/reports.
+type ReportListResponse struct {
+	Reports []ReportResponse `json:"reports"`
+}
+
+func reportToResponse(r service.Report) ReportResponse {
 	var capacityStatus *string
 	if r.ShelterCapacityStatus != nil {
 		v := string(*r.ShelterCapacityStatus)
 		capacityStatus = &v
 	}
-	return reportResponse{
+	return ReportResponse{
 		ID:                    r.ID,
 		Category:              string(r.Category),
 		Severity:              string(r.Severity),
@@ -86,17 +111,37 @@ func reportToResponse(r service.Report) reportResponse {
 
 const rfc3339Milli = "2006-01-02T15:04:05.000Z07:00"
 
-type fieldErrorBody struct {
-	Error struct {
-		Field   string `json:"field"`
-		Message string `json:"message"`
-	} `json:"error"`
+// ErrorDetail names the single input field that failed validation (or
+// "body" for a malformed request) and a user-safe message.
+type ErrorDetail struct {
+	Field   string `json:"field" example:"category"`
+	Message string `json:"message" example:"Choose a category to continue."`
+}
+
+// ErrorResponse is the JSON shape of every 400 and 500 response this API
+// returns. Exported so swag can document it by name.
+type ErrorResponse struct {
+	Error ErrorDetail `json:"error"`
 }
 
 // SubmitReport handles POST /api/reports: decode, validate (via svc), and
 // persist under the caller's session id. A ValidationError maps to 400 with
 // the offending field named; any other error maps to a generic 500 with the
 // detail logged server-side only, so database errors never reach a client.
+//
+// @Summary      Submit a new emergency report
+// @Description  Creates a location-tagged report under the caller's anonymous session. The
+// @Description  anonymous session cookie is issued automatically on the first request; no signup
+// @Description  or authentication is required. id, geohash, created_at and expires_at are computed
+// @Description  server-side and can never be set by the client.
+// @Tags         reports
+// @Accept       json
+// @Produce      json
+// @Param        body  body      SubmitReportRequest  true  "Report to submit"
+// @Success      201   {object}  SubmitReportResponse
+// @Failure      400   {object}  ErrorResponse
+// @Failure      500   {object}  ErrorResponse
+// @Router       /reports [post]
 func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID, ok := session.FromContext(r.Context())
@@ -109,7 +154,7 @@ func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
 
-		var req submitReportRequest
+		var req SubmitReportRequest
 		if err := dec.Decode(&req); err != nil {
 			writeFieldError(w, http.StatusBadRequest, "body", "Request body is missing or malformed.")
 			return
@@ -143,7 +188,7 @@ func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusCreated, map[string]any{"report": reportToResponse(report)})
+		writeJSON(w, http.StatusCreated, SubmitReportResponse{Report: reportToResponse(report)})
 	}
 }
 
@@ -152,6 +197,19 @@ func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 // unexpired reports nearest-first. This is the one endpoint that serves
 // both the map and the list (01-RESEARCH.md Pattern 3) — there is no
 // separate map-only or list-only route.
+//
+// @Summary      List unexpired reports near a point
+// @Description  Runs the indexed bounding-box prefilter followed by exact Haversine distance and
+// @Description  returns unexpired reports within radius_km, nearest first. This single endpoint
+// @Description  serves both the map and the list views — there is no separate map-only route.
+// @Tags         reports
+// @Produce      json
+// @Param        lat        query     number  true   "Latitude of the query center (required, -90 to 90)"
+// @Param        lon        query     number  true   "Longitude of the query center (required, -180 to 180)"
+// @Param        radius_km  query     number  false  "Search radius in kilometers (defaults to 10, bounded to 0.1-50)" minimum(0.1) maximum(50) default(10)
+// @Success      200  {object}  ReportListResponse
+// @Failure      400  {object}  ErrorResponse
+// @Router       /reports [get]
 func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -191,11 +249,11 @@ func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 			return
 		}
 
-		responses := make([]reportResponse, 0, len(reports))
+		responses := make([]ReportResponse, 0, len(reports))
 		for _, rep := range reports {
 			responses = append(responses, reportToResponse(rep))
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"reports": responses})
+		writeJSON(w, http.StatusOK, ReportListResponse{Reports: responses})
 	}
 }
 
@@ -224,10 +282,7 @@ func parseCoordinate(w http.ResponseWriter, q map[string][]string, name string, 
 }
 
 func writeFieldError(w http.ResponseWriter, status int, field, message string) {
-	var body fieldErrorBody
-	body.Error.Field = field
-	body.Error.Message = message
-	writeJSON(w, status, body)
+	writeJSON(w, status, ErrorResponse{Error: ErrorDetail{Field: field, Message: message}})
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
