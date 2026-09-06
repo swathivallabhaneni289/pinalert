@@ -505,42 +505,107 @@ body {
   border: 0;
 }
 
-/* Severity slider (D-05) — track fill reads from --severity-current so the
-   live color ramp animates as the value changes; thumb meets the
-   touch-target floor. */
+/* Severity slider (D-05) — the host stays a native <input type="range">
+   with no visible geometry of its own (appearance: none strips the OS
+   default, and the host's background is transparent); the thin rounded
+   track — an unfilled var(--color-border) trough plus a value-aligned
+   severity-coloured fill — is drawn on the track pseudo-elements below,
+   while the 44px thumb (WCAG 2.5.5 floor, see the --touch-target-min
+   comment above) stays large and fully tappable. This keeps the track and
+   thumb visually distinct instead of both painting the same 44px box. */
 .severity-slider {
   appearance: none;
   -webkit-appearance: none;
   width: 100%;
   min-height: var(--touch-target-min);
+  background: transparent;
+  cursor: pointer;
+}
+
+/* Track geometry — WebKit and Firefox each require their own
+   vendor-prefixed pseudo-element selector; a rule can style both only by
+   being declared twice (grouping them in one selector list, as the
+   reduced-motion block used to do below, makes an engine that doesn't
+   recognise one of the two pseudo-elements discard the whole rule). The
+   fill is a two-stop linear-gradient background-image layered over the
+   solid trough background-color, sized by --severity-fill-ratio (declared
+   per sev-* class in modal.css) via the calc() below so the fill's visible
+   edge lines up with the thumb's centre at all three slider positions
+   (the input runs min="1" max="3", and the thumb is inset from each end by
+   half its own width, so a naive 0%/50%/100% fill would visibly miss the
+   thumb at both extremes). */
+.severity-slider::-webkit-slider-runnable-track {
   height: var(--space-sm);
   border-radius: 999px;
-  background: linear-gradient(
+  background-color: var(--color-border);
+  background-image: linear-gradient(
     to right,
-    var(--severity-current, var(--color-severity-low)) 0%,
-    var(--severity-current, var(--color-severity-low)) 100%
+    var(--severity-current, var(--color-severity-low)),
+    var(--severity-current, var(--color-severity-low))
   );
-  cursor: pointer;
+  background-repeat: no-repeat;
+  background-size:
+    calc(
+      var(--touch-target-min) / 2 + var(--severity-fill-ratio, 0.5) *
+        (100% - var(--touch-target-min))
+    )
+    100%;
+}
+
+.severity-slider::-moz-range-track {
+  height: var(--space-sm);
+  border-radius: 999px;
+  background-color: var(--color-border);
+  background-image: linear-gradient(
+    to right,
+    var(--severity-current, var(--color-severity-low)),
+    var(--severity-current, var(--color-severity-low))
+  );
+  background-repeat: no-repeat;
+  background-size:
+    calc(
+      var(--touch-target-min) / 2 + var(--severity-fill-ratio, 0.5) *
+        (100% - var(--touch-target-min))
+    )
+    100%;
 }
 
 .severity-slider::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
+  box-sizing: border-box;
   width: var(--touch-target-min);
   height: var(--touch-target-min);
+  /* WebKit positions the thumb relative to the track's top edge, not
+     auto-centred like Firefox — this negative margin centres the 44px
+     thumb on the 8px runnable track. Do not copy this onto the Firefox
+     thumb rule below: ::-moz-range-track auto-centres its thumb, and
+     adding this margin there pushes it visibly above the track. */
+  margin-top: calc((var(--space-sm) - var(--touch-target-min)) / 2);
   border-radius: 50%;
   background: var(--color-bg);
   border: 3px solid var(--severity-current, var(--color-severity-low));
+  box-shadow: 0 1px 3px rgb(0 0 0 / 18%);
   cursor: pointer;
 }
 
+.severity-slider:active::-webkit-slider-thumb {
+  box-shadow: 0 2px 5px rgb(0 0 0 / 28%);
+}
+
 .severity-slider::-moz-range-thumb {
+  box-sizing: border-box;
   width: var(--touch-target-min);
   height: var(--touch-target-min);
   border-radius: 50%;
   background: var(--color-bg);
   border: 3px solid var(--severity-current, var(--color-severity-low));
+  box-shadow: 0 1px 3px rgb(0 0 0 / 18%);
   cursor: pointer;
+}
+
+.severity-slider:active::-moz-range-thumb {
+  box-shadow: 0 2px 5px rgb(0 0 0 / 28%);
 }
 
 /* Modal shells (D-02, D-03) — dimmed backdrop over the map; the dim uses an
