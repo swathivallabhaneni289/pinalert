@@ -1,0 +1,232 @@
+basePath: /api
+definitions:
+  handlers.ErrorDetail:
+    properties:
+      field:
+        example: category
+        type: string
+      message:
+        example: Choose a category to continue.
+        type: string
+    type: object
+  handlers.ErrorResponse:
+    properties:
+      error:
+        $ref: '#/definitions/handlers.ErrorDetail'
+    type: object
+  handlers.ReportListResponse:
+    properties:
+      reports:
+        items:
+          $ref: '#/definitions/handlers.ReportResponse'
+        type: array
+    type: object
+  handlers.ReportResponse:
+    properties:
+      category:
+        enum:
+        - flood
+        - earthquake
+        - fire
+        - storm_cyclone
+        - road_blocked
+        - power_outage
+        - shelter_open
+        - rescue_needed
+        - other
+        example: flood
+        type: string
+      created_at:
+        example: "2026-09-05T14:03:00.000Z"
+        type: string
+      description:
+        example: Water rising fast near the market bridge.
+        type: string
+      distance_km:
+        description: DistanceKm is present only in GET /api/reports responses (nil
+          on the report just submitted).
+        example: 1.42
+        type: number
+      expires_at:
+        example: "2026-09-06T14:03:00.000Z"
+        type: string
+      geohash:
+        example: tdr1qgzp
+        type: string
+      id:
+        example: 42
+        type: integer
+      latitude:
+        example: 13.0827
+        type: number
+      longitude:
+        example: 80.2707
+        type: number
+      severity:
+        enum:
+        - low
+        - medium
+        - critical
+        example: critical
+        type: string
+      shelter_capacity_status:
+        description: ShelterCapacityStatus is present only for shelter_open reports.
+        enum:
+        - available
+        - limited
+        - full
+        - closed
+        example: available
+        type: string
+      shelter_headcount:
+        example: 42
+        type: integer
+    type: object
+  handlers.SubmitReportRequest:
+    properties:
+      category:
+        description: Category is one of the nine canonical report categories (internal/service.Categories).
+        enum:
+        - flood
+        - earthquake
+        - fire
+        - storm_cyclone
+        - road_blocked
+        - power_outage
+        - shelter_open
+        - rescue_needed
+        - other
+        example: flood
+        type: string
+      description:
+        description: Description is a free-text account of the report, 10-1000 characters.
+        example: Water rising fast near the market bridge.
+        type: string
+      latitude:
+        description: Latitude must be between -90 and 90.
+        example: 13.0827
+        type: number
+      longitude:
+        description: Longitude must be between -180 and 180.
+        example: 80.2707
+        type: number
+      severity:
+        description: Severity affects triage ordering only; self-declaring critical
+          never bypasses the provisional-visibility gate (internal/service.Severities).
+        enum:
+        - low
+        - medium
+        - critical
+        example: medium
+        type: string
+      shelter_capacity_status:
+        description: ShelterCapacityStatus is required when category is shelter_open
+          and forbidden for every other category (internal/service.CapacityStatuses).
+        enum:
+        - available
+        - limited
+        - full
+        - closed
+        example: available
+        type: string
+      shelter_headcount:
+        description: ShelterHeadcount is optional and only valid alongside category
+          shelter_open.
+        example: 42
+        type: integer
+    type: object
+  handlers.SubmitReportResponse:
+    properties:
+      report:
+        $ref: '#/definitions/handlers.ReportResponse'
+    type: object
+info:
+  contact:
+    name: Pinalert project
+    url: https://github.com/swathivallabhaneni289/pinalert
+  description: |-
+    Anonymous, crowd-reported local emergency feed for floods, cyclones, and other
+    disasters. Reports are posted by nearby people and confirmed or disputed by
+    other nearby people; this API is the read/write surface for that data. Pinalert
+    is an unofficial, unaffiliated project and is not a substitute for contacting
+    emergency services. This document is Swagger 2.0 — swag (the generator behind
+    this spec) does not emit OpenAPI 3.x, so tooling that expects OpenAPI 3.x
+    specifically should account for that; OPS-01's "OpenAPI/Swagger spec" requirement
+    is satisfied by either format.
+  license:
+    name: Unlicensed (portfolio project, all rights reserved)
+  title: Pinalert API
+  version: "1.0"
+paths:
+  /reports:
+    get:
+      description: |-
+        Runs the indexed bounding-box prefilter followed by exact Haversine distance and
+        returns unexpired reports within radius_km, nearest first. This single endpoint
+        serves both the map and the list views — there is no separate map-only route.
+      parameters:
+      - description: Latitude of the query center (required, -90 to 90)
+        in: query
+        name: lat
+        required: true
+        type: number
+      - description: Longitude of the query center (required, -180 to 180)
+        in: query
+        name: lon
+        required: true
+        type: number
+      - default: 10
+        description: Search radius in kilometers (defaults to 10, bounded to 0.1-50)
+        in: query
+        maximum: 50
+        minimum: 0.1
+        name: radius_km
+        type: number
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ReportListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: List unexpired reports near a point
+      tags:
+      - reports
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Creates a location-tagged report under the caller's anonymous session. The
+        anonymous session cookie is issued automatically on the first request; no signup
+        or authentication is required. id, geohash, created_at and expires_at are computed
+        server-side and can never be set by the client.
+      parameters:
+      - description: Report to submit
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.SubmitReportRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handlers.SubmitReportResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Submit a new emergency report
+      tags:
+      - reports
+swagger: "2.0"

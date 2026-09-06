@@ -11,12 +11,15 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
 
 	"pinalert/internal/api/handlers"
 	"pinalert/internal/service"
 	"pinalert/internal/session"
 	sqlcgen "pinalert/internal/store/sqlc"
 	"pinalert/web"
+
+	_ "pinalert/docs" // swag-generated Swagger 2.0 spec, registered with http-swagger below
 )
 
 // Deps holds every dependency a route handler needs. Plan 01-07 extends this
@@ -28,6 +31,21 @@ type Deps struct {
 	Template *template.Template
 	Page     handlers.PageConfig
 }
+
+// @title        Pinalert API
+// @version      1.0
+// @description  Anonymous, crowd-reported local emergency feed for floods, cyclones, and other
+// @description  disasters. Reports are posted by nearby people and confirmed or disputed by
+// @description  other nearby people; this API is the read/write surface for that data. Pinalert
+// @description  is an unofficial, unaffiliated project and is not a substitute for contacting
+// @description  emergency services. This document is Swagger 2.0 — swag (the generator behind
+// @description  this spec) does not emit OpenAPI 3.x, so tooling that expects OpenAPI 3.x
+// @description  specifically should account for that; OPS-01's "OpenAPI/Swagger spec" requirement
+// @description  is satisfied by either format.
+// @BasePath     /api
+// @license.name Unlicensed (portfolio project, all rights reserved)
+// @contact.name Pinalert project
+// @contact.url  https://github.com/swathivallabhaneni289/pinalert
 
 // NewRouter builds the chi router: request-id/real-ip/recoverer/logger
 // middleware, then the session middleware (issuing or verifying the
@@ -43,6 +61,14 @@ func NewRouter(deps Deps) *chi.Mux {
 
 	r.Get("/", handlers.Page(deps.Template, deps.Page))
 	r.Handle("/static/*", http.StripPrefix("/static/", staticFileServer()))
+
+	// Mounted outside the /api group so its middleware stack stays
+	// independent, and left publicly reachable: this is a public read-only
+	// API with no privileged operations to hide, and OPS-01 asks for a
+	// stable, browsable URL. /swagger/index.html is that stable URL. The v2
+	// handler serves its UI assets from the binary — no third-party CDN
+	// request at view time.
+	r.Get("/swagger/*", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
 
 	r.Route("/api", func(r chi.Router) {
 		r.Post("/reports", handlers.SubmitReport(deps.Reports))
