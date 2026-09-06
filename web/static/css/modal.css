@@ -63,11 +63,29 @@
  * The wrapper carries the sev-low/sev-medium/sev-critical class toggled by
  * modal.js; those classes (defined in main.css) set --severity-current,
  * which inherits down to the native range input and the readout below
- * without either needing its own colour logic. */
+ * without either needing its own colour logic. Each sev-* class here also
+ * declares --severity-fill-ratio — a unitless 0/0.5/1 (not a colour, so
+ * this does not violate the no-raw-colour rule below) that main.css's track
+ * fill expression reads to align the fill's edge with the thumb centre at
+ * each of the control's three values. Scoped to .severity-control so it
+ * cannot leak onto the map pins and feed rows that share the same sev-*
+ * class names for their own (unrelated) colour purposes. */
 .severity-control {
   display: flex;
   flex-direction: column;
   gap: var(--space-xs);
+}
+
+.severity-control.sev-low {
+  --severity-fill-ratio: 0;
+}
+
+.severity-control.sev-medium {
+  --severity-fill-ratio: 0.5;
+}
+
+.severity-control.sev-critical {
+  --severity-fill-ratio: 1;
 }
 
 #severity-readout {
@@ -79,29 +97,71 @@
   transition: color 150ms ease;
 }
 
-/* Cross-browser thumb/track transition — the native thumb border and the
-   readout colour animate smoothly as the value moves; the track fill
-   (a linear-gradient background) is included for browsers that support
-   gradient interpolation but degrades gracefully to an instant swap where
-   they don't. */
-.severity-slider {
-  transition: background 150ms ease;
+/* Cross-browser thumb/track transitions — declared per vendor-prefixed
+ * pseudo-element in separate rules (never grouped in one selector list: an
+ * engine that doesn't recognise one of the two pseudo-elements discards the
+ * whole rule, which is exactly the bug fixed in the reduced-motion block
+ * below). The track's `background-size` transition is what makes the fill
+ * genuinely slide between positions as the value changes — background-size
+ * does interpolate. A gradient's own colour stops do not interpolate in any
+ * current engine, though, so the traffic-light colour itself still swaps
+ * instantly; the thumb border and the readout text animate through it
+ * instead, which is what carries the perceived smoothness. If the fill
+ * still visibly snaps instead of sliding in a given browser, that is this
+ * known, acceptable degradation — the control remains fully correct either
+ * way and nothing further needs chasing here. */
+.severity-slider::-webkit-slider-runnable-track {
+  transition:
+    background-size 150ms ease,
+    background-color 150ms ease;
+}
+
+.severity-slider::-moz-range-track {
+  transition:
+    background-size 150ms ease,
+    background-color 150ms ease;
 }
 
 .severity-slider::-webkit-slider-thumb {
-  transition: border-color 150ms ease;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
 
 .severity-slider::-moz-range-thumb {
-  transition: border-color 150ms ease;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
 
 /* Motion sensitivity is a real accessibility need — the control stays fully
-   usable with the animation removed entirely. */
+ * usable with every one of these transitions removed. Each vendor-prefixed
+ * pseudo-element gets its OWN rule with its own body here: grouping a
+ * -webkit- and a -moz- pseudo-element in one selector list is invalid CSS
+ * as a whole, because a selector list containing an unrecognised
+ * pseudo-element causes the entire rule to be dropped — Chrome doesn't know
+ * the -moz- form and drops the rule, Firefox doesn't know the -webkit- form
+ * and drops it too. The previous grouped form was therefore dead code in
+ * every browser, taking the standard #severity-readout selector caught in
+ * the same list down with it. Standard selectors (no vendor prefix) may
+ * still be grouped together, since they are valid everywhere. */
 @media (prefers-reduced-motion: reduce) {
-  #severity-readout,
-  .severity-slider,
-  .severity-slider::-webkit-slider-thumb,
+  #severity-readout {
+    transition: none;
+  }
+
+  .severity-slider::-webkit-slider-runnable-track {
+    transition: none;
+  }
+
+  .severity-slider::-webkit-slider-thumb {
+    transition: none;
+  }
+
+  .severity-slider::-moz-range-track {
+    transition: none;
+  }
+
   .severity-slider::-moz-range-thumb {
     transition: none;
   }
