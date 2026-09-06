@@ -1,0 +1,33 @@
+# sqlc config for Pinalert.
+#
+# Generated output under internal/store/sqlc/ is committed to git on purpose
+# (see 01-SKELETON.md "Architectural Decisions" -> Generated code policy): CI
+# needs no sqlc binary, and `go build ./...` alone proves the tree compiles.
+# Run `make sqlc` (or `sqlc generate`) locally after changing a query or the
+# schema, then commit the regenerated files.
+#
+# Source: docs.sqlc.dev/en/stable/guides/using-go-and-pgx.html [CITED]
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "internal/store/queries"
+    schema: "internal/store/migrations"
+    gen:
+      go:
+        package: "sqlcgen"
+        sql_package: "pgx/v5"
+        out: "internal/store/sqlc"
+        overrides:
+          # Non-nullable timestamptz -> time.Time (not pgtype.Timestamptz),
+          # so handler/service code can use the stdlib type directly.
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+            nullable: false
+          # Nullable text -> pointer string (shelter_capacity_status).
+          - db_type: "text"
+            go_type: "*string"
+            nullable: true
+          # Nullable integer -> pointer int32 (shelter_headcount).
+          - db_type: "integer"
+            go_type: "*int32"
+            nullable: true
