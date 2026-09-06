@@ -473,22 +473,31 @@ sql:
 -- name: NearbyReports :many
 -- Source: bounding-box-then-exact-distance pattern, .planning/research/ARCHITECTURE.md
 --         + .planning/research/PITFALLS.md Pitfall 1 [CITED: project research]
-SELECT *,
-       ( 6371 * acos(
-           cos(radians(sqlc.arg(lat)::float8)) * cos(radians(latitude))
-           * cos(radians(longitude) - radians(sqlc.arg(lon)::float8))
-           + sin(radians(sqlc.arg(lat)::float8)) * sin(radians(latitude))
-         )
-       ) AS distance_km
-FROM reports
-WHERE expires_at > now()
-  AND latitude  BETWEEN sqlc.arg(lat_min)::float8 AND sqlc.arg(lat_max)::float8
-  AND longitude BETWEEN sqlc.arg(lon_min)::float8 AND sqlc.arg(lon_max)::float8
-HAVING ( 6371 * acos(
-           cos(radians(sqlc.arg(lat)::float8)) * cos(radians(latitude))
-           * cos(radians(longitude) - radians(sqlc.arg(lon)::float8))
-           + sin(radians(sqlc.arg(lat)::float8)) * sin(radians(latitude))
-         ) ) <= sqlc.arg(radius_km)::float8
+-- NOTE: columns are enumerated explicitly, NOT `SELECT *` — session_id must never be
+-- returned on a public read path (see Security Domain: "report read paths must never
+-- return session_id"). Nested subquery avoids an invalid HAVING-without-GROUP-BY
+-- (Postgres rejects HAVING on a non-aggregate query with no GROUP BY) and computes the
+-- distance expression once instead of duplicating it. least(1.0, ...) clamps the acos()
+-- argument against floating-point drift when a report sits exactly at the query point.
+SELECT id, category, severity, description, latitude, longitude, geohash,
+       shelter_capacity_status, shelter_headcount, created_at, expires_at, distance_km
+FROM (
+    SELECT id, category, severity, description, latitude, longitude, geohash,
+           shelter_capacity_status, shelter_headcount, created_at, expires_at,
+           ( 6371 * acos(
+               least(1.0,
+                 cos(radians(sqlc.arg(lat)::float8)) * cos(radians(latitude))
+                 * cos(radians(longitude) - radians(sqlc.arg(lon)::float8))
+                 + sin(radians(sqlc.arg(lat)::float8)) * sin(radians(latitude))
+               )
+             )
+           ) AS distance_km
+    FROM reports
+    WHERE expires_at > now()
+      AND latitude  BETWEEN sqlc.arg(lat_min)::float8 AND sqlc.arg(lat_max)::float8
+      AND longitude BETWEEN sqlc.arg(lon_min)::float8 AND sqlc.arg(lon_max)::float8
+) AS candidates
+WHERE distance_km <= sqlc.arg(radius_km)::float8
 ORDER BY distance_km ASC;
 ```
 Index required (first migration): `CREATE INDEX idx_reports_lat_lon ON reports (latitude,
@@ -809,6 +818,7 @@ and CI are present.
 | Session forgery/replay (client crafts an arbitrary session id to inherit an aged/reputable session) | Spoofing | HMAC-signed cookie value, verified server-side with `hmac.Equal` (constant-time); a client cannot construct a valid signature without `SESSION_SECRET` |
 | CSRF on `POST /api/reports` | Tampering | `SameSite=Lax` blocks cross-site POST from being sent with the cookie on a cross-origin form submission; not adding an explicit CSRF token this phase since report creation has no account-takeover consequence — flagged as Assumption A5 for discuss-phase if a reviewer wants it hardened further |
 | Session-secret rotation/loss on redeploy | Tampering / Availability | `SESSION_SECRET` sourced from a persistent env var (not regenerated per process); losing it invalidates all sessions — acceptable for Phase 1 (no reputation data yet to lose), but the pattern must not change once Phase 2 makes sessions load-bearing for trust scoring |
+| Report read paths leaking `session_id` to any client | Info Disclosure | **Report read paths must never return `session_id`.** `GET /api/reports` and any future feed/map/triage query must enumerate response columns explicitly (never `SELECT *` on a query whose result is serialized to JSON) — leaking session ids on a public feed would let any visitor read every reporter's session identifier and hands a future attacker a ready-made list of valid ids to attribute forged votes to (see Code Examples' `NearbyReports` query, fixed to enumerate columns for this reason) |
 
 ## Sources
 
