@@ -17,19 +17,17 @@ func stripCSSComments(css string) string {
 	var b strings.Builder
 	rest := css
 	for {
-		openIdx := strings.Index(rest, "/*")
-		if openIdx == -1 {
-			b.WriteString(rest)
+		before, afterOpen, foundOpen := strings.Cut(rest, "/*")
+		b.WriteString(before)
+		if !foundOpen {
 			break
 		}
-		b.WriteString(rest[:openIdx])
-		afterOpen := rest[openIdx+2:]
-		closeIdx := strings.Index(afterOpen, "*/")
-		if closeIdx == -1 {
+		_, afterClose, foundClose := strings.Cut(afterOpen, "*/")
+		if !foundClose {
 			// Unterminated comment — drop the remainder entirely.
 			break
 		}
-		rest = afterOpen[closeIdx+2:]
+		rest = afterClose
 	}
 	return b.String()
 }
@@ -65,8 +63,7 @@ func TestModalBackdropHiddenGuard(t *testing.T) {
 		text := stripCSSComments(string(raw))
 
 		// Split on the closing-brace character to get one chunk per rule.
-		chunks := strings.Split(text, "}")
-		for _, chunk := range chunks {
+		for chunk := range strings.SplitSeq(text, "}") {
 			// Take everything after the LAST opening-brace character as the
 			// declaration body, and everything before it as the selector
 			// head. Splitting on the last brace (not the first) keeps a
