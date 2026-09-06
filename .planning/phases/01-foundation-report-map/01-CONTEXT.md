@@ -53,10 +53,20 @@ this phase is submit → store → view only, done as a real thin end-to-end sli
   signaling, not decoration.
 - **D-11:** Severity color mapping is traffic-light: green (low) / amber (medium) / red
   (critical).
-- **D-12:** Category icons (grid + map pins) use simple outlined line icons (Lucide/Feather
-  style) — not filled/solid icons, not emoji.
+- **D-12:** Category icons (grid + map pins) use simple, minimal glyphs (Lucide/Feather style),
+  refined per the approved theme reference (see `assets/01-theme-reference.png`): rendered as a
+  white glyph on a solid color-coded circular badge (map-pin/marker pattern), not a bare colored
+  line icon on a neutral background. Badge color follows category or severity context as shown in
+  the reference.
 - **D-13:** Dark mode ships from Phase 1, built with CSS variables from the start (not retrofitted
-  later). Directly relevant use case: checking the feed during a power outage at night.
+  later). Directly relevant use case: checking the feed during a power outage at night. Dark mode
+  is a genuinely distinct palette (not an inverted light theme) — see reference image.
+- **D-16:** Report list rows encode severity with a colored left border accent + a subtly tinted
+  row background (e.g., critical = red accent + faint red-tinted background), on top of the
+  numbered severity label — approved per the theme reference image.
+- **D-17:** The expiry fade (D-15) is implemented as **desaturation toward gray** as a report ages
+  (Fresh → Aging → Stale), not literal opacity reduction — confirmed against the theme reference's
+  "Age ramp" panel. Reads more clearly as "this is going stale" than plain fading.
 
 ### Expiry behavior
 - **D-14:** Default expiry is two-tiered by **severity**, not category: Critical severity (any
@@ -90,6 +100,12 @@ this phase is submit → store → view only, done as a real thin end-to-end sli
 - `.planning/REQUIREMENTS.md` — v1 requirement IDs this phase covers (FOUND-01..06, OPS-01,
   OPS-02) — **note the category enum in FOUND-02 is stale per D-01 above and needs updating**
 - `PROJECT-NOTES.md` (repo root) — full original feature/tech plan and data model sketch
+
+### Visual reference
+- `.planning/phases/01-foundation-report-map/assets/01-theme-reference.png` — user-approved
+  light/dark theme reference. Canonical visual target for severity colors, icon-badge treatment,
+  list-row severity accents, and the expiry desaturation ramp. See `<specifics>` below for what
+  it does and does not cover.
 
 ### Architecture and stack (from ecosystem research)
 - `.planning/research/ARCHITECTURE.md` — component boundaries, the `VisibilityResolver` pattern
@@ -130,6 +146,19 @@ this phase is submit → store → view only, done as a real thin end-to-end sli
   chosen deliberately to read as a credible monitoring tool rather than an alarmist or heavily
   branded consumer app — this framing should inform visual choices throughout, not just this
   phase.
+- **Approved visual theme reference:** `assets/01-theme-reference.png` (light/dark side-by-side
+  preview) is the canonical visual target for the whole product, not just Phase 1. It shows: the
+  traffic-light severity palette applied to numbered labels and category-badge pins; white glyph
+  icons on solid color-coded circular badges; report-list rows with a colored left-border accent
+  + tinted background keyed to severity; and an "Age ramp" panel demonstrating the expiry fade as
+  color desaturation (Fresh → Aging → Stale) rather than opacity reduction. Only 4 of the 9
+  category icons are shown in the reference (fire, shelter, flood, one unlabeled) — the remaining
+  icons (earthquake, storm/cyclone, road blocked, power outage, rescue needed, other) need to be
+  designed in the same style, not re-litigated.
+  **Scope note:** the reference mockup shows "Confirmed by N nearby" and "Unconfirmed · expires
+  soon" states, which are Phase 2 (Trust Engine) behavior — Phase 1 has no voting yet, so its
+  actual shipped screens show reports without confirm counts. The reference is the target for the
+  product's visual system across phases, not a literal Phase 1 screen mockup.
 
 </specifics>
 
