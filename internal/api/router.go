@@ -5,6 +5,9 @@ package api
 
 import (
 	"context"
+	"html/template"
+	"io/fs"
+	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -13,15 +16,17 @@ import (
 	"pinalert/internal/service"
 	"pinalert/internal/session"
 	sqlcgen "pinalert/internal/store/sqlc"
+	"pinalert/web"
 )
 
-// Deps holds every dependency a route handler needs. Plans 01-04 and 01-07
-// extend this struct further (page templates, swagger mount) without
-// touching this file's shape.
+// Deps holds every dependency a route handler needs. Plan 01-07 extends this
+// struct further (swagger mount) without touching this file's shape.
 type Deps struct {
 	Session  *session.Manager
 	Sessions *sqlcgen.Queries
 	Reports  *service.ReportService
+	Template *template.Template
+	Page     handlers.PageConfig
 }
 
 // NewRouter builds the chi router: request-id/real-ip/recoverer/logger
@@ -36,12 +41,33 @@ func NewRouter(deps Deps) *chi.Mux {
 	r.Use(middleware.Logger)
 	r.Use(deps.Session.Middleware(deps.persistSession))
 
+	r.Get("/", handlers.Page(deps.Template, deps.Page))
+	r.Handle("/static/*", http.StripPrefix("/static/", staticFileServer()))
+
 	r.Route("/api", func(r chi.Router) {
 		r.Post("/reports", handlers.SubmitReport(deps.Reports))
 		r.Get("/reports", handlers.NearbyReports(deps.Reports))
 	})
 
 	return r
+}
+
+// staticFileServer serves web/static's embedded files with a conservative
+// cache header. Static assets are rebuilt into a new binary on every
+// deploy, so a one-hour cache is safe and costs nothing to invalidate.
+func staticFileServer() http.Handler {
+	sub, err := fs.Sub(web.StaticFS, "static")
+	if err != nil {
+		// Only fails if the //go:embed directive itself is wrong — a
+		// build-time programming error, not a runtime condition a caller
+		// could meaningfully recover from.
+		panic("api: embedding web/static: " + err.Error())
+	}
+	fileServer := http.FileServer(http.FS(sub))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		fileServer.ServeHTTP(w, r)
+	})
 }
 
 // persistSession is the session Manager's persist callback: it writes the

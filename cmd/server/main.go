@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"pinalert/internal/api"
+	"pinalert/internal/api/handlers"
 	"pinalert/internal/service"
 	"pinalert/internal/session"
 	"pinalert/internal/store"
@@ -21,6 +22,15 @@ import (
 )
 
 const devInsecureSecret = "dev-only-insecure-secret-do-not-use-in-production"
+
+// Fallback map centre for visitors who deny geolocation (Bengaluru), and the
+// default nearby-reports search radius. Configurable here rather than
+// hard-coded in JS — see handlers.PageConfig.
+const (
+	fallbackLat     = 12.9716
+	fallbackLon     = 77.5946
+	defaultRadiusKm = 10.0
+)
 
 func main() {
 	dsn := os.Getenv("DATABASE_URL")
@@ -43,11 +53,22 @@ func main() {
 		log.Fatalf("constructing session manager: %v", err)
 	}
 
+	tmpl, err := handlers.ParsePageTemplate()
+	if err != nil {
+		log.Fatalf("parsing page template: %v", err)
+	}
+
 	queries := sqlcgen.New(pool)
 	deps := api.Deps{
 		Session:  sessionMgr,
 		Sessions: queries,
 		Reports:  service.NewReportService(queries),
+		Template: tmpl,
+		Page: handlers.PageConfig{
+			FallbackLat:     fallbackLat,
+			FallbackLon:     fallbackLon,
+			DefaultRadiusKm: defaultRadiusKm,
+		},
 	}
 	router := api.NewRouter(deps)
 
