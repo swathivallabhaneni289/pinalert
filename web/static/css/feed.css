@@ -1,8 +1,76 @@
 /*
- * feed.css — owned by plan 01-06 (report list + map/list linkage).
+ * Pinalert — feed.css
  *
- * This is a placeholder so the page shell (plan 01-04) can link a stable stylesheet set.
- * Plan 01-06 must consume design tokens and shared component classes from main.css
- * (--color-*, --space-*, --font-*, .report-row*, .sev-*, .age-*, .icon-badge*, .empty-state,
- * .error-state, .skeleton-row, etc.) rather than redeclaring raw values here.
+ * Owned by plan 01-06. Consumes main.css's custom properties and shared
+ * component classes (.report-row, .sev-*, .age-*, .icon-badge, .skeleton-row,
+ * .empty-state, .error-state, .view-toggle) exclusively — no raw hex color,
+ * no hard-coded pixel spacing outside a token, no font-size literal. This
+ * file adds only the list container layout, row internals, and the one
+ * narrow-screen adjustment main.css does not already cover.
  */
+
+/*
+ * [hidden] specificity fix — main.css's `.empty-state, .error-state {
+ * display: flex; }` is author-origin and beats the user-agent stylesheet's
+ * `[hidden] { display: none; }` regardless of source order, so toggling the
+ * `hidden` attribute from feed.js does nothing to those two elements (or to
+ * #report-list / #feed-skeleton, if either is ever given an author `display`
+ * value) without this override. `[id][hidden]` is specificity (1,1,0),
+ * beating `.empty-state`/`.error-state` at (0,1,0) — and this file loads
+ * last in index.html.tmpl regardless.
+ */
+#report-list[hidden],
+#feed-skeleton[hidden],
+#feed-empty[hidden],
+#feed-error[hidden] {
+  display: none;
+}
+
+/* List container — reset the <ol>'s default markers/margin, and lay rows
+   out with a token-driven gap rather than per-row margins. */
+#report-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Rows are clickable (Task 3's map/list linkage); main.css owns the
+   flex/border/background layout itself. */
+.report-row {
+  cursor: pointer;
+}
+
+.report-row__body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Scoped to .report-row so this does not reach map.js's pin badges, which
+   this plan does not own. feed.js's rows use an <img> (loading the shared
+   /static/icons/*.svg files), and main.css's `.icon-badge svg { width: 55%;
+   height: 55%; }` only targets an inline <svg>, not an <img> referencing
+   one — without an equivalent rule here the icon has no usable intrinsic
+   size (the source SVGs declare width/height as percentages) and falls
+   back to the browser's default replaced-element box. */
+.report-row .icon-badge img {
+  width: 55%;
+  height: 55%;
+  display: block;
+}
+
+.view-toggle__icon {
+  flex-shrink: 0;
+}
+
+@media (max-width: 899.98px) {
+  /* #view-toggle is reparented to #app-shell by feed.js precisely so it
+     survives main.css hiding .pane--list in narrow map view; this is just
+     the padding so the list's last row is not obscured by that
+     fixed-position button sitting over the bottom-left corner. */
+  #report-list {
+    padding-bottom: calc(var(--touch-target-min) + var(--space-lg) * 2);
+  }
+}
