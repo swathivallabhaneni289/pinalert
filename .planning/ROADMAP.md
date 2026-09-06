@@ -44,7 +44,15 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. A visitor can view a feed of reports filtered to those near their current location (bounding-box + Haversine, not a full-table scan) and see the same reports as pins on a Leaflet/OpenStreetMap map.
   4. A report stops appearing in the feed once its expiry time passes, checked live on every read — not solely dependent on a background sweep job.
   5. The JSON API is documented via a browsable OpenAPI/Swagger spec at a stable URL, and every push runs automated tests, `go vet`, and a build check via CI.
-**Plans**: TBD
+**Plans**: 7 plans (4 waves)
+Plans:
+- [ ] 01-01-PLAN.md — Repo scaffold, schema migration, test-DB infrastructure, GitHub Actions CI (wave 1)
+- [ ] 01-02-PLAN.md — Design system: complete token layer, dark mode, 9 committed category glyphs (wave 1)
+- [ ] 01-03-PLAN.md — Server slice: anonymous HMAC session, submit, nearby feed, proven end to end (wave 2)
+- [ ] 01-04-PLAN.md — Browser slice: page shell, shared client store, live Leaflet map, minimal submit — walking skeleton closes (wave 3)
+- [ ] 01-05-PLAN.md — Full submission modal: 3×3 category grid, accessible severity slider, shelter capacity, validation (wave 4)
+- [ ] 01-06-PLAN.md — Feed list: severity-first ordering, age-ramp desaturation, map/list sync, view toggle, states (wave 4)
+- [ ] 01-07-PLAN.md — OpenAPI/Swagger docs at a stable URL with a drift guard (wave 4)
 **UI hint**: yes
 
 ### Phase 2: Trust Mechanic Core — Confirm/Dispute & Visibility
@@ -119,7 +127,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation — Report & Map | 0/TBD | Not started | - |
+| 1. Foundation — Report & Map | 0/7 | Planned | - |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 0/TBD | Not started | - |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
