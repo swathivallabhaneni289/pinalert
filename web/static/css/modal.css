@@ -1,8 +1,242 @@
 /*
- * modal.css — owned by plan 01-05 (report submission modal).
+ * modal.css — plan 01-05: the production report submission modal.
  *
- * This is a placeholder so the page shell (plan 01-04) can link a stable stylesheet set.
- * Plan 01-05 must consume design tokens and shared component classes from main.css
- * (--color-*, --space-*, --font-*, .modal-backdrop, .modal-panel, .severity-slider, .btn*,
- * .category-tile*, etc.) rather than redeclaring raw values here.
+ * Consumes main.css's design tokens (--space-*, --font-*, --color-*,
+ * --touch-target-min, --severity-current) and shared component classes
+ * (.modal-backdrop, .modal-panel, .btn*, .category-tile*, .severity-slider)
+ * exclusively. No raw hex colour is declared here — main.css is the single
+ * source of colour tokens for the whole project.
  */
+
+/* Vertical rhythm between the modal panel's direct sections — the first
+   child (the h2 title) already carries its own margin from main.css. */
+.modal-panel {
+  position: relative;
+}
+
+.modal-panel > * + * {
+  margin-top: var(--space-md);
+}
+
+/* ---- Location (D-02) ---- */
+#modal-map {
+  height: 220px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+#coord-readout {
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+#location-notice {
+  margin: 0;
+  padding: var(--space-sm);
+  border-radius: 6px;
+  background: var(--color-surface);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+/* ---- Category grid (D-01, D-04) ---- */
+#category-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-sm);
+}
+
+#category-grid .category-tile {
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+}
+
+#category-grid .category-tile img {
+  width: 24px;
+  height: 24px;
+}
+
+/* ---- Severity slider (D-05, D-11) ----
+ * The wrapper carries the sev-low/sev-medium/sev-critical class toggled by
+ * modal.js; those classes (defined in main.css) set --severity-current,
+ * which inherits down to the native range input and the readout below
+ * without either needing its own colour logic. */
+.severity-control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+#severity-readout {
+  display: block;
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold);
+  color: var(--severity-current, var(--color-severity-low));
+  transition: color 150ms ease;
+}
+
+/* Cross-browser thumb/track transition — the native thumb border and the
+   readout colour animate smoothly as the value moves; the track fill
+   (a linear-gradient background) is included for browsers that support
+   gradient interpolation but degrades gracefully to an instant swap where
+   they don't. */
+.severity-slider {
+  transition: background 150ms ease;
+}
+
+.severity-slider::-webkit-slider-thumb {
+  transition: border-color 150ms ease;
+}
+
+.severity-slider::-moz-range-thumb {
+  transition: border-color 150ms ease;
+}
+
+/* Motion sensitivity is a real accessibility need — the control stays fully
+   usable with the animation removed entirely. */
+@media (prefers-reduced-motion: reduce) {
+  #severity-readout,
+  .severity-slider,
+  .severity-slider::-webkit-slider-thumb,
+  .severity-slider::-moz-range-thumb {
+    transition: none;
+  }
+}
+
+/* Three static position labels beneath the track (aria-hidden in the DOM;
+   the live announcement is aria-valuetext + #severity-readout). */
+.severity-position-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+/* ---- Description ---- */
+#description {
+  display: block;
+  width: 100%;
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: var(--space-sm);
+}
+
+/* ---- Shelter capacity fieldset (FOUND-06) ----
+ * The :not([hidden]) guard keeps the fieldset's native [hidden] behaviour
+ * intact — an #shelter-fields { display: flex } rule alone would win over
+ * the browser's [hidden] { display: none } at equal-or-lower specificity
+ * and defeat modal.js's hidden toggle. */
+#shelter-fields:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--space-md);
+}
+
+#shelter-fields legend {
+  padding: 0 var(--space-xs);
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+#shelter-capacity-status,
+#shelter-headcount {
+  min-height: var(--touch-target-min);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: var(--space-sm);
+}
+
+/* ---- Inline validation ---- */
+#form-error {
+  margin: 0;
+  /* Reserve one line's height up front so a validation message appearing
+     doesn't shift the layout of the controls below it. */
+  min-height: calc(var(--font-size-label) * var(--line-height-label));
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-severity-critical);
+}
+
+/* ---- Submit button posting state ---- */
+#submit-report:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ---- Toast (fixed, above the map) ---- */
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-2xl);
+  z-index: 1200;
+  transform: translateX(-50%);
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-size: var(--font-size-body);
+  padding: var(--space-sm) var(--space-lg);
+  border-radius: 999px;
+  animation: toast-in 200ms ease;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #toast {
+    animation: none;
+  }
+}
+
+/* ---- Discard confirmation overlay ----
+ * Covers the modal panel's own content area (the panel is already
+ * position: relative, set above) rather than the whole viewport, since
+ * #discard-confirm sits inside .modal-panel in the DOM, not beside it. The
+ * :not([hidden]) guard is required for the same specificity reason as the
+ * shelter fieldset above. */
+#discard-confirm:not([hidden]) {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  text-align: center;
+  background: var(--color-bg);
+  border-radius: 8px;
+}
+
+#discard-confirm p {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text);
+}
