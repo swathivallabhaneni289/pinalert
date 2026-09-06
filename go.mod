@@ -4,6 +4,7 @@ go 1.26.4
 
 require (
 	github.com/jackc/pgx/v5 v5.10.0
+	github.com/mmcloughlin/geohash v0.10.0
 	github.com/pressly/goose/v3 v3.28.0
 )
 
@@ -20,7 +21,6 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/mailru/easyjson v0.7.6 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
-	github.com/mmcloughlin/geohash v0.10.0 // indirect
 	github.com/sethvargo/go-retry v0.4.0 // indirect
 	github.com/swaggo/files/v2 v2.0.0 // indirect
 	github.com/swaggo/http-swagger/v2 v2.0.2 // indirect
