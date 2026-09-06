@@ -21,7 +21,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **FOUND-03**: User can view a feed of reports filtered to those near their current location,
       served via an indexed bounding-box prefilter + Haversine query (not a full-table scan)
 
-- [ ] **FOUND-04**: User can view reports as pins on a Leaflet/OpenStreetMap map
+- [x] **FOUND-04**: User can view reports as pins on a Leaflet/OpenStreetMap map
 - [x] **FOUND-05**: A report stops appearing in the live feed once its expiry time passes, checked
       as a read-time predicate on every query (not solely dependent on a background sweep job)
 
@@ -213,7 +213,7 @@ Populated during roadmap creation.
 | FOUND-01 | Phase 1 | Complete |
 | FOUND-02 | Phase 1 | Complete |
 | FOUND-03 | Phase 1 | Complete |
-| FOUND-04 | Phase 1 | Pending |
+| FOUND-04 | Phase 1 | Complete |
 | FOUND-05 | Phase 1 | Complete |
 | FOUND-06 | Phase 1 | Complete |
 | OPS-01 | Phase 1 | Pending |
