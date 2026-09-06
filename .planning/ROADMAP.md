@@ -40,7 +40,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Requirements**: FOUND-01, FOUND-02, FOUND-03, FOUND-04, FOUND-05, FOUND-06, OPS-01, OPS-02
 **Success Criteria** (what must be TRUE):
   1. A first-time visitor is automatically issued an anonymous session (cookie/localStorage, no signup) and can immediately submit a report.
-  2. A visitor can submit a report with location, category (flooding/road blocked/power outage/shelter open/rescue needed), severity, and description; a shelter-open report additionally records a capacity status (Available/Limited/Full/Closed) with an optional headcount.
+  2. A visitor can submit a report with location, category (flood/earthquake/fire/storm-cyclone damage/road blocked/power outage/shelter open/rescue needed/other — 9 categories), severity, and description; a shelter-open report additionally records a capacity status (Available/Limited/Full/Closed) with an optional headcount.
   3. A visitor can view a feed of reports filtered to those near their current location (bounding-box + Haversine, not a full-table scan) and see the same reports as pins on a Leaflet/OpenStreetMap map.
   4. A report stops appearing in the feed once its expiry time passes, checked live on every read — not solely dependent on a background sweep job.
   5. The JSON API is documented via a browsable OpenAPI/Swagger spec at a stable URL, and every push runs automated tests, `go vet`, and a build check via CI.
