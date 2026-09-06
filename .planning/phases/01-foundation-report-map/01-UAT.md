@@ -1,27 +1,22 @@
 ---
-status: testing
+status: partial
 phase: 01-foundation-report-map
 source: [01-VERIFICATION.md]
 started: 2026-09-06T09:55:00Z
-updated: 2026-09-06T12:22:00Z
+updated: 2026-09-06T12:45:00Z
 ---
 
 ## Current Test
 
-number: 1
-name: Live map tile rendering in a real browser (retest 2)
-expected: |
-  Open http://localhost:8090 and confirm the primary map (behind the "+" button, not the modal)
-  renders visible OpenStreetMap tiles filling the map pane, not a blank/black area. Centred on
-  geolocation or the Bengaluru fallback.
-awaiting: user response
+[session paused — Test 1 passed; 1 new cosmetic gap logged (tile retina quality). Routing to
+gap-closure for the retina fix. Resume via /gsd-verify-work 01 at Test 2 once it lands.]
 
 ## Tests
 
 ### 1. Live map tile rendering
 expected: A live OpenStreetMap tile layer is visible, centred on geolocation or the Bengaluru fallback.
-result: [pending]
-retest_note: "Two blockers found and fixed in sequence: (1) modal-backdrop [hidden] guard (01-08, confirmed working), (2) #map had no CSS height at all (01-09, commit 45ab1bb — #map { height: 100vh; height: 100dvh; }). Server restarted on port 8090 serving the fixed CSS. Re-testing again."
+result: pass
+notes: "Two blockers found and fixed in sequence before this passed: (1) modal-backdrop [hidden] guard (01-08), (2) #map had no CSS height at all (01-09). User confirmed the map now renders fully with correct centering and real tiles. Separately noted: tile text looks blurry on a Retina display — tracked as a cosmetic gap below (not blocking this test's literal pass criteria)."
 
 ### 2. New-pin visual rendering after submit (exercises the CR-01 icon-sizing fix)
 expected: Submit a report via the "+" button; a correctly-sized (55% of badge), non-overflowing category glyph appears on a colour-coded pin at the submitted coordinate immediately after submit, with no page reload.
@@ -62,9 +57,9 @@ result: [pending]
 ## Summary
 
 total: 10
-passed: 1
+passed: 2
 issues: 0
-pending: 9
+pending: 8
 skipped: 0
 blocked: 0
 notes: 1 (cosmetic feedback on Test 3's severity slider styling, captured pre-emptively; Test 3 itself remains pending for its full accessibility checklist)
@@ -132,3 +127,26 @@ notes: 1 (cosmetic feedback on Test 3's severity slider styling, captured pre-em
   test: 3
   artifacts: [web/static/css/modal.css, web/static/css/main.css]
   missing: []
+
+- truth: "A live OpenStreetMap tile layer is visible, centred on geolocation or the Bengaluru fallback." (tile quality, Test 1 passed but flagged)
+  status: pending_fix
+  reason: "User reported: map now renders correctly (Test 1 passed) but tile text/labels look blurry on a Retina display."
+  severity: cosmetic
+  test: 1
+  artifacts: [web/static/js/map.js, web/static/js/modal.js]
+  missing: ["detectRetina: true on both L.tileLayer(...) calls"]
+  root_cause_confirmed: |
+    tile.openstreetmap.org serves only standard-resolution (1x, 256px) raster tiles — it has
+    no {r}/@2x retina variant. Neither map.js's primary L.tileLayer (line ~25) nor modal.js's
+    modal-map L.tileLayer (line ~319) sets `detectRetina`, so on a Retina/HiDPI display the
+    browser upscales the 1x tile images by the device pixel ratio, which is what makes text
+    look soft. Confirmed via Leaflet's own official docs (leafletjs.com/reference.html) that
+    `detectRetina: true` alone — no manual `tileSize`/`zoomOffset` needed — makes Leaflet
+    automatically request four tiles from one zoom level higher and composite them into the
+    same space on a detected retina display, yielding genuinely higher-detail rendering (not
+    just an upscale) with zero new vendor, API key, or cost. User evaluated and explicitly
+    rejected switching to Google Maps (would require a Google Cloud billing account/card even
+    for the free tier, contradicting this project's "no paid map API" constraint) and MapTiler/
+    Stadia Maps (better quality but require a new vendor + free API key signup) in favor of
+    this zero-dependency fix. Fix: add `detectRetina: true` to both existing L.tileLayer
+    options objects.
