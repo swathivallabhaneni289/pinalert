@@ -1,0 +1,41 @@
+# OPS-02: every push and pull request runs build, vet, and the full test
+# suite against a real Postgres. No migration or codegen step is needed
+# here: internal/testutil applies the embedded goose migrations itself, and
+# internal/store/sqlc/ output is committed to git, so this runner needs
+# neither the goose nor the sqlc binary.
+#
+# The DATABASE_URL below points at this job's own ephemeral service
+# container — it carries no real credential. Never place a Neon/Supabase DSN
+# in this file; that belongs in a repository secret (T-01-09).
+#
+# Source: docs.github.com/actions/automating-builds-and-tests/building-and-testing-go [CITED]
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pinalert_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - run: go build -v ./...
+      - run: go vet ./...
+      - run: go test -v ./...
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/pinalert_test?sslmode=disable
