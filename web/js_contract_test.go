@@ -7,74 +7,100 @@ import (
 	"testing"
 )
 
-// tileLayerAnchor is the constructor call text every shipped tile layer
-// construction in this app starts with. Its presence in a JS file signals
-// "this file builds a Leaflet tile layer here"; its absence means the file
-// constructs no tile layer at all (app.js, feed.js).
-const tileLayerAnchor = "L.tileLayer("
+// Anchors shared by all three tests in this file. vectorAnchor and
+// rasterAnchor mark the start of each basemap branch's own construction
+// call; constructionEnd is the ".addTo(" call that always immediately
+// follows either one in this codebase, giving a bounded search window per
+// construction rather than an unbounded run to end-of-file. leafletMapAnchor
+// marks the Leaflet map constructor itself — its own open parenthesis is
+// what keeps it from also matching the vector bridge constructor's longer
+// name below. leafletMapConstructionEnd is the closing-paren-plus-semicolon
+// that always immediately follows a map construction's options object in
+// this codebase.
+const (
+	vectorAnchor              = "L.maplibreGL("
+	rasterAnchor              = "L.tileLayer("
+	constructionEnd           = ".addTo("
+	leafletMapAnchor          = "L.map("
+	leafletMapConstructionEnd = ");"
+)
 
-// TestTileLayersRequestRetinaTiles guards the cosmetic UAT gap-closure fix:
-// tile.openstreetmap.org serves only standard-resolution 1x, 256px raster
-// tiles with no @2x/retina variant, so without Leaflet's own detectRetina
-// option a Retina/HiDPI browser upscales those 1x tiles itself, which is
-// what made street names and place labels look soft. detectRetina: true
-// tells Leaflet to composite four higher-zoom tiles per tile slot instead,
-// entirely internally — no change to the tile URL template, no {r}
-// placeholder needed.
-//
-// This option is silently load-bearing on a second, unrelated-looking
-// option: Leaflet 1.9.4's retina branch only engages when
-// options.detectRetina && Browser.retina && options.maxZoom > 0. If a
-// future edit removes or zeroes maxZoom on either tile layer, this fix
-// becomes a silent no-op — no error, no test failure from this option's own
-// presence check, just the blur quietly returning. That is why every
-// content-gate in this plan also asserts maxZoom is still present.
-//
-// Honest limit of this test's claim: static inspection of the shipped
-// JavaScript can prove the option is present and enabled on every tile
-// layer this app constructs, but it cannot prove Leaflet actually fetched
-// higher-density tiles or that anything looks sharper at runtime — that
-// depends on devicePixelRatio in a real browser on a real display, which is
-// exactly what this plan's human-check covers. The two are complementary,
-// not redundant.
-//
-// The search window for each match is bounded to the tile layer's own
-// construction — from the "L.tileLayer(" anchor up to the ".addTo(" call
-// that always immediately follows it in this codebase — rather than
-// running unbounded to end-of-file. An unbounded window would still "pass"
-// if detectRetina or maxZoom appeared anywhere later in the file (e.g. in
-// an unrelated L.divIcon({...}) call), which defeats the point of a
-// regression gate: it must fail when the actual tile layer's options lose
-// the setting, not merely when the string disappears from the whole file.
-func TestTileLayersRequestRetinaTiles(t *testing.T) {
-	const retinaOption = "detectRetina"
-	const retinaValue = "true"
-	const maxZoomOption = "maxZoom"
-	const tileLayerEnd = ".addTo("
+// The vector style URL and the raster tile URL template this app has
+// reviewed and chosen. A silent re-point of either would otherwise start
+// streaming visitor viewport coordinates — an approximation of where a
+// person physically is during an emergency — to a host nobody evaluated.
+const (
+	vectorStyleURL        = "https://tiles.openfreemap.org/styles/liberty"
+	rasterTileURLTemplate = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+)
 
-	seen := map[string]bool{}
-
-	// readOptionValue returns the trimmed text of the value assigned to
-	// key within body — the text after key's first following colon, up
-	// to the next comma or closing brace, whichever comes first — and
-	// whether key was found at all.
-	readOptionValue := func(body, key string) (value string, found bool) {
-		optIdx := strings.Index(body, key)
-		if optIdx == -1 {
-			return "", false
-		}
-		afterKey := body[optIdx+len(key):]
-		colonIdx := strings.Index(afterKey, ":")
-		if colonIdx == -1 {
-			return "", false
-		}
-		afterColon := afterKey[colonIdx+1:]
-		end := len(afterColon)
-		if i := strings.IndexAny(afterColon, ",}"); i != -1 {
-			end = i
-		}
-		return strings.TrimSpace(afterColon[:end]), true
+// readOptionValue returns the trimmed text of the value assigned to key
+// within body — the text after key's first following colon, up to the next
+// comma or closing brace, whichever comes first — and whether key was found
+// at all. Tolerant of arbitrary whitespace around the key, colon and value.
+// Shared by all three tests in this file so this parsing behaviour can only
+// drift once, not three times.
+func readOptionValue(body, key string) (value string, found bool) {
+	optIdx := strings.Index(body, key)
+	if optIdx == -1 {
+		return "", false
 	}
+	afterKey := body[optIdx+len(key):]
+	colonIdx := strings.Index(afterKey, ":")
+	if colonIdx == -1 {
+		return "", false
+	}
+	afterColon := afterKey[colonIdx+1:]
+	end := len(afterColon)
+	if i := strings.IndexAny(afterColon, ",}"); i != -1 {
+		end = i
+	}
+	return strings.TrimSpace(afterColon[:end]), true
+}
+
+// windowAfter bounds a search window from the first occurrence of anchor in
+// text to the first occurrence of terminator that follows it (exclusive of
+// the terminator itself). It never searches unbounded to end-of-file, which
+// would let an option matched anywhere later in an unrelated call "pass" a
+// test that must be scoped to one specific construction. Returns the window
+// body, whether the anchor was found, and whether the terminator was found
+// once the anchor was located.
+func windowAfter(text, anchor, terminator string) (body string, anchorFound, terminatorFound bool) {
+	anchorIdx := strings.Index(text, anchor)
+	if anchorIdx == -1 {
+		return "", false, false
+	}
+	rest := text[anchorIdx:]
+	endIdx := strings.Index(rest, terminator)
+	if endIdx == -1 {
+		return "", true, false
+	}
+	return rest[:endIdx], true, true
+}
+
+// TestBasemapBranchesPointAtCorrectHosts asserts that both basemap branches
+// — the OpenFreeMap vector construction and the OpenStreetMap raster
+// fallback — exist in each map module, that neither appears more than once,
+// and that each points at the host this project actually reviewed and
+// chose.
+//
+// Non-obvious dependency for a future editor: the raster window's
+// terminator is the FIRST ".addTo(" call after the "L.tileLayer(" anchor,
+// which is the fallback layer's own add-to-map call — so the line that
+// re-derives the map's maximum zoom from that layer (map.setMaxZoom(...))
+// sits OUTSIDE this window by construction, and the maximum-zoom value this
+// test reads is unambiguously the layer's own. Anyone reordering the
+// fallback's add-to-map call and its maxZoom re-derivation should know this
+// window's bound depends on their order.
+//
+// Line comments are deliberately left alone by the stripper this test
+// reuses (stripCSSComments strips block comments only): both the raster
+// tile URL and the vector style URL contain a double slash, and a naive
+// line-comment stripper would truncate either string mid-URL and destroy
+// the very options object these tests read.
+func TestBasemapBranchesPointAtCorrectHosts(t *testing.T) {
+	seenVector := map[string]bool{}
+	seenRaster := map[string]bool{}
 
 	err := fs.WalkDir(StaticFS, "static/js", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -89,73 +115,73 @@ func TestTileLayersRequestRetinaTiles(t *testing.T) {
 			return err
 		}
 
-		// Strip block comments only, reusing the package's existing
-		// stripper (JS and CSS block comments share identical /* */
-		// delimiters). Line comments are deliberately left alone: the
-		// tile URL template's "https://" contains a double-slash, so a
-		// naive line-comment stripper would truncate that string
-		// mid-URL and destroy the very options object this test reads.
 		text := stripCSSComments(string(raw))
 
-		n := strings.Count(text, tileLayerAnchor)
-		if n == 0 {
+		nVector := strings.Count(text, vectorAnchor)
+		nRaster := strings.Count(text, rasterAnchor)
+		if nVector == 0 && nRaster == 0 {
 			return nil
 		}
-		if n > 1 {
-			t.Fatalf(
-				"%s: found %d tile layer constructions — this test assumes at most one per file "+
-					"and must be updated alongside any new call",
-				path, n,
-			)
+		if nVector > 1 {
+			t.Fatalf("%s: found %d vector basemap constructions — this test assumes at most one per file",
+				path, nVector)
+		}
+		if nRaster > 1 {
+			t.Fatalf("%s: found %d raster fallback constructions — this test assumes at most one per file",
+				path, nRaster)
 		}
 
-		seen[path] = true
+		if nVector == 1 {
+			seenVector[path] = true
+			body, _, termFound := windowAfter(text, vectorAnchor, constructionEnd)
+			if !termFound {
+				t.Errorf("%s: could not find %q after the vector basemap construction — cannot safely "+
+					"bound the search window to just this call's own options", path, constructionEnd)
+			} else {
+				style, found := readOptionValue(body, "style")
+				if !found {
+					t.Errorf("%s: vector basemap construction is missing the style option entirely", path)
+				} else if trimmed := strings.Trim(style, `'"`); trimmed != vectorStyleURL {
+					t.Errorf("%s: vector basemap style must be exactly %q, found %q — a silently "+
+						"re-pointed style host would stream visitor viewport coordinates to a "+
+						"provider nobody evaluated", path, vectorStyleURL, trimmed)
+				}
 
-		anchorIdx := strings.Index(text, tileLayerAnchor)
-		rest := text[anchorIdx:]
-
-		endIdx := strings.Index(rest, tileLayerEnd)
-		if endIdx == -1 {
-			t.Errorf("%s: could not find %q after the tile layer construction — cannot safely "+
-				"bound the search window to just this call's own options, so no further check "+
-				"is run on it", path, tileLayerEnd)
-			return nil
-		}
-		body := rest[:endIdx]
-
-		if strings.Count(body, retinaOption) > 1 {
-			t.Errorf("%s: expected %q exactly once in this tile layer's options, found more than one",
-				path, retinaOption)
-			return nil
-		}
-
-		value, found := readOptionValue(body, retinaOption)
-		if !found {
-			t.Errorf("%s: tile layer construction is missing the %q option entirely — "+
-				"the tile host serves no @2x variant, so without this the browser upscales a 1x "+
-				"raster and labels render blurry on a Retina display", path, retinaOption)
-		} else if value != retinaValue {
-			t.Errorf("%s: %q must be set to the boolean %q literal, found %q — a present-but-false "+
-				"option is the same blurry map with a passing presence check",
-				path, retinaOption, retinaValue, value)
+				attr, found := readOptionValue(body, "customAttribution")
+				if !found || strings.TrimSpace(attr) == "" {
+					t.Errorf("%s: vector basemap construction is missing a non-empty customAttribution "+
+						"option", path)
+				}
+			}
 		}
 
-		// maxZoom is the second, unrelated-looking option Leaflet's retina
-		// branch is conditional on (options.detectRetina && Browser.retina
-		// && options.maxZoom > 0, per this test's doc comment above). A
-		// future edit that removes or zeroes it would silently disable the
-		// retina fix while detectRetina's own presence check above still
-		// passes — this assertion is what makes that dependency durable
-		// rather than only documented in prose.
-		mzValue, mzFound := readOptionValue(body, maxZoomOption)
-		if !mzFound {
-			t.Errorf("%s: tile layer construction is missing %q entirely — Leaflet's retina "+
-				"branch only engages when this option is greater than zero, so removing it "+
-				"silently disables the retina fix even with %q still present and true",
-				path, maxZoomOption, retinaOption)
-		} else if n, convErr := strconv.Atoi(mzValue); convErr != nil || n <= 0 {
-			t.Errorf("%s: %q must be a positive integer for Leaflet's retina branch to engage "+
-				"(options.maxZoom > 0), found %q", path, maxZoomOption, mzValue)
+		if nRaster == 1 {
+			seenRaster[path] = true
+			body, _, termFound := windowAfter(text, rasterAnchor, constructionEnd)
+			if !termFound {
+				t.Errorf("%s: could not find %q after the raster fallback construction — cannot safely "+
+					"bound the search window to just this call's own options", path, constructionEnd)
+			} else {
+				retina, found := readOptionValue(body, "detectRetina")
+				if !found || retina != "true" {
+					t.Errorf("%s: raster fallback must keep detectRetina set to the boolean true "+
+						"literal, found %q (present=%v) — the fallback is meant to be exactly the "+
+						"layer plan 01-10 shipped, not a stripped-down version of it", path, retina, found)
+				}
+
+				mz, found := readOptionValue(body, "maxZoom")
+				if !found {
+					t.Errorf("%s: raster fallback construction is missing maxZoom entirely", path)
+				} else if n, convErr := strconv.Atoi(mz); convErr != nil || n <= 0 {
+					t.Errorf("%s: raster fallback maxZoom must be a positive integer, found %q",
+						path, mz)
+				}
+
+				if !strings.Contains(body, rasterTileURLTemplate) {
+					t.Errorf("%s: raster fallback construction must use the byte-identical "+
+						"OpenStreetMap tile URL template %q", path, rasterTileURLTemplate)
+				}
+			}
 		}
 
 		return nil
@@ -165,11 +191,144 @@ func TestTileLayersRequestRetinaTiles(t *testing.T) {
 	}
 
 	for _, module := range []string{"static/js/map.js", "static/js/modal.js"} {
-		if !seen[module] {
-			t.Fatalf("%s: expected a tile layer construction in this file but found none — "+
+		if !seenVector[module] {
+			t.Fatalf("%s: expected a vector basemap construction in this file but found none — "+
 				"either the primary map or the report modal's own separate Leaflet instance is "+
-				"missing its tile layer, which would stop this test passing vacuously if the call "+
-				"were ever deleted or renamed", module)
+				"missing it, which would let this test pass vacuously if the call were ever "+
+				"deleted or renamed", module)
+		}
+		if !seenRaster[module] {
+			t.Fatalf("%s: expected a raster fallback construction in this file but found none — "+
+				"same vacuity concern as the vector branch above", module)
+		}
+	}
+}
+
+// TestMapsDeclareOwnZoomBounds is the direct replacement for an assertion
+// that used to live on the deleted raster tile layer, and it guards a real
+// regression: Leaflet derives a map's maximum zoom from its zoom-bound
+// layers, only grid-based layers register as one, and the vector bridge's
+// layer is not one — so without an explicit maxZoom on the map's own
+// options, both maps would silently get unbounded pinch-zoom.
+//
+// The minimum-zoom assertion guards a separate, unrelated-looking
+// requirement of the bridge integration, not a stylistic preference: it
+// runs the renderer one zoom level below Leaflet, so Leaflet zoom zero
+// computes an out-of-range renderer zoom. A floor of at least 1 is a
+// requirement of the integration, which is why a value of zero must fail
+// here even though Leaflet itself would accept it.
+//
+// The anchor for the Leaflet map constructor includes its own open
+// parenthesis, which is what keeps it from also matching the vector bridge
+// constructor's longer name.
+func TestMapsDeclareOwnZoomBounds(t *testing.T) {
+	for _, module := range []string{"static/js/map.js", "static/js/modal.js"} {
+		raw, err := fs.ReadFile(StaticFS, module)
+		if err != nil {
+			t.Fatalf("%s: could not read embedded file — %v", module, err)
+		}
+		text := stripCSSComments(string(raw))
+
+		body, anchorFound, termFound := windowAfter(text, leafletMapAnchor, leafletMapConstructionEnd)
+		if !anchorFound {
+			t.Fatalf("%s: expected a %q Leaflet map construction but found none", module, leafletMapAnchor)
+		}
+		if !termFound {
+			t.Fatalf("%s: could not find %q after the map construction — cannot safely bound the "+
+				"search window to just this call's own options", module, leafletMapConstructionEnd)
+		}
+
+		mz, found := readOptionValue(body, "maxZoom")
+		if !found {
+			t.Errorf("%s: the map's own construction is missing maxZoom — the vector basemap layer "+
+				"registers no zoom limit of its own, so without this option pinch-zoom becomes "+
+				"unbounded", module)
+		} else if n, convErr := strconv.Atoi(mz); convErr != nil || n <= 0 {
+			t.Errorf("%s: the map's maxZoom must be a positive integer, found %q", module, mz)
+		}
+
+		mnz, found := readOptionValue(body, "minZoom")
+		if !found {
+			t.Errorf("%s: the map's own construction is missing minZoom — the bridge runs the "+
+				"renderer one zoom level below Leaflet, so zoom zero computes an out-of-range "+
+				"renderer zoom", module)
+		} else if n, convErr := strconv.Atoi(mnz); convErr != nil || n <= 0 {
+			t.Errorf("%s: the map's minZoom must be a positive integer (at least 1), found %q — "+
+				"zero is accepted by Leaflet itself but is out of range for the bridge integration",
+				module, mnz)
+		}
+
+		if !strings.Contains(body, "maxBounds") {
+			t.Errorf("%s: the map's own construction is missing the maxBounds option — this is the "+
+				"vector bridge maintainers' own boilerplate that prevents a documented renderer bug",
+				module)
+		}
+	}
+}
+
+// TestCapabilityProbeGatesBasemapChoice checks that a capability probe is
+// defined, that the file requests a webgl2 rendering context somewhere, that
+// the probe is invoked at least once after its own definition and before
+// the vector construction, and that the vector construction appears before
+// the raster fallback — the shape a true-branch-then-false-branch reads as.
+//
+// Honest limit of this test's claim, in the same spirit as this package's
+// existing CSS tests' honest-limits paragraphs: static inspection can prove
+// both constructions exist, that a capability probe is defined and invoked
+// ahead of them, and that they appear in branch order — but it CANNOT prove
+// the probe's return value actually selects between them, and it cannot
+// execute WebGL detection at all. A file that called the probe and then
+// unconditionally built both layers would pass this test. The runtime claim
+// belongs to this plan's human-check; the two are complementary, not
+// redundant. An `else`-token search between the two constructions was
+// considered and rejected as brittle: line comments survive the stripper,
+// so any prose containing that word between the branches would satisfy it
+// vacuously while proving nothing.
+func TestCapabilityProbeGatesBasemapChoice(t *testing.T) {
+	const probeDefAnchor = "function hasVectorBasemap"
+	const probeCallAnchor = "hasVectorBasemap("
+	const webglContextCall = "getContext('webgl2')"
+
+	for _, module := range []string{"static/js/map.js", "static/js/modal.js"} {
+		raw, err := fs.ReadFile(StaticFS, module)
+		if err != nil {
+			t.Fatalf("%s: could not read embedded file — %v", module, err)
+		}
+		text := stripCSSComments(string(raw))
+
+		defIdx := strings.Index(text, probeDefAnchor)
+		if defIdx == -1 {
+			t.Fatalf("%s: expected a %q definition but found none", module, probeDefAnchor)
+		}
+
+		if !strings.Contains(text, webglContextCall) {
+			t.Errorf("%s: expected a %q rendering-context request somewhere in this file",
+				module, webglContextCall)
+		}
+
+		afterDef := text[defIdx+len(probeDefAnchor):]
+		callIdx := strings.Index(afterDef, probeCallAnchor)
+		if callIdx == -1 {
+			t.Fatalf("%s: expected the capability probe to be invoked at least once after its own "+
+				"definition", module)
+		}
+		absCallIdx := defIdx + len(probeDefAnchor) + callIdx
+
+		vectorIdx := strings.Index(text, vectorAnchor)
+		rasterIdx := strings.Index(text, rasterAnchor)
+		if vectorIdx == -1 || rasterIdx == -1 {
+			t.Fatalf("%s: expected both a vector and a raster basemap construction in this file",
+				module)
+		}
+
+		if absCallIdx >= vectorIdx {
+			t.Errorf("%s: the capability probe must be invoked before the vector basemap construction",
+				module)
+		}
+
+		if vectorIdx >= rasterIdx {
+			t.Errorf("%s: the vector basemap construction must appear before the raster fallback, "+
+				"matching a true-branch-then-false-branch shape", module)
 		}
 	}
 }
