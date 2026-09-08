@@ -29,9 +29,10 @@ output from that mechanic.
 - **Tech stack**: Go 1.25+, PostgreSQL 16/17 with plain lat/lon columns (no PostGIS — unnecessary
   at this scale), `go-chi/chi/v5` for routing (not `gorilla/mux` — unmaintained since Dec 2022),
   `jackc/pgx/v5` + `sqlc` for type-safe SQL, `mmcloughlin/geohash` for diversity-weighting cell
-  computation, server-rendered HTML (`html/template`) + vanilla JS, Leaflet.js/OpenStreetMap for
-  the map. Chosen for a clean API-first architecture that's a good portfolio signal and doesn't
-  need paid infrastructure.
+  computation, server-rendered HTML (`html/template`) + vanilla JS, Leaflet.js as the map
+  framework with MapLibre GL rendering OpenFreeMap vector tiles as the basemap (OpenStreetMap
+  raster tiles retained as the fallback for clients without WebGL). Chosen for a clean API-first
+  architecture that's a good portfolio signal and doesn't need paid infrastructure.
 
 - **Budget**: Free tiers only for the core build — no paid map API, no paid SMS/WhatsApp gateway.
   Database hosting uses Neon or Supabase (genuinely persistent free Postgres, unlike Railway/
@@ -70,7 +71,9 @@ output from that mechanic.
 | `github.com/go-chi/chi/v5` | **v5.3.2** (verified via Go module proxy, released 2026-08-20) | HTTP router / middleware | **Confidence: MEDIUM.** `gorilla/mux` was effectively discontinued in Dec 2022 (archived, no more releases) — do not start a new project on it. Chi is the de facto successor for Go REST APIs: radix-tree routing, a mature middleware ecosystem (`chi/middleware` for logging, recoverer, request-ID, CORS, rate-limiting), and route-grouping that maps cleanly onto an API-first design (`/api/reports`, `/api/confirm`, etc. behind versioned/prefixed groups). Actively maintained (last release within the past month), Go 1.20+ support. |
 | `github.com/jackc/pgx/v5` | **v5.10.0** (verified via Go module proxy, released 2026-06-03) | PostgreSQL driver | **Confidence: MEDIUM.** `pgx` has superseded `lib/pq` (now in maintenance-only mode) as the standard Go Postgres driver — better performance, native support for Postgres types, and a connection-pool (`pgxpool`) built in. Use it either directly or as the driver underneath `sqlc` (see below). |
 | `sqlc` | **v1.31.1** (verified via Go module proxy, released 2026-04-22) | SQL → type-safe Go code generator | **Confidence: MEDIUM.** Write plain SQL queries in `.sql` files; `sqlc generate` produces typed Go structs/functions. This is the modern recommended alternative to hand-rolling `database/sql` boilerplate or pulling in a heavyweight ORM like GORM — you keep full control of the SQL (needed for the Haversine/geohash queries below) while getting compile-time-checked param/result types. Pairs directly with `pgx` (`sqlc.yaml` → `sql_package: "pgx/v5"`). |
-| Leaflet.js | **1.9.4** (verified via npm registry `leaflet@latest`, no 2.x shipped as of 2026-09) | Map rendering | Already chosen. No API key, no billing, pairs with free OSM tile servers (mind OSM's tile-usage policy at higher traffic — a portfolio demo is well within it). |
+| Leaflet.js | **1.9.4** (verified via npm registry `leaflet@latest`, no 2.x shipped as of 2026-09) | Map rendering | Already chosen. Leaflet remains the map framework — markers, popups, panes, controls, interaction — while the basemap itself is rendered by MapLibre GL; the OpenStreetMap tile servers are now touched only by the WebGL-less fallback path. No API key, no billing. |
+| `maplibre-gl` | **5.24.0** (verified via npm registry + unpkg CDN response, no build step — CDN `<script>` tag, not a module dependency) | Vector-tile basemap rendering | This is the last release line shipping a browser-global (UMD) build, which is what a no-build-step project needs — `maplibre-gl` v6 ships ES modules only, with no classic `<script>`-tag build at all. Requires WebGL2 on the client, hence the retained OpenStreetMap raster fallback. |
+| `@maplibre/maplibre-gl-leaflet` | **0.1.4** (verified via npm registry) | Renders the MapLibre basemap inside Leaflet's own tile pane | The renderer organisation's own plugin, published with a provenance attestation and npm trusted-publisher OIDC. Lets the app keep every existing Leaflet marker, popup and interaction API rather than rewriting them onto MapLibre's own API. |
 | `html/template` | stdlib | Server-rendered HTML | Already chosen. Auto-escapes by default (XSS-safe), no added dependency. |
 
 ### Supporting Libraries
@@ -135,6 +138,7 @@ output from that mechanic.
 | Relying solely on Background Sync for the offline-report queue | No Safari/iOS support at all (any version) as of 2026 — a meaningful fraction of mobile users on this exact use case (emergency reporting from a phone) would silently get no offline queueing. | IndexedDB queue + manual `online`-event retry as the baseline, Background Sync as progressive enhancement only |
 | Assuming Web Push works from a regular iOS Safari tab | It doesn't — iOS requires the site be installed to the Home Screen (iOS 16.4+) before push works at all. | Gate the push opt-in prompt behind an "add to home screen" step on iOS, and treat push as PWA-only across all platforms for consistency |
 | Running DB migrations automatically on app startup | Race conditions if the platform ever spins up >1 instance (e.g. Render/Railway autoscale); also makes rollback harder to reason about. | Run `goose`/`migrate` as an explicit step in the deploy script/CI pipeline |
+| `maplibre-gl`'s version-6 line in a project with no build step | Ships only ES modules with no browser-global build, so a classic `<script>` tag 404s on it and the Leaflet bridge's entry point (`L.maplibreGL`) ends up undefined; using it would additionally force an import map plus Leaflet's own ES-module build, destroying the global `L` that all four of this app's JavaScript modules depend on. | Pin to `maplibre-gl@5.24.0` — the last release line shipping a browser-global (UMD) build |
 
 ## Stack Patterns by Variant
 
@@ -177,6 +181,9 @@ output from that mechanic.
 - [Notificare: Web Push in iOS: Add to Home Screen](https://notificare.com/blog/2024/09/16/web-push-in-ios-add-to-home-screen/) and [Pushpad: iOS special requirements for web push notifications](https://pushpad.xyz/blog/ios-special-requirements-for-web-push-notifications) — iOS 16.4+/Home-Screen-install requirement, Safari 18.4 Declarative Web Push (MEDIUM, cross-checked across 3+ sources)
 - [Encore: Render vs Railway 2026](https://encore.dev/articles/render-vs-railway) and [justinmckelvey.com: Is Render Free?](https://justinmckelvey.com/blog/is-render-free) — free-tier limits, 30-day Postgres expiry, sleep behavior (MEDIUM, cross-checked across 2+ sources)
 - [dev.to: Best Database Migration Tools for Golang](https://dev.to/shrsv/best-database-migration-tools-for-golang-ajf) — golang-migrate vs goose comparison (MEDIUM)
+- [maplibre-gl-js GitHub](https://github.com/maplibre/maplibre-gl-js) + npm registry / unpkg CDN response (`maplibre-gl@6.8.0/dist/maplibre-gl.js` → 404, `@5.24.0` → 200) — confirms v6 ships no UMD browser-global build, which is why 5.24.0 is the correct pin (HIGH — CDN's own 404/200 responses, not inference)
+- [@maplibre/maplibre-gl-leaflet GitHub](https://github.com/maplibre/maplibre-gl-leaflet) + npm registry (`registry.npmjs.org/@maplibre/maplibre-gl-leaflet/0.1.4`) — SLSA v1 provenance attestation and npm trusted-publisher (GitHub OIDC) verified directly on the published package (HIGH — authoritative registry metadata)
+- [OpenFreeMap](https://openfreemap.org) live `liberty` style endpoint (`https://tiles.openfreemap.org/styles/liberty`) — confirmed free, no signup, no API key, CORS-open, static-file-hosted vector tiles (HIGH — fetched and inspected directly)
 
 <!-- GSD:stack-end -->
 
