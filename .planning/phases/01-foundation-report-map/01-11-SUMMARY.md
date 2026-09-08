@@ -163,3 +163,12 @@ FOUND-02 and FOUND-04 are **not** newly marked complete by this plan — both we
 ---
 *Phase: 01-foundation-report-map*
 *Completed: 2026-09-08*
+
+## Self-Check: PASSED
+
+- FOUND: `web/templates/index.html.tmpl`
+- FOUND: `web/template_contract_test.go`
+- FOUND: `.claude/CLAUDE.md`
+- FOUND: commit `403260c` (Task 1)
+- FOUND: commit `e809a29` (Task 2)
+- FOUND: commit `e9dba13` (this SUMMARY.md)
