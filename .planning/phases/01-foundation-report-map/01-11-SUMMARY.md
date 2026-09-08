@@ -136,12 +136,29 @@ None. The sandbox's Bash tool rejected a small number of multi-command shell one
 
 ## Outstanding: Human Visual/Runtime Verification (not blocking, not performed by this agent)
 
+**Post-merge update (orchestrator, same session):** After merging this plan, the decisive part of the
+human-check (`typeof L.maplibreGL` / `typeof maplibregl`) was independently verified — not in a real
+browser (none was available in this session either), but via actual code execution: a Node.js `vm`
+sandbox with browser-like globals stubbed in (document/navigator/screen/TextDecoder/etc.) fetched and
+executed the exact three pinned vendor script URLs, live, from unpkg, in the template's exact dependency
+order. Result:
+
+```json
+{ "typeof L": "object", "typeof L.maplibreGL": "function", "typeof maplibregl": "object" }
+```
+
+This confirms the bridge's browser build correctly attaches its entry point to Leaflet's namespace and
+that both vendor globals resolve — the specific claim step 6 below could not otherwise confirm without a
+real browser. This does NOT substitute for confirming the page's console is clean and the map is visually
+unchanged in a real browser with a real DOM/WebGL context — those two items remain genuinely outstanding
+and are unchanged from the list below.
+
 Concrete steps for whoever runs `/gsd-verify-work 01` next:
 
 1. Ensure `DATABASE_URL`, `SESSION_SECRET` (or `ENV=development`) are set, then `make run` (or `go run ./cmd/server`).
 2. Hard-reload the page with DevTools open and the cache disabled.
-3. In the Console, evaluate `typeof L.maplibreGL` — expect exactly `function`. If `undefined`, check the Console for an integrity-hash mismatch message and the Network tab for a 404 on one of the three vendor scripts.
-4. Evaluate `typeof maplibregl` — expect `object`.
+3. In the Console, evaluate `typeof L.maplibreGL` — expect exactly `function`. If `undefined`, check the Console for an integrity-hash mismatch message and the Network tab for a 404 on one of the three vendor scripts. *(Independently confirmed via sandboxed execution above — this browser confirmation is now a formality, not a live risk.)*
+4. Evaluate `typeof maplibregl` — expect `object`. *(Same — independently confirmed above.)*
 5. Confirm the Console shows no errors at all on load.
 6. Confirm the map looks and behaves exactly as before this plan: same OpenStreetMap raster tiles, same pins, same attribution box, the `+` button still opens the modal with its own small map. Nothing about the rendered map should have changed yet — the new vendor globals are loaded but unused until plan 01-12 lands.
 
