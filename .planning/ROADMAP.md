@@ -48,7 +48,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. A report stops appearing in the feed once its expiry time passes, checked live on every read — not solely dependent on a background sweep job.
   5. The JSON API is documented via a browsable OpenAPI/Swagger spec at a stable URL, and every push runs automated tests, `go vet`, and a build check via CI.
 
-**Plans**: 12/12 plans complete
+**Plans**: 12/13 plans complete (reopened for UAT gap closure round 2)
 Plans:
 **Wave 1**
 
@@ -79,6 +79,10 @@ Plans:
 
 - [x] 01-11-PLAN.md — Load the MapLibre GL renderer and the Leaflet bridge as SRI-pinned vendor tags in dependency order, locked by a template contract test, and update the stack documentation (wave 1)
 - [x] 01-12-PLAN.md — Swap both Leaflet basemaps to the OpenFreeMap liberty vector style via the bridge, with a WebGL-gated fallback to the existing OpenStreetMap raster layer, locked by a rewritten JS contract test (wave 2)
+
+**Gap closure (round 2)** *(from `01-UAT.md` Tests 2 and 6; run via `/gsd-execute-phase 01 --gaps-only`)*
+
+- [ ] 01-13-PLAN.md — Recolour the nine category glyphs through a CSS mask so page CSS reaches them, fixing solid-black icons in dark mode across map pins, feed rows and the modal grid, locked by two contract tests (wave 1)
 
 **UI hint**: yes
 
