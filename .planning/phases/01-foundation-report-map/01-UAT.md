@@ -56,12 +56,18 @@ notes: |
   the server produces a clean in-app "Couldn't load reports / Check your connection and try
   again." error state with a working Retry button (map tiles still render since they come from
   the third-party OpenFreeMap CDN, independent of the local server — expected).
-  NOT independently confirmed: narrow-screen (<900px) toggle behavior (user did not see a toggle
-  appear when eyeballing a narrower window, but didn't do a precise DevTools-width check either,
-  and explicitly said "think it's fine, let's move on" rather than reporting a firm defect) and
-  the empty-area empty-state copy. Both deferred rather than blocked — the CSS breakpoint itself
-  was confirmed present in the code (main.css:430, feed.css:68) during this session; flagging as
-  a should-recheck item, not logging as a Gap, since no concrete failure was observed.
+  NOT independently confirmed by the user: narrow-screen (<900px) toggle behavior (user did not
+  see a toggle appear when eyeballing a narrower window without a precise width, and explicitly
+  said "think it's fine, let's move on" rather than reporting a firm defect) and the empty-area
+  empty-state copy. Re-checked the toggle at the code level post-session and it IS correctly
+  wired: `.view-toggle { display: none }` (main.css:414) becomes `display: inline-flex; position:
+  fixed; ...` as a bottom-left pill button inside `@media (max-width: 899.98px)` (main.css:
+  447-463), feed.js:43/380-388 wires the click handler to flip `.app-shell`'s `data-view`
+  attribute, and main.css:430-445 shows/hides the two panes off that same attribute. Most likely
+  explanation: the user's manual window-resize never actually crossed the 899.98px threshold, or
+  the floating pill button was easy to miss. Recommend a quick recheck with the browser's
+  device/responsive mode at a precise width, but not logged as a Gap — no defect found in the
+  code path itself.
 
 ### 6. Dark-mode visual repaint
 expected: Switching the OS to dark mode with the app open repaints using a genuinely distinct dark palette (brighter/more-saturated severity dots, darker tint backgrounds) per D-13 and 01-UI-SPEC.md's dark hex values — not an inverted light theme.
