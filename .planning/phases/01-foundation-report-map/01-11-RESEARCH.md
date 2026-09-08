@@ -809,19 +809,22 @@ Also consider a `## What NOT to Use` row for **`maplibre-gl` v6 in a no-build-st
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **WebGL-less fallback: accept the regression, or keep `L.tileLayer` as a fallback branch?**
    - What we know: MapLibre throws with no basemap if WebGL is unavailable; the audience is Indian mobile users, plausibly arriving via in-app WebViews.
    - What's unclear: how much of the realistic audience that is. No telemetry exists.
    - Recommendation: **escalate to the user during planning.** The cheapest option is retaining the existing `L.tileLayer` call inside a `hasWebGL()` false branch — but that puts two basemap constructions in each file, which the static test's "at most one per file" `Fatalf` currently forbids. The test's shape depends on this answer, so it must be decided *before* the test is rewritten, not after.
+   - **RESOLVED:** escalated to the user, who decided the fallback is required — non-negotiable, not a default — given Pinalert's core value proposition of being reliable during emergencies. Implemented in `01-12-PLAN.md` Task 1 as a WebGL2-capability-gated branch falling back to the exact raster tile layer plan 01-10 shipped (byte-identical URL, retina detection, attribution), with a corrected `setMaxZoom()` re-derivation to prevent a blank map at full zoom on retina fallback devices. Locked by `01-12-PLAN.md` Task 2's rewritten contract test (three tests, two-anchor cardinality).
 
 2. **Does the planner want `updateInterval` tuned below the 32 ms default?**
    - What we know: issue #63 reports choppy panning on vector tiles; `updateInterval` is the exposed knob.
    - Recommendation: ship the default, put "does panning feel smooth on a phone?" in UAT, tune only if it fails. Pre-emptive tuning costs CPU on the low-end devices this app targets.
+   - **RESOLVED:** shipped at the library default, per the recommendation. `01-12-PLAN.md`'s human-check step 4 asks the tester to judge pan smoothness and report it; tuning is explicitly deferred until/unless that step reports a problem, not tuned preemptively.
 
 3. **Should `<link rel="preconnect" href="https://tiles.openfreemap.org">` be added?**
    - Recommendation: yes, cheap and clearly beneficial given the new style/TileJSON/glyph/sprite round-trips — but it is a separate one-line concern the planner may prefer to fold into the same template task.
+   - **RESOLVED:** yes, folded into `01-11-PLAN.md` Task 1 Step 2a, with a `crossorigin` attribute (bare, no value) since every fetch to that host is cross-origin once 01-12 lands. Verified by a dedicated shell gate in 01-11's `<verify>` block.
 
 ---
 
