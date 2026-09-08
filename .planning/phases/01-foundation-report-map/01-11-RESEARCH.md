@@ -6,6 +6,56 @@
 
 ---
 
+<user_constraints>
+## User Constraints
+
+### Locked Decisions
+
+**From this change's `<decision_already_made>` block (user chose these after being fully informed — do not re-litigate):**
+
+- **Provider: OpenFreeMap** (`https://openfreemap.org`) — free, no signup, no API key, no rate limits, vector tiles served as static files.
+- **Style: `liberty`** — URL confirmed: `https://tiles.openfreemap.org/styles/liberty`. Not `positron`, not `dark`.
+- **Integration approach: the `@maplibre/maplibre-gl-leaflet` bridge plugin** — NOT a full Leaflet-to-MapLibre rewrite. The app KEEPS `L.map()`, `L.marker()`, `L.divIcon()`, `bindPopup(domElement)`, draggable markers, `flyTo()`, and `getElement()` for CSS-class highlighting. **Only the base tile/style layer construction changes.**
+- **Timing: migrate now**, rather than finishing UAT first.
+- **Attribution content is fixed** (three credited entities/links, not one string): "OpenFreeMap", "© OpenMapTiles" (linking openmaptiles.org), "Data from OpenStreetMap" (linking openstreetmap.org/copyright).
+- **Version pin — AMENDED BY THIS RESEARCH:** the brief named `maplibre-gl@6.8.0`. That is **incompatible with the locked no-build-step/plain-`<script>`/keep-global-`L` constraints** (v6 ships no UMD build — unpkg returns 404). **`maplibre-gl@5.24.0` is the correct pin.** `@maplibre/maplibre-gl-leaflet@0.1.4` and `leaflet@1.9.4` are unchanged and confirmed compatible. See the Premise Correction below for the primary-source evidence. *This is a factual correction to a registry lookup, not a reversal of a user decision — every user decision above is preserved by it.*
+
+**Explicitly OUT OF SCOPE — do NOT propose:**
+- MapTiler, Google Maps, or any other tile provider — all evaluated and declined by the user.
+- A full MapLibre-only rewrite that drops Leaflet — declined by the user.
+- The `positron` or `dark` OpenFreeMap styles — `liberty` was chosen.
+
+**From `01-CONTEXT.md` `## Implementation Decisions` (phase-level, still binding):**
+
+- **D-02:** Location is set by GPS pre-filling a **draggable marker** on the map; the visitor can drag to correct. Not tap-only, not GPS-locked. → *the modal's `L.marker(..., {draggable: true})` and `map.on('click')` tap-to-place fallback must both keep working.*
+- **D-03:** The submission form is a **modal that opens over the map** (not a separate page) — visitor never loses spatial context. → *`#modal-map` keeps its own separate Leaflet instance.*
+- **D-06 / D-07:** Split view on wide screens; map-default with a one-tap toggle on narrow screens. → *`#map` must keep rendering correctly under both layouts and across the `display: none` ↔ `display: block` view swap.*
+- **D-10:** Overall visual direction is **neutral utility** — grayscale/minimal base, calm and credible, **color reserved almost entirely for severity signalling, not decoration.** → *this is the one decision that constrains basemap choice aesthetically: the `liberty` style must not visually compete with the traffic-light severity pins. Worth an explicit UAT look.*
+- **D-11 / D-12 / D-13 / D-16 / D-17:** traffic-light severity palette, white glyph on solid colour-coded circular badge pins, dark mode from Phase 1, list-row accents, age desaturation ramp. → *all live in Leaflet's marker pane and CSS; **none** are affected by the basemap swap.* Note: `liberty` is a light-only style — dark mode (D-13) currently applies to the app chrome, not the basemap. Not a regression (the OSM raster basemap was light-only too), but worth stating so nobody assumes vector tiles auto-theme.
+
+### Claude's Discretion
+
+From `01-CONTEXT.md`, the discretion areas relevant here:
+- Precise fade curve/easing for transitions — implementation detail.
+
+From this change specifically (not user-decided, researcher/planner's call):
+- Whether to keep a non-WebGL fallback branch (see Open Question 1 — **recommend escalating rather than deciding silently**, because it changes the shape of the static test).
+- Whether to tune the bridge's `updateInterval` below its 32 ms default.
+- Whether to add `<link rel="preconnect">` for the tile host.
+- Exact wording of the rewritten Go test names and doc comments.
+
+### Deferred Ideas (OUT OF SCOPE)
+
+`01-CONTEXT.md` `## Deferred Ideas` records **none** for this phase.
+
+Deferred by *this* research, for the planner to NOT pull in:
+- The missing `.map-pin--highlight` / `.map-popup*` CSS (pre-existing gap, unrelated to this change — see Existing Code Impact).
+- Adding a `Content-Security-Policy` header (would need `worker-src blob:`; no CSP exists today).
+- Dark-mode basemap styling.
+</user_constraints>
+
+---
+
 ## ⚠️ Premise Correction (read this first)
 
 The task brief states the target is `maplibre-gl@6.8.0` loaded via a plain `<script>` tag. **That combination is impossible.**
@@ -49,9 +99,11 @@ The `@maplibre/maplibre-gl-leaflet` bridge is a **234-line `L.Layer` subclass**.
 
 Three defaults in that source make this migration far lower-risk than a "swap the rendering engine" framing suggests. The layer defaults to `pane: "tilePane"` and `interactive: false`, so the WebGL canvas lands in exactly the DOM pane the raster tiles occupy today — beneath Leaflet's marker, popup, and control panes, with no z-index change anywhere. It force-sets `attributionControl: false` on the MapLibre `Map` it constructs and instead pushes the style's attribution string into **Leaflet's own** `attributionControl` — so there is exactly one attribution box, the same `.leaflet-control-attribution` element as today, and no duplicate. And MapLibre's `pixelRatio` "Defaults to `devicePixelRatio` if not specified," which makes Leaflet's `detectRetina` concept inapplicable rather than merely unused.
 
-The real work is smaller than the real risks. Two risks dominate. First, **`maxZoom` silently disappears**: Leaflet derives `getMaxZoom()` from zoom-bound layers, only `GridLayer` registers as one, and the GL layer extends bare `L.Layer` — so deleting `L.tileLayer({maxZoom: 19})` leaves the map at `maxZoom === Infinity` unless `maxZoom` is set explicitly on the `L.map()` options. Second, **`modal.js` constructs its Leaflet map while `#report-modal` is still `hidden`** — a 0×0 container — and only calls `invalidateSize()` on a later `setTimeout(0)`. A raster tile layer tolerates that; a WebGL context initialised against a zero-size container is a documented failure shape in this plugin's issue tracker.
+The real work is smaller than the real risks, and the two biggest risks are both about what *disappears* rather than what's added. First, **`maxZoom` silently becomes `Infinity`**: Leaflet derives `getMaxZoom()` from zoom-bound layers, only `GridLayer` registers as one, and the GL layer extends bare `L.Layer` — so deleting `L.tileLayer({maxZoom: 19})` leaves both maps with unbounded pinch-zoom unless `maxZoom` moves onto the `L.map()` options. Second, **WebGL becomes a hard dependency with no fallback** — for an app whose stated audience is Indian mobile users likely arriving via in-app WebViews, "no WebGL" changes from "slow map" to "no map," and that needs a deliberate decision rather than an accident.
 
-**Primary recommendation:** Pin `leaflet@1.9.4` (unchanged) + `maplibre-gl@5.24.0` (UMD) + `@maplibre/maplibre-gl-leaflet@0.1.4` (UMD, package root), loaded in that exact order as three classic `<script>` tags with SRI. Replace both `L.tileLayer(...)` calls with `L.maplibreGL({ style: 'https://tiles.openfreemap.org/styles/liberty', attributionControl: { customAttribution: '<OpenFreeMap credit>' } })`, add the maintainer-sanctioned `maxBounds`/`maxBoundsViscosity`/`minZoom`/`maxZoom` options to **both** `L.map()` calls, and defer the modal's GL layer until after the modal is visible.
+A third worry turned out not to be one, and the reason is worth recording: `modal.js` builds its Leaflet map while the modal is freshly un-hidden, which looks like it would initialise a WebGL context against a 0×0 container. It doesn't — Leaflet's `addLayer` routes through `whenReady`, so `onAdd` (and therefore `new maplibregl.Map()`) waits for the map's first `setView`, which in both files happens inside an async geolocation callback. No deferral code is needed; what *is* needed is documenting the invariant so a future refactor doesn't break it.
+
+**Primary recommendation:** Pin `leaflet@1.9.4` (unchanged) + `maplibre-gl@5.24.0` (UMD) + `@maplibre/maplibre-gl-leaflet@0.1.4` (UMD, package root), loaded in that exact order as three classic `<script>` tags with SRI. Replace both `L.tileLayer(...)` calls in place with `L.maplibreGL({ style: 'https://tiles.openfreemap.org/styles/liberty', attributionControl: { customAttribution: '<OpenFreeMap credit>' } })`, and add the maintainer-sanctioned `maxBounds`/`maxBoundsViscosity`/`minZoom` boilerplate plus `maxZoom: 19` to **both** `L.map()` calls. Keep every value as an inline literal in each file — the static Go regression gate reads them out of the constructor call's own options object, so shared constants would break it.
 
 ---
 
@@ -351,34 +403,49 @@ The canvas container is appended to Leaflet's **`tilePane`** — z-index 200 in 
 
 ## Common Pitfalls
 
-### Pitfall 1: MapLibre initialised against a zero-size hidden container (`modal.js`) — HIGHEST RISK
+### Pitfall 1: WebGL init timing in the hidden modal — Leaflet already sequences this correctly, and here is the constraint that keeps it correct
 
-**What goes wrong:** `modal.js:316-324` builds `modalMap` inside `initLocation()`, which `openModal()` calls. The current sequence is `modal.hidden = false` → `buildCategoryGrid()` → `updateSeverityReadout()` → `initLocation()`. `#report-modal` is un-hidden first, but `#modal-map` sits inside a `display: flex` backdrop whose layout may not have been computed yet in the same task, and both existing geolocation branches still schedule `modalMap.invalidateSize()` on a `setTimeout(..., 0)` — which is the tell that the container's size was known to be unreliable at construction time.
+The intuitive worry is that `modal.js` builds `modalMap` inside `initLocation()` while `#report-modal` may still be effectively unlaid-out, and that the bridge's `onAdd` → `_initGL()` → `new maplibregl.Map({container})` would then create a WebGL context against a 0×0 box (a WebGL drawing buffer is sized at context creation to `container.clientWidth * pixelRatio`, and unlike a raster tile layer it does not simply recover on the next `invalidateSize()`).
 
-The bridge's `onAdd` immediately runs `_initContainer()` (which reads `this._map.getSize()`) and `_initGL()` (which constructs `new maplibregl.Map({container})`). A raster tile layer tolerates a 0×0 container — it simply fetches no tiles and recovers on `invalidateSize()`. A WebGL context does not recover as gracefully.
-
-**Why it happens:** WebGL canvas dimensions are baked at context creation; MapLibre sizes its drawing buffer to `container.clientWidth * pixelRatio`. Zero-size at init produces a 0×0 drawing buffer.
-
-**How to avoid:** in `initLocation()`, un-hide first, then create the Leaflet map, call `modalMap.invalidateSize()`, and only then `.addTo()` the GL layer — ideally inside a `requestAnimationFrame` so layout has definitely flushed:
+**Leaflet already prevents this. Verified in `leaflet-src.js`:**
 
 ```js
-if (!modalMap) {
-  modalMap = L.map(modalMapEl, { maxBounds: [[180,-Infinity],[-180,Infinity]], maxBoundsViscosity: 1, minZoom: 1, maxZoom: 19 });
-  window.requestAnimationFrame(function () {
-    modalMap.invalidateSize();
-    L.maplibreGL({ style: OFM_STYLE_URL, attributionControl: { customAttribution: OFM_ATTRIBUTION } }).addTo(modalMap);
-  });
-}
+// leaflet-src.js:6940-6957 — addLayer defers onAdd until the map is ready
+addLayer: function (layer) {
+    ...
+    if (layer.beforeAdd) { layer.beforeAdd(this); }
+    this.whenReady(layer._layerAdd, layer);
+    return this;
+},
+// leaflet-src.js:4588-4595
+whenReady: function (callback, context) {
+    if (this._loaded) { callback.call(context || this, {target: this}); }
+    else { this.on('load', callback, context); }
+    return this;
+},
+// leaflet-src.js:4290-4291 — _loaded is first set inside _resetView(), which setView() calls
+var loading = !this._loaded;
+this._loaded = true;
 ```
 
-**Warning signs:** blank/black `#modal-map` on first open that fixes itself on second open; console `Cannot read properties of null (reading 'getZoom')` or `null is not an object (evaluating 'this._map.containerPointToLayerPoint')`.
+So `.addTo(map)` does **not** run `onAdd`/`_initGL` at call time on a fresh map — it registers a `load` listener, and `load` fires on the **first `setView()`**. In `modal.js` that is `modalMap.setView(...)` inside the geolocation success callback (line 336) or inside `showLocationDenied` (line 354). By then the modal has been visible for at least one task, and even on the tightest path — the synchronous `else { showLocationDenied(...) }` branch when `navigator.geolocation` is absent — `L.map()`'s own `getSize()`/`clientWidth` read forces a synchronous layout flush against an already-un-hidden container.
 
-**Related upstream evidence:**
+Corollary: `modalMap.invalidateSize()` inside a `requestAnimationFrame` placed *before* the first `setView` would be a **no-op** — `invalidateSize` early-returns on `if (!this._loaded) { return this; }` (`leaflet-src.js:3671`). The two existing `setTimeout(..., 0)` + `invalidateSize()` calls (lines 338-340, 355-357) run *after* `setView`, so they do work and should be left alone.
+
+**The durable constraint worth documenting (this is what the plan should actually guard):**
+
+> Do not call `setView()` on either map while its container is `display: none` or zero-sized, and do not add the GL layer to an **already-loaded** map while the modal is hidden. Both would put `new maplibregl.Map()` on a zero-size container. Today's ordering (`modal.hidden = false` → `L.map()` → `.addTo()` → async `setView`) satisfies this; a future refactor that hoists map creation to module scope, or that calls `setView` before un-hiding, would violate it.
+
+**Warning signs if it is ever violated:** blank/black `#modal-map` on first open that fixes itself on second open; console `Cannot read properties of null (reading 'getZoom')` or `null is not an object (evaluating 'this._map.containerPointToLayerPoint')`.
+
+**Related upstream evidence (context, not active risk):**
 - [Issue #58](https://github.com/maplibre/maplibre-gl-leaflet/issues/58) — `containerPointToLayerPoint` of null. **Already fixed in 0.1.4**: the requested `if (!this._map) return;` guard is present at line 166 of the published UMD. [VERIFIED: read the file]
-- [Issue #67](https://github.com/maplibre/maplibre-gl-leaflet/issues/67) — `getZoom` of null, filed against 0.0.22, still open. `_update` is guarded in 0.1.4 but `_pinchZoom`, `_animateZoom`, `_transformGL`, and `_transitionEnd` are **not**. Relevant if the modal is closed mid-animation.
-- The package ships **`debug/maps-concurrent-resizing.html`** (11,841 bytes) — a dedicated debug page for two simultaneously-resizing maps, which is precisely this app's `#map` + `#modal-map` situation. Worth opening during implementation.
+- [Issue #67](https://github.com/maplibre/maplibre-gl-leaflet/issues/67) — `getZoom` of null, filed against 0.0.22, still open. `_update` is guarded in 0.1.4 but `_pinchZoom`, `_animateZoom`, `_transformGL`, and `_transitionEnd` are **not**. Relevant only if the modal is torn down mid-zoom-animation.
+- The package ships **`debug/maps-concurrent-resizing.html`** (11,841 bytes) — a dedicated debug page for two simultaneously-resizing maps, which is precisely this app's `#map` + `#modal-map` situation. Worth opening during implementation if anything looks off.
 
-**Note also:** `map.js` is safe here — `#map` has a resolved `height: 100dvh` from the prior UAT gap-closure fix (`main.css:409-412`, guarded by `TestPrimaryMapHasResolvedHeight`), and is visible at `DOMContentLoaded`.
+**`map.js` is likewise safe:** `#map` has a resolved `height: 100dvh` (`main.css:409-412`, guarded by `TestPrimaryMapHasResolvedHeight`), is visible at `DOMContentLoaded`, and its only `setView` is also inside the async geolocation callback (`map.js:49`).
+
+**One genuine open interaction, for UAT rather than code:** on narrow screens the `data-view="list"` toggle sets `.pane--map { display: none }` (`main.css:439-441`). Toggling back to map fires no Leaflet `resize` event by itself, so the GL canvas may need an `invalidateSize()` on view-switch. The raster layer had the same latent issue; whether it is visible with a WebGL canvas is a UAT check ("toggle to list, back to map — is the basemap still drawn?").
 
 ### Pitfall 2: `maxZoom` silently becomes `Infinity`
 
@@ -474,8 +541,8 @@ Not applicable — greenfield frontend change, no rename/refactor/migration.
 
 ### `web/static/js/modal.js`
 
-- **Line 318:** `modalMap = L.map(modalMapEl);` → add the same options object.
-- **Lines 319-323:** the `L.tileLayer(...)` call → replaced, **and deferred until the container has size** (Pitfall 1).
+- **Line 318:** `modalMap = L.map(modalMapEl);` → add the same options object (values inlined, deliberately duplicated from `map.js` — see Code Examples).
+- **Lines 319-323:** the `L.tileLayer(...)` call → replaced in place by `L.maplibreGL({...}).addTo(modalMap)`. **No deferral, no `requestAnimationFrame`** — Leaflet's `whenReady` already holds `onAdd` until the first `setView`, which is async here (Pitfall 1).
 - `modalMap.invalidateSize()` at lines 339 and 356 stays — the bridge listens for Leaflet's `resize` event (`getEvents()` line 70 → `_resize` → `_transitionEnd`) and re-sizes/re-jumps the GL map accordingly, so `invalidateSize()` correctly propagates.
 - `modalMap.on('click', ...)` (line 358, tap-to-place) is unaffected — `interactive: false` means the canvas swallows nothing.
 - `L.marker(..., { draggable: true })` (line 302) and `dragend` (303) are marker-pane behaviour, unaffected.
@@ -498,57 +565,63 @@ The `L.tileLayer(` anchor disappears from both files. Full rewrite guidance in *
 
 ## Code Examples
 
-### Shared constants (suggest a single definition, e.g. in `app.js`'s `Pinalert` namespace)
+### ⚠️ Inline the literals — do NOT factor them into shared constants
 
-```js
-// Source: https://openfreemap.org (attribution requirement) +
-//         https://tiles.openfreemap.org/planet (TileJSON attribution field, verified)
-var OFM_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
-var OFM_ATTRIBUTION =
-  '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> ' +
-  '<a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">&copy; OpenMapTiles</a> ' +
-  'Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
+**This is load-bearing, not a style preference.** The regression gate in `web/js_contract_test.go` works by *static source inspection*: it reads the option value text out of the constructor call's own `{...}` window in each file. If the style URL, the attribution string, or `maxZoom` is hoisted into a shared `OFM_STYLE_URL` / `MAP_BASE_OPTIONS` constant (in `app.js` or anywhere else), `readOptionValue()` returns the literal text `"OFM_STYLE_URL"` — or finds no `maxZoom` key at all inside `L.map(container, MAP_BASE_OPTIONS)` — and **both new tests fail against otherwise-correct code.**
 
-// Maintainer-sanctioned boilerplate — see examples/basic-v5.html.
-// maxZoom is NOT part of that boilerplate; it is here because the GL layer
-// registers no zoom limit (unlike L.tileLayer), so without it getMaxZoom()
-// returns Infinity.
-var MAP_BASE_OPTIONS = {
-  maxBounds: [[180, -Infinity], [-180, Infinity]], // avoid max-latitude issues with MapLibre GL
-  maxBoundsViscosity: 1,                           // make the bounds "solid"
-  minZoom: 1,                                      // prevent sync issues at zoom 0
-  maxZoom: 19
-};
-```
+Duplicating these values across `map.js` and `modal.js` is already the **established convention in this codebase**, adopted for exactly this reason: the tile URL, `maxZoom: 19`, `detectRetina: true`, and the attribution string are duplicated across both files *today* so that the per-file gate can assert on each independently. Preserve that. An executor who "improves" this into shared constants will break the build; say so in the task description.
 
 ### `map.js` — the replacement
 
 ```js
 // Source: @maplibre/maplibre-gl-leaflet@0.1.4 examples/basic-v5.html (UMD, browser-global setup)
-map = L.map(container, MAP_BASE_OPTIONS);
+//
+// maxBounds/maxBoundsViscosity/minZoom are the plugin maintainers' own
+// boilerplate, copied verbatim — maxBounds' odd-looking lat/lng ordering is
+// intentional; do not "correct" it. maxZoom is NOT part of that boilerplate:
+// it moved here from the deleted L.tileLayer because the GL layer extends
+// bare L.Layer and so registers no zoom limit, which would leave
+// map.getMaxZoom() === Infinity and pinch-zoom unbounded.
+map = L.map(container, {
+  maxBounds: [[180, -Infinity], [-180, Infinity]], // avoid max-latitude issues with MapLibre GL
+  maxBoundsViscosity: 1,                           // make the max bounds "solid"
+  minZoom: 1,                                      // prevent sync issues at zoom 0
+  maxZoom: 19
+});
 
 L.maplibreGL({
-  style: OFM_STYLE_URL,
-  attributionControl: { customAttribution: OFM_ATTRIBUTION }
+  style: 'https://tiles.openfreemap.org/styles/liberty',
+  attributionControl: {
+    customAttribution:
+      '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> ' +
+      '<a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">&copy; OpenMapTiles</a> ' +
+      'Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'
+  }
 }).addTo(map);
 ```
 
-### `modal.js` — the replacement, with the hidden-container guard
+### `modal.js` — the replacement (same shape, values deliberately duplicated)
 
 ```js
 if (!modalMap) {
-  modalMap = L.map(modalMapEl, MAP_BASE_OPTIONS);
-  // The modal is un-hidden immediately before initLocation() runs, but the
-  // GL context's drawing buffer is sized at construction from
-  // container.clientWidth/Height — so defer to the next frame, after layout
-  // has flushed, rather than initialising WebGL against a 0x0 box.
-  window.requestAnimationFrame(function () {
-    modalMap.invalidateSize();
-    L.maplibreGL({
-      style: OFM_STYLE_URL,
-      attributionControl: { customAttribution: OFM_ATTRIBUTION }
-    }).addTo(modalMap);
+  modalMap = L.map(modalMapEl, {
+    maxBounds: [[180, -Infinity], [-180, Infinity]],
+    maxBoundsViscosity: 1,
+    minZoom: 1,
+    maxZoom: 19
   });
+  // No deferral needed: Leaflet's addLayer routes through whenReady(), so
+  // onAdd — and therefore new maplibregl.Map() — does not run until the
+  // map's first setView(). See Pitfall 1.
+  L.maplibreGL({
+    style: 'https://tiles.openfreemap.org/styles/liberty',
+    attributionControl: {
+      customAttribution:
+        '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> ' +
+        '<a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">&copy; OpenMapTiles</a> ' +
+        'Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'
+    }
+  }).addTo(modalMap);
 }
 ```
 
@@ -623,6 +696,9 @@ Every structural property the existing test relies on survives:
 **Delete outright** (do not adapt): the `detectRetina` presence/value assertions, the `maxZoom > 0` assertion *inside the layer options*, and the long doc comment explaining Leaflet's retina branch. The rationale for deletion — not a silent drop — is that `pixelRatio` "Defaults to `devicePixelRatio`" (`maplibre-gl.d.ts:11287`), so the entire premise the old test guarded (a raster host with no `@2x` variant) no longer exists. Say this in the new doc comment.
 
 **Add:**
+
+> **Precondition:** these assertions only work if the values are **inline literals** in each JS file. See the warning at the top of Code Examples — hoisting them into shared constants makes `readOptionValue` return a variable name and breaks both new tests.
+
 - `const maplibreLayerAnchor = "L.maplibreGL("`.
 - Within the `L.maplibreGL(` → `.addTo(` window, read the `style` option with the existing `readOptionValue` helper and assert it equals `'https://tiles.openfreemap.org/styles/liberty'` (quotes trimmed). This is the "someone silently repoints the tile host" gate the task asked for.
 - Optionally assert `customAttribution` is present and non-empty in the same window — cheap, and it guards the legal-ish attribution requirement.
@@ -727,7 +803,7 @@ Also consider a `## What NOT to Use` row for **`maplibre-gl` v6 in a no-build-st
 |---|---|---|---|
 | A1 | MapLibre v5's WebGL1 fallback context does not reliably produce correct full rendering (v5 effectively requires WebGL2) | Pitfall 4 | If WebGL1 in fact renders fine, the availability regression is smaller than stated — the mitigation decision could be relaxed. Verified only that the code tries `webgl2` then `webgl` and throws if both fail. |
 | A2 | MapLibre propagates a vector source's TileJSON `attribution` onto `getSource(id).attribution` | Pattern 5 (auto path) | Only affects the *rejected* auto path. The recommended explicit `customAttribution` makes this irrelevant. |
-| A3 | `#report-modal`'s layout has not necessarily flushed by the time `initLocation()` runs in the same task | Pitfall 1 | If layout has in fact flushed, the `requestAnimationFrame` deferral is merely harmless belt-and-braces, not required. Cheap insurance either way — the existing `setTimeout(0)` + `invalidateSize()` calls in the current code are circumstantial evidence the concern is real. |
+| A3 | *Withdrawn.* The original assumption ("modal layout may not have flushed, so WebGL init needs a `requestAnimationFrame` deferral") was **disproved** by reading `leaflet-src.js`: `addLayer` → `whenReady` defers `onAdd` to the first `setView`, and `invalidateSize` early-returns while `!_loaded`. Pitfall 1 rewritten accordingly; the rAF removed from the recommendation. | Pitfall 1 | — (resolved to HIGH confidence, no longer an assumption) |
 | A4 | Vector overzoom past OpenFreeMap's `maxzoom: 14` renders acceptably at Leaflet zoom 16 | Pattern 4 | If labels thin out unacceptably at zoom 16, `flyTo(..., 16)` and the modal's `setView(..., 16)` may want lowering to ~15. A UAT visual check settles it. |
 | A5 | Marker `dragend`/`click` and popup positioning stay pixel-accurate relative to the GL canvas during zoom animation | Existing Code Impact | Issue #26 (polyline drift) suggests overlay/canvas registration can drift mid-animation, though markers are DOM-positioned by Leaflet independently of the canvas. UAT should include "open a popup, zoom, confirm it stays on its pin." |
 
@@ -784,7 +860,7 @@ Also consider a `## What NOT to Use` row for **`maplibre-gl` v6 in a no-build-st
 - Retina/`pixelRatio`: **HIGH** — quoted from the shipped `.d.ts`.
 - `maxZoom` regression: **HIGH** — traced through Leaflet 1.9.4 source (`getMaxZoom` → `_zoomBoundLayers` → `GridLayer.beforeAdd`).
 - CSS non-collision, container sizing: **HIGH** — both stylesheets parsed.
-- Modal hidden-container risk: **MEDIUM** — the mechanism is certain (WebGL buffer sized at construction); whether it manifests in this exact code path is A3, unverified without a browser. The mitigation is cheap and harmless either way.
+- Modal WebGL init timing: **HIGH** — traced through Leaflet source (`addLayer` → `whenReady` → `load` → `setView`; `invalidateSize` early-return at 3671). Initially flagged as the top risk; reading the source **downgraded it to a non-issue with a documented invariant**.
 - WebGL2 hard requirement severity: **MEDIUM** — the throw path is verified in the bundle; the WebGL1-fallback adequacy is A1.
 - Pan-smoothness / overzoom aesthetics: **LOW** — UAT questions, not researchable statically.
 
