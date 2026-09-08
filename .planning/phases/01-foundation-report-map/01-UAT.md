@@ -8,8 +8,25 @@ updated: 2026-09-06T12:45:00Z
 
 ## Current Test
 
-[session paused — Test 1 passed; 1 new cosmetic gap logged (tile retina quality). Routing to
-gap-closure for the retina fix. Resume via /gsd-verify-work 01 at Test 2 once it lands.]
+number: 2
+name: New-pin visual rendering after submit (exercises the CR-01 icon-sizing fix)
+expected: |
+  Submit a report via the "+" button; a correctly-sized (55% of badge), non-overflowing category
+  glyph appears on a colour-coded pin at the submitted coordinate immediately after submit, with
+  no page reload.
+awaiting: user response
+
+<!-- Basemap migration note (post-Test-1, pre-Test-2): plans 01-11/01-12 replaced the OSM raster
+basemap with OpenFreeMap's "liberty" vector style via MapLibre GL, with an automatic WebGL2
+capability fallback to the byte-identical prior raster layer. On this Mac's Safari the map is
+currently rendering via the RASTER FALLBACK path (confirmed by the attribution text reading
+"Leaflet | © OpenStreetMap contributors" rather than the vector path's three-link OpenFreeMap/
+OpenMapTiles/OpenStreetMap credit) — CORS headers and a sandboxed execution of the actual vendor
+script bytes both confirm the vendor code itself is correct, so this is very likely this browser
+session's WebGL2 availability, not a code defect. Either basemap renders correctly and every
+Leaflet-based marker/popup/badge/drag/fly-to/highlight behavior is identical on both paths per
+01-12-PLAN.md's design, so this does not block resuming UAT. Tests 2 and 5 exercise map-behavioral
+code paths and should be evaluated against whichever basemap the tester's browser actually shows. -->
 
 ## Tests
 
