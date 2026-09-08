@@ -15,18 +15,80 @@ window.PinalertMap = (function () {
   var map = null;
   var markers = {}; // report id -> L.Marker
 
+  // hasVectorBasemap reports whether this browser can render the
+  // OpenFreeMap vector basemap through the MapLibre bridge: both vendor
+  // globals must have loaded, and the browser must grant a WebGL2
+  // rendering context, which is the version the renderer actually targets
+  // — a WebGL1-only probe would let a device through that still cannot
+  // paint. When any of that fails, the caller falls back to the raster
+  // layer instead.
+  //
+  // This probe is the only safety net for renderer failures in this file.
+  // The vector construction below is deliberately NOT wrapped in a second
+  // try/catch: Leaflet defers a layer's add hook until the map's first
+  // view is set, so a renderer failure would throw asynchronously from
+  // that later call, outside any try/catch placed around the construction
+  // itself.
+  function hasVectorBasemap() {
+    if (typeof L.maplibreGL !== 'function') {
+      return false;
+    }
+    if (typeof maplibregl === 'undefined') {
+      return false;
+    }
+    try {
+      return !!document.createElement('canvas').getContext('webgl2');
+    } catch (e) {
+      return false;
+    }
+  }
+
   function init() {
     var container = document.getElementById('map');
     if (!container || typeof L === 'undefined') {
       return;
     }
 
-    map = L.map(container);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      detectRetina: true,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(map);
+    // maxBounds/maxBoundsViscosity/minZoom are the vector bridge
+    // maintainers' own boilerplate, copied verbatim from their published
+    // example — maxBounds' inverted-looking lat/lng ordering prevents a
+    // documented renderer bug and must not be "corrected". maxZoom is NOT
+    // part of that boilerplate: it moved onto the map because the vector
+    // layer extends bare Leaflet's own layer base and registers no zoom
+    // limit of its own, which would otherwise leave pinch-zoom unbounded.
+    map = L.map(container, {
+      maxBounds: [[180, -Infinity], [-180, Infinity]],
+      maxBoundsViscosity: 1,
+      minZoom: 1,
+      maxZoom: 19
+    });
+
+    if (hasVectorBasemap()) {
+      L.maplibreGL({
+        style: 'https://tiles.openfreemap.org/styles/liberty',
+        attributionControl: {
+          customAttribution:
+            '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> ' +
+            '<a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">&copy; OpenMapTiles</a> ' +
+            'Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'
+        }
+      }).addTo(map);
+    } else {
+      var rasterLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        detectRetina: true,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      });
+      rasterLayer.addTo(map);
+      // Re-derive the map's own maximum zoom from the fallback layer's
+      // post-construction value. Leaflet's high-density-display branch can
+      // decrement that value below the map's fixed ceiling above, and the
+      // grid layer renders no tiles above its own maximum — so without
+      // this line a fallback visitor on such a display could reach a zoom
+      // at which the map goes blank. Reading it back off the layer gets
+      // this right on every display with no hardcoded number.
+      map.setMaxZoom(rasterLayer.options.maxZoom);
+    }
 
     Pinalert.subscribe(render);
     Pinalert.onSelect(function (id, source) {

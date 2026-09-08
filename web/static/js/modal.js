@@ -308,6 +308,36 @@
     updateCoordReadout(lat, lon);
   }
 
+  // hasVectorBasemap reports whether this browser can render the
+  // OpenFreeMap vector basemap through the MapLibre bridge: both vendor
+  // globals must have loaded, and the browser must grant a WebGL2
+  // rendering context, which is the version the renderer actually targets
+  // — a WebGL1-only probe would let a device through that still cannot
+  // paint. When any of that fails, the caller falls back to the raster
+  // layer instead. A private copy of the primary map's own probe, by this
+  // codebase's established convention of duplicating these small pieces
+  // per file rather than sharing them.
+  //
+  // This probe is the only safety net for renderer failures in this file.
+  // The vector construction below is deliberately NOT wrapped in a second
+  // try/catch: Leaflet defers a layer's add hook until the map's first
+  // view is set, so a renderer failure would throw asynchronously from
+  // that later call, outside any try/catch placed around the construction
+  // itself.
+  function hasVectorBasemap() {
+    if (typeof L.maplibreGL !== 'function') {
+      return false;
+    }
+    if (typeof maplibregl === 'undefined') {
+      return false;
+    }
+    try {
+      return !!document.createElement('canvas').getContext('webgl2');
+    } catch (e) {
+      return false;
+    }
+  }
+
   // initLocation centres the modal's own Leaflet instance on the visitor's
   // GPS position at zoom 16 with a draggable marker (D-02). Submission is
   // never blocked on geolocation — a denied prompt during an emergency must
@@ -315,12 +345,45 @@
   // the configured centre plus tap-to-place.
   function initLocation() {
     if (!modalMap) {
-      modalMap = L.map(modalMapEl);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        detectRetina: true,
-        attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(modalMap);
+      // Same maintainer boilerplate and the same maxZoom correction as the
+      // primary map, duplicated here per this file's own convention. No
+      // deferral, no animation-frame wrapper, and no visibility check is
+      // needed around the branch below: Leaflet's addLayer routes through
+      // its own ready mechanism, so the vector layer's add hook does not
+      // run until this map's first view is set, which happens inside the
+      // async geolocation callback further down, by which point the modal
+      // is already open and its container has real dimensions.
+      modalMap = L.map(modalMapEl, {
+        maxBounds: [[180, -Infinity], [-180, Infinity]],
+        maxBoundsViscosity: 1,
+        minZoom: 1,
+        maxZoom: 19
+      });
+
+      if (hasVectorBasemap()) {
+        L.maplibreGL({
+          style: 'https://tiles.openfreemap.org/styles/liberty',
+          attributionControl: {
+            customAttribution:
+              '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> ' +
+              '<a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">&copy; OpenMapTiles</a> ' +
+              'Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'
+          }
+        }).addTo(modalMap);
+      } else {
+        var rasterLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          detectRetina: true,
+          attribution: '&copy; OpenStreetMap contributors'
+        });
+        rasterLayer.addTo(modalMap);
+        // Re-derive the map's own maximum zoom from the fallback layer's
+        // post-construction value — same reasoning as the primary map: a
+        // high-density display can lower it below the map's fixed
+        // ceiling above, and the grid layer renders no tiles beyond its
+        // own maximum.
+        modalMap.setMaxZoom(rasterLayer.options.maxZoom);
+      }
     }
 
     locationNotice.hidden = true;
