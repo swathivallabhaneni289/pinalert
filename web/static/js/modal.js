@@ -344,6 +344,14 @@
   // not become a dead end, so denial/timeout/insecure-context falls back to
   // the configured centre plus tap-to-place.
   function initLocation() {
+    // Mirrors map.js's init() guard: if Leaflet's own script failed to
+    // load, L is undefined and every call below would throw an uncaught
+    // ReferenceError instead of degrading gracefully. Without Leaflet
+    // there is no way to show a location picker at all, so bail out
+    // before touching modalMap or scheduling the geolocation callback.
+    if (typeof L === 'undefined') {
+      return;
+    }
     if (!modalMap) {
       // Same maintainer boilerplate and the same maxZoom correction as the
       // primary map, duplicated here per this file's own convention. No

@@ -267,17 +267,27 @@ func TestMapsDeclareOwnZoomBounds(t *testing.T) {
 }
 
 // TestCapabilityProbeGatesBasemapChoice checks that a capability probe is
-// defined, that the file requests a webgl2 rendering context somewhere, that
-// the probe is invoked at least once after its own definition and before
-// the vector construction, and that the vector construction appears before
-// the raster fallback — the shape a true-branch-then-false-branch reads as.
+// defined, that its own body actually contains the fail-safe checks it
+// claims to (both vendor-global guards and the webgl2 context request —
+// not just that those strings appear somewhere in the file), that the file
+// requests a webgl2 rendering context somewhere, that the probe is invoked
+// at least once after its own definition and before the vector
+// construction, and that the vector construction appears before the raster
+// fallback — the shape a true-branch-then-false-branch reads as. It also
+// asserts the raster fallback's maxZoom ceiling correction
+// (map.setMaxZoom(rasterLayer.options.maxZoom)) is present after the raster
+// construction: Leaflet's retina branch can decrement a layer's own maxZoom
+// on a high-density display, and without re-deriving the map's ceiling from
+// the layer's post-construction value, a fallback visitor on such a display
+// could reach a zoom at which the raster layer renders nothing.
 //
 // Honest limit of this test's claim, in the same spirit as this package's
 // existing CSS tests' honest-limits paragraphs: static inspection can prove
-// both constructions exist, that a capability probe is defined and invoked
-// ahead of them, and that they appear in branch order — but it CANNOT prove
-// the probe's return value actually selects between them, and it cannot
-// execute WebGL detection at all. A file that called the probe and then
+// both constructions exist, that a capability probe is defined with the
+// right checks in its own body, that it is invoked ahead of them, and that
+// they appear in branch order — but it CANNOT prove the probe's return
+// value actually selects between them at runtime, and it cannot execute
+// WebGL detection at all. A file that called the probe and then
 // unconditionally built both layers would pass this test. The runtime claim
 // belongs to this plan's human-check; the two are complementary, not
 // redundant. An `else`-token search between the two constructions was
@@ -288,6 +298,9 @@ func TestCapabilityProbeGatesBasemapChoice(t *testing.T) {
 	const probeDefAnchor = "function hasVectorBasemap"
 	const probeCallAnchor = "hasVectorBasemap("
 	const webglContextCall = "getContext('webgl2')"
+	const bridgeGlobalGuard = "typeof L.maplibreGL"
+	const rendererGlobalGuard = "typeof maplibregl"
+	const fallbackCeilingCorrection = "setMaxZoom(rasterLayer.options.maxZoom)"
 
 	for _, module := range []string{"static/js/map.js", "static/js/modal.js"} {
 		raw, err := fs.ReadFile(StaticFS, module)
@@ -301,11 +314,6 @@ func TestCapabilityProbeGatesBasemapChoice(t *testing.T) {
 			t.Fatalf("%s: expected a %q definition but found none", module, probeDefAnchor)
 		}
 
-		if !strings.Contains(text, webglContextCall) {
-			t.Errorf("%s: expected a %q rendering-context request somewhere in this file",
-				module, webglContextCall)
-		}
-
 		afterDef := text[defIdx+len(probeDefAnchor):]
 		callIdx := strings.Index(afterDef, probeCallAnchor)
 		if callIdx == -1 {
@@ -313,6 +321,29 @@ func TestCapabilityProbeGatesBasemapChoice(t *testing.T) {
 				"definition", module)
 		}
 		absCallIdx := defIdx + len(probeDefAnchor) + callIdx
+
+		// Bound the probe's own body to the span between its definition and
+		// its first call site, rather than checking these guards appear
+		// anywhere in the file — a fail-safe check present elsewhere but
+		// absent from the probe itself would not actually gate anything.
+		probeBody := afterDef[:callIdx]
+
+		if !strings.Contains(probeBody, bridgeGlobalGuard) {
+			t.Errorf("%s: the capability probe's own body must check %q — without this guard, a "+
+				"browser where the bridge script failed to load (or was blocked by its integrity "+
+				"check) would throw instead of falling back to the raster layer",
+				module, bridgeGlobalGuard)
+		}
+		if !strings.Contains(probeBody, rendererGlobalGuard) {
+			t.Errorf("%s: the capability probe's own body must check %q — without this guard, a "+
+				"browser where the renderer script failed to load would throw instead of falling "+
+				"back to the raster layer", module, rendererGlobalGuard)
+		}
+		if !strings.Contains(probeBody, webglContextCall) {
+			t.Errorf("%s: the capability probe's own body must request a %q context — a "+
+				"rendering-context request found only outside the probe would not actually gate "+
+				"the basemap choice", module, webglContextCall)
+		}
 
 		vectorIdx := strings.Index(text, vectorAnchor)
 		rasterIdx := strings.Index(text, rasterAnchor)
@@ -329,6 +360,14 @@ func TestCapabilityProbeGatesBasemapChoice(t *testing.T) {
 		if vectorIdx >= rasterIdx {
 			t.Errorf("%s: the vector basemap construction must appear before the raster fallback, "+
 				"matching a true-branch-then-false-branch shape", module)
+		}
+
+		if !strings.Contains(text[rasterIdx:], fallbackCeilingCorrection) {
+			t.Errorf("%s: expected %q after the raster fallback construction — Leaflet's retina "+
+				"branch can decrement the layer's own maxZoom on a high-density display, and "+
+				"without re-deriving the map's ceiling from the layer's post-construction value, a "+
+				"fallback visitor on such a display could reach a zoom at which the map renders "+
+				"nothing", module, fallbackCeilingCorrection)
 		}
 	}
 }
