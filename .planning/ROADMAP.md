@@ -25,7 +25,7 @@ responder claims, shareable cards) that depend on the trust signals built in Pha
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation — Report & Map** - Anonymous visitors can submit and view location-tagged reports on a live map, with read-time auto-expiry, OpenAPI docs, and CI in place. (original 10 plans completed 2026-09-06; reopened for the vector basemap migration, plans 01-11/01-12)
+- [x] **Phase 1: Foundation — Report & Map** - Anonymous visitors can submit and view location-tagged reports on a live map, with read-time auto-expiry, OpenAPI docs, and CI in place. (original 10 plans completed 2026-09-06; reopened for the vector basemap migration, plans 01-11/01-12) (completed 2026-09-08)
 - [ ] **Phase 2: Trust Mechanic Core — Confirm/Dispute & Visibility** - Users can confirm/dispute reports through one shared, concurrency-safe visibility resolver with a provisional gate and resolved marking.
 - [ ] **Phase 3: Trust-Model Hardening — Diversity-Weighted Trust** - "Confirmed by N nearby" and the reliability/currency signals reflect distinct nearby corroboration, resistant to trivial gaming.
 - [ ] **Phase 4: Robustness — Real-World Resilience** - The app stays usable on degraded networks, under abuse/moderation pressure, and with clear legal footing.
@@ -48,7 +48,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. A report stops appearing in the feed once its expiry time passes, checked live on every read — not solely dependent on a background sweep job.
   5. The JSON API is documented via a browsable OpenAPI/Swagger spec at a stable URL, and every push runs automated tests, `go vet`, and a build check via CI.
 
-**Plans**: 11/12 plans executed
+**Plans**: 12/12 plans complete
 Plans:
 **Wave 1**
 
@@ -78,7 +78,7 @@ Plans:
 **Vector basemap migration** *(deliberate quality upgrade chosen by the user, researched in `01-11-RESEARCH.md`; NOT gap closure — run via `/gsd-execute-phase 01`)*
 
 - [x] 01-11-PLAN.md — Load the MapLibre GL renderer and the Leaflet bridge as SRI-pinned vendor tags in dependency order, locked by a template contract test, and update the stack documentation (wave 1)
-- [ ] 01-12-PLAN.md — Swap both Leaflet basemaps to the OpenFreeMap liberty vector style via the bridge, with a WebGL-gated fallback to the existing OpenStreetMap raster layer, locked by a rewritten JS contract test (wave 2)
+- [x] 01-12-PLAN.md — Swap both Leaflet basemaps to the OpenFreeMap liberty vector style via the bridge, with a WebGL-gated fallback to the existing OpenStreetMap raster layer, locked by a rewritten JS contract test (wave 2)
 
 **UI hint**: yes
 
@@ -169,7 +169,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation — Report & Map | 11/12 | In Progress|  |
+| 1. Foundation — Report & Map | 12/12 | Complete   | 2026-09-08 |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 0/TBD | Not started | - |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
