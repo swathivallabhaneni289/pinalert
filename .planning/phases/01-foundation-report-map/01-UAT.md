@@ -3,18 +3,15 @@ status: partial
 phase: 01-foundation-report-map
 source: [01-VERIFICATION.md]
 started: 2026-09-06T09:55:00Z
-updated: 2026-09-06T12:45:00Z
+updated: 2026-09-08T15:45:00Z
 ---
 
 ## Current Test
 
-number: 2
-name: New-pin visual rendering after submit (exercises the CR-01 icon-sizing fix)
-expected: |
-  Submit a report via the "+" button; a correctly-sized (55% of badge), non-overflowing category
-  glyph appears on a colour-coded pin at the submitted coordinate immediately after submit, with
-  no page reload.
-awaiting: user response
+[session paused — Test 2 found a major issue: category icons render solid black in dark mode
+(currentColor doesn't inherit through <img>-loaded SVGs). Root cause fully confirmed, fix not yet
+planned/applied. Resume via /gsd-verify-work 01 at Test 2 once a fix lands, or continue the gap-
+closure pipeline (diagnose -> plan -> execute -> review) in a fresh session given context budget.]
 
 <!-- Basemap migration note (post-Test-1, pre-Test-2): plans 01-11/01-12 replaced the OSM raster
 basemap with OpenFreeMap's "liberty" vector style via MapLibre GL, with an automatic WebGL2
@@ -37,7 +34,9 @@ notes: "Two blockers found and fixed in sequence before this passed: (1) modal-b
 
 ### 2. New-pin visual rendering after submit (exercises the CR-01 icon-sizing fix)
 expected: Submit a report via the "+" button; a correctly-sized (55% of badge), non-overflowing category glyph appears on a colour-coded pin at the submitted coordinate immediately after submit, with no page reload.
-result: [pending]
+result: issue
+reported: "i cant see the symbols properly" (screenshot: report modal in dark mode — all 9 category icons render as solid black glyphs, essentially invisible against the dark modal background)
+severity: major
 
 ### 3. Severity slider accessibility (screen reader, keyboard, reduced motion)
 expected: Tab to the slider; arrow keys/Home/End work; visible focus ring; a screen reader announces "1 · Low" / "2 · Medium" / "3 · Critical" (not just the bare number); colour animation disables under OS "Reduce motion" while the control stays usable.
@@ -75,13 +74,45 @@ result: [pending]
 
 total: 10
 passed: 2
-issues: 0
-pending: 8
+issues: 1
+pending: 7
 skipped: 0
 blocked: 0
 notes: 1 (cosmetic feedback on Test 3's severity slider styling, captured pre-emptively; Test 3 itself remains pending for its full accessibility checklist)
 
 ## Gaps
+
+- truth: "A correctly-sized, non-overflowing category glyph appears on a colour-coded pin ... immediately after submit" (also affects the report modal's own category grid, and by extension Test 6/dark-mode and Test 7/icon-correctness, both still pending)
+  status: failed
+  reason: "User reported: i cant see the symbols properly (dark mode) — all 9 category icons render as solid black, invisible against the dark UI"
+  severity: major
+  test: 2
+  artifacts: [web/static/js/map.js, web/static/js/modal.js, web/static/icons/*.svg]
+  missing: ["a way for currentColor-based SVGs to actually inherit page CSS color when dark mode is active"]
+  root_cause_confirmed: |
+    Every category SVG (web/static/icons/*.svg, e.g. flood.svg) uses `stroke="currentColor"` —
+    a technique that only works when an SVG is inlined directly into the page DOM, so
+    `currentColor` resolves against the surrounding element's CSS `color` (which main.css
+    already sets differently for light/dark mode).
+    But both icon call sites — map.js:143-144 (map pin badges) and modal.js:209-210 (category
+    grid tiles) — load these SVGs via `document.createElement('img'); img.src =
+    Pinalert.iconPath(category);`. An <img>-referenced SVG is rendered as a fully sealed,
+    separate document: the browser does NOT let the parent page's CSS (including `color`)
+    reach inside it. `currentColor` inside an <img>-loaded SVG therefore always resolves to
+    that isolated document's own default text color (effectively black), regardless of the
+    page's light/dark mode. In light mode this was an invisible bug (black-on-white/light
+    background reads fine); in dark mode it produces black-on-near-black icons that are
+    unreadable — exactly what the user's screenshot shows.
+    Fix requires one of: (a) fetch each SVG's text and inline it as a real <svg> DOM element
+    (via innerHTML on a sanitized/trusted string, or DOMParser) instead of an <img> src, so
+    currentColor can inherit normally; or (b) keep <img> but recolor via a CSS mask-image
+    technique (background-color + mask-image: url(icon.svg), which DOES respect page CSS
+    since the color comes from background-color, not the SVG's own currentColor); or (c) ship
+    two static icon variants (light/dark) and swap img.src based on the active theme. Touches
+    both map.js's badge-building code and modal.js's category-grid-building code identically,
+    since both use the same <img>-based pattern. Not caused by the 01-11/01-12 basemap
+    migration — pre-existing since the icon system shipped in plan 01-02, only now surfaced by
+    a human actually testing in dark mode.
 
 - truth: "A live OpenStreetMap tile layer is visible, centred on geolocation or the Bengaluru fallback."
   status: fix_landed
