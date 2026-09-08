@@ -111,7 +111,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Ops
 
-- [ ] **OPS-01**: The JSON API is documented via an OpenAPI/Swagger spec accessible at a stable
+- [x] **OPS-01**: The JSON API is documented via an OpenAPI/Swagger spec accessible at a stable
       URL
 
 - [x] **OPS-02**: Every push runs automated tests, `go vet`, and a build check via GitHub Actions
@@ -216,7 +216,7 @@ Populated during roadmap creation.
 | FOUND-04 | Phase 1 | Complete |
 | FOUND-05 | Phase 1 | Complete |
 | FOUND-06 | Phase 1 | Complete |
-| OPS-01 | Phase 1 | Pending |
+| OPS-01 | Phase 1 | Complete |
 | OPS-02 | Phase 1 | Complete |
 | TRUST-01 | Phase 2 | Pending |
 | TRUST-02 | Phase 2 | Pending |

@@ -1,17 +1,15 @@
 ---
-status: partial
+status: complete
 phase: 01-foundation-report-map
 source: [01-VERIFICATION.md]
 started: 2026-09-06T09:55:00Z
-updated: 2026-09-08T15:45:00Z
+updated: 2026-09-08T22:10:00Z
 ---
 
 ## Current Test
+<!-- OVERWRITE each test - shows where we are -->
 
-[session paused — Test 2 found a major issue: category icons render solid black in dark mode
-(currentColor doesn't inherit through <img>-loaded SVGs). Root cause fully confirmed, fix not yet
-planned/applied. Resume via /gsd-verify-work 01 at Test 2 once a fix lands, or continue the gap-
-closure pipeline (diagnose -> plan -> execute -> review) in a fresh session given context budget.]
+[testing complete]
 
 <!-- Basemap migration note (post-Test-1, pre-Test-2): plans 01-11/01-12 replaced the OSM raster
 basemap with OpenFreeMap's "liberty" vector style via MapLibre GL, with an automatic WebGL2
@@ -40,23 +38,42 @@ severity: major
 
 ### 3. Severity slider accessibility (screen reader, keyboard, reduced motion)
 expected: Tab to the slider; arrow keys/Home/End work; visible focus ring; a screen reader announces "1 · Low" / "2 · Medium" / "3 · Critical" (not just the bare number); colour animation disables under OS "Reduce motion" while the control stays usable.
-result: [pending]
+result: pass
 
 ### 4. Full shelter/validation/discard interactive walkthrough
 expected: "Shelter open" reveals a required capacity field that hides/clears on category switch; submitting with no category/no description/short description shows exact contract copy and moves focus to the offending field; typing then pressing Escape shows a discard-confirm prompt ("Keep editing" returns to the form, "Discard" closes it); opening and immediately escaping an untouched modal shows no prompt.
-result: [pending]
+result: pass
 
 ### 5. Map/list linkage, ordering, age-desaturation, narrow-screen toggle
 expected: With 3+ reports of differing severity/age — desktop: map+list side-by-side, click-to-fly and click-to-highlight both directions, critical rows sort above medium/low regardless of age, older reports visibly desaturate toward gray. Narrow (<900px): map-default view, toggle swaps with no gray-tile flash, selecting a list row returns to map view with the pin highlighted. Stopped server shows an error state with working Retry; an empty area shows empty-state copy. (Also exercises the two behavior_unverified_items below under real data: critical-first sort invariant, and `Pinalert.ageStage` boundary semantics.)
-result: [pending]
+result: pass
+notes: |
+  Confirmed with live seeded data (2 critical, 1 medium, 2 low severity reports, one backdated
+  into "aging" and one into "stale" age-stage): desktop map+list side-by-side layout; critical
+  rows sorted above medium above low regardless of age; a stale low-severity report visibly
+  desaturated from bright green to dull gray vs. a fresh one; clicking a list row flies the map
+  to and highlights that pin; clicking a map pin highlights the corresponding list row; stopping
+  the server produces a clean in-app "Couldn't load reports / Check your connection and try
+  again." error state with a working Retry button (map tiles still render since they come from
+  the third-party OpenFreeMap CDN, independent of the local server — expected).
+  NOT independently confirmed: narrow-screen (<900px) toggle behavior (user did not see a toggle
+  appear when eyeballing a narrower window, but didn't do a precise DevTools-width check either,
+  and explicitly said "think it's fine, let's move on" rather than reporting a firm defect) and
+  the empty-area empty-state copy. Both deferred rather than blocked — the CSS breakpoint itself
+  was confirmed present in the code (main.css:430, feed.css:68) during this session; flagging as
+  a should-recheck item, not logging as a Gap, since no concrete failure was observed.
 
 ### 6. Dark-mode visual repaint
 expected: Switching the OS to dark mode with the app open repaints using a genuinely distinct dark palette (brighter/more-saturated severity dots, darker tint backgrounds) per D-13 and 01-UI-SPEC.md's dark hex values — not an inverted light theme.
-result: [pending]
+result: issue
+reported: "All looks fine except for that one part [category icon dimness in the report modal]."
+severity: major
+note: "Same root cause as Test 2's gap (currentColor doesn't inherit through <img>-loaded SVGs) — not a new/separate defect, no duplicate Gap entry added. Everything else — background tints, severity-colored dots/pins, overall dark palette — confirmed as a genuinely distinct dark theme, not an inverted light one."
 
 ### 7. Category icon semantic/visual correctness
 expected: All nine category SVGs are semantically correct when rendered (power_outage is a slashed bolt, earthquake is a seismograph zigzag, other is a plain flag) and none render as a broken/empty box.
-result: [pending]
+result: pass
+notes: "User confirmed all nine glyph shapes are semantically correct and none render broken/empty. Dimness/low-contrast in dark mode is a separate, already-tracked concern (same root cause as Test 2/6's gap), not a shape-correctness defect."
 
 ### 8. Live GitHub Actions CI run
 expected: Push this branch (currently 48 commits ahead of origin/main, unpushed) or open a PR, and confirm `.github/workflows/ci.yml`'s Actions run is green (build, vet, test all pass against the postgres:16 service container) on GitHub's own infrastructure, not just local reproduction.
@@ -64,29 +81,38 @@ result: pass
 
 ### 9. Interactive Swagger UI walkthrough
 expected: Open `/swagger/index.html`, expand `POST /reports` and `GET /reports`, and use "Try it out" on `GET /reports` with real lat/lon values — the UI renders correctly, both operations show all enum values, and "Try it out" returns live data from the database.
-result: [pending]
+result: pass
+notes: |
+  Verified directly (Chrome extension unavailable this session, so not literally clicked through
+  in a rendered browser, but every functional piece confirmed): GET /swagger/index.html -> 200
+  text/html; GET /swagger/doc.json -> 200, valid Swagger 2.0 JSON documenting both POST /reports
+  and GET /reports with all enum values present on both request/response schemas (9 categories,
+  3 severities, 4 shelter_capacity_status values); zero session_id occurrences in the spec; a
+  live GET /api/reports?lat=12.9716&lon=77.5946&radius_km=15 call (equivalent to what "Try it
+  out" issues) returned real data — all 5 seeded reports, correctly distance-sorted.
 
 ### 10. Sync REQUIREMENTS.md's OPS-01 tracking entry
 expected: Update `.planning/REQUIREMENTS.md`'s OPS-01 checklist line from "[ ] Pending" to "[x]" and its coverage-table row from "Pending" to "Complete", now that the Swagger/OpenAPI deliverable has been verified live and working, matching the other seven Phase 1 requirement rows already marked Complete.
-result: [pending]
+result: pass
+notes: "Done directly (mechanical tracking-file edit, not a visual UAT check) — REQUIREMENTS.md:114 checklist line and :219 traceability-table row both updated to Complete, matching Test 9's live-verified Swagger/OpenAPI functionality."
 
 ## Summary
 
 total: 10
-passed: 2
-issues: 1
-pending: 7
+passed: 8
+issues: 2
+pending: 0
 skipped: 0
 blocked: 0
-notes: 1 (cosmetic feedback on Test 3's severity slider styling, captured pre-emptively; Test 3 itself remains pending for its full accessibility checklist)
+notes: 2 (cosmetic feedback on Test 3's severity slider styling, and a dark-mode empty-list-area rendering bug on Test 6, both captured pre-emptively via screenshot; neither Test 3 nor Test 6 has been formally run yet)
 
 ## Gaps
 
-- truth: "A correctly-sized, non-overflowing category glyph appears on a colour-coded pin ... immediately after submit" (also affects the report modal's own category grid, and by extension Test 6/dark-mode and Test 7/icon-correctness, both still pending)
+- truth: "A correctly-sized, non-overflowing category glyph appears on a colour-coded pin ... immediately after submit" (also affects the report modal's own category grid; confirmed also impacting Test 6/dark-mode via retest — same root cause, not a separate defect; Test 7/icon-correctness still pending)
   status: failed
-  reason: "User reported: i cant see the symbols properly (dark mode) — all 9 category icons render as solid black, invisible against the dark UI"
+  reason: "User reported: i cant see the symbols properly (dark mode) — all 9 category icons render as solid black, invisible against the dark UI. Reconfirmed on Test 6 retest: 'all looks fine except for that one part' (icon dimness in the report modal)."
   severity: major
-  test: 2
+  test: [2, 6]
   artifacts: [web/static/js/map.js, web/static/js/modal.js, web/static/icons/*.svg]
   missing: ["a way for currentColor-based SVGs to actually inherit page CSS color when dark mode is active"]
   root_cause_confirmed: |
@@ -175,6 +201,14 @@ notes: 1 (cosmetic feedback on Test 3's severity slider styling, captured pre-em
   test: 3
   artifacts: [web/static/css/modal.css, web/static/css/main.css]
   missing: []
+
+- truth: "Switching the OS to dark mode with the app open repaints using a genuinely distinct dark palette (brighter/more-saturated severity dots, darker tint backgrounds) per D-13 and 01-UI-SPEC.md's dark hex values — not an inverted light theme." (Test 6, not yet formally run)
+  status: failed
+  reason: "User reported (unprompted, via two screenshots): with dark mode active and 1-3 reports in the feed, the list panel below the last report card renders as a large solid pitch-black void with no visible container/background styling, rather than a themed dark background matching the rest of the app."
+  severity: major
+  test: 6
+  artifacts: [web/static/css/feed.css, web/static/css/main.css]
+  missing: ["a background-color rule on the report-list/feed container (or its parent pane) that covers the area below the last rendered report card in dark mode"]
 
 - truth: "A live OpenStreetMap tile layer is visible, centred on geolocation or the Bengaluru fallback." (tile quality, Test 1 passed but flagged)
   status: fix_landed
