@@ -68,7 +68,7 @@ expected: Switching the OS to dark mode with the app open repaints using a genui
 result: issue
 reported: "All looks fine except for that one part [category icon dimness in the report modal]."
 severity: major
-note: "Same root cause as Test 2's gap (currentColor doesn't inherit through <img>-loaded SVGs) — not a new/separate defect, no duplicate Gap entry added. Everything else — background tints, severity-colored dots/pins, overall dark palette — confirmed as a genuinely distinct dark theme, not an inverted light one."
+note: "Same root cause as Test 2's gap (currentColor doesn't inherit through <img>-loaded SVGs) — not a new/separate defect, no duplicate Gap entry added. Everything else — background tints, severity-colored dots/pins, overall dark palette — confirmed as a genuinely distinct dark theme, not an inverted light one. (The earlier-reported 'black void' below the list was investigated and is NOT a bug — #0B0D10 is the exact spec'd dark --color-bg value per 01-UI-SPEC.md:95; see Gaps section.)"
 
 ### 7. Category icon semantic/visual correctness
 expected: All nine category SVGs are semantically correct when rendered (power_outage is a slashed bolt, earthquake is a seismograph zigzag, other is a plain flag) and none render as a broken/empty box.
@@ -104,7 +104,7 @@ issues: 2
 pending: 0
 skipped: 0
 blocked: 0
-notes: 2 (cosmetic feedback on Test 3's severity slider styling, and a dark-mode empty-list-area rendering bug on Test 6, both captured pre-emptively via screenshot; neither Test 3 nor Test 6 has been formally run yet)
+notes: 2 (cosmetic feedback on Test 3's severity slider styling, captured pre-emptively; and a Test-6-adjacent "black void" report that was investigated and found to be correct dark-mode styling per spec, not a bug — see Gaps. Both Test 2 and Test 6's "issue" results share the same one underlying root cause — see Gaps.)
 
 ## Gaps
 
@@ -202,13 +202,21 @@ notes: 2 (cosmetic feedback on Test 3's severity slider styling, and a dark-mode
   artifacts: [web/static/css/modal.css, web/static/css/main.css]
   missing: []
 
-- truth: "Switching the OS to dark mode with the app open repaints using a genuinely distinct dark palette (brighter/more-saturated severity dots, darker tint backgrounds) per D-13 and 01-UI-SPEC.md's dark hex values — not an inverted light theme." (Test 6, not yet formally run)
-  status: failed
-  reason: "User reported (unprompted, via two screenshots): with dark mode active and 1-3 reports in the feed, the list panel below the last report card renders as a large solid pitch-black void with no visible container/background styling, rather than a themed dark background matching the rest of the app."
-  severity: major
+- truth: "Switching the OS to dark mode with the app open repaints using a genuinely distinct dark palette (brighter/more-saturated severity dots, darker tint backgrounds) per D-13 and 01-UI-SPEC.md's dark hex values — not an inverted light theme." (Test 6 — investigated, NOT a bug, see resolution below)
+  status: not_a_bug
+  reason: "User reported (unprompted, via two screenshots): with dark mode active and 1-3 reports in the feed, the list panel below the last report card renders as a large solid pitch-black area, initially assumed to be missing background styling."
+  severity: n/a
   test: 6
-  artifacts: [web/static/css/feed.css, web/static/css/main.css]
-  missing: ["a background-color rule on the report-list/feed container (or its parent pane) that covers the area below the last rendered report card in dark mode"]
+  root_cause_confirmed: |
+    FALSE ALARM — verified directly against the code before handing to fix-planning, and it's
+    correct as shipped. `body { background: var(--color-bg) }` (main.css:161) is the only
+    background rule needed here since `.pane`/`.pane--list`/`.app-shell` are all intentionally
+    transparent over it (main.css:371-388). `--color-bg` in dark mode is `#0B0D10`
+    (main.css:76,103) — and 01-UI-SPEC.md:95 documents `#0B0D10` as the exact spec'd dark value
+    for "Page background, modal background, map container background" (60% dominant color). A
+    near-black hex value reads as "solid black" in a screenshot/to the eye, but it IS the
+    intended dark palette per spec, not an unstyled void. No fix needed; this entry stays only
+    as a record that the report was investigated, not dropped silently.
 
 - truth: "A live OpenStreetMap tile layer is visible, centred on geolocation or the Bengaluru fallback." (tile quality, Test 1 passed but flagged)
   status: fix_landed
