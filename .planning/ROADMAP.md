@@ -25,7 +25,7 @@ responder claims, shareable cards) that depend on the trust signals built in Pha
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation — Report & Map** - Anonymous visitors can submit and view location-tagged reports on a live map, with read-time auto-expiry, OpenAPI docs, and CI in place. (original 10 plans completed 2026-09-06; reopened for the vector basemap migration, plans 01-11/01-12; gap-closure round 2 (01-13) fixed the solid-black-icon defect; gap-closure round 3 (01-14) landed 2026-09-09 — raised glyph ink coverage and fixed badge contrast across all 18 severity/age/theme pairings; see `01-UAT.md`) (all 14 plans complete; a real-browser human naming/legibility check is still outstanding — awaiting `/gsd-verify-work 01`)
+- [ ] **Phase 1: Foundation — Report & Map** - Anonymous visitors can submit and view location-tagged reports on a live map, with read-time auto-expiry, OpenAPI docs, and CI in place. (original 10 plans completed 2026-09-06; reopened for the vector basemap migration, plans 01-11/01-12; gap-closure round 2 (01-13) fixed the solid-black-icon defect; gap-closure round 3 (01-14) landed 2026-09-09 — raised glyph ink coverage and fixed badge contrast across all 18 severity/age/theme pairings; gap-closure round 4 (01-15) landed 2026-09-09 — live-tested fix for dark-mode category-tile glyph color, the actual root cause 01-14's stroke-width diagnosis missed, plus two caching-bug fixes; see `01-UAT.md`) (all 15 plans complete; UAT passed 10/10 with 0 open issues; canonical verification/security/Nyquist gates pending re-run)
 - [ ] **Phase 2: Trust Mechanic Core — Confirm/Dispute & Visibility** - Users can confirm/dispute reports through one shared, concurrency-safe visibility resolver with a provisional gate and resolved marking.
 - [ ] **Phase 3: Trust-Model Hardening — Diversity-Weighted Trust** - "Confirmed by N nearby" and the reliability/currency signals reflect distinct nearby corroboration, resistant to trivial gaming.
 - [ ] **Phase 4: Robustness — Real-World Resilience** - The app stays usable on degraded networks, under abuse/moderation pressure, and with clear legal footing.
@@ -48,7 +48,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. A report stops appearing in the feed once its expiry time passes, checked live on every read — not solely dependent on a background sweep job.
   5. The JSON API is documented via a browsable OpenAPI/Swagger spec at a stable URL, and every push runs automated tests, `go vet`, and a build check via CI.
 
-**Plans**: 14/14 plans complete
+**Plans**: 15/15 plans complete
 Plans:
 **Wave 1**
 
@@ -87,6 +87,10 @@ Plans:
 **Gap closure (round 3)** *(from `01-UAT.md`'s two `status: diagnosed` gaps on Tests 2 and 6, diagnosed in `.planning/debug/category-glyph-legibility.md`; run via `/gsd-execute-phase 01 --gaps-only`)*
 
 - [x] 01-14-PLAN.md — Give the nine glyphs enough ink to be identifiable at the 17.6px feed-row size and give every badge glyph a 3:1 foreground across all 18 severity/age/theme pairings, locked by two computed gates (stroke width per render context, WCAG contrast matrix); folds in 01-REVIEW.md WR-01 (wave 1)
+
+**Gap closure (round 4)** *(live-tested fixes from a real-browser UAT walkthrough on 2026-09-09; 01-14's stroke-width diagnosis proved insufficient in practice — the actual fix was category-tile glyph color, not thickness; documented retroactively per the project's process-deviation convention, see `01-15-PLAN.md`)*
+
+- [x] 01-15-PLAN.md — Fix category-tile glyph color in dark mode (`.category-tile .icon-glyph` / `--selected` counter-rule), revert the unrequested map/feed stroke-width thickening, reduce oversized badge glyphs (55%→48%), and fix two independent caching bugs (stale server processes, unversioned static asset URLs) via an `AssetVersion` cache-busting mechanism and dev-mode `Cache-Control: no-store` (wave 1)
 
 **UI hint**: yes
 
