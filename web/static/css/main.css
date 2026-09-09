@@ -58,7 +58,7 @@
 
   /* Severity palette — light values, traffic-light mapping (D-11) */
   --color-severity-low: #2F9E64;
-  --color-severity-medium: #C98A1A;
+  --color-severity-medium: #C48419;
   --color-severity-critical: #C0392B;
   --color-severity-low-bg: #E7F5EC;
   --color-severity-medium-bg: #FCF3DC;
@@ -126,7 +126,7 @@
   --color-focus-ring: #1A1D21;
 
   --color-severity-low: #2F9E64;
-  --color-severity-medium: #C98A1A;
+  --color-severity-medium: #C48419;
   --color-severity-critical: #C0392B;
   --color-severity-low-bg: #E7F5EC;
   --color-severity-medium-bg: #FCF3DC;
@@ -202,27 +202,54 @@ body {
  * ---------------------------------------------------------------------- */
 .age-fresh {
   --severity-current: var(--severity-base);
+  /* Deliberately no --badge-glyph-fg override here — .icon-badge's own
+     var(--badge-glyph-fg, var(--color-bg)) fallback applies, keeping
+     today's white-glyph-on-solid-color pattern for a fresh report. */
 }
 
 .age-aging {
   --severity-current: color-mix(in srgb, var(--severity-base) 50%, var(--color-age-stale) 50%);
+  /* See the .icon-badge comment above: an aging badge fill is already
+     partway toward the light neutral gray, so the glyph foreground flips
+     to --color-text (dark) rather than staying --color-bg (near-white). */
+  --badge-glyph-fg: var(--color-text);
 }
 
 .age-stale {
   /* Same neutral gray regardless of original severity — "about to disappear
      regardless of urgency". */
   --severity-current: var(--color-age-stale);
+  /* See the .icon-badge comment above — same foreground flip as .age-aging,
+     and the pairing this plan's diagnosis computed as failing WCAG 1.4.11
+     (2.36:1 dark, 1.60:1 light) before this override existed. */
+  --badge-glyph-fg: var(--color-text);
 }
 
 /* -------------------------------------------------------------------------
  * Icon badge (D-12) — circular badge filled with the current severity
  * color. The category glyph inside is painted by its own .icon-glyph
- * background (see below) through a CSS mask, so it renders white on this
- * badge (color set to --color-bg) per D-12's "white glyph on solid
- * color-coded circular badge" pattern. The icon files are referenced as
- * mask shapes rather than embedded as replaced-element images, because a
- * replaced-element's loaded document is a sealed sub-document that does
- * not inherit the page's own color.
+ * background (see below) through a CSS mask, so its color comes from this
+ * rule's `color` declaration, which every one of the six theme/context
+ * combinations resolves through the ordinary CSS cascade — unlike a
+ * replaced-element's loaded document, a sealed sub-document that does not
+ * inherit the page's own color.
+ *
+ * The foreground is `var(--badge-glyph-fg, var(--color-bg))` rather than a
+ * bare `var(--color-bg)`: at "fresh" no `.age-*` rule overrides
+ * --badge-glyph-fg, so the fallback applies and the glyph stays the
+ * original knocked-out-white-on-color pattern D-12 describes. Once a
+ * report desaturates to "aging" or "stale" (D-17), `.age-aging` and
+ * `.age-stale` below each declare --badge-glyph-fg: var(--color-text) —
+ * chosen because every desaturated badge fill is now a light-toned gray
+ * (--color-age-stale or a 50% mix toward it), against which the page's
+ * dark primary text color reads correctly, while --color-bg (near-white)
+ * would not. This travels by CSS custom-property INHERITANCE, declared
+ * alongside --severity-current in the very same .age-* rules, rather than
+ * a descendant or compound badge selector — load-bearing, because
+ * map.js:144 puts the age class on the badge element itself while
+ * feed.js:169 puts it on the row ancestor; a descendant form would cover
+ * only the feed row, a compound form only the map pin, and an inherited
+ * property covers both.
  * ---------------------------------------------------------------------- */
 .icon-badge {
   display: inline-flex;
@@ -233,7 +260,7 @@ body {
   height: var(--touch-target-min);
   border-radius: 50%;
   background: var(--severity-current, var(--severity-base));
-  color: var(--color-bg);
+  color: var(--badge-glyph-fg, var(--color-bg));
 }
 
 .icon-badge .icon-glyph {

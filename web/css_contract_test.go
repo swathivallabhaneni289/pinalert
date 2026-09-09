@@ -1,7 +1,9 @@
 package web
 
 import (
+	"fmt"
 	"io/fs"
+	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -955,5 +957,562 @@ func TestCategoryGlyphInkCoverageAcrossRenderContexts(t *testing.T) {
 
 		t.Logf("%s: stroke-width=%.2f -> pin(%.1fpx box)=%.3fpx tile(%.1fpx box)=%.3fpx feedRow(%.1fpx box)=%.3fpx",
 			path, sw, pinRenderBoxPx, pinPhysical, modalRenderBoxPx, modalPhysical, feedRenderBoxPx, feedPhysical)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestBadgeGlyphContrastAcrossAgeStagesAndThemes (01-14 Task 2) and its
+// resolver helpers.
+// ---------------------------------------------------------------------------
+
+// bareVarName parses a CSS value of the exact shape `var(--name)` and
+// returns "--name". Returns ok=false for any other shape, including a
+// var() with a fallback (see parseColorVarShape for that two-argument
+// shape, used only by the glyph-foreground parser).
+func bareVarName(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "var(") || !strings.HasSuffix(value, ")") {
+		return "", false
+	}
+	inner := strings.TrimSpace(value[len("var(") : len(value)-1])
+	if !strings.HasPrefix(inner, "--") {
+		return "", false
+	}
+	return inner, true
+}
+
+// parseColorVarShape parses a `.icon-badge` `color` property value and
+// accepts exactly the two shapes 01-14 Task 2 allows: a bare `var(--token)`
+// (overrideName returned as ""), or `var(--override, var(--token))`. Any
+// other shape returns ok=false. The override name is read out of the CSS
+// here rather than hardcoded, so this test tracks a rename of the property
+// instead of silently falling back to a stale name.
+func parseColorVarShape(value string) (overrideName, baseTokenName string, ok bool) {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "var(") || !strings.HasSuffix(value, ")") {
+		return "", "", false
+	}
+	inner := value[len("var(") : len(value)-1]
+
+	commaIdx := strings.Index(inner, ",")
+	if commaIdx == -1 {
+		name := strings.TrimSpace(inner)
+		if !strings.HasPrefix(name, "--") {
+			return "", "", false
+		}
+		return "", name, true
+	}
+
+	overrideName = strings.TrimSpace(inner[:commaIdx])
+	if !strings.HasPrefix(overrideName, "--") {
+		return "", "", false
+	}
+	fallback := strings.TrimSpace(inner[commaIdx+1:])
+	if !strings.HasPrefix(fallback, "var(") || !strings.HasSuffix(fallback, ")") {
+		return "", "", false
+	}
+	baseTokenName = strings.TrimSpace(fallback[len("var(") : len(fallback)-1])
+	if !strings.HasPrefix(baseTokenName, "--") {
+		return "", "", false
+	}
+	return overrideName, baseTokenName, true
+}
+
+// splitColorStop splits one `color-mix()` argument of the form
+// " var(--x) 50%" into ("var(--x)", 50.0, true).
+func splitColorStop(s string) (string, float64, bool) {
+	fields := strings.Fields(s)
+	if len(fields) != 2 {
+		return "", 0, false
+	}
+	if !strings.HasSuffix(fields[1], "%") {
+		return "", 0, false
+	}
+	pct, err := strconv.ParseFloat(strings.TrimSuffix(fields[1], "%"), 64)
+	if err != nil {
+		return "", 0, false
+	}
+	return fields[0], pct, true
+}
+
+// parseColorMixStops parses a `color-mix(in srgb, A P%, B Q%)` value into
+// its two (colorRef, percent) stops. Returns ok=false for any other shape —
+// the caller must t.Fatalf per this test's "any fourth form must fail
+// loudly" contract, rather than silently deleting the pairing.
+func parseColorMixStops(value string) (ref1 string, pct1 float64, ref2 string, pct2 float64, ok bool) {
+	value = strings.TrimSpace(value)
+	const prefix = "color-mix(in srgb,"
+	if !strings.HasPrefix(value, prefix) || !strings.HasSuffix(value, ")") {
+		return "", 0, "", 0, false
+	}
+	inner := value[len(prefix) : len(value)-1]
+	parts := strings.SplitN(inner, ",", 2)
+	if len(parts) != 2 {
+		return "", 0, "", 0, false
+	}
+	ref1, pct1, ok1 := splitColorStop(strings.TrimSpace(parts[0]))
+	ref2, pct2, ok2 := splitColorStop(strings.TrimSpace(parts[1]))
+	if !ok1 || !ok2 {
+		return "", 0, "", 0, false
+	}
+	return ref1, pct1, ref2, pct2, true
+}
+
+func parseHexRGB(t *testing.T, hex, context string) (int, int, int) {
+	t.Helper()
+	hex = strings.TrimPrefix(strings.TrimSpace(hex), "#")
+	if len(hex) != 6 {
+		t.Fatalf("%s: color value %q is not a 6-digit hex color", context, hex)
+	}
+	r, err1 := strconv.ParseInt(hex[0:2], 16, 32)
+	g, err2 := strconv.ParseInt(hex[2:4], 16, 32)
+	b, err3 := strconv.ParseInt(hex[4:6], 16, 32)
+	if err1 != nil || err2 != nil || err3 != nil {
+		t.Fatalf("%s: color value %q could not be parsed as hex RGB", context, hex)
+	}
+	return int(r), int(g), int(b)
+}
+
+// mixHexSRGB implements `color-mix(in srgb, hex1 pct1%, hex2 pct2%)` as a
+// weighted per-channel average of the gamma-encoded sRGB bytes — what
+// `in srgb` interpolation means. It does NOT linearize first.
+func mixHexSRGB(t *testing.T, hex1 string, pct1 float64, hex2 string, pct2 float64, context string) string {
+	t.Helper()
+	r1, g1, b1 := parseHexRGB(t, hex1, context)
+	r2, g2, b2 := parseHexRGB(t, hex2, context)
+	total := pct1 + pct2
+	w1 := pct1 / total
+	w2 := pct2 / total
+	r := int(math.Round(float64(r1)*w1 + float64(r2)*w2))
+	g := int(math.Round(float64(g1)*w1 + float64(g2)*w2))
+	b := int(math.Round(float64(b1)*w1 + float64(b2)*w2))
+	return fmt.Sprintf("#%02X%02X%02X", r, g, b)
+}
+
+// themeTokens maps a custom-property name (e.g. "--color-bg") to its hex
+// value string as declared for one resolved theme.
+type themeTokens map[string]string
+
+// resolveColorRefHex resolves a color-mix() stop reference (a bare
+// var(--name)) against either the current severity's --severity-base hex or
+// the theme's token table.
+func resolveColorRefHex(t *testing.T, ref, severityBaseHex string, tokens themeTokens, context string) string {
+	t.Helper()
+	name, ok := bareVarName(ref)
+	if !ok {
+		t.Fatalf("%s: color-mix() stop %q is not a bare var() reference", context, ref)
+	}
+	if name == "--severity-base" {
+		return severityBaseHex
+	}
+	if hex, found := tokens[name]; found {
+		return hex
+	}
+	t.Fatalf("%s: color-mix() stop references unknown token %q", context, name)
+	return ""
+}
+
+// resolveSeverityCurrentHex resolves one .age-{stage}'s `--severity-current`
+// declaration value to a final hex, supporting exactly the three forms this
+// codebase's .age-* rules use: a passthrough of --severity-base, a
+// passthrough of a token (e.g. --color-age-stale), or a two-stop
+// `color-mix(in srgb, A P%, B Q%)`. Any fourth form is a t.Fatalf naming the
+// value, per this test's "extend the resolver, don't delete the pairing"
+// contract.
+func resolveSeverityCurrentHex(t *testing.T, ageDeclValue, severityBaseHex string, tokens themeTokens, context string) string {
+	t.Helper()
+	value := strings.TrimSpace(ageDeclValue)
+
+	if name, ok := bareVarName(value); ok {
+		if name == "--severity-base" {
+			return severityBaseHex
+		}
+		if hex, found := tokens[name]; found {
+			return hex
+		}
+		t.Fatalf("%s: --severity-current references unknown token %q", context, name)
+	}
+
+	if strings.HasPrefix(value, "color-mix(") {
+		ref1, pct1, ref2, pct2, ok := parseColorMixStops(value)
+		if !ok {
+			t.Fatalf("%s: --severity-current is a color-mix() but not in the recognized "+
+				"`color-mix(in srgb, A P%%, B Q%%)` shape: %q", context, value)
+		}
+		hex1 := resolveColorRefHex(t, ref1, severityBaseHex, tokens, context)
+		hex2 := resolveColorRefHex(t, ref2, severityBaseHex, tokens, context)
+		return mixHexSRGB(t, hex1, pct1, hex2, pct2, context)
+	}
+
+	t.Fatalf("%s: --severity-current value %q is not one of the three recognized forms "+
+		"(passthrough of --severity-base, passthrough of a token, or a color-mix()) — extend the "+
+		"resolver rather than deleting this pairing", context, value)
+	return ""
+}
+
+// resolveForegroundValueHex resolves a `.age-{stage}` override declaration's
+// value (or, when no override exists for that stage, the base token's own
+// value) to a hex. Accepts a literal hex or a bare var() reference.
+func resolveForegroundValueHex(t *testing.T, value string, tokens themeTokens, context string) string {
+	t.Helper()
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "#") {
+		return value
+	}
+	if name, ok := bareVarName(value); ok {
+		if hex, found := tokens[name]; found {
+			return hex
+		}
+		t.Fatalf("%s: foreground value references unknown token %q", context, name)
+	}
+	t.Fatalf("%s: foreground value %q is neither a hex literal nor a bare var() reference", context, value)
+	return ""
+}
+
+func srgbChannelToLinear(c float64) float64 {
+	if c <= 0.03928 {
+		return c / 12.92
+	}
+	return math.Pow((c+0.055)/1.055, 2.4)
+}
+
+func relativeLuminance(t *testing.T, hex, context string) float64 {
+	t.Helper()
+	r, g, b := parseHexRGB(t, hex, context)
+	rl := srgbChannelToLinear(float64(r) / 255.0)
+	gl := srgbChannelToLinear(float64(g) / 255.0)
+	bl := srgbChannelToLinear(float64(b) / 255.0)
+	return 0.2126*rl + 0.7152*gl + 0.0722*bl
+}
+
+// wcagContrastRatio computes the standard WCAG relative-luminance contrast
+// ratio (lighter+0.05)/(darker+0.05) between two hex colors.
+func wcagContrastRatio(t *testing.T, hexA, hexB, context string) float64 {
+	t.Helper()
+	la := relativeLuminance(t, hexA, context)
+	lb := relativeLuminance(t, hexB, context)
+	lighter, darker := la, lb
+	if lb > la {
+		lighter, darker = lb, la
+	}
+	return (lighter + 0.05) / (darker + 0.05)
+}
+
+// isDarkMediaRootHead reports whether a rule's trimmed selector head is the
+// `@media (prefers-color-scheme: dark) { :root` compound produced when
+// splitting CSS text on its LAST opening brace: the media block's own open
+// brace and :root's open brace both precede the declaration body, so the
+// head retains the full "@media ... {" preamble followed by ":root". This
+// is identified by its @media PREFIX and its trailing ":root" FIELD, not by
+// a substring search for the word "dark" — both `prefers-color-scheme: dark`
+// and `[data-theme="dark"]` contain that substring, and so would a stripped
+// comment mentioning it, so a naive Contains check would misidentify a
+// rule.
+func isDarkMediaRootHead(head string) bool {
+	trimmed := strings.TrimSpace(head)
+	if !strings.HasPrefix(trimmed, "@media") {
+		return false
+	}
+	fields := strings.Fields(trimmed)
+	if len(fields) == 0 {
+		return false
+	}
+	return fields[len(fields)-1] == ":root"
+}
+
+// extractThemeTokens walks every rule in mainCSSRules and buckets each
+// needed custom property's value into one of the four theme SOURCES this
+// codebase actually ships (not two): the base :root block and
+// :root[data-theme="light"] both carry light values; the
+// @media (prefers-color-scheme: dark) :root block and :root[data-theme="dark"]
+// both carry dark values. Editing one member of a pair and not the other
+// ships a fix that works for OS-preference users and not explicit-toggle
+// users (or vice versa) — this is why both sources of each theme are kept
+// separate here rather than merged, so the caller can assert pairwise
+// equality.
+func extractThemeTokens(rules []cssRule, needed []string) (light1, light2, dark1, dark2 themeTokens) {
+	light1 = themeTokens{}
+	light2 = themeTokens{}
+	dark1 = themeTokens{}
+	dark2 = themeTokens{}
+
+	for _, r := range rules {
+		var target *themeTokens
+		switch {
+		case r.selectorHead == ":root":
+			target = &light1
+		case r.selectorHead == `:root[data-theme="light"]`:
+			target = &light2
+		case r.selectorHead == `:root[data-theme="dark"]`:
+			target = &dark2
+		case isDarkMediaRootHead(r.selectorHead):
+			target = &dark1
+		default:
+			continue
+		}
+		decls := declsOf(r.declBody)
+		for _, name := range needed {
+			if v, ok := decls[name]; ok {
+				(*target)[name] = v
+			}
+		}
+	}
+	return
+}
+
+// cssRule is one parsed CSS rule: its trimmed selector head and its raw
+// (untrimmed) declaration body.
+type cssRule struct {
+	selectorHead string
+	declBody     string
+}
+
+// parseCSSRules splits raw CSS text (already comment-stripped) into one
+// cssRule per rule, using this package's established split-on-last-brace
+// idiom so a rule nested inside an at-rule (e.g. a media query) still
+// parses with its at-rule preamble retained in the selector head rather
+// than mistaken for part of the declaration body.
+func parseCSSRules(raw string) []cssRule {
+	text := stripCSSComments(raw)
+	var rules []cssRule
+	for chunk := range strings.SplitSeq(text, "}") {
+		lastOpen := strings.LastIndex(chunk, "{")
+		if lastOpen == -1 {
+			continue
+		}
+		rules = append(rules, cssRule{
+			selectorHead: strings.TrimSpace(chunk[:lastOpen]),
+			declBody:     chunk[lastOpen+1:],
+		})
+	}
+	return rules
+}
+
+// declsOf splits one rule's declaration body into a name->value map, keyed
+// by the trimmed property name. Splitting on ";" is safe here because none
+// of this package's parsed CSS values contain a literal semicolon.
+func declsOf(declBody string) map[string]string {
+	m := map[string]string{}
+	for _, decl := range strings.Split(declBody, ";") {
+		name, value, hasColon := strings.Cut(decl, ":")
+		if !hasColon {
+			continue
+		}
+		m[strings.TrimSpace(name)] = strings.TrimSpace(value)
+	}
+	return m
+}
+
+// ruleBySelector returns the first rule in rules whose trimmed selector
+// head equals exactly want, or ok=false if none matches. Exact-head
+// matching (never a substring search) is load-bearing for this test's
+// glyph-foreground resolution: a wrongly-shaped fix that uses a compound
+// selector (e.g. ".icon-badge.age-stale") or a descendant selector
+// (e.g. ".report-row.age-stale .icon-badge") would satisfy a substring
+// search for "age-stale" while covering only one of the two badge contexts
+// (map.js:144 puts the age class on the badge itself; feed.js:169 puts it
+// on the row ancestor) — with an exact-head match, those wrongly-shaped
+// fixes leave the bare `.age-stale` rule undeclared, the resolver falls
+// through to the base token, and the failing ratios this test exists to
+// catch reappear as they should. A future reader must not "simplify" this
+// into a strings.Contains call.
+func ruleBySelector(rules []cssRule, want string) (cssRule, bool) {
+	for _, r := range rules {
+		if r.selectorHead == want {
+			return r, true
+		}
+	}
+	return cssRule{}, false
+}
+
+// TestBadgeGlyphContrastAcrossAgeStagesAndThemes closes 01-14 Mechanism 2:
+// `.icon-badge` paints its glyph foreground against a `--severity-current`
+// fill that the age ramp rewrites, without the foreground ever adapting —
+// producing a genuine WCAG 1.4.11 point-contrast failure once a report
+// desaturates (see .planning/debug/category-glyph-legibility.md). This test
+// resolves both sides of every one of the 3 severities x 3 age stages x 2
+// themes = 18 pairings statically from the shipped CSS and asserts each
+// clears the 3.0:1 graphical-object floor.
+//
+// The resolution is built in five layers: (1) theme token tables, asserted
+// pairwise-equal across each theme's two sources; (2) badge fill per
+// severity/age stage, resolved from the shipped .sev-* and .age-* rules
+// rather than hardcoding the ramp; (3) glyph foreground per age stage,
+// parsed from .icon-badge's own `color` declaration and each .age-{stage}
+// rule's EXACT selector head (see ruleBySelector's doc comment for why this
+// must never become a substring search); (4) standard WCAG contrast;
+// (5) the 18-pairing matrix itself.
+//
+// Honest limit of this test's claim, in the same spirit as this package's
+// other CSS contract tests: point contrast is a NECESSARY condition for a
+// readable glyph, not a SUFFICIENT one — it says nothing about whether the
+// glyph's shape is identifiable, which is Mechanism 1's concern and is what
+// TestCategoryGlyphInkCoverageAcrossRenderContexts and 01-14 Task 3's
+// human-check cover instead.
+func TestBadgeGlyphContrastAcrossAgeStagesAndThemes(t *testing.T) {
+	mainRaw, err := fs.ReadFile(StaticFS, "static/css/main.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/main.css: %v", err)
+	}
+	rules := parseCSSRules(string(mainRaw))
+
+	// --- Layer 1: token tables ---
+	neededTokens := []string{
+		"--color-bg",
+		"--color-text",
+		"--color-severity-low",
+		"--color-severity-medium",
+		"--color-severity-critical",
+		"--color-age-stale",
+	}
+	light1, light2, dark1, dark2 := extractThemeTokens(rules, neededTokens)
+
+	for _, name := range neededTokens {
+		v1, ok1 := light1[name]
+		v2, ok2 := light2[name]
+		if !ok1 || !ok2 {
+			t.Fatalf("token %s not declared in both light sources (:root=%v present, "+
+				":root[data-theme=light]=%v present)", name, ok1, ok2)
+		}
+		if v1 != v2 {
+			t.Errorf("token %s mismatched between :root (%s) and :root[data-theme=\"light\"] (%s) — "+
+				"a half-applied theme edit works for one light-mode entry path and not the other",
+				name, v1, v2)
+		}
+
+		d1, dok1 := dark1[name]
+		d2, dok2 := dark2[name]
+		if !dok1 || !dok2 {
+			t.Fatalf("token %s not declared in both dark sources (media block=%v present, "+
+				":root[data-theme=dark]=%v present)", name, dok1, dok2)
+		}
+		if d1 != d2 {
+			t.Errorf("token %s mismatched between the dark media block (%s) and "+
+				":root[data-theme=\"dark\"] (%s) — a half-applied theme edit works for OS-preference "+
+				"users and not explicit-toggle users, or vice versa", name, d1, d2)
+		}
+	}
+
+	lightTokens := light1
+	darkTokens := dark1
+
+	// --- Layer 2 setup: --severity-base per severity ---
+	severities := []string{"low", "medium", "critical"}
+	severityBaseTokenName := map[string]string{}
+	for _, sev := range severities {
+		selector := ".sev-" + sev
+		r, ok := ruleBySelector(rules, selector)
+		if !ok {
+			t.Fatalf("no exact %q rule found in static/css/main.css", selector)
+		}
+		decls := declsOf(r.declBody)
+		val, ok := decls["--severity-base"]
+		if !ok {
+			t.Fatalf("%s: rule declares no --severity-base", selector)
+		}
+		name, ok := bareVarName(val)
+		if !ok {
+			t.Fatalf("%s: --severity-base value %q is not a bare var() reference", selector, val)
+		}
+		severityBaseTokenName[sev] = name
+	}
+
+	// --- Layer 3 setup: glyph foreground shape from .icon-badge ---
+	badgeRule, ok := ruleBySelector(rules, ".icon-badge")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/main.css", ".icon-badge")
+	}
+	badgeDecls := declsOf(badgeRule.declBody)
+	colorVal, ok := badgeDecls["color"]
+	if !ok {
+		t.Fatalf(".icon-badge declares no `color` property")
+	}
+	overrideName, baseTokenName, ok := parseColorVarShape(colorVal)
+	if !ok {
+		t.Fatalf(".icon-badge `color: %s` is not one of the two recognized shapes "+
+			"(bare var(--token), or var(--override, var(--token)))", colorVal)
+	}
+	if overrideName == "" {
+		t.Fatalf(".icon-badge `color: %s` is a bare var() with no override — Task 2 requires the "+
+			"var(--override, var(--token)) shape so the age ramp can override the foreground per stage",
+			colorVal)
+	}
+
+	ageStages := []string{"fresh", "aging", "stale"}
+	ageSeverityCurrentValue := map[string]string{}
+	ageOverrideValue := map[string]string{} // stage -> override decl value; absent if not declared
+	for _, stage := range ageStages {
+		selector := ".age-" + stage
+		r, ok := ruleBySelector(rules, selector)
+		if !ok {
+			t.Fatalf("no exact %q rule found in static/css/main.css", selector)
+		}
+		decls := declsOf(r.declBody)
+		sc, ok := decls["--severity-current"]
+		if !ok {
+			t.Fatalf("%s: rule declares no --severity-current", selector)
+		}
+		ageSeverityCurrentValue[stage] = sc
+
+		if v, ok := decls[overrideName]; ok {
+			ageOverrideValue[stage] = v
+		}
+		// Deliberately no else: a stage that declares no override
+		// property is the intended fall-through-to-base-token case (this
+		// is exactly .age-fresh's expected shape), not a parse failure.
+	}
+
+	// --- Layers 4-5: resolve and assert the 18-pairing matrix ---
+	themes := []struct {
+		name   string
+		tokens themeTokens
+	}{
+		{"light", lightTokens},
+		{"dark", darkTokens},
+	}
+
+	var ran int
+	t.Logf("severity | stage | theme | fill | fg | ratio")
+	for _, sev := range severities {
+		baseTokenNameForSev := severityBaseTokenName[sev]
+		for _, stage := range ageStages {
+			for _, th := range themes {
+				context := fmt.Sprintf("severity=%s stage=%s theme=%s", sev, stage, th.name)
+
+				severityBaseHex, found := th.tokens[baseTokenNameForSev]
+				if !found {
+					t.Fatalf("%s: severity base token %q not found in %s token table",
+						context, baseTokenNameForSev, th.name)
+				}
+
+				fillHex := resolveSeverityCurrentHex(t, ageSeverityCurrentValue[stage], severityBaseHex, th.tokens, context)
+
+				var fgHex string
+				if overrideVal, ok := ageOverrideValue[stage]; ok {
+					fgHex = resolveForegroundValueHex(t, overrideVal, th.tokens, context)
+				} else {
+					baseHex, found := th.tokens[baseTokenName]
+					if !found {
+						t.Fatalf("%s: base foreground token %q not found in %s token table",
+							context, baseTokenName, th.name)
+					}
+					fgHex = baseHex
+				}
+
+				ratio := wcagContrastRatio(t, fillHex, fgHex, context)
+				ran++
+				t.Logf("%-8s | %-6s | %-5s | %s | %s | %.2f:1", sev, stage, th.name, fillHex, fgHex, ratio)
+
+				if ratio < 3.0 {
+					t.Errorf("%s: badge glyph foreground %s against fill %s computes to %.2f:1, "+
+						"below WCAG 1.4.11's 3.0:1 graphical-object floor", context, fgHex, fillHex, ratio)
+				}
+			}
+		}
+	}
+
+	if ran != 18 {
+		t.Fatalf("expected to evaluate exactly 18 severity x age-stage x theme pairings, evaluated %d — "+
+			"the matrix loop's own bounds may have changed", ran)
 	}
 }
