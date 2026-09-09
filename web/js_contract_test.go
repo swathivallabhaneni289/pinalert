@@ -371,3 +371,75 @@ func TestCapabilityProbeGatesBasemapChoice(t *testing.T) {
 		}
 	}
 }
+
+// TestIconGlyphsAreClassDriven guards the 01-13 fix's chosen strategy: each
+// of the three icon-rendering renderers resolves its category glyph
+// through Pinalert.iconClass and builds a mask-styled element carrying that
+// class pair, never a replaced-element <img> pointed directly at an icon
+// file — the exact pattern that caused UAT Tests 2/6 (every glyph
+// rendering solid black in dark mode, because an <img>'s loaded document is
+// a sealed sub-document the page's CSS cannot reach into).
+//
+// This test encodes THIS fix's strategy, not a universal rule against ever
+// creating an <img> element anywhere in the client. A contributor adding a
+// genuinely unrelated image element to one of these three files later
+// should update this test alongside it, not fight it.
+func TestIconGlyphsAreClassDriven(t *testing.T) {
+	const iconClassCall = "Pinalert.iconClass("
+	const imageNodeCreation = "createElement('img')"
+
+	for _, module := range []string{"static/js/map.js", "static/js/modal.js", "static/js/feed.js"} {
+		raw, err := fs.ReadFile(StaticFS, module)
+		if err != nil {
+			t.Fatalf("%s: could not read embedded file — %v", module, err)
+		}
+		text := stripCSSComments(string(raw))
+
+		if !strings.Contains(text, iconClassCall) {
+			t.Errorf("%s: expected a %q call resolving the category glyph — this fix's whole point "+
+				"is that glyph color comes from an ordinary CSS class on a real page element rather "+
+				"than a path into an isolated image sub-document", module, iconClassCall)
+		}
+		if strings.Contains(text, imageNodeCreation) {
+			t.Errorf("%s: found %q — this renderer has reverted to the sealed-sub-document icon "+
+				"pattern that caused UAT Tests 2/6 (every category glyph rendering solid black in "+
+				"dark mode, illegible on the report modal's category grid)", module, imageNodeCreation)
+		}
+	}
+
+	appJS, err := fs.ReadFile(StaticFS, "static/js/app.js")
+	if err != nil {
+		t.Fatalf("static/js/app.js: could not read embedded file — %v", err)
+	}
+	appText := stripCSSComments(string(appJS))
+
+	const defAnchor = "function iconClass"
+	const exportAnchor = "iconClass: iconClass"
+	const allowlistRef = "CATEGORIES.indexOf"
+
+	defIdx := strings.Index(appText, defAnchor)
+	if defIdx == -1 {
+		t.Fatalf("static/js/app.js: expected a %q definition but found none", defAnchor)
+	}
+	if !strings.Contains(appText, exportAnchor) {
+		t.Errorf("static/js/app.js: iconClass is defined but not exported on the returned Pinalert "+
+			"API object (expected %q) — every renderer in map.js, modal.js and feed.js calls it as "+
+			"Pinalert.iconClass", exportAnchor)
+	}
+
+	// Bound the allowlist-reference check to iconClass's own body — from
+	// its definition to the next top-level function declaration in this
+	// file, or end of file if it is the last one — rather than the whole
+	// module. A CATEGORIES.indexOf reference found only elsewhere would not
+	// actually guard this specific helper against T-01-13-01.
+	afterDef := appText[defIdx+len(defAnchor):]
+	fnBody := afterDef
+	if nextFuncIdx := strings.Index(afterDef, "\n  function "); nextFuncIdx != -1 {
+		fnBody = afterDef[:nextFuncIdx]
+	}
+	if !strings.Contains(fnBody, allowlistRef) {
+		t.Errorf("static/js/app.js: iconClass's own body does not reference the CATEGORIES allowlist "+
+			"(expected %q) — an unguarded rewrite of this helper would let a server-supplied category "+
+			"value reach className unchecked (T-01-13-01, direct continuation of T-01-17)", allowlistRef)
+	}
+}

@@ -216,9 +216,13 @@ body {
 
 /* -------------------------------------------------------------------------
  * Icon badge (D-12) — circular badge filled with the current severity
- * color; a currentColor glyph inside renders white on light backgrounds
- * (color set to --color-bg) per D-12's "white glyph on solid color-coded
- * circular badge" pattern.
+ * color. The category glyph inside is painted by its own .icon-glyph
+ * background (see below) through a CSS mask, so it renders white on this
+ * badge (color set to --color-bg) per D-12's "white glyph on solid
+ * color-coded circular badge" pattern. The icon files are referenced as
+ * mask shapes rather than embedded as replaced-element images, because a
+ * replaced-element's loaded document is a sealed sub-document that does
+ * not inherit the page's own color.
  * ---------------------------------------------------------------------- */
 .icon-badge {
   display: inline-flex;
@@ -233,9 +237,85 @@ body {
 }
 
 .icon-badge svg,
-.icon-badge img {
+.icon-badge .icon-glyph {
   width: 55%;
   height: 55%;
+}
+
+/* -------------------------------------------------------------------------
+ * Icon glyph — a category icon rendered as a CSS mask rather than an
+ * embedded image or inline SVG. background-color: currentColor is the
+ * entire color mechanism: the glyph's rendered color comes from an
+ * ordinary CSS `color` declaration on a real in-page element, so it
+ * participates normally in the cascade across every context (icon badge,
+ * unselected category tile, selected category tile) and both themes —
+ * unlike a replaced-element <img>, whose loaded document is a sealed
+ * sub-document the page's CSS cannot reach into, which is exactly what
+ * made every glyph render solid black regardless of theme. Each mask
+ * longhand below is declared twice — once -webkit- prefixed, once
+ * unprefixed — rather than using the `mask` shorthand, because the
+ * prefixed and unprefixed shorthands do not reset an identical set of
+ * sub-properties and mixing them produces engine-dependent results;
+ * shipping both longhand forms is correct on every engine regardless of
+ * which one it implements. mask-repeat: no-repeat is load-bearing, not
+ * decoration — the property's initial value tiles, so omitting it on any
+ * element box that is not exactly square would yield repeated ghost
+ * glyphs.
+ * ---------------------------------------------------------------------- */
+.icon-glyph {
+  display: block;
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.icon-glyph--flood {
+  -webkit-mask-image: url("/static/icons/flood.svg");
+  mask-image: url("/static/icons/flood.svg");
+}
+
+.icon-glyph--earthquake {
+  -webkit-mask-image: url("/static/icons/earthquake.svg");
+  mask-image: url("/static/icons/earthquake.svg");
+}
+
+.icon-glyph--fire {
+  -webkit-mask-image: url("/static/icons/fire.svg");
+  mask-image: url("/static/icons/fire.svg");
+}
+
+.icon-glyph--storm_cyclone {
+  -webkit-mask-image: url("/static/icons/storm_cyclone.svg");
+  mask-image: url("/static/icons/storm_cyclone.svg");
+}
+
+.icon-glyph--road_blocked {
+  -webkit-mask-image: url("/static/icons/road_blocked.svg");
+  mask-image: url("/static/icons/road_blocked.svg");
+}
+
+.icon-glyph--power_outage {
+  -webkit-mask-image: url("/static/icons/power_outage.svg");
+  mask-image: url("/static/icons/power_outage.svg");
+}
+
+.icon-glyph--shelter_open {
+  -webkit-mask-image: url("/static/icons/shelter_open.svg");
+  mask-image: url("/static/icons/shelter_open.svg");
+}
+
+.icon-glyph--rescue_needed {
+  -webkit-mask-image: url("/static/icons/rescue_needed.svg");
+  mask-image: url("/static/icons/rescue_needed.svg");
+}
+
+.icon-glyph--other {
+  -webkit-mask-image: url("/static/icons/other.svg");
+  mask-image: url("/static/icons/other.svg");
 }
 
 .icon-badge--sm {

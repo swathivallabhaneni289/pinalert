@@ -128,9 +128,10 @@
 
     var badge = document.createElement('span');
     badge.className = 'icon-badge icon-badge--sm';
-    var img = document.createElement('img');
-    img.alt = '';
-    badge.appendChild(img);
+    var glyph = document.createElement('span');
+    glyph.className = 'icon-glyph';
+    glyph.setAttribute('aria-hidden', 'true');
+    badge.appendChild(glyph);
 
     var body = document.createElement('div');
     body.className = 'report-row__body';
@@ -157,7 +158,7 @@
       }
     });
 
-    return { el: li, img: img, title: title, meta: meta };
+    return { el: li, glyph: glyph, title: title, meta: meta };
   }
 
   // updateRow applies severity/age classes and text content only — it never
@@ -167,7 +168,13 @@
     replacePrefixedClass(row.el, 'sev-', Pinalert.severityClass(report));
     replacePrefixedClass(row.el, 'age-', 'age-' + Pinalert.ageStage(report));
 
-    row.img.src = Pinalert.iconPath(report.category);
+    // Pinalert.iconClass returns the base "icon-glyph" class AND the
+    // category-specific class as one space-joined string; only the
+    // category-specific (last) field is passed to replacePrefixedClass so
+    // the base class — already set once in createRow — is never re-pushed
+    // on every poll, which would otherwise accumulate a duplicate copy.
+    var glyphClass = Pinalert.iconClass(report.category).split(/\s+/).pop();
+    replacePrefixedClass(row.glyph, 'icon-glyph--', glyphClass);
 
     Pinalert.setText(row.title, report.description);
     Pinalert.setText(row.meta, buildMetaText(report));
