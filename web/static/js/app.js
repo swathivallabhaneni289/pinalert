@@ -208,14 +208,15 @@ window.Pinalert = (function () {
     return 'sev-' + severity;
   }
 
-  // iconPath validates category against CATEGORIES before building a path
-  // (T-01-17): an unexpected value from the API can never be reflected into
-  // a path unchecked. Falls back to other.svg for anything unrecognised.
-  function iconPath(category) {
-    if (CATEGORIES.indexOf(category) === -1) {
-      return '/static/icons/other.svg';
-    }
-    return '/static/icons/' + category + '.svg';
+  // iconClass validates category against CATEGORIES before building a class
+  // name (T-01-17): an unexpected value from the API can never be reflected
+  // into className unchecked. Falls back to the "other" category for
+  // anything unrecognised. Returns the fixed base class plus the
+  // category-specific class, space-separated, so a caller can assign the
+  // pair straight to an element's className.
+  function iconClass(category) {
+    var validated = CATEGORIES.indexOf(category) === -1 ? 'other' : category;
+    return 'icon-glyph icon-glyph--' + validated;
   }
 
   function relativeTime(iso) {
@@ -284,7 +285,7 @@ window.Pinalert = (function () {
     select: select,
     onSelect: onSelect,
     severityClass: severityClass,
-    iconPath: iconPath,
+    iconClass: iconClass,
     relativeTime: relativeTime,
     ageStage: ageStage,
     setText: setText

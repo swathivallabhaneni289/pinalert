@@ -206,15 +206,14 @@
       tile.tabIndex = index === 0 ? 0 : -1;
       tile.dataset.category = category;
 
-      var img = document.createElement('img');
-      img.src = Pinalert.iconPath(category);
-      img.alt = '';
-      img.setAttribute('aria-hidden', 'true');
+      var glyph = document.createElement('span');
+      glyph.className = Pinalert.iconClass(category);
+      glyph.setAttribute('aria-hidden', 'true');
 
       var label = document.createElement('span');
       Pinalert.setText(label, Pinalert.CATEGORY_LABELS[category] || category);
 
-      tile.appendChild(img);
+      tile.appendChild(glyph);
       tile.appendChild(label);
       tile.addEventListener('click', function () {
         selectCategory(category);

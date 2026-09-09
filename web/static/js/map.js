@@ -5,10 +5,10 @@
 // Leaflet markers against Pinalert.state.reports.
 //
 // SECURITY (T-01-03, T-01-17): marker badge markup is assembled from fixed
-// strings and Pinalert.iconPath's validated path only — no report-authored
-// value ever appears in it. Popups are built as DOM elements (never a
-// markup string) and passed to Leaflet's bindPopup/setPopupContent, which
-// appendChild()s an Element instead of using innerHTML when given one.
+// strings and Pinalert.iconClass's validated class name only — no report-
+// authored value ever appears in it. Popups are built as DOM elements
+// (never a markup string) and passed to Leaflet's bindPopup/setPopupContent,
+// which appendChild()s an Element instead of using innerHTML when given one.
 window.PinalertMap = (function () {
   'use strict';
 
@@ -132,7 +132,10 @@ window.PinalertMap = (function () {
   // buildBadgeElement assembles a white category glyph on a solid
   // severity-coloured circular badge (D-11, D-12), desaturating toward gray
   // as the report ages (D-17). Fixed classes/strings plus the validated
-  // icon path only.
+  // icon class only. The glyph is a span carrying Pinalert.iconClass's
+  // mask-based class pair (see main.css's .icon-glyph rules) rather than a
+  // replaced-element image, so its color resolves from this badge's own
+  // `color` through the ordinary CSS cascade.
   function buildBadgeElement(report) {
     var sevClass = Pinalert.severityClass(report);
     var ageClass = 'age-' + Pinalert.ageStage(report);
@@ -140,10 +143,10 @@ window.PinalertMap = (function () {
     var badge = document.createElement('span');
     badge.className = 'icon-badge icon-badge--pin ' + sevClass + ' ' + ageClass;
 
-    var img = document.createElement('img');
-    img.src = Pinalert.iconPath(report.category);
-    img.alt = '';
-    badge.appendChild(img);
+    var glyph = document.createElement('span');
+    glyph.className = Pinalert.iconClass(report.category);
+    glyph.setAttribute('aria-hidden', 'true');
+    badge.appendChild(glyph);
 
     return badge;
   }
