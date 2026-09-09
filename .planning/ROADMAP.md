@@ -25,7 +25,7 @@ responder claims, shareable cards) that depend on the trust signals built in Pha
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation — Report & Map** - Anonymous visitors can submit and view location-tagged reports on a live map, with read-time auto-expiry, OpenAPI docs, and CI in place. (original 10 plans completed 2026-09-06; reopened for the vector basemap migration, plans 01-11/01-12; gap-closure round 2 (01-13) landed 2026-09-09 — fixed the solid-black-icon defect, but retest surfaced a distinct glyph-legibility issue; see `01-UAT.md`) (all 13 plans complete; a third gap-closure round is pending diagnosis via `/gsd-verify-work 01`)
+- [ ] **Phase 1: Foundation — Report & Map** - Anonymous visitors can submit and view location-tagged reports on a live map, with read-time auto-expiry, OpenAPI docs, and CI in place. (original 10 plans completed 2026-09-06; reopened for the vector basemap migration, plans 01-11/01-12; gap-closure round 2 (01-13) landed 2026-09-09 — fixed the solid-black-icon defect, but retest surfaced a distinct glyph-legibility issue; see `01-UAT.md`) (13 of 14 plans complete; gap-closure round 3 planned as 01-14 from the two diagnosed glyph-legibility mechanisms — run `/gsd-execute-phase 01 --gaps-only`)
 - [ ] **Phase 2: Trust Mechanic Core — Confirm/Dispute & Visibility** - Users can confirm/dispute reports through one shared, concurrency-safe visibility resolver with a provisional gate and resolved marking.
 - [ ] **Phase 3: Trust-Model Hardening — Diversity-Weighted Trust** - "Confirmed by N nearby" and the reliability/currency signals reflect distinct nearby corroboration, resistant to trivial gaming.
 - [ ] **Phase 4: Robustness — Real-World Resilience** - The app stays usable on degraded networks, under abuse/moderation pressure, and with clear legal footing.
@@ -83,6 +83,10 @@ Plans:
 **Gap closure (round 2)** *(from `01-UAT.md` Tests 2 and 6; run via `/gsd-execute-phase 01 --gaps-only`)*
 
 - [x] 01-13-PLAN.md — Recolour the nine category glyphs through a CSS mask so page CSS reaches them, fixing solid-black icons in dark mode across map pins, feed rows and the modal grid, locked by two contract tests (wave 1)
+
+**Gap closure (round 3)** *(from `01-UAT.md`'s two `status: diagnosed` gaps on Tests 2 and 6, diagnosed in `.planning/debug/category-glyph-legibility.md`; run via `/gsd-execute-phase 01 --gaps-only`)*
+
+- [ ] 01-14-PLAN.md — Give the nine glyphs enough ink to be identifiable at the 17.6px feed-row size and give every badge glyph a 3:1 foreground across all 18 severity/age/theme pairings, locked by two computed gates (stroke width per render context, WCAG contrast matrix); folds in 01-REVIEW.md WR-01 (wave 1)
 
 **UI hint**: yes
 
