@@ -80,3 +80,45 @@ func TestPageShellServesDOMContract(t *testing.T) {
 		t.Errorf("script tags out of order: app=%d map=%d modal=%d feed=%d (app.js must load first)", appIdx, mapIdx, modalIdx, feedIdx)
 	}
 }
+
+// TestPageShellAppliesAssetVersionToLocalStaticAssets is 01-15's regression
+// guard for the caching bug that let a human tester keep seeing pre-fix CSS
+// for most of a live UAT session: PageConfig.AssetVersion must actually
+// reach every local static asset URL as a "?v=" query string (see
+// PageConfig's doc comment for why), and must NOT be applied to the
+// third-party CDN tags, which are already pinned/SRI-hashed and would only
+// gain a meaningless, cache-defeating query string from this mechanism.
+func TestPageShellAppliesAssetVersionToLocalStaticAssets(t *testing.T) {
+	tmpl, err := ParsePageTemplate()
+	if err != nil {
+		t.Fatalf("ParsePageTemplate: %v", err)
+	}
+
+	const version = "test-version-12345"
+	handler := Page(tmpl, PageConfig{
+		FallbackLat:     12.9716,
+		FallbackLon:     77.5946,
+		DefaultRadiusKm: 10,
+		AssetVersion:    version,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	body := rec.Body.String()
+
+	localAssets := []string{
+		"/static/css/main.css", "/static/css/modal.css", "/static/css/feed.css",
+		"/static/js/app.js", "/static/js/map.js", "/static/js/modal.js", "/static/js/feed.js",
+	}
+	for _, asset := range localAssets {
+		want := asset + "?v=" + version
+		if !strings.Contains(body, want) {
+			t.Errorf("body missing versioned local asset URL %q — AssetVersion did not reach the template for this tag", want)
+		}
+	}
+
+	if strings.Contains(body, "unpkg.com") && strings.Contains(body, "unpkg.com/leaflet@1.9.4/dist/leaflet.js?v=") {
+		t.Errorf("third-party CDN script tag was versioned — only local static assets should carry ?v=")
+	}
+}

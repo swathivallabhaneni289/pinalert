@@ -30,6 +30,16 @@ type Deps struct {
 	Reports  *service.ReportService
 	Template *template.Template
 	Page     handlers.PageConfig
+	// Dev disables the static asset cache in staticFileServer. Left false
+	// (the zero value) selects the production 1-hour cache automatically —
+	// every existing Deps{} literal that doesn't set this field keeps
+	// today's behavior unchanged. See staticFileServer's doc comment for
+	// why a long-lived cache is actively wrong during local dev iteration
+	// (found live during 01-15's UAT correction round: PageConfig.AssetVersion
+	// busts the CSS/JS *linking* HTML, but the icon SVGs those stylesheets
+	// reference via `mask-image: url(...)` are never templated and so were
+	// never covered by that fix — this field is the other half of it).
+	Dev bool
 }
 
 // @title        Pinalert API
@@ -60,7 +70,7 @@ func NewRouter(deps Deps) *chi.Mux {
 	r.Use(deps.Session.Middleware(deps.persistSession))
 
 	r.Get("/", handlers.Page(deps.Template, deps.Page))
-	r.Handle("/static/*", http.StripPrefix("/static/", staticFileServer()))
+	r.Handle("/static/*", http.StripPrefix("/static/", staticFileServer(deps.Dev)))
 
 	// Mounted outside the /api group so its middleware stack stays
 	// independent, and left publicly reachable: this is a public read-only
@@ -78,10 +88,22 @@ func NewRouter(deps Deps) *chi.Mux {
 	return r
 }
 
-// staticFileServer serves web/static's embedded files with a conservative
-// cache header. Static assets are rebuilt into a new binary on every
-// deploy, so a one-hour cache is safe and costs nothing to invalidate.
-func staticFileServer() http.Handler {
+// staticFileServer serves web/static's embedded files. In production
+// (dev=false) a one-hour cache is safe and costs nothing to invalidate,
+// because static assets are rebuilt into a new binary on every deploy —
+// there is no long-running process whose embedded bytes go stale under a
+// caller's feet. That assumption is backwards during local dev iteration:
+// `go run` recompiles and restarts the SAME long-lived process repeatedly
+// against a browser that never navigates away, so an hour-long cache is an
+// hour spent unable to see a change land. Found live during 01-15's UAT
+// correction round — PageConfig.AssetVersion busts the cache for the CSS/JS
+// files a browser reaches via the templated HTML's own <link>/<script>
+// tags, but the icon SVGs those stylesheets reference via CSS
+// `mask-image: url(...)` are never templated, so they were still exposed
+// to a full hour of stale caching after every restart. dev=true disables
+// caching entirely instead of also trying to version those URLs, since
+// nothing here is served to a real browser audience in dev mode anyway.
+func staticFileServer(dev bool) http.Handler {
 	sub, err := fs.Sub(web.StaticFS, "static")
 	if err != nil {
 		// Only fails if the //go:embed directive itself is wrong — a
@@ -90,8 +112,12 @@ func staticFileServer() http.Handler {
 		panic("api: embedding web/static: " + err.Error())
 	}
 	fileServer := http.FileServer(http.FS(sub))
+	cacheControl := "public, max-age=3600"
+	if dev {
+		cacheControl = "no-store"
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("Cache-Control", cacheControl)
 		fileServer.ServeHTTP(w, r)
 	})
 }

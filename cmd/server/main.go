@@ -71,6 +71,7 @@ func main() {
 			DefaultRadiusKm: defaultRadiusKm,
 			AssetVersion:    strconv.FormatInt(time.Now().Unix(), 10),
 		},
+		Dev: env == "development",
 	}
 	router := api.NewRouter(deps)
 
