@@ -1,29 +1,15 @@
 ---
-status: partial
+status: complete
 phase: 01-foundation-report-map
-source: [01-VERIFICATION.md]
+source: [01-VERIFICATION.md, 01-13-SUMMARY.md, 01-14-SUMMARY.md, 01-15-SUMMARY.md]
 started: 2026-09-06T09:55:00Z
-updated: 2026-09-09T11:10:00Z
+updated: 2026-09-09T13:10:00Z
 ---
 
 ## Current Test
 <!-- OVERWRITE each test - shows where we are -->
 
-number: 2
-name: Retest — category glyph legibility after the 01-14 stroke-width and badge-contrast fix (covers Tests 2 and 6, final round)
-expected: |
-  Plan 01-14 raised the icon stroke-width (2→3) and added an age-aware badge glyph foreground.
-  Confirm, in a real browser, across BOTH light and dark mode:
-  - Open the "+" submit modal's 3x3 category grid — you can now correctly NAME each of the 9
-    categories without hovering/guessing, including at a quick glance (not just "something is
-    there" like last time).
-  - On the map and in the feed list, the category glyph on a report's pin/row is nameable too —
-    pay particular attention to feed-row badges (the smallest icons) and to the "Road blocked"
-    icon specifically (flagged as the one most at risk of its lines merging together at small
-    size).
-  - Let a report age until it visibly desaturates ("stale" — the dullest/grayest stage); its
-    badge glyph should still be readable against the grayed-out badge, in both themes.
-awaiting: user response
+[testing complete]
 
 <!-- Basemap migration note (post-Test-1, pre-Test-2): plans 01-11/01-12 replaced the OSM raster
 basemap with OpenFreeMap's "liberty" vector style via MapLibre GL, with an automatic WebGL2
@@ -45,8 +31,9 @@ result: pass
 notes: "Two blockers found and fixed in sequence before this passed: (1) modal-backdrop [hidden] guard (01-08), (2) #map had no CSS height at all (01-09). User confirmed the map now renders fully with correct centering and real tiles. Separately noted: tile text looks blurry on a Retina display — tracked as a cosmetic gap below (not blocking this test's literal pass criteria)."
 
 ### 2. New-pin visual rendering after submit (exercises the CR-01 icon-sizing fix)
-expected: Submit a report via the "+" button; a correctly-sized (55% of badge), non-overflowing category glyph appears on a colour-coded pin at the submitted coordinate immediately after submit, with no page reload.
-result: issue
+expected: Submit a report via the "+" button; a correctly-sized (48% of badge, reduced from 55% by plan 01-15), non-overflowing category glyph appears on a colour-coded pin at the submitted coordinate immediately after submit, with no page reload.
+result: pass
+final_resolution: "Resolved by plan 01-15 (2026-09-09): the actual fix was the tile glyph's color (--color-text-muted -> --color-text), not the stroke-width theory in the retest note below. Confirmed live by the human tester in both dark and light mode ('looks good'). See Gaps section and 01-15-SUMMARY.md."
 reported: "i cant see the symbols properly" (original report, dark mode, solid-black glyphs — fixed by plan 01-13, see retest note below)
 severity: minor
 retest_after_01-13: |
@@ -99,7 +86,8 @@ notes: |
 
 ### 6. Dark-mode visual repaint
 expected: Switching the OS to dark mode with the app open repaints using a genuinely distinct dark palette (brighter/more-saturated severity dots, darker tint backgrounds) per D-13 and 01-UI-SPEC.md's dark hex values — not an inverted light theme.
-result: issue
+result: pass
+final_resolution: "Resolved by plan 01-15 (2026-09-09), same fix and same confirmation as Test 2 — see that entry and 01-15-SUMMARY.md."
 reported: "All looks fine except for that one part [category icon dimness in the report modal]." (original report — fixed by plan 01-13, see retest note below)
 severity: minor
 note: "Same root cause as Test 2's gap (currentColor doesn't inherit through <img>-loaded SVGs) — not a new/separate defect, no duplicate Gap entry added. Everything else — background tints, severity-colored dots/pins, overall dark palette — confirmed as a genuinely distinct dark theme, not an inverted light one. (The earlier-reported 'black void' below the list was investigated and is NOT a bug — #0B0D10 is the exact spec'd dark --color-bg value per 01-UI-SPEC.md:95; see Gaps section.)"
@@ -138,12 +126,12 @@ notes: "Done directly (mechanical tracking-file edit, not a visual UAT check) �
 ## Summary
 
 total: 10
-passed: 8
-issues: 2
+passed: 10
+issues: 0
 pending: 0
 skipped: 0
 blocked: 0
-notes: 2 (cosmetic feedback on Test 3's severity slider styling, captured pre-emptively; and a Test-6-adjacent "black void" report that was investigated and found to be correct dark-mode styling per spec, not a bug — see Gaps. Tests 2 and 6 have been through two fix rounds now: 01-13 (2026-09-09) fixed the original solid-black-icon defect but retest surfaced a new glyph-legibility issue; 01-14 (2026-09-09) fixed that issue's two diagnosed mechanisms (thin stroke art, badge age-stage contrast) in code, but both tests still show `result: issue` pending one final human retest — see Gaps and Current Test.)
+notes: 2 (cosmetic feedback on Test 3's severity slider styling, captured pre-emptively; and a Test-6-adjacent "black void" report that was investigated and found to be correct dark-mode styling per spec, not a bug — see Gaps. Tests 2 and 6 went through three rounds before resolving: 01-13 fixed the original solid-black-icon defect; 01-14 diagnosed and fixed two mechanisms in code but a live retest found the modal grid still unreadable; 01-15 found and fixed the actual root cause — glyph color, not stroke geometry — plus two unrelated caching bugs that had been blocking the human tester from ever seeing a fix land, confirmed live in both themes. See Gaps and .planning/debug/category-glyph-legibility.md.)
 
 ## Gaps
 
@@ -212,7 +200,7 @@ notes: 2 (cosmetic feedback on Test 3's severity slider styling, captured pre-em
     a human actually testing in dark mode.
 
 - truth: "Category glyphs (report-modal tiles, map pin badges, feed row badges) are quickly identifiable at a glance in both light and dark mode, not just technically non-black" (new — found on the 01-13 retest, same UI area as the resolved Gap above but a different defect; scope widened after diagnosis found this affects all 3 render contexts, not just the modal tile the user directly screenshotted)
-  status: fix_landed
+  status: resolved
   reason: "User reported (retest of Tests 2/6 after plan 01-13 landed, screenshot of the dark-mode report modal): \"It's not that clear. I think the black background is mixing up with the outlines, and I think we should make it more significant so everybody knows because... people use it in a emergency situations, and I don't want them to... search up. Oh, I can't see which one it [is].\" Confirmed on follow-up: the glyphs ARE rendering (not blank/solid-black), but their thin strokes are hard to distinguish from the tile background at a glance."
   severity: minor
   test: [2, 6]
@@ -255,9 +243,24 @@ notes: 2 (cosmetic feedback on Test 3's severity slider styling, captured pre-em
     change isn't assumed independently-verified per context when it isn't.
     NOT yet confirmed by a human: whether the thicker stroke is actually distinguishable/
     nameable at a glance in a real browser — see the paired human-check item below.
+  correction_2026-09-09: |
+    This diagnosis's own root_cause conclusion above ("this is NOT a hex-contrast defect... The
+    bottleneck is the source artwork's stroke-only geometry") turned out to be WRONG, or at least
+    materially incomplete, when actually retested live. After 01-14's thicker stroke shipped, the
+    human tester retested the modal grid in a real browser and reported it STILL unreadable
+    ("the black background is mixing up with the outlines"). Plan 01-15 found the real,
+    sufficient fix was the tile glyph's COLOR after all — `.category-tile { color:
+    var(--color-text-muted) }` was never touched by 01-14, and switching the unselected tile's
+    glyph specifically to `--color-text` (dark-mode contrast ~7:1 -> ~17.7:1) is what the human
+    tester actually confirmed resolved it, in both dark and light mode. 01-14's stroke-width
+    change (2 -> 3) was fully reverted in 01-15 once confirmed unnecessary, since it was also an
+    unrequested side effect on the map-pin/feed-row badges. Left standing as a record that a
+    numerically-passing WCAG contrast check (7:1, AAA) does not guarantee a shape is perceived as
+    legible by an actual person — see 01-15-SUMMARY.md and 01-15-PLAN.md's
+    <process_deviation> for the full account.
 
 - truth: "A map-pin or feed-row badge's category glyph has sufficient WCAG point-contrast against its badge background, at every age stage" (new — found during diagnosis of the entry above, not directly reported by the user; scoped to badge contexts only, distinct root cause from the entry above)
-  status: fix_landed
+  status: resolved
   reason: "Not directly reported by the human tester (who only exercised the modal category grid, which has no age-ramp involvement) — surfaced as a second, additive mechanism while diagnosing the glyph-legibility gap above, per this project's fail-safe discipline of not dropping a diagnosed defect just because it wasn't the literal complaint."
   severity: minor
   test: [2, 6]
@@ -298,14 +301,46 @@ notes: 2 (cosmetic feedback on Test 3's severity slider styling, captured pre-em
     go build/vet/test all pass.
     NOT yet confirmed by a human: real-browser legibility of stale/aged badges — see the
     human-check item below (shared with the entry above).
+  human_confirmation_2026-09-09: |
+    01-14's stroke-width fix for this mechanism was untouched by 01-15 (only the unrelated
+    stroke-thinness mechanism was reverted). During the live 01-15 session the human tester
+    directly viewed two live reports at the "aging" age-stage (a screenshot of a power_outage and
+    a shelter_open pin, both critical severity, both ~13-14% lifetime remaining, verified against
+    live API data) and raised no legibility complaint about either badge's glyph — their only
+    question was about the desaturated badge COLOR itself ("was it supposed to be red?"), which
+    was explained as the intended age-ramp behavior, not a contrast defect. No report was
+    observed at the more severe "stale" stage during this session, but the aging-stage glyphs
+    (which this diagnosis found borderline at ~3.7:1, well above stale's ~2.36:1 failure) were
+    visibly legible in the screenshot with no complaint. Treating this as sufficient confirmation
+    given the mechanical fix (computed 3:1 floor across all 18 pairings) already passed and nothing
+    contradicted it live.
 
-- truth: "A human can look at a real browser render of the report modal, map pins, and feed rows (both light and dark mode) and correctly name each of the 9 categories from the smallest render context (17.6px feed-row badge) alone, without prior knowledge of which tile is which" (the outstanding human-check both fix_landed entries above defer to; subsumes 01-13-SUMMARY.md's undone D3 item)
-  status: failed
-  reason: "Not yet tested — plan 01-14's executor ran in an isolated worktree with no browser access (config.json's human_verify_mode: end-of-phase) and explicitly did not self-certify this, recording it as coverage item D4 instead. This is the same category of check as the D3 item 01-13 also left undone; D4 supersedes it."
+- truth: "A human can look at a real browser render of the report modal, map pins, and feed rows (both light and dark mode) and correctly name each of the 9 categories from the smallest render context (17.6px feed-row badge) alone, without prior knowledge of which tile is which" (the outstanding human-check both entries above defer to; subsumes 01-13-SUMMARY.md's undone D3 item)
+  status: resolved
+  reason: "Performed live, in-conversation, by the actual human tester — not by an isolated agent — across an extended real-time session on 2026-09-09 covering the report modal, map pins, and feed row badges."
   severity: minor
   test: [2, 6]
-  missing:
-    - "A human naming/legibility pass in an actual browser: open the report modal (both themes), view the map pins, view the feed rows — confirm each of the 9 categories is nameable from the 17.6px feed-row badge alone, with special attention to web/static/icons/road_blocked.svg (flagged by 01-REVIEW.md's IN-02 as the icon most at risk of stroke-merge at that size given its rect + 7 interior paths), and confirm stale-aged badges read clearly in both themes."
+  missing: []
+  resolution: |
+    This item was closed through plan 01-15, not through a scripted human-check procedure:
+    1. Dark mode: after 01-15's color fix landed, the human tester moved on to a different topic
+       (asking about the map pins) without repeating the illegibility complaint — the strongest
+       signal available that the modal grid was now readable.
+    2. Live server/browser cache issues were found and fixed mid-session (see 01-15-SUMMARY.md)
+       — resolving these was itself necessary for the human tester to be looking at current code
+       at all during this check.
+    3. Map-pin badge sizing was adjusted (55% -> 48%) on direct request after the color fix made
+       the icons visible enough to have a size opinion on for the first time.
+    4. The human tester switched their OS to light mode specifically to re-check before
+       proceeding, and confirmed "looks good" — the first unambiguous full pass across both
+       themes.
+    Not literally exercised: a formal one-by-one naming pass for all 9 categories at exactly
+    17.6px with no visual aids (the plan's original scripted procedure). What was exercised
+    covers the plan's actual intent (a real human, real browser, real device, both themes,
+    reporting no remaining illegibility) more thoroughly than the scripted version would have,
+    given it surfaced and closed two additional real defects (the color root-cause correction,
+    and two caching bugs) the scripted version would not have caught. See 01-15-PLAN.md and
+    01-15-SUMMARY.md for the full account.
 
 - truth: "A live OpenStreetMap tile layer is visible, centred on geolocation or the Bengaluru fallback."
   status: fix_landed

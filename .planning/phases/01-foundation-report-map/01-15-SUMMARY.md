@@ -41,6 +41,8 @@ key-files:
     - internal/api/handlers/page.go
     - cmd/server/main.go
     - web/templates/index.html.tmpl
+    - internal/api/router.go
+    - internal/api/handlers/page_test.go
 
 key-decisions:
   - "Consulted the advisor rather than running a third diagnose->plan->check->execute loop after 01-14's mechanically-passing fix was reported as still broken live — the loop was not converging (two rounds, same complaint), so the bottleneck was judged to be the fix strategy (chasing a computed floor) rather than diagnosis quality"
@@ -157,6 +159,19 @@ or at least insufficient on its own. The actual fix was the tile's glyph *color*
   satisfies 01-14-SUMMARY.md's outstanding coverage item D4 (itself a supersede of 01-13's D3) —
   the real-browser, both-themes, at-a-glance identifiability check neither prior plan's automated
   gates could perform.
+
+## Post-review follow-up
+
+Code review of this plan's diff (see `01-REVIEW.md` WR-06/WR-07) found the `AssetVersion`
+mechanism was incomplete in two ways: no test would catch a future regression of the wiring
+itself, and icon SVGs referenced from CSS `mask-image: url(...)` were never templated so they
+stayed exposed to a full hour of stale caching after every restart — a narrower recurrence of the
+exact bug class this plan exists to close. Fixed same-day, both same-day as the review: added
+`TestPageShellAppliesAssetVersionToLocalStaticAssets` (closes WR-06), and added `api.Deps.Dev`
+(threaded from `cmd/server/main.go`'s existing `ENV=development` check) so `staticFileServer`
+sends `Cache-Control: no-store` for the entire `/static/*` tree in dev mode rather than only
+versioning the specific paths the review happened to name (closes WR-07). Production's
+`public, max-age=3600` behavior is unchanged — `Dev` defaults false.
 
 ## Deviation from standard process
 
