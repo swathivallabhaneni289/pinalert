@@ -1,10 +1,12 @@
 ---
 phase: 01-foundation-report-map
-reviewed: 2026-09-06T00:00:00Z
+reviewed: 2026-09-09T00:00:00Z
 depth: standard
-files_reviewed: 33
+files_reviewed: 53
 files_reviewed_list:
+  - .claude/CLAUDE.md
   - .github/workflows/ci.yml
+  - .planning/phases/01-foundation-report-map/deferred-items.md
   - cmd/migrate/main.go
   - cmd/server/main.go
   - docs/docs.go
@@ -34,157 +36,225 @@ files_reviewed_list:
   - internal/testutil/db.go
   - internal/testutil/db_test.go
   - internal/testutil/seed.go
+  - web/css_contract_test.go
   - web/embed.go
-  - web/static/js/app.js
-  - web/static/js/map.js
-  - web/static/js/modal.js
-  - web/static/js/feed.js
-  - web/templates/index.html.tmpl
+  - web/js_contract_test.go
+  - web/static/css/feed.css
   - web/static/css/main.css
   - web/static/css/modal.css
-  - web/static/css/feed.css
+  - web/static/icons/earthquake.svg
+  - web/static/icons/fire.svg
+  - web/static/icons/flood.svg
+  - web/static/icons/other.svg
+  - web/static/icons/power_outage.svg
+  - web/static/icons/rescue_needed.svg
+  - web/static/icons/road_blocked.svg
+  - web/static/icons/shelter_open.svg
+  - web/static/icons/storm_cyclone.svg
+  - web/static/js/app.js
+  - web/static/js/feed.js
+  - web/static/js/map.js
+  - web/static/js/modal.js
+  - web/template_contract_test.go
+  - web/templates/index.html.tmpl
 findings:
-  critical: 1
-  warning: 7
+  critical: 0
+  warning: 4
   info: 2
-  total: 10
+  total: 6
 status: issues_found
 ---
 
-# Phase 1: Code Review Report
+# Phase 01: Code Review Report
 
-**Reviewed:** 2026-09-06T00:00:00Z
+**Reviewed:** 2026-09-09T00:00:00Z
 **Depth:** standard
-**Files Reviewed:** 33 (plus icon assets inspected in support of CR-01)
+**Files Reviewed:** 53
 **Status:** issues_found
 
 ## Summary
 
-This phase is well-built: the session HMAC/timing-safe verification, the never-SELECT-*-on-report-reads discipline, the server-side-only validation, and the client-side textContent-only DOM discipline (all called out as mandatory in CLAUDE.md) are implemented correctly and are covered by targeted tests (`TestNearbyReportsExcludesSessionID`, `TestNearbyResponseOmitsSessionID`, the session tamper/cross-secret tests). The previously-fixed shared-test-DB race (`-p 1` in `ci.yml`) is present and correct.
+This review supersedes the 2026-09-06 REVIEW.md for this phase. Per the workflow's scoping
+instructions, the 9 files touched by plan 01-13 (gap closure — switching category-icon rendering
+from `<img>`-loaded SVGs to CSS `mask`-based glyph spans) got proportionally deeper scrutiny:
+`web/static/css/main.css`, `web/static/js/app.js`, `web/static/js/map.js`,
+`web/static/js/modal.js`, `web/static/js/feed.js`, `web/css_contract_test.go`,
+`web/js_contract_test.go`, and the two icon-consuming stylesheets `web/static/css/feed.css` /
+`web/static/css/modal.css`. The remaining 44 files were re-read at standard depth; none produced
+a new finding — they remain consistent with the prior review's clean assessment. The one
+previously-logged item in that unchanged set (`internal/testutil/seed.go`'s
+`storm_cyclone_damage` vs. the canonical `storm_cyclone` slug) is already tracked in
+`.planning/phases/01-foundation-report-map/deferred-items.md` and is not repeated here as a new
+finding.
 
-The defects found are one confirmed visual-rendering bug in the map view (the app's primary feature) and a cluster of edge-case/test-fidelity gaps — no data-loss, injection, or session-integrity issues were found.
+**On the core question this gap-closure fix exists to answer — is the mask-based glyph rendering
+XSS-safe:** yes. `Pinalert.iconClass` (app.js) validates `category` against the fixed
+`CATEGORIES` array with `indexOf` (strict equality, no coercion) before building a class name,
+falls back to `'other'` for anything unrecognised, and every one of the three renderers
+(map.js/modal.js/feed.js) assigns the result only through `.className` / `el.className = ...` —
+never through a markup-parsing sink. This is a **strict improvement** over the `<img src="...">`
+approach it replaces: no path string is constructed from any category value at all, closing off
+even a would-be path-traversal/host-confusion class of bug that an unchecked `src` build could
+have opened. No injection, XSS, authz, or data-loss issue was found anywhere in this file set.
 
-## Critical Issues
-
-### CR-01: Map pin icon has no CSS sizing rule — the two sibling call sites both needed one and got it, this one didn't
-
-**File:** `web/static/js/map.js:73-86` (badge construction), missing counterpart in `web/static/css/main.css`
-
-**Issue:** `map.js`'s `buildBadgeElement` builds `<span class="icon-badge icon-badge--pin ...">` containing a plain `<img src="/static/icons/{category}.svg">`, with no width/height set on the `<img>` via attribute or class. The source SVGs (e.g. `web/static/icons/flood.svg`) declare `width="100%" height="100%"` — a percentage with no concrete size to resolve against — so the `<img>` has no usable intrinsic size.
-
-This is not a theoretical concern: the same icon-via-`<img>` pattern is used in two other places, and both of those needed an explicit fix:
-- `web/static/css/feed.css:58-62` — `.report-row .icon-badge img { width: 55%; height: 55%; display: block; }`, with a comment (`feed.css:51-57`) that spells out exactly why: *"main.css's `.icon-badge svg { width: 55%; height: 55%; }` only targets an inline `<svg>`, not an `<img>` referencing one — without an equivalent rule here the icon has no usable intrinsic size … and falls back to the browser's default replaced-element box."*
-- `web/static/css/modal.css:57-60` — `#category-grid .category-tile img { width: 24px; height: 24px; }`
-
-`main.css:235-238`'s `.icon-badge svg { width: 55%; height: 55%; }` rule is itself dead code — nothing in the codebase creates an inline `<svg>` inside `.icon-badge`; every call site (map.js, modal.js, feed.js) uses `<img>`. That rule was evidently the intended fix, but only feed.css and modal.css added the `<img>`-specific equivalent. Map markers — rendered via Leaflet's `L.divIcon` for every report pin on the primary map view — have no equivalent rule anywhere in `main.css`, `modal.css`, or `feed.css`.
-
-**Fix:** Add the missing rule next to the other two (or generalize it in `main.css` so all three call sites share it):
-```css
-/* main.css, near .icon-badge--pin */
-.icon-badge--pin img {
-  width: 55%;
-  height: 55%;
-  display: block;
-}
-```
+What follows are quality/robustness gaps in the mask migration itself and in the two new
+CSS/JS contract tests that were written to guard it — several of them are literal instances of
+the failure mode those tests' own doc comments warn against, which is why they're flagged as
+Warnings rather than Info.
 
 ## Warnings
 
-### WR-01: `radius_km`/`lat`/`lon` range validation is bypassed by the literal string `"NaN"` (GET /api/reports only)
+### WR-01: `.icon-badge svg` is dead CSS, and the new orphan-selector guard doesn't catch it
 
-**File:** `internal/api/handlers/reports.go:235`, `:277`; `internal/service/report.go:260-268` (`clamp`)
+**File:** `web/static/css/main.css:239-243`
+**Issue:** The sizing rule still carries both selectors:
 
-**Issue:** `strconv.ParseFloat` accepts the literal `"NaN"` and returns a valid (non-error) `math.NaN()`. Both range checks compare with `<`/`>`:
-```go
-// reports.go:235
-if radiusKm < minRadiusKm || radiusKm > maxRadiusKm {
-// reports.go:277 (parseCoordinate, used for both lat and lon)
-if parsed < min || parsed > max {
-```
-Every comparison against NaN is `false`, so `?lat=NaN&lon=NaN&radius_km=NaN` passes all three checks and reaches `service.Nearby`. There, `clamp` (`report.go:260-268`) has the identical pattern (`v < min` / `v > max`, both false for NaN) and passes NaN straight through into the SQL bounding-box parameters. The query does not crash or leak data — Postgres float8 comparisons against NaN are false, so the query silently returns zero rows instead of the 400 the input actually deserves — but it is a real gap in the "nothing here trusts client input" server-side validation contract this codebase otherwise takes seriously.
-
-Note this is **GET-only**: the identical bound-check pattern in `service.ValidateSubmitInput` (`report.go:199-204`) is not reachable via POST /api/reports, because `encoding/json` rejects a bare `NaN` token as invalid JSON syntax before validation ever runs.
-
-**Fix:** Reject non-finite values explicitly, e.g. in `parseCoordinate` and the radius check:
-```go
-if math.IsNaN(parsed) || math.IsInf(parsed, 0) {
-    writeFieldError(w, http.StatusBadRequest, name, name+" must be a finite number.")
-    return 0, false
+```css
+.icon-badge svg,
+.icon-badge .icon-glyph {
+  width: 55%;
+  height: 55%;
 }
 ```
 
-### WR-02: Description length limit is enforced in bytes server-side but UTF-16 code units client-side — the two disagree for any non-ASCII script
+Nothing in the current codebase places a bare `<svg>` element inside `.icon-badge` any more:
+`map.js`'s `buildBadgeElement` and `feed.js`'s `createRow` both append a `span.icon-glyph`
+child, and `feed.js`'s `createToggleIcon` builds an `<svg>` but appends it under
+`#view-toggle`/`.view-toggle__icon`, unrelated to `.icon-badge`. `.icon-badge svg` is therefore
+dead — exactly the pattern `web/css_contract_test.go`'s
+`assertGlyphSizingAndNoOrphanedImageSelectors` doc comment calls out as the failure mode it
+exists to catch ("an executor who appends the glyph selector to the existing image selector,
+instead of replacing it, would still pass (a) while leaving dead CSS behind"). The guard's own
+implementation only flags a trailing selector field of `img`:
 
-**File:** `internal/service/report.go:191-197`; `web/static/js/modal.js:468-470`
+```go
+if len(fields) < 2 || fields[len(fields)-1] != "img" {
+    continue
+}
+```
 
-**Issue:** The server checks `len(desc)` where `desc` is a Go `string` — `len()` on a string returns byte length, not character count. The client checks `description.length` (JS string length = UTF-16 code units, effectively character count for the BMP). For any multi-byte UTF-8 script — including Hindi/Devanagari or other Indic scripts, directly relevant given this project's stated India-first audience — the client will accept up to 1000 *characters* while the server (encoding each character as 2-3 UTF-8 bytes) rejects well before that, at roughly 330-500 characters. A visitor who writes a report near the client's own limit gets a confusing late server 400 the client-side check never warned about, contradicting `service.ValidateSubmitInput`'s doc comment that client messages should never be contradicted by a server rejection.
+— so the `svg` variant walks straight through undetected.
+**Fix:** Remove `.icon-badge svg,` from main.css (keep only `.icon-badge .icon-glyph`), and widen
+the test's orphan check to also flag a trailing `svg` selector field alongside `img`, so a future
+regression of the same shape is actually caught:
 
-**Fix:** Count runes server-side (`len([]rune(desc))` or `utf8.RuneCountInString(desc)`) so the limit means the same "1000 characters" the client and the copy both promise.
+```go
+if len(fields) < 2 || (fields[len(fields)-1] != "img" && fields[len(fields)-1] != "svg") {
+    continue
+}
+```
 
-### WR-03: The FOUND-03 "index is used" drift guard doesn't actually compare against the shipped SQL
+### WR-02: Per-category `-webkit-mask-image` declarations are asymmetrically unguarded
 
-**File:** `internal/store/reports_test.go:23-63`
+**File:** `web/static/css/main.css:276-319`, `web/css_contract_test.go:340-402`
+**Issue:** `assertBaseGlyphRule` (css_contract_test.go) enforces that the shared `.icon-glyph`
+base rule declares `mask-size`, `mask-repeat`, and `mask-position` in **both** prefixed and
+unprefixed form — the comment explains this cross-engine correctness requirement in detail.
+But `collectGlyphMaskRules`, which walks the nine per-category `.icon-glyph--{category}` rules
+(the ones that actually point at an icon file), only looks for the unprefixed spelling:
 
-**Issue:** `nearbyReportsSQLForExplain` is a hand-maintained copy of the `NearbyReports` query body, with a comment claiming it "must stay byte-for-byte in sync" with `queries/reports.sql` and that `TestNearbyReportsQuerySourceHasExpectedShape` is "a drift guard against the two diverging silently." That test only greps `queries/reports.sql` for the substrings `"expires_at > now()"` and `"BETWEEN"` — it never compares the constant to the file contents, so the constant can drift arbitrarily (extra join, changed predicate, different column order) and this test keeps passing. `TestNearbyReportsUsesIndex` then runs `EXPLAIN ANALYZE` against the *constant*, not the query the application actually executes (`sqlcgen.NearbyReports`, generated from the real file) — so the "no Seq Scan" guarantee this test exists to provide is validated against a copy, not the shipped code path.
+```go
+if strings.TrimSpace(name) == "mask-image" {
+    maskSource = extractMaskURLPath(strings.TrimSpace(value))
+}
+```
 
-**Fix:** Either (a) read the `NearbyReports` query body out of `queries/reports.sql` at test time (e.g., extract the `-- name: NearbyReports` block) and assert it equals `nearbyReportsSQLForExplain`, or (b) drop the copy and `EXPLAIN` by calling `sqlcgen.New(pool).NearbyReports` directly (via `pgx`'s query logging or a `EXPLAIN`-wrapped raw call using the same const sqlc emits, which is accessible from an external test only via this kind of duplication — option (a) is simpler).
+Deleting all nine `-webkit-mask-image: url(...)` lines from main.css leaves every test in the
+package green, while older WebKit-based engines that only honour the prefixed form would render
+all nine category glyphs invisible. This is the one declaration that actually resolves the icon
+path, in the one place the test suite's "assert both forms" discipline — deliberately applied
+to the base rule's three sibling mask properties — was not extended to.
+**Fix:** Extend `collectGlyphMaskRules` (or add a companion assertion) to also require a
+`-webkit-mask-image` declaration resolving to the same path as the unprefixed `mask-image` for
+every category rule, mirroring `assertBaseGlyphRule`'s both-forms enforcement.
 
-### WR-04: Swagger spec doesn't match actual error response shapes
+### WR-03: `feed.css`'s scoped glyph-sizing rule is a no-op duplicate
 
-**File:** `docs/docs.go:59-73` (GET spec), `:110-115` (POST 500 spec); `internal/api/handlers/reports.go:187`, `:248`
+**File:** `web/static/css/feed.css:51-59`
+**Issue:**
 
-**Issue:** Two mismatches between the documented contract and the real handlers:
-- POST `/reports`'s 500 is documented (`docs.go:110-115`) as returning `handlers.ErrorResponse` (a JSON `{"error":{...}}` body), but `SubmitReport`'s actual 500 path (`reports.go:187`) calls `http.Error(w, "internal server error", http.StatusInternalServerError)`, which writes `text/plain` with a bare string body, not JSON, and not the `ErrorResponse` shape.
-- GET `/reports` is documented (`docs.go:59-73`) with only 200 and 400 responses, but `NearbyReports` (`reports.go:248`) can also return the same undocumented, non-JSON 500.
+```css
+.report-row .icon-badge .icon-glyph {
+  width: 55%;
+  height: 55%;
+}
+```
 
-`TestSwaggerSpecCoversRoutes` (`swagger_test.go:119-165`) only checks that the paths/methods/enum values exist in the committed spec — it never checks response shapes, so this drift is undetected.
+is byte-identical in effect to the already-cascading `.icon-badge .icon-glyph { width: 55%;
+height: 55%; }` in `main.css:240-243` — 55% of the feed row's own smaller `.icon-badge--sm` box
+resolves to the same value whether the declaration lives in main.css or is repeated here at
+equal specificity. The comment above it ("the feed row's own smaller badge keeps its explicit
+sizing without that shared rule needing to know about this specific badge size") describes a
+distinction the rule doesn't actually make — both values are 55%, so this rule changes nothing.
+Its only functional effect is satisfying `assertGlyphSizingAndNoOrphanedImageSelectors`'s
+per-file requirement that `feed.css` contain *some* glyph-sizing rule with a `width` declaration.
+**Fix:** Either delete the rule (main.css's shared rule already covers `.icon-badge--sm` since
+percentage sizing is relative to each badge's own box) and relax the test's per-file requirement
+to only apply where a file genuinely needs its own override, or — if a future badge size is
+expected to diverge from 55% — leave a `/* intentionally matches main.css's 55% today */`
+comment that says so honestly instead of implying a distinction that isn't there.
 
-**Fix:** Either make the handlers' 500 path actually emit `ErrorResponse` JSON (consistent with every other error path in this file, which already goes through `writeFieldError`/`writeJSON`), or correct the swag annotations to match what's really returned. The former is preferable — it also makes the 500 response consistent with the 400 shape for any client parsing errors generically.
+### WR-04: `TestIconGlyphsAreClassDriven`'s regression guard is brittle to quote style
 
-### WR-05: No DB-level constraints on category/severity/capacity-status enums or the shelter-only-columns rule
+**File:** `web/js_contract_test.go:387-408`
+**Issue:**
 
-**File:** `internal/store/migrations/00001_create_reports.sql:3-16`
+```go
+const imageNodeCreation = "createElement('img')"
+...
+if strings.Contains(text, imageNodeCreation) {
+    t.Errorf(...)
+}
+```
 
-**Issue:** `category`, `severity`, and `shelter_capacity_status` are bare `TEXT` columns and `shelter_headcount` is a bare `INTEGER`, with no `CHECK` constraints enforcing the enum values `service.Categories`/`Severities`/`CapacityStatuses` declare, and nothing tying `shelter_capacity_status`/`shelter_headcount` to `category = 'shelter_open'`. All of that enforcement lives only in `service.ValidateSubmitInput`, which is bypassed by anything that writes to the table directly (a future migration/backfill script, an admin tool, or — concretely, in this codebase today — `internal/testutil/seed.go:25-35`, whose `seedCategories` list contains `"storm_cyclone_damage"`, a value that does not match `service.CategoryStormCyclone` ("storm_cyclone") or any other canonical category, and `internal/store/reports_test.go:171-176`, which inserts a raw row bypassing the service entirely). Neither of those two locations is caught by any test, because nothing checks seeded/inserted rows against the canonical enum. This is low-risk today (seed data used only for volume/index tests) but becomes a real correctness risk once Phase 2/3 aggregate confirm/dispute counts per category over this table.
-
-**Fix:** Add `CHECK (category IN (...))`, `CHECK (severity IN (...))`, `CHECK (shelter_capacity_status IS NULL OR shelter_capacity_status IN (...))`, and `CHECK ((category = 'shelter_open') OR (shelter_capacity_status IS NULL AND shelter_headcount IS NULL))` in a follow-up migration; fix the `"storm_cyclone_damage"` typo in `testutil/seed.go` to `"storm_cyclone"`.
-
-### WR-06: Bounding box does not wrap across the antimeridian
-
-**File:** `internal/service/report.go:242-258` (`BoundingBox`)
-
-**Issue:** `BoundingBox` clamps `lonMin`/`lonMax` to `[-180, 180]` rather than wrapping. A query centered near longitude ±180 (e.g. Fiji, the Chukotka/Alaska border region) with a radius that would normally cross the dateline instead gets a bounding box truncated at the boundary, silently excluding reports that are geographically within range but numerically on the other side of the ±180 seam. Low real-world impact for an India-focused deployment (India's longitude range, ~68–97°E, is nowhere near the antimeridian), but it's a genuine correctness gap in the one query that both the map and the list depend on, and would surface immediately if this app were ever deployed in/near the Pacific.
-
-**Fix:** Either document this as an accepted Phase 1 limitation (India-only launch geography), or handle the wraparound case by issuing two bounding boxes (`[lonMin, 180]` and `[-180, lonMax]`) when the computed range would cross ±180.
-
-### WR-07: `TestExpiryReadTimePredicate` has a thin, clock-dependent margin
-
-**File:** `internal/store/reports_test.go:113-145`
-
-**Issue:** The test seeds a report with a 2-second TTL (`testutil.SeedExpiringReport(t, pool, 2)`) and then `time.Sleep(2500 * time.Millisecond)` before asserting expiry. The margin between "TTL elapsed" and "test wakes up and queries" is 500ms, shared against `now()` on a real (not mocked) Postgres clock and a potentially loaded CI runner. A slow CI host or GC pause could push the actual elapsed wall-clock time on either side close enough to make this test flake in either direction (querying before Postgres's `now()` has passed `expires_at`, or occasionally the reverse for the "before expiry" assertion if scheduling is delayed).
-
-**Fix:** Widen the margin (e.g. 3s TTL / 4s sleep) or, more robustly, seed the row with `expires_at` computed from a captured `now()` and assert against `NOW() - INTERVAL` server-side rather than relying on wall-clock sleep timing in the test process.
+This is the test guarding against exactly the regression that caused UAT Tests 2/6 (glyphs
+rendering solid black in dark mode via a sealed `<img>` sub-document) — a real, security/UX
+relevant guard. But the match is a literal substring against one specific quoting/spacing style.
+A revert written as `createElement("img")`, `createElement( 'img' )`, or via
+`document.createElement.bind(document, 'img')` / a template literal passes this check cleanly
+while reintroducing the exact defect the test exists to catch. There is no linter/formatter step
+enforcing single-quote consistency across this codebase's JS files that would otherwise make this
+concern moot.
+**Fix:** Loosen the match to be whitespace/quote-tolerant (e.g. a small regex
+`createElement\(\s*['"]img['"]\s*\)`), or — more robustly — assert the *absence* of any
+`<img` element ever appended to a badge/tile container by checking for `appendChild` calls whose
+argument traces back to an `img`-tagged element, accepting that a determined revert can still
+evade a purely textual check either way.
 
 ## Info
 
-### IN-01: The `-p 1` test-isolation fix is correct today but depends entirely on an unenforced convention
+### IN-01: Icon SVGs still carry vestigial `fill="none" stroke="currentColor"` attributes that are now inert
 
-**File:** `.github/workflows/ci.yml:39-44`
+**File:** `web/static/icons/*.svg` (all nine files, e.g. `flood.svg:8-9`)
+**Issue:** Every icon file still declares `fill="none"` and `stroke="currentColor"` from its
+prior life as a directly-embedded `<img>`/inline SVG. Now that every icon is consumed exclusively
+as a `mask-image` source, the SVG is rasterized into a mask and only its **alpha channel**
+matters — CSS Masking Level 1's `mask-mode: match-source` resolves to `alpha` for a `url()` image
+reference, so `stroke="currentColor"` never resolves against any real page color and has no
+visible effect; the mask boundary is defined purely by which pixels the 2px stroke touches.
+Functionally harmless (this is why the mask technique works at all — thin opaque strokes on a
+transparent background are a perfectly valid alpha mask), but the attribute is misleading
+provenance: a future editor skimming these files could reasonably believe `currentColor` is still
+doing something, when today it is dead weight carried over from the pre-01-13 rendering approach.
+**Fix:** Optional cleanup — either strip `fill`/`stroke`/`stroke-width` down to whatever
+minimally produces the intended silhouette (since only alpha matters now), or add a one-line
+comment at the top of the icon directory (or in main.css's existing `.icon-glyph` comment block)
+noting that these attributes are vestigial under mask consumption, so nobody "fixes" a
+non-existent color bug here later.
 
-**Issue:** The comment correctly explains that `-p 1` is required because every package's `testutil.NewTestDB` truncates a table shared across the whole `postgres:16` service container. This works only because no test in the current suite calls `t.Parallel()` within a package — `-p 1` serializes packages but does nothing to prevent within-package parallelism. Nothing enforces or lints against a future test adding `t.Parallel()`, which would silently reintroduce the exact race this fix closed. (Note: the corresponding `Makefile` target was not in this review's file list and could not be checked for the same flag.)
+### IN-02: 44 previously-reviewed files re-read with no new findings
 
-**Fix:** A one-line comment on `testutil.NewTestDB` warning against `t.Parallel()` in any test that calls it would be cheap insurance; a `grep -r 't.Parallel()' --include=*_test.go` check in CI would make the invariant enforced rather than just documented.
-
-### IN-02: `defaultRadiusKm = 10.0` is declared twice, independently
-
-**File:** `cmd/server/main.go:32`; `internal/api/handlers/reports.go:29`
-
-**Issue:** The same 10km default appears as `defaultRadiusKm` in `cmd/server/main.go` (used only to populate the client's `data-default-radius-km` attribute, which the client always echoes back on every request) and separately as `defaultRadiusKm` in `internal/api/handlers/reports.go` (used when a caller of `GET /api/reports` omits `radius_km` entirely — reachable today only from a direct API client, not the shipped JS, which always sends the value explicitly). The two are not wired to the same source of truth; changing one without the other would make the displayed default and the server's actual fallback default silently diverge for direct API consumers.
-
-**Fix:** Thread `PageConfig.DefaultRadiusKm` through to the handler (e.g. via `Deps`) so there is exactly one 10.0 in the codebase.
+**Files:** every file in `files_reviewed_list` above other than the 9 touched by plan 01-13.
+**Issue:** N/A — re-reviewed at standard depth per this workflow's instructions; all remain
+consistent with the prior (2026-09-06) clean assessment. The one open item on this file set —
+`internal/testutil/seed.go`'s `seedCategories` using `storm_cyclone_damage` instead of the
+canonical `storm_cyclone` slug — is already tracked in
+`.planning/phases/01-foundation-report-map/deferred-items.md` and is referenced here only as a
+pointer, not restated as a new finding.
+**Fix:** N/A (tracked elsewhere).
 
 ---
 
-_Reviewed: 2026-09-06T00:00:00Z_
+_Reviewed: 2026-09-09T00:00:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
