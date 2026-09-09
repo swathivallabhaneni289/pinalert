@@ -60,9 +60,9 @@ files_reviewed_list:
   - web/templates/index.html.tmpl
 findings:
   critical: 0
-  warning: 5
+  warning: 8
   info: 2
-  total: 7
+  total: 10
 status: issues_found
 ---
 
@@ -75,209 +75,210 @@ status: issues_found
 
 ## Summary
 
-This review supersedes the prior 01-REVIEW.md (2026-09-09, 0 Critical / 4 Warning / 2 Info) for
-the same 53 files, following plan 01-14's second gap-closure round: a uniform `stroke-width`
-bump (2→3) across all nine category SVGs, a new `--badge-glyph-fg` age-aware foreground custom
-property in `main.css`, removal of the dead `.icon-badge svg` selector (closing the prior
-review's WR-01), a darkened light-mode `--color-severity-medium` hex, two new computed Go
-contract tests (`TestCategoryGlyphInkCoverageAcrossRenderContexts`,
-`TestBadgeGlyphContrastAcrossAgeStagesAndThemes`), and the `01-UI-SPEC.md` color-table sync.
+This review supersedes the prior 01-REVIEW.md (0 Critical / 5 Warning / 2 Info) for the same 53
+files, following plan 01-15 — a live, human-in-the-loop correction round run outside the normal
+executor pipeline. 01-15 changed: `web/static/css/main.css` (new `.category-tile .icon-glyph` /
+`.category-tile--selected .icon-glyph` color override; badge glyph sizing 55%→48%),
+`web/static/css/feed.css` (kept its scoped glyph-sizing rule in sync at 48%),
+`web/css_contract_test.go` (removed `TestCategoryGlyphInkCoverageAcrossRenderContexts` and its
+exclusive helpers), all nine icon SVGs (`stroke-width` reverted 3→2, undoing 01-14), and three new
+files — `cmd/server/main.go`, `internal/api/handlers/page.go`, `web/templates/index.html.tmpl` —
+adding a process-start-time `AssetVersion` cache-busting query string (`?v=`) on every local
+CSS/JS asset link, fixing a real bug where a 1-hour `Cache-Control: max-age=3600` plus orphaned
+`go run` server processes meant a human tester could not see fixes land even after correct
+restarts.
 
-**Scrutiny tiering:** the 01-14 file set (both changed CSS/test files, the 9 SVGs, and — since
-their DOM-shape claims about where `.age-*`/`.sev-*` classes land are load-bearing for the new
-CSS mechanism — `map.js`/`feed.js`) got a full line-by-line read plus independent verification:
-the two new Go tests were run (`go test ./web/...`, all pass), their math was hand-traced against
-the shipped tokens/SVGs, and a counter-scenario (pre-01-14 stroke-width=2, pre-01-14 medium hex)
-was computed by hand to confirm both new tests would genuinely have failed against the old
-values — they are not vacuous. The remaining 44 files (unchanged since the prior pass) got a
-lighter pass: full reads on the security-sensitive Go path (`reports.go`, `report.go`,
-`cookie.go`, `router.go`, `page.go`, `main.go`, `db.go`), a project-wide grep sweep for the
-standard anti-pattern set (secrets, `eval`/`innerHTML`, debug artifacts, empty catches), and
-`go build ./... && go vet ./... && go test ./...` (all clean) — consistent with the prior
-review's clean assessment of that set. Per the prior review's own note, `internal/testutil/seed.go`'s
-`storm_cyclone_damage` vs. canonical `storm_cyclone` mismatch remains tracked in
-`deferred-items.md` and is not repeated here.
+**Scrutiny tiering:** the 01-15 file set got a full line-by-line read plus independent
+verification — `go build ./...`, `go vet ./...`, and `go test ./web/... ./internal/api/handlers/...
+./cmd/...` all pass; `git show` was used to confirm the exact before/after diff for each changed
+file rather than relying on the stated change summary. The remaining files (unchanged since the
+prior pass) were re-confirmed still-current by re-reading the exact lines each carried-forward
+finding below cites.
 
-**WR-01 verified fixed.** `grep -n "svg\|img" web/static/css/*.css` (excluding `.svg"` mask-image
-URLs) now returns only a prose comment mentioning `<img>`, and
-`assertGlyphSizingAndNoOrphanedImageSelectors` now includes the trailing-`svg` check the prior
-review's fix suggested. No orphaned `.icon-badge svg` / `.category-tile svg` selector survives.
+**CSS specificity claim verified correct.** `.category-tile .icon-glyph` and
+`.category-tile--selected .icon-glyph` are both exactly two chained class selectors — identical
+specificity (0,2,0) — so the winner is decided by source order, and
+`.category-tile--selected .icon-glyph` (main.css line 482) is declared after
+`.category-tile .icon-glyph` (line 472), so it correctly wins for a tile carrying both classes.
+Confirmed against actual DOM construction in `modal.js:203`/`271` (`tile.className =
+'category-tile'`, then `classList.toggle('category-tile--selected', ...)` — both classes really do
+co-exist on the same element, not swapped). Also checked `modal.css` for a competing
+`#category-grid .category-tile .icon-glyph` declaration that could out-specificity this pair from
+a different file loaded later — it only sets `width`/`height` there (24px), never `color`, so no
+conflict. This mechanism is sound.
 
-**`--badge-glyph-fg` wiring verified correct across both DOM shapes.** `map.js:144` puts the age
-class on the badge element itself (compound match — `.age-*` wins over `.sev-*` for
-`--severity-current`/`--badge-glyph-fg` at equal specificity because it appears later in
-`main.css`'s source order); `feed.js:168-169` puts both the `sev-*` and `age-*` classes on the
-`<li class="report-row">` ancestor, and the custom properties reach the child `.icon-badge` via
-ordinary CSS custom-property inheritance — the same pre-existing mechanism that already made
-`--severity-current` (badge fill) work in both contexts before 01-14. `ruleBySelector`'s
-exact-selector-head match (not a substring search) means a wrongly-shaped fix (a compound
-`.icon-badge.age-stale` or descendant `.report-row.age-stale .icon-badge` selector) would leave
-the bare `.age-stale` rule undeclared and the test would catch it. This mechanism is sound.
+**Test-removal audit: clean.** `TestCategoryGlyphInkCoverageAcrossRenderContexts` and its exclusive
+helpers (`extractAttr`, `findDeclValue`, `parsePx`, `parsePercent`, the ink-floor/ceiling
+constants) are fully gone from `web/css_contract_test.go` — `grep` for each name returns only the
+doc-comment's prose mentions, `go build`/`go vet` are clean, and `TestBadgeGlyphContrastAcrossAgeStagesAndThemes`
+is byte-for-byte untouched. No dangling reference, no orphaned helper, no unused import. This
+removal does not leave a regression risk unguarded that WR-05 (below, now closed) hadn't already
+flagged as testing nothing independent.
 
-**No security regression found** in the SVGs or the new CSS: no `<script>`, no `javascript:`
-URLs, no new markup-string assembly in `map.js`/`feed.js` (both still build the badge via
-`document.createElement` + `.className`, never `innerHTML`), and every mask-image `url()` in
-`main.css` is a static literal pointing at the existing nine `/static/icons/*.svg` paths — no
-user input reaches any of this.
-
-**Carried forward from the prior review:** WR-02, WR-03 (updated), WR-04, and IN-01 below concern
-files/mechanisms plan 01-14 did not touch and remain valid against current source, verified by
-re-reading the exact lines cited. They are restated here (not just referenced) because this
-review overwrites the prior artifact and a future `--auto` re-review pass reads only this file.
+**AssetVersion wiring: correctly threaded, no injection risk, but incompletely covers the caching
+surface it was built to fix.** `PageConfig.AssetVersion` → `pageViewModel.AssetVersion` →
+`{{.AssetVersion}}` in every local `<link>`/`<script>` tag is wired end-to-end correctly, and
+`strconv.FormatInt(time.Now().Unix(), 10)` is fully server-controlled numeric output with no
+attacker-reachable input, so there is no XSS/injection risk regardless of `html/template`'s
+contextual escaping. However, three residual caching gaps are now findings below (WR-06, WR-07,
+WR-08) — the general shape of this plan's own root-cause bug (byte-identical cached response,
+nothing forcing a refetch) turns out not to be fully closed by this fix, just narrowed to CSS/JS
+document `<link>`/`<script>` tags specifically.
 
 ## Warnings
 
 ### WR-01 (closed): dead `.icon-badge svg` selector
 
-Fixed by 01-14. No longer present; the new orphan-selector check in
-`assertGlyphSizingAndNoOrphanedImageSelectors` now catches this shape if it recurs. Kept as a
-closed entry (not renumbered) so this document's WR-02 through WR-04 numbering stays stable
-across review passes.
+Fixed by 01-14. Kept as a closed entry so this document's numbering stays stable across review
+passes.
 
 ### WR-02: Per-category `-webkit-mask-image` declarations are still asymmetrically unguarded
 
-**File:** `web/static/css/main.css:302-345`, `web/css_contract_test.go:363-395` (`collectGlyphMaskRules`)
-**Issue:** `assertBaseGlyphRule` enforces that the shared `.icon-glyph` base rule declares
-`mask-size`/`mask-repeat`/`mask-position` in **both** prefixed and unprefixed form. But
-`collectGlyphMaskRules`, which walks the nine per-category `.icon-glyph--{category}` rules (the
-ones that resolve the actual icon path), still only inspects the unprefixed spelling:
-
-```go
-if strings.TrimSpace(name) == "mask-image" {
-    maskSource = extractMaskURLPath(strings.TrimSpace(value))
-}
-```
-
-Confirmed unaddressed by 01-14: `grep -n "webkit-mask-image" web/css_contract_test.go` matches
-only a comment, never an assertion. Deleting all nine `-webkit-mask-image: url(...)` lines from
-`main.css` would leave every test in the package green while older WebKit-based engines that only
-honor the prefixed form render all nine category glyphs invisible — the one declaration that
-actually resolves the icon path is the one place the codebase's "assert both forms" discipline
-was not extended to.
+**File:** `web/static/css/main.css:302-345`, `web/css_contract_test.go` (`collectGlyphMaskRules`)
+**Issue:** Unaffected by 01-15 — confirmed unchanged (`grep -n "webkit-mask-image"
+web/css_contract_test.go` still matches only a comment, never an assertion).
+`assertBaseGlyphRule` enforces both prefixed and unprefixed mask-size/repeat/position on the
+shared `.icon-glyph` base rule, but the nine per-category rules that resolve the actual icon path
+are only checked in unprefixed form. Deleting all nine `-webkit-mask-image` lines from `main.css`
+would leave every test in the package green while older WebKit-based engines render all nine
+category glyphs invisible.
 **Fix:** Extend `collectGlyphMaskRules` (or add a companion assertion) to also require a
 `-webkit-mask-image` declaration resolving to the same path as the unprefixed `mask-image` for
-every category rule, mirroring `assertBaseGlyphRule`'s both-forms enforcement.
+every category rule.
 
-### WR-03: `feed.css`'s scoped glyph-sizing rule is still a same-value duplicate — now also a test literal
+### WR-03: `feed.css`'s scoped glyph-sizing rule is a same-value duplicate, and its explanatory comment is now factually wrong
 
-**File:** `web/static/css/feed.css:56-59`
-**Issue:**
+**File:** `web/static/css/feed.css:51-59`
+**Issue:** 01-15 changed both `main.css`'s `.icon-badge .icon-glyph` and `feed.css`'s
+`.report-row .icon-badge .icon-glyph` from 55% to 48% (confirmed via `git show 1f87510` and `git
+show 5da5d1f`), so the two rules remain byte-identical in effect — the scoped rule still changes
+nothing at runtime, same underlying no-op-duplicate issue the prior review flagged. What's new:
+the comment directly above the rule was **not** updated and now reads:
 
 ```css
+/* Scoped to .report-row so this does not reach map.js's pin badges, which
+   this plan does not own. main.css's shared `.icon-badge .icon-glyph`
+   rule already sizes the glyph at 55%; this scoped rule exists so the
+   feed row's own smaller badge keeps its explicit sizing without that
+   shared rule needing to know about this specific badge size. */
 .report-row .icon-badge .icon-glyph {
-  width: 55%;
-  height: 55%;
+  width: 48%;
+  height: 48%;
 }
 ```
 
-remains byte-identical in effect to `main.css`'s cascading `.icon-badge .icon-glyph { width: 55%;
-height: 55%; }` — 55% of `.icon-badge--sm`'s own box resolves the same whether declared here or
-inherited from main.css, so the rule still changes nothing at runtime; the prior review's finding
-stands unchanged.
-
-**Update since the prior review:** this is no longer purely cosmetic risk.
-`TestCategoryGlyphInkCoverageAcrossRenderContexts` (new in 01-14) now reads this exact selector's
-`width` value as a literal via `findDeclValue(t, "static/css/feed.css", ".report-row .icon-badge
-.icon-glyph", "width")` and uses it as one leg of its stroke-width-floor computation. The prior
-review's suggested fix ("delete the rule; main.css's shared rule already covers it") would now
-also break this new test, which `t.Fatalf`s if the selector is missing. The underlying
-no-op-duplicate observation is still correct, but any fix now needs to account for two test
-dependents, not the original one.
-**Fix:** Either (a) leave the rule in place with a comment stating plainly that it is currently a
-byte-identical duplicate of main.css's cascade value, kept only because two contract tests read it
-as a literal, so a future editor does not "clean it up" and silently break both, or (b) if this
-selector is meant to diverge from main.css's 55% in the future, do so now and update both tests'
-literals to match.
+The comment claims main.css sizes the glyph at "55%" — main.css is also 48% now. A future editor
+reading only this comment would believe the two files still diverge by design; they don't.
+**Fix:** This rule cannot simply be deleted — `TestCategoryGlyphMaskRulesCoverEveryCategory`'s
+`assertGlyphSizingAndNoOrphanedImageSelectors` requires at least one rule in `feed.css` whose
+selector contains `icon-glyph` and whose body contains `width` (a presence check, not a value
+check), so removing it outright fails that test. Either (a) keep the rule, correct the comment's
+"55%" to "48%," and state plainly that it is currently a byte-identical duplicate of main.css's
+cascade value kept only to satisfy that test's per-file requirement; or (b) if `feed.css` is meant
+to diverge from `main.css` going forward, do so now and drop the stale "already sizes... 55%"
+framing entirely.
 
 ### WR-04: `TestIconGlyphsAreClassDriven`'s regression guard is still brittle to quote style
 
 **File:** `web/js_contract_test.go:387-408`
-**Issue:** Unchanged since the prior review — confirmed by re-reading the cited lines against
-current source. The guard against the exact regression that caused UAT Tests 2/6 (glyphs
-rendering solid black via a sealed `<img>` sub-document) is a literal substring match:
+**Issue:** Unchanged since the prior review — confirmed by re-reading current source. The guard
+against the exact regression that caused UAT Tests 2/6 is a literal substring match
+(`const imageNodeCreation = "createElement('img')"`). A revert written as
+`createElement("img")` or built via a template literal passes this check cleanly while
+reintroducing the defect.
+**Fix:** Loosen the match to be whitespace/quote-tolerant, or assert the absence of any
+`<img`-tagged element ever appended to a badge/tile container instead of matching the constructor
+call textually.
 
-```go
-const imageNodeCreation = "createElement('img')"
-...
-if strings.Contains(text, imageNodeCreation) {
-```
+### WR-05 (closed): `TestCategoryGlyphInkCoverageAcrossRenderContexts`'s tautological per-context assertions
 
-A revert written as `createElement("img")`, `createElement( 'img' )`, or built via
-`document.createElement.bind(document, 'img')` / a template literal passes this check cleanly
-while reintroducing the exact defect the test exists to catch. No lint/format step enforces
-single-quote consistency across this codebase's JS files that would otherwise make this moot.
-**Fix:** Loosen the match to be whitespace/quote-tolerant (e.g. a small regex
-`createElement\(\s*['"]img['"]\s*\)`), or assert the absence of any `<img`-tagged element ever
-appended to a badge/tile container instead of matching the constructor call textually.
+Test deleted outright by 01-15 (see summary's test-removal audit above), which is a valid
+resolution of this finding — the prior review had already established the per-context comparisons
+were algebraically identical to the single uniform-stroke-width check that ran alongside them, so
+no independently-verifying assertion is lost by the removal. Kept as a closed entry so this
+document's numbering stays stable.
 
-### WR-05 (new): `TestCategoryGlyphInkCoverageAcrossRenderContexts`'s per-context "physical stroke width" assertions are tautological
+### WR-06 (fixed post-review): The `AssetVersion` cache-busting mechanism has no test coverage
 
-**File:** `web/css_contract_test.go:940-960`
-**Issue:** The test's doc comment (lines 800-833) sells this as measuring "physical rendered
-stroke width per context" against a floor — implying an assertion that could fail independently
-per render-box context. Tracing the arithmetic shows it cannot:
+**File:** `internal/api/handlers/page_test.go`, `internal/api/handlers/page.go`
+**Issue:** `TestPageShellServesDOMContract` constructs `PageConfig{}` without setting
+`AssetVersion` (so it renders empty: `/static/css/main.css?v=`) and never asserts that
+`AssetVersion` is threaded from `PageConfig` through `pageViewModel` into the rendered `href`/`src`
+attributes. If a future edit accidentally dropped the `AssetVersion: cfg.AssetVersion,` line in
+`Page()` (page.go:62) — silently reverting to the exact stale-cache bug this plan exists to fix —
+no test in this package would fail.
+**Fix:** Add an assertion (either in `TestPageShellServesDOMContract` or a new test) that
+constructs `PageConfig{AssetVersion: "some-distinct-value"}` and asserts every local CSS/JS tag's
+`href`/`src` contains `?v=some-distinct-value`.
+**Resolution:** Fixed same-day, post-review: added `TestPageShellAppliesAssetVersionToLocalStaticAssets`
+(page_test.go) asserting exactly this — every local CSS/JS URL contains `?v=<AssetVersion>` and
+the third-party CDN script does not.
 
-```go
-floorFeed := inkFloorStrokeWidth * feedRenderBoxPx / glyphViewBoxUnits
-...
-feedPhysical := sw * feedRenderBoxPx / glyphViewBoxUnits
-...
-if feedPhysical < floorFeed {
-```
+### WR-07 (fixed post-review): Icon SVGs referenced via CSS `url()` are not covered by the `AssetVersion` mechanism
 
-`feedRenderBoxPx` and `glyphViewBoxUnits` are identical, non-zero constants on both sides of the
-comparison — they cancel algebraically, so `feedPhysical < floorFeed` reduces exactly to `sw <
-inkFloorStrokeWidth`, the same condition already asserted directly and unconditionally at line
-897 (`if uniform < inkFloorStrokeWidth || uniform > inkCeilingStrokeWidth`). The same cancellation
-holds for `modalPhysical`/`floorModal`. Verified by hand-computation, not just inspection: for any
-`sw`, `feedRenderBoxPx`, `modalRenderBoxPx` combination, `feedPhysical < floorFeed` and
-`modalPhysical < floorModal` are true if and only if `sw < 2.5`, regardless of the render-box
-values — the per-context loop can never fail independently of the single uniform-stroke-width
-check that already runs once, before it. The render-box literals (`feedPct`, `smPx`, `modalPx`)
-are real and are genuinely guarded — but only by their own three separate monotonicity checks
-(`feedPct < 55.0`, `smPx < 32.0`, `modalPx < 24.0`), not by the "physical stroke width per
-context" comparisons that the doc comment presents as the test's core claim.
-**Fix:** Either drop the per-icon `feedPhysical`/`modalPhysical` `t.Errorf` checks (keep the
-`t.Logf` for visibility) and adjust the doc comment to state plainly that render-box literals are
-guarded by monotonicity only, not by an independent per-context floor; or make the comparison
-genuinely context-dependent (e.g. derive `inkFloorStrokeWidth` as a floor on physical pixels
-rather than on the SVG's `stroke-width` units, so a context with a smaller render box has a
-tighter — not merely proportionally identical — bound).
+**File:** `web/static/css/main.css:302-345` (nine `mask-image: url("/static/icons/*.svg")`
+declarations), `internal/api/router.go:94`
+**Issue:** `AssetVersion` only versions the CSS/JS `<link>`/`<script>` tags the template emits
+directly; every `mask-image: url("/static/icons/{category}.svg")` in `main.css` is a static,
+unversioned path. `staticFileServer` (router.go:94) applies the same
+`Cache-Control: public, max-age=3600` to every path under `/static/*`, icons included. This plan's
+own diff reverted all nine icons' `stroke-width` from 3 back to 2 — a real content change to those
+exact files — but a browser that already cached the old (stroke-width=3) SVG bytes from within the
+last hour has no reason to refetch them even after the versioned CSS forces a fresh CSS fetch,
+because the icon `url()` path embedded in that fresh CSS is unchanged. This is a narrower,
+time-bounded (≤1 hour) recurrence of the same failure mode — a cached response with nothing
+forcing a refetch — that this plan was built to eliminate for CSS/JS.
+**Fix:** Either version the icon `url()` paths too (e.g. a build/deploy step appending
+`?v={{.AssetVersion}}` isn't available inside a static CSS file without templating CSS itself, so
+a content-hash-based filename or a shorter `max-age` specifically for `/static/icons/*` is more
+practical), or reduce `Cache-Control` max-age for the icons subtree so this window shrinks from an
+hour to something operationally acceptable.
+**Resolution:** Fixed same-day, post-review, via a different route than either suggested fix:
+rather than version or shorten-cache just the icons subtree, added `api.Deps.Dev` (router.go),
+threaded from `cmd/server/main.go`'s existing `ENV=development` check, which makes
+`staticFileServer` send `Cache-Control: no-store` for the ENTIRE `/static/*` tree (not just
+icons) whenever `ENV=development` — eliminating this failure class for every current and future
+static asset in dev mode, not just the ones this review happened to name. Production behavior
+(`public, max-age=3600`) is unchanged, since the zero-value `Dev: false` is what every existing
+`Deps{}` literal without the field already gets.
+
+### WR-08 (new): The HTML document response itself (which carries the `?v=` token) sets no `Cache-Control` or validator headers
+
+**File:** `internal/api/handlers/page.go:56-70`
+**Issue:** `Page()` sets only `Content-Type`; it never sets `Cache-Control`, `Last-Modified`, or
+`ETag` on the `/` response. The entire `AssetVersion` mechanism depends on a fresh HTML document
+being served on every request/restart — if the document itself is ever served stale by an
+intermediary (a CDN, a reverse proxy fronting a future deploy, or a browser's own heuristic
+freshness caching in the absence of any explicit directive, per RFC 7234 §4.2.2), the new `?v=`
+token would never reach the client at all and every static asset link would keep resolving to
+whatever version was baked into the last-cached HTML. In practice, most browsers revalidate a
+plain navigation request with no validator headers, so this is unlikely to bite today behind no
+intermediary — but it is the mechanism's own foundation and is currently unguarded by any explicit
+directive.
+**Fix:** Set an explicit `Cache-Control: no-cache` (or `no-store`) header on the `/` response in
+`Page()`, so the document is never cached by an intermediary regardless of heuristic freshness
+rules, making the `AssetVersion` mechanism's correctness independent of client/proxy defaults.
 
 ## Info
 
 ### IN-01: Icon SVGs still carry vestigial `fill="none" stroke="currentColor"` attributes
 
 **File:** `web/static/icons/*.svg` (all nine files, e.g. `flood.svg:8-9`)
-**Issue:** Unchanged since the prior review (01-14 only edited `stroke-width`, from `2` to `3`).
-Every icon still declares `fill="none"`/`stroke="currentColor"` from its pre-mask-consumption
-history. Since every icon is consumed exclusively as a `mask-image` source, only the rasterized
-alpha channel matters; `stroke="currentColor"` never resolves against any real page color.
-Functionally harmless, but a future editor skimming these files could reasonably believe
-`currentColor` is still doing something.
+**Issue:** Unchanged since the prior review. Every icon still declares `fill="none"`/
+`stroke="currentColor"` from its pre-mask-consumption history. Since every icon is consumed
+exclusively as a `mask-image` source, only the rasterized alpha channel matters; `stroke=
+"currentColor"` never resolves against any real page color. Functionally harmless.
 **Fix:** Optional — strip `fill`/`stroke` down to whatever minimally produces the intended
 silhouette, or add a one-line comment noting these attributes are vestigial under mask
 consumption.
 
-### IN-02 (new): `road_blocked.svg` is the shape most at risk of stroke-merge at the smallest render context — flag for the human-check step
+### IN-02 (closed): `road_blocked.svg` stroke-merge risk at small render context
 
-**File:** `web/static/icons/road_blocked.svg`, `.planning/phases/01-foundation-report-map/01-UI-SPEC.md`
-**Issue:** 01-14's fix raises ink coverage but both new contract tests explicitly and correctly
-disclaim proving shape identifiability (see each test's own "Honest limit" doc comment) — that is
-deferred to 01-14 Task 3's human visual check. Of the nine icons, `road_blocked.svg` (a `rect`
-20×8 plus seven interior/diagonal paths, all now at `stroke-width="3"`) is the most likely
-candidate for the interior strokes to visually merge at the feed row's smallest render context
-(17.6px box, ~0.73 px per SVG unit — the rect's 8-unit height renders at ~5.9px with a ~2.2px
-physical stroke top and bottom, leaving roughly 1.5px of interior height for three diagonal
-strokes at the same physical weight). This is not a code defect the test suite can catch (both
-tests correctly scope themselves to ink-coverage and contrast, not silhouette legibility) — it's
-a specific, named risk the human-check step should verify was actually looked at, rather than a
-generic "eyeball the 3x3 grid" pass that could plausibly skim past this one icon at the smallest
-size.
-**Fix:** None required in code. When 01-14 Task 3's human-check is performed, explicitly confirm
-`road_blocked` reads as distinguishable from the other eight icons in the feed-row context (not
-just the modal's 3x3 grid, which renders at the larger 24px size), not just that all nine icons
-are visible.
+Moot as of 01-15 — the finding's entire premise was 01-14's `stroke-width="3"`, which 01-15
+reverted back to `stroke-width="2"` (confirmed via direct inspection of all nine SVGs). The
+specific interior-stroke-merge risk at the feed row's smallest render context no longer applies at
+the current, thinner stroke weight. Kept as a closed entry so this document's numbering stays
+stable.
 
 ---
 
