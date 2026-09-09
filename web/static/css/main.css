@@ -264,8 +264,8 @@ body {
 }
 
 .icon-badge .icon-glyph {
-  width: 55%;
-  height: 55%;
+  width: 48%;
+  height: 48%;
 }
 
 /* -------------------------------------------------------------------------
@@ -463,10 +463,24 @@ body {
   cursor: pointer;
 }
 
+/* The glyph reads as too low-visual-weight at --color-text-muted, even at
+   01-14's thicker stroke (UAT retest, 2026-09-09) — the label text stays
+   muted (already legible as text), but the icon needs full --color-text
+   contrast to be identifiable at a glance. Selected-state override below
+   restores the glyph to --color-bg, matching .category-tile--selected's
+   own color so it doesn't paint the same tone as its own background. */
+.category-tile .icon-glyph {
+  color: var(--color-text);
+}
+
 .category-tile--selected {
   background: var(--color-text);
   color: var(--color-bg);
   border-color: var(--color-text);
+}
+
+.category-tile--selected .icon-glyph {
+  color: var(--color-bg);
 }
 
 /* -------------------------------------------------------------------------
