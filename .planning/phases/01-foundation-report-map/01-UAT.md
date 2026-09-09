@@ -3,7 +3,7 @@ status: complete
 phase: 01-foundation-report-map
 source: [01-VERIFICATION.md]
 started: 2026-09-06T09:55:00Z
-updated: 2026-09-08T22:10:00Z
+updated: 2026-09-09T00:00:00Z
 ---
 
 ## Current Test
@@ -115,12 +115,36 @@ notes: 2 (cosmetic feedback on Test 3's severity slider styling, captured pre-em
 ## Gaps
 
 - truth: "A correctly-sized, non-overflowing category glyph appears on a colour-coded pin ... immediately after submit" (also affects the report modal's own category grid; confirmed also impacting Test 6/dark-mode via retest — same root cause, not a separate defect; Test 7/icon-correctness still pending)
-  status: failed
+  status: fix_landed
   reason: "User reported: i cant see the symbols properly (dark mode) — all 9 category icons render as solid black, invisible against the dark UI. Reconfirmed on Test 6 retest: 'all looks fine except for that one part' (icon dimness in the report modal)."
   severity: major
   test: [2, 6]
-  artifacts: [web/static/js/map.js, web/static/js/modal.js, web/static/icons/*.svg]
-  missing: ["a way for currentColor-based SVGs to actually inherit page CSS color when dark mode is active"]
+  artifacts: [web/static/css/main.css, web/static/css/feed.css, web/static/css/modal.css, web/static/js/app.js, web/static/js/map.js, web/static/js/modal.js, web/static/js/feed.js, web/css_contract_test.go, web/js_contract_test.go]
+  missing: []
+  fix_applied: |
+    Plan 01-13 replaced option (a)/(c) below with option (b): a CSS mask-based glyph system.
+    All three renderers (map.js, modal.js, feed.js) now build `aria-hidden` `<span
+    class="icon-glyph icon-glyph--{category}">` nodes via a new `Pinalert.iconClass(category)`
+    allowlist-validated helper, instead of `<img>` nodes pointed at an icon path. main.css gained
+    an `.icon-glyph` base rule (`background-color: currentColor` + prefixed/unprefixed
+    `mask-image` longhands) plus nine `.icon-glyph--{category}` rules, so glyph color now
+    resolves through the ordinary CSS cascade (page background color on filled badges, muted
+    text color on unselected tiles, inverted on selected tiles) in both light and dark mode —
+    the `<img>` sealed-document isolation this bug depended on no longer applies. Two new Go
+    contract tests (web/css_contract_test.go: TestCategoryGlyphMaskRulesCoverEveryCategory,
+    web/js_contract_test.go: TestIconGlyphsAreClassDriven) fail the build if any category loses
+    its glyph rule or a renderer reverts to `<img>`-based icons. `go build`, `go vet`, and
+    `go test ./...` all pass post-merge.
+    NOT yet confirmed by a human: the plan's own Task 3 visual check (all 6 context×theme
+    combinations — badge/unselected-tile/selected-tile x light/dark — legible in Safari) was
+    intentionally left uncertified by the executor per this project's human-check discipline.
+    That visual confirmation is the one remaining item before this gap can be marked resolved;
+    route it through /gsd-verify-work 01.
+    Also noted by code review (01-REVIEW.md WR-01, non-blocking): `.icon-badge svg` in
+    main.css:239-243 is dead CSS left over from the pre-mask approach, and the new contract
+    test's own doc comment describes this exact failure mode but its implementation doesn't
+    check for a stray `svg` selector — only a trailing `img` one. Cosmetic/coverage gap, not a
+    functional regression.
   root_cause_confirmed: |
     Every category SVG (web/static/icons/*.svg, e.g. flood.svg) uses `stroke="currentColor"` —
     a technique that only works when an SVG is inlined directly into the page DOM, so
