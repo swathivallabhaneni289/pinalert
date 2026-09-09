@@ -3,7 +3,7 @@ status: complete
 phase: 01-foundation-report-map
 source: [01-VERIFICATION.md]
 started: 2026-09-06T09:55:00Z
-updated: 2026-09-09T00:00:00Z
+updated: 2026-09-09T09:30:00Z
 ---
 
 ## Current Test
@@ -33,8 +33,22 @@ notes: "Two blockers found and fixed in sequence before this passed: (1) modal-b
 ### 2. New-pin visual rendering after submit (exercises the CR-01 icon-sizing fix)
 expected: Submit a report via the "+" button; a correctly-sized (55% of badge), non-overflowing category glyph appears on a colour-coded pin at the submitted coordinate immediately after submit, with no page reload.
 result: issue
-reported: "i cant see the symbols properly" (screenshot: report modal in dark mode — all 9 category icons render as solid black glyphs, essentially invisible against the dark modal background)
-severity: major
+reported: "i cant see the symbols properly" (original report, dark mode, solid-black glyphs — fixed by plan 01-13, see retest note below)
+severity: minor
+retest_after_01-13: |
+  Retested after plan 01-13's CSS-mask fix. Original defect (solid-black-on-black,
+  img-isolation) is confirmed fixed — screenshot shows all nine glyphs rendering as thin
+  light/white outline shapes on the unselected tiles, matching the intended muted-text
+  colour, not solid black.
+  NEW distinct issue surfaced on retest: "It's not that clear. I think the black background
+  is mixing up with the outlines, and I think we should make it more significant so
+  everybody knows because... people use it in a emergency situations, and I don't want them
+  to... search up. Oh, I can't see which one it [is]." User confirmed on follow-up this is a
+  legibility/visual-weight complaint (thin, low-contrast strokes hard to distinguish at a
+  glance), not tiles being literally blank. Severity set to minor (icons are present and
+  distinguishable on close inspection, not missing/broken) but flagged as user-elevated given
+  the emergency-app context — fast glyph recognition is a real usability requirement here,
+  not pure cosmetic polish.
 
 ### 3. Severity slider accessibility (screen reader, keyboard, reduced motion)
 expected: Tab to the slider; arrow keys/Home/End work; visible focus ring; a screen reader announces "1 · Low" / "2 · Medium" / "3 · Critical" (not just the bare number); colour animation disables under OS "Reduce motion" while the control stays usable.
@@ -72,9 +86,14 @@ notes: |
 ### 6. Dark-mode visual repaint
 expected: Switching the OS to dark mode with the app open repaints using a genuinely distinct dark palette (brighter/more-saturated severity dots, darker tint backgrounds) per D-13 and 01-UI-SPEC.md's dark hex values — not an inverted light theme.
 result: issue
-reported: "All looks fine except for that one part [category icon dimness in the report modal]."
-severity: major
+reported: "All looks fine except for that one part [category icon dimness in the report modal]." (original report — fixed by plan 01-13, see retest note below)
+severity: minor
 note: "Same root cause as Test 2's gap (currentColor doesn't inherit through <img>-loaded SVGs) — not a new/separate defect, no duplicate Gap entry added. Everything else — background tints, severity-colored dots/pins, overall dark palette — confirmed as a genuinely distinct dark theme, not an inverted light one. (The earlier-reported 'black void' below the list was investigated and is NOT a bug — #0B0D10 is the exact spec'd dark --color-bg value per 01-UI-SPEC.md:95; see Gaps section.)"
+retest_after_01-13: |
+  Same retest and same new finding as Test 2 (shared root cause, shared fix): the
+  solid-black-on-black defect is fixed, but the resulting thin/muted-grey glyph strokes are
+  hard to distinguish at a glance in dark mode — see Test 2's retest_after_01-13 note and the
+  Gaps section for the full report and severity rationale.
 
 ### 7. Category icon semantic/visual correctness
 expected: All nine category SVGs are semantically correct when rendered (power_outage is a slashed bolt, earthquake is a seismograph zigzag, other is a plain flag) and none render as a broken/empty box.
@@ -110,15 +129,23 @@ issues: 2
 pending: 0
 skipped: 0
 blocked: 0
-notes: 2 (cosmetic feedback on Test 3's severity slider styling, captured pre-emptively; and a Test-6-adjacent "black void" report that was investigated and found to be correct dark-mode styling per spec, not a bug — see Gaps. Both Test 2 and Test 6's "issue" results share the same one underlying root cause — see Gaps.)
+notes: 2 (cosmetic feedback on Test 3's severity slider styling, captured pre-emptively; and a Test-6-adjacent "black void" report that was investigated and found to be correct dark-mode styling per spec, not a bug — see Gaps. Tests 2 and 6 were retested 2026-09-09 after plan 01-13's fix: the original solid-black-icon defect is confirmed resolved, but both tests still show `result: issue` because retesting surfaced a new, distinct glyph-legibility issue — see Gaps.)
 
 ## Gaps
 
 - truth: "A correctly-sized, non-overflowing category glyph appears on a colour-coded pin ... immediately after submit" (also affects the report modal's own category grid; confirmed also impacting Test 6/dark-mode via retest — same root cause, not a separate defect; Test 7/icon-correctness still pending)
-  status: fix_landed
+  status: resolved
   reason: "User reported: i cant see the symbols properly (dark mode) — all 9 category icons render as solid black, invisible against the dark UI. Reconfirmed on Test 6 retest: 'all looks fine except for that one part' (icon dimness in the report modal)."
   severity: major
   test: [2, 6]
+  resolution_confirmed: |
+    User retested after plan 01-13 landed (screenshot of the report modal in dark mode) and
+    confirmed the solid-black-on-black defect is gone — all nine glyphs render as visible
+    light-coloured outline shapes, not black boxes. This specific truth (glyphs are visible,
+    not solid black) is resolved. A DISTINCT follow-on issue — the resulting glyphs being
+    thin/low-visual-weight and hard to distinguish at a glance — was raised in the same retest
+    and is tracked as its own new Gap entry below (not this one), since it has a different
+    root cause (icon stroke weight / colour choice, not img-isolation).
   artifacts: [web/static/css/main.css, web/static/css/feed.css, web/static/css/modal.css, web/static/js/app.js, web/static/js/map.js, web/static/js/modal.js, web/static/js/feed.js, web/css_contract_test.go, web/js_contract_test.go]
   missing: []
   fix_applied: |
@@ -169,6 +196,30 @@ notes: 2 (cosmetic feedback on Test 3's severity slider styling, captured pre-em
     since both use the same <img>-based pattern. Not caused by the 01-11/01-12 basemap
     migration — pre-existing since the icon system shipped in plan 01-02, only now surfaced by
     a human actually testing in dark mode.
+
+- truth: "The unselected 3x3 category tiles in the report modal show glyphs a person can identify at a quick glance, not just glyphs that are technically non-black" (new — found on the 01-13 retest, same UI area as the resolved Gap above but a different defect)
+  status: failed
+  reason: "User reported (retest of Tests 2/6 after plan 01-13 landed, screenshot of the dark-mode report modal): \"It's not that clear. I think the black background is mixing up with the outlines, and I think we should make it more significant so everybody knows because... people use it in a emergency situations, and I don't want them to... search up. Oh, I can't see which one it [is].\" Confirmed on follow-up: the glyphs ARE rendering (not blank/solid-black), but their thin strokes in the muted grey/white colour are hard to distinguish from the dark tile background at a glance."
+  severity: minor
+  test: [2, 6]
+  artifacts: [web/static/css/main.css, web/static/icons/*.svg]
+  missing: []
+  observed_but_unconfirmed: |
+    Not yet root-caused by a debug agent — recorded here as an observation from this UAT
+    session, for the diagnosis step to verify or refute:
+    `.category-tile` sets `color: var(--color-text-muted)` (main.css:434), which `.icon-glyph`
+    inherits as `background-color: currentColor` for its mask fill. In dark mode
+    `--color-text-muted` is `#9CA3AF` against `--color-surface: #16181C` — a ~8:1 hex contrast
+    ratio, which is numerically high (comfortably passes WCAG AA/AAA for text). That suggests
+    the complaint isn't really a colour-contrast problem in the WCAG sense, but a visual-weight
+    one: the nine SVGs are stroke-only outline art (`fill="none" stroke="currentColor"`, already
+    flagged as vestigial by 01-REVIEW.md's Info item), so the CSS mask's opaque area is only a
+    thin ~1-2px line, not a filled silhouette — at icon-badge/tile size that thin a shape reads
+    as faint regardless of hex contrast, especially on a real phone screen versus a desktop
+    screenshot. If confirmed, candidate fixes include: switching the muted-tile colour to a
+    higher-weight token (e.g. full `--color-text` instead of `--color-text-muted`) and/or
+    thickening the glyphs' visual mass (heavier stroke-width in the source SVGs, or filled
+    rather than outline artwork) — needs an actual diagnosis pass, not assumed here.
 
 - truth: "A live OpenStreetMap tile layer is visible, centred on geolocation or the Bengaluru fallback."
   status: fix_landed
