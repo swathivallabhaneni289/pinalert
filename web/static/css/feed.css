@@ -49,16 +49,13 @@
 }
 
 /* Scoped to .report-row so this does not reach map.js's pin badges, which
-   this plan does not own. feed.js's rows use an <img> (loading the shared
-   /static/icons/*.svg files), and main.css's `.icon-badge svg { width: 55%;
-   height: 55%; }` only targets an inline <svg>, not an <img> referencing
-   one — without an equivalent rule here the icon has no usable intrinsic
-   size (the source SVGs declare width/height as percentages) and falls
-   back to the browser's default replaced-element box. */
-.report-row .icon-badge img {
+   this plan does not own. main.css's shared `.icon-badge .icon-glyph`
+   rule already sizes the glyph at 55%; this scoped rule exists so the
+   feed row's own smaller badge keeps its explicit sizing without that
+   shared rule needing to know about this specific badge size. */
+.report-row .icon-badge .icon-glyph {
   width: 55%;
   height: 55%;
-  display: block;
 }
 
 .view-toggle__icon {

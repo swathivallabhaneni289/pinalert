@@ -54,7 +54,7 @@
   min-height: var(--touch-target-min);
 }
 
-#category-grid .category-tile img {
+#category-grid .category-tile .icon-glyph {
   width: 24px;
   height: 24px;
 }
