@@ -19,6 +19,17 @@ type PageConfig struct {
 	FallbackLat     float64
 	FallbackLon     float64
 	DefaultRadiusKm float64
+	// AssetVersion is appended as a "?v=" query string to every local
+	// static asset the template links (CSS, JS — not the third-party CDN
+	// tags, which are already content-hashed by their pinned version and
+	// SRI integrity attribute). //go:embed bakes web/static into the
+	// binary at compile time, and the file server sends a 1-hour
+	// Cache-Control on top of that (see router.go's staticFileServer) —
+	// without a version bump in the URL itself, a browser that already
+	// cached the old bytes has no reason to ever re-fetch a changed CSS/JS
+	// file after a restart, even a hard reload. cmd/server/main.go sets
+	// this once at process start so every restart naturally busts it.
+	AssetVersion string
 }
 
 // pageViewModel is exactly what index.html.tmpl reads and nothing more.
@@ -26,6 +37,7 @@ type pageViewModel struct {
 	FallbackLat     float64
 	FallbackLon     float64
 	DefaultRadiusKm float64
+	AssetVersion    string
 }
 
 // ParsePageTemplate parses the embedded app shell template from
@@ -47,6 +59,7 @@ func Page(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 			FallbackLat:     cfg.FallbackLat,
 			FallbackLon:     cfg.FallbackLon,
 			DefaultRadiusKm: cfg.DefaultRadiusKm,
+			AssetVersion:    cfg.AssetVersion,
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := tmpl.ExecuteTemplate(w, templateName, vm); err != nil {

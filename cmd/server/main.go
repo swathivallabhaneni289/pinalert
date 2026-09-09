@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"pinalert/internal/api"
@@ -68,6 +69,7 @@ func main() {
 			FallbackLat:     fallbackLat,
 			FallbackLon:     fallbackLon,
 			DefaultRadiusKm: defaultRadiusKm,
+			AssetVersion:    strconv.FormatInt(time.Now().Unix(), 10),
 		},
 	}
 	router := api.NewRouter(deps)
