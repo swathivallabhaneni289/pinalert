@@ -54,8 +54,8 @@
    feed row's own smaller badge keeps its explicit sizing without that
    shared rule needing to know about this specific badge size. */
 .report-row .icon-badge .icon-glyph {
-  width: 55%;
-  height: 55%;
+  width: 48%;
+  height: 48%;
 }
 
 .view-toggle__icon {

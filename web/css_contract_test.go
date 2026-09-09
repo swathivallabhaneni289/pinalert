@@ -700,267 +700,6 @@ func TestCategoryGlyphMaskRulesCoverEveryCategory(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// TestCategoryGlyphInkCoverageAcrossRenderContexts (01-14 Task 1) and its
-// parsing helpers. See the test's own doc comment below for what it proves.
-// ---------------------------------------------------------------------------
-
-// inkFloorStrokeWidth and inkCeilingStrokeWidth are the hard bounds 01-14's
-// plan derived, both measured (not guessed): the floor is set above the
-// pre-fix artwork's stroke-width of 2, so this gate provably fails on the
-// artwork shipped before this fix; the ceiling is set below the point at
-// which a stroke centred on rescue_needed.svg's outer r=10 circle (or
-// earthquake.svg's x=2..22 path span) would clip the 24-unit viewBox.
-const (
-	inkFloorStrokeWidth   = 2.5
-	inkCeilingStrokeWidth = 3.5
-	glyphViewBoxUnits     = 24.0
-)
-
-// extractAttr returns the value of an XML/SVG attribute of the form
-// `name="value"` in raw, or ok=false if that exact attribute is not present.
-func extractAttr(raw, attr string) (string, bool) {
-	anchor := attr + `="`
-	idx := strings.Index(raw, anchor)
-	if idx == -1 {
-		return "", false
-	}
-	rest := raw[idx+len(anchor):]
-	end := strings.Index(rest, `"`)
-	if end == -1 {
-		return "", false
-	}
-	return rest[:end], true
-}
-
-// findDeclValue reads the named embedded stylesheet and returns the trimmed
-// value of declName from the rule whose selector head, once trimmed, equals
-// exactSelector exactly. t.Fatalf on a missing file, a selector that cannot
-// be found, or a selector found but never declaring declName — a silent ""
-// would let every literal-sizing or token assertion built on this helper
-// pass vacuously.
-func findDeclValue(t *testing.T, path, exactSelector, declName string) string {
-	t.Helper()
-
-	raw, err := fs.ReadFile(StaticFS, path)
-	if err != nil {
-		t.Fatalf("failed to read embedded %s: %v", path, err)
-	}
-	text := stripCSSComments(string(raw))
-
-	for chunk := range strings.SplitSeq(text, "}") {
-		lastOpen := strings.LastIndex(chunk, "{")
-		if lastOpen == -1 {
-			continue
-		}
-		selectorHead := strings.TrimSpace(chunk[:lastOpen])
-		if selectorHead != exactSelector {
-			continue
-		}
-		declBody := chunk[lastOpen+1:]
-		for _, decl := range strings.Split(declBody, ";") {
-			name, value, hasColon := strings.Cut(decl, ":")
-			if !hasColon {
-				continue
-			}
-			if strings.TrimSpace(name) == declName {
-				return strings.TrimSpace(value)
-			}
-		}
-	}
-
-	t.Fatalf("%s: no rule with selector head %q declaring %q found — a Task 1/Task 2 literal this "+
-		"gate depends on may have been renamed or removed", path, exactSelector, declName)
-	return ""
-}
-
-func parsePx(t *testing.T, label, value string) float64 {
-	t.Helper()
-	if !strings.HasSuffix(value, "px") {
-		t.Fatalf("%s: value %q does not end in px", label, value)
-	}
-	n, err := strconv.ParseFloat(strings.TrimSuffix(value, "px"), 64)
-	if err != nil {
-		t.Fatalf("%s: value %q is not a valid px number: %v", label, value, err)
-	}
-	return n
-}
-
-func parsePercent(t *testing.T, label, value string) float64 {
-	t.Helper()
-	if !strings.HasSuffix(value, "%") {
-		t.Fatalf("%s: value %q does not end in %%", label, value)
-	}
-	n, err := strconv.ParseFloat(strings.TrimSuffix(value, "%"), 64)
-	if err != nil {
-		t.Fatalf("%s: value %q is not a valid percentage: %v", label, value, err)
-	}
-	return n
-}
-
-// TestCategoryGlyphInkCoverageAcrossRenderContexts closes 01-14 Mechanism 1:
-// the diagnosed stroke-only source artwork that capped a masked glyph's ink
-// at a 1.47-2.02px hairline in all three render contexts regardless of
-// color token (see .planning/debug/category-glyph-legibility.md). It has
-// two factors and one free variable:
-//
-//  1. Artwork factor — every icon under static/icons must declare an
-//     identical stroke-width, within [inkFloorStrokeWidth,
-//     inkCeilingStrokeWidth], on the 24-unit viewBox the sizing arithmetic
-//     below assumes.
-//  2. Render-box factor — the feed row (55% of .icon-badge--sm's own 32px)
-//     and the modal tile (a flat 24px) are read as LITERALS from one rule
-//     each, not resolved through a cascade, and asserted to be at least
-//     their current value — a monotonicity guard, so this gate can never be
-//     satisfied by quietly shrinking a glyph.
-//
-// The map pin badge (55% of a >=44px badge = >=24.2px) is deliberately NOT
-// resolved as a third asserted context: it is strictly larger than the feed
-// row's 17.6px, so the feed-row assertion already dominates it by
-// arithmetic. Chasing .icon-badge's width through var(--touch-target-min)
-// into :root would require a miniature cascade resolver — exactly the kind
-// of test that gets weakened the first time it breaks. Instead this test
-// guards the domination argument itself with two cheap literal checks: that
-// :root's --touch-target-min is still >=44px, and that .icon-badge's own
-// width declaration still references it by name. If either check's shape
-// has changed, this test fails loudly rather than silently keep assuming
-// pin-badge dominance that may no longer hold.
-//
-// Honest limit of this test's claim, in the same spirit as this package's
-// other CSS contract tests: this gate proves the diagnosed root cause
-// (ink-starved geometry) was actually addressed and cannot silently
-// regress, but it cannot prove a human can tell two glyphs apart at a
-// glance — that is 01-14 Task 3's human-check, and the two are
-// complementary, not redundant.
-func TestCategoryGlyphInkCoverageAcrossRenderContexts(t *testing.T) {
-	// --- Artwork factor ---
-	strokeWidths := map[string]float64{}
-
-	err := fs.WalkDir(StaticFS, "static/icons", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		raw, err := fs.ReadFile(StaticFS, path)
-		if err != nil {
-			return err
-		}
-		text := string(raw)
-
-		swStr, ok := extractAttr(text, "stroke-width")
-		if !ok {
-			t.Errorf("%s: no stroke-width attribute found", path)
-			return nil
-		}
-		sw, parseErr := strconv.ParseFloat(swStr, 64)
-		if parseErr != nil {
-			t.Errorf("%s: stroke-width %q is not a valid number: %v", path, swStr, parseErr)
-			return nil
-		}
-		strokeWidths[path] = sw
-
-		vb, ok := extractAttr(text, "viewBox")
-		if !ok {
-			t.Errorf("%s: no viewBox attribute found", path)
-			return nil
-		}
-		if strings.TrimSpace(vb) != "0 0 24 24" {
-			t.Errorf("%s: viewBox is %q, expected the 24-unit box %q the sizing arithmetic assumes",
-				path, vb, "0 0 24 24")
-		}
-
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("failed to walk embedded static/icons: %v", err)
-	}
-
-	if len(strokeWidths) == 0 {
-		t.Fatalf("found zero icon files under static/icons — a walk that finds nothing would make " +
-			"every assertion below vacuously true")
-	}
-
-	var uniform float64
-	first := true
-	for path, sw := range strokeWidths {
-		if first {
-			uniform = sw
-			first = false
-			continue
-		}
-		if sw != uniform {
-			t.Errorf("%s: stroke-width %v does not match the value %v declared by other icons — "+
-				"Task 1 requires one identical value across all nine, applied identically", path, sw, uniform)
-		}
-	}
-	if uniform < inkFloorStrokeWidth || uniform > inkCeilingStrokeWidth {
-		t.Errorf("uniform stroke-width %v is outside the required bound [%v, %v]",
-			uniform, inkFloorStrokeWidth, inkCeilingStrokeWidth)
-	}
-
-	// --- Render-box factor: literal values only ---
-	feedPct := parsePercent(t, "static/css/feed.css .report-row .icon-badge .icon-glyph width",
-		findDeclValue(t, "static/css/feed.css", ".report-row .icon-badge .icon-glyph", "width"))
-	if feedPct < 55.0 {
-		t.Errorf("feed row glyph width %v%% is below the current 55%% baseline — a shrink would "+
-			"defeat this gate's monotonicity guarantee", feedPct)
-	}
-
-	smPx := parsePx(t, "static/css/main.css .icon-badge--sm width",
-		findDeclValue(t, "static/css/main.css", ".icon-badge--sm", "width"))
-	if smPx < 32.0 {
-		t.Errorf(".icon-badge--sm width %vpx is below the current 32px baseline", smPx)
-	}
-
-	modalPx := parsePx(t, "static/css/modal.css #category-grid .category-tile .icon-glyph width",
-		findDeclValue(t, "static/css/modal.css", "#category-grid .category-tile .icon-glyph", "width"))
-	if modalPx < 24.0 {
-		t.Errorf("modal tile glyph width %vpx is below the current 24px baseline", modalPx)
-	}
-
-	feedRenderBoxPx := feedPct / 100.0 * smPx
-	modalRenderBoxPx := modalPx
-
-	// Pin-badge domination guard — two literal checks, no cascade resolver.
-	touchTargetPx := parsePx(t, ":root --touch-target-min",
-		findDeclValue(t, "static/css/main.css", ":root", "--touch-target-min"))
-	if touchTargetPx < 44.0 {
-		t.Fatalf("--touch-target-min is %vpx, below 44px — the pin-badge domination argument "+
-			"(55%% of a >=44px badge always exceeds 55%% of the 32px feed badge) no longer holds; "+
-			"re-derive it", touchTargetPx)
-	}
-	iconBadgeWidthVal := findDeclValue(t, "static/css/main.css", ".icon-badge", "width")
-	if !strings.Contains(iconBadgeWidthVal, "var(--touch-target-min)") {
-		t.Fatalf(".icon-badge's width declaration is %q, no longer references var(--touch-target-min) "+
-			"by name — re-derive the pin-badge domination argument", iconBadgeWidthVal)
-	}
-	pinRenderBoxPx := 0.55 * touchTargetPx // derived for the SUMMARY table only; not asserted below.
-
-	// --- Compute and assert physical stroke width per icon per asserted context ---
-	floorFeed := inkFloorStrokeWidth * feedRenderBoxPx / glyphViewBoxUnits
-	floorModal := inkFloorStrokeWidth * modalRenderBoxPx / glyphViewBoxUnits
-
-	for path, sw := range strokeWidths {
-		feedPhysical := sw * feedRenderBoxPx / glyphViewBoxUnits
-		modalPhysical := sw * modalRenderBoxPx / glyphViewBoxUnits
-		pinPhysical := sw * pinRenderBoxPx / glyphViewBoxUnits
-
-		if feedPhysical < floorFeed {
-			t.Errorf("%s: feed-row physical stroke width %.3fpx is below the floor's implied %.3fpx",
-				path, feedPhysical, floorFeed)
-		}
-		if modalPhysical < floorModal {
-			t.Errorf("%s: modal-tile physical stroke width %.3fpx is below the floor's implied %.3fpx",
-				path, modalPhysical, floorModal)
-		}
-
-		t.Logf("%s: stroke-width=%.2f -> pin(%.1fpx box)=%.3fpx tile(%.1fpx box)=%.3fpx feedRow(%.1fpx box)=%.3fpx",
-			path, sw, pinRenderBoxPx, pinPhysical, modalRenderBoxPx, modalPhysical, feedRenderBoxPx, feedPhysical)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // TestBadgeGlyphContrastAcrossAgeStagesAndThemes (01-14 Task 2) and its
 // resolver helpers.
 // ---------------------------------------------------------------------------
@@ -1346,9 +1085,22 @@ func ruleBySelector(rules []cssRule, want string) (cssRule, bool) {
 // Honest limit of this test's claim, in the same spirit as this package's
 // other CSS contract tests: point contrast is a NECESSARY condition for a
 // readable glyph, not a SUFFICIENT one — it says nothing about whether the
-// glyph's shape is identifiable, which is Mechanism 1's concern and is what
-// TestCategoryGlyphInkCoverageAcrossRenderContexts and 01-14 Task 3's
-// human-check cover instead.
+// glyph's shape is identifiable at a glance. 01-14 also shipped
+// TestCategoryGlyphInkCoverageAcrossRenderContexts, a stroke-width floor,
+// on the theory that hairline-thin stroke art was the dominant legibility
+// factor (Mechanism 1). A follow-up UAT retest (see
+// .planning/phases/01-foundation-report-map/01-UAT.md) found the thicker
+// stroke alone did not fix the modal category grid's reported illegibility
+// — what fixed it was raising the unselected tile glyph's color from
+// --color-text-muted to --color-text (a direct, un-gated fix; see
+// .category-tile .icon-glyph in static/css/main.css). The icons were
+// reverted to their original stroke-width (2) since the thicker stroke
+// was an unwanted, unrequested side effect on the map-pin/feed-row badge
+// contexts, and TestCategoryGlyphInkCoverageAcrossRenderContexts was
+// removed with it — it asserted a floor this project deliberately reverted
+// below, and 01-REVIEW.md's WR-05 had already found its per-context
+// assertions added little independent verification. Shape identifiability
+// at a glance remains covered only by 01-14 Task 3's human-check.
 func TestBadgeGlyphContrastAcrossAgeStagesAndThemes(t *testing.T) {
 	mainRaw, err := fs.ReadFile(StaticFS, "static/css/main.css")
 	if err != nil {
