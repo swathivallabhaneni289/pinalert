@@ -50,7 +50,7 @@
 
 /* Scoped to .report-row so this does not reach map.js's pin badges, which
    this plan does not own. main.css's shared `.icon-badge .icon-glyph`
-   rule already sizes the glyph at 55%; this scoped rule exists so the
+   rule already sizes the glyph at 48%; this scoped rule exists so the
    feed row's own smaller badge keeps its explicit sizing without that
    shared rule needing to know about this specific badge size. */
 .report-row .icon-badge .icon-glyph {
