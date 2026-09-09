@@ -1,9 +1,9 @@
 ---
-status: complete
+status: diagnosed
 phase: 01-foundation-report-map
 source: [01-VERIFICATION.md]
 started: 2026-09-06T09:55:00Z
-updated: 2026-09-09T09:30:00Z
+updated: 2026-09-09T09:55:00Z
 ---
 
 ## Current Test
@@ -197,29 +197,62 @@ notes: 2 (cosmetic feedback on Test 3's severity slider styling, captured pre-em
     migration — pre-existing since the icon system shipped in plan 01-02, only now surfaced by
     a human actually testing in dark mode.
 
-- truth: "The unselected 3x3 category tiles in the report modal show glyphs a person can identify at a quick glance, not just glyphs that are technically non-black" (new — found on the 01-13 retest, same UI area as the resolved Gap above but a different defect)
-  status: failed
-  reason: "User reported (retest of Tests 2/6 after plan 01-13 landed, screenshot of the dark-mode report modal): \"It's not that clear. I think the black background is mixing up with the outlines, and I think we should make it more significant so everybody knows because... people use it in a emergency situations, and I don't want them to... search up. Oh, I can't see which one it [is].\" Confirmed on follow-up: the glyphs ARE rendering (not blank/solid-black), but their thin strokes in the muted grey/white colour are hard to distinguish from the dark tile background at a glance."
+- truth: "Category glyphs (report-modal tiles, map pin badges, feed row badges) are quickly identifiable at a glance in both light and dark mode, not just technically non-black" (new — found on the 01-13 retest, same UI area as the resolved Gap above but a different defect; scope widened after diagnosis found this affects all 3 render contexts, not just the modal tile the user directly screenshotted)
+  status: diagnosed
+  reason: "User reported (retest of Tests 2/6 after plan 01-13 landed, screenshot of the dark-mode report modal): \"It's not that clear. I think the black background is mixing up with the outlines, and I think we should make it more significant so everybody knows because... people use it in a emergency situations, and I don't want them to... search up. Oh, I can't see which one it [is].\" Confirmed on follow-up: the glyphs ARE rendering (not blank/solid-black), but their thin strokes are hard to distinguish from the tile background at a glance."
   severity: minor
   test: [2, 6]
-  artifacts: [web/static/css/main.css, web/static/icons/*.svg]
-  missing: []
-  observed_but_unconfirmed: |
-    Not yet root-caused by a debug agent — recorded here as an observation from this UAT
-    session, for the diagnosis step to verify or refute:
-    `.category-tile` sets `color: var(--color-text-muted)` (main.css:434), which `.icon-glyph`
-    inherits as `background-color: currentColor` for its mask fill. In dark mode
-    `--color-text-muted` is `#9CA3AF` against `--color-surface: #16181C` — a ~8:1 hex contrast
-    ratio, which is numerically high (comfortably passes WCAG AA/AAA for text). That suggests
-    the complaint isn't really a colour-contrast problem in the WCAG sense, but a visual-weight
-    one: the nine SVGs are stroke-only outline art (`fill="none" stroke="currentColor"`, already
-    flagged as vestigial by 01-REVIEW.md's Info item), so the CSS mask's opaque area is only a
-    thin ~1-2px line, not a filled silhouette — at icon-badge/tile size that thin a shape reads
-    as faint regardless of hex contrast, especially on a real phone screen versus a desktop
-    screenshot. If confirmed, candidate fixes include: switching the muted-tile colour to a
-    higher-weight token (e.g. full `--color-text` instead of `--color-text-muted`) and/or
-    thickening the glyphs' visual mass (heavier stroke-width in the source SVGs, or filled
-    rather than outline artwork) — needs an actual diagnosis pass, not assumed here.
+  root_cause: |
+    All 9 category SVGs (web/static/icons/*.svg, Lucide v1.41.0 icon set) are pure stroke/line
+    art — `fill="none" stroke="currentColor" stroke-width="2"` on a 24x24 viewBox, zero filled
+    shapes. CSS `mask-image` alpha-masks the rendered SVG, so only the ~2px stroke path is ever
+    unmasked (rendered stroke width ≈1.47-2.02px across the 3 contexts, thinnest in the 17.6px
+    feed-row badge) — an inherent hairline regardless of color token. This is NOT a hex-contrast
+    defect: the unselected-tile pairing this session flagged (--color-text-muted #9CA3AF on
+    --color-surface #16181C) computes to ≈7:1, passing WCAG AAA — cross-checked against light
+    mode's ≈4.3:1 for the same pairing (objectively worse contrast, yet drew no complaint),
+    confirming color isn't the discriminating factor. The bottleneck is the source artwork's
+    stroke-only geometry capping ink coverage regardless of color choice.
+  artifacts:
+    - path: "web/static/icons/*.svg"
+      issue: "All 9 files are stroke-only outline art (fill=\"none\"), so the CSS mask's opaque area is only a ~2px stroke line, not a filled silhouette"
+    - path: "web/static/css/main.css:265-274"
+      issue: ".icon-glyph base rule — mask mechanism is correctly implemented, not the defect; included for context"
+    - path: "web/static/css/modal.css:57-60"
+      issue: "24px modal-tile glyph sizing (thinnest-affected of the 3 contexts is feed.css, not this one)"
+    - path: "web/static/css/feed.css:56-59"
+      issue: "17.6px feed-row glyph sizing — smallest render, ≈1.47px stroke, most vulnerable to sub-pixel thinning"
+  missing:
+    - "Heavier/filled icon artwork, or a thicker stroke-width, so the CSS mask has more ink coverage regardless of color token"
+  debug_session: .planning/debug/category-glyph-legibility.md
+
+- truth: "A map-pin or feed-row badge's category glyph has sufficient WCAG point-contrast against its badge background, at every age stage" (new — found during diagnosis of the entry above, not directly reported by the user; scoped to badge contexts only, distinct root cause from the entry above)
+  status: diagnosed
+  reason: "Not directly reported by the human tester (who only exercised the modal category grid, which has no age-ramp involvement) — surfaced as a second, additive mechanism while diagnosing the glyph-legibility gap above, per this project's fail-safe discipline of not dropping a diagnosed defect just because it wasn't the literal complaint."
+  severity: minor
+  test: [2, 6]
+  root_cause: |
+    `.icon-badge` paints its glyph with `color: var(--color-bg)` against a `--severity-current`
+    background; `.age-stale` (main.css:211-215) overrides `--severity-current` to a flat
+    `--color-age-stale` regardless of the report's original severity. Computed contrast: dark
+    mode glyph #0B0D10 on badge #4B4F55 ≈2.36:1 (fails WCAG 1.4.11's 3:1 graphical-object floor
+    and AA's 4.5:1 text floor); light mode glyph #FFFFFF on badge #C9CDD1 ≈1.6:1 (worse still).
+    Severity-independent (age-stale forces the same neutral gray regardless of original
+    severity) — every stale-aged report's map-pin/feed-row glyph has genuinely insufficient
+    contrast in both themes. `.age-aging` (50% color-mix toward stale) is borderline
+    (~3.7:1 for critical/dark — above the 3:1 graphical floor, below the 4.5:1 text floor) but
+    not a clear failure like the stale stage. This is additive to, not a duplicate of, the
+    stroke-thinness mechanism above — it's a genuine, quantifiable point-contrast defect on top
+    of the inherent hairline-stroke problem, scoped only to badges (not the modal grid, which
+    has no age-ramp) once a report desaturates to "stale."
+  artifacts:
+    - path: "web/static/css/main.css:211-215"
+      issue: ".age-stale flattens badge background to a fixed --color-age-stale regardless of severity, without adjusting the glyph's --color-bg foreground to compensate"
+    - path: "web/static/css/main.css:236"
+      issue: ".icon-badge glyph color: var(--color-bg) — the foreground half of the failing pairing"
+  missing:
+    - "A stale-stage badge glyph/background pairing that clears WCAG 1.4.11's 3:1 graphical-object floor in both themes (e.g. a different foreground token for aged badges, or adjusting --color-age-stale's lightness)"
+  debug_session: .planning/debug/category-glyph-legibility.md
 
 - truth: "A live OpenStreetMap tile layer is visible, centred on geolocation or the Bengaluru fallback."
   status: fix_landed
