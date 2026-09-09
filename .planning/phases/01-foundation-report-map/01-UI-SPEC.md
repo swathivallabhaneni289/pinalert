@@ -106,10 +106,12 @@ Focus ring is deliberately neutral (matches `--color-text`, not a new hue) — s
 | Severity | CSS variable (dot/fill) | Light dot | Dark dot | CSS variable (tint bg) | Light tint bg | Dark tint bg |
 |----------|------------------------|-----------|----------|------------------------|---------------|--------------|
 | 1 · Low | `--color-severity-low` | `#2F9E64` | `#34D399` | `--color-severity-low-bg` | `#E7F5EC` | `#123524` |
-| 2 · Medium | `--color-severity-medium` | `#C98A1A` | `#E5A93B` | `--color-severity-medium-bg` | `#FCF3DC` | `#3A2C10` |
+| 2 · Medium | `--color-severity-medium` | `#C48419` | `#E5A93B` | `--color-severity-medium-bg` | `#FCF3DC` | `#3A2C10` |
 | 3 · Critical | `--color-severity-critical` | `#C0392B` | `#E5695C` | `--color-severity-critical-bg` | `#FBE9E7` | `#3A1512` |
 
 **Dark mode rule (D-13):** severity dots get *brighter/more saturated* in dark mode (not simply the light-mode hex on a dark background) and tint backgrounds get *darker*, not lighter — confirmed against the reference's dark-mode severity swatches. This is why dark values aren't a simple opacity/brightness filter on light values.
+
+**01-14 adjustment:** `--color-severity-medium`'s light value was darkened from `#C98A1A` to `#C48419` (dark value unchanged) to clear WCAG 1.4.11's 3:1 graphical-object floor for a fresh-medium badge glyph (`--color-bg` white on this fill computed 2.94:1 before the change, 3.15:1 after) — a sub-perceptual shift, not a re-hue; D-11's traffic-light mapping and D-13's distinct dark palette are both unaffected.
 
 ### Destructive
 
