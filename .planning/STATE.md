@@ -5,14 +5,14 @@ milestone_name: milestone
 current_phase: 1.1
 current_phase_name: Identity & Login — Mandatory Email Verification
 status: executing
-stopped_at: Phase 1.1 UI-SPEC approved
-last_updated: "2026-09-10T16:13:49.653Z"
+stopped_at: Phase 1.1 planned — 6 plans across 5 waves, ready to execute
+last_updated: "2026-09-10T18:00:00.000Z"
 last_activity: 2026-09-10
-last_activity_desc: Phase 1.1 context gathered (magic-link verification, login-required-to-view, long-lived multi-device sessions, no account recovery)
+last_activity_desc: Phase 1.1 planning complete (research, UI-SPEC, patterns, 6 plans, plan-checker VERIFICATION PASSED)
 progress:
   total_phases: 7
   completed_phases: 1
-  total_plans: 15
+  total_plans: 21
   completed_plans: 15
   percent: 14
 ---
@@ -25,15 +25,16 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 
 **Core value:** A report showing "confirmed by N nearby" must be verifiably backed by N
 independent nearby confirmations, resistant to trivial gaming.
-**Current focus:** Phase 1.1 — Identity & Login — Mandatory Email Verification (UI-SPEC approved,
-ready to plan; inserted before Phase 2, whose own discussion is paused mid-way, see Pending Todos)
+**Current focus:** Phase 1.1 — Identity & Login — Mandatory Email Verification (planned, 6 plans
+across 5 waves, ready to execute; inserted before Phase 2, whose own discussion is paused
+mid-way, see Pending Todos)
 
 ## Current Position
 
 Phase: 1.1 — Identity & Login — Mandatory Email Verification
-Plan: Not started
-Status: CONTEXT.md and UI-SPEC.md both done (UI-SPEC verified 6/6 dimensions), ready to plan
-Last activity: 2026-09-10 — Phase 1.1 UI-SPEC approved
+Plan: Ready to execute (6 plans: 01.1-01 through 01.1-06, 5 waves)
+Status: Ready to execute
+Last activity: 2026-09-10 — Phase 1.1 planning complete, plan-checker VERIFICATION PASSED
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -89,6 +90,16 @@ Recent decisions affecting current work:
   Ready for `/gsd-plan-phase 1.1`.
 
 ### Blockers/Concerns
+
+- **[2026-09-10] Resend custom-domain DNS verification is a pre-launch requirement**: Resend's
+  sandbox sender (`onboarding@resend.dev`) only delivers to the account owner's own signup email
+  until a custom domain is DNS-verified — until then, no real visitor can receive a verification
+  link, and since login is mandatory to view anything (D-05), that means an unusable app for
+  everyone but the developer. Plan 01.1-03 documents this in README.md as a required pre-launch
+  checklist item (add + DNS-verify a domain, then set `RESEND_FROM`), per the user's explicit
+  decision to plan for it now rather than defer it. Same category of blocker as the DLT
+  registration item below — a real account/DNS-configuration step, not something code can work
+  around.
 
 - **[2026-09-10] Access model reversed mid-Phase-2-discussion**: anonymous no-signup posting
   (Phase 1's FOUND-01, shipped and verified) is superseded by mandatory email verification via
