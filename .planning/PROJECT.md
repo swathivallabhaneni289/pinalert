@@ -20,30 +20,30 @@ output from that mechanic.
 
 ### Validated
 
-(None yet — ship to validate)
+**Shipped in Phase 1 (Foundation — Report & Map, completed 2026-09-10):**
+- ✓ Anonymous session identity — HMAC-signed cookie, issued on first visit, no signup — Phase 1
+- ✓ Location-tagged reports — indexed bounding-box prefilter + Haversine, confirmed index scan
+  (not a full-table scan) via `TestNearbyReportsUsesIndex` against real Postgres — Phase 1
+- ✓ Report categories — all 9 categories (flood, earthquake, fire, storm/cyclone damage, road
+  blocked, power outage, shelter open, rescue needed, other) shipped with committed glyphs — Phase 1
+- ✓ Severity level (low/medium/critical) — accessible slider, drives expiry tier and future triage
+  ordering — Phase 1
+- ✓ Auto-expiry — read-time predicate (`expires_at < now()`) confirmed live on every read via
+  `TestExpiryReadTimePredicate`, no background-sweep dependency — Phase 1
+- ✓ Map view — Leaflet with MapLibre GL vector basemap (OpenFreeMap liberty style), WebGL-gated
+  fallback to OpenStreetMap raster tiles for clients without WebGL2 — Phase 1 (upgraded from the
+  original plain-Leaflet/OSM plan mid-phase; see Key Decisions)
+- ✓ OpenAPI/Swagger docs for the JSON API — browsable spec at a stable URL with a drift guard
+  against handler behavior — Phase 1
+- ✓ GitHub Actions CI (`go test`, `go vet`, build) — confirmed green against final shipped code — Phase 1
 
 ### Active
 
-**Base reporting loop:**
-- [ ] Anonymous session identity — issued on first visit (cookie/localStorage), no signup;
-      load-bearing for reliability scoring, responder-claim attribution, and rate limiting, so it
-      ships in Phase 1, not implied later
-- [ ] Location-tagged reports — pinned to a place (GPS/area), feed filtered by proximity via an
-      indexed bounding-box prefilter + Haversine (not a naive full-table scan)
-- [ ] Report categories — flood, earthquake, fire, storm/cyclone damage, road blocked, power
-      outage, shelter open, rescue needed, other (expanded from an original flood/cyclone-only
-      5-category list during Phase 1 discussion — the product is a general local emergency feed,
-      not flood-specific)
+**Base reporting loop (remaining):**
 - [ ] Confirm/dispute voting on each report, surfaced as "confirmed by N nearby" — append-only
       vote log is the source of truth, with an atomic cache update in the same transaction as
       each vote (never read-then-write), and a concurrency test as a completion criterion, not a
       later hardening pass
-- [ ] Severity level (low/medium/critical) so urgent reports surface first — self-declared
-      severity affects triage ordering only, and must NOT by itself bypass the provisional
-      visibility gate below (that's a distinct, documented abuse vector)
-- [ ] Auto-expiry — a read-time predicate (`expires_at < now()`) checked on every read, not
-      solely a background sweep job (free-tier hosts sleep, so a ticker alone isn't reliable)
-- [ ] Map view — pins on a Leaflet/OpenStreetMap map for a quick visual scan
 - [ ] Resolved marking — reporter or nearby users close out a report once it's no longer true
       (promoted from Stretch: cheap, complements auto-expiry, directly serves Core Value)
 
@@ -205,8 +205,10 @@ Decision below.
 - **Tech stack**: Go 1.25+, PostgreSQL 16/17 with plain lat/lon columns (no PostGIS — unnecessary
   at this scale), `go-chi/chi/v5` for routing (not `gorilla/mux` — unmaintained since Dec 2022),
   `jackc/pgx/v5` + `sqlc` for type-safe SQL, `mmcloughlin/geohash` for diversity-weighting cell
-  computation, server-rendered HTML (`html/template`) + vanilla JS, Leaflet.js/OpenStreetMap for
-  the map. Chosen for a clean API-first architecture that's a good portfolio signal and doesn't
+  computation, server-rendered HTML (`html/template`) + vanilla JS, Leaflet.js as the map framework
+  with MapLibre GL rendering OpenFreeMap vector tiles as the basemap (upgraded mid-Phase-1 from the
+  original plain-OpenStreetMap-raster plan; OSM raster retained as the WebGL-less fallback).
+  Chosen for a clean API-first architecture that's a good portfolio signal and doesn't
   need paid infrastructure.
 - **Budget**: Free tiers only for the core build — no paid map API, no paid SMS/WhatsApp gateway.
   Database hosting uses Neon or Supabase (genuinely persistent free Postgres, unlike Railway/
@@ -229,15 +231,16 @@ Decision below.
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Verified local emergency feed over 4 other portfolio ideas | Confirm/dispute trust mechanic is a real differentiator, not just CRUD | — Pending |
-| API-first Go backend, website as first client | Enables PWA/native app later with no backend rewrite | — Pending |
-| Anonymous posting, no signup, session-first/IP-secondary rate limiting | Signup friction is unacceptable for emergency reporting; pure IP limiting was reconsidered after research flagged CGNAT collateral damage in India | — Pending |
-| Plain lat/lon + Go/SQL distance calc instead of PostGIS | Sufficient accuracy at this scale, avoids infra overkill | — Pending |
+| API-first Go backend, website as first client | Enables PWA/native app later with no backend rewrite | ✓ Good — Phase 1 shipped a browsable OpenAPI/Swagger spec against the same handlers the web client consumes |
+| Anonymous posting, no signup, session-first/IP-secondary rate limiting | Signup friction is unacceptable for emergency reporting; pure IP limiting was reconsidered after research flagged CGNAT collateral damage in India | Anonymous no-signup session shipped and verified in Phase 1; session-first/IP-secondary rate limiting itself is Phase 4 (ROBUST) scope, not yet built — Partially Pending |
+| Plain lat/lon + Go/SQL distance calc instead of PostGIS | Sufficient accuracy at this scale, avoids infra overkill | ✓ Good — Phase 1's bounding-box + Haversine query confirmed using an index scan (`TestNearbyReportsUsesIndex`), not a full-table scan, against real Postgres |
 | Demo/replay mode + official open-data feed (GDACS) promoted to core, not stretch | Solves the empty-map-on-first-visit problem that would otherwise kill the demo for reviewers | — Pending |
 | Trust-model hardening (provisional gating, diversity-weighted confirms, confidence/reliability split, retraction propagation) promoted to core | These are documented fixes for real failure modes (single-source rumors, vote-stuffing, stale-info spreading via shared cards), not speculative extras — the trust mechanic is the Core Value, so it needs to hold up | — Pending |
 | Single `VisibilityResolver` function as sole authority for report visibility, called by every read path | Architecture research found every documented trust-model pitfall traces back to visibility logic drifting out of sync across feed/map/triage/share-card paths | — Pending |
 | Independence predicate (distinct session + geohash cell) built before diversity-weighting curve | A weighting scheme built on raw vote counts is trivially beaten by multiple votes from one device — the predicate must exist first, not as a later refinement | — Pending |
 | DB hosting on Neon or Supabase instead of Railway/Render free tiers | Research found Render's free Postgres expires after 30 days and Railway dropped its indefinite free tier — neither is "free and persistent," which a portfolio project needs; Neon/Supabase are | — Pending |
-| `go-chi/chi/v5` + `pgx/v5` + `sqlc`, `mmcloughlin/geohash`, OpenAI Moderation API | Chi replaces the originally-considered gorilla/mux (unmaintained since Dec 2022); pgx+sqlc gives type-safe SQL without an ORM fighting the custom geo/trust queries; OpenAI's Moderation API is free and covers text+image in one call, unlike Google's Perspective API (shutting down) | — Pending |
+| `go-chi/chi/v5` + `pgx/v5` + `sqlc`, `mmcloughlin/geohash`, OpenAI Moderation API | Chi replaces the originally-considered gorilla/mux (unmaintained since Dec 2022); pgx+sqlc gives type-safe SQL without an ORM fighting the custom geo/trust queries; OpenAI's Moderation API is free and covers text+image in one call, unlike Google's Perspective API (shutting down) | chi/pgx/sqlc validated in Phase 1 (routing, store layer, migrations); `mmcloughlin/geohash` is an added dependency with no diversity-weighting usage yet (Phase 3 scope); OpenAI Moderation API not yet integrated (Phase 4 scope) — Partially Pending |
+| Vector basemap migration: Leaflet + MapLibre GL rendering OpenFreeMap tiles, OSM raster as WebGL-less fallback (`01-11-RESEARCH.md`) | User-chosen mid-Phase-1 quality upgrade over the original plain-Leaflet/OSM-raster plan; sharper rendering with no paid API key, `@maplibre/maplibre-gl-leaflet` bridge keeps all existing Leaflet marker/popup code unchanged | ✓ Good — Phase 1, capability-probed WebGL2 fallback verified working |
 | Confirmer location-capture method for diversity weighting (GPS prompt vs. IP-derived geohash) | Materially different UX/signal-quality tradeoff — flagged by research as needing an explicit decision, not left implicit | ⚠️ Unresolved — decide in Phase 2/3 planning |
 | Repo public on GitHub (`swathivallabhaneni289/pinalert`) | Portfolio project — needs to be visible to recruiters/interviewers | ✓ Good |
 
@@ -259,4 +262,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-05 after initialization*
+*Last updated: 2026-09-10 after Phase 1*
