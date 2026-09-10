@@ -11,19 +11,22 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Identity & Login
 
 - [ ] **IDENT-01**: A visitor cannot submit a report or cast a confirm/dispute vote until they've
-      verified an email address via a one-time passcode (OTP) — supersedes FOUND-01's
-      anonymous/no-signup model, reversed 2026-09-10 (see Key Decisions in PROJECT.md)
+      verified an email address by clicking a magic link sent to it (decided 2026-09-10 during
+      Phase 1.1 discussion — a typed one-time passcode was the original assumption, superseded by
+      a clickable link) — supersedes FOUND-01's anonymous/no-signup model, reversed 2026-09-10
+      (see Key Decisions in PROJECT.md)
 
-- [ ] **IDENT-02**: Email OTP delivery uses a free-tier transactional email provider (e.g. Resend),
-      within its free quota — no paid SMS/phone verification path exists in this phase (phone OTP
-      has no free tier at any real volume and requires India DLT sender registration for the cheap
-      rate; deferred, see PROJECT.md Key Decisions)
+- [ ] **IDENT-02**: Verification-email delivery uses a free-tier transactional email provider
+      (e.g. Resend), within its free quota — no paid SMS/phone verification path exists in this
+      phase (phone OTP has no free tier at any real volume and requires India DLT sender
+      registration for the cheap rate; deferred, see PROJECT.md Key Decisions)
 
 - [ ] **IDENT-03**: A verified user can view their own profile page, listing their submitted
       reports and their confirm/dispute voting activity
 
-- [ ] **IDENT-04**: OTP requests are rate-limited per email address and per IP, so the
-      email-sending endpoint can't be trivially abused for spam or cost inflation
+- [ ] **IDENT-04**: Verification-email requests are rate-limited per email address and per IP
+      (30-60 second resend cooldown), so the email-sending endpoint can't be trivially abused for
+      spam or cost inflation
 
 - [ ] **IDENT-05**: The Phase 1 session-cookie mechanism is retained as the underlying
       identity/session carrier — it is now gated behind a verified account rather than usable
@@ -33,8 +36,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **FOUND-01**: An anonymous session identity is issued to a first-time visitor (cookie/
       localStorage), with no signup required — **superseded 2026-09-10 by IDENT-01** (mandatory
-      email+OTP verification); shipped and verified as originally specified in Phase 1, but the
-      access model was deliberately reversed afterward (see PROJECT.md Key Decisions)
+      email verification via magic link); shipped and verified as originally specified in Phase 1,
+      but the access model was deliberately reversed afterward (see PROJECT.md Key Decisions)
 
 - [x] **FOUND-02**: User can submit a location-tagged report (GPS or manual area) with a category
       (flood/earthquake/fire/storm-cyclone damage/road blocked/power outage/shelter open/

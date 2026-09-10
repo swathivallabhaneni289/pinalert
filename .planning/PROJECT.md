@@ -43,14 +43,21 @@ output from that mechanic.
 ### Active
 
 **Identity & Login (Phase 1.1 — inserted 2026-09-10, must land before Phase 2):**
-- [ ] Mandatory email + one-time-passcode (OTP) verification before a visitor can submit a report
-      or cast a confirm/dispute vote — replaces the anonymous no-signup model shipped in Phase 1
-- [ ] Free-tier transactional email provider (e.g. Resend) for OTP delivery — no paid SMS/phone
-      verification path; phone OTP has no free tier at any real volume and the cheap route
-      additionally requires India DLT sender registration (see Key Decisions)
+- [ ] Mandatory email verification via magic link before a visitor can submit a report or cast a
+      confirm/dispute vote — replaces the anonymous no-signup model shipped in Phase 1. Login is
+      required to view anything, not just to act; landing shows a continuous rotating-globe
+      background with the login form already interactive on top (not a blocking splash sequence).
+      Link expires after 5 minutes; sessions are long-lived (reuses Phase 1's existing 1-year
+      cookie), support simultaneous multi-device login, have an explicit logout, and have no
+      account-recovery path for v1 (lost email access = start fresh with a new one) — see
+      `01.1-CONTEXT.md` for the full decision record.
+- [ ] Free-tier transactional email provider (e.g. Resend) for verification-email delivery — no
+      paid SMS/phone verification path; phone OTP has no free tier at any real volume and the
+      cheap route additionally requires India DLT sender registration (see Key Decisions)
 - [ ] User profile page — a verified user's own submitted reports and voting/confirm-dispute
       activity history
-- [ ] OTP request rate limiting, per email address and per IP
+- [ ] Verification-email request rate limiting — 30-60 second resend cooldown, per email address
+      and per IP
 
 **Base reporting loop (remaining):**
 - [ ] Confirm/dispute voting on each report, surfaced as "confirmed by N nearby" — append-only
@@ -235,7 +242,7 @@ Decision below.
   Render's now-limited free tiers) rather than a paid plan. Auto-moderation uses OpenAI's
   Moderation API (`omni-moderation-latest`, free) rather than Google's Perspective API (shutting
   down Dec 31, 2026).
-- **Access model** (revised 2026-09-10 — see Key Decisions): Mandatory email + OTP verification
+- **Access model** (revised 2026-09-10 — see Key Decisions): Mandatory email verification (magic link)
   before a visitor can submit a report or vote — reverses Phase 1's original anonymous/no-signup
   model. Decided during Phase 2 discussion after the user raised a real vote-stuffing concern
   (multiple devices/sessions from one person); weighed against the independence predicate
