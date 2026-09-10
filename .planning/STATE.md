@@ -5,10 +5,10 @@ milestone_name: milestone
 current_phase: 1.1
 current_phase_name: Identity & Login — Mandatory Email Verification
 status: executing
-stopped_at: Phase 1.1 context gathered
-last_updated: "2026-09-10T15:53:36.021Z"
+stopped_at: Phase 1.1 UI-SPEC approved
+last_updated: "2026-09-10T16:13:49.653Z"
 last_activity: 2026-09-10
-last_activity_desc: Phase 1.1 inserted before Phase 2 mid-discussion
+last_activity_desc: Phase 1.1 context gathered (magic-link verification, login-required-to-view, long-lived multi-device sessions, no account recovery)
 progress:
   total_phases: 7
   completed_phases: 1
@@ -25,15 +25,15 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 
 **Core value:** A report showing "confirmed by N nearby" must be verifiably backed by N
 independent nearby confirmations, resistant to trivial gaming.
-**Current focus:** Phase 1.1 — Identity & Login — Mandatory Email Verification (context gathered,
+**Current focus:** Phase 1.1 — Identity & Login — Mandatory Email Verification (UI-SPEC approved,
 ready to plan; inserted before Phase 2, whose own discussion is paused mid-way, see Pending Todos)
 
 ## Current Position
 
 Phase: 1.1 — Identity & Login — Mandatory Email Verification
 Plan: Not started
-Status: Context gathered (`01.1-CONTEXT.md`), ready to plan
-Last activity: 2026-09-10 — Phase 1.1 context gathered (magic-link verification, login-required-to-view, long-lived multi-device sessions, no account recovery)
+Status: CONTEXT.md and UI-SPEC.md both done (UI-SPEC verified 6/6 dimensions), ready to plan
+Last activity: 2026-09-10 — Phase 1.1 UI-SPEC approved
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -140,9 +140,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-10T15:53:36.016Z
-Stopped at: Phase 1.1 context gathered — magic-link email verification (not OTP), login required
-to view anything, long-lived multi-device sessions (reusing Phase 1's 1-year cookie), no
-account-recovery mechanism for v1. Ready for `/gsd-plan-phase 1.1`. Phase 2's own discussion
-remains checkpointed and paused (see Pending Todos) — resume it after Phase 1.1 ships.
-Resume file: .planning/phases/01.1-identity-login-mandatory-email-verification/01.1-CONTEXT.md
+Last session: 2026-09-10T16:13:49.647Z
+Stopped at: Phase 1.1 UI-SPEC approved (6/6 design-quality dimensions passed, no revisions
+needed). CONTEXT.md and UI-SPEC.md both done. Ready for `/gsd-plan-phase 1.1`. Phase 2's own
+discussion remains checkpointed and paused (see Pending Todos) — resume it after Phase 1.1 ships.
+Resume file: .planning/phases/01.1-identity-login-mandatory-email-verification/01.1-UI-SPEC.md
