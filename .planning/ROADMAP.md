@@ -36,7 +36,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 ### Phase 1: Foundation — Report & Map
 
-**Goal**: A visitor can submit a location-tagged emergency report and see it alongside other nearby reports on a live map, without creating an account.
+**Goal**: As a visitor, I want to submit a location-tagged emergency report and see it alongside other nearby reports on a live map, so that I can report and track emergencies without needing to create an account.
 **Mode:** mvp
 **Depends on**: Nothing (first phase)
 **Requirements**: FOUND-01, FOUND-02, FOUND-03, FOUND-04, FOUND-05, FOUND-06, OPS-01, OPS-02
