@@ -1,7 +1,7 @@
 ---
 phase: 01-foundation-report-map
 verified: 2026-09-09T13:40:00Z
-status: human_needed
+status: passed
 score: 5/5 roadmap success criteria verified
 behavior_unverified: 0
 overrides_applied: 0
@@ -9,6 +9,7 @@ re_verification:
   previous_status: human_needed
   previous_score: "5/5 roadmap success criteria (2 with residual human-verification component); 2 behavior_unverified items"
   gaps_closed:
+
     - "Category glyphs visible and legible in dark mode across map pins, feed rows, and modal grid (plans 01-13/14/15; final root cause was tile glyph color, not stroke geometry — confirmed live by human tester in both themes)"
     - "Critical-first list-ordering invariant (was PRESENT_BEHAVIOR_UNVERIFIED) — closed by 01-UAT.md Test 5's live walkthrough with seeded multi-severity/multi-age data (2 critical, 1 medium, 2 low; one backdated to aging, one to stale), confirmed critical rows sort above medium above low regardless of age"
     - "Pinalert.ageStage boundary classification (was PRESENT_BEHAVIOR_UNVERIFIED) — closed by 01-UAT.md Test 5's live desaturation confirmation plus the human_confirmation_2026-09-09 note in Gaps (two live reports at ~13-14% remaining lifetime, just above the 0.125 boundary, correctly classified 'aging' against live API data). Exact tie behavior at the literal 0.25/0.125 boundary values remains unexercised by an automated test — demoted to an Info-level code note, not a phase blocker, since real data either side of the boundary rendered correctly"
@@ -16,22 +17,23 @@ re_verification:
   gaps_remaining: []
   regressions: []
 resolved_human_verification:
+
   - test: "Push the current HEAD to origin/main (or open a PR) and confirm .github/workflows/ci.yml's Actions run is green against this exact commit."
     resolved_2026-09-09: "User pushed main to origin (b9ed10b..b5431ca). GitHub Actions run 34361264715 against final commit b5431ca completed status=completed, conclusion=success. Confirmed via `gh api repos/swathivallabhaneni289/pinalert/actions/runs/34361264715`. This closes the only remaining gap in Truth #5 (OpenAPI/CI requirement) — CI is now proven against final code, not merely reproduced locally."
-human_verification:
+
   - test: "Resolve the ROADMAP.md mode/goal-format mismatch for Phase 1: either set a User Story-format goal via /gsd mvp-phase 01, or clear the mode: mvp flag if this phase was never intended to follow MVP-mode planning."
-    expected: "ROADMAP.md's Phase 1 entry has a goal that either matches the 'As a ..., I want to ..., so that ....' format (if MVP mode is intentional) or has mode: mvp removed (if it was set unintentionally)."
-    why_human: "ROADMAP.md's Phase 1 section carries `Mode: mvp`, but its Goal field ('A visitor can submit a location-tagged emergency report and see it alongside other nearby reports on a live map, without creating an account.') fails `gsd_run query user-story.validate` (returns valid=false — no 'As a ... I want to ... so that ...' shape). Per the MVP-mode verification protocol this means the User Flow Coverage section cannot be produced without being low-quality, so it was omitted; verification instead ran against the 5 ROADMAP Success Criteria (the non-negotiable contract per Step 2a), which are unaffected by this metadata issue. This is a planning-artifact formatting defect, not a functional gap — it predates this verification round (the 2026-09-06 VERIFICATION.md also did not apply MVP-mode rules) and should be fixed by the developer, not silently edited by the verifier."
+    resolved_2026-09-10: "User directed the fix directly (reworded, not mode-drop). ROADMAP.md's Phase 1 Goal changed to 'As a visitor, I want to submit a location-tagged emergency report and see it alongside other nearby reports on a live map, so that I can report and track emergencies without needing to create an account.' — confirmed via gsd_run query user-story.validate: valid=true. Meaning preserved exactly (submit + view nearby reports + no signup required); only the phrasing changed."
+human_verification: []
 ---
 
 # Phase 1: Foundation — Report & Map Verification Report
 
-**Phase Goal:** A visitor can submit a location-tagged emergency report and see it alongside other nearby reports on a live map, without creating an account.
-**Verified:** 2026-09-09T13:40:00Z
-**Status:** human_needed
+**Phase Goal:** As a visitor, I want to submit a location-tagged emergency report and see it alongside other nearby reports on a live map, so that I can report and track emergencies without needing to create an account.
+**Verified:** 2026-09-09T13:40:00Z (human-verification items closed 2026-09-10)
+**Status:** passed
 **Re-verification:** Yes — after gap closure (plans 01-08 through 01-15, three gap-closure rounds plus a live-debugging round). Prior VERIFICATION.md (2026-09-06) predates all of 01-13/14/15 and is stale; this is a fresh full verification against the current codebase and 01-UAT.md's now-complete (10/10 passed, 0 open issues) human walkthrough.
 
-**Note on MVP mode:** ROADMAP.md's Phase 1 entry carries `Mode: mvp`, but its Goal text fails `user-story.validate` (not in "As a ..., I want to ..., so that ...." form). Per the MVP verification protocol this blocks producing a User Flow Coverage table specifically (it would be low-quality against a non-user-story goal) — it does not block verification generally. This report proceeds with standard goal-backward verification against the 5 ROADMAP Success Criteria (Step 2a's non-negotiable contract) and flags the mode/goal mismatch as a human-verification item below, rather than silently absorbing or "fixing" it.
+**Note on MVP mode (resolved 2026-09-10):** ROADMAP.md's Phase 1 entry carried `Mode: mvp`, but its Goal text originally failed `user-story.validate` (not in "As a ..., I want to ..., so that ...." form), which had blocked producing a User Flow Coverage table specifically (it would have been low-quality against a non-user-story goal) — it never blocked verification generally, which proceeded against the 5 ROADMAP Success Criteria (Step 2a's non-negotiable contract). The Goal has since been reworded into user-story form (see `resolved_human_verification` in frontmatter); `user-story.validate` now returns `valid: true`.
 
 ## Goal Achievement
 
@@ -45,7 +47,7 @@ human_verification:
 | 4 | A report stops appearing in the feed the instant its expiry passes, checked live on every read, not a sweep job | ✓ VERIFIED | `TestExpiryReadTimePredicate` passes fresh against real Postgres (2.5s real run: present before TTL, absent after). No sweep-job code exists anywhere in the codebase (grep-confirmed: zero `time.Ticker`/cron-style background job for expiry). |
 | 5 | The JSON API is documented via a browsable OpenAPI/Swagger spec at a stable URL, and every push runs tests/vet/build via CI | ✓ VERIFIED | Live re-verification: `GET /swagger/index.html` → 200, `GET /swagger/doc.json` → 200 valid Swagger 2.0 JSON documenting both `/reports` operations with all enum values; zero `session_id` occurrences in the served spec. `TestSwaggerDocServed`/`TestSwaggerSpecCoversRoutes` pass fresh. CI confirmed against final code: user pushed HEAD to `origin/main` (`b9ed10b..b5431ca`); GitHub Actions run `34361264715` against commit `b5431ca` completed with `conclusion: success`. See `resolved_human_verification` in frontmatter. |
 
-**Score:** 5/5 roadmap success criteria verified at the code/data/live-HTTP level, including a live GitHub Actions run against the final pushed commit (`b5431ca`, run `34361264715`, success). `behavior_unverified: 0` — both items left open by the prior (2026-09-06) verification pass (critical-first list ordering; `Pinalert.ageStage` boundary classification) are now closed by 01-UAT.md Test 5's live walkthrough with real seeded multi-severity/multi-age data. One item remains in Human Verification below: a pre-existing ROADMAP.md mode/goal metadata mismatch, not a functional gap.
+**Score:** 5/5 roadmap success criteria verified at the code/data/live-HTTP level, including a live GitHub Actions run against the final pushed commit (`b5431ca`, run `34361264715`, success). `behavior_unverified: 0` — both items left open by the prior (2026-09-06) verification pass (critical-first list ordering; `Pinalert.ageStage` boundary classification) are now closed by 01-UAT.md Test 5's live walkthrough with real seeded multi-severity/multi-age data. All human-verification items are now resolved (see `resolved_human_verification` in frontmatter) — the CI-on-final-code item and the pre-existing ROADMAP.md mode/goal metadata mismatch.
 
 ### Behavior-Dependent Truths — Now Closed by Live UAT
 
@@ -118,6 +120,7 @@ No `scripts/*/tests/probe-*.sh` convention or PLAN-declared probes exist for thi
 None blocking. All prior code-review Warnings (01-REVIEW.md, 01-14's post-review WR-05, 01-15's post-review WR-06/WR-07) were either fixed same-day (WR-06/WR-07 both closed by 01-15's own follow-up commits, confirmed present in code this pass) or remain non-blocking low-severity notes already documented in prior review reports.
 
 One new Info-level finding from this pass:
+
 - **ℹ️ Info:** `web/static/css/feed.css:53` has a stale code comment reading "this rule already sizes the glyph at 55%" — the actual value (both there and in `main.css`) is 48% (01-15 changed it, comment wasn't updated). Cosmetic doc-comment drift only; the CSS rule itself is correct and verified live. Not a functional defect.
 - **ℹ️ Info:** `Pinalert.ageStage`'s exact tie-boundary values (literally 0.25 and 0.125 remaining-lifetime fractions) are still not exercised by a dedicated automated unit test — only real data on either side of the boundary has been confirmed live (01-UAT Test 5's human_confirmation note). Low risk given the documented inclusive-at-0.125 semantics and confirmed real-world behavior either side of it.
 
