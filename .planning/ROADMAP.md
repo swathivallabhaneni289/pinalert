@@ -133,7 +133,29 @@ sessions are long-lived (reuses Phase 1's existing 1-year cookie), support simul
 multi-device login, and have an explicit logout; no account-recovery mechanism exists for v1 —
 losing email access means verifying a new one and starting fresh.
 
-**Plans**: TBD
+**Plans**: 6 plans
+Plans:
+**Wave 1**
+
+- [ ] 01.1-01-PLAN.md — Request a magic link: identity schema, token primitives, mailer seam, login gate screen (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 01.1-02-PLAN.md — Click the link and get in: atomic single-use consumption, account/session binding, five outcome screens (wave 2)
+- [ ] 01.1-03-PLAN.md — Real Resend delivery, fail-fast mailer loader, and the pre-launch domain-verification note (wave 2)
+
+**Wave 3** *(blocked on 01.1-02)*
+
+- [ ] 01.1-04-PLAN.md — The gate closes: requireVerifiedAccount middleware, route regrouping, API reference realigned (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 01.1-05-PLAN.md — Abuse resistance: per-email cooldown, per-IP token bucket, live resend countdown (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 01.1-06-PLAN.md — Profile page listing the account's reports across devices, plus explicit logout (wave 5)
+
 **UI hint**: yes
 
 ### Phase 2: Trust Mechanic Core — Confirm/Dispute & Visibility
@@ -224,6 +246,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
+| 1.1 Identity & Login — Mandatory Email Verification | 0/6 | Planned | - |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 0/TBD | Not started | - |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
