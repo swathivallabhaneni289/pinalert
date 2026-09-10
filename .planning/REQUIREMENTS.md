@@ -8,10 +8,33 @@ independent nearby confirmations, resistant to trivial gaming.
 
 Requirements for initial release. Each maps to roadmap phases.
 
+### Identity & Login
+
+- [ ] **IDENT-01**: A visitor cannot submit a report or cast a confirm/dispute vote until they've
+      verified an email address via a one-time passcode (OTP) — supersedes FOUND-01's
+      anonymous/no-signup model, reversed 2026-09-10 (see Key Decisions in PROJECT.md)
+
+- [ ] **IDENT-02**: Email OTP delivery uses a free-tier transactional email provider (e.g. Resend),
+      within its free quota — no paid SMS/phone verification path exists in this phase (phone OTP
+      has no free tier at any real volume and requires India DLT sender registration for the cheap
+      rate; deferred, see PROJECT.md Key Decisions)
+
+- [ ] **IDENT-03**: A verified user can view their own profile page, listing their submitted
+      reports and their confirm/dispute voting activity
+
+- [ ] **IDENT-04**: OTP requests are rate-limited per email address and per IP, so the
+      email-sending endpoint can't be trivially abused for spam or cost inflation
+
+- [ ] **IDENT-05**: The Phase 1 session-cookie mechanism is retained as the underlying
+      identity/session carrier — it is now gated behind a verified account rather than usable
+      anonymously; Phase 2's votes/reports continue to key off `session_id` as designed
+
 ### Foundation
 
 - [x] **FOUND-01**: An anonymous session identity is issued to a first-time visitor (cookie/
-      localStorage), with no signup required
+      localStorage), with no signup required — **superseded 2026-09-10 by IDENT-01** (mandatory
+      email+OTP verification); shipped and verified as originally specified in Phase 1, but the
+      access model was deliberately reversed afterward (see PROJECT.md Key Decisions)
 
 - [x] **FOUND-02**: User can submit a location-tagged report (GPS or manual area) with a category
       (flood/earthquake/fire/storm-cyclone damage/road blocked/power outage/shelter open/
@@ -210,7 +233,12 @@ Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FOUND-01 | Phase 1 | Complete |
+| IDENT-01 | Phase 1.1 | Pending |
+| IDENT-02 | Phase 1.1 | Pending |
+| IDENT-03 | Phase 1.1 | Pending |
+| IDENT-04 | Phase 1.1 | Pending |
+| IDENT-05 | Phase 1.1 | Pending |
+| FOUND-01 | Phase 1 | Complete (superseded by IDENT-01, Phase 1.1) |
 | FOUND-02 | Phase 1 | Complete |
 | FOUND-03 | Phase 1 | Complete |
 | FOUND-04 | Phase 1 | Complete |
@@ -246,12 +274,15 @@ Populated during roadmap creation.
 
 **Coverage:**
 
-- v1 requirements: 33 total (corrected from a stale "27" — 33 unique requirement IDs are
-  enumerated above: Foundation 6, Trust Engine 9, Coordination 8, Robustness 8, Ops 2)
+- v1 requirements: 38 total (33 original + 5 new IDENT-01..05 added 2026-09-10 for the inserted
+  Phase 1.1: Identity & Login — Foundation 6, Identity 5, Trust Engine 9, Coordination 8,
+  Robustness 8, Ops 2)
 
-- Mapped to phases: 33 (100%)
+- Mapped to phases: 38 (100%)
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-09-05*
-*Last updated: 2026-09-05 after roadmap creation (traceability populated, stale requirement count corrected)*
+*Last updated: 2026-09-10 — added IDENT-01..05 for Phase 1.1 (mandatory email+OTP login,
+inserted before Phase 2 after the user decided anonymous voting was too gameable); FOUND-01
+marked superseded, not removed (it shipped and was verified as originally specified in Phase 1)*

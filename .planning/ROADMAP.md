@@ -25,7 +25,8 @@ responder claims, shareable cards) that depend on the trust signals built in Pha
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [x] **Phase 1: Foundation — Report & Map** - Anonymous visitors can submit and view location-tagged reports on a live map, with read-time auto-expiry, OpenAPI docs, and CI in place. (original 10 plans completed 2026-09-06; reopened for the vector basemap migration, plans 01-11/01-12; gap-closure round 2 (01-13) fixed the solid-black-icon defect; gap-closure round 3 (01-14) landed 2026-09-09 — raised glyph ink coverage and fixed badge contrast across all 18 severity/age/theme pairings; gap-closure round 4 (01-15) landed 2026-09-09 — live-tested fix for dark-mode category-tile glyph color, the actual root cause 01-14's stroke-width diagnosis missed, plus two caching-bug fixes; see `01-UAT.md`) (all 15 plans complete; UAT passed 10/10 with 0 open issues; verification passed including MVP-mode User Flow Coverage, security SECURED with 0 open threats, Nyquist validation compliant) (completed 2026-09-10)
+- [x] **Phase 1: Foundation — Report & Map** - Anonymous visitors can submit and view location-tagged reports on a live map, with read-time auto-expiry, OpenAPI docs, and CI in place. (original 10 plans completed 2026-09-06; reopened for the vector basemap migration, plans 01-11/01-12; gap-closure round 2 (01-13) fixed the solid-black-icon defect; gap-closure round 3 (01-14) landed 2026-09-09 — raised glyph ink coverage and fixed badge contrast across all 18 severity/age/theme pairings; gap-closure round 4 (01-15) landed 2026-09-09 — live-tested fix for dark-mode category-tile glyph color, the actual root cause 01-14's stroke-width diagnosis missed, plus two caching-bug fixes; see `01-UAT.md`) (all 15 plans complete; UAT passed 10/10 with 0 open issues; verification passed including MVP-mode User Flow Coverage, security SECURED with 0 open threats, Nyquist validation compliant) (completed 2026-09-10) — **note:** this phase's anonymous/no-signup access model (FOUND-01) was superseded 2026-09-10 by Phase 1.1's mandatory login decision; the shipped code is unaffected, but the product's access model changes starting Phase 1.1
+- [ ] **Phase 1.1: Identity & Login — Mandatory Email Verification** *(INSERTED 2026-09-10 — urgent insertion, decided during Phase 2 discussion)* - A visitor must verify an email address via one-time passcode before they can submit a report or cast a confirm/dispute vote; supersedes Phase 1's anonymous-access model.
 - [ ] **Phase 2: Trust Mechanic Core — Confirm/Dispute & Visibility** - Users can confirm/dispute reports through one shared, concurrency-safe visibility resolver with a provisional gate and resolved marking.
 - [ ] **Phase 3: Trust-Model Hardening — Diversity-Weighted Trust** - "Confirmed by N nearby" and the reliability/currency signals reflect distinct nearby corroboration, resistant to trivial gaming.
 - [ ] **Phase 4: Robustness — Real-World Resilience** - The app stays usable on degraded networks, under abuse/moderation pressure, and with clear legal footing.
@@ -94,11 +95,49 @@ Plans:
 
 **UI hint**: yes
 
+### Phase 1.1: Identity & Login — Mandatory Email Verification
+
+*(INSERTED 2026-09-10.)* Decided mid-way through discussing Phase 2: the user raised a real
+concern that fully anonymous voting is gameable (multiple devices/sessions from one person), and
+after weighing it against the independence predicate (distinct session + distinct geohash cell)
+already planned for Phase 2, decided the accountability gap was worth closing with mandatory
+login rather than relying on location-diversity alone. Phone OTP was ruled out on cost grounds
+(no free tier at any real volume; the cheap route additionally requires India DLT sender
+registration) — see Key Decisions in PROJECT.md for the full tradeoff discussion. This phase must
+land before Phase 2, because Phase 2's vote/independence design is now built against verified
+accounts, not anonymous sessions.
+
+**Goal**: As a visitor, I want to verify my email with a one-time passcode before I can report or vote, so that every report and vote is tied to an accountable, verified identity.
+**Mode:** mvp
+**Depends on**: Phase 1
+**Requirements**: IDENT-01, IDENT-02, IDENT-03, IDENT-04, IDENT-05
+**Success Criteria** (what must be TRUE):
+
+  1. A visitor cannot submit a report or cast a confirm/dispute vote without first verifying an
+     email address via a one-time passcode sent to that address.
+  2. Email OTP delivery works through a free-tier transactional email provider (e.g. Resend),
+     within its free quota — no paid SMS or phone verification path exists in this phase.
+  3. A verified user can view a profile page listing their own submitted reports and their
+     voting/confirm-dispute activity.
+  4. OTP requests are rate-limited per email address and per IP, so the email-sending endpoint
+     can't be trivially abused for spam or cost inflation.
+  5. The Phase 1 session-cookie mechanism continues to carry identity underneath the new
+     verified-account gate — Phase 2's votes/reports still key off `session_id` as designed, just
+     now backed by a verified account rather than an anonymous one.
+
+**Open for discussion** (deferred to this phase's own `/gsd-discuss-phase 1.1` session, not
+decided yet): OTP expiry time, resend cooldown, whether a verified session persists across visits
+without re-verifying every time ("remember me") or requires OTP every session, and account
+recovery if a user loses access to their email.
+
+**Plans**: TBD
+**UI hint**: yes
+
 ### Phase 2: Trust Mechanic Core — Confirm/Dispute & Visibility
 
 **Goal**: A user can confirm or dispute a report, and the resulting Hidden/Provisional/Live/Retracted visibility is computed by one shared, concurrency-safe resolver everywhere it's shown.
 **Mode:** mvp
-**Depends on**: Phase 1
+**Depends on**: Phase 1.1
 **Requirements**: TRUST-01, TRUST-02, TRUST-03, TRUST-04, TRUST-06, TRUST-08, TRUST-09
 **Success Criteria** (what must be TRUE):
 

@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 2
-current_phase_name: Trust Mechanic Core — Confirm/Dispute & Visibility
+current_phase: "1.1"
+current_phase_name: Identity & Login — Mandatory Email Verification
 status: executing
 stopped_at: context exhaustion at 100% (2026-09-06)
 last_updated: "2026-09-10T09:22:51.984Z"
 last_activity: 2026-09-10
-last_activity_desc: Phase 01 complete, transitioned to Phase 2
+last_activity_desc: Phase 1.1 (Identity & Login) inserted before Phase 2 mid-discussion
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 1
   total_plans: 15
   completed_plans: 15
-  percent: 17
+  percent: 14
 ---
 
 # Project State
@@ -25,14 +25,16 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 
 **Core value:** A report showing "confirmed by N nearby" must be verifiably backed by N
 independent nearby confirmations, resistant to trivial gaming.
-**Current focus:** Phase 2 — Trust Mechanic Core — Confirm/Dispute & Visibility
+**Current focus:** Phase 1.1 — Identity & Login — Mandatory Email Verification (inserted before
+Phase 2; Phase 2's own discussion is paused mid-way, see Pending Todos)
 
 ## Current Position
 
-Phase: 2 — Trust Mechanic Core — Confirm/Dispute & Visibility
+Phase: 1.1 — Identity & Login — Mandatory Email Verification
 Plan: Not started
-Status: Ready to plan Phase 2
-Last activity: 2026-09-10 — Phase 01 complete, transitioned to Phase 2
+Status: Needs its own `/gsd-discuss-phase 1.1` session (OTP expiry, resend cooldown,
+session-persistence, and account-recovery specifics are not yet decided)
+Last activity: 2026-09-10 — Phase 1.1 inserted before Phase 2 mid-discussion
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -75,9 +77,27 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+- **Phase 2 discuss-phase session is paused mid-way** (checkpoint file:
+  `.planning/phases/02-trust-mechanic-core-confirm-dispute-visibility/02-DISCUSS-CHECKPOINT.json`).
+  1 of 4 selected gray areas complete (Confirm/Dispute interaction); "Hidden vs Retracted
+  triggers" is partway through (3 of ~4 questions answered: dispute-ratio threshold, critical
+  exemption, Retracted=resolved-marking — "can Hidden revert back to Live" was interrupted before
+  being answered). "Visibility-state visual treatment" and "Resolved-marking flow" areas not yet
+  started. Resume with `/gsd-discuss-phase 2` once Phase 1.1 is discussed/planned/executed.
+
+- **Phase 1.1 (Identity & Login) needs its own `/gsd-discuss-phase 1.1` session** before planning
+  — OTP expiry time, resend cooldown, whether a verified session persists across visits without
+  re-verifying ("remember me") or requires OTP every session, and account recovery if a user
+  loses email access are all explicitly undecided (see ROADMAP.md's "Open for discussion" note
+  under Phase 1.1).
 
 ### Blockers/Concerns
+
+- **[2026-09-10] Access model reversed mid-Phase-2-discussion**: anonymous no-signup posting
+  (Phase 1's FOUND-01, shipped and verified) is superseded by mandatory email+OTP login, inserted
+  as new Phase 1.1 before Phase 2. Phone OTP was explicitly rejected — no free tier at any real
+  SMS volume, and the cheap route needs India DLT sender registration (business paperwork, not
+  just an API key). See PROJECT.md Key Decisions for the full tradeoff record.
 
 - **Confirmer location-capture method unresolved** (GPS prompt vs. IP-derived coarse geohash) —
   materially changes what "diversity-weighted" measures; PROJECT.md flags this as an explicit
@@ -123,5 +143,7 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-09-10
-Stopped at: Phase 1 complete, ready to plan Phase 2
-Resume file: None
+Stopped at: Mid-discussion of Phase 2, user decided anonymous voting needed mandatory email+OTP
+login; Phase 1.1 inserted before Phase 2 with roadmap/requirements/PROJECT.md updated. Phase 2's
+own discussion is checkpointed and paused; Phase 1.1 needs its own discuss-phase session next.
+Resume file: .planning/phases/02-trust-mechanic-core-confirm-dispute-visibility/02-DISCUSS-CHECKPOINT.json

@@ -1,0 +1,32 @@
+{
+  "phase": "2",
+  "phase_name": "Trust Mechanic Core — Confirm/Dispute & Visibility",
+  "timestamp": "2026-09-10T01:00:00Z",
+  "areas_completed": ["Confirm/Dispute interaction"],
+  "areas_in_progress": {
+    "Hidden vs Retracted triggers": {
+      "questions_answered": 3,
+      "questions_remaining": ["Is Hidden reversible — can a report recover back to Live/Provisional if new confirms shift the balance later?"],
+      "note": "Interrupted here — user raised the vote-stuffing/mandatory-login concern instead. Resume with the 'Hidden revert' question before moving on."
+    }
+  },
+  "areas_remaining": ["Hidden vs Retracted triggers (finish)", "Visibility-state visual treatment", "Resolved-marking flow"],
+  "decisions": {
+    "Confirm/Dispute interaction": [
+      {"question": "Where should confirm/dispute controls appear?", "answer": "Both feed row & map popup", "options_presented": ["Both feed row & map popup (recommended)", "Feed row only", "Map pin popup only"]},
+      {"question": "Can a user change their vote after casting it?", "answer": "Yes, vote can be changed", "options_presented": ["Yes, vote can be changed (recommended)", "No, vote is permanent once cast"]},
+      {"question": "Can the reporter confirm/dispute their own report?", "answer": "Button hidden/disabled for the reporter", "options_presented": ["Button hidden/disabled for the reporter (recommended)", "Button visible but vote silently doesn't count"]},
+      {"question": "What immediate feedback should a user see right after casting a vote?", "answer": "Wait for server confirmation", "options_presented": ["Optimistic instant update (recommended)", "Wait for server confirmation"]}
+    ],
+    "Hidden vs Retracted triggers": [
+      {"question": "What should trigger a report going Hidden (as opposed to staying Live/Provisional)?", "answer": "Disputes outnumber confirms past a threshold", "options_presented": ["Disputes outnumber confirms past a threshold (recommended)", "A single independent dispute is enough", "Dispute count relative to confirms, PLUS a minimum dispute floor"]},
+      {"question": "Should critical/rescue-needed reports also be exempt from ever going Hidden via disputes?", "answer": "Yes, critical/rescue-needed can never be Hidden by disputes", "options_presented": ["Yes, critical/rescue-needed can never be Hidden by disputes (recommended)", "No, disputes can hide even critical reports"]},
+      {"question": "How does Retracted differ from Hidden — what actually triggers Retracted?", "answer": "Retracted = reporter/confirmer marked it resolved", "options_presented": ["Retracted = reporter/confirmer marked it resolved (recommended)", "Retracted = expired naturally (folded into existing expiry, not new)"]}
+    ]
+  },
+  "deferred_ideas": [],
+  "canonical_refs": [],
+  "cross_cutting_decisions_made_during_this_session": [
+    "Mandatory email+OTP login before reporting/voting (supersedes anonymous FOUND-01) — inserted as new Phase 1.1 before Phase 2. See PROJECT.md Key Decisions and ROADMAP.md Phase 1.1 for full detail. This affects Phase 2's 'independence predicate' language: 'distinct session' now implies 'distinct verified account' throughout."
+  ]
+}

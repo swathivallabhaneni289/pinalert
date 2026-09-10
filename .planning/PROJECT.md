@@ -22,6 +22,9 @@ output from that mechanic.
 
 **Shipped in Phase 1 (Foundation — Report & Map, completed 2026-09-10):**
 - ✓ Anonymous session identity — HMAC-signed cookie, issued on first visit, no signup — Phase 1
+  (**access model superseded 2026-09-10** — see Phase 1.1 in Active and the mandatory-login Key
+  Decision below; the cookie mechanism itself is retained, just now gated behind a verified
+  account rather than usable anonymously)
 - ✓ Location-tagged reports — indexed bounding-box prefilter + Haversine, confirmed index scan
   (not a full-table scan) via `TestNearbyReportsUsesIndex` against real Postgres — Phase 1
 - ✓ Report categories — all 9 categories (flood, earthquake, fire, storm/cyclone damage, road
@@ -39,11 +42,23 @@ output from that mechanic.
 
 ### Active
 
+**Identity & Login (Phase 1.1 — inserted 2026-09-10, must land before Phase 2):**
+- [ ] Mandatory email + one-time-passcode (OTP) verification before a visitor can submit a report
+      or cast a confirm/dispute vote — replaces the anonymous no-signup model shipped in Phase 1
+- [ ] Free-tier transactional email provider (e.g. Resend) for OTP delivery — no paid SMS/phone
+      verification path; phone OTP has no free tier at any real volume and the cheap route
+      additionally requires India DLT sender registration (see Key Decisions)
+- [ ] User profile page — a verified user's own submitted reports and voting/confirm-dispute
+      activity history
+- [ ] OTP request rate limiting, per email address and per IP
+
 **Base reporting loop (remaining):**
 - [ ] Confirm/dispute voting on each report, surfaced as "confirmed by N nearby" — append-only
       vote log is the source of truth, with an atomic cache update in the same transaction as
       each vote (never read-then-write), and a concurrency test as a completion criterion, not a
-      later hardening pass
+      later hardening pass. Votes are now cast by verified accounts (Phase 1.1), not anonymous
+      sessions — the independence predicate below still checks distinct session + distinct
+      geohash cell, but "session" now implies "verified account."
 - [ ] Resolved marking — reporter or nearby users close out a report once it's no longer true
       (promoted from Stretch: cheap, complements auto-expiry, directly serves Core Value)
 
@@ -210,16 +225,25 @@ Decision below.
   original plain-OpenStreetMap-raster plan; OSM raster retained as the WebGL-less fallback).
   Chosen for a clean API-first architecture that's a good portfolio signal and doesn't
   need paid infrastructure.
-- **Budget**: Free tiers only for the core build — no paid map API, no paid SMS/WhatsApp gateway.
+- **Budget**: Free tiers only for the core build — no paid map API, no paid SMS/WhatsApp gateway
+  (confirmed 2026-09-10: no phone-OTP provider — Firebase, MSG91, Twilio Verify, AWS SNS — has a
+  free tier at any real send volume; the cheapest real option, AWS SNS at ~$0.003/SMS, additionally
+  requires India DLT sender registration, a business-entity paperwork requirement, not just an API
+  key — this is why login uses email OTP only, via a free-tier transactional email provider like
+  Resend, not phone).
   Database hosting uses Neon or Supabase (genuinely persistent free Postgres, unlike Railway/
   Render's now-limited free tiers) rather than a paid plan. Auto-moderation uses OpenAI's
   Moderation API (`omni-moderation-latest`, free) rather than Google's Perspective API (shutting
   down Dec 31, 2026).
-- **Access model**: Anonymous posting with session-first, IP-secondary rate limiting, no signup
-  required — a deliberate choice, not a shortcut: requiring signup adds friction exactly when
-  someone needs to report something fast during an emergency. Pure IP-based limiting was
-  reconsidered after research flagged CGNAT (shared carrier IPs) as a real India-specific
-  collateral-damage risk.
+- **Access model** (revised 2026-09-10 — see Key Decisions): Mandatory email + OTP verification
+  before a visitor can submit a report or vote — reverses Phase 1's original anonymous/no-signup
+  model. Decided during Phase 2 discussion after the user raised a real vote-stuffing concern
+  (multiple devices/sessions from one person); weighed against the independence predicate
+  (distinct session + distinct geohash cell) already planned for Phase 2/3, but the user judged
+  the accountability gap worth closing directly rather than relying on location-diversity alone.
+  Session-first, IP-secondary rate limiting (originally reconsidered after research flagged CGNAT
+  — shared carrier IPs — as a real India-specific collateral-damage risk) still applies underneath
+  the login gate.
 - **Legal**: This is a public, unofficial emergency-information app — India's IT Rules 2021
   intermediary-safe-harbor conditions apply the moment it's public, regardless of real traffic.
   Research confidence on specific applicability is LOW; get an actual legal/mentor review before
@@ -232,7 +256,8 @@ Decision below.
 |----------|-----------|---------|
 | Verified local emergency feed over 4 other portfolio ideas | Confirm/dispute trust mechanic is a real differentiator, not just CRUD | — Pending |
 | API-first Go backend, website as first client | Enables PWA/native app later with no backend rewrite | ✓ Good — Phase 1 shipped a browsable OpenAPI/Swagger spec against the same handlers the web client consumes |
-| Anonymous posting, no signup, session-first/IP-secondary rate limiting | Signup friction is unacceptable for emergency reporting; pure IP limiting was reconsidered after research flagged CGNAT collateral damage in India | Anonymous no-signup session shipped and verified in Phase 1; session-first/IP-secondary rate limiting itself is Phase 4 (ROBUST) scope, not yet built — Partially Pending |
+| Anonymous posting, no signup, session-first/IP-secondary rate limiting | Signup friction is unacceptable for emergency reporting; pure IP limiting was reconsidered after research flagged CGNAT collateral damage in India | Shipped and verified in Phase 1 as originally specified — **then reversed 2026-09-10** (see the mandatory-login decision below); session-first/IP-secondary rate limiting itself is Phase 4 (ROBUST) scope, not yet built, and now applies underneath the login gate rather than to anonymous sessions |
+| Mandatory email + OTP login before reporting or voting, phone OTP explicitly rejected | User raised a real concern during Phase 2 discussion: fully anonymous voting is gameable via multiple devices/sessions from one person. Weighed against the independence predicate (distinct session + distinct geohash cell) already planned for Phase 2/3 — that predicate stops multi-device stuffing FROM ONE LOCATION, but not a person deliberately spoofing/visiting multiple locations. User judged the accountability gap worth closing directly. Researched current OTP pricing before deciding: no phone-OTP provider (Firebase, MSG91, Twilio Verify, AWS SNS) has a free tier at real volume, and the cheapest real option (AWS SNS, ~$0.003/SMS) requires India DLT sender registration (a business-entity paperwork requirement) to get that rate — conflicts with this project's free-tier-only budget and solo-developer/portfolio context. Email OTP (via Resend's free tier: 3,000/month, 100/day) closes the same accountability gap at zero cost. | Decided 2026-09-10, inserted as new Phase 1.1 (before Phase 2) — Pending implementation. Reverses Phase 1's already-shipped FOUND-01 (see REQUIREMENTS.md) |
 | Plain lat/lon + Go/SQL distance calc instead of PostGIS | Sufficient accuracy at this scale, avoids infra overkill | ✓ Good — Phase 1's bounding-box + Haversine query confirmed using an index scan (`TestNearbyReportsUsesIndex`), not a full-table scan, against real Postgres |
 | Demo/replay mode + official open-data feed (GDACS) promoted to core, not stretch | Solves the empty-map-on-first-visit problem that would otherwise kill the demo for reviewers | — Pending |
 | Trust-model hardening (provisional gating, diversity-weighted confirms, confidence/reliability split, retraction propagation) promoted to core | These are documented fixes for real failure modes (single-source rumors, vote-stuffing, stale-info spreading via shared cards), not speculative extras — the trust mechanic is the Core Value, so it needs to hold up | — Pending |
@@ -262,4 +287,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-10 after Phase 1*
+*Last updated: 2026-09-10 — mandatory email+OTP login decision (Phase 1.1 inserted before Phase 2)*
