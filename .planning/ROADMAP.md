@@ -133,7 +133,7 @@ sessions are long-lived (reuses Phase 1's existing 1-year cookie), support simul
 multi-device login, and have an explicit logout; no account-recovery mechanism exists for v1 —
 losing email access means verifying a new one and starting fresh.
 
-**Plans**: 6 plans
+**Plans**: 7 plans
 Plans:
 **Wave 1**
 
@@ -154,7 +154,11 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 01.1-06-PLAN.md — Profile page listing the account's reports across devices, plus explicit logout (wave 5)
+- [ ] 01.1-06-PLAN.md — Profile page with one merged Activity section listing the account's reports across devices, plus the logout endpoint (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 01.1-07-PLAN.md — Account menu in the app-shell header: verified address, Activity item, immediate logout (D-12) (wave 6)
 
 **UI hint**: yes
 

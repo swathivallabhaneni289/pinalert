@@ -5,14 +5,14 @@ milestone_name: milestone
 current_phase: 1.1
 current_phase_name: Identity & Login — Mandatory Email Verification
 status: executing
-stopped_at: Phase 1.1 planned — 6 plans across 5 waves, ready to execute
-last_updated: "2026-09-10T18:00:00.000Z"
-last_activity: 2026-09-10
-last_activity_desc: Phase 1.1 planning complete (research, UI-SPEC, patterns, 6 plans, plan-checker VERIFICATION PASSED)
+stopped_at: Phase 1.1 planned — 7 plans across 6 waves, ready to execute
+last_updated: "2026-09-11T13:30:00.000Z"
+last_activity: 2026-09-11
+last_activity_desc: Phase 1.1 replanned for D-12/D-13 — 01.1-06 revised (merged Activity section, logout endpoint only) and 01.1-07 added (account menu), 7 plans across 6 waves
 progress:
   total_phases: 7
   completed_phases: 1
-  total_plans: 21
+  total_plans: 22
   completed_plans: 15
   percent: 14
 ---
@@ -25,16 +25,17 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 
 **Core value:** A report showing "confirmed by N nearby" must be verifiably backed by N
 independent nearby confirmations, resistant to trivial gaming.
-**Current focus:** Phase 1.1 — Identity & Login — Mandatory Email Verification (planned, 6 plans
-across 5 waves, ready to execute; inserted before Phase 2, whose own discussion is paused
+**Current focus:** Phase 1.1 — Identity & Login — Mandatory Email Verification (planned, 7 plans
+across 6 waves, ready to execute; inserted before Phase 2, whose own discussion is paused
 mid-way, see Pending Todos)
 
 ## Current Position
 
 Phase: 1.1 — Identity & Login — Mandatory Email Verification
-Plan: Ready to execute (6 plans: 01.1-01 through 01.1-06, 5 waves)
+Plan: Ready to execute (7 plans: 01.1-01 through 01.1-07, 6 waves)
 Status: Ready to execute
-Last activity: 2026-09-10 — Phase 1.1 planning complete, plan-checker VERIFICATION PASSED
+Last activity: 2026-09-11 — Phase 1.1 replanned for the D-12 account menu and the D-13 merged
+Activity section: 01.1-06 revised, 01.1-07 added
 
 Progress: [░░░░░░░░░░] 0%
 
