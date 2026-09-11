@@ -214,3 +214,13 @@
 #check-inbox .btn + .btn {
   margin-top: var(--space-sm);
 }
+
+/* Plan 01.1-05: the resend countdown label ("Resend in {n}s") on the
+   disabled button. .btn already carries min-height: var(--touch-target-min)
+   (main.css), so the disabled state below changes only the label's color,
+   never the button's footprint — the layout must not shift as the digit
+   count in the label changes width while counting down. */
+#resend-link:disabled {
+  color: var(--color-text-muted);
+  cursor: default;
+}

@@ -17,6 +17,7 @@
   var checkInbox = document.getElementById('check-inbox');
   var resendButton = document.getElementById('resend-link');
   var refreshButton = document.getElementById('refresh-inbox');
+  var linkExpiryNotice = document.getElementById('link-expiry-notice');
 
   if (!requestButton || !emailInput) {
     return;
@@ -27,6 +28,82 @@
       return;
     }
     el.textContent = value === null || value === undefined ? '' : String(value);
+  }
+
+  // Two independent timers, per UI-SPEC item 9: the resend cooldown and the
+  // link's own 5-minute expiry are separate clocks and neither is ever
+  // derived from the other. Both durations are read off the check-inbox
+  // panel below — server-rendered values, not hard-coded here, since the
+  // server is the single source of truth for both
+  // (internal/api/handlers.loginGateViewModel).
+  var cooldownSeconds = checkInbox ? parseInt(checkInbox.getAttribute('data-cooldown-seconds'), 10) : 0;
+  var linkTTLSeconds = checkInbox ? parseInt(checkInbox.getAttribute('data-link-ttl-seconds'), 10) : 0;
+  if (!(cooldownSeconds > 0)) {
+    cooldownSeconds = 0;
+  }
+  if (!(linkTTLSeconds > 0)) {
+    linkTTLSeconds = 0;
+  }
+
+  var resendCountdownTimer = null;
+  var linkExpiryTimer = null;
+
+  // startResendCountdown disables #resend-link and decrements a per-second
+  // label until zero, at which point the button is re-enabled and restored
+  // to its resting label. A fresh call always clears any prior countdown
+  // first, so a resend never leaves two intervals ticking against the same
+  // button.
+  function setResendCountdownLabel(remaining) {
+    setText(resendButton, 'Resend in ' + remaining + 's');
+  }
+
+  function startResendCountdown(seconds) {
+    if (!resendButton || seconds <= 0) {
+      return;
+    }
+    if (resendCountdownTimer !== null) {
+      clearInterval(resendCountdownTimer);
+    }
+    var remaining = seconds;
+    resendButton.disabled = true;
+    setResendCountdownLabel(remaining);
+    resendCountdownTimer = setInterval(function () {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(resendCountdownTimer);
+        resendCountdownTimer = null;
+        resendButton.disabled = false;
+        setText(resendButton, 'Resend link');
+        return;
+      }
+      setResendCountdownLabel(remaining);
+    }, 1000);
+  }
+
+  // startLinkExpiryTimer runs entirely independently of the resend
+  // countdown above — a separate variable, a separate interval — and after
+  // `seconds` elapses reveals the inline expiry notice. Never inferred from
+  // the resend cooldown reaching zero; conflating the two is exactly how a
+  // 45-second cooldown would start silently claiming a 5-minute link
+  // expired (UI-SPEC item 9).
+  function startLinkExpiryTimer(seconds) {
+    if (!linkExpiryNotice || seconds <= 0) {
+      return;
+    }
+    if (linkExpiryTimer !== null) {
+      clearInterval(linkExpiryTimer);
+    }
+    linkExpiryNotice.hidden = true;
+    var remaining = seconds;
+    linkExpiryTimer = setInterval(function () {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(linkExpiryTimer);
+        linkExpiryTimer = null;
+        setText(linkExpiryNotice, 'This link has expired. Request a new one above.');
+        linkExpiryNotice.hidden = false;
+      }
+    }, 1000);
   }
 
   // requestLink POSTs the email to the request-link endpoint below. On
@@ -71,10 +148,17 @@
       var url = new URL(window.location.href);
       url.searchParams.set('sent', confirmedEmail);
       window.history.replaceState(null, '', url.toString());
+
+      // A link was just sent successfully — both clocks start now.
+      startResendCountdown(cooldownSeconds);
+      startLinkExpiryTimer(linkTTLSeconds);
     }).catch(function (err) {
       requestButton.disabled = false;
       setText(requestButton, 'Send verification link');
       setText(authError, (err && err.message) || 'Something went wrong. Try again.');
+      // A refused (429) or otherwise failed request sent nothing, so
+      // neither timer starts or resets here — its clock must not move
+      // (UI-SPEC item 6).
     });
   }
 

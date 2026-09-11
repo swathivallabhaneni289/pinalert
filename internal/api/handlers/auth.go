@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/mail"
 
+	"pinalert/internal/auth"
 	"pinalert/internal/service"
 	"pinalert/internal/session"
 )
@@ -27,11 +28,17 @@ type AuthConfig struct {
 
 // loginGateViewModel is exactly what login_gate.html.tmpl (and the
 // check_inbox.html.tmpl partial it includes) reads and nothing more.
+// ResendCooldownSeconds and LinkTTLSeconds are two independent durations —
+// D-03's resend cooldown and D-02's link expiry — sourced from
+// service.ResendCooldown and auth.TokenTTL respectively so the browser
+// never hard-codes a duration the server could change (UI-SPEC item 9: the
+// two timers are independent and must never be derived from one another).
 type loginGateViewModel struct {
 	AssetVersion          string
 	Email                 string
 	Sent                  bool
 	ResendCooldownSeconds int
+	LinkTTLSeconds        int
 }
 
 // LoginGate renders the globe login gate at GET /login. A `sent` query
@@ -45,6 +52,7 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 		vm := loginGateViewModel{
 			AssetVersion:          cfg.AssetVersion,
 			ResendCooldownSeconds: int(service.ResendCooldown.Seconds()),
+			LinkTTLSeconds:        int(auth.TokenTTL.Seconds()),
 		}
 
 		if raw := r.URL.Query().Get("sent"); raw != "" {
