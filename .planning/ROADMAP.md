@@ -137,7 +137,7 @@ sessions are long-lived (reuses Phase 1's existing 1-year cookie), support simul
 multi-device login, and have an explicit logout; no account-recovery mechanism exists for v1 —
 losing email access means verifying a new one and starting fresh.
 
-**Plans**: 1/7 plans executed
+**Plans**: 3/7 plans executed
 Plans:
 **Wave 1**
 
@@ -145,8 +145,8 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01.1-02-PLAN.md — Click the link and get in: atomic single-use consumption, account/session binding, five outcome screens (wave 2)
-- [ ] 01.1-03-PLAN.md — Real Resend delivery, fail-fast mailer loader, and the pre-launch domain-verification note (wave 2)
+- [x] 01.1-02-PLAN.md — Click the link and get in: atomic single-use consumption, account/session binding, five outcome screens (wave 2)
+- [x] 01.1-03-PLAN.md — Real Resend delivery, fail-fast mailer loader, and the pre-launch domain-verification note (wave 2)
 
 **Wave 3** *(blocked on 01.1-02)*
 
@@ -254,7 +254,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
-| 1.1 Identity & Login — Mandatory Email Verification | 1/7 | In Progress|  |
+| 1.1 Identity & Login — Mandatory Email Verification | 3/7 | In Progress|  |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 0/TBD | Not started | - |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
