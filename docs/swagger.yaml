@@ -82,6 +82,22 @@ definitions:
         example: 42
         type: integer
     type: object
+  handlers.RequestLinkRequest:
+    properties:
+      email:
+        description: |-
+          Email is the address to verify. Server-side validation (RFC 5322
+          address parsing, no display-name form) happens in
+          service.AuthService.RequestLink — never trust client-side validation.
+        example: visitor@example.com
+        type: string
+    type: object
+  handlers.RequestLinkResponse:
+    properties:
+      email:
+        example: visitor@example.com
+        type: string
+    type: object
   handlers.SubmitReportRequest:
     properties:
       category:
@@ -158,6 +174,39 @@ info:
   title: Pinalert API
   version: "1.0"
 paths:
+  /auth/request-link:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Validates the given email address, mints a single-use 5-minute magic-link
+        token, persists its hash, and hands the raw link to the configured mailer.
+        The response never carries a session identifier.
+      parameters:
+      - description: Email to verify
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.RequestLinkRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.RequestLinkResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Request a magic-link verification email
+      tags:
+      - auth
   /reports:
     get:
       description: |-

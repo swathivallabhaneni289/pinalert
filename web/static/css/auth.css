@@ -1,0 +1,185 @@
+/*
+ * auth.css — plan 01.1-01: the mandatory-email-verification login gate and
+ * check-inbox panel. Later plans in this phase (link-landing outcome pages,
+ * account header, profile page) extend this same file.
+ *
+ * Consumes main.css's design tokens exclusively (--space-*, --font-*,
+ * --color-*, --touch-target-min) and main.css's shared component classes
+ * (.btn, .btn--primary) — no raw hex colour, px, or font value is declared
+ * here; main.css is the single source of tokens for the whole project
+ * (01.1-UI-SPEC.md "Token discipline").
+ */
+
+.login-gate {
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--color-bg);
+  padding: var(--space-lg);
+}
+
+/* Globe background (D-06): a continuous ambient rotation behind the login
+   card, never a blocking intro — the card and its form are focusable and
+   usable from first paint regardless of animation state (D-06), and this
+   background replays every time login is needed, not just on a visitor's
+   first-ever visit (D-07). The globe itself is a CSS mask painted from
+   --color-text-muted at reduced opacity — the same currentColor-via-mask
+   mechanism main.css's .icon-glyph already establishes for the category
+   glyphs — rather than an <img src="...">, whose loaded document is a
+   sealed sub-document the page's CSS cannot reach into (see main.css's
+   .icon-glyph comment block for the full reasoning). */
+.globe-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.globe-bg__mask {
+  width: min(80vmin, 640px);
+  height: min(80vmin, 640px);
+  background-color: var(--color-text-muted);
+  -webkit-mask-image: url("/static/img/globe.svg");
+  mask-image: url("/static/img/globe.svg");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  animation: globe-rotate 90s linear infinite;
+}
+
+@keyframes globe-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .globe-bg__mask {
+    animation: none;
+  }
+}
+
+.login-card,
+#check-inbox {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--space-lg);
+}
+
+.login-card h1,
+#check-inbox h2 {
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  margin: 0 0 var(--space-md) 0;
+}
+
+.login-card p,
+#check-inbox p {
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-lg) 0;
+}
+
+.login-card label {
+  display: block;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+  margin-bottom: var(--space-xs);
+}
+
+.login-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: var(--touch-target-min);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0 var(--space-sm);
+  background: var(--color-bg);
+  margin-bottom: var(--space-md);
+}
+
+.login-field input {
+  flex: 1;
+  min-height: var(--touch-target-min);
+  border: none;
+  background: transparent;
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  color: var(--color-text);
+}
+
+.login-field input:focus {
+  outline: none;
+}
+
+/* Auth-surface icon glyphs (mail, circle-alert) — same mask mechanism as
+   main.css's .icon-glyph, deliberately under a distinct class prefix
+   (.auth-icon, not .icon-glyph) so this file's icons never collide with the
+   category-glyph contract main.css/app.js already own. */
+.auth-icon {
+  display: inline-block;
+  flex-shrink: 0;
+  width: var(--space-lg);
+  height: var(--space-lg);
+  background-color: currentColor;
+  color: var(--color-text-muted);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.auth-icon--mail {
+  -webkit-mask-image: url("/static/icons/mail.svg");
+  mask-image: url("/static/icons/mail.svg");
+}
+
+.auth-icon--circle-alert {
+  -webkit-mask-image: url("/static/icons/circle-alert.svg");
+  mask-image: url("/static/icons/circle-alert.svg");
+}
+
+.auth-error {
+  min-height: var(--font-size-label);
+  color: var(--color-severity-critical);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  margin: 0 0 var(--space-md) 0;
+}
+
+#request-link,
+#check-inbox .btn {
+  width: 100%;
+}
+
+#check-inbox .btn + .btn {
+  margin-top: var(--space-sm);
+}

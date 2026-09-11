@@ -67,21 +67,24 @@ func NewAuthService(q AuthQuerier, m mailer.Mailer, baseURL string, opts ...Auth
 // persists its hash before attempting delivery, and hands the raw link —
 // never a code to type back in; D-01 chose a link over a passcode, so no
 // passcode field exists anywhere in this flow — to the configured Mailer.
+// It returns the normalized address (trimmed, lowercased, no display-name
+// form) that was actually mailed, so a caller such as the HTTP handler can
+// echo it back without duplicating the normalization rule.
 //
 // The persist-then-send ordering is mandatory, not incidental: the
 // persisted row is what plan 01.1-05's cooldown reads, so a failed or
 // quota-exhausted send must still consume the cooldown (RESEARCH.md
 // Pitfall 3). A mailer failure is wrapped so the caller can log detail
 // server-side while returning a generic error to the visitor.
-func (s *AuthService) RequestLink(ctx context.Context, rawEmail string) error {
+func (s *AuthService) RequestLink(ctx context.Context, rawEmail string) (string, error) {
 	email, err := normalizeEmail(rawEmail)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	raw, hash, err := auth.GenerateToken()
 	if err != nil {
-		return fmt.Errorf("service: generating magic-link token: %w", err)
+		return "", fmt.Errorf("service: generating magic-link token: %w", err)
 	}
 
 	if _, err := s.q.InsertMagicLinkToken(ctx, sqlcgen.InsertMagicLinkTokenParams{
@@ -89,15 +92,15 @@ func (s *AuthService) RequestLink(ctx context.Context, rawEmail string) error {
 		Email:     email,
 		ExpiresAt: s.now().Add(auth.TokenTTL),
 	}); err != nil {
-		return fmt.Errorf("service: persisting magic-link token: %w", err)
+		return "", fmt.Errorf("service: persisting magic-link token: %w", err)
 	}
 
 	link := s.baseURL + "/auth/verify?token=" + url.QueryEscape(raw)
 	if err := s.mailer.SendVerificationLink(ctx, email, link); err != nil {
-		return fmt.Errorf("service: sending verification link: %w", err)
+		return "", fmt.Errorf("service: sending verification link: %w", err)
 	}
 
-	return nil
+	return email, nil
 }
 
 // normalizeEmail trims rawEmail, parses it with the stdlib address parser

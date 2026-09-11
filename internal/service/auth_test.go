@@ -62,7 +62,7 @@ func TestRequestLinkRejectsMalformedEmail(t *testing.T) {
 	q, m, _ := newFakes()
 	svc := service.NewAuthService(q, m, "https://pinalert.example")
 
-	err := svc.RequestLink(context.Background(), "not-an-email")
+	_, err := svc.RequestLink(context.Background(), "not-an-email")
 
 	assertValidationError(t, err, "email")
 	if err.(service.ValidationError).Message != "Enter a valid email address." {
@@ -74,7 +74,7 @@ func TestRequestLinkRejectsDisplayNameForm(t *testing.T) {
 	q, m, _ := newFakes()
 	svc := service.NewAuthService(q, m, "https://pinalert.example")
 
-	err := svc.RequestLink(context.Background(), "Someone <a@b.com>")
+	_, err := svc.RequestLink(context.Background(), "Someone <a@b.com>")
 
 	assertValidationError(t, err, "email")
 }
@@ -83,10 +83,14 @@ func TestRequestLinkNormalizesEmail(t *testing.T) {
 	q, m, _ := newFakes()
 	svc := service.NewAuthService(q, m, "https://pinalert.example")
 
-	if err := svc.RequestLink(context.Background(), "  A@Example.COM "); err != nil {
+	returnedEmail, err := svc.RequestLink(context.Background(), "  A@Example.COM ")
+	if err != nil {
 		t.Fatalf("RequestLink: %v", err)
 	}
 
+	if returnedEmail != "a@example.com" {
+		t.Fatalf("returned email = %q, want a@example.com", returnedEmail)
+	}
 	if q.lastArg.Email != "a@example.com" {
 		t.Fatalf("persisted email = %q, want a@example.com", q.lastArg.Email)
 	}
@@ -99,7 +103,7 @@ func TestRequestLinkInsertsBeforeSend(t *testing.T) {
 	q, m, calls := newFakes()
 	svc := service.NewAuthService(q, m, "https://pinalert.example")
 
-	if err := svc.RequestLink(context.Background(), "visitor@example.com"); err != nil {
+	if _, err := svc.RequestLink(context.Background(), "visitor@example.com"); err != nil {
 		t.Fatalf("RequestLink: %v", err)
 	}
 
@@ -113,7 +117,7 @@ func TestRequestLinkRecordsInsertEvenWhenMailerFails(t *testing.T) {
 	m.err = errors.New("provider unavailable")
 	svc := service.NewAuthService(q, m, "https://pinalert.example")
 
-	err := svc.RequestLink(context.Background(), "visitor@example.com")
+	_, err := svc.RequestLink(context.Background(), "visitor@example.com")
 
 	if err == nil {
 		t.Fatal("expected an error when the mailer fails, got nil")
@@ -131,7 +135,7 @@ func TestRequestLinkLinkShapeAndHash(t *testing.T) {
 	q, m, _ := newFakes()
 	svc := service.NewAuthService(q, m, "https://pinalert.example")
 
-	if err := svc.RequestLink(context.Background(), "visitor@example.com"); err != nil {
+	if _, err := svc.RequestLink(context.Background(), "visitor@example.com"); err != nil {
 		t.Fatalf("RequestLink: %v", err)
 	}
 
@@ -148,7 +152,7 @@ func TestRequestLinkUsesInjectedClockForExpiry(t *testing.T) {
 	q, m, _ := newFakes()
 	svc := service.NewAuthService(q, m, "https://pinalert.example", service.WithClock(func() time.Time { return fixed }))
 
-	if err := svc.RequestLink(context.Background(), "visitor@example.com"); err != nil {
+	if _, err := svc.RequestLink(context.Background(), "visitor@example.com"); err != nil {
 		t.Fatalf("RequestLink: %v", err)
 	}
 

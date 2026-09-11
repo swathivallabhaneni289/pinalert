@@ -16,6 +16,7 @@ import (
 
 	"pinalert/internal/api"
 	"pinalert/internal/api/handlers"
+	"pinalert/internal/mailer"
 	"pinalert/internal/service"
 	"pinalert/internal/session"
 	"pinalert/internal/store"
@@ -59,26 +60,49 @@ func main() {
 		log.Fatalf("parsing page template: %v", err)
 	}
 
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	// BASE_URL roots the absolute verification links AuthService mints
+	// (e.g. https://pinalert.example/auth/verify?token=...) — it must be the
+	// externally reachable origin, not necessarily this process's own bind
+	// address, so it defaults to a same-host guess only for local
+	// development and should always be set explicitly in any real
+	// deployment.
+	baseURL := os.Getenv("BASE_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:" + port
+	}
+
+	// The log-only mailer is the only implementation this plan wires up;
+	// plan 01.1-03 adds a Resend-backed implementation selected via
+	// RESEND_API_KEY, following the same fail-fast-outside-development
+	// pattern loadSessionSecret already establishes above.
+	mail := mailer.NewLogMailer()
+
+	assetVersion := strconv.FormatInt(time.Now().Unix(), 10)
+
 	queries := sqlcgen.New(pool)
 	deps := api.Deps{
-		Session:  sessionMgr,
-		Sessions: queries,
-		Reports:  service.NewReportService(queries),
+		Session:     sessionMgr,
+		Sessions:    queries,
+		Reports:     service.NewReportService(queries),
+		AuthService: service.NewAuthService(queries, mail, baseURL),
+		Auth: handlers.AuthConfig{
+			AssetVersion: assetVersion,
+		},
 		Template: tmpl,
 		Page: handlers.PageConfig{
 			FallbackLat:     fallbackLat,
 			FallbackLon:     fallbackLon,
 			DefaultRadiusKm: defaultRadiusKm,
-			AssetVersion:    strconv.FormatInt(time.Now().Unix(), 10),
+			AssetVersion:    assetVersion,
 		},
 		Dev: env == "development",
 	}
 	router := api.NewRouter(deps)
-
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
 
 	srv := &http.Server{
 		Addr:         ":" + port,

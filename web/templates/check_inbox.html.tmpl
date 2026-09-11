@@ -1,0 +1,6 @@
+<div id="check-inbox"{{if not .Sent}} hidden{{end}}>
+  <h2>Check your inbox</h2>
+  <p>We sent a verification link to {{.Email}}. Open it on this device within 5 minutes to continue here — if you open it on a different device or browser, continue there instead; this tab won't detect it automatically.</p>
+  <button type="button" id="resend-link" class="btn" data-resend-cooldown-seconds="{{.ResendCooldownSeconds}}">Resend link</button>
+  <button type="button" id="refresh-inbox" class="btn btn--primary">Check again</button>
+</div>

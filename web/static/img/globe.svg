@@ -1,0 +1,16 @@
+<!-- Pinalert — hand-drawn wireframe globe, plan 01.1-01 (D-06 ambient login background).
+     Monochrome outline: an outer meridian circle, two tilted meridian ellipses (longitude),
+     a straight equator line, and two flattened latitude ellipses. Referenced only via CSS
+     mask-image (see auth.css's .globe-bg__mask), never as an <img> src — a mask's coloring
+     comes from the masking element's own background-color, not this file's stroke value,
+     which is why every stroke below is a plain opaque color rather than currentColor: a
+     mask only reads the alpha channel, not the color itself. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none" stroke="#000000"
+     stroke-width="2" aria-hidden="true" focusable="false">
+  <circle cx="100" cy="100" r="90" />
+  <ellipse cx="100" cy="100" rx="30" ry="90" />
+  <ellipse cx="100" cy="100" rx="60" ry="90" />
+  <line x1="10" y1="100" x2="190" y2="100" />
+  <ellipse cx="100" cy="65" rx="76" ry="15" />
+  <ellipse cx="100" cy="135" rx="76" ry="15" />
+</svg>
