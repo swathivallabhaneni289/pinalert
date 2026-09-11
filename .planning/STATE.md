@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 1.1
+current_phase: 01.1
 current_phase_name: Identity & Login — Mandatory Email Verification
 status: executing
 stopped_at: Phase 1.1 planned — 7 plans across 6 waves, ready to execute
-last_updated: "2026-09-11T13:30:00.000Z"
+last_updated: "2026-09-11T09:47:53.044Z"
 last_activity: 2026-09-11
-last_activity_desc: Phase 1.1 replanned for "full header everywhere" — the account menu became a shared header partial and swapped to wave 5 (now 01.1-06), the profile page includes it at wave 6 (now 01.1-07); still 7 plans across 6 waves
+last_activity_desc: Phase 01.1 execution started
 progress:
   total_phases: 7
   completed_phases: 1
@@ -25,16 +25,16 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 
 **Core value:** A report showing "confirmed by N nearby" must be verifiably backed by N
 independent nearby confirmations, resistant to trivial gaming.
-**Current focus:** Phase 1.1 — Identity & Login — Mandatory Email Verification (planned, 7 plans
+**Current focus:** Phase 01.1 — Identity & Login — Mandatory Email Verification
 across 6 waves, ready to execute; inserted before Phase 2, whose own discussion is paused
 mid-way, see Pending Todos)
 
 ## Current Position
 
-Phase: 1.1 — Identity & Login — Mandatory Email Verification
-Plan: Ready to execute (7 plans: 01.1-01 through 01.1-07, 6 waves)
-Status: Ready to execute
-Last activity: 2026-09-11 — Phase 1.1 replanned for the user's "full header everywhere" decision.
+Phase: 01.1 (Identity & Login — Mandatory Email Verification) — EXECUTING
+Plan: 1 of 7
+Status: Executing Phase 01.1
+Last activity: 2026-09-11 — Phase 01.1 execution started
 The D-12 account menu is now a shared `account_header.html.tmpl` partial and moved to wave 5 as
 01.1-06; the profile page (D-13 merged Activity section) includes that partial and moved to wave 6
 as 01.1-07. The swap is required, not cosmetic: `html/template` errors at execution time on a

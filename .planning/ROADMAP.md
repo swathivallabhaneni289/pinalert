@@ -115,13 +115,17 @@ accounts, not anonymous sessions.
 
   1. A visitor cannot submit a report or cast a confirm/dispute vote without first verifying an
      email address by clicking a magic link sent to it.
+
   2. Verification-email delivery works through a free-tier transactional email provider (e.g.
      Resend), within its free quota — no paid SMS or phone verification path exists in this phase.
+
   3. A verified user can view a profile page listing their own submitted reports and their
      voting/confirm-dispute activity.
+
   4. Verification-email requests are rate-limited per email address and per IP (30-60 second
      resend cooldown), so the email-sending endpoint can't be trivially abused for spam or cost
      inflation.
+
   5. The Phase 1 session-cookie mechanism continues to carry identity underneath the new
      verified-account gate — Phase 2's votes/reports still key off `session_id` as designed, just
      now backed by a verified account rather than an anonymous one.
@@ -133,11 +137,11 @@ sessions are long-lived (reuses Phase 1's existing 1-year cookie), support simul
 multi-device login, and have an explicit logout; no account-recovery mechanism exists for v1 —
 losing email access means verifying a new one and starting fresh.
 
-**Plans**: 7 plans
+**Plans**: 1/7 plans executed
 Plans:
 **Wave 1**
 
-- [ ] 01.1-01-PLAN.md — Request a magic link: identity schema, token primitives, mailer seam, login gate screen (wave 1)
+- [x] 01.1-01-PLAN.md — Request a magic link: identity schema, token primitives, mailer seam, login gate screen (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -250,7 +254,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
-| 1.1 Identity & Login — Mandatory Email Verification | 0/6 | Planned | - |
+| 1.1 Identity & Login — Mandatory Email Verification | 1/7 | In Progress|  |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 0/TBD | Not started | - |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
