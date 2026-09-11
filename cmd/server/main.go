@@ -76,11 +76,16 @@ func main() {
 		baseURL = "http://localhost:" + port
 	}
 
-	// The log-only mailer is the only implementation this plan wires up;
-	// plan 01.1-03 adds a Resend-backed implementation selected via
-	// RESEND_API_KEY, following the same fail-fast-outside-development
-	// pattern loadSessionSecret already establishes above.
-	mail := mailer.NewLogMailer()
+	// LoadMailer selects the Resend-backed implementation when
+	// RESEND_API_KEY is set, or the log-only development fallback
+	// otherwise — failing fast outside ENV=development, the same
+	// startup contract loadSessionSecret already establishes above. A
+	// misconfigured deploy must fail loudly at boot rather than silently
+	// accept logins nobody can complete.
+	mail, err := mailer.LoadMailer(env)
+	if err != nil {
+		log.Fatalf("loading mailer: %v", err)
+	}
 
 	assetVersion := strconv.FormatInt(time.Now().Unix(), 10)
 

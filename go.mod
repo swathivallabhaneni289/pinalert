@@ -7,6 +7,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/mmcloughlin/geohash v0.10.0
 	github.com/pressly/goose/v3 v3.28.0
+	github.com/resend/resend-go/v3 v3.17.0
 	github.com/swaggo/http-swagger/v2 v2.0.2
 	github.com/swaggo/swag v1.16.4
 )
