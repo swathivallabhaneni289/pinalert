@@ -24,7 +24,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **IDENT-03**: A verified user can view their own profile page, listing their submitted
       reports and their confirm/dispute voting activity
 
-- [ ] **IDENT-04**: Verification-email requests are rate-limited per email address and per IP
+- [x] **IDENT-04**: Verification-email requests are rate-limited per email address and per IP
       (30-60 second resend cooldown), so the email-sending endpoint can't be trivially abused for
       spam or cost inflation
 
@@ -239,7 +239,7 @@ Populated during roadmap creation.
 | IDENT-01 | Phase 1.1 | Complete |
 | IDENT-02 | Phase 1.1 | Complete |
 | IDENT-03 | Phase 1.1 | Pending |
-| IDENT-04 | Phase 1.1 | Pending |
+| IDENT-04 | Phase 1.1 | Complete |
 | IDENT-05 | Phase 1.1 | Complete |
 | FOUND-01 | Phase 1 | Complete (superseded by IDENT-01, Phase 1.1) |
 | FOUND-02 | Phase 1 | Complete |

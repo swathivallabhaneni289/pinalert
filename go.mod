@@ -10,6 +10,7 @@ require (
 	github.com/resend/resend-go/v3 v3.17.0
 	github.com/swaggo/http-swagger/v2 v2.0.2
 	github.com/swaggo/swag v1.16.4
+	golang.org/x/time v0.16.0
 )
 
 require (

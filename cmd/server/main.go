@@ -34,6 +34,18 @@ const (
 	defaultRadiusKm = 10.0
 )
 
+// requestLinkRateLimitBurst/Every are DEC-I's per-IP budget for POST
+// /api/auth/request-link (01.1-05-PLAN.md): a burst of 5 immediately, one
+// token refilled every 60 seconds thereafter. Deliberately the looser,
+// secondary control — PROJECT.md flags CGNAT (many legitimate Indian mobile
+// users sharing one carrier IP) as a real collateral-damage risk, so the
+// per-address cooldown in internal/service.AuthService.RequestLink carries
+// the primary load.
+const (
+	requestLinkRateLimitBurst = 5
+	requestLinkRateLimitEvery = 60 * time.Second
+)
+
 func main() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -106,6 +118,13 @@ func main() {
 			AssetVersion:    assetVersion,
 		},
 		Dev: env == "development",
+		// DEC-I: burst 5, one token refilled per 60 seconds, applied only to
+		// POST /api/auth/request-link (see api.NewRouter). Named here, in
+		// one place, rather than left as literals inside the router.
+		RequestLinkRateLimit: api.RequestLinkRateLimit{
+			Burst: requestLinkRateLimitBurst,
+			Every: requestLinkRateLimitEvery,
+		},
 	}
 	router := api.NewRouter(deps)
 
