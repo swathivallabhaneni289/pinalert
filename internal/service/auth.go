@@ -56,7 +56,16 @@ type AuthQuerier interface {
 	GetAccountByEmail(ctx context.Context, email string) (sqlcgen.Account, error)
 	GetAccountBySessionID(ctx context.Context, sessionID string) (sqlcgen.GetAccountBySessionIDRow, error)
 	BindSessionAccount(ctx context.Context, arg sqlcgen.BindSessionAccountParams) error
+	LatestTokenForEmail(ctx context.Context, email string) (time.Time, error)
 }
+
+// ErrRateLimited is returned by RequestLink when a second verification-
+// email request for the same normalised address arrives inside
+// ResendCooldown of the last one (D-03/D-04, IDENT-04). It is a distinct
+// sentinel — never a ValidationError — so the handler maps it to 429
+// (errors.Is), not 400. Declared via errors.New rather than as a typed
+// error since no additional data ever needs to travel with it.
+var ErrRateLimited = errors.New("service: rate limited")
 
 // AuthService validates a requested email address, mints a magic-link
 // token, persists it, and hands the emailed link to a Mailer.
@@ -94,23 +103,44 @@ func NewAuthService(q AuthQuerier, m mailer.Mailer, baseURL string, opts ...Auth
 	return s
 }
 
-// RequestLink validates rawEmail, mints a single-use magic-link token,
-// persists its hash before attempting delivery, and hands the raw link —
-// never a code to type back in; D-01 chose a link over a passcode, so no
-// passcode field exists anywhere in this flow — to the configured Mailer.
-// It returns the normalized address (trimmed, lowercased, no display-name
-// form) that was actually mailed, so a caller such as the HTTP handler can
-// echo it back without duplicating the normalization rule.
+// RequestLink validates rawEmail, enforces D-03/D-04's per-address resend
+// cooldown, mints a single-use magic-link token, persists its hash before
+// attempting delivery, and hands the raw link — never a code to type back
+// in; D-01 chose a link over a passcode, so no passcode field exists
+// anywhere in this flow — to the configured Mailer. It returns the
+// normalized address (trimmed, lowercased, no display-name form) that was
+// actually mailed, so a caller such as the HTTP handler can echo it back
+// without duplicating the normalization rule.
 //
-// The persist-then-send ordering is mandatory, not incidental: the
-// persisted row is what plan 01.1-05's cooldown reads, so a failed or
-// quota-exhausted send must still consume the cooldown (RESEARCH.md
-// Pitfall 3). A mailer failure is wrapped so the caller can log detail
-// server-side while returning a generic error to the visitor.
+// The cooldown check happens between email normalisation and token
+// generation — before anything is persisted or sent — so a refused request
+// never writes a row and therefore can never extend or reset the cooldown
+// it is itself being refused by (DEC-J). Because the check reads the
+// normalised lowercase address and this row is always persisted lowercase,
+// case variants of one address ("A@Example.com" vs "a@example.com") share
+// one cooldown.
+//
+// The persist-then-send ordering below the cooldown check is mandatory, not
+// incidental: the persisted row is exactly what the cooldown check above
+// reads on the NEXT call, so a failed or quota-exhausted send must still
+// consume the cooldown (RESEARCH.md Pitfall 3, DEC-J) — these are two
+// different points in the request flow and must not be collapsed into one.
+// A mailer failure is wrapped so the caller can log detail server-side
+// while returning a generic error to the visitor.
 func (s *AuthService) RequestLink(ctx context.Context, rawEmail string) (string, error) {
 	email, err := normalizeEmail(rawEmail)
 	if err != nil {
 		return "", err
+	}
+
+	lastRequested, err := s.q.LatestTokenForEmail(ctx, email)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("service: reading latest token for %s: %w", email, err)
+		}
+		// No prior request for this address — proceed.
+	} else if s.now().Sub(lastRequested) < ResendCooldown {
+		return "", ErrRateLimited
 	}
 
 	raw, hash, err := auth.GenerateToken()

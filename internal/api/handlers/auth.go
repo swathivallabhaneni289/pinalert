@@ -82,9 +82,13 @@ type RequestLinkResponse struct {
 
 // RequestLink handles POST /api/auth/request-link: decode, validate and
 // mint a token (via svc), and hand it to the configured Mailer. A
-// service.ValidationError maps to 400 naming the offending field; any other
-// error maps to a generic 500 with the detail logged server-side only, so a
-// mailer/database failure never reaches a client (threat T-01-55).
+// service.ErrRateLimited (D-03/D-04's per-address resend cooldown) maps to
+// 429 with the same generic message and field name the per-IP limiter's own
+// refusal uses (internal/ratelimit), so a caller cannot tell which limiter
+// tripped or whether the address has an account. A service.ValidationError
+// maps to 400 naming the offending field; any other error maps to a generic
+// 500 with the detail logged server-side only, so a mailer/database failure
+// never reaches a client (threat T-01-55).
 //
 // @Summary      Request a magic-link verification email
 // @Description  Validates the given email address, mints a single-use 5-minute magic-link
@@ -96,6 +100,7 @@ type RequestLinkResponse struct {
 // @Param        body  body      RequestLinkRequest  true  "Email to verify"
 // @Success      200   {object}  RequestLinkResponse
 // @Failure      400   {object}  ErrorResponse
+// @Failure      429   {object}  ErrorResponse
 // @Failure      500   {object}  ErrorResponse
 // @Router       /auth/request-link [post]
 func RequestLink(svc *service.AuthService) http.HandlerFunc {
@@ -112,6 +117,10 @@ func RequestLink(svc *service.AuthService) http.HandlerFunc {
 
 		normalizedEmail, err := svc.RequestLink(r.Context(), req.Email)
 		if err != nil {
+			if errors.Is(err, service.ErrRateLimited) {
+				writeFieldError(w, http.StatusTooManyRequests, "email", "Too many requests — try again in a minute.")
+				return
+			}
 			var ve service.ValidationError
 			if errors.As(err, &ve) {
 				writeFieldError(w, http.StatusBadRequest, ve.Field, ve.Message)

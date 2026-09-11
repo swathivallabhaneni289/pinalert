@@ -8,12 +8,14 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 
 	"pinalert/internal/api/handlers"
+	"pinalert/internal/ratelimit"
 	"pinalert/internal/service"
 	"pinalert/internal/session"
 	sqlcgen "pinalert/internal/store/sqlc"
@@ -42,7 +44,27 @@ type Deps struct {
 	// reference via `mask-image: url(...)` are never templated and so were
 	// never covered by that fix — this field is the other half of it).
 	Dev bool
+	// RequestLinkRateLimit configures the per-IP token-bucket limiter plan
+	// 01.1-05 wraps around POST /api/auth/request-link only. Left at its
+	// zero value, RequestLinkRateLimitDefault below is used — every
+	// existing Deps{} literal that predates this field keeps working
+	// unchanged, and cmd/server/main.go is the one place the DEC-I numbers
+	// (burst 5, one token per 60s) are visible rather than buried as
+	// literals in this router.
+	RequestLinkRateLimit RequestLinkRateLimit
 }
+
+// RequestLinkRateLimit is the burst/refill configuration for the per-IP
+// limiter wrapping POST /api/auth/request-link (DEC-I).
+type RequestLinkRateLimit struct {
+	Burst int
+	Every time.Duration
+}
+
+// RequestLinkRateLimitDefault is DEC-I's chosen budget — burst 5, one token
+// refilled every 60 seconds — used whenever Deps.RequestLinkRateLimit is
+// left at its zero value.
+var RequestLinkRateLimitDefault = RequestLinkRateLimit{Burst: 5, Every: 60 * time.Second}
 
 // @title        Pinalert API
 // @version      1.0
@@ -110,7 +132,20 @@ func NewRouter(deps Deps) *chi.Mux {
 	// as its own subrouter in this router; every /api/* path is registered
 	// flat, gated or not, exactly as this one is. Deliberately reachable
 	// without verification — this is how a visitor becomes verified.
-	r.Post("/api/auth/request-link", handlers.RequestLink(deps.AuthService))
+	//
+	// The per-IP limiter (DEC-I: burst 5, one token per 60s) is scoped with
+	// r.With(...) to this single route only — never applied via a top-level
+	// r.Use — so it throttles POST /api/auth/request-link exclusively.
+	// Gating the whole router would throttle static assets and the login
+	// page itself during exactly the burst a real emergency produces
+	// (T-01-79's CGNAT concern compounds this: a shared carrier IP hitting
+	// a router-wide limit would lock out every other route too).
+	requestLinkLimit := deps.RequestLinkRateLimit
+	if requestLinkLimit == (RequestLinkRateLimit{}) {
+		requestLinkLimit = RequestLinkRateLimitDefault
+	}
+	requestLinkLimiter := ratelimit.NewPerIP(requestLinkLimit.Every, requestLinkLimit.Burst)
+	r.With(requestLinkLimiter.Middleware()).Post("/api/auth/request-link", handlers.RequestLink(deps.AuthService))
 
 	// --- Gated: requires a verified account (D-05). ---
 
