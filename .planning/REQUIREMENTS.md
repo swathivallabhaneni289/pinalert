@@ -10,13 +10,13 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Identity & Login
 
-- [ ] **IDENT-01**: A visitor cannot submit a report or cast a confirm/dispute vote until they've
+- [x] **IDENT-01**: A visitor cannot submit a report or cast a confirm/dispute vote until they've
       verified an email address by clicking a magic link sent to it (decided 2026-09-10 during
       Phase 1.1 discussion — a typed one-time passcode was the original assumption, superseded by
       a clickable link) — supersedes FOUND-01's anonymous/no-signup model, reversed 2026-09-10
       (see Key Decisions in PROJECT.md)
 
-- [ ] **IDENT-02**: Verification-email delivery uses a free-tier transactional email provider
+- [x] **IDENT-02**: Verification-email delivery uses a free-tier transactional email provider
       (e.g. Resend), within its free quota — no paid SMS/phone verification path exists in this
       phase (phone OTP has no free tier at any real volume and requires India DLT sender
       registration for the cheap rate; deferred, see PROJECT.md Key Decisions)
@@ -28,7 +28,7 @@ Requirements for initial release. Each maps to roadmap phases.
       (30-60 second resend cooldown), so the email-sending endpoint can't be trivially abused for
       spam or cost inflation
 
-- [ ] **IDENT-05**: The Phase 1 session-cookie mechanism is retained as the underlying
+- [x] **IDENT-05**: The Phase 1 session-cookie mechanism is retained as the underlying
       identity/session carrier — it is now gated behind a verified account rather than usable
       anonymously; Phase 2's votes/reports continue to key off `session_id` as designed
 
@@ -236,11 +236,11 @@ Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| IDENT-01 | Phase 1.1 | Pending |
-| IDENT-02 | Phase 1.1 | Pending |
+| IDENT-01 | Phase 1.1 | Complete |
+| IDENT-02 | Phase 1.1 | Complete |
 | IDENT-03 | Phase 1.1 | Pending |
 | IDENT-04 | Phase 1.1 | Pending |
-| IDENT-05 | Phase 1.1 | Pending |
+| IDENT-05 | Phase 1.1 | Complete |
 | FOUND-01 | Phase 1 | Complete (superseded by IDENT-01, Phase 1.1) |
 | FOUND-02 | Phase 1 | Complete |
 | FOUND-03 | Phase 1 | Complete |
