@@ -23,10 +23,21 @@ next.
    ```bash
    export DATABASE_URL="postgres://localhost:5432/pinalert?sslmode=disable"  # or your Neon/Supabase connection string
    export SESSION_SECRET="$(openssl rand -base64 32)"
+   export BASE_URL="http://localhost:8080"        # must be the externally reachable origin — see below
+   export ENV=development                          # unlocks the SESSION_SECRET/RESEND_API_KEY dev fallbacks below
+   export RESEND_API_KEY="re_..."                   # optional when ENV=development, required otherwise — see Email delivery below
+   export RESEND_FROM="Pinalert <onboarding@resend.dev>"  # optional; defaults to the Resend sandbox sender when unset
    ```
    The server refuses to start without `SESSION_SECRET` unless `ENV=development` is also set —
    never let a missing secret silently fall back to an auto-generated one, which would invalidate
-   every session on every restart.
+   every session on every restart. `RESEND_API_KEY` follows the identical rule: with
+   `ENV=development` and no key set, the server prints each verification link to its own log
+   instead of sending it; with any other `ENV` (including unset), a missing `RESEND_API_KEY` makes
+   the process exit at startup rather than boot into a state where nobody can receive their
+   verification email. `BASE_URL` roots the absolute link every verification email carries
+   (`{BASE_URL}/auth/verify?token=...`) — a wrong or unset-in-production value produces emailed
+   links that resolve to the wrong host, so set it explicitly to your real deployed origin outside
+   local development.
 3. **Apply the schema** (a dedicated binary, never run automatically by the server):
    ```bash
    make migrate
@@ -48,6 +59,34 @@ next.
 Every push and pull request runs `go build`, `go vet`, and `go test` against a `postgres:16`
 GitHub Actions service container (see `.github/workflows/ci.yml`) — no local setup needed to see
 CI results on a PR.
+
+## Email delivery (Resend)
+
+Pinalert sends verification-magic-link email through [Resend](https://resend.com)'s free tier.
+`internal/mailer/loader.go` selects the implementation at startup: `RESEND_API_KEY` unset with
+`ENV=development` prints the link to the server log (a build-and-test convenience, not a
+substitute for real delivery — a green test suite proves nothing about whether real mail arrives);
+`RESEND_API_KEY` set sends through Resend's official Go SDK; `RESEND_API_KEY` unset with any other
+`ENV` refuses to start.
+
+**Pre-launch requirement — read before sharing this app with anyone but yourself.** Resend's
+sandbox sender `onboarding@resend.dev` (the default when `RESEND_FROM` is unset) delivers **only**
+to the Resend account owner's own signup address. Until a custom domain is added and DNS-verified,
+every other visitor's verification email is silently undeliverable — and because login is
+mandatory to view anything at all (see PROJECT.md's Access Model), an undeliverable verification
+email means an unusable app for that person, not a degraded experience.
+
+Before sharing a deployed instance with real visitors:
+
+1. In the Resend dashboard, go to **Domains → Add Domain**, then add the printed DKIM/SPF records
+   at your DNS registrar and wait for verification to complete.
+2. Set `RESEND_FROM` to an address at that verified domain (e.g. `Pinalert <alerts@yourdomain.com>`)
+   and redeploy — `onboarding@resend.dev` must not be the sender in anything but local development.
+
+Resend's free tier is also quota-limited (roughly 100 sends/day at the time this was written —
+re-check the current figure in your own Resend dashboard rather than trusting this document). The
+per-email resend cooldown and per-IP rate limiter shipping in plan `01.1-05` exist specifically to
+protect that quota from being exhausted by repeated requests.
 
 ## API documentation
 
