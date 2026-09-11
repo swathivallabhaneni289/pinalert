@@ -91,7 +91,11 @@ Recent decisions affecting current work:
 
 - ~~Phase 1.1 (Identity & Login) needs its own `/gsd-discuss-phase 1.1` session~~ — **done
   2026-09-10**, see `.planning/phases/01.1-identity-login-mandatory-email-verification/01.1-CONTEXT.md`.
-  Ready for `/gsd-plan-phase 1.1`.
+
+- ~~Phase 1.1 needs `/gsd-plan-phase 1.1`~~ — **done 2026-09-11**: 7 plans across 6 waves,
+  gsd-plan-checker VERIFICATION PASSED after 4 revision iterations (D-12/D-13 account-menu and
+  merged-Activity-section rework, the "full header everywhere" wave-5/6 swap, and the provisional
+  wordmark's removal). Ready for `/gsd-execute-phase 1.1`.
 
 ### Blockers/Concerns
 
@@ -155,8 +159,15 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-10T16:13:49.647Z
-Stopped at: Phase 1.1 UI-SPEC approved (6/6 design-quality dimensions passed, no revisions
-needed). CONTEXT.md and UI-SPEC.md both done. Ready for `/gsd-plan-phase 1.1`. Phase 2's own
-discussion remains checkpointed and paused (see Pending Todos) — resume it after Phase 1.1 ships.
-Resume file: .planning/phases/01.1-identity-login-mandatory-email-verification/01.1-UI-SPEC.md
+Last session: 2026-09-11T13:30:00.000Z
+Stopped at: Phase 1.1 fully planned and verified — 7 plans across 6 waves, gsd-plan-checker
+VERIFICATION PASSED. Reached via 4 revision iterations continuing a prior session's half-finished
+UI amendment: 01.1-06 was stale against D-12 (account menu)/D-13 (merged Activity section), so it
+was split into a header plan and a profile plan; the user then chose "full header everywhere" over
+a minimal back-link, which required swapping wave order (01.1-06 is now the shared
+`account_header.html.tmpl` partial, wave 5; 01.1-07 is now the profile page that includes it, wave
+6) and building/removing a provisional home-link wordmark (user declined it — `/profile` has no
+route back to the map beyond browser-back, an accepted, documented trade-off). Ready for
+`/gsd-execute-phase 1.1`. Phase 2's own discussion remains checkpointed and paused (see Pending
+Todos) — resume it after Phase 1.1 ships.
+Resume file: .planning/phases/01.1-identity-login-mandatory-email-verification/01.1-07-PLAN.md
