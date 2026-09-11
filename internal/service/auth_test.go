@@ -345,8 +345,8 @@ func TestVerifyTokenConflictRefusesRebind(t *testing.T) {
 	if outcome != service.OutcomeConflict {
 		t.Fatalf("outcome = %v, want OutcomeConflict", outcome)
 	}
-	if email != "b@example.com" {
-		t.Fatalf("email = %q, want b@example.com (the token's address)", email)
+	if email != "a@example.com" {
+		t.Fatalf("email = %q, want a@example.com (the session's EXISTING verified account, not the token's target)", email)
 	}
 	for _, c := range *calls {
 		if c == "ConsumeToken" {

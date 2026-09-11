@@ -12,10 +12,13 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"pinalert/internal/api"
 	"pinalert/internal/api/handlers"
@@ -50,6 +53,86 @@ func (m *recordingMailer) last() (email, link string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.email, m.link
+}
+
+// newJarClient returns an *http.Client backed by a fresh in-memory cookie
+// jar, so a session cookie set by one request (e.g. requesting a link) is
+// carried automatically to a later request against the same server (e.g.
+// clicking the link) — the same browser identity across both requests,
+// exactly what the verify flow depends on.
+func newJarClient(t *testing.T) *http.Client {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("constructing cookie jar: %v", err)
+	}
+	return &http.Client{Jar: jar}
+}
+
+// sessionIDFromJar extracts the unsigned session id portion (before the
+// "." HMAC signature) of the pinalert_session cookie the jar is currently
+// holding for srvURL.
+func sessionIDFromJar(t *testing.T, client *http.Client, srvURL string) string {
+	t.Helper()
+	parsed, err := url.Parse(srvURL)
+	if err != nil {
+		t.Fatalf("parsing server URL: %v", err)
+	}
+	for _, c := range client.Jar.Cookies(parsed) {
+		if c.Name == "pinalert_session" {
+			id := strings.SplitN(c.Value, ".", 2)[0]
+			if id == "" {
+				t.Fatalf("session cookie %q has no id portion before the signature", c.Value)
+			}
+			return id
+		}
+	}
+	t.Fatalf("no pinalert_session cookie found in jar for %s", srvURL)
+	return ""
+}
+
+// requestLink drives POST /api/auth/request-link for email using client
+// (so the returned session cookie is captured in its jar) and returns the
+// raw token pulled out of the mailer's captured link.
+func requestLink(t *testing.T, client *http.Client, srv *httptest.Server, mailer *recordingMailer, email string) string {
+	t.Helper()
+	resp, err := client.Post(srv.URL+"/api/auth/request-link", "application/json",
+		bytes.NewReader([]byte(`{"email":"`+email+`"}`)))
+	if err != nil {
+		t.Fatalf("POST /api/auth/request-link: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("POST /api/auth/request-link status = %d, want 200: %s", resp.StatusCode, b)
+	}
+
+	_, link := mailer.last()
+	parsedLink, err := url.Parse(link)
+	if err != nil {
+		t.Fatalf("parsing mailed link %q: %v", link, err)
+	}
+	token := parsedLink.Query().Get("token")
+	if token == "" {
+		t.Fatalf("mailed link %q has no token query parameter", link)
+	}
+	return token
+}
+
+// getVerify drives GET /auth/verify?token=token using client and returns
+// the response status and body.
+func getVerify(t *testing.T, client *http.Client, srv *httptest.Server, token string) (int, string) {
+	t.Helper()
+	resp, err := client.Get(srv.URL + "/auth/verify?token=" + url.QueryEscape(token))
+	if err != nil {
+		t.Fatalf("GET /auth/verify: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading /auth/verify body: %v", err)
+	}
+	return resp.StatusCode, string(body)
 }
 
 func newAuthE2EServer(t *testing.T) (*httptest.Server, *pgxpool.Pool, *recordingMailer) {
@@ -208,5 +291,190 @@ func TestRequestLinkMalformedEmailReturns400(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("expected zero magic_link_tokens rows after a malformed request, got %d", count)
+	}
+}
+
+// TestVerifyEndToEnd is this plan's core end-to-end claim: requesting a
+// link and then clicking it in the same browser (same cookie jar) marks
+// that browser's session verified, renders "Email verified", and sets
+// sessions.account_id for that session — not merely a 200 status.
+func TestVerifyEndToEnd(t *testing.T) {
+	srv, pool, mailer := newAuthE2EServer(t)
+	client := newJarClient(t)
+
+	token := requestLink(t, client, srv, mailer, "verify-e2e@example.com")
+
+	status, body := getVerify(t, client, srv, token)
+	if status != http.StatusOK {
+		t.Fatalf("GET /auth/verify status = %d, want 200: %s", status, body)
+	}
+	if !strings.Contains(body, "Email verified") {
+		t.Fatalf("verify response does not contain \"Email verified\": %s", body)
+	}
+
+	sessionID := sessionIDFromJar(t, client, srv.URL)
+	var accountID *int64
+	if err := pool.QueryRow(context.Background(), `SELECT account_id FROM sessions WHERE session_id = $1`, sessionID).Scan(&accountID); err != nil {
+		t.Fatalf("reading back sessions.account_id: %v", err)
+	}
+	if accountID == nil {
+		t.Fatalf("sessions.account_id is NULL after a successful verify")
+	}
+}
+
+// TestVerifyRejectsSecondUse proves re-clicking the exact same link renders
+// the already-used outcome and does not change anything further.
+func TestVerifyRejectsSecondUse(t *testing.T) {
+	srv, _, mailer := newAuthE2EServer(t)
+	client := newJarClient(t)
+
+	token := requestLink(t, client, srv, mailer, "second-use@example.com")
+
+	firstStatus, firstBody := getVerify(t, client, srv, token)
+	if firstStatus != http.StatusOK || !strings.Contains(firstBody, "Email verified") {
+		t.Fatalf("first click: status=%d body=%s, want 200 with \"Email verified\"", firstStatus, firstBody)
+	}
+
+	secondStatus, secondBody := getVerify(t, client, srv, token)
+	if secondStatus != http.StatusOK {
+		t.Fatalf("second click status = %d, want 200", secondStatus)
+	}
+	if !strings.Contains(secondBody, "This link was already used") {
+		t.Fatalf("second click does not contain \"This link was already used\": %s", secondBody)
+	}
+}
+
+// TestVerifyExpiredToken inserts a token row whose expires_at is already
+// past and asserts the expired outcome renders.
+func TestVerifyExpiredToken(t *testing.T) {
+	srv, pool, _ := newAuthE2EServer(t)
+	client := newJarClient(t)
+
+	raw, hash, err := auth.GenerateToken()
+	if err != nil {
+		t.Fatalf("auth.GenerateToken: %v", err)
+	}
+	if _, err := pool.Exec(context.Background(),
+		`INSERT INTO magic_link_tokens (token_hash, email, expires_at) VALUES ($1, $2, $3)`,
+		hash, "expired-e2e@example.com", time.Now().Add(-1*time.Minute),
+	); err != nil {
+		t.Fatalf("inserting expired magic_link_tokens row: %v", err)
+	}
+
+	status, body := getVerify(t, client, srv, raw)
+	if status != http.StatusOK {
+		t.Fatalf("GET /auth/verify status = %d, want 200: %s", status, body)
+	}
+	if !strings.Contains(body, "This link has expired") {
+		t.Fatalf("verify response does not contain \"This link has expired\": %s", body)
+	}
+}
+
+// TestVerifyMalformedToken asserts a token that cannot possibly be a real
+// GenerateToken output renders the malformed outcome.
+func TestVerifyMalformedToken(t *testing.T) {
+	srv, _, _ := newAuthE2EServer(t)
+	client := newJarClient(t)
+
+	status, body := getVerify(t, client, srv, "not-a-real-token")
+	if status != http.StatusOK {
+		t.Fatalf("GET /auth/verify status = %d, want 200: %s", status, body)
+	}
+	if !strings.Contains(body, "This link isn't valid") {
+		t.Fatalf("verify response does not contain \"This link isn't valid\": %s", body)
+	}
+}
+
+// TestVerifyAccountConflict is DEC-D's core claim: a browser already
+// verified as one account that opens a token minted for a second address
+// is refused, not silently re-bound, and the second token is left
+// unconsumed.
+func TestVerifyAccountConflict(t *testing.T) {
+	srv, pool, mailer := newAuthE2EServer(t)
+	client := newJarClient(t)
+
+	tokenA := requestLink(t, client, srv, mailer, "conflict-a@example.com")
+	statusA, bodyA := getVerify(t, client, srv, tokenA)
+	if statusA != http.StatusOK || !strings.Contains(bodyA, "Email verified") {
+		t.Fatalf("verifying account A: status=%d body=%s", statusA, bodyA)
+	}
+	sessionID := sessionIDFromJar(t, client, srv.URL)
+	var accountIDBefore *int64
+	if err := pool.QueryRow(context.Background(), `SELECT account_id FROM sessions WHERE session_id = $1`, sessionID).Scan(&accountIDBefore); err != nil {
+		t.Fatalf("reading account_id after verifying A: %v", err)
+	}
+	if accountIDBefore == nil {
+		t.Fatalf("account_id is NULL after verifying A")
+	}
+
+	// Same jar (same browser, still verified as A) requests and opens a
+	// second address's link.
+	tokenB := requestLink(t, client, srv, mailer, "conflict-b@example.com")
+	statusB, bodyB := getVerify(t, client, srv, tokenB)
+	if statusB != http.StatusOK {
+		t.Fatalf("GET /auth/verify (conflict) status = %d, want 200: %s", statusB, bodyB)
+	}
+	if !strings.Contains(bodyB, "This link is for a different account") {
+		t.Fatalf("conflict response does not contain the conflict heading: %s", bodyB)
+	}
+	if !strings.Contains(bodyB, "conflict-a@example.com") {
+		t.Fatalf("conflict response does not name the currently-signed-in address: %s", bodyB)
+	}
+
+	var accountIDAfter *int64
+	if err := pool.QueryRow(context.Background(), `SELECT account_id FROM sessions WHERE session_id = $1`, sessionID).Scan(&accountIDAfter); err != nil {
+		t.Fatalf("reading account_id after the conflict attempt: %v", err)
+	}
+	if *accountIDAfter != *accountIDBefore {
+		t.Fatalf("account_id changed after a conflict outcome: before=%d after=%d", *accountIDBefore, *accountIDAfter)
+	}
+
+	var usedAt *time.Time
+	if err := pool.QueryRow(context.Background(),
+		`SELECT used_at FROM magic_link_tokens WHERE token_hash = $1`, auth.HashToken(tokenB),
+	).Scan(&usedAt); err != nil {
+		t.Fatalf("reading back token B's used_at: %v", err)
+	}
+	if usedAt != nil {
+		t.Fatalf("token B's used_at = %v after a conflict outcome, want NULL (unconsumed)", *usedAt)
+	}
+}
+
+// TestVerifyBindsWhenSessionRowAbsent proves the upsert path from Task 1
+// (RESEARCH.md Pitfall 2): a browser whose sessions row is deleted between
+// requesting a link and clicking it still ends up verified, with a fresh
+// sessions row created carrying the bound account_id.
+func TestVerifyBindsWhenSessionRowAbsent(t *testing.T) {
+	srv, pool, mailer := newAuthE2EServer(t)
+	client := newJarClient(t)
+
+	token := requestLink(t, client, srv, mailer, "absent-row@example.com")
+
+	sessionID := sessionIDFromJar(t, client, srv.URL)
+	if _, err := pool.Exec(context.Background(), `DELETE FROM sessions WHERE session_id = $1`, sessionID); err != nil {
+		t.Fatalf("deleting sessions row to simulate the persist-failure path: %v", err)
+	}
+	var rowCount int
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM sessions WHERE session_id = $1`, sessionID).Scan(&rowCount); err != nil {
+		t.Fatalf("counting sessions rows after delete: %v", err)
+	}
+	if rowCount != 0 {
+		t.Fatalf("expected zero sessions rows after delete, got %d", rowCount)
+	}
+
+	status, body := getVerify(t, client, srv, token)
+	if status != http.StatusOK {
+		t.Fatalf("GET /auth/verify status = %d, want 200: %s", status, body)
+	}
+	if !strings.Contains(body, "Email verified") {
+		t.Fatalf("verify response does not contain \"Email verified\": %s", body)
+	}
+
+	var accountID *int64
+	if err := pool.QueryRow(context.Background(), `SELECT account_id FROM sessions WHERE session_id = $1`, sessionID).Scan(&accountID); err != nil {
+		t.Fatalf("reading back sessions.account_id after bind-through-absent-row: %v", err)
+	}
+	if accountID == nil {
+		t.Fatalf("sessions.account_id is NULL after verifying with no pre-existing sessions row")
 	}
 }

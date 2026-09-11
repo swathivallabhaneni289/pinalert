@@ -135,11 +135,15 @@ func (s *AuthService) RequestLink(ctx context.Context, rawEmail string) (string,
 }
 
 // VerifyToken decides the outcome of a clicked magic link for the given
-// sessionID. It returns the outcome, the verified email (populated only for
-// OutcomeVerified and OutcomeConflict), and a transport error for anything
-// that isn't a clean outcome decision — a database error other than
-// pgx.ErrNoRows is always returned as an error, never mapped to a
-// fabricated outcome, so the handler can log it and render a generic 500.
+// sessionID. It returns the outcome, an email address (populated only for
+// OutcomeVerified and OutcomeConflict — empty for every other outcome), and
+// a transport error for anything that isn't a clean outcome decision — a
+// database error other than pgx.ErrNoRows is always returned as an error,
+// never mapped to a fabricated outcome, so the handler can log it and
+// render a generic 500. For OutcomeVerified the email is the
+// newly-verified address; for OutcomeConflict it is the session's EXISTING
+// verified account (what the visitor is currently signed in as), since the
+// token's own target address was never proven in this browser.
 //
 // Sequence, in this exact order (DEC-D, DEC-E, RESEARCH.md Pattern 1 and
 // Pitfall 2):
@@ -186,8 +190,12 @@ func (s *AuthService) VerifyToken(ctx context.Context, sessionID, rawToken strin
 		if existing.Email != row.Email {
 			// DEC-D/DEC-E: refuse to re-bind, and never consume the token —
 			// the rightful owner's single-use link must survive being
-			// opened in the wrong (already-verified) browser.
-			return OutcomeConflict, row.Email, nil
+			// opened in the wrong (already-verified) browser. The returned
+			// email is the session's EXISTING verified account (what the
+			// visitor is currently signed in as), not the token's target
+			// address — that address was never proven in this browser,
+			// which is the entire reason this is a conflict.
+			return OutcomeConflict, existing.Email, nil
 		}
 	case errors.Is(err, pgx.ErrNoRows):
 		// Unverified session opening a link it may not have requested

@@ -167,6 +167,37 @@
   mask-image: url("/static/icons/circle-alert.svg");
 }
 
+.auth-icon--check-circle {
+  -webkit-mask-image: url("/static/icons/check-circle.svg");
+  mask-image: url("/static/icons/check-circle.svg");
+}
+
+/* Link-landing outcome screen (plan 01.1-02: web/templates/verify_outcome.html.tmpl) —
+   the same .login-card surface as the login gate, centered instead of
+   left-aligned, with a single large status glyph above the heading. */
+.verify-outcome-card {
+  text-align: center;
+}
+
+.verify-outcome-icon {
+  display: block;
+  width: calc(var(--space-lg) * 2);
+  height: calc(var(--space-lg) * 2);
+  margin: 0 auto var(--space-md) auto;
+}
+
+.verify-outcome-icon--success {
+  color: var(--color-severity-low);
+}
+
+.verify-outcome-icon--error {
+  color: var(--color-severity-critical);
+}
+
+.verify-outcome-card .btn {
+  text-decoration: none;
+}
+
 .auth-error {
   min-height: var(--font-size-label);
   color: var(--color-severity-critical);

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinalert — Verify your email</title>
+  <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
+  {{if eq .Outcome "verified"}}<meta http-equiv="refresh" content="2;url=/">{{end}}
+</head>
+<body>
+  <div class="login-gate" id="verify-outcome">
+    <div class="globe-bg" aria-hidden="true">
+      <div class="globe-bg__mask"></div>
+    </div>
+
+    <div class="login-card verify-outcome-card">
+      {{if eq .Outcome "verified"}}
+      <span class="auth-icon auth-icon--check-circle verify-outcome-icon verify-outcome-icon--success" aria-hidden="true"></span>
+      <h1>Email verified</h1>
+      <p>Taking you to Pinalert…</p>
+      <a href="/" class="btn btn--primary">Continue</a>
+      {{else if eq .Outcome "expired"}}
+      <span class="auth-icon auth-icon--circle-alert verify-outcome-icon verify-outcome-icon--error" aria-hidden="true"></span>
+      <h1>This link has expired</h1>
+      <p>Verification links expire after 5 minutes. Request a new one below.</p>
+      <a href="/login" class="btn btn--primary">Send new link</a>
+      {{else if eq .Outcome "used"}}
+      <span class="auth-icon auth-icon--circle-alert verify-outcome-icon verify-outcome-icon--error" aria-hidden="true"></span>
+      <h1>This link was already used</h1>
+      <p>Magic links only work once. Request a new one below.</p>
+      <a href="/login" class="btn btn--primary">Send new link</a>
+      {{else if eq .Outcome "malformed"}}
+      <span class="auth-icon auth-icon--circle-alert verify-outcome-icon verify-outcome-icon--error" aria-hidden="true"></span>
+      <h1>This link isn't valid</h1>
+      <p>The verification link is broken or incomplete. Request a new one below.</p>
+      <a href="/login" class="btn btn--primary">Send new link</a>
+      {{else if eq .Outcome "conflict"}}
+      <span class="auth-icon auth-icon--circle-alert verify-outcome-icon verify-outcome-icon--error" aria-hidden="true"></span>
+      <h1>This link is for a different account</h1>
+      <p>You're signed in as {{.CurrentEmail}}. Log out first, then open the link again.</p>
+      <a href="/" class="btn btn--primary">Continue</a>
+      {{end}}
+    </div>
+  </div>
+</body>
+</html>
