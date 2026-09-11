@@ -1,7 +1,7 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "Anonymous, crowd-reported local emergency feed for floods, cyclones, and other\ndisasters. Reports are posted by nearby people and confirmed or disputed by\nother nearby people; this API is the read/write surface for that data. Pinalert\nis an unofficial, unaffiliated project and is not a substitute for contacting\nemergency services. This document is Swagger 2.0 — swag (the generator behind\nthis spec) does not emit OpenAPI 3.x, so tooling that expects OpenAPI 3.x\nspecifically should account for that; OPS-01's \"OpenAPI/Swagger spec\" requirement\nis satisfied by either format.",
+        "description": "Crowd-reported local emergency feed for floods, cyclones, and other disasters.\nReports are posted by nearby people and confirmed or disputed by other nearby\npeople; this API is the read/write surface for that data. Reading and writing\nreports both require a session verified by email through the magic-link flow —\nan unverified caller is refused with 401. Pinalert is an unofficial,\nunaffiliated project and is not a substitute for contacting emergency services.\nThis document is Swagger 2.0 — swag (the generator behind this spec) does not\nemit OpenAPI 3.x, so tooling that expects OpenAPI 3.x specifically should account\nfor that; OPS-01's \"OpenAPI/Swagger spec\" requirement is satisfied by either\nformat.",
         "title": "Pinalert API",
         "contact": {
             "name": "Pinalert project",
@@ -62,7 +62,7 @@
         },
         "/reports": {
             "get": {
-                "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance and\nreturns unexpired reports within radius_km, nearest first. This single endpoint\nserves both the map and the list views — there is no separate map-only route.",
+                "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance and\nreturns unexpired reports within radius_km, nearest first. This single endpoint\nserves both the map and the list views — there is no separate map-only route.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401 and no report data.",
                 "produces": [
                     "application/json"
                 ],
@@ -107,11 +107,17 @@
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
                     }
                 }
             },
             "post": {
-                "description": "Creates a location-tagged report under the caller's anonymous session. The\nanonymous session cookie is issued automatically on the first request; no signup\nor authentication is required. id, geohash, created_at and expires_at are computed\nserver-side and can never be set by the client.",
+                "description": "Creates a location-tagged report under the caller's session. Requires a session\nverified by email through the magic-link flow (POST /auth/request-link, then\nGET /auth/verify) — an unverified caller receives 401. id, geohash, created_at\nand expires_at are computed server-side and can never be set by the client.",
                 "consumes": [
                     "application/json"
                 ],
@@ -142,6 +148,12 @@
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }

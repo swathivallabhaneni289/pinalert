@@ -139,6 +139,25 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		}
 	}
 
+	// 01.1-04's drift guard: both /reports operations must declare the 401
+	// an unverified caller now receives from the access gate, not just the
+	// 200/400 shapes that predate it.
+	for _, method := range []string{"get", "post"} {
+		op, ok := reportsOps[method]
+		if !ok {
+			continue // already reported above
+		}
+		if !strings.Contains(string(op), `"401"`) {
+			t.Errorf("docs/swagger.json /reports %s operation is missing a 401 response", method)
+		}
+	}
+
+	// 01.1-04: the request-link endpoint that makes a session verified in
+	// the first place must itself be documented.
+	if _, ok := spec.Paths["/auth/request-link"]; !ok {
+		t.Errorf("docs/swagger.json is missing the /auth/request-link path")
+	}
+
 	body := string(raw)
 
 	for _, category := range []string{

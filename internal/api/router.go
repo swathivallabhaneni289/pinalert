@@ -46,14 +46,16 @@ type Deps struct {
 
 // @title        Pinalert API
 // @version      1.0
-// @description  Anonymous, crowd-reported local emergency feed for floods, cyclones, and other
-// @description  disasters. Reports are posted by nearby people and confirmed or disputed by
-// @description  other nearby people; this API is the read/write surface for that data. Pinalert
-// @description  is an unofficial, unaffiliated project and is not a substitute for contacting
-// @description  emergency services. This document is Swagger 2.0 — swag (the generator behind
-// @description  this spec) does not emit OpenAPI 3.x, so tooling that expects OpenAPI 3.x
-// @description  specifically should account for that; OPS-01's "OpenAPI/Swagger spec" requirement
-// @description  is satisfied by either format.
+// @description  Crowd-reported local emergency feed for floods, cyclones, and other disasters.
+// @description  Reports are posted by nearby people and confirmed or disputed by other nearby
+// @description  people; this API is the read/write surface for that data. Reading and writing
+// @description  reports both require a session verified by email through the magic-link flow —
+// @description  an unverified caller is refused with 401. Pinalert is an unofficial,
+// @description  unaffiliated project and is not a substitute for contacting emergency services.
+// @description  This document is Swagger 2.0 — swag (the generator behind this spec) does not
+// @description  emit OpenAPI 3.x, so tooling that expects OpenAPI 3.x specifically should account
+// @description  for that; OPS-01's "OpenAPI/Swagger spec" requirement is satisfied by either
+// @description  format.
 // @BasePath     /api
 // @license.name Unlicensed (portfolio project, all rights reserved)
 // @contact.name Pinalert project
