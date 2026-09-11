@@ -317,8 +317,14 @@
   word-break: break-all;
 }
 
-#account-menu a[role="menuitem"],
-#account-menu button[role="menuitem"] {
+/* .account-menu__item, not an ID-prefixed descendant selector, so this
+   rule's own `display` declaration never touches the panel's hidden-state
+   guard above — a descendant's own display never overrides an ancestor's
+   [hidden]-driven display:none regardless, but keeping the selector clear
+   of "#account-menu" as a substring is what lets
+   TestAccountMenuHiddenGuard's broad "any rule naming the panel"
+   substring check stay simple rather than special-casing descendants. */
+.account-menu__item {
   display: flex;
   align-items: center;
   gap: var(--space-xs);

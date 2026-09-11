@@ -130,6 +130,7 @@ func TestPageShellAppliesAssetVersionToLocalStaticAssets(t *testing.T) {
 		"/static/css/main.css", "/static/css/modal.css", "/static/css/feed.css",
 		"/static/css/auth.css",
 		"/static/js/app.js", "/static/js/map.js", "/static/js/modal.js", "/static/js/feed.js",
+		"/static/js/account-menu.js",
 	}
 	for _, asset := range localAssets {
 		want := asset + "?v=" + version
