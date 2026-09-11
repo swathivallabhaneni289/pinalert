@@ -10,31 +10,33 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"pinalert/internal/account"
 	"pinalert/internal/api/handlers"
 	"pinalert/internal/session"
 	sqlcgen "pinalert/internal/store/sqlc"
 )
 
-// accountCtxKey is an unexported struct type (never a string) so a value
-// stored by requireVerifiedAccount can never collide with a context key set
-// by unrelated code — mirrors internal/session.ctxKey's pattern.
-type accountCtxKey struct{}
-
 // Account is the identity requireVerifiedAccount resolves for a verified
 // session: the account row joined through sessions.account_id, never a
-// value the client can assert directly (threat T-01-71).
-type Account struct {
-	ID    int64
-	Email string
-}
+// value the client can assert directly (threat T-01-71). It is a type
+// alias onto pinalert/internal/account.Account (not a distinct type) so
+// this exported name and that package's own name are interchangeable for
+// any same-package caller in internal/api.
+type Account = account.Account
 
 // AccountFromContext returns the verified account requireVerifiedAccount
-// stored in the request context, if any. Plan 01.1-06's profile handler and
-// account header read the caller's account this way rather than repeating
-// the session-to-account lookup.
+// stored in the request context, if any, for internal/api's own callers.
+//
+// internal/api/handlers.Page (plan 01.1-06) needs the identical accessor
+// but cannot call this function: internal/api already imports
+// internal/api/handlers (router.go, this file), so
+// internal/api/handlers importing internal/api back would be a compile-time
+// import cycle. handlers.Page therefore calls
+// pinalert/internal/account.FromContext directly — the same underlying
+// context key this function reads, since requireVerifiedAccount stores the
+// account via account.WithAccount below, not a package-api-local key.
 func AccountFromContext(ctx context.Context) (Account, bool) {
-	acc, ok := ctx.Value(accountCtxKey{}).(Account)
-	return acc, ok
+	return account.FromContext(ctx)
 }
 
 // unverifiedErrorResponse is written for every gated /api/ request from an
@@ -77,7 +79,7 @@ func requireVerifiedAccount(q *sqlcgen.Queries) func(http.Handler) http.Handler 
 				row, err := q.GetAccountBySessionID(r.Context(), sessionID)
 				switch {
 				case err == nil:
-					ctx := context.WithValue(r.Context(), accountCtxKey{}, Account{ID: row.ID, Email: row.Email})
+					ctx := account.WithAccount(r.Context(), account.Account{ID: row.ID, Email: row.Email})
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				case errors.Is(err, pgx.ErrNoRows):

@@ -609,6 +609,11 @@ var nonCategoryIcons = map[string]bool{
 	"static/icons/mail.svg":         true,
 	"static/icons/circle-alert.svg": true,
 	"static/icons/check-circle.svg": true,
+	// Plan 01.1-06 (D-12): the account menu's trigger and logout glyphs,
+	// styled through auth.css's .auth-icon-- prefix, same exemption
+	// reasoning as the three entries above.
+	"static/icons/user.svg":    true,
+	"static/icons/log-out.svg": true,
 }
 
 // TestCategoryGlyphMaskRulesCoverEveryCategory guards the 01-13 fix's own

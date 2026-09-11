@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"pinalert/internal/account"
 	"pinalert/web"
 )
 
@@ -38,6 +39,12 @@ type pageViewModel struct {
 	FallbackLon     float64
 	DefaultRadiusKm float64
 	AssetVersion    string
+	// Email is the verified caller's account email, read per request from
+	// the gate's context (DEC-P) — never from PageConfig, which is
+	// built once at process start and cannot carry a per-request
+	// identity. Rendered by web/templates/account_header.html.tmpl's
+	// email row.
+	Email string
 }
 
 // ParsePageTemplate parses the embedded app shell template from
@@ -53,15 +60,35 @@ func ParsePageTemplate() (*template.Template, error) {
 // Page renders the html/template app shell. tmpl must have been parsed via
 // ParsePageTemplate (or an equivalent call against the same embedded
 // filesystem) so templateName resolves to a defined template.
+//
+// Page is only ever reached through internal/api's gated r.Group
+// (requireVerifiedAccount), so the request context always carries an
+// account by the time this handler runs — a lookup miss here means the
+// gate failed to do its job, which is a routing bug, not a condition a
+// redirect should paper over; it is logged and answered with a 500 rather
+// than silently rendering an empty email row (DEC-P).
 func Page(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		acc, ok := account.FromContext(r.Context())
+		if !ok {
+			log.Printf("handlers: Page: no verified account in request context — the gate should have made this impossible")
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
 		vm := pageViewModel{
 			FallbackLat:     cfg.FallbackLat,
 			FallbackLon:     cfg.FallbackLon,
 			DefaultRadiusKm: cfg.DefaultRadiusKm,
 			AssetVersion:    cfg.AssetVersion,
+			Email:           acc.Email,
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// DEC-Q: the shell now renders a person's email address into every
+		// response, and a shared/public device is exactly the scenario
+		// D-09's logout exists for — an intermediary or the browser's own
+		// cache must never keep serving a stale, personally-identifying
+		// copy of this page.
+		w.Header().Set("Cache-Control", "no-store")
 		if err := tmpl.ExecuteTemplate(w, templateName, vm); err != nil {
 			log.Printf("handlers: Page: %v", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)

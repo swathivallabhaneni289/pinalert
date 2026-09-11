@@ -224,3 +224,119 @@
   color: var(--color-text-muted);
   cursor: default;
 }
+
+/* Plan 01.1-06: the shared account header (D-12) — web/templates/
+   account_header.html.tmpl, rendered on every gated page (the app shell
+   now, the profile page in 01.1-07). Deliberately styled here rather than
+   in main.css: main.css is covered by four computed contract tests
+   including a WCAG contrast matrix, and keeping this phase's rules in
+   auth.css leaves those tests reasoning about exactly the source they were
+   written against. Fixed-position, top-right, matching the FAB/view-toggle
+   fixed-positioning convention (main.css) rather than sitting in normal
+   flow — .app-shell/#map already commit to a self-resolving 100vh/100dvh
+   height, and a header participating in normal document flow would push
+   that height past the viewport instead of overlaying it. DEC-S: the
+   header carries no left-slot content of any kind, so this rule set is
+   deliberately just the trigger button plus its dropdown panel — no bar
+   background, no logo slot. */
+.app-header {
+  position: fixed;
+  top: var(--space-md);
+  right: var(--space-md);
+  z-index: 1050; /* above the FAB/view-toggle's 1000, below the modal's 1100 */
+}
+
+.account-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-bg);
+  color: var(--color-text);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 20%);
+}
+
+/* Overrides .auth-icon's default --color-text-muted foreground: the
+   account trigger is the only icon-only interactive control in this
+   phase (UI-SPEC item 14), so its glyph needs full --color-text contrast
+   to read clearly against --color-bg, the same reasoning main.css's
+   .category-tile .icon-glyph override already applies to the unselected
+   category tile glyph. */
+.account-trigger .auth-icon {
+  color: var(--color-text);
+}
+
+.auth-icon--user {
+  -webkit-mask-image: url("/static/icons/user.svg");
+  mask-image: url("/static/icons/user.svg");
+}
+
+.auth-icon--log-out {
+  -webkit-mask-image: url("/static/icons/log-out.svg");
+  mask-image: url("/static/icons/log-out.svg");
+}
+
+/* The :not([hidden]) guard is required for the same specificity reason
+   documented at length in main.css's .modal-backdrop rule and
+   modal.css's #shelter-fields/#discard-confirm rules: the browser's
+   native [hidden] { display: none } is user-agent-origin, so an
+   author-origin `display` declaration at equal specificity would defeat
+   it and ship this panel permanently open on every gated page — worse
+   here than the modal backdrop case, since after 01.1-07 this partial
+   renders on every gated page, not just the primary app shell.
+   TestAccountMenuHiddenGuard (web/css_contract_test.go, plan 01.1-06
+   Task 2) fails the build if this guard is ever removed. */
+#account-menu:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  position: absolute;
+  top: calc(100% + var(--space-sm));
+  right: 0;
+  width: max-content;
+  min-width: 220px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--space-sm);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 20%);
+}
+
+.account-menu__email {
+  margin: 0 0 var(--space-xs) 0;
+  padding: var(--space-xs) var(--space-sm);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+  word-break: break-all;
+}
+
+#account-menu a[role="menuitem"],
+#account-menu button[role="menuitem"] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: var(--touch-target-min);
+  width: 100%;
+  padding: 0 var(--space-sm);
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+  text-decoration: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+#account-menu form {
+  margin: 0;
+}
