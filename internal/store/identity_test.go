@@ -2,8 +2,12 @@ package store_test
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	sqlcgen "pinalert/internal/store/sqlc"
 	"pinalert/internal/testutil"
@@ -90,5 +94,239 @@ func TestTruncateClearsIdentityTables(t *testing.T) {
 	}
 	if tokenCount != 0 {
 		t.Fatalf("magic_link_tokens has %d rows after Truncate, want 0", tokenCount)
+	}
+}
+
+// TestBindSessionAccountUpsertsWhenSessionRowAbsent proves the upsert shape
+// from Task 1 (RESEARCH.md Pitfall 2): a browser can hold a valid signed
+// cookie with no sessions row at all (internal/session/cookie.go's
+// log-and-continue persist-failure path), and BindSessionAccount must still
+// succeed and leave the session verified — never silently no-op like a bare
+// UPDATE would.
+func TestBindSessionAccountUpsertsWhenSessionRowAbsent(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+
+	testutil.MustExec(t, pool, `INSERT INTO accounts (email) VALUES ($1)`, "visitor@example.com")
+	var accountID int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM accounts WHERE email = $1`, "visitor@example.com").Scan(&accountID); err != nil {
+		t.Fatalf("reading back account id: %v", err)
+	}
+
+	var sessionRowCount int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM sessions WHERE session_id = $1`, "absent-session").Scan(&sessionRowCount); err != nil {
+		t.Fatalf("counting sessions rows: %v", err)
+	}
+	if sessionRowCount != 0 {
+		t.Fatalf("expected no sessions row before BindSessionAccount, found %d", sessionRowCount)
+	}
+
+	if err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{
+		SessionID: "absent-session",
+		AccountID: &accountID,
+	}); err != nil {
+		t.Fatalf("BindSessionAccount: %v", err)
+	}
+
+	row, err := q.GetAccountBySessionID(ctx, "absent-session")
+	if err != nil {
+		t.Fatalf("GetAccountBySessionID after bind: %v", err)
+	}
+	if row.ID != accountID || row.Email != "visitor@example.com" {
+		t.Fatalf("GetAccountBySessionID = %+v, want account %d/visitor@example.com", row, accountID)
+	}
+}
+
+// TestBindSessionAccountIsIdempotent covers Task 1's second BindSessionAccount
+// behaviour claim: calling it twice for the same session and account leaves
+// exactly one sessions row.
+func TestBindSessionAccountIsIdempotent(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+
+	testutil.MustExec(t, pool, `INSERT INTO accounts (email) VALUES ($1)`, "repeat@example.com")
+	var accountID int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM accounts WHERE email = $1`, "repeat@example.com").Scan(&accountID); err != nil {
+		t.Fatalf("reading back account id: %v", err)
+	}
+
+	for i := 0; i < 2; i++ {
+		if err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{
+			SessionID: "repeat-session",
+			AccountID: &accountID,
+		}); err != nil {
+			t.Fatalf("BindSessionAccount call %d: %v", i, err)
+		}
+	}
+
+	var sessionRowCount int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM sessions WHERE session_id = $1`, "repeat-session").Scan(&sessionRowCount); err != nil {
+		t.Fatalf("counting sessions rows: %v", err)
+	}
+	if sessionRowCount != 1 {
+		t.Fatalf("sessions rows for repeat-session = %d, want 1", sessionRowCount)
+	}
+}
+
+// TestConsumeTokenIsSingleUse proves ConsumeToken returns the email on the
+// first call and pgx.ErrNoRows on a second call against the same hash.
+func TestConsumeTokenIsSingleUse(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+
+	if _, err := q.InsertMagicLinkToken(ctx, sqlcgen.InsertMagicLinkTokenParams{
+		TokenHash: "single-use-hash",
+		Email:     "onceonly@example.com",
+		ExpiresAt: time.Now().Add(5 * time.Minute),
+	}); err != nil {
+		t.Fatalf("InsertMagicLinkToken: %v", err)
+	}
+
+	email, err := q.ConsumeToken(ctx, "single-use-hash")
+	if err != nil {
+		t.Fatalf("first ConsumeToken: %v", err)
+	}
+	if email != "onceonly@example.com" {
+		t.Fatalf("first ConsumeToken email = %q, want onceonly@example.com", email)
+	}
+
+	_, err = q.ConsumeToken(ctx, "single-use-hash")
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("second ConsumeToken err = %v, want pgx.ErrNoRows", err)
+	}
+}
+
+// TestConsumeTokenRejectsExpired proves ConsumeToken reports no rows for a
+// token whose expires_at is already in the past, and that used_at is left
+// NULL — an expired token must never be marked used by a failed consume
+// attempt.
+func TestConsumeTokenRejectsExpired(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+
+	testutil.MustExec(t, pool,
+		`INSERT INTO magic_link_tokens (token_hash, email, expires_at) VALUES ($1, $2, $3)`,
+		"expired-hash", "expired@example.com", time.Now().Add(-1*time.Minute),
+	)
+
+	_, err := q.ConsumeToken(ctx, "expired-hash")
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("ConsumeToken on expired token err = %v, want pgx.ErrNoRows", err)
+	}
+
+	var usedAt *time.Time
+	if err := pool.QueryRow(ctx, `SELECT used_at FROM magic_link_tokens WHERE token_hash = $1`, "expired-hash").Scan(&usedAt); err != nil {
+		t.Fatalf("reading back used_at: %v", err)
+	}
+	if usedAt != nil {
+		t.Fatalf("used_at = %v after a failed expired consume, want NULL", *usedAt)
+	}
+}
+
+// TestConsumeTokenConcurrent proves exactly one of two simultaneous
+// ConsumeToken calls against one token succeeds — the atomic conditional
+// UPDATE's whole reason for existing over a read-then-write shape
+// (RESEARCH.md "Don't Hand-Roll" TOCTOU row).
+func TestConsumeTokenConcurrent(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+
+	if _, err := q.InsertMagicLinkToken(ctx, sqlcgen.InsertMagicLinkTokenParams{
+		TokenHash: "concurrent-hash",
+		Email:     "concurrent@example.com",
+		ExpiresAt: time.Now().Add(5 * time.Minute),
+	}); err != nil {
+		t.Fatalf("InsertMagicLinkToken: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	successCount := 0
+	noRowsCount := 0
+
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := q.ConsumeToken(ctx, "concurrent-hash")
+			mu.Lock()
+			defer mu.Unlock()
+			if err == nil {
+				successCount++
+			} else if errors.Is(err, pgx.ErrNoRows) {
+				noRowsCount++
+			} else {
+				t.Errorf("unexpected ConsumeToken error: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if successCount != 1 {
+		t.Fatalf("successCount = %d, want exactly 1", successCount)
+	}
+	if noRowsCount != 1 {
+		t.Fatalf("noRowsCount = %d, want exactly 1", noRowsCount)
+	}
+}
+
+// TestResolveAccountIsIdempotent proves InsertAccount followed by
+// GetAccountByEmail returns a stable id, and a second InsertAccount for the
+// same email neither creates a duplicate row nor errors.
+func TestResolveAccountIsIdempotent(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+
+	if err := q.InsertAccount(ctx, "resolve@example.com"); err != nil {
+		t.Fatalf("first InsertAccount: %v", err)
+	}
+	first, err := q.GetAccountByEmail(ctx, "resolve@example.com")
+	if err != nil {
+		t.Fatalf("GetAccountByEmail after first insert: %v", err)
+	}
+
+	if err := q.InsertAccount(ctx, "resolve@example.com"); err != nil {
+		t.Fatalf("second InsertAccount: %v", err)
+	}
+	second, err := q.GetAccountByEmail(ctx, "resolve@example.com")
+	if err != nil {
+		t.Fatalf("GetAccountByEmail after second insert: %v", err)
+	}
+
+	if first.ID != second.ID {
+		t.Fatalf("account id changed across InsertAccount calls: %d != %d", first.ID, second.ID)
+	}
+
+	var count int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM accounts WHERE email = $1`, "resolve@example.com").Scan(&count); err != nil {
+		t.Fatalf("counting accounts: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("accounts rows for resolve@example.com = %d, want 1", count)
+	}
+}
+
+// TestGetAccountBySessionIDReturnsNoRowsWhenUnverified proves a session
+// whose account_id is NULL — the default for every anonymous session —
+// yields no row, which callers must treat as "unverified", never as an
+// error.
+func TestGetAccountBySessionIDReturnsNoRowsWhenUnverified(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+
+	if err := q.UpsertSession(ctx, "unverified-session"); err != nil {
+		t.Fatalf("UpsertSession: %v", err)
+	}
+
+	_, err := q.GetAccountBySessionID(ctx, "unverified-session")
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("GetAccountBySessionID for unverified session err = %v, want pgx.ErrNoRows", err)
 	}
 }

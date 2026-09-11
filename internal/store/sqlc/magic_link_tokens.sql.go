@@ -8,7 +8,60 @@ package sqlcgen
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const consumeToken = `-- name: ConsumeToken :one
+UPDATE magic_link_tokens
+SET used_at = now()
+WHERE token_hash = $1
+  AND used_at IS NULL
+  AND expires_at > now()
+RETURNING email
+`
+
+// A single atomic conditional UPDATE, never read-then-write: two
+// near-simultaneous clicks (a real user plus a mail-scanner prefetch) would
+// both pass a separate read before either wrote (RESEARCH.md "Don't
+// Hand-Roll" TOCTOU row). sqlc's :one returns pgx.ErrNoRows when zero rows
+// match (already-used, expired, or unknown token) — the caller distinguishes
+// which by the preceding GetMagicLinkTokenByHash read, not by parsing this
+// error.
+func (q *Queries) ConsumeToken(ctx context.Context, tokenHash string) (string, error) {
+	row := q.db.QueryRow(ctx, consumeToken, tokenHash)
+	var email string
+	err := row.Scan(&email)
+	return email, err
+}
+
+const getMagicLinkTokenByHash = `-- name: GetMagicLinkTokenByHash :one
+SELECT email, created_at, expires_at, used_at
+FROM magic_link_tokens
+WHERE token_hash = $1
+`
+
+type GetMagicLinkTokenByHashRow struct {
+	Email     string
+	CreatedAt time.Time
+	ExpiresAt time.Time
+	UsedAt    pgtype.Timestamptz
+}
+
+// Used only to choose outcome copy (already-used vs. expired vs. unknown);
+// authorisation rests entirely on ConsumeToken's atomic conditional UPDATE
+// below, never on this read.
+func (q *Queries) GetMagicLinkTokenByHash(ctx context.Context, tokenHash string) (GetMagicLinkTokenByHashRow, error) {
+	row := q.db.QueryRow(ctx, getMagicLinkTokenByHash, tokenHash)
+	var i GetMagicLinkTokenByHashRow
+	err := row.Scan(
+		&i.Email,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.UsedAt,
+	)
+	return i, err
+}
 
 const insertMagicLinkToken = `-- name: InsertMagicLinkToken :one
 INSERT INTO magic_link_tokens (
