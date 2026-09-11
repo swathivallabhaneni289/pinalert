@@ -1,6 +1,6 @@
 // Package api wires Pinalert's HTTP router: middleware, the anonymous
-// session gate, and the /api route group. Route handlers themselves live in
-// internal/api/handlers.
+// session cookie, the verified-account access gate (gate.go), and the route
+// table. Route handlers themselves live in internal/api/handlers.
 package api
 
 import (
@@ -61,7 +61,20 @@ type Deps struct {
 
 // NewRouter builds the chi router: request-id/real-ip/recoverer/logger
 // middleware, then the session middleware (issuing or verifying the
-// pinalert_session cookie on every request), then the /api route group.
+// pinalert_session cookie on every request), then the route table. D-05
+// ("login is required to view anything, not merely to act") is enforced by
+// splitting the table into two parts: a short, explicitly-documented set of
+// routes reachable without a verified account, and a single r.Group — every
+// other route — wrapped in the gate.go access-gate middleware. A route added
+// to the group is protected by construction; a route added outside it is
+// visibly, by construction, unprotected (threat T-01-70).
+//
+// The exempt set is exactly: /static/*, /swagger/*, GET /login, POST
+// /api/auth/request-link, and GET /auth/verify — the login surface itself,
+// the two request/verify steps that make a session verified in the first
+// place, static assets the login page needs to render, and the published
+// API reference (DEC-G, 01.1-04-PLAN.md; the /swagger/* exemption's tension
+// with D-05 is recorded there as accepted risk AR-32).
 func NewRouter(deps Deps) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -71,37 +84,39 @@ func NewRouter(deps Deps) *chi.Mux {
 	r.Use(middleware.Logger)
 	r.Use(deps.Session.Middleware(deps.persistSession))
 
-	r.Get("/", handlers.Page(deps.Template, deps.Page))
+	// --- Exempt: reachable without a verified account. ---
+
 	r.Get("/login", handlers.LoginGate(deps.Template, deps.Auth))
 	// GET only, deliberately: chi does not auto-map HEAD onto a GET-only
 	// handler the way net/http.ServeMux does, and registering only GET here
 	// cheaply sidesteps one class of mail-security-scanner prefetch
 	// consuming a visitor's single-use link before they click it
-	// (threat T-01-62). Left outside any verification gate — it is how a
-	// session becomes verified in the first place.
+	// (threat T-01-62). Left outside the gate — it is how a session becomes
+	// verified in the first place.
 	r.Get("/auth/verify", handlers.Verify(deps.AuthService, deps.Template, deps.Auth))
 	r.Handle("/static/*", http.StripPrefix("/static/", staticFileServer(deps.Dev)))
-
-	// Mounted outside the /api group so its middleware stack stays
-	// independent, and left publicly reachable: this is a public read-only
-	// API with no privileged operations to hide, and OPS-01 asks for a
-	// stable, browsable URL. /swagger/index.html is that stable URL. The v2
-	// handler serves its UI assets from the binary — no third-party CDN
-	// request at view time.
+	// Left publicly reachable: this is a public read-only API with no
+	// privileged operations to hide, and OPS-01 asks for a stable,
+	// browsable URL. /swagger/index.html is that stable URL. The v2 handler
+	// serves its UI assets from the binary — no third-party CDN request at
+	// view time.
 	r.Get("/swagger/*", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
+	// Registered as a literal path (not nested under an r.Route("/api", ...)
+	// mount) so it can stay outside the gated group below while /api/reports
+	// stays inside it — chi does not allow a literal sibling path alongside
+	// a wildcard r.Route mount at the same prefix, so /api is never mounted
+	// as its own subrouter in this router; every /api/* path is registered
+	// flat, gated or not, exactly as this one is. Deliberately reachable
+	// without verification — this is how a visitor becomes verified.
+	r.Post("/api/auth/request-link", handlers.RequestLink(deps.AuthService))
 
-	r.Route("/api", func(r chi.Router) {
-		r.Post("/reports", handlers.SubmitReport(deps.Reports))
-		r.Get("/reports", handlers.NearbyReports(deps.Reports))
+	// --- Gated: requires a verified account (D-05). ---
 
-		// Registered inside the /api group so the URL is POST
-		// /api/auth/request-link (chi does not allow a literal sibling path
-		// alongside a wildcard r.Route mount at the same prefix), but
-		// deliberately reachable without verification — this is how a
-		// visitor becomes verified in the first place. No access-gate
-		// middleware exists yet in this phase; when a later plan adds one,
-		// it must exclude this route explicitly.
-		r.Post("/auth/request-link", handlers.RequestLink(deps.AuthService))
+	r.Group(func(r chi.Router) {
+		r.Use(requireVerifiedAccount(deps.Sessions))
+		r.Get("/", handlers.Page(deps.Template, deps.Page))
+		r.Post("/api/reports", handlers.SubmitReport(deps.Reports))
+		r.Get("/api/reports", handlers.NearbyReports(deps.Reports))
 	})
 
 	return r
