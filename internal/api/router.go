@@ -25,11 +25,13 @@ import (
 // Deps holds every dependency a route handler needs. Plan 01-07 extends this
 // struct further (swagger mount) without touching this file's shape.
 type Deps struct {
-	Session  *session.Manager
-	Sessions *sqlcgen.Queries
-	Reports  *service.ReportService
-	Template *template.Template
-	Page     handlers.PageConfig
+	Session     *session.Manager
+	Sessions    *sqlcgen.Queries
+	Reports     *service.ReportService
+	AuthService *service.AuthService
+	Auth        handlers.AuthConfig
+	Template    *template.Template
+	Page        handlers.PageConfig
 	// Dev disables the static asset cache in staticFileServer. Left false
 	// (the zero value) selects the production 1-hour cache automatically —
 	// every existing Deps{} literal that doesn't set this field keeps
@@ -70,6 +72,7 @@ func NewRouter(deps Deps) *chi.Mux {
 	r.Use(deps.Session.Middleware(deps.persistSession))
 
 	r.Get("/", handlers.Page(deps.Template, deps.Page))
+	r.Get("/login", handlers.LoginGate(deps.Template, deps.Auth))
 	r.Handle("/static/*", http.StripPrefix("/static/", staticFileServer(deps.Dev)))
 
 	// Mounted outside the /api group so its middleware stack stays
@@ -83,6 +86,15 @@ func NewRouter(deps Deps) *chi.Mux {
 	r.Route("/api", func(r chi.Router) {
 		r.Post("/reports", handlers.SubmitReport(deps.Reports))
 		r.Get("/reports", handlers.NearbyReports(deps.Reports))
+
+		// Registered inside the /api group so the URL is POST
+		// /api/auth/request-link (chi does not allow a literal sibling path
+		// alongside a wildcard r.Route mount at the same prefix), but
+		// deliberately reachable without verification — this is how a
+		// visitor becomes verified in the first place. No access-gate
+		// middleware exists yet in this phase; when a later plan adds one,
+		// it must exclude this route explicitly.
+		r.Post("/auth/request-link", handlers.RequestLink(deps.AuthService))
 	})
 
 	return r

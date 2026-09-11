@@ -596,6 +596,20 @@ func assertGlyphSizingAndNoOrphanedImageSelectors(t *testing.T) {
 	}
 }
 
+// nonCategoryIcons names icon files under static/icons that are
+// deliberately not category glyphs — plan 01.1-01's login/auth surface
+// (01.1-UI-SPEC.md "New Icons") commits its own Lucide glyphs to the same
+// directory, styled through auth.css's distinct .auth-icon-- prefix rather
+// than .icon-glyph--. The category contract this test enforces governs only
+// the nine Pinalert.CATEGORIES glyphs; an entry here is exempt from the
+// "claimed by a mask rule" reverse-walk check below and nothing else — the
+// forward direction (every CATEGORIES entry has a rule) and the
+// rule-points-at-a-real-category check are both untouched by this map.
+var nonCategoryIcons = map[string]bool{
+	"static/icons/mail.svg":         true,
+	"static/icons/circle-alert.svg": true,
+}
+
 // TestCategoryGlyphMaskRulesCoverEveryCategory guards the 01-13 fix's own
 // core claim: every category in Pinalert.CATEGORIES has exactly one CSS
 // mask rule pointing at a real, committed icon file. Nine hand-written
@@ -683,6 +697,9 @@ func TestCategoryGlyphMaskRulesCoverEveryCategory(t *testing.T) {
 			return err
 		}
 		if d.IsDir() {
+			return nil
+		}
+		if nonCategoryIcons[path] {
 			return nil
 		}
 		if !claimedIcons[path] {

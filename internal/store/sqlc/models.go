@@ -6,7 +6,24 @@ package sqlcgen
 
 import (
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type Account struct {
+	ID        int64
+	Email     string
+	CreatedAt time.Time
+}
+
+type MagicLinkToken struct {
+	ID        int64
+	TokenHash string
+	Email     string
+	CreatedAt time.Time
+	ExpiresAt time.Time
+	UsedAt    pgtype.Timestamptz
+}
 
 type Report struct {
 	ID                    int64
@@ -26,4 +43,5 @@ type Report struct {
 type Session struct {
 	SessionID string
 	CreatedAt time.Time
+	AccountID *int64
 }

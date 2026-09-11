@@ -14,6 +14,52 @@
     },
     "basePath": "/api",
     "paths": {
+        "/auth/request-link": {
+            "post": {
+                "description": "Validates the given email address, mints a single-use 5-minute magic-link\ntoken, persists its hash, and hands the raw link to the configured mailer.\nThe response never carries a session identifier.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Request a magic-link verification email",
+                "parameters": [
+                    {
+                        "description": "Email to verify",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RequestLinkRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RequestLinkResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/reports": {
             "get": {
                 "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance and\nreturns unexpired reports within radius_km, nearest first. This single endpoint\nserves both the map and the list views — there is no separate map-only route.",
@@ -217,6 +263,25 @@
                 "shelter_headcount": {
                     "type": "integer",
                     "example": 42
+                }
+            }
+        },
+        "handlers.RequestLinkRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "description": "Email is the address to verify. Server-side validation (RFC 5322\naddress parsing, no display-name form) happens in\nservice.AuthService.RequestLink — never trust client-side validation.",
+                    "type": "string",
+                    "example": "visitor@example.com"
+                }
+            }
+        },
+        "handlers.RequestLinkResponse": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "visitor@example.com"
                 }
             }
         },

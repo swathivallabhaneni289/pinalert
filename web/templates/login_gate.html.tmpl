@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinalert — Verify your email</title>
+  <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
+</head>
+<body>
+  <div class="login-gate" id="login-gate">
+    <div class="globe-bg" aria-hidden="true">
+      <div class="globe-bg__mask"></div>
+    </div>
+
+    <div class="login-card" id="login-form-panel"{{if .Sent}} hidden{{end}}>
+      <h1>Verify your email to continue</h1>
+      <p>Pinalert requires a verified email before you can view or report anything nearby. We'll send a one-time link — no password needed.</p>
+
+      <label for="login-email">Email address</label>
+      <div class="login-field">
+        <span class="auth-icon auth-icon--mail" aria-hidden="true"></span>
+        <input type="email" id="login-email" name="email" placeholder="you@example.com"
+               autocomplete="email" required value="{{.Email}}">
+      </div>
+
+      <p id="auth-error" class="auth-error" role="alert"></p>
+
+      <button type="button" id="request-link" class="btn btn--primary">Send verification link</button>
+    </div>
+
+    {{template "check_inbox.html.tmpl" .}}
+  </div>
+
+  <script src="/static/js/auth.js?v={{.AssetVersion}}" defer></script>
+</body>
+</html>

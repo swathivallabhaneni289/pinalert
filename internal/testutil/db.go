@@ -20,9 +20,10 @@ import (
 )
 
 // NewTestDB reads DATABASE_URL, applies the embedded migrations, truncates
-// both tables, and returns a ready-to-use connection pool. It skips (via
-// t.Skip) rather than fails when DATABASE_URL is unset, so `go test ./...
-// -short` passes cleanly on a machine with no database configured.
+// the identity and report tables, and returns a ready-to-use connection
+// pool. It skips (via t.Skip) rather than fails when DATABASE_URL is unset,
+// so `go test ./... -short` passes cleanly on a machine with no database
+// configured.
 func NewTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 
@@ -63,12 +64,13 @@ func NewTestDB(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-// Truncate resets both tables to empty, restarting identity sequences, so
-// tests that need a clean slate between sub-cases don't have to open a new
-// pool via NewTestDB.
+// Truncate resets every identity and report table (accounts / magic_link_tokens
+// / reports / sessions) to empty, restarting identity sequences, so tests
+// that need a clean slate between sub-cases don't have to open a new pool
+// via NewTestDB.
 func Truncate(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
-	MustExec(t, pool, "TRUNCATE reports, sessions RESTART IDENTITY CASCADE")
+	MustExec(t, pool, "TRUNCATE accounts, magic_link_tokens, reports, sessions RESTART IDENTITY CASCADE")
 }
 
 // MustExec runs sql against pool and fails the test immediately on error, so
