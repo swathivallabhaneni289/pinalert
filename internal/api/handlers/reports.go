@@ -125,23 +125,28 @@ type ErrorResponse struct {
 }
 
 // SubmitReport handles POST /api/reports: decode, validate (via svc), and
-// persist under the caller's session id. A ValidationError maps to 400 with
-// the offending field named; any other error maps to a generic 500 with the
-// detail logged server-side only, so database errors never reach a client.
+// persist under the caller's session id. Reaching this handler at all
+// requires a session verified by email through the magic-link flow — the
+// access gate in internal/api/gate.go (01.1-04) refuses an unverified
+// caller with 401 before this function ever runs. A ValidationError maps to
+// 400 with the offending field named; any other error maps to a generic
+// 500 with the detail logged server-side only, so database errors never
+// reach a client.
 //
-// @Summary      Submit a new emergency report
-// @Description  Creates a location-tagged report under the caller's anonymous session. The
-// @Description  anonymous session cookie is issued automatically on the first request; no signup
-// @Description  or authentication is required. id, geohash, created_at and expires_at are computed
-// @Description  server-side and can never be set by the client.
-// @Tags         reports
-// @Accept       json
-// @Produce      json
-// @Param        body  body      SubmitReportRequest  true  "Report to submit"
-// @Success      201   {object}  SubmitReportResponse
-// @Failure      400   {object}  ErrorResponse
-// @Failure      500   {object}  ErrorResponse
-// @Router       /reports [post]
+// @Summary Submit a new emergency report
+// @Description Creates a location-tagged report under the caller's session. Requires a session
+// @Description verified by email through the magic-link flow (POST /auth/request-link, then
+// @Description GET /auth/verify) — an unverified caller receives 401. id, geohash, created_at
+// @Description and expires_at are computed server-side and can never be set by the client.
+// @Tags reports
+// @Accept json
+// @Produce json
+// @Param body body SubmitReportRequest true "Report to submit"
+// @Success 201 {object} SubmitReportResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /reports [post]
 func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID, ok := session.FromContext(r.Context())
@@ -196,20 +201,25 @@ func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 // query string, run the indexed bbox+Haversine query via svc, and return
 // unexpired reports nearest-first. This is the one endpoint that serves
 // both the map and the list (01-RESEARCH.md Pattern 3) — there is no
-// separate map-only or list-only route.
+// separate map-only or list-only route. Reaching this handler also requires
+// a verified session (see SubmitReport's doc comment); the gate refuses an
+// unverified reader with 401 before any report data is looked up.
 //
-// @Summary      List unexpired reports near a point
-// @Description  Runs the indexed bounding-box prefilter followed by exact Haversine distance and
-// @Description  returns unexpired reports within radius_km, nearest first. This single endpoint
-// @Description  serves both the map and the list views — there is no separate map-only route.
-// @Tags         reports
-// @Produce      json
-// @Param        lat        query     number  true   "Latitude of the query center (required, -90 to 90)"
-// @Param        lon        query     number  true   "Longitude of the query center (required, -180 to 180)"
-// @Param        radius_km  query     number  false  "Search radius in kilometers (defaults to 10, bounded to 0.1-50)" minimum(0.1) maximum(50) default(10)
-// @Success      200  {object}  ReportListResponse
-// @Failure      400  {object}  ErrorResponse
-// @Router       /reports [get]
+// @Summary List unexpired reports near a point
+// @Description Runs the indexed bounding-box prefilter followed by exact Haversine distance and
+// @Description returns unexpired reports within radius_km, nearest first. This single endpoint
+// @Description serves both the map and the list views — there is no separate map-only route.
+// @Description Requires a session verified by email through the magic-link flow; an unverified
+// @Description caller receives 401 and no report data.
+// @Tags reports
+// @Produce json
+// @Param lat query number true "Latitude of the query center (required, -90 to 90)"
+// @Param lon query number true "Longitude of the query center (required, -180 to 180)"
+// @Param radius_km query number false "Search radius in kilometers (defaults to 10, bounded to 0.1-50)" minimum(0.1) maximum(50) default(10)
+// @Success 200 {object} ReportListResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Router /reports [get]
 func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()

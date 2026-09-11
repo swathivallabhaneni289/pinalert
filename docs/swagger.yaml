@@ -161,14 +161,16 @@ info:
     name: Pinalert project
     url: https://github.com/swathivallabhaneni289/pinalert
   description: |-
-    Anonymous, crowd-reported local emergency feed for floods, cyclones, and other
-    disasters. Reports are posted by nearby people and confirmed or disputed by
-    other nearby people; this API is the read/write surface for that data. Pinalert
-    is an unofficial, unaffiliated project and is not a substitute for contacting
-    emergency services. This document is Swagger 2.0 — swag (the generator behind
-    this spec) does not emit OpenAPI 3.x, so tooling that expects OpenAPI 3.x
-    specifically should account for that; OPS-01's "OpenAPI/Swagger spec" requirement
-    is satisfied by either format.
+    Crowd-reported local emergency feed for floods, cyclones, and other disasters.
+    Reports are posted by nearby people and confirmed or disputed by other nearby
+    people; this API is the read/write surface for that data. Reading and writing
+    reports both require a session verified by email through the magic-link flow —
+    an unverified caller is refused with 401. Pinalert is an unofficial,
+    unaffiliated project and is not a substitute for contacting emergency services.
+    This document is Swagger 2.0 — swag (the generator behind this spec) does not
+    emit OpenAPI 3.x, so tooling that expects OpenAPI 3.x specifically should account
+    for that; OPS-01's "OpenAPI/Swagger spec" requirement is satisfied by either
+    format.
   license:
     name: Unlicensed (portfolio project, all rights reserved)
   title: Pinalert API
@@ -213,6 +215,8 @@ paths:
         Runs the indexed bounding-box prefilter followed by exact Haversine distance and
         returns unexpired reports within radius_km, nearest first. This single endpoint
         serves both the map and the list views — there is no separate map-only route.
+        Requires a session verified by email through the magic-link flow; an unverified
+        caller receives 401 and no report data.
       parameters:
       - description: Latitude of the query center (required, -90 to 90)
         in: query
@@ -242,6 +246,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
       summary: List unexpired reports near a point
       tags:
       - reports
@@ -249,10 +257,10 @@ paths:
       consumes:
       - application/json
       description: |-
-        Creates a location-tagged report under the caller's anonymous session. The
-        anonymous session cookie is issued automatically on the first request; no signup
-        or authentication is required. id, geohash, created_at and expires_at are computed
-        server-side and can never be set by the client.
+        Creates a location-tagged report under the caller's session. Requires a session
+        verified by email through the magic-link flow (POST /auth/request-link, then
+        GET /auth/verify) — an unverified caller receives 401. id, geohash, created_at
+        and expires_at are computed server-side and can never be set by the client.
       parameters:
       - description: Report to submit
         in: body
@@ -269,6 +277,10 @@ paths:
             $ref: '#/definitions/handlers.SubmitReportResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
         "500":

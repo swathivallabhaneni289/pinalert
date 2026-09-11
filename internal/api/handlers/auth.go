@@ -149,6 +149,15 @@ type verifyOutcomeViewModel struct {
 // not auto-map HEAD onto a GET-only handler the way net/http.ServeMux
 // does, which cheaply sidesteps one class of mail-security-scanner
 // prefetch (threat T-01-62).
+//
+// Deliberately carries no swag annotation and so has no entry in
+// docs/swagger.json: @BasePath is /api (see router.go's package-level swag
+// block) and this route lives outside that base path — it's an HTML
+// landing page a mail client's browser navigates to, not a JSON API
+// operation a client is meant to call programmatically. Do not "fix" this
+// by adding an annotation; TestSwaggerSpecCoversRoutes does not assert its
+// presence, and doing so would misrepresent the operation's shape (it
+// returns text/html, not any of this package's JSON response types).
 func Verify(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID, ok := session.FromContext(r.Context())

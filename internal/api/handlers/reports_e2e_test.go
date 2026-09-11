@@ -18,13 +18,21 @@ import (
 	"testing"
 
 	"pinalert/internal/api"
+	"pinalert/internal/api/handlers"
 	"pinalert/internal/service"
 	"pinalert/internal/session"
 	sqlcgen "pinalert/internal/store/sqlc"
 	"pinalert/internal/testutil"
 )
 
-func newE2EServer(t *testing.T) *httptest.Server {
+// newE2EServer builds a real router with every dependency the access gate
+// added in 01.1-04 needs, not just the reports slice — POST and GET
+// /api/reports are now both gated (D-05), so every caller of this helper
+// must verify a session (see verifySession) before driving either endpoint.
+// The returned *recordingMailer is the same fake-mailer harness
+// auth_e2e_test.go established in 01.1-02, reused here rather than
+// duplicated.
+func newE2EServer(t *testing.T) (*httptest.Server, *recordingMailer) {
 	t.Helper()
 	pool := testutil.NewTestDB(t)
 
@@ -32,17 +40,39 @@ func newE2EServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatalf("constructing session manager: %v", err)
 	}
+	tmpl, err := handlers.ParsePageTemplate()
+	if err != nil {
+		t.Fatalf("parsing page template: %v", err)
+	}
 	queries := sqlcgen.New(pool)
+	fm := &recordingMailer{}
 	deps := api.Deps{
-		Session:  mgr,
-		Sessions: queries,
-		Reports:  service.NewReportService(queries),
+		Session:     mgr,
+		Sessions:    queries,
+		Reports:     service.NewReportService(queries),
+		AuthService: service.NewAuthService(queries, fm, "https://pinalert.example"),
+		Auth:        handlers.AuthConfig{AssetVersion: "test"},
+		Template:    tmpl,
 	}
 	router := api.NewRouter(deps)
 
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)
-	return srv
+	return srv, fm
+}
+
+// verifySession drives the real request-link-then-verify flow for client
+// against srv (reusing requestLink/getVerify from auth_e2e_test.go), so the
+// session it represents is bound to a verified account before the caller
+// drives /api/reports — the access gate added in 01.1-04 refuses an
+// unverified session with 401, not report data.
+func verifySession(t *testing.T, client *http.Client, srv *httptest.Server, mailer *recordingMailer, email string) {
+	t.Helper()
+	token := requestLink(t, client, srv, mailer, email)
+	status, body := getVerify(t, client, srv, token)
+	if status != http.StatusOK || !strings.Contains(body, "Email verified") {
+		t.Fatalf("verifying session for %s: status=%d body=%s", email, status, body)
+	}
 }
 
 func postReport(t *testing.T, client *http.Client, baseURL string, body map[string]any) *http.Response {
@@ -59,13 +89,28 @@ func postReport(t *testing.T, client *http.Client, baseURL string, body map[stri
 }
 
 func TestSubmitThenNearbyReturnsReport(t *testing.T) {
-	srv := newE2EServer(t)
+	srv, mailer := newE2EServer(t)
 
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		t.Fatalf("constructing cookie jar: %v", err)
 	}
 	client := &http.Client{Jar: jar}
+	verifySession(t, client, srv, mailer, "submit-then-nearby@example.com")
+
+	srvURL, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatalf("parsing server URL: %v", err)
+	}
+	var gotSessionCookie bool
+	for _, c := range jar.Cookies(srvURL) {
+		if c.Name == "pinalert_session" {
+			gotSessionCookie = true
+		}
+	}
+	if !gotSessionCookie {
+		t.Fatalf("expected a pinalert_session cookie to have been set while verifying")
+	}
 
 	resp := postReport(t, client, srv.URL, map[string]any{
 		"category":    "flood",
@@ -79,16 +124,6 @@ func TestSubmitThenNearbyReturnsReport(t *testing.T) {
 	if resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("expected 201 from POST, got %d: %s", resp.StatusCode, b)
-	}
-
-	var gotSetCookie bool
-	for _, c := range resp.Cookies() {
-		if c.Name == "pinalert_session" {
-			gotSetCookie = true
-		}
-	}
-	if !gotSetCookie {
-		t.Fatalf("expected a Set-Cookie for pinalert_session on the first request")
 	}
 
 	nearbyURL := fmt.Sprintf("%s/api/reports?lat=12.9716&lon=77.5946&radius_km=5", srv.URL)
@@ -126,13 +161,14 @@ func TestSubmitThenNearbyReturnsReport(t *testing.T) {
 }
 
 func TestNearbyResponseOmitsSessionID(t *testing.T) {
-	srv := newE2EServer(t)
+	srv, mailer := newE2EServer(t)
 
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		t.Fatalf("constructing cookie jar: %v", err)
 	}
 	client := &http.Client{Jar: jar}
+	verifySession(t, client, srv, mailer, "omits-session-id@example.com")
 
 	resp := postReport(t, client, srv.URL, map[string]any{
 		"category":    "fire",
