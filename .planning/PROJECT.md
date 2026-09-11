@@ -162,6 +162,12 @@ output from that mechanic.
 - Capability-matched dispatch alerts (boat/medical/generator tags) — deferred, needs the alert
   radius/push feature first
 - Targeted confirm-nudge to already-engaged sessions — deferred, needs push infra first
+  (re-raised during Phase 1.1 as "notify a reporter when someone confirms/disputes their report" —
+  same underlying idea, still blocked on the same push infrastructure)
+- Comment/discussion thread under each report (free-text, distinct from confirm/dispute voting) —
+  raised during Phase 1.1 discussion; deferred, not currently in REQUIREMENTS.md at all — needs
+  its own scoping (moderation surface, abuse vectors on free text tied to a real account) before
+  it becomes a phase
 - Crowd-translation queue for report free text — deferred past v1
 - Multi-language UI toggle (Hindi + one regional language) — deferred past v1
 - Rapid swipe-triage queue — deferred, the filtered triage list view covers v1 needs
