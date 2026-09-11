@@ -8,7 +8,7 @@ status: executing
 stopped_at: Phase 1.1 planned — 7 plans across 6 waves, ready to execute
 last_updated: "2026-09-11T13:30:00.000Z"
 last_activity: 2026-09-11
-last_activity_desc: Phase 1.1 replanned for D-12/D-13 — 01.1-06 revised (merged Activity section, logout endpoint only) and 01.1-07 added (account menu), 7 plans across 6 waves
+last_activity_desc: Phase 1.1 replanned for "full header everywhere" — the account menu became a shared header partial and swapped to wave 5 (now 01.1-06), the profile page includes it at wave 6 (now 01.1-07); still 7 plans across 6 waves
 progress:
   total_phases: 7
   completed_phases: 1
@@ -34,8 +34,11 @@ mid-way, see Pending Todos)
 Phase: 1.1 — Identity & Login — Mandatory Email Verification
 Plan: Ready to execute (7 plans: 01.1-01 through 01.1-07, 6 waves)
 Status: Ready to execute
-Last activity: 2026-09-11 — Phase 1.1 replanned for the D-12 account menu and the D-13 merged
-Activity section: 01.1-06 revised, 01.1-07 added
+Last activity: 2026-09-11 — Phase 1.1 replanned for the user's "full header everywhere" decision.
+The D-12 account menu is now a shared `account_header.html.tmpl` partial and moved to wave 5 as
+01.1-06; the profile page (D-13 merged Activity section) includes that partial and moved to wave 6
+as 01.1-07. The swap is required, not cosmetic: `html/template` errors at execution time on a
+`{{template}}` call naming a template a later wave has not written yet.
 
 Progress: [░░░░░░░░░░] 0%
 

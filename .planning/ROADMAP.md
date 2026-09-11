@@ -154,11 +154,11 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 01.1-06-PLAN.md — Profile page with one merged Activity section listing the account's reports across devices, plus the logout endpoint (wave 5)
+- [ ] 01.1-06-PLAN.md — Shared header partial rendered on every gated page: account menu with verified address, Activity item, immediate logout (D-12) (wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 01.1-07-PLAN.md — Account menu in the app-shell header: verified address, Activity item, immediate logout (D-12) (wave 6)
+- [ ] 01.1-07-PLAN.md — Profile page under that shared header, with one merged Activity section listing the account's reports across devices, plus the logout endpoint (wave 6)
 
 **UI hint**: yes
 
