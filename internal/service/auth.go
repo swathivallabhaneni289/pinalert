@@ -2,16 +2,41 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/mail"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"pinalert/internal/auth"
 	"pinalert/internal/mailer"
 	sqlcgen "pinalert/internal/store/sqlc"
 )
+
+// VerifyOutcome discriminates the five ways GET /auth/verify (plan 01.1-02)
+// can land. The handler passes the value straight into the outcome
+// template's discriminator, so these are kept lowercase and stable — never
+// renamed once shipped, since a template branch and this constant must stay
+// in lockstep.
+type VerifyOutcome string
+
+const (
+	OutcomeVerified  VerifyOutcome = "verified"
+	OutcomeExpired   VerifyOutcome = "expired"
+	OutcomeUsed      VerifyOutcome = "used"
+	OutcomeMalformed VerifyOutcome = "malformed"
+	OutcomeConflict  VerifyOutcome = "conflict"
+)
+
+// rawTokenBytes is the decoded length internal/auth.GenerateToken produces
+// (tokenBytes there) — a token that doesn't decode to exactly this many
+// bytes is malformed by construction, never a database lookup away from
+// being valid.
+const rawTokenBytes = 32
 
 // ResendCooldown is the minimum time a caller must wait between successive
 // verification-email requests for the same address (D-03: the midpoint of
@@ -25,6 +50,12 @@ const ResendCooldown = 45 * time.Second
 // plans widen this interface as more of the verification flow lands.
 type AuthQuerier interface {
 	InsertMagicLinkToken(ctx context.Context, arg sqlcgen.InsertMagicLinkTokenParams) (sqlcgen.InsertMagicLinkTokenRow, error)
+	GetMagicLinkTokenByHash(ctx context.Context, tokenHash string) (sqlcgen.GetMagicLinkTokenByHashRow, error)
+	ConsumeToken(ctx context.Context, tokenHash string) (string, error)
+	InsertAccount(ctx context.Context, email string) error
+	GetAccountByEmail(ctx context.Context, email string) (sqlcgen.Account, error)
+	GetAccountBySessionID(ctx context.Context, sessionID string) (sqlcgen.GetAccountBySessionIDRow, error)
+	BindSessionAccount(ctx context.Context, arg sqlcgen.BindSessionAccountParams) error
 }
 
 // AuthService validates a requested email address, mints a magic-link
@@ -101,6 +132,121 @@ func (s *AuthService) RequestLink(ctx context.Context, rawEmail string) (string,
 	}
 
 	return email, nil
+}
+
+// VerifyToken decides the outcome of a clicked magic link for the given
+// sessionID. It returns the outcome, an email address (populated only for
+// OutcomeVerified and OutcomeConflict — empty for every other outcome), and
+// a transport error for anything that isn't a clean outcome decision — a
+// database error other than pgx.ErrNoRows is always returned as an error,
+// never mapped to a fabricated outcome, so the handler can log it and
+// render a generic 500. For OutcomeVerified the email is the
+// newly-verified address; for OutcomeConflict it is the session's EXISTING
+// verified account (what the visitor is currently signed in as), since the
+// token's own target address was never proven in this browser.
+//
+// Sequence, in this exact order (DEC-D, DEC-E, RESEARCH.md Pattern 1 and
+// Pitfall 2):
+//  1. Reject an empty or malformed-shape token as OutcomeMalformed without
+//     touching the database — a cheap shape check that keeps garbage out.
+//  2. Hash the raw token and look up the row; pgx.ErrNoRows maps to
+//     OutcomeMalformed (unknown token).
+//  3. If the row is already used or expired, return that outcome. These
+//     reads exist only to pick the right copy for the visitor, never to
+//     authorise.
+//  4. If the current session is already verified as a different account,
+//     return OutcomeConflict WITHOUT consuming the token, so the rightful
+//     owner's single-use link survives being opened in the wrong browser.
+//  5. Consume the token atomically. This is the branch that actually
+//     decides the request.
+//  6. Lazily resolve (create-if-absent) the account for the token's email —
+//     only now that ownership of the address is proven.
+//  7. Bind the account onto the current session.
+//  8. Return OutcomeVerified.
+func (s *AuthService) VerifyToken(ctx context.Context, sessionID, rawToken string) (VerifyOutcome, string, error) {
+	if !isWellFormedToken(rawToken) {
+		return OutcomeMalformed, "", nil
+	}
+
+	hash := auth.HashToken(rawToken)
+	row, err := s.q.GetMagicLinkTokenByHash(ctx, hash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return OutcomeMalformed, "", nil
+		}
+		return "", "", fmt.Errorf("service: reading magic-link token: %w", err)
+	}
+
+	if row.UsedAt.Valid {
+		return OutcomeUsed, "", nil
+	}
+	if !row.ExpiresAt.After(s.now()) {
+		return OutcomeExpired, "", nil
+	}
+
+	existing, err := s.q.GetAccountBySessionID(ctx, sessionID)
+	switch {
+	case err == nil:
+		if existing.Email != row.Email {
+			// DEC-D/DEC-E: refuse to re-bind, and never consume the token —
+			// the rightful owner's single-use link must survive being
+			// opened in the wrong (already-verified) browser. The returned
+			// email is the session's EXISTING verified account (what the
+			// visitor is currently signed in as), not the token's target
+			// address — that address was never proven in this browser,
+			// which is the entire reason this is a conflict.
+			return OutcomeConflict, existing.Email, nil
+		}
+	case errors.Is(err, pgx.ErrNoRows):
+		// Unverified session opening a link it may not have requested
+		// itself (D-07: cross-device verification is the supported happy
+		// path, not an anomaly).
+	default:
+		return "", "", fmt.Errorf("service: reading current session's account: %w", err)
+	}
+
+	email, err := s.q.ConsumeToken(ctx, hash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			if row.UsedAt.Valid {
+				return OutcomeUsed, "", nil
+			}
+			return OutcomeExpired, "", nil
+		}
+		return "", "", fmt.Errorf("service: consuming magic-link token: %w", err)
+	}
+
+	if err := s.q.InsertAccount(ctx, email); err != nil {
+		return "", "", fmt.Errorf("service: resolving account for %s: %w", email, err)
+	}
+	account, err := s.q.GetAccountByEmail(ctx, email)
+	if err != nil {
+		return "", "", fmt.Errorf("service: reading resolved account for %s: %w", email, err)
+	}
+
+	if err := s.q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{
+		SessionID: sessionID,
+		AccountID: &account.ID,
+	}); err != nil {
+		return "", "", fmt.Errorf("service: binding session to account: %w", err)
+	}
+
+	return OutcomeVerified, email, nil
+}
+
+// isWellFormedToken reports whether raw could plausibly be a value
+// GenerateToken produced: non-empty, valid base64url (RawURLEncoding, no
+// padding — matching GenerateToken's own encoding), and decoding to exactly
+// rawTokenBytes bytes.
+func isWellFormedToken(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return false
+	}
+	return len(decoded) == rawTokenBytes
 }
 
 // normalizeEmail trims rawEmail, parses it with the stdlib address parser

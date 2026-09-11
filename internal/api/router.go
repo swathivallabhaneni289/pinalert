@@ -73,6 +73,13 @@ func NewRouter(deps Deps) *chi.Mux {
 
 	r.Get("/", handlers.Page(deps.Template, deps.Page))
 	r.Get("/login", handlers.LoginGate(deps.Template, deps.Auth))
+	// GET only, deliberately: chi does not auto-map HEAD onto a GET-only
+	// handler the way net/http.ServeMux does, and registering only GET here
+	// cheaply sidesteps one class of mail-security-scanner prefetch
+	// consuming a visitor's single-use link before they click it
+	// (threat T-01-62). Left outside any verification gate — it is how a
+	// session becomes verified in the first place.
+	r.Get("/auth/verify", handlers.Verify(deps.AuthService, deps.Template, deps.Auth))
 	r.Handle("/static/*", http.StripPrefix("/static/", staticFileServer(deps.Dev)))
 
 	// Mounted outside the /api group so its middleware stack stays

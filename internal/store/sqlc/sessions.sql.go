@@ -9,6 +9,49 @@ import (
 	"context"
 )
 
+const bindSessionAccount = `-- name: BindSessionAccount :exec
+INSERT INTO sessions (session_id, account_id)
+VALUES ($1, $2)
+ON CONFLICT (session_id) DO UPDATE SET account_id = EXCLUDED.account_id
+`
+
+type BindSessionAccountParams struct {
+	SessionID string
+	AccountID *int64
+}
+
+// Must be an upsert, never a bare UPDATE: internal/session/cookie.go logs
+// and continues when its persist callback fails, so a browser can hold a
+// valid signed cookie with no sessions row at all (RESEARCH.md Pitfall 2). A
+// bare UPDATE would silently affect zero rows while the token was already
+// consumed — a dead end the visitor cannot recover from without requesting
+// a new link.
+func (q *Queries) BindSessionAccount(ctx context.Context, arg BindSessionAccountParams) error {
+	_, err := q.db.Exec(ctx, bindSessionAccount, arg.SessionID, arg.AccountID)
+	return err
+}
+
+const getAccountBySessionID = `-- name: GetAccountBySessionID :one
+SELECT accounts.id, accounts.email
+FROM sessions
+JOIN accounts ON sessions.account_id = accounts.id
+WHERE sessions.session_id = $1
+`
+
+type GetAccountBySessionIDRow struct {
+	ID    int64
+	Email string
+}
+
+// A session with a NULL account_id yields no row (pgx.ErrNoRows), which
+// callers must treat as "unverified", never as an error.
+func (q *Queries) GetAccountBySessionID(ctx context.Context, sessionID string) (GetAccountBySessionIDRow, error) {
+	row := q.db.QueryRow(ctx, getAccountBySessionID, sessionID)
+	var i GetAccountBySessionIDRow
+	err := row.Scan(&i.ID, &i.Email)
+	return i, err
+}
+
 const upsertSession = `-- name: UpsertSession :exec
 INSERT INTO sessions (session_id)
 VALUES ($1)

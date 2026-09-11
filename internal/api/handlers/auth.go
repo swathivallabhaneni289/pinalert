@@ -9,6 +9,7 @@ import (
 	"net/mail"
 
 	"pinalert/internal/service"
+	"pinalert/internal/session"
 )
 
 // maxAuthBodyBytes caps the request-link POST body, matching
@@ -122,5 +123,69 @@ func RequestLink(svc *service.AuthService) http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusOK, RequestLinkResponse{Email: normalizedEmail})
+	}
+}
+
+// verifyOutcomeTemplateName is the file executed by Verify's
+// ExecuteTemplate call.
+const verifyOutcomeTemplateName = "verify_outcome.html.tmpl"
+
+// verifyOutcomeViewModel is exactly what verify_outcome.html.tmpl reads and
+// nothing more. Email is the newly-verified address (OutcomeVerified);
+// CurrentEmail is the session's existing verified address, shown only on
+// the OutcomeConflict screen ("You're signed in as {{.CurrentEmail}}").
+type verifyOutcomeViewModel struct {
+	AssetVersion string
+	Outcome      string
+	Email        string
+	CurrentEmail string
+}
+
+// Verify handles GET /auth/verify: reads the current session id from
+// context (never from a query parameter — the token names the account, the
+// signed cookie names the browser being bound), delegates the whole
+// decision to svc.VerifyToken, and renders the one shared outcome template.
+// Only GET is ever registered for this route (see router.go) — chi does
+// not auto-map HEAD onto a GET-only handler the way net/http.ServeMux
+// does, which cheaply sidesteps one class of mail-security-scanner
+// prefetch (threat T-01-62).
+func Verify(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sessionID, ok := session.FromContext(r.Context())
+		if !ok {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		token := r.URL.Query().Get("token")
+		outcome, email, err := svc.VerifyToken(r.Context(), sessionID, token)
+		if err != nil {
+			log.Printf("handlers: Verify: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		vm := verifyOutcomeViewModel{
+			AssetVersion: cfg.AssetVersion,
+			Outcome:      string(outcome),
+		}
+		if outcome == service.OutcomeVerified {
+			vm.Email = email
+		}
+		if outcome == service.OutcomeConflict {
+			vm.CurrentEmail = email
+		}
+
+		// This response reflects an authentication state change (a session
+		// either just became verified, or the request revealed which
+		// account the browser is currently signed in as) — it must never
+		// be served from a shared cache or restored from the
+		// back-forward cache (threat T-01-64).
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err := tmpl.ExecuteTemplate(w, verifyOutcomeTemplateName, vm); err != nil {
+			log.Printf("handlers: Verify: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+		}
 	}
 }

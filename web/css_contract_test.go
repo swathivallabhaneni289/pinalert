@@ -608,6 +608,7 @@ func assertGlyphSizingAndNoOrphanedImageSelectors(t *testing.T) {
 var nonCategoryIcons = map[string]bool{
 	"static/icons/mail.svg":         true,
 	"static/icons/circle-alert.svg": true,
+	"static/icons/check-circle.svg": true,
 }
 
 // TestCategoryGlyphMaskRulesCoverEveryCategory guards the 01-13 fix's own
