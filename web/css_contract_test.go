@@ -112,6 +112,78 @@ func TestModalBackdropHiddenGuard(t *testing.T) {
 	}
 }
 
+// TestAccountMenuHiddenGuard is TestModalBackdropHiddenGuard's own
+// machinery one selector over: plan 01.1-06's account menu panel
+// (#account-menu, web/templates/account_header.html.tmpl) ships `hidden`
+// in the template and is only ever revealed by account-menu.js clearing
+// that attribute — exactly the shape that bit the modal backdrop in
+// Phase 1 (a live UAT blocker), because the browser's native
+// `[hidden] { display: none }` rule is user-agent-origin and loses to any
+// author-origin `display` declaration at equal specificity. It matters
+// more here than it did for the modal: once 01.1-07 lands, this panel
+// renders on every gated page, so an unguarded rule would ship the menu
+// stuck open — covering the map — everywhere at once, with a green build
+// and no other signal.
+func TestAccountMenuHiddenGuard(t *testing.T) {
+	const panelSelector = "#account-menu"
+	const guard = ":not([hidden])"
+
+	var sawGuardedPanelInAuthCSS bool
+
+	err := fs.WalkDir(StaticFS, "static/css", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".css") {
+			return nil
+		}
+
+		raw, err := fs.ReadFile(StaticFS, path)
+		if err != nil {
+			return err
+		}
+
+		text := stripCSSComments(string(raw))
+
+		for chunk := range strings.SplitSeq(text, "}") {
+			lastOpen := strings.LastIndex(chunk, "{")
+			if lastOpen == -1 {
+				continue
+			}
+			selectorHead := chunk[:lastOpen]
+			declBody := chunk[lastOpen+1:]
+
+			if !strings.Contains(selectorHead, panelSelector) {
+				continue
+			}
+			if !strings.Contains(declBody, "display") {
+				continue
+			}
+
+			if strings.Contains(selectorHead, guard) {
+				if path == "static/css/auth.css" {
+					sawGuardedPanelInAuthCSS = true
+				}
+				continue
+			}
+
+			t.Errorf(
+				"%s: found a rule setting `display` on the account menu panel selector without a %q guard — selector head: %q",
+				path, guard, strings.TrimSpace(selectorHead),
+			)
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed to walk embedded static/css: %v", err)
+	}
+
+	if !sawGuardedPanelInAuthCSS {
+		t.Fatalf("expected static/css/auth.css to contain at least one guarded %s%s selector — found none (the rule may have been deleted outright)", panelSelector, guard)
+	}
+}
+
 // TestPrimaryMapHasResolvedHeight guards the UAT Test 1 retest blocker: the
 // primary Leaflet map container (the div index.html.tmpl gives id="map")
 // had no height rule anywhere in the shipped CSS, so it collapsed to 0px and
@@ -609,6 +681,11 @@ var nonCategoryIcons = map[string]bool{
 	"static/icons/mail.svg":         true,
 	"static/icons/circle-alert.svg": true,
 	"static/icons/check-circle.svg": true,
+	// Plan 01.1-06 (D-12): the account menu's trigger and logout glyphs,
+	// styled through auth.css's .auth-icon-- prefix, same exemption
+	// reasoning as the three entries above.
+	"static/icons/user.svg":    true,
+	"static/icons/log-out.svg": true,
 }
 
 // TestCategoryGlyphMaskRulesCoverEveryCategory guards the 01-13 fix's own
