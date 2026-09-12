@@ -119,6 +119,34 @@ func requestLink(t *testing.T, client *http.Client, srv *httptest.Server, mailer
 	return token
 }
 
+// submitReport drives POST /api/reports for category/description using
+// client, failing the test on anything but 201. 01.1-07's profile tests
+// need real report rows to list, the same real-router-plus-real-Postgres
+// shape every other e2e test in this file already uses.
+func submitReport(t *testing.T, client *http.Client, srv *httptest.Server, category, description string) {
+	t.Helper()
+	payload := map[string]any{
+		"category":    category,
+		"severity":    "low",
+		"description": description,
+		"latitude":    12.9716,
+		"longitude":   77.5946,
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshaling report payload: %v", err)
+	}
+	resp, err := client.Post(srv.URL+"/api/reports", "application/json", bytes.NewReader(b))
+	if err != nil {
+		t.Fatalf("POST /api/reports: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("POST /api/reports status = %d, want 201: %s", resp.StatusCode, body)
+	}
+}
+
 // getVerify drives GET /auth/verify?token=token using client and returns
 // the response status and body.
 func getVerify(t *testing.T, client *http.Client, srv *httptest.Server, token string) (int, string) {
@@ -476,5 +504,173 @@ func TestVerifyBindsWhenSessionRowAbsent(t *testing.T) {
 	}
 	if accountID == nil {
 		t.Fatalf("sessions.account_id is NULL after verifying with no pre-existing sessions row")
+	}
+}
+
+// --- Profile page (01.1-07-PLAN.md Task 2) ---
+
+// TestProfileListsOwnReportsAcrossSessions is this plan's core claim: an
+// account's reports filed from two different sessions (devices) both
+// appear on one GET /profile response read through the FIRST device's
+// cookie jar. The second device is simulated by binding a freshly-issued
+// session directly to the same account row (sqlcgen.BindSessionAccount)
+// rather than running it through a second real RequestLink/Verify round
+// trip, which would collide with RequestLink's own per-address resend
+// cooldown (D-03/D-04) inside this test — the DB-level bind is exactly what
+// a second successful verification of the same address would leave behind.
+func TestProfileListsOwnReportsAcrossSessions(t *testing.T) {
+	srv, pool, mailer := newAuthE2EServer(t)
+	clientA := newJarClient(t)
+
+	token := requestLink(t, clientA, srv, mailer, "profile-multi@example.com")
+	status, body := getVerify(t, clientA, srv, token)
+	if status != http.StatusOK || !strings.Contains(body, "Email verified") {
+		t.Fatalf("verifying device A: status=%d body=%s", status, body)
+	}
+	submitReport(t, clientA, srv, "flood", "report from device A")
+
+	sessionA := sessionIDFromJar(t, clientA, srv.URL)
+	var accountID int64
+	if err := pool.QueryRow(context.Background(), `SELECT account_id FROM sessions WHERE session_id = $1`, sessionA).Scan(&accountID); err != nil {
+		t.Fatalf("reading device A's account_id: %v", err)
+	}
+
+	clientB := newJarClient(t)
+	if resp, err := clientB.Get(srv.URL + "/login"); err != nil {
+		t.Fatalf("GET /login (issuing device B's session cookie): %v", err)
+	} else {
+		resp.Body.Close()
+	}
+	sessionB := sessionIDFromJar(t, clientB, srv.URL)
+	q := sqlcgen.New(pool)
+	if err := q.BindSessionAccount(context.Background(), sqlcgen.BindSessionAccountParams{SessionID: sessionB, AccountID: &accountID}); err != nil {
+		t.Fatalf("binding device B to the same account: %v", err)
+	}
+	submitReport(t, clientB, srv, "fire", "report from device B")
+
+	resp, err := clientA.Get(srv.URL + "/profile")
+	if err != nil {
+		t.Fatalf("GET /profile: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("GET /profile status = %d, want 200: %s", resp.StatusCode, b)
+	}
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading /profile body: %v", err)
+	}
+	bodyStr := string(respBody)
+	if !strings.Contains(bodyStr, "report from device A") {
+		t.Errorf("/profile is missing device A's report: %s", bodyStr)
+	}
+	if !strings.Contains(bodyStr, "report from device B") {
+		t.Errorf("/profile is missing device B's report: %s", bodyStr)
+	}
+}
+
+// TestProfileEmptyState proves a freshly-verified account with no reports
+// sees the honest "No reports yet" empty state — never a fabricated row.
+func TestProfileEmptyState(t *testing.T) {
+	srv, _, mailer := newAuthE2EServer(t)
+	client := newJarClient(t)
+
+	token := requestLink(t, client, srv, mailer, "profile-empty@example.com")
+	status, body := getVerify(t, client, srv, token)
+	if status != http.StatusOK || !strings.Contains(body, "Email verified") {
+		t.Fatalf("verifying: status=%d body=%s", status, body)
+	}
+
+	resp, err := client.Get(srv.URL + "/profile")
+	if err != nil {
+		t.Fatalf("GET /profile: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("GET /profile status = %d, want 200: %s", resp.StatusCode, b)
+	}
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading /profile body: %v", err)
+	}
+	if !strings.Contains(string(respBody), "No reports yet") {
+		t.Fatalf("/profile does not contain the empty-state heading: %s", respBody)
+	}
+}
+
+// TestProfileRequiresVerification proves an unverified session hitting
+// GET /profile is redirected by the gate (302 to /login) rather than served
+// the page — the same gate every other protected route already goes
+// through.
+func TestProfileRequiresVerification(t *testing.T) {
+	srv, _, _ := newAuthE2EServer(t)
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	resp, err := client.Get(srv.URL + "/profile")
+	if err != nil {
+		t.Fatalf("GET /profile: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("GET /profile (unverified) status = %d, want %d", resp.StatusCode, http.StatusFound)
+	}
+	if loc := resp.Header.Get("Location"); loc != "/login" {
+		t.Fatalf("Location = %q, want /login", loc)
+	}
+}
+
+// TestProfileRendersSharedHeader is 01.1-06's header contract, re-asserted
+// against this second page (01.1-07-PLAN.md Task 2): the account trigger's
+// aria-label, the verified address, the /profile and /auth/logout menu
+// targets, the account-menu.js tag with a cache-busting ?v= suffix, and
+// Cache-Control: no-store — proving the header renders identically here as
+// a fact, not merely an intention.
+func TestProfileRendersSharedHeader(t *testing.T) {
+	srv, _, mailer := newAuthE2EServer(t)
+	client := newJarClient(t)
+
+	token := requestLink(t, client, srv, mailer, "profile-header@example.com")
+	status, body := getVerify(t, client, srv, token)
+	if status != http.StatusOK || !strings.Contains(body, "Email verified") {
+		t.Fatalf("verifying: status=%d body=%s", status, body)
+	}
+
+	resp, err := client.Get(srv.URL + "/profile")
+	if err != nil {
+		t.Fatalf("GET /profile: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("GET /profile status = %d, want 200: %s", resp.StatusCode, b)
+	}
+	if cc := resp.Header.Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control = %q, want %q (DEC-T)", cc, "no-store")
+	}
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading /profile body: %v", err)
+	}
+	bodyStr := string(respBody)
+
+	wantSubstrings := []string{
+		`aria-label="Account menu"`,
+		`aria-haspopup="menu"`,
+		`role="menu"`,
+		"profile-header@example.com",
+		`href="/profile"`,
+		`action="/auth/logout"`,
+		"account-menu.js?v=",
+	}
+	for _, want := range wantSubstrings {
+		if !strings.Contains(bodyStr, want) {
+			t.Errorf("/profile is missing shared-header contract substring: %s", want)
+		}
 	}
 }

@@ -154,6 +154,12 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.Get("/", handlers.Page(deps.Template, deps.Page))
 		r.Post("/api/reports", handlers.SubmitReport(deps.Reports))
 		r.Get("/api/reports", handlers.NearbyReports(deps.Reports))
+		// deps.Template — the same ParsePageTemplate result / handlers.Page
+		// gets, not a separately-parsed single file — is load-bearing:
+		// profile.html.tmpl includes 01.1-06's account_header.html.tmpl
+		// partial via {{template}}, which html/template only resolves
+		// within the template set it was parsed into (01.1-07-PLAN.md).
+		r.Get("/profile", handlers.Profile(deps.AuthService, deps.Template, deps.Auth))
 	})
 
 	return r

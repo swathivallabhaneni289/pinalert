@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinalert — Activity</title>
+  <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/feed.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
+</head>
+<body>
+  {{template "account_header.html.tmpl" .}}
+
+  <main class="profile-page">
+    <p class="profile-email">{{.Email}}</p>
+
+    <section class="profile-activity">
+      <h2>Activity</h2>
+
+      {{if .Reports}}
+      <ol class="profile-report-list">
+        {{range .Reports}}
+        <li class="report-row {{.SeverityClass}}">
+          <span class="icon-badge icon-badge--sm">
+            <span class="icon-glyph {{.CategoryGlyph}}" aria-hidden="true"></span>
+          </span>
+          <div class="report-row__body">
+            <p class="report-row__title">{{.Description}}</p>
+            <p class="report-row__meta">{{.MetaText}}</p>
+          </div>
+        </li>
+        {{end}}
+      </ol>
+      {{else}}
+      <div class="empty-state profile-empty-state">
+        <h3>No reports yet</h3>
+        <p>Reports you submit will appear here.</p>
+      </div>
+      {{end}}
+
+      <div class="empty-state profile-empty-state">
+        <p>Confirm and dispute activity will appear here once voting launches.</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
+</body>
+</html>
