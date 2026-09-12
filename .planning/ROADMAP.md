@@ -137,7 +137,7 @@ sessions are long-lived (reuses Phase 1's existing 1-year cookie), support simul
 multi-device login, and have an explicit logout; no account-recovery mechanism exists for v1 —
 losing email access means verifying a new one and starting fresh.
 
-**Plans**: 7/8 plans complete
+**Plans**: 8/8 plans complete
 Plans:
 **Wave 1**
 
@@ -166,7 +166,7 @@ Plans:
 
 **Wave 7** *(gap closure — blocked on Wave 6 completion)*
 
-- [ ] 01.1-08-PLAN.md — Gap closure for SC4/IDENT-04: un-forgeable per-IP limiter key (drops chi's deprecated header-trusting middleware) and an atomic `email_cooldowns` claim replacing the TOCTOU-racy per-address cooldown, both proven by tests that fail against the pre-fix tree (wave 7)
+- [x] 01.1-08-PLAN.md — Gap closure for SC4/IDENT-04: un-forgeable per-IP limiter key (drops chi's deprecated header-trusting middleware) and an atomic `email_cooldowns` claim replacing the TOCTOU-racy per-address cooldown, both proven by tests that fail against the pre-fix tree (wave 7)
 
 **UI hint**: yes
 
@@ -258,7 +258,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
-| 1.1 Identity & Login — Mandatory Email Verification | 7/7 | Complete   | 2026-09-12 |
+| 1.1 Identity & Login — Mandatory Email Verification | 8/8 | Complete   | 2026-09-12 |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 0/TBD | Not started | - |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
