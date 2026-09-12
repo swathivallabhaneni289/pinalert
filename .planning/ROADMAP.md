@@ -26,7 +26,7 @@ responder claims, shareable cards) that depend on the trust signals built in Pha
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation — Report & Map** - Anonymous visitors can submit and view location-tagged reports on a live map, with read-time auto-expiry, OpenAPI docs, and CI in place. (original 10 plans completed 2026-09-06; reopened for the vector basemap migration, plans 01-11/01-12; gap-closure round 2 (01-13) fixed the solid-black-icon defect; gap-closure round 3 (01-14) landed 2026-09-09 — raised glyph ink coverage and fixed badge contrast across all 18 severity/age/theme pairings; gap-closure round 4 (01-15) landed 2026-09-09 — live-tested fix for dark-mode category-tile glyph color, the actual root cause 01-14's stroke-width diagnosis missed, plus two caching-bug fixes; see `01-UAT.md`) (all 15 plans complete; UAT passed 10/10 with 0 open issues; verification passed including MVP-mode User Flow Coverage, security SECURED with 0 open threats, Nyquist validation compliant) (completed 2026-09-10) — **note:** this phase's anonymous/no-signup access model (FOUND-01) was superseded 2026-09-10 by Phase 1.1's mandatory login decision; the shipped code is unaffected, but the product's access model changes starting Phase 1.1
-- [ ] **Phase 1.1: Identity & Login — Mandatory Email Verification** *(INSERTED 2026-09-10 — urgent insertion, decided during Phase 2 discussion)* - A visitor must verify an email address via a magic link before they can submit a report or cast a confirm/dispute vote; supersedes Phase 1's anonymous-access model.
+- [x] **Phase 1.1: Identity & Login — Mandatory Email Verification** *(INSERTED 2026-09-10 — urgent insertion, decided during Phase 2 discussion)* - A visitor must verify an email address via a magic link before they can submit a report or cast a confirm/dispute vote; supersedes Phase 1's anonymous-access model. (completed 2026-09-12)
 - [ ] **Phase 2: Trust Mechanic Core — Confirm/Dispute & Visibility** - Users can confirm/dispute reports through one shared, concurrency-safe visibility resolver with a provisional gate and resolved marking.
 - [ ] **Phase 3: Trust-Model Hardening — Diversity-Weighted Trust** - "Confirmed by N nearby" and the reliability/currency signals reflect distinct nearby corroboration, resistant to trivial gaming.
 - [ ] **Phase 4: Robustness — Real-World Resilience** - The app stays usable on degraded networks, under abuse/moderation pressure, and with clear legal footing.
@@ -137,7 +137,7 @@ sessions are long-lived (reuses Phase 1's existing 1-year cookie), support simul
 multi-device login, and have an explicit logout; no account-recovery mechanism exists for v1 —
 losing email access means verifying a new one and starting fresh.
 
-**Plans**: 6/7 plans executed
+**Plans**: 7/7 plans complete
 Plans:
 **Wave 1**
 
@@ -162,7 +162,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 01.1-07-PLAN.md — Profile page under that shared header, with one merged Activity section listing the account's reports across devices, plus the logout endpoint (wave 6)
+- [x] 01.1-07-PLAN.md — Profile page under that shared header, with one merged Activity section listing the account's reports across devices, plus the logout endpoint (wave 6)
 
 **UI hint**: yes
 
@@ -254,7 +254,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
-| 1.1 Identity & Login — Mandatory Email Verification | 6/7 | In Progress|  |
+| 1.1 Identity & Login — Mandatory Email Verification | 7/7 | Complete   | 2026-09-12 |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 0/TBD | Not started | - |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
