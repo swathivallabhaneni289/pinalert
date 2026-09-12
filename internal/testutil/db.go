@@ -65,12 +65,12 @@ func NewTestDB(t *testing.T) *pgxpool.Pool {
 }
 
 // Truncate resets every identity and report table (accounts / magic_link_tokens
-// / reports / sessions) to empty, restarting identity sequences, so tests
-// that need a clean slate between sub-cases don't have to open a new pool
-// via NewTestDB.
+// / email_cooldowns / reports / sessions) to empty, restarting identity
+// sequences, so tests that need a clean slate between sub-cases don't have
+// to open a new pool via NewTestDB.
 func Truncate(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
-	MustExec(t, pool, "TRUNCATE accounts, magic_link_tokens, reports, sessions RESTART IDENTITY CASCADE")
+	MustExec(t, pool, "TRUNCATE accounts, magic_link_tokens, email_cooldowns, reports, sessions RESTART IDENTITY CASCADE")
 }
 
 // MustExec runs sql against pool and fails the test immediately on error, so
