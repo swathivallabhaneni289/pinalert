@@ -171,3 +171,70 @@ func (q *Queries) NearbyReports(ctx context.Context, arg NearbyReportsParams) ([
 	}
 	return items, nil
 }
+
+const reportsByAccount = `-- name: ReportsByAccount :many
+SELECT r.id, r.category, r.severity, r.description, r.latitude, r.longitude, r.geohash,
+       r.shelter_capacity_status, r.shelter_headcount, r.created_at, r.expires_at
+FROM reports r
+JOIN sessions s ON r.session_id = s.session_id
+WHERE s.account_id = $1
+ORDER BY r.created_at DESC
+`
+
+type ReportsByAccountRow struct {
+	ID                    int64
+	Category              string
+	Severity              string
+	Description           string
+	Latitude              float64
+	Longitude             float64
+	Geohash               string
+	ShelterCapacityStatus *string
+	ShelterHeadcount      *int32
+	CreatedAt             time.Time
+	ExpiresAt             time.Time
+}
+
+// Joins through the session's bound account rather than filtering on
+// r.session_id directly (01.1-07-PLAN.md's whole point): one account can
+// hold multiple verified sessions (multi-device, D-10), and this is the
+// query that must surface all of them together. A plain INNER JOIN is
+// equivalent here to a defensive LEFT JOIN — an orphaned report has no
+// session row and therefore no bound account, so the WHERE clause below
+// filters it out either way (DEC-M). No expiry predicate: a person's own
+// history does not vanish from their own profile when a report ages out of
+// the public feed. No session_id in the selected columns, continuing
+// T-01-02's control (TestNearbyReportsExcludesSessionID) — Phase 2/3's
+// independence predicate must count distinct account, with the session
+// identifier retained only as the write-path column (IDENT-05).
+func (q *Queries) ReportsByAccount(ctx context.Context, accountID *int64) ([]ReportsByAccountRow, error) {
+	rows, err := q.db.Query(ctx, reportsByAccount, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReportsByAccountRow
+	for rows.Next() {
+		var i ReportsByAccountRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Category,
+			&i.Severity,
+			&i.Description,
+			&i.Latitude,
+			&i.Longitude,
+			&i.Geohash,
+			&i.ShelterCapacityStatus,
+			&i.ShelterHeadcount,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

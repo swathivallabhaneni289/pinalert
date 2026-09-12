@@ -43,6 +43,11 @@ type fakeAuthQuerier struct {
 	// since VerifyToken never calls LatestTokenForEmail.
 	latestToken    time.Time
 	latestTokenErr error
+
+	// reportsRows/reportsErr/reportsArg drive ReportsForAccount.
+	reportsRows []sqlcgen.ReportsByAccountRow
+	reportsErr  error
+	reportsArg  *int64
 }
 
 func (f *fakeAuthQuerier) InsertMagicLinkToken(ctx context.Context, arg sqlcgen.InsertMagicLinkTokenParams) (sqlcgen.InsertMagicLinkTokenRow, error) {
@@ -102,6 +107,15 @@ func (f *fakeAuthQuerier) LatestTokenForEmail(ctx context.Context, email string)
 		return time.Time{}, f.latestTokenErr
 	}
 	return f.latestToken, nil
+}
+
+func (f *fakeAuthQuerier) ReportsByAccount(ctx context.Context, accountID *int64) ([]sqlcgen.ReportsByAccountRow, error) {
+	*f.calls = append(*f.calls, "ReportsByAccount")
+	f.reportsArg = accountID
+	if f.reportsErr != nil {
+		return nil, f.reportsErr
+	}
+	return f.reportsRows, nil
 }
 
 type fakeMailer struct {
@@ -552,6 +566,50 @@ func TestVerifyTokenSameAccountRebindIsNotConflict(t *testing.T) {
 	}
 	if email != "same@example.com" {
 		t.Fatalf("email = %q, want same@example.com", email)
+	}
+}
+
+// --- ReportsForAccount ---
+
+// TestReportsForAccountPassesAccountIDAndReturnsRows proves the service
+// method forwards accountID as a pointer to the generated querier (the
+// underlying column is nullable) and returns exactly the rows the querier
+// hands back, unmodified — this is a thin pass-through, not a place any
+// filtering/transformation happens.
+func TestReportsForAccountPassesAccountIDAndReturnsRows(t *testing.T) {
+	q, m, _ := newFakes()
+	q.reportsRows = []sqlcgen.ReportsByAccountRow{
+		{ID: 1, Category: "flood", Severity: "low", Description: "first"},
+		{ID: 2, Category: "fire", Severity: "critical", Description: "second"},
+	}
+	svc := service.NewAuthService(q, m, "https://pinalert.example")
+
+	rows, err := svc.ReportsForAccount(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("ReportsForAccount: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("len(rows) = %d, want 2", len(rows))
+	}
+	if q.reportsArg == nil || *q.reportsArg != 42 {
+		t.Fatalf("ReportsByAccount called with accountID = %v, want pointer to 42", q.reportsArg)
+	}
+}
+
+// TestReportsForAccountWrapsQuerierError proves a querier failure is
+// wrapped (not swallowed or mapped to an empty slice), so a caller can
+// distinguish "no reports" from "the database read failed".
+func TestReportsForAccountWrapsQuerierError(t *testing.T) {
+	q, m, _ := newFakes()
+	q.reportsErr = errors.New("connection reset")
+	svc := service.NewAuthService(q, m, "https://pinalert.example")
+
+	_, err := svc.ReportsForAccount(context.Background(), 7)
+	if err == nil {
+		t.Fatal("expected an error when the querier fails")
+	}
+	if !strings.Contains(err.Error(), "connection reset") {
+		t.Fatalf("error %q does not wrap the underlying querier error", err.Error())
 	}
 }
 

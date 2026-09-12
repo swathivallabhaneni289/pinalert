@@ -57,6 +57,7 @@ type AuthQuerier interface {
 	GetAccountBySessionID(ctx context.Context, sessionID string) (sqlcgen.GetAccountBySessionIDRow, error)
 	BindSessionAccount(ctx context.Context, arg sqlcgen.BindSessionAccountParams) error
 	LatestTokenForEmail(ctx context.Context, email string) (time.Time, error)
+	ReportsByAccount(ctx context.Context, accountID *int64) ([]sqlcgen.ReportsByAccountRow, error)
 }
 
 // ErrRateLimited is returned by RequestLink when a second verification-
@@ -277,6 +278,25 @@ func isWellFormedToken(raw string) bool {
 		return false
 	}
 	return len(decoded) == rawTokenBytes
+}
+
+// ReportsForAccount returns every report filed by any session ever bound to
+// accountID, newest first — the profile page's core read (01.1-07-PLAN.md).
+// Aggregation stays in the service layer rather than the handler, matching
+// how ReportService owns the nearby query: sqlcgen.ReportsByAccountRow is a
+// generated type callers should not need to know about directly, and a
+// second caller (Phase 2's own profile-shaped read, if one ever exists)
+// gets this same seam rather than a second hand-rolled query. accountID is
+// always non-nil in practice — it's the ID of an account the request's
+// gate has already resolved via a real database row (internal/api/gate.go)
+// — but the underlying column is nullable (sessions.account_id), which is
+// why sqlcgen.Queries.ReportsByAccount itself takes a pointer.
+func (s *AuthService) ReportsForAccount(ctx context.Context, accountID int64) ([]sqlcgen.ReportsByAccountRow, error) {
+	rows, err := s.q.ReportsByAccount(ctx, &accountID)
+	if err != nil {
+		return nil, fmt.Errorf("service: reading reports for account %d: %w", accountID, err)
+	}
+	return rows, nil
 }
 
 // normalizeEmail trims rawEmail, parses it with the stdlib address parser
