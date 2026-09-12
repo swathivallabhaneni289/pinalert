@@ -294,6 +294,73 @@ func TestSessionIssuance(t *testing.T) {
 	})
 }
 
+// TestClearCookieMatchesIssuedAttributes is threat T-01-85's regression
+// guard: it compares ClearCookie's Name/Path/HttpOnly/Secure/SameSite
+// against the REAL cookie Middleware issues (never against hard-coded
+// literals that could quietly drift out of sync with Middleware's own
+// values), and asserts MaxAge is negative — a browser only actually
+// deletes a cookie whose every other attribute matches the one it's
+// holding.
+func TestClearCookieMatchesIssuedAttributes(t *testing.T) {
+	mgr := testManager(t, "test-secret-clear", true)
+	persist := &fakePersist{}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	wrapped := mgr.Middleware(persist.persist)(handler)
+	srv := httptest.NewServer(wrapped)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatalf("GET failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var issued *http.Cookie
+	for _, c := range resp.Cookies() {
+		if c.Name == "pinalert_session" {
+			issued = c
+		}
+	}
+	if issued == nil {
+		t.Fatalf("expected an issued Set-Cookie to compare ClearCookie against")
+	}
+
+	rec := httptest.NewRecorder()
+	mgr.ClearCookie(rec)
+
+	var cleared *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "pinalert_session" {
+			cleared = c
+		}
+	}
+	if cleared == nil {
+		t.Fatalf("ClearCookie did not set a pinalert_session cookie")
+	}
+
+	if cleared.Name != issued.Name {
+		t.Errorf("Name = %q, want %q (matching the issued cookie)", cleared.Name, issued.Name)
+	}
+	if cleared.Path != issued.Path {
+		t.Errorf("Path = %q, want %q (matching the issued cookie)", cleared.Path, issued.Path)
+	}
+	if cleared.HttpOnly != issued.HttpOnly {
+		t.Errorf("HttpOnly = %v, want %v (matching the issued cookie)", cleared.HttpOnly, issued.HttpOnly)
+	}
+	if cleared.Secure != issued.Secure {
+		t.Errorf("Secure = %v, want %v (matching the issued cookie)", cleared.Secure, issued.Secure)
+	}
+	if cleared.SameSite != issued.SameSite {
+		t.Errorf("SameSite = %v, want %v (matching the issued cookie)", cleared.SameSite, issued.SameSite)
+	}
+	if cleared.MaxAge >= 0 {
+		t.Errorf("MaxAge = %d, want negative (browser must delete the cookie immediately)", cleared.MaxAge)
+	}
+}
+
 func tamperLastChar(s string) string {
 	if s == "" {
 		return "x"

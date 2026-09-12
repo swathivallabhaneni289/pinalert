@@ -147,3 +147,29 @@ func FromContext(ctx context.Context) (string, bool) {
 	id, ok := ctx.Value(ctxKey{}).(string)
 	return id, ok
 }
+
+// ClearCookie writes a cookie that deletes the browser's pinalert_session
+// cookie — D-09's explicit log-out action (internal/api/handlers.Logout).
+// Every one of Name, Path, HttpOnly, Secure and SameSite must exactly match
+// what Middleware issues: a browser treats a cookie differing in Path or
+// the Secure flag as a DIFFERENT cookie and quietly keeps the original,
+// which is how a logout can appear to work and not (threat T-01-85).
+// A negative MaxAge tells the browser to delete it immediately. This
+// clears only the browser's copy of the cookie — sessions.account_id is left
+// deliberately untouched (DEC-K): that row's binding is what still
+// connects reports filed from this session to the account, which is
+// exactly what the profile page reads, so unbinding it here would silently
+// erase a person's own history from their own profile. Nothing about
+// signing, verification, or MaxAge for a still-live session changes; this
+// extends the Phase 1 mechanism (D-08/IDENT-05) rather than replacing it.
+func (m *Manager) ClearCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   m.secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}

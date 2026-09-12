@@ -3,14 +3,19 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
 	"net/mail"
+	"strings"
+	"time"
 
+	"pinalert/internal/account"
 	"pinalert/internal/auth"
 	"pinalert/internal/service"
 	"pinalert/internal/session"
+	sqlcgen "pinalert/internal/store/sqlc"
 )
 
 // maxAuthBodyBytes caps the request-link POST body, matching
@@ -213,5 +218,218 @@ func Verify(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) h
 			log.Printf("handlers: Verify: %v", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 		}
+	}
+}
+
+// profileTemplateName is the file executed by Profile's ExecuteTemplate call.
+const profileTemplateName = "profile.html.tmpl"
+
+// categoryLabels mirrors web/static/js/app.js's CATEGORY_LABELS (D-01) for
+// this page's server-rendered listing. Presentation-layer only — kept here
+// rather than promoted into internal/service, which has no reason to know
+// about human-readable copy.
+var categoryLabels = map[service.Category]string{
+	service.CategoryFlood:        "Flood",
+	service.CategoryEarthquake:   "Earthquake",
+	service.CategoryFire:         "Fire",
+	service.CategoryStormCyclone: "Storm/Cyclone damage",
+	service.CategoryRoadBlocked:  "Road blocked",
+	service.CategoryPowerOutage:  "Power outage",
+	service.CategoryShelterOpen:  "Shelter open",
+	service.CategoryRescueNeeded: "Rescue needed",
+	service.CategoryOther:        "Other",
+}
+
+// profileReport is exactly what profile.html.tmpl's Activity section reads
+// for one row — Phase 1's existing .report-row markup and classes, reused
+// verbatim rather than reinvented for this account-scoped listing
+// (01.1-07-PLAN.md Task 2, UI-SPEC item 16).
+type profileReport struct {
+	CategoryGlyph string
+	SeverityClass string
+	Description   string
+	MetaText      string
+}
+
+// profileViewModel is exactly what profile.html.tmpl reads and nothing more.
+type profileViewModel struct {
+	AssetVersion string
+	Email        string
+	Reports      []profileReport
+}
+
+// profileRelativeTime mirrors web/static/js/app.js's relativeTime: the same
+// coarse buckets (just now / N min ago / N hours ago / N days ago), computed
+// once server-side at render time since this page carries no client-side JS
+// that refreshes it on an interval the way the live feed does.
+func profileRelativeTime(t, now time.Time) string {
+	diff := now.Sub(t)
+	if diff < 0 {
+		diff = 0
+	}
+	switch {
+	case diff < time.Minute:
+		return "just now"
+	case diff < time.Hour:
+		mins := int(diff.Round(time.Minute) / time.Minute)
+		if mins < 1 {
+			mins = 1
+		}
+		if mins == 1 {
+			return "1 min ago"
+		}
+		return fmt.Sprintf("%d min ago", mins)
+	case diff < 24*time.Hour:
+		hours := int(diff.Round(time.Hour) / time.Hour)
+		if hours < 1 {
+			hours = 1
+		}
+		if hours == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", hours)
+	default:
+		days := int(diff.Round(24*time.Hour) / (24 * time.Hour))
+		if days < 1 {
+			days = 1
+		}
+		if days == 1 {
+			return "1 day ago"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	}
+}
+
+// capitalizeASCII upper-cases only the first byte of s — sufficient for the
+// four lowercase, ASCII shelter capacity status slugs
+// (service.CapacityStatuses), matching feed.js's own CAPACITY_LABELS
+// derivation (capitalizing the raw slug rather than a separate label map).
+func capitalizeASCII(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// newProfileReport maps one ReportsByAccount row into the view struct
+// profile.html.tmpl renders. category/severity fall back to "other"/"low"
+// for any value outside the canonical enum — the same validate-before-
+// building-a-className discipline app.js's iconClass/severityClass apply
+// client-side (T-01-17), applied here since this handler builds the
+// className string directly rather than leaving it to client JS.
+func newProfileReport(row sqlcgen.ReportsByAccountRow, now time.Time) profileReport {
+	category := service.Category(row.Category)
+	if !category.Valid() {
+		category = service.CategoryOther
+	}
+	severity := service.Severity(row.Severity)
+	if !severity.Valid() {
+		severity = service.SeverityLow
+	}
+
+	meta := categoryLabels[category] + " · " + profileRelativeTime(row.CreatedAt, now)
+	if category == service.CategoryShelterOpen {
+		if row.ShelterCapacityStatus != nil && *row.ShelterCapacityStatus != "" {
+			meta += " · " + capitalizeASCII(*row.ShelterCapacityStatus)
+		}
+		if row.ShelterHeadcount != nil {
+			n := *row.ShelterHeadcount
+			unit := "people"
+			if n == 1 {
+				unit = "person"
+			}
+			meta += fmt.Sprintf(" · %d %s", n, unit)
+		}
+	}
+
+	return profileReport{
+		CategoryGlyph: "icon-glyph--" + string(category),
+		SeverityClass: "sev-" + string(severity),
+		Description:   row.Description,
+		MetaText:      meta,
+	}
+}
+
+// Profile handles GET /profile: every report the caller's verified account
+// has ever filed, across every session/device it has ever verified on
+// (ReportsByAccount, Task 1), rendered inside one merged Activity section
+// (D-13). Profile is only ever reached through internal/api's gated
+// r.Group (requireVerifiedAccount), so the request context always carries
+// an account by the time this handler runs — a lookup miss here means the
+// gate failed to do its job, a routing bug rather than a condition a
+// redirect should paper over (the same discipline handlers.Page's DEC-P
+// already applies).
+//
+// Deliberately carries no swag annotation and so has no entry in
+// docs/swagger.json, the same reasoning Verify's doc comment above records:
+// this route serves text/html, not a JSON API operation, and lives outside
+// @BasePath /api (see router.go's package-level swag block).
+func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		acc, ok := account.FromContext(r.Context())
+		if !ok {
+			log.Printf("handlers: Profile: no verified account in request context — the gate should have made this impossible")
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		rows, err := svc.ReportsForAccount(r.Context(), acc.ID)
+		if err != nil {
+			log.Printf("handlers: Profile: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		now := time.Now()
+		reports := make([]profileReport, 0, len(rows))
+		for _, row := range rows {
+			reports = append(reports, newProfileReport(row, now))
+		}
+
+		vm := profileViewModel{
+			AssetVersion: cfg.AssetVersion,
+			Email:        acc.Email,
+			Reports:      reports,
+		}
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// DEC-T: this page renders the verified address alongside the
+		// account's entire report history — the most sensitive of the
+		// three no-store responses in this phase (the gate's own redirect
+		// and 01.1-06's app shell being the other two), and a shared or
+		// public device is exactly the scenario D-09's logout exists for.
+		w.Header().Set("Cache-Control", "no-store")
+		if err := tmpl.ExecuteTemplate(w, profileTemplateName, vm); err != nil {
+			log.Printf("handlers: Profile: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+		}
+	}
+}
+
+// Logout handles POST /auth/logout — D-09's explicit log-out action, which
+// exists so a shared or public device can be handed back: clear the
+// session cookie (mgr.ClearCookie), then redirect to /login with
+// StatusSeeOther, the status that turns the POST into a GET on the
+// follow-up so a browser reload never re-submits the logout. This response
+// itself reflects an authentication-state change (the browser's session
+// cookie is gone) and so carries Cache-Control: no-store, the same
+// discipline Verify's and Profile's responses already apply.
+//
+// sessions.account_id is deliberately left intact (DEC-K): that row's
+// binding is what still connects reports filed from this session to the
+// account, which is exactly what the profile page reads — unbinding it
+// here would silently erase a person's own history from their own
+// profile. Its on-screen control already exists: 01.1-06 shipped the
+// "Log out" item in the shared header's account menu as a real POST form
+// submit one wave earlier; this handler is what stops that submit from
+// 404ing. This page's own template adds no logout control of its own
+// (see profile.html.tmpl) — the control and the CSRF property DEC-L
+// records (SameSite=Lax withholding the session cookie from a cross-site
+// POST) both live with 01.1-06's shared header, not here.
+func Logout(mgr *session.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		mgr.ClearCookie(w)
+		w.Header().Set("Cache-Control", "no-store")
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	}
 }

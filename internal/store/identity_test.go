@@ -330,3 +330,131 @@ func TestGetAccountBySessionIDReturnsNoRowsWhenUnverified(t *testing.T) {
 		t.Fatalf("GetAccountBySessionID for unverified session err = %v, want pgx.ErrNoRows", err)
 	}
 }
+
+// TestReportsByAccountSpansMultipleSessions is 01.1-07-PLAN.md Task 1's core
+// claim: an account with two different verified sessions (multi-device,
+// D-10) sees reports filed from BOTH sessions on one ReportsByAccount call,
+// newest first — and nothing filed by a different account's session, or by
+// a session with no account bound at all.
+func TestReportsByAccountSpansMultipleSessions(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+
+	testutil.MustExec(t, pool, `INSERT INTO accounts (email) VALUES ($1)`, "multi-device@example.com")
+	var accountID int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM accounts WHERE email = $1`, "multi-device@example.com").Scan(&accountID); err != nil {
+		t.Fatalf("reading back account id: %v", err)
+	}
+	testutil.MustExec(t, pool, `INSERT INTO accounts (email) VALUES ($1)`, "other-account@example.com")
+	var otherAccountID int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM accounts WHERE email = $1`, "other-account@example.com").Scan(&otherAccountID); err != nil {
+		t.Fatalf("reading back other account id: %v", err)
+	}
+
+	if err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{SessionID: "device-a", AccountID: &accountID}); err != nil {
+		t.Fatalf("binding device-a: %v", err)
+	}
+	if err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{SessionID: "device-b", AccountID: &accountID}); err != nil {
+		t.Fatalf("binding device-b: %v", err)
+	}
+	if err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{SessionID: "device-c-other-account", AccountID: &otherAccountID}); err != nil {
+		t.Fatalf("binding device-c-other-account: %v", err)
+	}
+	if err := q.UpsertSession(ctx, "device-d-unbound"); err != nil {
+		t.Fatalf("UpsertSession device-d-unbound: %v", err)
+	}
+
+	insertReportAt := func(sessionID, description string, createdAt time.Time) {
+		testutil.MustExec(t, pool,
+			`INSERT INTO reports
+				(session_id, category, severity, description, latitude, longitude, geohash, created_at, expires_at)
+			 VALUES ($1, 'flood', 'low', $2, 12.9716, 77.5946, 'tdr1qgzn', $3::timestamptz, $3::timestamptz + interval '1 hour')`,
+			sessionID, description, createdAt,
+		)
+	}
+
+	base := time.Now().Add(-1 * time.Hour).Truncate(time.Second)
+	insertReportAt("device-a", "from device A", base)
+	insertReportAt("device-b", "from device B", base.Add(1*time.Minute))
+	insertReportAt("device-c-other-account", "from a different account", base.Add(2*time.Minute))
+	insertReportAt("device-d-unbound", "from an unbound session", base.Add(3*time.Minute))
+
+	rows, err := q.ReportsByAccount(ctx, &accountID)
+	if err != nil {
+		t.Fatalf("ReportsByAccount: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("len(rows) = %d, want exactly 2: %+v", len(rows), rows)
+	}
+	if rows[0].Description != "from device B" || rows[1].Description != "from device A" {
+		t.Fatalf("rows not newest-first: got [%q, %q], want [\"from device B\", \"from device A\"]",
+			rows[0].Description, rows[1].Description)
+	}
+}
+
+// TestReportsByAccountReturnsNothingForAccountWithNoReports proves an
+// account that has never filed anything gets an empty (not nil-panicking,
+// not error) result — the profile page's honest empty state depends on
+// this returning a clean zero-length slice.
+func TestReportsByAccountReturnsNothingForAccountWithNoReports(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+
+	testutil.MustExec(t, pool, `INSERT INTO accounts (email) VALUES ($1)`, "no-reports@example.com")
+	var accountID int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM accounts WHERE email = $1`, "no-reports@example.com").Scan(&accountID); err != nil {
+		t.Fatalf("reading back account id: %v", err)
+	}
+	if err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{SessionID: "empty-device", AccountID: &accountID}); err != nil {
+		t.Fatalf("binding empty-device: %v", err)
+	}
+
+	rows, err := q.ReportsByAccount(ctx, &accountID)
+	if err != nil {
+		t.Fatalf("ReportsByAccount: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("len(rows) = %d, want 0 for an account with no reports", len(rows))
+	}
+}
+
+// TestReportsByAccountIncludesExpired proves a report whose expires_at is
+// already in the past still appears on the owner's own profile — a
+// person's history does not vanish from their own profile when a report
+// ages out of the public feed (unlike NearbyReports, which applies
+// expires_at > now()).
+func TestReportsByAccountIncludesExpired(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+
+	testutil.MustExec(t, pool, `INSERT INTO accounts (email) VALUES ($1)`, "expired-owner@example.com")
+	var accountID int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM accounts WHERE email = $1`, "expired-owner@example.com").Scan(&accountID); err != nil {
+		t.Fatalf("reading back account id: %v", err)
+	}
+	if err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{SessionID: "expired-device", AccountID: &accountID}); err != nil {
+		t.Fatalf("binding expired-device: %v", err)
+	}
+
+	testutil.MustExec(t, pool,
+		`INSERT INTO reports
+			(session_id, category, severity, description, latitude, longitude, geohash, created_at, expires_at)
+		 VALUES ($1, 'flood', 'low', 'a report that has since expired', 12.9716, 77.5946, 'tdr1qgzn',
+		         now() - interval '2 hours', now() - interval '1 hour')`,
+		"expired-device",
+	)
+
+	rows, err := q.ReportsByAccount(ctx, &accountID)
+	if err != nil {
+		t.Fatalf("ReportsByAccount: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("len(rows) = %d, want 1 (an expired report must still appear on the owner's own profile)", len(rows))
+	}
+	if rows[0].Description != "a report that has since expired" {
+		t.Fatalf("unexpected report returned: %+v", rows[0])
+	}
+}

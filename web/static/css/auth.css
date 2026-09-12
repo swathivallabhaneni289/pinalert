@@ -346,3 +346,64 @@
 #account-menu form {
   margin: 0;
 }
+
+/* Plan 01.1-07: the profile page's own body (web/templates/
+   profile.html.tmpl). The shared header above this comment block is
+   01.1-06's; nothing here touches it. Styled here rather than in main.css
+   for the same reason the header rules above are: main.css is covered by
+   four computed contract tests including a WCAG contrast matrix, and
+   keeping this phase's rules in auth.css leaves those tests reasoning about
+   exactly the source they were written against. Top padding clears the
+   fixed-position header (.app-header, above) so the page's own content
+   never sits underneath it. */
+.profile-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: calc(var(--touch-target-min) + var(--space-lg)) var(--space-lg) var(--space-lg);
+}
+
+.profile-email {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-lg) 0;
+  word-break: break-all;
+}
+
+.profile-activity h2 {
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  margin: 0 0 var(--space-md) 0;
+}
+
+.profile-report-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin: 0 0 var(--space-md) 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One merged section (D-13) holds both the reports list and the
+   always-empty voting subsection — this rule adds the separating gap
+   between them without a second .empty-state having to look identical to
+   the first one's own D-15 report-list spacing above. */
+.profile-empty-state + .profile-empty-state {
+  margin-top: var(--space-md);
+}
+
+/* main.css's `.empty-state h2, .error-state h2` rule intentionally targets
+   h2 only (there is exactly one h2 per page there); this page's own
+   empty-state heading is deliberately an h3 (01.1-07-PLAN.md Task 2, so
+   the page keeps exactly one h2), so it needs its own rule for the same
+   visual treatment rather than inheriting main.css's h2-scoped one. */
+.profile-empty-state h3 {
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  margin: 0;
+}
