@@ -137,7 +137,7 @@ sessions are long-lived (reuses Phase 1's existing 1-year cookie), support simul
 multi-device login, and have an explicit logout; no account-recovery mechanism exists for v1 —
 losing email access means verifying a new one and starting fresh.
 
-**Plans**: 5/7 plans executed
+**Plans**: 6/7 plans executed
 Plans:
 **Wave 1**
 
@@ -158,7 +158,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 01.1-06-PLAN.md — Shared header partial rendered on every gated page: account menu with verified address, Activity item, immediate logout (D-12) (wave 5)
+- [x] 01.1-06-PLAN.md — Shared header partial rendered on every gated page: account menu with verified address, Activity item, immediate logout (D-12) (wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -254,7 +254,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
-| 1.1 Identity & Login — Mandatory Email Verification | 5/7 | In Progress|  |
+| 1.1 Identity & Login — Mandatory Email Verification | 6/7 | In Progress|  |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 0/TBD | Not started | - |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
