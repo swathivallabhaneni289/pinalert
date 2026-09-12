@@ -35,14 +35,16 @@ type fakeAuthQuerier struct {
 	byEmailErr    error
 	bindErr       error
 
-	// latestToken/latestTokenErr drive RequestLink's cooldown check.
-	// newFakes defaults latestTokenErr to pgx.ErrNoRows ("no prior
-	// request for this address") so every existing RequestLink test case
-	// that never sets it keeps behaving unchanged; VerifyToken tests
-	// (built via newFakeQuerier below) never touch this field at all,
-	// since VerifyToken never calls LatestTokenForEmail.
-	latestToken    time.Time
-	latestTokenErr error
+	// cooldownClaims/cooldownClaimErr drive RequestLink's cooldown claim.
+	// newFakes seeds an empty cooldownClaims map so every existing
+	// RequestLink test case that never pre-populates it exercises the
+	// no-prior-claim (proceed) path unchanged; VerifyToken tests (built via
+	// newFakeQuerier below) never touch this field at all, since
+	// VerifyToken never calls ClaimEmailCooldown. cooldownClaimErr lets a
+	// test force a non-ErrNoRows transport error out of the claim, which no
+	// map state can express.
+	cooldownClaims   map[string]time.Time
+	cooldownClaimErr error
 
 	// reportsRows/reportsErr/reportsArg drive ReportsForAccount.
 	reportsRows []sqlcgen.ReportsByAccountRow
@@ -101,12 +103,26 @@ func (f *fakeAuthQuerier) BindSessionAccount(ctx context.Context, arg sqlcgen.Bi
 	return f.bindErr
 }
 
-func (f *fakeAuthQuerier) LatestTokenForEmail(ctx context.Context, email string) (time.Time, error) {
-	*f.calls = append(*f.calls, "LatestTokenForEmail")
-	if f.latestTokenErr != nil {
-		return time.Time{}, f.latestTokenErr
+// ClaimEmailCooldown applies the real ClaimEmailCooldown statement's own
+// rule rather than an approximation of it: a stored timestamp after
+// arg.CooldownCutoff refuses the claim (pgx.ErrNoRows, map untouched);
+// otherwise the claim is granted, arg.RequestedAt is stored, and it is
+// returned with a nil error. This keeps the WithClock seam meaningful — the
+// cutoff still comes from the service's injected clock — and keeps the
+// fake faithful to the SQL instead of inventing a second cooldown rule.
+func (f *fakeAuthQuerier) ClaimEmailCooldown(ctx context.Context, arg sqlcgen.ClaimEmailCooldownParams) (time.Time, error) {
+	*f.calls = append(*f.calls, "ClaimEmailCooldown")
+	if f.cooldownClaimErr != nil {
+		return time.Time{}, f.cooldownClaimErr
 	}
-	return f.latestToken, nil
+	if stored, ok := f.cooldownClaims[arg.Email]; ok && stored.After(arg.CooldownCutoff) {
+		return time.Time{}, pgx.ErrNoRows
+	}
+	if f.cooldownClaims == nil {
+		f.cooldownClaims = make(map[string]time.Time)
+	}
+	f.cooldownClaims[arg.Email] = arg.RequestedAt
+	return arg.RequestedAt, nil
 }
 
 func (f *fakeAuthQuerier) ReportsByAccount(ctx context.Context, accountID *int64) ([]sqlcgen.ReportsByAccountRow, error) {
@@ -132,13 +148,12 @@ func (f *fakeMailer) SendVerificationLink(ctx context.Context, email, link strin
 	return f.err
 }
 
-// newFakes defaults latestTokenErr to pgx.ErrNoRows — "no prior request for
-// this address" — so every existing RequestLink test that predates the
-// cooldown check (and never sets this field) keeps exercising the
-// no-cooldown path unchanged.
+// newFakes leaves cooldownClaims nil — "no prior claim for this address" —
+// so every existing RequestLink test that never pre-populates it exercises
+// the no-prior-claim (proceed) path unchanged.
 func newFakes() (*fakeAuthQuerier, *fakeMailer, *[]string) {
 	calls := &[]string{}
-	return &fakeAuthQuerier{calls: calls, latestTokenErr: pgx.ErrNoRows}, &fakeMailer{calls: calls}, calls
+	return &fakeAuthQuerier{calls: calls}, &fakeMailer{calls: calls}, calls
 }
 
 func assertValidationError(t *testing.T, err error, field string) {
@@ -201,7 +216,7 @@ func TestRequestLinkInsertsBeforeSend(t *testing.T) {
 		t.Fatalf("RequestLink: %v", err)
 	}
 
-	if len(*calls) != 3 || (*calls)[0] != "LatestTokenForEmail" || (*calls)[1] != "insert:visitor@example.com" || (*calls)[2] != "send:visitor@example.com" {
+	if len(*calls) != 3 || (*calls)[0] != "ClaimEmailCooldown" || (*calls)[1] != "insert:visitor@example.com" || (*calls)[2] != "send:visitor@example.com" {
 		t.Fatalf("unexpected call order: %v", *calls)
 	}
 }
@@ -220,7 +235,7 @@ func TestRequestLinkRecordsInsertEvenWhenMailerFails(t *testing.T) {
 	if errors.As(err, &ve) {
 		t.Fatalf("expected a non-validation error, got ValidationError: %v", err)
 	}
-	if len(*calls) != 3 || (*calls)[0] != "LatestTokenForEmail" || (*calls)[1] != "insert:visitor@example.com" {
+	if len(*calls) != 3 || (*calls)[0] != "ClaimEmailCooldown" || (*calls)[1] != "insert:visitor@example.com" {
 		t.Fatalf("expected the insert to be recorded even though the mailer failed: %v", *calls)
 	}
 }
@@ -249,8 +264,7 @@ func TestRequestLinkLinkShapeAndHash(t *testing.T) {
 func TestRequestLinkRejectsSecondRequestInsideCooldown(t *testing.T) {
 	fixed := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	q, m, calls := newFakes()
-	q.latestTokenErr = nil
-	q.latestToken = fixed.Add(-10 * time.Second)
+	q.cooldownClaims = map[string]time.Time{"visitor@example.com": fixed.Add(-10 * time.Second)}
 	svc := service.NewAuthService(q, m, "https://pinalert.example", service.WithClock(func() time.Time { return fixed }))
 
 	_, err := svc.RequestLink(context.Background(), "visitor@example.com")
@@ -258,8 +272,8 @@ func TestRequestLinkRejectsSecondRequestInsideCooldown(t *testing.T) {
 	if !errors.Is(err, service.ErrRateLimited) {
 		t.Fatalf("err = %v, want service.ErrRateLimited", err)
 	}
-	if len(*calls) != 1 || (*calls)[0] != "LatestTokenForEmail" {
-		t.Fatalf("a rate-limit refusal must call only LatestTokenForEmail, no insert or send: %v", *calls)
+	if len(*calls) != 1 || (*calls)[0] != "ClaimEmailCooldown" {
+		t.Fatalf("a rate-limit refusal must call only ClaimEmailCooldown, no insert or send: %v", *calls)
 	}
 }
 
@@ -269,14 +283,13 @@ func TestRequestLinkRejectsSecondRequestInsideCooldown(t *testing.T) {
 func TestRequestLinkAllowsRequestAfterCooldownElapses(t *testing.T) {
 	fixed := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	q, m, calls := newFakes()
-	q.latestTokenErr = nil
-	q.latestToken = fixed.Add(-46 * time.Second)
+	q.cooldownClaims = map[string]time.Time{"visitor@example.com": fixed.Add(-46 * time.Second)}
 	svc := service.NewAuthService(q, m, "https://pinalert.example", service.WithClock(func() time.Time { return fixed }))
 
 	if _, err := svc.RequestLink(context.Background(), "visitor@example.com"); err != nil {
 		t.Fatalf("RequestLink: %v", err)
 	}
-	if len(*calls) != 3 || (*calls)[0] != "LatestTokenForEmail" || (*calls)[1] != "insert:visitor@example.com" || (*calls)[2] != "send:visitor@example.com" {
+	if len(*calls) != 3 || (*calls)[0] != "ClaimEmailCooldown" || (*calls)[1] != "insert:visitor@example.com" || (*calls)[2] != "send:visitor@example.com" {
 		t.Fatalf("unexpected call order once the cooldown has elapsed: %v", *calls)
 	}
 }
@@ -287,8 +300,12 @@ func TestRequestLinkAllowsRequestAfterCooldownElapses(t *testing.T) {
 func TestRequestLinkCooldownIsCaseInsensitive(t *testing.T) {
 	fixed := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	q, m, _ := newFakes()
-	q.latestTokenErr = nil
-	q.latestToken = fixed.Add(-10 * time.Second)
+	// Seeded under the lowercase form only — a claim that queried the raw
+	// "A@Example.com" string against a cooldown keyed on the lowercase form
+	// would miss this entry entirely and NOT rate limit, so this test
+	// exercises the case-insensitivity contract directly against the fake's
+	// map, not merely by inference.
+	q.cooldownClaims = map[string]time.Time{"a@example.com": fixed.Add(-10 * time.Second)}
 	svc := service.NewAuthService(q, m, "https://pinalert.example", service.WithClock(func() time.Time { return fixed }))
 
 	_, err := svc.RequestLink(context.Background(), "A@Example.com")
@@ -296,25 +313,14 @@ func TestRequestLinkCooldownIsCaseInsensitive(t *testing.T) {
 	if !errors.Is(err, service.ErrRateLimited) {
 		t.Fatalf("err = %v, want service.ErrRateLimited for a case-variant address within the cooldown", err)
 	}
-	// LatestTokenForEmail must have been consulted with the normalised
-	// (lowercase) address — the fake doesn't record its argument, so this is
-	// asserted indirectly: a mismatched-case lookup that queried the raw
-	// "A@Example.com" string against a cooldown keyed on the lowercase form
-	// would, in the real database, simply miss and NOT rate limit. Since the
-	// fake always returns q.latestToken regardless of the email argument,
-	// this test's real assertion is the case-insensitivity CONTRACT itself
-	// (normalizeEmail lowercases before the cooldown read), covered directly
-	// by TestRequestLinkNormalizesEmail above; this test additionally proves
-	// RequestLink still reaches and honors ErrRateLimited for a mixed-case
-	// input rather than short-circuiting validation differently for it.
 }
 
 // TestRequestLinkMailerFailureLeavesCooldownConsumed is Pitfall 3's core
-// claim: a first RequestLink whose mailer fails still leaves the token row
-// present (the insert already happened before the send), so an immediate
-// retry for that address is refused by the cooldown — proven here by
-// driving RequestLink twice against one fake querier whose insert call
-// updates latestToken as a real database's cooldown read would observe.
+// claim: a first RequestLink whose mailer fails still leaves the cooldown
+// claimed (the claim is committed before token generation and the send,
+// DEC-J/DEC-X), so an immediate retry for that address is refused — proven
+// here by driving RequestLink twice against one fake querier whose own
+// ClaimEmailCooldown records the claim exactly as the real statement would.
 func TestRequestLinkMailerFailureLeavesCooldownConsumed(t *testing.T) {
 	fixed := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	q, m, calls := newFakes()
@@ -328,17 +334,34 @@ func TestRequestLinkMailerFailureLeavesCooldownConsumed(t *testing.T) {
 		t.Fatalf("expected the first call's insert to be recorded despite the mailer failure: %v", *calls)
 	}
 
-	// Simulate the cooldown clock a real database would now enforce: the
-	// insert that just happened is the most recent token for this address.
-	q.latestTokenErr = nil
-	q.latestToken = fixed
-
 	_, err := svc.RequestLink(context.Background(), "visitor@example.com")
 	if !errors.Is(err, service.ErrRateLimited) {
 		t.Fatalf("immediate retry after a mailer failure: err = %v, want service.ErrRateLimited", err)
 	}
-	if len(*calls) != 4 || (*calls)[3] != "LatestTokenForEmail" {
+	if len(*calls) != 4 || (*calls)[3] != "ClaimEmailCooldown" {
 		t.Fatalf("the retry must be refused by the cooldown without a second insert: %v", *calls)
+	}
+}
+
+// TestRequestLinkClaimErrorSurfacesAsTransportError proves a claim error
+// that is not pgx.ErrNoRows is wrapped and returned as a transport error,
+// never silently treated as ErrRateLimited — the branch that would
+// otherwise convert a database outage into "everyone is rate limited".
+func TestRequestLinkClaimErrorSurfacesAsTransportError(t *testing.T) {
+	q, m, _ := newFakes()
+	q.cooldownClaimErr = errors.New("connection reset")
+	svc := service.NewAuthService(q, m, "https://pinalert.example")
+
+	_, err := svc.RequestLink(context.Background(), "visitor@example.com")
+
+	if err == nil {
+		t.Fatal("expected an error when the claim fails")
+	}
+	if errors.Is(err, service.ErrRateLimited) {
+		t.Fatalf("a non-ErrNoRows claim error must not surface as ErrRateLimited: %v", err)
+	}
+	if !strings.Contains(err.Error(), "connection reset") {
+		t.Fatalf("error %q does not wrap the underlying claim error", err.Error())
 	}
 }
 

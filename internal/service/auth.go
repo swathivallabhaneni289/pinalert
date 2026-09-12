@@ -56,7 +56,7 @@ type AuthQuerier interface {
 	GetAccountByEmail(ctx context.Context, email string) (sqlcgen.Account, error)
 	GetAccountBySessionID(ctx context.Context, sessionID string) (sqlcgen.GetAccountBySessionIDRow, error)
 	BindSessionAccount(ctx context.Context, arg sqlcgen.BindSessionAccountParams) error
-	LatestTokenForEmail(ctx context.Context, email string) (time.Time, error)
+	ClaimEmailCooldown(ctx context.Context, arg sqlcgen.ClaimEmailCooldownParams) (time.Time, error)
 	ReportsByAccount(ctx context.Context, accountID *int64) ([]sqlcgen.ReportsByAccountRow, error)
 }
 
@@ -104,7 +104,7 @@ func NewAuthService(q AuthQuerier, m mailer.Mailer, baseURL string, opts ...Auth
 	return s
 }
 
-// RequestLink validates rawEmail, enforces D-03/D-04's per-address resend
+// RequestLink validates rawEmail, claims D-03/D-04's per-address resend
 // cooldown, mints a single-use magic-link token, persists its hash before
 // attempting delivery, and hands the raw link — never a code to type back
 // in; D-01 chose a link over a passcode, so no passcode field exists
@@ -113,35 +113,38 @@ func NewAuthService(q AuthQuerier, m mailer.Mailer, baseURL string, opts ...Auth
 // actually mailed, so a caller such as the HTTP handler can echo it back
 // without duplicating the normalization rule.
 //
-// The cooldown check happens between email normalisation and token
-// generation — before anything is persisted or sent — so a refused request
-// never writes a row and therefore can never extend or reset the cooldown
-// it is itself being refused by (DEC-J). Because the check reads the
-// normalised lowercase address and this row is always persisted lowercase,
-// case variants of one address ("A@Example.com" vs "a@example.com") share
-// one cooldown.
+// The cooldown is claimed in a single atomic statement (ClaimEmailCooldown)
+// between email normalisation and token generation — before anything else
+// is persisted or sent. A refused claim writes nothing at all, so it can
+// never extend or reset the window that refused it (DEC-J, DEC-X, T-01-93,
+// T-01-94). Because the claim is made with the normalised lowercase
+// address, case variants of one address ("A@Example.com" vs
+// "a@example.com") share one cooldown.
 //
-// The persist-then-send ordering below the cooldown check is mandatory, not
-// incidental: the persisted row is exactly what the cooldown check above
-// reads on the NEXT call, so a failed or quota-exhausted send must still
-// consume the cooldown (RESEARCH.md Pitfall 3, DEC-J) — these are two
-// different points in the request flow and must not be collapsed into one.
-// A mailer failure is wrapped so the caller can log detail server-side
-// while returning a generic error to the visitor.
+// A granted claim commits before token generation, the insert, and the
+// send, so a failed or quota-exhausted send — or even a failed token
+// insert — still consumes the cooldown (RESEARCH.md Pitfall 3, DEC-J,
+// DEC-X): that is what stops a failing provider being hammered in a retry
+// loop. A mailer failure is wrapped so the caller can log detail
+// server-side while returning a generic error to the visitor.
 func (s *AuthService) RequestLink(ctx context.Context, rawEmail string) (string, error) {
 	email, err := normalizeEmail(rawEmail)
 	if err != nil {
 		return "", err
 	}
 
-	lastRequested, err := s.q.LatestTokenForEmail(ctx, email)
-	if err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return "", fmt.Errorf("service: reading latest token for %s: %w", email, err)
+	now := s.now()
+	if _, err := s.q.ClaimEmailCooldown(ctx, sqlcgen.ClaimEmailCooldownParams{
+		Email:          email,
+		RequestedAt:    now,
+		CooldownCutoff: now.Add(-ResendCooldown),
+	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// The claim was refused: a cooldown claim for this address
+			// already exists and is still within the window.
+			return "", ErrRateLimited
 		}
-		// No prior request for this address — proceed.
-	} else if s.now().Sub(lastRequested) < ResendCooldown {
-		return "", ErrRateLimited
+		return "", fmt.Errorf("service: claiming email cooldown for %s: %w", email, err)
 	}
 
 	raw, hash, err := auth.GenerateToken()
@@ -152,7 +155,7 @@ func (s *AuthService) RequestLink(ctx context.Context, rawEmail string) (string,
 	if _, err := s.q.InsertMagicLinkToken(ctx, sqlcgen.InsertMagicLinkTokenParams{
 		TokenHash: hash,
 		Email:     email,
-		ExpiresAt: s.now().Add(auth.TokenTTL),
+		ExpiresAt: now.Add(auth.TokenTTL),
 	}); err != nil {
 		return "", fmt.Errorf("service: persisting magic-link token: %w", err)
 	}
