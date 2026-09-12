@@ -21,7 +21,7 @@ Requirements for initial release. Each maps to roadmap phases.
       phase (phone OTP has no free tier at any real volume and requires India DLT sender
       registration for the cheap rate; deferred, see PROJECT.md Key Decisions)
 
-- [ ] **IDENT-03**: A verified user can view their own profile page, listing their submitted
+- [x] **IDENT-03**: A verified user can view their own profile page, listing their submitted
       reports and their confirm/dispute voting activity
 
 - [x] **IDENT-04**: Verification-email requests are rate-limited per email address and per IP
@@ -238,7 +238,7 @@ Populated during roadmap creation.
 |-------------|-------|--------|
 | IDENT-01 | Phase 1.1 | Complete |
 | IDENT-02 | Phase 1.1 | Complete |
-| IDENT-03 | Phase 1.1 | Pending |
+| IDENT-03 | Phase 1.1 | Complete |
 | IDENT-04 | Phase 1.1 | Complete |
 | IDENT-05 | Phase 1.1 | Complete |
 | FOUND-01 | Phase 1 | Complete (superseded by IDENT-01, Phase 1.1) |
