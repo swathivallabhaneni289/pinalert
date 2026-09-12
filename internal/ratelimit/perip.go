@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"golang.org/x/time/rate"
 )
 
@@ -134,14 +135,19 @@ func (p *PerIP) entryCount() int {
 
 // Middleware returns an http middleware that keys on the client's IP,
 // refusing a request that exceeds the configured budget with a 429 in the
-// same {error:{field,message}} envelope the rest of this API uses. It reads
-// r.RemoteAddr, which chi's middleware.RealIP has already normalised
-// upstream in this project's router — callers wrapping a handler with this
-// middleware must apply it after RealIP for that trust assumption to hold.
+// same {error:{field,message}} envelope the rest of this API uses. The key
+// is whichever address the router's installed ClientIPFrom* middleware
+// resolved, read via middleware.GetClientIP, with the TCP-peer host (via
+// r.RemoteAddr) as the fallback for callers that install none — that
+// fallback is what keeps this package usable standalone, e.g. Phase 4's
+// ROBUST-04, with no dependency on a specific router wiring (DEC-V).
 func (p *PerIP) Middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			key := clientIP(r.RemoteAddr)
+			key := middleware.GetClientIP(r.Context())
+			if key == "" {
+				key = clientIP(r.RemoteAddr)
+			}
 			if !p.Allow(key) {
 				writeTooManyRequests(w)
 				return
