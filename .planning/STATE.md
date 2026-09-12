@@ -5,14 +5,14 @@ milestone_name: milestone
 current_phase: 01.1
 current_phase_name: Identity & Login — Mandatory Email Verification
 status: executing
-stopped_at: Phase 1.1 planned — 7 plans across 6 waves, ready to execute
-last_updated: "2026-09-11T09:47:53.044Z"
-last_activity: 2026-09-11
-last_activity_desc: Phase 01.1 execution started
+stopped_at: Phase 1.1 gap closure planned — 01.1-08 (wave 7) created to re-close SC4/IDENT-04
+last_updated: "2026-09-12T19:30:00.000Z"
+last_activity: 2026-09-12
+last_activity_desc: Phase 01.1 gap-closure plan 01.1-08 created
 progress:
   total_phases: 7
   completed_phases: 1
-  total_plans: 22
+  total_plans: 23
   completed_plans: 15
   percent: 14
 ---
@@ -31,10 +31,10 @@ mid-way, see Pending Todos)
 
 ## Current Position
 
-Phase: 01.1 (Identity & Login — Mandatory Email Verification) — EXECUTING
-Plan: 1 of 7
-Status: Executing Phase 01.1
-Last activity: 2026-09-11 — Phase 01.1 execution started
+Phase: 01.1 (Identity & Login — Mandatory Email Verification) — EXECUTING (gap closure)
+Plan: 8 of 8 (plans 01-07 executed; 01.1-08 planned, not yet executed)
+Status: Phase 01.1 verified with one gap — gap-closure plan 01.1-08 created, awaiting execution
+Last activity: 2026-09-12 — Phase 01.1 gap-closure plan 01.1-08 created
 The D-12 account menu is now a shared `account_header.html.tmpl` partial and moved to wave 5 as
 01.1-06; the profile page (D-13 merged Activity section) includes that partial and moved to wave 6
 as 01.1-07. The swap is required, not cosmetic: `html/template` errors at execution time on a
@@ -98,6 +98,19 @@ Recent decisions affecting current work:
   wordmark's removal). Ready for `/gsd-execute-phase 1.1`.
 
 ### Blockers/Concerns
+
+- **[2026-09-12] Phase 1.1 verification found one gap: SC4/IDENT-04 abuse resistance does not hold**
+  (`01.1-VERIFICATION.md`, matching `01.1-REVIEW.md`'s CR-01/WR-01). Both layers are defeatable:
+  the per-IP limiter's key comes from a client-supplied proxy header via chi's deprecated
+  `middleware.RealIP`, and the per-address cooldown is an unserialised check-then-insert (TOCTOU).
+  **Gap-closure plan `01.1-08` (wave 7) is written and validated** — run `/gsd-execute-phase 1.1`
+  to execute it. It supersedes two of `01.1-05`'s declared must-haves (the `LatestTokenForEmail`
+  key link and the `ORDER BY created_at DESC` artifact string); the supersession table is in
+  `01.1-08-PLAN.md` so a re-verify reads it rather than flagging a regression.
+
+- **[2026-09-12] SC2/IDENT-02 (real Resend delivery) needs one human check, not a code fix** — no
+  test ever makes a live call to Resend by explicit design, so delivery has never been exercised.
+  Tracked in `01.1-VERIFICATION.md`'s `human_verification` section; not something a plan can close.
 
 - **[2026-09-10] Resend custom-domain DNS verification is a pre-launch requirement**: Resend's
   sandbox sender (`onboarding@resend.dev`) only delivers to the account owner's own signup email

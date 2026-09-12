@@ -137,7 +137,7 @@ sessions are long-lived (reuses Phase 1's existing 1-year cookie), support simul
 multi-device login, and have an explicit logout; no account-recovery mechanism exists for v1 —
 losing email access means verifying a new one and starting fresh.
 
-**Plans**: 7/7 plans complete
+**Plans**: 7/8 plans complete
 Plans:
 **Wave 1**
 
@@ -163,6 +163,10 @@ Plans:
 **Wave 6** *(blocked on Wave 5 completion)*
 
 - [x] 01.1-07-PLAN.md — Profile page under that shared header, with one merged Activity section listing the account's reports across devices, plus the logout endpoint (wave 6)
+
+**Wave 7** *(gap closure — blocked on Wave 6 completion)*
+
+- [ ] 01.1-08-PLAN.md — Gap closure for SC4/IDENT-04: un-forgeable per-IP limiter key (drops chi's deprecated header-trusting middleware) and an atomic `email_cooldowns` claim replacing the TOCTOU-racy per-address cooldown, both proven by tests that fail against the pre-fix tree (wave 7)
 
 **UI hint**: yes
 
