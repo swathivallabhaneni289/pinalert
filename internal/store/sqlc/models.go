@@ -16,6 +16,11 @@ type Account struct {
 	CreatedAt time.Time
 }
 
+type EmailCooldown struct {
+	Email           string
+	LastRequestedAt time.Time
+}
+
 type MagicLinkToken struct {
 	ID        int64
 	TokenHash string

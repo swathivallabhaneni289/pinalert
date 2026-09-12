@@ -39,6 +39,7 @@ type recordingMailer struct {
 	mu    sync.Mutex
 	email string
 	link  string
+	sends int
 }
 
 func (m *recordingMailer) SendVerificationLink(ctx context.Context, email, link string) error {
@@ -46,6 +47,7 @@ func (m *recordingMailer) SendVerificationLink(ctx context.Context, email, link 
 	defer m.mu.Unlock()
 	m.email = email
 	m.link = link
+	m.sends++
 	return nil
 }
 
@@ -53,6 +55,15 @@ func (m *recordingMailer) last() (email, link string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.email, m.link
+}
+
+// sendCount reports how many times SendVerificationLink has been called,
+// read under the same mutex last() uses — TestRequestLinkConcurrentSameAddressSendsExactlyOneEmail's
+// core assertion.
+func (m *recordingMailer) sendCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.sends
 }
 
 // newJarClient returns an *http.Client backed by a fresh in-memory cookie
@@ -163,7 +174,20 @@ func getVerify(t *testing.T, client *http.Client, srv *httptest.Server, token st
 	return resp.StatusCode, string(body)
 }
 
+// newAuthE2EServer delegates to newAuthE2EServerWithRateLimit using the zero
+// value, so RequestLinkRateLimitDefault is still what every existing call
+// site gets — no existing test's signature or behavior changes.
 func newAuthE2EServer(t *testing.T) (*httptest.Server, *pgxpool.Pool, *recordingMailer) {
+	t.Helper()
+	return newAuthE2EServerWithRateLimit(t, api.RequestLinkRateLimit{})
+}
+
+// newAuthE2EServerWithRateLimit is newAuthE2EServer's full implementation,
+// taking an explicit per-IP rate limit so
+// TestRequestLinkConcurrentSameAddressSendsExactlyOneEmail can open the
+// limiter up (a high burst) and isolate the per-address cooldown as the
+// only control under test.
+func newAuthE2EServerWithRateLimit(t *testing.T, limit api.RequestLinkRateLimit) (*httptest.Server, *pgxpool.Pool, *recordingMailer) {
 	t.Helper()
 	pool := testutil.NewTestDB(t)
 
@@ -179,12 +203,13 @@ func newAuthE2EServer(t *testing.T) (*httptest.Server, *pgxpool.Pool, *recording
 	queries := sqlcgen.New(pool)
 	fm := &recordingMailer{}
 	deps := api.Deps{
-		Session:     mgr,
-		Sessions:    queries,
-		Reports:     service.NewReportService(queries),
-		AuthService: service.NewAuthService(queries, fm, "https://pinalert.example"),
-		Auth:        handlers.AuthConfig{AssetVersion: "test"},
-		Template:    tmpl,
+		Session:              mgr,
+		Sessions:             queries,
+		Reports:              service.NewReportService(queries),
+		AuthService:          service.NewAuthService(queries, fm, "https://pinalert.example"),
+		Auth:                 handlers.AuthConfig{AssetVersion: "test"},
+		Template:             tmpl,
+		RequestLinkRateLimit: limit,
 	}
 	router := api.NewRouter(deps)
 
@@ -319,6 +344,85 @@ func TestRequestLinkMalformedEmailReturns400(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("expected zero magic_link_tokens rows after a malformed request, got %d", count)
+	}
+}
+
+// TestRequestLinkConcurrentSameAddressSendsExactlyOneEmail is this whole
+// gap-closure plan's core claim (T-01-93): eight independent callers
+// converging on one victim address must send exactly one email and mint
+// exactly one token row, never eight. The server is stood up with the
+// per-IP limiter deliberately opened (Burst: 100) — at the default burst of
+// 5 the limiter would refuse most of these requests by itself and this test
+// would pass green against the unfixed cooldown, proving nothing. With the
+// limiter opened up, the per-address cooldown claim is the only control
+// left standing between one address and eight emails.
+//
+// The eight clients are deliberately independent, with no shared cookie
+// jar — the attack being modeled is eight unrelated callers converging on
+// one victim address, not one browser retrying. A side effect is that the
+// session middleware mints eight session ids and writes eight sessions
+// rows concurrently; that noise is expected and irrelevant to the three
+// assertions below, none of which reads the sessions table.
+func TestRequestLinkConcurrentSameAddressSendsExactlyOneEmail(t *testing.T) {
+	srv, pool, mailer := newAuthE2EServerWithRateLimit(t, api.RequestLinkRateLimit{Burst: 100, Every: time.Millisecond})
+
+	const callers = 8
+	const targetEmail = "mail-bomb-target@example.com"
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	statusCodes := make([]int, 0, callers)
+
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			client := &http.Client{}
+			resp, err := client.Post(srv.URL+"/api/auth/request-link", "application/json",
+				bytes.NewReader([]byte(`{"email":"`+targetEmail+`"}`)))
+			if err != nil {
+				t.Errorf("POST /api/auth/request-link: %v", err)
+				return
+			}
+			defer resp.Body.Close()
+			io.ReadAll(resp.Body)
+			mu.Lock()
+			statusCodes = append(statusCodes, resp.StatusCode)
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+
+	okCount, refusedCount := 0, 0
+	for _, code := range statusCodes {
+		switch code {
+		case http.StatusOK:
+			okCount++
+		case http.StatusTooManyRequests:
+			refusedCount++
+		default:
+			t.Fatalf("unexpected status code %d among %v", code, statusCodes)
+		}
+	}
+	if okCount != 1 {
+		t.Fatalf("okCount = %d, want exactly 1 (statuses: %v)", okCount, statusCodes)
+	}
+	if refusedCount != callers-1 {
+		t.Fatalf("refusedCount = %d, want exactly %d (statuses: %v)", refusedCount, callers-1, statusCodes)
+	}
+
+	if got := mailer.sendCount(); got != 1 {
+		t.Fatalf("mailer.sendCount() = %d, want exactly 1", got)
+	}
+
+	var tokenRows int
+	if err := pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM magic_link_tokens WHERE email = $1`, targetEmail,
+	).Scan(&tokenRows); err != nil {
+		t.Fatalf("counting magic_link_tokens for %s: %v", targetEmail, err)
+	}
+	if tokenRows != 1 {
+		t.Fatalf("magic_link_tokens rows for %s = %d, want exactly 1", targetEmail, tokenRows)
 	}
 }
 

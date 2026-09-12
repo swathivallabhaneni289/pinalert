@@ -83,8 +83,8 @@ var RequestLinkRateLimitDefault = RequestLinkRateLimit{Burst: 5, Every: 60 * tim
 // @contact.name Pinalert project
 // @contact.url  https://github.com/swathivallabhaneni289/pinalert
 
-// NewRouter builds the chi router: request-id/real-ip/recoverer/logger
-// middleware, then the session middleware (issuing or verifying the
+// NewRouter builds the chi router: request-id/client-ip-resolution/
+// recoverer/logger middleware, then the session middleware (issuing or verifying the
 // pinalert_session cookie on every request), then the route table. D-05
 // ("login is required to view anything, not merely to act") is enforced by
 // splitting the table into two parts: a short, explicitly-documented set of
@@ -103,7 +103,12 @@ func NewRouter(deps Deps) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	// The client IP is resolved from the TCP peer address because nothing in
+	// front of this service is confirmed to overwrite inbound proxy headers
+	// (DEC-U). If this app is ever deployed behind a confirmed single
+	// trusted reverse proxy, middleware.ClientIPFromXFFTrustedProxies
+	// configured with that proxy's real hop count is the correct upgrade.
+	r.Use(middleware.ClientIPFromRemoteAddr)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Logger)
 	r.Use(deps.Session.Middleware(deps.persistSession))

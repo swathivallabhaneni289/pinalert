@@ -90,25 +90,3 @@ func (q *Queries) InsertMagicLinkToken(ctx context.Context, arg InsertMagicLinkT
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.ExpiresAt)
 	return i, err
 }
-
-const latestTokenForEmail = `-- name: LatestTokenForEmail :one
-SELECT created_at
-FROM magic_link_tokens
-WHERE email = $1
-ORDER BY created_at DESC
-LIMIT 1
-`
-
-// Plan 01.1-05's resend-cooldown read (IDENT-04, D-03): the most recent
-// token requested for this address, whatever its used/expired state — the
-// cooldown clock runs from when a token was last REQUESTED, not from
-// whether it was ever consumed. Served by migration 00002's
-// (email, created_at DESC) index. sqlc's :one returns pgx.ErrNoRows when no
-// prior request exists for the address — the caller treats that as "no
-// cooldown, proceed", never as an error.
-func (q *Queries) LatestTokenForEmail(ctx context.Context, email string) (time.Time, error) {
-	row := q.db.QueryRow(ctx, latestTokenForEmail, email)
-	var created_at time.Time
-	err := row.Scan(&created_at)
-	return created_at, err
-}

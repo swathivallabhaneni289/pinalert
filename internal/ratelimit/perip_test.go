@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 // TestAllowsBurstThenRefuses is this limiter's core token-bucket contract: a
@@ -183,4 +185,82 @@ func TestMiddlewareFallsBackToRawRemoteAddr(t *testing.T) {
 	if rec2.Code != http.StatusTooManyRequests {
 		t.Fatalf("second request status = %d, want 429", rec2.Code)
 	}
+}
+
+// TestMiddlewareIgnoresForgedForwardedHeaders proves the limiter's key comes
+// from middleware.ClientIPFromRemoteAddr's resolution of the TCP peer, never
+// from a caller-supplied header — the regression guard for T-01-92. The
+// handler chain mirrors production: ClientIPFromRemoteAddr runs ahead of the
+// limiter, exactly as it does in router.go.
+func TestMiddlewareIgnoresForgedForwardedHeaders(t *testing.T) {
+	newHandler := func(burst int) http.Handler {
+		p := NewPerIP(time.Minute, burst)
+		inner := p.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		return middleware.ClientIPFromRemoteAddr(inner)
+	}
+
+	t.Run("X-Forwarded-For", func(t *testing.T) {
+		handler := newHandler(2)
+		forged := []string{"198.51.100.1", "198.51.100.2", "198.51.100.3"}
+		for i, xff := range forged {
+			req := httptest.NewRequest(http.MethodPost, "/api/auth/request-link", nil)
+			req.RemoteAddr = "203.0.113.9:44444"
+			req.Header.Set("X-Forwarded-For", xff)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if i < 2 {
+				if rec.Code != http.StatusOK {
+					t.Fatalf("request %d: status = %d, want 200", i+1, rec.Code)
+				}
+			} else {
+				if rec.Code != http.StatusTooManyRequests {
+					t.Fatalf("request %d: status = %d, want 429", i+1, rec.Code)
+				}
+			}
+		}
+	})
+
+	t.Run("X-Real-IP", func(t *testing.T) {
+		handler := newHandler(2)
+		forged := []string{"198.51.100.11", "198.51.100.12", "198.51.100.13"}
+		for i, xrip := range forged {
+			req := httptest.NewRequest(http.MethodPost, "/api/auth/request-link", nil)
+			req.RemoteAddr = "203.0.113.9:44444"
+			req.Header.Set("X-Real-IP", xrip)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if i < 2 {
+				if rec.Code != http.StatusOK {
+					t.Fatalf("request %d: status = %d, want 200", i+1, rec.Code)
+				}
+			} else {
+				if rec.Code != http.StatusTooManyRequests {
+					t.Fatalf("request %d: status = %d, want 429", i+1, rec.Code)
+				}
+			}
+		}
+	})
+
+	t.Run("True-Client-IP", func(t *testing.T) {
+		handler := newHandler(2)
+		forged := []string{"198.51.100.21", "198.51.100.22", "198.51.100.23"}
+		for i, tcip := range forged {
+			req := httptest.NewRequest(http.MethodPost, "/api/auth/request-link", nil)
+			req.RemoteAddr = "203.0.113.9:44444"
+			req.Header.Set("True-Client-IP", tcip)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if i < 2 {
+				if rec.Code != http.StatusOK {
+					t.Fatalf("request %d: status = %d, want 200", i+1, rec.Code)
+				}
+			} else {
+				if rec.Code != http.StatusTooManyRequests {
+					t.Fatalf("request %d: status = %d, want 429", i+1, rec.Code)
+				}
+			}
+		}
+	})
 }
