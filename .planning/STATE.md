@@ -5,10 +5,10 @@ milestone_name: milestone
 current_phase: 01.1
 current_phase_name: Identity & Login — Mandatory Email Verification
 status: executing
-stopped_at: Phase 1.1 gap closure planned — 01.1-08 (wave 7) created to re-close SC4/IDENT-04
+stopped_at: Phase 1.1 gap-closure plan 01.1-08 executed and independently re-verified — SC4/IDENT-04 confirmed closed; one human-only check (live Resend delivery) remains, tracked in 01.1-UAT.md
 last_updated: "2026-09-12T19:30:00.000Z"
 last_activity: 2026-09-12
-last_activity_desc: Phase 01.1 gap-closure plan 01.1-08 created
+last_activity_desc: Phase 01.1 gap-closure plan 01.1-08 executed; re-verification confirms the rate-limiting gap is closed; phase held at human_needed pending one Resend-delivery UAT item
 progress:
   total_phases: 7
   completed_phases: 1
@@ -31,16 +31,18 @@ mid-way, see Pending Todos)
 
 ## Current Position
 
-Phase: 01.1 (Identity & Login — Mandatory Email Verification) — EXECUTING (gap closure)
-Plan: 8 of 8 (plans 01-07 executed; 01.1-08 planned, not yet executed)
-Status: Phase 01.1 verified with one gap — gap-closure plan 01.1-08 created, awaiting execution
-Last activity: 2026-09-12 — Phase 01.1 gap-closure plan 01.1-08 created
-The D-12 account menu is now a shared `account_header.html.tmpl` partial and moved to wave 5 as
-01.1-06; the profile page (D-13 merged Activity section) includes that partial and moved to wave 6
-as 01.1-07. The swap is required, not cosmetic: `html/template` errors at execution time on a
-`{{template}}` call naming a template a later wave has not written yet.
+Phase: 01.1 (Identity & Login — Mandatory Email Verification) — HUMAN VERIFICATION PENDING
+Plan: 8 of 8 executed (all waves 1-7 complete, all gates green)
+Status: All code-verifiable must-haves pass, including the re-closed SC4/IDENT-04 rate-limiting
+gap. One human-only check remains — live Resend email delivery (SC2/IDENT-02) — tracked in
+`01.1-UAT.md`. Run `/gsd-verify-work 1.1` with a real RESEND_API_KEY and DNS-verified domain to
+close it out.
+Last activity: 2026-09-12 — Gap-closure plan 01.1-08 executed and independently re-verified against
+the live code (not just trusted from its own SUMMARY): `middleware.RealIP` is confirmed absent,
+the per-email cooldown is confirmed a single atomic `INSERT ... ON CONFLICT` claim, and all 7
+adversarial tests (forged-header spoofing, concurrent-claim races) pass against the current tree.
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] 100% of phase 1.1's code-verifiable work; 1 human-only UAT item outstanding
 
 ## Performance Metrics
 
@@ -99,18 +101,23 @@ Recent decisions affecting current work:
 
 ### Blockers/Concerns
 
-- **[2026-09-12] Phase 1.1 verification found one gap: SC4/IDENT-04 abuse resistance does not hold**
-  (`01.1-VERIFICATION.md`, matching `01.1-REVIEW.md`'s CR-01/WR-01). Both layers are defeatable:
-  the per-IP limiter's key comes from a client-supplied proxy header via chi's deprecated
-  `middleware.RealIP`, and the per-address cooldown is an unserialised check-then-insert (TOCTOU).
-  **Gap-closure plan `01.1-08` (wave 7) is written and validated** — run `/gsd-execute-phase 1.1`
-  to execute it. It supersedes two of `01.1-05`'s declared must-haves (the `LatestTokenForEmail`
-  key link and the `ORDER BY created_at DESC` artifact string); the supersession table is in
-  `01.1-08-PLAN.md` so a re-verify reads it rather than flagging a regression.
+- ~~**[2026-09-12] Phase 1.1 verification found one gap: SC4/IDENT-04 abuse resistance does not
+  hold**~~ — **closed 2026-09-12**: gap-closure plan `01.1-08` (wave 7) replaced chi's deprecated,
+  spoofable `middleware.RealIP` with `middleware.ClientIPFromRemoteAddr`, and replaced the
+  per-email cooldown's unserialised check-then-insert with a single atomic
+  `INSERT ... ON CONFLICT (email) DO UPDATE ... RETURNING` claim (new `email_cooldowns` table).
+  Independently re-verified against the live code by a fresh `gsd-verifier` pass (not just trusted
+  from the plan's own SUMMARY) — `middleware.RealIP` and `LatestTokenForEmail` are both confirmed
+  absent from the codebase, and all 7 adversarial tests (3 forged-header variants, 4 concurrency
+  tests) pass. It supersedes two of `01.1-05`'s declared must-haves (the `LatestTokenForEmail` key
+  link and the `ORDER BY created_at DESC` artifact string) — recorded in `01.1-08-PLAN.md`'s
+  supersession table, not a silent regression.
 
 - **[2026-09-12] SC2/IDENT-02 (real Resend delivery) needs one human check, not a code fix** — no
   test ever makes a live call to Resend by explicit design, so delivery has never been exercised.
-  Tracked in `01.1-VERIFICATION.md`'s `human_verification` section; not something a plan can close.
+  This is the **only remaining item before Phase 1.1 fully closes** — tracked in `01.1-UAT.md`;
+  run `/gsd-verify-work 1.1` with a real `RESEND_API_KEY` and a DNS-verified `RESEND_FROM` domain
+  to confirm and close it out.
 
 - **[2026-09-10] Resend custom-domain DNS verification is a pre-launch requirement**: Resend's
   sandbox sender (`onboarding@resend.dev`) only delivers to the account owner's own signup email
@@ -172,15 +179,20 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-11T13:30:00.000Z
-Stopped at: Phase 1.1 fully planned and verified — 7 plans across 6 waves, gsd-plan-checker
-VERIFICATION PASSED. Reached via 4 revision iterations continuing a prior session's half-finished
-UI amendment: 01.1-06 was stale against D-12 (account menu)/D-13 (merged Activity section), so it
-was split into a header plan and a profile plan; the user then chose "full header everywhere" over
-a minimal back-link, which required swapping wave order (01.1-06 is now the shared
-`account_header.html.tmpl` partial, wave 5; 01.1-07 is now the profile page that includes it, wave
-6) and building/removing a provisional home-link wordmark (user declined it — `/profile` has no
-route back to the map beyond browser-back, an accepted, documented trade-off). Ready for
-`/gsd-execute-phase 1.1`. Phase 2's own discussion remains checkpointed and paused (see Pending
-Todos) — resume it after Phase 1.1 ships.
-Resume file: .planning/phases/01.1-identity-login-mandatory-email-verification/01.1-07-PLAN.md
+Last session: 2026-09-12T19:30:00.000Z
+Stopped at: Phase 1.1 fully executed — all 8 plans across 7 waves (7 original + 1 gap-closure),
+every post-merge build/test/UI-safety/schema-drift gate green throughout. `/gsd-execute-phase 1.1`
+ran the 7 planned waves, then its own `gsd-verifier` pass caught a real gap (SC4/IDENT-04:
+spoofable rate-limit IP key + a TOCTOU cooldown race, independently confirmed against the pinned
+chi v5.3.2 source and cross-checked against `01.1-REVIEW.md`'s CR-01/WR-01). Ran `/gsd-plan-phase
+01.1 --gaps` to close it: gap-closure plan `01.1-08` (2 plan-checker iterations, one build-ordering
+fix) replaced `middleware.RealIP` with `middleware.ClientIPFromRemoteAddr` and the cooldown's
+read-then-insert with an atomic `INSERT ... ON CONFLICT` claim. Executed and re-verified — gap
+confirmed closed against the live code, not just trusted from the plan's SUMMARY.
+Phase now sits at `human_needed`, not fully closed: the one remaining item is a human-only check
+(real Resend delivery with live credentials, SC2/IDENT-02 — no test in the suite ever calls the
+live API by explicit design). Persisted as `01.1-UAT.md`. Run `/gsd-verify-work 1.1` once you have
+a real `RESEND_API_KEY` and a DNS-verified `RESEND_FROM` domain to close the phase out fully.
+Phase 2's own discussion remains checkpointed and paused (see Pending Todos) — resume it once
+Phase 1.1 fully closes.
+Resume file: .planning/phases/01.1-identity-login-mandatory-email-verification/01.1-UAT.md
