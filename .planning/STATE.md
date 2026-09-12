@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 
 **Core value:** A report showing "confirmed by N nearby" must be verifiably backed by N
 independent nearby confirmations, resistant to trivial gaming.
-**Current focus:** Phase 01.1 — Identity & Login — Mandatory Email Verification
-across 6 waves, ready to execute; inserted before Phase 2, whose own discussion is paused
-mid-way, see Pending Todos)
+**Current focus:** Phase 01.1 — Identity & Login — Mandatory Email Verification is executed and
+holding at human_needed (one live-Resend-delivery UAT item outstanding). Phase 2's discuss-phase
+session is now complete (see `02-CONTEXT.md`) — ready for `/gsd-plan-phase 2`.
 
 ## Current Position
 
@@ -83,13 +83,12 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- **Phase 2 discuss-phase session is paused mid-way** (checkpoint file:
-  `.planning/phases/02-trust-mechanic-core-confirm-dispute-visibility/02-DISCUSS-CHECKPOINT.json`).
-  1 of 4 selected gray areas complete (Confirm/Dispute interaction); "Hidden vs Retracted
-  triggers" is partway through (3 of ~4 questions answered: dispute-ratio threshold, critical
-  exemption, Retracted=resolved-marking — "can Hidden revert back to Live" was interrupted before
-  being answered). "Visibility-state visual treatment" and "Resolved-marking flow" areas not yet
-  started. Resume with `/gsd-discuss-phase 2` once Phase 1.1 is discussed/planned/executed.
+- ~~Phase 2 discuss-phase session is paused mid-way~~ — **done 2026-09-12**: resumed and
+  completed all 4 originally-selected areas (Confirm/Dispute interaction, Hidden vs Retracted
+  triggers, Visibility-state visual treatment, Resolved-marking flow) plus a 5th area
+  (Confirmer location-capture method, resolving the open item PROJECT.md flagged for TRUST-03).
+  See `.planning/phases/02-trust-mechanic-core-confirm-dispute-visibility/02-CONTEXT.md`. Next:
+  `/gsd-plan-phase 2`.
 
 - ~~Phase 1.1 (Identity & Login) needs its own `/gsd-discuss-phase 1.1` session~~ — **done
   2026-09-10**, see `.planning/phases/01.1-identity-login-mandatory-email-verification/01.1-CONTEXT.md`.
