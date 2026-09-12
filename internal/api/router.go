@@ -160,6 +160,11 @@ func NewRouter(deps Deps) *chi.Mux {
 		// partial via {{template}}, which html/template only resolves
 		// within the template set it was parsed into (01.1-07-PLAN.md).
 		r.Get("/profile", handlers.Profile(deps.AuthService, deps.Template, deps.Auth))
+		// D-09's explicit log-out action; only POST is ever registered for
+		// this path (DEC-L: SameSite=Lax withholds the session cookie from
+		// a cross-site POST, so a forged logout carries no authenticated
+		// session — the same property would not hold for GET).
+		r.Post("/auth/logout", handlers.Logout(deps.Session))
 	})
 
 	return r

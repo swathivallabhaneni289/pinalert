@@ -405,3 +405,31 @@ func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) 
 		}
 	}
 }
+
+// Logout handles POST /auth/logout — D-09's explicit log-out action, which
+// exists so a shared or public device can be handed back: clear the
+// session cookie (mgr.ClearCookie), then redirect to /login with
+// StatusSeeOther, the status that turns the POST into a GET on the
+// follow-up so a browser reload never re-submits the logout. This response
+// itself reflects an authentication-state change (the browser's session
+// cookie is gone) and so carries Cache-Control: no-store, the same
+// discipline Verify's and Profile's responses already apply.
+//
+// sessions.account_id is deliberately left intact (DEC-K): that row's
+// binding is what still connects reports filed from this session to the
+// account, which is exactly what the profile page reads — unbinding it
+// here would silently erase a person's own history from their own
+// profile. Its on-screen control already exists: 01.1-06 shipped the
+// "Log out" item in the shared header's account menu as a real POST form
+// submit one wave earlier; this handler is what stops that submit from
+// 404ing. This page's own template adds no logout control of its own
+// (see profile.html.tmpl) — the control and the CSRF property DEC-L
+// records (SameSite=Lax withholding the session cookie from a cross-site
+// POST) both live with 01.1-06's shared header, not here.
+func Logout(mgr *session.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		mgr.ClearCookie(w)
+		w.Header().Set("Cache-Control", "no-store")
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+	}
+}

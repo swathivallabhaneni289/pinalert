@@ -674,3 +674,115 @@ func TestProfileRendersSharedHeader(t *testing.T) {
 		}
 	}
 }
+
+// --- Logout (01.1-07-PLAN.md Task 3) ---
+
+// TestLogoutReturnsToLoginGate proves POST /auth/logout actually clears the
+// browser's session cookie: a verified GET / succeeds before logout, the
+// logout response itself redirects to /login with StatusSeeOther, and a
+// follow-up GET / with the SAME client (jar) is gated again — the cleared
+// cookie, not merely the redirect response, is what makes the second GET
+// come back unverified.
+func TestLogoutReturnsToLoginGate(t *testing.T) {
+	srv, _, mailer := newAuthE2EServer(t)
+	client := newJarClient(t)
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	token := requestLink(t, client, srv, mailer, "logout-e2e@example.com")
+	status, body := getVerify(t, client, srv, token)
+	if status != http.StatusOK || !strings.Contains(body, "Email verified") {
+		t.Fatalf("verifying: status=%d body=%s", status, body)
+	}
+
+	beforeResp, err := client.Get(srv.URL + "/")
+	if err != nil {
+		t.Fatalf("GET / (verified): %v", err)
+	}
+	beforeResp.Body.Close()
+	if beforeResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET / (verified) status = %d, want 200", beforeResp.StatusCode)
+	}
+
+	logoutResp, err := client.Post(srv.URL+"/auth/logout", "", nil)
+	if err != nil {
+		t.Fatalf("POST /auth/logout: %v", err)
+	}
+	logoutResp.Body.Close()
+	if logoutResp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("POST /auth/logout status = %d, want %d", logoutResp.StatusCode, http.StatusSeeOther)
+	}
+	if loc := logoutResp.Header.Get("Location"); loc != "/login" {
+		t.Fatalf("POST /auth/logout Location = %q, want /login", loc)
+	}
+
+	afterResp, err := client.Get(srv.URL + "/")
+	if err != nil {
+		t.Fatalf("GET / (after logout): %v", err)
+	}
+	defer afterResp.Body.Close()
+	if afterResp.StatusCode != http.StatusFound {
+		t.Fatalf("GET / (after logout) status = %d, want %d (gated again)", afterResp.StatusCode, http.StatusFound)
+	}
+	if loc := afterResp.Header.Get("Location"); loc != "/login" {
+		t.Fatalf("GET / (after logout) Location = %q, want /login", loc)
+	}
+}
+
+// TestLogoutPreservesReportHistory is DEC-K's core claim: logging out never
+// unbinds sessions.account_id, so re-verifying the same address afterward
+// restores the full report history. Re-verification here inserts a fresh
+// magic_link_tokens row directly (the same technique TestVerifyExpiredToken
+// above uses) rather than a second real POST /api/auth/request-link for
+// the same address, which would collide with RequestLink's own per-address
+// resend cooldown (D-03/D-04) purely as an artifact of running two requests
+// for one address inside a single fast test — GET /auth/verify, the actual
+// re-verification event this test needs to prove, still runs for real
+// against the real router either way.
+func TestLogoutPreservesReportHistory(t *testing.T) {
+	srv, pool, mailer := newAuthE2EServer(t)
+	client := newJarClient(t)
+
+	token := requestLink(t, client, srv, mailer, "logout-preserve@example.com")
+	status, body := getVerify(t, client, srv, token)
+	if status != http.StatusOK || !strings.Contains(body, "Email verified") {
+		t.Fatalf("verifying: status=%d body=%s", status, body)
+	}
+	submitReport(t, client, srv, "flood", "report before logout")
+
+	logoutResp, err := client.Post(srv.URL+"/auth/logout", "", nil)
+	if err != nil {
+		t.Fatalf("POST /auth/logout: %v", err)
+	}
+	logoutResp.Body.Close()
+
+	raw, hash, err := auth.GenerateToken()
+	if err != nil {
+		t.Fatalf("auth.GenerateToken: %v", err)
+	}
+	if _, err := pool.Exec(context.Background(),
+		`INSERT INTO magic_link_tokens (token_hash, email, expires_at) VALUES ($1, $2, $3)`,
+		hash, "logout-preserve@example.com", time.Now().Add(5*time.Minute),
+	); err != nil {
+		t.Fatalf("inserting a fresh magic_link_tokens row for re-verification: %v", err)
+	}
+
+	status2, body2 := getVerify(t, client, srv, raw)
+	if status2 != http.StatusOK || !strings.Contains(body2, "Email verified") {
+		t.Fatalf("re-verifying after logout: status=%d body=%s", status2, body2)
+	}
+
+	resp, err := client.Get(srv.URL + "/profile")
+	if err != nil {
+		t.Fatalf("GET /profile: %v", err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading /profile body: %v", err)
+	}
+	if !strings.Contains(string(respBody), "report before logout") {
+		t.Fatalf("/profile after re-verification is missing the report filed before logout (DEC-K): %s", respBody)
+	}
+}

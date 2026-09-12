@@ -88,6 +88,19 @@ re-check the current figure in your own Resend dashboard rather than trusting th
 per-email resend cooldown and per-IP rate limiter shipping in plan `01.1-05` exist specifically to
 protect that quota from being exhausted by repeated requests.
 
+## Account access and logout
+
+Pinalert has **no account-recovery path in v1** (D-11), by deliberate decision, not oversight.
+Losing access to the inbox that verified an address means verifying a new address and starting
+fresh — the previous account's reports stay attached to the old, now-unreachable address, with no
+way to reclaim them. There is no password to reset and no support flow that hands an account back.
+
+Logging out is a different, much safer action: it is fully **reversible**. Clicking "Log out" from
+the account menu clears the session cookie on that device and returns to the login gate, but the
+account itself, and everything it has ever reported, is untouched — re-verifying the same email
+address (on the same device or a new one) restores the full report history on `/profile`. Losing
+the inbox is the only unrecoverable case; logging out is never one.
+
 ## API documentation
 
 With the server running (`make run`), the JSON API is documented at:
