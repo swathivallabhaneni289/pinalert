@@ -75,14 +75,14 @@ const docTemplate = `{
         },
         "/reports": {
             "get": {
-                "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance and\nreturns unexpired reports within radius_km, nearest first. This single endpoint\nserves both the map and the list views — there is no separate map-only route.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401 and no report data.",
+                "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance,\nthen resolves each report's visibility fresh via the shared resolver and returns\nonly listable ones, nearest first. This single endpoint serves both the map and the\nlist views — there is no separate map-only route. A resolved (retracted) report is\nnever returned by either view. show_disputed=true additionally includes reports\ncurrently hidden by disputes, in the list and among the map pins together. Every\nreport carries your_vote and is_own_report relative to the calling verified account.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401 and no report data.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "reports"
                 ],
-                "summary": "List unexpired reports near a point",
+                "summary": "List unexpired, currently-visible reports near a point",
                 "parameters": [
                     {
                         "type": "number",
@@ -105,6 +105,12 @@ const docTemplate = `{
                         "default": 10,
                         "description": "Search radius in kilometers (defaults to 10, bounded to 0.1-50)",
                         "name": "radius_km",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include reports hidden by disputes (defaults to false)",
+                        "name": "show_disputed",
                         "in": "query"
                     }
                 ],
@@ -552,13 +558,126 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.FeedReportResponse": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": [
+                        "flood",
+                        "earthquake",
+                        "fire",
+                        "storm_cyclone",
+                        "road_blocked",
+                        "power_outage",
+                        "shelter_open",
+                        "rescue_needed",
+                        "other"
+                    ],
+                    "example": "flood"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-09-05T14:03:00.000Z"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Water rising fast near the market bridge."
+                },
+                "distance_km": {
+                    "type": "number",
+                    "example": 1.42
+                },
+                "expires_at": {
+                    "type": "string",
+                    "example": "2026-09-06T14:03:00.000Z"
+                },
+                "geohash": {
+                    "type": "string",
+                    "example": "tdr1qgzp"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 42
+                },
+                "is_own_report": {
+                    "description": "IsOwnReport is true when the calling account submitted this report.\n02-05 omits the confirm/dispute controls when true (D-03) rather than\nrendering a button that will 403 — a convenience for the client,\nnever the control: service.VotingService.CastVote refuses the\nself-vote server-side and 02-03b returns 403 for it regardless of\nwhat the client renders. Derived from a reporter account id the\nserver looks up and never serialises: this response carries a\nboolean, never an account id or an email (T-01-02).",
+                    "type": "boolean",
+                    "example": false
+                },
+                "latitude": {
+                    "type": "number",
+                    "example": 13.0827
+                },
+                "longitude": {
+                    "type": "number",
+                    "example": 80.2707
+                },
+                "severity": {
+                    "type": "string",
+                    "enum": [
+                        "low",
+                        "medium",
+                        "critical"
+                    ],
+                    "example": "critical"
+                },
+                "shelter_capacity_status": {
+                    "description": "ShelterCapacityStatus is present only for shelter_open reports.",
+                    "type": "string",
+                    "enum": [
+                        "available",
+                        "limited",
+                        "full",
+                        "closed"
+                    ],
+                    "example": "available"
+                },
+                "shelter_headcount": {
+                    "type": "integer",
+                    "example": 42
+                },
+                "visibility": {
+                    "description": "Visibility is the resolver's own answer, serialised verbatim from\nservice.ReportView.Visibility; the client renders it and never\nrecomputes it (TRUST-02, T-02-04). \"retracted\" is in the declared\nenum — it is one of the four values of the shared type — but can\nnever actually appear here: D-12 removes retracted reports from both\nthe default and the show_disputed view.",
+                    "type": "string",
+                    "enum": [
+                        "hidden",
+                        "provisional",
+                        "live",
+                        "retracted"
+                    ],
+                    "example": "live"
+                },
+                "visibility_reason": {
+                    "description": "VisibilityReason is the resolver's own explanation for Visibility\nabove, from the SAME closed slug set votes.go's CastVoteResponse.Reason\ndeclares, so 02-06's display-copy mapping has one contract to key off\nregardless of which endpoint delivered it.",
+                    "type": "string",
+                    "enum": [
+                        "resolved",
+                        "critical_bypasses_gates",
+                        "disputed",
+                        "awaiting_second_independent_confirmation",
+                        "confirmed"
+                    ],
+                    "example": "confirmed"
+                },
+                "your_vote": {
+                    "description": "YourVote is the calling account's own current content vote on this\nreport — confirm, dispute, or null. Deliberately without omitempty,\nso the key is always present and explicitly null when the caller has\nno standing content vote. It is viewer-specific, which makes this\nresponse uncacheable across callers.",
+                    "type": "string",
+                    "enum": [
+                        "confirm",
+                        "dispute"
+                    ],
+                    "example": "confirm"
+                }
+            }
+        },
         "handlers.ReportListResponse": {
             "type": "object",
             "properties": {
                 "reports": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/handlers.ReportResponse"
+                        "$ref": "#/definitions/handlers.FeedReportResponse"
                     }
                 }
             }
