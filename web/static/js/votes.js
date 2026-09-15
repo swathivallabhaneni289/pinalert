@@ -159,9 +159,184 @@
     });
   }
 
+  // createVoteBlock builds the DOM for one report's controls: two buttons
+  // (Confirm first, Dispute second, the Copywriting Contract's reading
+  // order) inside a .vote-controls container, plus a hidden .vote-error
+  // paragraph. It applies no state of its own — updateVoteBlock is always
+  // called immediately after it. Built entirely with document.createElement,
+  // never a markup string (T-01-03).
+  function createVoteBlock(reportId) {
+    var controls = document.createElement('div');
+    controls.className = 'vote-controls';
+    controls.dataset.reportId = String(reportId);
+
+    var confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.className = 'vote-btn vote-btn--confirm';
+    confirmBtn.dataset.action = 'confirm';
+    confirmBtn.setAttribute('aria-pressed', 'false');
+    Pinalert.setText(confirmBtn, 'Confirm');
+
+    var disputeBtn = document.createElement('button');
+    disputeBtn.type = 'button';
+    disputeBtn.className = 'vote-btn vote-btn--dispute';
+    disputeBtn.dataset.action = 'dispute';
+    disputeBtn.setAttribute('aria-pressed', 'false');
+    Pinalert.setText(disputeBtn, 'Dispute');
+
+    controls.appendChild(confirmBtn);
+    controls.appendChild(disputeBtn);
+
+    var error = document.createElement('p');
+    error.className = 'vote-error';
+    error.setAttribute('role', 'alert');
+    error.hidden = true;
+
+    var block = { controls: controls, error: error };
+
+    // One listener on the container, not one per button. Delegation at
+    // this level is what lets a future third button be appended with no
+    // new wiring.
+    controls.addEventListener('click', function (evt) {
+      evt.stopPropagation();
+      var btn = evt.target.closest('.vote-btn');
+      if (!btn) {
+        return;
+      }
+      onControlsClick(block, btn);
+    });
+
+    // This listener exists solely to stop the feed row's own keydown
+    // handler from also firing on Enter/Space — the browser already
+    // synthesises a click from a keyboard activation of a <button>, so
+    // casting a vote here too would double-submit.
+    controls.addEventListener('keydown', function (evt) {
+      if (evt.target.closest('.vote-btn') &&
+          (evt.key === 'Enter' || evt.key === ' ' || evt.key === 'Spacebar')) {
+        evt.stopPropagation();
+      }
+    });
+
+    return block;
+  }
+
+  // applyOwnReportRule removes the reporter's own Confirm/Dispute buttons
+  // from the DOM rather than leaving them present but non-interactive
+  // (D-03) — a UI courtesy layered on the server's enforced refusal
+  // (02-03b), never a replacement for it. Runs on every call, including
+  // every 30-second poll, so it must be idempotent: it queries the buttons
+  // fresh each time and tolerates their already being gone.
+  function applyOwnReportRule(block, report) {
+    if (report.is_own_report) {
+      var confirmBtn = block.controls.querySelector('.vote-btn--confirm');
+      var disputeBtn = block.controls.querySelector('.vote-btn--dispute');
+      if (confirmBtn) {
+        confirmBtn.remove();
+      }
+      if (disputeBtn) {
+        disputeBtn.remove();
+      }
+    }
+
+    var hasAnyButton = block.controls.querySelector('.vote-btn') !== null;
+    block.controls.hidden = !hasAnyButton;
+  }
+
+  // updateVoteBlock writes aria-pressed on both buttons from
+  // report.your_vote — rewriting both on every call, since writing only
+  // the newly active one leaves a stale pressed state on the other after
+  // a vote change (D-02) — and applies the own-report rule above. It never
+  // reads or writes the busy state; see the next function's own doc
+  // comment for why that separation matters.
+  function updateVoteBlock(block, report) {
+    applyOwnReportRule(block, report);
+
+    var confirmBtn = block.controls.querySelector('.vote-btn--confirm');
+    var disputeBtn = block.controls.querySelector('.vote-btn--dispute');
+    if (confirmBtn) {
+      confirmBtn.setAttribute('aria-pressed', report.your_vote === 'confirm' ? 'true' : 'false');
+    }
+    if (disputeBtn) {
+      disputeBtn.setAttribute('aria-pressed', report.your_vote === 'dispute' ? 'true' : 'false');
+    }
+  }
+
+  // setBlockBusy is the sole owner of the busy state on a vote block: it
+  // toggles the interactive attribute that takes every button in the
+  // block out of the tab order and pointer-event path while a vote is in
+  // flight, plus aria-busy on the container itself. No label change: the
+  // Copywriting Contract supplies no in-flight string for Confirm/Dispute
+  // and states outright that their labels never change, so the busy
+  // treatment is carried entirely by this attribute and aria-busy.
+  function setBlockBusy(block, busy) {
+    var btns = block.controls.querySelectorAll('.vote-btn');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].disabled = busy;
+    }
+    if (busy) {
+      block.controls.setAttribute('aria-busy', 'true');
+    } else {
+      block.controls.removeAttribute('aria-busy');
+    }
+  }
+
+  // showVoteError writes message into the block's error paragraph and
+  // reveals it. Goes through Pinalert.setText even though the message may
+  // be server-authored (T-01-03: the discipline is about the sink, not
+  // the author).
+  function showVoteError(block, message) {
+    Pinalert.setText(block.error, message);
+    block.error.hidden = false;
+  }
+
+  function clearVoteError(block) {
+    block.error.hidden = true;
+    Pinalert.setText(block.error, '');
+  }
+
+  // onControlsClick is the only place D-04 is implemented: nothing about
+  // the block's rendering changes until the server has answered.
+  function onControlsClick(block, button) {
+    clearVoteError(block);
+    setBlockBusy(block, true);
+
+    var reportId = block.controls.dataset.reportId;
+    var action = button.dataset.action;
+
+    castVote(reportId, action).then(function () {
+      // Keep the block busy across the refetch: releasing it before the
+      // re-render would show buttons that still carry the pre-vote state
+      // for the duration of the round trip, exactly the optimistic-
+      // looking window D-04 forbids. The re-render is what applies the
+      // server's your_vote — this module never assigns it itself.
+      return Pinalert.fetchReports();
+    }).then(function () {
+      setBlockBusy(block, false);
+    }).catch(function (err) {
+      showVoteError(block, (err && err.fieldMessage) || GENERIC_FAILURE_MESSAGE);
+      setBlockBusy(block, false);
+    });
+
+    // One accepted limitation: map.js rebuilds its popup content on every
+    // render, so a background poll landing during an in-flight vote
+    // replaces this block and leaves this handler holding a detached
+    // node — after which the freshly built block's buttons are already
+    // interactive again. The consequence is bounded: a second tap in
+    // that window sends a duplicate vote, which the append-only vote log
+    // absorbs and the current-vote read collapses to one row (re-sending
+    // the same vote is documented as harmless in 02-UI-SPEC.md's
+    // interaction contract). Engineering around it would mean holding a
+    // vote-scoped identity across a popup rebuild, which is more
+    // machinery than the outcome justifies.
+  }
+
   window.PinalertVotes = {
     getVoterLocation: getVoterLocation,
     castVote: castVote,
+    createVoteBlock: createVoteBlock,
+    updateVoteBlock: updateVoteBlock,
+    setBlockBusy: setBlockBusy,
+    showVoteError: showVoteError,
     GPS_DENIED_MESSAGE: GPS_DENIED_MESSAGE,
     GENERIC_FAILURE_MESSAGE: GENERIC_FAILURE_MESSAGE
   };

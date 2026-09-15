@@ -1,0 +1,84 @@
+/*
+ * Pinalert — trust.css
+ *
+ * Owned by plan 02-05. Vote-control styling for the confirm/dispute
+ * mechanic (D-01: one stylesheet drives both the feed row and the map
+ * popup, since votes.js mounts identical markup on both surfaces).
+ * Consumes main.css's custom properties exclusively — no raw hex color, no
+ * hard-coded pixel spacing outside a token, no font-size literal, the same
+ * rule feed.css states for itself. Loads after main.css and feed.css in
+ * index.html.tmpl, so a later phase's visibility-tag cascade rules can be
+ * appended directly here, with no specificity trick needed to win over the
+ * existing age ramp.
+ */
+
+/*
+ * [hidden] specificity fix — see feed.css's identical block. The browser's
+ * native `[hidden] { display: none; }` rule is user-agent-origin and loses
+ * to an author-origin `display` declaration at equal specificity, which is
+ * why every `display` rule below carries `:not([hidden])`.
+ */
+.vote-controls:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.vote-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch-target-min);
+  /* Horizontal padding is tightened from .btn's --space-lg to --space-sm:
+     three buttons at the default padding overflow a narrow feed row, while
+     min-height keeps the 44x44 touch target intact (WCAG 2.5.5 — a
+     continuation of the existing rule, not an exception to it). Vertical
+     padding is 0 on purpose: min-height plus the flex centring already own
+     the button's height. */
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+/* Reuses the existing green hue's established low-severity valence ("this
+   checks out") rather than introducing a fifth color. */
+.vote-btn--confirm[aria-pressed="true"] {
+  border-color: var(--color-severity-low);
+  color: var(--color-severity-low);
+  background: var(--color-severity-low-bg);
+}
+
+/* Mirrors the confirm rule above with the established critical hue. */
+.vote-btn--dispute[aria-pressed="true"] {
+  border-color: var(--color-severity-critical);
+  color: var(--color-severity-critical);
+  background: var(--color-severity-critical-bg);
+}
+
+/* Serves every non-actionable state this block can be in: in flight,
+   awaiting a location prompt, or any future non-actionable button. */
+.vote-btn:disabled {
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  cursor: not-allowed;
+}
+
+/* Unlike #form-error, this does not reserve a line of height: a feed row
+   is dense, and a permanently reserved empty line under every row costs
+   more than the layout shift it would prevent. */
+.vote-error:not([hidden]) {
+  display: block;
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-severity-critical);
+}
