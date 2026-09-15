@@ -1568,3 +1568,192 @@ func TestActivityModuleHasNoMarkupParsingSink(t *testing.T) {
 		}
 	}
 }
+
+// --- Plan 02-07 Task 3: Reopen ---
+
+// TestReopenButtonPostsThroughTheSharedTransport proves the reopen click
+// path in activity.js calls the votes module's transport with the reopen
+// action and, on success, uses the votes module's exported reopen-
+// succeeded copy constant — no request of its own, no location read, no
+// copy string declared here.
+func TestReopenButtonPostsThroughTheSharedTransport(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/activity.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	if !strings.Contains(text, "PinalertVotes.castVote(") {
+		t.Errorf("activity.js does not call PinalertVotes.castVote( — the reopen button must post " +
+			"through the shared transport, never construct a request of its own")
+	}
+	if strings.Contains(text, "fetch(") {
+		t.Errorf("activity.js contains fetch( — every network call must go through PinalertVotes.castVote")
+	}
+	if strings.Contains(text, "navigator.geolocation") {
+		t.Errorf("activity.js references navigator.geolocation directly — location capture belongs " +
+			"to castVote alone")
+	}
+	if !strings.Contains(text, "PinalertVotes.REOPEN_SUCCEEDED_TOAST") {
+		t.Errorf("activity.js does not reference PinalertVotes.REOPEN_SUCCEEDED_TOAST — it must reuse " +
+			"the votes module's exported copy constant rather than declaring its own")
+	}
+	if strings.Contains(text, "'Report reopened.'") || strings.Contains(text, "\"Report reopened.\"") {
+		t.Errorf("activity.js declares its own copy of the reopen-succeeded string — it must " +
+			"reference PinalertVotes.REOPEN_SUCCEEDED_TOAST instead")
+	}
+}
+
+// TestReopenSuccessCopyIsAlwaysTheReopenedString is the amendment's
+// client-side gate (D-16 amended 2026-09-15): the reopen success path
+// reaches the toast with the reopen-succeeded constant on every branch —
+// no conditional selecting between two toast strings, and the
+// reopen-pending constant is never referenced by this module. This button
+// renders only on rows the viewer submitted, and 02-03a's amended
+// CastVote makes a reporter's reopen instant, so the pending outcome is
+// unreachable here.
+func TestReopenSuccessCopyIsAlwaysTheReopenedString(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/activity.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	if strings.Contains(text, "REOPEN_PENDING_TOAST") {
+		t.Errorf("activity.js references REOPEN_PENDING_TOAST — this button's outcome is always " +
+			"the reopen-succeeded string (D-16 amended); a later edit must not reintroduce the " +
+			"two-outcome branch")
+	}
+	if strings.Contains(text, "resolutionOutcomeMessage") {
+		t.Errorf("activity.js calls resolutionOutcomeMessage — on the Activity page a reopen has " +
+			"exactly one outcome, so this function (which DECIDES between two) must not be called here")
+	}
+
+	showToastCount := strings.Count(text, "Pinalert.showToast(")
+	if showToastCount != 1 {
+		t.Errorf("expected exactly one Pinalert.showToast( call in activity.js, found %d — the "+
+			"reopen outcome has exactly one possible toast", showToastCount)
+	}
+}
+
+// TestReopenHasNoClientSideIdentityOrThreshold is this plan's T-02-03
+// gate: activity.js contains no ownership or account-comparison read, no
+// threshold arithmetic, no second button and no confirmation block. The
+// row's own data attributes are the only inputs to whether the button
+// renders — the reporter's instant reopen is granted server-side, never
+// claimed client-side.
+func TestReopenHasNoClientSideIdentityOrThreshold(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/activity.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	for _, forbidden := range []string{
+		"is_own_report", "reporterAccountID", "ReporterReopened", "accountID",
+		"Threshold", "threshold", "resolve-confirm", "vote-btn--confirm-resolve",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Errorf("activity.js references %q — the reporter's instant reopen is the server's to "+
+				"grant; this module must never read identity, compute a threshold, or build a "+
+				"confirmation step (T-02-03)", forbidden)
+		}
+	}
+
+	if n := strings.Count(text, "addEventListener"); n != 1 {
+		t.Errorf("expected exactly one addEventListener call in activity.js (one delegated listener "+
+			"on the report list), found %d", n)
+	}
+}
+
+// TestReopenAppliesTheServerAnswerRatherThanGuessing proves the success
+// path applies the visibility the RESPONSE carried — updating the chip and
+// the state class — and removes the control block only when that
+// visibility is no longer the retracted slug. Fails if the button removes
+// itself optimistically before the response arrives.
+func TestReopenAppliesTheServerAnswerRatherThanGuessing(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/activity.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	if !strings.Contains(text, "PinalertVisibility.updateVisibilityTag(") {
+		t.Errorf("activity.js's reopen success path does not call " +
+			"PinalertVisibility.updateVisibilityTag( to rebuild the chip from the response")
+	}
+	if !strings.Contains(text, "PinalertVisibility.applyVisibilityClass(") {
+		t.Errorf("activity.js's reopen success path does not call " +
+			"PinalertVisibility.applyVisibilityClass( to rebuild the state class from the response")
+	}
+	if !strings.Contains(text, "PinalertVotes.RETRACTED_VISIBILITY_SLUG") {
+		t.Errorf("activity.js does not reference PinalertVotes.RETRACTED_VISIBILITY_SLUG to decide " +
+			"whether the control block should be removed")
+	}
+}
+
+// TestRetractedRowTreatmentMatchesHidden proves the retracted state rule
+// in trust.css declares the same properties with the same values as
+// 02-06's hidden state rule, and that the badge rule exists in both the
+// compound and the descendant selector form — the same invariant
+// 02-06's TestVisibilityCascadeOverridesAgeRamp established for
+// .vis-hidden, extended to .vis-retracted.
+func TestRetractedRowTreatmentMatchesHidden(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/css/trust.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/trust.css: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+	rules := parseCSSRules(text)
+
+	hiddenRule, ok := ruleBySelector(rules, ".vis-hidden")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vis-hidden")
+	}
+	retractedRule, ok := ruleBySelector(rules, ".vis-retracted")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vis-retracted")
+	}
+
+	hiddenDecls := declsOf(hiddenRule.declBody)
+	retractedDecls := declsOf(retractedRule.declBody)
+	if len(hiddenDecls) == 0 {
+		t.Fatalf(".vis-hidden declares no properties — nothing to compare against")
+	}
+	for name, want := range hiddenDecls {
+		got, ok := retractedDecls[name]
+		if !ok {
+			t.Errorf(".vis-retracted is missing declaration %q (.vis-hidden has %q)", name, want)
+			continue
+		}
+		if got != want {
+			t.Errorf(".vis-retracted's %s = %q, want %q (must match .vis-hidden exactly)", name, got, want)
+		}
+	}
+	for name := range retractedDecls {
+		if _, ok := hiddenDecls[name]; !ok {
+			t.Errorf(".vis-retracted declares %q, which .vis-hidden does not — the two rules must "+
+				"be identical", name)
+		}
+	}
+
+	var retractedBadgeRules []cssRule
+	for _, r := range rules {
+		if strings.Contains(r.selectorHead, "vis-retracted") && strings.Contains(r.declBody, "background") {
+			retractedBadgeRules = append(retractedBadgeRules, r)
+		}
+	}
+	if len(retractedBadgeRules) != 1 {
+		t.Fatalf("expected exactly one rule in trust.css mentioning the retracted state class and "+
+			"declaring background, found %d", len(retractedBadgeRules))
+	}
+	badgeSelector := retractedBadgeRules[0].selectorHead
+	if !strings.Contains(badgeSelector, ".icon-badge.vis-retracted") {
+		t.Errorf("the retracted badge rule's selector head must contain the compound form, found: %q",
+			badgeSelector)
+	}
+	if !strings.Contains(badgeSelector, ".vis-retracted .icon-badge") {
+		t.Errorf("the retracted badge rule's selector head must contain the descendant form, found: %q",
+			badgeSelector)
+	}
+}
