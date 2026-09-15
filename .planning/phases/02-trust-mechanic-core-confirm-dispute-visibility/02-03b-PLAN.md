@@ -24,7 +24,7 @@ must_haves:
     - "An unverified caller receives 401 with the gate's standard ErrorResponse envelope and no vote is recorded — the four routes inherit requireVerifiedAccount by construction rather than re-checking auth themselves."
     - "The reporter POSTing /confirm on their own report receives 403 with 'You can't vote on your own report.' (D-03, T-02-05), while the same reporter POSTing /resolve receives 200 and a retracted visibility (D-13, TRUST-08)."
     - "Two confirms from two verified accounts at coordinates inside ONE geohash cell leave the report provisional; moving the second voter to a distinct cell returns live — TRUST-03's independence predicate proven through the full HTTP stack, not only at the service layer."
-    - "One independent reopen vote on a retracted report leaves it retracted; a second from a distinct cell returns it to the live pipeline — D-16's no-reporter-carve-out reopen and D-14's one shared threshold proven at the HTTP boundary, on the one route no other test reaches (TRUST-08)."
+    - "One independent (non-reporter) reopen vote on a retracted report leaves it retracted; a second from a distinct cell returns it to the live pipeline — D-14's one shared threshold, applying to a non-reporter's reopen under amended D-16 (the reporter's own reopen is instant and threshold-free, D-16 amended 2026-09-15), proven at the HTTP boundary, on the one route no other test reaches (TRUST-08)."
     - "The request body accepts latitude and longitude only: a body carrying a geohash field is rejected 400 by DisallowUnknownFields, so a client-computed cell can never reach the store (D-17, T-02-01)."
     - "docs/swagger.json documents all four vote paths with their 200/400/401/403/404/409 responses, so Phase 1's OPS-01 API reference stays a truthful description of the API."
   artifacts:
@@ -482,9 +482,11 @@ Change nothing else in either file.
     - Assert up front, as the two independence tests above do, that B's and C's chosen coordinates
       encode to different precision-7 cells, so the second 200 cannot pass for the wrong reason.
     - The doc comment must state why this test is load-bearing: `/reopen` is otherwise mounted but
-      never driven, D-16's no-reporter-carve-out resolution and D-14's one-shared-threshold rule are
-      proven at the `Resolve` and tally levels but nowhere at the HTTP boundary, and a route that no
-      test ever POSTs to is a route nobody has confirmed is reachable.
+      never driven, a non-reporter's reopen still requires D-14's one shared threshold under amended
+      D-16 (the reporter's own reopen is separately instant and threshold-free — proven elsewhere, by
+      `02-03a`'s `TestBuildVoteTallyOnlyReporterSetsReporterReopened` and `02-07`'s
+      `TestProfileReopenIsInstantForTheReporter` — not by this test, which uses two non-reporter
+      accounts), and a route that no test ever POSTs to is a route nobody has confirmed is reachable.
 
     `TestCastVoteOnExpiredReportIsRejected`:
     - Seed an already-expired report with `testutil.SeedExpiringReport(t, pool, -3600)`, then have
@@ -792,10 +794,11 @@ absent from `files_modified`.
 - Two verified accounts confirming from two distinct precision-7 cells flip a low-severity report
   from `provisional` to `live`; the same two accounts confirming from one cell leave it
   `provisional` (TRUST-03, TRUST-04).
-- A retracted report stays retracted after one independent `/reopen` and leaves the retracted state
-  after a second from a distinct cell — the shared independent-agreement threshold applies to
-  reopening with no reporter shortcut (D-14, D-16, TRUST-08), and every one of the four mounted
-  routes is reached by at least one test.
+- A retracted report stays retracted after one independent (non-reporter) `/reopen` and leaves the
+  retracted state after a second from a distinct cell — D-14's shared independent-agreement
+  threshold applies to a non-reporter's reopen (the reporter's own reopen is instant and
+  threshold-free under D-16 amended 2026-09-15, TRUST-08), and every one of the four mounted routes
+  is reached by at least one test.
 - A vote on an expired report is 409 with "This report has expired."; on a missing report, 404; with
   an unknown body field, 400 — and none of the three writes a row.
 - `cmd/server/main.go` constructs `service.NewVotingService(queries)` from the same handle every

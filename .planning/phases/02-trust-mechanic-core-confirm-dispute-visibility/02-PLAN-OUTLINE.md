@@ -95,17 +95,24 @@ codebase; 7 waves (after the 02-03 split) is the honest depth, not under-paralle
 ## Open questions — resolved during planning
 
 1. **Reporter-instant reopen (RESEARCH A1 / Open Question 1, `02-UI-SPEC.md` line 237) —
-   RESOLVED: no reporter-instant reopen.** D-13 grants the reporter an instant, threshold-free
-   *resolve*; D-16 gives reopening no equivalent carve-out. Every plan (01, 03a, 07) implements and
-   asserts the literal reading — reopen always requires the independent-agreement threshold, for
-   every account including the reporter, **except** that a reporter withdrawing their own instant
-   resolve (changing their vote per D-02) removes the sole cause of the retraction rather than
-   overriding independent agreement — that is a vote change, not a reopen, and is a separate,
-   deliberate code path (`02-01` Task 1: `ReporterResolved` flipping false). Confirmed consistent
-   across `Resolve()` (02-01), `CastVote` (02-03a), and the Activity-page UI (02-07) by
-   gsd-plan-checker's 2026-09-15 verification pass.
-   **Still needs an explicit user confirmation** (RESEARCH.md's own recommendation was not to
-   silently default this) — see STATE.md Blockers/Concerns.
+   RESOLVED 2026-09-15: reporter-instant reopen, symmetric with D-13.** The literal reading below
+   was the plan set's ORIGINAL assumption, later reversed by an explicit user confirmation — see
+   `02-CONTEXT.md` D-16's "Amendment history" for the full record. Final answer: **the reporter
+   gets an instant, threshold-free reopen**, mirroring D-13's instant resolve, regardless of how
+   the report became Retracted. A non-reporter's reopen still requires D-14's independent-agreement
+   threshold. `02-01` (`VoteTally.ReporterReopened`, symmetric `isRetracted()`), `02-03a`
+   (`BuildVoteTally` populates the flag from a server-side identity check only), `02-03b` (the
+   non-reporter HTTP-level proof, `TestReopenRequiresIndependentAgreement`), and `02-07` (the
+   Activity page's Reopen button, always instant since that page only shows the viewer's own
+   reports) were all built or amended against this final answer and cross-verified consistent by
+   two `gsd-plan-checker` passes (2026-09-15).
+
+   *(Historical note, kept for context: the discuss-phase session's literal D-16 text read "reopen
+   always requires the independent-agreement threshold, for every account including the reporter"
+   — no carve-out at all, not even for a reporter withdrawing their own resolve. That withdrawal
+   case remains a separate, correctly-distinct code path from reopen either way: `02-01` Task 1's
+   `ReporterResolved` flipping false removes the sole cause of a retraction rather than overriding
+   independent agreement — a vote change per D-02, not a reopen.)*
 2. **ROADMAP Goal line is not in user-story form — RESOLVED, left as-is deliberately.** Rather than
    editing ROADMAP.md's Goal line (a capability statement) into `As a … I want to … so that …`
    form, every one of the 8 PLAN.md files was handed the same locked user story verbatim by the
