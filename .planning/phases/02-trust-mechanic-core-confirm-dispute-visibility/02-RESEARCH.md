@@ -286,17 +286,24 @@ func (m ReportMeta) criticalBypass() bool {
 // VoteTally is every already-aggregated count Resolve needs. Building this
 // from raw vote rows is trust.go's job (BuildVoteTally), not this file's —
 // Resolve itself never sees a []Vote or touches the database.
+//
+// ReporterResolved and ReporterReopened are symmetric (amended 2026-09-15,
+// see 02-CONTEXT.md D-16 amendment history): the reporter gets an instant,
+// threshold-free path on BOTH sides of the resolve/reopen pair, mirroring
+// D-13's instant resolve. A non-reporter's resolve or reopen still needs
+// IndependentAgreementThreshold distinct cells either way.
 type VoteTally struct {
 	ConfirmCells     int  // independent (distinct geohash cell) confirm count
 	DisputeCells     int  // independent dispute count
 	ResolveCells     int  // independent resolve count, EXCLUDING the reporter's own vote
 	ReopenCells      int  // independent reopen count, EXCLUDING the reporter's own vote
 	ReporterResolved bool // reporter's own current resolution vote is "resolve" (D-13 instant path)
+	ReporterReopened bool // reporter's own current resolution vote is "reopen" (amended D-16 instant path)
 }
 
 func (t VoteTally) isRetracted() bool {
 	resolved := t.ReporterResolved || t.ResolveCells >= IndependentAgreementThreshold
-	reopened := t.ReopenCells >= IndependentAgreementThreshold
+	reopened := t.ReporterReopened || t.ReopenCells >= IndependentAgreementThreshold
 	return resolved && !reopened
 }
 
@@ -675,25 +682,27 @@ r.Route("/api/reports/{id}", func(r chi.Router) {
 
 | # | Claim | Section | Risk if Wrong |
 |---|-------|---------|---------------|
-| A1 | Reopening (D-16) has **no** reporter-instant path symmetric to D-13's reporter-instant resolve — every reopen, including the original reporter's own, requires the shared independent-agreement threshold. This is the literal reading of D-16's text ("Reopening requires the same independent-agreement threshold as D-14"), but CONTEXT.md doesn't explicitly rule out a symmetric reporter shortcut. | `Resolve()`/`VoteTally.isRetracted()`, Pattern 2 | If wrong, a reporter who mistakenly marked their own still-active report resolved has no fast way to self-correct — they'd need 2 independent confirmers to reopen it, same as anyone else. Low severity (a UX friction point, not a trust-model break) but worth confirming with the user before planning locks it in. |
+| A1 | **SUPERSEDED 2026-09-15 — user confirmed the opposite.** Originally: reopening (D-16) has no reporter-instant path symmetric to D-13's reporter-instant resolve. `gsd-plan-checker`'s verification pass caught that this had never actually been confirmed with the user (only inferred from D-16's literal text) and surfaced it directly. **The user's answer: the reporter DOES get an instant, threshold-free reopen, symmetric with D-13's instant resolve** — regardless of how the report became Retracted. `02-01`, `02-03a`, and `02-07` were re-planned 2026-09-15 to add a `ReporterReopened` signal to `VoteTally`, mirroring `ReporterResolved`. | `Resolve()`/`VoteTally.isRetracted()`, Pattern 2 | Resolved — no longer a risk. See amended `02-CONTEXT.md` D-16. |
 | A2 | `IndependentAgreementThreshold = 2` is the correct concrete number for D-05/D-06/D-14/D-16's shared floor, derived from TRUST-04's own explicit "second independent confirmation" wording plus Pitfall 4's "cost more than the value of gaming it" framing for a low-traffic portfolio demo. | Concrete Threshold Recommendation (below), `Resolve()` | If the real deployment sees meaningfully more traffic than a portfolio-demo volume, 2 may be too low a bar against coordinated multi-account gaming — this is flagged in `PITFALLS.md` Pitfall 4 as an accepted, documented limitation, not a claim of being unbeatable. |
 | A3 | `voterGeohashPrecision = 7` (~153m × 153m cells) is a reasonable interim choice against Pitfall 10's ~100-300m incident-radius guidance, pending Phase 3's benchmarked precision decision. | Pattern 3, Pitfall 3 | If too coarse, genuinely independent nearby witnesses could be suppressed into one cell (Pitfall 10's exact failure mode); if too fine, a single determined attacker moving a short distance could too easily generate "distinct" cells. Phase 3 is explicitly scoped to revisit this with real benchmarking. |
 | A4 | Votes cast on an already-expired report should be rejected at the service layer (not explicitly stated in any TRUST requirement or CONTEXT.md decision, but implied by the trust mechanic existing only for live/provisional reports). | `VotingService.CastVote` (not yet coded in the example above — flagged for the planner to make an explicit task) | If unhandled, a vote on an expired report is harmless (it's never included in any resolver-driven feed since expiry is a separate filter) but wastes a write and could confuse a debugging session later. Low risk either way — the planner should make an explicit, small decision here rather than leaving it implicit. |
 
 ## Open Questions
 
-1. **Does reopening (D-16) grant the original reporter an instant path, symmetric to D-13's
-   instant resolve?**
-   - What we know: D-13 explicitly grants the reporter an instant, threshold-free resolve action.
-     D-16 says reopening "requires the same independent-agreement threshold as D-14" with no
-     explicit reporter carve-out.
-   - What's unclear: whether this asymmetry (instant resolve, but never instant reopen — even for
-     the reporter correcting their own mistake) was a deliberate discussion outcome or an
-     unstated gap.
-   - Recommendation: implement per the literal text (no reporter-instant-reopen) as the default,
-     but flag this explicitly for a one-line confirmation during planning or with the user before
-     the plan-checker signs off — it's a two-line code change either way, not worth blocking on,
-     but worth a deliberate yes/no rather than a silent default.
+1. **RESOLVED 2026-09-15 — Does reopening (D-16) grant the original reporter an instant path,
+   symmetric to D-13's instant resolve? Yes.**
+   - What we knew: D-13 explicitly grants the reporter an instant, threshold-free resolve action.
+     D-16 said reopening "requires the same independent-agreement threshold as D-14" with no
+     explicit reporter carve-out — an asymmetry that was never actually confirmed with the user.
+   - What happened: `gsd-plan-checker`'s verification pass (after all 8 plans were built against
+     the literal no-carve-out reading) caught the missing confirmation and surfaced the question
+     directly to the user rather than letting the silent default stand.
+   - Answer: the reporter gets an instant, threshold-free reopen — fully symmetric with D-13.
+     `02-01`'s `VoteTally` gains a `ReporterReopened` field mirroring `ReporterResolved`; `isRetracted()`
+     becomes `(ReporterResolved || ResolveCells >= threshold) && !(ReporterReopened || ReopenCells >= threshold)`.
+     `02-03a`'s `BuildVoteTally` populates it from the reporter's current resolution vote. `02-07`'s
+     UI gets the same instant-vs-threshold-gated outcome-copy split for Reopen that it already had
+     for Resolve. See amended `02-CONTEXT.md` D-16 for the full amendment record.
 
 2. **Should a vote endpoint reject votes on an already-expired report, or is a vote on an expired
    report simply harmless/inert?**
