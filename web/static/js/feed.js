@@ -13,12 +13,14 @@
 // server-rendered shell (index.html.tmpl); this file is the whole defence
 // for anything built here afterward.
 //
-// SCOPE (T-01-23): this list now renders the confirm/dispute controls and
-// the viewer's own standing vote, but still shows no confirmation COUNT
-// and no trust-state wording. The weighted "confirmed by N nearby" number
-// belongs to a later phase and does not exist yet — inventing a
-// placeholder would put an unbacked claim in front of a reader, which is
-// the exact failure mode this product exists to counter.
+// SCOPE (T-01-23, TRUST-02): this list now renders the confirm/dispute
+// controls, the viewer's own standing vote, and the resolver's own
+// visibility state — in words (the visibility tag) and in the row
+// treatment (the state class) — but still shows no confirmation COUNT and
+// no trust-state number. The weighted "confirmed by N nearby" number
+// remains Phase 3 / TRUST-05, and inventing a placeholder for it would put
+// an unbacked claim in front of a reader, which is the exact failure mode
+// this product exists to counter.
 (function () {
   'use strict';
 
@@ -39,10 +41,12 @@
   var reportListEl = document.getElementById('report-list');
   var skeletonEl = document.getElementById('feed-skeleton');
   var emptyEl = document.getElementById('feed-empty');
+  var disputedEmptyEl = document.getElementById('disputed-empty');
   var errorEl = document.getElementById('feed-error');
   var retryBtn = document.getElementById('feed-retry');
   var viewToggleBtn = document.getElementById('view-toggle');
   var appShellEl = document.getElementById('app-shell');
+  var showDisputedToggleEl = document.getElementById('show-disputed-toggle');
 
   // rowsById reconciles rendered <li> nodes by report id across polls,
   // rather than clearing and rebuilding the list every 30 seconds, so
@@ -77,6 +81,19 @@
     } else {
       el.removeAttribute('hidden');
     }
+  }
+
+  // setEmptyState is the sole owner of both empty-state elements. render is
+  // documented as the one place that decides which of the list, skeleton,
+  // empty state and error state is showing, and a fifth element would
+  // otherwise turn four explicit branches into eight — every setHidden call
+  // targeting either empty-state element lives in this function and
+  // nowhere else. kind is one of 'none' (neither shown), 'general' (the
+  // Phase 1 empty state) or 'disputed' (the shared query parameter's own
+  // empty state).
+  function setEmptyState(kind) {
+    setHidden(emptyEl, kind !== 'general');
+    setHidden(disputedEmptyEl, kind !== 'disputed');
   }
 
   function replacePrefixedClass(el, prefix, newClass) {
@@ -146,9 +163,13 @@
     body.appendChild(title);
     body.appendChild(meta);
 
-    // The vote controls are appended right after the meta line so a
-    // later visibility indicator can be inserted between the two with no
-    // restructuring of this body.
+    // This is the insertion point 02-05's artifact table reserved for the
+    // visibility tag: between the meta line and the vote controls. The tag
+    // ships hidden from its own builder, so a Live report's row is
+    // byte-identical to what Phase 1 rendered.
+    var tag = PinalertVisibility.createVisibilityTag();
+    body.appendChild(tag);
+
     var block = PinalertVotes.createVoteBlock(id);
     body.appendChild(block.controls);
     body.appendChild(block.error);
@@ -166,7 +187,7 @@
       }
     });
 
-    return { el: li, glyph: glyph, title: title, meta: meta, votes: block };
+    return { el: li, glyph: glyph, title: title, meta: meta, votes: block, tag: tag };
   }
 
   // updateRow applies severity/age classes and text content only — it never
@@ -175,6 +196,16 @@
   function updateRow(row, report) {
     replacePrefixedClass(row.el, 'sev-', Pinalert.severityClass(report));
     replacePrefixedClass(row.el, 'age-', 'age-' + Pinalert.ageStage(report));
+
+    // The visibility state class goes on the row element (inherits down to
+    // its badge), not the badge itself — main.css's own .icon-badge
+    // comment is the authority for this split. refreshAgeAndTime below is
+    // deliberately left untouched: it re-applies only the age class, which
+    // strips nothing this class added, and the cascade order that makes
+    // the Provisional treatment win is a property of stylesheet load
+    // order rather than of class-list order — so a 60-second age refresh
+    // cannot un-dim a provisional row.
+    PinalertVisibility.applyVisibilityClass(row.el, report);
 
     // Pinalert.iconClass returns the base "icon-glyph" class AND the
     // category-specific class as one space-joined string; only the
@@ -186,6 +217,8 @@
 
     Pinalert.setText(row.title, report.description);
     Pinalert.setText(row.meta, buildMetaText(report));
+
+    PinalertVisibility.updateVisibilityTag(row.tag, report);
 
     var selectedId = Pinalert.state.selectedId;
     var isSelected = selectedId !== null && selectedId !== undefined &&
@@ -247,7 +280,7 @@
     if (state.status === 'idle' || state.status === 'loading') {
       setHidden(skeletonEl, false);
       setHidden(reportListEl, true);
-      setHidden(emptyEl, true);
+      setEmptyState('none');
       setHidden(errorEl, true);
       return;
     }
@@ -260,20 +293,28 @@
       // useful than a blank panel to someone who just lost signal.
       setHidden(errorEl, false);
       setHidden(reportListEl, true);
-      setHidden(emptyEl, true);
+      setEmptyState('none');
       return;
     }
 
     setHidden(errorEl, true);
 
     if (state.reports.length === 0) {
-      setHidden(emptyEl, false);
+      // The disputed empty state replaces the general one rather than
+      // stacking above a populated list, because in this codebase this
+      // component means "shown instead of the list" — and the checked box
+      // sitting directly above it is the context that makes the narrower
+      // message the right one. Read from the store's flag rather than the
+      // checkbox: the store's value describes the data actually in
+      // state.reports, while the checkbox describes an intent whose fetch
+      // may still be in flight.
+      setEmptyState(Pinalert.state.showDisputed ? 'disputed' : 'general');
       setHidden(reportListEl, true);
       clearRows();
       return;
     }
 
-    setHidden(emptyEl, true);
+    setEmptyState('none');
     setHidden(reportListEl, false);
     renderRows(state.reports);
   }
@@ -332,9 +373,10 @@
 
   // createToggleIcon builds a minimal inline glyph for the view-toggle
   // button. UI-SPEC's Icon Mapping only covers the 9 category icons; no
-  // dedicated map/list asset exists, and adding new /static/icons/*.svg
-  // files is outside this plan's two-file ownership. Built via the SVG DOM
-  // API (never a markup string), aria-hidden since the button's text label
+  // dedicated map/list asset exists, and adding new SVG files under
+  // /static/icons (e.g. new-icon.svg) is outside this plan's two-file
+  // ownership. Built via the SVG DOM API (never a markup string),
+  // aria-hidden since the button's text label
   // already carries the meaning.
   function createToggleIcon(kind) {
     var svg = document.createElementNS(SVG_NS, 'svg');
@@ -450,6 +492,24 @@
     retryBtn.addEventListener('click', function () {
       Pinalert.fetchReports();
     });
+  }
+
+  if (showDisputedToggleEl) {
+    showDisputedToggleEl.addEventListener('change', function () {
+      // Refetching rather than filtering state.reports in place is
+      // deliberate: the server decides which reports exist under the
+      // shared query parameter (02-04), and a client-side filter would be
+      // a second visibility decision — the resolver bypass T-02-04 names.
+      Pinalert.setShowDisputed(showDisputedToggleEl.checked);
+      Pinalert.fetchReports();
+    });
+
+    // Synchronise the store's flag from the checkbox's current value once,
+    // without fetching. Costs one line and makes the template's own
+    // autocomplete attribute belt-and-braces rather than load-bearing: a
+    // browser that restores checkbox state across a reload or bfcache
+    // restore cannot leave a checked box over unfiltered data.
+    Pinalert.setShowDisputed(showDisputedToggleEl.checked);
   }
 
   Pinalert.onSelect(function (id, source) {

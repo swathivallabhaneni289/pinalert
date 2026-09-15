@@ -132,10 +132,14 @@ func TestVendorMapScriptsLoadInDependencyOrder(t *testing.T) {
 	// the bridge too, and it is listed here in its actual template position
 	// (immediately after app.js) rather than first, since this loop only
 	// checks each module's position against the bridge, never the modules'
-	// relative order among themselves.
+	// relative order among themselves. /static/js/visibility.js (plan
+	// 02-06) is a second Phase 2 module joining the same vendor-layer-first
+	// rule, listed in its actual template position immediately after
+	// votes.js.
 	appModules := []string{
 		"/static/js/app.js",
 		"/static/js/votes.js",
+		"/static/js/visibility.js",
 		"/static/js/map.js",
 		"/static/js/modal.js",
 		"/static/js/feed.js",

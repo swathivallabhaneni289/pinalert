@@ -11,7 +11,10 @@
 // which appendChild()s an Element instead of using innerHTML when given one.
 // The popup now carries interactive controls too, still assembled as DOM
 // elements and handed to that same Leaflet API, so adding buttons changes
-// nothing about that guarantee.
+// nothing about that guarantee. The popup and the pin badge now also carry
+// a server-supplied state value, validated against a fixed list before it
+// is reflected into a class name or an attribute — the same discipline the
+// category value has always been under here.
 window.PinalertMap = (function () {
   'use strict';
 
@@ -146,6 +149,13 @@ window.PinalertMap = (function () {
     var badge = document.createElement('span');
     badge.className = 'icon-badge icon-badge--pin ' + sevClass + ' ' + ageClass;
 
+    // On this surface the state class goes on the badge element itself,
+    // because there is no row ancestor — the same split main.css's own
+    // comment documents for the age ramp, and precisely why the
+    // stylesheet's hidden-badge rule carries both the compound and the
+    // descendant selector form.
+    PinalertVisibility.applyVisibilityClass(badge, report);
+
     var glyph = document.createElement('span');
     glyph.className = Pinalert.iconClass(report.category);
     glyph.setAttribute('aria-hidden', 'true');
@@ -173,6 +183,13 @@ window.PinalertMap = (function () {
 
     wrap.appendChild(meta);
     wrap.appendChild(description);
+
+    // Unlike the feed row, this surface builds and updates the tag in one
+    // call: upsertMarker rebuilds the popup's content on every render
+    // rather than updating it in place.
+    var tag = PinalertVisibility.createVisibilityTag();
+    PinalertVisibility.updateVisibilityTag(tag, report);
+    wrap.appendChild(tag);
 
     // The same vote controls block the feed row mounts, from the same
     // builder — what makes the shared confirm/dispute mechanic
