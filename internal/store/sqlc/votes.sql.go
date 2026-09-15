@@ -89,3 +89,58 @@ func (q *Queries) InsertVote(ctx context.Context, arg InsertVoteParams) error {
 	)
 	return err
 }
+
+const reportVoteContext = `-- name: ReportVoteContext :one
+SELECT r.severity, r.category, r.expires_at, s.account_id AS reporter_account_id
+FROM reports r
+LEFT JOIN sessions s ON r.session_id = s.session_id
+WHERE r.id = $1
+`
+
+type ReportVoteContextRow struct {
+	Severity          string
+	Category          string
+	ExpiresAt         time.Time
+	ReporterAccountID *int64
+}
+
+// The single read VotingService.CastVote makes before deciding anything
+// (02-03a). Four points a later reader would otherwise "correct":
+//
+// (a) Why one query instead of two. CastVote needs the reporter identity,
+// the severity/category pair Resolve needs as ReportMeta, and expires_at on
+// every single call. Reading all four in one statement removes a window in
+// which a report could expire or be deleted between a separate reporter
+// lookup and a separate meta read. This query supersedes the narrower
+// ReporterAccountID query 02-02/02-PATTERNS.md/02-RESEARCH.md anticipated;
+// that query is deliberately never created.
+//
+// (b) Why the join stops at sessions. sessions.account_id IS accounts.id —
+// a foreign key onto that column. A third join through accounts could only
+// re-confirm what the foreign key already guarantees, at the cost of an
+// extra join, so it is omitted on purpose.
+//
+// (c) Why LEFT JOIN and not INNER JOIN. reports.session_id carries no
+// foreign key, and sessions.account_id is nullable — both deliberate, both
+// documented in migration 00002. A report submitted before Phase 1.1 made
+// login mandatory therefore has no account-bound session. An INNER JOIN
+// would return zero rows for such a report, indistinguishable from "no
+// such report," and the report would become unvotable. The LEFT JOIN
+// returns a NULL reporter_account_id instead: nobody matches it, the D-03
+// self-vote block correctly does not fire, and the report stays votable.
+// Zero rows then means exactly one thing — the report id does not exist.
+//
+// (d) What this query is for. The reporter identity for D-03's self-vote
+// block, the severity/category pair for ReportMeta, and expires_at for the
+// expired-report rejection.
+func (q *Queries) ReportVoteContext(ctx context.Context, reportID int64) (ReportVoteContextRow, error) {
+	row := q.db.QueryRow(ctx, reportVoteContext, reportID)
+	var i ReportVoteContextRow
+	err := row.Scan(
+		&i.Severity,
+		&i.Category,
+		&i.ExpiresAt,
+		&i.ReporterAccountID,
+	)
+	return i, err
+}
