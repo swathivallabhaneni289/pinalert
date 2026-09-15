@@ -57,7 +57,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Trust Engine
 
 - [ ] **TRUST-01**: User can confirm or dispute another user's report
-- [ ] **TRUST-02**: A report's visibility state (Hidden/Provisional/Live/Retracted) is computed by
+- [x] **TRUST-02**: A report's visibility state (Hidden/Provisional/Live/Retracted) is computed by
       one shared resolver function and is identical everywhere it's shown — feed, map, triage
       view, and shareable cards
 
@@ -65,14 +65,14 @@ Requirements for initial release. Each maps to roadmap phases.
       distinct anonymous session AND a distinct geohash cell from every other counted vote on
       that report
 
-- [ ] **TRUST-04**: A newly submitted non-critical report displays as "provisional" until a
+- [x] **TRUST-04**: A newly submitted non-critical report displays as "provisional" until a
       second independent confirmation arrives; critical/rescue-needed reports publish at full
       visibility immediately, with no gate
 
 - [ ] **TRUST-05**: The feed displays "confirmed by N nearby" computed from the count of distinct
       confirming geohash cells/sessions, not the raw number of votes
 
-- [ ] **TRUST-06**: A report's severity is used for triage sort order only, and cannot by itself
+- [x] **TRUST-06**: A report's severity is used for triage sort order only, and cannot by itself
       bypass the provisional visibility gate (TRUST-04)
 
 - [ ] **TRUST-07**: A report displays two distinct trust signals — a fast-decaying "is this still
@@ -250,10 +250,10 @@ Populated during roadmap creation.
 | OPS-01 | Phase 1 | Complete |
 | OPS-02 | Phase 1 | Complete |
 | TRUST-01 | Phase 2 | Pending |
-| TRUST-02 | Phase 2 | Pending |
+| TRUST-02 | Phase 2 | Complete |
 | TRUST-03 | Phase 2 | Pending |
-| TRUST-04 | Phase 2 | Pending |
-| TRUST-06 | Phase 2 | Pending |
+| TRUST-04 | Phase 2 | Complete |
+| TRUST-06 | Phase 2 | Complete |
 | TRUST-08 | Phase 2 | Pending |
 | TRUST-09 | Phase 2 | Pending |
 | TRUST-05 | Phase 3 | Pending |
