@@ -38,15 +38,15 @@ created: 2026-09-12
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 02-xx-xx | TBD | TBD | TRUST-01 | T-02-05 | Confirm/dispute cast, stored, reflected in tally | unit + integration | `go test ./internal/service/... ./internal/store/... -run TestCastVote` | ❌ W0 | ⬜ pending |
-| 02-xx-xx | TBD | TBD | TRUST-02 | T-02-04 | `Resolve()` gives identical output regardless of caller | unit (table-driven) | `go test ./internal/service/... -run TestResolve` | ❌ W0 | ⬜ pending |
-| 02-xx-xx | TBD | TBD | TRUST-03 | T-02-01 | Only distinct-account + distinct-cell votes count | unit | `go test ./internal/service/... -run TestIndependentCellCount` | ❌ W0 | ⬜ pending |
-| 02-xx-xx | TBD | TBD | TRUST-04 | — | Non-critical Provisional until 2nd independent confirm; critical instant | unit | `go test ./internal/service/... -run TestResolve_ProvisionalGate` | ❌ W0 | ⬜ pending |
-| 02-xx-xx | TBD | TBD | TRUST-06 | — | Severity affects triage sort only, never bypasses the gate for non-critical | unit | `go test ./internal/service/... -run TestResolve_SeverityNeverBypassesGateAlone` | ❌ W0 | ⬜ pending |
-| 02-xx-xx | TBD | TBD | TRUST-08 | T-02-03 | Reporter-instant-resolve; confirmer-resolve needs independent agreement | integration | `go test ./internal/store/... -run TestResolveReopen` | ❌ W0 | ⬜ pending |
-| 02-xx-xx | TBD | TBD | TRUST-09 | T-02-02 | N concurrent votes on one report never silently drop one | integration/concurrency | `go test ./internal/store/... -run TestCastVoteConcurrent -p 1` | ❌ W0 | ⬜ pending |
+| 02-02 T1-3, 02-03a T1-3, 02-03b T1-3, 02-05 T1-3 | 02-02, 02-03a, 02-03b, 02-05 | 1, 2, 3, 5 | TRUST-01 | T-02-05 | Confirm/dispute cast (store→service→HTTP→client), stored, reflected in tally | unit + integration + e2e | `go test ./internal/store/... -run TestCastVoteConcurrent && go test ./internal/service/... -run TestCastVote && go test ./internal/api/handlers/... -run TestCastVote` | ❌ pending execution | ⬜ pending |
+| 02-01 T1-3, 02-04 T1-3 | 02-01, 02-04 | 1, 4 | TRUST-02 | T-02-04 | `Resolve()` gives identical output regardless of caller; feed/map both call it, never re-derive | unit (table-driven) + e2e | `go test ./internal/service/ -run TestResolve && go test ./internal/api/handlers/... -run TestFeedVisibilityMatchesCastVoteResponse` | ❌ pending execution | ⬜ pending |
+| 02-03a T1-3, 02-05 T1-3 | 02-03a, 02-05 | 2, 5 | TRUST-03 | T-02-01 | Only distinct-account + distinct-cell votes count; GPS-denial hard-blocks the vote client-side | unit + frontend contract | `go test ./internal/service/ -run TestIndependentCellCount && go test ./web/ -run TestVoteTransportHasNoLocationFallback` | ❌ pending execution | ⬜ pending |
+| 02-01 T1-3, 02-04 T1-3, 02-06 T1-3 | 02-01, 02-04, 02-06 | 1, 4, 6 | TRUST-04 | — | Non-critical Provisional until 2nd independent confirm; critical instant; dimmed+labelled client-side | unit + e2e + frontend contract | `go test ./internal/service/ -run TestResolve_ProvisionalGate && go test ./internal/api/handlers/... -run TestShowDisputedRevealsHiddenReports && go test ./web/ -run TestVisibilityCascadeOverridesAgeRamp` | ❌ pending execution | ⬜ pending |
+| 02-01 T1-3, 02-04 T1-3 | 02-01, 02-04 | 1, 4 | TRUST-06 | — | Severity affects triage sort only, never bypasses the gate for non-critical | unit + unit | `go test ./internal/service/ -run TestResolve_SeverityNeverBypassesGateAlone && go test ./internal/service/... -run TestNearbySeverityDoesNotChangeGatingAmongNonCritical` | ❌ pending execution | ⬜ pending |
+| 02-03a T1-3, 02-03b T1-3, 02-07 T1-3 | 02-03a, 02-03b, 02-07 | 2, 3, 7 | TRUST-08 | T-02-03 | Reporter-instant-resolve; confirmer-resolve and any reopen need independent agreement (no reporter carve-out) | unit + e2e + frontend contract | `go test ./internal/service/ -run TestCastVoteAllowsReporterResolutionVote && go test ./internal/api/handlers/... -run TestReporterCanResolveOwnReportInstantly && go test ./internal/api/handlers/... -run TestReopenRequiresIndependentAgreement` | ❌ pending execution | ⬜ pending |
+| 02-02 T1-3 | 02-02 | 1 | TRUST-09 | T-02-02 | N concurrent votes on one report never silently drop one | integration/concurrency | `go test ./internal/store/... -run TestCastVoteConcurrent -p 1` | ❌ pending execution | ⬜ pending |
 
-*Task/Plan/Wave columns are placeholders — the planner fills in real IDs once PLAN.md files exist. Threat Refs (T-02-01..05) correspond to the Security Domain threats below, in the same order listed there.*
+*Backfilled 2026-09-15 once all 8 PLAN.md files existed (02-03 split into 02-03a/02-03b during detailed planning, shifting waves 4-7 by one from this file's original draft). Each cell lists every plan that contributes to that requirement's proof — several requirements span the full store→service→HTTP→client chain, so no single plan owns them alone. "File Exists" reflects pre-execution state: every test file is created within its own plan's tasks (TDD-style RED→GREEN→Harden, per 02-01's pattern), not via a separate Wave 0 pass — there is nothing to scaffold ahead of time here. Threat Refs (T-02-01..05) correspond to the Security Domain threats below, in the same order listed there. Full per-plan test-name lists live in each PLAN.md's own "Artifacts this phase produces" section.*
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -54,24 +54,21 @@ created: 2026-09-12
 
 ## Wave 0 Requirements
 
-- [ ] `internal/service/visibility_test.go` — table-driven `Resolve()` tests covering: critical
-      bypass over Hidden-by-dispute, critical bypass over Provisional, Hidden reversibility
-      (confirms later outweighing disputes flips back to Live/Provisional in the same test via two
-      calls with different tallies), Retracted taking precedence over everything except reopen,
-      reopen flipping Retracted back to the live pipeline.
-- [ ] `internal/service/trust_test.go` — `independentCellCount()` unit tests (empty, all-same-cell,
-      all-distinct, mixed) and `BuildVoteTally()` tests against fabricated `CurrentVotesForReports`
-      rows (including the reporter's own resolution vote being excluded from `ResolveCells` and
-      surfaced via `ReporterResolved` instead).
-- [ ] `internal/store/votes_test.go` — mirrors `internal/store/cooldown_test.go`'s structure
-      exactly: `TestCastVoteConcurrent` (N goroutines, N distinct accounts, one report, assert
-      `COUNT(*) = N`), `TestCurrentVoteIsLatestOnAccountChange` (same account votes confirm then
-      dispute, assert exactly one current row and it's the later one), `TestVotesArePerReportPerAccountKind`
-      (a content vote and a resolution vote from the same account on the same report don't
-      interfere with each other's "current" read).
-- [ ] `internal/api/handlers/votes_e2e_test.go` — end-to-end for the 403 on reporter self-vote
-      (D-03) and the 401 on an unverified caller (reusing the existing gated-route test pattern
-      from `reports_e2e_test.go`).
+*Superseded — no separate Wave 0 pass needed.* Each item below turned out to be created inside its
+own plan's own tasks (TDD-style RED→GREEN→Harden), not a shared pre-planning scaffold:
+
+- [x] `internal/service/visibility_test.go` — table-driven `Resolve()` tests covering: critical
+      bypass over Hidden-by-dispute, critical bypass over Provisional, Hidden reversibility,
+      Retracted precedence, reopen. → **02-01, Task 1** (written before Task 2's implementation).
+- [x] `internal/service/trust_test.go` — `independentCellCount()` and `BuildVoteTally()` tests.
+      → **02-03a** (package `service`, alongside the exported `VotingService`/`CastVote` symbols).
+- [x] `internal/store/votes_test.go` — `TestCastVoteConcurrent`, `TestCurrentVoteIsLatestOnAccountChange`,
+      `TestVotesArePerReportPerAccountKind`, plus two additional gates the plan added
+      (`TestVotesHaveNoUniqueKeyBeyondPrimaryKey`, `TestVotesQuerySourceHasNoUpsertOrLock`).
+      → **02-02**.
+- [x] `internal/api/handlers/votes_e2e_test.go` — end-to-end for the 403 on reporter self-vote and
+      the 401 on an unverified caller. → **02-03b** (plus `TestReopenRequiresIndependentAgreement`,
+      added after a coverage gap was caught on review).
 
 *Framework install: none — `go test` is already the only tool this repo uses.*
 
