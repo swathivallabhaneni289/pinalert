@@ -184,7 +184,37 @@ Plans:
   4. A report's visibility state (Hidden/Provisional/Live/Retracted) is identical everywhere it's shown — feed, map, triage view, and shareable card — because one shared resolver function computes it.
   5. A user (the reporter or a nearby confirmer) can mark a report resolved, removing it from the live feed.
 
-**Plans**: TBD
+**Plans**: 8 plans across 7 waves
+
+**Wave 1** *(parallel — zero file overlap, neither depends on the other)*
+
+- [ ] 02-01-PLAN.md — The pure `Resolve()` resolver: Hidden/Provisional/Live/Retracted decided in exactly one place, critical bypass over both gates, Hidden fully reversible from live tallies, retract/reopen never latching (D-05..D-09, D-14, D-16) (wave 1)
+- [ ] 02-02-PLAN.md — Append-only vote log with no shared mutable counter to race on: N concurrent casts from N accounts all land, latest row per (report, account, kind) wins, content and resolution votes never interfere (TRUST-09, D-02) (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 02-03a-PLAN.md — `VotingService.CastVote`: voter geohash cell computed server-side from raw lat/lon, self-vote block scoped to content votes only, expired-report rejection, one shared independence helper (D-03, D-13, D-17) (wave 2)
+
+**Wave 3** *(blocked on 02-03a)*
+
+- [ ] 02-03b-PLAN.md — The four vote routes mounted inside the existing verified-account gate from one `handlers.CastVote` factory, with the OpenAPI spec regenerated so OPS-01 stays truthful (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 02-04-PLAN.md — Feed and map return the identical resolver-computed visibility: Retracted never appears, Hidden only under `?show_disputed=true`, plus `your_vote` and `is_own_report` for the client (D-03, D-08, D-10, D-11, D-12) (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 02-05-PLAN.md — First user-clickable increment: Confirm/Dispute on the feed row and the map pin popup from one shared builder, GPS captured once per session with a hard block on denial, nothing rendered until the server answers (D-01, D-02, D-04, D-17, D-18) (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 02-06-PLAN.md — Trust state made legible: Provisional rows and pins dimmed *and* labelled "Unconfirmed", one "Show disputed reports" toggle revealing outlined rows *and* pins from one shared query param, and an empty result that explains itself (D-09, D-10, D-11) (wave 6)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 02-07-PLAN.md — A report can be taken out of the live feed and put back: "Mark resolved" with an inline destructive confirmation on both surfaces and outcome copy driven by the server's own answer, plus the Activity page's real trust state and "Reopen · not actually resolved" (D-12, D-13, D-15, D-16) (wave 7)
+
 **UI hint**: yes
 
 ### Phase 3: Trust-Model Hardening — Diversity-Weighted Trust
