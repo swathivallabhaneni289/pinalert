@@ -13,11 +13,12 @@
 // server-rendered shell (index.html.tmpl); this file is the whole defence
 // for anything built here afterward.
 //
-// SCOPE (T-01-23): this list shows no confirmation count and no trust-
-// state wording. That data belongs to the Phase 2 Trust Engine and does
-// not exist yet — inventing a placeholder would put an unbacked claim in
-// front of a reader, which is the exact failure mode this product exists
-// to counter.
+// SCOPE (T-01-23): this list now renders the confirm/dispute controls and
+// the viewer's own standing vote, but still shows no confirmation COUNT
+// and no trust-state wording. The weighted "confirmed by N nearby" number
+// belongs to a later phase and does not exist yet — inventing a
+// placeholder would put an unbacked claim in front of a reader, which is
+// the exact failure mode this product exists to counter.
 (function () {
   'use strict';
 
@@ -145,6 +146,13 @@
     body.appendChild(title);
     body.appendChild(meta);
 
+    // The vote controls are appended right after the meta line so a
+    // later visibility indicator can be inserted between the two with no
+    // restructuring of this body.
+    var block = PinalertVotes.createVoteBlock(id);
+    body.appendChild(block.controls);
+    body.appendChild(block.error);
+
     li.appendChild(badge);
     li.appendChild(body);
 
@@ -158,7 +166,7 @@
       }
     });
 
-    return { el: li, glyph: glyph, title: title, meta: meta };
+    return { el: li, glyph: glyph, title: title, meta: meta, votes: block };
   }
 
   // updateRow applies severity/age classes and text content only — it never
@@ -183,6 +191,13 @@
     var isSelected = selectedId !== null && selectedId !== undefined &&
       String(selectedId) === String(report.id);
     row.el.classList.toggle('report-row--selected', isSelected);
+
+    // Same create-once / update-on-poll split this function already
+    // follows for everything else: the block's nodes were built once in
+    // createRow, and only their state is written here, so a background
+    // refresh cannot disturb focus on a button the reader is about to
+    // press.
+    PinalertVotes.updateVoteBlock(row.votes, report);
   }
 
   function renderRows(reports) {

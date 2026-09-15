@@ -56,12 +56,12 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Trust Engine
 
-- [ ] **TRUST-01**: User can confirm or dispute another user's report
+- [x] **TRUST-01**: User can confirm or dispute another user's report
 - [x] **TRUST-02**: A report's visibility state (Hidden/Provisional/Live/Retracted) is computed by
       one shared resolver function and is identical everywhere it's shown — feed, map, triage
       view, and shareable cards
 
-- [ ] **TRUST-03**: A vote counts toward the independence threshold only if it comes from a
+- [x] **TRUST-03**: A vote counts toward the independence threshold only if it comes from a
       distinct anonymous session AND a distinct geohash cell from every other counted vote on
       that report
 
@@ -249,9 +249,9 @@ Populated during roadmap creation.
 | FOUND-06 | Phase 1 | Complete |
 | OPS-01 | Phase 1 | Complete |
 | OPS-02 | Phase 1 | Complete |
-| TRUST-01 | Phase 2 | Pending |
+| TRUST-01 | Phase 2 | Complete |
 | TRUST-02 | Phase 2 | Complete |
-| TRUST-03 | Phase 2 | Pending |
+| TRUST-03 | Phase 2 | Complete |
 | TRUST-04 | Phase 2 | Complete |
 | TRUST-06 | Phase 2 | Complete |
 | TRUST-08 | Phase 2 | Complete |
