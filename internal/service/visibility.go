@@ -78,9 +78,12 @@ type ReportMeta struct {
 
 // criticalBypass reports whether m exempts its report from both the
 // Provisional gate (TRUST-04) and the Hidden-by-dispute trigger (D-06).
-// TODO(02-01 Task 2): implement the decision ladder.
+// This single predicate serves BOTH exemptions — deliberately one method
+// rather than two copies that could drift apart — and is keyed on the
+// report's severity/category fields, never on triage sort weight
+// (TRUST-06: the same field has two independent consumers).
 func (m ReportMeta) criticalBypass() bool {
-	return false
+	return m.Severity == SeverityCritical || m.Category == CategoryRescueNeeded
 }
 
 // VoteTally is an already-loaded snapshot of a report's confirm, dispute,
@@ -123,10 +126,36 @@ type VoteTally struct {
 	ReporterReopened bool
 }
 
-// isRetracted reports whether t currently retracts its report.
-// TODO(02-01 Task 2): implement the decision ladder.
+// isRetracted reports whether t currently retracts its report. The
+// expression encodes four semantics:
+//
+//   - D-13 — the reporter's own current resolution vote retracts
+//     instantly, with no threshold.
+//   - D-14 — a non-reporter confirmer needs IndependentAgreementThreshold
+//     standing independent resolve cells, the one shared independence
+//     number, not a second bespoke one. The same number, on the other
+//     side, is what a non-reporter reopen needs.
+//   - D-16 (amended 2026-09-15) — reopening is symmetric with D-13's
+//     resolve: the reporter's own standing reopen vote lifts the
+//     retraction INSTANTLY at zero independent reopen cells, and does so
+//     regardless of how the report became Retracted — their own instant
+//     resolve, or independent confirmers reaching the threshold. Everyone
+//     else still needs IndependentAgreementThreshold standing independent
+//     reopen cells. This reverses the original 2026-09-12 reading
+//     (threshold-only reopen for every account) — see 02-CONTEXT.md D-16's
+//     amendment history; do not "fix" the symmetry back out.
+//   - D-08 — both sides read STANDING counts and standing votes (each
+//     account's current resolution vote, as produced by 02-03a's
+//     BuildVoteTally), so nothing latches on either half. Reopen outranks
+//     resolve at equal standing; a report whose standing reopen cells
+//     later drop back below the threshold re-retracts; and a reporter who
+//     changes their resolution vote away from reopen likewise lets any
+//     surviving resolve agreement reassert itself. State is always a pure
+//     function of the current tally, never a one-way unlock.
 func (t VoteTally) isRetracted() bool {
-	return false
+	resolved := t.ReporterResolved || t.ResolveCells >= IndependentAgreementThreshold
+	reopened := t.ReporterReopened || t.ReopenCells >= IndependentAgreementThreshold
+	return resolved && !reopened
 }
 
 // Resolve maps a report's static metadata and its currently-loaded vote
@@ -141,7 +170,44 @@ func (t VoteTally) isRetracted() bool {
 // resolver's output, rather than being a fifth state (D-07) — and the
 // parameter is retained for Phase 3's decay scoring (TRUST-07) per the
 // VisibilityResolver contract in .planning/research/ARCHITECTURE.md.
+//
+// The rungs below are checked in this exact order — the order is the
+// specification:
+//
+//  1. Retracted (D-07): a distinct trigger, fired only by explicit resolve
+//     marking, outranks everything below it, including the critical
+//     bypass, because marking a report resolved must work regardless of
+//     severity. The only ways past this rung are the two reopen paths
+//     (D-16 amended), both of which isRetracted already accounts for;
+//     there is no reopen branch out here in Resolve itself.
+//  2. Critical bypass (D-06, TRUST-04): sits ABOVE the dispute rung (a
+//     critical or rescue-needed report can never be Hidden by disputes)
+//     and ABOVE the confirm gate (critical/rescue-needed publishes at
+//     full visibility immediately, with no gate). One rung, both
+//     exemptions.
+//  3. Hidden (D-05): a floor (DisputeCells >= IndependentAgreementThreshold,
+//     so a single dispute can never hide a report) AND a strict majority
+//     (DisputeCells > ConfirmCells, so a bare tie does not hide either).
+//     There is deliberately no matching unhide branch anywhere in this
+//     file — D-08's reversibility falls out of recomputing this
+//     expression against the current tally on every read.
+//  4. Provisional gate (TRUST-04): Provisional is emitted as a state
+//     distinct from Live rather than folded into it, because D-09's
+//     dimmed-and-labelled treatment (built in 02-06) needs a discrete
+//     state to key off.
+//  5. Live: the default once nothing above fired.
 func Resolve(meta ReportMeta, tally VoteTally, now time.Time) (Visibility, ResolveReason) {
-	// TODO(02-01 Task 2): implement the decision ladder.
-	return VisibilityProvisional, ReasonAwaitingConfirmation
+	if tally.isRetracted() {
+		return VisibilityRetracted, ReasonResolved
+	}
+	if meta.criticalBypass() {
+		return VisibilityLive, ReasonCriticalBypass
+	}
+	if tally.DisputeCells >= IndependentAgreementThreshold && tally.DisputeCells > tally.ConfirmCells {
+		return VisibilityHidden, ReasonDisputed
+	}
+	if tally.ConfirmCells < IndependentAgreementThreshold {
+		return VisibilityProvisional, ReasonAwaitingConfirmation
+	}
+	return VisibilityLive, ReasonConfirmed
 }
