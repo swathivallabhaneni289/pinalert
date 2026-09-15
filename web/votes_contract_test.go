@@ -2,6 +2,7 @@ package web
 
 import (
 	"io/fs"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -214,5 +215,226 @@ func TestVoteModuleLoadsBeforeItsConsumers(t *testing.T) {
 				"consumers read window.PinalertVotes at evaluation time", votesPos, consumer,
 				consumerPos)
 		}
+	}
+}
+
+// TestVoteBlockHiddenGuard is this plan's highest-value automated gate. The
+// browser's native [hidden] { display: none } rule is user-agent-origin and
+// loses to any author-origin display declaration at equal specificity —
+// exactly the specificity trap that shipped a permanently-open modal
+// backdrop in Phase 1 (a live UAT blocker, see TestModalBackdropHiddenGuard)
+// and threatened the same for the account menu in Phase 1.1 (see
+// TestAccountMenuHiddenGuard). Here the consequence would be an empty error
+// paragraph rendered under every single feed row and every popup, with a
+// green build and no other signal — and, for .vote-controls, an empty
+// bordered strip under every report the viewer submitted themselves.
+func TestVoteBlockHiddenGuard(t *testing.T) {
+	const guard = ":not([hidden])"
+	targets := []string{".vote-error", ".vote-controls"}
+	sawGuarded := map[string]bool{}
+
+	err := fs.WalkDir(StaticFS, "static/css", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".css") {
+			return nil
+		}
+
+		raw, err := fs.ReadFile(StaticFS, path)
+		if err != nil {
+			return err
+		}
+		text := stripCSSComments(string(raw))
+
+		for chunk := range strings.SplitSeq(text, "}") {
+			lastOpen := strings.LastIndex(chunk, "{")
+			if lastOpen == -1 {
+				continue
+			}
+			selectorHead := chunk[:lastOpen]
+			declBody := chunk[lastOpen+1:]
+
+			for _, target := range targets {
+				if !strings.Contains(selectorHead, target) {
+					continue
+				}
+				if !strings.Contains(declBody, "display") {
+					continue
+				}
+				if strings.Contains(selectorHead, guard) {
+					if path == "static/css/trust.css" {
+						sawGuarded[target] = true
+					}
+					continue
+				}
+				t.Errorf(
+					"%s: found a rule setting `display` on the %s selector without a %q guard — selector head: %q",
+					path, target, guard, strings.TrimSpace(selectorHead),
+				)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed to walk embedded static/css: %v", err)
+	}
+
+	for _, target := range targets {
+		if !sawGuarded[target] {
+			t.Fatalf("expected static/css/trust.css to contain at least one guarded %s%s selector — found none (the rule may have been deleted outright)", target, guard)
+		}
+	}
+}
+
+// anyDeclReferences reports whether any declaration value in decls contains
+// token as a substring — used below to check that a rule references a
+// given custom property without pinning to one specific declaration name (a
+// color token might land on border-color or color depending on the rule).
+func anyDeclReferences(decls map[string]string, token string) bool {
+	for _, v := range decls {
+		if strings.Contains(v, token) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestVoteButtonsMeetTouchTargetAndUseTokensOnly proves trust.css introduces
+// no new color and resolves every value through main.css's existing tokens,
+// and that the vote buttons and their active/disabled states are declared
+// exactly as 02-UI-SPEC.md's Color and Spacing sections specify.
+//
+// Honest limit of this test's claim: static inspection proves the
+// declarations exist and are token-derived; it cannot prove the rendered
+// result is legible or that the touch target is actually 44px after the
+// cascade. The end-of-phase human check covers that.
+func TestVoteButtonsMeetTouchTargetAndUseTokensOnly(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/css/trust.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/trust.css: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	hexColorRE := regexp.MustCompile(`#([0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b`)
+	if m := hexColorRE.FindString(text); m != "" {
+		t.Errorf("trust.css contains a raw hex colour literal (%q) — every colour must resolve "+
+			"through a var(--...) token; this phase introduces no new hex value", m)
+	}
+	for _, fn := range []string{"rgb(", "rgba(", "hsl("} {
+		if strings.Contains(text, fn) {
+			t.Errorf("trust.css contains a %q functional colour notation — every colour must "+
+				"resolve through a var(--...) token", fn)
+		}
+	}
+
+	rules := parseCSSRules(text)
+
+	btnRule, ok := ruleBySelector(rules, ".vote-btn")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vote-btn")
+	}
+	btnDecls := declsOf(btnRule.declBody)
+	if v := btnDecls["min-height"]; v != "var(--touch-target-min)" {
+		t.Errorf(".vote-btn min-height must be exactly var(--touch-target-min), found %q", v)
+	}
+	padding := btnDecls["padding"]
+	if !strings.Contains(padding, "var(--space-sm)") {
+		t.Errorf(".vote-btn padding must reference var(--space-sm), found %q", padding)
+	}
+	if strings.Contains(padding, "var(--space-lg)") {
+		t.Errorf(".vote-btn padding must NOT reference var(--space-lg) — 02-UI-SPEC.md's explicit "+
+			"deviation from .btn: three buttons at the default horizontal padding overflow a "+
+			"narrow feed row, found %q", padding)
+	}
+
+	confirmRule, ok := ruleBySelector(rules, `.vote-btn--confirm[aria-pressed="true"]`)
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", `.vote-btn--confirm[aria-pressed="true"]`)
+	}
+	if !anyDeclReferences(declsOf(confirmRule.declBody), "--color-severity-low") {
+		t.Errorf(".vote-btn--confirm[aria-pressed=\"true\"] must reference --color-severity-low — "+
+			"reusing the existing green hue's established low-severity valence rather than "+
+			"inventing a fifth colour, declarations: %v", declsOf(confirmRule.declBody))
+	}
+
+	disputeRule, ok := ruleBySelector(rules, `.vote-btn--dispute[aria-pressed="true"]`)
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", `.vote-btn--dispute[aria-pressed="true"]`)
+	}
+	if !anyDeclReferences(declsOf(disputeRule.declBody), "--color-severity-critical") {
+		t.Errorf(".vote-btn--dispute[aria-pressed=\"true\"] must reference --color-severity-critical "+
+			"— reusing the existing red hue's established critical-severity valence, declarations: %v",
+			declsOf(disputeRule.declBody))
+	}
+
+	disabledRule, ok := ruleBySelector(rules, ".vote-btn:disabled")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vote-btn:disabled")
+	}
+	if !anyDeclReferences(declsOf(disabledRule.declBody), "--color-text-muted") {
+		t.Errorf(".vote-btn:disabled must reference --color-text-muted, declarations: %v",
+			declsOf(disabledRule.declBody))
+	}
+}
+
+// TestOwnReportRuleRemovesControlsRatherThanDisablingThem proves D-03's UI
+// courtesy is implemented exactly as 02-UI-SPEC.md specifies (removal, not
+// disabling) and proves the disabled attribute has exactly one owner
+// (setBlockBusy), so a background poll landing mid-vote can never re-enable
+// an in-flight button. It also proves votes.js contains no markup-parsing
+// sink anywhere (T-01-03): every element this module builds goes through
+// document.createElement, and the server's own error messages — though
+// server-authored — still reach the DOM only through Pinalert.setText,
+// because the sink discipline is about the sink, not about who wrote the
+// string.
+func TestOwnReportRuleRemovesControlsRatherThanDisablingThem(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/votes.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	for _, sink := range []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"} {
+		if strings.Contains(text, sink) {
+			t.Errorf("votes.js contains %q — every element must be built with "+
+				"document.createElement and every string must reach the DOM through "+
+				"Pinalert.setText (T-01-03)", sink)
+		}
+	}
+
+	applyOwnReportBody := jsFunctionBody(t, text, "applyOwnReportRule(block, report)")
+	if !strings.Contains(applyOwnReportBody, "is_own_report") {
+		t.Errorf("applyOwnReportRule's own body does not reference is_own_report")
+	}
+	if !strings.Contains(applyOwnReportBody, ".remove()") {
+		t.Errorf("applyOwnReportRule's own body does not call .remove() — 02-UI-SPEC.md is " +
+			"explicit that the reporter's buttons are removed from the DOM, not disabled")
+	}
+	if strings.Contains(applyOwnReportBody, "disabled") {
+		t.Errorf("applyOwnReportRule's own body references \"disabled\" — the reporter's buttons " +
+			"must be removed, never disabled; a disabled button reads as a bug on a row already " +
+			"tight for space")
+	}
+
+	updateVoteBlockBody := jsFunctionBody(t, text, "updateVoteBlock(block, report)")
+	if strings.Contains(updateVoteBlockBody, "disabled") {
+		t.Errorf("updateVoteBlock's own body references \"disabled\" — setBlockBusy is the sole " +
+			"owner of that attribute; a background poll landing mid-vote must not be able to " +
+			"re-enable an in-flight button")
+	}
+	if n := strings.Count(updateVoteBlockBody, "aria-pressed"); n < 2 {
+		t.Errorf("updateVoteBlock's own body must reference aria-pressed at least twice (both "+
+			"buttons written on every call), found %d — writing only the newly active button "+
+			"leaves a stale aria-pressed=\"true\" on the other after a vote change", n)
+	}
+
+	setBlockBusyBody := jsFunctionBody(t, text, "setBlockBusy(block, busy)")
+	if !strings.Contains(setBlockBusyBody, "disabled") {
+		t.Errorf("setBlockBusy's own body does not reference \"disabled\" — it must be the sole " +
+			"owner of that attribute")
+	}
+	if !strings.Contains(setBlockBusyBody, "aria-busy") {
+		t.Errorf("setBlockBusy's own body does not reference \"aria-busy\"")
 	}
 }
