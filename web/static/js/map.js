@@ -9,6 +9,9 @@
 // authored value ever appears in it. Popups are built as DOM elements
 // (never a markup string) and passed to Leaflet's bindPopup/setPopupContent,
 // which appendChild()s an Element instead of using innerHTML when given one.
+// The popup now carries interactive controls too, still assembled as DOM
+// elements and handed to that same Leaflet API, so adding buttons changes
+// nothing about that guarantee.
 window.PinalertMap = (function () {
   'use strict';
 
@@ -170,6 +173,19 @@ window.PinalertMap = (function () {
 
     wrap.appendChild(meta);
     wrap.appendChild(description);
+
+    // The same vote controls block the feed row mounts, from the same
+    // builder — what makes the shared confirm/dispute mechanic
+    // structural rather than a convention two call sites have to
+    // remember. Unlike the feed row, this surface builds and updates in
+    // one call: upsertMarker rebuilds the popup's content on every
+    // render rather than updating it in place, an accepted limitation
+    // votes.js's own click orchestration documents.
+    var block = PinalertVotes.createVoteBlock(report.id);
+    PinalertVotes.updateVoteBlock(block, report);
+    wrap.appendChild(block.controls);
+    wrap.appendChild(block.error);
+
     return wrap;
   }
 
