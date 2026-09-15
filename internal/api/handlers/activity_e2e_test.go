@@ -70,12 +70,21 @@ func TestProfileShowsResolvedStateForAResolvedReport(t *testing.T) {
 		t.Fatalf("resolve response visibility = %q, want %q", visibility, "retracted")
 	}
 
+	// Honest limit of this test's claim: GET /profile returns the
+	// server-rendered HTML only — the "Resolved" chip text itself is built
+	// by activity.js/visibility.js client-side from these attributes, which
+	// a Go HTTP test cannot execute. This asserts the server-rendered
+	// hooks that make that chip build correctly; the rendered pixels are
+	// the end-of-phase <human-check>'s claim.
 	body := getProfile(t, client, srv.URL)
 	if !strings.Contains(body, "vis-retracted") {
 		t.Errorf("/profile does not carry the vis-retracted state class for the resolved report: %s", body)
 	}
-	if !strings.Contains(body, "Resolved") {
-		t.Errorf("/profile does not render the \"Resolved\" visibility-tag label: %s", body)
+	if !strings.Contains(body, `data-visibility="retracted"`) {
+		t.Errorf("/profile does not carry data-visibility=\"retracted\" for the resolved report: %s", body)
+	}
+	if !strings.Contains(body, `data-visibility-reason="resolved"`) {
+		t.Errorf("/profile does not carry data-visibility-reason=\"resolved\" for the resolved report: %s", body)
 	}
 }
 
