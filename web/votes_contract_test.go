@@ -1452,3 +1452,119 @@ func TestResolveControlsMeetTouchTargetAndUseTokensOnly(t *testing.T) {
 		t.Errorf(".resolve-confirm:not([hidden]) must declare display")
 	}
 }
+
+// --- Plan 02-07 Task 2: the Activity page's real trust state ---
+
+// TestProfilePageLoadsTrustAssetsInDependencyOrder proves profile.html.tmpl
+// links the trust stylesheet after the feed stylesheet and before the auth
+// stylesheet, and loads the shared store, votes, visibility and activity
+// modules — in that order, every one deferred and asset-versioned. The
+// order is a correctness constraint: visibility.js writes its chip text
+// through the shared store's helper, and activity.js consumes both other
+// globals at call time.
+func TestProfilePageLoadsTrustAssetsInDependencyOrder(t *testing.T) {
+	raw, err := TemplatesFS.ReadFile("templates/profile.html.tmpl")
+	if err != nil {
+		t.Fatalf("failed to read embedded templates/profile.html.tmpl: %v", err)
+	}
+	html := string(raw)
+
+	feedCSSPos := strings.Index(html, "/static/css/feed.css")
+	trustCSSPos := strings.Index(html, "/static/css/trust.css")
+	authCSSPos := strings.Index(html, "/static/css/auth.css")
+	if feedCSSPos == -1 || trustCSSPos == -1 || authCSSPos == -1 {
+		t.Fatalf("could not locate all three stylesheet links in profile.html.tmpl (feed=%d, "+
+			"trust=%d, auth=%d)", feedCSSPos, trustCSSPos, authCSSPos)
+	}
+	if !(feedCSSPos < trustCSSPos && trustCSSPos < authCSSPos) {
+		t.Errorf("trust.css must be linked after feed.css and before auth.css, found feed=%d "+
+			"trust=%d auth=%d", feedCSSPos, trustCSSPos, authCSSPos)
+	}
+
+	scripts := []string{
+		"/static/js/app.js",
+		"/static/js/votes.js",
+		"/static/js/visibility.js",
+		"/static/js/activity.js",
+	}
+	positions := make([]int, 0, len(scripts))
+	for _, src := range scripts {
+		if n := strings.Count(html, src); n != 1 {
+			t.Fatalf("expected exactly one occurrence of %q, found %d", src, n)
+		}
+		window := findTagWindow(t, html, src)
+		if !strings.Contains(window, " defer") {
+			t.Errorf("%s tag is missing the defer attribute — window: %q", src, window)
+		}
+		if !strings.Contains(window, "?v={{.AssetVersion}}") {
+			t.Errorf("%s tag is missing the ?v={{.AssetVersion}} cache-busting suffix — window: %q",
+				src, window)
+		}
+		positions = append(positions, strings.Index(html, src))
+	}
+	for i := 1; i < len(positions); i++ {
+		if positions[i-1] >= positions[i] {
+			t.Errorf("script load order is wrong: %q must load strictly before %q (positions %v)",
+				scripts[i-1], scripts[i], positions)
+		}
+	}
+}
+
+// TestProfilePageCarriesTheReportIdAndVisibilityHooks proves every list row
+// in the template declares a report-id attribute and a visibility
+// attribute — without both, activity.js has nothing to key off.
+func TestProfilePageCarriesTheReportIdAndVisibilityHooks(t *testing.T) {
+	raw, err := TemplatesFS.ReadFile("templates/profile.html.tmpl")
+	if err != nil {
+		t.Fatalf("failed to read embedded templates/profile.html.tmpl: %v", err)
+	}
+	html := string(raw)
+
+	for _, hook := range []string{"data-report-id=", "data-visibility=", "data-visibility-reason="} {
+		if !strings.Contains(html, hook) {
+			t.Errorf("profile.html.tmpl does not declare %q on its report rows", hook)
+		}
+	}
+}
+
+// TestActivityModuleReusesTheSharedLabelMapAndTransport proves activity.js
+// references visibility.js's exported API rather than growing a second
+// label map or state allowlist, and declares no fetch( of its own — the
+// Activity page has no report fetch, so there is nothing for a
+// client-side computation to be built from even by accident (T-02-04).
+func TestActivityModuleReusesTheSharedLabelMapAndTransport(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/activity.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	if !strings.Contains(text, "PinalertVisibility.") {
+		t.Errorf("activity.js does not reference PinalertVisibility's exported API")
+	}
+	for _, forbidden := range []string{"'Unconfirmed'", "'Disputed'", "'Resolved'"} {
+		if strings.Contains(text, forbidden) {
+			t.Errorf("activity.js contains %q — this label belongs to visibility.js's "+
+				"VISIBILITY_TAG_LABELS only", forbidden)
+		}
+	}
+	if strings.Contains(text, "fetch(") {
+		t.Errorf("activity.js contains fetch( — this page has no report fetch of its own")
+	}
+}
+
+// TestActivityModuleHasNoMarkupParsingSink proves activity.js contains no
+// markup-parsing sink (T-01-03).
+func TestActivityModuleHasNoMarkupParsingSink(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/activity.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	for _, sink := range []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"} {
+		if strings.Contains(text, sink) {
+			t.Errorf("activity.js contains forbidden markup-parsing sink %q (T-01-03)", sink)
+		}
+	}
+}
