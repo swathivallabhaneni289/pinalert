@@ -184,7 +184,7 @@ Plans:
   4. A report's visibility state (Hidden/Provisional/Live/Retracted) is identical everywhere it's shown — feed, map, triage view, and shareable card — because one shared resolver function computes it.
   5. A user (the reporter or a nearby confirmer) can mark a report resolved, removing it from the live feed.
 
-**Plans**: 5/8 plans executed
+**Plans**: 6/8 plans executed
 
 **Wave 1** *(parallel — zero file overlap, neither depends on the other)*
 
@@ -205,7 +205,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 02-05-PLAN.md — First user-clickable increment: Confirm/Dispute on the feed row and the map pin popup from one shared builder, GPS captured once per session with a hard block on denial, nothing rendered until the server answers (D-01, D-02, D-04, D-17, D-18) (wave 5)
+- [x] 02-05-PLAN.md — First user-clickable increment: Confirm/Dispute on the feed row and the map pin popup from one shared builder, GPS captured once per session with a hard block on denial, nothing rendered until the server answers (D-01, D-02, D-04, D-17, D-18) (wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -289,7 +289,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
 | 1.1 Identity & Login — Mandatory Email Verification | 8/8 | Complete   | 2026-09-12 |
-| 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 5/8 | In Progress|  |
+| 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 6/8 | In Progress|  |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
 | 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
