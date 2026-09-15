@@ -129,9 +129,13 @@ func TestAccountMenuJSUsesNoMarkupParsingSink(t *testing.T) {
 }
 
 // TestAccountMenuJSHasNoAppShellDependency asserts account-menu.js never
-// references window.Pinalert — plan 01.1-07's profile page loads this file
-// alone, without app.js/map.js/modal.js/feed.js, so a Pinalert reference
-// here would throw on that page.
+// references window.Pinalert. As of 02-07, the profile page now loads the
+// shared store (app.js), votes.js, visibility.js and activity.js
+// alongside account-menu.js — this test's point is narrower and still
+// true: account-menu.js itself must depend on none of them, because it is
+// the one module that also ships on pages where they are absent (e.g. the
+// login gate and verify-outcome pages), and a Pinalert reference here
+// would throw there.
 func TestAccountMenuJSHasNoAppShellDependency(t *testing.T) {
 	raw, err := StaticFS.ReadFile(accountMenuJSPath)
 	if err != nil {

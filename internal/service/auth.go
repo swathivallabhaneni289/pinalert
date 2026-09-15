@@ -58,6 +58,12 @@ type AuthQuerier interface {
 	BindSessionAccount(ctx context.Context, arg sqlcgen.BindSessionAccountParams) error
 	ClaimEmailCooldown(ctx context.Context, arg sqlcgen.ClaimEmailCooldownParams) (time.Time, error)
 	ReportsByAccount(ctx context.Context, accountID *int64) ([]sqlcgen.ReportsByAccountRow, error)
+	// CurrentVotesForReports backs ActivityForAccount (02-07). Signature
+	// copied verbatim from trust.go's VotingQuerier — the same generated
+	// method, named a second time by a second consumer-defined interface
+	// (idiomatic Go: each interface stays small enough to fake without a
+	// real Postgres, deliberately not deduplicated into a shared one).
+	CurrentVotesForReports(ctx context.Context, reportIDs []int64) ([]sqlcgen.CurrentVotesForReportsRow, error)
 }
 
 // ErrRateLimited is returned by RequestLink when a second verification-
@@ -300,6 +306,86 @@ func (s *AuthService) ReportsForAccount(ctx context.Context, accountID int64) ([
 		return nil, fmt.Errorf("service: reading reports for account %d: %w", accountID, err)
 	}
 	return rows, nil
+}
+
+// ActivityReport is one Activity-page row: the ReportsByAccount row
+// (unmodified) plus the VALIDATED category and severity and the resolved
+// visibility and reason. Category/Severity are separate fields rather than
+// an embed — embedding sqlcgen.ReportsByAccountRow would collide its own
+// raw string Category/Severity fields with these validated typed ones.
+type ActivityReport struct {
+	Row        sqlcgen.ReportsByAccountRow
+	Category   Category
+	Severity   Severity
+	Visibility Visibility
+	Reason     ResolveReason
+}
+
+// ActivityForAccount is 02-07's Activity-page read: ReportsForAccount (the
+// existing, unmodified query), then ONE CurrentVotesForReports call over
+// the whole page's report ids, then BuildVoteTally + Resolve per report —
+// the same batched shape 02-04's Nearby uses, so this page is not an N+1
+// and not a second resolver.
+//
+// Deliberately NO new store query is created for "the account's retracted
+// reports": ReportsByAccount already carries no expiry predicate and
+// returns every report the account has ever filed, retracted or not, so
+// there is nothing this page needs that ReportsForAccount does not already
+// return. Encoding retraction as a SQL predicate here would be
+// ARCHITECTURE.md's Anti-Pattern 2 (T-02-04) — the resolver, not a query,
+// is the single authority on visibility.
+//
+// Category and severity are validated ONCE, here, rather than in the
+// handler: the fallback this function computes is the SAME value the
+// resolver sees, so the rendered class name and the resolved trust state
+// can never disagree (T-01-17).
+func (s *AuthService) ActivityForAccount(ctx context.Context, accountID int64) ([]ActivityReport, error) {
+	rows, err := s.ReportsForAccount(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return []ActivityReport{}, nil
+	}
+
+	ids := make([]int64, len(rows))
+	for i, row := range rows {
+		ids[i] = row.ID
+	}
+
+	voteRows, err := s.q.CurrentVotesForReports(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("service: reading current votes for account %d's reports: %w", accountID, err)
+	}
+
+	now := time.Now().UTC()
+	reports := make([]ActivityReport, 0, len(rows))
+	for _, row := range rows {
+		category := Category(row.Category)
+		if !category.Valid() {
+			category = CategoryOther
+		}
+		severity := Severity(row.Severity)
+		if !severity.Valid() {
+			severity = SeverityLow
+		}
+
+		meta := ReportMeta{Severity: severity, Category: category}
+		// The viewing account is always this report's reporter — this page
+		// lists only the account's own submitted reports (D-16's whole
+		// reason the Reopen path needs no identity check at all).
+		tally := BuildVoteTally(voteRows, row.ID, &accountID)
+		vis, reason := Resolve(meta, tally, now)
+
+		reports = append(reports, ActivityReport{
+			Row:        row,
+			Category:   category,
+			Severity:   severity,
+			Visibility: vis,
+			Reason:     reason,
+		})
+	}
+	return reports, nil
 }
 
 // normalizeEmail trims rawEmail, parses it with the stdlib address parser

@@ -15,7 +15,6 @@ import (
 	"pinalert/internal/auth"
 	"pinalert/internal/service"
 	"pinalert/internal/session"
-	sqlcgen "pinalert/internal/store/sqlc"
 )
 
 // maxAuthBodyBytes caps the request-link POST body, matching
@@ -240,15 +239,30 @@ var categoryLabels = map[service.Category]string{
 	service.CategoryOther:        "Other",
 }
 
+// profileVisibilityStateClassPrefix mirrors visibility.js's own
+// VISIBILITY_CLASS_PREFIX (T-01-17) — the server-rendered class and the
+// client-rendered one must use the identical prefix so a poll-driven
+// client update and a fresh page load agree on what the class is called.
+const profileVisibilityStateClassPrefix = "vis-"
+
 // profileReport is exactly what profile.html.tmpl's Activity section reads
 // for one row — Phase 1's existing .report-row markup and classes, reused
 // verbatim rather than reinvented for this account-scoped listing
-// (01.1-07-PLAN.md Task 2, UI-SPEC item 16).
+// (01.1-07-PLAN.md Task 2, UI-SPEC item 16). ReportID, Visibility,
+// VisibilityReason, VisibilityClass and CanReopen are 02-07's additions:
+// the first four give activity.js the hooks it needs to render the trust
+// chip; CanReopen (Task 3) gates the Reopen control to rows that are both
+// retracted AND not yet expired.
 type profileReport struct {
-	CategoryGlyph string
-	SeverityClass string
-	Description   string
-	MetaText      string
+	ReportID         int64
+	CategoryGlyph    string
+	SeverityClass    string
+	Description      string
+	MetaText         string
+	Visibility       string
+	VisibilityReason string
+	VisibilityClass  string
+	CanReopen        bool
 }
 
 // profileViewModel is exactly what profile.html.tmpl reads and nothing more.
@@ -311,21 +325,27 @@ func capitalizeASCII(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-// newProfileReport maps one ReportsByAccount row into the view struct
-// profile.html.tmpl renders. category/severity fall back to "other"/"low"
-// for any value outside the canonical enum — the same validate-before-
-// building-a-className discipline app.js's iconClass/severityClass apply
-// client-side (T-01-17), applied here since this handler builds the
-// className string directly rather than leaving it to client JS.
-func newProfileReport(row sqlcgen.ReportsByAccountRow, now time.Time) profileReport {
-	category := service.Category(row.Category)
-	if !category.Valid() {
-		category = service.CategoryOther
-	}
-	severity := service.Severity(row.Severity)
-	if !severity.Valid() {
-		severity = service.SeverityLow
-	}
+// newProfileReport maps one service.ActivityReport into the view struct
+// profile.html.tmpl renders. Category and severity are already validated
+// by ActivityForAccount — this handler reads those values rather than
+// re-validating the raw row, so the resolver's inputs and the rendered
+// class names can never disagree (T-01-17): two copies of the same
+// fallback could drift apart, and a report would render one category's
+// colour against another category's trust state.
+//
+// CanReopen (Task 3, D-16 amended) gates the Reopen control to rows that
+// are BOTH retracted AND not yet past their own expires_at: 02-03a's
+// expiry rejection (step 4) is not scoped by vote kind the way its
+// self-vote block is, so a reopen on an expired report would 409 — and
+// even a successful one would restore nothing, since NearbyReports filters
+// on expires_at regardless of visibility. Resolve is deliberately
+// expiry-blind (expiry is not one of the four states), which is why this
+// clause lives here rather than in the resolver, and why it gates the
+// BUTTON alone, never the "Resolved" label.
+func newProfileReport(ar service.ActivityReport, now time.Time) profileReport {
+	row := ar.Row
+	category := ar.Category
+	severity := ar.Severity
 
 	meta := categoryLabels[category] + " · " + profileRelativeTime(row.CreatedAt, now)
 	if category == service.CategoryShelterOpen {
@@ -342,11 +362,29 @@ func newProfileReport(row sqlcgen.ReportsByAccountRow, now time.Time) profileRep
 		}
 	}
 
+	// Resolve cannot return an invalid Visibility, so this guard is
+	// defence in depth (T-01-17) rather than a real branch — but the
+	// fallback direction is a decision with a trust consequence and must
+	// match visibility.js's own fallback: provisional, never live. A page
+	// that renders "trusted" for a value it could not validate overstates
+	// corroboration, which is the one thing this product exists not to do.
+	visibility := ar.Visibility
+	if !visibility.Valid() {
+		visibility = service.VisibilityProvisional
+	}
+
+	canReopen := visibility == service.VisibilityRetracted && row.ExpiresAt.After(now)
+
 	return profileReport{
-		CategoryGlyph: "icon-glyph--" + string(category),
-		SeverityClass: "sev-" + string(severity),
-		Description:   row.Description,
-		MetaText:      meta,
+		ReportID:         row.ID,
+		CategoryGlyph:    "icon-glyph--" + string(category),
+		SeverityClass:    "sev-" + string(severity),
+		Description:      row.Description,
+		MetaText:         meta,
+		Visibility:       string(visibility),
+		VisibilityReason: string(ar.Reason),
+		VisibilityClass:  profileVisibilityStateClassPrefix + string(visibility),
+		CanReopen:        canReopen,
 	}
 }
 
@@ -373,7 +411,7 @@ func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) 
 			return
 		}
 
-		rows, err := svc.ReportsForAccount(r.Context(), acc.ID)
+		activityReports, err := svc.ActivityForAccount(r.Context(), acc.ID)
 		if err != nil {
 			log.Printf("handlers: Profile: %v", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -381,9 +419,9 @@ func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) 
 		}
 
 		now := time.Now()
-		reports := make([]profileReport, 0, len(rows))
-		for _, row := range rows {
-			reports = append(reports, newProfileReport(row, now))
+		reports := make([]profileReport, 0, len(activityReports))
+		for _, ar := range activityReports {
+			reports = append(reports, newProfileReport(ar, now))
 		}
 
 		vm := profileViewModel{

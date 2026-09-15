@@ -609,8 +609,41 @@ body {
   }
 }
 
+/* ---- Toast (fixed, above the map) — moved from modal.css (Task 1, 02-07):
+   the profile page loads main.css but not modal.css, and a page with no
+   modal must not link the modal stylesheet just to get one shared
+   component. Declarations unchanged from modal.css's own rule. ---- */
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-2xl);
+  z-index: 1200;
+  transform: translateX(-50%);
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-size: var(--font-size-body);
+  padding: var(--space-sm) var(--space-lg);
+  border-radius: 999px;
+  animation: toast-in 200ms ease;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .skeleton-row {
+    animation: none;
+  }
+
+  #toast {
     animation: none;
   }
 }

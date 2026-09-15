@@ -416,6 +416,17 @@ func TestOwnReportRuleRemovesControlsRatherThanDisablingThem(t *testing.T) {
 			"must be removed, never disabled; a disabled button reads as a bug on a row already " +
 			"tight for space")
 	}
+	// 02-07 Task 1 supersedes 02-05's "the emptied .vote-controls container
+	// is hidden" truth: Mark resolved renders for the reporter too (D-13,
+	// D-15), so the container is never emptied in practice. The mechanism
+	// itself (hide the container only when it has no .vote-btn child left)
+	// is unchanged — only this assertion moves from "is hidden for an own
+	// report" to "computes hasAnyButton before deciding hidden".
+	if !strings.Contains(applyOwnReportBody, "hasAnyButton") {
+		t.Errorf("applyOwnReportRule's own body does not compute hasAnyButton — the container " +
+			"must be hidden only when it has no .vote-btn child left (which, after Task 1, never " +
+			"happens on a real row), never simply because is_own_report is true")
+	}
 
 	updateVoteBlockBody := jsFunctionBody(t, text, "updateVoteBlock(block, report)")
 	if strings.Contains(updateVoteBlockBody, "disabled") {
@@ -1130,5 +1141,626 @@ func TestFeedExplainsAnEmptyDisputedResult(t *testing.T) {
 	if !strings.Contains(feedText, "Pinalert.fetchReports()") {
 		t.Errorf("feed.js does not call Pinalert.fetchReports() — checking the toggle must refetch, " +
 			"never filter state.reports in place")
+	}
+}
+
+// --- Plan 02-07 Task 1: Mark Resolved ---
+
+// TestResolveButtonMountsInsideTheVoteControlsContainer proves the resolve
+// button and its inline confirmation block are built INSIDE the same
+// .vote-controls container createVoteBlock already returns for confirm/
+// dispute — not as siblings, which would sit outside 02-05's one delegated
+// listener and force a second one.
+func TestResolveButtonMountsInsideTheVoteControlsContainer(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/votes.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	createVoteBlockBody := jsFunctionBody(t, text, "createVoteBlock(reportId)")
+
+	if !strings.Contains(createVoteBlockBody, "vote-btn--resolve") {
+		t.Errorf("createVoteBlock's own body does not build a .vote-btn--resolve element")
+	}
+	if !strings.Contains(createVoteBlockBody, "resolve-confirm") {
+		t.Errorf("createVoteBlock's own body does not build a .resolve-confirm element")
+	}
+	if !strings.Contains(createVoteBlockBody, "vote-btn--confirm-resolve") {
+		t.Errorf("createVoteBlock's own body does not build a .vote-btn--confirm-resolve element")
+	}
+	if !strings.Contains(createVoteBlockBody, "vote-btn--cancel-resolve") {
+		t.Errorf("createVoteBlock's own body does not build a .vote-btn--cancel-resolve element")
+	}
+
+	resolveAppendIdx := strings.Index(createVoteBlockBody, "controls.appendChild(resolveBtn)")
+	confirmBlockAppendIdx := strings.Index(createVoteBlockBody, "controls.appendChild(confirmBlock)")
+	if resolveAppendIdx == -1 {
+		t.Errorf("createVoteBlock does not append the resolve button to the same .vote-controls " +
+			"container as confirm/dispute")
+	}
+	if confirmBlockAppendIdx == -1 {
+		t.Errorf("createVoteBlock does not append .resolve-confirm INSIDE the .vote-controls " +
+			"container — a sibling would sit outside the one delegated listener 02-05 built")
+	}
+
+	addListenerCount := strings.Count(createVoteBlockBody, "addEventListener")
+	if addListenerCount != 2 {
+		t.Errorf("createVoteBlock's own body must still attach exactly two listeners (click, "+
+			"keydown) — found %d. The three new buttons need no listener of their own", addListenerCount)
+	}
+}
+
+// TestResolveActionAllowlistIsUnchanged proves VOTE_ACTIONS — the transport
+// allowlist and a security control (T-02-01) — is byte-identical to 02-05's
+// declaration. confirm-resolve/cancel-resolve are UI-only dispatch keys and
+// must never be added to it.
+func TestResolveActionAllowlistIsUnchanged(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/votes.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	const want = "var VOTE_ACTIONS = ['confirm', 'dispute', 'resolve', 'reopen'];"
+	if !strings.Contains(text, want) {
+		t.Errorf("VOTE_ACTIONS must remain byte-identical to 02-05's declaration — expected to find %q", want)
+	}
+}
+
+// TestResolveIsGatedByAnInlineConfirmation proves a single tap on the
+// resolve button opens the inline confirmation without ever reaching
+// castVote, and that the cancel branch calls neither castVote nor
+// getVoterLocation directly.
+func TestResolveIsGatedByAnInlineConfirmation(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/votes.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	body := jsFunctionBody(t, text, "onControlsClick(block, button)")
+
+	openIdx := strings.Index(body, "openResolveConfirm(block)")
+	closeIdx := strings.Index(body, "closeResolveConfirm(block)")
+	castVoteIdx := strings.Index(body, "castVote(")
+	if openIdx == -1 {
+		t.Fatalf("onControlsClick's own body does not call openResolveConfirm(block)")
+	}
+	if closeIdx == -1 {
+		t.Fatalf("onControlsClick's own body does not call closeResolveConfirm(block)")
+	}
+	if castVoteIdx == -1 {
+		t.Fatalf("onControlsClick's own body does not call castVote( at all")
+	}
+	if openIdx >= castVoteIdx {
+		t.Errorf("openResolveConfirm(block) must appear strictly before castVote( in " +
+			"onControlsClick's own body — a single tap on the resolve button must never reach the network")
+	}
+	if closeIdx >= castVoteIdx {
+		t.Errorf("closeResolveConfirm(block) (the cancel branch) must appear strictly before " +
+			"castVote( in onControlsClick's own body — cancelling must never reach the network")
+	}
+
+	if strings.Contains(body, "getVoterLocation(") {
+		t.Errorf("onControlsClick must not call getVoterLocation( directly — location capture " +
+			"belongs to castVote alone, so the cancel branch cannot possibly trigger a GPS prompt")
+	}
+}
+
+// TestResolveOutcomeCopyIsChosenFromTheServerResponse proves
+// resolutionOutcomeMessage is exported, reads the response's visibility
+// field and nothing else, and that all four resolve/reopen outcome toasts
+// exist verbatim.
+func TestResolveOutcomeCopyIsChosenFromTheServerResponse(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/votes.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	if !strings.Contains(text, "resolutionOutcomeMessage: resolutionOutcomeMessage") {
+		t.Errorf("resolutionOutcomeMessage must be exported on window.PinalertVotes")
+	}
+
+	body := jsFunctionBody(t, text, "resolutionOutcomeMessage(action, result)")
+	if !strings.Contains(body, "result.visibility") && !strings.Contains(body, ".visibility") {
+		t.Errorf("resolutionOutcomeMessage's own body does not read result's visibility field")
+	}
+	for _, forbidden := range []string{"is_own_report", "ReporterResolved", "Threshold", "threshold"} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("resolutionOutcomeMessage's own body references %q — it must decide purely "+
+				"from the server's visibility, never from identity or a threshold", forbidden)
+		}
+	}
+
+	for _, copy := range []string{
+		"Report marked resolved.",
+		"Your resolve vote was recorded. It needs agreement from other nearby confirmers before it's marked resolved.",
+		"Report reopened.",
+		"Your reopen vote was recorded. It needs agreement from other nearby confirmers before it reopens.",
+	} {
+		if !strings.Contains(text, copy) {
+			t.Errorf("votes.js does not contain the Copywriting Contract's %q verbatim", copy)
+		}
+	}
+}
+
+// TestResolutionOutcomeSlugMatchesVisibilityStates is a cross-module drift
+// gate: votes.js holds its own retracted-slug constant (it loads before
+// visibility.js and cannot read VISIBILITY_STATES at evaluation time), so
+// this test proves the two stay in step.
+func TestResolutionOutcomeSlugMatchesVisibilityStates(t *testing.T) {
+	votesRaw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/votes.js: %v", err)
+	}
+	votesText := stripCSSComments(string(votesRaw))
+	if !strings.Contains(votesText, "'retracted'") {
+		t.Fatalf("votes.js does not declare the retracted visibility slug literal")
+	}
+
+	visRaw, err := fs.ReadFile(StaticFS, "static/js/visibility.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/visibility.js: %v", err)
+	}
+	visText := stripCSSComments(string(visRaw))
+	if !strings.Contains(visText, "'retracted'") {
+		t.Fatalf("visibility.js's VISIBILITY_STATES no longer contains 'retracted' — this test's " +
+			"premise no longer holds")
+	}
+}
+
+// TestToastHasExactlyOneImplementation proves app.js is the only module
+// under web/static/js/ that performs the toast element's id lookup, and
+// that modal.js's submit toast now delegates to Pinalert.showToast.
+func TestToastHasExactlyOneImplementation(t *testing.T) {
+	appRaw, err := fs.ReadFile(StaticFS, "static/js/app.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/app.js: %v", err)
+	}
+	appText := stripCSSComments(string(appRaw))
+	if !strings.Contains(appText, "getElementById('toast')") {
+		t.Errorf("app.js does not perform the toast element's id lookup")
+	}
+	if !strings.Contains(appText, "showToast: showToast") {
+		t.Errorf("app.js does not export showToast on window.Pinalert")
+	}
+
+	modalRaw, err := fs.ReadFile(StaticFS, "static/js/modal.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/modal.js: %v", err)
+	}
+	modalText := stripCSSComments(string(modalRaw))
+	if strings.Contains(modalText, "getElementById('toast')") {
+		t.Errorf("modal.js still performs the toast element's id lookup — app.js must be the sole owner")
+	}
+	if !strings.Contains(modalText, "Pinalert.showToast(") {
+		t.Errorf("modal.js's submit toast must delegate to Pinalert.showToast")
+	}
+}
+
+// TestToastStylingLivesWhereBothPagesLoadIt proves the toast rule, its
+// keyframes and its reduced-motion override moved from modal.css to
+// main.css, unchanged, and that main.css still carries exactly one
+// reduced-motion block (the fold-in, not a second block).
+func TestToastStylingLivesWhereBothPagesLoadIt(t *testing.T) {
+	mainRaw, err := fs.ReadFile(StaticFS, "static/css/main.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/main.css: %v", err)
+	}
+	mainText := stripCSSComments(string(mainRaw))
+
+	modalRaw, err := fs.ReadFile(StaticFS, "static/css/modal.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/modal.css: %v", err)
+	}
+	modalText := stripCSSComments(string(modalRaw))
+
+	mainRules := parseCSSRules(mainText)
+	if _, ok := ruleBySelector(mainRules, "#toast"); !ok {
+		t.Fatalf("no exact %q rule found in static/css/main.css", "#toast")
+	}
+	if !strings.Contains(mainText, "@keyframes toast-in") {
+		t.Errorf("main.css does not contain @keyframes toast-in")
+	}
+
+	if strings.Contains(modalText, "#toast") {
+		t.Errorf("modal.css still contains a #toast rule — the toast rules must be moved, not duplicated")
+	}
+	if strings.Contains(modalText, "@keyframes toast-in") {
+		t.Errorf("modal.css still contains @keyframes toast-in")
+	}
+
+	if n := strings.Count(mainText, "@media (prefers-reduced-motion: reduce)"); n != 1 {
+		t.Errorf("main.css must contain exactly one @media (prefers-reduced-motion: reduce) "+
+			"block (the toast override folded into the existing one), found %d", n)
+	}
+	reducedMotionIdx := strings.Index(mainText, "@media (prefers-reduced-motion: reduce)")
+	if reducedMotionIdx == -1 {
+		t.Fatalf("main.css does not contain the reduced-motion block at all")
+	}
+	if !strings.Contains(mainText[reducedMotionIdx:], "#toast") {
+		t.Errorf("main.css's single reduced-motion block does not override #toast's animation")
+	}
+}
+
+// TestResolveControlsMeetTouchTargetAndUseTokensOnly proves trust.css's
+// new resolve/reopen/confirmation rules introduce no new colour and resolve
+// every value through main.css's existing tokens, and that the base
+// .vote-btn rule every new button relies on for its 44px floor is unchanged.
+func TestResolveControlsMeetTouchTargetAndUseTokensOnly(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/css/trust.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/trust.css: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	hexColorRE := regexp.MustCompile(`#([0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b`)
+	if m := hexColorRE.FindString(text); m != "" {
+		t.Errorf("trust.css contains a raw hex colour literal (%q) — every colour must resolve "+
+			"through a var(--...) token", m)
+	}
+	for _, fn := range []string{"rgb(", "rgba(", "hsl("} {
+		if strings.Contains(text, fn) {
+			t.Errorf("trust.css contains a %q functional colour notation — every colour must "+
+				"resolve through a var(--...) token", fn)
+		}
+	}
+
+	rules := parseCSSRules(text)
+
+	baseBtnRule, ok := ruleBySelector(rules, ".vote-btn")
+	if !ok {
+		t.Fatalf("no exact %q rule found — every new button relies on this rule for its 44px floor", ".vote-btn")
+	}
+	if v := declsOf(baseBtnRule.declBody)["min-height"]; v != "var(--touch-target-min)" {
+		t.Errorf(".vote-btn min-height must remain exactly var(--touch-target-min), found %q", v)
+	}
+
+	resolveRule, ok := ruleBySelector(rules, ".vote-btn--resolve")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vote-btn--resolve")
+	}
+	if !anyDeclReferences(declsOf(resolveRule.declBody), "--color-text") {
+		t.Errorf(".vote-btn--resolve must reference --color-text (inverted neutral), declarations: %v",
+			declsOf(resolveRule.declBody))
+	}
+
+	affirmRule, ok := ruleBySelector(rules, ".vote-btn--confirm-resolve")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vote-btn--confirm-resolve")
+	}
+	if !anyDeclReferences(declsOf(affirmRule.declBody), "--color-severity-critical") {
+		t.Errorf(".vote-btn--confirm-resolve must reference --color-severity-critical "+
+			"(the Destructive token), declarations: %v", declsOf(affirmRule.declBody))
+	}
+
+	if _, ok := ruleBySelector(rules, ".vote-btn--cancel-resolve"); !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vote-btn--cancel-resolve")
+	}
+	if _, ok := ruleBySelector(rules, ".vote-btn--reopen"); !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vote-btn--reopen")
+	}
+
+	confirmBlockRule, ok := ruleBySelector(rules, ".resolve-confirm:not([hidden])")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css — the [hidden] specificity "+
+			"guard is mandatory", ".resolve-confirm:not([hidden])")
+	}
+	if _, hasDisplay := declsOf(confirmBlockRule.declBody)["display"]; !hasDisplay {
+		t.Errorf(".resolve-confirm:not([hidden]) must declare display")
+	}
+}
+
+// --- Plan 02-07 Task 2: the Activity page's real trust state ---
+
+// TestProfilePageLoadsTrustAssetsInDependencyOrder proves profile.html.tmpl
+// links the trust stylesheet after the feed stylesheet and before the auth
+// stylesheet, and loads the shared store, votes, visibility and activity
+// modules — in that order, every one deferred and asset-versioned. The
+// order is a correctness constraint: visibility.js writes its chip text
+// through the shared store's helper, and activity.js consumes both other
+// globals at call time.
+func TestProfilePageLoadsTrustAssetsInDependencyOrder(t *testing.T) {
+	raw, err := TemplatesFS.ReadFile("templates/profile.html.tmpl")
+	if err != nil {
+		t.Fatalf("failed to read embedded templates/profile.html.tmpl: %v", err)
+	}
+	html := string(raw)
+
+	feedCSSPos := strings.Index(html, "/static/css/feed.css")
+	trustCSSPos := strings.Index(html, "/static/css/trust.css")
+	authCSSPos := strings.Index(html, "/static/css/auth.css")
+	if feedCSSPos == -1 || trustCSSPos == -1 || authCSSPos == -1 {
+		t.Fatalf("could not locate all three stylesheet links in profile.html.tmpl (feed=%d, "+
+			"trust=%d, auth=%d)", feedCSSPos, trustCSSPos, authCSSPos)
+	}
+	if !(feedCSSPos < trustCSSPos && trustCSSPos < authCSSPos) {
+		t.Errorf("trust.css must be linked after feed.css and before auth.css, found feed=%d "+
+			"trust=%d auth=%d", feedCSSPos, trustCSSPos, authCSSPos)
+	}
+
+	scripts := []string{
+		"/static/js/app.js",
+		"/static/js/votes.js",
+		"/static/js/visibility.js",
+		"/static/js/activity.js",
+	}
+	positions := make([]int, 0, len(scripts))
+	for _, src := range scripts {
+		if n := strings.Count(html, src); n != 1 {
+			t.Fatalf("expected exactly one occurrence of %q, found %d", src, n)
+		}
+		window := findTagWindow(t, html, src)
+		if !strings.Contains(window, " defer") {
+			t.Errorf("%s tag is missing the defer attribute — window: %q", src, window)
+		}
+		if !strings.Contains(window, "?v={{.AssetVersion}}") {
+			t.Errorf("%s tag is missing the ?v={{.AssetVersion}} cache-busting suffix — window: %q",
+				src, window)
+		}
+		positions = append(positions, strings.Index(html, src))
+	}
+	for i := 1; i < len(positions); i++ {
+		if positions[i-1] >= positions[i] {
+			t.Errorf("script load order is wrong: %q must load strictly before %q (positions %v)",
+				scripts[i-1], scripts[i], positions)
+		}
+	}
+}
+
+// TestProfilePageCarriesTheReportIdAndVisibilityHooks proves every list row
+// in the template declares a report-id attribute and a visibility
+// attribute — without both, activity.js has nothing to key off.
+func TestProfilePageCarriesTheReportIdAndVisibilityHooks(t *testing.T) {
+	raw, err := TemplatesFS.ReadFile("templates/profile.html.tmpl")
+	if err != nil {
+		t.Fatalf("failed to read embedded templates/profile.html.tmpl: %v", err)
+	}
+	html := string(raw)
+
+	for _, hook := range []string{"data-report-id=", "data-visibility=", "data-visibility-reason="} {
+		if !strings.Contains(html, hook) {
+			t.Errorf("profile.html.tmpl does not declare %q on its report rows", hook)
+		}
+	}
+}
+
+// TestActivityModuleReusesTheSharedLabelMapAndTransport proves activity.js
+// references visibility.js's exported API rather than growing a second
+// label map or state allowlist, and declares no fetch( of its own — the
+// Activity page has no report fetch, so there is nothing for a
+// client-side computation to be built from even by accident (T-02-04).
+func TestActivityModuleReusesTheSharedLabelMapAndTransport(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/activity.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	if !strings.Contains(text, "PinalertVisibility.") {
+		t.Errorf("activity.js does not reference PinalertVisibility's exported API")
+	}
+	for _, forbidden := range []string{"'Unconfirmed'", "'Disputed'", "'Resolved'"} {
+		if strings.Contains(text, forbidden) {
+			t.Errorf("activity.js contains %q — this label belongs to visibility.js's "+
+				"VISIBILITY_TAG_LABELS only", forbidden)
+		}
+	}
+	if strings.Contains(text, "fetch(") {
+		t.Errorf("activity.js contains fetch( — this page has no report fetch of its own")
+	}
+}
+
+// TestActivityModuleHasNoMarkupParsingSink proves activity.js contains no
+// markup-parsing sink (T-01-03).
+func TestActivityModuleHasNoMarkupParsingSink(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/activity.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	for _, sink := range []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"} {
+		if strings.Contains(text, sink) {
+			t.Errorf("activity.js contains forbidden markup-parsing sink %q (T-01-03)", sink)
+		}
+	}
+}
+
+// --- Plan 02-07 Task 3: Reopen ---
+
+// TestReopenButtonPostsThroughTheSharedTransport proves the reopen click
+// path in activity.js calls the votes module's transport with the reopen
+// action and, on success, uses the votes module's exported reopen-
+// succeeded copy constant — no request of its own, no location read, no
+// copy string declared here.
+func TestReopenButtonPostsThroughTheSharedTransport(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/activity.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	if !strings.Contains(text, "PinalertVotes.castVote(") {
+		t.Errorf("activity.js does not call PinalertVotes.castVote( — the reopen button must post " +
+			"through the shared transport, never construct a request of its own")
+	}
+	if strings.Contains(text, "fetch(") {
+		t.Errorf("activity.js contains fetch( — every network call must go through PinalertVotes.castVote")
+	}
+	if strings.Contains(text, "navigator.geolocation") {
+		t.Errorf("activity.js references navigator.geolocation directly — location capture belongs " +
+			"to castVote alone")
+	}
+	if !strings.Contains(text, "PinalertVotes.REOPEN_SUCCEEDED_TOAST") {
+		t.Errorf("activity.js does not reference PinalertVotes.REOPEN_SUCCEEDED_TOAST — it must reuse " +
+			"the votes module's exported copy constant rather than declaring its own")
+	}
+	if strings.Contains(text, "'Report reopened.'") || strings.Contains(text, "\"Report reopened.\"") {
+		t.Errorf("activity.js declares its own copy of the reopen-succeeded string — it must " +
+			"reference PinalertVotes.REOPEN_SUCCEEDED_TOAST instead")
+	}
+}
+
+// TestReopenSuccessCopyIsAlwaysTheReopenedString is the amendment's
+// client-side gate (D-16 amended 2026-09-15): the reopen success path
+// reaches the toast with the reopen-succeeded constant on every branch —
+// no conditional selecting between two toast strings, and the
+// reopen-pending constant is never referenced by this module. This button
+// renders only on rows the viewer submitted, and 02-03a's amended
+// CastVote makes a reporter's reopen instant, so the pending outcome is
+// unreachable here.
+func TestReopenSuccessCopyIsAlwaysTheReopenedString(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/activity.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	if strings.Contains(text, "REOPEN_PENDING_TOAST") {
+		t.Errorf("activity.js references REOPEN_PENDING_TOAST — this button's outcome is always " +
+			"the reopen-succeeded string (D-16 amended); a later edit must not reintroduce the " +
+			"two-outcome branch")
+	}
+	if strings.Contains(text, "resolutionOutcomeMessage") {
+		t.Errorf("activity.js calls resolutionOutcomeMessage — on the Activity page a reopen has " +
+			"exactly one outcome, so this function (which DECIDES between two) must not be called here")
+	}
+
+	showToastCount := strings.Count(text, "Pinalert.showToast(")
+	if showToastCount != 1 {
+		t.Errorf("expected exactly one Pinalert.showToast( call in activity.js, found %d — the "+
+			"reopen outcome has exactly one possible toast", showToastCount)
+	}
+}
+
+// TestReopenHasNoClientSideIdentityOrThreshold is this plan's T-02-03
+// gate: activity.js contains no ownership or account-comparison read, no
+// threshold arithmetic, no second button and no confirmation block. The
+// row's own data attributes are the only inputs to whether the button
+// renders — the reporter's instant reopen is granted server-side, never
+// claimed client-side.
+func TestReopenHasNoClientSideIdentityOrThreshold(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/activity.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	// "Threshold" (the identifier shape, matching
+	// service.IndependentAgreementThreshold) is checked rather than the
+	// bare lowercase word: stripCSSComments only strips CSS-style /* */
+	// blocks, not JS // line comments, and this file's own explanatory
+	// comments legitimately use the English word "threshold" (and
+	// "threshold-free") in prose describing why none is computed —
+	// banning the word outright would forbid documenting its own absence.
+	for _, forbidden := range []string{
+		"is_own_report", "reporterAccountID", "ReporterReopened", "accountID",
+		"Threshold", "resolve-confirm", "vote-btn--confirm-resolve",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Errorf("activity.js references %q — the reporter's instant reopen is the server's to "+
+				"grant; this module must never read identity, compute a threshold, or build a "+
+				"confirmation step (T-02-03)", forbidden)
+		}
+	}
+
+	if n := strings.Count(text, "addEventListener"); n != 1 {
+		t.Errorf("expected exactly one addEventListener call in activity.js (one delegated listener "+
+			"on the report list), found %d", n)
+	}
+}
+
+// TestReopenAppliesTheServerAnswerRatherThanGuessing proves the success
+// path applies the visibility the RESPONSE carried — updating the chip and
+// the state class — and removes the control block only when that
+// visibility is no longer the retracted slug. Fails if the button removes
+// itself optimistically before the response arrives.
+func TestReopenAppliesTheServerAnswerRatherThanGuessing(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/activity.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	if !strings.Contains(text, "PinalertVisibility.updateVisibilityTag(") {
+		t.Errorf("activity.js's reopen success path does not call " +
+			"PinalertVisibility.updateVisibilityTag( to rebuild the chip from the response")
+	}
+	if !strings.Contains(text, "PinalertVisibility.applyVisibilityClass(") {
+		t.Errorf("activity.js's reopen success path does not call " +
+			"PinalertVisibility.applyVisibilityClass( to rebuild the state class from the response")
+	}
+	if !strings.Contains(text, "PinalertVotes.RETRACTED_VISIBILITY_SLUG") {
+		t.Errorf("activity.js does not reference PinalertVotes.RETRACTED_VISIBILITY_SLUG to decide " +
+			"whether the control block should be removed")
+	}
+}
+
+// TestRetractedRowTreatmentMatchesHidden proves the retracted state rule
+// in trust.css declares the same properties with the same values as
+// 02-06's hidden state rule, and that the badge rule exists in both the
+// compound and the descendant selector form — the same invariant
+// 02-06's TestVisibilityCascadeOverridesAgeRamp established for
+// .vis-hidden, extended to .vis-retracted.
+func TestRetractedRowTreatmentMatchesHidden(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/css/trust.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/trust.css: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+	rules := parseCSSRules(text)
+
+	hiddenRule, ok := ruleBySelector(rules, ".vis-hidden")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vis-hidden")
+	}
+	retractedRule, ok := ruleBySelector(rules, ".vis-retracted")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vis-retracted")
+	}
+
+	hiddenDecls := declsOf(hiddenRule.declBody)
+	retractedDecls := declsOf(retractedRule.declBody)
+	if len(hiddenDecls) == 0 {
+		t.Fatalf(".vis-hidden declares no properties — nothing to compare against")
+	}
+	for name, want := range hiddenDecls {
+		got, ok := retractedDecls[name]
+		if !ok {
+			t.Errorf(".vis-retracted is missing declaration %q (.vis-hidden has %q)", name, want)
+			continue
+		}
+		if got != want {
+			t.Errorf(".vis-retracted's %s = %q, want %q (must match .vis-hidden exactly)", name, got, want)
+		}
+	}
+	for name := range retractedDecls {
+		if _, ok := hiddenDecls[name]; !ok {
+			t.Errorf(".vis-retracted declares %q, which .vis-hidden does not — the two rules must "+
+				"be identical", name)
+		}
+	}
+
+	var retractedBadgeRules []cssRule
+	for _, r := range rules {
+		if strings.Contains(r.selectorHead, "vis-retracted") && strings.Contains(r.declBody, "background") {
+			retractedBadgeRules = append(retractedBadgeRules, r)
+		}
+	}
+	if len(retractedBadgeRules) != 1 {
+		t.Fatalf("expected exactly one rule in trust.css mentioning the retracted state class and "+
+			"declaring background, found %d", len(retractedBadgeRules))
+	}
+	badgeSelector := retractedBadgeRules[0].selectorHead
+	if !strings.Contains(badgeSelector, ".icon-badge.vis-retracted") {
+		t.Errorf("the retracted badge rule's selector head must contain the compound form, found: %q",
+			badgeSelector)
+	}
+	if !strings.Contains(badgeSelector, ".vis-retracted .icon-badge") {
+		t.Errorf("the retracted badge rule's selector head must contain the descendant form, found: %q",
+			badgeSelector)
 	}
 }

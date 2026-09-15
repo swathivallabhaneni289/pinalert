@@ -6,6 +6,7 @@
   <title>Pinalert — Activity</title>
   <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/feed.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/trust.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
 </head>
 <body>
@@ -20,7 +21,11 @@
       {{if .Reports}}
       <ol class="profile-report-list">
         {{range .Reports}}
-        <li class="report-row {{.SeverityClass}}">
+        <li class="report-row {{.SeverityClass}} {{.VisibilityClass}}"
+            data-report-id="{{.ReportID}}"
+            data-visibility="{{.Visibility}}"
+            data-visibility-reason="{{.VisibilityReason}}"
+            {{if .CanReopen}}data-can-reopen="true"{{end}}>
           <span class="icon-badge icon-badge--sm">
             <span class="icon-glyph {{.CategoryGlyph}}" aria-hidden="true"></span>
           </span>
@@ -37,13 +42,15 @@
         <p>Reports you submit will appear here.</p>
       </div>
       {{end}}
-
-      <div class="empty-state profile-empty-state">
-        <p>Confirm and dispute activity will appear here once voting launches.</p>
-      </div>
     </section>
   </main>
 
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="/static/js/app.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/votes.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/visibility.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/activity.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
 </body>
 </html>

@@ -50,6 +50,14 @@ type fakeAuthQuerier struct {
 	reportsRows []sqlcgen.ReportsByAccountRow
 	reportsErr  error
 	reportsArg  *int64
+
+	// votesRows/votesErr/votesCallCount drive CurrentVotesForReports
+	// (02-07's ActivityForAccount). votesCallCount lets
+	// TestActivityForAccountBatchesVoteReadsOnce assert the exact call
+	// count directly rather than inferring it from *calls' length.
+	votesRows      []sqlcgen.CurrentVotesForReportsRow
+	votesErr       error
+	votesCallCount int
 }
 
 func (f *fakeAuthQuerier) InsertMagicLinkToken(ctx context.Context, arg sqlcgen.InsertMagicLinkTokenParams) (sqlcgen.InsertMagicLinkTokenRow, error) {
@@ -132,6 +140,18 @@ func (f *fakeAuthQuerier) ReportsByAccount(ctx context.Context, accountID *int64
 		return nil, f.reportsErr
 	}
 	return f.reportsRows, nil
+}
+
+// CurrentVotesForReports drives 02-07's ActivityForAccount. Its signature
+// is copied verbatim from trust.go's VotingQuerier — same generated
+// method, a second consumer-defined interface naming it.
+func (f *fakeAuthQuerier) CurrentVotesForReports(ctx context.Context, reportIDs []int64) ([]sqlcgen.CurrentVotesForReportsRow, error) {
+	*f.calls = append(*f.calls, "CurrentVotesForReports")
+	f.votesCallCount++
+	if f.votesErr != nil {
+		return nil, f.votesErr
+	}
+	return f.votesRows, nil
 }
 
 type fakeMailer struct {
@@ -633,6 +653,128 @@ func TestReportsForAccountWrapsQuerierError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "connection reset") {
 		t.Fatalf("error %q does not wrap the underlying querier error", err.Error())
+	}
+}
+
+// --- ActivityForAccount (02-07 Task 2) ---
+
+// TestActivityForAccountResolvesVisibility proves the Activity page's
+// visibility comes from the same service.Resolve every other read path
+// calls: a report carrying a standing reporter resolve vote comes back
+// retracted/resolved, and a report with no votes at all comes back
+// provisional/awaiting-confirmation.
+func TestActivityForAccountResolvesVisibility(t *testing.T) {
+	q, m, _ := newFakes()
+	future := time.Now().Add(1 * time.Hour)
+	q.reportsRows = []sqlcgen.ReportsByAccountRow{
+		{ID: 1, Category: "flood", Severity: "low", Description: "resolved report", ExpiresAt: future},
+		{ID: 2, Category: "flood", Severity: "low", Description: "untouched report", ExpiresAt: future},
+	}
+	q.votesRows = []sqlcgen.CurrentVotesForReportsRow{
+		{ReportID: 1, AccountID: 99, Kind: "resolution", Value: "resolve", GeohashCell: "abc"},
+	}
+	svc := service.NewAuthService(q, m, "https://pinalert.example")
+
+	reports, err := svc.ActivityForAccount(context.Background(), 99)
+	if err != nil {
+		t.Fatalf("ActivityForAccount: %v", err)
+	}
+	if len(reports) != 2 {
+		t.Fatalf("len(reports) = %d, want 2", len(reports))
+	}
+
+	var resolved, untouched *service.ActivityReport
+	for i := range reports {
+		switch reports[i].Row.ID {
+		case 1:
+			resolved = &reports[i]
+		case 2:
+			untouched = &reports[i]
+		}
+	}
+	if resolved == nil || untouched == nil {
+		t.Fatalf("expected both report ids 1 and 2 in the result, got %+v", reports)
+	}
+	if resolved.Visibility != service.VisibilityRetracted {
+		t.Errorf("report 1 visibility = %v, want %v (the reporter's own resolve vote, D-13)",
+			resolved.Visibility, service.VisibilityRetracted)
+	}
+	if resolved.Reason != service.ReasonResolved {
+		t.Errorf("report 1 reason = %v, want %v", resolved.Reason, service.ReasonResolved)
+	}
+	if untouched.Visibility != service.VisibilityProvisional {
+		t.Errorf("report 2 (no votes) visibility = %v, want %v", untouched.Visibility, service.VisibilityProvisional)
+	}
+	if untouched.Reason != service.ReasonAwaitingConfirmation {
+		t.Errorf("report 2 reason = %v, want %v", untouched.Reason, service.ReasonAwaitingConfirmation)
+	}
+}
+
+// TestActivityForAccountBatchesVoteReadsOnce proves N reports cost exactly
+// one CurrentVotesForReports call, and an account with no reports at all
+// costs zero — the same batched shape 02-04's Nearby uses, never an N+1.
+func TestActivityForAccountBatchesVoteReadsOnce(t *testing.T) {
+	q, m, _ := newFakes()
+	future := time.Now().Add(1 * time.Hour)
+	q.reportsRows = []sqlcgen.ReportsByAccountRow{
+		{ID: 1, Category: "flood", Severity: "low", ExpiresAt: future},
+		{ID: 2, Category: "fire", Severity: "medium", ExpiresAt: future},
+		{ID: 3, Category: "other", Severity: "critical", ExpiresAt: future},
+	}
+	svc := service.NewAuthService(q, m, "https://pinalert.example")
+
+	if _, err := svc.ActivityForAccount(context.Background(), 42); err != nil {
+		t.Fatalf("ActivityForAccount: %v", err)
+	}
+	if q.votesCallCount != 1 {
+		t.Fatalf("CurrentVotesForReports called %d times for 3 reports, want exactly 1", q.votesCallCount)
+	}
+
+	q2, m2, _ := newFakes()
+	svc2 := service.NewAuthService(q2, m2, "https://pinalert.example")
+	reports, err := svc2.ActivityForAccount(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("ActivityForAccount (no reports): %v", err)
+	}
+	if len(reports) != 0 {
+		t.Fatalf("expected an empty slice for an account with no reports, got %d", len(reports))
+	}
+	if q2.votesCallCount != 0 {
+		t.Fatalf("CurrentVotesForReports called %d times for an account with no reports, want 0", q2.votesCallCount)
+	}
+}
+
+// TestActivityForAccountValidatesCategoryAndSeverityOnce proves category
+// and severity are validated exactly once, in the service, with the
+// canonical fallbacks landing on BOTH the returned struct and the values
+// the resolver saw — proven by a garbage severity NOT triggering the
+// critical bypass, which is what would happen if the resolver saw a wrong
+// (or a second, disagreeing) fallback.
+func TestActivityForAccountValidatesCategoryAndSeverityOnce(t *testing.T) {
+	q, m, _ := newFakes()
+	q.reportsRows = []sqlcgen.ReportsByAccountRow{
+		{ID: 1, Category: "not-a-real-category", Severity: "not-a-real-severity", ExpiresAt: time.Now().Add(1 * time.Hour)},
+	}
+	svc := service.NewAuthService(q, m, "https://pinalert.example")
+
+	reports, err := svc.ActivityForAccount(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("ActivityForAccount: %v", err)
+	}
+	if len(reports) != 1 {
+		t.Fatalf("len(reports) = %d, want 1", len(reports))
+	}
+	got := reports[0]
+	if got.Category != service.CategoryOther {
+		t.Errorf("Category = %v, want the canonical fallback %v", got.Category, service.CategoryOther)
+	}
+	if got.Severity != service.SeverityLow {
+		t.Errorf("Severity = %v, want the canonical fallback %v", got.Severity, service.SeverityLow)
+	}
+	if got.Visibility != service.VisibilityProvisional {
+		t.Errorf("Visibility = %v, want %v — a garbage severity must fall back to low, not "+
+			"critical, or the resolver would wrongly bypass the confirmation gate",
+			got.Visibility, service.VisibilityProvisional)
 	}
 }
 

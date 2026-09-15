@@ -167,6 +167,27 @@
   outline: 1px solid var(--color-border);
 }
 
+/* Retracted (Task 3, 02-07, Activity page only) — declarations identical
+   to .vis-hidden's above, property for property: "this is not currently
+   active" reads consistently whether the reason is dispute or resolution,
+   while the visibility-tag's own text ("Disputed" vs "Resolved")
+   distinguishes why. Held there deliberately: 02-06's selector heads
+   above are NOT widened to cover this state — ruleBySelector matches
+   heads exactly, and widening would break 02-06's own cascade lookups —
+   so the duplication is checked by TestRetractedRowTreatmentMatchesHidden
+   rather than shared through one selector. */
+.vis-retracted {
+  --severity-current: var(--color-border);
+  --severity-tint: transparent;
+  --badge-glyph-fg: var(--color-text-muted);
+}
+
+.icon-badge.vis-retracted,
+.vis-retracted .icon-badge {
+  background: transparent;
+  outline: 1px solid var(--color-border);
+}
+
 /* The visibility-tag chip. The mandatory [hidden] guard — this repo's
    third encounter with the specificity trap — exists because the chip's
    vertical padding forces a non-inline display, which is an author-origin
@@ -228,4 +249,71 @@
   font-weight: var(--font-weight-regular);
   color: var(--color-text);
   cursor: pointer;
+}
+
+/* -------------------------------------------------------------------------
+ * Mark Resolved (Task 1, 02-07) — the third vote-controls button, its
+ * inline destructive confirmation, and the reopen button's own neutral
+ * outline (rendered on the Activity page by Task 3, declared here now so
+ * this file's selector list grows append-only across both tasks rather
+ * than being edited twice). Every button already inherits the 44px floor
+ * and the tightened horizontal padding from the shared .vote-btn rule
+ * above — none of these color-only rules needs to redeclare it.
+ * ---------------------------------------------------------------------- */
+
+/* Inverted neutral fill — matches Phase 1's FAB/primary-submit-button
+   treatment. Mark Resolved is a primary-weight action, not a severity
+   signal, so it deliberately does not borrow a severity hue. */
+.vote-btn--resolve {
+  background: var(--color-text);
+  color: var(--color-bg);
+  border-color: var(--color-text);
+}
+
+/* Destructive — the inline confirmation's affirm button only, per
+   02-UI-SPEC.md's Destructive row. Mark Resolved is the highest-
+   consequence action this phase introduces, so it borrows the same
+   critical-severity token Phase 1 already reserved for the discard-draft
+   confirmation, not a fifth colour. */
+.vote-btn--confirm-resolve {
+  background: var(--color-severity-critical);
+  color: var(--color-bg);
+  border-color: var(--color-severity-critical);
+}
+
+/* Neutral outline — identical to .vote-btn's own unvoted default. Declared
+   explicitly rather than left implicit so a reader scanning this file's
+   selector list sees the full contract for both buttons, and so each has
+   an exact selector head to assert against. */
+.vote-btn--cancel-resolve {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+.vote-btn--reopen {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+/* The confirmation block's layout — wraps rather than overflowing inside a
+   Leaflet popup's fixed max-width, matching .vote-controls' own
+   flex-wrap. The [hidden] guard is this repo's fourth encounter with the
+   specificity trap documented at the top of this file. */
+.resolve-confirm:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.resolve-confirm p {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text);
 }
