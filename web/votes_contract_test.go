@@ -416,6 +416,17 @@ func TestOwnReportRuleRemovesControlsRatherThanDisablingThem(t *testing.T) {
 			"must be removed, never disabled; a disabled button reads as a bug on a row already " +
 			"tight for space")
 	}
+	// 02-07 Task 1 supersedes 02-05's "the emptied .vote-controls container
+	// is hidden" truth: Mark resolved renders for the reporter too (D-13,
+	// D-15), so the container is never emptied in practice. The mechanism
+	// itself (hide the container only when it has no .vote-btn child left)
+	// is unchanged — only this assertion moves from "is hidden for an own
+	// report" to "computes hasAnyButton before deciding hidden".
+	if !strings.Contains(applyOwnReportBody, "hasAnyButton") {
+		t.Errorf("applyOwnReportRule's own body does not compute hasAnyButton — the container " +
+			"must be hidden only when it has no .vote-btn child left (which, after Task 1, never " +
+			"happens on a real row), never simply because is_own_report is true")
+	}
 
 	updateVoteBlockBody := jsFunctionBody(t, text, "updateVoteBlock(block, report)")
 	if strings.Contains(updateVoteBlockBody, "disabled") {
@@ -1130,5 +1141,314 @@ func TestFeedExplainsAnEmptyDisputedResult(t *testing.T) {
 	if !strings.Contains(feedText, "Pinalert.fetchReports()") {
 		t.Errorf("feed.js does not call Pinalert.fetchReports() — checking the toggle must refetch, " +
 			"never filter state.reports in place")
+	}
+}
+
+// --- Plan 02-07 Task 1: Mark Resolved ---
+
+// TestResolveButtonMountsInsideTheVoteControlsContainer proves the resolve
+// button and its inline confirmation block are built INSIDE the same
+// .vote-controls container createVoteBlock already returns for confirm/
+// dispute — not as siblings, which would sit outside 02-05's one delegated
+// listener and force a second one.
+func TestResolveButtonMountsInsideTheVoteControlsContainer(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/votes.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	createVoteBlockBody := jsFunctionBody(t, text, "createVoteBlock(reportId)")
+
+	if !strings.Contains(createVoteBlockBody, "vote-btn--resolve") {
+		t.Errorf("createVoteBlock's own body does not build a .vote-btn--resolve element")
+	}
+	if !strings.Contains(createVoteBlockBody, "resolve-confirm") {
+		t.Errorf("createVoteBlock's own body does not build a .resolve-confirm element")
+	}
+	if !strings.Contains(createVoteBlockBody, "vote-btn--confirm-resolve") {
+		t.Errorf("createVoteBlock's own body does not build a .vote-btn--confirm-resolve element")
+	}
+	if !strings.Contains(createVoteBlockBody, "vote-btn--cancel-resolve") {
+		t.Errorf("createVoteBlock's own body does not build a .vote-btn--cancel-resolve element")
+	}
+
+	resolveAppendIdx := strings.Index(createVoteBlockBody, "controls.appendChild(resolveBtn)")
+	confirmBlockAppendIdx := strings.Index(createVoteBlockBody, "controls.appendChild(confirmBlock)")
+	if resolveAppendIdx == -1 {
+		t.Errorf("createVoteBlock does not append the resolve button to the same .vote-controls " +
+			"container as confirm/dispute")
+	}
+	if confirmBlockAppendIdx == -1 {
+		t.Errorf("createVoteBlock does not append .resolve-confirm INSIDE the .vote-controls " +
+			"container — a sibling would sit outside the one delegated listener 02-05 built")
+	}
+
+	addListenerCount := strings.Count(createVoteBlockBody, "addEventListener")
+	if addListenerCount != 2 {
+		t.Errorf("createVoteBlock's own body must still attach exactly two listeners (click, "+
+			"keydown) — found %d. The three new buttons need no listener of their own", addListenerCount)
+	}
+}
+
+// TestResolveActionAllowlistIsUnchanged proves VOTE_ACTIONS — the transport
+// allowlist and a security control (T-02-01) — is byte-identical to 02-05's
+// declaration. confirm-resolve/cancel-resolve are UI-only dispatch keys and
+// must never be added to it.
+func TestResolveActionAllowlistIsUnchanged(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/votes.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	const want = "var VOTE_ACTIONS = ['confirm', 'dispute', 'resolve', 'reopen'];"
+	if !strings.Contains(text, want) {
+		t.Errorf("VOTE_ACTIONS must remain byte-identical to 02-05's declaration — expected to find %q", want)
+	}
+}
+
+// TestResolveIsGatedByAnInlineConfirmation proves a single tap on the
+// resolve button opens the inline confirmation without ever reaching
+// castVote, and that the cancel branch calls neither castVote nor
+// getVoterLocation directly.
+func TestResolveIsGatedByAnInlineConfirmation(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/votes.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	body := jsFunctionBody(t, text, "onControlsClick(block, button)")
+
+	openIdx := strings.Index(body, "openResolveConfirm(block)")
+	closeIdx := strings.Index(body, "closeResolveConfirm(block)")
+	castVoteIdx := strings.Index(body, "castVote(")
+	if openIdx == -1 {
+		t.Fatalf("onControlsClick's own body does not call openResolveConfirm(block)")
+	}
+	if closeIdx == -1 {
+		t.Fatalf("onControlsClick's own body does not call closeResolveConfirm(block)")
+	}
+	if castVoteIdx == -1 {
+		t.Fatalf("onControlsClick's own body does not call castVote( at all")
+	}
+	if openIdx >= castVoteIdx {
+		t.Errorf("openResolveConfirm(block) must appear strictly before castVote( in " +
+			"onControlsClick's own body — a single tap on the resolve button must never reach the network")
+	}
+	if closeIdx >= castVoteIdx {
+		t.Errorf("closeResolveConfirm(block) (the cancel branch) must appear strictly before " +
+			"castVote( in onControlsClick's own body — cancelling must never reach the network")
+	}
+
+	if strings.Contains(body, "getVoterLocation(") {
+		t.Errorf("onControlsClick must not call getVoterLocation( directly — location capture " +
+			"belongs to castVote alone, so the cancel branch cannot possibly trigger a GPS prompt")
+	}
+}
+
+// TestResolveOutcomeCopyIsChosenFromTheServerResponse proves
+// resolutionOutcomeMessage is exported, reads the response's visibility
+// field and nothing else, and that all four resolve/reopen outcome toasts
+// exist verbatim.
+func TestResolveOutcomeCopyIsChosenFromTheServerResponse(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/votes.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	if !strings.Contains(text, "resolutionOutcomeMessage: resolutionOutcomeMessage") {
+		t.Errorf("resolutionOutcomeMessage must be exported on window.PinalertVotes")
+	}
+
+	body := jsFunctionBody(t, text, "resolutionOutcomeMessage(action, result)")
+	if !strings.Contains(body, "result.visibility") && !strings.Contains(body, ".visibility") {
+		t.Errorf("resolutionOutcomeMessage's own body does not read result's visibility field")
+	}
+	for _, forbidden := range []string{"is_own_report", "ReporterResolved", "Threshold", "threshold"} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("resolutionOutcomeMessage's own body references %q — it must decide purely "+
+				"from the server's visibility, never from identity or a threshold", forbidden)
+		}
+	}
+
+	for _, copy := range []string{
+		"Report marked resolved.",
+		"Your resolve vote was recorded. It needs agreement from other nearby confirmers before it's marked resolved.",
+		"Report reopened.",
+		"Your reopen vote was recorded. It needs agreement from other nearby confirmers before it reopens.",
+	} {
+		if !strings.Contains(text, copy) {
+			t.Errorf("votes.js does not contain the Copywriting Contract's %q verbatim", copy)
+		}
+	}
+}
+
+// TestResolutionOutcomeSlugMatchesVisibilityStates is a cross-module drift
+// gate: votes.js holds its own retracted-slug constant (it loads before
+// visibility.js and cannot read VISIBILITY_STATES at evaluation time), so
+// this test proves the two stay in step.
+func TestResolutionOutcomeSlugMatchesVisibilityStates(t *testing.T) {
+	votesRaw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/votes.js: %v", err)
+	}
+	votesText := stripCSSComments(string(votesRaw))
+	if !strings.Contains(votesText, "'retracted'") {
+		t.Fatalf("votes.js does not declare the retracted visibility slug literal")
+	}
+
+	visRaw, err := fs.ReadFile(StaticFS, "static/js/visibility.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/visibility.js: %v", err)
+	}
+	visText := stripCSSComments(string(visRaw))
+	if !strings.Contains(visText, "'retracted'") {
+		t.Fatalf("visibility.js's VISIBILITY_STATES no longer contains 'retracted' — this test's " +
+			"premise no longer holds")
+	}
+}
+
+// TestToastHasExactlyOneImplementation proves app.js is the only module
+// under web/static/js/ that performs the toast element's id lookup, and
+// that modal.js's submit toast now delegates to Pinalert.showToast.
+func TestToastHasExactlyOneImplementation(t *testing.T) {
+	appRaw, err := fs.ReadFile(StaticFS, "static/js/app.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/app.js: %v", err)
+	}
+	appText := stripCSSComments(string(appRaw))
+	if !strings.Contains(appText, "getElementById('toast')") {
+		t.Errorf("app.js does not perform the toast element's id lookup")
+	}
+	if !strings.Contains(appText, "showToast: showToast") {
+		t.Errorf("app.js does not export showToast on window.Pinalert")
+	}
+
+	modalRaw, err := fs.ReadFile(StaticFS, "static/js/modal.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/modal.js: %v", err)
+	}
+	modalText := stripCSSComments(string(modalRaw))
+	if strings.Contains(modalText, "getElementById('toast')") {
+		t.Errorf("modal.js still performs the toast element's id lookup — app.js must be the sole owner")
+	}
+	if !strings.Contains(modalText, "Pinalert.showToast(") {
+		t.Errorf("modal.js's submit toast must delegate to Pinalert.showToast")
+	}
+}
+
+// TestToastStylingLivesWhereBothPagesLoadIt proves the toast rule, its
+// keyframes and its reduced-motion override moved from modal.css to
+// main.css, unchanged, and that main.css still carries exactly one
+// reduced-motion block (the fold-in, not a second block).
+func TestToastStylingLivesWhereBothPagesLoadIt(t *testing.T) {
+	mainRaw, err := fs.ReadFile(StaticFS, "static/css/main.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/main.css: %v", err)
+	}
+	mainText := stripCSSComments(string(mainRaw))
+
+	modalRaw, err := fs.ReadFile(StaticFS, "static/css/modal.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/modal.css: %v", err)
+	}
+	modalText := stripCSSComments(string(modalRaw))
+
+	mainRules := parseCSSRules(mainText)
+	if _, ok := ruleBySelector(mainRules, "#toast"); !ok {
+		t.Fatalf("no exact %q rule found in static/css/main.css", "#toast")
+	}
+	if !strings.Contains(mainText, "@keyframes toast-in") {
+		t.Errorf("main.css does not contain @keyframes toast-in")
+	}
+
+	if strings.Contains(modalText, "#toast") {
+		t.Errorf("modal.css still contains a #toast rule — the toast rules must be moved, not duplicated")
+	}
+	if strings.Contains(modalText, "@keyframes toast-in") {
+		t.Errorf("modal.css still contains @keyframes toast-in")
+	}
+
+	if n := strings.Count(mainText, "@media (prefers-reduced-motion: reduce)"); n != 1 {
+		t.Errorf("main.css must contain exactly one @media (prefers-reduced-motion: reduce) "+
+			"block (the toast override folded into the existing one), found %d", n)
+	}
+	reducedMotionIdx := strings.Index(mainText, "@media (prefers-reduced-motion: reduce)")
+	if reducedMotionIdx == -1 {
+		t.Fatalf("main.css does not contain the reduced-motion block at all")
+	}
+	if !strings.Contains(mainText[reducedMotionIdx:], "#toast") {
+		t.Errorf("main.css's single reduced-motion block does not override #toast's animation")
+	}
+}
+
+// TestResolveControlsMeetTouchTargetAndUseTokensOnly proves trust.css's
+// new resolve/reopen/confirmation rules introduce no new colour and resolve
+// every value through main.css's existing tokens, and that the base
+// .vote-btn rule every new button relies on for its 44px floor is unchanged.
+func TestResolveControlsMeetTouchTargetAndUseTokensOnly(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/css/trust.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/trust.css: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	hexColorRE := regexp.MustCompile(`#([0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b`)
+	if m := hexColorRE.FindString(text); m != "" {
+		t.Errorf("trust.css contains a raw hex colour literal (%q) — every colour must resolve "+
+			"through a var(--...) token", m)
+	}
+	for _, fn := range []string{"rgb(", "rgba(", "hsl("} {
+		if strings.Contains(text, fn) {
+			t.Errorf("trust.css contains a %q functional colour notation — every colour must "+
+				"resolve through a var(--...) token", fn)
+		}
+	}
+
+	rules := parseCSSRules(text)
+
+	baseBtnRule, ok := ruleBySelector(rules, ".vote-btn")
+	if !ok {
+		t.Fatalf("no exact %q rule found — every new button relies on this rule for its 44px floor", ".vote-btn")
+	}
+	if v := declsOf(baseBtnRule.declBody)["min-height"]; v != "var(--touch-target-min)" {
+		t.Errorf(".vote-btn min-height must remain exactly var(--touch-target-min), found %q", v)
+	}
+
+	resolveRule, ok := ruleBySelector(rules, ".vote-btn--resolve")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vote-btn--resolve")
+	}
+	if !anyDeclReferences(declsOf(resolveRule.declBody), "--color-text") {
+		t.Errorf(".vote-btn--resolve must reference --color-text (inverted neutral), declarations: %v",
+			declsOf(resolveRule.declBody))
+	}
+
+	affirmRule, ok := ruleBySelector(rules, ".vote-btn--confirm-resolve")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vote-btn--confirm-resolve")
+	}
+	if !anyDeclReferences(declsOf(affirmRule.declBody), "--color-severity-critical") {
+		t.Errorf(".vote-btn--confirm-resolve must reference --color-severity-critical "+
+			"(the Destructive token), declarations: %v", declsOf(affirmRule.declBody))
+	}
+
+	if _, ok := ruleBySelector(rules, ".vote-btn--cancel-resolve"); !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vote-btn--cancel-resolve")
+	}
+	if _, ok := ruleBySelector(rules, ".vote-btn--reopen"); !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vote-btn--reopen")
+	}
+
+	confirmBlockRule, ok := ruleBySelector(rules, ".resolve-confirm:not([hidden])")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css — the [hidden] specificity "+
+			"guard is mandatory", ".resolve-confirm:not([hidden])")
+	}
+	if _, hasDisplay := declsOf(confirmBlockRule.declBody)["display"]; !hasDisplay {
+		t.Errorf(".resolve-confirm:not([hidden]) must declare display")
 	}
 }
