@@ -183,7 +183,29 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		}
 	}
 
+	// 02-04's contribution to this same OPS-01 drift guard: one response
+	// shape changed (GET /reports now returns FeedReportResponse, not
+	// ReportResponse), one spec regenerated. The GET /reports operation
+	// must declare the show_disputed parameter.
+	if getOp, ok := reportsOps["get"]; ok {
+		if !strings.Contains(string(getOp), "show_disputed") {
+			t.Errorf("docs/swagger.json GET /reports operation is missing the show_disputed parameter")
+		}
+	}
+
 	body := string(raw)
+
+	// 02-04: the GET /reports element shape and its four new response
+	// fields must be documented so 02-06's display-copy mapping has a
+	// contract to key off.
+	if !strings.Contains(body, "FeedReportResponse") {
+		t.Errorf("docs/swagger.json is missing the FeedReportResponse definition")
+	}
+	for _, field := range []string{"visibility_reason", "your_vote", "is_own_report"} {
+		if !strings.Contains(body, field) {
+			t.Errorf("docs/swagger.json is missing response field %q", field)
+		}
+	}
 
 	for _, category := range []string{
 		"flood", "earthquake", "fire", "storm_cyclone", "road_blocked",
@@ -212,5 +234,13 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 	// a future change to start populating it.
 	if strings.Contains(body, "session_id") || strings.Contains(body, "sessionId") {
 		t.Fatalf("docs/swagger.json must never document a session_id/sessionId field")
+	}
+
+	// 02-04's own contribution to the same rule: the reporter account id
+	// the feed loads to compute is_own_report must reduce to a boolean on
+	// the wire and never travel as a value (T-01-02's published-schema
+	// counterpart for this plan's new field).
+	if strings.Contains(body, "reporter_account_id") || strings.Contains(body, "reporterAccountId") {
+		t.Fatalf("docs/swagger.json must never document a reporter_account_id/reporterAccountId field")
 	}
 }

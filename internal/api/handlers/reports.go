@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"pinalert/internal/account"
 	"pinalert/internal/service"
 	"pinalert/internal/session"
 )
@@ -54,10 +55,11 @@ type SubmitReportRequest struct {
 	ShelterHeadcount *int `json:"shelter_headcount,omitempty" example:"42"`
 }
 
-// ReportResponse is the public JSON shape of a report, returned by both
-// POST /api/reports and GET /api/reports. Declared field by field rather
-// than reusing any store row type — see package doc comment. It never
-// includes session_id (threat register T-01-02).
+// ReportResponse is the public JSON shape of a report returned by POST
+// /api/reports (the GET /api/reports element shape is FeedReportResponse
+// below). Declared field by field rather than reusing any store row type —
+// see package doc comment. It never includes session_id (threat register
+// T-01-02).
 type ReportResponse struct {
 	ID          int64   `json:"id" example:"42"`
 	Category    string  `json:"category" enums:"flood,earthquake,fire,storm_cyclone,road_blocked,power_outage,shelter_open,rescue_needed,other" example:"flood"`
@@ -81,10 +83,61 @@ type SubmitReportResponse struct {
 	Report ReportResponse `json:"report"`
 }
 
+// FeedReportResponse is the public JSON shape of a report returned by GET
+// /api/reports — the twelve fields ReportResponse also carries, plus four
+// read-only fields the resolver and the viewer's own standing contribute.
+// Hand-declared field by field, never embedding ReportResponse and never
+// aliasing a store row, exactly as this file's package doc comment
+// requires: each public JSON shape is declared explicitly so a change to
+// one can never silently alter the other. The duplication with
+// ReportResponse is deliberate for that same reason.
+type FeedReportResponse struct {
+	ID          int64   `json:"id" example:"42"`
+	Category    string  `json:"category" enums:"flood,earthquake,fire,storm_cyclone,road_blocked,power_outage,shelter_open,rescue_needed,other" example:"flood"`
+	Severity    string  `json:"severity" enums:"low,medium,critical" example:"critical"`
+	Description string  `json:"description" example:"Water rising fast near the market bridge."`
+	Latitude    float64 `json:"latitude" example:"13.0827"`
+	Longitude   float64 `json:"longitude" example:"80.2707"`
+	Geohash     string  `json:"geohash" example:"tdr1qgzp"`
+	// ShelterCapacityStatus is present only for shelter_open reports.
+	ShelterCapacityStatus *string  `json:"shelter_capacity_status,omitempty" enums:"available,limited,full,closed" example:"available"`
+	ShelterHeadcount      *int     `json:"shelter_headcount,omitempty" example:"42"`
+	CreatedAt             string   `json:"created_at" example:"2026-09-05T14:03:00.000Z"`
+	ExpiresAt             string   `json:"expires_at" example:"2026-09-06T14:03:00.000Z"`
+	DistanceKm            *float64 `json:"distance_km,omitempty" example:"1.42"`
+	// Visibility is the resolver's own answer, serialised verbatim from
+	// service.ReportView.Visibility; the client renders it and never
+	// recomputes it (TRUST-02, T-02-04). "retracted" is in the declared
+	// enum — it is one of the four values of the shared type — but can
+	// never actually appear here: D-12 removes retracted reports from both
+	// the default and the show_disputed view.
+	Visibility string `json:"visibility" enums:"hidden,provisional,live,retracted" example:"live"`
+	// VisibilityReason is the resolver's own explanation for Visibility
+	// above, from the SAME closed slug set votes.go's CastVoteResponse.Reason
+	// declares, so 02-06's display-copy mapping has one contract to key off
+	// regardless of which endpoint delivered it.
+	VisibilityReason string `json:"visibility_reason" enums:"resolved,critical_bypasses_gates,disputed,awaiting_second_independent_confirmation,confirmed" example:"confirmed"`
+	// YourVote is the calling account's own current content vote on this
+	// report — confirm, dispute, or null. Deliberately without omitempty,
+	// so the key is always present and explicitly null when the caller has
+	// no standing content vote. It is viewer-specific, which makes this
+	// response uncacheable across callers.
+	YourVote *string `json:"your_vote" enums:"confirm,dispute" example:"confirm"`
+	// IsOwnReport is true when the calling account submitted this report.
+	// 02-05 omits the confirm/dispute controls when true (D-03) rather than
+	// rendering a button that will 403 — a convenience for the client,
+	// never the control: service.VotingService.CastVote refuses the
+	// self-vote server-side and 02-03b returns 403 for it regardless of
+	// what the client renders. Derived from a reporter account id the
+	// server looks up and never serialises: this response carries a
+	// boolean, never an account id or an email (T-01-02).
+	IsOwnReport bool `json:"is_own_report" example:"false"`
+}
+
 // ReportListResponse wraps the unexpired, nearest-first reports returned by
 // GET /api/reports.
 type ReportListResponse struct {
-	Reports []ReportResponse `json:"reports"`
+	Reports []FeedReportResponse `json:"reports"`
 }
 
 func reportToResponse(r service.Report) ReportResponse {
@@ -106,6 +159,44 @@ func reportToResponse(r service.Report) ReportResponse {
 		CreatedAt:             r.CreatedAt.Format(rfc3339Milli),
 		ExpiresAt:             r.ExpiresAt.Format(rfc3339Milli),
 		DistanceKm:            r.DistanceKm,
+	}
+}
+
+// reportViewToResponse maps a service.ReportView — a report plus the
+// resolver's answer and the viewer's own standing — onto the wire shape
+// GET /api/reports returns. YourVote is nil exactly when v.ViewerVote is
+// the empty service.VoteValue (no standing content vote); otherwise it
+// points at the vote's string value. Deliberately not deduplicated with
+// reportToResponse — the same reason FeedReportResponse and ReportResponse
+// are declared as two separate structs above.
+func reportViewToResponse(v service.ReportView) FeedReportResponse {
+	var capacityStatus *string
+	if v.ShelterCapacityStatus != nil {
+		s := string(*v.ShelterCapacityStatus)
+		capacityStatus = &s
+	}
+	var yourVote *string
+	if v.ViewerVote != "" {
+		s := string(v.ViewerVote)
+		yourVote = &s
+	}
+	return FeedReportResponse{
+		ID:                    v.ID,
+		Category:              string(v.Category),
+		Severity:              string(v.Severity),
+		Description:           v.Description,
+		Latitude:              v.Latitude,
+		Longitude:             v.Longitude,
+		Geohash:               v.Geohash,
+		ShelterCapacityStatus: capacityStatus,
+		ShelterHeadcount:      v.ShelterHeadcount,
+		CreatedAt:             v.CreatedAt.Format(rfc3339Milli),
+		ExpiresAt:             v.ExpiresAt.Format(rfc3339Milli),
+		DistanceKm:            v.DistanceKm,
+		Visibility:            string(v.Visibility),
+		VisibilityReason:      string(v.VisibilityReason),
+		YourVote:              yourVote,
+		IsOwnReport:           v.IsOwnReport,
 	}
 }
 
@@ -197,18 +288,23 @@ func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 	}
 }
 
-// NearbyReports handles GET /api/reports: parse lat/lon/radius_km from the
-// query string, run the indexed bbox+Haversine query via svc, and return
-// unexpired reports nearest-first. This is the one endpoint that serves
-// both the map and the list (01-RESEARCH.md Pattern 3) — there is no
-// separate map-only or list-only route. Reaching this handler also requires
-// a verified session (see SubmitReport's doc comment); the gate refuses an
-// unverified reader with 401 before any report data is looked up.
+// NearbyReports handles GET /api/reports: parse lat/lon/radius_km/
+// show_disputed from the query string, run the indexed bbox+Haversine query
+// plus the resolver over it via svc, and return listable reports
+// nearest-first. This is the one endpoint that serves both the map and the
+// list (01-RESEARCH.md Pattern 3) — there is no separate map-only or
+// list-only route. Reaching this handler also requires a verified session
+// (see SubmitReport's doc comment); the gate refuses an unverified reader
+// with 401 before any report data is looked up.
 //
-// @Summary List unexpired reports near a point
-// @Description Runs the indexed bounding-box prefilter followed by exact Haversine distance and
-// @Description returns unexpired reports within radius_km, nearest first. This single endpoint
-// @Description serves both the map and the list views — there is no separate map-only route.
+// @Summary List unexpired, currently-visible reports near a point
+// @Description Runs the indexed bounding-box prefilter followed by exact Haversine distance,
+// @Description then resolves each report's visibility fresh via the shared resolver and returns
+// @Description only listable ones, nearest first. This single endpoint serves both the map and the
+// @Description list views — there is no separate map-only route. A resolved (retracted) report is
+// @Description never returned by either view. show_disputed=true additionally includes reports
+// @Description currently hidden by disputes, in the list and among the map pins together. Every
+// @Description report carries your_vote and is_own_report relative to the calling verified account.
 // @Description Requires a session verified by email through the magic-link flow; an unverified
 // @Description caller receives 401 and no report data.
 // @Tags reports
@@ -216,12 +312,23 @@ func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 // @Param lat query number true "Latitude of the query center (required, -90 to 90)"
 // @Param lon query number true "Longitude of the query center (required, -180 to 180)"
 // @Param radius_km query number false "Search radius in kilometers (defaults to 10, bounded to 0.1-50)" minimum(0.1) maximum(50) default(10)
+// @Param show_disputed query boolean false "Include reports hidden by disputes (defaults to false)"
 // @Success 200 {object} ReportListResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
 // @Router /reports [get]
 func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Reaching this handler at all means the gate already resolved a
+		// verified account, so a missing one is a programming error (a
+		// route mounted outside the gated group), not a client condition —
+		// the same shape SubmitReport uses for a missing session id.
+		acc, ok := account.FromContext(r.Context())
+		if !ok {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
 		q := r.URL.Query()
 
 		lat, ok := parseCoordinate(w, q, "lat", -90, 90)
@@ -248,10 +355,32 @@ func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 			return
 		}
 
-		reports, err := svc.Nearby(r.Context(), service.NearbyQuery{
-			Latitude:  lat,
-			Longitude: lon,
-			RadiusKm:  radiusKm,
+		// The default is deliberately closed — D-10 removes Hidden reports
+		// from the default feed for every viewer, so omitting the
+		// parameter must never widen the result. An unparseable value is
+		// rejected rather than silently treated as false, matching
+		// radius_km's existing strictness: silently ignoring a filter the
+		// caller asked for is how a user ends up trusting a view that is
+		// not the view they requested.
+		showDisputed := false
+		if raw := q.Get("show_disputed"); raw != "" {
+			parsed, err := strconv.ParseBool(raw)
+			if err != nil {
+				writeFieldError(w, http.StatusBadRequest, "show_disputed", "show_disputed must be true or false.")
+				return
+			}
+			showDisputed = parsed
+		}
+
+		// ViewerAccountID comes from the gate's context, never from the
+		// query string — a client cannot ask what some other account
+		// voted.
+		views, err := svc.Nearby(r.Context(), service.NearbyQuery{
+			Latitude:        lat,
+			Longitude:       lon,
+			RadiusKm:        radiusKm,
+			ViewerAccountID: acc.ID,
+			IncludeDisputed: showDisputed,
 		})
 		if err != nil {
 			log.Printf("handlers: NearbyReports: %v", err)
@@ -259,9 +388,9 @@ func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 			return
 		}
 
-		responses := make([]ReportResponse, 0, len(reports))
-		for _, rep := range reports {
-			responses = append(responses, reportToResponse(rep))
+		responses := make([]FeedReportResponse, 0, len(views))
+		for _, v := range views {
+			responses = append(responses, reportViewToResponse(v))
 		}
 		writeJSON(w, http.StatusOK, ReportListResponse{Reports: responses})
 	}

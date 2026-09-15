@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"pinalert/internal/account"
 	"pinalert/internal/api/handlers"
 	"pinalert/internal/service"
 	sqlcgen "pinalert/internal/store/sqlc"
@@ -180,6 +181,13 @@ func TestNearbyReportsExcludesSessionID(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/reports?lat="+
 		strconv.FormatFloat(lat, 'f', -1, 64)+"&lon="+
 		strconv.FormatFloat(lon, 'f', -1, 64)+"&radius_km=5", nil)
+	// The handler now reads the caller's account to compute your_vote and
+	// is_own_report; in production the gate supplies it.
+	// internal/api/handlers/page_test.go already uses account.WithAccount
+	// for exactly this "gated request without standing up the whole
+	// router" purpose.
+	const canaryEmail = "session-leak-canary@example.com"
+	req = req.WithContext(account.WithAccount(req.Context(), account.Account{ID: 1, Email: canaryEmail}))
 	rec := httptest.NewRecorder()
 
 	handlers.NearbyReports(svc)(rec, req)
@@ -189,5 +197,8 @@ func TestNearbyReportsExcludesSessionID(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), sentinel) {
 		t.Fatalf("nearby response leaked the session identifier: %s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), canaryEmail) {
+		t.Fatalf("nearby response leaked the caller's own account email: %s", rec.Body.String())
 	}
 }

@@ -45,11 +45,123 @@ definitions:
       error:
         $ref: '#/definitions/handlers.ErrorDetail'
     type: object
+  handlers.FeedReportResponse:
+    properties:
+      category:
+        enum:
+        - flood
+        - earthquake
+        - fire
+        - storm_cyclone
+        - road_blocked
+        - power_outage
+        - shelter_open
+        - rescue_needed
+        - other
+        example: flood
+        type: string
+      created_at:
+        example: "2026-09-05T14:03:00.000Z"
+        type: string
+      description:
+        example: Water rising fast near the market bridge.
+        type: string
+      distance_km:
+        example: 1.42
+        type: number
+      expires_at:
+        example: "2026-09-06T14:03:00.000Z"
+        type: string
+      geohash:
+        example: tdr1qgzp
+        type: string
+      id:
+        example: 42
+        type: integer
+      is_own_report:
+        description: |-
+          IsOwnReport is true when the calling account submitted this report.
+          02-05 omits the confirm/dispute controls when true (D-03) rather than
+          rendering a button that will 403 — a convenience for the client,
+          never the control: service.VotingService.CastVote refuses the
+          self-vote server-side and 02-03b returns 403 for it regardless of
+          what the client renders. Derived from a reporter account id the
+          server looks up and never serialises: this response carries a
+          boolean, never an account id or an email (T-01-02).
+        example: false
+        type: boolean
+      latitude:
+        example: 13.0827
+        type: number
+      longitude:
+        example: 80.2707
+        type: number
+      severity:
+        enum:
+        - low
+        - medium
+        - critical
+        example: critical
+        type: string
+      shelter_capacity_status:
+        description: ShelterCapacityStatus is present only for shelter_open reports.
+        enum:
+        - available
+        - limited
+        - full
+        - closed
+        example: available
+        type: string
+      shelter_headcount:
+        example: 42
+        type: integer
+      visibility:
+        description: |-
+          Visibility is the resolver's own answer, serialised verbatim from
+          service.ReportView.Visibility; the client renders it and never
+          recomputes it (TRUST-02, T-02-04). "retracted" is in the declared
+          enum — it is one of the four values of the shared type — but can
+          never actually appear here: D-12 removes retracted reports from both
+          the default and the show_disputed view.
+        enum:
+        - hidden
+        - provisional
+        - live
+        - retracted
+        example: live
+        type: string
+      visibility_reason:
+        description: |-
+          VisibilityReason is the resolver's own explanation for Visibility
+          above, from the SAME closed slug set votes.go's CastVoteResponse.Reason
+          declares, so 02-06's display-copy mapping has one contract to key off
+          regardless of which endpoint delivered it.
+        enum:
+        - resolved
+        - critical_bypasses_gates
+        - disputed
+        - awaiting_second_independent_confirmation
+        - confirmed
+        example: confirmed
+        type: string
+      your_vote:
+        description: |-
+          YourVote is the calling account's own current content vote on this
+          report — confirm, dispute, or null. Deliberately without omitempty,
+          so the key is always present and explicitly null when the caller has
+          no standing content vote. It is viewer-specific, which makes this
+          response uncacheable across callers.
+        enum:
+        - confirm
+        - dispute
+        example: confirm
+        type: string
+    type: object
   handlers.ReportListResponse:
     properties:
       reports:
         items:
-          $ref: '#/definitions/handlers.ReportResponse'
+          $ref: '#/definitions/handlers.FeedReportResponse'
         type: array
     type: object
   handlers.ReportResponse:
@@ -247,9 +359,13 @@ paths:
   /reports:
     get:
       description: |-
-        Runs the indexed bounding-box prefilter followed by exact Haversine distance and
-        returns unexpired reports within radius_km, nearest first. This single endpoint
-        serves both the map and the list views — there is no separate map-only route.
+        Runs the indexed bounding-box prefilter followed by exact Haversine distance,
+        then resolves each report's visibility fresh via the shared resolver and returns
+        only listable ones, nearest first. This single endpoint serves both the map and the
+        list views — there is no separate map-only route. A resolved (retracted) report is
+        never returned by either view. show_disputed=true additionally includes reports
+        currently hidden by disputes, in the list and among the map pins together. Every
+        report carries your_vote and is_own_report relative to the calling verified account.
         Requires a session verified by email through the magic-link flow; an unverified
         caller receives 401 and no report data.
       parameters:
@@ -270,6 +386,10 @@ paths:
         minimum: 0.1
         name: radius_km
         type: number
+      - description: Include reports hidden by disputes (defaults to false)
+        in: query
+        name: show_disputed
+        type: boolean
       produces:
       - application/json
       responses:
@@ -285,7 +405,7 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
-      summary: List unexpired reports near a point
+      summary: List unexpired, currently-visible reports near a point
       tags:
       - reports
     post:

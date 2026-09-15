@@ -169,11 +169,19 @@ type Report struct {
 
 // NearbyQuery is the caller's proximity search: a center point and a
 // radius. Defaults and bounds on RadiusKm (10 default, 0.1 min, 50 max) are
-// the handler's responsibility, not this type's.
+// the handler's responsibility, not this type's. ViewerAccountID comes from
+// the verified-account gate's request context, never from a query string —
+// a client cannot ask "what did account 12 vote". 0 means "no identified
+// viewer", which yields an empty ViewerVote and a false IsOwnReport for
+// every report. IncludeDisputed is D-10/D-11's "Show disputed" toggle,
+// gating Hidden reports into the result for both the list and the map pins
+// at once; it never reveals Retracted reports (D-12).
 type NearbyQuery struct {
-	Latitude  float64
-	Longitude float64
-	RadiusKm  float64
+	Latitude        float64
+	Longitude       float64
+	RadiusKm        float64
+	ViewerAccountID int64
+	IncludeDisputed bool
 }
 
 // ValidateSubmitInput enforces every server-side rule a report submission
@@ -268,10 +276,18 @@ func clamp(v, min, max float64) float64 {
 }
 
 // Querier is the subset of the sqlc-generated Queries type ReportService
-// needs — small enough to fake in a test without a real Postgres.
+// needs — small enough to fake in a test without a real Postgres. The read
+// path now needs the current votes and the reporter identity for the page
+// it is returning: CurrentVotesForReports and ReporterAccountsForReports.
+// VotingQuerier in trust.go declares CurrentVotesForReports too — two
+// consumer-defined interfaces naming one generated method is idiomatic Go
+// and deliberately not deduplicated into a shared interface, because each
+// stays small enough to fake without a real Postgres.
 type Querier interface {
 	InsertReport(ctx context.Context, arg sqlcgen.InsertReportParams) (sqlcgen.InsertReportRow, error)
 	NearbyReports(ctx context.Context, arg sqlcgen.NearbyReportsParams) ([]sqlcgen.NearbyReportsRow, error)
+	CurrentVotesForReports(ctx context.Context, reportIds []int64) ([]sqlcgen.CurrentVotesForReportsRow, error)
+	ReporterAccountsForReports(ctx context.Context, reportIds []int64) ([]sqlcgen.ReporterAccountsForReportsRow, error)
 }
 
 // ReportService validates, computes derived fields, and persists reports.
@@ -357,11 +373,33 @@ func reportFromInsertRow(row sqlcgen.InsertReportRow) Report {
 
 // Nearby runs the indexed bounding-box prefilter followed by exact
 // Haversine distance (see internal/store/queries/reports.sql's
-// NearbyReports) and returns unexpired reports within q.RadiusKm, nearest
-// first. This is the one read path that serves both the map and the list
-// (01-RESEARCH.md Pattern 3) — there is no separate map-only or list-only
-// query.
-func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]Report, error) {
+// NearbyReports), loads the page's current votes and reporter identities in
+// two batched calls, asks Resolve once per report, and filters on the
+// answer in Go. This remains the ONE read path serving both the map and the
+// list — handlers.NearbyReports is the only route that calls it and there
+// is no map-only or list-only query (01-RESEARCH.md Pattern 3, TRUST-02).
+// Visibility is decided by Resolve and filtered in Go over its output,
+// never by a WHERE clause — internal/store/queries/reports.sql deliberately
+// carries no visibility, vote or votes-table predicate, and its being
+// byte-for-byte what Phase 1 shipped is the evidence (ARCHITECTURE.md
+// Anti-Pattern 1, threat T-02-04). The two batched reads are what keep a
+// page of N reports at a constant number of round trips (BuildVoteTally's
+// own doc comment names this plan as the reason its reportID parameter
+// exists). Appending in the order produced by the bounding-box query
+// preserves ascending distance, so removing a report can never reorder the
+// survivors — severity-first triage ordering is applied client-side by
+// web/static/js/feed.js to whatever this returns, which is TRUST-06's
+// separation of "where a report sits" from "whether a report is shown."
+// The order below is part of the specification:
+//
+//  1. Run the bounding-box/Haversine call and map with reportFromNearbyRow.
+//  2. Empty result -> return immediately; neither batched query runs.
+//  3. Collect ids.
+//  4. CurrentVotesForReports once for the whole page.
+//  5. ReporterAccountsForReports once for the whole page.
+//  6. Capture now once, as the authoritative clock.
+//  7. Per report: build the tally, resolve, filter, append.
+func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView, error) {
 	latMin, latMax, lonMin, lonMax := BoundingBox(q.Latitude, q.Longitude, q.RadiusKm)
 
 	rows, err := s.q.NearbyReports(ctx, sqlcgen.NearbyReportsParams{
@@ -376,12 +414,53 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]Report, er
 	if err != nil {
 		return nil, err
 	}
-
-	reports := make([]Report, 0, len(rows))
-	for _, row := range rows {
-		reports = append(reports, reportFromNearbyRow(row))
+	if len(rows) == 0 {
+		// Deliberate and asserted (TestNearbyBatchesVoteReadsOnce): an
+		// empty page costs zero extra round trips.
+		return []ReportView{}, nil
 	}
-	return reports, nil
+
+	ids := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+
+	voteRows, err := s.q.CurrentVotesForReports(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	reporterRows, err := s.q.ReporterAccountsForReports(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	reporterByReport := make(map[int64]*int64, len(reporterRows))
+	for _, rr := range reporterRows {
+		reporterByReport[rr.ReportID] = rr.ReporterAccountID
+	}
+
+	now := time.Now().UTC()
+
+	views := make([]ReportView, 0, len(rows))
+	for _, row := range rows {
+		r := reportFromNearbyRow(row)
+		reporterID := reporterByReport[r.ID]
+
+		tally := BuildVoteTally(voteRows, r.ID, reporterID)
+		meta := ReportMeta{Severity: r.Severity, Category: r.Category}
+		vis, reason := Resolve(meta, tally, now)
+		if !vis.ListableInFeed(q.IncludeDisputed) {
+			continue
+		}
+
+		views = append(views, ReportView{
+			Report:           r,
+			Visibility:       vis,
+			VisibilityReason: reason,
+			ViewerVote:       ViewerContentVote(voteRows, r.ID, q.ViewerAccountID),
+			IsOwnReport:      reporterID != nil && *reporterID == q.ViewerAccountID,
+		})
+	}
+	return views, nil
 }
 
 func reportFromNearbyRow(row sqlcgen.NearbyReportsRow) Report {

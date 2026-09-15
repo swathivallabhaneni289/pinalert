@@ -52,3 +52,54 @@ FROM reports r
 JOIN sessions s ON r.session_id = s.session_id
 WHERE s.account_id = sqlc.arg(account_id)
 ORDER BY r.created_at DESC;
+
+-- name: ReporterAccountsForReports :many
+-- Batched sibling of ReportVoteContext's reporter half (internal/store/
+-- queries/votes.sql), reused for a whole feed page instead of one report.
+--
+-- (a) Why it exists at all. service.BuildVoteTally(rows, reportID,
+-- reporterAccountID) needs each report's reporter account to route the
+-- reporter's own resolution vote into ReporterResolved and to exclude the
+-- reporter's rows from the independent counts. Passing nil here on the read
+-- path would mean ReporterResolved never fires on a read, and a report whose
+-- reporter marked it resolved would keep appearing in the live feed — a
+-- direct D-12/D-13 failure. The same value also decides the response's
+-- is_own_report flag (D-03).
+--
+-- (b) Why it is batched rather than per report. The feed returns a whole
+-- page. One call with the page's ids costs one round trip; a per-report
+-- lookup would be an N+1 — the exact shape CurrentVotesForReports was
+-- designed as a batch to avoid.
+--
+-- (c) Why it is a separate query instead of a join added to NearbyReports.
+-- NearbyReports is pinned byte-for-byte by a drift const and its plan is
+-- asserted by an EXPLAIN-based index test. Leaving it untouched keeps
+-- FOUND-03's proven bounding-box/Haversine query exactly as Phase 1 shipped
+-- it, and — the load-bearing part — makes it self-evident that the feed
+-- query gained no visibility or vote predicate of its own
+-- (.planning/research/ARCHITECTURE.md Anti-Pattern 1, threat T-02-04).
+-- Filtering by visibility happens in Go, over Resolve's output, never in
+-- SQL.
+--
+-- (d) Why LEFT JOIN and not INNER JOIN. reports.session_id carries no
+-- foreign key and sessions.account_id is nullable — both deliberate, both
+-- documented in migration 00002. A report submitted before Phase 1.1 made
+-- login mandatory, and any report seeded by internal/testutil/seed.go
+-- (which inserts a literal session_id with no matching sessions row),
+-- therefore has no account-bound session. An INNER JOIN would drop those
+-- reports from this result entirely, and the caller could not distinguish
+-- "no reporter account" from "report not in the batch." With the LEFT JOIN
+-- every requested-and-existing report comes back, carrying a NULL
+-- reporter_account_id: nobody matches it, is_own_report is false for every
+-- viewer, and the report stays in the feed exactly as it does today. Note
+-- also that sessions.session_id is the table's PRIMARY KEY, so the join
+-- matches at most one row and can never duplicate a report.
+--
+-- (e) Why the join stops at sessions. sessions.account_id IS accounts.id by
+-- foreign key, so a third join through accounts could only re-confirm a row
+-- the constraint already guarantees. Omitted on purpose, matching
+-- ReportVoteContext's own reasoning.
+SELECT r.id AS report_id, s.account_id AS reporter_account_id
+FROM reports r
+LEFT JOIN sessions s ON r.session_id = s.session_id
+WHERE r.id = ANY(sqlc.arg(report_ids)::bigint[]);
