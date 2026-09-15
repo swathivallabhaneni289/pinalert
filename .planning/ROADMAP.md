@@ -184,12 +184,12 @@ Plans:
   4. A report's visibility state (Hidden/Provisional/Live/Retracted) is identical everywhere it's shown — feed, map, triage view, and shareable card — because one shared resolver function computes it.
   5. A user (the reporter or a nearby confirmer) can mark a report resolved, removing it from the live feed.
 
-**Plans**: 8 plans across 7 waves
+**Plans**: 2/8 plans executed
 
 **Wave 1** *(parallel — zero file overlap, neither depends on the other)*
 
-- [ ] 02-01-PLAN.md — The pure `Resolve()` resolver: Hidden/Provisional/Live/Retracted decided in exactly one place, critical bypass over both gates, Hidden fully reversible from live tallies, retract/reopen never latching (D-05..D-09, D-14, D-16) (wave 1)
-- [ ] 02-02-PLAN.md — Append-only vote log with no shared mutable counter to race on: N concurrent casts from N accounts all land, latest row per (report, account, kind) wins, content and resolution votes never interfere (TRUST-09, D-02) (wave 1)
+- [x] 02-01-PLAN.md — The pure `Resolve()` resolver: Hidden/Provisional/Live/Retracted decided in exactly one place, critical bypass over both gates, Hidden fully reversible from live tallies, retract/reopen never latching (D-05..D-09, D-14, D-16) (wave 1)
+- [x] 02-02-PLAN.md — Append-only vote log with no shared mutable counter to race on: N concurrent casts from N accounts all land, latest row per (report, account, kind) wins, content and resolution votes never interfere (TRUST-09, D-02) (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -289,7 +289,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
 | 1.1 Identity & Login — Mandatory Email Verification | 8/8 | Complete   | 2026-09-12 |
-| 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 0/TBD | Not started | - |
+| 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 2/8 | In Progress|  |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
 | 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
