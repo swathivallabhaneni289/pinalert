@@ -3,7 +3,9 @@ package store_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -350,5 +352,119 @@ func TestVotesArePerReportPerAccountKind(t *testing.T) {
 	}
 	if current2[1].Kind != "resolution" || current2[1].Value != "resolve" {
 		t.Fatalf("current2[1] = {Kind: %q, Value: %q}, want {resolution, resolve} (unchanged)", current2[1].Kind, current2[1].Value)
+	}
+}
+
+// TestVotesHaveNoUniqueKeyBeyondPrimaryKey is the primary, database-level
+// guard against T-02-02 (the lost-update class of bug) being silently
+// reintroduced. If a later change adds UNIQUE (report_id, account_id,
+// kind), this test fails — and it should, because that key is exactly what
+// would turn a vote write from a lock-free append into a contended row,
+// reintroducing the race this plan structurally avoids and destroying the
+// vote-change history Phase 3 needs.
+func TestVotesHaveNoUniqueKeyBeyondPrimaryKey(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+
+	// (1) The only uniqueness-bearing constraint is the primary key on id.
+	var constraintCount int
+	if err := pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM pg_constraint WHERE conrelid = 'votes'::regclass AND contype IN ('u','p')`,
+	).Scan(&constraintCount); err != nil {
+		t.Fatalf("counting unique/primary-key constraints on votes: %v", err)
+	}
+	if constraintCount != 1 {
+		t.Fatalf("unique/primary-key constraint count on votes = %d, want exactly 1 (only the id primary key)", constraintCount)
+	}
+
+	// (2) Catches a bare unique index created without a constraint, which
+	// (1) above would miss.
+	var uniqueIndexCount int
+	if err := pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM pg_index WHERE indrelid = 'votes'::regclass AND indisunique`,
+	).Scan(&uniqueIndexCount); err != nil {
+		t.Fatalf("counting unique indexes on votes: %v", err)
+	}
+	if uniqueIndexCount != 1 {
+		t.Fatalf("unique index count on votes = %d, want exactly 1", uniqueIndexCount)
+	}
+
+	// (3) That sole unique index must be the id primary key, not some other
+	// uniqueness-bearing index. pg_get_indexdef is used rather than
+	// inspecting indkey directly — indkey is an int2vector and joining it
+	// against pg_attribute needs an explicit ::smallint[] cast that is easy
+	// to get wrong for no added value here.
+	var indexDef string
+	if err := pool.QueryRow(ctx,
+		`SELECT pg_get_indexdef(indexrelid) FROM pg_index WHERE indrelid = 'votes'::regclass AND indisunique`,
+	).Scan(&indexDef); err != nil {
+		t.Fatalf("reading unique index definition on votes: %v", err)
+	}
+	if !strings.HasSuffix(indexDef, "(id)") {
+		t.Fatalf("unique index definition = %q, want it to end with (id)", indexDef)
+	}
+}
+
+// forbiddenClauseIn strips SQL comment lines (leading -- after
+// strings.TrimSpace) from sql, then returns the first of ON CONFLICT,
+// FOR UPDATE, or FOR NO KEY UPDATE found in the remaining text (uppercased
+// before scanning), or the empty string if none is present. Filtering out
+// comment lines is mandatory, not optional: Task 1's rationale comments
+// deliberately name the rejected patterns in prose, so an unfiltered scan
+// would fail against the very comments that document the decision.
+func forbiddenClauseIn(sql string) string {
+	var kept []string
+	for _, line := range strings.Split(sql, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	upper := strings.ToUpper(strings.Join(kept, "\n"))
+
+	for _, forbidden := range []string{"ON CONFLICT", "FOR UPDATE", "FOR NO KEY UPDATE"} {
+		if strings.Contains(upper, forbidden) {
+			return forbidden
+		}
+	}
+	return ""
+}
+
+// TestVotesQuerySourceHasNoUpsertOrLock is the secondary, source-level
+// guard, modelled on TestNearbyReportsQuerySourceHasExpectedShape
+// (internal/store/reports_test.go). It needs no database and must run
+// under go test ./... -short.
+func TestVotesQuerySourceHasNoUpsertOrLock(t *testing.T) {
+	data, err := os.ReadFile("queries/votes.sql")
+	if err != nil {
+		t.Fatalf("reading queries/votes.sql: %v", err)
+	}
+	src := string(data)
+
+	if found := forbiddenClauseIn(src); found != "" {
+		t.Fatalf("queries/votes.sql contains forbidden clause %q — see 02-RESEARCH.md Pitfall 1: votes is append-only and must never gain an upsert-conflict or row-lock clause", found)
+	}
+
+	upper := strings.ToUpper(src)
+	if !strings.Contains(upper, "DISTINCT ON (REPORT_ID, ACCOUNT_ID, KIND)") {
+		t.Fatalf("queries/votes.sql missing DISTINCT ON (report_id, account_id, kind) — the current-vote read's deduplication key must not be dropped silently")
+	}
+	if !strings.Contains(upper, "ID DESC") {
+		t.Fatalf("queries/votes.sql missing id DESC — the current-vote read's tiebreaker must not be dropped silently")
+	}
+
+	// Negative control: prove the guard can actually fail. A hardcoded
+	// known-bad counter-example string carrying an upsert-conflict clause
+	// in its statement body, plus a line of -- comment prose that also
+	// names that clause — the comment-filter must not blind the helper
+	// into passing.
+	const knownBad = `-- name: BadInsertVote :exec
+-- This comment mentions ON CONFLICT in prose but must not trigger a match.
+INSERT INTO votes (report_id, account_id, kind, value, geohash_cell)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (report_id, account_id, kind) DO UPDATE SET value = EXCLUDED.value;
+`
+	if got := forbiddenClauseIn(knownBad); got != "ON CONFLICT" {
+		t.Fatalf("forbiddenClauseIn(knownBad) = %q, want %q — the guard must detect a real forbidden clause in the statement body, not be fooled by the comment line naming it", got, "ON CONFLICT")
 	}
 }
