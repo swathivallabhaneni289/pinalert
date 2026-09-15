@@ -172,9 +172,358 @@
                     }
                 }
             }
+        },
+        "/reports/{id}/confirm": {
+            "post": {
+                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Cast a confirm, dispute, resolve, or reopen vote on a report",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Report id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Voter's current coordinates",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.CastVoteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.CastVoteResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/reports/{id}/dispute": {
+            "post": {
+                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Cast a confirm, dispute, resolve, or reopen vote on a report",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Report id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Voter's current coordinates",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.CastVoteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.CastVoteResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/reports/{id}/reopen": {
+            "post": {
+                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Cast a confirm, dispute, resolve, or reopen vote on a report",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Report id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Voter's current coordinates",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.CastVoteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.CastVoteResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/reports/{id}/resolve": {
+            "post": {
+                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Cast a confirm, dispute, resolve, or reopen vote on a report",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Report id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Voter's current coordinates",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.CastVoteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.CastVoteResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
+        "handlers.CastVoteRequest": {
+            "type": "object",
+            "properties": {
+                "latitude": {
+                    "description": "Latitude must be between -90 and 90.",
+                    "type": "number",
+                    "example": 13.0827
+                },
+                "longitude": {
+                    "description": "Longitude must be between -180 and 180.",
+                    "type": "number",
+                    "example": 80.2707
+                }
+            }
+        },
+        "handlers.CastVoteResponse": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "enum": [
+                        "resolved",
+                        "critical_bypasses_gates",
+                        "disputed",
+                        "awaiting_second_independent_confirmation",
+                        "confirmed"
+                    ],
+                    "example": "confirmed"
+                },
+                "visibility": {
+                    "type": "string",
+                    "enum": [
+                        "hidden",
+                        "provisional",
+                        "live",
+                        "retracted"
+                    ],
+                    "example": "live"
+                }
+            }
+        },
         "handlers.ErrorDetail": {
             "type": "object",
             "properties": {

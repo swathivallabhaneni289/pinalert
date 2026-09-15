@@ -1,5 +1,36 @@
 basePath: /api
 definitions:
+  handlers.CastVoteRequest:
+    properties:
+      latitude:
+        description: Latitude must be between -90 and 90.
+        example: 13.0827
+        type: number
+      longitude:
+        description: Longitude must be between -180 and 180.
+        example: 80.2707
+        type: number
+    type: object
+  handlers.CastVoteResponse:
+    properties:
+      reason:
+        enum:
+        - resolved
+        - critical_bypasses_gates
+        - disputed
+        - awaiting_second_independent_confirmation
+        - confirmed
+        example: confirmed
+        type: string
+      visibility:
+        enum:
+        - hidden
+        - provisional
+        - live
+        - retracted
+        example: live
+        type: string
+    type: object
   handlers.ErrorDetail:
     properties:
       field:
@@ -292,6 +323,234 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Submit a new emergency report
+      tags:
+      - reports
+  /reports/{id}/confirm:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Casts one of four votes against a report: confirm/dispute are content votes (is
+        this report still true), resolve/reopen are resolution votes (is this resolved).
+        Requires a session verified by email through the magic-link flow; an unverified
+        caller receives 401. The reporter receives 403 on confirm/dispute but may resolve
+        or reopen their own report instantly. The response carries the freshly recomputed
+        visibility and reason so the client can render the outcome without guessing.
+      parameters:
+      - description: Report id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Voter's current coordinates
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.CastVoteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.CastVoteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Cast a confirm, dispute, resolve, or reopen vote on a report
+      tags:
+      - reports
+  /reports/{id}/dispute:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Casts one of four votes against a report: confirm/dispute are content votes (is
+        this report still true), resolve/reopen are resolution votes (is this resolved).
+        Requires a session verified by email through the magic-link flow; an unverified
+        caller receives 401. The reporter receives 403 on confirm/dispute but may resolve
+        or reopen their own report instantly. The response carries the freshly recomputed
+        visibility and reason so the client can render the outcome without guessing.
+      parameters:
+      - description: Report id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Voter's current coordinates
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.CastVoteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.CastVoteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Cast a confirm, dispute, resolve, or reopen vote on a report
+      tags:
+      - reports
+  /reports/{id}/reopen:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Casts one of four votes against a report: confirm/dispute are content votes (is
+        this report still true), resolve/reopen are resolution votes (is this resolved).
+        Requires a session verified by email through the magic-link flow; an unverified
+        caller receives 401. The reporter receives 403 on confirm/dispute but may resolve
+        or reopen their own report instantly. The response carries the freshly recomputed
+        visibility and reason so the client can render the outcome without guessing.
+      parameters:
+      - description: Report id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Voter's current coordinates
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.CastVoteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.CastVoteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Cast a confirm, dispute, resolve, or reopen vote on a report
+      tags:
+      - reports
+  /reports/{id}/resolve:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Casts one of four votes against a report: confirm/dispute are content votes (is
+        this report still true), resolve/reopen are resolution votes (is this resolved).
+        Requires a session verified by email through the magic-link flow; an unverified
+        caller receives 401. The reporter receives 403 on confirm/dispute but may resolve
+        or reopen their own report instantly. The response carries the freshly recomputed
+        visibility and reason so the client can render the outcome without guessing.
+      parameters:
+      - description: Report id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Voter's current coordinates
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.CastVoteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.CastVoteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Cast a confirm, dispute, resolve, or reopen vote on a report
       tags:
       - reports
 swagger: "2.0"
