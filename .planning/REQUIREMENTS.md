@@ -78,7 +78,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **TRUST-07**: A report displays two distinct trust signals — a fast-decaying "is this still
       current" confidence score and a slow-decaying "is this source reliable" score
 
-- [ ] **TRUST-08**: User (reporter or a nearby confirmer) can mark a report resolved, removing it
+- [x] **TRUST-08**: User (reporter or a nearby confirmer) can mark a report resolved, removing it
       from the live feed
 
 - [ ] **TRUST-09**: Concurrent confirm/dispute votes submitted on the same report at the same time
@@ -254,7 +254,7 @@ Populated during roadmap creation.
 | TRUST-03 | Phase 2 | Pending |
 | TRUST-04 | Phase 2 | Complete |
 | TRUST-06 | Phase 2 | Complete |
-| TRUST-08 | Phase 2 | Pending |
+| TRUST-08 | Phase 2 | Complete |
 | TRUST-09 | Phase 2 | Pending |
 | TRUST-05 | Phase 3 | Pending |
 | TRUST-07 | Phase 3 | Pending |
