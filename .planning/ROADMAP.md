@@ -184,7 +184,7 @@ Plans:
   4. A report's visibility state (Hidden/Provisional/Live/Retracted) is identical everywhere it's shown — feed, map, triage view, and shareable card — because one shared resolver function computes it.
   5. A user (the reporter or a nearby confirmer) can mark a report resolved, removing it from the live feed.
 
-**Plans**: 2/8 plans executed
+**Plans**: 3/8 plans executed
 
 **Wave 1** *(parallel — zero file overlap, neither depends on the other)*
 
@@ -193,7 +193,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02-03a-PLAN.md — `VotingService.CastVote`: voter geohash cell computed server-side from raw lat/lon, self-vote block scoped to content votes only, expired-report rejection, one shared independence helper (D-03, D-13, D-17) (wave 2)
+- [x] 02-03a-PLAN.md — `VotingService.CastVote`: voter geohash cell computed server-side from raw lat/lon, self-vote block scoped to content votes only, expired-report rejection, one shared independence helper (D-03, D-13, D-17) (wave 2)
 
 **Wave 3** *(blocked on 02-03a)*
 
@@ -289,7 +289,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
 | 1.1 Identity & Login — Mandatory Email Verification | 8/8 | Complete   | 2026-09-12 |
-| 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 2/8 | In Progress|  |
+| 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 3/8 | In Progress|  |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
 | 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
