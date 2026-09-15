@@ -5,8 +5,8 @@ milestone_name: milestone
 current_phase: 01.1
 current_phase_name: Identity & Login — Mandatory Email Verification
 status: executing
-stopped_at: Phase 2 context gathered
-last_updated: "2026-09-12T15:16:51.611Z"
+stopped_at: Phase 2 UI-SPEC approved
+last_updated: "2026-09-15T03:40:32.391Z"
 last_activity: 2026-09-12
 last_activity_desc: Gap-closure plan 01.1-08 executed and independently re-verified against
 progress:
@@ -178,8 +178,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-12T15:16:51.605Z
-Stopped at: Phase 2 context gathered
+Last session: 2026-09-15T03:40:32.382Z
+Stopped at: Phase 2 UI-SPEC approved
 every post-merge build/test/UI-safety/schema-drift gate green throughout. `/gsd-execute-phase 1.1`
 ran the 7 planned waves, then its own `gsd-verifier` pass caught a real gap (SC4/IDENT-04:
 spoofable rate-limit IP key + a TOCTOU cooldown race, independently confirmed against the pinned
@@ -194,4 +194,4 @@ live API by explicit design). Persisted as `01.1-UAT.md`. Run `/gsd-verify-work 
 a real `RESEND_API_KEY` and a DNS-verified `RESEND_FROM` domain to close the phase out fully.
 Phase 2's own discussion remains checkpointed and paused (see Pending Todos) — resume it once
 Phase 1.1 fully closes.
-Resume file: .planning/phases/02-trust-mechanic-core-confirm-dispute-visibility/02-CONTEXT.md
+Resume file: .planning/phases/02-trust-mechanic-core-confirm-dispute-visibility/02-UI-SPEC.md
