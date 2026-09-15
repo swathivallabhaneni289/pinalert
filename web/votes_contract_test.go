@@ -438,3 +438,81 @@ func TestOwnReportRuleRemovesControlsRatherThanDisablingThem(t *testing.T) {
 		t.Errorf("setBlockBusy's own body does not reference \"aria-busy\"")
 	}
 }
+
+// TestBothSurfacesMountTheSameVoteBlock proves D-01 structurally: both
+// feed.js and map.js call the same builder rather than growing their own
+// implementation of the vote controls, following TestIconGlyphsAreClassDriven's
+// own shape of iterating a fixed module list and asserting a shared property
+// across all of them.
+func TestBothSurfacesMountTheSameVoteBlock(t *testing.T) {
+	modules := []string{"static/js/feed.js", "static/js/map.js"}
+
+	for _, module := range modules {
+		raw, err := fs.ReadFile(StaticFS, module)
+		if err != nil {
+			t.Fatalf("%s: could not read embedded file — %v", module, err)
+		}
+		text := stripCSSComments(string(raw))
+
+		if !strings.Contains(text, "PinalertVotes.createVoteBlock(") {
+			t.Errorf("%s: expected a call to PinalertVotes.createVoteBlock( — a surface calling "+
+				"neither this nor updateVoteBlock has either dropped its controls or grown a "+
+				"second implementation, which is exactly what D-01 exists to prevent", module)
+		}
+		if !strings.Contains(text, "PinalertVotes.updateVoteBlock(") {
+			t.Errorf("%s: expected a call to PinalertVotes.updateVoteBlock( — see the message "+
+				"above", module)
+		}
+
+		for _, literal := range []string{"vote-btn", "vote-controls", "vote-error"} {
+			if strings.Contains(text, literal) {
+				t.Errorf("%s: contains the literal %q — this class name belongs to votes.js and "+
+					"trust.css only. A class name typed into a consumer is the first step of a "+
+					"second implementation of the vote controls", module, literal)
+			}
+		}
+		for _, field := range []string{"your_vote", "is_own_report"} {
+			if strings.Contains(text, field) {
+				t.Errorf("%s: contains the literal %q — both fields are read inside "+
+					"updateVoteBlock; a consumer reading them would mean a consumer deciding "+
+					"something about vote state itself", module, field)
+			}
+		}
+	}
+}
+
+// TestVoteClickDoesNotActivateItsRow proves a tap on a vote button never
+// reaches the feed row's own activation handlers (no map fly-to, no view
+// switch, no selection change).
+//
+// Honest limit of this test's claim: static inspection proves the calls
+// are present in the right function; it cannot prove the event actually
+// stops, that the listener is attached to the right element, or that
+// Leaflet's popup does not intercept first. The end-of-phase human check
+// covers the runtime claim; the two are complementary, not redundant.
+func TestVoteClickDoesNotActivateItsRow(t *testing.T) {
+	votesRaw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/votes.js: %v", err)
+	}
+	votesText := stripCSSComments(string(votesRaw))
+
+	createVoteBlockBody := jsFunctionBody(t, votesText, "createVoteBlock(reportId)")
+	if n := strings.Count(createVoteBlockBody, "stopPropagation"); n < 2 {
+		t.Errorf("createVoteBlock's own body must call stopPropagation at least twice (once in "+
+			"the click listener, once in the keydown listener), found %d", n)
+	}
+
+	feedRaw, err := fs.ReadFile(StaticFS, "static/js/feed.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/feed.js: %v", err)
+	}
+	feedText := stripCSSComments(string(feedRaw))
+
+	if n := strings.Count(feedText, "activateRow(id)"); n < 3 {
+		t.Errorf("expected feed.js to still call activateRow(id) at least three times (the "+
+			"definition plus both the row's own click and keydown listeners), found %d — this "+
+			"guard only matters while the row's own activation handlers still exist; a future "+
+			"edit that removed them would leave this test passing vacuously", n)
+	}
+}
