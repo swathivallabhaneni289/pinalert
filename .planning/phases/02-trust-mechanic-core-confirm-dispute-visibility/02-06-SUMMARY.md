@@ -245,3 +245,12 @@ None beyond what's listed above. All eight new contract tests' "honest limits" p
 *Phase: 02-trust-mechanic-core-confirm-dispute-visibility*
 *Plan: 06*
 *Completed: 2026-09-15*
+
+## Self-Check: PASSED
+
+- FOUND: `web/static/js/visibility.js` (created file exists on disk)
+- FOUND: `.planning/phases/02-trust-mechanic-core-confirm-dispute-visibility/02-06-SUMMARY.md`
+- FOUND: `0e3a9ff` (Task 1 commit) in `git log`
+- FOUND: `23d0265` (Task 2 commit) in `git log`
+- FOUND: `2770789` (Task 3 commit) in `git log`
+- Re-ran all plan-level `<verification>` commands: `gofmt -l web/` clean, `go build ./...` and `go vet ./...` exit 0, `go test ./web/ -count=1 -v` all green (26 tests including this plan's 8 new ones), `go test ./... -short` exits 0, `go test ./... -p 1` with `DATABASE_URL` set exits 0, `git status --porcelain` clean, `votes.js` and `js_contract_test.go` confirmed unmodified via `git diff --stat` against base.
