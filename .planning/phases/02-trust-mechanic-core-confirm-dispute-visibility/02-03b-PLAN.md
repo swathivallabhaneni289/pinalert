@@ -24,6 +24,7 @@ must_haves:
     - "An unverified caller receives 401 with the gate's standard ErrorResponse envelope and no vote is recorded — the four routes inherit requireVerifiedAccount by construction rather than re-checking auth themselves."
     - "The reporter POSTing /confirm on their own report receives 403 with 'You can't vote on your own report.' (D-03, T-02-05), while the same reporter POSTing /resolve receives 200 and a retracted visibility (D-13, TRUST-08)."
     - "Two confirms from two verified accounts at coordinates inside ONE geohash cell leave the report provisional; moving the second voter to a distinct cell returns live — TRUST-03's independence predicate proven through the full HTTP stack, not only at the service layer."
+    - "One independent reopen vote on a retracted report leaves it retracted; a second from a distinct cell returns it to the live pipeline — D-16's no-reporter-carve-out reopen and D-14's one shared threshold proven at the HTTP boundary, on the one route no other test reaches (TRUST-08)."
     - "The request body accepts latitude and longitude only: a body carrying a geohash field is rejected 400 by DisallowUnknownFields, so a client-computed cell can never reach the store (D-17, T-02-01)."
     - "docs/swagger.json documents all four vote paths with their 200/400/401/403/404/409 responses, so Phase 1's OPS-01 API reference stays a truthful description of the API."
   artifacts:
@@ -466,6 +467,25 @@ Change nothing else in either file.
       standing in one cell are one independent confirmation, which is the entire claim of the Core
       Value. Assert up front that the two coordinate pairs encode to the same precision-7 cell.
 
+    `TestReopenRequiresIndependentAgreement` (D-16, D-14, TRUST-08 — the only test in the phase
+    that reaches the `/reopen` route at all):
+    - Client A (verified) submits a low-severity `flood` report and POSTs `/resolve` on it: status
+      200, `visibility` `"retracted"` (D-13's reporter-instant path, already covered above, reused
+      here as setup).
+    - Client B, a separate verified account, POSTs `/reopen` from a distinct cell: status 200, and
+      `visibility` is STILL `"retracted"` — one standing reopen cell is below
+      `IndependentAgreementThreshold`, so a single non-reporter account cannot unilaterally reopen
+      someone else's resolved report.
+    - Client C, a third verified account, POSTs `/reopen` from a third distinct cell: status 200,
+      and `visibility` is no longer `"retracted"` — the shared threshold is met and the report
+      returns to the live pipeline.
+    - Assert up front, as the two independence tests above do, that B's and C's chosen coordinates
+      encode to different precision-7 cells, so the second 200 cannot pass for the wrong reason.
+    - The doc comment must state why this test is load-bearing: `/reopen` is otherwise mounted but
+      never driven, D-16's no-reporter-carve-out resolution and D-14's one-shared-threshold rule are
+      proven at the `Resolve` and tally levels but nowhere at the HTTP boundary, and a route that no
+      test ever POSTs to is a route nobody has confirmed is reachable.
+
     `TestCastVoteOnExpiredReportIsRejected`:
     - Seed an already-expired report with `testutil.SeedExpiringReport(t, pool, -3600)`, then have
       a verified client POST `/confirm` on it. Status is 409 and `error.message` is exactly
@@ -508,8 +528,9 @@ helper's doc comment to say the pool is returned for tests that need to seed or 
 directly.
 
 **Then create `internal/api/handlers/votes_e2e_test.go`** in `package handlers_test`, matching
-`reports_e2e_test.go`'s imports plus `github.com/mmcloughlin/geohash` and
-`pinalert/internal/testutil`.
+`reports_e2e_test.go`'s imports plus `strconv`, `github.com/mmcloughlin/geohash` and
+`pinalert/internal/testutil`. (`strconv` is not among `reports_e2e_test.go`'s imports and is needed
+by `postVote` below; `fmt` already is.)
 
 Write three small unexported helpers at the top and use them everywhere, so no test repeats
 plumbing:
@@ -561,14 +582,18 @@ the same OPS-01 drift guard Phase 1 established: four routes shipped, four route
       functions named exactly `TestCastVoteRequiresVerifiedAccount`,
       `TestCastVoteRejectsReporterSelfVote`, `TestReporterCanResolveOwnReportInstantly`,
       `TestIndependentConfirmsFlipProvisionalToLive`, `TestConfirmsFromOneCellStayProvisional`,
-      `TestCastVoteOnExpiredReportIsRejected`, `TestCastVoteRejectsUnknownBodyField`,
-      `TestCastVoteOnMissingReportIs404`.
+      `TestReopenRequiresIndependentAgreement`, `TestCastVoteOnExpiredReportIsRejected`,
+      `TestCastVoteRejectsUnknownBodyField`, `TestCastVoteOnMissingReportIs404`.
+    - Every one of the four mounted routes is POSTed to by at least one test — `confirm`, `dispute`,
+      `resolve` and `reopen` each appear as the action argument of a `postVote` call in
+      `internal/api/handlers/votes_e2e_test.go`. A mounted route that no test ever reaches is a
+      route nobody has confirmed is reachable.
     - `grep -c 'func newE2EServer(t \*testing.T) (\*httptest.Server, \*recordingMailer, \*pgxpool.Pool)' internal/api/handlers/reports_e2e_test.go` is exactly `1`, and
       `grep -c 'Votes: *service.NewVotingService(queries)' internal/api/handlers/reports_e2e_test.go`
       is exactly `1`.
     - With `DATABASE_URL` set,
-      `go test ./internal/api/... -p 1 -v -run 'TestCastVote|TestReporterCanResolve|TestIndependentConfirms|TestConfirmsFromOneCell'`
-      reports every one of the eight as PASS and none as SKIP.
+      `go test ./internal/api/... -p 1 -v -run 'TestCastVote|TestReporterCanResolve|TestIndependentConfirms|TestConfirmsFromOneCell|TestReopenRequires'`
+      reports every one of the nine as PASS and none as SKIP.
     - `go test ./... -short` exits 0 — the database-backed vote tests skip cleanly and
       `TestSwaggerSpecCoversRoutes` runs and passes.
     - `docs/swagger.json` documents all four vote paths:
@@ -585,16 +610,17 @@ the same OPS-01 drift guard Phase 1 established: four routes shipped, four route
   </acceptance_criteria>
 
   <verify>
-    <automated>[ -z "$(gofmt -l internal/api/ docs/)" ] && go build ./... && go vet ./... && make swag && [ "$(grep -cF '/reports/{id}/confirm' docs/swagger.json)" -ge 1 ] && [ "$(grep -cF '/reports/{id}/dispute' docs/swagger.json)" -ge 1 ] && [ "$(grep -cF '/reports/{id}/resolve' docs/swagger.json)" -ge 1 ] && [ "$(grep -cF '/reports/{id}/reopen' docs/swagger.json)" -ge 1 ] && [ "$(grep -cF 'CastVoteResponse' docs/swagger.json)" -ge 1 ] && for f in TestCastVoteRequiresVerifiedAccount TestCastVoteRejectsReporterSelfVote TestReporterCanResolveOwnReportInstantly TestIndependentConfirmsFlipProvisionalToLive TestConfirmsFromOneCellStayProvisional TestCastVoteOnExpiredReportIsRejected TestCastVoteRejectsUnknownBodyField TestCastVoteOnMissingReportIs404; do grep -q "^func ${f}(t \*testing.T)" internal/api/handlers/votes_e2e_test.go || { echo "missing ${f}"; exit 1; }; done && go test ./... -short && go test ./internal/api/... -p 1 -v -run 'TestCastVote|TestReporterCanResolve|TestIndependentConfirms|TestConfirmsFromOneCell|TestSwagger' && go test ./... -p 1</automated>
+    <automated>go build ./... && go vet ./... && make swag && [ -z "$(gofmt -l internal/api/ docs/)" ] && [ "$(grep -cF '/reports/{id}/confirm' docs/swagger.json)" -ge 1 ] && [ "$(grep -cF '/reports/{id}/dispute' docs/swagger.json)" -ge 1 ] && [ "$(grep -cF '/reports/{id}/resolve' docs/swagger.json)" -ge 1 ] && [ "$(grep -cF '/reports/{id}/reopen' docs/swagger.json)" -ge 1 ] && [ "$(grep -cF 'CastVoteResponse' docs/swagger.json)" -ge 1 ] && for f in TestCastVoteRequiresVerifiedAccount TestCastVoteRejectsReporterSelfVote TestReporterCanResolveOwnReportInstantly TestIndependentConfirmsFlipProvisionalToLive TestConfirmsFromOneCellStayProvisional TestReopenRequiresIndependentAgreement TestCastVoteOnExpiredReportIsRejected TestCastVoteRejectsUnknownBodyField TestCastVoteOnMissingReportIs404; do grep -q "^func ${f}(t \*testing.T)" internal/api/handlers/votes_e2e_test.go || { echo "missing ${f}"; exit 1; }; done && for a in confirm dispute resolve reopen; do grep -q "\"${a}\"" internal/api/handlers/votes_e2e_test.go || { echo "route ${a} never POSTed by any test"; exit 1; }; done && go test ./... -short && go test ./internal/api/... -p 1 -v -run 'TestCastVote|TestReporterCanResolve|TestIndependentConfirms|TestConfirmsFromOneCell|TestReopenRequires|TestSwagger' && go test ./... -p 1</automated>
   </verify>
 
   <done>
-    The four routes are proven over a real router and a real Postgres: an unverified caller gets 401
+    All four routes are proven over a real router and a real Postgres: an unverified caller gets 401
     and writes nothing, the reporter gets 403 on confirm and dispute but 200 and a retracted report
     on resolve, two independent cells flip a report from provisional to live while two accounts in
-    one cell do not, an expired report gets 409, an unknown body field gets 400, and a missing
-    report gets 404. `docs/swagger.json` documents all four paths and the drift guard now fails if a
-    future change ships a fifth route undocumented.
+    one cell do not, one reopen leaves a retracted report retracted while a second from a distinct
+    cell returns it to the live pipeline, an expired report gets 409, an unknown body field gets
+    400, and a missing report gets 404. `docs/swagger.json` documents all four paths and the drift
+    guard now fails if a future change ships a fifth route undocumented.
   </done>
 </task>
 
@@ -666,8 +692,13 @@ already writes its own 400 and returns `ok=false` in `parseCoordinate`'s establi
 
 `TestCastVoteRequiresVerifiedAccount` · `TestCastVoteRejectsReporterSelfVote` ·
 `TestReporterCanResolveOwnReportInstantly` · `TestIndependentConfirmsFlipProvisionalToLive` ·
-`TestConfirmsFromOneCellStayProvisional` · `TestCastVoteOnExpiredReportIsRejected` ·
-`TestCastVoteRejectsUnknownBodyField` · `TestCastVoteOnMissingReportIs404`
+`TestConfirmsFromOneCellStayProvisional` · `TestReopenRequiresIndependentAgreement` ·
+`TestCastVoteOnExpiredReportIsRejected` · `TestCastVoteRejectsUnknownBodyField` ·
+`TestCastVoteOnMissingReportIs404`
+
+All four mounted routes are reached by at least one of these: `/confirm` and `/dispute` by the
+self-vote and independence tests, `/resolve` by the reporter-instant test, `/reopen` by
+`TestReopenRequiresIndependentAgreement`.
 
 **Deliberately NOT produced here** (so a drift check does not flag these as missing)
 
@@ -761,6 +792,10 @@ absent from `files_modified`.
 - Two verified accounts confirming from two distinct precision-7 cells flip a low-severity report
   from `provisional` to `live`; the same two accounts confirming from one cell leave it
   `provisional` (TRUST-03, TRUST-04).
+- A retracted report stays retracted after one independent `/reopen` and leaves the retracted state
+  after a second from a distinct cell — the shared independent-agreement threshold applies to
+  reopening with no reporter shortcut (D-14, D-16, TRUST-08), and every one of the four mounted
+  routes is reached by at least one test.
 - A vote on an expired report is 409 with "This report has expired."; on a missing report, 404; with
   an unknown body field, 400 — and none of the three writes a row.
 - `cmd/server/main.go` constructs `service.NewVotingService(queries)` from the same handle every

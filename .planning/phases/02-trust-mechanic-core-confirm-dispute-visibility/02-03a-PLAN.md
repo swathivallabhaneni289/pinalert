@@ -662,7 +662,7 @@ Do not create any HTTP type, route or handler in this task.
 
   <acceptance_criteria>
     - `gofmt -l internal/service/` prints nothing and `go vet ./internal/service/` exits 0.
-    - All eight test functions exist with exactly these names: `TestCastVoteRejectsReporterContentVote`,
+    - All nine test functions exist with exactly these names: `TestCastVoteRejectsReporterContentVote`,
       `TestCastVoteAllowsReporterResolutionVote`, `TestCastVoteAllowsNonReporter`,
       `TestCastVoteTreatsNullReporterAsNobody`, `TestCastVoteRejectsExpiredReport`,
       `TestCastVoteRejectsMissingReport`, `TestCastVoteComputesGeohashCellServerSide`,
