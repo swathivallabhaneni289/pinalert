@@ -794,3 +794,109 @@ func TestVisibilityModuleLoadsBeforeItsConsumers(t *testing.T) {
 		}
 	}
 }
+
+// TestBothSurfacesMountTheSameVisibilityTag proves D-01's structural
+// pattern once more, this time for the display half: both feed.js and
+// map.js call the same builder rather than growing their own
+// implementation of the visibility tag, following
+// TestIconGlyphsAreClassDriven's own shape of iterating a fixed module list
+// and asserting a shared property across all of them, and
+// TestBothSurfacesMountTheSameVoteBlock's own reasoning for why a class
+// literal or a response-field name typed into a consumer is the cheapest
+// possible detector for a second implementation.
+func TestBothSurfacesMountTheSameVisibilityTag(t *testing.T) {
+	modules := []string{"static/js/feed.js", "static/js/map.js"}
+	texts := map[string]string{}
+
+	for _, module := range modules {
+		raw, err := fs.ReadFile(StaticFS, module)
+		if err != nil {
+			t.Fatalf("%s: could not read embedded file — %v", module, err)
+		}
+		text := stripCSSComments(string(raw))
+		texts[module] = text
+
+		if !strings.Contains(text, "PinalertVisibility.createVisibilityTag(") {
+			t.Errorf("%s: expected a call to PinalertVisibility.createVisibilityTag( — a surface "+
+				"calling none of the three PinalertVisibility functions has either dropped the "+
+				"treatment entirely, or grown a second implementation, which is exactly what "+
+				"02-UI-SPEC.md's \"identical markup/classes so the same script handles both\" exists "+
+				"to prevent", module)
+		}
+		if !strings.Contains(text, "PinalertVisibility.updateVisibilityTag(") {
+			t.Errorf("%s: expected a call to PinalertVisibility.updateVisibilityTag( — see the "+
+				"message above", module)
+		}
+		if !strings.Contains(text, "PinalertVisibility.applyVisibilityClass(") {
+			t.Errorf("%s: expected a call to PinalertVisibility.applyVisibilityClass( — see the "+
+				"message above", module)
+		}
+
+		for _, literal := range []string{"visibility-tag", "vis-provisional", "vis-hidden", "visibility_reason"} {
+			if strings.Contains(text, literal) {
+				t.Errorf("%s: contains the literal %q — this class name or response-field name "+
+					"belongs to visibility.js and trust.css only. A class name or a response key typed "+
+					"into a consumer is the first step of a second implementation of the visibility "+
+					"display, and it would be invisible until someone compared a list against a map "+
+					"by hand", module, literal)
+			}
+		}
+		if strings.Contains(text, "report.visibility") {
+			t.Errorf("%s: contains %q — a consumer reading the visibility field directly would mean "+
+				"a consumer deciding something about trust state itself, rather than rendering the "+
+				"resolver's answer through visibility.js", module, "report.visibility")
+		}
+
+		// 02-05's own cross-surface prohibitions still hold — a regression
+		// here would mean this task disturbed 02-05's vote block.
+		for _, literal := range []string{"vote-btn", "vote-controls", "vote-error"} {
+			if strings.Contains(text, literal) {
+				t.Errorf("%s: contains the literal %q — 02-05's own cross-surface prohibition, still "+
+					"in force", module, literal)
+			}
+		}
+		for _, field := range []string{"your_vote", "is_own_report"} {
+			if strings.Contains(text, field) {
+				t.Errorf("%s: contains the literal %q — 02-05's own cross-surface prohibition, still "+
+					"in force", module, field)
+			}
+		}
+	}
+
+	createRowBody := jsFunctionBody(t, texts["static/js/feed.js"], "createRow(id)")
+	metaIdx := strings.Index(createRowBody, "body.appendChild(meta)")
+	tagIdx := strings.Index(createRowBody, "PinalertVisibility.createVisibilityTag(")
+	voteBlockIdx := strings.Index(createRowBody, "PinalertVotes.createVoteBlock(")
+	if metaIdx == -1 || tagIdx == -1 || voteBlockIdx == -1 {
+		t.Fatalf("createRow's own body is missing one of the three anchors needed to check "+
+			"insertion order (meta append=%d, tag builder=%d, vote block builder=%d)",
+			metaIdx, tagIdx, voteBlockIdx)
+	}
+	if !(metaIdx < tagIdx && tagIdx < voteBlockIdx) {
+		t.Errorf("createRow's own body must append the visibility tag after the meta paragraph and "+
+			"before the vote block is built (found meta=%d, tag=%d, vote block=%d) — this is the "+
+			"insertion point 02-05's artifact table reserved", metaIdx, tagIdx, voteBlockIdx)
+	}
+
+	popupBody := jsFunctionBody(t, texts["static/js/map.js"], "buildPopupContent(report)")
+	descIdx := strings.Index(popupBody, "wrap.appendChild(description)")
+	popupTagIdx := strings.Index(popupBody, "PinalertVisibility.createVisibilityTag(")
+	popupVoteBlockIdx := strings.Index(popupBody, "PinalertVotes.createVoteBlock(")
+	if descIdx == -1 || popupTagIdx == -1 || popupVoteBlockIdx == -1 {
+		t.Fatalf("buildPopupContent's own body is missing one of the three anchors needed to check "+
+			"insertion order (description append=%d, tag builder=%d, vote block builder=%d)",
+			descIdx, popupTagIdx, popupVoteBlockIdx)
+	}
+	if !(descIdx < popupTagIdx && popupTagIdx < popupVoteBlockIdx) {
+		t.Errorf("buildPopupContent's own body must append the visibility tag after the description "+
+			"and before the vote block is built (found description=%d, tag=%d, vote block=%d)",
+			descIdx, popupTagIdx, popupVoteBlockIdx)
+	}
+
+	// Honest limits of this test's claim: static inspection proves the
+	// calls are present, in the right functions, in the right order. It
+	// cannot prove the resulting node lands in the right place in the
+	// rendered DOM, that the cascade resolves as intended, or that the
+	// treatment is legible — the end-of-phase human check on Task 3
+	// carries those claims; the two are complementary, not redundant.
+}
