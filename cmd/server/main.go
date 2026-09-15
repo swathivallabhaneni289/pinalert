@@ -106,6 +106,7 @@ func main() {
 		Session:     sessionMgr,
 		Sessions:    queries,
 		Reports:     service.NewReportService(queries),
+		Votes:       service.NewVotingService(queries),
 		AuthService: service.NewAuthService(queries, mail, baseURL),
 		Auth: handlers.AuthConfig{
 			AssetVersion: assetVersion,

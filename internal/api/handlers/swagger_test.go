@@ -158,6 +158,31 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		t.Errorf("docs/swagger.json is missing the /auth/request-link path")
 	}
 
+	// 02-03b's contribution to this same OPS-01 drift guard: four vote
+	// routes shipped, four vote routes documented, each with its 401 and
+	// 403 response declared — a mounted route that ships without a
+	// regenerated spec fails here rather than silently drifting.
+	for _, path := range []string{
+		"/reports/{id}/confirm", "/reports/{id}/dispute",
+		"/reports/{id}/resolve", "/reports/{id}/reopen",
+	} {
+		ops, ok := spec.Paths[path]
+		if !ok {
+			t.Errorf("docs/swagger.json is missing the %s path", path)
+			continue
+		}
+		op, ok := ops["post"]
+		if !ok {
+			t.Errorf("docs/swagger.json is missing the %s post operation", path)
+			continue
+		}
+		for _, code := range []string{`"401"`, `"403"`} {
+			if !strings.Contains(string(op), code) {
+				t.Errorf("docs/swagger.json %s post operation is missing a %s response", path, code)
+			}
+		}
+	}
+
 	body := string(raw)
 
 	for _, category := range []string{
@@ -171,6 +196,13 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 	for _, severity := range []string{"low", "medium", "critical"} {
 		if !strings.Contains(body, severity) {
 			t.Errorf("docs/swagger.json is missing severity enum value %q", severity)
+		}
+	}
+	// 02-03b: the four visibility enum values must be published so 02-06's
+	// display-copy mapping has a documented contract to key off.
+	for _, visibility := range []string{"hidden", "provisional", "live", "retracted"} {
+		if !strings.Contains(body, visibility) {
+			t.Errorf("docs/swagger.json is missing visibility enum value %q", visibility)
 		}
 	}
 

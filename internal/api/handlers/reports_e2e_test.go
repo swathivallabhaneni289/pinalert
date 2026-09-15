@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"pinalert/internal/api"
 	"pinalert/internal/api/handlers"
 	"pinalert/internal/service"
@@ -31,8 +33,10 @@ import (
 // must verify a session (see verifySession) before driving either endpoint.
 // The returned *recordingMailer is the same fake-mailer harness
 // auth_e2e_test.go established in 01.1-02, reused here rather than
-// duplicated.
-func newE2EServer(t *testing.T) (*httptest.Server, *recordingMailer) {
+// duplicated. The pool is also returned (02-03b) for tests that need to
+// seed rows directly (e.g. an already-expired report) or assert row counts
+// against the votes table without a second parallel harness.
+func newE2EServer(t *testing.T) (*httptest.Server, *recordingMailer, *pgxpool.Pool) {
 	t.Helper()
 	pool := testutil.NewTestDB(t)
 
@@ -50,6 +54,7 @@ func newE2EServer(t *testing.T) (*httptest.Server, *recordingMailer) {
 		Session:     mgr,
 		Sessions:    queries,
 		Reports:     service.NewReportService(queries),
+		Votes:       service.NewVotingService(queries),
 		AuthService: service.NewAuthService(queries, fm, "https://pinalert.example"),
 		Auth:        handlers.AuthConfig{AssetVersion: "test"},
 		Template:    tmpl,
@@ -58,7 +63,7 @@ func newE2EServer(t *testing.T) (*httptest.Server, *recordingMailer) {
 
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)
-	return srv, fm
+	return srv, fm, pool
 }
 
 // verifySession drives the real request-link-then-verify flow for client
@@ -89,7 +94,7 @@ func postReport(t *testing.T, client *http.Client, baseURL string, body map[stri
 }
 
 func TestSubmitThenNearbyReturnsReport(t *testing.T) {
-	srv, mailer := newE2EServer(t)
+	srv, mailer, _ := newE2EServer(t)
 
 	jar, err := cookiejar.New(nil)
 	if err != nil {
@@ -161,7 +166,7 @@ func TestSubmitThenNearbyReturnsReport(t *testing.T) {
 }
 
 func TestNearbyResponseOmitsSessionID(t *testing.T) {
-	srv, mailer := newE2EServer(t)
+	srv, mailer, _ := newE2EServer(t)
 
 	jar, err := cookiejar.New(nil)
 	if err != nil {
