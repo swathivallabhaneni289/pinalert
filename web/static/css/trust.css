@@ -197,3 +197,35 @@
   line-height: var(--line-height-label);
   font-weight: var(--font-weight-semibold);
 }
+
+/* The disputed empty state's own [hidden] override — the OTHER guard form
+   from the chip's :not([hidden]) above. This element's `display: flex`
+   comes from main.css's shared .empty-state rule, which this file does not
+   own, so a :not([hidden]) guard on a rule of this file's own would not be
+   in the cascade path at all: feed.css's identical id-and-attribute block
+   for #feed-empty is the form that actually works here, and this is the
+   third variant of the same trap this repo has now hit. */
+#disputed-empty[hidden] {
+  display: none;
+}
+
+/* The "Show disputed reports" filter toggle. The 44px touch-target floor
+   is met by the label rather than the checkbox, because the label wraps
+   the input and is therefore the whole hit area — a continuation of the
+   WCAG 2.5.5 rule Phase 1 established, not an exception to it. This
+   element is never toggled by the hidden attribute, so it deliberately
+   carries no [hidden] guard — a reader comparing it against the two rules
+   above should not read the absence as an oversight. */
+.filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: var(--touch-target-min);
+  margin-bottom: var(--space-sm);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+  cursor: pointer;
+}

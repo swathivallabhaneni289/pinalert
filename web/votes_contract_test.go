@@ -900,3 +900,235 @@ func TestBothSurfacesMountTheSameVisibilityTag(t *testing.T) {
 	// treatment is legible — the end-of-phase human check on Task 3
 	// carries those claims; the two are complementary, not redundant.
 }
+
+// TestShowDisputedUsesOneSharedQueryParam proves D-10, D-11 and TRUST-02's
+// client-side mechanism: the "Show disputed reports" filter contributes one
+// boolean to the one report fetch the shared store owns, so the list and
+// the map cannot disagree about which reports exist. There is no
+// map-specific query, and neither renderer builds one of its own.
+func TestShowDisputedUsesOneSharedQueryParam(t *testing.T) {
+	appRaw, err := fs.ReadFile(StaticFS, "static/js/app.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/app.js: %v", err)
+	}
+	appText := stripCSSComments(string(appRaw))
+
+	if n := strings.Count(appText, "show_disputed"); n != 1 {
+		t.Fatalf("expected exactly one occurrence of the shared query parameter's name in app.js, "+
+			"found %d", n)
+	}
+
+	fetchReportsBody := jsFunctionBody(t, appText, "fetchReports()")
+	if !strings.Contains(fetchReportsBody, "show_disputed") {
+		t.Errorf("fetchReports's own body does not reference the shared query parameter — it must " +
+			"sit inside this function's own body so the parameter is conditional on state rather " +
+			"than hardcoded")
+	}
+	if !strings.Contains(fetchReportsBody, "state.showDisputed") {
+		t.Errorf("fetchReports's own body does not reference state.showDisputed — the parameter must " +
+			"be conditional on the store's own flag")
+	}
+
+	if n := strings.Count(appText, "function setShowDisputed("); n != 1 {
+		t.Errorf("expected exactly one setShowDisputed( function declaration, found %d", n)
+	}
+	setterExportRE := regexp.MustCompile(`(?m)^\s*setShowDisputed: setShowDisputed,?$`)
+	if !setterExportRE.MatchString(appText) {
+		t.Errorf("setShowDisputed must be exported as its own \"name: name\" line in the returned " +
+			"object literal")
+	}
+
+	// fetch( staying at exactly two (the report fetch, the submit) is the
+	// cheapest possible detector for a second report query: a third fetch
+	// call would mean the map or the list building its own request, which
+	// is exactly the shape that lets one surface see a different set of
+	// reports than the other.
+	if n := strings.Count(appText, "fetch("); n != 2 {
+		t.Errorf("expected exactly two fetch( calls in app.js (the report fetch and the submit "+
+			"call), found %d — a third would mean a second report query", n)
+	}
+
+	for _, module := range []string{"static/js/feed.js", "static/js/map.js"} {
+		raw, err := fs.ReadFile(StaticFS, module)
+		if err != nil {
+			t.Fatalf("%s: could not read embedded file — %v", module, err)
+		}
+		text := stripCSSComments(string(raw))
+		if strings.Contains(text, "show_disputed") {
+			t.Errorf("%s: contains the shared query parameter's name — a surface building its own "+
+				"query is exactly the feed/map divergence TRUST-02 forbids, and it would be invisible "+
+				"until someone compared a list against a map by hand", module)
+		}
+	}
+
+	// Honest limits of this test's claim: static inspection proves there is
+	// one parameter on one fetch and that neither renderer builds a query.
+	// It cannot prove the server honours the parameter (02-04's own
+	// TestShowDisputedRevealsHiddenReports covers that against real
+	// Postgres) nor that the pins actually appear, which the human check
+	// covers.
+}
+
+// TestDisputedEmptyStateHiddenGuard proves the OTHER [hidden] guard form is
+// used correctly for the disputed empty state: unlike the visibility-tag
+// chip (a rule this plan owns), this element's `display: flex` comes from
+// main.css's shared .empty-state rule, so a :not([hidden]) guard on a rule
+// of this file's own would not be in the cascade path at all. The
+// id-and-attribute override — the same form feed.css already uses for its
+// four elements — is the one that actually works here.
+func TestDisputedEmptyStateHiddenGuard(t *testing.T) {
+	trustRaw, err := fs.ReadFile(StaticFS, "static/css/trust.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/trust.css: %v", err)
+	}
+	trustText := stripCSSComments(string(trustRaw))
+	trustRules := parseCSSRules(trustText)
+
+	guardRule, ok := ruleBySelector(trustRules, "#disputed-empty[hidden]")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", "#disputed-empty[hidden]")
+	}
+	if v := declsOf(guardRule.declBody)["display"]; v != "none" {
+		t.Errorf("#disputed-empty[hidden] must declare display: none, found %q", v)
+	}
+
+	// Walk every stylesheet and fail any rule whose selector head mentions
+	// the new element WITHOUT the attribute qualifier and whose body sets
+	// display — a bare id rule would reintroduce exactly the specificity
+	// problem this override exists to fix.
+	err = fs.WalkDir(StaticFS, "static/css", func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".css") {
+			return nil
+		}
+		raw, readErr := fs.ReadFile(StaticFS, path)
+		if readErr != nil {
+			return readErr
+		}
+		text := stripCSSComments(string(raw))
+		for _, r := range parseCSSRules(text) {
+			if !strings.Contains(r.selectorHead, "disputed-empty") {
+				continue
+			}
+			if strings.Contains(r.selectorHead, "[hidden]") {
+				continue
+			}
+			if _, hasDisplay := declsOf(r.declBody)["display"]; hasDisplay {
+				t.Errorf("%s: found a rule setting display on a #disputed-empty selector without the "+
+					"[hidden] attribute qualifier — selector head: %q", path, r.selectorHead)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed to walk embedded static/css: %v", err)
+	}
+}
+
+// TestFeedExplainsAnEmptyDisputedResult proves D-10: turning the filter on
+// with nothing disputed nearby renders the Copywriting Contract's own copy
+// instead of a blank list, and that setEmptyState stays the sole owner of
+// both empty-state elements after a fifth element joined render's state
+// machine.
+func TestFeedExplainsAnEmptyDisputedResult(t *testing.T) {
+	htmlRaw, err := TemplatesFS.ReadFile("templates/index.html.tmpl")
+	if err != nil {
+		t.Fatalf("failed to read templates/index.html.tmpl from the embedded TemplatesFS: %v", err)
+	}
+	html := string(htmlRaw)
+
+	if n := strings.Count(html, `id="show-disputed-toggle"`); n != 1 {
+		t.Fatalf("expected exactly one show-disputed-toggle element, found %d", n)
+	}
+	toggleWindow := findTagWindow(t, html, `id="show-disputed-toggle"`)
+	if !strings.Contains(toggleWindow, `type="checkbox"`) {
+		t.Errorf("show-disputed-toggle must be a checkbox input — window: %q", toggleWindow)
+	}
+
+	toggleLabelWindow := findTagWindow(t, html, "filter-toggle")
+	if !strings.Contains(toggleLabelWindow, "<label") {
+		t.Errorf("expected the filter-toggle class on a label element — window: %q", toggleLabelWindow)
+	}
+
+	if !strings.Contains(html, "Show disputed reports") {
+		t.Errorf("template does not contain the Copywriting Contract's toggle label verbatim")
+	}
+
+	togglePos := strings.Index(html, `id="show-disputed-toggle"`)
+	listPos := strings.Index(html, `id="report-list"`)
+	if togglePos == -1 || listPos == -1 {
+		t.Fatalf("could not locate both the toggle and the report list in the template")
+	}
+	if togglePos >= listPos {
+		t.Errorf("the show-disputed-toggle must appear before #report-list in the template, matching "+
+			"02-UI-SPEC.md's placement immediately above the list — found toggle at %d, list at %d",
+			togglePos, listPos)
+	}
+
+	if n := strings.Count(html, `id="disputed-empty"`); n != 1 {
+		t.Fatalf("expected exactly one disputed-empty element, found %d", n)
+	}
+	emptyWindow := findTagWindow(t, html, `id="disputed-empty"`)
+	if !strings.Contains(emptyWindow, "empty-state") {
+		t.Errorf("disputed-empty must carry the empty-state class — window: %q", emptyWindow)
+	}
+	if !strings.Contains(emptyWindow, "hidden") {
+		t.Errorf("disputed-empty must ship the hidden attribute — window: %q", emptyWindow)
+	}
+
+	for _, copy := range []string{
+		"No disputed reports nearby",
+		"Reports only show up here if enough nearby people have disputed them.",
+	} {
+		if !strings.Contains(html, copy) {
+			t.Errorf("template does not contain the Copywriting Contract's %q verbatim", copy)
+		}
+	}
+
+	feedRaw, err := fs.ReadFile(StaticFS, "static/js/feed.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/feed.js: %v", err)
+	}
+	feedText := stripCSSComments(string(feedRaw))
+
+	if n := strings.Count(feedText, "function setEmptyState("); n != 1 {
+		t.Fatalf("expected exactly one setEmptyState( function declaration, found %d", n)
+	}
+	setEmptyStateBody := jsFunctionBody(t, feedText, "setEmptyState(kind)")
+
+	if n := strings.Count(feedText, "setHidden(emptyEl"); n != 1 {
+		t.Fatalf("expected exactly one setHidden(emptyEl call in the whole file, found %d — every "+
+			"call touching either empty-state element must live inside setEmptyState and nowhere "+
+			"else, or render's own \"exactly one place decides which is showing\" comment stops "+
+			"being true", n)
+	}
+	if !strings.Contains(setEmptyStateBody, "setHidden(emptyEl") {
+		t.Errorf("the one setHidden(emptyEl call in the file is not inside setEmptyState's own body")
+	}
+
+	if n := strings.Count(feedText, "setHidden(disputedEmptyEl"); n != 1 {
+		t.Fatalf("expected exactly one setHidden(disputedEmptyEl call in the whole file, found %d",
+			n)
+	}
+	if !strings.Contains(setEmptyStateBody, "setHidden(disputedEmptyEl") {
+		t.Errorf("the one setHidden(disputedEmptyEl call in the file is not inside setEmptyState's " +
+			"own body")
+	}
+
+	if !strings.Contains(feedText, "Pinalert.state.showDisputed") {
+		t.Errorf("feed.js does not reference Pinalert.state.showDisputed — the empty-state choice " +
+			"must describe the data actually in hand (the store's flag), not an intent that may not " +
+			"have been fetched yet (the checkbox)")
+	}
+
+	if !strings.Contains(feedText, "addEventListener('change'") {
+		t.Errorf("feed.js does not attach a change listener — the toggle must call the store's " +
+			"setter and refetch on change")
+	}
+	if !strings.Contains(feedText, "Pinalert.fetchReports()") {
+		t.Errorf("feed.js does not call Pinalert.fetchReports() — checking the toggle must refetch, " +
+			"never filter state.reports in place")
+	}
+}

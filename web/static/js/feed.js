@@ -41,10 +41,12 @@
   var reportListEl = document.getElementById('report-list');
   var skeletonEl = document.getElementById('feed-skeleton');
   var emptyEl = document.getElementById('feed-empty');
+  var disputedEmptyEl = document.getElementById('disputed-empty');
   var errorEl = document.getElementById('feed-error');
   var retryBtn = document.getElementById('feed-retry');
   var viewToggleBtn = document.getElementById('view-toggle');
   var appShellEl = document.getElementById('app-shell');
+  var showDisputedToggleEl = document.getElementById('show-disputed-toggle');
 
   // rowsById reconciles rendered <li> nodes by report id across polls,
   // rather than clearing and rebuilding the list every 30 seconds, so
@@ -79,6 +81,19 @@
     } else {
       el.removeAttribute('hidden');
     }
+  }
+
+  // setEmptyState is the sole owner of both empty-state elements. render is
+  // documented as the one place that decides which of the list, skeleton,
+  // empty state and error state is showing, and a fifth element would
+  // otherwise turn four explicit branches into eight — every setHidden call
+  // targeting either empty-state element lives in this function and
+  // nowhere else. kind is one of 'none' (neither shown), 'general' (the
+  // Phase 1 empty state) or 'disputed' (the shared query parameter's own
+  // empty state).
+  function setEmptyState(kind) {
+    setHidden(emptyEl, kind !== 'general');
+    setHidden(disputedEmptyEl, kind !== 'disputed');
   }
 
   function replacePrefixedClass(el, prefix, newClass) {
@@ -265,7 +280,7 @@
     if (state.status === 'idle' || state.status === 'loading') {
       setHidden(skeletonEl, false);
       setHidden(reportListEl, true);
-      setHidden(emptyEl, true);
+      setEmptyState('none');
       setHidden(errorEl, true);
       return;
     }
@@ -278,20 +293,28 @@
       // useful than a blank panel to someone who just lost signal.
       setHidden(errorEl, false);
       setHidden(reportListEl, true);
-      setHidden(emptyEl, true);
+      setEmptyState('none');
       return;
     }
 
     setHidden(errorEl, true);
 
     if (state.reports.length === 0) {
-      setHidden(emptyEl, false);
+      // The disputed empty state replaces the general one rather than
+      // stacking above a populated list, because in this codebase this
+      // component means "shown instead of the list" — and the checked box
+      // sitting directly above it is the context that makes the narrower
+      // message the right one. Read from the store's flag rather than the
+      // checkbox: the store's value describes the data actually in
+      // state.reports, while the checkbox describes an intent whose fetch
+      // may still be in flight.
+      setEmptyState(Pinalert.state.showDisputed ? 'disputed' : 'general');
       setHidden(reportListEl, true);
       clearRows();
       return;
     }
 
-    setHidden(emptyEl, true);
+    setEmptyState('none');
     setHidden(reportListEl, false);
     renderRows(state.reports);
   }
@@ -350,9 +373,10 @@
 
   // createToggleIcon builds a minimal inline glyph for the view-toggle
   // button. UI-SPEC's Icon Mapping only covers the 9 category icons; no
-  // dedicated map/list asset exists, and adding new /static/icons/*.svg
-  // files is outside this plan's two-file ownership. Built via the SVG DOM
-  // API (never a markup string), aria-hidden since the button's text label
+  // dedicated map/list asset exists, and adding new SVG files under
+  // /static/icons (e.g. new-icon.svg) is outside this plan's two-file
+  // ownership. Built via the SVG DOM API (never a markup string),
+  // aria-hidden since the button's text label
   // already carries the meaning.
   function createToggleIcon(kind) {
     var svg = document.createElementNS(SVG_NS, 'svg');
@@ -468,6 +492,24 @@
     retryBtn.addEventListener('click', function () {
       Pinalert.fetchReports();
     });
+  }
+
+  if (showDisputedToggleEl) {
+    showDisputedToggleEl.addEventListener('change', function () {
+      // Refetching rather than filtering state.reports in place is
+      // deliberate: the server decides which reports exist under the
+      // shared query parameter (02-04), and a client-side filter would be
+      // a second visibility decision — the resolver bypass T-02-04 names.
+      Pinalert.setShowDisputed(showDisputedToggleEl.checked);
+      Pinalert.fetchReports();
+    });
+
+    // Synchronise the store's flag from the checkbox's current value once,
+    // without fetching. Costs one line and makes the template's own
+    // autocomplete attribute belt-and-braces rather than load-bearing: a
+    // browser that restores checkbox state across a reload or bfcache
+    // restore cannot leave a checked box over unfiltered data.
+    Pinalert.setShowDisputed(showDisputedToggleEl.checked);
   }
 
   Pinalert.onSelect(function (id, source) {

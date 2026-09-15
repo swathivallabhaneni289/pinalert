@@ -34,6 +34,10 @@
 
     <section class="pane pane--list">
       <button type="button" class="view-toggle" id="view-toggle">List</button>
+      <label class="filter-toggle">
+        <input type="checkbox" id="show-disputed-toggle" autocomplete="off">
+        Show disputed reports
+      </label>
       <ol id="report-list"></ol>
       <div id="feed-skeleton">
         <div class="skeleton-row"></div>
@@ -44,6 +48,10 @@
       <div class="empty-state" id="feed-empty" hidden>
         <h2>No reports near you yet</h2>
         <p>Nothing has been reported in your area recently. Tap + to report what you're seeing.</p>
+      </div>
+      <div class="empty-state" id="disputed-empty" hidden>
+        <h2>No disputed reports nearby</h2>
+        <p>Reports only show up here if enough nearby people have disputed them.</p>
       </div>
       <div class="error-state" id="feed-error" hidden>
         <h2>Couldn't load reports</h2>

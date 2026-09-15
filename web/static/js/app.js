@@ -75,7 +75,10 @@ window.Pinalert = (function () {
     status: 'idle', // idle | loading | ok | error
     error: null,
     selectedId: null,
-    center: { lat: config.fallbackLat, lon: config.fallbackLon }
+    center: { lat: config.fallbackLat, lon: config.fallbackLon },
+    // The client half of D-10's closed default: a visitor who has not
+    // asked for disputed reports never sees them.
+    showDisputed: false
   };
 
   var listeners = [];
@@ -104,6 +107,13 @@ window.Pinalert = (function () {
     state.center = { lat: lat, lon: lon };
   }
 
+  // setShowDisputed mirrors setCenter's shape exactly: a single coerced
+  // assignment onto state, no notify, no fetch — the caller decides when
+  // to refetch.
+  function setShowDisputed(value) {
+    state.showDisputed = !!value;
+  }
+
   // fetchReports performs the one and only GET /api/reports call. A
   // background refresh (status already "ok") leaves status untouched so the
   // list does not flash skeletons on every 30s poll.
@@ -118,6 +128,21 @@ window.Pinalert = (function () {
       '?lat=' + encodeURIComponent(state.center.lat) +
       '&lon=' + encodeURIComponent(state.center.lon) +
       '&radius_km=' + encodeURIComponent(config.defaultRadiusKm);
+
+    // This is the only report fetch in the client (see this file's own
+    // header comment), and both the list and the map render from the one
+    // state.reports array it fills — so one flag on one URL reveals both
+    // surfaces' hidden rows and pins together. There is no map-specific
+    // query to add and none must ever be added: a second fetch would be
+    // the first place the two surfaces could disagree about what exists,
+    // which is exactly what TRUST-02 forbids. The value below is a fixed
+    // string, so no encodeURIComponent call is needed or wanted here,
+    // unlike the three coordinate/radius parameters above, which encode
+    // runtime numbers. Omitting the parameter entirely when the flag is
+    // false keeps this URL byte-identical to Phase 1's.
+    if (state.showDisputed) {
+      url += '&show_disputed=true';
+    }
 
     return fetch(url)
       .then(function (res) {
@@ -279,6 +304,7 @@ window.Pinalert = (function () {
     state: state,
     subscribe: subscribe,
     setCenter: setCenter,
+    setShowDisputed: setShowDisputed,
     fetchReports: fetchReports,
     startPolling: startPolling,
     submitReport: submitReport,
