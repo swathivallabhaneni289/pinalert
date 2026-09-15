@@ -234,7 +234,7 @@ Because Retracted reports are removed from the feed/map immediately (D-12) and n
 </li>
 ```
 
-Tapping `Reopen · not actually resolved` follows the identical GPS-then-POST-then-wait flow (D-04) as any other vote. No reporter-instant shortcut exists for reopen per the literal reading of D-16 (RESEARCH.md Open Question 1 flags this as worth a one-line confirmation with the user during planning — this UI-SPEC implements the literal/conservative reading; if planning confirms a reporter-instant reopen path instead, only this one button's disabled/instant behavior needs updating, not the surrounding layout).
+Tapping `Reopen · not actually resolved` follows the identical GPS-then-POST-then-wait flow (D-04) as any other vote. **Confirmed 2026-09-15 (amended D-16, see `02-CONTEXT.md`):** the reporter gets an instant, threshold-free reopen, symmetric with D-13's instant resolve. Because this Activity-page button only ever appears on the viewing account's *own* submitted reports (the page lists "the account's own submitted reports," never anyone else's), every tap of this specific button is by definition the reporter's own action — so in practice it always succeeds instantly, and the toast is always "Report reopened." The "reopen vote recorded, pending agreement" toast copy (below) is retained for API-consistency with `castVote`'s generic outcome handling (a non-reporter *could* call the same endpoint directly, outside any UI this phase ships) but is not reachable through this button.
 
 ### "Show disputed" filter (D-10, D-11)
 
