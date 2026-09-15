@@ -127,8 +127,15 @@ func TestVendorMapScriptsLoadInDependencyOrder(t *testing.T) {
 	bridgeSrc := vendorScriptSources[len(vendorScriptSources)-1]
 	bridgePos := strings.Index(html, bridgeSrc)
 
+	// /static/js/votes.js (plan 02-05) joins this same vendor-layer-first
+	// rule: it is an app module like the other four, so it must load after
+	// the bridge too, and it is listed here in its actual template position
+	// (immediately after app.js) rather than first, since this loop only
+	// checks each module's position against the bridge, never the modules'
+	// relative order among themselves.
 	appModules := []string{
 		"/static/js/app.js",
+		"/static/js/votes.js",
 		"/static/js/map.js",
 		"/static/js/modal.js",
 		"/static/js/feed.js",
