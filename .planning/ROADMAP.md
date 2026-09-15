@@ -180,7 +180,7 @@ Plans:
 
   1. A user can confirm or dispute another user's report, and concurrent votes submitted on the same report at the same time never silently lose an update, verified by an automated concurrency test.
   2. A newly submitted non-critical report displays as "provisional" until a second independent confirmation arrives; a critical/rescue-needed report publishes at full visibility immediately, with no gate.
-  3. Only a vote from a distinct anonymous session AND a distinct geohash cell counts toward that independent confirmation — a report's self-declared severity affects triage sort order only and can never by itself unlock full visibility.
+  3. Only a vote from a distinct verified account AND a distinct geohash cell counts toward that independent confirmation — a report's self-declared severity affects triage sort order only and can never by itself unlock full visibility.
   4. A report's visibility state (Hidden/Provisional/Live/Retracted) is identical everywhere it's shown — feed, map, triage view, and shareable card — because one shared resolver function computes it.
   5. A user (the reporter or a nearby confirmer) can mark a report resolved, removing it from the live feed.
 

@@ -2,9 +2,10 @@
 phase: 2
 slug: trust-mechanic-core-confirm-dispute-visibility
 status: draft
-nyquist_compliant: false
-wave_0_complete: false
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-09-12
+updated: 2026-09-15
 ---
 
 # Phase 2 — Validation Strategy
@@ -85,11 +86,13 @@ own plan's own tasks (TDD-style RED→GREEN→Harden), not a shared pre-planning
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 60s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies — confirmed by gsd-plan-checker
+      (2026-09-15): 3 `<automated>` blocks per plan (11 for 02-07), zero missing
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify — confirmed, holds
+- [x] Wave 0 covers all MISSING references — superseded: no separate Wave 0 needed, every test is
+      created inside its owning plan's own tasks (see "Wave 0 Requirements" section above)
+- [x] No watch-mode flags — confirmed, zero found across all 8 plans
+- [x] Feedback latency < 60s — confirmed, full suite ~30-60s against shared Postgres
+- [x] `nyquist_compliant: true` set in frontmatter — done
 
-**Approval:** pending
+**Approval:** approved 2026-09-15 (gsd-plan-checker VERIFICATION, Dimension 8/Nyquist: PASS)

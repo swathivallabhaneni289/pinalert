@@ -89,7 +89,8 @@ codebase; 7 waves (after the 02-03 split) is the honest depth, not under-paralle
   `checkpoint:human-verify` task.
 - **Locked from RESEARCH open questions.** A vote on an already-expired report is rejected with an
   explicit 4xx ("This report has expired." — `02-UI-SPEC.md` Copywriting Contract ships the copy),
-  assigned to 02-03. See Open Questions below for the one that is *not* closed.
+  assigned to 02-03. See "Open questions — resolved during planning" below for how both of
+  RESEARCH's open questions were closed.
 
 ## Open questions — resolved during planning
 
@@ -97,8 +98,14 @@ codebase; 7 waves (after the 02-03 split) is the honest depth, not under-paralle
    RESOLVED: no reporter-instant reopen.** D-13 grants the reporter an instant, threshold-free
    *resolve*; D-16 gives reopening no equivalent carve-out. Every plan (01, 03a, 07) implements and
    asserts the literal reading — reopen always requires the independent-agreement threshold, for
-   every account including the reporter. Confirmed consistent across `Resolve()` (02-01),
-   `CastVote` (02-03a), and the Activity-page UI (02-07).
+   every account including the reporter, **except** that a reporter withdrawing their own instant
+   resolve (changing their vote per D-02) removes the sole cause of the retraction rather than
+   overriding independent agreement — that is a vote change, not a reopen, and is a separate,
+   deliberate code path (`02-01` Task 1: `ReporterResolved` flipping false). Confirmed consistent
+   across `Resolve()` (02-01), `CastVote` (02-03a), and the Activity-page UI (02-07) by
+   gsd-plan-checker's 2026-09-15 verification pass.
+   **Still needs an explicit user confirmation** (RESEARCH.md's own recommendation was not to
+   silently default this) — see STATE.md Blockers/Concerns.
 2. **ROADMAP Goal line is not in user-story form — RESOLVED, left as-is deliberately.** Rather than
    editing ROADMAP.md's Goal line (a capability statement) into `As a … I want to … so that …`
    form, every one of the 8 PLAN.md files was handed the same locked user story verbatim by the
