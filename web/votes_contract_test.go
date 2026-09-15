@@ -1649,9 +1649,16 @@ func TestReopenHasNoClientSideIdentityOrThreshold(t *testing.T) {
 	}
 	text := stripCSSComments(string(raw))
 
+	// "Threshold" (the identifier shape, matching
+	// service.IndependentAgreementThreshold) is checked rather than the
+	// bare lowercase word: stripCSSComments only strips CSS-style /* */
+	// blocks, not JS // line comments, and this file's own explanatory
+	// comments legitimately use the English word "threshold" (and
+	// "threshold-free") in prose describing why none is computed —
+	// banning the word outright would forbid documenting its own absence.
 	for _, forbidden := range []string{
 		"is_own_report", "reporterAccountID", "ReporterReopened", "accountID",
-		"Threshold", "threshold", "resolve-confirm", "vote-btn--confirm-resolve",
+		"Threshold", "resolve-confirm", "vote-btn--confirm-resolve",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Errorf("activity.js references %q — the reporter's instant reopen is the server's to "+

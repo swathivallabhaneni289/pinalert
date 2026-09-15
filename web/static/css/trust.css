@@ -167,6 +167,27 @@
   outline: 1px solid var(--color-border);
 }
 
+/* Retracted (Task 3, 02-07, Activity page only) — declarations identical
+   to .vis-hidden's above, property for property: "this is not currently
+   active" reads consistently whether the reason is dispute or resolution,
+   while the visibility-tag's own text ("Disputed" vs "Resolved")
+   distinguishes why. Held there deliberately: 02-06's selector heads
+   above are NOT widened to cover this state — ruleBySelector matches
+   heads exactly, and widening would break 02-06's own cascade lookups —
+   so the duplication is checked by TestRetractedRowTreatmentMatchesHidden
+   rather than shared through one selector. */
+.vis-retracted {
+  --severity-current: var(--color-border);
+  --severity-tint: transparent;
+  --badge-glyph-fg: var(--color-text-muted);
+}
+
+.icon-badge.vis-retracted,
+.vis-retracted .icon-badge {
+  background: transparent;
+  outline: 1px solid var(--color-border);
+}
+
 /* The visibility-tag chip. The mandatory [hidden] guard — this repo's
    third encounter with the specificity trap — exists because the chip's
    vertical padding forces a non-inline display, which is an author-origin
