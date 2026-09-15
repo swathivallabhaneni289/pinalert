@@ -26,8 +26,9 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 **Core value:** A report showing "confirmed by N nearby" must be verifiably backed by N
 independent nearby confirmations, resistant to trivial gaming.
 **Current focus:** Phase 01.1 — Identity & Login — Mandatory Email Verification is executed and
-holding at human_needed (one live-Resend-delivery UAT item outstanding). Phase 2's discuss-phase
-session is now complete (see `02-CONTEXT.md`) — ready for `/gsd-plan-phase 2`.
+holding at human_needed (one live-Resend-delivery UAT item outstanding). Phase 2 is fully planned
+— 8 PLAN.md files across 7 waves (02-01 through 02-07, with 02-03 split into 02-03a/02-03b) — and
+ready for the plan-checker verification pass, then `/gsd-execute-phase 2`.
 
 ## Current Position
 
@@ -87,8 +88,20 @@ Recent decisions affecting current work:
   completed all 4 originally-selected areas (Confirm/Dispute interaction, Hidden vs Retracted
   triggers, Visibility-state visual treatment, Resolved-marking flow) plus a 5th area
   (Confirmer location-capture method, resolving the open item PROJECT.md flagged for TRUST-03).
-  See `.planning/phases/02-trust-mechanic-core-confirm-dispute-visibility/02-CONTEXT.md`. Next:
-  `/gsd-plan-phase 2`.
+  See `.planning/phases/02-trust-mechanic-core-confirm-dispute-visibility/02-CONTEXT.md`.
+
+- ~~Phase 2 needs `/gsd-ui-phase 2`~~ — **done 2026-09-15**: `02-UI-SPEC.md` approved, 6/6
+  dimensions passed, 0 recommendations.
+
+- ~~Phase 2 needs `/gsd-plan-phase 2`~~ — **done 2026-09-15**: research complete
+  (`02-RESEARCH.md`), pattern map complete (`02-PATTERNS.md`), 8 plans across 7 waves committed
+  (`02-01`, `02-02`, `02-03a`, `02-03b`, `02-04`, `02-05`, `02-06`, `02-07`). The initial
+  single-shot planner call stalled after 600s with nothing written; recovered by switching to
+  chunked mode (one plan per agent call, committed individually) — see `02-PLAN-OUTLINE.md` for
+  the full plan breakdown and cross-plan contracts. **Not yet run:** the gsd-plan-checker
+  verification pass across all 8 plans (deliberately held for explicit confirmation before
+  running, given how long this planning session took). Next: verify, then
+  `/gsd-execute-phase 2`.
 
 - ~~Phase 1.1 (Identity & Login) needs its own `/gsd-discuss-phase 1.1` session~~ — **done
   2026-09-10**, see `.planning/phases/01.1-identity-login-mandatory-email-verification/01.1-CONTEXT.md`.
