@@ -50,3 +50,13 @@ type Session struct {
 	CreatedAt time.Time
 	AccountID *int64
 }
+
+type Vote struct {
+	ID          int64
+	ReportID    int64
+	AccountID   int64
+	Kind        string
+	Value       string
+	GeohashCell string
+	CreatedAt   time.Time
+}
