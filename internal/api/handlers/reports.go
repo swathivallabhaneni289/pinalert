@@ -261,7 +261,7 @@ func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 
 		responses := make([]ReportResponse, 0, len(reports))
 		for _, rep := range reports {
-			responses = append(responses, reportToResponse(rep))
+			responses = append(responses, reportToResponse(rep.Report))
 		}
 		writeJSON(w, http.StatusOK, ReportListResponse{Reports: responses})
 	}
