@@ -2,13 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 01.1
-current_phase_name: Identity & Login — Mandatory Email Verification
-status: executing
-stopped_at: Phase 2 UI-SPEC approved
-last_updated: "2026-09-15T03:40:32.391Z"
-last_activity: 2026-09-12
-last_activity_desc: Gap-closure plan 01.1-08 executed and independently re-verified against
+current_phase: "02"
+current_phase_name: Trust Mechanic Core — Confirm/Dispute & Visibility
+status: planned
+stopped_at: Phase 2 plans re-verified (7 parallel gsd-plan-checker passes, all 8 plans), ready for /gsd-execute-phase 2
+last_updated: "2026-09-15T14:31:24.000Z"
+last_activity: 2026-09-15
+last_activity_desc: Ran a fresh phase-wide plan-checker verification pass (7 parallel calls, one per
+wave) over Phase 2's 8 committed plans; 6 passed clean, 1 (02-04) passed with a single non-blocking
+stale-doc-reference warning, fixed same session. Requirements Coverage and Decision Coverage gates
+(TRUST-01..09 minus 05/07, D-01..D-18) independently confirmed via direct grep across all 8 plans.
 progress:
   total_phases: 7
   completed_phases: 2
@@ -26,24 +29,30 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 **Core value:** A report showing "confirmed by N nearby" must be verifiably backed by N
 independent nearby confirmations, resistant to trivial gaming.
 **Current focus:** Phase 01.1 — Identity & Login — Mandatory Email Verification is executed and
-holding at human_needed (one live-Resend-delivery UAT item outstanding). Phase 2 is fully planned
-— 8 PLAN.md files across 7 waves (02-01 through 02-07, with 02-03 split into 02-03a/02-03b) — and
-ready for the plan-checker verification pass, then `/gsd-execute-phase 2`.
+holding at human_needed (one live-Resend-delivery UAT item outstanding, independent of Phase 2).
+Phase 2 is fully planned AND re-verified — 8 PLAN.md files across 7 waves (02-01 through 02-07,
+with 02-03 split into 02-03a/02-03b), all 8 passed a fresh gsd-plan-checker pass on 2026-09-15 —
+ready for `/gsd-execute-phase 2`.
 
 ## Current Position
 
-Phase: 01.1 (Identity & Login — Mandatory Email Verification) — HUMAN VERIFICATION PENDING
-Plan: 8 of 8 executed (all waves 1-7 complete, all gates green)
-Status: All code-verifiable must-haves pass, including the re-closed SC4/IDENT-04 rate-limiting
-gap. One human-only check remains — live Resend email delivery (SC2/IDENT-02) — tracked in
-`01.1-UAT.md`. Run `/gsd-verify-work 1.1` with a real RESEND_API_KEY and DNS-verified domain to
-close it out.
-Last activity: 2026-09-12 — Gap-closure plan 01.1-08 executed and independently re-verified against
-the live code (not just trusted from its own SUMMARY): `middleware.RealIP` is confirmed absent,
-the per-email cooldown is confirmed a single atomic `INSERT ... ON CONFLICT` claim, and all 7
-adversarial tests (forged-header spoofing, concurrent-claim races) pass against the current tree.
+Phase: 02 (Trust Mechanic Core — Confirm/Dispute & Visibility) — PLANNED, VERIFIED, READY TO EXECUTE
+Plans: 8/8 written, committed, and re-verified (0/8 executed)
+Status: A prior planning session (2026-09-15, earlier same day) wrote all 8 plans in chunked mode
+and caught+resolved a real decision ambiguity (D-16 reporter-instant reopen) via its own
+plan-checker passes, amending 02-01/02-03a/02-07/02-VALIDATION.md/02-03b across several commits
+ending 19:42 IST — but STATE.md was never refreshed after that (it still read "Not yet run" for
+the checker). This session ran a fresh, independent 7-way parallel gsd-plan-checker pass (one call
+per wave, sonnet model, cross-plan contracts checked via targeted reference reads) over the
+CURRENT on-disk content: 6 plans passed clean, 02-04 passed with one non-blocking stale-doc-
+reference warning (fixed same session, commit 1c0ecec). Requirements Coverage (TRUST-01..04,06,
+08,09) and Decision Coverage (D-01..D-18) independently confirmed present across the 8 plans via
+direct grep. No blockers found anywhere in the phase.
+Last activity: 2026-09-15 — see above.
+Separately, Phase 1.1's one remaining item (live Resend delivery, SC2/IDENT-02) is unrelated to
+Phase 2 and does not block Phase 2 execution — see Blockers/Concerns below.
 
-Progress: [██████████] 100% of phase 1.1's code-verifiable work; 1 human-only UAT item outstanding
+Progress: [██████████] 100% of Phase 2 planning + verification; 0% executed (next: `/gsd-execute-phase 2`)
 
 ## Performance Metrics
 
@@ -98,10 +107,9 @@ Recent decisions affecting current work:
   (`02-01`, `02-02`, `02-03a`, `02-03b`, `02-04`, `02-05`, `02-06`, `02-07`). The initial
   single-shot planner call stalled after 600s with nothing written; recovered by switching to
   chunked mode (one plan per agent call, committed individually) — see `02-PLAN-OUTLINE.md` for
-  the full plan breakdown and cross-plan contracts. **Not yet run:** the gsd-plan-checker
-  verification pass across all 8 plans (deliberately held for explicit confirmation before
-  running, given how long this planning session took). Next: verify, then
-  `/gsd-execute-phase 2`.
+  the full plan breakdown and cross-plan contracts. **Verification: done 2026-09-15** — 7 parallel
+  gsd-plan-checker passes (one per wave) over all 8 plans, all passed (1 non-blocking warning
+  found and fixed same session). Next: `/gsd-execute-phase 2`.
 
 - ~~Phase 1.1 (Identity & Login) needs its own `/gsd-discuss-phase 1.1` session~~ — **done
   2026-09-10**, see `.planning/phases/01.1-identity-login-mandatory-email-verification/01.1-CONTEXT.md`.
@@ -195,20 +203,33 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-15T03:40:32.382Z
-Stopped at: Phase 2 UI-SPEC approved
-every post-merge build/test/UI-safety/schema-drift gate green throughout. `/gsd-execute-phase 1.1`
-ran the 7 planned waves, then its own `gsd-verifier` pass caught a real gap (SC4/IDENT-04:
-spoofable rate-limit IP key + a TOCTOU cooldown race, independently confirmed against the pinned
-chi v5.3.2 source and cross-checked against `01.1-REVIEW.md`'s CR-01/WR-01). Ran `/gsd-plan-phase
-01.1 --gaps` to close it: gap-closure plan `01.1-08` (2 plan-checker iterations, one build-ordering
-fix) replaced `middleware.RealIP` with `middleware.ClientIPFromRemoteAddr` and the cooldown's
-read-then-insert with an atomic `INSERT ... ON CONFLICT` claim. Executed and re-verified — gap
-confirmed closed against the live code, not just trusted from the plan's SUMMARY.
-Phase now sits at `human_needed`, not fully closed: the one remaining item is a human-only check
-(real Resend delivery with live credentials, SC2/IDENT-02 — no test in the suite ever calls the
-live API by explicit design). Persisted as `01.1-UAT.md`. Run `/gsd-verify-work 1.1` once you have
-a real `RESEND_API_KEY` and a DNS-verified `RESEND_FROM` domain to close the phase out fully.
-Phase 2's own discussion remains checkpointed and paused (see Pending Todos) — resume it once
-Phase 1.1 fully closes.
-Resume file: .planning/phases/02-trust-mechanic-core-confirm-dispute-visibility/02-UI-SPEC.md
+Last session: 2026-09-15T14:31:24.000Z
+Stopped at: Phase 2 plans re-verified, ready for /gsd-execute-phase 2
+Prior sessions built Phase 1.1 (Identity & Login) end to end, closing a real SC4/IDENT-04 gap via
+gap-closure plan `01.1-08` (replaced spoofable `middleware.RealIP` with
+`middleware.ClientIPFromRemoteAddr`, and a TOCTOU-racy cooldown with an atomic
+`INSERT ... ON CONFLICT` claim), independently re-verified against live code. Phase 1.1 sits at
+`human_needed`: the one remaining item is a human-only check (real Resend delivery with live
+credentials, SC2/IDENT-02 — no test ever calls the live API by design), tracked in `01.1-UAT.md`.
+Run `/gsd-verify-work 1.1` with a real `RESEND_API_KEY` and DNS-verified `RESEND_FROM` domain to
+close it out — this is independent of Phase 2 and does not block Phase 2 execution.
+
+Phase 2 (Trust Mechanic Core) was then fully planned in chunked mode across a long session
+(8 PLAN.md files, 7 waves, 02-03 split into 02-03a/02-03b) — see `02-PLAN-OUTLINE.md`. That
+session's own plan-checker passes caught a real decision ambiguity (D-16: does the reporter get
+an instant, threshold-free reopen symmetric with D-13's instant resolve?) and, after explicit user
+confirmation, amended `02-01`/`02-03a`/`02-07`/`02-VALIDATION.md`/`02-03b` across several commits
+ending 19:42 IST 2026-09-15 — but this STATE.md file was never refreshed after the 15:44 "planning
+complete, verification pending" snapshot, so it went stale claiming the checker had "not yet run."
+
+This session ran a fresh, independent verification pass to resolve that: 7 parallel
+`gsd-plan-checker` agents (sonnet model, one per wave, each reading its assigned plan(s) plus
+targeted cross-plan reference reads for interface contracts) covering all 8 plans against the
+CURRENT on-disk content. Result: 6 plans passed clean; `02-04` passed with one non-blocking
+stale-doc-reference warning (claimed `02-VALIDATION.md`'s verification table was still `TBD` when
+it had already been backfilled) — fixed and committed (`1c0ecec`). Also independently confirmed,
+via direct grep (not delegated to an agent): every TRUST-01..04,06,08,09 requirement ID and every
+D-01..D-18 decision ID is referenced across the 8 plans. No blockers found anywhere in the phase.
+
+Next: `/gsd-execute-phase 2`.
+Resume file: .planning/phases/02-trust-mechanic-core-confirm-dispute-visibility/02-PLAN-OUTLINE.md
