@@ -75,11 +75,25 @@ means "distinct verified account" — anonymous voting no longer exists.
 - **D-15:** "Mark Resolved" is placed at **the same surface as Confirm/Dispute** (feed row & map
   popup) — not tucked into a report-detail-only view, despite being a higher-consequence action
   than a vote.
-- **D-16:** A Retracted report **can be reopened** — not a one-way terminal state. Reopening uses
-  **a dedicated "Reopen / not actually resolved" action**, distinct from ordinary confirm/dispute
-  votes on the report's underlying content — keeps "is this report still true" and "is this
-  resolved" as two separately-tracked signals rather than overloading one vote type. Reopening
-  requires the same independent-agreement threshold as D-14 to flip back to Live/Provisional.
+- **D-16 (amended 2026-09-15 — see below):** A Retracted report **can be reopened** — not a
+  one-way terminal state. Reopening uses **a dedicated "Reopen / not actually resolved" action**,
+  distinct from ordinary confirm/dispute votes on the report's underlying content — keeps "is this
+  report still true" and "is this resolved" as two separately-tracked signals rather than
+  overloading one vote type. **The reporter can reopen their own report instantly, no threshold —
+  symmetric with D-13's instant resolve.** A non-reporter confirmer's reopen still requires the
+  same independent-agreement threshold as D-14 to flip the report back to Live/Provisional; the
+  reporter's own reopen action always succeeds immediately, regardless of how the report came to
+  be Retracted (their own instant resolve, or independent confirmers' agreement).
+
+  **Amendment history:** the original discuss-phase session (2026-09-12) locked reopening as
+  requiring the independent-agreement threshold for every account including the reporter, with no
+  carve-out. `02-RESEARCH.md`'s Open Question 1 flagged this specific asymmetry (instant resolve
+  but no instant reopen) as needing an explicit user confirmation before plan-checker sign-off
+  rather than a silent default, since it materially changes reporter power over their own report.
+  All 8 Phase 2 plans were built against the literal no-carve-out reading; `gsd-plan-checker`'s
+  2026-09-15 verification pass caught the missing confirmation and surfaced the question directly.
+  The user's answer, given then, reversed the original reading to the symmetric-with-D-13 form
+  above. `02-01`, `02-03a`, and `02-07` were re-planned accordingly the same day.
 
 ### Confirmer location-capture method (resolves the open item flagged in PROJECT.md)
 - **D-17:** The voter's own location for the independence predicate's "distinct geohash cell"
@@ -204,12 +218,15 @@ means "distinct verified account" — anonymous voting no longer exists.
   direction for D-09's Provisional treatment, though the literal "confirmed by N nearby" *number*
   itself is Phase 3 (diversity-weighted count), not this phase. This phase's Provisional/Hidden
   states can borrow the visual language without needing the final weighted count wired up yet.
-- **One independence rule everywhere:** the discussion repeatedly converged on reusing the *same*
-  distinct-session-AND-distinct-geohash-cell predicate and the *same* small threshold across three
-  separate mechanics — the Hidden trigger (D-05/D-06), confirmer-driven resolving (D-13/D-14), and
-  reopening a Retracted report (D-16). This was a deliberate simplification the user leaned into
-  each time it came up, not three independent design choices — planning should treat "independent
-  agreement" as one reusable concept, not reimplement it three times.
+- **One independence rule everywhere — with one now-explicit reporter carve-out.** The discussion
+  repeatedly converged on reusing the *same* distinct-account-AND-distinct-geohash-cell predicate
+  and the *same* small threshold across three separate mechanics — the Hidden trigger (D-05/D-06),
+  confirmer-driven resolving (D-13/D-14), and non-reporter reopening (D-16). Treat "independent
+  agreement" as one reusable concept for all three, not three separate implementations. **The one
+  asymmetry, confirmed 2026-09-15:** the reporter gets an instant, threshold-free path on both
+  halves of the resolve/reopen pair (D-13 resolve, amended D-16 reopen) — mirroring each other —
+  while the Hidden trigger (D-05/D-06) has no equivalent reporter carve-out at all (a reporter
+  cannot single-handedly un-hide their own disputed report; only new independent confirms can).
 - **GPS-based location capture (D-17) was chosen specifically because of this project's own CGNAT
   finding** — the same shared-carrier-IP risk that ruled out pure IP-based *rate limiting*
   elsewhere in the project (see PROJECT.md Constraints) was raised again here as the reason to
