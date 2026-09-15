@@ -7,7 +7,12 @@
 package service
 
 import (
+	"context"
 	"errors"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/mmcloughlin/geohash"
 
 	sqlcgen "pinalert/internal/store/sqlc"
 )
@@ -190,4 +195,169 @@ func BuildVoteTally(rows []sqlcgen.CurrentVotesForReportsRow, reportID int64, re
 		ReporterResolved: reporterResolved,
 		ReporterReopened: reporterReopened,
 	}
+}
+
+// gpsDeniedMessage is 02-UI-SPEC.md's Copywriting Contract copy for a
+// missing or out-of-range coordinate on the wire, verbatim — reused here
+// rather than paraphrased because report.go's ValidationError doc comment
+// requires a server rejection to never contradict the client's own inline
+// copy, and a garbled/absent coordinate is exactly the situation this
+// copy describes.
+const gpsDeniedMessage = "Voting needs your location, so nearby confirmations can be verified as independent. Turn on location access for this site and try again."
+
+// VotingQuerier is the entire store surface the voting path touches —
+// small enough to fake without a real Postgres, mirroring report.go's
+// Querier. 02-04 writes its own fake against this exact shape. The
+// parameter is named reportIDs here while sqlc emits reportIds; Go
+// matches interfaces structurally, so the names need not agree, but the
+// types must.
+type VotingQuerier interface {
+	InsertVote(ctx context.Context, arg sqlcgen.InsertVoteParams) error
+	CurrentVotesForReports(ctx context.Context, reportIDs []int64) ([]sqlcgen.CurrentVotesForReportsRow, error)
+	ReportVoteContext(ctx context.Context, reportID int64) (sqlcgen.ReportVoteContextRow, error)
+}
+
+// VotingService authorizes, records, and resolves confirm/dispute/
+// resolve/reopen votes.
+type VotingService struct {
+	q VotingQuerier
+}
+
+// NewVotingService constructs a VotingService backed by q.
+func NewVotingService(q VotingQuerier) *VotingService {
+	return &VotingService{q: q}
+}
+
+// CastVoteInput is every client-settable field of a cast vote.
+// GeohashCell and CreatedAt are deliberately absent because the server
+// computes them (following SubmitInput's own idiom), and AccountID comes
+// from the verified-account gate's request context (02-03b), never from a
+// request body — a client cannot assert whose vote this is.
+type CastVoteInput struct {
+	ReportID  int64
+	AccountID int64
+	Kind      VoteKind
+	Value     VoteValue
+	Latitude  float64
+	Longitude float64
+}
+
+// CastVoteResult is the two values 02-03b serialises and 02-05/02-06
+// render. A named result, rather than a bare pair, leaves room for
+// 02-04's response work to grow the shape without changing every
+// caller's arity.
+type CastVoteResult struct {
+	Visibility Visibility
+	Reason     ResolveReason
+}
+
+// CastVote authorizes, records, and resolves a single confirm/dispute/
+// resolve/reopen vote. The steps run in this exact order — the order is
+// part of the specification:
+//
+//  1. Validate the input, before touching the store — garbage input then
+//     costs zero database round trips.
+//  2. Load the report's vote context (severity/category/expiry/reporter)
+//     in one round trip.
+//  3. Apply D-03's self-vote block, scoped to VoteKindContent alone —
+//     resolve and reopen are both VoteKindResolution values the reporter
+//     is always allowed to cast on their own report (D-13, D-16
+//     amended). This sits above the expiry check because it is the
+//     authorisation decision and should not depend on a state check that
+//     might later move.
+//  4. Reject an expired report — RESEARCH Open Question 2's locked
+//     answer: reject, do not accept-and-ignore.
+//  5. Compute the voter's geohash cell server-side from raw coordinates —
+//     the T-02-01 control: CastVoteInput has no geohash field for a
+//     client to populate.
+//  6. Append the vote.
+//  7. Read the current votes back — AFTER the insert, so the response
+//     carries the POST-vote state (D-04).
+//  8. Build the tally and resolve. CastVote contains NO branch of its own
+//     for the reporter's instant resolve or instant reopen: both arrive
+//     as flags on the tally BuildVoteTally builds and are adjudicated by
+//     isRetracted() inside Resolve. A reporter reopening their own
+//     Retracted report therefore gets the un-retracted visibility back
+//     through the ordinary path, with no special case anywhere in this
+//     function — adding one here would create the second visibility
+//     authority T-02-04 exists to prevent.
+//
+// CastVote calls Resolve rather than deciding visibility itself, so the
+// vote-cast response and 02-04's feed read give byte-identical answers
+// for the same data (TRUST-02 / T-02-04). No transaction, row lock or
+// conflict clause appears anywhere in this sequence because 02-02's
+// append-only schema has no contended row to serialise (T-02-02).
+func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVoteResult, error) {
+	// 1. Validate.
+	if !in.Kind.Valid() {
+		return CastVoteResult{}, ValidationError{Field: "kind", Message: "Unrecognised vote kind."}
+	}
+	if !in.Value.ValidFor(in.Kind) {
+		return CastVoteResult{}, ValidationError{Field: "value", Message: "Unrecognised vote value for this kind."}
+	}
+	if in.Latitude < -90 || in.Latitude > 90 {
+		return CastVoteResult{}, ValidationError{Field: "latitude", Message: gpsDeniedMessage}
+	}
+	if in.Longitude < -180 || in.Longitude > 180 {
+		return CastVoteResult{}, ValidationError{Field: "longitude", Message: gpsDeniedMessage}
+	}
+
+	// 2. Load the report's vote context.
+	rc, err := s.q.ReportVoteContext(ctx, in.ReportID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return CastVoteResult{}, ErrReportNotFound
+		}
+		return CastVoteResult{}, err
+	}
+
+	// 3. D-03's self-vote block. The VoteKindContent guard is
+	// load-bearing in both directions: dropping it would break the
+	// reporter's instant resolution path, and widening it past content
+	// votes would silently disable the two actions that path exists to
+	// grant — D-13's instant resolve and D-16-amended's instant reopen.
+	// The nil check is not defensive noise — a pre-Phase-1.1 report
+	// legitimately has no reporter account, and a nil pointer must never
+	// compare equal to a caller.
+	if in.Kind == VoteKindContent && rc.ReporterAccountID != nil && *rc.ReporterAccountID == in.AccountID {
+		return CastVoteResult{}, ErrCannotVoteOwnReport
+	}
+
+	// 4. Reject an expired report. now is captured once, here, as the
+	// authoritative clock — never a client-supplied timestamp, matching
+	// Submit's own convention.
+	now := time.Now().UTC()
+	if !rc.ExpiresAt.After(now) {
+		return CastVoteResult{}, ErrReportExpired
+	}
+
+	// 5. Compute the voter's cell server-side. Any geohash string a
+	// client might invent has nowhere to enter — CastVoteInput has no
+	// such field.
+	cell := geohash.EncodeWithPrecision(in.Latitude, in.Longitude, voterGeohashPrecision)
+
+	// 6. Append the vote.
+	if err := s.q.InsertVote(ctx, sqlcgen.InsertVoteParams{
+		ReportID:    in.ReportID,
+		AccountID:   in.AccountID,
+		Kind:        string(in.Kind),
+		Value:       string(in.Value),
+		GeohashCell: cell,
+	}); err != nil {
+		return CastVoteResult{}, err
+	}
+
+	// 7. Read the current votes back. This must come after the insert —
+	// the response's whole purpose (D-04) is to carry the POST-vote
+	// state.
+	rows, err := s.q.CurrentVotesForReports(ctx, []int64{in.ReportID})
+	if err != nil {
+		return CastVoteResult{}, err
+	}
+
+	// 8. Build the tally and resolve.
+	tally := BuildVoteTally(rows, in.ReportID, rc.ReporterAccountID)
+	meta := ReportMeta{Severity: Severity(rc.Severity), Category: Category(rc.Category)}
+	vis, reason := Resolve(meta, tally, now)
+	return CastVoteResult{Visibility: vis, Reason: reason}, nil
 }

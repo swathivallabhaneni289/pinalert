@@ -10,8 +10,13 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/mmcloughlin/geohash"
 
 	sqlcgen "pinalert/internal/store/sqlc"
 )
@@ -341,6 +346,521 @@ func TestBuildVoteTallyFeedsResolveEndToEnd(t *testing.T) {
 		vis, reason := Resolve(meta, tally, time.Now())
 		if vis != VisibilityProvisional || reason != ReasonAwaitingConfirmation {
 			t.Errorf("Resolve() = %v/%v, want %v/%v", vis, reason, VisibilityProvisional, ReasonAwaitingConfirmation)
+		}
+	})
+}
+
+// fakeVotingQuerier is the recording fake CastVote's tests drive — the
+// exact shape auth_test.go's fakeAuthQuerier established: one programmable
+// return value (plus error) per method, every InsertVoteParams it
+// received recorded verbatim, and an ordered call log every method
+// appends to, which is what makes
+// TestCastVoteReturnsFreshlyResolvedVisibility's ordering assertion and
+// every "zero calls recorded" assertion mechanical rather than inferred.
+type fakeVotingQuerier struct {
+	calls []string
+
+	voteContextRow sqlcgen.ReportVoteContextRow
+	voteContextErr error
+
+	currentVotesRows []sqlcgen.CurrentVotesForReportsRow
+	currentVotesErr  error
+
+	insertVoteErr error
+	insertedVotes []sqlcgen.InsertVoteParams
+}
+
+func (f *fakeVotingQuerier) ReportVoteContext(ctx context.Context, reportID int64) (sqlcgen.ReportVoteContextRow, error) {
+	f.calls = append(f.calls, "ReportVoteContext")
+	if f.voteContextErr != nil {
+		return sqlcgen.ReportVoteContextRow{}, f.voteContextErr
+	}
+	return f.voteContextRow, nil
+}
+
+func (f *fakeVotingQuerier) InsertVote(ctx context.Context, arg sqlcgen.InsertVoteParams) error {
+	f.calls = append(f.calls, "InsertVote")
+	f.insertedVotes = append(f.insertedVotes, arg)
+	return f.insertVoteErr
+}
+
+func (f *fakeVotingQuerier) CurrentVotesForReports(ctx context.Context, reportIDs []int64) ([]sqlcgen.CurrentVotesForReportsRow, error) {
+	f.calls = append(f.calls, "CurrentVotesForReports")
+	if f.currentVotesErr != nil {
+		return nil, f.currentVotesErr
+	}
+	return f.currentVotesRows, nil
+}
+
+func TestCastVoteRejectsReporterContentVote(t *testing.T) {
+	reporterID := int64(7)
+	for _, v := range []VoteValue{VoteConfirm, VoteDispute} {
+		t.Run(string(v), func(t *testing.T) {
+			q := &fakeVotingQuerier{
+				voteContextRow: sqlcgen.ReportVoteContextRow{
+					Severity:          string(SeverityLow),
+					Category:          string(CategoryFlood),
+					ExpiresAt:         time.Now().Add(time.Hour),
+					ReporterAccountID: &reporterID,
+				},
+			}
+			svc := NewVotingService(q)
+			_, err := svc.CastVote(context.Background(), CastVoteInput{
+				ReportID: 1, AccountID: 7, Kind: VoteKindContent, Value: v,
+				Latitude: 12.9716, Longitude: 77.5946,
+			})
+			if !errors.Is(err, ErrCannotVoteOwnReport) {
+				t.Fatalf("err = %v, want ErrCannotVoteOwnReport", err)
+			}
+			if len(q.insertedVotes) != 0 {
+				t.Fatalf("InsertVote called %d times, want 0 — rejecting AFTER writing the row would still fail this requirement", len(q.insertedVotes))
+			}
+		})
+	}
+}
+
+// TestCastVoteAllowsReporterResolutionVote proves a block applied to both
+// content AND resolution votes would silently break D-13's
+// reporter-instant resolve — this test exists next to
+// TestCastVoteRejectsReporterContentVote for exactly that reason.
+// Structured as a two-case table over {VoteResolve, VoteReopen} so neither
+// half of the reporter's resolution privilege can be dropped by a later
+// edit without the table visibly shrinking: since D-16's amendment,
+// reopen is a reporter privilege of exactly the same standing as resolve.
+func TestCastVoteAllowsReporterResolutionVote(t *testing.T) {
+	reporterID := int64(7)
+	newQuerier := func() *fakeVotingQuerier {
+		return &fakeVotingQuerier{
+			voteContextRow: sqlcgen.ReportVoteContextRow{
+				Severity:          string(SeverityLow),
+				Category:          string(CategoryFlood),
+				ExpiresAt:         time.Now().Add(time.Hour),
+				ReporterAccountID: &reporterID,
+			},
+		}
+	}
+
+	for _, v := range []VoteValue{VoteResolve, VoteReopen} {
+		t.Run(string(v), func(t *testing.T) {
+			q := newQuerier()
+			svc := NewVotingService(q)
+			_, err := svc.CastVote(context.Background(), CastVoteInput{
+				ReportID: 1, AccountID: 7, Kind: VoteKindResolution, Value: v,
+				Latitude: 12.9716, Longitude: 77.5946,
+			})
+			if err != nil {
+				t.Fatalf("err = %v, want nil", err)
+			}
+			if len(q.insertedVotes) != 1 {
+				t.Fatalf("InsertVote called %d times, want 1", len(q.insertedVotes))
+			}
+		})
+	}
+
+	t.Run("reporter's instant resolve resolves the report to Retracted end to end", func(t *testing.T) {
+		q := newQuerier()
+		q.currentVotesRows = []sqlcgen.CurrentVotesForReportsRow{
+			voteRow(1, 7, VoteKindResolution, VoteResolve, "tdr1qg0"),
+		}
+		svc := NewVotingService(q)
+		result, err := svc.CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: 7, Kind: VoteKindResolution, Value: VoteResolve,
+			Latitude: 12.9716, Longitude: 77.5946,
+		})
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if result.Visibility != VisibilityRetracted || result.Reason != ReasonResolved {
+			t.Errorf("result = %+v, want Visibility=%v Reason=%v", result, VisibilityRetracted, ReasonResolved)
+		}
+	})
+}
+
+// TestCastVoteReporterInstantReopen is the exact mirror of
+// TestCastVoteAllowsReporterResolutionVote's resolve half, and the reason
+// this plan was amended (D-16, 2026-09-15, TRUST-08). Reopening is
+// threshold-free for the reporter and threshold-gated for everyone else —
+// see 02-CONTEXT.md D-16's amendment history so a reader who finds an
+// older document does not "restore" a threshold here.
+func TestCastVoteReporterInstantReopen(t *testing.T) {
+	reporterID := int64(7)
+	baseVoteContext := func() sqlcgen.ReportVoteContextRow {
+		return sqlcgen.ReportVoteContextRow{
+			Severity:          string(SeverityLow),
+			Category:          string(CategoryFlood),
+			ExpiresAt:         time.Now().Add(time.Hour),
+			ReporterAccountID: &reporterID,
+		}
+	}
+
+	t.Run("reporter's own reopen lifts the retraction their own resolve caused, at zero independent reopen cells", func(t *testing.T) {
+		q := &fakeVotingQuerier{voteContextRow: baseVoteContext()}
+		q.currentVotesRows = []sqlcgen.CurrentVotesForReportsRow{
+			voteRow(1, 7, VoteKindResolution, VoteReopen, "tdr1qg0"),
+		}
+		svc := NewVotingService(q)
+		result, err := svc.CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: 7, Kind: VoteKindResolution, Value: VoteReopen,
+			Latitude: 12.9716, Longitude: 77.5946,
+		})
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if result.Visibility == VisibilityRetracted {
+			t.Fatalf("Visibility = %v, want NOT Retracted", result.Visibility)
+		}
+		if result.Visibility != VisibilityProvisional || result.Reason != ReasonAwaitingConfirmation {
+			t.Errorf("result = %+v, want Visibility=%v Reason=%v — the report falls back through the ordinary ladder with zero confirm cells standing", result, VisibilityProvisional, ReasonAwaitingConfirmation)
+		}
+		if len(q.insertedVotes) != 1 {
+			t.Fatalf("InsertVote called %d times, want 1", len(q.insertedVotes))
+		}
+		if q.insertedVotes[0].Kind != string(VoteKindResolution) || q.insertedVotes[0].Value != string(VoteReopen) {
+			t.Errorf("inserted vote = %+v, want Kind=resolution Value=reopen — the reporter's reopen is a stored vote like any other, not a state mutation", q.insertedVotes[0])
+		}
+	})
+
+	t.Run("the load-bearing case: reporter's own reopen lifts a retraction that came from independent confirmers, not their own resolve", func(t *testing.T) {
+		q := &fakeVotingQuerier{voteContextRow: baseVoteContext()}
+		q.currentVotesRows = []sqlcgen.CurrentVotesForReportsRow{
+			voteRow(1, 8, VoteKindResolution, VoteResolve, "tdr1qg1"),
+			voteRow(1, 10, VoteKindResolution, VoteResolve, "tdr1qg2"),
+			voteRow(1, 7, VoteKindResolution, VoteReopen, "tdr1qg0"),
+		}
+		svc := NewVotingService(q)
+		result, err := svc.CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: 7, Kind: VoteKindResolution, Value: VoteReopen,
+			Latitude: 12.9716, Longitude: 77.5946,
+		})
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if result.Visibility == VisibilityRetracted {
+			t.Fatalf("Visibility = %v, want NOT Retracted — the reporter's reopen must lift a retraction regardless of how it arose (D-16 amended, TRUST-08)", result.Visibility)
+		}
+		if len(q.insertedVotes) != 1 {
+			t.Fatalf("InsertVote called %d times, want 1", len(q.insertedVotes))
+		}
+	})
+
+	t.Run("the inverse: one non-reporter reopen is below threshold and cannot lift someone else's retraction — proves no threshold crept in", func(t *testing.T) {
+		q := &fakeVotingQuerier{voteContextRow: baseVoteContext()}
+		q.currentVotesRows = []sqlcgen.CurrentVotesForReportsRow{
+			voteRow(1, 8, VoteKindResolution, VoteResolve, "tdr1qg1"),
+			voteRow(1, 10, VoteKindResolution, VoteResolve, "tdr1qg2"),
+			voteRow(1, 9, VoteKindResolution, VoteReopen, "tdr1qg0"),
+		}
+		svc := NewVotingService(q)
+		result, err := svc.CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: 9, Kind: VoteKindResolution, Value: VoteReopen,
+			Latitude: 12.9716, Longitude: 77.5946,
+		})
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if result.Visibility != VisibilityRetracted {
+			t.Errorf("Visibility = %v, want Retracted — one non-reporter reopen is below IndependentAgreementThreshold and cannot lift someone else's retraction (D-14)", result.Visibility)
+		}
+		if len(q.insertedVotes) != 1 {
+			t.Fatalf("InsertVote called %d times, want 1", len(q.insertedVotes))
+		}
+	})
+}
+
+func TestCastVoteAllowsNonReporter(t *testing.T) {
+	reporterID := int64(7)
+	q := &fakeVotingQuerier{
+		voteContextRow: sqlcgen.ReportVoteContextRow{
+			Severity:          string(SeverityLow),
+			Category:          string(CategoryFlood),
+			ExpiresAt:         time.Now().Add(time.Hour),
+			ReporterAccountID: &reporterID,
+		},
+	}
+	svc := NewVotingService(q)
+	_, err := svc.CastVote(context.Background(), CastVoteInput{
+		ReportID: 1, AccountID: 9, Kind: VoteKindContent, Value: VoteConfirm,
+		Latitude: 12.9716, Longitude: 77.5946,
+	})
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if len(q.insertedVotes) != 1 {
+		t.Fatalf("InsertVote called %d times, want 1", len(q.insertedVotes))
+	}
+	got := q.insertedVotes[0]
+	if got.ReportID != 1 || got.AccountID != 9 || got.Kind != string(VoteKindContent) || got.Value != string(VoteConfirm) {
+		t.Errorf("inserted vote = %+v, want ReportID=1 AccountID=9 Kind=content Value=confirm", got)
+	}
+}
+
+func TestCastVoteTreatsNullReporterAsNobody(t *testing.T) {
+	q := &fakeVotingQuerier{
+		voteContextRow: sqlcgen.ReportVoteContextRow{
+			Severity:          string(SeverityLow),
+			Category:          string(CategoryFlood),
+			ExpiresAt:         time.Now().Add(time.Hour),
+			ReporterAccountID: nil,
+		},
+	}
+	svc := NewVotingService(q)
+	_, err := svc.CastVote(context.Background(), CastVoteInput{
+		ReportID: 1, AccountID: 7, Kind: VoteKindContent, Value: VoteConfirm,
+		Latitude: 12.9716, Longitude: 77.5946,
+	})
+	if err != nil {
+		t.Fatalf("err = %v, want nil — a nil reporter must not be compared equal to any caller", err)
+	}
+	if len(q.insertedVotes) != 1 {
+		t.Fatalf("InsertVote called %d times, want 1", len(q.insertedVotes))
+	}
+}
+
+func TestCastVoteRejectsExpiredReport(t *testing.T) {
+	t.Run("expired one hour ago is rejected and writes no row", func(t *testing.T) {
+		q := &fakeVotingQuerier{
+			voteContextRow: sqlcgen.ReportVoteContextRow{
+				Severity:  string(SeverityLow),
+				Category:  string(CategoryFlood),
+				ExpiresAt: time.Now().Add(-time.Hour),
+			},
+		}
+		svc := NewVotingService(q)
+		_, err := svc.CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: 9, Kind: VoteKindContent, Value: VoteConfirm,
+			Latitude: 12.9716, Longitude: 77.5946,
+		})
+		if !errors.Is(err, ErrReportExpired) {
+			t.Fatalf("err = %v, want ErrReportExpired", err)
+		}
+		if len(q.insertedVotes) != 0 {
+			t.Fatalf("InsertVote called %d times, want 0", len(q.insertedVotes))
+		}
+	})
+
+	t.Run("expiring one hour in the future is accepted — pins the predicate's direction", func(t *testing.T) {
+		q := &fakeVotingQuerier{
+			voteContextRow: sqlcgen.ReportVoteContextRow{
+				Severity:  string(SeverityLow),
+				Category:  string(CategoryFlood),
+				ExpiresAt: time.Now().Add(time.Hour),
+			},
+		}
+		svc := NewVotingService(q)
+		_, err := svc.CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: 9, Kind: VoteKindContent, Value: VoteConfirm,
+			Latitude: 12.9716, Longitude: 77.5946,
+		})
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+	})
+}
+
+func TestCastVoteRejectsMissingReport(t *testing.T) {
+	q := &fakeVotingQuerier{voteContextErr: pgx.ErrNoRows}
+	svc := NewVotingService(q)
+	_, err := svc.CastVote(context.Background(), CastVoteInput{
+		ReportID: 1, AccountID: 9, Kind: VoteKindContent, Value: VoteConfirm,
+		Latitude: 12.9716, Longitude: 77.5946,
+	})
+	if !errors.Is(err, ErrReportNotFound) {
+		t.Fatalf("err = %v, want ErrReportNotFound", err)
+	}
+	if len(q.insertedVotes) != 0 {
+		t.Fatalf("InsertVote called %d times, want 0", len(q.insertedVotes))
+	}
+}
+
+func castVoteAndGetCell(t *testing.T, lat, lon float64) string {
+	t.Helper()
+	q := &fakeVotingQuerier{
+		voteContextRow: sqlcgen.ReportVoteContextRow{
+			Severity:  string(SeverityLow),
+			Category:  string(CategoryFlood),
+			ExpiresAt: time.Now().Add(time.Hour),
+		},
+	}
+	svc := NewVotingService(q)
+	_, err := svc.CastVote(context.Background(), CastVoteInput{
+		ReportID: 1, AccountID: 9, Kind: VoteKindContent, Value: VoteConfirm,
+		Latitude: lat, Longitude: lon,
+	})
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	return q.insertedVotes[0].GeohashCell
+}
+
+func TestCastVoteComputesGeohashCellServerSide(t *testing.T) {
+	t.Run("recorded cell matches geohash.EncodeWithPrecision at voterGeohashPrecision, length 7", func(t *testing.T) {
+		got := castVoteAndGetCell(t, 12.9716, 77.5946)
+		want := geohash.EncodeWithPrecision(12.9716, 77.5946, voterGeohashPrecision)
+		if got != want {
+			t.Errorf("GeohashCell = %q, want %q", got, want)
+		}
+		if len(got) != 7 {
+			t.Errorf("len(GeohashCell) = %d, want 7", len(got))
+		}
+	})
+
+	t.Run("two callers ~40m apart produce the same cell; several hundred meters apart produce different cells", func(t *testing.T) {
+		lat1, lon1 := 12.9716, 77.5946
+		lat2, lon2 := 12.9716+0.0004, 77.5946
+		lat3, lon3 := 12.9716+0.005, 77.5946
+
+		if geohash.EncodeWithPrecision(lat1, lon1, voterGeohashPrecision) != geohash.EncodeWithPrecision(lat2, lon2, voterGeohashPrecision) {
+			t.Fatalf("test setup invalid: expected lat1/lon1 and lat2/lon2 to fall in the same cell")
+		}
+		if geohash.EncodeWithPrecision(lat1, lon1, voterGeohashPrecision) == geohash.EncodeWithPrecision(lat3, lon3, voterGeohashPrecision) {
+			t.Fatalf("test setup invalid: expected lat1/lon1 and lat3/lon3 to fall in different cells")
+		}
+
+		cell1 := castVoteAndGetCell(t, lat1, lon1)
+		cell2 := castVoteAndGetCell(t, lat2, lon2)
+		cell3 := castVoteAndGetCell(t, lat3, lon3)
+
+		if cell1 != cell2 {
+			t.Errorf("cell1 = %q, cell2 = %q, want equal (callers ~40m apart)", cell1, cell2)
+		}
+		if cell1 == cell3 {
+			t.Errorf("cell1 = %q, cell3 = %q, want different (callers several hundred meters apart)", cell1, cell3)
+		}
+	})
+}
+
+func TestCastVoteValidatesInput(t *testing.T) {
+	cases := []struct {
+		name      string
+		in        CastVoteInput
+		wantField string
+	}{
+		{
+			name:      "unknown kind",
+			in:        CastVoteInput{ReportID: 1, AccountID: 9, Kind: VoteKind("bogus"), Value: VoteConfirm, Latitude: 12.9716, Longitude: 77.5946},
+			wantField: "kind",
+		},
+		{
+			name:      "value not valid for kind",
+			in:        CastVoteInput{ReportID: 1, AccountID: 9, Kind: VoteKindContent, Value: VoteResolve, Latitude: 12.9716, Longitude: 77.5946},
+			wantField: "value",
+		},
+		{
+			name:      "latitude out of range",
+			in:        CastVoteInput{ReportID: 1, AccountID: 9, Kind: VoteKindContent, Value: VoteConfirm, Latitude: 91, Longitude: 77.5946},
+			wantField: "latitude",
+		},
+		{
+			name:      "longitude out of range",
+			in:        CastVoteInput{ReportID: 1, AccountID: 9, Kind: VoteKindContent, Value: VoteConfirm, Latitude: 12.9716, Longitude: -181},
+			wantField: "longitude",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			q := &fakeVotingQuerier{}
+			svc := NewVotingService(q)
+			_, err := svc.CastVote(context.Background(), tc.in)
+			var ve ValidationError
+			if !errors.As(err, &ve) {
+				t.Fatalf("err = %v, want a ValidationError", err)
+			}
+			if ve.Field != tc.wantField {
+				t.Errorf("ValidationError.Field = %q, want %q", ve.Field, tc.wantField)
+			}
+			if len(q.calls) != 0 {
+				t.Errorf("store calls = %v, want none — validation must run before the store is touched at all", q.calls)
+			}
+		})
+	}
+}
+
+func TestCastVoteReturnsFreshlyResolvedVisibility(t *testing.T) {
+	newQuerier := func(rows []sqlcgen.CurrentVotesForReportsRow) *fakeVotingQuerier {
+		return &fakeVotingQuerier{
+			voteContextRow: sqlcgen.ReportVoteContextRow{
+				Severity:  string(SeverityLow),
+				Category:  string(CategoryFlood),
+				ExpiresAt: time.Now().Add(time.Hour),
+			},
+			currentVotesRows: rows,
+		}
+	}
+
+	t.Run("one confirm leaves the report Provisional", func(t *testing.T) {
+		q := newQuerier([]sqlcgen.CurrentVotesForReportsRow{
+			voteRow(1, 9, VoteKindContent, VoteConfirm, "tdr1qg0"),
+		})
+		svc := NewVotingService(q)
+		result, err := svc.CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: 9, Kind: VoteKindContent, Value: VoteConfirm,
+			Latitude: 12.9716, Longitude: 77.5946,
+		})
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if result.Visibility != VisibilityProvisional || result.Reason != ReasonAwaitingConfirmation {
+			t.Errorf("result = %+v, want Visibility=%v Reason=%v", result, VisibilityProvisional, ReasonAwaitingConfirmation)
+		}
+	})
+
+	t.Run("two confirms in distinct cells flip the report to Live — TRUST-03 through the full service path", func(t *testing.T) {
+		q := newQuerier([]sqlcgen.CurrentVotesForReportsRow{
+			voteRow(1, 9, VoteKindContent, VoteConfirm, "tdr1qg0"),
+			voteRow(1, 10, VoteKindContent, VoteConfirm, "tdr1qg1"),
+		})
+		svc := NewVotingService(q)
+		result, err := svc.CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: 10, Kind: VoteKindContent, Value: VoteConfirm,
+			Latitude: 12.9716, Longitude: 77.5946,
+		})
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if result.Visibility != VisibilityLive || result.Reason != ReasonConfirmed {
+			t.Errorf("result = %+v, want Visibility=%v Reason=%v", result, VisibilityLive, ReasonConfirmed)
+		}
+	})
+
+	t.Run("two confirms in the SAME cell keep the report Provisional", func(t *testing.T) {
+		q := newQuerier([]sqlcgen.CurrentVotesForReportsRow{
+			voteRow(1, 9, VoteKindContent, VoteConfirm, "tdr1qg0"),
+			voteRow(1, 10, VoteKindContent, VoteConfirm, "tdr1qg0"),
+		})
+		svc := NewVotingService(q)
+		result, err := svc.CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: 10, Kind: VoteKindContent, Value: VoteConfirm,
+			Latitude: 12.9716, Longitude: 77.5946,
+		})
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if result.Visibility != VisibilityProvisional {
+			t.Errorf("Visibility = %v, want %v", result.Visibility, VisibilityProvisional)
+		}
+	})
+
+	t.Run("CurrentVotesForReports is called AFTER InsertVote, so the response reflects post-vote state", func(t *testing.T) {
+		q := newQuerier(nil)
+		svc := NewVotingService(q)
+		_, err := svc.CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: 9, Kind: VoteKindContent, Value: VoteConfirm,
+			Latitude: 12.9716, Longitude: 77.5946,
+		})
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		insertIdx, votesIdx := -1, -1
+		for i, c := range q.calls {
+			if c == "InsertVote" && insertIdx == -1 {
+				insertIdx = i
+			}
+			if c == "CurrentVotesForReports" && votesIdx == -1 {
+				votesIdx = i
+			}
+		}
+		if insertIdx == -1 || votesIdx == -1 || votesIdx < insertIdx {
+			t.Errorf("call log = %v, want InsertVote before CurrentVotesForReports", q.calls)
 		}
 	})
 }
