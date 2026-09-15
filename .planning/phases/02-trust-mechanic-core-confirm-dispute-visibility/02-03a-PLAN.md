@@ -17,12 +17,14 @@ requirements: [TRUST-01, TRUST-03, TRUST-08, TRUST-09]
 must_haves:
   truths:
     - "A content vote (confirm/dispute) whose caller is the report's own reporter is rejected with ErrCannotVoteOwnReport before any row is written — D-03 is enforced inside VotingService.CastVote, never only by a hidden client button (T-02-05)."
-    - "A resolution vote (resolve/reopen) from that same reporter is NOT rejected: the block is scoped to VoteKindContent alone, because D-13 grants the reporter an instant resolve on their own report (TRUST-08)."
+    - "A resolution vote (resolve/reopen) from that same reporter is NOT rejected: the block is scoped to VoteKindContent alone, because D-13 grants the reporter an instant resolve AND D-16 (amended 2026-09-15) grants them an equally instant, threshold-free reopen on their own report (TRUST-08)."
     - "The voter's geohash_cell is computed server-side as geohash.EncodeWithPrecision(latitude, longitude, voterGeohashPrecision) with voterGeohashPrecision = 7, from the raw coordinates D-17's GPS capture supplies — CastVoteInput carries no geohash field at all, so there is nothing for a client to forge."
     - "A vote on a report whose expires_at is not after the server's own now is rejected with ErrReportExpired and writes no row; a vote on a report id that does not exist is rejected with ErrReportNotFound and writes no row."
     - "Two confirm votes from two DISTINCT accounts standing in the SAME geohash cell produce ConfirmCells == 1, so the report stays Provisional — independence is measured in distinct cells, never in raw vote count (TRUST-03)."
     - "independentCellCount is the only implementation of 'independent agreement' in the tree: BuildVoteTally routes all four cell counts through it and no gate re-derives distinctness itself (D-14)."
-    - "BuildVoteTally surfaces the reporter's own current resolution vote as ReporterResolved and excludes that account from ResolveCells/ReopenCells, exactly as 02-01's VoteTally doc comment requires."
+    - "BuildVoteTally surfaces the reporter's own current resolution vote through BOTH symmetric flags — ReporterResolved when that vote is resolve, ReporterReopened when it is reopen — from the SAME single read, and excludes that account from ResolveCells/ReopenCells, exactly as 02-01's six-field VoteTally doc comment requires (D-13, D-16 amended 2026-09-15)."
+    - "Only the report's own reporter account can set ReporterReopened: a reopen row from any other account lands in ReopenCells and leaves ReporterReopened false. Since D-16's amendment removed the structural guarantee that used to come from the field not existing at all, this read-side identity check is now the whole of the enforcement (T-02-03)."
+    - "A reporter casting reopen on their own Retracted report gets a CastVoteResult whose Visibility is no longer Retracted, at zero independent reopen cells, and regardless of whether the retraction came from their own resolve or from independent confirmers reaching the threshold (D-16 amended, TRUST-08)."
     - "CastVote returns the visibility service.Resolve computes over the tally read back AFTER the insert, so the caller receives the post-vote state in the same response (D-04) and never re-derives it locally (T-02-04)."
   artifacts:
     - internal/store/queries/votes.sql
@@ -70,6 +72,19 @@ The decisions this plan implements, each cited by ID:
 - **D-13** — the reporter *can* mark their own report resolved, instantly and with no threshold.
   That is why D-03's block is scoped to `VoteKindContent` and never to `VoteKindResolution`. Get
   this scoping wrong in either direction and one of the two decisions breaks silently.
+- **D-16 (amended 2026-09-15)** — the reporter *can also reopen* their own report, instantly and
+  with no threshold, **exactly symmetric with D-13's resolve**. Both halves of the reporter's
+  resolution privilege therefore flow through `VoteKindResolution`, and `BuildVoteTally` reads them
+  off the same single "reporter's current resolution vote" lookup: that vote is either `resolve`
+  (→ `ReporterResolved`) or `reopen` (→ `ReporterReopened`), never both, because
+  `CurrentVotesForReports`' `DISTINCT ON (report_id, account_id, kind)` yields at most one current
+  `resolution` row per account. A non-reporter's reopen is still gated on
+  `IndependentAgreementThreshold` distinct cells, same as their resolve.
+  *(Amendment history: the original 2026-09-12 discuss session locked reopening as threshold-only
+  for every account including the reporter. `02-RESEARCH.md` Open Question 1 flagged that asymmetry
+  as never explicitly confirmed; `gsd-plan-checker`'s 2026-09-15 pass surfaced it, and the user's
+  answer reversed the reading. See `02-CONTEXT.md` D-16's "Amendment history" paragraph — this is
+  locked, not open. Do not "fix" the symmetry back out after finding an older document.)*
 - **D-17** — the voter's location arrives as raw `{latitude, longitude}` captured by the browser's
   GPS prompt (once per session, cached). The server encodes the cell itself at
   `voterGeohashPrecision = 7`; there is no geohash field on `CastVoteInput` for a client to
@@ -237,10 +252,19 @@ column on `reports`.
   <name>Task 2: One independence rule, written once — the vote vocabulary and the tally builder</name>
 
   <read_first>
-    - `internal/service/visibility.go` as completed by 02-01 — the exact `VoteTally` field list
-      (`ConfirmCells`, `DisputeCells`, `ResolveCells`, `ReopenCells`, `ReporterResolved`), its
-      struct doc comment (which explicitly assigns the job of populating it to this file), and
-      `IndependentAgreementThreshold`. Do not redeclare or shadow anything declared there.
+    - `internal/service/visibility.go` as completed by 02-01 — the exact **six**-field `VoteTally`
+      field list (`ConfirmCells`, `DisputeCells`, `ResolveCells`, `ReopenCells`, `ReporterResolved`,
+      `ReporterReopened`), its struct doc comment (which explicitly assigns the job of populating it
+      to this file), `isRetracted()`'s symmetric expression, and `IndependentAgreementThreshold`.
+      Do not redeclare or shadow anything declared there. **`ReporterReopened` is the field added by
+      D-16's 2026-09-15 amendment** — 02-01's plan and `02-CONTEXT.md` D-16 both carry the amendment
+      history; read it before assuming an older "no reporter reopen channel" reading.
+    - `02-01-PLAN.md`'s "`VoteTally` field contract (read this before writing `BuildVoteTally` in
+      02-03a)" table and the "Mutual exclusivity" note directly under it — it states that
+      `ReporterResolved` and `ReporterReopened` derive from the reporter's ONE current resolution
+      vote so both-true is unreachable here, that both-true is nonetheless *defined* behaviour in
+      `Resolve()` (reopen wins), and that **02-03a must therefore NOT add a defensive invariant
+      check or panic for it**.
     - `internal/service/report.go` lines 39-123 — the `Category` / `Severity` / `CapacityStatus`
       enum shape to mirror exactly: a string type, grouped constants, an exported ordered
       `Xs` slice, and a `Valid()` method that range-loops that slice with exact comparison and no
@@ -299,15 +323,28 @@ column on `reports`.
     - rows whose `ReportID` is 2 are ignored entirely when `reportID` is 1, including when they
       would otherwise dominate the counts. This proves the filter 02-04's batched read depends on.
     - `reporterAccountID` non-nil and a `resolution`/`resolve` row from that account →
-      `ReporterResolved` true, `ResolveCells` 0 (the reporter's own vote is surfaced through the
-      flag and excluded from the independent count, per 02-01's `VoteTally` doc comment).
+      `ReporterResolved` true, `ReporterReopened` false, `ResolveCells` 0 (the reporter's own vote
+      is surfaced through the flag and excluded from the independent count, per 02-01's `VoteTally`
+      doc comment).
     - `reporterAccountID` non-nil and a `resolution`/`reopen` row from that account →
-      `ReporterResolved` false, `ReopenCells` 0. The reporter has no reopen channel (D-16's locked
-      resolution); the row is dropped rather than counted.
+      `ReporterReopened` true, `ReporterResolved` false, `ReopenCells` 0. **This is the amended-D-16
+      case.** The reporter's reopen is their instant, threshold-free path out of Retracted,
+      symmetric with the resolve row above: it is surfaced through the flag and excluded from the
+      independent count, exactly the same shape, not dropped and not counted as a cell.
+    - The same reporter `resolution`/`reopen` row, but with `ReopenCells` and `ResolveCells` worth
+      of rows from OTHER accounts also present (two non-reporter resolve rows in distinct cells,
+      one non-reporter reopen row) → `ReporterReopened` is still true and `ReporterResolved` still
+      false, while `ResolveCells` is 2 and `ReopenCells` is 1. The reporter flag is a function of
+      the reporter's own row alone and never of other accounts' volume, in either direction.
     - two `resolution`/`resolve` rows from two NON-reporter accounts in distinct cells →
-      `ResolveCells` 2, `ReporterResolved` false.
+      `ResolveCells` 2, `ReporterResolved` false, `ReporterReopened` false.
     - `reporterAccountID` nil → no row is treated as the reporter's; a `resolution`/`resolve` row
-      counts toward `ResolveCells` normally.
+      counts toward `ResolveCells` normally and a `resolution`/`reopen` row toward `ReopenCells`,
+      with both reporter flags false.
+    - The two reporter flags are never both true in any case in this table, and no case asserts
+      that both-true is rejected — `CurrentVotesForReports`' `DISTINCT ON (report_id, account_id,
+      kind)` makes it unproducible, and 02-01 explicitly forbids adding a defensive invariant for
+      it. Record that as an in-test comment, not as an assertion.
     - rows with an unrecognised `Kind` (`"telemetry"`) or an unrecognised `Value` (`"maybe"`) are
       ignored and change no count — the vote vocabulary can grow in Phase 3 without a migration
       (02-02's schema left `kind`/`value` unconstrained for exactly this reason).
@@ -316,6 +353,30 @@ column on `reports`.
     - a `content`/`confirm` row from the reporter's own account, plus one from another account in a
       different cell → `ConfirmCells` 1, not 2. D-03 stops these being written in the first place;
       this is the read-side second layer that also covers any row predating the check (T-02-05).
+
+    `TestBuildVoteTallyOnlyReporterSetsReporterReopened` — the security-critical counterpart to the
+    test above, and the obligation 02-01's T-02-03 row hands to this plan by name. Its doc comment
+    must say why it exists: before D-16's amendment, the *absence* of a reporter-reopen field was
+    itself the enforcement — violating D-16 required visibly adding a struct field. That structural
+    guarantee is deliberately gone, `Resolve()` is a pure function that structurally cannot replace
+    it, so this read-side identity check is now the whole of the control. A caller able to set
+    `ReporterReopened` for a non-reporter could un-retract any report in the system.
+    - a `resolution`/`reopen` row from account 9 with `reporterAccountID` = 7 → `ReporterReopened`
+      false, `ReopenCells` 1. The reopen counts as one ordinary independent cell, nothing more.
+    - the same row with `reporterAccountID` nil → `ReporterReopened` false, `ReopenCells` 1. A nil
+      reporter must never compare equal to any account.
+    - THREE `resolution`/`reopen` rows from three distinct non-reporter accounts in three distinct
+      cells → `ReporterReopened` still false and `ReopenCells` 3. No volume of non-reporter reopens
+      can ever promote itself into the reporter's instant flag; it reaches
+      `IndependentAgreementThreshold` through `ReopenCells` or not at all (D-14).
+    - the mirror assertion for the resolve half, so neither flag can drift: a
+      `resolution`/`resolve` row from account 9 with `reporterAccountID` = 7 → `ReporterResolved`
+      false, `ResolveCells` 1.
+    - one row from account 7 (`reopen`) and one from account 9 (`reopen`) in distinct cells, with
+      `reporterAccountID` = 7 → `ReporterReopened` true and `ReopenCells` 1 — the reporter's row
+      routes to the flag and only the non-reporter's row reaches the count. This is the
+      discriminating case: an implementation that set the flag from any reopen row, or that let the
+      reporter's row also fall through into `ReopenCells`, fails exactly here.
 
     `TestBuildVoteTallyFeedsResolveEndToEnd`:
     - Build a tally from two confirm rows in distinct cells and pass it straight into
@@ -387,8 +448,13 @@ Declare, in this order:
    It stays unexported so nothing outside this package can build a competing count.
 
 7. `func BuildVoteTally(rows []sqlcgen.CurrentVotesForReportsRow, reportID int64, reporterAccountID *int64) VoteTally`.
-   Collect four `[]string` slices of geohash cells, then return a `VoteTally` whose four count
-   fields are each `independentCellCount` of one slice, plus the `ReporterResolved` flag.
+   **The signature is frozen** — 02-03b, 02-04, 02-05 and 02-07 all call it as written. Collect four
+   `[]string` slices of geohash cells, then return a `VoteTally` whose four count fields are each
+   `independentCellCount` of one slice, plus BOTH reporter flags. Write that return as a **keyed
+   composite literal naming all six fields explicitly**, both booleans included: Go zero-fills an
+   omitted field without complaint, so a five-field literal compiles and ships
+   `ReporterReopened: false` on every report — which is precisely the pre-amendment behaviour this
+   amendment exists to remove.
 
    Per row: skip it unless `row.ReportID == reportID`. Determine whether the row belongs to the
    reporter — true only when `reporterAccountID != nil && row.AccountID == *reporterAccountID`.
@@ -397,21 +463,38 @@ Declare, in this order:
      T-02-05 — D-03 stops these at write time, and this covers any row that predates the check);
      otherwise append `row.GeohashCell` to the confirm slice for `VoteConfirm`, the dispute slice
      for `VoteDispute`, and ignore any other value.
-   - `VoteKindResolution`: if the row is the reporter's, set `ReporterResolved` to
-     `VoteValue(row.Value) == VoteResolve` and append the cell to nothing at all — D-13 routes the
-     reporter through the flag, and D-16's locked resolution gives the reporter no reopen channel,
-     so a reporter `reopen` row sets the flag false and is otherwise dropped. Otherwise append the
-     cell to the resolve slice for `VoteResolve` or the reopen slice for `VoteReopen`, ignoring any
-     other value.
+   - `VoteKindResolution`: if the row is the reporter's, derive BOTH reporter flags from that ONE
+     row's value — `ReporterResolved` is `VoteValue(row.Value) == VoteResolve` and
+     `ReporterReopened` is `VoteValue(row.Value) == VoteReopen` — and append the cell to nothing at
+     all. The two assignments must sit side by side, read off the same row, in the same shape: the
+     symmetry IS the amended decision (D-13's instant resolve and D-16-amended's instant reopen are
+     one privilege with two values, not a privilege plus a special case). This is a small, precise
+     extension of the single lookup that already determined `ReporterResolved` — do **not** add a
+     second pass over `rows` or a separate reporter lookup for the reopen half. An unrecognised
+     resolution value (neither `resolve` nor `reopen`) correctly leaves both flags false.
+     Otherwise — the row is some other account's — append the cell to the resolve slice for
+     `VoteResolve` or the reopen slice for `VoteReopen`, ignoring any other value. A non-reporter's
+     reopen is an ordinary independent cell and must never touch `ReporterReopened`.
    - any other kind: ignore.
 
-   The doc comment must state four things: that the `reportID` parameter exists because 02-04
+   Because `CurrentVotesForReports` selects `DISTINCT ON (report_id, account_id, kind)`, at most one
+   `resolution` row per account survives the read, so at most one of the two flags can ever be set
+   here. Record that as a comment. Do **not** add an invariant check, a panic or an error return for
+   the both-true case: 02-01 defines that combination's behaviour (reopen wins) and explicitly
+   forbids a defensive guard in this plan.
+
+   The doc comment must state five things: that the `reportID` parameter exists because 02-04
    loads votes for a whole page of reports in ONE `CurrentVotesForReports` call and then calls this
    per report — removing the parameter would push the feed path into an N+1; that unrecognised
    kinds and values are ignored rather than erroring, so Phase 3 can extend the vocabulary without
-   a migration; that the reporter's own resolution vote is surfaced via `ReporterResolved` and
-   excluded from `ResolveCells`/`ReopenCells` exactly as `visibility.go`'s `VoteTally` doc comment
-   specifies; and that this function performs no I/O and takes no `context.Context`, so it is as
+   a migration; that the reporter's own resolution vote is surfaced via the symmetric
+   `ReporterResolved`/`ReporterReopened` pair and excluded from `ResolveCells`/`ReopenCells` exactly
+   as `visibility.go`'s six-field `VoteTally` doc comment specifies (D-13, D-16 amended
+   2026-09-15 — cite `02-CONTEXT.md` D-16's amendment history so a reader who finds an older
+   document does not remove the reopen flag); that **both** flags are set only on a server-side
+   reporter-identity match against the account `ReportVoteContext` resolved, never from anything a
+   client can assert, because a client able to set `ReporterReopened` could un-retract any report
+   (T-02-03); and that this function performs no I/O and takes no `context.Context`, so it is as
    testable as `Resolve` itself.
 
 Create `internal/service/trust_test.go` declaring **`package service`** — the INTERNAL test
@@ -437,10 +520,23 @@ bodies in. Do not add `CastVote` or `VotingService` in this task — they are Ta
     - `internal/service/trust_test.go` declares `package service` (the internal test package) and
       `internal/service/report_test.go` still declares `package service_test` — both packages
       coexist in the directory.
-    - All five test functions exist with exactly these names: `TestVoteKindAndValueValidation`,
+    - All six test functions exist with exactly these names: `TestVoteKindAndValueValidation`,
       `TestIndependentCellCount`, `TestBuildVoteTally`,
-      `TestBuildVoteTallyExcludesReporterOwnContentVote`, `TestBuildVoteTallyFeedsResolveEndToEnd`.
+      `TestBuildVoteTallyExcludesReporterOwnContentVote`,
+      `TestBuildVoteTallyOnlyReporterSetsReporterReopened`,
+      `TestBuildVoteTallyFeedsResolveEndToEnd`.
     - `go test ./internal/service/ -run 'TestVoteKindAndValueValidation|TestIndependentCellCount|TestBuildVoteTally' -count=1` passes.
+    - `BuildVoteTally` populates `ReporterReopened` in code, not only in a doc comment: with
+      full-line comments stripped, `internal/service/trust.go` mentions `ReporterReopened` at least
+      once. The discriminating proof is behavioural —
+      `TestBuildVoteTallyOnlyReporterSetsReporterReopened` and `TestBuildVoteTally`'s amended-D-16
+      rows — and this grep is only a cheap structural backstop against the field being left at its
+      zero value.
+    - The returned `VoteTally` literal sets all six fields: the field names appearing with a `:` in
+      the composite literal `BuildVoteTally` returns are exactly `ConfirmCells`, `DisputeCells`,
+      `ResolveCells`, `ReopenCells`, `ReporterResolved`, `ReporterReopened`. A five-field literal
+      compiles fine in Go and silently ships `ReporterReopened: false` for every report, which is
+      precisely the pre-amendment behaviour this amendment exists to remove.
     - `02-VALIDATION.md`'s TRUST-03 command runs green:
       `go test ./internal/service/... -run TestIndependentCellCount`.
     - `grep -c 'func independentCellCount(cells \[\]string) int' internal/service/trust.go` is
@@ -454,15 +550,16 @@ bodies in. Do not add `CastVote` or `VotingService` in this task — they are Ta
   </acceptance_criteria>
 
   <verify>
-    <automated>[ -z "$(gofmt -l internal/service/)" ] && go vet ./internal/service/ && [ "$(grep -c 'func independentCellCount(cells \[\]string) int' internal/service/trust.go)" = "1" ] && [ "$(grep -c 'voterGeohashPrecision = 7' internal/service/trust.go)" = "1" ] && [ "$(grep -c 'func BuildVoteTally(rows \[\]sqlcgen.CurrentVotesForReportsRow, reportID int64, reporterAccountID \*int64) VoteTally' internal/service/trust.go)" = "1" ] && [ "$(grep -c 'func Resolve(' internal/service/visibility.go)" = "1" ] && grep -q '^package service$' internal/service/trust_test.go && for f in TestVoteKindAndValueValidation TestIndependentCellCount TestBuildVoteTally TestBuildVoteTallyExcludesReporterOwnContentVote TestBuildVoteTallyFeedsResolveEndToEnd; do grep -q "^func ${f}(t \*testing.T)" internal/service/trust_test.go || { echo "missing ${f}"; exit 1; }; done && go test ./internal/service/... -run TestIndependentCellCount -count=1 && go test ./internal/service/ -count=1 && go test ./... -short</automated>
+    <automated>[ -z "$(gofmt -l internal/service/)" ] && go vet ./internal/service/ && [ "$(grep -c 'func independentCellCount(cells \[\]string) int' internal/service/trust.go)" = "1" ] && [ "$(grep -c 'voterGeohashPrecision = 7' internal/service/trust.go)" = "1" ] && [ "$(grep -c 'func BuildVoteTally(rows \[\]sqlcgen.CurrentVotesForReportsRow, reportID int64, reporterAccountID \*int64) VoteTally' internal/service/trust.go)" = "1" ] && [ "$(grep -c 'func Resolve(' internal/service/visibility.go)" = "1" ] && grep -q '^package service$' internal/service/trust_test.go && [ "$(grep -v '^[[:space:]]*//' internal/service/trust.go | grep -c 'ReporterReopened:')" -ge 1 ] && [ "$(grep -v '^[[:space:]]*//' internal/service/trust.go | grep -c 'ReporterResolved:')" -ge 1 ] && for f in TestVoteKindAndValueValidation TestIndependentCellCount TestBuildVoteTally TestBuildVoteTallyExcludesReporterOwnContentVote TestBuildVoteTallyOnlyReporterSetsReporterReopened TestBuildVoteTallyFeedsResolveEndToEnd; do grep -q "^func ${f}(t \*testing.T)" internal/service/trust_test.go || { echo "missing ${f}"; exit 1; }; done && go test ./internal/service/... -run TestIndependentCellCount -count=1 && go test ./internal/service/ -count=1 && go test ./... -short</automated>
   </verify>
 
   <done>
     The vote vocabulary validates itself, `independentCellCount` exists exactly once, and
-    `BuildVoteTally` turns a batch of current-vote rows into the `VoteTally` 02-01's `Resolve`
-    consumes — with two accounts in one cell proven to count as one, the reporter's own resolution
-    vote proven to route through `ReporterResolved`, and the tally proven to drive `Resolve` to the
-    right answer end to end.
+    `BuildVoteTally` turns a batch of current-vote rows into the six-field `VoteTally` 02-01's
+    `Resolve` consumes — with two accounts in one cell proven to count as one, the reporter's own
+    resolution vote proven to route through the symmetric `ReporterResolved`/`ReporterReopened`
+    pair (D-13 / D-16 amended) and no other account's reopen proven able to set that flag, and the
+    tally proven to drive `Resolve` to the right answer end to end.
   </done>
 </task>
 
@@ -508,14 +605,46 @@ bodies in. Do not add `CastVote` or `VotingService` in this task — they are Ta
       calls. Assert both: rejecting after writing the row would still fail the requirement.
     - Same with value `dispute` → identical outcome.
 
-    `TestCastVoteAllowsReporterResolutionVote` (D-13, TRUST-08):
+    `TestCastVoteAllowsReporterResolutionVote` (D-13, D-16 amended, TRUST-08):
     - reporter account 7, caller account 7, kind `resolution`, value `resolve` → no error, exactly
       one `InsertVote` call recorded. The doc comment on this test must say plainly that a block
       applied to both kinds would silently break D-13's reporter-instant resolve, which is why this
       test exists next to the one above.
+    - **The same assertion with value `reopen`** → no error, exactly one `InsertVote` call recorded.
+      Both resolution values must be provable here: D-03 blocks *content* votes on one's own report
+      and nothing else, and since D-16's amendment `reopen` is a reporter privilege of exactly the
+      same standing as `resolve`. A block that fired on either value would silently remove one half
+      of the reporter's resolution privilege, and this is the test that catches it. Structure the
+      function as a two-case table over `{VoteResolve, VoteReopen}` so neither value can be dropped
+      by a later edit without the table visibly shrinking.
     - With the current-vote rows programmed to include that reporter `resolution`/`resolve` row,
       the returned result is `VisibilityRetracted` / `ReasonResolved` — the reporter's instant path
       end to end.
+
+    `TestCastVoteReporterInstantReopen` (D-16 amended 2026-09-15, TRUST-08) — the exact mirror of
+    the resolve case above, and the reason this plan was amended. Its doc comment must state that
+    reopening is threshold-free for the reporter and threshold-gated for everyone else, and cite
+    `02-CONTEXT.md` D-16's amendment history so a reader who finds an older document does not
+    "restore" a threshold here.
+    - Reporter account 7, caller account 7, kind `resolution`, value `reopen`. Current-vote rows
+      programmed as the reporter's own `resolution`/`reopen` row plus nothing else, and the report
+      previously Retracted by that same reporter's resolve. The result's `Visibility` is NOT
+      `VisibilityRetracted`: with zero confirm cells it is `VisibilityProvisional` /
+      `ReasonAwaitingConfirmation`, the report having fallen back through the ordinary ladder. The
+      assertion is on the returned value, not on `ReopenCells` — the point is that the flip happened
+      with **zero** independent reopen cells standing.
+    - **The load-bearing case:** the same reporter reopen, but the retraction came from *independent
+      confirmers* — current-vote rows programmed as two NON-reporter `resolution`/`resolve` rows in
+      distinct cells (so `ResolveCells` reaches `IndependentAgreementThreshold`) plus the reporter's
+      own `resolution`/`reopen` row. The result is still NOT `VisibilityRetracted`. "Regardless of
+      how the report became Retracted" is exactly this case, and an implementation that only lets
+      the reporter undo their *own* resolve fails here while passing the case above.
+    - The inverse, proving no threshold crept in: the identical rows with the reopen row belonging
+      to account 9 instead of account 7 → the result IS `VisibilityRetracted`. One non-reporter
+      reopen is below the threshold and cannot lift someone else's retraction (D-14), and this is
+      what stops the test above from passing for the wrong reason.
+    - In every case exactly one `InsertVote` call is recorded, with `Kind` `resolution` and `Value`
+      `reopen` — the reporter's reopen is a stored vote like any other, not a state mutation.
 
     `TestCastVoteAllowsNonReporter`:
     - reporter account 7, caller account 9, kind `content`, value `confirm` → no error, one
@@ -617,9 +746,15 @@ with the reason for each position:
    returned as-is for the handler to log and map to 500.
 3. **Apply D-03's self-vote block.** If `in.Kind == VoteKindContent` and
    `rc.ReporterAccountID != nil` and `*rc.ReporterAccountID == in.AccountID`, return
-   `ErrCannotVoteOwnReport`. Comment that the `VoteKindContent` guard is load-bearing in both
-   directions: dropping it would break D-13's reporter-instant resolve, and widening it past
-   content votes would silently disable the one action D-13 exists to grant. Comment that this sits
+   `ErrCannotVoteOwnReport`. **The condition itself is unchanged by the D-16 amendment and must stay
+   scoped to `VoteKindContent`** — D-03 blocks *content* votes (confirm/dispute) on one's own report
+   and nothing else; `resolve` and `reopen` are both `VoteKindResolution` values the reporter is
+   always allowed to cast on their own report. Comment that the `VoteKindContent` guard is
+   load-bearing in both directions: dropping it would break the reporter's instant resolution path,
+   and widening it past content votes would silently disable the **two** actions that path exists to
+   grant — D-13's instant resolve and D-16-amended's instant reopen. Adding a value-level condition
+   here (blocking `reopen` while allowing `resolve`, or vice versa) is the specific regression the
+   two-case table in `TestCastVoteAllowsReporterResolutionVote` exists to catch. Comment that this sits
    above the expiry check because it is the authorisation decision and should not depend on a
    state check that might later move. The nil check is not defensive noise — a pre-Phase-1.1
    report legitimately has no reporter account, and a nil pointer must never compare equal to a
@@ -640,7 +775,12 @@ with the reason for each position:
 8. **Build the tally and resolve.** `tally := BuildVoteTally(rows, in.ReportID, rc.ReporterAccountID)`,
    then `meta := ReportMeta{Severity: Severity(rc.Severity), Category: Category(rc.Category)}`, then
    `vis, reason := Resolve(meta, tally, now)` reusing the same `now` from step 4. Return
-   `CastVoteResult{Visibility: vis, Reason: reason}`.
+   `CastVoteResult{Visibility: vis, Reason: reason}`. Comment that `CastVote` contains **no** branch
+   of its own for the reporter's instant resolve or instant reopen: both arrive as flags on the
+   tally Task 2 builds and are adjudicated by `isRetracted()` inside `Resolve`. A reporter reopening
+   their own Retracted report therefore gets the un-retracted visibility back through the ordinary
+   path, with no special case anywhere in this function — adding one here would create the second
+   visibility authority T-02-04 exists to prevent.
 
 The function doc comment must additionally record that `CastVote` calls `Resolve` rather than
 deciding visibility itself, so the vote-cast response and 02-04's feed read give byte-identical
@@ -662,11 +802,22 @@ Do not create any HTTP type, route or handler in this task.
 
   <acceptance_criteria>
     - `gofmt -l internal/service/` prints nothing and `go vet ./internal/service/` exits 0.
-    - All nine test functions exist with exactly these names: `TestCastVoteRejectsReporterContentVote`,
-      `TestCastVoteAllowsReporterResolutionVote`, `TestCastVoteAllowsNonReporter`,
+    - All ten test functions exist with exactly these names: `TestCastVoteRejectsReporterContentVote`,
+      `TestCastVoteAllowsReporterResolutionVote`, `TestCastVoteReporterInstantReopen`,
+      `TestCastVoteAllowsNonReporter`,
       `TestCastVoteTreatsNullReporterAsNobody`, `TestCastVoteRejectsExpiredReport`,
       `TestCastVoteRejectsMissingReport`, `TestCastVoteComputesGeohashCellServerSide`,
       `TestCastVoteValidatesInput`, `TestCastVoteReturnsFreshlyResolvedVisibility`.
+    - The D-03 block is still scoped to content votes and carries no value-level condition: in
+      `internal/service/trust.go`, the guard returning `ErrCannotVoteOwnReport` tests
+      `in.Kind == VoteKindContent`, and neither `VoteResolve` nor `VoteReopen` appears in that
+      guard's condition. Proven behaviourally by
+      `TestCastVoteAllowsReporterResolutionVote`'s two-case table (both resolution values accepted)
+      rather than by a brittle grep over the condition's text.
+    - `CastVote` adds no reporter carve-out of its own: `internal/service/trust.go` contains no
+      reference to `ReporterReopened` or `ReporterResolved` outside `BuildVoteTally` — both flags
+      are set there and consumed only by `Resolve`, so `CastVote` has exactly one visibility
+      authority (T-02-04).
     - `go test ./internal/service/ -run TestCastVote -count=1` passes with zero failures.
     - `02-VALIDATION.md`'s TRUST-01 command runs green:
       `go test ./internal/service/... ./internal/store/... -run TestCastVote -p 1`.
@@ -686,12 +837,14 @@ Do not create any HTTP type, route or handler in this task.
   </acceptance_criteria>
 
   <verify>
-    <automated>[ -z "$(gofmt -l internal/service/)" ] && go vet ./... && [ "$(grep -c 'func (s \*VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVoteResult, error)' internal/service/trust.go)" = "1" ] && [ "$(grep -c 'geohash.EncodeWithPrecision' internal/service/trust.go)" = "1" ] && ! awk '/^import \(/{b=1;next} b&&/^\)/{b=0} b' internal/service/trust.go | grep -qE 'net/http|go-chi/chi' && for f in TestCastVoteRejectsReporterContentVote TestCastVoteAllowsReporterResolutionVote TestCastVoteAllowsNonReporter TestCastVoteTreatsNullReporterAsNobody TestCastVoteRejectsExpiredReport TestCastVoteRejectsMissingReport TestCastVoteComputesGeohashCellServerSide TestCastVoteValidatesInput TestCastVoteReturnsFreshlyResolvedVisibility; do grep -q "^func ${f}(t \*testing.T)" internal/service/trust_test.go || { echo "missing ${f}"; exit 1; }; done && go test ./internal/service/ -count=1 && go test ./internal/service/... ./internal/store/... -run TestCastVote -p 1 && go test ./... -short && go test ./... -p 1</automated>
+    <automated>[ -z "$(gofmt -l internal/service/)" ] && go vet ./... && [ "$(grep -c 'func (s \*VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVoteResult, error)' internal/service/trust.go)" = "1" ] && [ "$(grep -c 'geohash.EncodeWithPrecision' internal/service/trust.go)" = "1" ] && ! awk '/^import \(/{b=1;next} b&&/^\)/{b=0} b' internal/service/trust.go | grep -qE 'net/http|go-chi/chi' && for f in TestCastVoteRejectsReporterContentVote TestCastVoteAllowsReporterResolutionVote TestCastVoteReporterInstantReopen TestCastVoteAllowsNonReporter TestCastVoteTreatsNullReporterAsNobody TestCastVoteRejectsExpiredReport TestCastVoteRejectsMissingReport TestCastVoteComputesGeohashCellServerSide TestCastVoteValidatesInput TestCastVoteReturnsFreshlyResolvedVisibility; do grep -q "^func ${f}(t \*testing.T)" internal/service/trust_test.go || { echo "missing ${f}"; exit 1; }; done && go test ./internal/service/ -count=1 && go test ./internal/service/... ./internal/store/... -run TestCastVote -p 1 && go test ./... -short && go test ./... -p 1</automated>
   </verify>
 
   <done>
     `VotingService.CastVote` refuses the reporter's own content vote before writing anything, still
-    honours the reporter's instant resolve, rejects expired and missing reports, computes the
+    honours BOTH halves of the reporter's instant resolution privilege — resolve (D-13) and reopen
+    (D-16 amended), the latter lifting a retraction at zero independent reopen cells however the
+    retraction arose — rejects expired and missing reports, computes the
     voter's geohash cell from raw coordinates on the server, appends the vote, and returns the
     visibility `Resolve` computes over the tally read back afterwards — every branch proven against
     a recording fake with no database.
@@ -747,7 +900,7 @@ third join through `accounts` could only re-prove what the constraint already gu
 | `ErrCannotVoteOwnReport` | var | `error` — D-03; 02-03b maps it to 403 |
 | `ErrReportExpired` | var | `error` — 02-03b maps it to 409 |
 | `ErrReportNotFound` | var | `error` — 02-03b maps it to 404 |
-| `BuildVoteTally` | func | `func BuildVoteTally(rows []sqlcgen.CurrentVotesForReportsRow, reportID int64, reporterAccountID *int64) VoteTally` |
+| `BuildVoteTally` | func | `func BuildVoteTally(rows []sqlcgen.CurrentVotesForReportsRow, reportID int64, reporterAccountID *int64) VoteTally` — signature unchanged by the D-16 amendment; populates all **six** `VoteTally` fields including `ReporterReopened` |
 | `VotingQuerier` | interface | `InsertVote`, `CurrentVotesForReports`, `ReportVoteContext` — exactly three methods |
 | `VotingService` | struct | unexported field `q VotingQuerier` |
 | `NewVotingService` | func | `func NewVotingService(q VotingQuerier) *VotingService` |
@@ -759,6 +912,28 @@ third join through `accounts` could only re-prove what the constraint already gu
 reports with ONE `CurrentVotesForReports` call and then calls `BuildVoteTally` once per report over
 that shared slice. Removing the parameter would force a per-report query and reintroduce the N+1
 the batched query exists to avoid.
+
+**What `BuildVoteTally` populates** (read this before writing 02-07's fixtures or 02-04's feed
+path). It returns 02-01's **six**-field `VoteTally` with every field set explicitly:
+
+| Field | Source |
+|-------|--------|
+| `ConfirmCells` / `DisputeCells` | `independentCellCount` over non-reporter `content` rows |
+| `ResolveCells` / `ReopenCells` | `independentCellCount` over non-reporter `resolution` rows |
+| `ReporterResolved` | the reporter's own current `resolution` row, when its value is `resolve` |
+| `ReporterReopened` | the reporter's own current `resolution` row, when its value is `reopen` — **D-16 amended 2026-09-15**; mirrors `ReporterResolved` field-for-field |
+
+Both reporter booleans come from the **same single** "reporter's current resolution vote" read, and
+`CurrentVotesForReports`' `DISTINCT ON (report_id, account_id, kind)` guarantees at most one such
+row per account — so at most one flag is ever set and both-true is unproducible here. 02-01 defines
+both-true's behaviour anyway (reopen wins) and forbids a defensive invariant check in this plan;
+none is added. Neither flag is ever set for a non-reporter account: a reopen from account X ≠ the
+reporter lands in `ReopenCells` and leaves `ReporterReopened` false, asserted by
+`TestBuildVoteTallyOnlyReporterSetsReporterReopened` (T-02-03).
+
+`CastVote`'s signature and every other exported symbol below are **unchanged** by the D-16
+amendment — only what `BuildVoteTally` populates changed. 02-03b, 02-04, 02-05 and 02-07 call these
+exactly as listed and need no edit on account of the amendment.
 
 **New unexported symbols in package `service`**
 
@@ -773,12 +948,18 @@ directly; `report_test.go` and `auth_test.go` remain `package service_test` and 
 coexist in the directory)
 
 `TestVoteKindAndValueValidation` · `TestIndependentCellCount` · `TestBuildVoteTally` ·
-`TestBuildVoteTallyExcludesReporterOwnContentVote` · `TestBuildVoteTallyFeedsResolveEndToEnd` ·
+`TestBuildVoteTallyExcludesReporterOwnContentVote` ·
+`TestBuildVoteTallyOnlyReporterSetsReporterReopened` · `TestBuildVoteTallyFeedsResolveEndToEnd` ·
 `TestCastVoteRejectsReporterContentVote` · `TestCastVoteAllowsReporterResolutionVote` ·
+`TestCastVoteReporterInstantReopen` ·
 `TestCastVoteAllowsNonReporter` · `TestCastVoteTreatsNullReporterAsNobody` ·
 `TestCastVoteRejectsExpiredReport` · `TestCastVoteRejectsMissingReport` ·
 `TestCastVoteComputesGeohashCellServerSide` · `TestCastVoteValidatesInput` ·
 `TestCastVoteReturnsFreshlyResolvedVisibility`
+
+The two names added by D-16's 2026-09-15 amendment are
+`TestBuildVoteTallyOnlyReporterSetsReporterReopened` (the T-02-03 enforcement 02-01 handed to this
+plan) and `TestCastVoteReporterInstantReopen` (the reporter's threshold-free reopen, end to end).
 
 **Deliberately NOT produced here** (so a drift check does not flag these as missing)
 
@@ -811,7 +992,7 @@ plan mints no new IDs. ASVS level 1, block-on: high.
 |-----------|----------|-----------|----------|-------------|-----------------|
 | T-02-05 | Tampering (of a report's own trust score) | `VotingService.CastVote` step 3 — reporter self-confirming their own report | high | mitigate | Two layers, both server-side. (a) `CastVote` compares the caller's `AccountID` against the `reporter_account_id` that `ReportVoteContext` resolves through `reports` → `sessions`, and returns `ErrCannotVoteOwnReport` **before** `InsertVote` runs — `TestCastVoteRejectsReporterContentVote` asserts both the sentinel error and that zero insert calls were recorded, so rejecting-after-writing cannot pass. The hidden button 02-05 renders is a courtesy, never the control. (b) `BuildVoteTally` additionally drops any content row belonging to the reporter account at read time, covering rows that predate the check; `TestBuildVoteTallyExcludesReporterOwnContentVote` asserts it. The block is deliberately scoped to `VoteKindContent` so D-13's reporter-instant resolve keeps working, and `TestCastVoteAllowsReporterResolutionVote` fails if that scoping is widened. A NULL reporter account (a pre-Phase-1.1 report) never compares equal to a caller — `TestCastVoteTreatsNullReporterAsNobody`. |
 | T-02-01 | Spoofing | `voterGeohashPrecision` / `independentCellCount` — Sybil or multi-account vote stuffing from one physical location | high | mitigate | The independence predicate is server-computed end to end and stacks on Phase 1.1's mandatory email verification. The cell is derived by `geohash.EncodeWithPrecision(lat, lon, 7)` inside `CastVote`; `CastVoteInput` has no geohash field, so there is no channel for a forged cell (structurally asserted by Task 3's six-field criterion, not only by comment). `independentCellCount` counts DISTINCT cells over an already-per-account-deduped read, so N accounts standing in one place count once — `TestBuildVoteTally`'s identical-cell case and `TestCastVoteReturnsFreshlyResolvedVisibility`'s same-cell case both fail if counting reverts to raw rows. **Residual risk, accepted and documented:** GPS spoofing via devtools override or a mock-location app is not preventable at this project's budget (`PITFALLS.md` Pitfall 4). Mitigated, not solved — no UI copy in this phase may claim the mechanic is fraud-proof. |
-| T-02-03 | Elevation of Privilege | `CastVote` + `BuildVoteTally` — unauthorised resolve/reopen by a single non-reporter account, **write/tally half** | high | mitigate | A non-reporter's `resolution` vote is recorded as one cell among many and never short-circuits anything: `BuildVoteTally` routes it into `ResolveCells`/`ReopenCells`, which `Resolve` gates on `IndependentAgreementThreshold` (D-14). Only the report's own reporter account sets `ReporterResolved`, and the reporter is identified by the same `ReportVoteContext` join the D-03 block uses — never by a client assertion. The reporter gets no reopen channel at all (D-16's locked resolution): a reporter `resolution`/`reopen` row sets the flag false and is dropped rather than counted. **Scope note:** 02-01 mitigates the decision half (`isRetracted`'s two admitted paths) and this plan mitigates the write/tally half; the two together complete T-02-03. |
+| T-02-03 | Elevation of Privilege | `CastVote` + `BuildVoteTally` — unauthorised resolve/reopen by a single non-reporter account, **write/tally half** | high | mitigate | A non-reporter's `resolution` vote is recorded as one cell among many and never short-circuits anything: `BuildVoteTally` routes it into `ResolveCells`/`ReopenCells`, which `Resolve` gates on `IndependentAgreementThreshold` (D-14). Only the report's own reporter account sets `ReporterResolved`/`ReporterReopened` (D-16, amended 2026-09-15 — the reporter now gets a threshold-free path on BOTH sides, symmetric with D-13), and the reporter is identified by the same `ReportVoteContext` join the D-03 block uses — never by a client assertion. A non-reporter's `resolution`/`reopen` row leaves `ReporterReopened` false and is counted only toward `ReopenCells`, gated by the same threshold as everyone else — `TestBuildVoteTallyOnlyReporterSetsReporterReopened` asserts this holds regardless of how many non-reporter reopen rows exist. **Scope note:** 02-01 mitigates the decision half (`isRetracted`'s two admitted paths) and this plan mitigates the write/tally half; the two together complete T-02-03. |
 
 **Threats owned by other plans** (listed so the gap is explicit rather than silent): T-02-02
 (concurrency race on the tally) → 02-02's append-only, no-shared-counter schema and its
