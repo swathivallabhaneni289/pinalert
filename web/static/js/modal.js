@@ -23,7 +23,6 @@
   var formError = document.getElementById('form-error');
   var coordReadout = document.getElementById('coord-readout');
   var locationNotice = document.getElementById('location-notice');
-  var toast = document.getElementById('toast');
   var modalMapEl = document.getElementById('modal-map');
   var shelterFields = document.getElementById('shelter-fields');
   var shelterCapacityStatus = document.getElementById('shelter-capacity-status');
@@ -40,7 +39,6 @@
   var modalMarker = null;
   var selectedCategory = null;
   var lastFocusedEl = null;
-  var toastTimer = null;
   var severityWrapper = null;
   var formTouched = false;
   var preDiscardFocusEl = null;
@@ -511,17 +509,6 @@
     }
   }
 
-  function showToast(message) {
-    Pinalert.setText(toast, message);
-    toast.hidden = false;
-    if (toastTimer) {
-      window.clearTimeout(toastTimer);
-    }
-    toastTimer = window.setTimeout(function () {
-      toast.hidden = true;
-    }, 3000);
-  }
-
   // validate mirrors the server's rules for usability only — the server
   // (internal/service.ValidateSubmitInput) remains the sole authority and
   // revalidates everything (T-01-21); bypassing this client-side check
@@ -600,7 +587,7 @@
       submitButton.disabled = false;
       Pinalert.setText(submitButton, 'Post report');
       closeModal();
-      showToast('Report posted.');
+      Pinalert.showToast('Report posted.');
     }).catch(function (err) {
       submitButton.disabled = false;
       Pinalert.setText(submitButton, 'Post report');

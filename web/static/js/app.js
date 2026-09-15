@@ -84,6 +84,11 @@ window.Pinalert = (function () {
   var listeners = [];
   var selectListeners = [];
   var pollTimer = null;
+  // toastTimer is showToast's own module-level state (Task 1, 02-07): kept
+  // here rather than inside the function so repeated calls collapse onto
+  // one timer, exactly as modal.js's private implementation — the one this
+  // function replaces — already did.
+  var toastTimer = null;
 
   function notify() {
     for (var i = 0; i < listeners.length; i++) {
@@ -294,6 +299,29 @@ window.Pinalert = (function () {
     el.textContent = value === null || value === undefined ? '' : String(value);
   }
 
+  // showToast (Task 1, 02-07) is modal.js's own toast implementation,
+  // promoted here verbatim so app.js becomes the toast element's single
+  // owner — the profile page loads main.css and app.js but not modal.css/
+  // modal.js, and a page with no modal must not link the modal module just
+  // to get one shared component. The element is resolved LAZILY, inside
+  // this function, rather than cached at module-evaluation time: that
+  // keeps this module inert on a page that has no #toast element at all,
+  // with no error thrown — the call simply no-ops.
+  function showToast(message) {
+    var toastEl = document.getElementById('toast');
+    if (!toastEl) {
+      return;
+    }
+    setText(toastEl, message);
+    toastEl.hidden = false;
+    if (toastTimer) {
+      window.clearTimeout(toastTimer);
+    }
+    toastTimer = window.setTimeout(function () {
+      toastEl.hidden = true;
+    }, 3000);
+  }
+
   return {
     CATEGORIES: CATEGORIES,
     SEVERITIES: SEVERITIES,
@@ -314,6 +342,7 @@ window.Pinalert = (function () {
     iconClass: iconClass,
     relativeTime: relativeTime,
     ageStage: ageStage,
-    setText: setText
+    setText: setText,
+    showToast: showToast
   };
 }());
