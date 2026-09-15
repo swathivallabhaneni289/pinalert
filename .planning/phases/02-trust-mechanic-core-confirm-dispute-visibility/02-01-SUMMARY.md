@@ -186,3 +186,14 @@ None - no external service configuration required. This plan is pure Go standard
 ---
 *Phase: 02-trust-mechanic-core-confirm-dispute-visibility*
 *Completed: 2026-09-15*
+
+## Self-Check: PASSED
+
+- FOUND: internal/service/visibility.go
+- FOUND: internal/service/visibility_test.go
+- FOUND: .planning/phases/02-trust-mechanic-core-confirm-dispute-visibility/02-01-SUMMARY.md
+- FOUND commit: ae8836c (test — RED)
+- FOUND commit: d7a8a4c (feat — GREEN)
+- FOUND commit: f3f1cf4 (test — totality/determinism proof)
+- FOUND commit: 08c126e (docs — plan metadata)
+- Re-ran all `<acceptance_criteria>` and the plan-level `<verification>` block: gofmt clean, go vet clean, import set exactly `time`, all six TestResolve* functions green, field-name-set and symmetry greps pass, `go test ./... -short` green, files touched exactly the two declared, suite completes in well under 60s.
