@@ -27,9 +27,15 @@ import (
 // Deps holds every dependency a route handler needs. Plan 01-07 extends this
 // struct further (swagger mount) without touching this file's shape.
 type Deps struct {
-	Session     *session.Manager
-	Sessions    *sqlcgen.Queries
-	Reports     *service.ReportService
+	Session  *session.Manager
+	Sessions *sqlcgen.Queries
+	Reports  *service.ReportService
+	// Votes backs the four vote routes registered below. Additive exactly
+	// as Dev and RequestLinkRateLimit were — a Deps{} literal that omits
+	// it (such as swagger_test.go's) still compiles and still serves
+	// every route that does not touch voting.
+	Votes *service.VotingService
+
 	AuthService *service.AuthService
 	Auth        handlers.AuthConfig
 	Template    *template.Template
@@ -159,6 +165,30 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.Get("/", handlers.Page(deps.Template, deps.Page))
 		r.Post("/api/reports", handlers.SubmitReport(deps.Reports))
 		r.Get("/api/reports", handlers.NearbyReports(deps.Reports))
+		// The four vote routes (02-03b). All four come from ONE
+		// handlers.CastVote factory so the JSON contract and error mapping
+		// exist exactly once. Content votes (confirm/dispute) and
+		// resolution votes (resolve/reopen) are distinguished by the kind
+		// argument rather than by four separate handlers, keeping "is this
+		// report still true" and "is this resolved" as two separately
+		// tracked signals (D-02, D-16). They are registered flat — as four
+		// separate r.Post calls on full literal paths, NOT via
+		// r.Route("/api/reports/{id}", ...) as 02-PATTERNS.md sketches —
+		// because this router already has a literal /api/reports leaf that
+		// a wildcard subrouter mounted at an overlapping prefix would sit
+		// awkwardly beside; every /api/* path in this router is registered
+		// flat, gated or not (see the /api/auth/request-link comment
+		// above). Flat registration also keeps these four routes in the
+		// same visual list as every other route in the group, which is
+		// exactly the property this function's own doc comment relies on
+		// for T-01-70: you can see at a glance that they are inside the
+		// gate. They are inside the gate at all because a vote must be
+		// attributable to a verified account, which is Phase 1.1's entire
+		// reason for existing.
+		r.Post("/api/reports/{id}/confirm", handlers.CastVote(deps.Votes, service.VoteKindContent, service.VoteConfirm))
+		r.Post("/api/reports/{id}/dispute", handlers.CastVote(deps.Votes, service.VoteKindContent, service.VoteDispute))
+		r.Post("/api/reports/{id}/resolve", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteResolve))
+		r.Post("/api/reports/{id}/reopen", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteReopen))
 		// deps.Template — the same ParsePageTemplate result / handlers.Page
 		// gets, not a separately-parsed single file — is load-bearing:
 		// profile.html.tmpl includes 01.1-06's account_header.html.tmpl
