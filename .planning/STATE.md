@@ -135,13 +135,17 @@ Recent decisions affecting current work:
   (business paperwork, not just an API key). See PROJECT.md Key Decisions for the full tradeoff
   record.
 
-- **Confirmer location-capture method unresolved** (GPS prompt vs. IP-derived coarse geohash) —
-  materially changes what "diversity-weighted" measures; PROJECT.md flags this as an explicit
-  open decision to resolve during Phase 2/3 planning, not deferred further.
+- ~~Confirmer location-capture method unresolved~~ — **resolved 2026-09-12** during Phase 2's
+  discuss-phase session: GPS prompt, asked once per session/device and cached (not IP-derived —
+  this project's own CGNAT finding would collapse genuinely-independent nearby voters into one
+  cell); a denied prompt blocks the vote rather than accepting it uncounted. See `02-CONTEXT.md`
+  D-17/D-18.
 
-- **Geohash cell-size precision has no benchmarked value** — needs a documented, reasoned choice
-  against a realistic incident radius (~100-300m for a flooded road segment) during Phase 3
-  planning.
+- **Geohash cell-size precision has no benchmarked value** — still open for Phase 3's
+  diversity-weighting display count (TRUST-05). Note: Phase 2's research (`02-RESEARCH.md`)
+  separately picked `voterGeohashPrecision = 7` (~153m cells) for the independence-predicate gate
+  only — deliberately distinct from the report's own existing precision-8 geohash column and from
+  whatever precision Phase 3 benchmarks for the display curve.
 
 - **India IT Rules 2021 intermediary-liability applicability is LOW confidence** — get an actual
   legal/mentor review before any wide public promotion; not required before initial deploy
