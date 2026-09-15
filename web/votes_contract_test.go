@@ -516,3 +516,281 @@ func TestVoteClickDoesNotActivateItsRow(t *testing.T) {
 			"edit that removed them would leave this test passing vacuously", n)
 	}
 }
+
+// TestVisibilityTagHiddenGuard is this repo's third encounter with the
+// [hidden] specificity trap (see TestModalBackdropHiddenGuard and
+// TestVoteBlockHiddenGuard): the browser's native [hidden] { display: none }
+// rule is user-agent-origin and loses to any author-origin display
+// declaration at equal specificity. The chip carries vertical padding, and
+// vertical padding on a default-inline element overflows the line box
+// instead of expanding it — so the chip must be inline-block, which is
+// exactly the author-origin declaration that beats the UA rule.
+// Unguarded, an empty bordered chip would render under every single live
+// report on both surfaces, with a green build and no other signal.
+func TestVisibilityTagHiddenGuard(t *testing.T) {
+	const target = ".visibility-tag"
+	const guard = ":not([hidden])"
+	sawGuarded := false
+
+	err := fs.WalkDir(StaticFS, "static/css", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".css") {
+			return nil
+		}
+
+		raw, err := fs.ReadFile(StaticFS, path)
+		if err != nil {
+			return err
+		}
+		text := stripCSSComments(string(raw))
+
+		for chunk := range strings.SplitSeq(text, "}") {
+			lastOpen := strings.LastIndex(chunk, "{")
+			if lastOpen == -1 {
+				continue
+			}
+			selectorHead := chunk[:lastOpen]
+			declBody := chunk[lastOpen+1:]
+
+			if !strings.Contains(selectorHead, target) {
+				continue
+			}
+			if !strings.Contains(declBody, "display") {
+				continue
+			}
+			if strings.Contains(selectorHead, guard) {
+				if path == "static/css/trust.css" {
+					sawGuarded = true
+				}
+				continue
+			}
+			t.Errorf(
+				"%s: found a rule setting `display` on the %s selector without a %q guard — selector head: %q",
+				path, target, guard, strings.TrimSpace(selectorHead),
+			)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed to walk embedded static/css: %v", err)
+	}
+
+	if !sawGuarded {
+		t.Fatalf("expected static/css/trust.css to contain at least one guarded %s%s selector — found none (the rule may have been deleted outright)", target, guard)
+	}
+}
+
+// TestVisibilityCascadeOverridesAgeRamp proves D-09's mechanism
+// structurally: the Provisional and Hidden visibility-state rules win over
+// main.css's .sev-*/.age-* ramp purely through trust.css's load position in
+// index.html.tmpl, with no specificity trick and no !important
+// (02-UI-SPEC.md's cascade contract).
+func TestVisibilityCascadeOverridesAgeRamp(t *testing.T) {
+	normalize := func(s string) string {
+		return strings.Join(strings.Fields(s), " ")
+	}
+
+	mainRaw, err := fs.ReadFile(StaticFS, "static/css/main.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/main.css: %v", err)
+	}
+	mainRules := parseCSSRules(string(mainRaw))
+
+	ageAgingRule, ok := ruleBySelector(mainRules, ".age-aging")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/main.css", ".age-aging")
+	}
+	wantSeverityCurrent, ok := declsOf(ageAgingRule.declBody)["--severity-current"]
+	if !ok {
+		t.Fatalf(".age-aging in main.css does not declare --severity-current")
+	}
+
+	trustRaw, err := fs.ReadFile(StaticFS, "static/css/trust.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/trust.css: %v", err)
+	}
+	trustText := stripCSSComments(string(trustRaw))
+	trustRules := parseCSSRules(trustText)
+
+	provisionalRule, ok := ruleBySelector(trustRules, ".vis-provisional")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vis-provisional")
+	}
+	provisionalDecls := declsOf(provisionalRule.declBody)
+	if gotSeverityCurrent, ok := provisionalDecls["--severity-current"]; !ok {
+		t.Errorf(".vis-provisional does not declare --severity-current")
+	} else if normalize(gotSeverityCurrent) != normalize(wantSeverityCurrent) {
+		t.Errorf(".vis-provisional's --severity-current must be string-equal (after whitespace "+
+			"normalisation) to .age-aging's own value in main.css — D-09's instruction is to reuse "+
+			"the expiry-fade pattern, not to approximate it. Found %q, want %q",
+			gotSeverityCurrent, wantSeverityCurrent)
+	}
+	if _, ok := provisionalDecls["--badge-glyph-fg"]; !ok {
+		t.Errorf(".vis-provisional does not declare --badge-glyph-fg")
+	}
+
+	hiddenRule, ok := ruleBySelector(trustRules, ".vis-hidden")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vis-hidden")
+	}
+	hiddenDecls := declsOf(hiddenRule.declBody)
+	if _, ok := hiddenDecls["--severity-current"]; !ok {
+		t.Errorf(".vis-hidden does not declare --severity-current")
+	}
+	if v := hiddenDecls["--severity-tint"]; v != "transparent" {
+		t.Errorf(".vis-hidden's --severity-tint must be exactly \"transparent\" (the row's severity "+
+			"background wash removed), found %q", v)
+	}
+	if _, ok := hiddenDecls["--badge-glyph-fg"]; !ok {
+		t.Errorf(".vis-hidden does not declare --badge-glyph-fg")
+	}
+
+	var badgeRulesWithBackground []cssRule
+	for _, r := range trustRules {
+		if strings.Contains(r.selectorHead, "vis-hidden") && strings.Contains(r.declBody, "background") {
+			badgeRulesWithBackground = append(badgeRulesWithBackground, r)
+		}
+	}
+	if len(badgeRulesWithBackground) != 1 {
+		t.Fatalf("expected exactly one rule in trust.css mentioning the hidden state class and "+
+			"declaring background, found %d", len(badgeRulesWithBackground))
+	}
+	badgeSelector := badgeRulesWithBackground[0].selectorHead
+	if !strings.Contains(badgeSelector, ".icon-badge.vis-hidden") {
+		t.Errorf("the hidden badge rule's selector head must contain the compound form "+
+			"(class on the badge element itself, which covers the map pin) — main.css's own "+
+			".icon-badge comment says a descendant form alone covers only the feed row and a "+
+			"compound form alone only the map pin. Found selector head: %q", badgeSelector)
+	}
+	if !strings.Contains(badgeSelector, ".vis-hidden .icon-badge") {
+		t.Errorf("the hidden badge rule's selector head must contain the descendant form "+
+			"(class on a row ancestor, which covers the feed row) — main.css's own .icon-badge "+
+			"comment says a descendant form alone covers only the feed row and a compound form "+
+			"alone only the map pin. Found selector head: %q", badgeSelector)
+	}
+
+	allowedCustomProps := map[string]bool{
+		"--severity-current": true,
+		"--severity-tint":    true,
+		"--badge-glyph-fg":   true,
+	}
+	for _, r := range trustRules {
+		for name := range declsOf(r.declBody) {
+			if strings.HasPrefix(name, "--") && !allowedCustomProps[name] {
+				t.Errorf("trust.css declares an unexpected custom property %q — this allowlist "+
+					"supersedes 02-05's cruder `grep -cE '^\\s*--[a-z-]+:' web/static/css/trust.css` "+
+					"= 0 gate, which could not distinguish re-declaring an existing main.css property "+
+					"from inventing a new token; inventing a new token remains forbidden and is what "+
+					"this allowlist enforces", name)
+			}
+		}
+	}
+
+	htmlRaw, err := TemplatesFS.ReadFile("templates/index.html.tmpl")
+	if err != nil {
+		t.Fatalf("failed to read templates/index.html.tmpl from the embedded TemplatesFS: %v", err)
+	}
+	html := string(htmlRaw)
+	mainCSSPos := strings.Index(html, "/static/css/main.css")
+	trustCSSPos := strings.Index(html, "/static/css/trust.css")
+	if mainCSSPos == -1 || trustCSSPos == -1 {
+		t.Fatalf("could not locate both main.css and trust.css stylesheet links in the template")
+	}
+	if trustCSSPos <= mainCSSPos {
+		t.Errorf("trust.css must be linked after main.css in index.html.tmpl, so its .vis-* rules " +
+			"win over main.css's .age-* ramp through source order alone")
+	}
+}
+
+// TestVisibilityTagCopyAndFallback proves T-01-17's validate-before-reflect
+// discipline is applied to the two new server-supplied fields this plan
+// reads, that the fallback direction never lets an unvalidated value read
+// as trusted, and that the chip's Copywriting Contract strings ship
+// verbatim.
+func TestVisibilityTagCopyAndFallback(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/visibility.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/visibility.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	for _, label := range []string{"Unconfirmed", "Disputed", "Resolved"} {
+		if !strings.Contains(text, label) {
+			t.Errorf("visibility.js does not contain the Copywriting Contract's %q label verbatim", label)
+		}
+	}
+
+	stateBody := jsFunctionBody(t, text, "visibilityState(report)")
+	if !strings.Contains(stateBody, ".indexOf(") {
+		t.Errorf("visibilityState's own body does not call .indexOf( — a server-supplied visibility " +
+			"value must be validated against a fixed allowlist before it is reflected into a class " +
+			"name (T-01-17), the same discipline app.js's iconClass applies to category")
+	}
+	if !strings.Contains(stateBody, "'provisional'") {
+		t.Errorf("visibilityState's own body does not contain the provisional fallback slug literal")
+	}
+	if strings.Contains(stateBody, "'live'") {
+		t.Errorf("visibilityState's own body contains the live slug literal — the only slug literal " +
+			"inside this function must be its fallback. An unrecognised, missing or null visibility " +
+			"must render as not-yet-trusted, never as trusted, because the one thing this product " +
+			"must never do is overstate corroboration it cannot substantiate")
+	}
+
+	for _, sink := range []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"} {
+		if strings.Contains(text, sink) {
+			t.Errorf("visibility.js contains %q — every element must be built with "+
+				"document.createElement and every string must reach the DOM through Pinalert.setText "+
+				"(T-01-03)", sink)
+		}
+	}
+}
+
+// TestVisibilityModuleLoadsBeforeItsConsumers proves visibility.js loads
+// after the vendor bridge and before both of its consumers (feed.js,
+// map.js) — both resolve window.PinalertVisibility at script-evaluation
+// time, and a module hoisted above its provider ships an undefined global
+// with no build-time signal.
+func TestVisibilityModuleLoadsBeforeItsConsumers(t *testing.T) {
+	raw, err := TemplatesFS.ReadFile("templates/index.html.tmpl")
+	if err != nil {
+		t.Fatalf("failed to read templates/index.html.tmpl from the embedded TemplatesFS: %v", err)
+	}
+	html := string(raw)
+
+	const visSrc = "/static/js/visibility.js"
+	if n := strings.Count(html, visSrc); n != 1 {
+		t.Fatalf("expected exactly one occurrence of %q in the template, found %d", visSrc, n)
+	}
+
+	window := findTagWindow(t, html, visSrc)
+	if !strings.Contains(window, " defer") {
+		t.Errorf("visibility.js tag is missing the defer attribute — window: %q", window)
+	}
+	if !strings.Contains(window, "?v={{.AssetVersion}}") {
+		t.Errorf("visibility.js tag is missing the ?v={{.AssetVersion}} cache-busting suffix every "+
+			"other app module carries — window: %q", window)
+	}
+
+	visPos := strings.Index(html, visSrc)
+	bridgeSrc := vendorScriptSources[len(vendorScriptSources)-1]
+	bridgePos := strings.Index(html, bridgeSrc)
+	if bridgePos == -1 {
+		t.Fatalf("could not locate the vendor bridge script %q in the template", bridgeSrc)
+	}
+	if visPos <= bridgePos {
+		t.Fatalf("visibility.js (%d) must load strictly after the vendor bridge script (%d)", visPos, bridgePos)
+	}
+
+	for _, consumer := range []string{"/static/js/map.js", "/static/js/feed.js"} {
+		consumerPos := strings.Index(html, consumer)
+		if consumerPos == -1 {
+			t.Fatalf("could not locate consumer module %q in the template", consumer)
+		}
+		if visPos >= consumerPos {
+			t.Fatalf("visibility.js (%d) must load strictly before its consumer %q (%d) — both "+
+				"consumers resolve window.PinalertVisibility at evaluation time", visPos, consumer, consumerPos)
+		}
+	}
+}

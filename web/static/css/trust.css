@@ -9,7 +9,9 @@
  * rule feed.css states for itself. Loads after main.css and feed.css in
  * index.html.tmpl, so a later phase's visibility-tag cascade rules can be
  * appended directly here, with no specificity trick needed to win over the
- * existing age ramp.
+ * existing age ramp. Plan 02-06 is the second owner: the visibility-state
+ * cascade rules and the disputed-filter rules below are appended after
+ * 02-05's block for exactly the reason the paragraph above states.
  */
 
 /*
@@ -81,4 +83,117 @@
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
   color: var(--color-severity-critical);
+}
+
+/* -------------------------------------------------------------------------
+ * Visibility state cascade (D-09, plan 02-06). Declared in this exact order
+ * — after main.css's severity/age ramp (.sev-* then .age-*), which is
+ * guaranteed by this file's own load position (see the header comment)
+ * rather than by anything in
+ * this file — so a Provisional or Hidden report's treatment always wins
+ * over whatever age stage the report is actually at, with no specificity
+ * trick and no !important (02-UI-SPEC.md's cascade contract). A report is
+ * never both classes at once (the resolver's contract guarantees exactly
+ * one visibility state per report), so this is a documentation-of-
+ * precedence exercise for future-proofing, not an expected runtime
+ * conflict.
+ *
+ * Custom properties: the three declared below (--severity-current,
+ * --severity-tint, --badge-glyph-fg) are main.css's own — this file
+ * introduces no new custom property and no raw colour. Re-declaring them
+ * here IS the cascade mechanism 02-UI-SPEC.md mandates: source order alone
+ * makes these win over .age-*'s own declarations of the same properties.
+ * ---------------------------------------------------------------------- */
+
+/* Provisional (D-09) — unconditionally reuses Phase 1's expiry-fade mix
+   (01-CONTEXT.md D-17: desaturation toward gray, never opacity), so "not
+   yet trusted" reads consistently with "going stale". The value below is
+   copied character for character from main.css's .age-aging rule —
+   TestVisibilityCascadeOverridesAgeRamp asserts the two stay string-equal
+   at test time, reading main.css's own value rather than a hardcoded copy,
+   so the two cannot silently drift apart. This applies regardless of the
+   report's real age stage, per 02-UI-SPEC.md's cascade contract, and wins
+   over .age-* purely through this file's load position.
+   Note for a future editor: the colour-space keyword below is "srgb"
+   followed by a comma, not "rgb(" followed by a parenthesis, so it does
+   not match TestVoteButtonsMeetTouchTargetAndUseTokensOnly's forbidden-
+   function-notation check — this value is safe and must not be rewritten
+   to dodge that check. */
+.vis-provisional {
+  --severity-current: color-mix(in srgb, var(--severity-base) 50%, var(--color-age-stale) 50%);
+  --badge-glyph-fg: var(--color-text);
+}
+
+/* Hidden (D-11) — the row's entire treatment, carried by inheritance alone
+   with no row-scoped rule needed, because main.css already reads every one
+   of these three properties. The left border goes neutral rather than
+   severity-coloured, the background wash is removed entirely (transparent,
+   not a lighter tint), and the glyph goes muted. Ignores both
+   --severity-current and any age stage: Hidden is never shown to a default
+   viewer, so there is no age-based nuance worth preserving once it is
+   shown via the toggle. */
+.vis-hidden {
+  --severity-current: var(--color-border);
+  --severity-tint: transparent;
+  --badge-glyph-fg: var(--color-text-muted);
+}
+
+/* Hidden badge — the only visibility-state rule that needs a real
+   selector, and it needs BOTH the compound and the descendant form in one
+   comma-separated head: main.css's own .icon-badge comment records that
+   map.js puts the age/state class on the badge element itself while
+   feed.js puts it on the row ancestor, so a descendant form alone would
+   cover only the feed row and a compound form alone only the map pin.
+   `outline` rather than `border` is deliberate: an outline takes no layout
+   space, so the pin keeps the identical 44x44 geometry 02-UI-SPEC.md
+   requires of it ("distinct fill, identical geometry" — its own word for
+   this treatment is "outline ring"). .icon-badge--pin's existing drop
+   shadow is deliberately left alone (no box-shadow override here) so a
+   Hidden pin still reads as a pin on the basemap rather than as a
+   rendering failure, and re-declaring it would need a raw colour literal
+   this file forbids.
+   Verified safe against the Phase 1 glyph gates: collectGlyphMaskRules
+   only collects rules whose selector head contains the category-glyph
+   prefix, which this rule does not, and
+   assertGlyphSizingAndNoOrphanedImageSelectors's orphan check only fires
+   when a multi-field selector's trailing field is literally img or svg —
+   this rule's trailing field is the badge class, so the descendant form is
+   not an orphaned replaced-element selector. That check's per-file sizing
+   checklist tracks only main.css, feed.css and modal.css, so this
+   stylesheet is not on it. */
+.icon-badge.vis-hidden,
+.vis-hidden .icon-badge {
+  background: transparent;
+  outline: 1px solid var(--color-border);
+}
+
+/* The visibility-tag chip. The mandatory [hidden] guard — this repo's
+   third encounter with the specificity trap — exists because the chip's
+   vertical padding forces a non-inline display, which is an author-origin
+   declaration that beats the user-agent [hidden] rule at equal
+   specificity: unguarded, an empty bordered chip would render under every
+   single live report on both surfaces, with a green build and no other
+   signal. The chip stays neutral in every state — 02-UI-SPEC.md's "Accent
+   reserved for" list explicitly excludes it, since the state is carried by
+   the row/pin treatment and by the chip's own text, not by a fifth colour.
+   No modifier-class rule is declared: the two modifier selectors
+   (.visibility-tag--provisional, .visibility-tag--hidden) get no
+   declarations of their own today, so per 02-05's stated convention this
+   file omits them entirely rather than shipping empty rules — recorded
+   here so a reader does not think they were forgotten. No .vis-live rule
+   either: unlike .age-fresh, which exists to reset a property the other
+   age stages override, the live state overrides nothing, so there is
+   nothing to declare. */
+.visibility-tag:not([hidden]) {
+  display: inline-block;
+  margin: var(--space-xs) 0 0;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
 }
