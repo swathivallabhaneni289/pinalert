@@ -320,3 +320,130 @@ func TestResolve_RetractedAndReopen(t *testing.T) {
 		})
 	}
 }
+
+// TestResolve_IsTotalAndDeterministic is a single exhaustive matrix over
+// every severity x category x {ConfirmCells,DisputeCells,ResolveCells,
+// ReopenCells} in 0..IndependentAgreementThreshold+1 x ReporterResolved x
+// ReporterReopened (~27.6k combinations of a pure function — milliseconds).
+// For every combination it proves Resolve is total (T-02-04), returns only
+// slugs from the closed reason set, is deterministic across repeat calls,
+// and is time-invariant for Phase 2. It additionally pins three structural
+// properties: the retraction predicate is exactly the symmetric expression
+// (D-13, D-14, D-16 amended), Retracted outranks the critical bypass, and
+// the critical_bypasses_gates reason is returned if and only if the two
+// documented triggers (D-06) hold.
+//
+// The matrix necessarily generates ReporterResolved && ReporterReopened
+// together, a combination production cannot produce (one account has one
+// current resolution vote, so 02-03a's BuildVoteTally sets at most one of
+// the two). That combination is deliberately exercised here rather than
+// skipped: the defined behaviour is that reopen wins, matching the
+// non-reporter half where reopen outranks resolve at equal standing — no
+// defensive invariant check should ever be added downstream for it.
+func TestResolve_IsTotalAndDeterministic(t *testing.T) {
+	// This time-invariance assertion holds for Phase 2 only, because expiry
+	// is a separate read-time predicate (D-07) and no decay signal exists
+	// yet. Phase 3 (TRUST-07) introduces time-decaying confidence/
+	// reliability scoring, at which point now becomes load-bearing and this
+	// specific assertion is expected to be revised — its later removal is a
+	// planned Phase 3 change, not a regression.
+	now1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	now2 := now1.AddDate(5, 0, 0)
+
+	for _, sev := range service.Severities {
+		for _, cat := range service.Categories {
+			sev, cat := sev, cat
+			t.Run(string(sev)+"/"+string(cat), func(t *testing.T) {
+				meta := service.ReportMeta{Severity: sev, Category: cat}
+
+				for confirmCells := 0; confirmCells <= service.IndependentAgreementThreshold+1; confirmCells++ {
+					for disputeCells := 0; disputeCells <= service.IndependentAgreementThreshold+1; disputeCells++ {
+						for resolveCells := 0; resolveCells <= service.IndependentAgreementThreshold+1; resolveCells++ {
+							for reopenCells := 0; reopenCells <= service.IndependentAgreementThreshold+1; reopenCells++ {
+								for _, reporterResolved := range []bool{false, true} {
+									for _, reporterReopened := range []bool{false, true} {
+										tally := service.VoteTally{
+											ConfirmCells:     confirmCells,
+											DisputeCells:     disputeCells,
+											ResolveCells:     resolveCells,
+											ReopenCells:      reopenCells,
+											ReporterResolved: reporterResolved,
+											ReporterReopened: reporterReopened,
+										}
+
+										vis1, reason1 := service.Resolve(meta, tally, now1)
+
+										// Total: no fall-through returning the zero value.
+										if !vis1.Valid() {
+											t.Errorf("meta=%+v tally=%+v: visibility %q is not a valid Visibility", meta, tally, vis1)
+										}
+
+										// Closed reason set: always one of the five known slugs.
+										validReason := false
+										for _, r := range service.ResolveReasons {
+											if r == reason1 {
+												validReason = true
+												break
+											}
+										}
+										if !validReason {
+											t.Errorf("meta=%+v tally=%+v: reason %q is not in the closed ResolveReasons set", meta, tally, reason1)
+										}
+
+										// Deterministic / caller-independent: identical meta+tally,
+										// identical pair, on a second call.
+										vis1b, reason1b := service.Resolve(meta, tally, now1)
+										if vis1b != vis1 || reason1b != reason1 {
+											t.Errorf("meta=%+v tally=%+v: Resolve is not deterministic: first (%q,%q), second (%q,%q)", meta, tally, vis1, reason1, vis1b, reason1b)
+										}
+
+										// Time-invariant for Phase 2 (see comment above).
+										vis2, reason2 := service.Resolve(meta, tally, now2)
+										if vis2 != vis1 || reason2 != reason1 {
+											t.Errorf("meta=%+v tally=%+v: Resolve is not time-invariant: now1 (%q,%q), now2 (%q,%q)", meta, tally, vis1, reason1, vis2, reason2)
+										}
+
+										// The retraction predicate is exactly the symmetric expression
+										// (D-13, D-14, D-16 amended): dropping the ReporterReopened
+										// term, adding a threshold to the reporter's instant path, or
+										// making reopen lose to resolve at equal standing each break
+										// this single property.
+										wantRetracted := (tally.ReporterResolved || tally.ResolveCells >= service.IndependentAgreementThreshold) &&
+											!(tally.ReporterReopened || tally.ReopenCells >= service.IndependentAgreementThreshold)
+										gotRetracted := vis1 == service.VisibilityRetracted
+										if gotRetracted != wantRetracted {
+											t.Errorf("meta=%+v tally=%+v: retracted = %v, want %v (visibility %q)", meta, tally, gotRetracted, wantRetracted, vis1)
+										}
+
+										// Retracted outranks the critical bypass: a tally with
+										// ReporterResolved true, ReporterReopened false and no
+										// standing reopen cells always yields retracted, never live —
+										// the reporter's own standing reopen vote lifts a retraction
+										// instantly at any independent cell count (D-16 amended), but
+										// absent that vote nothing (not even a critical/rescue_needed
+										// report) outranks an active resolve.
+										if reporterResolved && !reporterReopened && reopenCells == 0 {
+											if vis1 != service.VisibilityRetracted {
+												t.Errorf("meta=%+v tally=%+v: expected retracted to outrank the critical bypass, got %q", meta, tally, vis1)
+											}
+										}
+
+										// The bypass is exactly the two documented triggers (D-06):
+										// pinned in both directions so neither adding a third trigger
+										// nor removing one of the two existing triggers can pass
+										// silently.
+										wantBypass := (sev == service.SeverityCritical || cat == service.CategoryRescueNeeded) && !gotRetracted
+										gotBypass := reason1 == service.ReasonCriticalBypass
+										if gotBypass != wantBypass {
+											t.Errorf("meta=%+v tally=%+v: critical_bypasses_gates reason = %v, want %v (visibility %q, reason %q)", meta, tally, gotBypass, wantBypass, vis1, reason1)
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			})
+		}
+	}
+}
