@@ -414,12 +414,53 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 	if err != nil {
 		return nil, err
 	}
+	if len(rows) == 0 {
+		// Deliberate and asserted (TestNearbyBatchesVoteReadsOnce): an
+		// empty page costs zero extra round trips.
+		return []ReportView{}, nil
+	}
 
-	// TODO(RED): the batched reads and the per-report Resolve call arrive
-	// in GREEN. Returning empty here is a deliberate stub so the failing
-	// tests in feed_test.go fail on assertions, not on a build error.
-	_ = rows
-	return []ReportView{}, nil
+	ids := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+
+	voteRows, err := s.q.CurrentVotesForReports(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	reporterRows, err := s.q.ReporterAccountsForReports(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	reporterByReport := make(map[int64]*int64, len(reporterRows))
+	for _, rr := range reporterRows {
+		reporterByReport[rr.ReportID] = rr.ReporterAccountID
+	}
+
+	now := time.Now().UTC()
+
+	views := make([]ReportView, 0, len(rows))
+	for _, row := range rows {
+		r := reportFromNearbyRow(row)
+		reporterID := reporterByReport[r.ID]
+
+		tally := BuildVoteTally(voteRows, r.ID, reporterID)
+		meta := ReportMeta{Severity: r.Severity, Category: r.Category}
+		vis, reason := Resolve(meta, tally, now)
+		if !vis.ListableInFeed(q.IncludeDisputed) {
+			continue
+		}
+
+		views = append(views, ReportView{
+			Report:           r,
+			Visibility:       vis,
+			VisibilityReason: reason,
+			ViewerVote:       ViewerContentVote(voteRows, r.ID, q.ViewerAccountID),
+			IsOwnReport:      reporterID != nil && *reporterID == q.ViewerAccountID,
+		})
+	}
+	return views, nil
 }
 
 func reportFromNearbyRow(row sqlcgen.NearbyReportsRow) Report {

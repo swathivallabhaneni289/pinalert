@@ -43,9 +43,9 @@ type ReportView struct {
 func (v Visibility) ListableInFeed(includeDisputed bool) bool {
 	switch v {
 	case VisibilityLive, VisibilityProvisional:
-		return false // TODO(RED): fill in during GREEN
+		return true
 	case VisibilityHidden:
-		return false // TODO(RED): fill in during GREEN
+		return includeDisputed
 	case VisibilityRetracted:
 		return false
 	default:
@@ -67,5 +67,20 @@ func (v Visibility) ListableInFeed(includeDisputed bool) bool {
 // starting at 1, which is what makes 0 a safe "no identified viewer"
 // sentinel.
 func ViewerContentVote(rows []sqlcgen.CurrentVotesForReportsRow, reportID int64, viewerAccountID int64) VoteValue {
-	return "" // TODO(RED): fill in during GREEN
+	if viewerAccountID == 0 {
+		return ""
+	}
+	for _, row := range rows {
+		if row.ReportID != reportID || row.AccountID != viewerAccountID {
+			continue
+		}
+		if VoteKind(row.Kind) != VoteKindContent {
+			continue
+		}
+		v := VoteValue(row.Value)
+		if v == VoteConfirm || v == VoteDispute {
+			return v
+		}
+	}
+	return ""
 }
