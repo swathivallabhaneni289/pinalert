@@ -91,6 +91,11 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
+- **[2026-09-16] Real 3D WebGL globe on login screen** — user wants the Phase 1.1 login page's
+  flat CSS-masked rotating SVG globe replaced with a genuine 3D render, raised live during Phase 2
+  UAT. Not scoped/planned — needs a design pass (new WebGL dependency vs. this project's
+  no-build-step stack). See `.planning/todos/pending/2026-09-16-real-3d-webgl-globe-on-login-screen.md`.
+
 - ~~Phase 2 discuss-phase session is paused mid-way~~ — **done 2026-09-12**: resumed and
   completed all 4 originally-selected areas (Confirm/Dispute interaction, Hidden vs Retracted
   triggers, Visibility-state visual treatment, Resolved-marking flow) plus a 5th area
