@@ -4,16 +4,16 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 02
 current_phase_name: Trust Mechanic Core — Confirm/Dispute & Visibility
-status: executing
-stopped_at: Phase 2 plans re-verified (7 parallel gsd-plan-checker passes, all 8 plans), ready for /gsd-execute-phase 2
-last_updated: "2026-09-15T14:37:08.025Z"
-last_activity: 2026-09-15
-last_activity_desc: Phase 02 execution started
+status: human_needed
+stopped_at: Phase 2 executed (8/8 plans, 7 waves), all automated gates green, 3 human-only UAT items pending — run /gsd-verify-work 2
+last_updated: "2026-09-16T14:45:00.000Z"
+last_activity: 2026-09-16
+last_activity_desc: Phase 02 fully executed and code-reviewed; verification found 5/5 must-haves met, status human_needed pending 3 browser UAT items
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 31
-  completed_plans: 23
+  completed_plans: 31
   percent: 29
 ---
 
@@ -25,31 +25,32 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 
 **Core value:** A report showing "confirmed by N nearby" must be verifiably backed by N
 independent nearby confirmations, resistant to trivial gaming.
-**Current focus:** Phase 02 — Trust Mechanic Core — Confirm/Dispute & Visibility
-holding at human_needed (one live-Resend-delivery UAT item outstanding, independent of Phase 2).
-Phase 2 is fully planned AND re-verified — 8 PLAN.md files across 7 waves (02-01 through 02-07,
-with 02-03 split into 02-03a/02-03b), all 8 passed a fresh gsd-plan-checker pass on 2026-09-15 —
-ready for `/gsd-execute-phase 2`.
+**Current focus:** Phase 02 — Trust Mechanic Core — Confirm/Dispute & Visibility is fully executed
+(8/8 plans, 7 waves, all merged to `main` directly — no phase branch, per explicit user choice) and
+holding at `human_needed`: `gsd-verifier` confirmed 5/5 ROADMAP success criteria against the live
+codebase (not just SUMMARY claims), but 3 items need a real browser (GPS-denial hard block,
+Provisional/Hidden visual legibility + "Show disputed" toggle, Mark Resolved/Reopen click-through)
+— tracked in `02-UAT.md`. Run `/gsd-verify-work 2` to close them out and complete the phase.
+Separately, Phase 1.1's one remaining item (live Resend delivery, SC2/IDENT-02) is still open and
+independent of Phase 2 — see Blockers/Concerns below.
 
 ## Current Position
 
-Phase: 02 (Trust Mechanic Core — Confirm/Dispute & Visibility) — EXECUTING
-Plans: 8/8 written, committed, and re-verified (0/8 executed)
-Status: Executing Phase 02
-and caught+resolved a real decision ambiguity (D-16 reporter-instant reopen) via its own
-plan-checker passes, amending 02-01/02-03a/02-07/02-VALIDATION.md/02-03b across several commits
-ending 19:42 IST — but STATE.md was never refreshed after that (it still read "Not yet run" for
-the checker). This session ran a fresh, independent 7-way parallel gsd-plan-checker pass (one call
-per wave, sonnet model, cross-plan contracts checked via targeted reference reads) over the
-CURRENT on-disk content: 6 plans passed clean, 02-04 passed with one non-blocking stale-doc-
-reference warning (fixed same session, commit 1c0ecec). Requirements Coverage (TRUST-01..04,06,
-08,09) and Decision Coverage (D-01..D-18) independently confirmed present across the 8 plans via
-direct grep. No blockers found anywhere in the phase.
-Last activity: 2026-09-15 — Phase 02 execution started
-Separately, Phase 1.1's one remaining item (live Resend delivery, SC2/IDENT-02) is unrelated to
-Phase 2 and does not block Phase 2 execution — see Blockers/Concerns below.
+Phase: 02 (Trust Mechanic Core — Confirm/Dispute & Visibility) — HUMAN VERIFICATION PENDING
+Plans: 8/8 executed (all 7 waves complete: resolver, vote log, voting service, HTTP routes,
+feed/map read path, confirm/dispute UI, trust-state legibility, mark-resolved/reopen)
+Status: Every automated gate is green — post-merge build+test after all 7 waves (final: 213/213
+tests, 0 fail, 0 skip, real Postgres), code review (0 BLOCKER / 1 WARNING / 2 INFO, see below),
+regression gate (covered by the repeated full-suite runs), and phase-goal verification (5/5
+success criteria independently confirmed against the codebase, not trusted from SUMMARYs). Not yet
+closed: 3 human-only browser UAT items (`02-UAT.md`) and two items needing a human decision (see
+Blockers/Concerns): the code review's rate-limiting WARNING, and a verifier-surfaced escalation
+about ROADMAP.md's `Mode: mvp` flag vs. its non-user-story Goal wording.
+Last activity: 2026-09-16 — full phase execution, code review, and verification completed in one
+continuous session (~4.5 hours wall-clock across 7 sequential dependency-chain waves).
 
-Progress: [██████████] 100% of Phase 2 planning + verification; 0% executed (next: `/gsd-execute-phase 2`)
+Progress: [██████████] 100% of Phase 2's code-verifiable work; 3 human-only UAT items + 2 human
+decisions outstanding before the phase can close
 
 ## Performance Metrics
 
@@ -117,6 +118,26 @@ Recent decisions affecting current work:
   wordmark's removal). Ready for `/gsd-execute-phase 1.1`.
 
 ### Blockers/Concerns
+
+- **[2026-09-16] Phase 2 code review WARNING: vote routes have no rate/velocity limit** —
+  `02-REVIEW.md` (WR-01): `POST /api/reports/{id}/confirm|dispute|resolve|reopen` carry no
+  rate-limiting of any kind, unlike `/api/auth/request-link`. The `votes` table is append-only by
+  design (no unique key), and the independence predicate depends on a client-supplied,
+  server-unverifiable GPS coordinate — so a single verified account can currently cast unlimited
+  votes with no throttle. This bears directly on the Core Value's "resistant to trivial gaming"
+  framing. Not a Phase 2 must-have (rate limiting is ROBUST-04, Phase 4's scope) and the phase's
+  verifier confirmed it's correctly out of scope here — but worth prioritizing early in Phase 4,
+  or as a standalone hardening plan before Phase 4 if it's used in a public demo sooner.
+
+- **[2026-09-16] Verifier escalation: ROADMAP.md's Phase 2 `Mode: mvp` flag vs. non-user-story
+  Goal wording** — `02-VERIFICATION.md`'s `mode_guard` frontmatter: the phase is tagged `Mode: mvp`
+  but its Goal field is a capability statement, not `As a <role>, I want to <capability>, so that
+  <outcome>.` form. The verifier's own guard refused to force the MVP User Flow Coverage table and
+  instead verified directly against ROADMAP's 5 explicit numbered Success Criteria (which worked
+  fine — 5/5 confirmed). A human should decide: rewrite the Goal line as a user story, or clear the
+  `Mode: mvp` flag for this phase, so future verification/planning runs on Phase 2 (e.g. gap
+  closure) don't hit the same guard. Non-blocking for now since the direct-Success-Criteria path
+  fully substituted.
 
 - ~~**[2026-09-12] Phase 1.1 verification found one gap: SC4/IDENT-04 abuse resistance does not
   hold**~~ — **closed 2026-09-12**: gap-closure plan `01.1-08` (wave 7) replaced chi's deprecated,
@@ -200,33 +221,38 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-15T14:31:24.000Z
-Stopped at: Phase 2 plans re-verified, ready for /gsd-execute-phase 2
-Prior sessions built Phase 1.1 (Identity & Login) end to end, closing a real SC4/IDENT-04 gap via
-gap-closure plan `01.1-08` (replaced spoofable `middleware.RealIP` with
-`middleware.ClientIPFromRemoteAddr`, and a TOCTOU-racy cooldown with an atomic
-`INSERT ... ON CONFLICT` claim), independently re-verified against live code. Phase 1.1 sits at
-`human_needed`: the one remaining item is a human-only check (real Resend delivery with live
-credentials, SC2/IDENT-02 — no test ever calls the live API by design), tracked in `01.1-UAT.md`.
-Run `/gsd-verify-work 1.1` with a real `RESEND_API_KEY` and DNS-verified `RESEND_FROM` domain to
-close it out — this is independent of Phase 2 and does not block Phase 2 execution.
+Last session: 2026-09-16T14:45:00.000Z
+Stopped at: Phase 2 fully executed and verified; human_needed pending 3 browser UAT items
+Prior sessions built Phase 1.1 (Identity & Login) end to end and re-verified Phase 2's 8 plans
+(catching and fixing a D-16 amendment ripple and a stale doc reference) — see prior entries in git
+history for full detail. Phase 1.1 remains at `human_needed` for its own unrelated item (live
+Resend delivery, `01.1-UAT.md`).
 
-Phase 2 (Trust Mechanic Core) was then fully planned in chunked mode across a long session
-(8 PLAN.md files, 7 waves, 02-03 split into 02-03a/02-03b) — see `02-PLAN-OUTLINE.md`. That
-session's own plan-checker passes caught a real decision ambiguity (D-16: does the reporter get
-an instant, threshold-free reopen symmetric with D-13's instant resolve?) and, after explicit user
-confirmation, amended `02-01`/`02-03a`/`02-07`/`02-VALIDATION.md`/`02-03b` across several commits
-ending 19:42 IST 2026-09-15 — but this STATE.md file was never refreshed after the 15:44 "planning
-complete, verification pending" snapshot, so it went stale claiming the checker had "not yet run."
+This session then ran `/gsd-execute-phase 2` end to end: 7 sequential waves (wave 1 parallel —
+02-01 resolver + 02-02 vote log; waves 2-7 single-plan — 02-03a service layer, 02-03b HTTP routes,
+02-04 feed/map read path, 02-05 first clickable confirm/dispute UI, 02-06 trust-state legibility,
+02-07 mark-resolved/reopen), each in an isolated git worktree, merged back to `main` (direct
+commits, no phase branch — the user's explicit choice given `branching_strategy: none`), with a
+real build+test gate after every merge against a local Postgres 16 test database
+(`pinalert_test`) — final run: 213/213 tests, 0 failures, 0 skips. One executor handback (02-04)
+self-reported an incorrect `expected_base` in its `<worktree_metadata>` block (its own final
+commit instead of the real fork point); caught via `git merge-base --is-ancestor` before recording,
+worked around without incident.
 
-This session ran a fresh, independent verification pass to resolve that: 7 parallel
-`gsd-plan-checker` agents (sonnet model, one per wave, each reading its assigned plan(s) plus
-targeted cross-plan reference reads for interface contracts) covering all 8 plans against the
-CURRENT on-disk content. Result: 6 plans passed clean; `02-04` passed with one non-blocking
-stale-doc-reference warning (claimed `02-VALIDATION.md`'s verification table was still `TBD` when
-it had already been backfilled) — fixed and committed (`1c0ecec`). Also independently confirmed,
-via direct grep (not delegated to an agent): every TRUST-01..04,06,08,09 requirement ID and every
-D-01..D-18 decision ID is referenced across the 8 plans. No blockers found anywhere in the phase.
+Post-execution gates: code review (`02-REVIEW.md`, 0 BLOCKER / 1 WARNING — vote routes have no
+rate limiting, see Blockers/Concerns / 2 INFO — pre-Phase-3 auth.go tightening notes; one review
+attempt stalled on a 600s watchdog and was cleanly retried), regression gate (covered by the
+repeated full-suite runs), and phase-goal verification (`02-VERIFICATION.md`, `gsd-verifier`
+independently confirmed all 5 ROADMAP success criteria against the live codebase — exactly 3
+call sites for `service.Resolve()` in the whole codebase, confirming the single-resolver
+architecture is structural, not conventional). Verifier also caught and this session fixed a
+stale `REQUIREMENTS.md` row (TRUST-09 marked "Pending" despite passing concurrency tests).
 
-Next: `/gsd-execute-phase 2`.
-Resume file: .planning/phases/02-trust-mechanic-core-confirm-dispute-visibility/02-PLAN-OUTLINE.md
+Status is `human_needed`, not `passed`: 3 planner-deferred `<human-check>` items (GPS-denial hard
+block, Provisional/Hidden visual legibility + "Show disputed" toggle, Mark Resolved/Reopen
+click-through) need a real browser, per `workflow.human_verify_mode: end-of-phase`. Persisted as
+`02-UAT.md`. Also flagged for a human decision, non-blocking: the code review's rate-limiting
+WARNING, and a verifier-surfaced `Mode: mvp` vs. non-user-story-Goal escalation on ROADMAP.md.
+
+Next: `/gsd-verify-work 2` (walks through the 3 UAT items) to close out the phase.
+Resume file: .planning/phases/02-trust-mechanic-core-confirm-dispute-visibility/02-UAT.md
