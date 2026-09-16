@@ -81,7 +81,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **TRUST-08**: User (reporter or a nearby confirmer) can mark a report resolved, removing it
       from the live feed
 
-- [ ] **TRUST-09**: Concurrent confirm/dispute votes submitted on the same report at the same time
+- [x] **TRUST-09**: Concurrent confirm/dispute votes submitted on the same report at the same time
       never silently lose an update (verified by an automated concurrency test)
 
 ### Coordination
@@ -255,7 +255,7 @@ Populated during roadmap creation.
 | TRUST-04 | Phase 2 | Complete |
 | TRUST-06 | Phase 2 | Complete |
 | TRUST-08 | Phase 2 | Complete |
-| TRUST-09 | Phase 2 | Pending |
+| TRUST-09 | Phase 2 | Complete |
 | TRUST-05 | Phase 3 | Pending |
 | TRUST-07 | Phase 3 | Pending |
 | ROBUST-01 | Phase 4 | Pending |
