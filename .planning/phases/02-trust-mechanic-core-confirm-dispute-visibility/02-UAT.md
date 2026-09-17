@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 02-trust-mechanic-core-confirm-dispute-visibility
 source: [02-VERIFICATION.md]
 started: 2026-09-16T14:42:29Z
@@ -109,12 +109,12 @@ blocked: 0
   reason: "User reported: the confirmation text box that appeared on the map popup doesn't seem visible/legible."
   severity: major
   test: 3
-  root_cause: "Not yet isolated. .resolve-confirm p { color: var(--color-text) } reads correct in trust.css by inspection alone, so something else (possibly a Leaflet popup default style, or a specificity conflict scoped to .leaflet-popup-content) is washing the text out specifically inside the popup. Needs live DevTools inspection to confirm the actual overriding rule."
+  root_cause: "Investigated but INCONCLUSIVE from static analysis alone. Fetched leaflet@1.9.4's actual shipped CSS (unpkg) and checked every color/opacity/!important declaration touching .leaflet-popup*: the only color rule is `.leaflet-popup-content-wrapper, .leaflet-popup-tip { color: #333 }` at specificity (0,1,0), which .resolve-confirm p's own `color: var(--color-text)` rule at (0,1,1) should out-specify and win on paper. No !important, no higher-specificity popup text rule, and no opacity/fade rule scoped to just the heading (the .leaflet-fade-anim popup-open fade affects the whole popup uniformly, not selectively the heading, and doesn't match the symptom of sibling buttons rendering at full contrast while only the heading is washed out). Needs live DevTools computed-styles inspection to see what's actually being applied at render time — this could not be resolved by reading source alone."
   artifacts:
     - path: "web/static/css/trust.css"
-      issue: ".resolve-confirm p color rule looks correct in isolation but renders washed-out inside the Leaflet popup context"
+      issue: ".resolve-confirm p color rule is correct by static specificity analysis; the discrepancy with the live rendering is unexplained without a browser inspector"
   missing:
-    - "Live-inspect the rendered popup DOM/computed styles to find what's overriding .resolve-confirm p's text color"
+    - "Live-inspect the rendered popup DOM's computed color/opacity for the confirmHeading <p> to find what's actually overriding it, then fix that specific rule"
   debug_session: ""
 
 - truth: "After tapping Reopen on the Activity page, navigating back to the main feed shows the report live again immediately, with no manual reload needed."
@@ -122,7 +122,7 @@ blocked: 0
   reason: "User reported: had to manually refresh the page after going back to the map to see the reopened report's updated state — going back showed stale data instead."
   severity: major
   test: 3
-  root_cause: "Hypothesized, not yet confirmed live: the main page already sets Cache-Control: no-store (page.go), which should prevent this, but browsers (Safari in particular) don't always fully honor no-store for back-forward-cache (bfcache) restoration — a Back navigation can restore a frozen pre-reopen DOM snapshot without re-running JS or refetching. Needs repro with DevTools/network inspection to confirm bfcache is what's actually firing."
+  root_cause: "page.go correctly sets Cache-Control: no-store on the main document (DEC-Q), which per spec should make Chrome/Firefox exclude the page from back-forward-cache (bfcache) entirely. Confirmed no-store is NOT set on GET /api/reports itself either (only static assets get a Cache-Control header, in router.go's staticFileServer — the reports JSON endpoint sets none), though that's a separate, lower-priority gap from the bfcache issue. User is on Safari, and Safari's WebKit Page Cache is documented to NOT reliably honor Cache-Control: no-store for bfcache eligibility the way Chromium/Firefox do — so a Safari Back navigation can still restore a frozen pre-reopen page snapshot without re-running JS or refetching, despite the header being correct. This is the most likely explanation but is a browser-behavior claim, not something confirmed via live repro in this session."
   artifacts:
     - path: "web/static/js/feed.js"
       issue: "No pageshow/event.persisted listener to force a re-fetch when the page is restored from bfcache"
