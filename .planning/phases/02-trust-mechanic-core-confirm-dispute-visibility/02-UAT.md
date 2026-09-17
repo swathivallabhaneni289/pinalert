@@ -1,24 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 02-trust-mechanic-core-confirm-dispute-visibility
 source: [02-VERIFICATION.md]
 started: 2026-09-16T14:42:29Z
-updated: 2026-09-16T14:42:29Z
+updated: 2026-09-17T16:28:33Z
 ---
 
 ## Current Test
 
-number: 1
-name: D-18 GPS-denial hard block, live in a real browser
-expected: |
-  Denying the browser's location prompt on Confirm/Dispute greys the buttons out and immediately
-  re-enables them, shows the exact GPS-denial sentence in the row's .vote-error element, and sends
-  NO network request to /api/reports/{id}/confirm|dispute (verified in DevTools Network panel — a
-  request sent and then rejected is a failure even if the visible outcome looks similar). A granted
-  prompt is cached in sessionStorage and not re-requested for a second vote in the same tab, but is
-  re-requested in a new tab. Both the feed row and the map popup behave identically, and no state
-  changes before the server responds (D-04).
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -30,7 +20,15 @@ expected: Denying the browser's location prompt on Confirm/Dispute greys the but
   similar). A granted prompt is cached in sessionStorage and not re-requested for a second vote in
   the same tab, but is re-requested in a new tab. Both the feed row and the map popup behave
   identically, and no state changes before the server responds (D-04).
-result: [pending]
+result: pass
+notes: Exact GPS_DENIED_MESSAGE copy confirmed verbatim in the row's .vote-error element on a real
+  deny (root cause of the initial no-prompt confusion was macOS System Settings > Privacy &
+  Security > Location Services being off entirely — not a Pinalert or Safari site-permission bug;
+  user re-enabled it). Buttons observed functioning (not stuck disabled) after the denial. NOT
+  independently re-confirmed live after the Location Services fix: DevTools Network-tab
+  no-request check, sessionStorage same-tab-no-reprompt/new-tab-reprompt caching behavior, and map
+  popup parity for the deny path specifically. No defect found in anything actually observed; these
+  remain untested rather than failed.
 
 ### 2. D-09/D-10/D-11 Provisional dimming+label, Hidden outline treatment, and the "Show disputed reports" toggle, live in a real browser and both themes
 expected: A fresh non-critical report shows BOTH a desaturated badge/border AND an explicit
@@ -42,7 +40,18 @@ expected: A fresh non-critical report shows BOTH a desaturated badge/border AND 
   both together. The checkbox does not persist checked across a reload. An empty disputed result
   shows the specific "No disputed reports nearby" copy, not a blank list. All of the above holds in
   dark mode too.
-result: [pending]
+result: issue
+reported: "Hidden outline treatment confirmed correct on both the feed row and map pin (transparent
+  badge, muted glyph, 'Disputed' label matching VISIBILITY_TAG_LABELS.hidden exactly). Toggle
+  reveal/hide confirmed on both surfaces together. Critical-severity bypass confirmed (no chip, no
+  treatment, always live, matches D-06). Checkbox correctly resets to unchecked on a real reload,
+  matching the original spec — but the user wants this changed so reloading keeps the current
+  filtered view instead. The user also wants a manual light/dark toggle added so light mode can be
+  verified/used without touching OS settings. Two items were never visually confirmed either way:
+  the Provisional dimmed+'Unconfirmed'-chip treatment (only checked via API response, not a
+  screenshot) and the 'No disputed reports nearby' empty-state copy. Light-mode rendering of any of
+  this was never checked at all (every screenshot this session was dark mode)."
+severity: minor
 
 ### 3. TRUST-08 Mark Resolved / confirmation-gate / Reopen flow, live in a real browser
 expected: Tapping "Mark resolved" on someone else's report replaces the button set in place with an
@@ -55,15 +64,109 @@ expected: Tapping "Mark resolved" on someone else's report replaces the button s
   the reopen-succeeded toast (never the pending one) and the row updates with no page reload, and
   the feed shows the report live again. Denying GPS on affirm hard-blocks with the GPS-denial copy
   and sends no request.
-result: [pending]
+result: issue
+reported: "Non-reporter affirm correctly showed the 'awaiting agreement' toast and the report
+  stayed in the feed. Reporter's own report resolved instantly as expected. Activity page correctly
+  lists the resolved report. But: (1) on both the feed row and the map popup, the original
+  Confirm/Dispute/Mark-resolved buttons stay visibly rendered right next to the new inline Yes/
+  Cancel confirmation instead of being replaced by it — user described the result as buttons that
+  'look too big'/doubled up. (2) In the map popup specifically, the 'Mark this report resolved?'
+  confirmation heading text renders barely legible/washed out. (3) After tapping Reopen on the
+  Activity page and navigating back to the main feed, the reopened report did not show as live
+  again until a manual page reload — contradicts the 'no page reload' requirement. GPS-deny-on-
+  affirm was not independently live-tested but verified by code inspection to share the exact same
+  castVote/getVoterLocation code path already confirmed in Test 1, so treated as covered by
+  construction rather than untested. User also flagged the Activity page has no way to navigate
+  back to the main map other than the browser's own back button."
+severity: major
 
 ## Summary
 
 total: 3
-passed: 0
-issues: 0
-pending: 3
+passed: 1
+issues: 2
+pending: 0
 skipped: 0
 blocked: 0
 
 ## Gaps
+
+- truth: "Tapping 'Mark resolved' replaces the Confirm/Dispute/Mark-resolved button row IN PLACE with the inline Yes/Cancel confirmation (D-15), on both the feed row and the map popup."
+  status: failed
+  reason: "User reported: the original three buttons stay visible next to the new Yes/Cancel confirmation instead of being replaced, on both the feed row and the map popup — looks oversized/doubled up."
+  severity: major
+  test: 3
+  root_cause: "trust.css line 30's .vote-btn rule has no :not([hidden]) guard, unlike every other display rule in the same file. votes.js's openResolveConfirm() correctly sets hidden=true on the three buttons, but the browser's native [hidden]{display:none} user-agent rule loses to the equal-specificity author .vote-btn{display:inline-flex} rule (author styles win ties over user-agent styles), so the buttons stay rendered despite the hidden attribute."
+  artifacts:
+    - path: "web/static/css/trust.css"
+      issue: ".vote-btn selector (line 30) missing the :not([hidden]) guard every other display rule in this file carries"
+  missing:
+    - "Change `.vote-btn {` to `.vote-btn:not([hidden]) {` in trust.css, matching the file's own documented pattern"
+  debug_session: ""
+
+- truth: "The 'Mark this report resolved?' confirmation heading is legible (--color-text on --color-bg) in the map popup, same as the feed row."
+  status: failed
+  reason: "User reported: the confirmation text box that appeared on the map popup doesn't seem visible/legible."
+  severity: major
+  test: 3
+  root_cause: "Not yet isolated. .resolve-confirm p { color: var(--color-text) } reads correct in trust.css by inspection alone, so something else (possibly a Leaflet popup default style, or a specificity conflict scoped to .leaflet-popup-content) is washing the text out specifically inside the popup. Needs live DevTools inspection to confirm the actual overriding rule."
+  artifacts:
+    - path: "web/static/css/trust.css"
+      issue: ".resolve-confirm p color rule looks correct in isolation but renders washed-out inside the Leaflet popup context"
+  missing:
+    - "Live-inspect the rendered popup DOM/computed styles to find what's overriding .resolve-confirm p's text color"
+  debug_session: ""
+
+- truth: "After tapping Reopen on the Activity page, navigating back to the main feed shows the report live again immediately, with no manual reload needed."
+  status: failed
+  reason: "User reported: had to manually refresh the page after going back to the map to see the reopened report's updated state — going back showed stale data instead."
+  severity: major
+  test: 3
+  root_cause: "Hypothesized, not yet confirmed live: the main page already sets Cache-Control: no-store (page.go), which should prevent this, but browsers (Safari in particular) don't always fully honor no-store for back-forward-cache (bfcache) restoration — a Back navigation can restore a frozen pre-reopen DOM snapshot without re-running JS or refetching. Needs repro with DevTools/network inspection to confirm bfcache is what's actually firing."
+  artifacts:
+    - path: "web/static/js/feed.js"
+      issue: "No pageshow/event.persisted listener to force a re-fetch when the page is restored from bfcache"
+  missing:
+    - "Add a window.addEventListener('pageshow', ...) handler that calls Pinalert.fetchReports() when event.persisted is true, as a defensive fix alongside the existing Cache-Control: no-store header"
+  debug_session: ""
+
+- truth: "The Activity/profile page offers a way to navigate back to the main map/feed view."
+  status: failed
+  reason: "User reported: after viewing Activity, there's no way to go back to the main map to see what's happening, other than the browser's own back button."
+  severity: minor
+  test: 3
+  root_cause: "Confirmed via inspection: web/templates/profile.html.tmpl has no back/home navigation link at all."
+  artifacts:
+    - path: "web/templates/profile.html.tmpl"
+      issue: "No link back to the main feed/map view"
+  missing:
+    - "Add a 'Back to map' (or similar) link/button on the Activity page pointing to the main feed route"
+  debug_session: ""
+
+- truth: "Reloading the page while 'Show disputed reports' is checked keeps the same filtered view instead of resetting to the default feed."
+  status: failed
+  reason: "User explicitly requested this behavior change: a page refresh currently resets the checkbox to unchecked and returns to the default feed view; the user wants it to stay on the disputed view instead."
+  severity: minor
+  test: 2
+  root_cause: "By design, not a pre-existing bug: the checkbox (02-UI-SPEC.md) is a plain <input type=checkbox> with no checked attribute, no localStorage, and no URL query-param wiring — Phase 2 deliberately scoped it as an ephemeral client-side filter, not a persisted preference. This gap changes that scope at the user's explicit request."
+  artifacts:
+    - path: "web/templates/index.html.tmpl"
+      issue: "show-disputed-toggle checkbox has no persistence mechanism"
+    - path: "web/static/js/feed.js"
+      issue: "showDisputedToggleEl listener does not read/write persisted state (e.g. a URL query param) on load"
+  missing:
+    - "Persist the toggle's checked state (e.g. via a URL query parameter or localStorage) and restore it on page load"
+  debug_session: ""
+
+- truth: "A person can switch between light and dark mode from within the app (e.g. in Settings) rather than only via the OS-level appearance setting."
+  status: failed
+  reason: "User explicitly requested this new feature so light mode can be verified and used without changing OS-level system settings."
+  severity: minor
+  test: 2
+  root_cause: "New feature, not a defect. main.css already has :root[data-theme=\"dark\"] and :root[data-theme=\"light\"] override blocks specifically prepared for this (its own header comment: 'so a future theme toggle needs no restructuring'), but no UI control or JS exists yet to set the data-theme attribute."
+  artifacts:
+    - path: "web/static/css/main.css"
+      issue: "data-theme override blocks exist but nothing in the UI/JS sets the attribute"
+  missing:
+    - "Add a toggle control (e.g. in a Settings section) that sets document.documentElement.dataset.theme and persists the choice (e.g. localStorage)"
+  debug_session: ""
