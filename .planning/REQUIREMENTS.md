@@ -143,6 +143,13 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **OPS-02**: Every push runs automated tests, `go vet`, and a build check via GitHub Actions
       CI
 
+### Presentation
+
+- [ ] **UX-01**: A user can choose Light, Dark, or follow-the-OS appearance from inside the app
+      (added 2026-09-18 from Phase 2 UAT — the app already renders both palettes via
+      `prefers-color-scheme`/`[data-theme]`, but nothing lets a user choose independently of the
+      OS setting)
+
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
@@ -256,6 +263,7 @@ Populated during roadmap creation.
 | TRUST-06 | Phase 2 | Complete |
 | TRUST-08 | Phase 2 | Complete |
 | TRUST-09 | Phase 2 | Complete |
+| UX-01 | Phase 2 | Pending (gap-closure plan 02-10) |
 | TRUST-05 | Phase 3 | Pending |
 | TRUST-07 | Phase 3 | Pending |
 | ROBUST-01 | Phase 4 | Pending |
@@ -277,15 +285,16 @@ Populated during roadmap creation.
 
 **Coverage:**
 
-- v1 requirements: 38 total (33 original + 5 new IDENT-01..05 added 2026-09-10 for the inserted
-  Phase 1.1: Identity & Login — Foundation 6, Identity 5, Trust Engine 9, Coordination 8,
-  Robustness 8, Ops 2)
+- v1 requirements: 39 total (33 original + 5 new IDENT-01..05 added 2026-09-10 for the inserted
+  Phase 1.1: Identity & Login + 1 new UX-01 added 2026-09-18 from Phase 2 UAT — Foundation 6,
+  Identity 5, Trust Engine 9, Coordination 8, Robustness 8, Ops 2, Presentation 1)
 
-- Mapped to phases: 38 (100%)
+- Mapped to phases: 39 (100%)
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-09-05*
-*Last updated: 2026-09-10 — added IDENT-01..05 for Phase 1.1 (mandatory email+OTP login,
+*Last updated: 2026-09-18 — added UX-01 (in-app light/dark toggle) surfaced by Phase 2's UAT gap
+closure round, linked to plan 02-10; added IDENT-01..05 for Phase 1.1 (mandatory email+OTP login,
 inserted before Phase 2 after the user decided anonymous voting was too gameable); FOUND-01
 marked superseded, not removed (it shipped and was verified as originally specified in Phase 1)*
