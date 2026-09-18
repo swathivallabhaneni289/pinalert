@@ -1,14 +1,20 @@
 ---
-status: diagnosed
+status: testing
 phase: 02-trust-mechanic-core-confirm-dispute-visibility
 source: [02-VERIFICATION.md]
 started: 2026-09-16T14:42:29Z
-updated: 2026-09-17T16:28:33Z
+updated: 2026-09-18T20:15:00Z
 ---
 
 ## Current Test
 
-[testing complete]
+number: 4
+name: D-18 GPS-denial hard block — DevTools/sessionStorage/map-popup re-confirmation
+expected: |
+  Denying the location prompt sends zero network requests (verified in the Network panel, not just
+  by visible outcome) and shows the exact GPS-denial copy; a granted prompt is cached per session
+  (not re-prompted same-tab, re-prompted new-tab); the map popup behaves identically to the feed row.
+awaiting: user response
 
 ## Tests
 
@@ -80,19 +86,98 @@ reported: "Non-reporter affirm correctly showed the 'awaiting agreement' toast a
   back to the main map other than the browser's own back button."
 severity: major
 
+### 4. D-18 GPS-denial hard block — DevTools/sessionStorage/map-popup re-confirmation
+expected: Denying the location prompt sends zero network requests (verified in the Network panel,
+  not just by visible outcome) and shows the exact GPS-denial copy; a granted prompt is cached per
+  session (not re-prompted same-tab, re-prompted new-tab); the map popup behaves identically to the
+  feed row.
+result: [pending]
+context: Carried forward from this same UAT's Test 1, which passed on the core behavior but never
+  independently re-confirmed these three specifics live after the Location Services root cause was
+  fixed. Unresolved by any of the three gap-closure plans (none touch votes.js's GPS-transport code).
+
+### 5. Provisional dimming/"Unconfirmed" chip and the "No disputed reports nearby" empty state
+expected: A fresh non-critical report shows both a desaturated badge/border and an explicit
+  "Unconfirmed" chip, on both the feed row and the map pin popup. An empty disputed-view result
+  shows the specific "No disputed reports nearby" copy, not a blank list.
+result: [pending]
+context: Carried forward from this same UAT's Test 2 — never visually confirmed either way (only
+  checked via API response, not a screenshot). Unresolved by any gap-closure plan (none touch
+  visibility.js or the badge/chip rendering path).
+
+### 6. 02-08 gap closure: Mark Resolved button row is replaced, not doubled up
+expected: In a real browser (both themes), tap Mark resolved on someone else's report on the feed
+  row and on a map pin popup. The three primary buttons visually disappear the instant the
+  confirmation appears, rather than rendering beside it.
+result: [pending]
+context: Fix is a CSS selector-head guard (:not([hidden])), proven present by static parsing and by
+  the two touch-target contract tests that previously failed to catch its absence. Static CSS
+  parsing cannot prove a real browser's rendered layout actually stops painting the three buttons —
+  this repo shipped exactly that class of bug once already from a test suite that stayed green
+  throughout.
+
+### 7. 02-08 gap closure: map popup "Mark this report resolved?" heading legibility
+expected: Open a map pin popup in dark mode and tap Mark resolved. The heading text is clearly
+  legible against the popup's own background, at contrast comparable to the buttons beside it.
+  Repeat in light mode and confirm nothing regressed (the fix's own falsifiable prediction is that
+  the pre-fix bug never reproduced in light mode).
+result: [pending]
+context: TestMapPopupSurfaceIsThemeAware proves the override's declarations exist, resolve through
+  the correct CSS custom properties, and clear 4.5:1 WCAG contrast arithmetically — it does not
+  composite the page in a real browser. The plan's own SUMMARY explicitly leaves the light-mode
+  falsifiability check and the live dark-mode legibility check to this step.
+
+### 8. 02-09 gap closure: Safari Back-after-Reopen refetch
+expected: Resolve a report, open Activity, tap Reopen, press the browser's Back button (Safari
+  first, then one Chromium browser). The feed shows the reopened report live immediately with no
+  manual reload, and the Network panel shows a fresh GET /api/reports fired on the restore.
+result: [pending]
+context: The pageshow/event.persisted fix is proven wired and correctly ordered by static
+  inspection only. The pre-fix Safari bfcache symptom this fix targets was never independently
+  reproduced live in the original UAT session — the diagnosis is the most likely explanation, not a
+  confirmed one.
+
+### 9. 02-09 gap closure: disputed-filter reload persistence, no unfiltered flash
+expected: Check "Show disputed reports", reload the page. The box is still checked and the disputed
+  view shows from the very first paint, with no visible flash of the default feed first. Copy the
+  URL with the parameter set, open in a new tab, confirm it loads the disputed view directly.
+result: [pending]
+context: The "restored before the first fetch" guarantee rests on an argument about script
+  execution order that 02-09-SUMMARY itself flags as an argument, not a proof, and names what would
+  invalidate it. Static tests confirm the code shape; they cannot observe whether a real browser
+  ever paints an unfiltered frame first.
+
+### 10. 02-10 gap closure: theme toggle — no-flash, native controls, post-logout, full light-mode walkthrough
+expected: Set the theme to Dark, reload — no flash of light first. Set Light, log out — the login
+  gate renders light rather than snapping to a dark OS default. Toggle Dark — native checkboxes and
+  the scrollbar also go dark. Walk all of Phase 2's UI once in light mode (never done — every UAT
+  screenshot this phase was dark) and report anything illegible.
+result: [pending]
+context: Presence of a non-deferred head script and a color-scheme CSS declaration is provable by
+  static inspection (done, both pass); a real paint-flash timing effect and real rendered legibility
+  across a theme never once visually inspected in this project cannot be. 02-10-SUMMARY states
+  explicitly this walkthrough has not been performed.
+
+### 11. 02-10 gap closure: Activity "Back to map" link, live click-through
+expected: From the Activity page, click "Back to map" and confirm it lands on the main feed/map
+  view.
+result: [pending]
+context: Structurally verified (link present, contract test passes) but not separately re-run live
+  by the phase verifier.
+
 ## Summary
 
-total: 3
+total: 11
 passed: 1
 issues: 2
-pending: 0
+pending: 8
 skipped: 0
 blocked: 0
 
 ## Gaps
 
 - truth: "Tapping 'Mark resolved' replaces the Confirm/Dispute/Mark-resolved button row IN PLACE with the inline Yes/Cancel confirmation (D-15), on both the feed row and the map popup."
-  status: failed
+  status: resolved
   reason: "User reported: the original three buttons stay visible next to the new Yes/Cancel confirmation instead of being replaced, on both the feed row and the map popup — looks oversized/doubled up."
   severity: major
   test: 3
@@ -105,7 +190,7 @@ blocked: 0
   debug_session: ""
 
 - truth: "The 'Mark this report resolved?' confirmation heading is legible (--color-text on --color-bg) in the map popup, same as the feed row."
-  status: failed
+  status: resolved
   reason: "User reported: the confirmation text box that appeared on the map popup doesn't seem visible/legible."
   severity: major
   test: 3
@@ -118,7 +203,7 @@ blocked: 0
   debug_session: ""
 
 - truth: "After tapping Reopen on the Activity page, navigating back to the main feed shows the report live again immediately, with no manual reload needed."
-  status: failed
+  status: resolved
   reason: "User reported: had to manually refresh the page after going back to the map to see the reopened report's updated state — going back showed stale data instead."
   severity: major
   test: 3
@@ -131,7 +216,7 @@ blocked: 0
   debug_session: ""
 
 - truth: "The Activity/profile page offers a way to navigate back to the main map/feed view."
-  status: failed
+  status: resolved
   reason: "User reported: after viewing Activity, there's no way to go back to the main map to see what's happening, other than the browser's own back button."
   severity: minor
   test: 3
@@ -144,7 +229,7 @@ blocked: 0
   debug_session: ""
 
 - truth: "Reloading the page while 'Show disputed reports' is checked keeps the same filtered view instead of resetting to the default feed."
-  status: failed
+  status: resolved
   reason: "User explicitly requested this behavior change: a page refresh currently resets the checkbox to unchecked and returns to the default feed view; the user wants it to stay on the disputed view instead."
   severity: minor
   test: 2
@@ -159,7 +244,7 @@ blocked: 0
   debug_session: ""
 
 - truth: "A person can switch between light and dark mode from within the app (e.g. in Settings) rather than only via the OS-level appearance setting."
-  status: failed
+  status: resolved
   reason: "User explicitly requested this new feature so light mode can be verified and used without changing OS-level system settings."
   severity: minor
   test: 2
