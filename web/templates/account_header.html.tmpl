@@ -8,6 +8,9 @@
   <div id="account-menu" role="menu" hidden>
     <p class="account-menu__email">{{.Email}}</p>
     <a role="menuitem" class="account-menu__item" href="/profile">Activity</a>
+    <button type="button" id="theme-toggle" role="menuitem" class="account-menu__item">
+      Theme: <span id="theme-toggle-label">System</span>
+    </button>
     <form method="post" action="/auth/logout">
       <button type="submit" role="menuitem" class="account-menu__item">
         <span class="auth-icon auth-icon--log-out" aria-hidden="true"></span>
