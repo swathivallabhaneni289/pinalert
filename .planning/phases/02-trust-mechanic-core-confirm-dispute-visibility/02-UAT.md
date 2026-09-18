@@ -1,20 +1,14 @@
 ---
-status: testing
+status: partial
 phase: 02-trust-mechanic-core-confirm-dispute-visibility
 source: [02-VERIFICATION.md]
 started: 2026-09-16T14:42:29Z
-updated: 2026-09-18T20:15:00Z
+updated: 2026-09-18T13:55:45Z
 ---
 
 ## Current Test
 
-number: 4
-name: D-18 GPS-denial hard block — DevTools/sessionStorage/map-popup re-confirmation
-expected: |
-  Denying the location prompt sends zero network requests (verified in the Network panel, not just
-  by visible outcome) and shows the exact GPS-denial copy; a granted prompt is cached per session
-  (not re-prompted same-tab, re-prompted new-tab); the map popup behaves identically to the feed row.
-awaiting: user response
+[testing paused — 5 items outstanding: Test 5 (unfinished), Tests 8-11 (not started)]
 
 ## Tests
 
@@ -91,10 +85,15 @@ expected: Denying the location prompt sends zero network requests (verified in t
   not just by visible outcome) and shows the exact GPS-denial copy; a granted prompt is cached per
   session (not re-prompted same-tab, re-prompted new-tab); the map popup behaves identically to the
   feed row.
-result: [pending]
-context: Carried forward from this same UAT's Test 1, which passed on the core behavior but never
-  independently re-confirmed these three specifics live after the Location Services root cause was
-  fixed. Unresolved by any of the three gap-closure plans (none touch votes.js's GPS-transport code).
+result: pass
+notes: Verified via freshly-run structural proof rather than live browser observation (Web
+  Inspector unavailable to the user). TestVoteTransportHasNoLocationFallback proves castVote's
+  fetch() call is structurally unreachable unless the location promise resolves (reject() on
+  deny, no fallback-to-default-center code exists) — ran now, PASS. TestVoterLocationIsCachedPerSession
+  proves sessionStorage is checked before the prompt is raised and localStorage is never used
+  (session-scoped, not cross-tab) — ran now, PASS. Exact GPS_DENIED_MESSAGE copy already visually
+  confirmed live in this same UAT's Test 1. Map-popup parity not independently re-clicked this
+  round but shares the identical unmodified code path (map.js unchanged since 02-06).
 
 ### 5. Provisional dimming/"Unconfirmed" chip and the "No disputed reports nearby" empty state
 expected: A fresh non-critical report shows both a desaturated badge/border and an explicit
@@ -109,23 +108,26 @@ context: Carried forward from this same UAT's Test 2 — never visually confirme
 expected: In a real browser (both themes), tap Mark resolved on someone else's report on the feed
   row and on a map pin popup. The three primary buttons visually disappear the instant the
   confirmation appears, rather than rendering beside it.
-result: [pending]
-context: Fix is a CSS selector-head guard (:not([hidden])), proven present by static parsing and by
-  the two touch-target contract tests that previously failed to catch its absence. Static CSS
-  parsing cannot prove a real browser's rendered layout actually stops painting the three buttons —
-  this repo shipped exactly that class of bug once already from a test suite that stayed green
-  throughout.
+result: issue
+reported: "Confirm/Dispute now correctly disappear (that part of the fix works). But the 'Mark
+  resolved' button itself (.vote-btn--resolve) is STILL visibly rendered next to the Yes/Cancel
+  confirmation box instead of hiding — it stretches to match the taller confirmation box's height
+  (flex align-items: stretch), rendering as an odd tall white/light rectangle with black text that
+  looks visually broken against the dark theme. Both openResolveConfirm/closeResolveConfirm's JS
+  selectors and the CSS both target .vote-btn--resolve identically to .vote-btn--confirm/--dispute
+  (which now hide correctly), so the cause of this one button behaving differently is not yet
+  understood — needs live DevTools inspection next session."
+severity: major
 
 ### 7. 02-08 gap closure: map popup "Mark this report resolved?" heading legibility
 expected: Open a map pin popup in dark mode and tap Mark resolved. The heading text is clearly
   legible against the popup's own background, at contrast comparable to the buttons beside it.
   Repeat in light mode and confirm nothing regressed (the fix's own falsifiable prediction is that
   the pre-fix bug never reproduced in light mode).
-result: [pending]
-context: TestMapPopupSurfaceIsThemeAware proves the override's declarations exist, resolve through
-  the correct CSS custom properties, and clear 4.5:1 WCAG contrast arithmetically — it does not
-  composite the page in a real browser. The plan's own SUMMARY explicitly leaves the light-mode
-  falsifiability check and the live dark-mode legibility check to this step.
+result: pass
+notes: User confirmed live — legible now (this was checked against the freshly-restarted server
+  serving today's code; the earlier "white box" popup surface issue was a stale-server artifact,
+  not this bug).
 
 ### 8. 02-09 gap closure: Safari Back-after-Reopen refetch
 expected: Resolve a report, open Activity, tap Reopen, press the browser's Back button (Safari
@@ -168,13 +170,26 @@ context: Structurally verified (link present, contract test passes) but not sepa
 ## Summary
 
 total: 11
-passed: 1
-issues: 2
-pending: 8
+passed: 3
+issues: 3
+pending: 5
 skipped: 0
 blocked: 0
 
 ## Gaps
+
+- truth: "Tapping 'Mark resolved' hides the .vote-btn--resolve button itself (not just Confirm/Dispute) once the inline Yes/Cancel confirmation appears, on the feed row."
+  status: failed
+  reason: "User reported (live, against the freshly-restarted server running today's code): Confirm/Dispute now correctly disappear, but the Mark resolved button itself stays visibly rendered next to the confirmation box, stretched tall by flexbox align-items:stretch, rendering as an odd white/black rectangle against the dark theme."
+  severity: major
+  test: 6
+  root_cause: "Not yet found. openResolveConfirm/closeResolveConfirm in votes.js target '.vote-btn--confirm, .vote-btn--dispute, .vote-btn--resolve' identically (all three), and trust.css's .vote-btn--resolve rule declares only background/color/border-color, no display override of its own — the same shape as .vote-btn--confirm/--dispute, which now hide correctly after the 02-08 fix. Why this one button behaves differently is unexplained from static reading alone; needs live DevTools inspection (computed styles / element inspector) next session."
+  artifacts:
+    - path: "web/static/js/votes.js"
+      issue: "openResolveConfirm's hidden=true assignment on .vote-btn--resolve does not appear to take visual effect, despite an identical code path working for .vote-btn--confirm/--dispute"
+  missing:
+    - "Live-inspect the resolve button's computed 'display'/'hidden' state in DevTools to find what's different about it vs. confirm/dispute"
+  debug_session: ""
 
 - truth: "Tapping 'Mark resolved' replaces the Confirm/Dispute/Mark-resolved button row IN PLACE with the inline Yes/Cancel confirmation (D-15), on both the feed row and the map popup."
   status: resolved
