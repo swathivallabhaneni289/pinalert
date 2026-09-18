@@ -142,3 +142,10 @@ None - no external service configuration required.
 ---
 *Phase: 02-trust-mechanic-core-confirm-dispute-visibility*
 *Completed: 2026-09-18*
+
+## Self-Check: PASSED
+
+- FOUND: web/static/css/trust.css
+- FOUND: web/votes_contract_test.go
+- FOUND: commit 2705743 (Task 1)
+- FOUND: commit bdfa5a3 (Task 2)
