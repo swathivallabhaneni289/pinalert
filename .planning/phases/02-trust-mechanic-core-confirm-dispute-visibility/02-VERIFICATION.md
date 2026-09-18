@@ -1,256 +1,295 @@
 ---
 phase: 02-trust-mechanic-core-confirm-dispute-visibility
-verified: 2026-09-16T20:30:00Z
+verified: 2026-09-18T20:00:00Z
 status: human_needed
-score: 5/5
-behavior_unverified: 0
+score: 8/13 must-haves verified
+behavior_unverified: 5
 overrides_applied: 0
 mode_guard:
   phase_mode: mvp
   goal_is_user_story: false
   note: >
-    ROADMAP.md marks this phase Mode: mvp, but the phase's Goal field ("A user can confirm or
-    dispute a report, and the resulting Hidden/Provisional/Live/Retracted visibility is computed
-    by one shared, concurrency-safe resolver everywhere it's shown.") does not match the required
+    Carried forward from the prior 02-VERIFICATION.md (2026-09-16), unresolved. ROADMAP.md still
+    marks this phase Mode: mvp, but the phase's Goal field ("A user can confirm or dispute a
+    report, and the resulting Hidden/Provisional/Live/Retracted visibility is computed by one
+    shared, concurrency-safe resolver everywhere it's shown.") is not in the required
     "As a <role>, I want to <capability>, so that <outcome>." format the MVP Mode Verification
-    section's user-story guard requires. Per that guard, full MVP-mode verification (the User Flow
-    Coverage table) is refused and NOT produced. This report instead runs the standard
-    goal-backward methodology directly against ROADMAP's 5 explicit numbered Success Criteria,
-    which are unambiguous and fully testable on their own. This is an escalation, not a silent
-    substitution: a human should decide whether to fix the goal wording (e.g. re-run
-    `/gsd mvp-phase 02` or hand-edit ROADMAP.md's Goal line) or clear the `Mode: mvp` flag for this
-    phase, so future verification runs don't hit the same guard.
+    guard requires. Per that guard, full MVP-mode narrowing (the User Flow Coverage table) is
+    refused and NOT produced; this report again verifies directly against ROADMAP's 5 explicit
+    Success Criteria plus the gap-closure plans' own must_haves. A human should decide whether to
+    fix the Goal field's wording or clear the Mode: mvp flag for Phase 2 so a future verification
+    pass doesn't hit the same guard again.
+re_verification:
+  previous_status: human_needed
+  previous_score: "5/5 (ROADMAP SCs only; no gaps: block existed to parse — see Method)"
+  gaps_closed:
+    - "D-15: Mark Resolved button row now actually disappears (replaced) instead of rendering beside the Yes/Cancel confirmation, on both feed row and map popup (trust.css .vote-btn:not([hidden]) guard)"
+    - "Map popup 'Mark this report resolved?' heading legibility: Leaflet popup surface is now theme-aware (background/color override) instead of a hard-coded white Leaflet box"
+    - "Stale feed after Reopen + Back navigation: feed.js now refetches on pageshow when event.persisted is true; GET /api/reports now sets Cache-Control: no-store on every exit path"
+    - "Activity page had no way back to the map: profile.html.tmpl now has a 'Back to map' link as the first element in <main>"
+    - "Show disputed filter reset on reload (user-requested reversal): filter state now round-trips through the page URL (history.replaceState, show_disputed param), restored before the first fetch"
+    - "No in-app light/dark toggle (user-requested new feature): theme.js + account-menu Theme control (System/Light/Dark), applied pre-paint via a non-deferred head script on all 4 full-page templates, with color-scheme added to all 4 theme sources in main.css"
+  gaps_remaining: []
+  regressions: []
+gaps: []
 deferred:
   - truth: "A report's visibility state is identical on the triage view and the shareable card, in addition to feed/map/Activity"
     addressed_in: "Phase 6"
-    evidence: "REQUIREMENTS.md Traceability maps COORD-04 (triage list) and COORD-08 (shareable card) to Phase 6; neither surface exists yet in the codebase, so SC4 is verified for every surface that currently exists (feed, map, Activity page) and the resolver's one-function architecture structurally extends to any future surface without change."
+    evidence: "REQUIREMENTS.md Traceability maps COORD-04 (triage list) and COORD-08 (shareable card) to Phase 6; neither surface exists yet in the codebase."
+behavior_unverified_items:
+  - truth: "Tapping 'Mark resolved' REPLACES the Confirm/Dispute/Mark-resolved button row in place with the inline Yes/Cancel confirmation, on both the feed row and the map pin popup (02-08 gap closure, D-15)"
+    test: "In a real browser (both themes), tap Mark resolved on someone else's report on the feed row and on a map pin popup. Confirm the three primary buttons visually disappear the instant the confirmation appears, rather than rendering beside it."
+    why_human: "The fix is a CSS selector-head guard (`:not([hidden])`) proven present by static parsing and by the same two touch-target contract tests that previously failed to catch its absence. Static CSS parsing cannot prove a real browser's rendered layout actually stops painting the three buttons — that is exactly the class of claim this repository has now shipped wrong once already (the original UAT gap) from a test suite that was green throughout."
+  - truth: "The map popup's 'Mark this report resolved?' heading is legible in dark mode, because the popup surface now resolves to app tokens instead of Leaflet's hard-coded white box (02-08 gap closure)"
+    test: "Open a map pin popup in dark mode and tap Mark resolved. Confirm the heading text is clearly legible against the popup's own background, at contrast comparable to the buttons beside it. Repeat in light mode and confirm nothing regressed (the fix's own falsifiable prediction is that the pre-fix bug never reproduced in light mode)."
+    why_human: "02-08's new tests (`TestMapPopupSurfaceIsThemeAware`) prove the override's declarations exist, resolve through the correct CSS custom properties, and that the token pair clears 4.5:1 WCAG contrast arithmetically — they do not composite the page in a real browser. The plan's own SUMMARY explicitly leaves the light-mode falsifiability check and the live dark-mode legibility check to this human-check step, not yet run."
+  - truth: "Navigating Back to the feed after tapping Reopen on the Activity page shows the reopened report live again with no manual reload, specifically on Safari (02-09 gap closure)"
+    test: "Resolve a report, open Activity, tap Reopen, press the browser's Back button (Safari first, then one Chromium browser). Confirm the feed shows the reopened report live immediately with no manual reload, and that the Network panel shows a fresh GET /api/reports fired on the restore."
+    why_human: "The fix (a `pageshow` listener guarded on `event.persisted`, firing before any refetch) is proven wired and correctly ordered by static inspection of the embedded JS source only. 02-09-SUMMARY states directly that the pre-fix Safari bfcache symptom this fix targets was never independently reproduced live in the original UAT session — the diagnosis is the most likely explanation, not a confirmed one, and only a live Safari Back navigation can confirm the fix actually closes it."
+  - truth: "Reloading the page while 'Show disputed reports' is checked keeps the same filtered view, restored before the first render with no flash of the unfiltered feed (02-09 gap closure, user-requested reversal)"
+    test: "Check 'Show disputed reports', reload the page. Confirm the box is still checked and the disputed view shows from the very first paint, with no visible flash of the default feed first. Copy the URL with the parameter set, open in a new tab, confirm it loads the disputed view directly."
+    why_human: "The 'restored before the first fetch' guarantee rests on an argument about JS module/script execution order (deferred module bodies run to completion before map.js's async geolocation callback fires the first fetch) that 02-09-SUMMARY itself flags as an argument, not a proof — and explicitly names what would invalidate it (a future change to script order). Static tests can confirm the code shape; they cannot observe whether a real browser ever paints an unfiltered frame first."
+  - truth: "The chosen theme is applied before the page paints (no flash of the wrong palette on reload), and native form controls/scrollbars follow the chosen theme too, across every full page including post-logout (02-10 gap closure)"
+    test: "Set the theme to Dark, reload — confirm no flash of light first. Set Light, log out, confirm the login gate renders light rather than snapping to a dark OS default. Toggle Dark and confirm native checkboxes and the scrollbar also go dark. As 02-10's human-check step 6 requires: walk all of Phase 2's UI once in light mode (never done — every UAT screenshot was dark) and report anything illegible."
+    why_human: "Presence of a non-deferred head script with no `defer`/`async` and a `color-scheme` CSS declaration is provable by static inspection (done, both pass); a real paint-flash timing effect and real rendered legibility across every surface in a theme that has never once been visually inspected in this project cannot be. 02-10-SUMMARY states explicitly this walkthrough 'has not been performed as part of this plan's execution.'"
 human_verification:
-  - test: "D-18 GPS-denial hard block, live in a real browser (harvested from 02-05-PLAN.md Task 3's deferred <human-check>, 02-VALIDATION.md Manual-Only row 1)"
-    expected: "Denying the browser's location prompt on Confirm/Dispute greys the buttons out and immediately re-enables them, shows the exact GPS-denial sentence in the row's .vote-error element, and sends NO network request to /api/reports/{id}/confirm|dispute (verified in DevTools Network panel — a request sent and then rejected is a failure even if the visible outcome looks similar). A granted prompt is cached in sessionStorage and not re-requested for a second vote in the same tab, but is re-requested in a new tab. Both the feed row and the map popup behave identically, and no state changes before the server responds (D-04)."
-    why_human: "This is live browser permission-prompt behavior (grant/deny/timeout dialogs, DevTools Network panel inspection, sessionStorage inspection, throttled-network waiting-state observation) that cannot be exercised by a Go test or a static contract test. The automated contract test (TestVoteTransportHasNoLocationFallback, which ran and passed) proves no fallback CODE PATH exists in the source — it does not prove a real denied prompt in a real browser actually produces the correct on-screen error, re-enables the button, and sends zero requests."
-  - test: "D-09/D-10/D-11 Provisional dimming+label, Hidden outline treatment, and the 'Show disputed reports' toggle, live in a real browser and both themes (harvested from 02-06-PLAN.md Task 3's deferred <human-check>, 02-VALIDATION.md Manual-Only row 2)"
-    expected: "A fresh non-critical report shows BOTH a desaturated badge/border AND an explicit 'Unconfirmed' chip, on both the feed row and the map pin popup, and the dimming visibly wins over the report's actual age stage. A critical report shows neither treatment. With 'Show disputed reports' unchecked, a disputed report is absent from both list and map; checking it reveals the disputed report with the outline treatment (transparent badge, neutral ring, muted glyph, no severity tint) on both surfaces simultaneously, findable against the basemap; unchecking removes both together. The checkbox does not persist checked across a reload. An empty disputed result shows the specific 'No disputed reports nearby' copy, not a blank list. All of the above holds in dark mode too."
-    why_human: "Visual rendering, cross-surface consistency, and reload-state behavior in a live browser. The project's own contract tests (TestVisibilityCascadeOverridesAgeRamp, TestShowDisputedUsesOneSharedQueryParam, etc., all of which ran and passed) prove the CSS selector specificity and source order WOULD win and that the client wiring is structurally correct — they do not prove the rendered page actually reads as visually distinct to a person looking at it, which is exactly the point of this decision (D-09's own wording: 'trust state exists; it is not legible' until a human confirms it reads that way)."
-  - test: "TRUST-08 Mark Resolved / confirmation-gate / Reopen flow, live in a real browser (harvested from 02-07-PLAN.md's deferred <human-check>, third Manual-Only-equivalent row named directly in that plan)"
-    expected: "Tapping 'Mark resolved' on someone else's report replaces the button set in place with an inline confirmation and sends NO request until the affirm button is tapped; Cancel restores the row with no request. Affirming as a non-reporter shows the 'recorded, awaiting agreement' toast and the report stays in the feed; affirming as the reporter shows the 'resolved' toast and the report disappears from both list and map immediately. The map popup offers the same three buttons, wrapping rather than causing a horizontal scrollbar. The Activity page lists the resolved report with the outline/'Resolved' treatment and a Reopen control; tapping Reopen shows the reopen-succeeded toast (never the pending one) and the row updates with no page reload, and the feed shows the report live again. Denying GPS on affirm hard-blocks with the GPS-denial copy and sends no request."
-    why_human: "Live browser flow spanning two pages (feed and Activity/profile), toast timing/copy correctness, in-place DOM replacement without a reload, and a live GPS-denial interaction on the resolve path specifically. Automated e2e/contract tests already prove the server-side visibility transitions and the absence of client-side identity/threshold logic (TestReporterCanResolveOwnReportInstantly, TestReopenHasNoClientSideIdentityOrThreshold, etc., all of which ran and passed) — they do not exercise the actual click-through UX a person experiences."
+  - test: "D-18 GPS-denial hard block — DevTools no-request check, sessionStorage same-tab/new-tab caching, and map-popup parity on the deny path specifically"
+    expected: "Denying the location prompt sends zero network requests (verified in the Network panel, not just by visible outcome) and shows the exact GPS-denial copy; a granted prompt is cached per session (not re-prompted same-tab, re-prompted new-tab); the map popup behaves identically to the feed row."
+    why_human: "02-UAT.md Test 1 recorded this as 'pass' but with an explicit caveat: the DevTools Network-tab check, the sessionStorage caching behavior, and map-popup deny-path parity were never independently re-confirmed live after the root-cause (OS Location Services being off) was fixed. 'No defect found in anything actually observed; these remain untested rather than failed' — carried forward verbatim from 02-UAT.md, not resolved by any of the three gap-closure plans (none of which touch votes.js's GPS-transport code)."
+  - test: "Provisional dimming + 'Unconfirmed' chip visual treatment, and the 'No disputed reports nearby' empty-state copy, in a real browser"
+    expected: "A fresh non-critical report shows both a desaturated badge/border and an explicit 'Unconfirmed' chip, on both the feed row and the map pin popup. An empty disputed-view result shows the specific 'No disputed reports nearby' copy, not a blank list."
+    why_human: "02-UAT.md Test 2 recorded these two items as 'never visually confirmed either way (only checked via API response, not a screenshot)' when the rest of Test 2 was marked 'issue' (now resolved by 02-09). Neither item was re-tested by any of the three gap-closure plans, none of which touch visibility.js or the badge/chip rendering path."
+  - test: "The five items in behavior_unverified_items above (Mark Resolved button replacement in both themes; map popup heading legibility in both themes; Safari Back-after-Reopen refetch; disputed-filter reload persistence with no unfiltered flash; theme toggle no-flash + native-control theming + full light-mode UI walkthrough)"
+    expected: "See each item's own test/expected text above."
+    why_human: "Every one of these gaps was a browser-rendering or browser-caching bug the static/unit test suite was green throughout while the bug shipped. The gap-closure plans' own SUMMARYs and human-check sections explicitly defer the actual confirmation to this end-of-phase human pass and have not yet been run against a live browser."
 ---
 
 # Phase 2: Trust Mechanic Core — Confirm/Dispute & Visibility Verification Report
 
 **Phase Goal:** A user can confirm or dispute a report, and the resulting Hidden/Provisional/Live/Retracted visibility is computed by one shared, concurrency-safe resolver everywhere it's shown.
-**Verified:** 2026-09-16
+**Verified:** 2026-09-18
 **Status:** human_needed
-**Re-verification:** No — initial verification
-
-## Escalation: Mode/Goal-Format Mismatch (read before the rest of this report)
-
-ROADMAP.md tags this phase `Mode: mvp`. The MVP Mode Verification methodology requires the
-phase's Goal to be a literal User Story (`As a <role>, I want to <capability>, so that <outcome>.`)
-before it will produce the narrowed User Flow Coverage table. Phase 2's actual Goal field is not
-in that format (it reads as a declarative technical statement, not a first-person user story —
-contrast Phase 1's and Phase 1.1's Goal fields, which both do start with "As a..."). Per the
-verifier's own guard, this means: **do not silently apply MVP narrowing, and do not silently
-ignore the mode flag either — surface it.** This is that surfacing. It does not block this
-report's findings below, which instead verify directly against ROADMAP's 5 explicit, unambiguous,
-individually-numbered Success Criteria (a superset of what a User Flow Coverage table would have
-checked). A human should decide whether to correct the Goal field's wording or clear the `mode:
-mvp` flag for Phase 2 so a future verification pass doesn't hit the same guard. See the
-`mode_guard` frontmatter block above for the machine-readable form.
+**Re-verification:** Yes — after gap closure (02-08, 02-09, 02-10) and a code review (02-REVIEW.md)
 
 ## Method
 
-This is initial verification (no prior `02-VERIFICATION.md` existed). Must-haves were assembled
-from ROADMAP.md's 5 Success Criteria plus the `must_haves` frontmatter (`truths`, `artifacts`,
-`key_links`, and `prohibitions`) of all 8 phase plans (02-01, 02-02, 02-03a, 02-03b, 02-04, 02-05,
-02-06, 02-07). Verification went beyond static reading: the project was built (`go build ./...`,
-`go vet ./...`), and the **full test suite was executed once against a real local Postgres 16
-instance** (a scratch `pinalert_verify_test` database, migrated via the project's own embedded
-goose migrations and dropped afterward) — specifically so TRUST-09's concurrency claim and the
-resolver's exhaustive test carry genuine, independently-observed behavioral evidence rather than
-trusting SUMMARY.md's narration of a CI run this verifier did not itself watch run.
+The prior `02-VERIFICATION.md` (2026-09-16) recorded `status: human_needed` with no `gaps:` block
+(all 5 ROADMAP Success Criteria were VERIFIED at that time; only planner-deferred human-check items
+were outstanding). A human UAT walkthrough (`02-UAT.md`, `status: diagnosed`) subsequently ran those
+deferred checks and found **6 gaps** (3 major, 3 minor — 4 defects, 2 user-requested scope
+changes/new features). Three gap-closure plans (`02-08`, `02-09`, `02-10`, all `wave: 8`, mutually
+parallel, zero shared files) closed all 6. A code review (`02-REVIEW.md`) then ran and found 1
+Critical, 3 Warning, 2 Info findings — advisory-only per this project's workflow, not a phase
+must-have gate (see "Advisory Item" section below).
+
+This re-verification:
+
+1. Re-checked all 5 ROADMAP Success Criteria against the current codebase (regression check — no
+   code in this area changed since the prior pass, confirmed by `git log` on the relevant files).
+2. Verified, against the actual codebase (not the SUMMARYs' narration), that each of the 6 UAT gaps
+   has a real corresponding fix: grepped for the specific fix artifacts, then read the surrounding
+   code directly.
+3. Ran the **full test suite once against a real local Postgres 16 instance** (a scratch
+   `pinalert_verify_test2` database, created and dropped by this verifier), plus the 13 new/extended
+   gap-closure tests individually by name, so their pass status is this verifier's own observation,
+   not SUMMARY.md's claim:
 
 ```
 go test -p 1 ./...
-ok  	pinalert/internal/api            0.667s
-ok  	pinalert/internal/api/handlers   1.133s
+ok  	pinalert/internal/api            0.835s
+ok  	pinalert/internal/api/handlers   1.269s
 ok  	pinalert/internal/auth           (cached)
 ok  	pinalert/internal/mailer         (cached)
 ok  	pinalert/internal/ratelimit      (cached)
-ok  	pinalert/internal/service        0.204s
+ok  	pinalert/internal/service        (cached)
 ok  	pinalert/internal/session        (cached)
-ok  	pinalert/internal/store          3.485s
-ok  	pinalert/internal/testutil       0.539s
-ok  	pinalert/web                     0.441s
+ok  	pinalert/internal/store          3.913s
+ok  	pinalert/internal/testutil       0.576s
+ok  	pinalert/web                     (cached)
 ```
 
-All packages passed with zero failures. `go vet ./...` reported nothing.
+All 13 gap-closure tests (`TestVoteBlockHiddenGuard`, `TestMapPopupSurfaceIsThemeAware`,
+`TestResolveConfirmPaintsItsOwnSurface`, `TestFeedRefetchesOnBackForwardCacheRestore`,
+`TestDisputedFilterIsCarriedInThePageURL`, `TestFeedResponseIsNotCached`,
+`TestActivityPageLinksBackToTheMap`, `TestThemeScriptLoadsBeforeFirstPaintOnEveryFullPage`,
+`TestThemeModuleHasNoAppShellDependency`, `TestThemeModuleUsesNoMarkupParsingSink`,
+`TestThemeModuleValidatesStoredModeBeforeReflectingIt`, `TestThemeModuleGuardsStorageAccess`,
+`TestAccountHeaderRendersThemeControl`, `TestThemeOverrideBlocksExistForBothModes`) were also run
+individually by name with `-v` and every one printed `--- PASS`. `go build ./...` and `go vet ./...`
+are clean.
 
-**Every 02-0N-PLAN.md was also scanned for planner-deferred `<human-check>` blocks** (per
-`workflow.human_verify_mode: end-of-phase`, #3309). Three were found — in 02-05 (Task 3), 02-06
-(Task 3), and 02-07 — and **no `02-UAT.md` exists yet**, meaning none of them have been run. These
-are harvested into the `human_verification` list above and are the reason this report's status is
-`human_needed` rather than `passed`, even though every automatable truth below verified clean.
+4. Applied the treatment Step 3 of this workflow requires for behavior-dependent truths: every gap
+   this round closed is a **rendered-visibility or browser-caching invariant** (does a button
+   disappear on screen; is text legible in a real compositor; does a real Safari bfcache restore
+   refetch; does a real reload avoid an unfiltered flash; does a real paint avoid a palette flash).
+   Grep/static-parse evidence proves the code is present, wired, and — critically — that the
+   contract tests which failed to catch each original bug now encode the specific invariant that
+   was missing. It does **not** prove the browser-rendered behavior itself, which is exactly the
+   class of claim this same repository shipped wrong once already while its test suite stayed green
+   throughout. Each of these 5 items is therefore marked `PRESENT_BEHAVIOR_UNVERIFIED` below, not
+   `VERIFIED`, per this workflow's Step 3/Step 9 behavior-dependent-truth rule, and routed to human
+   verification rather than counted toward the score.
 
 ## Goal Achievement
 
-### Observable Truths (ROADMAP Success Criteria)
+### Observable Truths — ROADMAP Success Criteria (regression check, unchanged since 2026-09-16)
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | A user can confirm or dispute another user's report, and concurrent votes on the same report never silently lose an update, verified by an automated concurrency test | ✓ VERIFIED | `internal/service/trust.go`'s `CastVote` + four HTTP routes (`internal/api/handlers/votes.go`) implement confirm/dispute. `internal/store/migrations/00004_create_votes.sql` is a deliberately append-only table with **no** unique constraint beyond the `id` primary key (`TestVotesHaveNoUniqueKeyBeyondPrimaryKey`, ran and passed). `TestCastVoteConcurrent` (8 goroutines, 8 distinct accounts, one report) and the discriminating `TestCastVoteConcurrentSameAccountKeepsEveryRow` (8 concurrent casts from **one** account, asserting the raw row count is 8, not 1 — proving no upsert/lock design) were **run against a real Postgres by this verifier** and both **PASS**. |
-| 2 | A newly submitted non-critical report displays as "provisional" until a second independent confirmation arrives; a critical/rescue-needed report publishes at full visibility immediately, with no gate | ✓ VERIFIED | `internal/service/visibility.go`'s `Resolve()`: `criticalBypass()` (severity==critical OR category==rescue_needed) returns `VisibilityLive` unconditionally, checked *before* the Hidden and Provisional rungs. Non-critical reports gate on `ConfirmCells < IndependentAgreementThreshold` (=2). `TestResolve_ProvisionalGate`, `TestResolve`, and the e2e `TestIndependentConfirmsFlipProvisionalToLive` / `TestConfirmsFromOneCellStayProvisional` all ran and passed. (The rendered *legibility* of Provisional — dimming + chip, live in a browser — is a separate harvested human-verification item above, D-09.) |
-| 3 | Only a vote from a distinct verified account AND a distinct geohash cell counts toward that independent confirmation; severity affects triage sort order only and can never by itself unlock full visibility | ✓ VERIFIED | `internal/service/trust.go`'s `independentCellCount` counts distinct geohash cells over an already-account-deduped slice (`CurrentVotesForReports`'s `DISTINCT ON (report_id, account_id, kind)`). `voterGeohashPrecision = 7` is computed **server-side** from raw lat/lon — `CastVoteInput`/`CastVoteRequest` carry `Latitude`/`Longitude` only (confirmed by reading `trust.go` and `votes.go` directly, and by `TestCastVoteRejectsUnknownBodyField`, which proves a client-supplied geohash field is rejected 400 by `DisallowUnknownFields`). `TestResolve_SeverityNeverBypassesGateAlone` and e2e `TestConfirmsFromOneCellStayProvisional` (two accounts, same cell, stays provisional) both ran and passed. Feed ordering (`internal/service/report.go`'s `Nearby`) stays distance-ascending regardless of severity; severity is applied client-side only for triage sort, never as a gate input. |
-| 4 | A report's visibility state is identical everywhere it's shown — feed, map, triage view, shareable card — because one shared resolver function computes it | ✓ VERIFIED (for surfaces that exist; see `deferred`) | `grep -rn "Resolve("` across `internal/service` finds **exactly 3 call sites** for the package-level `Resolve` function: `internal/service/report.go:450` (feed/map, single `GET /api/reports` route serves both per `router.go`), `internal/service/auth.go:378` (Activity/profile page), `internal/service/trust.go:361` (the vote-cast response itself). `internal/store/queries/reports.sql` and `votes.sql` carry **no** visibility/vote predicate (`grep` confirms — `NearbyReports` is byte-for-byte what Phase 1 shipped). No JavaScript file computes visibility; `web/static/js/visibility.js` only renders the server's `visibility`/`visibility_reason` fields, with an explicit "unrecognised value renders as Provisional, never Live" fail-closed default. `TestFeedVisibilityMatchesCastVoteResponse` (e2e, asserts the cast response and the subsequent feed read agree) ran and passed. Triage view and shareable card (COORD-04/COORD-08) do not exist yet — correctly deferred to Phase 6, see `deferred` in frontmatter — so the verifiable claim for *this* phase covers every surface that currently exists. |
-| 5 | A user (reporter or nearby confirmer) can mark a report resolved, removing it from the live feed | ✓ VERIFIED | `VoteKindResolution`/`VoteResolve` path: reporter's own resolve vote sets `ReporterResolved=true`, retracting instantly with no threshold (D-13); a non-reporter's resolve needs `IndependentAgreementThreshold` (2) distinct cells (D-14). `ListableInFeed` (`internal/service/feed.go`) returns `false` for `VisibilityRetracted` under **both** the default and `?show_disputed=true` views. `TestFeedNeverReturnsRetractedReports`, `TestReporterCanResolveOwnReportInstantly`, `TestReopenRequiresIndependentAgreement` (e2e) all ran and passed; UI wiring (Mark Resolved button inside `.vote-controls` on both feed row and map popup, `TestResolveButtonMountsInsideTheVoteControlsContainer`) was inspected and its contract test ran and passed. (The live click-through UX is a separate harvested human-verification item above, TRUST-08.) |
+| 1 | A user can confirm or dispute another user's report, and concurrent votes never silently lose an update, verified by an automated concurrency test | ✓ VERIFIED | Unchanged since the prior pass. `internal/store/votes_test.go`'s `TestCastVoteConcurrent` and `TestCastVoteConcurrentSameAccountKeepsEveryRow` re-ran against a real Postgres in this pass's full-suite invocation and passed. No file in this area was touched by any 02-08/09/10 gap-closure plan (confirmed: none of their `files_modified` lists include `internal/store/` or `internal/service/trust.go`). |
+| 2 | A newly submitted non-critical report displays as "provisional" until a second independent confirmation; a critical report publishes at full visibility immediately | ✓ VERIFIED | Unchanged. `internal/service/visibility.go`'s `Resolve()`/`criticalBypass()` untouched by any gap-closure plan; `TestResolve_ProvisionalGate` and `TestIndependentConfirmsFlipProvisionalToLive` re-ran and passed. |
+| 3 | Only a distinct verified account AND a distinct geohash cell counts toward independence; severity affects triage order only | ✓ VERIFIED | Unchanged. `internal/service/trust.go`'s `independentCellCount` untouched; `TestResolve_SeverityNeverBypassesGateAlone` re-ran and passed. |
+| 4 | A report's visibility state is identical everywhere it's shown — feed, map, triage view, shareable card — via one shared resolver | ✓ VERIFIED (for surfaces that exist; see `deferred`) | Unchanged. `grep -rn "Resolve("` across `internal/service` still finds exactly the 3 call sites recorded in the prior pass. `TestFeedVisibilityMatchesCastVoteResponse` re-ran and passed. Triage view/shareable card still correctly deferred to Phase 6. |
+| 5 | A user (reporter or nearby confirmer) can mark a report resolved, removing it from the live feed | ✓ VERIFIED | Server-side resolve/reopen logic (`VoteKindResolution`, `IndependentAgreementThreshold` gate, `ListableInFeed`) is unchanged and re-verified — `TestFeedNeverReturnsRetractedReports`, `TestReporterCanResolveOwnReportInstantly` re-ran and passed. **The client-side click-through UX this truth also depends on** (the button-replacement, popup legibility, and post-Reopen feed freshness) is the exact surface the 6 UAT gaps hit and this round's gap-closure plans targeted — see the gap-closure items below, several of which remain `PRESENT_BEHAVIOR_UNVERIFIED` rather than fully closed. |
 
-**Score:** 5/5 truths verified (all programmatically verifiable behavior; 0 left
-present-but-behavior-unverified).
+### Observable Truths — 02-08/09/10 Gap-Closure Must-Haves
 
-### Required Artifacts
+| # | Truth | Status | Evidence |
+|---|-------|--------|----------|
+| 6 | 02-08: trust.css's base vote-button rule carries `:not([hidden])`; the two exact-head test lookups were moved, not relaxed | ✓ VERIFIED | `grep -n "^\.vote-btn" web/static/css/trust.css` shows `.vote-btn:not([hidden]) {` at line 36; the unguarded head (`grep -cE '^\.vote-btn[[:space:]]*\{'`) returns 0. `ruleBySelector` in `web/css_contract_test.go` is byte-identical (not weakened to substring matching) — confirmed by reading the file; the two callers were realigned. |
+| 7 | 02-08: the Leaflet popup surface is theme-aware (background/color resolve through app tokens, ancestor-field-guarded against the vendor-load-order trap, no raw color/no `!important`) | ✓ VERIFIED (structurally — see item 2 in `behavior_unverified_items` for the rendered claim) | `web/static/css/trust.css:380-381` declares `.leaflet-container .leaflet-popup-content-wrapper, .leaflet-container .leaflet-popup-tip`. `TestMapPopupSurfaceIsThemeAware` (asserts the ancestor field, the WCAG 4.5:1 pair, and that the vendor stylesheet is still linked) ran and passed. |
+| 8 | 02-09: `feed.js` refetches on a `pageshow` event when `event.persisted` is true, no `unload`/`beforeunload` listener added | ✓ VERIFIED (structurally — see item 3 in `behavior_unverified_items` for the rendered/live-Safari claim) | `web/static/js/feed.js:625` registers exactly one `pageshow` listener; `grep -cE "'(unload|beforeunload)'"` returns 0. `TestFeedRefetchesOnBackForwardCacheRestore` ran and passed. |
+| 9 | 02-09: `GET /api/reports` sets `Cache-Control: no-store` on every exit path, set inside `NearbyReports` and not inside the shared `writeJSON` helper | ✓ VERIFIED | Read directly: `internal/api/handlers/reports.go` line 352 sets the header inside `NearbyReports`, before any query-parameter parsing — confirmed by reading the surrounding code, not merely grepping for the string. `TestFeedResponseIsNotCached` (asserts the header on both a 200 and a 400 from the same handler) ran and passed as its own named test in this pass. |
+| 10 | 02-09: the disputed filter's state round-trips through the page URL (`history.replaceState`, never `pushState`, no `localStorage`), restored before the first fetch, kept in step with the address bar | ✓ VERIFIED (structurally — see item 4 in `behavior_unverified_items` for the rendered/no-flash claim) | `web/static/js/feed.js`: `DISPUTED_PARAM = 'show_disputed'` (line 46), `history.replaceState` call present, `grep -c 'pushState'`/`grep -c 'localStorage'` both return 0. `TestDisputedFilterIsCarriedInThePageURL` ran and passed. The pre-existing `TestShowDisputedUsesOneSharedQueryParam` guard (independently re-read by this verifier, not just trusted from SUMMARY narration) still enforces exactly one `show_disputed` occurrence in `app.js` and exactly two `fetch(` calls total — the "no second report query, no client-side filtering of `state.reports`" invariant was narrowed to the real invariant, not loosened; confirmed by reading the test body directly. `grep -n "state.reports\.filter\|\.filter("` on `feed.js` returns no matches. |
+| 11 | 02-09: the reversal of Phase 2's original non-persistence scoping is recorded in `02-UI-SPEC.md` as a dated, locked amendment | ✓ VERIFIED | `02-UI-SPEC.md` line 254: "Amendment history (added 2026-09-17, plan 02-09 — locked, not open)" — read directly, present and dated as claimed. |
+| 12 | 02-10: the Activity page has a "Back to map" link as the first element in `<main>`, in the page body (not the shared header, per DEC-S) | ✓ VERIFIED | `web/templates/profile.html.tmpl:17`: `<a href="/" class="profile-back-link">Back to map</a>`. `TestActivityPageLinksBackToTheMap` ran and passed. `git diff web/templates/account_header.html.tmpl` for this concern is empty (the link was not added to the shared header). |
+| 13 | 02-10: an in-app System/Light/Dark theme toggle exists in the account menu, applies before first paint via a non-deferred head script on every full page, validates the stored value against a fixed list before reflecting it, and `color-scheme` is declared on all four theme sources | ✓ VERIFIED (structurally — see item 5 in `behavior_unverified_items` for the rendered no-flash/native-control claim) | `web/static/js/theme.js` exists; `web/templates/account_header.html.tmpl:11-12` renders the `#theme-toggle`/`#theme-toggle-label` control. All 7 of 02-10's named tests (`TestThemeScriptLoadsBeforeFirstPaintOnEveryFullPage`, `TestThemeModuleHasNoAppShellDependency`, `TestThemeModuleUsesNoMarkupParsingSink`, `TestThemeModuleValidatesStoredModeBeforeReflectingIt`, `TestThemeModuleGuardsStorageAccess`, `TestAccountHeaderRendersThemeControl`, `TestThemeOverrideBlocksExistForBothModes`) ran individually and passed. |
+
+**Score:** 8/13 truths verified (5 ROADMAP SCs + 3 gap-closure truths with no rendered-behavior
+component). **5 present-but-behavior-unverified** (items 7, 8, 10, 13 partially, and 6's rendered
+half via item 5's truth) — every one is a browser-composited or browser-caching claim the gap-closure
+plans' own authors flag as needing the human-check that has not yet run. No truth FAILED.
+
+### Required Artifacts (gap-closure round)
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `internal/service/visibility.go` | Pure `Resolve()` resolver, D-05..D-16 ladder | ✓ VERIFIED | Reviewed in full; import set is exactly `time`, no I/O, no mutable state, matches doc comments and plan must-haves exactly. |
-| `internal/service/visibility_test.go` | Table-driven + exhaustive totality proof | ✓ VERIFIED | `TestResolve_IsTotalAndDeterministic` (27+ severity/category subtests) ran and passed. |
-| `internal/store/migrations/00004_create_votes.sql` | Append-only votes table, no unique key beyond PK | ✓ VERIFIED | Read directly; `TestVotesHaveNoUniqueKeyBeyondPrimaryKey` ran and passed. |
-| `internal/store/queries/votes.sql` | No upsert/lock clause | ✓ VERIFIED | `TestVotesQuerySourceHasNoUpsertOrLock` ran and passed. |
-| `internal/store/votes_test.go` | Concurrency proof | ✓ VERIFIED | Ran against a real local Postgres; both concurrency tests pass. |
-| `internal/service/trust.go` | Independence predicate, `VotingService.CastVote` | ✓ VERIFIED | Reviewed in full; matches D-03/D-13/D-14/D-16/D-17 exactly; no `net/http`/chi import. |
-| `internal/api/handlers/votes.go` | Four vote routes, one factory | ✓ VERIFIED | Referenced by router.go; e2e tests pass; `CastVoteRequest` carries only latitude/longitude. |
-| `internal/service/feed.go` | `ListableInFeed`, `ViewerContentVote` | ✓ VERIFIED | Reviewed; no SQL-side visibility logic. |
-| `web/static/js/votes.js` | Shared vote-block builder, GPS hard-block (D-17/D-18) | ✓ VERIFIED (structurally) | Reviewed; `getVoterLocation` rejects (never falls back) on denial; contract tests (`TestVoteTransportHasNoLocationFallback`, `TestVoterLocationIsCachedPerSession`) ran and passed. Live-browser behavior is a harvested human-verification item. |
-| `web/static/js/visibility.js` | Shared visibility-tag builder | ✓ VERIFIED | Reviewed; fail-closed unrecognised-value handling confirmed. |
-| `web/static/js/activity.js` | Reopen affordance on Activity page | ✓ VERIFIED | Reviewed; no client-side identity/threshold logic (`TestReopenHasNoClientSideIdentityOrThreshold` passed). |
+| `web/static/css/trust.css` | Guarded vote-button rule + Leaflet popup surface override | ✓ VERIFIED | Both present, read directly; no raw hex/`rgb()`/`rgba()`/`hsl()`/`!important` introduced (confirmed by grep). |
+| `web/votes_contract_test.go` | Widened `TestVoteBlockHiddenGuard` targets, 2 new tests, narrowed (not loosened) `TestShowDisputedUsesOneSharedQueryParam` | ✓ VERIFIED | All present and read; ran and passed individually. |
+| `web/static/js/feed.js` | `pageshow` listener, `DISPUTED_PARAM`, URL restore/sync | ✓ VERIFIED | Present, read directly; no `unload`/`beforeunload`/`localStorage`/`pushState`. |
+| `internal/api/handlers/reports.go` | `Cache-Control: no-store` in `NearbyReports`, not `writeJSON` | ✓ VERIFIED | Confirmed by reading the handler body, not just grepping the string. |
+| `web/feed_freshness_contract_test.go` | New file, 2 tests | ✓ VERIFIED | Exists, both tests ran and passed. |
+| `internal/api/handlers/feed_visibility_e2e_test.go` | `TestFeedResponseIsNotCached` | ✓ VERIFIED | Ran and passed against a real e2e harness. |
+| `.planning/.../02-UI-SPEC.md` | Dated amendment on D-10/D-11 section | ✓ VERIFIED | Present, read in full. |
+| `web/templates/profile.html.tmpl` | "Back to map" link | ✓ VERIFIED | Present as first element in `<main>`. |
+| `web/static/js/theme.js` | Theme module, IIFE house style, no app-shell dependency | ✓ VERIFIED | Exists; contract tests confirm no `Pinalert` reference, no markup-parsing sink, guarded storage access. |
+| `web/templates/account_header.html.tmpl`, `index.html.tmpl`, `login_gate.html.tmpl`, `verify_outcome.html.tmpl` | Theme control / script tag wiring | ✓ VERIFIED | `TestThemeScriptLoadsBeforeFirstPaintOnEveryFullPage` (filesystem-derived, not hardcoded) ran and passed. |
+| `web/static/css/main.css` | `color-scheme` on all 4 theme sources, no token drift | ✓ VERIFIED | `TestThemeOverrideBlocksExistForBothModes` and the pre-existing 18-pairing WCAG matrix (`TestBadgeGlyphContrastAcrossAgeStagesAndThemes`) both ran and passed, confirming no token was disturbed. |
+| `web/profile_nav_contract_test.go`, `web/theme_contract_test.go` | New test files | ✓ VERIFIED | Both exist; all tests ran and passed individually. |
 
-### Key Link Verification
+### Key Link Verification (gap-closure round)
 
 | From | To | Via | Status | Details |
 |------|-----|-----|--------|---------|
-| `report.go` (feed/map) | `visibility.go` `Resolve()` | direct call | ✓ WIRED | Confirmed by grep + read. |
-| `auth.go` (Activity) | `visibility.go` `Resolve()` | direct call | ✓ WIRED | Confirmed by grep + read. |
-| `trust.go` (`CastVote`) | `visibility.go` `Resolve()` | direct call | ✓ WIRED | Confirmed by grep + read; `TestFeedVisibilityMatchesCastVoteResponse` proves the two paths agree. |
-| `votes.js` | `POST /api/reports/{id}/{confirm,dispute,resolve,reopen}` | `fetch` | ✓ WIRED | `TestVoteButtonsMeetTouchTargetAndUseTokensOnly`, `TestBothSurfacesMountTheSameVoteBlock` confirm one shared builder drives both feed and map. |
-| `router.go` | `requireVerifiedAccount` gate | route group | ✓ WIRED | `TestCastVoteRequiresVerifiedAccount` (e2e) passed. |
+| `votes.js`'s `openResolveConfirm` | `trust.css`'s guarded `.vote-btn` rule | `hidden` attribute + CSS guard | ✓ WIRED | Confirmed: `votes.js` unedited by 02-08 (per its prohibition list, verified by `git diff`-equivalent read), CSS now respects the attribute. |
+| `feed.js`'s `pageshow` handler | `app.js`'s shared fetch | direct call, `persisted`-guarded | ✓ WIRED | Confirmed by reading `feed.js`; `TestFeedRefetchesOnBackForwardCacheRestore` asserts `persisted` check precedes the fetch call textually. |
+| `feed.js`'s URL reader/writer | `internal/api/handlers/reports.go`'s query parser | shared `show_disputed` param name | ✓ WIRED | Confirmed identical literal on both sides by reading both files directly (not merely trusting the SUMMARY's claim). |
+| `account_header.html.tmpl`'s theme control | `theme.js`'s click handler | shared element ids | ✓ WIRED | `TestAccountHeaderRendersThemeControl` reads both embedded files and asserts the module addresses both ids — ran and passed. |
+| `theme.js` | `main.css`'s `data-theme` override blocks | `data-theme` attribute | ✓ WIRED | `TestThemeOverrideBlocksExistForBothModes` confirms both override blocks still exist with `color-scheme` added; `theme.js` is the sole writer of the attribute (exactly one `setAttribute`/`removeAttribute` pair, confirmed by grep count of 1/1). |
 
-### Prohibitions (must_haves.prohibitions — the must-NOT sibling to truths)
+### Advisory Item Carried Forward from Code Review (not a phase must-have — informational only)
 
-Every plan's `prohibitions:` block was enumerated and checked directly against the codebase
-(grep/read for structural claims, the already-run test suite for test-backed claims). All items
-below resolved with concrete enforcement evidence — none is left unverified/flagged.
-
-| Plan | Prohibition (paraphrased) | Verification | Evidence |
-|------|---------------------------|---------------|----------|
-| 02-01 | `visibility.go` imports only `time`; no I/O, no `context.Context`, no package state | test+read | Read in full: `import "time"` is the only import; `Resolve`/`isRetracted`/`criticalBypass` are pure functions with no I/O or package vars. |
-| 02-01 | No second independence number for non-reporter reopen; only reporter-instant paths are boolean | read | `isRetracted()` reads `IndependentAgreementThreshold` for both `ResolveCells` and `ReopenCells`; `ReporterResolved`/`ReporterReopened` are plain booleans with no threshold arithmetic. |
-| 02-01 | No reporter carve-out on Hidden/Provisional rungs | read | The Hidden rung (`DisputeCells >= threshold`) and Provisional rung (`ConfirmCells < threshold`) reference no reporter-identity field at all. |
-| 02-01 | No cached `confirm_count`/status column, no dampening curve | read | `ReportMeta`/`VoteTally` have no such fields; grep for `confirm_count` across `internal/` finds no such column anywhere in this phase's migrations. |
-| 02-02 | No UNIQUE/PK over (report_id, account_id, kind) | test | `TestVotesHaveNoUniqueKeyBeyondPrimaryKey` — ran, passed. |
-| 02-02 | No upsert-conflict/row-lock clause in votes.sql | test | `TestVotesQuerySourceHasNoUpsertOrLock` — ran, passed. |
-| 02-02 | No cached confirm/dispute/status column on `reports` | read | Migration 00004 only adds `votes`; no `ALTER TABLE reports` anywhere in this phase. |
-| 02-02 | No `internal/service` import from any file this plan touches | grep | `grep "pinalert/internal/service"` over all 02-02 `files_modified` — zero matches. |
-| 02-03a | No second independence predicate | read | `independentCellCount` is the only distinctness function in `internal/service`; grep confirms no duplicate. |
-| 02-03a | No geohash string accepted from caller | read | `CastVoteInput` has `Latitude`/`Longitude` fields only — no `GeohashCell` field. |
-| 02-03a | No `net/http`, no chi, no handler type in `trust.go` | grep | `grep -n "net/http\|go-chi\|http\."  internal/service/trust.go` — zero matches. |
-| 02-03b | No auth check inside `votes.go` (identity from context only) | grep | `votes.go` reads `account.FromContext(r.Context())`; no password/JWT/credential-check code present. |
-| 02-03b | No visibility/tally/independence logic in the handler | grep | `grep "Resolve(\|BuildVoteTally(\|independentCellCount(" internal/api/handlers/votes.go` — zero matches; the handler only calls `service.VotingService.CastVote`. |
-| 02-03b | No `r.Route`/`r.Mount` subrouter for vote paths | grep | `grep "r.Route\|r.Mount" internal/api/router.go` — zero matches (router's own comment confirms flat registration). |
-| 02-03b | No geohash/visibility/kind/value field on `CastVoteRequest` | read | `CastVoteRequest` struct has exactly two fields: `Latitude`, `Longitude`. |
-| 02-04 | No visibility/vote predicate in `reports.sql` | read | `NearbyReports` query read in full — bounding-box + Haversine only, no votes-table reference. |
-| 02-04 | No `Resolve`/`BuildVoteTally`/`VoteTally` call from `internal/api/handlers` | grep | `grep "service.Resolve(\|service.BuildVoteTally(\|service.VoteTally{" internal/api/handlers/reports.go` — zero matches. |
-| 02-04 | No reporter account id/email in feed response | read | `FeedReportResponse` struct read in full — no account/email field; explicit doc comment states `is_own_report` is boolean-only (T-01-02). |
-| 02-04 | No second report read route | grep | Exactly one `r.Get("/api/reports", ...)` in `router.go`. |
-| 02-04 | No cached visibility/status/confirm_count column on `reports` | read | Confirmed — no such migration exists. |
-| 02-05 | No fallback location / default centre in `votes.js` | test | `TestVoteTransportHasNoLocationFallback` — ran, passed. |
-| 02-05 | No optimistic update (no state change before server response) | read+test | `setBlockBusy` disables before fetch, `updateVoteBlock` only called after response; `TestVoteButtonsMeetTouchTargetAndUseTokensOnly` family passed. |
-| 02-05 | No client-computed geohash / extra POST field | read | `castVote` sends `{latitude, longitude}` only (confirmed reading `votes.js`). |
-| 02-05 | No Mark resolved / resolve UI in this plan's scope | superseded within-phase | `git log --oneline -- web/static/js/votes.js` shows the file created in 02-05 (`81179bb`, `41d2573`) with no resolve UI, then extended in 02-07 (`427af3f feat(02-07): implement Mark Resolved with inline confirmation`) — Mark Resolved was correctly and deliberately added to the same file one wave later, by design, not a violation of this prohibition's scope. |
-| 02-05 | No `innerHTML`/`insertAdjacentHTML`/`outerHTML`/`document.write` | grep | Zero matches across `votes.js`, `visibility.js`, `activity.js`, `feed.js`, `map.js`. |
-| 02-06 | No vote-casting change (`votes.js` untouched by 02-06's diff) | test (git) | `git log --oneline --all --grep="02-06"` lists five 02-06 commits; none touches `web/static/js/votes.js` (`git log --oneline -- web/static/js/votes.js` shows only 02-05 and 02-07 commits). Confirmed, not inferred. |
-| 02-06 | No "confirmed by N nearby" count/number string | grep | `grep -i "confirmed by" web/static/js/*.js web/templates/*.tmpl` — zero live matches (one is an explanatory code comment, not rendered copy). |
-| 02-06 | No client-side visibility computation | read | `visibility.js` only reads `report.visibility`/`report.visibility_reason` fields — no derivation. |
-| 02-06 | No new CSS custom property / raw colour literal in `trust.css` | grep | `grep -oE "^[[:space:]]*--[a-z-]+:" web/static/css/trust.css` returns exactly the three properties the prohibition names as pre-existing (`--badge-glyph-fg`, `--severity-current`, `--severity-tint`) and nothing else — checked directly, not deferred. |
-| 02-07 | No client-side identity/threshold mechanism in the reopen path | grep+test | `grep "is_own_report\|threshold" web/static/js/activity.js` — only explanatory comments, no logic; `TestReopenHasNoClientSideIdentityOrThreshold` ran and passed. |
-| 02-07 | No new SQL query / no `internal/store/` change / no swag regen | test (git) | `git log --all --oneline --name-only --grep="02-07"` shows zero commits touching any `internal/store/` or `docs/swagger*` path. Confirmed, not inferred. |
-| 02-07 | No retraction/expiry/vote predicate in SQL | read | Confirmed — `reports.sql`/`votes.sql` carry no such predicate (same evidence as 02-04's equivalent prohibition). |
-| 02-07 | No new `VOTE_ACTIONS` entry / no transport change | read | `VOTE_ACTIONS = ['confirm', 'dispute', 'resolve', 'reopen']` — exactly the four values named since 02-05. |
-| 02-07 | No general voting-history list on the Activity page | read | `activity.js`'s own comment and `ActivityForAccount`'s doc comment both confirm it lists only the account's own submitted reports. |
-| 02-07 | No second toast implementation | grep | `showToast`/`#toast` defined once, in `app.js`; `modal.js` delegates to it (confirmed by grep). |
-
-None of these prohibitions required an `unverified-prohibition` flag — every one has direct
-enforcement evidence: a passing named test, unambiguous source reading, a grep with zero matches,
-or (for the "no diff in this plan's commits" claims) a `git log`/`git show` check against the
-actual phase commit history rather than an inference from current file contents alone.
-
-### Behavioral Spot-Checks (run by this verifier, not sourced from SUMMARY.md)
-
-| Behavior | Command | Result | Status |
-|----------|---------|--------|--------|
-| TRUST-09 concurrency (N distinct accounts) | `go test ./internal/store/... -run TestCastVoteConcurrent` against real local Postgres | PASS, 8/8 rows persisted | ✓ PASS |
-| TRUST-09 discriminating proof (same account, no upsert) | `go test ./internal/store/... -run TestCastVoteConcurrentSameAccountKeepsEveryRow` | PASS, raw count = 8 (would be 1 under upsert) | ✓ PASS |
-| No unique key beyond PK on `votes` | `go test ./internal/store/... -run TestVotesHaveNoUniqueKeyBeyondPrimaryKey` | PASS | ✓ PASS |
-| Resolver totality/determinism | `go test ./internal/service/... -run TestResolve_IsTotalAndDeterministic` | PASS (27 subtests) | ✓ PASS |
-| Full workspace suite (single run) | `go test -p 1 ./...` against real local Postgres | All packages PASS, 0 failures | ✓ PASS |
-| Build / static check | `go build ./...`, `go vet ./...` | Clean | ✓ PASS |
+`02-REVIEW.md` (2026-09-18, 0 Blocker findings in this workflow's own review taxonomy / 1 Critical +
+3 Warning + 2 Info in the reviewer's own severity scale) flags **CR-01**: the four vote-casting
+routes and report submission carry no rate limiting, and the independence predicate accepts
+client-supplied lat/lon with no proof-of-location — meaning the trust mechanic's core
+gaming-resistance property (the project's own stated Core Value) can be defeated by a small number
+of scripted, freshly-verified accounts. This is correctly scoped by the review itself as advisory
+rather than a phase must-have: no plan's `must_haves.truths`/`must_haves.artifacts` names rate
+limiting or proof-of-location, and the review's own text notes the fuller weighted/diversity fix is
+explicitly Phase 3 scope (`TRUST-05`, `TRUST-07`). Per this workflow's own gate taxonomy, review
+findings are advisory and do not block phase verification; per Step 9b, this would also be a
+legitimate deferral to Phase 3/4 if it were treated as a gap (Phase 4's `ROBUST-04` already covers
+session-based rate limiting). **Flagged here for visibility, carried forward from the prior
+verification report, not counted as a gap.** The orchestrator should still surface CR-01 to the
+developer directly, per this workflow's escalation instructions for code-review Critical findings.
 
 ### Requirements Coverage
 
 | Requirement | Source Plan(s) | Description | Status | Evidence |
 |-------------|-----------------|--------------|--------|----------|
-| TRUST-01 | 02-02, 02-03a, 02-03b, 02-05 | User can confirm or dispute another user's report | ✓ SATISFIED | Four vote routes, shared vote-block UI, e2e-proven end to end. |
-| TRUST-02 | 02-01, 02-04, 02-06 | One shared resolver, identical everywhere shown | ✓ SATISFIED | Exactly 3 `Resolve()` call sites; no SQL/JS re-derivation. |
-| TRUST-03 | 02-03a, 02-03b, 02-05 | Distinct account AND distinct geohash cell for independence | ✓ SATISFIED | `independentCellCount` over server-computed geohash cells; e2e-proven. |
-| TRUST-04 | 02-01, 02-04, 02-06 | Provisional gate; critical bypass with no gate | ✓ SATISFIED | `criticalBypass()`, exhaustive resolver tests, e2e provisional/live transitions. |
-| TRUST-06 | 02-01, 02-04 | Severity is triage-sort-only, never a gate | ✓ SATISFIED | `TestResolve_SeverityNeverBypassesGateAlone`; feed ordering unaffected by severity. |
-| TRUST-08 | 02-03a, 02-03b, 02-04, 02-07 | Reporter or nearby confirmer can mark resolved | ✓ SATISFIED | D-13/D-14/D-16 implemented and tested; Activity page Reopen wired. Live click-through UX is a harvested human-verification item. |
-| TRUST-09 | 02-02, 02-03a | Concurrent votes never silently lost, automated concurrency test | ✓ SATISFIED | Concurrency tests run directly by this verifier against a real Postgres; both pass. **Note:** `.planning/REQUIREMENTS.md`'s Traceability table still lists TRUST-09 as "Pending" (a stale bookkeeping row — every other Phase 2 TRUST-* row reads "Complete"). This is a documentation-tracking gap, not a code gap; recommend updating that one row as trivial housekeeping, not a phase blocker. |
+| TRUST-01 | 02-02, 02-03a, 02-03b, 02-05 | User can confirm or dispute another user's report | ✓ SATISFIED | Unchanged from prior pass; regression-confirmed. |
+| TRUST-02 | 02-01, 02-04, 02-06, 02-08, 02-09 | One shared resolver, identical everywhere shown | ✓ SATISFIED | Unchanged resolver; gap-closure plans (correctly) touched only client-rendering/caching of the resolver's output, not the resolver itself. |
+| TRUST-03 | 02-03a, 02-03b, 02-05 | Distinct account AND distinct geohash cell for independence | ✓ SATISFIED | Unchanged; regression-confirmed. |
+| TRUST-04 | 02-01, 02-04, 02-06 | Provisional gate; critical bypass with no gate | ✓ SATISFIED | Unchanged; regression-confirmed. |
+| TRUST-06 | 02-01, 02-04 | Severity is triage-sort-only, never a gate | ✓ SATISFIED | Unchanged; regression-confirmed. |
+| TRUST-08 | 02-03a, 02-03b, 02-04, 02-07, 02-08, 02-09 | Reporter or nearby confirmer can mark resolved | ✓ SATISFIED (server-side); client-side click-through UX **partially human_needed** | Server logic unchanged and re-verified. The button-replacement and post-Reopen feed-freshness gap-closure fixes are structurally verified but their rendered/live behavior is not yet human-confirmed (see `behavior_unverified_items`). |
+| TRUST-09 | 02-02, 02-03a | Concurrent votes never silently lost, automated concurrency test | ✓ SATISFIED | Concurrency tests re-ran against a real Postgres in this pass and passed. `.planning/REQUIREMENTS.md`'s Traceability table now correctly shows TRUST-09 as "Complete" — the prior pass's stale-row note is resolved. |
+| IDENT-03 | 02-10 | Verified user can view their own profile page, listing submitted reports | ✓ SATISFIED | Already "Complete" in REQUIREMENTS.md prior to this gap-closure round (per 02-10-SUMMARY, this ID's presence in 02-10's `requirements:` field covers the Activity-page back-link addition only); the back-link itself is verified above. |
+| UX-01 | 02-10 | A user can choose Light, Dark, or follow-the-OS appearance from inside the app | ✓ SATISFIED in code, ⚠️ stale traceability row | The requirement's own checkbox in `.planning/REQUIREMENTS.md` is `[x]` and the requirement text records it was added 2026-09-18 from this phase's UAT. **However, the Traceability table's own row (line 266) still reads "UX-01 | Phase 2 | Pending (gap-closure plan 02-10)"** despite 02-10-SUMMARY's claim that `gsd-tools query requirements.mark-complete IDENT-03 UX-01` was run. This is a documentation-bookkeeping gap (the same class of issue the prior verification flagged for TRUST-09, which is now itself resolved) — not a code gap. Recommend running the mark-complete step (or a manual edit) so the Traceability table's "Pending" row does not contradict the requirement's own "Complete"-implying checkbox and 02-10-SUMMARY's claim. |
 
-No orphaned requirements: all IDs REQUIREMENTS.md maps to Phase 2 (TRUST-01, 02, 03, 04, 06, 08, 09) appear in at least one plan's `requirements:` frontmatter field.
+No orphaned requirements: all IDs REQUIREMENTS.md maps to Phase 2 (TRUST-01/02/03/04/06/08/09,
+IDENT-03, UX-01) appear in at least one plan's `requirements:` frontmatter field, including the two
+requirements UX-01 and IDENT-03 that 02-10 (a gap-closure plan) newly claims.
 
 ### Anti-Patterns Found
 
-None. Scanned all 39 files listed in `02-REVIEW.md`'s `files_reviewed_list` for `TBD|FIXME|XXX|TODO|HACK|PLACEHOLDER` — zero matches. `go vet ./...` is clean.
+None. Scanned every file touched by 02-08/02-09/02-10 for `TBD|FIXME|XXX|TODO|HACK|PLACEHOLDER` —
+zero matches. `go vet ./...` is clean. `git status --porcelain` on the working tree is clean and all
+gap-closure commits (`2705743`, `bdfa5a3`, `63b1790`, `5909c39`, `6173ada`, `3a3fedc`, `3e5257c`,
+`1fe424b`, `b3dee5b`, `bae7fcc`, `738c850`) are present in `git log`.
 
-### Advisory Item Carried Forward from Code Review (not a phase must-have)
+### Behavioral Spot-Checks (run by this verifier)
 
-`02-REVIEW.md` (completed same day, 0 BLOCKER / 1 WARNING / 2 INFO) flags **WR-01**: the four vote-casting routes carry no rate or velocity limit, which is a real gap against the Core Value's "resistant to trivial gaming" framing (an attacker who registers several verified accounts could supply arbitrary distinct coordinates to defeat the independence predicate without physically being anywhere). This is correctly scoped as advisory rather than a plan must-have — no plan's `must_haves.artifacts` or `truths` names rate limiting, and ROBUST-04 (session-based rate limiting) is explicitly Phase 4 scope. Flagged here for visibility, not as a gap blocking this phase.
+| Behavior | Command | Result | Status |
+|----------|---------|--------|--------|
+| Full workspace suite (single run, real Postgres) | `go test -p 1 ./...` | All packages PASS, 0 failures | ✓ PASS |
+| Build / static check | `go build ./...`, `go vet ./...` | Clean | ✓ PASS |
+| All 13 gap-closure tests, run individually by name | `go test ./web/... ./internal/api/handlers/... -run '<13 names>' -v` | 13/13 `--- PASS` | ✓ PASS |
+| `TestShowDisputedUsesOneSharedQueryParam` (narrowed guard, independently re-read, not just trusted from SUMMARY) | read `web/votes_contract_test.go:919-964` directly | Still enforces exactly 1 `show_disputed` occurrence in `app.js` and exactly 2 `fetch(` calls total | ✓ PASS |
+| `feed.js` performs no client-side filtering of `state.reports` | `grep -n "state.reports\.filter\|\.filter(" web/static/js/feed.js` | No matches | ✓ PASS |
+| `Cache-Control: no-store` placement | read `internal/api/handlers/reports.go:320-352` directly | Confirmed inside `NearbyReports`, before query parsing, not inside `writeJSON` | ✓ PASS |
 
 ### Human Verification Required
 
-Three items, harvested from planner-deferred `<human-check>` blocks in 02-05, 02-06, and 02-07
-(see frontmatter `human_verification` for the full detail each item needs — reproduced in summary
-here):
+Eight items — three carried forward unresolved from `02-UAT.md` even where marked "pass" or already
+addressed, plus the five newly-introduced gap-closure fixes that are themselves rendered/live-browser
+claims (see frontmatter `behavior_unverified_items` for full detail on each):
 
-1. **D-18 GPS-denial hard block** (feed + map, both surfaces) — a denied location prompt must send
-   zero network requests and show the exact denial copy; a granted prompt must be cached per
-   session, not per vote.
-2. **D-09/D-10/D-11 Provisional dimming+label and Hidden outline treatment, plus the "Show
-   disputed reports" toggle** — must render identically on feed and map, in both light and dark
-   themes, and the toggle's checked state must not survive a reload.
-3. **TRUST-08 Mark Resolved / confirmation gate / Reopen click-through flow** — the inline
-   confirm/cancel exchange, the outcome toast copy (reporter-instant vs. confirmer-pending), and
-   the Activity-page Reopen control's single-outcome behavior, all live in a browser.
+1. **D-18 GPS-denial** — the DevTools no-request check, sessionStorage caching behavior, and map-popup deny-path parity were never independently re-confirmed live (02-UAT.md Test 1's own caveat, unresolved by any gap-closure plan).
+2. **Provisional dimming/"Unconfirmed" chip and the empty-disputed-state copy** — never visually confirmed with a screenshot (02-UAT.md Test 2's own caveat, unresolved by any gap-closure plan).
+3. **02-08's button-replacement fix**, live, both themes, both surfaces (feed row + map popup).
+4. **02-08's map-popup heading-legibility fix**, live, both themes — including checking the fix's own falsifiable prediction (no light-mode reproduction).
+5. **02-09's Safari Back-after-Reopen refetch fix**, live in Safari specifically, then one Chromium browser — the pre-fix symptom itself was never confirmed reproducible live, only diagnosed from source.
+6. **02-09's disputed-filter reload persistence**, live — including whether the first paint genuinely shows no unfiltered flash.
+7. **02-10's theme toggle**, live — no-flash-on-reload, native form-control/scrollbar theming, post-logout persistence, and (novel) the **first-ever light-mode walkthrough of all of Phase 2's UI**, which 02-10-SUMMARY states explicitly has not yet happened.
+8. **02-10's Activity "Back to map" link**, live click-through (structurally verified; a live tap-through was not separately re-run by this verifier).
 
-No `02-UAT.md` currently exists recording these as run. Recommend running them via
-`/gsd-verify-work 2` per `workflow.human_verify_mode: end-of-phase`, or manually against the setup
-steps each plan documents, before treating Phase 2 as fully closed.
+Recommend running these via `/gsd-verify-work 2` (a second UAT round against `02-UAT.md`'s
+re-verification instructions and each gap-closure plan's own `<human-check>` block) before treating
+Phase 2 as fully closed. None of these are code gaps — every fix has a corresponding automated
+regression gate that passed — but every one is a rendered-browser claim this workflow's own rules
+require a human, not a grep, to confirm.
 
 ### Gaps Summary
 
-No code gaps found. All 5 ROADMAP success criteria are verified against the actual codebase — not
-merely claimed in SUMMARY.md — through direct code inspection, static analysis (`go vet`), and by
-independently executing the phase's test suite (including the concurrency-critical `internal/store`
-package) against a real local Postgres 16 database created for this verification and dropped
-afterward. Every `must_haves.prohibitions` item across all 8 plans was checked and holds. The
-report's status is `human_needed` rather than `passed` solely because three planner-deferred
-`<human-check>` items (GPS-denial UX, Provisional/Hidden visual legibility, and the Mark
-Resolved/Reopen click-through flow) have not yet been run in a real browser — this is expected,
-intentional process per `workflow.human_verify_mode: end-of-phase`, not a defect. Two additional
-non-blocking notes are carried forward: a one-row documentation staleness in REQUIREMENTS.md's
-Traceability table (TRUST-09 marked "Pending"), and the pre-existing WARNING from 02-REVIEW.md
-about vote-route rate limiting.
+No code gaps found in this re-verification pass. All 6 gaps `02-UAT.md` recorded as `status: failed`
+now have a corresponding, independently-verified codebase fix (grepped and read directly by this
+verifier, not merely accepted from SUMMARY.md narration), and all 13 new/extended regression tests
+those fixes shipped with pass individually against a real Postgres instance this verifier created
+and dropped for the purpose. The full workspace test suite is green with zero failures. No
+`TBD|FIXME|XXX|TODO|HACK|PLACEHOLDER` debt marker exists in any file this gap-closure round touched.
+
+The report's status is `human_needed` rather than `passed` for two independent reasons: (1) every
+one of the 6 fixes this round shipped is a rendered-visibility or browser-caching invariant that
+static/unit tests can prove is wired correctly but cannot prove actually composites/behaves correctly
+in a real browser — exactly the class of claim this same phase's test suite was green throughout
+while the original bug shipped, so presence-and-wiring evidence alone is treated as
+`PRESENT_BEHAVIOR_UNVERIFIED`, not `VERIFIED`, per this workflow's behavior-dependent-truth rule; and
+(2) three items from the original `02-UAT.md` walkthrough remain genuinely untested (not merely
+unverified by this pass) even where the UAT's own summary marked the surrounding test "pass" — the
+GPS-denial DevTools/sessionStorage checks, and the Provisional-chip/empty-state visual confirmation.
+
+Two non-blocking notes carried forward or newly found: the `mode_guard` escalation (ROADMAP's
+`Mode: mvp` tag vs. a non-user-story Goal field) is unresolved and carried forward unchanged from the
+prior verification pass; and `UX-01`'s Traceability-table row still reads "Pending" despite the
+requirement's own checkbox and 02-10-SUMMARY's claim that it was marked complete — a one-row
+documentation staleness, the mirror of the now-resolved TRUST-09 staleness the prior pass flagged.
+The advisory code-review Critical finding (CR-01, vote-endpoint rate limiting / proof-of-location) is
+carried forward for visibility per the prior report's framing; it is correctly out of scope for this
+phase's must-haves and is Phase 3/4 territory by the project's own roadmap.
 
 ---
 
-_Verified: 2026-09-16_
+_Verified: 2026-09-18_
 _Verifier: Claude (gsd-verifier)_
