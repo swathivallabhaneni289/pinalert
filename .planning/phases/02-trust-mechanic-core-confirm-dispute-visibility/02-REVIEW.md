@@ -1,9 +1,10 @@
 ---
 phase: 02-trust-mechanic-core-confirm-dispute-visibility
-reviewed: 2026-09-16T00:00:00Z
+reviewed: 2026-09-18T08:56:15Z
 depth: standard
-files_reviewed: 45
+files_reviewed: 55
 files_reviewed_list:
+  - .planning/phases/02-trust-mechanic-core-confirm-dispute-visibility/02-UI-SPEC.md
   - cmd/server/main.go
   - docs/docs.go
   - docs/swagger.json
@@ -36,6 +37,9 @@ files_reviewed_list:
   - internal/store/votes_test.go
   - internal/testutil/db.go
   - web/account_menu_contract_test.go
+  - web/feed_freshness_contract_test.go
+  - web/profile_nav_contract_test.go
+  - web/static/css/auth.css
   - web/static/css/main.css
   - web/static/css/modal.css
   - web/static/css/trust.css
@@ -44,152 +48,152 @@ files_reviewed_list:
   - web/static/js/feed.js
   - web/static/js/map.js
   - web/static/js/modal.js
+  - web/static/js/theme.js
   - web/static/js/visibility.js
   - web/static/js/votes.js
   - web/template_contract_test.go
+  - web/templates/account_header.html.tmpl
   - web/templates/index.html.tmpl
+  - web/templates/login_gate.html.tmpl
   - web/templates/profile.html.tmpl
+  - web/templates/verify_outcome.html.tmpl
+  - web/theme_contract_test.go
   - web/votes_contract_test.go
 findings:
-  critical: 0
-  warning: 1
+  critical: 1
+  warning: 3
   info: 2
-  total: 3
+  total: 6
 status: issues_found
 ---
 
-# Phase 2: Code Review Report
+# Phase 02: Code Review Report
 
-**Reviewed:** 2026-09-16
+**Reviewed:** 2026-09-18T08:56:15Z
 **Depth:** standard
-**Files Reviewed:** 45
+**Files Reviewed:** 55
 **Status:** issues_found
 
 ## Summary
 
-This phase implements the confirm/dispute/resolve/reopen trust mechanic: the shared
-`service.Resolve` visibility resolver (`internal/service/visibility.go`), the independence
-predicate and vote tally builder (`internal/service/trust.go`), the vote-casting HTTP surface
-(`internal/api/handlers/votes.go`), and the three read paths that consume the resolver
-(`ReportService.Nearby` in `internal/service/report.go:450`, `AuthService.ActivityForAccount` in
-`internal/service/auth.go:378`, and `VotingService.CastVote` in `internal/service/trust.go:361`).
+This phase implements the confirm/dispute/resolve/reopen trust mechanic: a single
+`Resolve` function (`internal/service/visibility.go`) that is the sole authority for a
+report's visibility, fed by `BuildVoteTally` (`internal/service/trust.go`), exposed
+through four vote endpoints (`internal/api/handlers/votes.go`) and a read path
+(`GET /api/reports`, `GET /profile`) that both defer to the same resolver. The Go-side
+architecture is unusually disciplined: `Resolve` is pure and exhaustively table-tested
+(including a ~27k-combination totality/determinism matrix), the append-only `votes`
+table is proven lock-free and race-safe against a real Postgres, session-id/account-id
+leak controls are asserted by reflection and e2e string-search, and the client JS
+(`votes.js`, `visibility.js`) is covered by static contract tests for the XSS-sink
+discipline, the D-18 "no GPS fallback for voting" rule, and CSS specificity traps.
 
-**The core trust logic holds up under adversarial reading.** I traced the single-resolver-
-everywhere invariant (TRUST-02/T-02-04) across all three read/write paths and found no
-divergent visibility computation anywhere — no read path re-derives visibility in SQL, in a
-handler, or in JavaScript; every one of them calls `service.Resolve` with a tally built by the
-one `BuildVoteTally` function. I traced the independence predicate (distinct account, guaranteed
-by `CurrentVotesForReports`' `DISTINCT ON (report_id, account_id, kind)`, combined with distinct
-geohash cell via `independentCellCount`) through `Resolve`'s five-rung ladder, the D-13/D-16
-reporter-instant resolve/reopen symmetry, and the D-08 non-latching reversibility property, and
-confirmed the implementation matches every documented decision (D-05 through D-16) with no
-off-by-one or ordering defect. The `votes` table is deliberately unique-key-free and the append-
-only design is exercised by a real concurrent-write test (`TestCastVoteConcurrentSameAccountKeepsEveryRow`)
-that would fail under an upsert reintroduction — a stronger-than-typical proof for TRUST-09.
-`internal/service/visibility_test.go`'s `TestResolve_IsTotalAndDeterministic` exhaustively checks
-~27.6k tally combinations for totality, determinism, and the exact retraction predicate, which
-gives high confidence the resolver itself is correct. The D-16 reporter-instant-reopen path is
-enforced server-side only (`BuildVoteTally`'s identity check against `ReportVoteContext`'s
-`reporter_account_id`); `web/static/js/activity.js` renders the reopen control from a
-server-rendered `data-can-reopen` hook alone and asserts no client-side identity or threshold
-logic, matching the server.
+The one place this discipline does not reach is the thing the phase's stated Core
+Value is actually about: whether the confirm/dispute mechanic is "resistant to trivial
+gaming." As implemented, the independence predicate can be satisfied by a small,
+easily scripted number of freshly-verified email accounts supplying self-reported,
+unverified coordinates, with no rate limiting on the vote-casting endpoints themselves
+to raise the cost of doing so. That is this review's one Critical finding; the
+remaining findings are narrower robustness and code-quality items.
 
-I found no BLOCKER-level defects. One WARNING is worth fixing before this ships more broadly:
-the vote-casting endpoints carry no rate or velocity limiting, which is a real gap given the
-`votes` table's deliberately-unbounded append-only design and the fact that the independence
-predicate's cell diversity is rooted in a client-supplied GPS coordinate the server cannot
-verify. Two INFO items are minor consistency/robustness notes.
+## Critical Issues
+
+### CR-01: The independence predicate is trivially gameable — no proof-of-location, no per-account/per-session throttling on vote endpoints
+
+**File:** `internal/service/trust.go:290-363` (`VotingService.CastVote`), `internal/api/router.go:161-203` (gated route group), `internal/api/handlers/votes.go:103-184` (`CastVote` handler)
+
+**Issue:**
+`CastVote` computes the voter's geohash cell directly from `CastVoteInput.Latitude`/`Longitude` (trust.go:337), which is copied verbatim from the client-supplied JSON body (`votes.go:136-137`, `web/static/js/votes.js` `castVote()`). There is no server-side check that the coordinates are plausible for the caller (no IP-geolocation cross-check, no device attestation, no proof the browser's own geolocation API — rather than a hand-crafted `fetch` call — produced the value). `IndependentAgreementThreshold` is 2 (`visibility.go:45`), so exactly **two** accounts voting from two fabricated coordinate pairs ≥153m apart (`voterGeohashPrecision = 7`, `trust.go:31`) are sufficient to:
+- flip any report to `live`/`confirmed` (two fake confirms),
+- retract any report (two fake resolves, or one if the attacker is also the reporter — `D-13` instant path),
+- hide any report behind a dispute (two fake disputes, since `DisputeCells > ConfirmCells` is satisfied at 2-vs-0).
+
+The only friction on minting a new "independent" voter is `POST /api/auth/request-link`: email-only verification (no CAPTCHA, no phone/SMS), a 45s per-address cooldown, and a per-IP token bucket of burst 5 + 1 refill/60s (`router.go:154-159`, `cmd/server/main.go:37-47`). That budget alone permits roughly one new verified account per minute per source IP (~60/hour), far more than the 2 accounts needed to control any single report's state, and is trivially multiplied with disposable-inbox services or multiple egress IPs — neither of which requires any sophistication.
+
+Compounding this, **none of the four vote endpoints (`/confirm`, `/dispute`, `/resolve`, `/reopen`) or `POST /api/reports` carry any rate limiting at all** — `router.go`'s gated `r.Group` (lines 163-203) applies only `requireVerifiedAccount`; the per-IP limiter (`ratelimit.NewPerIP`) is wired exclusively to `/api/auth/request-link` (line 158-159). Once an attacker holds two verified sessions, they can cast unlimited confirm/dispute/resolve/reopen requests per second against any report id (ids are sequential and guessable) with no throttle at all.
+
+Taken together: the mechanic whose entire stated purpose is to let a reader trust "confirmed by N independent nearby confirmations" can be fully manufactured, for any report, by an unauthenticated script that only needs to (a) receive two emails and click two links, and (b) send two POST bodies with fabricated lat/lon. Nothing in this phase raises that cost above "trivial."
+
+This is flagged as Critical because it is exactly the property `CLAUDE.md` names as this project's Core Value ("the confirm/dispute trust mechanic ... must work correctly and be resistant to trivial gaming"), and the code as shipped in this phase does not meet that bar — not as an edge case, but as the default, unmitigated path for every report in the system. (The project's own longer-term plan defers weighted/diversity scoring to Phase 3 — `TRUST-05`, `TRUST-07` — which is a reasonable place to land the *full* fix; the finding here is that Phase 2 ships with *zero* mitigating friction in the meantime, not merely an "unfinished" weighting scheme.)
+
+**Fix (incremental, does not require Phase 3's full scoring model):**
+```go
+// 1. Rate-limit the vote endpoints per verified account, mirroring the
+//    existing per-IP limiter already wired to request-link:
+requestLinkLimiter := ratelimit.NewPerIP(requestLinkLimit.Every, requestLinkLimit.Burst)
+voteLimiter := ratelimit.NewPerAccount(5*time.Second, 3) // e.g. burst 3, 1/5s refill
+
+r.Group(func(r chi.Router) {
+    r.Use(requireVerifiedAccount(deps.Sessions))
+    r.With(voteLimiter.Middleware()).Post("/api/reports/{id}/confirm", handlers.CastVote(deps.Votes, service.VoteKindContent, service.VoteConfirm))
+    // ...same for dispute/resolve/reopen
+})
+
+// 2. Raise the cost of minting a new "independent" voter: add a CAPTCHA
+//    (e.g. free Cloudflare Turnstile) to POST /api/auth/request-link, and/or
+//    tighten the per-IP budget materially below 60/hour.
+
+// 3. Treat a voter's geohash cell as a weaker signal than the current binary
+//    "counts as 1" model: e.g. discount cells from accounts verified in the
+//    last N minutes, or require the CONFIRMED report to have survived past
+//    some minimum account age — pulling a slice of Phase 3's planned
+//    reliability decay (TRUST-07) forward as a cheap interim control rather
+//    than shipping this phase with no control at all.
+```
 
 ## Warnings
 
-### WR-01: Vote-casting endpoints carry no rate or velocity limit
+### WR-01: `POST /api/reports` (report submission) also carries no rate limiting
 
-**File:** `internal/api/router.go:154-191`
-**Issue:** The router's only rate limiter (`ratelimit.NewPerIP`, DEC-I: burst 5, one token per
-60s) is scoped via `r.With(requestLinkLimiter.Middleware())` to `POST /api/auth/request-link`
-alone (line 159). The four vote routes registered immediately below it — `POST
-/api/reports/{id}/confirm|dispute|resolve|reopen` (lines 188-191) — carry no limiter of any
-kind, only the `requireVerifiedAccount` gate.
+**File:** `internal/api/router.go:161-203`, `internal/api/handlers/reports.go:241-289`
 
-This matters more here than it would for an ordinary write endpoint because of two properties
-this phase deliberately built:
-1. `votes` has no unique key beyond its `id` primary key (migration `00004_create_votes.sql`,
-   proven at the database level by `TestVotesHaveNoUniqueKeyBeyondPrimaryKey`) — every POST to
-   a vote route appends a new row regardless of whether it duplicates the caller's own standing
-   vote. A single verified account can grow this table without bound against a single report at
-   essentially no cost (3 DB round trips per call: `ReportVoteContext`, `InsertVote`,
-   `CurrentVotesForReports` — see `internal/service/trust.go:290-363`).
-2. The independence predicate's "distinct geohash cell" half is computed server-side from a
-   client-supplied `latitude`/`longitude` pair (`CastVoteInput`, `internal/service/trust.go:337`)
-   that the server has no way to corroborate against the account's actual location. A caller who
-   controls several verified accounts (each requiring only an email address, not a payment or
-   phone verification) can supply an arbitrary distinct coordinate per account and defeat the
-   independence predicate's "resistant to trivial gaming" goal (this Core Value is the phase's
-   own named design target) without needing to physically be anywhere — nothing rate-limits how
-   many distinct-cell votes one IP or one burst of accounts can cast against one report.
+**Issue:** Like the vote endpoints, report submission is gated only by `requireVerifiedAccount`; no per-account or per-IP limiter is applied. A single verified session can flood the feed with reports (each up to 64 KiB, `maxSubmitBodyBytes`) at line rate, which is both a resource-exhaustion vector and, since triage ordering and the empty-state UX depend on the feed being a small, meaningful list, a direct usability/DoS risk during exactly the disaster scenario this app is built for (an attacker or a malfunctioning client script drowning out real reports).
 
-Neither of these is a correctness bug in the resolver itself — `Resolve` and `BuildVoteTally`
-do exactly what they are specified to do given their inputs. But the phase's stated goal is
-resistance to *trivial* gaming, and right now the only friction on scaling either attack is the
-magic-link email flow's own cooldown (`ResendCooldown`, 45s per address) — there is nothing that
-throttles vote volume once an account is verified.
+**Fix:** Apply a per-account (or per-session) token-bucket limiter to `POST /api/reports`, analogous to the existing per-IP limiter on `/api/auth/request-link`. A generous budget (e.g. 1 report every few seconds, burst 3) would not meaningfully impede a genuine reporter while blocking scripted flooding.
 
-**Fix:** Add a per-account (and/or per-IP) token-bucket limiter scoped to the four vote routes,
-mirroring the existing `r.With(...)` pattern used for `/api/auth/request-link`:
-```go
-voteLimiter := ratelimit.NewPerIP(1*time.Second, 10) // or per-account, keyed on acc.ID
-r.With(voteLimiter.Middleware()).Post("/api/reports/{id}/confirm", handlers.CastVote(...))
-// ...repeat for dispute/resolve/reopen, or wrap the whole sub-group
-```
-At minimum, consider capping the number of *distinct geohash cells* one account can contribute
-across recent votes in a short window, since that is the specific signal the independence
-predicate depends on and the specific one a rate limiter alone does not fully address.
+### WR-02: `CastVote`'s voter-location cache has no staleness or plausibility check beyond the initial GPS read
+
+**File:** `web/static/js/votes.js:91-149` (`getVoterLocation`)
+
+**Issue:** Per D-17, the voter's coordinates are read from the browser's geolocation API once per browser session and then cached in `sessionStorage` for every subsequent vote in that tab. This is a deliberate UX choice (avoid re-prompting), but it means a single genuine GPS read early in a session is reused indefinitely for votes cast much later and potentially from a different physical location (the voter has moved), silently feeding a stale cell into the independence predicate for the rest of the session. This is not a security bug in the adversarial sense (a legitimate voter isn't "gaming" anything), but it does mean the predicate's accuracy degrades over a session with no visible signal to the voter or the product that this has happened.
+
+**Fix:** Consider re-validating the cached coordinate's age (e.g. re-prompt after N minutes, or on next `getCurrentPosition` opportunistically refresh the cache) rather than caching for the lifetime of the tab unconditionally. Low priority relative to CR-01/WR-01, but worth tracking alongside the Phase 3 reliability work since it affects the same independence signal.
+
+### WR-03: Dead/unreachable outcome branches ship in the vote-response copy layer with no caller that can exercise them
+
+**File:** `web/static/js/votes.js:404-421` (`resolutionOutcomeMessage`), `61-82` (`REOPEN_PENDING_TOAST`, `REOPEN_BUTTON_LABEL`/`_IN_FLIGHT` for the reopen half)
+
+**Issue:** `resolutionOutcomeMessage`'s `reopen` branch and `REOPEN_PENDING_TOAST` are, by the module's own doc comments, unreachable from any UI this phase ships — the only caller of `castVote('reopen', ...)` is `activity.js`, which hard-codes its own toast and never calls `resolutionOutcomeMessage`. The code is deliberately retained "for API-consistency," which is a defensible call, but it means this file now carries logic with no test or runtime path that can ever select it (a future non-reporter reopen UI would need to be added and wired through before this branch does anything). This is a maintainability/quality note rather than a functional bug: an untested, unreachable branch is exactly the kind of code that silently rots (e.g., a future edit to the resolve-half logic could break the reopen-half symmetry with no red test to catch it, since nothing calls it).
+
+**Fix:** Either add a unit test that calls `PinalertVotes.resolutionOutcomeMessage('reopen', ...)` directly (cheap, and it already exists as an exported function — `window.PinalertVotes.resolutionOutcomeMessage`) so the symmetry is at least pinned by a test even though no UI reaches it yet, or drop the unreachable branch until a non-reporter-facing reopen surface actually ships.
 
 ## Info
 
-### IN-01: `ActivityForAccount` and `Profile` read the wall clock twice for one page render
+### IN-01: `activity.js` never releases `reopenBlocks` map entries after a successful reopen
 
-**File:** `internal/service/auth.go:361`, `internal/api/handlers/auth.go:421`
-**Issue:** `ActivityForAccount` captures `now := time.Now().UTC()` to pass into `Resolve` (whose
-`now` parameter is currently unused — see `visibility.go`'s own doc comment), and the `Profile`
-handler separately captures `now := time.Now()` a few instructions later to compute
-`CanReopen`'s `row.ExpiresAt.After(now)` check (`internal/api/handlers/auth.go:376`). These are
-two independent live-clock reads for what is conceptually one render. Go's `time.Time`
-comparisons are correct regardless of location, so this is not a live bug today (the drift
-between the two calls is microseconds, and `Resolve` ignores its `now` argument entirely in
-Phase 2), but the moment `now` becomes load-bearing in `Resolve` for Phase 3's decay scoring
-(TRUST-07, flagged in `visibility.go`'s own comment as the reason the parameter exists), a
-`CanReopen` gate computed against a *different* clock read than the one `Resolve` used for
-`Visibility` becomes a real (if narrow) source of disagreement between the two.
-**Fix:** Thread a single `now time.Time` from the `Profile` handler down into
-`ActivityForAccount` (or have `ActivityForAccount` return the `now` it used alongside its
-`[]ActivityReport`), so the visibility decision and the reopen-eligibility decision are provably
-computed against the same instant. Low priority for Phase 2; worth doing before Phase 3 wires up
-time-based decay.
+**File:** `web/static/js/activity.js:26-30, 145-159`
 
-### IN-02: `newProfileReport`'s `CanReopen` duplicates an expiry rule that lives nowhere else, with no shared constant or test spanning both call sites
+**Issue:** `onReopenClick`'s success path removes the `.vote-controls`/`.vote-error` DOM nodes (`block.controls.remove()`) once the report is no longer retracted, but never deletes the corresponding entry from the module-level `reopenBlocks` map (`reopenBlocks[row.dataset.reportId]`). The stale reference is harmless in practice (the delegated click listener re-checks `row.dataset.reportId` and the button that would trigger it is gone from the DOM), but it's an avoidable minor leak/inconsistency between the map's keys and what's actually still interactive.
 
-**File:** `internal/api/handlers/auth.go:376`
-**Issue:** `canReopen := visibility == service.VisibilityRetracted && row.ExpiresAt.After(now)`
-encodes a real, load-bearing business rule (a reopen on an expired report 409s at
-`VotingService.CastVote`'s step 4, `internal/service/trust.go:326-332`) purely in a handler-
-layer boolean, duplicating the *meaning* of that check without sharing any code or constant with
-it. The two are proven consistent today only by two separate, non-adjacent tests
-(`TestProfileWithholdsReopenOnAnExpiredRetractedReport` in `activity_e2e_test.go` and
-`TestCastVoteOnExpiredReportIsRejected` in `votes_e2e_test.go`), not by a shared implementation.
-This is not a bug — the current behavior is correct and the doc comment above `newProfileReport`
-explains the reasoning clearly — but it is exactly the kind of two-copies-of-one-decision
-pattern that this phase's own commentary elsewhere (e.g. `criticalBypass`'s doc comment:
-"deliberately one method rather than two copies that could drift apart") identifies as a risk
-worth naming when it appears.
-**Fix:** Consider exposing a small `service` helper (e.g. `func CanVoteResolution(expiresAt,
-now time.Time) bool`) that both `VotingService.CastVote`'s expiry check and
-`newProfileReport`'s `CanReopen` computation call, so a future change to the expiry rule (e.g.
-scoping it differently per vote kind, which `trust.go`'s own comment flags as a currently-true
-but non-obvious constraint) cannot update one call site and silently miss the other.
+**Fix:**
+```js
+if (updated.visibility !== PinalertVotes.RETRACTED_VISIBILITY_SLUG) {
+  block.controls.remove();
+  block.error.remove();
+  delete reopenBlocks[row.dataset.reportId];
+}
+```
+
+### IN-02: `newSwaggerTestRouter`'s `api.Deps` omits `Votes`, which is fine today but relies on an implicit "never invoked" contract with no compile-time guard
+
+**File:** `internal/api/handlers/swagger_test.go:66-72`
+
+**Issue:** `api.Deps{Reports: service.NewReportService(nil), ...}` leaves `Votes` as its zero value (`nil *service.VotingService`). `handlers.CastVote(deps.Votes, ...)` captures that `nil` pointer in a closure at router-construction time; the test never exercises `/api/reports/{id}/confirm` etc., so this is currently safe, but it is safe only because no test in this file happens to hit those routes — there is no assertion (and none is easy to add) that would fail loudly if a future test in this file *did* accidentally drive a vote route and hit a nil-pointer dereference inside `VotingService.CastVote`. This is the same pattern `router.go`'s own doc comment calls out as intentionally permissive ("a `Deps{}` literal that omits it still compiles"), so this is a note for awareness rather than a defect to fix now.
+
+**Fix:** No action required; flagging only so a future contributor extending `swagger_test.go` to cover the vote routes knows to also construct a real (or fake-backed) `VotingService` first.
 
 ---
 
-_Reviewed: 2026-09-16_
+_Reviewed: 2026-09-18T08:56:15Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
