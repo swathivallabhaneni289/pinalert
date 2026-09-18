@@ -14,6 +14,16 @@
  */
 
 :root {
+  /* color-scheme, declared on all four theme sources in this file (plan
+     02-10): without it, a reader who chooses an explicit theme gets the
+     app's own colours but native form controls, scrollbars and other
+     browser-painted UI left on the OS palette — a visibly half-applied
+     theme. All four sources are edited together for the reason
+     extractThemeTokens's own doc comment gives (web/css_contract_test.go):
+     editing one member of a pair and not the other ships a fix that works
+     for OS-preference users and not explicit-toggle users, or vice versa. */
+  color-scheme: light;
+
   /* Spacing scale — 4px-multiple, per UI-SPEC "Spacing Scale" */
   --space-xs: 4px;
   --space-sm: 8px;
@@ -72,6 +82,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    color-scheme: dark;
+
     /* Base surfaces & text — dark values */
     --color-bg: #0B0D10;
     --color-surface: #16181C;
@@ -100,6 +112,8 @@
    @media (prefers-color-scheme: dark) :root block (0,1,0) regardless of source order — a
    dark-OS visitor who has explicitly chosen [data-theme="light"] must see the light palette. */
 :root[data-theme="dark"] {
+  color-scheme: dark;
+
   --color-bg: #0B0D10;
   --color-surface: #16181C;
   --color-border: #2A2D31;
@@ -118,6 +132,8 @@
 }
 
 :root[data-theme="light"] {
+  color-scheme: light;
+
   --color-bg: #FFFFFF;
   --color-surface: #F1F3F4;
   --color-border: #E1E4E8;
