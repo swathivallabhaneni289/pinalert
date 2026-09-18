@@ -315,3 +315,18 @@ during Phase 2 UAT re-verification (2026-09-18): the current submission flow is 
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.2: "Show disputed reports" as an exclusive filter (BACKLOG)
+
+**Goal:** [Captured for future planning] Change "Show disputed reports" from an additive reveal
+(adds Hidden reports on top of the normal feed, per D-10) to an exclusive filter that shows ONLY
+actually-disputed reports when checked. Surfaced during Phase 2 UAT re-verification (2026-09-18):
+user found it confusing that a fresh, zero-vote Provisional report (which is visible in the
+default feed regardless of the toggle) also appears when the toggle is checked, since nothing
+distinguishes "here because you asked for disputed" from "here anyway." Not a bug — current
+behavior matches documented D-10 — but a real UX objection to that design.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
