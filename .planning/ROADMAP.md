@@ -300,3 +300,18 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
 | 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
 | 6. Coordination — Safety, Needs, and Response | 0/TBD | Not started | - |
+
+## Backlog
+
+### Phase 999.1: Address search box for report location (BACKLOG)
+
+**Goal:** [Captured for future planning] Add a text/address search box for setting a report's
+location, using OSM Nominatim geocoding (free, no API key) to jump the map/pin to the typed
+address — kept alongside the existing draggable pin for fine-tuning, not replacing it. Surfaced
+during Phase 2 UAT re-verification (2026-09-18): the current submission flow is 100% map-interaction
+(GPS auto-fill, drag, tap-to-place), with no way to type an address.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
