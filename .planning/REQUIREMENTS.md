@@ -263,7 +263,7 @@ Populated during roadmap creation.
 | TRUST-06 | Phase 2 | Complete |
 | TRUST-08 | Phase 2 | Complete |
 | TRUST-09 | Phase 2 | Complete |
-| UX-01 | Phase 2 | Pending (gap-closure plan 02-10) |
+| UX-01 | Phase 2 | Complete (gap-closure plan 02-10) |
 | TRUST-05 | Phase 3 | Pending |
 | TRUST-07 | Phase 3 | Pending |
 | ROBUST-01 | Phase 4 | Pending |
