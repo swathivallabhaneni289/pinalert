@@ -362,6 +362,29 @@
   padding: calc(var(--touch-target-min) + var(--space-lg)) var(--space-lg) var(--space-lg);
 }
 
+/* The Activity page's own way back to the map and feed (UAT gap 4). Lives
+   in the page body rather than the shared header — DEC-S above records
+   that .app-header carries no left-slot content of any kind. Meets the
+   44px touch floor via min-height plus a flex display that lets the
+   element actually take that height, same convention every other control
+   in this project follows. Like .filter-toggle's own rule (static/css/
+   trust.css), this element is never toggled by the hidden attribute, so it
+   deliberately carries no :not([hidden]) guard — a reader comparing it
+   against the guarded rules elsewhere in the codebase should not read the
+   absence as an oversight. */
+.profile-back-link {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  width: fit-content;
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+  margin: 0 0 var(--space-md) 0;
+}
+
 .profile-email {
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
