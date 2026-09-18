@@ -228,9 +228,13 @@ func TestVoteModuleLoadsBeforeItsConsumers(t *testing.T) {
 // paragraph rendered under every single feed row and every popup, with a
 // green build and no other signal — and, for .vote-controls, an empty
 // bordered strip under every report the viewer submitted themselves.
+// The third target, .vote-btn, was added by gap closure (02-UAT.md Test 3,
+// gap 1) after this exact guard's absence on the base vote-button rule
+// shipped to a user: the three primary buttons kept rendering beside
+// openResolveConfirm's confirmation instead of being replaced by it.
 func TestVoteBlockHiddenGuard(t *testing.T) {
 	const guard = ":not([hidden])"
-	targets := []string{".vote-error", ".vote-controls"}
+	targets := []string{".vote-error", ".vote-controls", ".vote-btn"}
 	sawGuarded := map[string]bool{}
 
 	err := fs.WalkDir(StaticFS, "static/css", func(path string, d fs.DirEntry, err error) error {
@@ -330,9 +334,9 @@ func TestVoteButtonsMeetTouchTargetAndUseTokensOnly(t *testing.T) {
 
 	rules := parseCSSRules(text)
 
-	btnRule, ok := ruleBySelector(rules, ".vote-btn")
+	btnRule, ok := ruleBySelector(rules, ".vote-btn:not([hidden])")
 	if !ok {
-		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vote-btn")
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vote-btn:not([hidden])")
 	}
 	btnDecls := declsOf(btnRule.declBody)
 	if v := btnDecls["min-height"]; v != "var(--touch-target-min)" {
@@ -1410,9 +1414,9 @@ func TestResolveControlsMeetTouchTargetAndUseTokensOnly(t *testing.T) {
 
 	rules := parseCSSRules(text)
 
-	baseBtnRule, ok := ruleBySelector(rules, ".vote-btn")
+	baseBtnRule, ok := ruleBySelector(rules, ".vote-btn:not([hidden])")
 	if !ok {
-		t.Fatalf("no exact %q rule found — every new button relies on this rule for its 44px floor", ".vote-btn")
+		t.Fatalf("no exact %q rule found — every new button relies on this rule for its 44px floor", ".vote-btn:not([hidden])")
 	}
 	if v := declsOf(baseBtnRule.declBody)["min-height"]; v != "var(--touch-target-min)" {
 		t.Errorf(".vote-btn min-height must remain exactly var(--touch-target-min), found %q", v)

@@ -27,7 +27,13 @@
   margin-top: var(--space-md);
 }
 
-.vote-btn {
+/* Gap closure (02-UAT.md Test 3, gap 1): this rule's own header comment
+   above claimed every display rule in this file carried the [hidden]
+   specificity guard, and this rule — the very first one after that
+   comment — did not. Consequence: openResolveConfirm's hidden attribute
+   had no visual effect on either surface, so the confirmation rendered
+   beside the three primary buttons instead of replacing them. */
+.vote-btn:not([hidden]) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
