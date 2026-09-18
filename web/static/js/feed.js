@@ -525,4 +525,45 @@
   updateToggleLabel();
 
   window.setInterval(refreshAgeAndTime, 60000);
+
+  // pageshow / back-forward-cache refetch (02-UAT.md gap 3, "major").
+  //
+  // handlers.Page already sets the document's own Cache-Control: no-store
+  // (DEC-Q) on every response. Chromium and Firefox honour that by
+  // excluding the page from the back-forward cache entirely, so a Back
+  // navigation on those browsers always re-runs this file from scratch.
+  // Safari's WebKit page cache does NOT reliably honour that header for
+  // bfcache eligibility, though — a Safari Back can restore a frozen
+  // pre-vote DOM snapshot with no JavaScript re-run at all, which is
+  // exactly what the UAT reporter saw after tapping Reopen on Activity and
+  // pressing Back: nothing refetched, so the feed kept showing the
+  // pre-reopen state. This listener is a defensive addition on top of the
+  // no-store header, not a replacement for it — it is what makes the
+  // restore itself correct, rather than trying to fight for bfcache
+  // exclusion on a browser that does not reliably grant it.
+  //
+  // The guard on the event's persisted property is what stops an ordinary
+  // first load or a normal forward navigation from firing a duplicate
+  // fetch: pageshow also fires on those, with persisted false. Only a true
+  // bfcache restore sets it to true.
+  //
+  // The poll timer (app.js's startPolling) is not a substitute for this
+  // listener: a restored page's interval timers resume ticking from where
+  // they left off, but the reader would still see the stale snapshot for
+  // up to a full poll interval (config.pollIntervalMs) before the next
+  // tick fires — exactly the delay the UAT reported.
+  //
+  // Do NOT add an unload or beforeunload listener anywhere in this file,
+  // or anywhere else, to "fix" this instead: either one makes the
+  // page permanently ineligible for the back-forward cache, which would
+  // suppress this symptom by destroying the very restore this listener is
+  // making correct — and would also cost the reader the scroll-position
+  // and form-state benefits bfcache gives them on every other Back
+  // navigation.
+  window.addEventListener('pageshow', function (evt) {
+    if (!evt.persisted) {
+      return;
+    }
+    Pinalert.fetchReports();
+  });
 }());

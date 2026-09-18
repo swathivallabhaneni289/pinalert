@@ -329,6 +329,28 @@ func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 			return
 		}
 
+		// UAT gap 3 (02-UAT.md, closed by 02-09): this feed response is a
+		// personalised, freshness-critical view — it carries your_vote,
+		// is_own_report, and a visibility recomputed fresh on every read
+		// (service.Resolve) — so an uncached-but-cacheable JSON response
+		// is eligible for a browser's own heuristic caching, and a fresh
+		// fetch() could still be answered from a pre-vote snapshot even on
+		// a page that DID re-run its JavaScript after a Back navigation.
+		// Set before any query-parameter parsing below, so every exit path
+		// from this handler — the 200, every 400 from the validators that
+		// follow, and the 500 above — carries it. Cross-reference page.go's
+		// DEC-Q header, which applies the same reasoning to the document
+		// itself.
+		//
+		// Deliberately NOT set inside writeJSON: that helper is also called
+		// by auth.go's link-request route, this file's own submit route
+		// and error helper, and votes.go's cast-vote route — six call
+		// sites across three files nobody examined for this change.
+		// Blanket-applying a cache directive there would silently change
+		// the response contract of five endpoints whose only stated
+		// purpose here is a feed-freshness fix.
+		w.Header().Set("Cache-Control", "no-store")
+
 		q := r.URL.Query()
 
 		lat, ok := parseCoordinate(w, q, "lat", -90, 90)
