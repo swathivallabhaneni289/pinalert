@@ -339,3 +339,41 @@ func TestShowDisputedRejectsNonBooleanValue(t *testing.T) {
 		resp.Body.Close()
 	}
 }
+
+// TestFeedResponseIsNotCached proves the second, lower-priority hole the
+// UAT gap-3 diagnosis surfaced (02-UAT.md): the feed endpoint set no
+// Cache-Control header at all, so an uncached-but-cacheable JSON response
+// was eligible for a browser's own heuristic caching even on a page that
+// DID re-run its JavaScript after a Back navigation. Both a 200 and a 400
+// from this handler are checked so the header is proven set early — before
+// any query-parameter validation runs — rather than only on the success
+// path. page.go's Page handler applies the same DEC-Q reasoning to the
+// document; this closes the equivalent gap for the JSON that document's own
+// JavaScript fetches.
+func TestFeedResponseIsNotCached(t *testing.T) {
+	srv, mailer, _ := newE2EServer(t)
+	client := newVerifiedClient(t, srv, mailer, "feed-no-store@example.com")
+
+	const lat, lon = 12.9716, 77.5946
+
+	resp := getNearby(t, client, srv.URL, lat, lon, false)
+	decodeFeedResponse(t, resp)
+	if cc := resp.Header.Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("200 response Cache-Control = %q, want %q", cc, "no-store")
+	}
+
+	badURL := srv.URL + "/api/reports?lat=" + strconv.FormatFloat(lat, 'f', -1, 64) +
+		"&lon=" + strconv.FormatFloat(lon, 'f', -1, 64) + "&radius_km=5&show_disputed=yes"
+	badResp, err := client.Get(badURL)
+	if err != nil {
+		t.Fatalf("GET %s: %v", badURL, err)
+	}
+	defer badResp.Body.Close()
+	if badResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", badResp.StatusCode)
+	}
+	if cc := badResp.Header.Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("400 response Cache-Control = %q, want %q — the header must be set before "+
+			"query-parameter validation runs, not only on the success path", cc, "no-store")
+	}
+}
