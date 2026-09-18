@@ -145,7 +145,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Presentation
 
-- [ ] **UX-01**: A user can choose Light, Dark, or follow-the-OS appearance from inside the app
+- [x] **UX-01**: A user can choose Light, Dark, or follow-the-OS appearance from inside the app
       (added 2026-09-18 from Phase 2 UAT — the app already renders both palettes via
       `prefers-color-scheme`/`[data-theme]`, but nothing lets a user choose independently of the
       OS setting)
