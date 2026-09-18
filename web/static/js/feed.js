@@ -38,6 +38,13 @@
 
   var SVG_NS = 'http://www.w3.org/2000/svg';
 
+  // DISPUTED_PARAM is the page URL's own name for the "Show disputed"
+  // filter flag — deliberately the exact same literal app.js's own
+  // fetchReports appends to the GET /api/reports URL (see app.js's
+  // fetchReports comment), so the page and the server share one
+  // vocabulary for this idea rather than two spellings of it.
+  var DISPUTED_PARAM = 'show_disputed';
+
   var reportListEl = document.getElementById('report-list');
   var skeletonEl = document.getElementById('feed-skeleton');
   var emptyEl = document.getElementById('feed-empty');
@@ -494,6 +501,40 @@
     });
   }
 
+  // readDisputedFromURL reports whether the current address bar asks for
+  // the disputed view (UAT gap 5, a user-requested scope reversal dated
+  // 2026-09-17 — see 02-UI-SPEC.md's dated amendment on the "Show disputed
+  // filter (D-10, D-11)" section; the original spec's ephemeral,
+  // non-persisting checkbox was deliberate and shipped as specified, this
+  // is not a bug fix). Parsed with URLSearchParams and compared against
+  // the one literal app.js's own fetchReports appends ('true'), never
+  // interpolated anywhere (T-01-17) — so the page and the server can never
+  // disagree about what a given URL means. An absent, misspelled or
+  // hostile value collapses to false, which is D-10's closed default: the
+  // fail-safe direction, since the failure mode of guessing wrong here is
+  // showing a reader disputed content they did not ask for.
+  function readDisputedFromURL() {
+    var params = new URLSearchParams(window.location.search);
+    return params.get(DISPUTED_PARAM) === 'true';
+  }
+
+  // syncDisputedURL keeps the address bar's DISPUTED_PARAM in step with
+  // checked: added when true, deleted when false. Applies the update via
+  // history.replaceState, the History API's in-place-update variant —
+  // never its variant that adds a new Back-button-history entry — because
+  // a filter toggle must not create a Back-button step, or Back would walk
+  // the reader through their own filter history instead of leaving the
+  // page, which is a behaviour change nobody asked for.
+  function syncDisputedURL(checked) {
+    var url = new URL(window.location.href);
+    if (checked) {
+      url.searchParams.set(DISPUTED_PARAM, 'true');
+    } else {
+      url.searchParams.delete(DISPUTED_PARAM);
+    }
+    window.history.replaceState(null, '', url);
+  }
+
   if (showDisputedToggleEl) {
     showDisputedToggleEl.addEventListener('change', function () {
       // Refetching rather than filtering state.reports in place is
@@ -502,14 +543,35 @@
       // a second visibility decision — the resolver bypass T-02-04 names.
       Pinalert.setShowDisputed(showDisputedToggleEl.checked);
       Pinalert.fetchReports();
+      syncDisputedURL(showDisputedToggleEl.checked);
     });
 
-    // Synchronise the store's flag from the checkbox's current value once,
-    // without fetching. Costs one line and makes the template's own
-    // autocomplete attribute belt-and-braces rather than load-bearing: a
-    // browser that restores checkbox state across a reload or bfcache
-    // restore cannot leave a checked box over unfiltered data.
-    Pinalert.setShowDisputed(showDisputedToggleEl.checked);
+    // Restore step, not a synchronisation step — direction of trust
+    // reversed as of the 2026-09-17 scope reversal above: the URL is now
+    // the source of truth, and the checkbox is driven FROM it. Read the
+    // URL, write the result onto the checkbox's checked property, then
+    // hand the same value to the shared store's setter — never the other
+    // way around, and never a fetch here. The template's own autocomplete
+    // attribute is now genuinely belt-and-braces (a browser that restores
+    // a checked box across a reload is immediately overwritten by this
+    // read), rather than the load-bearing defence the superseded comment
+    // this block replaces used to claim it was.
+    //
+    // No fetch is issued here because it does not need to be: the first
+    // report fetch fires from map.js's centerOnVisitor, inside an async
+    // geolocation success/failure callback, and every deferred module
+    // body — including this one — runs to completion before any async
+    // callback can execute. This restore is therefore guaranteed to
+    // precede the first fetch, so the first render is never briefly
+    // unfiltered. If a future change ever moves the initial fetch into a
+    // deferred module body ABOVE this one in the template's script order,
+    // that guarantee breaks and this restore would need its own fetch —
+    // flagging that here since it is the one thing that would invalidate
+    // this reasoning. Adding a fetch unconditionally would issue a
+    // duplicate request on every single page load.
+    var initialDisputed = readDisputedFromURL();
+    showDisputedToggleEl.checked = initialDisputed;
+    Pinalert.setShowDisputed(initialDisputed);
   }
 
   Pinalert.onSelect(function (id, source) {
@@ -525,4 +587,57 @@
   updateToggleLabel();
 
   window.setInterval(refreshAgeAndTime, 60000);
+
+  // pageshow / back-forward-cache refetch (02-UAT.md gap 3, "major").
+  //
+  // handlers.Page already sets the document's own Cache-Control: no-store
+  // (DEC-Q) on every response. Chromium and Firefox honour that by
+  // excluding the page from the back-forward cache entirely, so a Back
+  // navigation on those browsers always re-runs this file from scratch.
+  // Safari's WebKit page cache does NOT reliably honour that header for
+  // bfcache eligibility, though — a Safari Back can restore a frozen
+  // pre-vote DOM snapshot with no JavaScript re-run at all, which is
+  // exactly what the UAT reporter saw after tapping Reopen on Activity and
+  // pressing Back: nothing refetched, so the feed kept showing the
+  // pre-reopen state. This listener is a defensive addition on top of the
+  // no-store header, not a replacement for it — it is what makes the
+  // restore itself correct, rather than trying to fight for bfcache
+  // exclusion on a browser that does not reliably grant it.
+  //
+  // The guard on the event's persisted property is what stops an ordinary
+  // first load or a normal forward navigation from firing a duplicate
+  // fetch: pageshow also fires on those, with persisted false. Only a true
+  // bfcache restore sets it to true.
+  //
+  // The poll timer (app.js's startPolling) is not a substitute for this
+  // listener: a restored page's interval timers resume ticking from where
+  // they left off, but the reader would still see the stale snapshot for
+  // up to a full poll interval (config.pollIntervalMs) before the next
+  // tick fires — exactly the delay the UAT reported.
+  //
+  // Do NOT add an unload or beforeunload listener anywhere in this file,
+  // or anywhere else, to "fix" this instead: either one makes the
+  // page permanently ineligible for the back-forward cache, which would
+  // suppress this symptom by destroying the very restore this listener is
+  // making correct — and would also cost the reader the scroll-position
+  // and form-state benefits bfcache gives them on every other Back
+  // navigation.
+  window.addEventListener('pageshow', function (evt) {
+    if (!evt.persisted) {
+      return;
+    }
+    // Re-read the URL and re-apply it to the checkbox and the store
+    // BEFORE refetching (UAT gap 5's extension into gap 3): this is what
+    // finally makes true the claim the pre-reversal comment on the
+    // disputed-toggle block made and could not keep — a restored frozen
+    // DOM can no longer show a checked box over unfiltered data, because
+    // the checked box is now always re-derived from the URL rather than
+    // trusted as whatever the browser happened to restore.
+    var disputed = readDisputedFromURL();
+    if (showDisputedToggleEl) {
+      showDisputedToggleEl.checked = disputed;
+    }
+    Pinalert.setShowDisputed(disputed);
+    Pinalert.fetchReports();
+  });
 }());

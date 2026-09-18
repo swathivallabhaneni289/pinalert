@@ -963,22 +963,62 @@ func TestShowDisputedUsesOneSharedQueryParam(t *testing.T) {
 			"call), found %d — a third would mean a second report query", n)
 	}
 
-	for _, module := range []string{"static/js/feed.js", "static/js/map.js"} {
-		raw, err := fs.ReadFile(StaticFS, module)
-		if err != nil {
-			t.Fatalf("%s: could not read embedded file — %v", module, err)
-		}
-		text := stripCSSComments(string(raw))
-		if strings.Contains(text, "show_disputed") {
-			t.Errorf("%s: contains the shared query parameter's name — a surface building its own "+
-				"query is exactly the feed/map divergence TRUST-02 forbids, and it would be invisible "+
-				"until someone compared a list against a map by hand", module)
-		}
+	// map.js is untouched by every plan that has ever needed this parameter
+	// (including 02-09 below) and stays under the original blanket guard:
+	// zero references, full stop. There is no map-specific query, and this
+	// is the assertion that proves it.
+	mapRaw, err := fs.ReadFile(StaticFS, "static/js/map.js")
+	if err != nil {
+		t.Fatalf("static/js/map.js: could not read embedded file — %v", err)
+	}
+	if strings.Contains(stripCSSComments(string(mapRaw)), "show_disputed") {
+		t.Errorf("static/js/map.js: contains the shared query parameter's name — a surface " +
+			"building its own query is exactly the feed/map divergence TRUST-02 forbids, and it " +
+			"would be invisible until someone compared a list against a map by hand")
+	}
+
+	// feed.js is the one exception, added by 02-09 (a later gap-closure
+	// plan) for a reason this test's original blanket guard did not
+	// anticipate: the "Show disputed" filter's checked state now
+	// round-trips through the page's own URL (02-UI-SPEC.md's dated
+	// amendment on "Show disputed filter (D-10, D-11)"), and the URL's
+	// parameter name is deliberately the same literal as the one this test
+	// already pins in app.js — one vocabulary, not two spellings of the
+	// same idea. That is NOT the divergence this guard exists to catch:
+	// feed.js still issues no fetch( call of its own (checked below), so
+	// there is still exactly one query, built in exactly one place, sent
+	// exactly once per report list. TestDisputedFilterIsCarriedInThePageURL
+	// (web/feed_freshness_contract_test.go) is the gate that gives feed.js's
+	// one legitimate reference its own dedicated coverage; the two
+	// assertions below narrow this test's guard to the invariant it was
+	// always actually protecting, rather than dropping feed.js from it.
+	feedRaw, err := fs.ReadFile(StaticFS, "static/js/feed.js")
+	if err != nil {
+		t.Fatalf("static/js/feed.js: could not read embedded file — %v", err)
+	}
+	feedText := stripCSSComments(string(feedRaw))
+	if n := strings.Count(feedText, "show_disputed"); n != 1 {
+		t.Errorf("static/js/feed.js: expected exactly one occurrence of the shared query "+
+			"parameter's name (02-09's DISPUTED_PARAM constant, restoring the URL-persisted "+
+			"filter), found %d — more than one is exactly the kind of drift this guard exists "+
+			"to catch", n)
+	}
+	if !regexp.MustCompile(`DISPUTED_PARAM\s*=\s*'show_disputed'`).MatchString(feedText) {
+		t.Errorf("static/js/feed.js: its sole show_disputed reference is not the " +
+			"DISPUTED_PARAM constant declaration — any other use would need its own review")
+	}
+	if n := strings.Count(feedText, "fetch("); n != 0 {
+		t.Errorf("static/js/feed.js: expected zero fetch( calls, found %d — this is the real "+
+			"invariant the string-match above only proxies: a fetch( call here would mean feed.js "+
+			"building its own report query rather than delegating to the one shared "+
+			"Pinalert.fetchReports()", n)
 	}
 
 	// Honest limits of this test's claim: static inspection proves there is
-	// one parameter on one fetch and that neither renderer builds a query.
-	// It cannot prove the server honours the parameter (02-04's own
+	// one parameter on one fetch, that map.js builds no query at all, and
+	// that feed.js's own single reference to the parameter's name is its
+	// URL-restore constant rather than a second fetch( call. It cannot
+	// prove the server honours the parameter (02-04's own
 	// TestShowDisputedRevealsHiddenReports covers that against real
 	// Postgres) nor that the pins actually appear, which the human check
 	// covers.
