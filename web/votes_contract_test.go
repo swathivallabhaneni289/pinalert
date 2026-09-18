@@ -1457,6 +1457,148 @@ func TestResolveControlsMeetTouchTargetAndUseTokensOnly(t *testing.T) {
 	}
 }
 
+// TestMapPopupSurfaceIsThemeAware closes 02-UAT.md Test 3, gap 2. Leaflet
+// 1.9.4 ships its popup content wrapper and popup tip white with a
+// dark-grey foreground, and this app had never overridden either — so a
+// Leaflet popup was a white box in every theme, including dark mode. This
+// test proves the override actually exists, that its selector head carries
+// the ancestor field the source-order ladder against Leaflet's own
+// later-linked stylesheet depends on (see trust.css's own comment for why
+// that field must never be "simplified" away), and that the token pair it
+// resolves through clears WCAG AA contrast in both themes — the
+// machine-checkable form of "legible in both themes", not a hope.
+//
+// Honest limit of this test's claim, matching this package's convention:
+// static inspection proves the declarations exist and resolve through
+// tokens at the values main.css declares; it cannot prove a real browser
+// composited them as expected inside an actual Leaflet popup, which is
+// what the end-of-phase human check is for.
+func TestMapPopupSurfaceIsThemeAware(t *testing.T) {
+	trustRaw, err := fs.ReadFile(StaticFS, "static/css/trust.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/trust.css: %v", err)
+	}
+	rules := parseCSSRules(string(trustRaw))
+
+	const ancestor = ".leaflet-container "
+	const wrapperClass = ".leaflet-popup-content-wrapper"
+	const tipClass = ".leaflet-popup-tip"
+
+	var popupRules []cssRule
+	for _, r := range rules {
+		if strings.Contains(r.selectorHead, "leaflet-popup") {
+			popupRules = append(popupRules, r)
+		}
+	}
+	if len(popupRules) == 0 {
+		t.Fatalf("expected at least one rule in trust.css whose selector head mentions a Leaflet " +
+			"popup class — found none")
+	}
+
+	var combined cssRule
+	foundCombined := false
+	for _, r := range popupRules {
+		if !strings.Contains(r.selectorHead, ancestor) {
+			t.Errorf("popup-surface selector head %q does not carry the %q ancestor field — "+
+				"without it this rule ties Leaflet's own rule at equal specificity and loses on "+
+				"source order, silently reverting 02-UAT.md Test 3 gap 2", r.selectorHead, ancestor)
+		}
+		if strings.Contains(r.selectorHead, wrapperClass) && strings.Contains(r.selectorHead, tipClass) {
+			combined = r
+			foundCombined = true
+		}
+	}
+	if !foundCombined {
+		t.Fatalf("expected one rule whose selector head covers both %q and %q together",
+			wrapperClass, tipClass)
+	}
+
+	decls := declsOf(combined.declBody)
+	if len(decls) != 2 {
+		t.Fatalf("expected the popup-surface rule to declare exactly 2 properties (background, "+
+			"color), found %d: %v", len(decls), decls)
+	}
+	if v := decls["background"]; v != "var(--color-bg)" {
+		t.Errorf("popup-surface rule must declare background: var(--color-bg), found %q", v)
+	}
+	if v := decls["color"]; v != "var(--color-text)" {
+		t.Errorf("popup-surface rule must declare color: var(--color-text), found %q", v)
+	}
+
+	tmplRaw, err := TemplatesFS.ReadFile("templates/index.html.tmpl")
+	if err != nil {
+		t.Fatalf("failed to read embedded templates/index.html.tmpl: %v", err)
+	}
+	if !strings.Contains(string(tmplRaw), "leaflet@1.9.4/dist/leaflet.css") {
+		t.Fatalf("index.html.tmpl no longer links leaflet@1.9.4/dist/leaflet.css — this rule's " +
+			"whole premise is pointless if the vendor sheet ever stops loading, and a test whose " +
+			"premise has silently evaporated is worse than no test")
+	}
+
+	mainRaw, err := fs.ReadFile(StaticFS, "static/css/main.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/main.css: %v", err)
+	}
+	mainRules := parseCSSRules(string(mainRaw))
+	light1, light2, dark1, dark2 := extractThemeTokens(mainRules, []string{"--color-bg", "--color-text"})
+
+	themes := map[string]themeTokens{
+		`light :root`:                       light1,
+		`light :root[data-theme="light"]`:   light2,
+		`dark @media (prefers-color-scheme)`: dark1,
+		`dark :root[data-theme="dark"]`:      dark2,
+	}
+	for themeName, tokens := range themes {
+		bgHex, ok := tokens["--color-bg"]
+		if !ok {
+			t.Fatalf("%s: --color-bg not found", themeName)
+		}
+		fgHex, ok := tokens["--color-text"]
+		if !ok {
+			t.Fatalf("%s: --color-text not found", themeName)
+		}
+		ratio := wcagContrastRatio(t, bgHex, fgHex, themeName)
+		if ratio < 4.5 {
+			t.Errorf("%s: --color-text on --color-bg contrast is %.2f:1, below the 4.5:1 WCAG AA "+
+				"floor — the popup surface would be no more legible than Leaflet's own defaults",
+				themeName, ratio)
+		}
+	}
+}
+
+// TestResolveConfirmPaintsItsOwnSurface proves .resolve-confirm no longer
+// depends on an ancestor it does not own for its background: belt-and-
+// braces alongside the popup-surface override above, so the confirmation
+// block is self-contained on any surface it is ever mounted on.
+//
+// Honest limit of this test's claim: static inspection proves the
+// declaration exists and resolves through the token; it cannot prove the
+// rendered result is legible, which is what the end-of-phase human check
+// is for.
+func TestResolveConfirmPaintsItsOwnSurface(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/css/trust.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/trust.css: %v", err)
+	}
+	rules := parseCSSRules(string(raw))
+
+	blockRule, ok := ruleBySelector(rules, ".resolve-confirm:not([hidden])")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".resolve-confirm:not([hidden])")
+	}
+	if v := declsOf(blockRule.declBody)["background"]; v != "var(--color-bg)" {
+		t.Errorf(".resolve-confirm:not([hidden]) must declare background: var(--color-bg), found %q", v)
+	}
+
+	pRule, ok := ruleBySelector(rules, ".resolve-confirm p")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".resolve-confirm p")
+	}
+	if v := declsOf(pRule.declBody)["color"]; v != "var(--color-text)" {
+		t.Errorf(".resolve-confirm p must declare color: var(--color-text), found %q", v)
+	}
+}
+
 // --- Plan 02-07 Task 2: the Activity page's real trust state ---
 
 // TestProfilePageLoadsTrustAssetsInDependencyOrder proves profile.html.tmpl

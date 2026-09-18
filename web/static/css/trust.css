@@ -315,11 +315,70 @@
   padding: var(--space-md);
   border: 1px solid var(--color-border);
   border-radius: 6px;
+  /* Gap closure (02-UAT.md Test 3, gap 2), belt-and-braces: paints its own
+     base-surface background rather than depending on an ancestor it does
+     not own, the same way the base vote-button rule and the visibility-tag
+     chip already do. */
+  background: var(--color-bg);
 }
 
 .resolve-confirm p {
   margin: 0;
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
+  color: var(--color-text);
+}
+
+/* -------------------------------------------------------------------------
+ * Map popup surface (gap closure, 02-UAT.md Test 3, gap 2). Leaflet 1.9.4
+ * ships a vendor rule pairing its popup content wrapper with its popup tip
+ * (the little pointer beneath the box), setting a white background and a
+ * dark-grey #333 foreground, and this app has never overridden either — so
+ * a Leaflet popup was a white box in every theme, including dark mode, for
+ * the whole of Phases 1 and 2. Phase 1's own popup text (.map-popup__meta,
+ * .map-popup__description) never set an app `color` rule and so inherited
+ * that dark grey, legible on white by accident. This app's Mark Resolved
+ * confirmation DOES set a theme-aware `color` (`.resolve-confirm p` above,
+ * resolving to --color-text), and in dark mode that is a near-white
+ * foreground sitting on Leaflet's white surface — invisible. The rule
+ * below gives that surface a background and foreground that belong to this
+ * app's theme instead of to Leaflet's 2010 defaults.
+ *
+ * Four things a future editor must not "simplify" away:
+ *
+ * 1. The ancestor field prefixing each selector below is load-bearing, not
+ *    decoration. index.html.tmpl links the app stylesheets BEFORE
+ *    leaflet.css, so a bare two-class head would tie Leaflet's own rule at
+ *    equal specificity and lose on source order — silently, with a green
+ *    build, reverting exactly this bug. Adding the ancestor field raises
+ *    this rule's specificity above Leaflet's, independent of link order.
+ *    TestMapPopupSurfaceIsThemeAware asserts the field is present on every
+ *    popup-surface selector head in this file.
+ * 2. Leaflet's own popup rule also declares a box-shadow using a
+ *    functional colour notation that two tests in this file forbid
+ *    outright. That shadow is theme-neutral and needs no override, so it
+ *    is deliberately left to cascade from the vendor rule — this rule
+ *    declares background and color only.
+ * 3. The close button is deliberately left alone. Its own Leaflet rule
+ *    carries a type field as well as two classes and therefore already
+ *    out-specifies a two-class-plus-ancestor override — a matching rule
+ *    here would tie and lose on source order, so properly overriding it
+ *    would need an even longer selector head for no benefit. Its mid-grey
+ *    glyph measures roughly 4.2:1 against this app's dark base surface and
+ *    4.6:1 against the light one, both clear of the 3:1 graphical-object
+ *    floor, so it stays legible in both themes as shipped without any
+ *    override.
+ * 4. This rule lives here, not in main.css, for the same reason auth.css's
+ *    own "Styled here rather than in main.css" comment gives for itself:
+ *    main.css is covered by four computed contract tests including an
+ *    18-pairing WCAG matrix (TestBadgeGlyphContrastAcrossAgeStagesAndThemes),
+ *    and keeping later phases' rules out of it leaves those tests reasoning
+ *    about exactly the source they were written against. profile.html.tmpl
+ *    also loads this stylesheet and has no map, where this rule simply
+ *    matches nothing.
+ * ---------------------------------------------------------------------- */
+.leaflet-container .leaflet-popup-content-wrapper,
+.leaflet-container .leaflet-popup-tip {
+  background: var(--color-bg);
   color: var(--color-text);
 }
