@@ -282,6 +282,11 @@
   mask-image: url("/static/icons/log-out.svg");
 }
 
+.auth-icon--arrow-left {
+  -webkit-mask-image: url("/static/icons/arrow-left.svg");
+  mask-image: url("/static/icons/arrow-left.svg");
+}
+
 /* The :not([hidden]) guard is required for the same specificity reason
    documented at length in main.css's .modal-backdrop rule and
    modal.css's #shelter-fields/#discard-confirm rules: the browser's
@@ -359,30 +364,60 @@
 .profile-page {
   max-width: 640px;
   margin: 0 auto;
-  padding: calc(var(--touch-target-min) + var(--space-lg)) var(--space-lg) var(--space-lg);
+  padding-top: var(--space-md);
+  padding-right: var(--space-lg);
+  padding-bottom: var(--space-lg);
+  padding-left: var(--space-lg);
 }
 
-/* The Activity page's own way back to the map and feed (UAT gap 4). Lives
-   in the page body rather than the shared header — DEC-S above records
-   that .app-header carries no left-slot content of any kind. Meets the
-   44px touch floor via min-height plus a flex display that lets the
-   element actually take that height, same convention every other control
-   in this project follows. Like .filter-toggle's own rule (static/css/
-   trust.css), this element is never toggled by the hidden attribute, so it
-   deliberately carries no :not([hidden]) guard — a reader comparing it
-   against the guarded rules elsewhere in the codebase should not read the
-   absence as an oversight. */
+/* The Activity page's icon-only way back to the map and feed. Lives in the
+   page body rather than the shared header (DEC-S above records that
+   .app-header carries no left-slot content of any kind). It mirrors
+   .account-trigger (same 44px circle, border, background and shadow) so the
+   two read as a pair. Two declarations put them on one line at scroll top:
+   .profile-page padding-top equals .app-header top, and this height equals
+   .account-trigger height. A contract test locks both pairs. Being in flow,
+   the control scrolls away with the page and its left edge is the content
+   column's left edge by construction. Keyboard focus relies on the global
+   :focus-visible ring in main.css, so no outline is set here. Unlike
+   .account-trigger it has hover and press states, which is deliberate. Like
+   .filter-toggle's own rule (static/css/trust.css), this element is never
+   toggled by the hidden attribute, so it carries no :not([hidden]) guard. */
 .profile-back-link {
   display: flex;
   align-items: center;
+  justify-content: center;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  min-width: var(--touch-target-min);
   min-height: var(--touch-target-min);
-  width: fit-content;
-  font-family: var(--font-family);
-  font-size: var(--font-size-body);
-  line-height: var(--line-height-body);
-  font-weight: var(--font-weight-regular);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-bg);
   color: var(--color-text);
-  margin: 0 0 var(--space-md) 0;
+  text-decoration: none;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 20%);
+  margin: 0 0 var(--space-lg) 0;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.profile-back-link .auth-icon {
+  color: var(--color-text);
+}
+
+.profile-back-link:hover {
+  background: var(--color-surface);
+  border-color: var(--color-text-muted);
+}
+
+.profile-back-link:active {
+  background: var(--color-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-back-link {
+    transition: none;
+  }
 }
 
 .profile-email {
