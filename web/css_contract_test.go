@@ -686,6 +686,9 @@ var nonCategoryIcons = map[string]bool{
 	// reasoning as the three entries above.
 	"static/icons/user.svg":    true,
 	"static/icons/log-out.svg": true,
+	// Activity page back control (quick task 260921-mf2): an auth-surface
+	// glyph styled through the .auth-icon-- prefix, same exemption reasoning.
+	"static/icons/arrow-left.svg": true,
 }
 
 // TestCategoryGlyphMaskRulesCoverEveryCategory guards the 01-13 fix's own
