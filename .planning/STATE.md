@@ -46,7 +46,7 @@ success criteria independently confirmed against the codebase, not trusted from 
 closed: 3 human-only browser UAT items (`02-UAT.md`) and two items needing a human decision (see
 Blockers/Concerns): the code review's rate-limiting WARNING, and a verifier-surfaced escalation
 about ROADMAP.md's `Mode: mvp` flag vs. its non-user-story Goal wording.
-Last activity: 2026-09-18 — Phase 02 execution started
+Last activity: 2026-09-21 - Completed quick task 260921-mf2: Activity page back-arrow icon control
 continuous session (~4.5 hours wall-clock across 7 sequential dependency-chain waves).
 
 Progress: [██████████] 100% of Phase 2's code-verifiable work; 3 human-only UAT items + 2 human
@@ -215,6 +215,12 @@ Recent decisions affecting current work:
   `go-version: '1.25'` while `go.mod` requires `go 1.26.4`. `GOTOOLCHAIN=auto` downloads the right
   toolchain so CI still runs correctly today, but there's no explicit `toolchain` directive or
   `GOTOOLCHAIN` override — worth tightening so this isn't silently relying on default behavior.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260921-mf2 | Activity page: replace Back to map text link with a back-arrow icon control, perfect placement | 2026-09-21 | 9719806 | [260921-mf2-activity-page-replace-back-to-map-text-l](./quick/260921-mf2-activity-page-replace-back-to-map-text-l/) |
 
 ## Deferred Items
 
