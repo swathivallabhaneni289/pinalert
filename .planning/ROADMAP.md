@@ -184,7 +184,7 @@ Plans:
   4. A report's visibility state (Hidden/Provisional/Live/Retracted) is identical everywhere it's shown — feed, map, triage view, and shareable card — because one shared resolver function computes it.
   5. A user (the reporter or a nearby confirmer) can mark a report resolved, removing it from the live feed.
 
-**Plans**: 11/11 plans complete
+**Plans**: 15 plans (11 complete, 4 planned in gap-closure round 2)
 
 **Wave 1** *(parallel — zero file overlap, neither depends on the other)*
 
@@ -220,6 +220,13 @@ Plans:
 - [x] 02-08-PLAN.md — The inline resolve confirmation actually replaces the button row on both surfaces (the base vote-button rule was the one `display` rule in `trust.css` missing its `:not([hidden])` guard), and the Leaflet popup gets a theme-aware surface so its prompt is legible — the popup had been a white box in dark mode since Phase 1 (wave 8)
 - [x] 02-09-PLAN.md — The feed refetches when Safari restores it from the back-forward cache, `GET /api/reports` declares itself uncacheable, and the "Show disputed reports" filter is carried in the page URL so a reload keeps the view (a user-requested reversal of the spec's deliberate no-persistence scoping, amended on `02-UI-SPEC.md`) (wave 8)
 - [x] 02-10-PLAN.md — The Activity page gets a "Back to map" link, and a three-state System/Light/Dark control in the account menu writes the root `data-theme` attribute Phase 1's `main.css` was already built to read, applied before first paint on every full page including the logged-out ones (wave 8)
+
+**Gap closure (round 2)** *(from `02-UAT.md`'s six `status: failed` gaps, diagnosed live 2026-09-22; the four plans share zero files and run in parallel. Run via `/gsd-execute-phase 02 --gaps-only`)*
+
+- [ ] 02-11-PLAN.md — Both map surfaces (the primary map and the report modal's pin-drop map) resolve their OpenFreeMap basemap style from the live theme and re-style it on a toggle via a root-attribute observer, leaving `theme.js` byte-identical; the WebGL-less raster fallback stays light in every theme as an explicitly accepted limitation (wave 9)
+- [ ] 02-12-PLAN.md — "Show disputed reports" becomes a true partition rather than an additive reveal: `ListableInFeed` returns Live and Provisional only when the flag is off and Hidden only when it is on, with the two test suites, the research diagram and the regenerated OpenAPI spec brought onto the exclusive contract (**resolves backlog Phase 999.2**) (wave 9)
+- [ ] 02-13-PLAN.md — Provisional dimming strengthened from the intermediate age-ramp mix to 80 percent toward stale with a neutral row wash, behind a new perceptual-distance gate written to fail first against the shipped value, plus the defensive hidden-attribute guard on the Mark Resolved rule (cause still unconfirmed) (wave 9)
+- [ ] 02-14-PLAN.md — The two mechanical `site-design-rules.md` violations: ten user-visible long dashes rewritten in plain punctuation across nine files (including a third copy of the rate-limit message the debug sweep missed), and the two pill-shaped controls de-pilled, behind a standing gate. The broad polish items are deferred to `/gsd-ui-phase` (wave 9)
 
 **UI hint**: yes
 
@@ -316,7 +323,11 @@ during Phase 2 UAT re-verification (2026-09-18): the current submission flow is 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
 
-### Phase 999.2: "Show disputed reports" as an exclusive filter (BACKLOG)
+### Phase 999.2: "Show disputed reports" as an exclusive filter (RESOLVED, promoted 2026-09-22)
+
+**Status:** Promoted into Phase 2 gap-closure round 2 as plan `02-12-PLAN.md`, after the user raised
+the same objection a second time during UAT round 3 (2026-09-21/22). Do not promote again. Kept here
+rather than deleted so a reader of the backlog's history sees where it went.
 
 **Goal:** [Captured for future planning] Change "Show disputed reports" from an additive reveal
 (adds Hidden reports on top of the normal feed, per D-10) to an exclusive filter that shows ONLY
