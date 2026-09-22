@@ -1,14 +1,14 @@
 ---
-status: partial
+status: complete
 phase: 02-trust-mechanic-core-confirm-dispute-visibility
 source: [02-VERIFICATION.md]
 started: 2026-09-16T14:42:29Z
-updated: 2026-09-18T13:55:45Z
+updated: 2026-09-22T13:15:00Z
 ---
 
 ## Current Test
 
-[testing paused — 5 items outstanding: Test 5 (unfinished), Tests 8-11 (not started)]
+[testing complete]
 
 ## Tests
 
@@ -99,10 +99,27 @@ notes: Verified via freshly-run structural proof rather than live browser observ
 expected: A fresh non-critical report shows both a desaturated badge/border and an explicit
   "Unconfirmed" chip, on both the feed row and the map pin popup. An empty disputed-view result
   shows the specific "No disputed reports nearby" copy, not a blank list.
-result: [pending]
+result: issue
+reported: "I don't see the faded look but I definitely see the unconfirmed chip to it" (screenshot
+  2026-09-21, dark mode, a fresh Low-severity Flood report, feed row and map popup). THE USER DOES
+  NOT SEE THE FADING/DESATURATION. The required desaturated badge/border is not perceivable, so
+  half of the Provisional treatment (D-09) FAILS on both surfaces, even though the Unconfirmed chip
+  itself is visible and correct. Separately confirmed live in the same session: the 'No disputed
+  reports nearby' empty state renders with the Show disputed reports box ticked and no live reports
+  (that half of this test passes)."
+severity: major
 context: Carried forward from this same UAT's Test 2 — never visually confirmed either way (only
   checked via API response, not a screenshot). Unresolved by any gap-closure plan (none touch
   visibility.js or the badge/chip rendering path).
+notes: The user's observation is the finding: the fading is NOT visible to them. The chip half
+  passes on both surfaces; the fading half fails on both. Supporting evidence from pixel-sampling
+  the screenshot (context for the fix, not a reason to discount the report): row badge measured
+  #58947c and map pin #4b7d6a, versus the undimmed dark-mode Low colour --color-severity-low
+  #34D399, so .vis-provisional appears to be applied (trust.css line 128 mixes --severity-base
+  50/50 with --color-age-stale #4B4F55, predicting about #409177) but the effect is too weak to
+  perceive. Hypothesis, not confirmed: a Low-severity green blended toward dark grey still reads as
+  an ordinary green with no live report beside it. Whether it is also too weak in light mode is
+  unchecked (Test 10).
 
 ### 6. 02-08 gap closure: Mark Resolved button row is replaced, not doubled up
 expected: In a real browser (both themes), tap Mark resolved on someone else's report on the feed
@@ -133,7 +150,12 @@ notes: User confirmed live — legible now (this was checked against the freshly
 expected: Resolve a report, open Activity, tap Reopen, press the browser's Back button (Safari
   first, then one Chromium browser). The feed shows the reopened report live immediately with no
   manual reload, and the Network panel shows a fresh GET /api/reports fired on the restore.
-result: [pending]
+result: pass
+notes: User confirmed live in Safari on 2026-09-21 ("yes it did"): after Reopen on the Activity page,
+  pressing Safari's Back arrow showed the reopened report live in the feed with no manual reload.
+  Limits, stated honestly: the Chromium half (Chrome or Edge) was not run, and the Network panel
+  check for a fresh GET /api/reports was not observed (Web Inspector unavailable to the user), so
+  the pass rests on the visible outcome in Safari only.
 context: The pageshow/event.persisted fix is proven wired and correctly ordered by static
   inspection only. The pre-fix Safari bfcache symptom this fix targets was never independently
   reproduced live in the original UAT session — the diagnosis is the most likely explanation, not a
@@ -143,7 +165,15 @@ context: The pageshow/event.persisted fix is proven wired and correctly ordered 
 expected: Check "Show disputed reports", reload the page. The box is still checked and the disputed
   view shows from the very first paint, with no visible flash of the default feed first. Copy the
   URL with the parameter set, open in a new tab, confirm it loads the disputed view directly.
-result: [pending]
+result: issue
+reported: "still does that" (2026-09-21), and on the follow-up question the user picked "Report shows
+  under disputed": a report nobody disputed still appears when Show disputed reports is ticked. The
+  user considers their answers complete.
+severity: minor
+notes: Same finding as the exclusive-filter gap below (backlog 999.2, approved for fixing). The
+  reload-persistence, no-flash and new-tab halves of this test were NOT separately observed. Retest
+  them after the exclusive-filter fix, when they become easy to judge: with a live report present
+  the disputed view will be empty, so any flash of the default feed shows the report row briefly.
 context: The "restored before the first fetch" guarantee rests on an argument about script
   execution order that 02-09-SUMMARY itself flags as an argument, not a proof, and names what would
   invalidate it. Static tests confirm the code shape; they cannot observe whether a real browser
@@ -154,7 +184,19 @@ expected: Set the theme to Dark, reload — no flash of light first. Set Light, 
   gate renders light rather than snapping to a dark OS default. Toggle Dark — native checkboxes and
   the scrollbar also go dark. Walk all of Phase 2's UI once in light mode (never done — every UAT
   screenshot this phase was dark) and report anything illegible.
-result: [pending]
+result: issue
+reported: "for the light theme thing, even if I log out or reload, if I change the setting from dark
+  mode to light mode, it changes accordingly, it works fine" (2026-09-21/22). Two things raised
+  alongside that pass: (1) the 'Theme: Dark' text label 'looks really wordy', the user does not want
+  a words-based toggle and asked for research into how other apps present this control. (2) 'even if
+  i change it to the dark mode the map doesn't change much and same goes to when i change it to the
+  light mode', the map basemap looks the same regardless of theme.
+severity: minor
+notes: The core requirement (persists across reload and logout, no snap to a dark OS default, no
+  reported flash) passes on the user's own account. The two follow-on items are recorded as gaps
+  below rather than failing this test outright, since the user described the toggle itself as
+  working. Native checkbox/scrollbar dark styling was not explicitly confirmed or denied; left open,
+  not re-asked given the length of this session.
 context: Presence of a non-deferred head script and a color-scheme CSS declaration is provable by
   static inspection (done, both pass); a real paint-flash timing effect and real rendered legibility
   across a theme never once visually inspected in this project cannot be. 02-10-SUMMARY states
@@ -163,20 +205,90 @@ context: Presence of a non-deferred head script and a color-scheme CSS declarati
 ### 11. 02-10 gap closure: Activity "Back to map" link, live click-through
 expected: From the Activity page, click "Back to map" and confirm it lands on the main feed/map
   view.
-result: [pending]
+result: pass
+notes: User confirmed live (2026-09-21): the Back to map link works and returns to the map/feed,
+  including after reopening a report. Visual complaint recorded separately in the polish gap: the
+  link's placement and its plain underlined-text styling look odd to the user (screenshot shows it
+  as underlined white text floating top-left above the email, not styled like the app's buttons).
+  Not a functional failure, so this test passes.
 context: Structurally verified (link present, contract test passes) but not separately re-run live
   by the phase verifier.
 
 ## Summary
 
 total: 11
-passed: 3
-issues: 3
-pending: 5
+passed: 5
+issues: 6
+pending: 0
 skipped: 0
 blocked: 0
 
 ## Gaps
+
+- truth: "The map basemap itself visibly changes to match the app's Light/Dark theme, not just the surrounding chrome (badges, buttons, panels)."
+  status: failed
+  reason: "User reported (2026-09-21/22, during Test 10): 'even if i change it to the dark mode the map doesn't change much and same goes to the um when i change it to the light mode'."
+  severity: minor
+  test: 10
+  root_cause: "By design gap, not a defect: map.js hardcodes a single MapLibre style, 'https://tiles.openfreemap.org/styles/liberty' (a light basemap), with no theme-awareness at all, and the WebGL-less fallback is the standard OpenStreetMap raster tile server (also light-only, no dark variant exists). theme.js only ever touches document.documentElement's data-theme attribute, which main.css's app-chrome rules read; nothing in map.js listens for it. RESEARCHED 2026-09-22: OpenFreeMap does publish a ready-made dark vector style at the same free, no-key endpoint pattern as the current one, confirmed live (HTTP 200): https://tiles.openfreemap.org/styles/dark, alongside liberty, bright, positron and fiord. No paid tier or new vendor needed for the vector path. The OSM raster fallback has no equivalent free dark style; that path would keep the light raster tiles even after this fix, and needs its own decision (accept the mismatch, or drop dark-theme parity for the no-WebGL fallback only)."
+  artifacts:
+    - path: "web/static/js/map.js"
+      issue: "MapLibre style URL is a single hardcoded light style with no data-theme awareness"
+  missing:
+    - "Swap the MapLibre style URL between the liberty (light) and dark OpenFreeMap styles based on document.documentElement's data-theme attribute (and the system preference when data-theme is absent), re-applying on theme.js's toggle click without a full page reload if practical. Decide and document what the raster (no-WebGL) fallback does in dark mode, since OpenFreeMap has no free dark raster tiles to match."
+  debug_session: ""
+
+- truth: "With Show disputed reports ticked, the list and map show ONLY disputed reports; a fresh live or provisional report does not appear."
+  status: failed
+  reason: "User reported (2026-09-21, during Test 9): 'still pops up in the disputed reports when I click the show disputed reports... I still see the report, the issue I just added.' Same objection first raised 2026-09-18 (backlog 999.2). The user has now asked for this twice."
+  severity: minor
+  test: 9
+  root_cause: "Not a defect: additive reveal is the documented design (D-10). GET /api/reports?show_disputed=true returns the normal feed plus Hidden reports (internal/api/handlers/reports.go ~line 388), and feed.js only swaps to the disputed empty state when the whole list is empty. Changing it reverses locked decision D-10 and needs the user's go-ahead. GIVEN 2026-09-21: the user asked again 'if no one disputed it why am I seeing that in the disputed area, it should not pop up there', so the exclusive filter is approved."
+  artifacts:
+    - path: "internal/api/handlers/reports.go"
+      issue: "show_disputed=true adds Hidden reports to the default feed instead of replacing it"
+    - path: "web/static/js/feed.js"
+      issue: "Disputed empty state only shows when the combined list is empty"
+  missing:
+    - "Make show_disputed an exclusive filter: return only Hidden reports when set, and update the empty-state, toggle copy and any tests that assert the additive contract. Promotes backlog 999.2 into gap closure."
+  debug_session: ""
+
+- truth: "The app looks and feels polished: buttons, backgrounds and surfaces look intentionally designed, and interactions and transitions are smooth, not like a beginner's first web project."
+  status: failed
+  reason: "User reported (2026-09-21, while on the Activity page during Test 8, screenshot attached): 'the buttons and like the way the website is designed right now looks like a star beginner doing to start... I don't want it to look like that I want it to be like looking smooth transitions very smooth process I don't know these buttons and the background I don't know I think we should fix it'. Also flagged that a button label for the light/dark feature 'looks really odd' and asked for it to be fixed."
+  severity: major
+  test: general (raised during Test 8, not a failure of Test 8's own expectation)
+  root_cause: "Not diagnosed. Broad visual-design and motion-polish scope, larger than a gap fix. Two concrete labels are named as odd: the account menu's theme control reads 'Theme: System' (account_header.html.tmpl line 12, id theme-toggle) and the Activity page's Reopen button reads 'Reopen · not actually resolved' (votes.js line 79, REOPEN_BUTTON_LABEL). The user has not said which one they meant, possibly both."
+  artifacts:
+    - path: "web/static/css/main.css"
+      issue: "Global styling, buttons and backgrounds judged unpolished by the user; no transition/motion system observed"
+    - path: "web/static/css/trust.css"
+      issue: "Vote/resolve/reopen button styling judged unpolished by the user"
+    - path: "web/templates/profile.html.tmpl"
+      issue: "The 'Back to map' link works but its placement (top-left, above the email) and plain underlined-text styling look odd to the user (reported 2026-09-21)"
+    - path: "web/templates/account_header.html.tmpl"
+      issue: "CONFIRMED 2026-09-22: the 'Theme: Dark'/'Theme: Light'/'Theme: System' text label is the odd control the user meant. Their words: 'it looks really wordy and I don't like it that way'. They asked for research into how other apps and sites present a theme toggle before redesigning it (e.g. an icon-only sun/moon control cycling the same three modes, common on iOS/Android system settings and most major sites, versus a text label). Do this research as part of the wider polish pass, then replace the wordy text label with whatever pattern the research and the site-design-rules.md constraints (no emoji icons; use a real SVG glyph, matching the .auth-icon mask system already used for user.svg/log-out.svg/arrow-left.svg) land on."
+    - path: "web/static/js/votes.js"
+      issue: "REOPEN_BUTTON_LABEL 'Reopen · not actually resolved' named as odd (unconfirmed which control)"
+  missing:
+    - "A UI design pass (contract first, e.g. via /gsd-ui-phase) covering buttons, surfaces, background, hover/press states and smooth transitions, checked in both themes"
+    - "Reword the odd button label(s) once the user confirms which one they meant"
+    - "HARD CONSTRAINTS from the user (2026-09-21), copy into any UI-SPEC: the site must not look vibe coded. Never use purple gradients, pill-shaped buttons (user confirmed), fake reviews or fake metrics, hero text of any kind (user confirmed: 'no hero text'), emoji icons, em or en dashes in any user-visible copy, or over-the-top scroll animations. Smooth but restrained transitions only."
+    - "Sweep existing user-visible copy for em dashes: <title> tags in login_gate, verify_outcome and profile templates, login_gate and check_inbox body copy, index.html.tmpl location-off notice, auth.js rate-limit error. Known pill radii: .view-toggle and #toast in main.css."
+  debug_session: ""
+
+- truth: "A fresh non-critical report's badge/border is visibly desaturated (D-09 Provisional dimming) on both the feed row and the map pin popup, in addition to the Unconfirmed chip."
+  status: failed
+  reason: "User reported: I don't see the faded look but I definitely see the unconfirmed chip to it. The user does not see any fading on a fresh unconfirmed report, on the feed row or the map popup, so the desaturation half of the Provisional treatment does not work for them."
+  severity: major
+  test: 5
+  root_cause: "Likely cause (hypothesis, to be confirmed at diagnosis): .vis-provisional IS applied (screenshot badge pixels #58947c row, #4b7d6a pin, not the undimmed #34D399), but the 50/50 mix in trust.css line 128 (--severity-base with --color-age-stale) is too weak to be perceived as 'faded' for a Low-severity green in dark mode. The fix needs a much stronger, unmistakable dimming (e.g. lower opacity or a larger desaturation) checked in both themes; Test 10 covers the light-mode look."
+  artifacts:
+    - path: "web/static/css/trust.css"
+      issue: ".vis-provisional mixes only 50% toward --color-age-stale; too weak to perceive for Low severity in dark mode"
+  missing:
+    - "Strengthen the provisional dimming until it is unmistakable without a side-by-side reference, then re-check in both themes"
+  debug_session: ""
 
 - truth: "Tapping 'Mark resolved' hides the .vote-btn--resolve button itself (not just Confirm/Dispute) once the inline Yes/Cancel confirmation appears, on the feed row."
   status: failed
