@@ -111,22 +111,50 @@
  * makes these win over .age-*'s own declarations of the same properties.
  * ---------------------------------------------------------------------- */
 
-/* Provisional (D-09) — unconditionally reuses Phase 1's expiry-fade mix
-   (01-CONTEXT.md D-17: desaturation toward gray, never opacity), so "not
-   yet trusted" reads consistently with "going stale". The value below is
-   copied character for character from main.css's .age-aging rule —
-   TestVisibilityCascadeOverridesAgeRamp asserts the two stay string-equal
-   at test time, reading main.css's own value rather than a hardcoded copy,
-   so the two cannot silently drift apart. This applies regardless of the
-   report's real age stage, per 02-UI-SPEC.md's cascade contract, and wins
-   over .age-* purely through this file's load position.
+/* Provisional (D-09, gap-closure plan 02-13). Originally reused Phase 1's
+   intermediate expiry-fade mix (01-CONTEXT.md D-17: desaturation toward
+   gray, never opacity) character for character from main.css's .age-aging
+   rule, on the theory that "not yet trusted" should read consistently with
+   "going stale". A human reported (UAT Test 5, 2026-09-21) that they could
+   not see the dimming at all, on either the feed row or the map pin, in
+   dark mode. Measured against this app's own contrast machinery, the
+   shared 50/50 value produced only ~1.9-2.0:1 luminance contrast in dark
+   mode and ~1.46:1 in light mode against the undimmed fill — roughly half
+   the strength of this app's own strongest existing desaturation step
+   (Fresh-to-Stale, ~4.3:1 dark). Unlike the age ramp, which a reader learns
+   by watching one report's own border drift over its lifetime, a
+   Provisional report has no adjacent reference to compare against, so a
+   shift that subtle read as "the same colour". The reuse of .age-aging's
+   value was a reasonable consistency decision on its own terms; what was
+   missing was any test asserting either value was far enough from the
+   undimmed baseline to see.
+
+   The value below severs that reuse deliberately: 20% severity to 80%
+   stale, roughly twice as strong as the old 50/50 mix. As a product
+   statement, a Provisional report now reads as nearly as drained as an
+   about-to-expire one — that is the point of the state, not an accident of
+   the numbers. TestProvisionalDimmingIsPerceptiblyDistinctFromLive
+   (web/css_contract_test.go) now guards the strength directly, by
+   resolving the shipped colour rather than reading the percentage written
+   here, so this value cannot be weakened past its floor without the build
+   failing.
    Note for a future editor: the colour-space keyword below is "srgb"
    followed by a comma, not "rgb(" followed by a parenthesis, so it does
    not match TestVoteButtonsMeetTouchTargetAndUseTokensOnly's forbidden-
    function-notation check — this value is safe and must not be rewritten
    to dodge that check. */
 .vis-provisional {
-  --severity-current: color-mix(in srgb, var(--severity-base) 50%, var(--color-age-stale) 50%);
+  --severity-current: color-mix(in srgb, var(--severity-base) 20%, var(--color-age-stale) 80%);
+  /* Feed-row-only confound the diagnosis named: without this, the row's
+     background wash stays main.css's full-strength --severity-tint (a
+     saturated severity-coloured background) even as the border and badge
+     dim, so the row still reads as "green"/"amber"/etc. --color-surface is
+     an existing neutral token, already permitted by this file's
+     custom-property allowlist (TestVisibilityCascadeOverridesAgeRamp).
+     Deliberately not `transparent`: that is exactly .vis-hidden's value
+     below, and collapsing the two would regress a Hidden behaviour UAT
+     Test 2 confirmed correct. */
+  --severity-tint: var(--color-surface);
   --badge-glyph-fg: var(--color-text);
 }
 
@@ -269,8 +297,24 @@
 
 /* Inverted neutral fill — matches Phase 1's FAB/primary-submit-button
    treatment. Mark Resolved is a primary-weight action, not a severity
-   signal, so it deliberately does not borrow a severity hue. */
-.vote-btn--resolve {
+   signal, so it deliberately does not borrow a severity hue.
+
+   Gap closure (02-UAT.md Test 6, gap-closure plan 02-13): this was the
+   only rule in the Mark Resolved block without the [hidden] specificity
+   guard every sibling rule here carries (see this file's header comment).
+   It declares no `display` property, so it could not contest the base
+   `.vote-btn:not([hidden])` rule's guarded display the way an unguarded
+   display rule would — extensive headless reproduction in two rendering
+   engines (Chromium and WebKit), against both an isolated block and the
+   real feed-row DOM ancestry, never reproduced the reported symptom (a
+   tall light-coloured rectangle staying visible beside the Yes/Cancel
+   confirmation). This is a consistency fix, restoring this rule to the
+   guard discipline every other display-bearing rule in this file follows;
+   it does NOT claim to have fixed the symptom, whose live cause remains
+   unidentified. See .planning/debug/resolve-button-not-hidden.md for the
+   full investigation and 02-13-PLAN.md's human-check for the decisive next
+   step (a live DevTools capture at the moment the rectangle is observed). */
+.vote-btn--resolve:not([hidden]) {
   background: var(--color-text);
   color: var(--color-bg);
   border-color: var(--color-text);
