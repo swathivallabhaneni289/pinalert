@@ -443,3 +443,80 @@ func TestIconGlyphsAreClassDriven(t *testing.T) {
 			"value reach className unchecked (T-01-13-01, direct continuation of T-01-17)", allowlistRef)
 	}
 }
+
+// TestMapPopupCarriesReportStateClasses closes plan 260923-mb0 Task 3: it
+// proves map.js wires the same three validated state classes (severity,
+// age, visibility) onto a marker's popup at the moment it is first bound,
+// keeps them current on every reconcile pass afterward through the popup's
+// own live container element, and never unbinds an already open popup to
+// do it. render()'s own comment names dropping an open popup a reader is
+// looking at as exactly the failure its reconcile-by-id loop exists to
+// prevent.
+//
+// This file's own convention, matching TestIconGlyphsAreClassDriven above:
+// prove the wiring exists in the shipped source text, not that it executes
+// correctly. A real browser actually compositing a tinted popup is what the
+// end-of-phase human check is for.
+func TestMapPopupCarriesReportStateClasses(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/map.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/map.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	// The content argument passed to bindPopup( itself contains a nested
+	// call (buildPopupContent(report)), so a paren-based terminator would
+	// read past the one call this window means to scope. marker.on( is the
+	// statement that always immediately follows a new marker's bindPopup(
+	// call in this file, so it is the deliberate terminator instead.
+	const bindAnchor = "bindPopup("
+	const bindTerminator = "marker.on("
+	body, anchorFound, termFound := windowAfter(text, bindAnchor, bindTerminator)
+	if !anchorFound {
+		t.Fatalf("expected a %q call in static/js/map.js", bindAnchor)
+	}
+	if !termFound {
+		t.Fatalf("expected a %q call following the %q call in static/js/map.js", bindTerminator, bindAnchor)
+	}
+
+	classNameValue, found := readOptionValue(body, "className")
+	if !found {
+		t.Fatalf("the bindPopup( call's options object does not declare a className option: %q", body)
+	}
+	if strings.HasPrefix(classNameValue, "'") || strings.HasPrefix(classNameValue, "\"") {
+		t.Errorf("bindPopup('s className option %q is a literal string rather than a call to the "+
+			"state class builder. A report's severity/age/visibility state can change on any 30 "+
+			"second poll, so a literal string bound once at first open would go stale", classNameValue)
+	}
+	if classNameValue != "popupStateClasses(report)" {
+		t.Errorf("bindPopup('s className option must call the state class builder as "+
+			"popupStateClasses(report), found %q", classNameValue)
+	}
+
+	// getElement is Leaflet's own documented accessor and the only path
+	// that reaches an already-opened popup's live container, which the
+	// reconcile path needs in order to swap classes on an open popup in
+	// place rather than rebinding it.
+	const getElementAccessor = "getElement("
+	if !strings.Contains(text, getElementAccessor) {
+		t.Errorf("static/js/map.js does not reference Leaflet's %q accessor, the only documented "+
+			"path that reaches an already-opened popup's live container", getElementAccessor)
+	}
+
+	const reconcileUpdate = "setPopupContent("
+	if !strings.Contains(text, reconcileUpdate) {
+		t.Errorf("static/js/map.js no longer calls %q on the reconcile path, the mechanism that "+
+			"keeps an already-bound marker's popup content current on every 30 second poll",
+			reconcileUpdate)
+	}
+
+	// The negative form of render()'s never-drop-an-open-popup constraint:
+	// rebinding a popup to pass a fresh className would close a popup a
+	// reader currently has open on the very next poll.
+	const unbindMethod = "unbindPopup("
+	if strings.Contains(text, unbindMethod) {
+		t.Errorf("static/js/map.js calls %q. Rebinding a popup to pass a fresh className would "+
+			"close a popup a reader currently has open on the next 30 second poll, which is exactly "+
+			"what render()'s own reconcile-by-id loop exists to prevent", unbindMethod)
+	}
+}
