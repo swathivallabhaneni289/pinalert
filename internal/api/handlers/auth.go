@@ -130,7 +130,10 @@ func RequestLink(svc *service.AuthService) http.HandlerFunc {
 		normalizedEmail, err := svc.RequestLink(r.Context(), req.Email)
 		if err != nil {
 			if errors.Is(err, service.ErrRateLimited) {
-				writeFieldError(w, http.StatusTooManyRequests, "email", "Too many requests — try again in a minute.")
+				// This sentence is duplicated in internal/ratelimit's
+				// tooManyRequestsMessage and in the client-side auth.js
+				// script; all three copies must move together (02-14).
+				writeFieldError(w, http.StatusTooManyRequests, "email", "Too many requests. Try again in a minute.")
 				return
 			}
 			var ve service.ValidationError

@@ -18,7 +18,7 @@ const (
 	verificationBodyText = "Click the link below to verify your email and start using Pinalert. " +
 		"This link expires in 5 minutes and can only be used once."
 	verificationButtonLabel = "Verify email"
-	verificationDisclaimer  = "Didn't request this? You can safely ignore this email — no account will be created."
+	verificationDisclaimer  = "Didn't request this? You can safely ignore this email. No account will be created."
 )
 
 // resendMailer implements Mailer by sending through Resend's official Go

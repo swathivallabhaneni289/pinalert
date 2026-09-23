@@ -155,7 +155,7 @@ func TestMiddlewareRefusesBeyondBurst(t *testing.T) {
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("status = %d, want 429", rec.Code)
 	}
-	want := `{"error":{"field":"email","message":"Too many requests — try again in a minute."}}`
+	want := `{"error":{"field":"email","message":"Too many requests. Try again in a minute."}}`
 	if rec.Body.String() != want {
 		t.Fatalf("body = %q, want %q", rec.Body.String(), want)
 	}
