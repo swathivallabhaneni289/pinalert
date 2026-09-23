@@ -310,7 +310,11 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 ## Backlog
 
-### Phase 999.1: Address search box for report location (BACKLOG)
+### Phase 999.1: Address search box for report location (PROMOTED to Phase 7, 2026-09-23)
+
+**Status:** Promoted to Phase 7 after the user called it "one of the most important things" and
+asked for it to be planned during Phase 2 UAT round 3 continuation. Kept here rather than deleted
+so a reader of the backlog's history sees where it went.
 
 **Goal:** [Captured for future planning] Add a text/address search box for setting a report's
 location, using OSM Nominatim geocoding (free, no API key) to jump the map/pin to the typed
@@ -343,3 +347,22 @@ behavior matches documented D-10 — but a real UX objection to that design.
 Plans:
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 7: Address search box for report location
+
+**Goal:** Add a text/address search box for setting a report's location, using OSM Nominatim
+geocoding (free, no API key) to jump the map/pin to the typed address, kept alongside the
+existing draggable pin for fine-tuning, not replacing it. Surfaced during Phase 2 UAT
+re-verification (2026-09-18) and repeated by the user during Phase 2 UAT round 3 continuation
+(2026-09-23, "we don't know if it's where we're going... it's like randomly picking up a place
+depending on the location where I'm in, but we need to have that description for the location
+also mentioned properly when the person is making a report"): the current submission flow is
+100% map-interaction (GPS auto-fill, drag, tap-to-place), with no way to type an address.
+**Requirements**: TBD
+**Depends on:** Phase 1 (the report-submission modal and its map already exist there; this phase
+only adds a search input alongside them, it does not need Phase 6's coordination features)
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 7 to break down)
