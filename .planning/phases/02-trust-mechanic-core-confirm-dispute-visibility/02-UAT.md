@@ -1,10 +1,20 @@
 ---
-status: diagnosed
+status: fixes_shipped_pending_retest
 phase: 02-trust-mechanic-core-confirm-dispute-visibility
 source: [02-VERIFICATION.md]
 started: 2026-09-16T14:42:29Z
-updated: 2026-09-22T14:00:00Z
+updated: 2026-09-23T00:00:00Z
 ---
+
+<!-- Gap-closure round 2 (plans 02-11..02-14, wave 9) shipped 2026-09-23. Full commit range:
+     bab6292..04cdeae. All code fixes pass automated tests against a disposable database
+     (never pinalert_test) and were merged cleanly. This does NOT mean every gap is closed:
+     four of the five fixes address things a passing test cannot fully confirm (the user
+     perceiving a color change, seeing a map repaint, or a UI symptom whose live cause was
+     never confirmed). Only the disputed-filter gap's underlying defect is unambiguously
+     fixed by code; its own UAT test still needs a live retest for the parts that only
+     became observable once the fix landed. See each gap entry below for the honest
+     per-gap status; do not read "status: fixes_shipped_pending_retest" above as "resolved". -->
 
 ## Current Test
 
@@ -223,10 +233,22 @@ pending: 0
 skipped: 0
 blocked: 0
 
+gap_closure_round_2: |
+  2026-09-23, plans 02-11..02-14 (wave 9), commit range bab6292..04cdeae. All 4 plans merged
+  clean, full test suite green against a disposable database. Honest per-gap status:
+  1 of 6 gaps: status resolved (disputed-filter-not-exclusive, code-level defect, code fix).
+  4 of 6 gaps: status fix_shipped_pending_retest or defensive_fix_shipped_cause_unconfirmed
+  (map-theme, provisional-dimming, resolve-button, and the mechanical half of ui-visual-polish)
+  — code shipped and passes automated tests, but each needs a live look before calling it done.
+  1 of 6 gaps: ui-visual-polish's larger scope (motion, tokens, surface elevation, theme-toggle
+  icon) deliberately deferred to a future /gsd-ui-phase design pass, not touched here.
+  Dev server must be restarted before any retest (CSS/JS are go:embed'd at build time).
+
 ## Gaps
 
 - truth: "The map basemap itself visibly changes to match the app's Light/Dark theme, not just the surrounding chrome (badges, buttons, panels)."
-  status: failed
+  status: fix_shipped_pending_retest
+  fix_shipped: "2026-09-23, plan 02-11, commits 288a5d2/fb88e64/a4f1c0d. Both map.js and modal.js now resolve the theme from document.documentElement's data-theme (falling back to matchMedia for System) and re-style via a MutationObserver, switching between the existing liberty style and the newly-added dark OpenFreeMap style, guarded against the renderer not existing yet. All named unit/contract tests pass, including a new TestMapBasemapFollowsTheAppTheme. NOT independently confirmed in a real browser: this is a visual behavior no test can fully prove. Retest: load the map, toggle Theme between Light and Dark, confirm the basemap itself repaints (not just badges/buttons), on both the main map and the report-submission pin-drop map. The dev server must be restarted first (CSS/JS are embedded at build time)."
   reason: "User reported (2026-09-21/22, during Test 10): 'even if i change it to the dark mode the map doesn't change much and same goes to the um when i change it to the light mode'."
   severity: minor
   test: 10
@@ -246,7 +268,8 @@ blocked: 0
   debug_session: ".planning/debug/map-theme-not-applied.md"
 
 - truth: "With Show disputed reports ticked, the list and map show ONLY disputed reports; a fresh live or provisional report does not appear."
-  status: failed
+  status: resolved
+  fix_shipped: "2026-09-23, plan 02-12, commits 10bca11/aa37950/1f649f9. internal/service/feed.go's ListableInFeed is now a true partition (Live/Provisional return !includeDisputed; Hidden returns includeDisputed). Verified against a disposable Postgres database (never pinalert_test): TestListableInFeed (10/10 subtests), TestNearbyHidesDisputedUnlessRequested (5/5), TestShowDisputedRevealsHiddenReports, and three sibling tests the executor found and fixed as a same-file deviation, all pass. Swagger docs and 02-RESEARCH.md's diagram were corrected and regenerated. This defect is code-level, not perceptual, so status: resolved is warranted here (unlike the other four gaps in this round). RETEST STILL NEEDED, separately: Test 9 below (reload persistence, no-unfiltered-flash, new-tab load) was never independently observed and only becomes judgeable now that the disputed view is genuinely empty when nothing is disputed."
   reason: "User reported (2026-09-21, during Test 9): 'still pops up in the disputed reports when I click the show disputed reports... I still see the report, the issue I just added.' Same objection first raised 2026-09-18 (backlog 999.2). The user has now asked for this twice."
   severity: minor
   test: 9
@@ -270,7 +293,8 @@ blocked: 0
   debug_session: ".planning/debug/disputed-filter-not-exclusive.md"
 
 - truth: "The app looks and feels polished: buttons, backgrounds and surfaces look intentionally designed, and interactions and transitions are smooth, not like a beginner's first web project."
-  status: failed
+  status: partially_fix_shipped_rest_deferred
+  fix_shipped: "2026-09-23, plan 02-14, commits af04ca2/33295b5/686b1d0. Only the mechanical half of this gap was closed, exactly as scoped: all 10 confirmed em-dash sites rewritten to plain punctuation (one more site found during execution than the debug session listed, a third copy of the rate-limit sentence in auth.go; all three copies are now byte-identical), and the two 999px pill radii (.view-toggle, #toast) changed to 8px matching .category-tile. Both are gated by new standing tests (web/design_rules_contract_test.go). THE LARGER COMPLAINT THIS GAP IS ABOUT IS UNCHANGED BY DESIGN: the hover/active/transition motion system, the radius/shadow/duration token scale, the background/surface-elevation treatment, and the theme-toggle icon redesign are explicitly deferred to a future /gsd-ui-phase design contract, not a code patch. Do not read this gap as closed; the 'looks like a beginner project' impression the user described is the still-open part."
   reason: "User reported (2026-09-21, while on the Activity page during Test 8, screenshot attached): 'the buttons and like the way the website is designed right now looks like a star beginner doing to start... I don't want it to look like that I want it to be like looking smooth transitions very smooth process I don't know these buttons and the background I don't know I think we should fix it'. Also flagged that a button label for the light/dark feature 'looks really odd' and asked for it to be fixed."
   severity: major
   test: general (raised during Test 8, not a failure of Test 8's own expectation)
@@ -297,7 +321,8 @@ blocked: 0
   debug_session: ".planning/debug/ui-visual-polish.md"
 
 - truth: "A fresh non-critical report's badge/border is visibly desaturated (D-09 Provisional dimming) on both the feed row and the map pin popup, in addition to the Unconfirmed chip."
-  status: failed
+  status: fix_shipped_pending_retest
+  fix_shipped: "2026-09-23, plan 02-13, commits 8c5f391/9e5a97b/79cd442. .vis-provisional's color-mix strengthened from 50/50 to 20/80 toward --color-age-stale, plus --severity-tint neutralized on the feed row so the background wash no longer stays full-strength green. Measured chroma ratios after the fix: 0.15-0.23 (well under the 0.30 ceiling), luminance contrast 2.93-3.16:1 dark mode and 1.71-1.83:1 light mode (both above their floors). A new standing test, TestProvisionalDimmingIsPerceptiblyDistinctFromLive, was confirmed RED against the old 50/50 mix (chroma ~0.46-0.52, matching the diagnosis's prediction almost exactly) and GREEN after the fix. A computed contrast number is not the same thing as the user perceiving it, which is exactly what this gap is about, so this is NOT marked resolved. Retest: look at a fresh unconfirmed report's badge and border on the feed row and the map marker icon (not the popup, which never had a badge by design), in both themes, and confirm it now visibly reads as faded next to a normal report."
   reason: "User reported: I don't see the faded look but I definitely see the unconfirmed chip to it. The user does not see any fading on a fresh unconfirmed report, on the feed row or the map popup, so the desaturation half of the Provisional treatment does not work for them."
   severity: major
   test: 5
@@ -317,7 +342,8 @@ blocked: 0
   debug_session: ".planning/debug/provisional-dimming-not-perceptible.md"
 
 - truth: "Tapping 'Mark resolved' hides the .vote-btn--resolve button itself (not just Confirm/Dispute) once the inline Yes/Cancel confirmation appears, on the feed row."
-  status: failed
+  status: defensive_fix_shipped_cause_unconfirmed
+  fix_shipped: "2026-09-23, plan 02-13, commit 9e5a97b (same plan as the dimming fix, same file). Applied ONLY the low-risk defensive fix the inconclusive debug session recommended: added the :not([hidden]) guard to trust.css's .vote-btn--resolve rule, for consistency with every sibling rule in that block. This is NOT a confirmed repair; extensive headless testing in both Chromium and WebKit never reproduced the symptom at all, in isolation, with full DOM ancestry, or under a simulated background poll. Retest: repeat the original steps (Mark resolved on someone else's report, feed row, dark theme). If it still happens, the decisive next step is a live DevTools Elements/Computed panel check at the moment it appears, on the actual device, not more static investigation. The map popup surface was never covered by this investigation either and may need its own check."
   reason: "User reported (live, against the freshly-restarted server running today's code): Confirm/Dispute now correctly disappear, but the Mark resolved button itself stays visibly rendered next to the confirmation box, stretched tall by flexbox align-items:stretch, rendering as an odd white/black rectangle against the dark theme."
   severity: major
   test: 6
