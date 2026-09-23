@@ -75,7 +75,7 @@ const docTemplate = `{
         },
         "/reports": {
             "get": {
-                "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance,\nthen resolves each report's visibility fresh via the shared resolver and returns\nonly listable ones, nearest first. This single endpoint serves both the map and the\nlist views — there is no separate map-only route. A resolved (retracted) report is\nnever returned by either view. show_disputed=true additionally includes reports\ncurrently hidden by disputes, in the list and among the map pins together. Every\nreport carries your_vote and is_own_report relative to the calling verified account.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401 and no report data.",
+                "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance,\nthen resolves each report's visibility fresh via the shared resolver and returns\nonly listable ones, nearest first. This single endpoint serves both the map and the\nlist views — there is no separate map-only route. A resolved (retracted) report is\nnever returned by either view. show_disputed=true switches to the disputed-only\nview: only reports currently hidden by disputes, on the list and among the map pins\ntogether, replacing the default Live-and-Provisional view rather than adding to it.\nA critical or rescue-needed report stays Live however heavily it is disputed, so it\nappears only in the default view, never in the disputed one. Every report carries\nyour_vote and is_own_report relative to the calling verified account. Requires a\nsession verified by email through the magic-link flow; an unverified caller receives\n401 and no report data.",
                 "produces": [
                     "application/json"
                 ],
@@ -109,7 +109,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "boolean",
-                        "description": "Include reports hidden by disputes (defaults to false)",
+                        "description": "Select the disputed-only view instead of the default view (defaults to false)",
                         "name": "show_disputed",
                         "in": "query"
                     }
