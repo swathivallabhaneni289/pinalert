@@ -689,6 +689,11 @@ var nonCategoryIcons = map[string]bool{
 	// Activity page back control (quick task 260921-mf2): an auth-surface
 	// glyph styled through the .auth-icon-- prefix, same exemption reasoning.
 	"static/icons/arrow-left.svg": true,
+	// Account menu theme toggle (quick task 260923-qwi): two more
+	// auth-surface glyphs styled through the .auth-icon-- prefix, same
+	// exemption reasoning.
+	"static/icons/sun.svg":  true,
+	"static/icons/moon.svg": true,
 }
 
 // TestCategoryGlyphMaskRulesCoverEveryCategory guards the 01-13 fix's own

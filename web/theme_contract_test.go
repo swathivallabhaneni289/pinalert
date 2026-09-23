@@ -146,11 +146,29 @@ func TestThemeModuleUsesNoMarkupParsingSink(t *testing.T) {
 }
 
 // TestThemeModuleValidatesStoredModeBeforeReflectingIt guards T-01-17: the
-// stored mode is validated against a fixed list before it is ever
-// reflected into the root theme attribute. There must be exactly one place
-// a value can reach the DOM (one setAttribute, one removeAttribute call
-// site for the root theme attribute), and it must be downstream of an
-// indexOf membership check against that fixed list.
+// stored mode is validated against a fixed two-element list (light, dark)
+// before it is ever reflected into the root theme attribute. There must be
+// exactly one place a value can reach the DOM, one setAttribute call site
+// for the root theme attribute, and it must be downstream of an indexOf
+// membership check against that fixed list. There is no removeAttribute
+// call site any more: with follow-the-OS gone (D-D), there is no branch
+// that wants the attribute absent, so the single setAttribute call is the
+// only write path left.
+//
+// This test also positively asserts theme.js references matchMedia at all,
+// the one-time operating-system read that seeds a first-ever visit's
+// initial mode (D-C). Presence only, deliberately never a count: the
+// correct guarded form of this lookup (an existence check on the window
+// property, then the call) legitimately names matchMedia twice, and the
+// media-feature string legitimately appears again in the file's own header
+// comment, so any exact count would force either a red build or a
+// bound-reference hack that throws in a real browser. What this presence
+// assertion does NOT prove: that the operating system is read exactly once
+// ever. That property is structural, not greppable, because the
+// initial-mode function runs exactly once during module evaluation and
+// only reaches matchMedia when the storage read returned null (D-C) —
+// carried by this task's done criteria and the human check, not by this
+// test.
 func TestThemeModuleValidatesStoredModeBeforeReflectingIt(t *testing.T) {
 	raw, err := StaticFS.ReadFile(themeJSPath)
 	if err != nil {
@@ -172,9 +190,10 @@ func TestThemeModuleValidatesStoredModeBeforeReflectingIt(t *testing.T) {
 			"more than one place a value can reach the DOM defeats the point of validating it in "+
 			"exactly one place", themeJSPath, got)
 	}
-	if got := strings.Count(text, "removeAttribute('data-theme'"); got != 1 {
-		t.Errorf("%s: expected exactly one removeAttribute('data-theme') call site, found %d",
-			themeJSPath, got)
+
+	if !strings.Contains(text, "matchMedia") {
+		t.Errorf("%s: expected a reference to matchMedia — the one-time operating-system read that "+
+			"seeds a first-ever visit's initial mode (D-C)", themeJSPath)
 	}
 }
 
@@ -203,10 +222,12 @@ func TestThemeModuleGuardsStorageAccess(t *testing.T) {
 // TestAccountHeaderRendersThemeControl asserts the shared account header
 // partial renders the theme control between Activity and Log out, reusing
 // the existing menu-item class and menuitem role, and that theme.js
-// actually addresses both the control's id and its label span's id. Both
-// ids are read out of the two embedded files rather than hardcoded twice in
-// this test, so a rename on either side can only drift this test, never
-// let the two silently diverge.
+// actually addresses the control's id, the glyph span's id, and both icon
+// modifier class names. All four are read out of the embedded template and
+// script rather than hardcoded twice in this test, so a rename on any side
+// can only drift this test, never let them silently diverge — this is the
+// drift guard across template, script and CSS that catches a rename before
+// it ships a button that renders an empty circle.
 func TestAccountHeaderRendersThemeControl(t *testing.T) {
 	tmplRaw, err := TemplatesFS.ReadFile(accountHeaderPath)
 	if err != nil {
@@ -215,13 +236,13 @@ func TestAccountHeaderRendersThemeControl(t *testing.T) {
 	tmplText := string(tmplRaw)
 
 	const controlID = `id="theme-toggle"`
-	const labelID = `id="theme-toggle-label"`
+	const iconID = `id="theme-toggle-icon"`
 
 	if !strings.Contains(tmplText, controlID) {
 		t.Fatalf("%s: expected %s — the theme control's own id", accountHeaderPath, controlID)
 	}
-	if !strings.Contains(tmplText, labelID) {
-		t.Fatalf("%s: expected %s — the control's changing-word span's own id", accountHeaderPath, labelID)
+	if !strings.Contains(tmplText, iconID) {
+		t.Fatalf("%s: expected %s — the control's glyph span's own id", accountHeaderPath, iconID)
 	}
 
 	window := findTagWindow(t, tmplText, controlID)
@@ -232,6 +253,14 @@ func TestAccountHeaderRendersThemeControl(t *testing.T) {
 		t.Errorf("%s: theme control tag is missing the existing account-menu__item class — window: %q",
 			accountHeaderPath, window)
 	}
+	if !strings.Contains(window, "aria-label=") {
+		t.Errorf("%s: theme control tag is missing an aria-label attribute — an icon-only control has "+
+			"no visible text, so this attribute carries the whole accessible name — window: %q",
+			accountHeaderPath, window)
+	}
+	if !strings.Contains(window, "title=") {
+		t.Errorf("%s: theme control tag is missing a title attribute — window: %q", accountHeaderPath, window)
+	}
 
 	jsRaw, err := StaticFS.ReadFile(themeJSPath)
 	if err != nil {
@@ -239,10 +268,87 @@ func TestAccountHeaderRendersThemeControl(t *testing.T) {
 	}
 	jsText := string(jsRaw)
 
-	for _, id := range []string{"theme-toggle", "theme-toggle-label"} {
-		if !strings.Contains(jsText, id) {
-			t.Errorf("%s: expected a reference to %q — the id read from %s", themeJSPath, id, accountHeaderPath)
+	for _, ref := range []string{"theme-toggle", "theme-toggle-icon", "auth-icon--sun", "auth-icon--moon"} {
+		if !strings.Contains(jsText, ref) {
+			t.Errorf("%s: expected a reference to %q — theme.js must address every id and class name "+
+				"the template and CSS declare, or a rename on one side ships a button that renders an "+
+				"empty circle", themeJSPath, ref)
 		}
+	}
+}
+
+// TestThemeToggleIconAssetsExist locks the visual assets and geometry the
+// two-state icon-only theme control depends on: both icon files exist and
+// are embedded, both .auth-icon-- modifier rules resolve to those exact
+// committed files, and the .theme-toggle control's own rule shares
+// .account-trigger's height and declares a fully-rounded border-radius —
+// what makes it a circle in the same visual family rather than a rounded
+// rectangle (D-A).
+//
+// Honest limit of this test's claim, in the same spirit as this package's
+// other CSS contract tests: static inspection proves the rules and files
+// line up. It cannot prove the glyphs read as a sun and a moon at a glance
+// — that is the plan's human-check verify step's job.
+func TestThemeToggleIconAssetsExist(t *testing.T) {
+	for _, path := range []string{"static/icons/sun.svg", "static/icons/moon.svg"} {
+		if _, err := StaticFS.ReadFile(path); err != nil {
+			t.Errorf("expected %s to exist in the embedded static filesystem: %v", path, err)
+		}
+	}
+
+	authRaw, err := StaticFS.ReadFile("static/css/auth.css")
+	if err != nil {
+		t.Fatalf("reading embedded static/css/auth.css: %v", err)
+	}
+	rules := parseCSSRules(string(authRaw))
+
+	for selector, iconPath := range map[string]string{
+		".auth-icon--sun":  "static/icons/sun.svg",
+		".auth-icon--moon": "static/icons/moon.svg",
+	} {
+		rule, ok := ruleBySelector(rules, selector)
+		if !ok {
+			t.Fatalf("no exact %q rule found in static/css/auth.css", selector)
+		}
+		maskSrc := extractMaskURLPath(declsOf(rule.declBody)["mask-image"])
+		if maskSrc == "" {
+			t.Errorf("%s: no unprefixed mask-image url(...) declaration", selector)
+			continue
+		}
+		resolved := strings.TrimPrefix(maskSrc, "/")
+		if resolved != iconPath {
+			t.Errorf("%s: mask-image resolves to %q, want %q", selector, resolved, iconPath)
+		}
+		if _, statErr := fs.Stat(StaticFS, resolved); statErr != nil {
+			t.Errorf("%s: mask-image %q does not resolve to an embedded file: %v", selector, maskSrc, statErr)
+		}
+	}
+
+	toggleRule, ok := ruleBySelector(rules, ".theme-toggle")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/auth.css", ".theme-toggle")
+	}
+	triggerRule, ok := ruleBySelector(rules, ".account-trigger")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/auth.css", ".account-trigger")
+	}
+	toggleDecls := declsOf(toggleRule.declBody)
+	triggerDecls := declsOf(triggerRule.declBody)
+
+	toggleHeight, hasToggleHeight := toggleDecls["height"]
+	triggerHeight, hasTriggerHeight := triggerDecls["height"]
+	if !hasToggleHeight || !hasTriggerHeight {
+		t.Fatalf("need .theme-toggle height and .account-trigger height declared, got theme-toggle=%q account-trigger=%q",
+			toggleHeight, triggerHeight)
+	}
+	if toggleHeight != triggerHeight {
+		t.Errorf("geometry lock: .theme-toggle height (%q) must equal .account-trigger height (%q), "+
+			"otherwise the two controls fall out of the same visual family (D-A)", toggleHeight, triggerHeight)
+	}
+
+	if got := toggleDecls["border-radius"]; got != "50%" {
+		t.Errorf(".theme-toggle: expected border-radius: 50%%, got %q — this is what makes the control "+
+			"a circle rather than a rounded rectangle", got)
 	}
 }
 
