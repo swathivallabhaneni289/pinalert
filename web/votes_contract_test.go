@@ -602,11 +602,24 @@ func TestVisibilityTagHiddenGuard(t *testing.T) {
 // main.css's .sev-*/.age-* ramp purely through trust.css's load position in
 // index.html.tmpl, with no specificity trick and no !important
 // (02-UI-SPEC.md's cascade contract).
+//
+// The Provisional strength assertion below was originally a string-equality
+// check against .age-aging's own value: D-09's instruction was to reuse
+// Phase 1's expiry-fade mix character for character, and this test enforced
+// that reuse literally. Gap-closure plan 02-13 deliberately severs that
+// reuse — a human reported (UAT Test 5, 2026-09-21) that the shared 50/50
+// strength was imperceptible, and TestProvisionalDimmingIsPerceptiblyDistinctFromLive
+// (web/css_contract_test.go) now owns the strength claim directly, resolving
+// measured colour rather than a percentage in the source. What this test
+// keeps asserting is the invariant that actually still matters: the
+// mechanism (a two-stop color-mix() between the same two references) is
+// unchanged, and Provisional must be at least as dim as the intermediate
+// age stage it sits above in the cascade — strictly MORE dim now, since
+// that is exactly the change 02-13 made. A reader of either test should
+// find the other: this test proves the cascade mechanism and the
+// stronger-than-Aging invariant; the other proves the resulting colour is
+// far enough from the undimmed baseline to see.
 func TestVisibilityCascadeOverridesAgeRamp(t *testing.T) {
-	normalize := func(s string) string {
-		return strings.Join(strings.Fields(s), " ")
-	}
-
 	mainRaw, err := fs.ReadFile(StaticFS, "static/css/main.css")
 	if err != nil {
 		t.Fatalf("failed to read embedded static/css/main.css: %v", err)
@@ -617,9 +630,14 @@ func TestVisibilityCascadeOverridesAgeRamp(t *testing.T) {
 	if !ok {
 		t.Fatalf("no exact %q rule found in static/css/main.css", ".age-aging")
 	}
-	wantSeverityCurrent, ok := declsOf(ageAgingRule.declBody)["--severity-current"]
+	agingSeverityCurrent, ok := declsOf(ageAgingRule.declBody)["--severity-current"]
 	if !ok {
 		t.Fatalf(".age-aging in main.css does not declare --severity-current")
+	}
+	agingRef1, _, agingRef2, agingPct2, ok := parseColorMixStops(agingSeverityCurrent)
+	if !ok {
+		t.Fatalf(".age-aging's --severity-current value %q is not a recognized two-stop "+
+			"color-mix(in srgb, A P%%, B Q%%)", agingSeverityCurrent)
 	}
 
 	trustRaw, err := fs.ReadFile(StaticFS, "static/css/trust.css")
@@ -634,16 +652,39 @@ func TestVisibilityCascadeOverridesAgeRamp(t *testing.T) {
 		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vis-provisional")
 	}
 	provisionalDecls := declsOf(provisionalRule.declBody)
-	if gotSeverityCurrent, ok := provisionalDecls["--severity-current"]; !ok {
+	provisionalSeverityCurrent, ok := provisionalDecls["--severity-current"]
+	if !ok {
 		t.Errorf(".vis-provisional does not declare --severity-current")
-	} else if normalize(gotSeverityCurrent) != normalize(wantSeverityCurrent) {
-		t.Errorf(".vis-provisional's --severity-current must be string-equal (after whitespace "+
-			"normalisation) to .age-aging's own value in main.css — D-09's instruction is to reuse "+
-			"the expiry-fade pattern, not to approximate it. Found %q, want %q",
-			gotSeverityCurrent, wantSeverityCurrent)
+	} else {
+		provRef1, _, provRef2, provPct2, ok := parseColorMixStops(provisionalSeverityCurrent)
+		if !ok {
+			t.Errorf(".vis-provisional's --severity-current value %q is not a recognized "+
+				"two-stop color-mix(in srgb, A P%%, B Q%%)", provisionalSeverityCurrent)
+		} else {
+			if provRef1 != agingRef1 || provRef2 != agingRef2 {
+				t.Errorf(".vis-provisional's color-mix() stop references must match .age-aging's "+
+					"own (%s, %s) — the mechanism must stay the same, only the strength changes. "+
+					"Found (%s, %s)", agingRef1, agingRef2, provRef1, provRef2)
+			}
+			if provPct2 <= agingPct2 {
+				t.Errorf(".vis-provisional's weight on the stale stop (%.0f%%) must be strictly "+
+					"greater than .age-aging's (%.0f%%) — Provisional must be at least as dim as the "+
+					"intermediate age stage it sits above in the cascade, and gap-closure plan 02-13 "+
+					"deliberately strengthened it beyond that floor because the shared 50/50 value was "+
+					"reported imperceptible (UAT Test 5, 2026-09-21)", provPct2, agingPct2)
+			}
+		}
 	}
 	if _, ok := provisionalDecls["--badge-glyph-fg"]; !ok {
 		t.Errorf(".vis-provisional does not declare --badge-glyph-fg")
+	}
+	if tintVal, ok := provisionalDecls["--severity-tint"]; !ok {
+		t.Errorf(".vis-provisional does not declare --severity-tint")
+	} else if strings.TrimSpace(tintVal) == "transparent" {
+		t.Errorf(".vis-provisional's --severity-tint must not be exactly \"transparent\" — that is "+
+			".vis-hidden's own treatment below, and the two visibility states declare the same three "+
+			"properties while deliberately diverging on this one, mirroring the positive assertion "+
+			"that .vis-hidden's tint IS exactly \"transparent\"")
 	}
 
 	hiddenRule, ok := ruleBySelector(trustRules, ".vis-hidden")
@@ -1462,14 +1503,29 @@ func TestResolveControlsMeetTouchTargetAndUseTokensOnly(t *testing.T) {
 		t.Errorf(".vote-btn min-height must remain exactly var(--touch-target-min), found %q", v)
 	}
 
-	resolveRule, ok := ruleBySelector(rules, ".vote-btn--resolve")
+	// Gap-closure plan 02-13 added the hidden-attribute guard to this rule's
+	// selector head for consistency with every sibling rule in the Mark
+	// Resolved block (see trust.css's own comment above .vote-btn--resolve).
+	// ruleBySelector matches heads exactly by design (see its own doc
+	// comment), so the lookup below tracks the guarded head rather than the
+	// bare class.
+	resolveRule, ok := ruleBySelector(rules, ".vote-btn--resolve:not([hidden])")
 	if !ok {
-		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vote-btn--resolve")
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vote-btn--resolve:not([hidden])")
 	}
 	if !anyDeclReferences(declsOf(resolveRule.declBody), "--color-text") {
-		t.Errorf(".vote-btn--resolve must reference --color-text (inverted neutral), declarations: %v",
-			declsOf(resolveRule.declBody))
+		t.Errorf(".vote-btn--resolve:not([hidden]) must reference --color-text (inverted neutral), "+
+			"declarations: %v", declsOf(resolveRule.declBody))
 	}
+
+	// The sibling colour-only rules below (.vote-btn--confirm-resolve,
+	// .vote-btn--cancel-resolve, .vote-btn--reopen) are deliberately NOT
+	// given the same guard here. They declare no `display` either, so the
+	// same reasoning would apply structurally — but the debug session
+	// (.planning/debug/resolve-button-not-hidden.md) flagged only
+	// .vote-btn--resolve's colour signature as matching the reported
+	// artefact, and broadening the change would put more surface under a
+	// fix whose live cause is unconfirmed. Left unguarded on purpose.
 
 	affirmRule, ok := ruleBySelector(rules, ".vote-btn--confirm-resolve")
 	if !ok {
