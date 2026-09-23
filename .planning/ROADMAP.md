@@ -27,7 +27,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation — Report & Map** - Anonymous visitors can submit and view location-tagged reports on a live map, with read-time auto-expiry, OpenAPI docs, and CI in place. (original 10 plans completed 2026-09-06; reopened for the vector basemap migration, plans 01-11/01-12; gap-closure round 2 (01-13) fixed the solid-black-icon defect; gap-closure round 3 (01-14) landed 2026-09-09 — raised glyph ink coverage and fixed badge contrast across all 18 severity/age/theme pairings; gap-closure round 4 (01-15) landed 2026-09-09 — live-tested fix for dark-mode category-tile glyph color, the actual root cause 01-14's stroke-width diagnosis missed, plus two caching-bug fixes; see `01-UAT.md`) (all 15 plans complete; UAT passed 10/10 with 0 open issues; verification passed including MVP-mode User Flow Coverage, security SECURED with 0 open threats, Nyquist validation compliant) (completed 2026-09-10) — **note:** this phase's anonymous/no-signup access model (FOUND-01) was superseded 2026-09-10 by Phase 1.1's mandatory login decision; the shipped code is unaffected, but the product's access model changes starting Phase 1.1
 - [x] **Phase 1.1: Identity & Login — Mandatory Email Verification** *(INSERTED 2026-09-10 — urgent insertion, decided during Phase 2 discussion)* - A visitor must verify an email address via a magic link before they can submit a report or cast a confirm/dispute vote; supersedes Phase 1's anonymous-access model. (completed 2026-09-12)
-- [ ] **Phase 2: Trust Mechanic Core — Confirm/Dispute & Visibility** - Users can confirm/dispute reports through one shared, concurrency-safe visibility resolver with a provisional gate and resolved marking. (original 8 plans completed 2026-09-15; **reopened 2026-09-17** for gap-closure round 1 — a human UAT walkthrough found 6 gaps, 3 major and 3 minor, all diagnosed in `02-UAT.md`: the inline resolve confirmation never replaced the button row, its prompt was illegible in the map popup, a Safari Back navigation showed a stale feed after Reopen, the Activity page had no way back to the map, plus two user-requested scope changes — a persisting "Show disputed" filter and an in-app light/dark toggle. Plans 02-08, 02-09 and 02-10, all wave 8, mutually parallel, executed and merged 2026-09-18) — **all 11 plans complete, but re-verification (02-VERIFICATION.md) returned `human_needed`: 8 rendered-browser behaviors still require a live UAT pass (in progress as a second `02-UAT.md` round, tests 4-11) before this phase can be marked complete**
+- [x] **Phase 2: Trust Mechanic Core — Confirm/Dispute & Visibility** - Users can confirm/dispute reports through one shared, concurrency-safe visibility resolver with a provisional gate and resolved marking. (original 8 plans completed 2026-09-15; **reopened 2026-09-17** for gap-closure round 1 — a human UAT walkthrough found 6 gaps, 3 major and 3 minor, all diagnosed in `02-UAT.md`: the inline resolve confirmation never replaced the button row, its prompt was illegible in the map popup, a Safari Back navigation showed a stale feed after Reopen, the Activity page had no way back to the map, plus two user-requested scope changes — a persisting "Show disputed" filter and an in-app light/dark toggle. Plans 02-08, 02-09 and 02-10, all wave 8, mutually parallel, executed and merged 2026-09-18) — **all 11 plans complete, but re-verification (02-VERIFICATION.md) returned `human_needed`: 8 rendered-browser behaviors still require a live UAT pass (in progress as a second `02-UAT.md` round, tests 4-11) before this phase can be marked complete** (completed 2026-09-23)
 - [ ] **Phase 3: Trust-Model Hardening — Diversity-Weighted Trust** - "Confirmed by N nearby" and the reliability/currency signals reflect distinct nearby corroboration, resistant to trivial gaming.
 - [ ] **Phase 4: Robustness — Real-World Resilience** - The app stays usable on degraded networks, under abuse/moderation pressure, and with clear legal footing.
 - [ ] **Phase 5: Official Feed & Demo Mode** - First-time visitors see a populated map with official GDACS pins and a working demo immediately, instead of an empty product.
@@ -184,7 +184,7 @@ Plans:
   4. A report's visibility state (Hidden/Provisional/Live/Retracted) is identical everywhere it's shown — feed, map, triage view, and shareable card — because one shared resolver function computes it.
   5. A user (the reporter or a nearby confirmer) can mark a report resolved, removing it from the live feed.
 
-**Plans**: 15 plans (11 complete, 4 planned in gap-closure round 2)
+**Plans**: 15/15 plans complete
 
 **Wave 1** *(parallel — zero file overlap, neither depends on the other)*
 
@@ -223,10 +223,10 @@ Plans:
 
 **Gap closure (round 2)** *(from `02-UAT.md`'s six `status: failed` gaps, diagnosed live 2026-09-22; the four plans share zero files and run in parallel. Run via `/gsd-execute-phase 02 --gaps-only`)*
 
-- [ ] 02-11-PLAN.md — Both map surfaces (the primary map and the report modal's pin-drop map) resolve their OpenFreeMap basemap style from the live theme and re-style it on a toggle via a root-attribute observer, leaving `theme.js` byte-identical; the WebGL-less raster fallback stays light in every theme as an explicitly accepted limitation (wave 9)
-- [ ] 02-12-PLAN.md — "Show disputed reports" becomes a true partition rather than an additive reveal: `ListableInFeed` returns Live and Provisional only when the flag is off and Hidden only when it is on, with the two test suites, the research diagram and the regenerated OpenAPI spec brought onto the exclusive contract (**resolves backlog Phase 999.2**) (wave 9)
-- [ ] 02-13-PLAN.md — Provisional dimming strengthened from the intermediate age-ramp mix to 80 percent toward stale with a neutral row wash, behind a new perceptual-distance gate written to fail first against the shipped value, plus the defensive hidden-attribute guard on the Mark Resolved rule (cause still unconfirmed) (wave 9)
-- [ ] 02-14-PLAN.md — The two mechanical `site-design-rules.md` violations: ten user-visible long dashes rewritten in plain punctuation across nine files (including a third copy of the rate-limit message the debug sweep missed), and the two pill-shaped controls de-pilled, behind a standing gate. The broad polish items are deferred to `/gsd-ui-phase` (wave 9)
+- [x] 02-11-PLAN.md — Both map surfaces (the primary map and the report modal's pin-drop map) resolve their OpenFreeMap basemap style from the live theme and re-style it on a toggle via a root-attribute observer, leaving `theme.js` byte-identical; the WebGL-less raster fallback stays light in every theme as an explicitly accepted limitation (wave 9)
+- [x] 02-12-PLAN.md — "Show disputed reports" becomes a true partition rather than an additive reveal: `ListableInFeed` returns Live and Provisional only when the flag is off and Hidden only when it is on, with the two test suites, the research diagram and the regenerated OpenAPI spec brought onto the exclusive contract (**resolves backlog Phase 999.2**) (wave 9)
+- [x] 02-13-PLAN.md — Provisional dimming strengthened from the intermediate age-ramp mix to 80 percent toward stale with a neutral row wash, behind a new perceptual-distance gate written to fail first against the shipped value, plus the defensive hidden-attribute guard on the Mark Resolved rule (cause still unconfirmed) (wave 9)
+- [x] 02-14-PLAN.md — The two mechanical `site-design-rules.md` violations: ten user-visible long dashes rewritten in plain punctuation across nine files (including a third copy of the rate-limit message the debug sweep missed), and the two pill-shaped controls de-pilled, behind a standing gate. The broad polish items are deferred to `/gsd-ui-phase` (wave 9)
 
 **UI hint**: yes
 
@@ -302,7 +302,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
 | 1.1 Identity & Login — Mandatory Email Verification | 8/8 | Complete   | 2026-09-12 |
-| 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 11/11 | Human verification pending (2nd UAT round) | - |
+| 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 15/15 | Complete   | 2026-09-23 |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
 | 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
@@ -321,6 +321,7 @@ during Phase 2 UAT re-verification (2026-09-18): the current submission flow is 
 **Plans:** 0 plans
 
 Plans:
+
 - [ ] TBD (promote with /gsd-review-backlog when ready)
 
 ### Phase 999.2: "Show disputed reports" as an exclusive filter (RESOLVED, promoted 2026-09-22)
@@ -340,4 +341,5 @@ behavior matches documented D-10 — but a real UX objection to that design.
 **Plans:** 0 plans
 
 Plans:
+
 - [ ] TBD (promote with /gsd-review-backlog when ready)
