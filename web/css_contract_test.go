@@ -1366,3 +1366,334 @@ func TestBadgeGlyphContrastAcrossAgeStagesAndThemes(t *testing.T) {
 			"the matrix loop's own bounds may have changed", ran)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// TestProvisionalDimmingIsPerceptiblyDistinctFromLive (gap-closure plan
+// 02-13, UAT Test 5) and its own chroma helper.
+// ---------------------------------------------------------------------------
+
+// chromaOf returns a hex color's chroma as the difference between its
+// largest and smallest sRGB channel (0-255 scale). This is the primary
+// perceptual-distance measure below: it is theme-symmetric, unlike WCAG
+// luminance (which light mode's near-white stale token defeats — see the
+// luminance assertion's own comment for why), and it is the direct numeric
+// expression of "desaturated", the word both D-09 and 02-UI-SPEC.md use for
+// this treatment.
+func chromaOf(t *testing.T, hex, context string) float64 {
+	t.Helper()
+	r, g, b := parseHexRGB(t, hex, context)
+	maxC, minC := r, r
+	if g > maxC {
+		maxC = g
+	}
+	if b > maxC {
+		maxC = b
+	}
+	if g < minC {
+		minC = g
+	}
+	if b < minC {
+		minC = b
+	}
+	return float64(maxC - minC)
+}
+
+// TestProvisionalDimmingIsPerceptiblyDistinctFromLive closes the coverage
+// gap .planning/debug/provisional-dimming-not-perceptible.md's diagnosis
+// names directly: the only prior guard on .vis-provisional's strength,
+// TestVisibilityCascadeOverridesAgeRamp, asserted the value stayed
+// string-equal to .age-aging's own value, never that either was far enough
+// from the undimmed baseline to see. A human reported (UAT Test 5,
+// 2026-09-21) that the Provisional dimming was imperceptible on both the
+// feed row and the map pin badge, in dark mode.
+//
+// Root cause, per the diagnosis: nothing was broken. applyVisibilityClass
+// reached the right element on both surfaces with the right cascade order
+// the whole time — the shipped 50/50 color-mix() simply produced too small
+// a perceptual delta (WCAG luminance ratio ~1.9-2.0:1 in dark mode, ~1.46:1
+// in light mode) against the undimmed severity color, worse than half the
+// strength of this app's own strongest existing desaturation step
+// (Fresh-to-Stale, ~4.29:1 dark). This test guards the strength directly so
+// that gap cannot silently reopen.
+//
+// Honest limit, in the same spirit as this package's other CSS contract
+// tests: static resolution of the shipped stylesheet proves the declared
+// colours are far enough apart by two independent measures; it cannot prove
+// a person perceives the difference on their own screen, which is what the
+// human check in 02-13-PLAN.md exists for. It also says nothing about the
+// Leaflet popup box, which carries no severity-coloured element at all by
+// design (the diagnosis's own popup-ambiguity finding).
+func TestProvisionalDimmingIsPerceptiblyDistinctFromLive(t *testing.T) {
+	mainRaw, err := fs.ReadFile(StaticFS, "static/css/main.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/main.css: %v", err)
+	}
+	mainRules := parseCSSRules(string(mainRaw))
+
+	trustRaw, err := fs.ReadFile(StaticFS, "static/css/trust.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/trust.css: %v", err)
+	}
+	trustRules := parseCSSRules(string(trustRaw))
+
+	// --- Layer 1: token tables, asserted pairwise-equal exactly as
+	// TestBadgeGlyphContrastAcrossAgeStagesAndThemes does and for the same
+	// documented reason: editing one member of a theme pair and not the
+	// other ships a fix for half the readers.
+	neededTokens := []string{
+		"--color-severity-low",
+		"--color-severity-medium",
+		"--color-severity-critical",
+		"--color-age-stale",
+		"--color-surface",
+		"--color-text",
+		"--color-bg",
+		"--color-border",
+	}
+	light1, light2, dark1, dark2 := extractThemeTokens(mainRules, neededTokens)
+	for _, name := range neededTokens {
+		v1, ok1 := light1[name]
+		v2, ok2 := light2[name]
+		if !ok1 || !ok2 {
+			t.Fatalf("token %s not declared in both light sources (:root=%v present, "+
+				":root[data-theme=light]=%v present)", name, ok1, ok2)
+		}
+		if v1 != v2 {
+			t.Errorf("token %s mismatched between :root (%s) and :root[data-theme=\"light\"] (%s) — "+
+				"a half-applied theme edit works for one light-mode entry path and not the other",
+				name, v1, v2)
+		}
+
+		d1, dok1 := dark1[name]
+		d2, dok2 := dark2[name]
+		if !dok1 || !dok2 {
+			t.Fatalf("token %s not declared in both dark sources (media block=%v present, "+
+				":root[data-theme=dark]=%v present)", name, dok1, dok2)
+		}
+		if d1 != d2 {
+			t.Errorf("token %s mismatched between the dark media block (%s) and "+
+				":root[data-theme=\"dark\"] (%s) — a half-applied theme edit works for OS-preference "+
+				"users and not explicit-toggle users, or vice versa", name, d1, d2)
+		}
+	}
+	lightTokens := light1
+	darkTokens := dark1
+
+	// --- Layer 2: --severity-base per severity, same lookup
+	// TestBadgeGlyphContrastAcrossAgeStagesAndThemes uses.
+	severities := []string{"low", "medium", "critical"}
+	severityBaseTokenName := map[string]string{}
+	for _, sev := range severities {
+		selector := ".sev-" + sev
+		r, ok := ruleBySelector(mainRules, selector)
+		if !ok {
+			t.Fatalf("no exact %q rule found in static/css/main.css", selector)
+		}
+		val, ok := declsOf(r.declBody)["--severity-base"]
+		if !ok {
+			t.Fatalf("%s: rule declares no --severity-base", selector)
+		}
+		name, ok := bareVarName(val)
+		if !ok {
+			t.Fatalf("%s: --severity-base value %q is not a bare var() reference", selector, val)
+		}
+		severityBaseTokenName[sev] = name
+	}
+
+	// --- Layer 3: undimmed baseline (.age-fresh, main.css) and dimmed fill
+	// (.vis-provisional, trust.css), both resolved with the same
+	// resolveSeverityCurrentHex the 18-pairing matrix above uses.
+	ageFreshRule, ok := ruleBySelector(mainRules, ".age-fresh")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/main.css", ".age-fresh")
+	}
+	undimmedValue, ok := declsOf(ageFreshRule.declBody)["--severity-current"]
+	if !ok {
+		t.Fatalf(".age-fresh declares no --severity-current")
+	}
+
+	provisionalRule, ok := ruleBySelector(trustRules, ".vis-provisional")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vis-provisional")
+	}
+	provisionalDecls := declsOf(provisionalRule.declBody)
+	dimmedValue, ok := provisionalDecls["--severity-current"]
+	if !ok {
+		t.Fatalf(".vis-provisional declares no --severity-current")
+	}
+
+	hiddenRule, ok := ruleBySelector(trustRules, ".vis-hidden")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vis-hidden")
+	}
+	hiddenSeverityCurrentValue, ok := declsOf(hiddenRule.declBody)["--severity-current"]
+	if !ok {
+		t.Fatalf(".vis-hidden declares no --severity-current")
+	}
+
+	// --- Layer 3b: glyph-foreground resolution shape, mirrors
+	// TestBadgeGlyphContrastAcrossAgeStagesAndThemes's own setup by reading
+	// .icon-badge's own `color` declaration for the override/fallback token
+	// names. Before this test, nothing guarded the glyph against a change
+	// to the Provisional fill specifically: the 18-pairing matrix above
+	// covers severities crossed with age stages only, and .vis-provisional
+	// is outside that matrix entirely.
+	badgeRule, ok := ruleBySelector(mainRules, ".icon-badge")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/main.css", ".icon-badge")
+	}
+	badgeColorVal, ok := declsOf(badgeRule.declBody)["color"]
+	if !ok {
+		t.Fatalf(".icon-badge declares no `color` property")
+	}
+	glyphOverrideName, glyphBaseTokenName, ok := parseColorVarShape(badgeColorVal)
+	if !ok || glyphOverrideName == "" {
+		t.Fatalf(".icon-badge `color: %s` is not the recognized var(--override, var(--token)) shape",
+			badgeColorVal)
+	}
+
+	themes := []struct {
+		name     string
+		tokens   themeTokens
+		lumFloor float64
+	}{
+		{"dark", darkTokens, 2.8},
+		{"light", lightTokens, 1.65},
+	}
+
+	var ranChroma, ranLum, ranGlyph, ranDistinct int
+	for _, sev := range severities {
+		baseTokenNameForSev := severityBaseTokenName[sev]
+		for _, th := range themes {
+			context := fmt.Sprintf("severity=%s theme=%s", sev, th.name)
+
+			severityBaseHex, found := th.tokens[baseTokenNameForSev]
+			if !found {
+				t.Fatalf("%s: severity base token %q not found in %s token table",
+					context, baseTokenNameForSev, th.name)
+			}
+
+			undimmedHex := resolveSeverityCurrentHex(t, undimmedValue, severityBaseHex, th.tokens, context)
+			dimmedHex := resolveSeverityCurrentHex(t, dimmedValue, severityBaseHex, th.tokens, context)
+
+			// --- Assertion A (primary): colourfulness drop. Theme-symmetric
+			// and the direct numeric expression of "desaturated" — see this
+			// test's own doc comment.
+			undimmedChroma := chromaOf(t, undimmedHex, context)
+			dimmedChroma := chromaOf(t, dimmedHex, context)
+			ranChroma++
+			if undimmedChroma == 0 {
+				t.Fatalf("%s: undimmed fill %s has zero chroma — cannot compute a ratio", context, undimmedHex)
+			}
+			chromaRatio := dimmedChroma / undimmedChroma
+			if chromaRatio > 0.30 {
+				t.Errorf("%s: Provisional fill %s retains %.2f of undimmed fill %s's chroma "+
+					"(dimmed chroma %.1f vs undimmed chroma %.1f) — exceeds the 0.30 ceiling. A "+
+					"Provisional badge must read as visibly drained of colour, not merely computably "+
+					"different (UAT Test 5, 2026-09-21)",
+					context, dimmedHex, chromaRatio, undimmedHex, dimmedChroma, undimmedChroma)
+			}
+
+			// --- Assertion C: glyph legibility against the dimmed fill —
+			// the regression this change could cause.
+			var fgHex string
+			if overrideVal, ok := provisionalDecls[glyphOverrideName]; ok {
+				fgHex = resolveForegroundValueHex(t, overrideVal, th.tokens, context)
+			} else {
+				baseHex, found := th.tokens[glyphBaseTokenName]
+				if !found {
+					t.Fatalf("%s: glyph base foreground token %q not found in %s token table",
+						context, glyphBaseTokenName, th.name)
+				}
+				fgHex = baseHex
+			}
+			ranGlyph++
+			glyphRatio := wcagContrastRatio(t, dimmedHex, fgHex, context)
+			if glyphRatio < 3.0 {
+				t.Errorf("%s: badge glyph foreground %s against Provisional fill %s computes to "+
+					"%.2f:1, below WCAG 1.4.11's 3.0:1 graphical-object floor", context, fgHex, dimmedHex, glyphRatio)
+			}
+
+			// --- Assertion D: Provisional stays distinguishable from
+			// Hidden. UAT Test 2 confirmed the Hidden outline treatment
+			// correct on both surfaces, and a fix that made Provisional
+			// indistinguishable from Hidden would trade one closed gap for
+			// one reopened.
+			hiddenHex := resolveSeverityCurrentHex(t, hiddenSeverityCurrentValue, severityBaseHex, th.tokens, context)
+			hiddenChroma := chromaOf(t, hiddenHex, context)
+			ranDistinct++
+			if dimmedChroma <= hiddenChroma {
+				t.Errorf("%s: Provisional fill %s (chroma %.1f) is not strictly more colourful than "+
+					"Hidden fill %s (chroma %.1f)", context, dimmedHex, dimmedChroma, hiddenHex, hiddenChroma)
+			}
+
+			// --- Assertion B (supporting): luminance distance, honest
+			// per-theme floors, low and medium severities only. A critical
+			// or rescue-needed report can never be Provisional (D-06's
+			// bypass rung sits above the dispute and confirmation rungs in
+			// internal/service/visibility.go's Resolve()), so a Provisional
+			// critical badge is not a renderable state and holding it to a
+			// floor would constrain a colour nobody can see.
+			//
+			// The two floors differ because the palette itself is
+			// asymmetric, not because the claim is weaker in light mode: in
+			// light mode --color-age-stale is a near-white grey, so mixing
+			// toward it RAISES luminance while the severity colour is
+			// mid-dark — even a 100% mix reaches only about 2:1 there, so a
+			// 3:1 floor is not achievable in light mode with the tokens
+			// this app ships, and writing one would be a test that can only
+			// be satisfied by inventing a token this file forbids. These
+			// floors sit just below what the chosen mix ratio actually
+			// achieves, so they catch a weakening without pretending to a
+			// standard the palette cannot meet — Assertion A (chroma) is
+			// what actually carries the perceptual claim in light mode.
+			// Reference point: this app's own strongest existing
+			// desaturation step, Fresh-to-Stale at a full mix, measures
+			// about 4.3:1 in dark mode; this test does not claim that step
+			// was ever independently confirmed as perceptible, only that it
+			// is this app's own in-app comparison point, not a validated
+			// standard.
+			if sev == "low" || sev == "medium" {
+				ranLum++
+				lumRatio := wcagContrastRatio(t, undimmedHex, dimmedHex, context)
+				if lumRatio < th.lumFloor {
+					t.Errorf("%s: undimmed fill %s vs Provisional fill %s computes to %.2f:1 "+
+						"luminance contrast, below the %.2f:1 floor for %s mode",
+						context, undimmedHex, dimmedHex, lumRatio, th.lumFloor, th.name)
+				}
+			}
+		}
+	}
+
+	if ranChroma != 6 {
+		t.Fatalf("expected to evaluate exactly 6 severity x theme chroma pairings (3 severities x "+
+			"2 themes), evaluated %d — the matrix loop's own bounds may have changed", ranChroma)
+	}
+	if ranLum != 4 {
+		t.Fatalf("expected to evaluate exactly 4 severity x theme luminance pairings (2 severities "+
+			"x 2 themes), evaluated %d — the matrix loop's own bounds may have changed", ranLum)
+	}
+	if ranGlyph != 6 {
+		t.Fatalf("expected to evaluate exactly 6 severity x theme glyph pairings, evaluated %d", ranGlyph)
+	}
+	if ranDistinct != 6 {
+		t.Fatalf("expected to evaluate exactly 6 severity x theme Hidden-distinctness pairings, "+
+			"evaluated %d", ranDistinct)
+	}
+
+	// --- Assertion D (tint half): .vis-provisional's --severity-tint must
+	// never be the literal "transparent" .vis-hidden declares — collapsing
+	// the two would regress a Hidden behaviour UAT Test 2 confirmed
+	// correct. Checked only if declared: before this plan's Task 2,
+	// .vis-provisional declares no --severity-tint at all, which is a
+	// different state from declaring it exactly "transparent" (and is
+	// itself the feed-row-only confound the diagnosis named — the row's
+	// background wash stays a full-strength severity tint while the border
+	// dims, which Task 2 fixes by declaring a neutral, non-transparent
+	// value here).
+	if tintVal, ok := provisionalDecls["--severity-tint"]; ok && strings.TrimSpace(tintVal) == "transparent" {
+		t.Errorf(".vis-provisional's --severity-tint must not be the literal \"transparent\" value "+
+			".vis-hidden declares — that would make a Provisional row's background indistinguishable "+
+			"from a Hidden row's, found %q", tintVal)
+	}
+}
