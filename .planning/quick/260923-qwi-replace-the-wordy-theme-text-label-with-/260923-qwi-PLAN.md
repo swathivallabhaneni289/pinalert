@@ -118,11 +118,18 @@ Change 1, TestThemeModuleValidatesStoredModeBeforeReflectingIt. Keep the MODES i
 keep the .indexOf( membership assertion, and keep the exactly-one setAttribute for the data-theme
 attribute assertion. Delete the assertion that counts removeAttribute call sites for that attribute:
 with follow-the-OS gone there is no branch that clears the attribute, so exactly one write path
-remains. Do not replace it with a zero-count gate. Add one positive assertion instead: the module
-must reference matchMedia exactly once, which is the single one-time operating-system read described
-in D-C, and more than one occurrence would mean a code path still consults the OS on later loads.
-Rewrite the doc comment to describe the two-element list, the single write path, and the one-time
-read, per D-D.
+remains. Do not replace it with a zero-count gate. Add one positive PRESENCE assertion instead: the module
+must reference matchMedia at all, which is the one-time operating-system read described in D-C.
+Presence, never a count. A counted gate is wrong here twice over: the correct guarded form
+(an existence check on the window property, then the call) legitimately names matchMedia twice, and
+the media-feature string legitimately appears again in the rewritten header comment, so any exact
+count forces either a red build or a bound-reference hack that throws in a real browser. Say so in
+the doc comment, and say plainly what the presence assertion does and does not prove: that the
+operating system is read ONCE EVER is structural, not greppable, because the initial-mode function
+runs a single time during module evaluation and only reaches matchMedia when the storage read
+returned null. That property is carried by this task's done criteria and the human check, not by
+this test. Rewrite the rest of the doc comment to describe the two-element list, the single write
+path, and the one-time read, per D-D.
 
 Change 2, TestAccountHeaderRendersThemeControl. The control id constant stays. Replace the label span
 id constant with the glyph span id chosen in Task 3 (theme-toggle-icon). Keep both the menuitem role
@@ -158,7 +165,10 @@ against the current theme.js, auth.css and template before any of them is touche
   </verify>
   <done>go vet passes, so the rewritten test file compiles. The three named tests fail, and their failure
 output names the missing matchMedia reference, the missing glyph span id, and the missing icon files
-or CSS rules rather than a compile error.</done>
+or CSS rules rather than a compile error. Commit this red state on its own as a test-prefixed commit
+and proceed to Task 2: these three failures are the expected RED half of this plan's cycle, not a
+gate violation and not a reason to stop. Every other test in the package must still be green, so if
+anything beyond those three fails, that IS a blocker.</done>
 </task>
 
 <task type="auto">
@@ -248,9 +258,13 @@ The storage read keeps its try/catch wrapper and its membership check against th
 returns a null signal when there is no valid stored value, instead of returning a follow-the-OS
 default. A separate initial-mode function consumes that: if the read returned a valid value it is
 used unchanged; otherwise, and only otherwise, the module reads the operating system dark preference
-through matchMedia exactly once and derives dark or light from it. Guard the matchMedia lookup with a
-plain existence check on the window property rather than a third try block. This must be the only
-matchMedia reference in the file; Task 1's test counts it.
+through matchMedia and derives dark or light from it. Guard the matchMedia lookup with a plain
+existence check on the window property rather than a third try block. Naming matchMedia twice there,
+once to test for it and once to call it, is correct and expected: Task 1's test asserts presence
+only, never a count, precisely so this guarded form passes. Do not cache the function reference to
+reduce the occurrence count, because an unbound call throws in a real browser. The once-ever
+property is structural, and comes from this function being called exactly once during module
+evaluation and only reaching matchMedia when the storage read returned null.
 
 The apply function collapses to a single setAttribute call for the root theme attribute. Delete the
 branch that removed the attribute: with follow-the-OS gone there is no state that wants the attribute
