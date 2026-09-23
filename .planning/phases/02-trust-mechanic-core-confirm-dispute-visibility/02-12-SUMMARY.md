@@ -167,3 +167,8 @@ None — no external service configuration required.
 *Phase: 02-trust-mechanic-core-confirm-dispute-visibility*
 *Plan: 12*
 *Completed: 2026-09-23*
+
+## Self-Check: PASSED
+
+All 8 `files_modified` paths plus this SUMMARY.md verified present on disk. All 4 commit
+hashes (`10bca11`, `aa37950`, `1f649f9`, `8f1bd98`) verified present in `git log --oneline --all`.
