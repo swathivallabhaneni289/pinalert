@@ -104,11 +104,20 @@ func TestFeedExcludesHiddenByDefault(t *testing.T) {
 }
 
 // TestShowDisputedRevealsHiddenReports is D-10/D-11/TRUST-02: show_disputed
-// additionally returns the hidden report — and because GET /api/reports is
-// the one endpoint serving both the map and the list (reports.go's own
-// package/handler doc comments), this single response satisfies D-11's "the
-// toggle also reveals Hidden pins on the map" without a second code path
-// existing to drift.
+// switches to the disputed-only view rather than widening the default one.
+// The disputed view contains the genuinely disputed report and NOT an
+// undisputed control report from the same account, and — proven here in
+// the same test, at the HTTP layer, not only in the service unit test —
+// the default view contains the control and NOT the disputed report. This
+// is the exclusive/partition contract, not additive: because GET
+// /api/reports is the one endpoint serving both the map and the list
+// (reports.go's own package/handler doc comments), this single response
+// satisfies D-11's "the toggle also reveals Hidden pins on the map"
+// without a second code path existing to drift. The previous additive
+// framing was reversed deliberately in gap-closure plan 02-12 at the
+// user's twice-stated request (2026-09-18, then again 2026-09-21) — see
+// 02-UAT.md Test 9 and ROADMAP.md backlog entry Phase 999.2 — not relaxed
+// to make a fix pass.
 func TestShowDisputedRevealsHiddenReports(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
 	clientA := newVerifiedClient(t, srv, mailer, "feed-show-disputed-a@example.com")
@@ -126,16 +135,26 @@ func TestShowDisputedRevealsHiddenReports(t *testing.T) {
 	decodeVoteResponse(t, postVote(t, clientB, srv.URL, reportID, "dispute", map[string]any{"latitude": bLat, "longitude": bLon}))
 	decodeVoteResponse(t, postVote(t, clientC, srv.URL, reportID, "dispute", map[string]any{"latitude": cLat, "longitude": cLon}))
 
-	reports := decodeFeedResponse(t, getNearby(t, clientA, srv.URL, lat, lon, true))
-	r, ok := findFeedReport(reports, reportID)
+	disputedReports := decodeFeedResponse(t, getNearby(t, clientA, srv.URL, lat, lon, true))
+	r, ok := findFeedReport(disputedReports, reportID)
 	if !ok {
 		t.Fatalf("disputed report %d absent under show_disputed=true", reportID)
 	}
 	if r.Visibility != "hidden" || r.VisibilityReason != "disputed" {
 		t.Fatalf("got visibility=%q reason=%q, want %q/%q", r.Visibility, r.VisibilityReason, "hidden", "disputed")
 	}
-	if _, ok := findFeedReport(reports, controlID); !ok {
-		t.Fatalf("control report %d absent under show_disputed=true — the toggle should add reports, not replace the view", controlID)
+	if _, ok := findFeedReport(disputedReports, controlID); ok {
+		t.Fatalf("control report %d present under show_disputed=true — the toggle must replace the view, not add to it; an "+
+			"undisputed report appearing in the disputed view was reported by the user on 2026-09-18 and again on 2026-09-21", controlID)
+	}
+
+	defaultReports := decodeFeedResponse(t, getNearby(t, clientA, srv.URL, lat, lon, false))
+	if _, ok := findFeedReport(defaultReports, controlID); !ok {
+		t.Fatalf("control report %d absent from the default view", controlID)
+	}
+	if _, ok := findFeedReport(defaultReports, reportID); ok {
+		t.Fatalf("disputed report %d present in the default view, want absent — a regression that returned an empty "+
+			"list for every request would otherwise pass this test", reportID)
 	}
 }
 

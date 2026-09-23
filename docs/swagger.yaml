@@ -363,11 +363,14 @@ paths:
         then resolves each report's visibility fresh via the shared resolver and returns
         only listable ones, nearest first. This single endpoint serves both the map and the
         list views — there is no separate map-only route. A resolved (retracted) report is
-        never returned by either view. show_disputed=true additionally includes reports
-        currently hidden by disputes, in the list and among the map pins together. Every
-        report carries your_vote and is_own_report relative to the calling verified account.
-        Requires a session verified by email through the magic-link flow; an unverified
-        caller receives 401 and no report data.
+        never returned by either view. show_disputed=true switches to the disputed-only
+        view: only reports currently hidden by disputes, on the list and among the map pins
+        together, replacing the default Live-and-Provisional view rather than adding to it.
+        A critical or rescue-needed report stays Live however heavily it is disputed, so it
+        appears only in the default view, never in the disputed one. Every report carries
+        your_vote and is_own_report relative to the calling verified account. Requires a
+        session verified by email through the magic-link flow; an unverified caller receives
+        401 and no report data.
       parameters:
       - description: Latitude of the query center (required, -90 to 90)
         in: query
@@ -386,7 +389,8 @@ paths:
         minimum: 0.1
         name: radius_km
         type: number
-      - description: Include reports hidden by disputes (defaults to false)
+      - description: Select the disputed-only view instead of the default view (defaults
+          to false)
         in: query
         name: show_disputed
         type: boolean

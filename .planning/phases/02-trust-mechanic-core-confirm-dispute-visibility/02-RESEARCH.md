@@ -165,9 +165,10 @@ gate at that time.
 │  1. NearbyReports bbox+Haversine (existing, unchanged)                 │
 │  2. CurrentVotesForReports(ANY(ids)) — ONE batched query, no N+1        │
 │  3. BuildVoteTally per report → visibility.Resolve() per report        │
-│  4. filter: default {Provisional, Live}; ?show_disputed=true adds       │
-│     {Hidden} (D-10/D-11); Retracted is never returned by this feed      │
-│     query (D-12 — visible only via the existing profile/Activity path) │
+│  4. filter: default view = {Provisional, Live}; ?show_disputed=true     │
+│     SWITCHES to {Hidden} alone (D-10/D-11) — a partition, not a         │
+│     union. Retracted is never returned by this feed query in            │
+│     either view (D-12 — visible only via the profile/Activity path)     │
 └─────────────────────────────────────────────────────────────────────────┘
                            │
 ┌──────────────────────────▼────────────────────────────────────────────┐
@@ -176,6 +177,16 @@ gate at that time.
 │  reports (unchanged this phase — no new columns needed)                 │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Correction (2026-09-23, gap-closure plan 02-12):** the filter line above
+originally read "default {Provisional, Live}; ?show_disputed=true **adds**
+{Hidden}" — describing a union, not a partition. That additive reading was
+introduced here and in `internal/service/feed.go`'s `ListableInFeed`, not by
+D-10 or D-11's locked text in `02-CONTEXT.md`, which only require Hidden
+reports to be *reachable* through the toggle. The user reported the resulting
+symptom twice (`02-UAT.md` Test 9, `ROADMAP.md` backlog entry Phase 999.2)
+before this diagram and the underlying predicate were corrected to describe
+an exclusive partition instead.
 
 ### Recommended Project Structure
 

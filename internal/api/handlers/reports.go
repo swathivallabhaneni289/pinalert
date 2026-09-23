@@ -302,17 +302,20 @@ func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 // @Description then resolves each report's visibility fresh via the shared resolver and returns
 // @Description only listable ones, nearest first. This single endpoint serves both the map and the
 // @Description list views — there is no separate map-only route. A resolved (retracted) report is
-// @Description never returned by either view. show_disputed=true additionally includes reports
-// @Description currently hidden by disputes, in the list and among the map pins together. Every
-// @Description report carries your_vote and is_own_report relative to the calling verified account.
-// @Description Requires a session verified by email through the magic-link flow; an unverified
-// @Description caller receives 401 and no report data.
+// @Description never returned by either view. show_disputed=true switches to the disputed-only
+// @Description view: only reports currently hidden by disputes, on the list and among the map pins
+// @Description together, replacing the default Live-and-Provisional view rather than adding to it.
+// @Description A critical or rescue-needed report stays Live however heavily it is disputed, so it
+// @Description appears only in the default view, never in the disputed one. Every report carries
+// @Description your_vote and is_own_report relative to the calling verified account. Requires a
+// @Description session verified by email through the magic-link flow; an unverified caller receives
+// @Description 401 and no report data.
 // @Tags reports
 // @Produce json
 // @Param lat query number true "Latitude of the query center (required, -90 to 90)"
 // @Param lon query number true "Longitude of the query center (required, -180 to 180)"
 // @Param radius_km query number false "Search radius in kilometers (defaults to 10, bounded to 0.1-50)" minimum(0.1) maximum(50) default(10)
-// @Param show_disputed query boolean false "Include reports hidden by disputes (defaults to false)"
+// @Param show_disputed query boolean false "Select the disputed-only view instead of the default view (defaults to false)"
 // @Success 200 {object} ReportListResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
