@@ -20,43 +20,6 @@ window.PinalertMap = (function () {
 
   var map = null;
   var markers = {}; // report id -> L.Marker
-  var vectorLayer = null; // retained so a later theme switch can re-style it
-
-  // BASEMAP_STYLES is the closed, reviewed lookup the basemap's style is
-  // chosen from (T-01-17, TestBasemapBranchesPointAtCorrectHosts). Both
-  // values are whole string literals: nothing here is concatenated,
-  // interpolated or built from parts, so there is no shape in which the
-  // mode below can become part of a URL. A third entry needs the same
-  // review these two had.
-  var BASEMAP_STYLES = {
-    light: 'https://tiles.openfreemap.org/styles/liberty',
-    dark: 'https://tiles.openfreemap.org/styles/dark'
-  };
-
-  // currentBasemapMode resolves the effective theme mode fresh on every
-  // call, never memoised: System mode is expressed by data-theme's
-  // ABSENCE (see theme.js's applyMode), so a mode captured once at
-  // construction time would go stale the instant a reader switches back
-  // to following the OS. The attribute value is validated against
-  // BASEMAP_STYLES's own keys before it selects anything (T-01-17) — the
-  // same discipline Pinalert.iconClass applies to a server-supplied
-  // category — and anything absent or unrecognised falls back to the
-  // system colour-scheme preference below, guarded for that API being
-  // absent (defaulting to light in that case). There is no other system
-  // colour-scheme preference read anywhere in web/static/js/ before this
-  // one: it mirrors in JavaScript what main.css's own
-  // `@media (prefers-color-scheme: dark)` block already does
-  // declaratively.
-  function currentBasemapMode() {
-    var attr = document.documentElement.getAttribute('data-theme');
-    if (Object.prototype.hasOwnProperty.call(BASEMAP_STYLES, attr)) {
-      return attr;
-    }
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      return 'dark';
-    }
-    return 'light';
-  }
 
   // hasVectorBasemap reports whether this browser can render the
   // OpenFreeMap vector basemap through the MapLibre bridge: both vendor
@@ -107,24 +70,16 @@ window.PinalertMap = (function () {
     });
 
     if (hasVectorBasemap()) {
-      vectorLayer = L.maplibreGL({
-        style: BASEMAP_STYLES[currentBasemapMode()],
+      L.maplibreGL({
+        style: 'https://tiles.openfreemap.org/styles/liberty',
         attributionControl: {
           customAttribution:
             '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> ' +
             '<a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">&copy; OpenMapTiles</a> ' +
             'Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'
         }
-      });
-      vectorLayer.addTo(map);
+      }).addTo(map);
     } else {
-      // Accepted limitation: OpenFreeMap publishes no free dark raster
-      // tileset (the dark style is vector-only), so this fallback renders
-      // the light OpenStreetMap raster basemap in every theme. Adding a
-      // second raster vendor to cover this one degraded path would
-      // introduce an unevaluated host receiving visitor viewport
-      // coordinates — exactly what TestBasemapBranchesPointAtCorrectHosts
-      // exists to prevent.
       var rasterLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         detectRetina: true,
@@ -149,30 +104,6 @@ window.PinalertMap = (function () {
     });
 
     centerOnVisitor();
-
-    // Re-styles the retained vector layer when the root theme attribute
-    // changes, so switching Light/Dark/System from the account menu
-    // repaints the basemap with no reload. theme.js dispatches no event
-    // and stays unmodified; this module watches the DOM directly instead
-    // (see the file header SECURITY note). Three guards, checked in
-    // order, make the callback a safe no-op instead of an exception when
-    // the renderer is not constructed yet: Leaflet defers a layer's add
-    // hook — and therefore the bridge's own renderer construction — until
-    // the map's first setView call, which happens inside
-    // centerOnVisitor()'s async geolocation callback, up to its own
-    // 8000ms timeout. A switch that arrives during that window is a safe
-    // no-op; the map's eventual construction reads the mode fresh via
-    // currentBasemapMode() anyway.
-    new MutationObserver(function () {
-      if (!vectorLayer || typeof vectorLayer.getMaplibreMap !== 'function') {
-        return;
-      }
-      var renderer = vectorLayer.getMaplibreMap();
-      if (!renderer) {
-        return;
-      }
-      renderer.setStyle(BASEMAP_STYLES[currentBasemapMode()]);
-    }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   }
 
   // centerOnVisitor centres on the visitor's geolocation when granted, and

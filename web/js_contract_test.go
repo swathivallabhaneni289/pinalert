@@ -25,27 +25,12 @@ const (
 	leafletMapConstructionEnd = ");"
 )
 
-// Accepted limitation, recorded once here: OpenFreeMap publishes no free
-// dark raster tileset (the dark style below is vector-only), so the
-// raster fallback branch in both map modules stays the light
-// OpenStreetMap basemap in every theme. See each module's own copy of
-// this comment next to its raster construction.
-//
-// vectorStyleURLLight and vectorStyleURLDark are the closed, two-URL
-// allowlist both map modules choose from at runtime (gap-closure plan
-// 02-11: the basemap became theme-aware, so a runtime lookup replaced the
-// single string literal this constant used to be — a deliberate
-// severing, not a relaxation of the host-pinning guarantee below). A
-// silent re-point of either — or a quietly added third URL — would
-// otherwise start streaming visitor viewport coordinates, an
-// approximation of where a person physically is during an emergency, to
-// a host nobody evaluated. The set is closed: a third entry needs the
-// same review these two had. rasterTileURLTemplate is unchanged from
-// before this plan.
+// The vector style URL and the raster tile URL template this app has
+// reviewed and chosen. A silent re-point of either would otherwise start
+// streaming visitor viewport coordinates — an approximation of where a
+// person physically is during an emergency — to a host nobody evaluated.
 const (
-	vectorStyleURLLight   = "https://tiles.openfreemap.org/styles/liberty"
-	vectorStyleURLDark    = "https://tiles.openfreemap.org/styles/dark"
-	tileHostPrefix        = "https://tiles."
+	vectorStyleURL        = "https://tiles.openfreemap.org/styles/liberty"
 	rasterTileURLTemplate = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
 )
 
@@ -96,21 +81,8 @@ func windowAfter(text, anchor, terminator string) (body string, anchorFound, ter
 // TestBasemapBranchesPointAtCorrectHosts asserts that both basemap branches
 // — the OpenFreeMap vector construction and the OpenStreetMap raster
 // fallback — exist in each map module, that neither appears more than once,
-// and that each points at a host this project actually reviewed and chose.
-//
-// The vector half's shape changed in gap-closure plan 02-11, deliberately,
-// not as a relaxation: before that plan, the style option had to be one
-// exact string literal (vectorStyleURL, now retired). Now that both map
-// modules pick their style from a runtime theme lookup (T-01-17), the
-// construction call's own style option can no longer be a literal — so this
-// test instead asserts the construction call does NOT inline a URL (proving
-// it selects rather than names one), and separately pins the host by
-// requiring each of the two reviewed style URLs to appear exactly once per
-// module, with no other tile-host-prefixed string anywhere in the file. The
-// security property this test exists for — no silent re-point to an
-// unreviewed host — is preserved, and arguably strengthened: the exact-once
-// count also catches a duplicated or leftover URL that the old single-literal
-// check would have missed.
+// and that each points at the host this project actually reviewed and
+// chose.
 //
 // Non-obvious dependency for a future editor: the raster window's
 // terminator is the FIRST ".addTo(" call after the "L.tileLayer(" anchor,
@@ -169,12 +141,10 @@ func TestBasemapBranchesPointAtCorrectHosts(t *testing.T) {
 				style, found := readOptionValue(body, "style")
 				if !found {
 					t.Errorf("%s: vector basemap construction is missing the style option entirely", path)
-				} else if strings.Contains(style, "http") {
-					t.Errorf("%s: vector basemap style must select from the reviewed lookup rather "+
-						"than naming a URL inline, found %q — the URL set is pinned at module scope "+
-						"where it can be reviewed in one place, and inlining a URL back into the "+
-						"construction call would let a second, unreviewed style hide in a branch",
-						path, style)
+				} else if trimmed := strings.Trim(style, `'"`); trimmed != vectorStyleURL {
+					t.Errorf("%s: vector basemap style must be exactly %q, found %q — a silently "+
+						"re-pointed style host would stream visitor viewport coordinates to a "+
+						"provider nobody evaluated", path, vectorStyleURL, trimmed)
 				}
 
 				attr, found := readOptionValue(body, "customAttribution")
@@ -218,32 +188,6 @@ func TestBasemapBranchesPointAtCorrectHosts(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("failed to walk embedded static/js: %v", err)
-	}
-
-	// The two reviewed style URLs are what actually pin the hosts now that
-	// the construction call selects rather than inlines a style: each must
-	// appear exactly once per module, in the module-scope lookup Task 1
-	// added, and no other occurrence of the tile-host prefix may exist —
-	// closing the "third style added quietly in a branch" case the
-	// no-inline check above would not catch on its own.
-	for _, module := range []string{"static/js/map.js", "static/js/modal.js"} {
-		raw, err := fs.ReadFile(StaticFS, module)
-		if err != nil {
-			t.Fatalf("%s: could not read embedded file — %v", module, err)
-		}
-		text := stripCSSComments(string(raw))
-
-		if n := strings.Count(text, vectorStyleURLLight); n != 1 {
-			t.Errorf("%s: expected %q to appear exactly once, found %d", module, vectorStyleURLLight, n)
-		}
-		if n := strings.Count(text, vectorStyleURLDark); n != 1 {
-			t.Errorf("%s: expected %q to appear exactly once, found %d", module, vectorStyleURLDark, n)
-		}
-		if n := strings.Count(text, tileHostPrefix); n != 2 {
-			t.Errorf("%s: expected exactly 2 occurrences of the tile-host prefix %q (the two "+
-				"reviewed style URLs and nothing else), found %d — a third style may have been "+
-				"slipped in alongside them", module, tileHostPrefix, n)
-		}
 	}
 
 	for _, module := range []string{"static/js/map.js", "static/js/modal.js"} {
@@ -497,95 +441,5 @@ func TestIconGlyphsAreClassDriven(t *testing.T) {
 		t.Errorf("static/js/app.js: iconClass's own body does not reference the CATEGORIES allowlist "+
 			"(expected %q) — an unguarded rewrite of this helper would let a server-supplied category "+
 			"value reach className unchecked (T-01-13-01, direct continuation of T-01-17)", allowlistRef)
-	}
-}
-
-// TestMapBasemapFollowsTheAppTheme guards gap-closure plan 02-11's whole
-// point: that both map.js and modal.js resolve their basemap from the
-// live app theme, watch the root theme attribute for a later change, and
-// can actually act on one — and that theme.js, which they depend on,
-// never grows a dependency back on them.
-//
-// Honest limit of this test's claim, in the same spirit as this package's
-// existing CSS tests' honest-limits paragraphs: static inspection proves
-// each module reads the mode, watches the attribute and can swap the
-// style. It cannot prove a real browser actually repaints the tiles —
-// that is the end-of-phase human check's job — and it cannot prove the
-// raster fallback looks acceptable in dark mode, which is an accepted
-// limitation recorded in a code comment next to each raster construction,
-// not a claim this test makes.
-func TestMapBasemapFollowsTheAppTheme(t *testing.T) {
-	const (
-		themeAttributeRead      = "document.documentElement.getAttribute('data-theme')"
-		systemPreferenceRead    = "matchMedia('(prefers-color-scheme: dark)')"
-		observerRegistration    = "new MutationObserver("
-		observerAttributeFilter = "attributeFilter: ['data-theme']"
-		retainedLayerAccessor   = "getMaplibreMap"
-		styleSwapCall           = "setStyle("
-	)
-
-	for _, module := range []string{"static/js/map.js", "static/js/modal.js"} {
-		raw, err := fs.ReadFile(StaticFS, module)
-		if err != nil {
-			t.Fatalf("%s: could not read embedded file — %v", module, err)
-		}
-		text := stripCSSComments(string(raw))
-
-		if !strings.Contains(text, themeAttributeRead) {
-			t.Errorf("%s: expected a resolved-mode read of the root theme attribute (%q) — without "+
-				"it this module cannot know the app's current theme at all", module, themeAttributeRead)
-		}
-		if !strings.Contains(text, systemPreferenceRead) {
-			t.Errorf("%s: expected a system colour-scheme preference read (%q) — without it, the "+
-				"case where data-theme is absent (System mode) falls through unhandled instead of "+
-				"following the OS", module, systemPreferenceRead)
-		}
-		if !strings.Contains(text, observerAttributeFilter) {
-			t.Errorf("%s: expected the theme observer to be registered with an attribute filter "+
-				"naming the theme attribute (%q) — a bare, unfiltered observer would still re-fire "+
-				"on every unrelated root attribute change", module, observerAttributeFilter)
-		}
-		if !strings.Contains(text, retainedLayerAccessor) {
-			t.Errorf("%s: expected the retained vector layer's renderer accessor (%q) — a module "+
-				"that observes the theme attribute but has no way to reach the renderer cannot "+
-				"actually re-style anything", module, retainedLayerAccessor)
-		}
-
-		regIdx := strings.Index(text, observerRegistration)
-		if regIdx == -1 {
-			t.Fatalf("%s: expected an observer registration (%q) but found none", module, observerRegistration)
-		}
-		swapIdx := strings.Index(text, styleSwapCall)
-		if swapIdx == -1 {
-			t.Errorf("%s: expected a style-swap call (%q) — a module that observes the theme "+
-				"attribute but never calls it cannot actually re-style the basemap", module, styleSwapCall)
-		} else if swapIdx <= regIdx {
-			t.Errorf("%s: expected the style-swap call (%q) to sit after the observer registration "+
-				"(%q) in the file, so the swap is reachable from the notification rather than being "+
-				"an unrelated leftover — found the swap at index %d, the registration at index %d",
-				module, styleSwapCall, observerRegistration, swapIdx, regIdx)
-		}
-	}
-
-	// Module-independent assertion: theme.js must never learn either map
-	// module exists. The signal path is deliberately one-way — the maps
-	// read the DOM; theme.js dispatches no event and calls no shared
-	// function — and this plan's own prohibitions forbid editing theme.js
-	// at all. modal.js exposes no global of its own, so checking for
-	// map.js's PinalertMap global covers both.
-	themeJS, err := fs.ReadFile(StaticFS, "static/js/theme.js")
-	if err != nil {
-		t.Fatalf("static/js/theme.js: could not read embedded file — %v", err)
-	}
-	themeText := stripCSSComments(string(themeJS))
-
-	if strings.Contains(themeText, "MutationObserver") {
-		t.Errorf("static/js/theme.js: found %q — this module must stay self-contained and never "+
-			"learn that the map modules exist; the signal path is one-way through the DOM, observed "+
-			"by the maps, never emitted by theme.js", "MutationObserver")
-	}
-	if strings.Contains(themeText, "PinalertMap") {
-		t.Errorf("static/js/theme.js: found a reference to map.js's global %q — theme.js must never "+
-			"grow a dependency on either map module", "PinalertMap")
 	}
 }
