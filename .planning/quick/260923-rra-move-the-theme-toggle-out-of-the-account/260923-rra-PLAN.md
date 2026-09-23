@@ -21,7 +21,7 @@ must_haves:
     - "The account menu contains exactly the email row, the Activity link and Log out, with no theme row and no empty leftover row."
     - "One tap still flips the app between light and dark, the glyph still swaps between sun and moon, and the accessible name and tooltip still update on every flip, because theme.js is not modified at all."
     - "The control's markup exists in exactly one file and is included by exactly two pages, so no page ever renders two elements carrying the same control id."
-    - "The login gate, check inbox and verify outcome pages render no theme control at all and keep loading theme.js unchanged, which stays inert there."
+    - "The login gate and verify outcome pages, and the check inbox partial login_gate includes, render no theme control at all and keep loading theme.js unchanged, which stays inert there."
     - "The floating control never overlaps the report button, Leaflet's bottom-right attribution strip, Leaflet's top-left zoom control or the top-right account button, and it sits below the report modal's backdrop when the modal opens."
     - "The control's vertical offset is computed from the report button's own bottom token plus the shared touch-target token plus a space token, never a hardcoded pixel value."
     - "go build, go vet and go test ./... -short are all green with no database involved."
@@ -180,10 +180,13 @@ file's existing style.
      constant rather than typing the filename a second time, so a rename can only fail the build and
      never let the two sides drift.
   h. That same include action appears zero times in templates/login_gate.html.tmpl,
-     templates/check_inbox.html.tmpl and templates/verify_outcome.html.tmpl. Those three pages render
-     no header and no control today, and this assertion is what keeps that true. Read each with
-     TemplatesFS.ReadFile and fail loudly if any of the three cannot be read, so the zero-count check
-     can never pass because the file simply was not found.
+     templates/check_inbox.html.tmpl and templates/verify_outcome.html.tmpl. Note the exact shapes
+     here so you target the right files: login_gate and verify_outcome are full pages, while
+     check_inbox is a partial that login_gate itself includes, so it reaches a reader only through
+     that page and opens no html element of its own. All three render no header and no theme control
+     today, and this assertion is what keeps that true. Read each with TemplatesFS.ReadFile and fail
+     loudly if any of the three cannot be read, so the zero-count check can never pass merely because
+     the file was not found.
   i. Keep the existing cross-file drift loop unchanged: theme.js must still reference the control id,
      the glyph span id, and both icon modifier class names. This is what catches a rename on one side
      shipping a button that renders an empty circle.
@@ -303,9 +306,10 @@ has no equivalent container, so body level is the only placement that is identic
 it keeps the fixed-position control out of any nested stacking context a pane might introduce.
 
 Do not add the include to login_gate.html.tmpl, check_inbox.html.tmpl or verify_outcome.html.tmpl.
-Those three render no header today and must keep rendering no control; Task 1 asserts a zero count on
-each of them. They continue to load theme.js unchanged, where wireControl's existing early return on
-a missing element keeps the module inert, exactly as it already is today.
+login_gate and verify_outcome are full pages; check_inbox is a partial login_gate itself includes.
+All three render no header today and must keep rendering no control; Task 1 asserts a zero count on
+each of them. The two pages continue to load theme.js unchanged, where wireControl's existing early
+return on a missing element keeps the module inert, exactly as it already is today.
 
 Do not touch web/static/js/theme.js in this task or any other. Per D-D, getElementById is document
 scoped, so the module keeps working unmodified once the ids move.
@@ -445,7 +449,7 @@ test file.
   contract test fails the build if the two controls' bands ever overlap.
 - The account menu contains only the email row, the Activity link and Log out, with no leftover row.
 - The control's markup exists in exactly one file, is included by exactly two pages, and appears zero
-  times on the login gate, check inbox and verify outcome pages.
+  times in the login gate page, the verify outcome page and the check inbox partial.
 - theme.js is byte-identical to what shipped in quick task 260923-qwi, and one tap still flips the app
   between exactly two modes with the glyph, aria-label and title all updating.
 - Whole test suite green with no database.
