@@ -37,6 +37,7 @@
 
   var modalMap = null;
   var modalMarker = null;
+  var modalVectorLayer = null; // retained so a later theme switch can re-style it
   var selectedCategory = null;
   var lastFocusedEl = null;
   var severityWrapper = null;
@@ -305,6 +306,36 @@
     updateCoordReadout(lat, lon);
   }
 
+  // BASEMAP_STYLES is the closed, reviewed lookup this modal's own
+  // pin-drop map chooses its style from. Byte-identical to map.js's own
+  // lookup, by this codebase's established convention of duplicating
+  // small pieces like this per file rather than sharing them — see
+  // hasVectorBasemap's own comment just below. A third entry needs the
+  // same review these two had (T-01-17, TestBasemapBranchesPointAtCorrectHosts).
+  var BASEMAP_STYLES = {
+    light: 'https://tiles.openfreemap.org/styles/liberty',
+    dark: 'https://tiles.openfreemap.org/styles/dark'
+  };
+
+  // currentBasemapMode mirrors map.js's own resolver: resolved fresh on
+  // every call, never memoised, because System mode is expressed by
+  // data-theme's ABSENCE (see theme.js's applyMode), so a mode captured
+  // once at construction time would go stale the instant a reader
+  // switches back to following the OS. Validated against BASEMAP_STYLES's
+  // own keys before it selects anything (T-01-17), falling back to the
+  // system colour-scheme preference below, guarded for that API being
+  // absent (defaulting to light in that case).
+  function currentBasemapMode() {
+    var attr = document.documentElement.getAttribute('data-theme');
+    if (Object.prototype.hasOwnProperty.call(BASEMAP_STYLES, attr)) {
+      return attr;
+    }
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      return 'dark';
+    }
+    return 'light';
+  }
+
   // hasVectorBasemap reports whether this browser can render the
   // OpenFreeMap vector basemap through the MapLibre bridge: both vendor
   // globals must have loaded, and the browser must grant a WebGL2
@@ -366,16 +397,22 @@
       });
 
       if (hasVectorBasemap()) {
-        L.maplibreGL({
-          style: 'https://tiles.openfreemap.org/styles/liberty',
+        modalVectorLayer = L.maplibreGL({
+          style: BASEMAP_STYLES[currentBasemapMode()],
           attributionControl: {
             customAttribution:
               '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> ' +
               '<a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">&copy; OpenMapTiles</a> ' +
               'Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'
           }
-        }).addTo(modalMap);
+        });
+        modalVectorLayer.addTo(modalMap);
       } else {
+        // Accepted limitation: OpenFreeMap publishes no free dark raster
+        // tileset (the dark style is vector-only), so this fallback stays
+        // the light OpenStreetMap raster basemap in every theme. See
+        // map.js's own copy of this comment and
+        // TestBasemapBranchesPointAtCorrectHosts for the full reasoning.
         var rasterLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           maxZoom: 19,
           detectRetina: true,
@@ -629,4 +666,27 @@
       requestClose();
     }
   });
+
+  // Re-styles the modal's own retained vector layer when the root theme
+  // attribute changes. Registered once here, not inside initLocation(),
+  // which runs on every modal open — a second observer per open would
+  // stack duplicate listeners. Same three guards as map.js's copy, in the
+  // same order, for the same reason: modalVectorLayer is null until the
+  // report modal has been opened at least once (initLocation() builds it
+  // lazily), and even after that, Leaflet defers the bridge's own
+  // renderer construction until this map's first setView call, which
+  // happens inside initLocation()'s async geolocation callback. A theme
+  // switch that arrives before then, or before the modal has ever been
+  // opened, is a safe no-op; a later modal open reads the mode fresh via
+  // currentBasemapMode() anyway.
+  new MutationObserver(function () {
+    if (!modalVectorLayer || typeof modalVectorLayer.getMaplibreMap !== 'function') {
+      return;
+    }
+    var renderer = modalVectorLayer.getMaplibreMap();
+    if (!renderer) {
+      return;
+    }
+    renderer.setStyle(BASEMAP_STYLES[currentBasemapMode()]);
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 }());
