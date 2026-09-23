@@ -150,3 +150,13 @@ Not applicable to this plan — the light-mode visual walkthrough is a `<human-c
 *Phase: 02-trust-mechanic-core-confirm-dispute-visibility*
 *Plan: 02-13*
 *Completed: 2026-09-23*
+
+## Self-Check: PASSED
+
+- FOUND: web/css_contract_test.go
+- FOUND: web/static/css/trust.css
+- FOUND: web/votes_contract_test.go
+- FOUND: .planning/phases/02-trust-mechanic-core-confirm-dispute-visibility/02-13-SUMMARY.md
+- FOUND commit 8c5f391 (Task 1)
+- FOUND commit 9e5a97b (Task 2)
+- FOUND commit 79cd442 (Task 3)
