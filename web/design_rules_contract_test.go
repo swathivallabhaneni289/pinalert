@@ -124,3 +124,102 @@ func TestUserVisibleCopyUsesPlainPunctuationAuthJS(t *testing.T) {
 			agreedRateLimitSentence, count)
 	}
 }
+
+// TestNoPillShapedControls is the standing gate for design rule 2: no
+// pill-shaped (fully rounded) buttons. It reuses this package's own
+// parseCSSRules/declsOf/ruleBySelector helpers (web/css_contract_test.go)
+// rather than a second parser.
+//
+// This test cannot be a simple "the fully-rounded value appears zero
+// times" count: the severity slider's two track pseudo-elements
+// legitimately keep it (a slider track is not a pill-shaped button, and
+// site-design-rules.md says so explicitly), so a bare count would fail on
+// correct code. Instead it distinguishes WHICH selectors are allowed to be
+// fully rounded — the severity slider only — from every other rule, which
+// must not be.
+//
+// Honest limit of this test's claim, in the same spirit as this package's
+// other CSS contract tests: it proves the declared radii in the shipped
+// stylesheet. It cannot prove the rendered controls look right in a real
+// browser — that is the human check's job.
+func TestNoPillShapedControls(t *testing.T) {
+	const fullyRoundedRadius = "999px"
+	const interimRadius = "8px"
+	const viewToggleSelector = ".view-toggle"
+	const toastSelector = "#toast"
+	const severitySliderPrefix = ".severity-slider"
+
+	raw, err := fs.ReadFile(StaticFS, "static/css/main.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/main.css: %v", err)
+	}
+	rules := parseCSSRules(string(raw))
+
+	// The view toggle has two rules sharing the same exact selector head:
+	// a base display rule and a responsive rule that alone carries a
+	// radius. Collect ALL of them — fatal if fewer than two are found,
+	// since a silently vanished premise is worse than no test at all.
+	var viewToggleRules []cssRule
+	for _, r := range rules {
+		if r.selectorHead == viewToggleSelector {
+			viewToggleRules = append(viewToggleRules, r)
+		}
+	}
+	if len(viewToggleRules) < 2 {
+		t.Fatalf("expected at least 2 rules with exact selector head %q (a base display rule and a "+
+			"responsive rounded rule), found %d — the premise this test is built on may have silently "+
+			"evaporated", viewToggleSelector, len(viewToggleRules))
+	}
+	for _, r := range viewToggleRules {
+		decls := declsOf(r.declBody)
+		radius, ok := decls["border-radius"]
+		if !ok {
+			continue
+		}
+		if radius == fullyRoundedRadius {
+			t.Errorf("%s declares a fully-rounded border-radius (%s) — site-design-rules.md forbids "+
+				"pill-shaped buttons", viewToggleSelector, radius)
+		} else if radius != interimRadius {
+			t.Errorf("%s declares border-radius %q, want the interim %q", viewToggleSelector, radius, interimRadius)
+		}
+	}
+
+	toastRule, ok := ruleBySelector(rules, toastSelector)
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/main.css", toastSelector)
+	}
+	toastDecls := declsOf(toastRule.declBody)
+	if radius, ok := toastDecls["border-radius"]; !ok {
+		t.Errorf("%s declares no border-radius", toastSelector)
+	} else if radius == fullyRoundedRadius {
+		t.Errorf("%s declares a fully-rounded border-radius (%s) — site-design-rules.md forbids "+
+			"pill-shaped buttons", toastSelector, radius)
+	} else if radius != interimRadius {
+		t.Errorf("%s declares border-radius %q, want the interim %q", toastSelector, radius, interimRadius)
+	}
+
+	// Walk EVERY rule: whichever ones declare the fully-rounded radius
+	// must name the severity slider. This is the assertion that
+	// distinguishes an allowed selector from a forbidden one, rather than
+	// banning the value outright.
+	var foundSliderFullyRounded bool
+	for _, r := range rules {
+		decls := declsOf(r.declBody)
+		radius, ok := decls["border-radius"]
+		if !ok || radius != fullyRoundedRadius {
+			continue
+		}
+		if !strings.Contains(r.selectorHead, severitySliderPrefix) {
+			t.Errorf("rule %q declares a fully-rounded border-radius (%s) but its selector does not "+
+				"name the severity slider — site-design-rules.md allows this radius only on the slider "+
+				"tracks, every other control must not be a pill", r.selectorHead, radius)
+			continue
+		}
+		foundSliderFullyRounded = true
+	}
+	if !foundSliderFullyRounded {
+		t.Fatalf("expected at least one severity-slider rule to declare the fully-rounded border-radius "+
+			"(%s) — if the slider rules were ever deleted, this check would otherwise pass vacuously",
+			fullyRoundedRadius)
+	}
+}

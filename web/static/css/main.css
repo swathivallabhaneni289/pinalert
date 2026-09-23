@@ -592,7 +592,10 @@ body {
     justify-content: center;
     gap: var(--space-xs);
     border: 1px solid var(--color-border);
-    border-radius: 999px;
+    /* site-design-rules.md: no pill-shaped buttons. 8px matches the
+       category tile and the account menu panel, not a new scale — the
+       deferred UI phase may re-tokenise it. */
+    border-radius: 8px;
     background: var(--color-bg);
     color: var(--color-text);
     cursor: pointer;
@@ -639,7 +642,10 @@ body {
   color: var(--color-bg);
   font-size: var(--font-size-body);
   padding: var(--space-sm) var(--space-lg);
-  border-radius: 999px;
+  /* site-design-rules.md: no pill-shaped buttons. 8px matches the
+     category tile and the account menu panel, not a new scale — the
+     deferred UI phase may re-tokenise it. */
+  border-radius: 8px;
   animation: toast-in 200ms ease;
 }
 
