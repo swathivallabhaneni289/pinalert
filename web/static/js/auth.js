@@ -123,7 +123,7 @@
       body: JSON.stringify({ email: email })
     }).then(function (res) {
       if (res.status === 429) {
-        throw new Error('Too many requests — try again in a minute.');
+        throw new Error('Too many requests. Try again in a minute.');
       }
       return res.json().catch(function () {
         return {};

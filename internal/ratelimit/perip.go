@@ -26,7 +26,7 @@ import (
 // message (internal/service.ErrRateLimited's handler mapping) so a caller
 // cannot tell which limiter tripped, or whether the address involved has an
 // account (T-01-78).
-const tooManyRequestsMessage = "Too many requests — try again in a minute."
+const tooManyRequestsMessage = "Too many requests. Try again in a minute."
 
 // ipEntry pairs one key's limiter with the last time it was touched, so an
 // idle sweep can evict entries nobody has used in a while without ever

@@ -21,7 +21,7 @@ func TestVerificationEmailHTML(t *testing.T) {
 	if !strings.Contains(body, "This link expires in 5 minutes and can only be used once.") {
 		t.Errorf("verificationEmailHTML(%q) missing expiry copy", link)
 	}
-	if !strings.Contains(body, "Didn't request this? You can safely ignore this email — no account will be created.") {
+	if !strings.Contains(body, "Didn't request this? You can safely ignore this email. No account will be created.") {
 		t.Errorf("verificationEmailHTML(%q) missing didn't-request-this line", link)
 	}
 }
