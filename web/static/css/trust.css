@@ -403,15 +403,17 @@
  *    outright. That shadow is theme-neutral and needs no override, so it
  *    is deliberately left to cascade from the vendor rule — this rule
  *    declares background and color only.
- * 3. The close button is deliberately left alone. Its own Leaflet rule
- *    carries a type field as well as two classes and therefore already
- *    out-specifies a two-class-plus-ancestor override — a matching rule
- *    here would tie and lose on source order, so properly overriding it
- *    would need an even longer selector head for no benefit. Its mid-grey
- *    glyph measures roughly 4.2:1 against this app's dark base surface and
- *    4.6:1 against the light one, both clear of the 3:1 graphical-object
- *    floor, so it stays legible in both themes as shipped without any
- *    override.
+ * 3. The close button IS now overridden, to --color-text-muted at rest and
+ *    --color-text on hover and focus. A severity tinted wrapper moves the
+ *    surface the glyph sits on, so the old resting figures (roughly 4.2:1
+ *    and 4.6:1) no longer describe what ships: Leaflet's own resting
+ *    #757575 measures about 2.88:1 on the dark low severity tint and
+ *    2.90:1 on the dark medium one, both under the 3:1 graphical-object
+ *    floor this block already invokes, and its hover #585858 is worse
+ *    still. The override rules live directly below the tint rules, each
+ *    carrying the ancestor field for the same reason point 1 above gives,
+ *    at a specificity that beats Leaflet's own base rule (0,2,1) and
+ *    hover/focus pair (0,3,1) regardless of link order.
  * 4. This rule lives here, not in main.css, for the same reason auth.css's
  *    own "Styled here rather than in main.css" comment gives for itself:
  *    main.css is covered by four computed contract tests including an
@@ -423,6 +425,52 @@
  * ---------------------------------------------------------------------- */
 .leaflet-container .leaflet-popup-content-wrapper,
 .leaflet-container .leaflet-popup-tip {
-  background: var(--color-bg);
+  background: var(--severity-tint, var(--color-bg));
+  color: var(--color-text);
+}
+
+/* Hidden and Retracted override, scoped to this popup surface only. The
+   single declaration below is a hard constraint, not a style preference:
+   TestVisibilityCascadeOverridesAgeRamp and
+   TestRetractedRowTreatmentMatchesHidden each demand exactly one rule in
+   this file whose selector head names their state class and whose
+   declaration body contains the substring "background": adding a
+   background property to this rule would satisfy both counts at once and
+   fail both tests. This is not a divergence from the feed row: .vis-hidden's
+   transparent on a row reveals body's own var(--color-bg), while
+   transparent on a popup floating above the basemap would reveal map tiles
+   instead of the app's surface, so declaring var(--color-bg) here
+   reproduces the row's RENDERED result rather than only its declared
+   keyword. The retracted half is future proofing on this surface: D-12
+   already filters retracted reports out of the map response before the
+   client ever sees them, the same distinction trust.css's own .vis-retracted
+   rule documents for itself. The ancestor field is mandatory here for the
+   same reason point 1 above gives, and because TestMapPopupSurfaceIsThemeAware
+   hard errors on any rule in this file whose selector head mentions a
+   leaflet popup class without it. */
+.leaflet-container .leaflet-popup.vis-hidden,
+.leaflet-container .leaflet-popup.vis-retracted {
+  --severity-tint: var(--color-bg);
+}
+
+/* Close glyph override. The specificity ladder is the whole point: Leaflet's
+   own base rule (.leaflet-container a.leaflet-popup-close-button) carries a
+   type field plus two classes for (0,2,1), and this rule's ancestor field
+   plus its own two classes plus the type field gives (0,3,1), so it wins
+   regardless of the fact that leaflet.css links after this file. Leaflet's
+   hover/focus pair sits at (0,3,1); this rule's own hover/focus pair below
+   adds the ancestor field to reach (0,4,1), winning the same way. The
+   override exists now, and did not before, because Leaflet's resting
+   #757575 measures about 2.88:1 on the dark low severity tint and 2.90:1 on
+   the dark medium one, both under the 3:1 graphical-object floor, and its
+   hover #585858 is worse still: a severity tinted wrapper moves the surface
+   the glyph sits on, so the untinted surface's old passing figures no
+   longer apply. */
+.leaflet-container .leaflet-popup a.leaflet-popup-close-button {
+  color: var(--color-text-muted);
+}
+
+.leaflet-container .leaflet-popup a.leaflet-popup-close-button:hover,
+.leaflet-container .leaflet-popup a.leaflet-popup-close-button:focus {
   color: var(--color-text);
 }
