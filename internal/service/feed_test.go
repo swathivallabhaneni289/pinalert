@@ -175,9 +175,9 @@ func TestListableInFeed(t *testing.T) {
 		want            bool
 	}{
 		{"Live is listable when disputed reports are excluded", service.VisibilityLive, false, true},
-		{"Live is listable when disputed reports are included", service.VisibilityLive, true, true},
+		{"Live is excluded when disputed reports are included (the partition, not a union)", service.VisibilityLive, true, false},
 		{"Provisional is listable when disputed reports are excluded", service.VisibilityProvisional, false, true},
-		{"Provisional is listable when disputed reports are included", service.VisibilityProvisional, true, true},
+		{"Provisional is excluded when disputed reports are included (the partition, not a union)", service.VisibilityProvisional, true, false},
 		{"Hidden is not listable when disputed reports are excluded (D-10)", service.VisibilityHidden, false, false},
 		{"Hidden is listable when disputed reports are included (D-10)", service.VisibilityHidden, true, true},
 		{"Retracted is not listable when disputed reports are excluded (D-12)", service.VisibilityRetracted, false, false},
@@ -273,7 +273,7 @@ func TestNearbyExcludesRetractedFromBothViews(t *testing.T) {
 		}
 	}
 
-	t.Run("a report the reporter has resolved is absent from the default and the disputed views", func(t *testing.T) {
+	t.Run("a report the reporter has resolved is absent from both the default and the disputed views", func(t *testing.T) {
 		fake := build(service.SeverityLow, service.CategoryFlood)
 		svc := service.NewReportService(fake)
 
@@ -287,8 +287,15 @@ func TestNearbyExcludesRetractedFromBothViews(t *testing.T) {
 			if containsReportID(views, 1) {
 				t.Errorf("includeDisputed=%v: report 1 (retracted) is present, want absent", includeDisputed)
 			}
-			if !containsReportID(views, 2) || !containsReportID(views, 3) {
-				t.Errorf("includeDisputed=%v: expected reports 2 and 3 present, got %v", includeDisputed, viewIDs(views))
+			// Reports 2 and 3 are Provisional (unvoted), so under the
+			// partition they belong to the default view only — the
+			// disputed view is Hidden alone.
+			wantPresent := !includeDisputed
+			if got := containsReportID(views, 2); got != wantPresent {
+				t.Errorf("includeDisputed=%v: report 2 present=%v, want %v", includeDisputed, got, wantPresent)
+			}
+			if got := containsReportID(views, 3); got != wantPresent {
+				t.Errorf("includeDisputed=%v: report 3 present=%v, want %v", includeDisputed, got, wantPresent)
 			}
 		}
 	})
@@ -350,35 +357,81 @@ func TestNearbyHidesDisputedUnlessRequested(t *testing.T) {
 		}
 	})
 
-	t.Run("an unvoted report stays provisional in both views (D-08, D-09) — the toggle adds Hidden reports, never removes Provisional ones", func(t *testing.T) {
-		for _, includeDisputed := range []bool{false, true} {
-			views, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: includeDisputed})
-			if err != nil {
-				t.Fatalf("Nearby: %v", err)
-			}
-			v, ok := findView(views, 2)
-			if !ok {
-				t.Fatalf("includeDisputed=%v: report 2 absent, want present", includeDisputed)
-			}
-			if v.Visibility != service.VisibilityProvisional || v.VisibilityReason != service.ReasonAwaitingConfirmation {
-				t.Errorf("includeDisputed=%v: got visibility=%q reason=%q, want %q/%q", includeDisputed, v.Visibility, v.VisibilityReason, service.VisibilityProvisional, service.ReasonAwaitingConfirmation)
-			}
+	t.Run("an unvoted report is present with Provisional in the default view and absent under show_disputed — the toggle replaces the view, it does not add to it", func(t *testing.T) {
+		defViews, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: false})
+		if err != nil {
+			t.Fatalf("Nearby: %v", err)
+		}
+		v, ok := findView(defViews, 2)
+		if !ok {
+			t.Fatalf("default view: report 2 absent, want present")
+		}
+		if v.Visibility != service.VisibilityProvisional || v.VisibilityReason != service.ReasonAwaitingConfirmation {
+			t.Errorf("default view: got visibility=%q reason=%q, want %q/%q", v.Visibility, v.VisibilityReason, service.VisibilityProvisional, service.ReasonAwaitingConfirmation)
+		}
+
+		disputedViews, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: true})
+		if err != nil {
+			t.Fatalf("Nearby: %v", err)
+		}
+		if containsReportID(disputedViews, 2) {
+			t.Errorf("show_disputed view: report 2 (provisional) present, want absent — the disputed view is Hidden alone")
 		}
 	})
 
-	t.Run("a confirmed report stays live in both views", func(t *testing.T) {
-		for _, includeDisputed := range []bool{false, true} {
-			views, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: includeDisputed})
-			if err != nil {
-				t.Fatalf("Nearby: %v", err)
+	t.Run("a confirmed report is present with Live in the default view and absent under show_disputed — the toggle replaces the view, it does not add to it", func(t *testing.T) {
+		defViews, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: false})
+		if err != nil {
+			t.Fatalf("Nearby: %v", err)
+		}
+		v, ok := findView(defViews, 3)
+		if !ok {
+			t.Fatalf("default view: report 3 absent, want present")
+		}
+		if v.Visibility != service.VisibilityLive || v.VisibilityReason != service.ReasonConfirmed {
+			t.Errorf("default view: got visibility=%q reason=%q, want %q/%q", v.Visibility, v.VisibilityReason, service.VisibilityLive, service.ReasonConfirmed)
+		}
+
+		disputedViews, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: true})
+		if err != nil {
+			t.Fatalf("Nearby: %v", err)
+		}
+		if containsReportID(disputedViews, 3) {
+			t.Errorf("show_disputed view: report 3 (live) present, want absent — the disputed view is Hidden alone")
+		}
+	})
+
+	t.Run("the default and disputed views partition the three seeded reports: their union is all three ids and their intersection is empty", func(t *testing.T) {
+		defViews, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: false})
+		if err != nil {
+			t.Fatalf("Nearby (default): %v", err)
+		}
+		disputedViews, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: true})
+		if err != nil {
+			t.Fatalf("Nearby (disputed): %v", err)
+		}
+
+		defIDs := viewIDs(defViews)
+		disputedIDs := viewIDs(disputedViews)
+
+		seen := map[int64]int{}
+		for _, id := range defIDs {
+			seen[id]++
+		}
+		for _, id := range disputedIDs {
+			seen[id]++
+		}
+		wantIDs := []int64{1, 2, 3}
+		for _, id := range wantIDs {
+			if seen[id] == 0 {
+				t.Errorf("report %d present in neither view, want present in exactly one; default=%v disputed=%v", id, defIDs, disputedIDs)
 			}
-			v, ok := findView(views, 3)
-			if !ok {
-				t.Fatalf("includeDisputed=%v: report 3 absent, want present", includeDisputed)
+			if seen[id] > 1 {
+				t.Errorf("report %d present in both views, want present in exactly one; default=%v disputed=%v", id, defIDs, disputedIDs)
 			}
-			if v.Visibility != service.VisibilityLive || v.VisibilityReason != service.ReasonConfirmed {
-				t.Errorf("includeDisputed=%v: got visibility=%q reason=%q, want %q/%q", includeDisputed, v.Visibility, v.VisibilityReason, service.VisibilityLive, service.ReasonConfirmed)
-			}
+		}
+		if len(seen) != len(wantIDs) {
+			t.Errorf("union of default and disputed views = %v, want exactly %v", seen, wantIDs)
 		}
 	})
 }
@@ -469,12 +522,12 @@ func TestNearbyOrderingIsIndependentOfVisibility(t *testing.T) {
 		assertAscendingDistance(t, views)
 	})
 
-	t.Run("the show_disputed view also stays ascending by distance", func(t *testing.T) {
+	t.Run("the show_disputed view also stays ascending by distance, and contains only the Hidden report (partition, not union)", func(t *testing.T) {
 		views, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: true})
 		if err != nil {
 			t.Fatalf("Nearby: %v", err)
 		}
-		wantIDs := []int64{1, 2, 4, 5}
+		wantIDs := []int64{2}
 		if got := viewIDs(views); !equalIDs(got, wantIDs) {
 			t.Fatalf("got %v, want %v", got, wantIDs)
 		}
@@ -561,7 +614,7 @@ func TestNearbyMarksOwnReportAndViewerVote(t *testing.T) {
 	svc := service.NewReportService(fake)
 
 	t.Run("is_own_report is true only for the report the viewer actually reported", func(t *testing.T) {
-		views, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: true, ViewerAccountID: 7})
+		views, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: false, ViewerAccountID: 7})
 		if err != nil {
 			t.Fatalf("Nearby: %v", err)
 		}
@@ -580,7 +633,7 @@ func TestNearbyMarksOwnReportAndViewerVote(t *testing.T) {
 
 	t.Run("a nil reporter account id is never own-report for any viewer, including viewer 0", func(t *testing.T) {
 		for _, viewer := range []int64{7, 0} {
-			views, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: true, ViewerAccountID: viewer})
+			views, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: false, ViewerAccountID: viewer})
 			if err != nil {
 				t.Fatalf("Nearby: %v", err)
 			}
@@ -595,7 +648,7 @@ func TestNearbyMarksOwnReportAndViewerVote(t *testing.T) {
 	})
 
 	t.Run("the viewer's own confirm vote is echoed back on the report it was cast on, and nowhere else", func(t *testing.T) {
-		views, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: true, ViewerAccountID: 7})
+		views, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: false, ViewerAccountID: 7})
 		if err != nil {
 			t.Fatalf("Nearby: %v", err)
 		}
@@ -610,7 +663,7 @@ func TestNearbyMarksOwnReportAndViewerVote(t *testing.T) {
 	})
 
 	t.Run("viewer account id 0 yields an empty vote and false is_own_report for every report, with no panic", func(t *testing.T) {
-		views, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: true, ViewerAccountID: 0})
+		views, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: false, ViewerAccountID: 0})
 		if err != nil {
 			t.Fatalf("Nearby: %v", err)
 		}

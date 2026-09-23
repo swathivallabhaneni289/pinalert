@@ -28,22 +28,41 @@ type ReportView struct {
 }
 
 // ListableInFeed reports whether a report with visibility v should appear
-// in GET /api/reports's result given includeDisputed. Live and Provisional
-// are always shown (D-08, D-09 — Provisional is dimmed and labelled
-// client-side in 02-06, not filtered here). Hidden is shown only behind the
-// "Show disputed" toggle, and shown on the map and in the list together
-// because one endpoint serves both (D-10, D-11). Retracted is never shown
-// in either view, because D-12 removes a resolved report from the live
-// feed and map immediately and its only remaining surface is the Activity
-// history 02-07 builds. "Show disputed" reveals disputed reports, not
-// resolved ones — folding the two together is the likely future mistake
-// this comment exists to prevent. Written as a switch with an explicit
-// default so an unrecognised value fails closed rather than leaking into a
-// feed.
+// in GET /api/reports's result given includeDisputed. The flag selects
+// between two DISJOINT views rather than widening one: exactly one of them
+// contains any given non-retracted report, never both, never neither. The
+// default view (includeDisputed false) is Live plus Provisional (D-08,
+// D-09 — Provisional is dimmed and labelled client-side in 02-06, not
+// filtered here). The disputed view (includeDisputed true) is Hidden
+// alone, served to the list and the map pins together because one
+// endpoint feeds both (D-10, D-11). Retracted appears in neither view,
+// because D-12 removes a resolved report from the live feed and map
+// immediately and leaves the Activity page as its only remaining surface.
+// "Show disputed" reveals disputed reports, not resolved ones — folding
+// the two together is the likely future mistake this comment exists to
+// prevent.
+//
+// Pre-existing consequence, made more visible by this partition and not a
+// regression it introduces: D-06's critical-bypass rung sits above the
+// dispute rung in Resolve(), so a critical or rescue-needed report stays
+// Live however heavily it is disputed, and therefore never appears in the
+// disputed view.
+//
+// This reverses a documented earlier choice: this function previously
+// unioned Hidden into the default view instead of partitioning, matching
+// 02-RESEARCH.md's data-flow diagram at the time. That additive reading
+// was never required by D-10 or D-11's locked text in 02-CONTEXT.md — it
+// was an interpretation carried into this function and the diagram one
+// layer below the decision. The user reported the resulting symptom twice
+// (02-UAT.md Test 9, ROADMAP.md backlog entry Phase 999.2) before this was
+// corrected by gap-closure plan 02-12.
+//
+// Written as a switch with an explicit default so an unrecognised value
+// fails closed rather than leaking into a feed.
 func (v Visibility) ListableInFeed(includeDisputed bool) bool {
 	switch v {
 	case VisibilityLive, VisibilityProvisional:
-		return true
+		return !includeDisputed
 	case VisibilityHidden:
 		return includeDisputed
 	case VisibilityRetracted:
