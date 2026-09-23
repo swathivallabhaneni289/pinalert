@@ -46,7 +46,7 @@ success criteria independently confirmed against the codebase, not trusted from 
 closed: 3 human-only browser UAT items (`02-UAT.md`) and two items needing a human decision (see
 Blockers/Concerns): the code review's rate-limiting WARNING, and a verifier-surfaced escalation
 about ROADMAP.md's `Mode: mvp` flag vs. its non-user-story Goal wording.
-Last activity: 2026-09-21 - Completed quick task 260921-mf2: Activity page back-arrow icon control
+Last activity: 2026-09-23 - Completed quick task 260923-mb0: severity-tinted map popup background
 continuous session (~4.5 hours wall-clock across 7 sequential dependency-chain waves).
 
 Progress: [██████████] 100% of Phase 2's code-verifiable work; 3 human-only UAT items + 2 human
@@ -221,6 +221,7 @@ Recent decisions affecting current work:
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260921-mf2 | Activity page: replace Back to map text link with a back-arrow icon control, perfect placement | 2026-09-21 | 9719806 | [260921-mf2-activity-page-replace-back-to-map-text-l](./quick/260921-mf2-activity-page-replace-back-to-map-text-l/) |
+| 260923-mb0 | Give the map popup the same severity-tinted background the feed row already has | 2026-09-23 | 5ebeda4 | [260923-mb0-give-the-map-popup-the-same-severity-tin](./quick/260923-mb0-give-the-map-popup-the-same-severity-tin/) |
 
 ## Deferred Items
 
