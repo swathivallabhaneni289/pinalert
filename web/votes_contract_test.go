@@ -1564,6 +1564,14 @@ func TestResolveControlsMeetTouchTargetAndUseTokensOnly(t *testing.T) {
 // resolves through clears WCAG AA contrast in both themes — the
 // machine-checkable form of "legible in both themes", not a hope.
 //
+// The background is now severity aware: it reads var(--severity-tint,
+// var(--color-bg)) rather than a bare var(--color-bg), so the popup box
+// picks up the same tint the feed row already reads. This test only proves
+// the declaration itself and the fallback pairing; resolving each actual
+// tint value (severity, provisional, hidden/retracted, across both themes)
+// is TestMapPopupTintTracksFeedRowAcrossStatesAndThemes's own job, placed
+// directly after this test.
+//
 // Honest limit of this test's claim, matching this package's convention:
 // static inspection proves the declarations exist and resolve through
 // tokens at the values main.css declares; it cannot prove a real browser
@@ -1614,8 +1622,8 @@ func TestMapPopupSurfaceIsThemeAware(t *testing.T) {
 		t.Fatalf("expected the popup-surface rule to declare exactly 2 properties (background, "+
 			"color), found %d: %v", len(decls), decls)
 	}
-	if v := decls["background"]; v != "var(--color-bg)" {
-		t.Errorf("popup-surface rule must declare background: var(--color-bg), found %q", v)
+	if v := decls["background"]; v != "var(--severity-tint, var(--color-bg))" {
+		t.Errorf("popup-surface rule must declare background: var(--severity-tint, var(--color-bg)), found %q", v)
 	}
 	if v := decls["color"]; v != "var(--color-text)" {
 		t.Errorf("popup-surface rule must declare color: var(--color-text), found %q", v)
