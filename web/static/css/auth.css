@@ -287,6 +287,16 @@
   mask-image: url("/static/icons/arrow-left.svg");
 }
 
+.auth-icon--sun {
+  -webkit-mask-image: url("/static/icons/sun.svg");
+  mask-image: url("/static/icons/sun.svg");
+}
+
+.auth-icon--moon {
+  -webkit-mask-image: url("/static/icons/moon.svg");
+  mask-image: url("/static/icons/moon.svg");
+}
+
 /* The :not([hidden]) guard is required for the same specificity reason
    documented at length in main.css's .modal-backdrop rule and
    modal.css's #shelter-fields/#discard-confirm rules: the browser's
@@ -346,6 +356,53 @@
   text-decoration: none;
   text-align: left;
   cursor: pointer;
+}
+
+/* The theme control (quick task 260923-qwi): the account menu's icon-only
+   two-state light/dark toggle, styled into a circle in the same visual
+   family as .account-trigger and .profile-back-link. Placed AFTER
+   .account-menu__item on purpose: both selectors are single-class, so they
+   share equal specificity, and source order alone decides which width,
+   padding, border, border-radius and background win here. Never written as
+   a descendant of the panel id, for the same reason the comment above
+   .account-menu__item gives: TestAccountMenuHiddenGuard's broad substring
+   check on any rule naming the panel would otherwise catch this rule too.
+   .account-menu__item already declares the shared touch-target token as a
+   min-height, so it agrees by construction with this rule's own height
+   declaration below. */
+.theme-toggle {
+  justify-content: center;
+  width: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-bg);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 20%);
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+/* Overrides .auth-icon's default --color-text-muted foreground, same
+   reasoning as .account-trigger's and .profile-back-link's own override
+   above: an icon-only control needs full contrast. */
+.theme-toggle .auth-icon {
+  color: var(--color-text);
+}
+
+.theme-toggle:hover {
+  background: var(--color-surface);
+  border-color: var(--color-text-muted);
+}
+
+.theme-toggle:active {
+  background: var(--color-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-toggle {
+    transition: none;
+  }
 }
 
 #account-menu form {
