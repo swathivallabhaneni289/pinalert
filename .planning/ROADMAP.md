@@ -358,11 +358,15 @@ re-verification (2026-09-18) and repeated by the user during Phase 2 UAT round 3
 depending on the location where I'm in, but we need to have that description for the location
 also mentioned properly when the person is making a report"): the current submission flow is
 100% map-interaction (GPS auto-fill, drag, tap-to-place), with no way to type an address.
-**Requirements**: TBD
+**Requirements**: TBD (promoted backlog item, not tied to a REQUIREMENTS.md id; the traceable unit
+is 07-CONTEXT.md's decisions D-01 through D-04, carried in each plan's `requirements` field)
 **Depends on:** Phase 1 (the report-submission modal and its map already exist there; this phase
 only adds a search input alongside them, it does not need Phase 6's coordination features)
-**Plans:** 0 plans
+**Plans:** 4 plans across 3 waves
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 7 to break down)
+- [ ] 07-01-PLAN.md — internal/geocode rate-limited Nominatim proxy client plus the GET /api/geocode handler (wave 1)
+- [ ] 07-02-PLAN.md — search box markup and styling in the report modal, with hidden-guard and stacking contract tests (wave 1)
+- [ ] 07-03-PLAN.md — route registration inside the verified-account gate, server wiring, and the regenerated API spec (wave 2)
+- [ ] 07-04-PLAN.md — debounced client-side search wiring, suggestion-to-pin placement, and the teardown and sink contract tests (wave 3)
