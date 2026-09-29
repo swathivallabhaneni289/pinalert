@@ -9,6 +9,15 @@
 // SECURITY (T-01-03): every string that reaches the DOM here — validation
 // messages included, whether client- or server-authored — is inserted as
 // text content, never assembled into markup for the browser to parse.
+//
+// Plan 07-04 adds the address search box to this same file (D-01, D-03,
+// D-04): a debounced live suggestion dropdown above the map, a tap handler
+// that reuses the existing pin placement path, and two inline status
+// messages for a no-match or a failed search. Every place name and address
+// the geocoding proxy returns is third-party data, OpenStreetMap
+// contributor text this app did not author, and is inserted through the
+// same text-only discipline stated above, never through a sink that would
+// let the browser parse it as markup.
 (function () {
   'use strict';
 
@@ -23,6 +32,9 @@
   var formError = document.getElementById('form-error');
   var coordReadout = document.getElementById('coord-readout');
   var locationNotice = document.getElementById('location-notice');
+  var locationSearchInput = document.getElementById('location-search');
+  var locationSearchResults = document.getElementById('location-search-results');
+  var locationSearchStatus = document.getElementById('location-search-status');
   var modalMapEl = document.getElementById('modal-map');
   var shelterFields = document.getElementById('shelter-fields');
   var shelterCapacityStatus = document.getElementById('shelter-capacity-status');
@@ -45,6 +57,17 @@
 
   var SEVERITY_BY_VALUE = { '1': 'low', '2': 'medium', '3': 'critical' };
   var SEVERITY_POSITIONS = ['1 · Low', '2 · Medium', '3 · Critical'];
+
+  // Location search (D-01, D-03, D-04). Same zoom initLocation's GPS
+  // success callback uses, so a searched location and a GPS location
+  // arrive at identical map state.
+  var SEARCH_RESULT_ZOOM = 16;
+  var SEARCH_NO_MATCH_MESSAGE = 'No matches found.';
+  // Byte identical to geocodeUnavailableMessage in
+  // internal/api/handlers/geocode.go, on purpose, so the visitor reads one
+  // wording whether the failure came from upstream or from this browser's
+  // own fetch.
+  var SEARCH_UNAVAILABLE_MESSAGE = 'Search unavailable, try tapping the map instead.';
 
   // buildSeverityControl wraps the existing native <label>/<input
   // type="range">/<output> in a single container (once, at init) so a
@@ -305,6 +328,89 @@
     updateCoordReadout(lat, lon);
   }
 
+  // showSearchStatus / clearSearchStatus are the only two functions that
+  // touch #location-search-status, carrying D-04's no-match and
+  // unavailable inline messages.
+  function showSearchStatus(message) {
+    Pinalert.setText(locationSearchStatus, message);
+    locationSearchStatus.hidden = false;
+  }
+
+  function clearSearchStatus() {
+    Pinalert.setText(locationSearchStatus, '');
+    locationSearchStatus.hidden = true;
+  }
+
+  // hideDropdown empties the suggestion container's children, not only its
+  // hidden attribute. Emptying the children is required, not cosmetic:
+  // trapTab collects focusables with modal.querySelectorAll('button,
+  // [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'), so
+  // a leftover result button inside a hidden container would enter the tab
+  // cycle and silently swallow a focus call, and a stale row must not be
+  // revealed by a later hidden clear before fresh results replace it.
+  function hideDropdown() {
+    locationSearchResults.textContent = '';
+    locationSearchResults.hidden = true;
+    locationSearchInput.setAttribute('aria-expanded', 'false');
+  }
+
+  // renderResultRow builds one suggestion row entirely from created
+  // elements and Pinalert.setText insertions (T-07-03): no markup string is
+  // ever assembled here. Nominatim's name field is jsonv2-specific and not
+  // always populated, so the fallback collapses to a single line rather
+  // than rendering an empty primary row. Tapping a row calls the existing
+  // placeMarker and modalMap.setView, the same pair initLocation's GPS
+  // success callback calls, so there is exactly one pin placement code
+  // path in this file and no extra confirmation step between the tap and
+  // the placement (D-03). The pin placeMarker creates is already draggable
+  // with its own dragend handler, so it stays adjustable afterward with no
+  // extra work.
+  function renderResultRow(result) {
+    var row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'location-search-result';
+
+    var primary = document.createElement('span');
+    Pinalert.setText(primary, result.name || result.display_name);
+    row.appendChild(primary);
+
+    if (result.name) {
+      var secondary = document.createElement('span');
+      secondary.className = 'location-search-result-secondary';
+      Pinalert.setText(secondary, result.display_name);
+      row.appendChild(secondary);
+    }
+
+    row.addEventListener('click', function () {
+      markTouched();
+      placeMarker(result.lat, result.lon);
+      modalMap.setView([result.lat, result.lon], SEARCH_RESULT_ZOOM);
+      clearSearchStatus();
+      hideDropdown();
+    });
+
+    return row;
+  }
+
+  // renderDropdown renders at most the results the server already
+  // returned, in the order received: the proxy returns Nominatim's own
+  // relevance order, and re-sorting client side risks disagreeing with
+  // that ranking for no benefit.
+  function renderDropdown(results) {
+    if (!results || results.length === 0) {
+      hideDropdown();
+      showSearchStatus(SEARCH_NO_MATCH_MESSAGE);
+      return;
+    }
+    clearSearchStatus();
+    locationSearchResults.textContent = '';
+    results.forEach(function (result) {
+      locationSearchResults.appendChild(renderResultRow(result));
+    });
+    locationSearchResults.hidden = false;
+    locationSearchInput.setAttribute('aria-expanded', 'true');
+  }
+
   // hasVectorBasemap reports whether this browser can render the
   // OpenFreeMap vector basemap through the MapLibre bridge: both vendor
   // globals must have loaded, and the browser must grant a WebGL2
@@ -528,7 +634,7 @@
       return { field: 'description', message: 'Add a short description (at least 10 characters).' };
     }
     if (!modalMarker) {
-      return { field: 'location', message: 'Set a location by dragging the pin or allowing location access.' };
+      return { field: 'location', message: 'Set a location by searching, dragging the pin, or allowing location access.' };
     }
     if (selectedCategory === 'shelter_open' && !shelterCapacityStatus.value) {
       return { field: 'shelter_capacity_status', message: 'Choose a shelter capacity status.' };
