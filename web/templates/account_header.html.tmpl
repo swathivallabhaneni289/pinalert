@@ -8,10 +8,6 @@
   <div id="account-menu" role="menu" hidden>
     <p class="account-menu__email">{{.Email}}</p>
     <a role="menuitem" class="account-menu__item" href="/profile">Activity</a>
-    <button type="button" id="theme-toggle" role="menuitem" class="account-menu__item theme-toggle"
-            aria-label="Switch to light mode" title="Switch to light mode">
-      <span id="theme-toggle-icon" class="auth-icon auth-icon--moon" aria-hidden="true"></span>
-    </button>
     <form method="post" action="/auth/logout">
       <button type="submit" role="menuitem" class="account-menu__item">
         <span class="auth-icon auth-icon--log-out" aria-hidden="true"></span>
