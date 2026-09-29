@@ -362,13 +362,13 @@ also mentioned properly when the person is making a report"): the current submis
 is 07-CONTEXT.md's decisions D-01 through D-04, carried in each plan's `requirements` field)
 **Depends on:** Phase 1 (the report-submission modal and its map already exist there; this phase
 only adds a search input alongside them, it does not need Phase 6's coordination features)
-**Plans:** 4 plans across 3 waves
+**Plans:** 2/4 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 07-01-PLAN.md — internal/geocode rate-limited Nominatim proxy client plus the GET /api/geocode handler (wave 1)
-- [ ] 07-02-PLAN.md — search box markup and styling in the report modal, with hidden-guard and stacking contract tests (wave 1)
+- [x] 07-01-PLAN.md — internal/geocode rate-limited Nominatim proxy client plus the GET /api/geocode handler (wave 1)
+- [x] 07-02-PLAN.md — search box markup and styling in the report modal, with hidden-guard and stacking contract tests (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
