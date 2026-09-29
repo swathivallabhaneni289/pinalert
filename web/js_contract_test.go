@@ -520,3 +520,118 @@ func TestMapPopupCarriesReportStateClasses(t *testing.T) {
 			"what render()'s own reconcile-by-id loop exists to prevent", unbindMethod)
 	}
 }
+
+// TestLocationSearchUsesTextSinksAndExistingPinPlacement (plan 07-04) proves
+// three properties of the shipped static/js/modal.js bytes: every string
+// the geocoding proxy returns reaches the DOM through a text sink and never
+// a markup-parsing one (T-07-03), a suggestion tap reuses the file's single
+// existing pin-placement path rather than adding a second one (D-03), and
+// the input listener plus the teardown function carry the contract Task 1
+// and Task 2 of this plan wrote them to. It proves properties of the
+// shipped bytes; it cannot prove the dropdown looks or feels right in a
+// real browser, which is the human check's job.
+func TestLocationSearchUsesTextSinksAndExistingPinPlacement(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/modal.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/modal.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	// 1. The script references all three element ids the template ships.
+	// Quoted forms disambiguate 'location-search' from the two ids that
+	// contain it as a prefix.
+	for _, id := range []string{"'location-search'", "'location-search-results'", "'location-search-status'"} {
+		if !strings.Contains(text, id) {
+			t.Errorf("expected modal.js to reference the element id %s, found none", id)
+		}
+	}
+
+	// 2. D-03's structural proof: there is one pin-placement code path in
+	// the file and the search reuses it rather than adding a second.
+	const markerConstruction = "L.marker("
+	if n := strings.Count(text, markerConstruction); n != 1 {
+		t.Errorf("expected exactly 1 occurrence of %q in modal.js (one pin-placement code path), found %d",
+			markerConstruction, n)
+	}
+
+	// 3. Bound renderResultRow's own body and assert its sink discipline
+	// and its calls into the existing pin-placement path.
+	const rowBuilderAnchor = "function renderResultRow("
+	const nextFunctionTerminator = "\n  function "
+	rowBody, rowAnchorFound, _ := windowAfter(text, rowBuilderAnchor, nextFunctionTerminator)
+	if !rowAnchorFound {
+		t.Fatalf("expected a %q definition in modal.js", rowBuilderAnchor)
+	}
+	const setTextSink = "Pinalert.setText("
+	if n := strings.Count(rowBody, setTextSink); n < 2 {
+		t.Errorf("renderResultRow's own body must call %q at least twice (the primary line and the "+
+			"secondary line), found %d", setTextSink, n)
+	}
+	if !strings.Contains(rowBody, "placeMarker(") {
+		t.Errorf("renderResultRow's own body must call placeMarker(, the existing pin-placement "+
+			"function, rather than constructing a marker itself")
+	}
+	if !strings.Contains(rowBody, "modalMap.setView(") {
+		t.Errorf("renderResultRow's own body must call modalMap.setView(, matching the same pair "+
+			"initLocation's GPS success callback calls (D-03)")
+	}
+
+	// 4. A whole-file zero count on every markup-parsing sink property.
+	// Correct here, unlike a dash scan: this file's header states its
+	// text-insertion rule by concept without naming any of these
+	// properties, so there is no legitimate comment for the scan to trip
+	// on.
+	for _, sink := range []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"} {
+		if n := strings.Count(text, sink); n != 0 {
+			t.Errorf("found %d occurrence(s) of markup-parsing sink %q in modal.js (T-07-03): every "+
+				"string the geocoding proxy returns must reach the DOM through Pinalert.setText, never "+
+				"a sink that lets the browser parse it as markup", n, sink)
+		}
+	}
+
+	// 5. The listener is registered in the top-level wiring block, not
+	// inside initLocation, which runs on every openModal call.
+	const inputListenerAnchor = "locationSearchInput.addEventListener('input'"
+	const resetFormAnchor = "function resetForm"
+	listenerIdx := strings.Index(text, inputListenerAnchor)
+	resetFormIdx := strings.Index(text, resetFormAnchor)
+	if listenerIdx == -1 {
+		t.Fatalf("expected %q in modal.js", inputListenerAnchor)
+	}
+	if resetFormIdx == -1 {
+		t.Fatalf("expected %q in modal.js", resetFormAnchor)
+	}
+	if listenerIdx <= resetFormIdx {
+		t.Errorf("expected the byte index of %q (%d) to be greater than the byte index of %q (%d), "+
+			"proving the listener is registered in the top-level wiring block rather than inside "+
+			"initLocation", inputListenerAnchor, listenerIdx, resetFormAnchor, resetFormIdx)
+	}
+
+	// 6. resetSearch's own body carries the full teardown contract
+	// (Pitfall 4): bound on the next top-level function, not the next
+	// closing brace, so a nested block inside resetSearch cannot truncate
+	// the region and let this assertion pass on a fragment.
+	const resetSearchAnchor = "function resetSearch("
+	resetSearchBody, resetSearchAnchorFound, _ := windowAfter(text, resetSearchAnchor, nextFunctionTerminator)
+	if !resetSearchAnchorFound {
+		t.Fatalf("expected a %q definition in modal.js", resetSearchAnchor)
+	}
+	for _, want := range []string{"clearTimeout", "searchSeq", "hideDropdown(", "clearSearchStatus(", "searchCache.clear("} {
+		if !strings.Contains(resetSearchBody, want) {
+			t.Errorf("resetSearch's own body is missing %q, part of the six-piece teardown contract "+
+				"that keeps a reopened modal from showing the previous session's search state", want)
+		}
+	}
+
+	// 7. The submit-time location message names all three ways to set a
+	// location, and the stale two-way sentence is gone.
+	const newLocationMessage = "Set a location by searching, dragging the pin, or allowing location access."
+	const oldLocationMessage = "Set a location by dragging the pin or allowing location access."
+	if n := strings.Count(text, newLocationMessage); n != 1 {
+		t.Errorf("expected modal.js to contain %q exactly once, found %d", newLocationMessage, n)
+	}
+	if n := strings.Count(text, oldLocationMessage); n != 0 {
+		t.Errorf("expected modal.js to contain the stale two-way location message %q zero times, found %d",
+			oldLocationMessage, n)
+	}
+}
