@@ -54,13 +54,28 @@
   var severityWrapper = null;
   var formTouched = false;
   var preDiscardFocusEl = null;
+  var searchDebounceTimer = null;
+  var searchSeq = 0;
+  // Session scoped and emptied by resetForm: both a Nominatim usage policy
+  // ask (cache repeated queries) and what keeps a visitor retyping the
+  // same place from firing duplicate requests.
+  var searchCache = new Map();
 
   var SEVERITY_BY_VALUE = { '1': 'low', '2': 'medium', '3': 'critical' };
   var SEVERITY_POSITIONS = ['1 · Low', '2 · Medium', '3 · Critical'];
 
-  // Location search (D-01, D-03, D-04). Same zoom initLocation's GPS
-  // success callback uses, so a searched location and a GPS location
-  // arrive at identical map state.
+  // Location search (D-01, D-03, D-04). SEARCH_DEBOUNCE_MS is a user
+  // experience knob only, not the policy compliance control: the actual
+  // one-request-per-second ceiling D-02 requires is enforced by the
+  // process-wide limiter inside internal/geocode, so this number can be
+  // tuned for feel without reasoning about compliance.
+  var SEARCH_DEBOUNCE_MS = 600;
+  // Must stay equal to the server's own minimum (minGeocodeQueryRunes in
+  // internal/api/handlers/geocode.go): a smaller value here would only
+  // produce requests the server refuses with a 400.
+  var MIN_QUERY_RUNES = 3;
+  // Same zoom initLocation's GPS success callback uses, so a searched
+  // location and a GPS location arrive at identical map state.
   var SEARCH_RESULT_ZOOM = 16;
   var SEARCH_NO_MATCH_MESSAGE = 'No matches found.';
   // Byte identical to geocodeUnavailableMessage in
@@ -411,6 +426,70 @@
     locationSearchInput.setAttribute('aria-expanded', 'true');
   }
 
+  // onSearchInput is a pause-based debounce: the timer is cleared and
+  // rescheduled on every keystroke, so one request is sent per typing
+  // pause rather than one per keystroke (D-01, D-02). Query length is
+  // measured in code points, not UTF-16 code units, so the client's
+  // minimum agrees with the server's rune-based minimum for a Devanagari
+  // or other multibyte query.
+  function onSearchInput() {
+    markTouched();
+    window.clearTimeout(searchDebounceTimer);
+    var query = locationSearchInput.value.trim();
+    if (Array.from(query).length < MIN_QUERY_RUNES) {
+      hideDropdown();
+      clearSearchStatus();
+      return;
+    }
+    searchDebounceTimer = window.setTimeout(function () {
+      runSearch(query);
+    }, SEARCH_DEBOUNCE_MS);
+  }
+
+  // runSearch mirrors votes.js's castVote error idiom exactly. The
+  // searchSeq sequence guard is load-bearing, not defensive: without it a
+  // slow response for an earlier query can arrive last and overwrite the
+  // suggestions for the query the visitor is actually looking at. This
+  // function must never touch submitButton, never detach the map's own
+  // click or dragend listeners, and never disable the search input,
+  // because every one of those would violate D-04.
+  function runSearch(query) {
+    var cacheKey = query.toLowerCase();
+    if (searchCache.has(cacheKey)) {
+      renderDropdown(searchCache.get(cacheKey));
+      return;
+    }
+
+    searchSeq += 1;
+    var mySeq = searchSeq;
+
+    fetch('/api/geocode?q=' + encodeURIComponent(query))
+      .then(function (res) {
+        return res.json().catch(function () {
+          return {};
+        }).then(function (body) {
+          if (!res.ok) {
+            var fieldError = (body && body.error) || {};
+            var err = new Error(fieldError.message || SEARCH_UNAVAILABLE_MESSAGE);
+            err.fieldMessage = fieldError.message || SEARCH_UNAVAILABLE_MESSAGE;
+            throw err;
+          }
+          if (mySeq !== searchSeq) {
+            return;
+          }
+          searchCache.set(cacheKey, body.results);
+          renderDropdown(body.results);
+        });
+      })
+      .catch(function (err) {
+        if (mySeq !== searchSeq) {
+          return;
+        }
+        hideDropdown();
+        showSearchStatus((err && err.fieldMessage) || SEARCH_UNAVAILABLE_MESSAGE);
+      });
+  }
+
   // hasVectorBasemap reports whether this browser can render the
   // OpenFreeMap vector basemap through the MapLibre bridge: both vendor
   // globals must have loaded, and the browser must grant a WebGL2
@@ -535,6 +614,25 @@
     });
   }
 
+  // resetSearch clears every piece of search state. All six pieces are
+  // required, not optional: resetForm is reached from closeModal, so
+  // leaving any of them out lets the previous submission's dropdown,
+  // message, or cached results appear in the next one.
+  function resetSearch() {
+    window.clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+    // Discards any in-flight response on arrival rather than letting it
+    // resolve into a closed or reopened modal.
+    searchSeq += 1;
+    locationSearchInput.value = '';
+    hideDropdown();
+    clearSearchStatus();
+    searchCache.clear();
+  }
+
+  // resetForm remains the single teardown path for every piece of the
+  // modal's state, search included; no parallel teardown function is
+  // introduced.
   function resetForm() {
     selectedCategory = null;
     var tiles = categoryGrid.querySelectorAll('.category-tile');
@@ -553,6 +651,7 @@
     }
     Pinalert.setText(coordReadout, '');
     hideShelterFields();
+    resetSearch();
     discardConfirm.hidden = true;
     formTouched = false;
     preDiscardFocusEl = null;
@@ -722,6 +821,13 @@
   fabButton.addEventListener('click', openModal);
   cancelButton.addEventListener('click', requestClose);
   submitButton.addEventListener('click', handleSubmit);
+  // Registered here, once, and not inside initLocation: initLocation runs
+  // on every openModal call, and showLocationDenied already demonstrates
+  // the consequence of registering inside it (a re-registered
+  // modalMap.on('click') handler stacking duplicates across open/close
+  // cycles). That pre-existing bug is out of this phase's scope to fix,
+  // but a second instance of the same class of bug must not be created.
+  locationSearchInput.addEventListener('input', onSearchInput);
   severityInput.addEventListener('input', updateSeverityReadout);
   severityInput.addEventListener('input', markTouched);
   descriptionField.addEventListener('input', markTouched);
