@@ -27,7 +27,14 @@ findings:
   info: 4
   total: 8
 status: issues_found
+critical_resolved: 1
 ---
+
+**Post-review update (2026-09-29):** CR-01 was fixed directly (commit `589e23e`) — `searchSeq` is
+now incremented unconditionally at the top of `runSearch`, before the cache check, so a cache-hit
+render invalidates any older in-flight fetch the same way a new fetch would. Full suite + the
+three location-search contract tests re-run green after the fix. WR-01/WR-02/WR-03 and the INFO
+items remain open, not blocking phase completion.
 
 # Phase 07: Code Review Report
 
