@@ -464,7 +464,10 @@ usage policy are both stable, long-lived surfaces; no recent breaking change fou
 
 **If this table is empty:** N/A — see above.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+Both questions below were resolved during `/gsd-plan-phase 07`; each question's original text is
+kept for the record, with the resolution recorded under its recommendation.
 
 1. **Does the autocomplete-usage-policy risk (Pitfall 1) actually manifest under this app's real
    traffic, or is it purely theoretical at portfolio-project scale?**
@@ -475,6 +478,13 @@ usage policy are both stable, long-lived surfaces; no recent breaking change fou
    - Recommendation: ship as specified (server-side proxy, global limiter, min-length gate, cache),
      rely on D-04's graceful-degradation path if blocking occurs, and keep Photon noted as the
      documented swap-in if it does.
+   - RESOLVED: shipped exactly as recommended, all four controls. The server-side proxy and the
+     process-wide limiter are plan 07-01's `internal/geocode` client; the min-length gate is
+     `minGeocodeQueryRunes`, mirrored client-side as `MIN_QUERY_RUNES`; the same-query cache and the
+     pause-based debounce are plan 07-04's `searchCache` and `SEARCH_DEBOUNCE_MS`; and D-04's
+     graceful-degradation path is the inline unavailable message wired in plan 07-04. Photon remains
+     documented here as the swap-in and is deliberately not wired, so the theoretical-versus-real
+     question needs no answer before shipping.
 
 2. **Should the `/api/geocode` route's per-IP secondary limiter (Pattern 1's step 4) use a burst/refill
    pair distinct from `RequestLinkRateLimitDefault` (burst 5, 1/60s)?**
@@ -484,6 +494,10 @@ usage policy are both stable, long-lived surfaces; no recent breaking change fou
      single report submission but rare across a session.
    - Recommendation: planner picks a fresh, explicitly-named constant (e.g. burst 3, 1 per 2s) rather
      than reusing `RequestLinkRateLimitDefault` verbatim — different traffic shape, different budget.
+   - RESOLVED: yes, a distinct pair. Plan 07-03 adds `GeocodeRateLimitDefault` in `internal/api`,
+     fed by its own `geocodeRateLimitBurst` and `geocodeRateLimitEvery` constants in `cmd/server`.
+     `RequestLinkRateLimitDefault` is left untouched, so the login-link budget and the search-box
+     budget can be tuned independently.
 
 ## Environment Availability
 
