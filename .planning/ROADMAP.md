@@ -365,8 +365,15 @@ only adds a search input alongside them, it does not need Phase 6's coordination
 **Plans:** 4 plans across 3 waves
 
 Plans:
+**Wave 1**
 
 - [ ] 07-01-PLAN.md — internal/geocode rate-limited Nominatim proxy client plus the GET /api/geocode handler (wave 1)
 - [ ] 07-02-PLAN.md — search box markup and styling in the report modal, with hidden-guard and stacking contract tests (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 07-03-PLAN.md — route registration inside the verified-account gate, server wiring, and the regenerated API spec (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 07-04-PLAN.md — debounced client-side search wiring, suggestion-to-pin placement, and the teardown and sink contract tests (wave 3)
