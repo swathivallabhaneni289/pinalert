@@ -20,6 +20,7 @@
 </head>
 <body>
   {{template "account_header.html.tmpl" .}}
+  {{template "theme_toggle.html.tmpl" .}}
   <div class="app-shell" id="app-shell" data-view="map"
        data-fallback-lat="{{.FallbackLat}}"
        data-fallback-lon="{{.FallbackLon}}"
