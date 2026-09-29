@@ -11,48 +11,53 @@ files_modified:
   - web/templates/index.html.tmpl
   - web/templates/profile.html.tmpl
   - web/static/css/auth.css
+  - web/static/css/main.css
 autonomous: true
 requirements:
   - "Phase 2 UAT round 3 follow-up: move the sun/moon theme toggle out of the account menu into an always-visible floating control stacked with the report button"
 must_haves:
   truths:
-    - "The theme control is visible on the main map page without opening any menu, as a 44px circle in the bottom-right corner, vertically stacked with the report button and separated from it by one space token."
-    - "The same control appears at the identical bottom-right position on the Activity page, where there is no report button under it."
+    - "The theme control is visible on the main map page without opening any menu, as a 44px circle in the bottom-right corner, occupying the LOWER of two stacked slots at the report button's own former offset, with the report button moved up into the slot above it and one space token of gap between them."
+    - "The same control appears at the identical bottom-right position on the Activity page, where there is no report button above it. Because it now sits at the standard floating offset rather than pushed one control-height up, it reads as a normal floating control on that page rather than as something suspended in mid air."
     - "The account menu contains exactly the email row, the Activity link and Log out, with no theme row and no empty leftover row."
     - "One tap still flips the app between light and dark, the glyph still swaps between sun and moon, and the accessible name and tooltip still update on every flip, because theme.js is not modified at all."
     - "The control's markup exists in exactly one file and is included by exactly two pages, so no page ever renders two elements carrying the same control id."
     - "The login gate and verify outcome pages, and the check inbox partial login_gate includes, render no theme control at all and keep loading theme.js unchanged, which stays inert there."
     - "The floating control never overlaps the report button, Leaflet's bottom-right attribution strip, Leaflet's top-left zoom control or the top-right account button, and it sits below the report modal's backdrop when the modal opens."
-    - "The control's vertical offset is computed from the report button's own bottom token plus the shared touch-target token plus a space token, never a hardcoded pixel value."
+    - "The report button's raised vertical offset is computed from its own former bottom token plus the shared touch-target token plus a space token, never a hardcoded pixel value, and the theme control's own offset is that former single token unchanged."
     - "go build, go vet and go test ./... -short are all green with no database involved."
   artifacts:
     - "web/templates/theme_toggle.html.tmpl, the single shared partial holding the control's markup"
     - "One include line in web/templates/index.html.tmpl and one in web/templates/profile.html.tmpl"
     - "A theme control free web/templates/account_header.html.tmpl"
-    - "A self-sufficient, fixed-position .theme-toggle rule in web/static/css/auth.css"
+    - "A self-sufficient, fixed-position .theme-toggle rule in web/static/css/auth.css, sitting in the lower slot"
+    - "A one-declaration change to the .fab rule in web/static/css/main.css, raising only its bottom value into the upper slot and leaving every other declaration in that rule and every other rule in that file untouched"
     - "TestThemeToggleRendersAsAFloatingControl in web/theme_contract_test.go, replacing TestAccountHeaderRendersThemeControl"
-    - "TestThemeToggleFloatsClearOfTheReportButton in web/theme_contract_test.go, a computed geometry lock against .fab"
+    - "TestThemeToggleFloatsClearOfTheReportButton in web/theme_contract_test.go, a computed geometry lock against .fab that both proves the two bands cannot intersect and locks which of the two is the lower one"
   key_links:
     - "Leaving the control in account_header.html.tmpl while also shipping the partial puts two elements with the same id on every gated page, and getElementById wires only the first, so one of the two circles becomes a dead button with a green build. The negative assertion in TestThemeToggleRendersAsAFloatingControl is the only thing that catches this."
     - ".theme-toggle currently free rides on .account-menu__item for display flex, align-items center and cursor pointer. Outside the menu it inherits none of them, so those three must be declared on the rule itself or the 24px glyph sits on the button's text baseline instead of centered in the 44px circle."
     - "The comment block above .theme-toggle in auth.css explains a source-order argument against .account-menu__item that stops being true the moment the control leaves the menu. It must be rewritten, not kept."
     - "template.ParseFS(web.TemplatesFS, \"templates/*.tmpl\") registers every .tmpl by base filename automatically, so the new partial needs no Go wiring. It must not contain an <html element, or findFullPageTemplates in theme_contract_test.go starts counting it as a fifth full page."
     - "The new file lives under templates/, so TestUserVisibleCopyUsesPlainPunctuation whole-file scans it for em dashes and en dashes from the moment it is created."
+    - "The two bottom values are now a matched pair across two stylesheets. Editing auth.css without also editing main.css, or the reverse, leaves both controls claiming the same offset, so their bands are identical and fully intersecting. The band check in TestThemeToggleFloatsClearOfTheReportButton is therefore also the completeness check on the two-file edit: a half-done swap cannot ship green."
 ---
 
 <objective>
 Move the sun/moon theme toggle out of the account menu dropdown and into its own always visible
-floating circular button in the bottom-right corner, stacked with the "+" report button on the map
-page and floating at the same position on the Activity page.
+floating circular button in the bottom-right corner, stacked BELOW the "+" report button on the map
+page, with the report button raised one slot to make room, and floating at the same position on the
+Activity page.
 
 Purpose: the user saw the control live immediately after quick task 260923-qwi shipped it inside the
 account menu, and asked for it out of the menu and down beside the report button. A theme switch
-buried behind a dropdown costs two taps for a one-tap action.
+buried behind a dropdown costs two taps for a one-tap action. Asked directly whether they wanted the
+toggle above the "+" or below it with the "+" moving up, the user chose below with the "+" moving up.
 
-Output: one new shared template partial, two include lines, one removal, one rewritten CSS rule, and
-two contract tests (one replacing an existing test, one new computed geometry lock). theme.js is not
-touched at all: its wireControl already looks the control up by id and does not care where in the
-document that id lives.
+Output: one new shared template partial, two include lines, one removal, one rewritten CSS rule in
+auth.css, a single raised bottom declaration on the .fab rule in main.css, and two contract tests
+(one replacing an existing test, one new computed geometry lock). theme.js is not touched at all: its
+wireControl already looks the control up by id and does not care where in the document that id lives.
 </objective>
 
 <execution_context>
@@ -74,39 +79,47 @@ document that id lives.
 <decisions>
 Recorded so a later reviewer does not "fix" them back:
 
-**D-A. The floating control stacks ABOVE the report button, at a larger `bottom` value, not below it.**
+**D-A. The floating control takes the LOWER slot and the report button moves UP into the slot above
+it. This is a settled user decision, not an inference.**
 
-This overrides the literal reading in the task constraints, and the reasoning is load bearing, so it
-is recorded here and must also be written into a code comment in auth.css.
+The user was asked the question directly, as two named alternatives: "toggle above the +" versus
+"toggle below, + moves up". They chose "toggle below, + moves up". There is nothing left to interpret
+here, and the reasoning below exists only to explain why the arrangement is safe and why it required
+the one scope expansion it required. It must also be written into a code comment, in auth.css for the
+control and in main.css for the report button.
 
-Three independent grounds:
+The two values, both built from the same three design tokens:
 
-1. *The source utterance is ambiguous, not clearly "below".* The raw quote is "put it over the below
-   the uh, the plus option." It contains both "over" and "below", spoken mid-correction. Neither word
-   can be treated as the settled instruction.
+- `.theme-toggle` in auth.css takes `bottom: var(--space-lg)`, which resolves to 24px. This is the
+  report button's current offset, taken over unchanged. Band: 24px to 68px measured up from the
+  viewport bottom edge.
+- `.fab` in main.css moves to
+  `bottom: calc(var(--space-lg) + var(--touch-target-min) + var(--space-sm))`, which resolves to
+  24 + 44 + 8 = 76px. Band: 76px to 120px. Gap between the two bands: exactly `--space-sm`, 8px.
 
-2. *A lower placement is geometrically impossible inside this task's scope.* `.fab` is
-   `position: fixed; bottom: var(--space-lg)` with `height: var(--touch-target-min)`, which resolves
-   to a band from 24px to 68px measured up from the viewport bottom edge. A 44px control placed under
-   it would need its own top edge at or below 24px, putting its `bottom` at `-20px` even with a zero
-   gap. It would be off screen. The only way to make room is to move `.fab` itself, which the task
-   scope explicitly forbids and which would also relocate the primary action a user already has
-   muscle memory for.
+Note that this is the same calc expression the previous version of this plan derived, simply applied
+to the other element now. The arithmetic was already correct; only which control it governs changed.
 
-3. *A lower placement would land on Leaflet's attribution strip.* No stylesheet in this repo
-   overrides Leaflet's control positions, so the attribution control sits at the default bottom-right,
-   flush with the bottom edge. The report button already clears it by sitting at 24px. A control
-   placed under the report button would cover it, which is both ugly and an attribution problem.
+*Why this needed the one scope expansion it got.* `.fab`'s band already ran from 24px up by one
+touch-target height, so a 44px control placed under an unmoved report button would need its own bottom
+at -20px even with a zero gap, which is off screen. The lower arrangement is therefore only reachable
+by moving `.fab`, and moving `.fab` is exactly what the user authorized when they picked this option.
+`web/static/css/main.css` is consequently an owned file for this task, where the previous version of
+this plan declared it explicitly out of scope. That change is confined to the single `bottom`
+declaration on the `.fab` rule. Nothing else in main.css moves.
 
-The chosen value is `bottom: calc(var(--space-lg) + var(--touch-target-min) + var(--space-sm))`,
-which resolves to 24 + 44 + 8 = 76px, giving a toggle band of 76px to 120px and a clean 8px gap above
-the report button's 68px top edge. This is also the standard floating-action-button stack convention:
-secondary actions stack upward from the primary one.
+*Why the arrangement is safe with respect to Leaflet's attribution strip.* No stylesheet in this repo
+overrides Leaflet's control positions, so the attribution control sits at the default bottom-right,
+flush with the bottom edge. This is the strongest safety argument in the plan and it holds positively:
+whichever control occupies the lower slot sits at `var(--space-lg)`, which is the exact offset the
+report button clears the attribution strip from today. The bottom-most pixel of the stack is therefore
+unchanged from what currently ships, so attribution clearance is identical and needs no new
+verification. What the swap changes is only what sits at 76px, which was empty before.
 
-If the user genuinely meant physically lower on the screen, the follow-up is a swap (toggle at
-`var(--space-lg)`, report button moved up to the 76px slot), which is a one-line change to each rule
-but touches `.fab`, and so is deliberately out of this task's scope. The human check below asks this
-question directly.
+*The tradeoff the user accepted.* The report button is the primary action for filing an emergency
+report, and it moves up 52px from where a user of the shipped build has muscle memory for it. That is
+the real cost of this arrangement and the live look below asks about it directly. It is not a reason
+to revisit the decision; it is the thing to confirm reads acceptably.
 
 **D-B. The partial is named `theme_toggle.html.tmpl`, not `theme_toggle_fab.html.tmpl`.**
 
@@ -119,9 +132,15 @@ distinct visual treatment (bordered circle on `--color-bg`, versus the report bu
 
 The user asked for "the same fixed bottom-right position" on the Activity page. Reading that plainly
 gives one rule with no page qualifier, which also means the control does not jump position when the
-user navigates between the map and Activity. The cost is that on the Activity page it floats 76px up
-with nothing under it. Whether that reads as stranded is a live-look question, raised in the human
-check, not something to pre-solve with a second magic value.
+user navigates between the map and Activity.
+
+The swap largely retires the worry the previous version of this plan recorded here. Under the old
+arrangement the control would have floated at 76px on the Activity page with nothing beneath it,
+which risked reading as suspended in mid air, and a page-scoped override was named as the possible
+follow-up. Now the control sits at `var(--space-lg)`, the ordinary floating offset every other
+bottom-anchored control in this codebase uses, so on a page with no report button it simply reads as
+a normal floating control. There is no longer a plausible reason to add a second value, and the live
+look asks about it only as a sanity check rather than as an open design question.
 
 **D-D. theme.js is not modified.** `wireControl` resolves `#theme-toggle` and `#theme-toggle-icon`
 through `getElementById`, which is document scoped and indifferent to where the ids live. Both pages
@@ -212,8 +231,15 @@ them. Reject the expression and fail the test if it resolves to zero var referen
 contains any px literal, or if it contains a minus, asterisk or slash character. That rejection is
 the no-magic-number gate the task constraints ask for: a hardcoded seventy-six pixel value has no var
 references and fails on the spot, and a value built with arithmetic other than addition is refused
-rather than silently mis-summed. This same helper resolves the report button's plain single-token
-bottom value and the control's calc expression, so both sides go through identical code.
+rather than silently mis-summed. This same helper resolves the control's plain single-token bottom
+value and the report button's calc expression, so both sides go through identical code.
+
+One consequence of the px-literal rejection that will bite if ignored: if declsOf hands back
+declaration text including any trailing comment, then a comment stating the resolved arithmetic on the
+same line as the declaration, of the shape bottom colon calc(...) semicolon followed by a comment
+naming a pixel count, trips the gate on the comment rather than on the value. Task 3 is instructed to
+keep the arithmetic in the block comment above each rule for exactly this reason. If you find that
+declsOf already strips comments, no action is needed; do not loosen the gate either way.
 
 With that in place, fetch the exact .fab rule from main.css and the exact .theme-toggle rule from
 auth.css, then assert:
@@ -222,20 +248,36 @@ auth.css, then assert:
   - The control's right value is string-equal to the report button's right value, so the two share one
     vertical line. Compare the declarations as written, not the resolved numbers, because sharing the
     same token is the intent.
-  - The control's bottom value starts with calc and, once resolved through the helper, is a positive
-    integer. Assert separately that its text references the shared touch-target token by name, which
-    is what makes the offset derived from the report button's own height rather than coincidentally
-    equal to it.
+  - The REPORT BUTTON's bottom value starts with calc and, once resolved through the helper, is a
+    positive integer. Assert separately that its text references the shared touch-target token by
+    name, which is what makes the raised offset derived from a control height rather than
+    coincidentally equal to one. Note the direction carefully: it is the report button, not the
+    control, that carries the calc under this arrangement.
+  - The CONTROL's bottom value resolves through the helper to a positive integer and contains no calc
+    at all. It is a single plain token reference, the one the report button used to carry, so any calc
+    appearing there means the two rules were swapped back or half edited.
   - Both z-index values parse as integers and the control's is greater than or equal to the report
     button's. Say in the failure message that a lower value would let the report button's own
     stacking context cover the control.
+  - THE ORDER LOCK, which is what encodes the user's actual decision rather than mere geometry: assert
+    the control's resolved bottom is strictly LESS than the report button's resolved bottom, so the
+    control occupies the lower slot. The band check below is deliberately written direction agnostic
+    and would therefore pass just as happily with the two controls swapped, which is precisely why
+    this separate assertion has to exist: without it a later well meaning "fix" restores the old
+    arrangement with a fully green build. Write the failure message so it names the decision, not the
+    arithmetic: the user was asked directly and chose the toggle below the report button with the
+    report button moved up, see D-A.
   - THE BAND CHECK, which is the assertion that actually catches a wrong number: resolve the report
     button's bottom and height and the control's bottom and height into two vertical bands measured up
     from the viewport bottom edge, each running from its bottom value to its bottom value plus its
-    height. Assert the two bands do not intersect. Then assert the gap between them, meaning the
-    control's bottom minus the report button's band top, is strictly greater than zero and no larger
-    than the resolved value of the large space token. A gap of zero means the two circles touch, and a
-    gap larger than that token means they no longer read as one stack. Log both bands and the gap with
+    height. Assert the two bands do not intersect. Then compute the gap direction agnostically rather
+    than hardcoding which control is on top: take whichever band has the smaller bottom as the lower
+    band, the other as the upper, and define the gap as the upper band's bottom minus the lower band's
+    top. Assert that gap is strictly greater than zero and no larger than the resolved value of the
+    large space token. A gap of zero means the two circles touch, and a gap larger than that token
+    means they no longer read as one stack. Sorting the bands rather than assuming an order keeps this
+    assertion honest about what it actually proves, which is non-overlap and tightness, with the order
+    lock above carrying the separate claim about which one is lower. Log both bands and the gap with
     t.Logf so a future failure shows the arithmetic rather than just a boolean.
   - THE CASCADE ORPHAN GUARD: the control's rule declares display, align-items, justify-content and
     cursor in its own body. Outside the account menu it inherits none of these from the menu item
@@ -245,7 +287,10 @@ auth.css, then assert:
 
 Write an honest-limit paragraph in the doc comment in the same spirit as this package's other CSS
 contract tests: static arithmetic over the shipped declarations proves the two controls cannot
-overlap and that the offset is derived rather than hardcoded. It cannot prove a browser paints them
+overlap, that the control is the lower of the two, that the raised offset is derived rather than
+hardcoded, and, as a side effect worth stating, that both stylesheets were actually edited, since a
+half-done swap leaves both rules claiming the same offset and the bands then intersect
+completely. It cannot prove a browser paints them
 as a deliberate-looking pair, that the result reads the way the user meant, or that nothing else on
 the page collides at a narrow viewport.
 
@@ -327,9 +372,13 @@ has not moved yet. That is the only remaining red.</done>
 </task>
 
 <task type="auto">
-  <name>Task 3: Reposition the control rule into a self-sufficient floating circle</name>
-  <files>web/static/css/auth.css</files>
+  <name>Task 3: Reposition the control into a self-sufficient floating circle in the lower slot and raise the report button into the slot above it</name>
+  <files>web/static/css/auth.css, web/static/css/main.css</files>
   <action>
+This is the one task that touches two stylesheets, and the two edits are a matched pair: doing either
+one alone leaves both controls claiming the same offset, their bands fully intersecting, and
+TestThemeToggleFloatsClearOfTheReportButton red. Do both before running the suite.
+
 Rewrite the .theme-toggle rule in web/static/css/auth.css. Read the existing rule and the comment
 block directly above it first, then read the .fab rule in web/static/css/main.css and the
 .profile-back-link block further down auth.css, because this rule ends up sharing properties with
@@ -338,14 +387,31 @@ both.
 The rule keeps its selector and its visual identity, and gains two things: fixed positioning, and
 every property it used to free ride on from the account menu item rule.
 
-Positioning, per D-A. Declare position fixed. Declare right using the same single space token the
-report button's own right declaration uses, so the two controls share one vertical line. Declare
-bottom as a calc summing three tokens: that same space token the report button uses for its own
-bottom, plus the shared touch-target token, plus the small space token. Nothing else in that
-expression: no px literal, no subtraction, no multiplication. Declare a z-index equal to the report
-button's, which is one thousand, and carry over the intent of that rule's own trailing comment about
-sitting above Leaflet's control panes. One thousand is also deliberately below the account header's
-value and below the report modal's backdrop, so the control does not float over an open modal.
+Positioning, per D-A. The control takes the LOWER of the two slots. Declare position fixed. Declare
+right using the same single space token the report button's own right declaration uses, so the two
+controls share one vertical line. Declare bottom as that same single large space token the report
+button currently uses for its own bottom, taken over unchanged and with no calc around it: the control
+is inheriting the report button's existing offset, not computing a new one. Declare a z-index equal to
+the report button's, which is one thousand, and carry over the intent of that rule's own trailing
+comment about sitting above Leaflet's control panes. One thousand is also deliberately below the
+account header's value and below the report modal's backdrop, so the control does not float over an
+open modal.
+
+Then, in web/static/css/main.css, change EXACTLY ONE declaration: the .fab rule's bottom value becomes
+a calc summing three tokens, namely that same large space token it carries today, plus the shared
+touch-target token, plus the small space token. Nothing else in that expression: no px literal, no
+subtraction, no multiplication. That raises the report button into the slot above the control with a
+gap of one small space token between their bands. Do not change .fab's right, z-index, width, height,
+min-width, min-height, border, border-radius, background, color, font-size, line-height, display,
+align-items, justify-content, cursor or box-shadow, and do not touch any other rule anywhere in
+main.css. If you find yourself editing a second declaration in that file, stop: the swap is one value
+on each side.
+
+Do not write the resolved pixel arithmetic as a trailing comment on either bottom line. Task 1's
+resolver rejects any expression containing a px literal, and depending on whether declsOf strips
+comments, a trailing comment naming a pixel count can be read as part of the declaration and trip that
+gate. The arithmetic belongs in the block comment above each rule, which is where both comment specs
+below put it anyway.
 
 The cascade orphan fix. The old rule assumed the account menu item rule supplied display flex,
 align-items center, cursor pointer, a color and a min-height. None of that reaches the control any
@@ -361,25 +427,46 @@ Everything visual stays exactly as shipped and must not be redesigned: zero padd
 border in the shared border color, a fifty percent border-radius, the base background token, the same
 two-pixel eight-pixel twenty-percent-black box-shadow, and the 150ms ease transition on background
 color and border color. Leave the hover rule, the active rule and the reduced-motion rule untouched;
-all three still apply unchanged. Do not touch the report button's own rule in main.css, and do not
-touch any other rule in auth.css.
+all three still apply unchanged. In the report button's own rule in main.css, change its bottom
+declaration and nothing else, as specified above. Do not touch any other rule in auth.css.
 
 Rewrite the comment block above the rule. The current one argues at length that the rule must sit
 after the account menu item rule because both selectors are single-class and source order decides the
 winner. That argument dies with this change and would actively mislead the next reader. The
-replacement comment must carry three things forward:
+replacement comment must carry three things forward, and must describe the FINAL arrangement only.
+Leave no sentence behind that reasons about the control sitting above the report button, because no
+such arrangement ever shipped and a leftover argument for it would send the next reader hunting for a
+value that is not there:
 
-  1. That the control is now a fixed-position floating button stacked with the report button, and is
-     no longer a menu row.
-  2. The full D-A reasoning for stacking above rather than below, in its own words: the source
-     utterance contained both "over" and "below" mid-correction; a lower placement is geometrically
-     impossible because the report button's band already runs from the large space token up by one
-     touch-target height, leaving a 44px control nowhere to go but off screen; and a lower placement
-     would cover Leaflet's bottom-right attribution strip. State the resolved arithmetic explicitly so
-     a future reader does not have to redo it.
-  3. That the offset is expressed in tokens on purpose, so changing the report button's own bottom
-     token moves both controls together, and that the geometry test in web/theme_contract_test.go
-     fails the build if the two bands ever overlap.
+  1. That the control is now a fixed-position floating button in the LOWER of two stacked slots in the
+     bottom-right corner, with the report button raised into the slot above it, and that it is no
+     longer a menu row.
+  2. The D-A reasoning for this arrangement, in its own words, with three points. First, that it is a
+     direct user decision: asked whether they wanted the toggle above the report button or below it
+     with the report button moving up, the user chose below with the report button moving up, so this
+     is not an inferred layout and should not be "corrected". Second, that reaching it required moving
+     .fab, because the report button's band already ran from the large space token up by one
+     touch-target height, leaving a 44px control placed beneath an unmoved report button nowhere to go
+     but off screen, which is why main.css is in scope for this change at all. Third, that the stack's
+     bottom-most pixel is unchanged from what previously shipped, since whichever control holds the
+     lower slot sits at the same large space token the report button used to, so clearance over
+     Leaflet's default bottom-right attribution strip is exactly as before. State the resolved
+     arithmetic explicitly, in this comment block and not on the declaration line, so a future reader
+     does not have to redo it: the control's band runs 24px to 68px, the report button's runs 76px to
+     120px, and the gap between them is the 8px small space token.
+  3. That both offsets are expressed in tokens on purpose, so changing the large space token moves both
+     controls together and keeps the gap intact, and that the geometry test in
+     web/theme_contract_test.go fails the build both if the two bands ever overlap and if the two
+     controls are ever swapped back.
+
+Add a short companion comment above the .fab rule in main.css too, or extend the existing section
+comment above it, saying that its bottom is raised by one touch-target height plus the small space
+token to make room for the theme toggle in the slot below, pointing at auth.css's .theme-toggle rule
+and at the geometry test as the pair that keeps the two in sync. Without this, a reader of main.css
+alone sees an unexplained calc. Keep it to a few lines; main.css is not where the full rationale
+lives. Use plain punctuation in what you add, and do not reflow, reword or "clean up" the em dashes
+already present in main.css's pre-existing comments: they are outside this task's scope and touching
+them would bury the one-declaration diff.
 
 You may leave the rule where it currently sits in the file or move it out of the account menu section
 into its own section; ruleBySelector is order independent, so no test cares either way. If you move
@@ -393,12 +480,16 @@ literally.
   </action>
   <verify>
     <automated>go build ./... && go vet ./... && go test ./web/ -short && go test ./... -short</automated>
-    <human-check>Restart the dev server first. The CSS, JS and templates are embedded into the binary at build time, so none of this is visible until a rebuild. Then, on the map page: (1) THE DECISION QUESTION, does the toggle sitting above the "+" read as what the user asked for, or did they mean it physically lower on the screen, in which case the follow-up is swapping the two offsets, which touches the report button's rule and was left out of scope on purpose (see D-A); (2) does the pair read as one deliberate stack, or as two unrelated floating circles; (3) at 375px phone width, does anything collide, check the map's attribution strip along the bottom edge, Leaflet's zoom control in the top-left, and the account button in the top-right; (4) is the glyph actually centered in the circle, this is the cascade-orphan failure mode and it is the first thing to look at; (5) open the report modal and confirm the toggle sits behind the backdrop rather than floating over it; (6) on the Activity page, the toggle floats at the same height with nothing under it, does that look stranded, and if so the follow-up is a page-scoped bottom override, which D-C deliberately did not pre-solve; (7) one tap still flips the whole app cleanly in both places.</human-check>
+    <human-check>Restart the dev server first. The CSS, JS and templates are embedded into the binary at build time, so none of this is visible until a rebuild. Then, on the map page: (1) THE ONE REAL RISK IN THIS ARRANGEMENT, the report button has moved up 52px from where it sits in the shipped build, and it is the primary action for filing an emergency report, so check that it still reads as the obvious primary target and that its new height feels reachable with a thumb rather than awkwardly high; the stacking order itself is settled and is not the question here (see D-A); (2) does the pair read as one deliberate stack, with the report button clearly the dominant one of the two, or as two unrelated floating circles; (3) is the glyph actually centered in the toggle's circle, this is the cascade-orphan failure mode and it is the first thing to look at; (4) at 375px phone width, does anything collide, and note that the stack's bottom edge is unchanged from the shipped build so the map's attribution strip along the bottom edge should look exactly as it does today, which makes any change there a real finding; also glance at Leaflet's zoom control in the top-left, the account button in the top-right, and the mobile-only view-toggle, which is fixed bottom-LEFT at the same height the toggle now occupies, so the bottom row should read as a balanced pair of corners rather than a crowded one; (5) trigger a toast and confirm the report button's new higher position does not make the toast look like it is colliding with it, noting the toast is z-index 1200 and so deliberately paints over both controls, which is pre-existing behavior and not a defect; (6) open the report modal and confirm the toggle sits behind the backdrop rather than floating over it; (7) on the Activity page, the toggle now sits at the ordinary floating offset with nothing above it, so this should simply look like a normal floating control, a sanity check rather than an open question (see D-C); (8) one tap still flips the whole app cleanly in both places.</human-check>
   </verify>
   <done>Whole suite green with no database set, including TestThemeToggleFloatsClearOfTheReportButton's band
-check and cascade-orphan guard. The control renders as a fixed 44px circle in the bottom-right corner
-of both the map page and the Activity page, its glyph is centered, one tap flips the root theme
-attribute, and the account menu shows only the email, Activity and Log out.</done>
+check, order lock and cascade-orphan guard. That band check is also the proof that BOTH stylesheets
+were edited: had only one of the two bottom values changed, the two controls would claim the same
+offset, their bands would be identical and fully intersecting, and the test would be red, so a partial
+edit cannot ship green here. The control renders as a fixed 44px circle in the bottom-right corner of
+both the map page and the Activity page, the report button sits one slot above it on the map page with
+one small space token of gap, the control's glyph is centered, one tap flips the root theme attribute,
+and the account menu shows only the email, Activity and Log out.</done>
 </task>
 
 </tasks>
@@ -418,7 +509,7 @@ attribute, and the account menu shows only the email, Activity and Log out.</don
 | T-01-17 | Tampering | theme.js stored-mode read | low | mitigate | Unchanged and unmodified by this task. The stored string is still membership checked against the fixed two-element list before reaching the single setAttribute call site. Still guarded by TestThemeModuleValidatesStoredModeBeforeReflectingIt, which this plan leaves untouched. |
 | T-01-03 | Tampering | theme.js DOM writes | low | mitigate | Unchanged and unmodified. Every value reaching the DOM still goes through classList or setAttribute. Still guarded by the untouched TestThemeModuleUsesNoMarkupParsingSink. |
 | T-RRA-01 | Tampering | template composition, duplicate control id | low | mitigate | Splitting the markup across a new partial while leaving the original in place would put two elements carrying the same control id into every gated page. getElementById would wire only the first, leaving a second, permanently dead circle with a fully green build. Mitigated by the negative assertion in TestThemeToggleRendersAsAFloatingControl (Task 1, item f) plus the exactly-once counts inside the partial and on each including page. |
-| T-RRA-02 | Denial of service | floating control overlapping the report button | low | mitigate | A wrong offset could cover the "+" button, which is the primary action for filing an emergency report. Mitigated by the computed band check in TestThemeToggleFloatsClearOfTheReportButton, which resolves both controls' offsets and heights from the shipped tokens and fails on any intersection, and by the z-index assertion. |
+| T-RRA-02 | Denial of service | floating control overlapping the report button | low | mitigate | A wrong offset could cover the "+" button, which is the primary action for filing an emergency report. The risk is slightly higher than in the previous version of this plan because the two offsets now live in two separate stylesheets and must move together: editing only one leaves both controls claiming the same offset and the report button fully covered. Mitigated by the computed band check in TestThemeToggleFloatsClearOfTheReportButton, which resolves both controls' offsets and heights from the shipped tokens and fails on any intersection, so a half-done two-file edit cannot ship green, and by the z-index assertion. |
 
 No new dependency, no package install, no network call, no server-side change, no new route and no
 new data flow. This plan touches one stylesheet, three templates, one new template partial and one
@@ -436,17 +527,31 @@ test file.
    on port 8090 owns that database. Port 8080 is never used for this project locally.
 5. The plain-punctuation requirement on the markup side is covered automatically by
    TestUserVisibleCopyUsesPlainPunctuation, which whole-file scans every embedded template, including
-   the new partial. For auth.css, grep the file for the em dash and en dash characters and confirm
-   zero hits, since no test covers dashes in stylesheets.
-6. grep the shipped account header partial and confirm it contains no occurrence of the control id.
+   the new partial. No test covers dashes in stylesheets, so check those by hand, but check ADDED
+   LINES ONLY, not whole files. main.css already contains em dashes in several pre-existing comments,
+   including the section header immediately above the .fab rule, the toast block and a feed.css cross
+   reference, so a blanket whole-file zero-hit grep on main.css fails on content this task does not
+   touch and must not be used. Instead take git diff with zero context lines for each stylesheet,
+   keep only the added lines, and grep those for the em dash and en dash characters, expecting zero
+   hits. auth.css happens to be clean today, so a whole-file grep would also pass there, but use the
+   added-lines form on both for consistency.
+6. Confirm from the same diff that web/static/css/main.css shows exactly one changed declaration, the
+   .fab rule's bottom, plus whatever comment lines Task 3 adds above that rule. Any other changed
+   declaration in that file is out of scope and must be reverted.
+7. grep the shipped account header partial and confirm it contains no occurrence of the control id.
 </verification>
 
 <success_criteria>
 - The theme control is visible on the map page and the Activity page without opening any menu.
 - It is a fixed 44px circle in the bottom-right corner, sharing one vertical line with the report
-  button and separated from it by one space token, with the glyph centered inside it.
-- Its vertical offset is a calc over three design tokens, never a hardcoded pixel value, and a
-  contract test fails the build if the two controls' bands ever overlap.
+  button, occupying the LOWER of the two slots at the report button's own former offset, separated
+  from the report button by one space token, with the glyph centered inside it.
+- The report button now sits in the upper slot, and its raised vertical offset is a calc over three
+  design tokens, never a hardcoded pixel value, while the control's offset is the single token the
+  report button previously carried. A contract test fails the build if the two controls' bands ever
+  overlap AND if the two are ever swapped back into the other order.
+- web/static/css/main.css is changed by exactly one declaration, the .fab rule's bottom value, plus
+  the comment lines explaining it.
 - The account menu contains only the email row, the Activity link and Log out, with no leftover row.
 - The control's markup exists in exactly one file, is included by exactly two pages, and appears zero
   times in the login gate page, the verify outcome page and the check inbox partial.
@@ -463,21 +568,35 @@ the user's explicit instruction.
 
 Computationally verified: the markup lives in exactly one partial and is included exactly once by each
 of the two intended pages and zero times by the three headerless pages; the control id is absent from
-the account header; the offset is a token-derived calc with no magic number; the two controls' vertical
-bands provably cannot intersect and the gap between them is one space token; the control's z-index is
-at least the report button's; the rule declares its own display, alignment and cursor rather than
-relying on the menu row it no longer lives in; the circle geometry still matches the account button;
-and the whole suite is green with no database.
+the account header; the report button's raised offset is a token-derived calc with no magic number and
+the control's own offset is a single plain token; the two controls' vertical bands provably cannot
+intersect and the gap between them is one space token; the control is provably the lower of the two, so
+the user's chosen stacking order is locked against a later well-meaning reversal; both stylesheets were
+provably edited, since a half-done swap collapses the two bands onto each other and fails the same
+check; the control's z-index is at least the report button's; the rule declares its own display,
+alignment and cursor rather than relying on the menu row it no longer lives in; the circle geometry
+still matches the account button; main.css changed by exactly one declaration; and the whole suite is
+green with no database.
+
+Also record explicitly that the stack's bottom-most pixel is unchanged from the previously shipped
+build, because whichever control holds the lower slot sits at the same large space token the report
+button used to, so clearance over Leaflet's bottom-right attribution strip needs no fresh verification.
 
 Not verified by any headless Go test and genuinely needing a browser, in priority order: whether the
-toggle sitting ABOVE the "+" is what the user actually meant by "below" (D-A records why a lower
-placement is geometrically impossible without moving the report button, and names the swap as the
-follow-up if the answer is no); whether the glyph is truly centered in the circle; whether the pair
-reads as one deliberate stack rather than two stranded circles; whether anything collides at 375px
-phone width, specifically the map attribution strip, Leaflet's zoom control and the account button;
-whether the control correctly sits behind the report modal's backdrop; and whether the Activity page's
-lone floating circle at the same height looks intentional (D-C records why no page-scoped override was
-added).
+report button, having moved up 52px, still reads as the obvious primary action and remains comfortably
+thumb-reachable, which is the single real cost the user accepted when choosing this arrangement and the
+only open question left about it; whether the toggle's glyph is truly centered in its circle; whether
+the pair reads as one deliberate stack with the report button clearly dominant, rather than two
+unrelated circles; whether anything collides at 375px phone width, specifically Leaflet's zoom control,
+the account button, and the mobile-only bottom-left view-toggle which now shares the toggle's height;
+whether a shown toast looks acceptable against the report button's higher position; whether the control
+correctly sits behind the report modal's backdrop; and, as a sanity check rather than an open design
+question, whether the Activity page's lone floating circle reads normally now that it sits at the
+ordinary floating offset (D-C records why the previous version's stranded-control worry is retired).
+
+Do not carry forward any framing in which the toggle sits above the report button. The user was asked
+directly and chose below with the report button moving up; the SUMMARY should read as a record of
+implementing a settled decision, not of resolving an ambiguity.
 
 State plainly in the SUMMARY that the dev server needs a restart before anyone can see any of this,
 because the CSS, JS and templates are embedded into the binary at build time.
