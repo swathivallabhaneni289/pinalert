@@ -407,6 +407,17 @@ align-items, justify-content, cursor or box-shadow, and do not touch any other r
 main.css. If you find yourself editing a second declaration in that file, stop: the swap is one value
 on each side.
 
+Two facts verified at planning time so you do not have to rediscover them. First, the three tokens
+were read directly out of main.css's :root and are --space-sm 8px, --space-lg 24px and
+--touch-target-min 44px, so every resolved figure quoted in this plan and in the comment specs below
+is correct as written: 24 + 44 + 8 = 76, the control's band is 24px to 68px, the report button's is
+76px to 120px, the gap is 8px, and the report button rises 52px. Second, no test in this repo asserts
+anything about .fab's bottom value, and nothing names .fab at all: the only test that scans main.css
+generically is TestNoPillShapedControls, which targets .view-toggle, #toast and .severity-slider by
+name and inspects only border-radius. Raising .fab's bottom therefore breaks no pre-existing test, and
+the only test that should change colour on this task is TestThemeToggleFloatsClearOfTheReportButton
+going from red to green. Anything else turning red is a blocker, not an expected step.
+
 Do not write the resolved pixel arithmetic as a trailing comment on either bottom line. Task 1's
 resolver rejects any expression containing a px literal, and depending on whether declsOf strips
 comments, a trailing comment naming a pixel count can be read as part of the declaration and trip that
