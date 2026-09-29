@@ -362,7 +362,7 @@ also mentioned properly when the person is making a report"): the current submis
 is 07-CONTEXT.md's decisions D-01 through D-04, carried in each plan's `requirements` field)
 **Depends on:** Phase 1 (the report-submission modal and its map already exist there; this phase
 only adds a search input alongside them, it does not need Phase 6's coordination features)
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 
 Plans:
 **Wave 1**
@@ -372,7 +372,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 07-03-PLAN.md — route registration inside the verified-account gate, server wiring, and the regenerated API spec (wave 2)
+- [x] 07-03-PLAN.md — route registration inside the verified-account gate, server wiring, and the regenerated API spec (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
