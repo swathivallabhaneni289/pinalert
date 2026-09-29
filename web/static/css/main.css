@@ -410,10 +410,15 @@ body {
  * button are deliberately NOT accent-colored (D-09, D-10): inverted
  * neutral treatment (--color-text on --color-bg) instead.
  * ---------------------------------------------------------------------- */
+/* bottom is raised by one touch-target height plus the small space token
+   (quick task 260923-rra) to make room for the theme toggle in the slot
+   below. See auth.css's .theme-toggle rule for the full D-A rationale, and
+   web/theme_contract_test.go's TestThemeToggleFloatsClearOfTheReportButton
+   for the geometry lock that keeps the two in sync. */
 .fab {
   position: fixed;
   right: var(--space-lg);
-  bottom: var(--space-lg);
+  bottom: calc(var(--space-lg) + var(--touch-target-min) + var(--space-sm));
   z-index: 1000; /* above Leaflet's control panes */
   width: var(--touch-target-min);
   height: var(--touch-target-min);
