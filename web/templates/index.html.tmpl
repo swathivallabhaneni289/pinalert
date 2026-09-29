@@ -66,6 +66,16 @@
       <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <h2 id="modal-title">Report an emergency</h2>
 
+        <label for="location-search">Search for a place or address</label>
+        <div class="location-search-field">
+          <input type="search" id="location-search" name="location_search" autocomplete="off"
+                 autocapitalize="off" spellcheck="false" role="combobox" aria-expanded="false"
+                 aria-autocomplete="list" aria-controls="location-search-results"
+                 placeholder="Type a place name or address">
+          <div id="location-search-results" role="listbox" aria-label="Place suggestions" hidden></div>
+        </div>
+        <p id="location-search-status" role="status" aria-live="polite" hidden></p>
+
         <div id="modal-map"></div>
         <p id="coord-readout"></p>
         <p id="location-notice" hidden>

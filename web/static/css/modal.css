@@ -18,6 +18,87 @@
   margin-top: var(--space-md);
 }
 
+/* ---- Location search (D-01, D-04) ----
+ * .location-search-field is what the dropdown below anchors to. Anchoring
+ * to .modal-panel instead would let Leaflet's own panes clip or cover the
+ * dropdown (07-RESEARCH.md Pitfall 5), since the map sits between the
+ * search field and the rest of the panel in DOM order. */
+.location-search-field {
+  position: relative;
+}
+
+#location-search {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: var(--touch-target-min);
+  padding: var(--space-sm);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+/* The :not([hidden]) guard on both selectors below is mandatory, not
+ * cosmetic: the browser's native [hidden] { display: none } rule is
+ * user-agent origin and loses to an author-origin display declaration at
+ * equal specificity — the exact failure that produced a live UAT blocker
+ * on .modal-backdrop in Phase 1 (see TestModalBackdropHiddenGuard). Without
+ * this guard, both elements would ship permanently visible. The dropdown's
+ * z-index of 1100 clears Leaflet's own maximum pane z-index of 1000, so it
+ * is never painted under the modal map. */
+#location-search-results:not([hidden]) {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: var(--space-xs);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.location-search-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-height: var(--touch-target-min);
+  padding: var(--space-sm);
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.location-search-result:last-child {
+  border-bottom: 0;
+}
+
+.location-search-result-secondary {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+#location-search-status:not([hidden]) {
+  display: block;
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
 /* ---- Location (D-02) ---- */
 #modal-map {
   height: 220px;
@@ -246,11 +327,19 @@
  * position: relative, set above) rather than the whole viewport, since
  * #discard-confirm sits inside .modal-panel in the DOM, not beside it. The
  * :not([hidden]) guard is required for the same specificity reason as the
- * shelter fieldset above. */
+ * shelter fieldset above. z-index is 1200, above the location search
+ * dropdown's 1100: .modal-panel is position: relative with no z-index of
+ * its own, so it is not a stacking context and the dropdown and this
+ * overlay compete directly in the same stacking context. requestClose()
+ * shows this overlay without calling resetForm(), so an open dropdown
+ * would otherwise paint over the "Discard this report?" question. The
+ * overlay is a confirmation that must occlude everything in the panel, so
+ * raising it above the dropdown is the correct fix rather than adding a
+ * JavaScript coupling from requestClose() to the dropdown. */
 #discard-confirm:not([hidden]) {
   position: absolute;
   inset: 0;
-  z-index: 10;
+  z-index: 1200;
   display: flex;
   flex-direction: column;
   align-items: center;
