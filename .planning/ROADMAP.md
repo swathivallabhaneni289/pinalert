@@ -362,7 +362,7 @@ also mentioned properly when the person is making a report"): the current submis
 is 07-CONTEXT.md's decisions D-01 through D-04, carried in each plan's `requirements` field)
 **Depends on:** Phase 1 (the report-submission modal and its map already exist there; this phase
 only adds a search input alongside them, it does not need Phase 6's coordination features)
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 **Wave 1**
@@ -376,4 +376,4 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 07-04-PLAN.md — debounced client-side search wiring, suggestion-to-pin placement, and the teardown and sink contract tests (wave 3)
+- [x] 07-04-PLAN.md — debounced client-side search wiring, suggestion-to-pin placement, and the teardown and sink contract tests (wave 3)
