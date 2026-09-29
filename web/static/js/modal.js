@@ -9,6 +9,15 @@
 // SECURITY (T-01-03): every string that reaches the DOM here — validation
 // messages included, whether client- or server-authored — is inserted as
 // text content, never assembled into markup for the browser to parse.
+//
+// Plan 07-04 adds the address search box to this same file (D-01, D-03,
+// D-04): a debounced live suggestion dropdown above the map, a tap handler
+// that reuses the existing pin placement path, and two inline status
+// messages for a no-match or a failed search. Every place name and address
+// the geocoding proxy returns is third-party data, OpenStreetMap
+// contributor text this app did not author, and is inserted through the
+// same text-only discipline stated above, never through a sink that would
+// let the browser parse it as markup.
 (function () {
   'use strict';
 
@@ -23,6 +32,9 @@
   var formError = document.getElementById('form-error');
   var coordReadout = document.getElementById('coord-readout');
   var locationNotice = document.getElementById('location-notice');
+  var locationSearchInput = document.getElementById('location-search');
+  var locationSearchResults = document.getElementById('location-search-results');
+  var locationSearchStatus = document.getElementById('location-search-status');
   var modalMapEl = document.getElementById('modal-map');
   var shelterFields = document.getElementById('shelter-fields');
   var shelterCapacityStatus = document.getElementById('shelter-capacity-status');
@@ -42,9 +54,35 @@
   var severityWrapper = null;
   var formTouched = false;
   var preDiscardFocusEl = null;
+  var searchDebounceTimer = null;
+  var searchSeq = 0;
+  // Session scoped and emptied by resetForm: both a Nominatim usage policy
+  // ask (cache repeated queries) and what keeps a visitor retyping the
+  // same place from firing duplicate requests.
+  var searchCache = new Map();
 
   var SEVERITY_BY_VALUE = { '1': 'low', '2': 'medium', '3': 'critical' };
   var SEVERITY_POSITIONS = ['1 · Low', '2 · Medium', '3 · Critical'];
+
+  // Location search (D-01, D-03, D-04). SEARCH_DEBOUNCE_MS is a user
+  // experience knob only, not the policy compliance control: the actual
+  // one-request-per-second ceiling D-02 requires is enforced by the
+  // process-wide limiter inside internal/geocode, so this number can be
+  // tuned for feel without reasoning about compliance.
+  var SEARCH_DEBOUNCE_MS = 600;
+  // Must stay equal to the server's own minimum (minGeocodeQueryRunes in
+  // internal/api/handlers/geocode.go): a smaller value here would only
+  // produce requests the server refuses with a 400.
+  var MIN_QUERY_RUNES = 3;
+  // Same zoom initLocation's GPS success callback uses, so a searched
+  // location and a GPS location arrive at identical map state.
+  var SEARCH_RESULT_ZOOM = 16;
+  var SEARCH_NO_MATCH_MESSAGE = 'No matches found.';
+  // Byte identical to geocodeUnavailableMessage in
+  // internal/api/handlers/geocode.go, on purpose, so the visitor reads one
+  // wording whether the failure came from upstream or from this browser's
+  // own fetch.
+  var SEARCH_UNAVAILABLE_MESSAGE = 'Search unavailable, try tapping the map instead.';
 
   // buildSeverityControl wraps the existing native <label>/<input
   // type="range">/<output> in a single container (once, at init) so a
@@ -305,6 +343,153 @@
     updateCoordReadout(lat, lon);
   }
 
+  // showSearchStatus / clearSearchStatus are the only two functions that
+  // touch #location-search-status, carrying D-04's no-match and
+  // unavailable inline messages.
+  function showSearchStatus(message) {
+    Pinalert.setText(locationSearchStatus, message);
+    locationSearchStatus.hidden = false;
+  }
+
+  function clearSearchStatus() {
+    Pinalert.setText(locationSearchStatus, '');
+    locationSearchStatus.hidden = true;
+  }
+
+  // hideDropdown empties the suggestion container's children, not only its
+  // hidden attribute. Emptying the children is required, not cosmetic:
+  // trapTab collects focusables with modal.querySelectorAll('button,
+  // [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'), so
+  // a leftover result button inside a hidden container would enter the tab
+  // cycle and silently swallow a focus call, and a stale row must not be
+  // revealed by a later hidden clear before fresh results replace it.
+  function hideDropdown() {
+    locationSearchResults.textContent = '';
+    locationSearchResults.hidden = true;
+    locationSearchInput.setAttribute('aria-expanded', 'false');
+  }
+
+  // renderResultRow builds one suggestion row entirely from created
+  // elements and Pinalert.setText insertions (T-07-03): no markup string is
+  // ever assembled here. Nominatim's name field is jsonv2-specific and not
+  // always populated, so the fallback collapses to a single line rather
+  // than rendering an empty primary row. Tapping a row calls the existing
+  // placeMarker and modalMap.setView, the same pair initLocation's GPS
+  // success callback calls, so there is exactly one pin placement code
+  // path in this file and no extra confirmation step between the tap and
+  // the placement (D-03). The pin placeMarker creates is already draggable
+  // with its own dragend handler, so it stays adjustable afterward with no
+  // extra work.
+  function renderResultRow(result) {
+    var row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'location-search-result';
+
+    var primary = document.createElement('span');
+    Pinalert.setText(primary, result.name || result.display_name);
+    row.appendChild(primary);
+
+    if (result.name) {
+      var secondary = document.createElement('span');
+      secondary.className = 'location-search-result-secondary';
+      Pinalert.setText(secondary, result.display_name);
+      row.appendChild(secondary);
+    }
+
+    row.addEventListener('click', function () {
+      markTouched();
+      placeMarker(result.lat, result.lon);
+      modalMap.setView([result.lat, result.lon], SEARCH_RESULT_ZOOM);
+      clearSearchStatus();
+      hideDropdown();
+    });
+
+    return row;
+  }
+
+  // renderDropdown renders at most the results the server already
+  // returned, in the order received: the proxy returns Nominatim's own
+  // relevance order, and re-sorting client side risks disagreeing with
+  // that ranking for no benefit.
+  function renderDropdown(results) {
+    if (!results || results.length === 0) {
+      hideDropdown();
+      showSearchStatus(SEARCH_NO_MATCH_MESSAGE);
+      return;
+    }
+    clearSearchStatus();
+    locationSearchResults.textContent = '';
+    results.forEach(function (result) {
+      locationSearchResults.appendChild(renderResultRow(result));
+    });
+    locationSearchResults.hidden = false;
+    locationSearchInput.setAttribute('aria-expanded', 'true');
+  }
+
+  // onSearchInput is a pause-based debounce: the timer is cleared and
+  // rescheduled on every keystroke, so one request is sent per typing
+  // pause rather than one per keystroke (D-01, D-02). Query length is
+  // measured in code points, not UTF-16 code units, so the client's
+  // minimum agrees with the server's rune-based minimum for a Devanagari
+  // or other multibyte query.
+  function onSearchInput() {
+    markTouched();
+    window.clearTimeout(searchDebounceTimer);
+    var query = locationSearchInput.value.trim();
+    if (Array.from(query).length < MIN_QUERY_RUNES) {
+      hideDropdown();
+      clearSearchStatus();
+      return;
+    }
+    searchDebounceTimer = window.setTimeout(function () {
+      runSearch(query);
+    }, SEARCH_DEBOUNCE_MS);
+  }
+
+  // runSearch mirrors votes.js's castVote error idiom exactly. The
+  // searchSeq sequence guard is load-bearing, not defensive: without it a
+  // slow response for an earlier query can arrive last and overwrite the
+  // suggestions for the query the visitor is actually looking at. This
+  // function must never touch submitButton, never detach the map's own
+  // click or dragend listeners, and never disable the search input,
+  // because every one of those would violate D-04.
+  function runSearch(query) {
+    var cacheKey = query.toLowerCase();
+    if (searchCache.has(cacheKey)) {
+      renderDropdown(searchCache.get(cacheKey));
+      return;
+    }
+
+    searchSeq += 1;
+    var mySeq = searchSeq;
+
+    fetch('/api/geocode?q=' + encodeURIComponent(query))
+      .then(function (res) {
+        return res.json().catch(function () {
+          return {};
+        }).then(function (body) {
+          if (!res.ok) {
+            var fieldError = (body && body.error) || {};
+            var err = new Error(fieldError.message || SEARCH_UNAVAILABLE_MESSAGE);
+            err.fieldMessage = fieldError.message || SEARCH_UNAVAILABLE_MESSAGE;
+            throw err;
+          }
+          if (mySeq !== searchSeq) {
+            return;
+          }
+          searchCache.set(cacheKey, body.results);
+          renderDropdown(body.results);
+        });
+      })
+      .catch(function (err) {
+        if (mySeq !== searchSeq) {
+          return;
+        }
+        hideDropdown();
+        showSearchStatus((err && err.fieldMessage) || SEARCH_UNAVAILABLE_MESSAGE);
+      });
+  }
+
   // hasVectorBasemap reports whether this browser can render the
   // OpenFreeMap vector basemap through the MapLibre bridge: both vendor
   // globals must have loaded, and the browser must grant a WebGL2
@@ -429,6 +614,25 @@
     });
   }
 
+  // resetSearch clears every piece of search state. All six pieces are
+  // required, not optional: resetForm is reached from closeModal, so
+  // leaving any of them out lets the previous submission's dropdown,
+  // message, or cached results appear in the next one.
+  function resetSearch() {
+    window.clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+    // Discards any in-flight response on arrival rather than letting it
+    // resolve into a closed or reopened modal.
+    searchSeq += 1;
+    locationSearchInput.value = '';
+    hideDropdown();
+    clearSearchStatus();
+    searchCache.clear();
+  }
+
+  // resetForm remains the single teardown path for every piece of the
+  // modal's state, search included; no parallel teardown function is
+  // introduced.
   function resetForm() {
     selectedCategory = null;
     var tiles = categoryGrid.querySelectorAll('.category-tile');
@@ -447,6 +651,7 @@
     }
     Pinalert.setText(coordReadout, '');
     hideShelterFields();
+    resetSearch();
     discardConfirm.hidden = true;
     formTouched = false;
     preDiscardFocusEl = null;
@@ -528,7 +733,7 @@
       return { field: 'description', message: 'Add a short description (at least 10 characters).' };
     }
     if (!modalMarker) {
-      return { field: 'location', message: 'Set a location by dragging the pin or allowing location access.' };
+      return { field: 'location', message: 'Set a location by searching, dragging the pin, or allowing location access.' };
     }
     if (selectedCategory === 'shelter_open' && !shelterCapacityStatus.value) {
       return { field: 'shelter_capacity_status', message: 'Choose a shelter capacity status.' };
@@ -616,6 +821,13 @@
   fabButton.addEventListener('click', openModal);
   cancelButton.addEventListener('click', requestClose);
   submitButton.addEventListener('click', handleSubmit);
+  // Registered here, once, and not inside initLocation: initLocation runs
+  // on every openModal call, and showLocationDenied already demonstrates
+  // the consequence of registering inside it (a re-registered
+  // modalMap.on('click') handler stacking duplicates across open/close
+  // cycles). That pre-existing bug is out of this phase's scope to fix,
+  // but a second instance of the same class of bug must not be created.
+  locationSearchInput.addEventListener('input', onSearchInput);
   severityInput.addEventListener('input', updateSeverityReadout);
   severityInput.addEventListener('input', markTouched);
   descriptionField.addEventListener('input', markTouched);
