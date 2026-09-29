@@ -40,6 +40,22 @@ type Deps struct {
 	Auth        handlers.AuthConfig
 	Template    *template.Template
 	Page        handlers.PageConfig
+	// Geocode backs GET /api/geocode (plan 07-01/07-03). Typed as the
+	// handlers.GeocodeSearcher interface, not *geocode.Client, so this file
+	// needs no import of internal/geocode and a test can substitute a stub.
+	// Additive exactly as Votes and RequestLinkRateLimit were — a Deps{}
+	// literal that omits it (such as swagger_test.go's) still compiles and
+	// still serves every route that does not touch geocoding, and a
+	// request to GET /api/geocode against a nil value degrades to the D-04
+	// "search unavailable" message rather than panicking (the handler
+	// guards it).
+	Geocode handlers.GeocodeSearcher
+	// GeocodeRateLimit configures the per-IP token-bucket limiter wrapped
+	// around GET /api/geocode only. Left at its zero value,
+	// GeocodeRateLimitDefault below is used, matching RequestLinkRateLimit's
+	// contract — cmd/server/main.go is the one place the numbers are
+	// visible rather than buried as literals in this router.
+	GeocodeRateLimit GeocodeRateLimit
 	// Dev disables the static asset cache in staticFileServer. Left false
 	// (the zero value) selects the production 1-hour cache automatically —
 	// every existing Deps{} literal that doesn't set this field keeps
@@ -71,6 +87,26 @@ type RequestLinkRateLimit struct {
 // refilled every 60 seconds — used whenever Deps.RequestLinkRateLimit is
 // left at its zero value.
 var RequestLinkRateLimitDefault = RequestLinkRateLimit{Burst: 5, Every: 60 * time.Second}
+
+// GeocodeRateLimit is the burst/refill configuration for the per-IP limiter
+// wrapping GET /api/geocode only.
+type GeocodeRateLimit struct {
+	Burst int
+	Every time.Duration
+}
+
+// GeocodeRateLimitDefault is this plan's chosen budget — burst 3, one token
+// refilled every 2 seconds — used whenever Deps.GeocodeRateLimit is left at
+// its zero value. This is a fresh named budget, not a reuse of
+// RequestLinkRateLimitDefault (burst 5, one token per 60s): that budget was
+// tuned for "request a login link" traffic, which is rare and deliberate,
+// whereas typing into a search box is bursty within one report submission
+// and rare across a session, so it needs its own shape (07-RESEARCH.md Open
+// Question 2). This per-IP limiter is the secondary, anti-abuse control
+// only — the actual Nominatim policy ceiling (D-02) is the process-wide
+// limiter inside internal/geocode, because a per-IP limiter cannot bound
+// total outbound traffic across many clients.
+var GeocodeRateLimitDefault = GeocodeRateLimit{Burst: 3, Every: 2 * time.Second}
 
 // @title        Pinalert API
 // @version      1.0
@@ -189,6 +225,19 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.Post("/api/reports/{id}/dispute", handlers.CastVote(deps.Votes, service.VoteKindContent, service.VoteDispute))
 		r.Post("/api/reports/{id}/resolve", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteResolve))
 		r.Post("/api/reports/{id}/reopen", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteReopen))
+		// GET /api/geocode (plan 07-03). Registered as a flat literal path,
+		// not under an r.Route mount — see this router's own doc comments
+		// above for why every /api/* path here is flat, gated or not.
+		// Gated at all because geocoding is only reachable from the report
+		// submission modal, which is already behind login (D-05); leaving
+		// it ungated would hand an unauthenticated caller a free proxy onto
+		// this app's shared Nominatim budget.
+		geocodeLimit := deps.GeocodeRateLimit
+		if geocodeLimit == (GeocodeRateLimit{}) {
+			geocodeLimit = GeocodeRateLimitDefault
+		}
+		geocodeLimiter := ratelimit.NewPerIP(geocodeLimit.Every, geocodeLimit.Burst)
+		r.With(geocodeLimiter.Middleware()).Get("/api/geocode", handlers.Geocode(deps.Geocode))
 		// deps.Template — the same ParsePageTemplate result / handlers.Page
 		// gets, not a separately-parsed single file — is load-bearing:
 		// profile.html.tmpl includes 01.1-06's account_header.html.tmpl

@@ -27,6 +27,7 @@ next.
    export ENV=development                          # unlocks the SESSION_SECRET/RESEND_API_KEY dev fallbacks below
    export RESEND_API_KEY="re_..."                   # optional when ENV=development, required otherwise — see Email delivery below
    export RESEND_FROM="Pinalert <onboarding@resend.dev>"  # optional; defaults to the Resend sandbox sender when unset
+   export NOMINATIM_CONTACT_EMAIL="you@example.com"  # optional, safe to leave unset; see below
    ```
    The server refuses to start without `SESSION_SECRET` unless `ENV=development` is also set —
    never let a missing secret silently fall back to an auto-generated one, which would invalidate
@@ -37,7 +38,13 @@ next.
    verification email. `BASE_URL` roots the absolute link every verification email carries
    (`{BASE_URL}/auth/verify?token=...`) — a wrong or unset-in-production value produces emailed
    links that resolve to the wrong host, so set it explicitly to your real deployed origin outside
-   local development.
+   local development. The address search box in the report modal geocodes through OSM Nominatim,
+   whose usage policy requires an identifying contact in the outbound User-Agent rather than a
+   stock HTTP library agent string; setting `NOMINATIM_CONTACT_EMAIL` puts your address in that
+   header and in Nominatim's optional `email` parameter. There is no signup and no API key for
+   this service. Leaving it unset is safe and the server still starts, falling back to the project
+   repository URL as the identifier, so unlike `SESSION_SECRET` and `RESEND_API_KEY` this variable
+   never blocks boot.
 3. **Apply the schema** (a dedicated binary, never run automatically by the server):
    ```bash
    make migrate

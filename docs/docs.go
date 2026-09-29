@@ -73,6 +73,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/geocode": {
+            "get": {
+                "description": "Proxies a search query to Nominatim and returns at most five matches. Requires a\nsession verified by email through the magic-link flow. A 503 means search is\ntemporarily unavailable; report submission remains fully usable regardless.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "geocode"
+                ],
+                "summary": "Search for a place or address by free-text query",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Place or address text, 3 to 200 characters",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.GeocodeResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/reports": {
             "get": {
                 "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance,\nthen resolves each report's visibility fresh via the shared resolver and returns\nonly listable ones, nearest first. This single endpoint serves both the map and the\nlist views — there is no separate map-only route. A resolved (retracted) report is\nnever returned by either view. show_disputed=true switches to the disputed-only\nview: only reports currently hidden by disputes, on the list and among the map pins\ntogether, replacing the default Live-and-Provisional view rather than adding to it.\nA critical or rescue-needed report stays Live however heavily it is disputed, so it\nappears only in the default view, never in the disputed one. Every report carries\nyour_vote and is_own_report relative to the calling verified account. Requires a\nsession verified by email through the magic-link flow; an unverified caller receives\n401 and no report data.",
@@ -668,6 +721,38 @@ const docTemplate = `{
                         "dispute"
                     ],
                     "example": "confirm"
+                }
+            }
+        },
+        "handlers.GeocodeResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.GeocodeResult"
+                    }
+                }
+            }
+        },
+        "handlers.GeocodeResult": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string",
+                    "example": "Bengaluru, Bangalore North, Bengaluru Urban, Karnataka, India"
+                },
+                "lat": {
+                    "type": "number",
+                    "example": 12.9767936
+                },
+                "lon": {
+                    "type": "number",
+                    "example": 77.590082
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Bengaluru"
                 }
             }
         },

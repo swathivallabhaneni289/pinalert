@@ -16,6 +16,7 @@ import (
 
 	"pinalert/internal/api"
 	"pinalert/internal/api/handlers"
+	"pinalert/internal/geocode"
 	"pinalert/internal/mailer"
 	"pinalert/internal/service"
 	"pinalert/internal/session"
@@ -44,6 +45,18 @@ const (
 const (
 	requestLinkRateLimitBurst = 5
 	requestLinkRateLimitEvery = 60 * time.Second
+)
+
+// geocodeRateLimitBurst/Every are this plan's per-IP secondary budget for
+// GET /api/geocode: a burst of 3 immediately, one token refilled every 2
+// seconds thereafter. Deliberately shaped differently from the
+// request-link budget above: typing into a search box is bursty within
+// one report submission and rare across a session (07-RESEARCH.md Open
+// Question 2). The real D-02 policy ceiling is the process-wide
+// one-request-per-second limiter inside internal/geocode, not this number.
+const (
+	geocodeRateLimitBurst = 3
+	geocodeRateLimitEvery = 2 * time.Second
 )
 
 func main() {
@@ -101,6 +114,22 @@ func main() {
 
 	assetVersion := strconv.FormatInt(time.Now().Unix(), 10)
 
+	// NOMINATIM_CONTACT_EMAIL is operator-supplied configuration for the
+	// address-search feature's outbound User-Agent to OSM Nominatim.
+	// Deliberately NOT a log.Fatal path, unlike SESSION_SECRET and
+	// RESEND_API_KEY above: those two fail fast outside ENV=development
+	// because a misconfigured deploy would otherwise boot into a state
+	// where nobody can log in at all, whereas address search is a
+	// secondary convenience whose whole design contract (D-04) is that its
+	// failure never blocks reporting. Failing to boot over it would invert
+	// that contract. internal/geocode's userAgent falls back to the
+	// project repository URL as the identifier when this is empty, so the
+	// outbound agent string stays non-stock regardless.
+	nominatimContactEmail := os.Getenv("NOMINATIM_CONTACT_EMAIL")
+	if nominatimContactEmail == "" {
+		log.Println("WARNING: NOMINATIM_CONTACT_EMAIL unset; outbound geocoding User-Agent will fall back to the project repository URL")
+	}
+
 	queries := sqlcgen.New(pool)
 	deps := api.Deps{
 		Session:     sessionMgr,
@@ -125,6 +154,14 @@ func main() {
 		RequestLinkRateLimit: api.RequestLinkRateLimit{
 			Burst: requestLinkRateLimitBurst,
 			Every: requestLinkRateLimitEvery,
+		},
+		// This is the only construction site of the real geocode client in
+		// the whole program, which is what makes the process-wide limiter
+		// inside internal/geocode genuinely process wide.
+		Geocode: geocode.NewClient(nominatimContactEmail),
+		GeocodeRateLimit: api.GeocodeRateLimit{
+			Burst: geocodeRateLimitBurst,
+			Every: geocodeRateLimitEvery,
 		},
 	}
 	router := api.NewRouter(deps)

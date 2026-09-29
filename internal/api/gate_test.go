@@ -325,6 +325,47 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 	}
 }
 
+// TestAccessGateBlocksUnverifiedGeocode is this plan's V4 Access Control
+// proof: an unverified session gets 401 with the standard {error:{field}}
+// envelope from GET /api/geocode, and the raw body never contains
+// "results", so a refusal can never be mistaken for an empty result set.
+// This test skips without DATABASE_URL (via testutil.NewTestDB), so the
+// phase gate is `make test`, not a short-mode run.
+func TestAccessGateBlocksUnverifiedGeocode(t *testing.T) {
+	srv, _, _ := newGateTestServer(t)
+	client := newGateJarClient(t)
+
+	resp, err := client.Get(srv.URL + "/api/geocode?q=bengaluru")
+	if err != nil {
+		t.Fatalf("GET /api/geocode: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading GET /api/geocode body: %v", err)
+	}
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("GET /api/geocode status = %d, want 401: %s", resp.StatusCode, body)
+	}
+	if strings.Contains(string(body), "results") {
+		t.Fatalf("GET /api/geocode unverified response body must not contain \"results\": %s", body)
+	}
+
+	var errBody struct {
+		Error struct {
+			Field   string `json:"field"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &errBody); err != nil {
+		t.Fatalf("decoding GET /api/geocode error body: %v", err)
+	}
+	if errBody.Error.Field != "auth" {
+		t.Fatalf("GET /api/geocode error field = %q, want %q", errBody.Error.Field, "auth")
+	}
+}
+
 // TestAccessGateTreatsMissingSessionRowAsUnverified proves RESEARCH.md
 // Pattern 2 end to end through the real gate: a browser whose sessions row
 // is deleted out from under it is redirected to /login exactly like a
