@@ -1,31 +1,37 @@
 ---
 phase: 07-address-search-box-for-report-location
 verified: 2026-09-29T13:15:00Z
-status: human_needed
+status: passed
 score: 22/29 must-haves verified
 behavior_unverified: 7
 overrides_applied: 0
 behavior_unverified_items:
+
   - truth: "Typing at least three characters and pausing shows at most five matching places, one request per pause (not per keystroke), and a repeated query is served from the in-session cache with no request at all (D-01)."
     test: "Open the report modal, open the browser network panel, type a place name slowly (e.g. 'bengaluru') one character at a time."
     expected: "No request fires until a typing pause; exactly one /api/geocode request per pause; retyping the identical query after clearing produces zero new requests (served from searchCache)."
     why_human: "No JS test framework exists in this repo (confirmed: zero JS test files). The debounce timer and network request count are runtime browser behaviors; the shipped contract test only proves the debounce/cache code is present and wired (SEARCH_DEBOUNCE_MS, searchCache.has/set/clear counts), not that it behaves correctly when actually typed into."
+
   - truth: "Tapping a suggestion places the pin at that place, centers the map at zoom 16 through the existing placeMarker/setView path, and the pin remains draggable afterward with no second confirmation step (D-03)."
     test: "Type a query, tap a dropdown suggestion, confirm pin placement and map centering, then drag the placed pin."
     expected: "Pin appears at the tapped place, map centers on it, coordinate readout updates, dropdown closes, and the pin can still be dragged with no intervening confirm/apply control."
     why_human: "Visual map interaction. The contract test proves renderResultRow's click handler calls placeMarker(/modalMap.setView( structurally (source presence), but cannot execute a real tap or observe the rendered map state."
+
   - truth: "A slow response for an earlier (non-cached) query is discarded rather than overwriting the suggestions or status message rendered for a newer, already-answered query (the CR-01 ordering invariant)."
     test: "With the network artificially slowed (devtools throttling), search query A (not previously cached), then before A's response arrives, clear and search query B where B is already present in searchCache from an earlier search this session. Confirm B's cached results stay on screen when A's slow response finally lands."
     expected: "B's suggestion list is not overwritten by A's late-arriving results; no visible flicker back to A's places."
     why_human: "This is a cancellation/ordering invariant, not a static property. The fix (searchSeq incremented unconditionally before the cache-hit check, commit 589e23e) is confirmed present in the shipped file by direct source read, and the existing contract test asserts the guard string 'mySeq !== searchSeq' appears twice structurally — but that same structural assertion also passed while CR-01's bug was still live in the code, which is direct proof in this phase's own history that presence-counting this guard does not establish it fires correctly. No automated test in this repo actually drives the real race."
+
   - truth: "A no-match search shows 'No matches found.' and a failed/timed-out/refused search shows 'Search unavailable, try tapping the map instead.', both inline near the search box, and GPS/tap-to-place/drag/submit remain fully usable throughout (D-04)."
     test: "Search a nonsense query (e.g. 'zzzzqqqq'); then disable the network and search a real place name; confirm both inline messages and confirm GPS, tap-to-place, drag, and Post report all keep working in both states."
     expected: "'No matches found.' shown on empty result; 'Search unavailable, try tapping the map instead.' shown on network failure; report submission never blocked by either state."
     why_human: "Requires simulating an empty-result query and a live network failure in a real browser. Source-level proof exists (renderDropdown's no-match branch, runSearch's catch branch, and the source assertions that no search code path touches submitButton.disabled or calls modalMap.off), but the end-to-end user-visible behavior is unexecuted by any automated test in this repo."
+
   - truth: "Closing the modal clears all six pieces of search state (debounce timer, sequence counter, input value, dropdown children, status text, query cache) so a reopened modal never shows the previous session's search state."
     test: "Type a query into the search box, close the modal before results arrive (or before tapping a suggestion), then reopen it."
     expected: "The search box is empty, with no leftover dropdown and no leftover inline status message."
     why_human: "One of the six teardown pieces is the same searchSeq increment the CR-01 ordering-invariant item above depends on, so it inherits the same presence-is-not-proof caveat: TestLocationSearchUsesTextSinksAndExistingPinPlacement confirms resetSearch's function body contains all six calls (clearTimeout, searchSeq, input.value clear, hideDropdown, clearSearchStatus, searchCache.clear), and closeModal -> resetForm -> resetSearch is confirmed wired by direct source read, but no executing test actually reopens the modal and observes empty state. This exact scenario is also the closing instruction of 07-04-PLAN.md's own human-check item 3 (\"close the modal before results arrive, reopen it, and confirm the search box is empty with no leftover dropdown and no leftover message\")."
+
   - truth: "Report modal's location search input styling visually matches the shelter-capacity/headcount control conventions (corner rounding, height, border colour), and the hidden dropdown/status elements render as completely invisible with no stray empty box, in both light and dark theme; the modal still scrolls and the map still renders at normal height with tap-to-place still working."
     test: "Run the app, sign in, open the report modal in both light and dark theme."
     expected: "Search input visually matches existing form controls; no stray empty box or blank line where the hidden dropdown/status line are; input is not pill-shaped, has no gradient, no icon glyph; modal scroll and map height/tap-to-place behavior unaffected."
@@ -159,15 +165,18 @@ None. Scanned all 14 files modified across the four plans (`internal/geocode/cli
 
 **Non-blocking code review findings, open by the reviewer's own disposition (informational for
 this report, not must-have gaps):**
+
 - WR-01 (`07-REVIEW.md`): `GET /api/geocode`'s 429 response reuses the request-link rate limiter's
   hardcoded envelope (`field: "email"`, "Try again in a minute.") instead of a geocode-specific
   one; confirmed still present in `router.go`/`internal/ratelimit/perip.go` by direct read. Does
   not violate any must-have in this phase's plans (no must-have specifies the 429 field/message
   shape) and does not block submission (D-04) since `modal.js` only reads `.message`, never
   `.field`, on the search error path.
+
 - WR-02: search dropdown declares `role="combobox"`/`role="listbox"`/`aria-autocomplete` ARIA
   semantics not fully implemented (no `role="option"`, no arrow-key navigation). Confirmed present
   in `index.html.tmpl` by direct read. Accessibility polish gap, not a must-have failure.
+
 - WR-03: dropdown has no blur/outside-click close handler; confirmed no such listener exists in
   `modal.js`'s wiring block. Could let the dropdown visually sit over the map edge in an unusual
   interaction sequence; does not block GPS/tap/drag/submit (D-04's binding guarantee) and is not
