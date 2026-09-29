@@ -1702,3 +1702,131 @@ func TestProvisionalDimmingIsPerceptiblyDistinctFromLive(t *testing.T) {
 			"from a Hidden row's, found %q", tintVal)
 	}
 }
+
+// TestLocationSearchHiddenGuards is TestModalBackdropHiddenGuard's own
+// machinery two selectors over (plan 07-02): the location search dropdown
+// (#location-search-results) and its inline status line
+// (#location-search-status) both ship `hidden` in index.html.tmpl and are
+// only ever revealed by plan 07-04's JavaScript clearing that attribute —
+// exactly the shape that bit the modal backdrop in Phase 1 (a live UAT
+// blocker), because the browser's native `[hidden] { display: none }` rule
+// is user-agent origin and loses to any author-origin `display` declaration
+// at equal specificity. Without a `:not([hidden])` guard on every rule that
+// sets `display` on either selector, that element ships permanently
+// visible.
+func TestLocationSearchHiddenGuards(t *testing.T) {
+	const guard = ":not([hidden])"
+	selectors := []string{"#location-search-results", "#location-search-status"}
+	sawGuarded := map[string]bool{}
+
+	err := fs.WalkDir(StaticFS, "static/css", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".css") {
+			return nil
+		}
+
+		raw, err := fs.ReadFile(StaticFS, path)
+		if err != nil {
+			return err
+		}
+
+		text := stripCSSComments(string(raw))
+
+		for chunk := range strings.SplitSeq(text, "}") {
+			lastOpen := strings.LastIndex(chunk, "{")
+			if lastOpen == -1 {
+				continue
+			}
+			selectorHead := chunk[:lastOpen]
+			declBody := chunk[lastOpen+1:]
+
+			for _, sel := range selectors {
+				if !strings.Contains(selectorHead, sel) {
+					continue
+				}
+				if !strings.Contains(declBody, "display") {
+					continue
+				}
+
+				if strings.Contains(selectorHead, guard) {
+					if path == "static/css/modal.css" {
+						sawGuarded[sel] = true
+					}
+					continue
+				}
+
+				t.Errorf(
+					"%s: found a rule setting `display` on %s without a %q guard — selector head: %q",
+					path, sel, guard, strings.TrimSpace(selectorHead),
+				)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed to walk embedded static/css: %v", err)
+	}
+
+	for _, sel := range selectors {
+		if !sawGuarded[sel] {
+			t.Fatalf("expected static/css/modal.css to contain at least one guarded %s%s selector — found none (the rule may have been deleted outright)", sel, guard)
+		}
+	}
+}
+
+// TestLocationSearchDropdownStacking asserts the location search dropdown
+// clears Leaflet's own maximum pane z-index (1000), and that the discard
+// confirmation overlay always paints above the dropdown — so an open
+// suggestion list can never obscure the "Discard this report?" question
+// (plan 07-02).
+func TestLocationSearchDropdownStacking(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/css/modal.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/modal.css: %v", err)
+	}
+	rules := parseCSSRules(string(raw))
+
+	dropdownRule, ok := ruleBySelector(rules, "#location-search-results:not([hidden])")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/modal.css", "#location-search-results:not([hidden])")
+	}
+	discardRule, ok := ruleBySelector(rules, "#discard-confirm:not([hidden])")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/modal.css", "#discard-confirm:not([hidden])")
+	}
+
+	dropdownDecls := declsOf(dropdownRule.declBody)
+	discardDecls := declsOf(discardRule.declBody)
+
+	dropdownZStr, ok := dropdownDecls["z-index"]
+	if !ok {
+		t.Fatalf("#location-search-results:not([hidden]) declares no z-index")
+	}
+	discardZStr, ok := discardDecls["z-index"]
+	if !ok {
+		t.Fatalf("#discard-confirm:not([hidden]) declares no z-index")
+	}
+
+	dropdownZ, err := strconv.Atoi(dropdownZStr)
+	if err != nil {
+		t.Fatalf("could not parse dropdown z-index %q as an integer: %v", dropdownZStr, err)
+	}
+	discardZ, err := strconv.Atoi(discardZStr)
+	if err != nil {
+		t.Fatalf("could not parse discard overlay z-index %q as an integer: %v", discardZStr, err)
+	}
+
+	const leafletMaxPaneZIndex = 1000
+	if dropdownZ <= leafletMaxPaneZIndex {
+		t.Errorf("#location-search-results:not([hidden]) z-index = %d, want strictly greater than "+
+			"Leaflet's own maximum pane z-index (%d) so the dropdown is never painted under the modal map",
+			dropdownZ, leafletMaxPaneZIndex)
+	}
+	if discardZ <= dropdownZ {
+		t.Errorf("#discard-confirm:not([hidden]) z-index = %d, want strictly greater than the dropdown's "+
+			"z-index (%d) so a confirmation dialog is never obscured by a suggestion list", discardZ, dropdownZ)
+	}
+}
