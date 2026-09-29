@@ -79,6 +79,7 @@
   line-height: var(--line-height-body);
   color: var(--color-text);
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .location-search-result:last-child {
