@@ -157,6 +157,28 @@ definitions:
         example: confirm
         type: string
     type: object
+  handlers.GeocodeResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/handlers.GeocodeResult'
+        type: array
+    type: object
+  handlers.GeocodeResult:
+    properties:
+      display_name:
+        example: Bengaluru, Bangalore North, Bengaluru Urban, Karnataka, India
+        type: string
+      lat:
+        example: 12.9767936
+        type: number
+      lon:
+        example: 77.590082
+        type: number
+      name:
+        example: Bengaluru
+        type: string
+    type: object
   handlers.ReportListResponse:
     properties:
       reports:
@@ -356,6 +378,44 @@ paths:
       summary: Request a magic-link verification email
       tags:
       - auth
+  /geocode:
+    get:
+      description: |-
+        Proxies a search query to Nominatim and returns at most five matches. Requires a
+        session verified by email through the magic-link flow. A 503 means search is
+        temporarily unavailable; report submission remains fully usable regardless.
+      parameters:
+      - description: Place or address text, 3 to 200 characters
+        in: query
+        name: q
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.GeocodeResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Search for a place or address by free-text query
+      tags:
+      - geocode
   /reports:
     get:
       description: |-

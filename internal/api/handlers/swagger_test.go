@@ -228,6 +228,46 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		}
 	}
 
+	// 07-03's contribution to this same OPS-01 drift guard: GET /geocode
+	// (plan 07-01/07-03) must be published with its 401 (the access gate)
+	// and 503 (D-04's unavailable path) responses, its q query parameter,
+	// and the GeocodeResponse shape.
+	geocodeOps, ok := spec.Paths["/geocode"]
+	if !ok {
+		t.Fatalf("docs/swagger.json is missing the /geocode path")
+	}
+	geocodeOp, ok := geocodeOps["get"]
+	if !ok {
+		t.Fatalf("docs/swagger.json is missing the /geocode get operation")
+	}
+	geocodeOpRaw := string(geocodeOp)
+	for _, code := range []string{`"401"`, `"503"`} {
+		if !strings.Contains(geocodeOpRaw, code) {
+			t.Errorf("docs/swagger.json /geocode get operation is missing a %s response", code)
+		}
+	}
+	if !strings.Contains(geocodeOpRaw, `"q"`) {
+		t.Errorf("docs/swagger.json /geocode get operation is missing the q query parameter")
+	}
+	if !strings.Contains(body, "GeocodeResponse") {
+		t.Errorf("docs/swagger.json is missing the GeocodeResponse definition")
+	}
+	for _, field := range []string{"display_name", "lat", "lon"} {
+		if !strings.Contains(body, field) {
+			t.Errorf("docs/swagger.json is missing GeocodeResult field %q", field)
+		}
+	}
+	// Published-schema counterpart to T-07-04: a documented field is an
+	// invitation for a future change to start populating it, which is
+	// exactly why this allowlist is asserted in the published schema and
+	// not only at runtime (internal/api/handlers/geocode_test.go's
+	// TestGeocode_AllowlistsResponseFields).
+	for _, field := range []string{"place_id", "osm_id", "place_rank", "boundingbox"} {
+		if strings.Contains(body, field) {
+			t.Fatalf("docs/swagger.json must never document Nominatim-internal field %q", field)
+		}
+	}
+
 	// The published-schema counterpart to the runtime information-disclosure
 	// control (T-01-02): a session identifier must never be advertised as
 	// part of the contract, because a documented field is an invitation for
