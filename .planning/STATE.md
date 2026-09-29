@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 07
-current_phase_name: address-search-box-for-report-location
-status: executing
-stopped_at: Phase 07 context gathered
-last_updated: "2026-09-29T06:51:52.524Z"
+current_phase: 3
+current_phase_name: trust-model-hardening-diversity-weighted-trust
+status: not_started
+stopped_at: Phase 07 complete
+last_updated: "2026-09-29T09:19:01.904Z"
 last_activity: 2026-09-29
-last_activity_desc: Phase 07 execution started
+last_activity_desc: Phase 07 complete (address search box); next unstarted phase in numeric roadmap order is Phase 3
 progress:
   total_phases: 8
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 42
-  completed_plans: 38
-  percent: 38
+  completed_plans: 42
+  percent: 50
 ---
 
 # Project State
@@ -36,27 +36,19 @@ independent of Phase 2 — see Blockers/Concerns below.
 
 ## Current Position
 
-Phase: 07 (address-search-box-for-report-location) — EXECUTING
-Plans: 8/8 executed (all 7 waves complete: resolver, vote log, voting service, HTTP routes,
-feed/map read path, confirm/dispute UI, trust-state legibility, mark-resolved/reopen)
-Status: Executing Phase 07
-tests, 0 fail, 0 skip, real Postgres), code review (0 BLOCKER / 1 WARNING / 2 INFO, see below),
-regression gate (covered by the repeated full-suite runs), and phase-goal verification (5/5
-success criteria independently confirmed against the codebase, not trusted from SUMMARYs). Not yet
-closed: 3 human-only browser UAT items (`02-UAT.md`) and two items needing a human decision (see
-Blockers/Concerns): the code review's rate-limiting WARNING, and a verifier-surfaced escalation
-about ROADMAP.md's `Mode: mvp` flag vs. its non-user-story Goal wording.
-Last activity: 2026-09-29 — Phase 07 execution started
-continuous session (~4.5 hours wall-clock across 7 sequential dependency-chain waves).
+Phase: 3 — Trust-Model Hardening: Diversity-Weighted Trust (not started)
+Status: Ready to plan. Phase 07 (address search box) completed 2026-09-29: 4/4 plans across 3
+waves, full regression suite green, 1 code-review Critical (CR-01 staleness guard) found and
+fixed, 6/6 UAT tests passed (including a live layout bug found and fixed mid-session — see
+`07-UAT.md`), security review closed with threats_open: 0 (`07-SECURITY.md`).
 
-Progress: [██████████] 100% of Phase 2's code-verifiable work; 3 human-only UAT items + 2 human
-decisions outstanding before the phase can close
+Progress: [██████████████░░░░░░] 4/8 phases complete (1, 1.1, 2, 07)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 15
+- Total plans completed: 19
 - Average duration: N/A
 - Total execution time: 0 hours
 
@@ -65,6 +57,7 @@ decisions outstanding before the phase can close
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 15 | - | - |
+| 07 | 4 | - | - |
 
 **Recent Trend:**
 
