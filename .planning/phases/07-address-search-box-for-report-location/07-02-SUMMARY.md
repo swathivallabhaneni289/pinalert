@@ -149,3 +149,9 @@ The pre-existing full-suite test flakiness noted above is not a blocker for this
 ---
 *Phase: 07-address-search-box-for-report-location*
 *Completed: 2026-09-29*
+
+## Self-Check: PASSED
+
+All 6 claimed files found on disk (index.html.tmpl, page_test.go, modal.css, css_contract_test.go,
+deferred-items.md, this SUMMARY.md). All 4 claimed commit hashes (75a47e7, d1b6d1d, 43908bb,
+7e67dc3) found in `git log --oneline`.
