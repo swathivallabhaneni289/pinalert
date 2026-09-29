@@ -2,17 +2,21 @@ package web
 
 import (
 	"io/fs"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
 
 // themeScriptSource is the versioned static-asset path the theme module
 // ships under. themeJSPath and accountHeaderPath name the two embedded
-// files most of this file's tests inspect.
+// files most of this file's tests inspect. themeTogglePath names the
+// shared floating-control partial this plan extracts the control into.
 const (
 	themeScriptSource = "/static/js/theme.js"
 	themeJSPath       = "static/js/theme.js"
 	accountHeaderPath = "templates/account_header.html.tmpl"
+	themeTogglePath   = "templates/theme_toggle.html.tmpl"
 )
 
 // findFullPageTemplates walks every file under templates/*.tmpl in
@@ -219,49 +223,134 @@ func TestThemeModuleGuardsStorageAccess(t *testing.T) {
 	}
 }
 
-// TestAccountHeaderRendersThemeControl asserts the shared account header
-// partial renders the theme control between Activity and Log out, reusing
-// the existing menu-item class and menuitem role, and that theme.js
-// actually addresses the control's id, the glyph span's id, and both icon
-// modifier class names. All four are read out of the embedded template and
-// script rather than hardcoded twice in this test, so a rename on any side
-// can only drift this test, never let them silently diverge — this is the
-// drift guard across template, script and CSS that catches a rename before
-// it ships a button that renders an empty circle.
-func TestAccountHeaderRendersThemeControl(t *testing.T) {
-	tmplRaw, err := TemplatesFS.ReadFile(accountHeaderPath)
-	if err != nil {
-		t.Fatalf("reading embedded %s: %v", accountHeaderPath, err)
-	}
-	tmplText := string(tmplRaw)
-
+// TestThemeToggleRendersAsAFloatingControl replaces
+// TestAccountHeaderRendersThemeControl now that the theme control has moved
+// out of the account menu dropdown and into its own always-visible floating
+// partial (quick task 260923-rra). It proves the markup lives in exactly one
+// file, is included by exactly the two pages that should carry it, is
+// entirely absent from the account header it used to live in and from the
+// three headerless pages, and is still addressed by the same identifiers
+// theme.js uses.
+//
+// Honest limit of this test's claim: static per-file inspection cannot prove
+// a browser composes the templates into a single document with one unique
+// id — html/template's ParseFS composition is not rendered here. The
+// per-file exactly-once counts plus the critical negative assertion below
+// stand in for that: if the control existed in two files at once, at least
+// one of those counts would read two instead of one, or the negative
+// assertion would fail.
+func TestThemeToggleRendersAsAFloatingControl(t *testing.T) {
 	const controlID = `id="theme-toggle"`
 	const iconID = `id="theme-toggle-icon"`
 
-	if !strings.Contains(tmplText, controlID) {
-		t.Fatalf("%s: expected %s — the theme control's own id", accountHeaderPath, controlID)
+	// a. The partial reads out of TemplatesFS without error.
+	tmplRaw, err := TemplatesFS.ReadFile(themeTogglePath)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", themeTogglePath, err)
 	}
-	if !strings.Contains(tmplText, iconID) {
-		t.Fatalf("%s: expected %s — the control's glyph span's own id", accountHeaderPath, iconID)
+	tmplText := string(tmplRaw)
+
+	// b. The control id and glyph span id each appear exactly once —
+	// counts, not presence, so a duplicated block inside the partial itself
+	// is caught.
+	if got := strings.Count(tmplText, controlID); got != 1 {
+		t.Fatalf("%s: expected %s to appear exactly once, found %d", themeTogglePath, controlID, got)
+	}
+	if got := strings.Count(tmplText, iconID); got != 1 {
+		t.Fatalf("%s: expected %s to appear exactly once, found %d", themeTogglePath, iconID, got)
 	}
 
+	// c. The control's opening tag carries type=button, aria-label and
+	// title — an icon-only control has no visible text, so those two
+	// attributes carry the whole accessible name.
 	window := findTagWindow(t, tmplText, controlID)
-	if !strings.Contains(window, "menuitem") {
-		t.Errorf("%s: theme control tag is missing the menuitem role — window: %q", accountHeaderPath, window)
-	}
-	if !strings.Contains(window, "account-menu__item") {
-		t.Errorf("%s: theme control tag is missing the existing account-menu__item class — window: %q",
-			accountHeaderPath, window)
+	if !strings.Contains(window, `type="button"`) {
+		t.Errorf("%s: theme control tag is missing type=\"button\" — window: %q", themeTogglePath, window)
 	}
 	if !strings.Contains(window, "aria-label=") {
 		t.Errorf("%s: theme control tag is missing an aria-label attribute — an icon-only control has "+
 			"no visible text, so this attribute carries the whole accessible name — window: %q",
-			accountHeaderPath, window)
+			themeTogglePath, window)
 	}
 	if !strings.Contains(window, "title=") {
-		t.Errorf("%s: theme control tag is missing a title attribute — window: %q", accountHeaderPath, window)
+		t.Errorf("%s: theme control tag is missing a title attribute — window: %q", themeTogglePath, window)
 	}
 
+	// d. The partial contains the base icon class and the moon modifier
+	// class, the markup-side initial glyph theme.js overwrites on load.
+	if !strings.Contains(tmplText, "auth-icon") {
+		t.Errorf("%s: expected the base %q icon class", themeTogglePath, "auth-icon")
+	}
+	if !strings.Contains(tmplText, "auth-icon--moon") {
+		t.Errorf("%s: expected the %q modifier class as the markup-side initial glyph", themeTogglePath, "auth-icon--moon")
+	}
+
+	// e. The partial does NOT contain the account menu item class. Outside
+	// the menu that class styles nothing, and its presence would mean the
+	// migration was only half done.
+	if strings.Contains(tmplText, "account-menu__item") {
+		t.Errorf("%s: found the account-menu__item class in the extracted partial — outside the menu "+
+			"that class styles nothing, and its presence here means the migration into a standalone "+
+			"floating control was only half done", themeTogglePath)
+	}
+
+	// f. THE CRITICAL NEGATIVE ASSERTION. Without this, a copy-paste that
+	// adds the new partial while leaving the old button in place ships two
+	// elements carrying the same control id on every gated page.
+	// getElementById wires only the first, leaving a second, permanently
+	// dead circle with a fully green build.
+	headerRaw, err := TemplatesFS.ReadFile(accountHeaderPath)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", accountHeaderPath, err)
+	}
+	if strings.Contains(string(headerRaw), controlID) {
+		t.Errorf("%s: still contains %s — the control must be a plain deletion from the account menu "+
+			"now that it lives in %s; leaving both in place puts two elements with the same id on every "+
+			"gated page, getElementById wires only the first, and one of the two circles becomes a "+
+			"permanently dead button with a fully green build", accountHeaderPath, controlID, themeTogglePath)
+	}
+
+	// g. The include action for the new partial appears exactly once in
+	// each of the two pages that should carry it. The expected string is
+	// built from the path constant, not typed a second time, so a rename
+	// can only fail the build and never let the two sides drift.
+	includeFilename := strings.TrimPrefix(themeTogglePath, "templates/")
+	includeAction := `{{template "` + includeFilename + `" .}}`
+
+	for _, page := range []string{"templates/index.html.tmpl", "templates/profile.html.tmpl"} {
+		raw, err := TemplatesFS.ReadFile(page)
+		if err != nil {
+			t.Fatalf("reading embedded %s: %v", page, err)
+		}
+		if got := strings.Count(string(raw), includeAction); got != 1 {
+			t.Errorf("%s: expected the include action %q to appear exactly once, found %d", page, includeAction, got)
+		}
+	}
+
+	// h. That same include action appears zero times on the three
+	// headerless pages. login_gate and verify_outcome are full pages;
+	// check_inbox is a partial login_gate itself includes and reaches a
+	// reader only through that page. All three render no header and no
+	// theme control today, and this assertion is what keeps that true.
+	for _, page := range []string{
+		"templates/login_gate.html.tmpl",
+		"templates/check_inbox.html.tmpl",
+		"templates/verify_outcome.html.tmpl",
+	} {
+		raw, err := TemplatesFS.ReadFile(page)
+		if err != nil {
+			t.Fatalf("reading embedded %s: %v", page, err)
+		}
+		if got := strings.Count(string(raw), includeAction); got != 0 {
+			t.Errorf("%s: expected the include action %q to appear zero times, found %d — this page "+
+				"renders no header and must keep rendering no theme control", page, includeAction, got)
+		}
+	}
+
+	// i. The existing cross-file drift loop, unchanged: theme.js must still
+	// reference the control id, the glyph span id, and both icon modifier
+	// class names. This is what catches a rename on one side shipping a
+	// button that renders an empty circle.
 	jsRaw, err := StaticFS.ReadFile(themeJSPath)
 	if err != nil {
 		t.Fatalf("reading embedded %s: %v", themeJSPath, err)
@@ -273,6 +362,237 @@ func TestAccountHeaderRendersThemeControl(t *testing.T) {
 			t.Errorf("%s: expected a reference to %q — theme.js must address every id and class name "+
 				"the template and CSS declare, or a rename on one side ships a button that renders an "+
 				"empty circle", themeJSPath, ref)
+		}
+	}
+}
+
+// themeLengthTokenPrefix marks the design-token names
+// resolveThemeGeometryLength is allowed to sum: every declared spacing
+// token plus the shared touch-target token.
+const themeLengthTokenPrefix = "--space"
+
+// buildThemeGeometryTokenTable reads the exact :root rule out of main.css
+// and returns a name-to-pixel-integer map covering every declared spacing
+// token plus the shared touch-target token. It fails loudly if the
+// touch-target token or the large space token cannot be resolved, because
+// every later assertion in TestThemeToggleFloatsClearOfTheReportButton
+// depends on them.
+func buildThemeGeometryTokenTable(t *testing.T, mainCSSRules []cssRule) map[string]int {
+	t.Helper()
+
+	rootRule, ok := ruleBySelector(mainCSSRules, ":root")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/main.css", ":root")
+	}
+	decls := declsOf(rootRule.declBody)
+
+	tokens := map[string]int{}
+	for name, value := range decls {
+		if !strings.HasPrefix(name, themeLengthTokenPrefix) && name != "--touch-target-min" {
+			continue
+		}
+		trimmed := strings.TrimSuffix(strings.TrimSpace(value), "px")
+		n, convErr := strconv.Atoi(trimmed)
+		if convErr != nil {
+			continue
+		}
+		tokens[name] = n
+	}
+
+	if _, ok := tokens["--touch-target-min"]; !ok {
+		t.Fatalf(":root: could not resolve --touch-target-min to an integer pixel value")
+	}
+	if _, ok := tokens["--space-lg"]; !ok {
+		t.Fatalf(":root: could not resolve --space-lg to an integer pixel value")
+	}
+
+	return tokens
+}
+
+// themeGeometryVarRefRE matches one var(--token-name) reference.
+var themeGeometryVarRefRE = regexp.MustCompile(`var\(--[A-Za-z0-9-]+\)`)
+
+// resolveThemeGeometryLength resolves a CSS length expression (a plain
+// var() reference or a calc() summing several) to an integer number of
+// pixels, by finding every var() reference, looking each name up in tokens,
+// and summing them. It is the no-magic-number gate this test exists to
+// enforce: it fails the test outright if the expression resolves to zero
+// var() references, contains any px literal outside those references, or
+// contains a minus, asterisk or slash — arithmetic other than addition is
+// refused rather than silently mis-summed.
+func resolveThemeGeometryLength(t *testing.T, tokens map[string]int, expr string) int {
+	t.Helper()
+
+	matches := themeGeometryVarRefRE.FindAllString(expr, -1)
+	if len(matches) == 0 {
+		t.Fatalf("length expression %q contains no var() references — a hardcoded pixel value has no "+
+			"var references and must be rejected by this no-magic-number gate", expr)
+	}
+
+	stripped := expr
+	sum := 0
+	for _, m := range matches {
+		name := strings.TrimSuffix(strings.TrimPrefix(m, "var("), ")")
+		val, ok := tokens[name]
+		if !ok {
+			t.Fatalf("length expression %q references unknown token %q — not found on :root", expr, name)
+		}
+		sum += val
+		stripped = strings.Replace(stripped, m, "", 1)
+	}
+
+	if strings.Contains(stripped, "px") {
+		t.Fatalf("length expression %q contains a raw px literal outside its var() references", expr)
+	}
+	for _, op := range []string{"-", "*", "/"} {
+		if strings.Contains(stripped, op) {
+			t.Fatalf("length expression %q contains arithmetic operator %q other than addition — "+
+				"refusing to resolve it rather than silently mis-summing", expr, op)
+		}
+	}
+
+	return sum
+}
+
+// TestThemeToggleFloatsClearOfTheReportButton is a computed geometry lock
+// against .fab (main.css) and .theme-toggle (auth.css): it proves the two
+// controls' vertical bands cannot intersect and separately locks which of
+// the two occupies the lower slot, per the user's explicit D-A decision
+// (see 260923-rra-PLAN.md).
+//
+// Honest limit of this test's claim: static arithmetic over the shipped
+// declarations proves the two controls cannot overlap, that the control is
+// the lower of the two, that the raised report-button offset is derived
+// rather than hardcoded, and, as a side effect worth stating, that both
+// stylesheets were actually edited, since a half-done swap leaves both
+// rules claiming the same offset and the bands then intersect completely.
+// It cannot prove a browser paints them as a deliberate-looking pair, that
+// the result reads the way the user meant, or that nothing else on the page
+// collides at a narrow viewport.
+func TestThemeToggleFloatsClearOfTheReportButton(t *testing.T) {
+	mainRaw, err := StaticFS.ReadFile("static/css/main.css")
+	if err != nil {
+		t.Fatalf("reading embedded static/css/main.css: %v", err)
+	}
+	authRaw, err := StaticFS.ReadFile("static/css/auth.css")
+	if err != nil {
+		t.Fatalf("reading embedded static/css/auth.css: %v", err)
+	}
+
+	mainRules := parseCSSRules(string(mainRaw))
+	authRules := parseCSSRules(string(authRaw))
+
+	tokens := buildThemeGeometryTokenTable(t, mainRules)
+
+	fabRule, ok := ruleBySelector(mainRules, ".fab")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/main.css", ".fab")
+	}
+	toggleRule, ok := ruleBySelector(authRules, ".theme-toggle")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/auth.css", ".theme-toggle")
+	}
+	fabDecls := declsOf(fabRule.declBody)
+	toggleDecls := declsOf(toggleRule.declBody)
+
+	if toggleDecls["position"] != "fixed" {
+		t.Errorf(".theme-toggle: expected position: fixed, got %q", toggleDecls["position"])
+	}
+
+	if toggleDecls["right"] != fabDecls["right"] {
+		t.Errorf(".theme-toggle right (%q) must be string-equal to .fab right (%q) — the two share one "+
+			"vertical line by sharing the same token", toggleDecls["right"], fabDecls["right"])
+	}
+
+	fabBottomExpr := strings.TrimSpace(fabDecls["bottom"])
+	if !strings.HasPrefix(fabBottomExpr, "calc") {
+		t.Errorf(".fab: expected the bottom declaration to start with calc, got %q", fabBottomExpr)
+	}
+	if !strings.Contains(fabBottomExpr, "--touch-target-min") {
+		t.Errorf(".fab: expected the bottom declaration to reference --touch-target-min by name, which "+
+			"is what makes the raised offset derived from a control height rather than coincidentally "+
+			"equal to one — got %q", fabBottomExpr)
+	}
+	fabBottom := resolveThemeGeometryLength(t, tokens, fabBottomExpr)
+	if fabBottom <= 0 {
+		t.Errorf(".fab: resolved bottom must be a positive integer, got %d", fabBottom)
+	}
+
+	toggleBottomExpr := strings.TrimSpace(toggleDecls["bottom"])
+	if strings.Contains(toggleBottomExpr, "calc") {
+		t.Errorf(".theme-toggle: bottom must be a single plain token with no calc, got %q — any calc "+
+			"here means the two rules were swapped back or half edited", toggleBottomExpr)
+	}
+	toggleBottom := resolveThemeGeometryLength(t, tokens, toggleBottomExpr)
+	if toggleBottom <= 0 {
+		t.Errorf(".theme-toggle: resolved bottom must be a positive integer, got %d", toggleBottom)
+	}
+
+	fabZ, fabZErr := strconv.Atoi(strings.TrimSpace(fabDecls["z-index"]))
+	toggleZ, toggleZErr := strconv.Atoi(strings.TrimSpace(toggleDecls["z-index"]))
+	if fabZErr != nil || toggleZErr != nil {
+		t.Fatalf("both z-index values must parse as integers — .fab=%q .theme-toggle=%q", fabDecls["z-index"], toggleDecls["z-index"])
+	}
+	if toggleZ < fabZ {
+		t.Errorf(".theme-toggle z-index (%d) must be at least .fab's z-index (%d) — a lower value would "+
+			"let the report button's own stacking context cover the control", toggleZ, fabZ)
+	}
+
+	// THE ORDER LOCK: encodes the user's actual decision (D-A), not mere
+	// geometry. The band check below is direction agnostic and would pass
+	// just as happily with the two controls swapped, which is why this
+	// separate assertion has to exist: without it a later well-meaning
+	// "fix" restores the old arrangement with a fully green build.
+	if !(toggleBottom < fabBottom) {
+		t.Errorf("the control's resolved bottom (%d) must be strictly less than the report button's "+
+			"resolved bottom (%d), so the control occupies the LOWER slot — the user was asked directly "+
+			"and chose the toggle below the report button with the report button moved up, see D-A",
+			toggleBottom, fabBottom)
+	}
+
+	// THE BAND CHECK: direction agnostic, proves non-overlap and tightness.
+	fabHeight := resolveThemeGeometryLength(t, tokens, strings.TrimSpace(fabDecls["height"]))
+	toggleHeight := resolveThemeGeometryLength(t, tokens, strings.TrimSpace(toggleDecls["height"]))
+
+	type band struct {
+		bottom int
+		top    int
+	}
+	fabBand := band{bottom: fabBottom, top: fabBottom + fabHeight}
+	toggleBand := band{bottom: toggleBottom, top: toggleBottom + toggleHeight}
+
+	lower, upper := fabBand, toggleBand
+	if toggleBand.bottom < fabBand.bottom {
+		lower, upper = toggleBand, fabBand
+	}
+
+	gap := upper.bottom - lower.top
+	t.Logf("lower band: %d to %d; upper band: %d to %d; gap: %d", lower.bottom, lower.top, upper.bottom, upper.top, gap)
+
+	if lower.top > upper.bottom {
+		t.Errorf("the two controls' vertical bands intersect: lower band runs %d to %d, upper band runs "+
+			"%d to %d", lower.bottom, lower.top, upper.bottom, upper.top)
+	}
+	if gap <= 0 {
+		t.Errorf("gap between the two bands is %d — a gap of zero or less means the two circles touch "+
+			"or overlap", gap)
+	}
+	if gap > tokens["--space-lg"] {
+		t.Errorf("gap between the two bands is %d, larger than the large space token (%d) — the two no "+
+			"longer read as one stack", gap, tokens["--space-lg"])
+	}
+
+	// THE CASCADE ORPHAN GUARD: outside the account menu, .theme-toggle
+	// inherits none of display, align-items, justify-content or cursor from
+	// the menu item rule it used to free ride on. Without the first three,
+	// the 24px glyph sits on the button's text baseline instead of centered
+	// in the 44px circle — a visible defect with a green build.
+	for _, prop := range []string{"display", "align-items", "justify-content", "cursor"} {
+		if strings.TrimSpace(toggleDecls[prop]) == "" {
+			t.Errorf(".theme-toggle: missing its own %q declaration — outside the account menu it "+
+				"inherits nothing from .account-menu__item any more, and missing display, align-items or "+
+				"justify-content leaves the glyph sitting on the button's text baseline instead of "+
+				"centered in the 44px circle, a visible defect with a green build", prop)
 		}
 	}
 }
