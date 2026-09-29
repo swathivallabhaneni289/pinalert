@@ -454,14 +454,18 @@
   // click or dragend listeners, and never disable the search input,
   // because every one of those would violate D-04.
   function runSearch(query) {
+    // Incremented unconditionally, before the cache check: a cache-hit
+    // render must invalidate any older in-flight fetch the same way a new
+    // fetch would, or a slow response for an earlier (non-cached) query can
+    // still land after this cache-hit render and silently overwrite it.
+    searchSeq += 1;
+    var mySeq = searchSeq;
+
     var cacheKey = query.toLowerCase();
     if (searchCache.has(cacheKey)) {
       renderDropdown(searchCache.get(cacheKey));
       return;
     }
-
-    searchSeq += 1;
-    var mySeq = searchSeq;
 
     fetch('/api/geocode?q=' + encodeURIComponent(query))
       .then(function (res) {
