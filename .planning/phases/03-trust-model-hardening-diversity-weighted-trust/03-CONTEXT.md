@@ -7,9 +7,9 @@
 ## Phase Boundary
 
 This phase makes the trust numbers a reader sees on a report resistant to trivial gaming and easy
-for a first time user to understand. It delivers TRUST-05 (a "confirmed by N people nearby" count
-computed from distinct confirming places, not raw votes, with a deliberately chosen and documented
-geohash precision) and TRUST-07 (two distinct trust signals shown side by side on every report: a
+for a first time user to understand. It delivers TRUST-05 (a confirmed count, shown beside a disputed
+count, computed from distinct confirming places, not raw votes, with a deliberately chosen and
+documented geohash precision) and TRUST-07 (two distinct trust signals shown side by side on every report: a
 fast decaying "is this still current" signal, and a slow decaying "is this source reliable" signal,
 which is a public rating of the reporter).
 
@@ -108,8 +108,9 @@ cut, cut D-22 first. The server side check in D-01 is what makes "nearby" true a
 - **D-11:** **Outcomes.** Only **expired** reports are judged, because a vote on an expired report
   is rejected, so its tally is frozen and its outcome cannot change. Corroborated (2 or more
   independent confirming places, not out disputed) counts for. Contradicted (Hidden by dispute)
-  counts against. **A report that expires never confirmed counts as a mild negative**, weighted
-  less than a contradicted outcome (the user chose this over corroboration only). Reports still in
+  counts against. **A report that expires never confirmed counts against the source**, but less
+  than a contradicted outcome (credit 0.25, see D-23; the user chose to penalise unconfirmed reports
+  rather than judge corroboration only). Reports still in
   flight, and the reporter's own resolve or reopen, are neutral, so self resolving cannot erase a
   bad record. Classification calls `Resolve` with neutralised metadata (non critical severity, non
   rescue category) and a tally with the resolution fields zeroed, then maps Live by confirmation to
@@ -139,31 +140,39 @@ cut, cut D-22 first. The server side check in D-01 is what makes "nearby" true a
   (brigading detection is deferred, TRUSTX-03).
 
 ### Trust block display
-- **D-16:** **Count line:** `Confirmed by N people nearby` for any N of 1 or more (`Confirmed by 1
-  person nearby` at one) and nothing at zero. The noun "people" was added after the user asked
-  "confirmed by three what?" and matches the wording in the original project description. When
-  someone disputed, the same line ends with `, M disputed` (only when M is 1 or more; M is the
-  distinct dispute place count, R-04). Raw vote totals are never shown.
+- **D-16:** **Counters.** The top of the trust block is a small section of two counters side by
+  side on one line: the confirmed count and the disputed count, each a number followed by a short
+  label (`3 confirmed`, `1 disputed`). **Both are always shown, including zeros** (`0 confirmed`,
+  `0 disputed`), so a report nobody has confirmed but one person disputed reads `0 confirmed` and
+  `1 disputed`. The owner asked for the numbers to be shown, not just words, in a section of its own
+  that is not wordy. This replaces the earlier sentence style count line ("Confirmed by N people
+  nearby, M disputed"). The number is bold and the label regular, in the normal text color. N is the
+  distinct confirming place count (D-04) and M the distinct disputing place count (R-04). Raw vote
+  totals are never shown. The words "people nearby" live in the hover (D-19), so the labels stay
+  short.
 - **D-17:** The **Unconfirmed chip keeps its wording** (the user chose this over renaming it to
-  "Needs 2 confirmations"). At exactly 1 confirmation the row shows the chip and `Confirmed by 1
-  person nearby` together, and the user accepted that. Hovering the chip explains: "Needs 2
+  "Needs 2 confirmations"). At exactly 1 confirmation the row shows the chip and `1 confirmed`
+  together, and the user accepted that. Hovering the chip explains: "Needs 2
   confirmations before this counts as confirmed."
 - **D-18:** **Layout and words.** Two short lines of plain text in the normal text color (color is
-  reserved for severity): line 1 is the count line, line 2 is the still current word and the
+  reserved for severity): line 1 is the two counters (D-16), line 2 is the still current word and the
   reporter tag side by side, stacking on very narrow phones. No chips, bars, colors or icons. Still
   current words: **Up to date**, **Getting old**, **Needs re-confirming**, and **Too early to
   tell**. "Too early to tell" appears only when no Unconfirmed chip is showing, that is on critical
   and rescue needed reports with fewer than 2 confirming places, and it is identical for every
   severity with no warning phrase. On a Provisional row the second line shows only the reporter
-  tag, and so does a Hidden row in the Show disputed view (R-03). The user asked that the boxes not be filled with too many words, be simple and accessible,
-  and put detail on hover without feeling clumsy.
+  tag, and so does a Hidden row in the Show disputed view (R-03). The user asked that the boxes not
+  be filled with too many words, be simple and accessible, and put detail on hover without feeling
+  clumsy.
 - **D-19:** **Reasons on hover.** Hover on desktop, tap on touch and focus on keyboard (dismissible
-  with Escape) each show one short sentence with real numbers: the count line ("3 people in 3
-  different places confirmed this. Counts separate places, not votes."), the still current word ("2
-  different places confirmed this in the last 2 hours."), the reporter tag ("5 of 7 earlier reports
-  were confirmed by people nearby.") and the Unconfirmed chip (D-17). These four sentences are the
-  approved wording. N is a lower bound on people (D-04), and the second half of the count sentence
-  carries that caveat. Hover sentences for the other words and tags are left to Claude's Discretion.
+  with Escape) each show one short sentence with real numbers: the confirmed counter ("3 people in 3
+  different places confirmed this. Counts separate places, not votes."), the disputed counter ("1
+  person nearby disputed this."), the still current word ("2 different places confirmed this in the
+  last 2 hours."), the reporter tag ("5 of 7 earlier reports were confirmed by people nearby.") and
+  the Unconfirmed chip (D-17). The confirmed, still current, reporter tag and chip sentences are the
+  approved wording; the disputed sentence is a proposal for the UI contract to confirm. N is a lower
+  bound on people (D-04), and the second half of the confirmed sentence carries that caveat. Hover
+  sentences for the other words and tags are left to Claude's Discretion.
   Most phones have no hover, so tap and focus are required, not optional.
 - **D-20:** **One block, identical everywhere.** The same block appears on the feed row, the map
   popup and each of the reporter's own reports on the Activity page. There is no reporter only
@@ -189,6 +198,17 @@ cut, cut D-22 first. The server side check in D-01 is what makes "nearby" true a
   only geometry allowed in JavaScript and it grants nothing. The 1 km figure in the sentence is built
   from that supplied radius, never typed into a template or script.
 
+### Decisions made after research
+- **D-23:** **Unconfirmed credit is 0.25.** After the research, the owner chose that a source whose
+  reports all expire unconfirmed reads **Unreliable reporter** once 5 such reports are judged (score
+  about 32), over the researcher's recommended credit of 0.4 (which would read Mixed record, about
+  43). A corroborated report earns credit 1, a contradicted one 0 and an unconfirmed one 0.25. The
+  critical and rescue needed exemption (D-12) still applies. The research tables and its invariant I2
+  were computed with 0.4: the planner must recompute the worked examples and change I2 to "a history of
+  only unconfirmed reports, with at least 5 judged, always reads Unreliable reporter". The owner
+  accepted the stated cost: a newcomer in a quiet area can be tagged Unreliable after five quiet
+  reports.
+
 ### Derived rules (worked out from the decisions above, not separately reviewed by the owner)
 - **R-01:** **Not yet corroborated** means fewer than 2 distinct confirming places over the report's
   whole life (the same `ConfirmCells` the resolver gates on), not inside the window. In that state
@@ -204,11 +224,11 @@ cut, cut D-22 first. The server side check in D-01 is what makes "nearby" true a
   60 second `refreshAgeAndTime` timer in `feed.js`), and holds no thresholds. Intended consequence of
   D-07: a non critical report that no 2 places have re-confirmed inside the window dims earlier than
   Phase 1's last quarter rule.
-- **R-03:** On a **Hidden** row (Show disputed view only) line 1 is the count line with the dispute
-  count and line 2 shows only the reporter tag, like a Provisional row. No still current word and no
+- **R-03:** On a **Hidden** row (Show disputed view only) line 1 is the two counters and line 2
+  shows only the reporter tag, like a Provisional row. No still current word and no
   still current fade contribution appear there.
-- **R-04:** In `, M disputed`, M is `DisputeCells` from the same `BuildVoteTally`, the distinct
-  dispute places, so it obeys the same independence rule as N.
+- **R-04:** The disputed counter M is `DisputeCells` from the same `BuildVoteTally`, the distinct
+  dispute places, so it obeys the same independence rule as the confirmed counter N.
 - **R-05:** **What counts as judged (D-11, D-13).** A report is judged once its `expires_at` is at or
   before now, whether or not it was Retracted. The reporter's own resolve and reopen votes are ignored
   when classifying, so a self resolved report is judged by its content votes only. Neutral outcomes
@@ -228,7 +248,7 @@ cut, cut D-22 first. The server side check in D-01 is what makes "nearby" true a
   line 2 (for example "Up to date 82"), with no "/100", no bars and no icon, and the hover reason
   explains it. Nothing is shown when the score is null.
 - **R-08:** **Activity page.** The block appears on reports the account posted; reports the account
-  only voted on keep their current display. A Retracted or expired report there shows the count line
+  only voted on keep their current display. A Retracted or expired report there shows the counters
   and the reporter tag only, with no still current word. The only vote control on that page is the
   reporter's own Reopen, so the block updates from the trust object in `CastVoteResponse` after
   Reopen, and the page has no too far hint.
@@ -434,6 +454,9 @@ cut, cut D-22 first. The server side check in D-01 is what makes "nearby" true a
   the boxes "should not be filled with too many words, make it simple and accessible"; more detail
   belongs on hover; and it must not be clumsy. What readers see and what reporters see should be the
   same.
+- ROADMAP criterion 1 says the feed displays "confirmed by N nearby". The visible form is now the
+  counter `N confirmed` (D-16), with "people nearby" in the hover (D-19). If a stricter literal
+  reading of the criterion is wanted, the planner should ask the owner rather than assume.
 - "Confirmed by three what?" is the test every new string must pass: a first time user reads it
   without help.
 - The user wants clicking a report to open something like a post on X, with a discussion thread of

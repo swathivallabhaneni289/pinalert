@@ -56,7 +56,7 @@ map TRUST-05, TRUST-07, decisions D-01 to D-22 and derived rules R-01 to R-08 to
 | V-09 D-01 | `ReportVoteContext` returns report coordinates | store (DB) | `go test ./internal/store/ -run TestReportVoteContextReturnsCoordinates` | Wave 0 |
 | V-10 D-03 | Cell width and witness test (at most 24 distinct cells from 200 witnesses in 300 m at five latitudes) | unit | `go test ./internal/service/ -run TestGeohashPrecisionWitnesses` | Wave 0 |
 | V-11 D-04 TRUST-05 | `ConfirmedPlaces == ConfirmCells`, dedupe, permutation, reporter excluded | property | `-run TestBuildTrustCountsMatchTally` | Wave 0 |
-| V-12 D-16 R-04 TRUST-05 | Count line grammar (0, 1, 2, 99, 100, disputes, N=0 with M) | unit | `-run TestTrustCountLabel` | Wave 0 |
+| V-12 D-16 R-04 TRUST-05 | Counter labels for confirmed and disputed (0, 1, 2, 99, 100, both always shown, zeros included) | unit | `-run TestTrustCountLabel` | Wave 0 |
 | V-13 D-05 R-01 TRUST-07 | Currency boundary table (W-1ns, W, W+1ns, 2W, 2W+1ns, 4W, skew) for 8 h and 24 h | unit | `-run TestCurrencyScoreBoundaries` | Wave 0 |
 | V-14 R-01 | N below 2 gives null score and `not_yet_corroborated`, also for critical | unit | `-run TestCurrencyNotYetCorroborated` | Wave 0 |
 | V-15 D-05 | One account re-tapping cannot refresh; two places can | unit | `-run TestCurrencyRetapCannotRefresh` | Wave 0 |
@@ -66,7 +66,7 @@ map TRUST-05, TRUST-07, decisions D-01 to D-22 and derived rules R-01 to R-08 to
 | V-19 D-07 R-02 R-03 | Fade stage mapping, none for critical, rescue needed, Hidden, not applicable | unit | `-run TestFadeStageMapping` | Wave 0 |
 | V-20 D-11 D-12 R-05 R-06 | Outcome classification table, equals `Resolve` on neutral inputs | unit and property | `-run TestClassifyOutcome` | Wave 0 |
 | V-21 D-13 | Reliability worked table, boundaries (n 4 vs 5, 30 cap, exact 75 and 35) | unit | `-run TestReliabilityTable` | Wave 0 |
-| V-22 D-13 D-15 | Invariants I1 to I4 (spotless never Mixed, unconfirmed only Mixed, monotone, bounded) | property | `-run TestReliabilityInvariants` | Wave 0 |
+| V-22 D-13 D-15 | Invariants I1 to I4 (spotless always Reliable, unconfirmed only with n of at least 5 always Unreliable per D-23, monotone, bounded) | property | `-run TestReliabilityInvariants` | Wave 0 |
 | V-23 D-13 | Half life weights and 90 day window edge | unit | `-run TestReliabilityDecayAndWindow` | Wave 0 |
 | V-24 D-13 | Index named `idx_reports_session_expires` used, no Seq Scan on reports | store (DB) | `go test ./internal/store/ -run TestReporterHistoryUsesSessionIndex` | Wave 0 |
 | V-25 D-13 | History bounds: window, cap 30, expired only, multi session, accountless | store (DB) | `-run TestReporterHistoryBounds` | Wave 0 |
