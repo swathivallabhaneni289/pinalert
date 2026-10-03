@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 3
 status: not_started
-stopped_at: Phase 3 context gathered
-last_updated: "2026-09-30T07:38:56.314Z"
+stopped_at: "Sketch 001 closed (d4 wins, 124d34c). Next: sketch wrap-up, report page and comments phase, then /gsd-ui-phase 3"
+last_updated: "2026-10-03T06:48:05.560Z"
 progress:
   total_phases: 8
   completed_phases: 4
@@ -23,19 +23,18 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 
 **Core value:** A report showing "confirmed by N nearby" must be verifiably backed by N
 independent nearby confirmations, resistant to trivial gaming.
-**Current focus:** Phase 07 — address-search-box-for-report-location
-(8/8 plans, 7 waves, all merged to `main` directly — no phase branch, per explicit user choice) and
-holding at `human_needed`: `gsd-verifier` confirmed 5/5 ROADMAP success criteria against the live
-codebase (not just SUMMARY claims), but 3 items need a real browser (GPS-denial hard block,
-Provisional/Hidden visual legibility + "Show disputed" toggle, Mark Resolved/Reopen click-through)
-— tracked in `02-UAT.md`. Run `/gsd-verify-work 2` to close them out and complete the phase.
-Separately, Phase 1.1's one remaining item (live Resend delivery, SC2/IDENT-02) is still open and
-independent of Phase 2 — see Blockers/Concerns below.
+**Current focus:** Phase 3 (Trust-Model Hardening: Diversity-Weighted Trust). The popup design is
+chosen (sketch 001, variant d4), so the next step is the UI contract (`/gsd-ui-phase 3`), then
+`/gsd-plan-phase 3`. Open items from earlier phases that do not block planning: Phase 2's live retests
+(`02-UAT.md`, wanted before Phase 3 is executed) and Phase 1.1's live Resend delivery check
+(`01.1-UAT.md`, SC2/IDENT-02). See Blockers/Concerns below.
 
 ## Current Position
 
 Phase: 3 — Trust-Model Hardening: Diversity-Weighted Trust (not started)
-Status: Ready to plan. Phase 07 (address search box) completed 2026-09-29: 4/4 plans across 3
+Status: Context, research, validation draft, design brief and the popup sketch are done. Ready for the UI
+contract (`/gsd-ui-phase 3`); `/gsd-plan-phase 3` is gated on it. Phase 07 (address search box)
+completed 2026-09-29: 4/4 plans across 3
 waves, full regression suite green, 1 code-review Critical (CR-01 staleness guard) found and
 fixed, 6/6 UAT tests passed (including a live layout bug found and fixed mid-session — see
 `07-UAT.md`), security review closed with threats_open: 0 (`07-SECURITY.md`).
@@ -226,38 +225,27 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-30T07:38:56.298Z
-Stopped at: Phase 3 context gathered
-Prior sessions built Phase 1.1 (Identity & Login) end to end and re-verified Phase 2's 8 plans
-(catching and fixing a D-16 amendment ripple and a stale doc reference) — see prior entries in git
-history for full detail. Phase 1.1 remains at `human_needed` for its own unrelated item (live
-Resend delivery, `01.1-UAT.md`).
+Last session: 2026-10-03T06:48:05.549Z
+Stopped at: Sketch 001 closed (d4 wins, 124d34c). Next: sketch wrap-up, report page and comments phase, then /gsd-ui-phase 3
+Phase 3 so far: context (D-01 to D-23, R-01 to R-08), research, a draft validation plan (V-01 to V-42) and
+the design brief are committed. The popup was then sketched (sketches 001 and 002 in `.planning/sketches/`,
+four independent reviews) and the owner chose variant d4, built from their own reference image. Sketch 001 is
+closed and committed (`124d34c`). Its README lists where d4 departs from locked decisions D-18, D-19, D-20 and
+D-22 and from validation rows V-39 and V-40 (a pill severity label, grey signal words, one disclosure button
+instead of per word reasons, a 340px neutral card, an always visible too far sentence, a comments footer with
+no phase behind it). The UI contract has to record each of those as an explicit amendment. Sketch 002 (report
+page and thread) stays open until a separate report page and comments phase exists.
 
-This session then ran `/gsd-execute-phase 2` end to end: 7 sequential waves (wave 1 parallel —
-02-01 resolver + 02-02 vote log; waves 2-7 single-plan — 02-03a service layer, 02-03b HTTP routes,
-02-04 feed/map read path, 02-05 first clickable confirm/dispute UI, 02-06 trust-state legibility,
-02-07 mark-resolved/reopen), each in an isolated git worktree, merged back to `main` (direct
-commits, no phase branch — the user's explicit choice given `branching_strategy: none`), with a
-real build+test gate after every merge against a local Postgres 16 test database
-(`pinalert_test`) — final run: 213/213 tests, 0 failures, 0 skips. One executor handback (02-04)
-self-reported an incorrect `expected_base` in its `<worktree_metadata>` block (its own final
-commit instead of the real fork point); caught via `git merge-base --is-ancestor` before recording,
-worked around without incident.
+Order of work from here: package the sketch findings (`/gsd-sketch --wrap-up`), add the report page and
+comments phase (`/gsd-phase`), write the UI contract (`/gsd-ui-phase 3`), then plan (`/gsd-plan-phase 3`).
+`/gsd-plan-phase 3` exits at the UI gate until a UI-SPEC exists, and `/gsd-ui-phase 3` only reads sketches that
+the wrap-up has packaged into a findings skill.
 
-Post-execution gates: code review (`02-REVIEW.md`, 0 BLOCKER / 1 WARNING — vote routes have no
-rate limiting, see Blockers/Concerns / 2 INFO — pre-Phase-3 auth.go tightening notes; one review
-attempt stalled on a 600s watchdog and was cleanly retried), regression gate (covered by the
-repeated full-suite runs), and phase-goal verification (`02-VERIFICATION.md`, `gsd-verifier`
-independently confirmed all 5 ROADMAP success criteria against the live codebase — exactly 3
-call sites for `service.Resolve()` in the whole codebase, confirming the single-resolver
-architecture is structural, not conventional). Verifier also caught and this session fixed a
-stale `REQUIREMENTS.md` row (TRUST-09 marked "Pending" despite passing concurrency tests).
+Open items that do not block planning: Phase 2's live retests (`02-UAT.md` is still
+`fixes_shipped_pending_retest`; wanted before Phase 3 is executed, because Phase 3 rewrites the popup that the
+Mark resolved fix never covered) and Phase 1.1's live Resend delivery check (`01.1-UAT.md`). The `Mode: mvp`
+flag on Phase 3 has a Goal that is not written as a user story, the same guard that hit Phase 2, so decide
+between rewriting the goal and clearing the flag before planning. Build, review and verification history for
+Phases 1.1 and 2 lives in their phase directories and in git history.
 
-Status is `human_needed`, not `passed`: 3 planner-deferred `<human-check>` items (GPS-denial hard
-block, Provisional/Hidden visual legibility + "Show disputed" toggle, Mark Resolved/Reopen
-click-through) need a real browser, per `workflow.human_verify_mode: end-of-phase`. Persisted as
-`02-UAT.md`. Also flagged for a human decision, non-blocking: the code review's rate-limiting
-WARNING, and a verifier-surfaced `Mode: mvp` vs. non-user-story-Goal escalation on ROADMAP.md.
-
-Next: `/gsd-verify-work 2` (walks through the 3 UAT items) to close out the phase.
-Resume file: .planning/phases/03-trust-model-hardening-diversity-weighted-trust/03-CONTEXT.md
+Resume file: .planning/sketches/001-map-pin-popup/README.md
