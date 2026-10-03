@@ -19,8 +19,11 @@ responder claims, shareable cards) that depend on the trust signals built in Pha
 Added 2026-10-03, after the Phase 3 popup sketch: Phase 3.1 (report history views) and Phase 3.2
 (in-app updates and trusted-reporter alerts) sit right after Phase 3 because they consume its trust
 object, outcome labels and reliability tag. Phase 5 now leads with NDMA SACHET alerts. Phase 8
-(report page and comments) and Phase 9 (followable reporter profiles) come last, and Phase 9 is the
-first to cut if time runs short.
+(report page and comments) runs before Phase 6 because Phase 6's receipts and shareable cards link to its
+page, and Phase 9 (followable reporter profiles) comes last. Suggested cut order if time runs short, from the
+2026-10-03 independent reviews: Phase 9 first, then the Reliable-reporter filter and alerts (NOTIF-04 and
+NOTIF-05) from Phase 3.2, then the comments half of Phase 8, then the GDACS pins in Phase 5. Email digests
+stay in the backlog.
 
 ## Phases
 
