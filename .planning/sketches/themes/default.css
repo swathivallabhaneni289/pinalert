@@ -1,0 +1,8 @@
+/*
+ * Sketch theme for Pinalert.
+ *
+ * The design tokens belong to web/static/css/main.css, the single source of design tokens for the
+ * whole project. They are pulled in by reference so a sketch can never drift from the app. Light and
+ * dark come from that file's :root[data-theme] blocks. Nothing is redeclared here.
+ */
+@import url("../../../web/static/css/main.css");

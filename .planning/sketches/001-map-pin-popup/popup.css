@@ -1,0 +1,279 @@
+/*
+ * Proposed production CSS: the expanded map popup. In the app this belongs in the popup surface section of
+ * web/static/css/trust.css, next to the rules that already tint the popup with --severity-tint.
+ *
+ * Leaflet 1.9.4 ships popup defaults that break the design system: 13px Helvetica Neue text, a 13/24px
+ * margin around the content, a 24px close button, a 12px radius and a 14px 40% shadow. Every rule below
+ * keeps the .leaflet-container ancestor so it out ranks leaflet.css regardless of link order, the same
+ * discipline trust.css already documents.
+ *
+ * Two variants differ in one thing only, the header. A puts the badge beside the title, as the feed row does.
+ * B stacks the badge above the title, which follows the owner's listed order literally and gives the title
+ * and meta the full width. The switches on the root element (data-comments, data-resolve) are review tools:
+ * the shipped design is one unconditional set of values.
+ */
+
+/* One new token. It repeats the value .fab already uses, and must live on main.css :root because the app's
+   custom property allowlist forbids declaring it in trust.css, and its rgb( notation is banned there. */
+:root {
+  --shadow-popup: 0 2px 8px rgb(0 0 0 / 25%);
+}
+
+/* ---- Leaflet chrome ------------------------------------------------------------------------------ */
+.leaflet-container .leaflet-popup-content-wrapper {
+  padding: 0;
+  border-radius: 8px;
+  overflow: hidden; /* clips the 4px severity bar to the rounded corners */
+  box-shadow: var(--shadow-popup);
+}
+
+.leaflet-container .leaflet-popup-tip {
+  box-shadow: var(--shadow-popup);
+}
+
+.leaflet-container .leaflet-popup-content {
+  margin: 0;
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+}
+
+/* Leaflet also declares .leaflet-popup-content p { margin: 1.3em 0 }, which beats any class only margin and
+   is the source of the loose gaps in today's popup. Paragraphs carry no margin here, and every gap in the
+   popup comes from a flex gap or a section margin on the spacing scale instead. */
+.leaflet-container .leaflet-popup-content p {
+  margin: 0;
+}
+
+/* 44px close target, glyph on the display size so it reads at arm's length. Its glyph is centred on the
+   badge row (top 8px puts the centre 30px down, the badge centre is 32px). */
+.leaflet-container .leaflet-popup a.leaflet-popup-close-button {
+  top: var(--space-sm);
+  right: 0;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  font-family: var(--font-family);
+  font-size: var(--font-size-display);
+  line-height: var(--touch-target-min);
+  font-weight: var(--font-weight-regular);
+}
+
+/* The strip variant ends on a neutral row, so the tip below it takes the same surface. */
+:root[data-comments="strip"] .leaflet-container .leaflet-popup-tip {
+  background: var(--color-bg);
+}
+
+/* ---- Popup body ---------------------------------------------------------------------------------- */
+.map-popup__body {
+  padding: var(--space-md);
+  border-left: 4px solid var(--severity-current, var(--color-border));
+}
+
+/* Blocks are grouped by whitespace alone: identity, trust, actions. No dividers. */
+.map-popup__section + .map-popup__section {
+  margin-top: var(--space-md);
+}
+
+/* ---- Identity: badge, title, meta ---------------------------------------------------------------- */
+.map-popup__header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+/* Variant A: the close button owns the top right 44px, so the title keeps clear of it. */
+.map-popup__title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  flex: 1;
+  min-width: 0;
+  padding-right: var(--space-xl);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+  margin: 0;
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+/* Meta sits under the header at the full content width in both variants, so 'Road blocked · 6 hours ago ·
+   1.8 km' and the other long labels stay on one line. Shelter capacity takes its own line. */
+.map-popup__metas {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-xs);
+}
+
+.map-popup__meta {
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+}
+
+/* Variant B: the badge stands alone on the first line, the title below it uses the full width. */
+:root[data-variant="b"] .map-popup__header {
+  flex-direction: column;
+}
+
+:root[data-variant="b"] .map-popup__title {
+  width: 100%;
+  padding-right: 0;
+}
+
+/* ---- Actions: Confirm and Dispute share a row, Mark resolved takes the next --------------------- */
+.map-popup__section--actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.map-popup .vote-controls:not([hidden]) {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-sm);
+  margin-top: 0;
+}
+
+.map-popup .vote-btn--resolve,
+.map-popup .resolve-confirm {
+  grid-column: 1 / -1;
+}
+
+/* The quiet option: Mark resolved as an outlined neutral button like its two neighbours. The filled style
+   measures 14.4:1 against the tint while Confirm and Dispute measure 1.2:1, so the closing action would be the
+   loudest control in the popup. */
+:root[data-resolve="outlined"] .map-popup .vote-btn--resolve:not([hidden]):not(:disabled) {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+/* ---- Comments entry: a navigation row, never the thread ------------------------------------------ */
+/* Leaflet paints every link #0078A8 through .leaflet-container a, so the row names that ancestor and its
+   own tag to stay on the grayscale palette. */
+.leaflet-container a.map-popup__comments:not([hidden]) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  min-height: var(--touch-target-min);
+  color: var(--color-text);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.leaflet-container a.map-popup__comments:focus-visible {
+  outline-offset: -2px; /* inset, so the popup's clipped edge cannot cut the ring */
+}
+
+.map-popup__comments-text {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Only the action carries weight, so the row stays quieter than the trust block above it. */
+.map-popup__comments-action {
+  font-weight: var(--font-weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+
+.leaflet-container a.map-popup__comments:hover .map-popup__comments-action {
+  text-decoration-thickness: 2px;
+}
+
+/* tint: the row stays inside the tinted body under a hairline */
+:root[data-comments="tint"] .leaflet-container a.map-popup__comments {
+  margin-top: var(--space-md);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+/* strip: the row is a plain surface under the body, so muted text keeps 4.5:1 and it reads as navigation.
+   The transparent 4px border lines its text up with the body's content edge. No hover fill: it would drop
+   the muted count to 4.3:1, and the thicker underline already answers a pointer. */
+:root[data-comments="strip"] .leaflet-container a.map-popup__comments {
+  padding: var(--space-xs) var(--space-md);
+  border-top: 1px solid var(--color-border);
+  border-left: 4px solid transparent;
+  background: var(--color-bg);
+}
+
+:root[data-comments="strip"] .map-popup__comments-count {
+  color: var(--color-text-muted);
+}
+
+/* ---- Variant C: composed ------------------------------------------------------------------------------
+   Four zones instead of a tall list of rows. The header is the row header of A. Counts and signals sit side by
+   side as two columns of plain text. Confirm and Dispute share one row with Mark resolved as a quiet text action
+   beside them. Comments is a one line footer. */
+
+/* Trust: votes on the left, signals on the right. Both columns use the 24px line of the counts so the rows
+   line up. If the pair is too wide for the popup the signals column wraps under the counts, as in B. */
+:root[data-variant="c"] .trust-block:not([hidden]) {
+  flex-direction: row;
+  flex-wrap: wrap;
+  column-gap: var(--space-md);
+  row-gap: var(--space-xs);
+}
+
+:root[data-variant="c"] .trust-block__counts:not([hidden]),
+:root[data-variant="c"] .trust-block__signals:not([hidden]) {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  row-gap: var(--space-xs);
+  line-height: calc(var(--font-size-body) * var(--line-height-body));
+}
+
+/* The signals stack, so there is no separator to draw. */
+:root[data-variant="c"] .trust-block__signal + .trust-block__signal::before {
+  display: none;
+}
+
+/* Actions: one row. Confirm and Dispute share the width, Mark resolved is a text action at the end. */
+:root[data-variant="c"] .map-popup .vote-controls:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+:root[data-variant="c"] .map-popup .vote-controls .vote-btn--confirm,
+:root[data-variant="c"] .map-popup .vote-controls .vote-btn--dispute {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+:root[data-variant="c"] .map-popup .vote-controls .vote-btn--resolve:not([hidden]):not(:disabled) {
+  flex: 0 0 auto;
+  padding: 0 var(--space-xs);
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* On your own report Mark resolved is the only action, so it keeps a button's edge and the full width. */
+:root[data-variant="c"] .map-popup .vote-controls .vote-btn--resolve:only-of-type:not([hidden]):not(:disabled) {
+  flex: 1 1 100%;
+  border-color: var(--color-border);
+  background: var(--color-bg);
+  text-decoration: none;
+}
+
+:root[data-variant="c"] .map-popup .vote-controls .resolve-confirm {
+  flex: 1 0 100%;
+}
+
+/* Footer: the count and the action on one line. The word Comments stays in the link for screen readers. */
+:root[data-variant="c"] .leaflet-container a.map-popup__comments:not([hidden]) {
+  align-items: center;
+}

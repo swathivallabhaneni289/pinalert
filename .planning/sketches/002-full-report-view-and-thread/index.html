@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sketch 002: Full report view and thread</title>
+  <style>
+    /* Review board chrome only. Not part of the product, so it does not use the app's tokens. */
+    :root { color-scheme: light dark; --bd: #c9ccd1; --muted: #5b616b; --bg: #f4f5f6; --card: #ffffff; --fg: #15181c; --accent: #15181c; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bd: #3a3e44; --muted: #a3a9b3; --bg: #101215; --card: #181b1f; --fg: #eceef1; --accent: #eceef1; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 72px 24px 48px; background: var(--bg); color: var(--fg);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    #variant-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 10; display: flex; gap: 8px; align-items: center;
+      padding: 12px 24px; background: var(--card); border-bottom: 1px solid var(--bd); }
+    #variant-nav .title { font-weight: 600; margin-right: 16px; }
+    button, select { font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--bd); border-radius: 6px;
+      padding: 6px 12px; cursor: pointer; transition: background-color 150ms ease, border-color 150ms ease; }
+    button:hover, select:hover { border-color: var(--muted); }
+    button.on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+    .controls { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: center; margin-bottom: 24px; }
+    .controls .group { display: flex; align-items: center; gap: 8px; }
+    .controls .group > span { color: var(--muted); }
+    .frames { display: flex; flex-wrap: wrap; gap: 32px; align-items: flex-start; }
+    figure { margin: 0; }
+    figcaption { font-weight: 600; margin-bottom: 8px; }
+    iframe { display: block; border: 1px solid var(--bd); border-radius: 8px; background: #fff; }
+    .rules { margin: 8px 0 0; max-width: 560px; color: var(--muted); font-size: 13px; }
+    .rules.bad { color: #b3261e; }
+    .rules ul { margin: 4px 0 0; padding-left: 16px; }
+    .notes { max-width: 860px; margin-top: 32px; }
+    .notes h2 { font-size: 16px; margin: 0 0 8px; }
+    .notes p, .notes li { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div id="variant-nav">
+    <span class="title">Sketch 002: Full report view and thread</span>
+    <button class="variant-tab on" data-variant="a">A: Page</button>
+    <button class="variant-tab" data-variant="b">B: Split with map</button>
+  </div>
+
+  <div class="controls">
+    <div class="group"><span>Report state</span>
+      <select id="state">
+        <option value="critical">Critical, 2 comments (your spec)</option>
+        <option value="early">Critical, no comments yet</option>
+        <option value="quiet">Low, gone quiet, 1 comment</option>
+        <option value="unconfirmed">Low shelter, unconfirmed</option>
+        <option value="contested">Medium, contested, 3 comments</option>
+        <option value="storm">Medium storm, longest category label</option>
+        <option value="own">Your own report</option>
+        <option value="far">Too far to vote</option>
+        <option value="long">Long text</option>
+      </select>
+    </div>
+    <div class="group"><span>Screen</span>
+      <button data-width="360" class="on">Phone 360</button><button data-width="1100">Desktop 1100</button>
+    </div>
+    <div class="group"><span>Mark resolved</span>
+      <button data-resolve="filled" class="on">Filled</button><button data-resolve="outlined">Outlined</button>
+    </div>
+  </div>
+
+  <div class="frames">
+    <figure><figcaption>Light</figcaption><iframe id="frame-light" title="Light theme report view"></iframe><div class="rules" id="rules-light">Checking the rules...</div></figure>
+    <figure><figcaption>Dark</figcaption><iframe id="frame-dark" title="Dark theme report view"></iframe><div class="rules" id="rules-dark">Checking the rules...</div></figure>
+  </div>
+
+  <div class="notes">
+    <h2 id="note-title"></h2>
+    <p id="note-body"></p>
+    <h2>What to look for</h2>
+    <ul>
+      <li>Is it obvious this is the same report you just tapped, only larger: same badge, same trust block, same three actions?</li>
+      <li>Does the thread read as a plain list, oldest first, with nothing that looks like a social feed?</li>
+      <li>Post a comment at the bottom. It joins the end of the thread and the count updates.</li>
+      <li>Open the phone size first. The desktop view only changes the width, or in B adds the map beside the panel.</li>
+    </ul>
+    <p>The Reporter label marks the report author's own replies in words. No identities, emails or avatars are shown. The composer is not in your brief: it is included so the thread is complete, and it is one label, one box and one button. Thread text is sample data.</p>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+      var VARIANTS = {
+        a: { title: 'A: Page',
+          body: 'View comments opens a dedicated page in the same frame as the Activity page: a back arrow to the map, the report block, then the thread. A plain URL per report, server rendered, works on any screen and can be shared. Leaving the map means the map reloads when you go back.' },
+        b: { title: 'B: Split with map',
+          body: 'Identical to A on a phone. On a wide screen the report opens as a panel to the right and the map stays visible with the pin on it. It keeps location context but needs client side state to open and close the panel, and a phone still needs a full screen sheet.' }
+      };
+      var st = { variant: 'a', state: 'critical', width: 360, resolve: 'outlined' };
+
+      function url(theme) {
+        var p = new URLSearchParams({ theme: theme, variant: st.variant, state: st.state, width: st.width, resolve: st.resolve });
+        return 'stage.html?' + p.toString();
+      }
+      function mark(selector, attr, value) {
+        document.querySelectorAll(selector).forEach(function (b) { b.classList.toggle('on', b.getAttribute(attr) === String(value)); });
+      }
+      function render() {
+        ['light', 'dark'].forEach(function (theme) {
+          var frame = document.getElementById('frame-' + theme);
+          frame.style.width = st.width + 'px';
+          frame.style.height = (st.width > 600 ? 720 : 640) + 'px';
+          frame.src = url(theme);
+          var slot = document.getElementById('rules-' + theme);
+          slot.className = 'rules';
+          slot.textContent = 'Checking the rules...';
+        });
+        mark('.variant-tab', 'data-variant', st.variant);
+        mark('[data-width]', 'data-width', st.width);
+        mark('[data-resolve]', 'data-resolve', st.resolve);
+        document.getElementById('note-title').textContent = VARIANTS[st.variant].title;
+        document.getElementById('note-body').textContent = VARIANTS[st.variant].body;
+      }
+      document.querySelectorAll('.variant-tab').forEach(function (b) {
+        b.addEventListener('click', function () { st.variant = b.getAttribute('data-variant'); render(); });
+      });
+      document.querySelectorAll('[data-width]').forEach(function (b) {
+        b.addEventListener('click', function () { st.width = parseInt(b.getAttribute('data-width'), 10); render(); });
+      });
+      document.querySelectorAll('[data-resolve]').forEach(function (b) {
+        b.addEventListener('click', function () { st.resolve = b.getAttribute('data-resolve'); render(); });
+      });
+      document.getElementById('state').addEventListener('change', function (e) { st.state = e.target.value; render(); });
+
+      window.addEventListener('message', function (e) {
+        var d = e.data;
+        if (!d || d.type !== 'rules' || d.meta.sketch !== '002') { return; }
+        var slot = document.getElementById('rules-' + d.meta.theme);
+        var n = d.result.violations.length;
+        slot.textContent = '';
+        if (n === 0) {
+          slot.className = 'rules';
+          slot.textContent = 'Design rules check: passed on ' + d.result.stats.elements + ' elements.';
+          return;
+        }
+        slot.className = 'rules bad';
+        slot.appendChild(document.createTextNode('Design rules check: ' + n + (n === 1 ? ' violation' : ' violations')));
+        var list = document.createElement('ul');
+        d.result.violations.slice(0, 8).forEach(function (v) {
+          var li = document.createElement('li');
+          li.textContent = v.rule + ': ' + v.element + ' (' + v.detail + ')';
+          list.appendChild(li);
+        });
+        slot.appendChild(list);
+      });
+
+      render();
+    }());
+  </script>
+</body>
+</html>

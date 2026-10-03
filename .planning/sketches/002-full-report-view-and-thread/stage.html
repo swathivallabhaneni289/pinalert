@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" data-variant="a" data-resolve="outlined">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sketch 002 stage</title>
+  <script>
+    (function () {
+      var q = new URLSearchParams(location.search);
+      var root = document.documentElement;
+      root.setAttribute('data-theme', q.get('theme') === 'dark' ? 'dark' : 'light');
+      if (q.get('variant')) { root.setAttribute('data-variant', q.get('variant')); }
+      if (q.get('resolve')) { root.setAttribute('data-resolve', q.get('resolve')); }
+    }());
+  </script>
+  <!-- Same order as profile.html.tmpl, plus Leaflet for variant B's map. -->
+  <link rel="stylesheet" href="../themes/default.css">
+  <link rel="stylesheet" href="../../../web/static/css/feed.css">
+  <link rel="stylesheet" href="../../../web/static/css/trust.css">
+  <link rel="stylesheet" href="../../../web/static/css/auth.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="../shared/report-block.css">
+  <link rel="stylesheet" href="view.css">
+  <style>
+    /* Mockup only. */
+    #map { background: var(--color-surface); }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <button type="button" class="account-trigger" aria-label="Account menu">
+      <span class="auth-icon auth-icon--user" aria-hidden="true"></span>
+    </button>
+  </header>
+
+  <div class="view-shell">
+    <div class="view-map"><div id="map"></div></div>
+    <main class="profile-page report-view" id="report-view"></main>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
+  <script src="../shared/sketch-shared.js"></script>
+  <script src="../shared/rules-check.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      var q = Sketch.params();
+      var r = Sketch.getState(q.state);
+      var el = Sketch.el;
+      var main = document.getElementById('report-view');
+      var variant = document.documentElement.getAttribute('data-variant');
+
+      Sketch.injectGlyphMasks();
+
+      // Back to the map: the popup stage, on the same report and theme.
+      var back = el('a', 'profile-back-link');
+      var popupParams = new URLSearchParams();
+      ['theme', 'state', 'width', 'resolve', 'comments'].forEach(function (k) { if (q[k]) { popupParams.set(k, q[k]); } });
+      popupParams.set('variant', 'a');
+      back.href = '../001-map-pin-popup/stage.html?' + popupParams.toString();
+      back.setAttribute('aria-label', 'Back to map');
+      var arrow = el('span', 'auth-icon auth-icon--arrow-left');
+      arrow.setAttribute('aria-hidden', 'true');
+      back.appendChild(arrow);
+      main.appendChild(back);
+
+      // The report block: badge, title, meta, chip, trust block, actions. One component, three places.
+      var block = el('article', 'report-view__report ' + Sketch.stateClasses(r));
+      var header = el('div', 'report-view__header');
+      var heading = el('div', 'report-view__heading');
+      heading.appendChild(Sketch.buildTitle(r, 'report-view__title', 'h1'));
+      var metas = el('div', 'report-view__metas');
+      Sketch.metaParts(r).forEach(function (parts) { metas.appendChild(Sketch.buildMetaLine(parts, 'report-view__meta')); });
+      heading.appendChild(metas);
+      header.appendChild(Sketch.buildBadge(r, 'sm'));
+      header.appendChild(heading);
+      block.appendChild(header);
+      if (r.chip) { block.appendChild(el('span', 'visibility-tag', r.chip)); }
+      var trust = Sketch.buildTrustBlock(r, { scores: true });
+      block.appendChild(trust);
+      var actions = Sketch.buildActions(r, trust);
+      block.appendChild(actions.controls);
+      block.appendChild(actions.note);
+      main.appendChild(block);
+
+      // The thread.
+      var section = el('section', 'thread-section');
+      section.setAttribute('aria-labelledby', 'comments-heading');
+      var head = el('div', 'thread-section__head');
+      var title = el('h2', 'thread-section__title', 'Comments');
+      title.id = 'comments-heading';
+      var count = el('p', 'thread-section__count', Sketch.commentsText(r.thread.length));
+      count.setAttribute('role', 'status');
+      head.appendChild(title);
+      head.appendChild(count);
+      section.appendChild(head);
+
+      var list = el('ol', 'thread');
+      var empty = el('p', 'thread-empty', 'No comments yet.');
+
+      function addComment(c) {
+        var item = el('li', 'thread__item');
+        var meta = el('p', 'thread__meta');
+        if (c.reporter) { meta.appendChild(el('span', 'thread__author', 'Reporter')); }
+        meta.appendChild(el('span', 'thread__time', c.timeText));
+        item.appendChild(meta);
+        item.appendChild(el('p', 'thread__body', c.body));
+        list.appendChild(item);
+      }
+      r.thread.forEach(addComment);
+      section.appendChild(list);
+      if (!r.thread.length) { section.appendChild(empty); }
+
+      // A composer so the thread is complete. Not in the brief, so it is one label, one box, one button.
+      var form = el('form', 'composer');
+      var label = el('label', null, 'Add a comment');
+      label.setAttribute('for', 'comment-body');
+      var box = el('textarea');
+      box.id = 'comment-body';
+      box.rows = 3;
+      var post = el('button', 'btn', 'Post comment');
+      post.type = 'submit';
+      form.appendChild(label);
+      form.appendChild(box);
+      form.appendChild(post);
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var text = box.value.trim();
+        if (!text) { return; }
+        addComment({ reporter: false, timeText: 'just now', body: text });
+        r.thread.push({});
+        count.textContent = Sketch.commentsText(r.thread.length);
+        if (empty.parentNode) { empty.remove(); }
+        box.value = '';
+      });
+      section.appendChild(form);
+      main.appendChild(section);
+
+      // Variant B keeps the map visible beside the panel on wide screens.
+      if (variant === 'b' && window.innerWidth >= 900) {
+        var map = L.map('map', { zoomControl: false, attributionControl: false, zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false });
+        var ok = false;
+        try { ok = !!document.createElement('canvas').getContext('webgl2'); } catch (e) { ok = false; }
+        if (typeof L.maplibreGL === 'function' && typeof maplibregl !== 'undefined' && ok) {
+          L.maplibreGL({ style: 'https://tiles.openfreemap.org/styles/liberty' }).addTo(map);
+        }
+        var center = [13.05, 80.2824];
+        map.setView(center, 16, { animate: false });
+        L.marker(center, { icon: L.divIcon({ html: Sketch.buildBadge(r, 'pin'), className: '', iconSize: [44, 44] }) }).addTo(map);
+      }
+
+      // The page has no popup comments row, so the thread heading and count take its place in the order.
+      var critical = !q.state || q.state === 'critical';
+      var fire = Sketch.STATES.critical.thread;
+      var expected = critical
+        ? Sketch.EXPECTED_ORDER.slice(0, 9).concat(['Comments', '2 comments', 'Reporter', '3 min ago', fire[0].body, '1 min ago', fire[1].body])
+        : null;
+
+      window.setTimeout(function () {
+        var result = SketchRules.check(main, {
+          report: r,
+          expectedOrder: expected,
+          allowMixed: r.age !== 'fresh' || r.visibility !== 'live'
+        });
+        Sketch.post({ theme: q.theme || 'light', sketch: '002' }, result);
+      }, variant === 'b' ? 1400 : 500);
+    }());
+  </script>
+</body>
+</html>

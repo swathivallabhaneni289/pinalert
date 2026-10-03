@@ -1,0 +1,238 @@
+/*
+ * Proposed production CSS: the full report view that "View comments" opens. In the app this would be a
+ * server rendered /reports/{id} page beside profile.html.tmpl. It reuses auth.css's .profile-page frame and
+ * .profile-back-link, so only the report block and the thread are new. Tokens only, four sizes, two weights,
+ * spacing from the scale, no cards, no avatars, no shadows.
+ */
+
+/* ---- Report block: the same anatomy as the popup body and the feed row, on the page -------------- */
+.report-view__report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border-left: 4px solid var(--severity-current, var(--color-border));
+  background: var(--severity-tint, transparent);
+}
+
+.report-view__header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+}
+
+.report-view__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  flex: 1;
+  min-width: 0;
+}
+
+.report-view__title {
+  margin: 0;
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.report-view__metas {
+  display: flex;
+  flex-direction: column;
+}
+
+.report-view__meta {
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+}
+
+/* A 1000 character description is allowed, so on a phone the title uses the heading size and the trust
+   block and actions stay near the first screen. Both sizes are already in the four. */
+@media (max-width: 599.98px) {
+  .report-view__title {
+    font-size: var(--font-size-heading);
+    line-height: var(--line-height-heading);
+  }
+}
+
+/* The chip is an inline element, so it must not stretch the flex column. */
+.report-view__report .visibility-tag {
+  align-self: flex-start;
+  margin: 0;
+}
+
+/* On a phone the two votes share a row and Mark resolved takes the next, exactly as in the popup. */
+.report-view__report .vote-controls:not([hidden]) {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-sm);
+  margin-top: 0;
+}
+
+.report-view__report .vote-btn--resolve,
+.report-view__report .resolve-confirm {
+  grid-column: 1 / -1;
+}
+
+/* The quiet option chosen in sketch 001 carries through: Mark resolved as an outlined neutral button. */
+:root[data-resolve="outlined"] .report-view__report .vote-btn--resolve:not([hidden]):not(:disabled) {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+/* With room to spare the buttons keep their natural widths instead of stretching across the page. */
+@media (min-width: 600px) {
+  .report-view__report .vote-controls:not([hidden]) {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .report-view__report .vote-btn {
+    min-width: 96px;
+  }
+}
+
+/* ---- Thread: a plain chronological list, oldest first --------------------------------------------- */
+.thread-section {
+  margin-top: var(--space-lg);
+}
+
+.thread-section__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.thread-section__title {
+  margin: 0;
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+/* Muted is safe here: this sits on the plain page surface, where --color-text-muted keeps 4.5:1. */
+.thread-section__count {
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+.thread {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.thread__item {
+  padding: var(--space-md) 0;
+}
+
+.thread__item + .thread__item {
+  border-top: 1px solid var(--color-border);
+}
+
+.thread__meta {
+  display: flex;
+  gap: var(--space-sm);
+  margin: 0 0 var(--space-xs);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+/* The reporter's own replies are marked in words, not with an avatar or a colour. */
+.thread__author {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.thread__body {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.thread-empty {
+  margin: 0;
+  padding: var(--space-md) 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text-muted);
+}
+
+/* ---- Composer: one label, one box, one button ----------------------------------------------------- */
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-lg);
+}
+
+.composer label {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+/* Same treatment as #location-search in modal.css. */
+.composer textarea {
+  width: 100%;
+  min-height: calc(var(--touch-target-min) * 2);
+  padding: var(--space-sm);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-text-muted); /* --color-border is 1.28:1 on the page, under the 3:1 floor for a field edge */
+  border-radius: 6px;
+  resize: vertical;
+}
+
+.composer .btn {
+  align-self: flex-end;
+}
+
+/* ---- Variant B: on a wide screen the report opens as a side panel and the map stays in view ------ */
+.view-map {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  :root[data-variant="b"] .view-shell {
+    display: grid;
+    grid-template-columns: 1fr 440px;
+    height: 100vh;
+  }
+
+  :root[data-variant="b"] .view-map {
+    display: block;
+  }
+
+  :root[data-variant="b"] .report-view__title {
+    font-size: var(--font-size-heading);
+    line-height: var(--line-height-heading);
+  }
+
+  :root[data-variant="b"] .report-view {
+    max-width: none;
+    margin: 0;
+    overflow-y: auto;
+    border-left: 1px solid var(--color-border);
+  }
+}

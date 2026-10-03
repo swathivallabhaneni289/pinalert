@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" data-variant="b" data-comments="strip" data-resolve="outlined">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sketch 001 stage</title>
+  <script>
+    // Theme and variant switches are read from the address before first paint, so a frame never flashes.
+    (function () {
+      var q = new URLSearchParams(location.search);
+      var root = document.documentElement;
+      root.setAttribute('data-theme', q.get('theme') === 'dark' ? 'dark' : 'light');
+      ['variant', 'comments', 'resolve'].forEach(function (key) {
+        if (q.get(key)) { root.setAttribute('data-' + key, q.get(key)); }
+      });
+    }());
+  </script>
+  <script>
+    // Design variants d1, d2, ... live in their own files: variants/<key>.css and variants/<key>.js. The script
+    // defines window.PopupVariant = { build(report, ctx), expectedOrder } and is loaded before the stage script.
+    (function () {
+      var v = new URLSearchParams(location.search).get('variant');
+      if (v && /^d[0-9]+$/.test(v)) {
+        document.write('<link rel="stylesheet" href="variants/' + v + '.css">');
+        window.__variantKey = v;
+      }
+    }());
+  </script>
+  <!-- Same order as index.html.tmpl: app stylesheets first, Leaflet after them. -->
+  <link rel="stylesheet" href="../themes/default.css">
+  <link rel="stylesheet" href="../../../web/static/css/feed.css">
+  <link rel="stylesheet" href="../../../web/static/css/trust.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css">
+  <!-- Proposed production CSS for the new pieces. -->
+  <link rel="stylesheet" href="../shared/report-block.css">
+  <link rel="stylesheet" href="popup.css">
+  <style>
+    /* Mockup only. The frame is the phone; #map keeps the app's own 100dvh rule from main.css. */
+    html, body { margin: 0; height: 100%; overflow: hidden; }
+    #map { background: var(--color-surface); }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
+  <script src="../shared/sketch-shared.js"></script>
+  <script src="../shared/rules-check.js"></script>
+  <script>
+    if (window.__variantKey) { document.write('<script src="variants/' + window.__variantKey + '.js"><\/script>'); }
+  </script>
+  <script>
+    (function () {
+      'use strict';
+
+      var q = Sketch.params();
+      var report = Sketch.getState(q.state);
+      var el = Sketch.el;
+      var CENTER = [13.05, 80.2824]; // Marina Beach Road, Chennai
+
+      Sketch.injectGlyphMasks();
+
+      function buildPopupContent(r) {
+        var wrap = el('div', 'map-popup');
+        var body = el('div', 'map-popup__body');
+
+        // 1 to 3: category badge, title, meta line (and the Unconfirmed chip when it applies)
+        var identity = el('div', 'map-popup__section');
+        var header = el('div', 'map-popup__header');
+        header.appendChild(Sketch.buildBadge(r, 'sm'));
+        header.appendChild(Sketch.buildTitle(r, 'map-popup__title'));
+        identity.appendChild(header);
+        var metas = el('div', 'map-popup__metas');
+        Sketch.metaParts(r).forEach(function (parts) { metas.appendChild(Sketch.buildMetaLine(parts, 'map-popup__meta')); });
+        identity.appendChild(metas);
+        if (r.chip) {
+          var chip = el('span', 'visibility-tag', r.chip);
+          identity.appendChild(chip);
+        }
+        body.appendChild(identity);
+
+        // 4 and 5: trust block
+        var trust = Sketch.buildTrustBlock(r, { scores: true });
+        var trustSection = el('div', 'map-popup__section');
+        trustSection.appendChild(trust);
+        body.appendChild(trustSection);
+
+        // 6: actions
+        var actions = Sketch.buildActions(r, trust);
+        var actionSection = el('div', 'map-popup__section map-popup__section--actions');
+        actionSection.appendChild(actions.controls);
+        actionSection.appendChild(actions.note);
+        body.appendChild(actionSection);
+
+        // 7: comments entry, inside the tinted body or as a strip under it
+        var comments = Sketch.buildCommentsRow(r, Sketch.commentsHref(q));
+        if (document.documentElement.getAttribute('data-comments') === 'strip') {
+          wrap.appendChild(body);
+          wrap.appendChild(comments);
+        } else {
+          body.appendChild(comments);
+          wrap.appendChild(body);
+        }
+        return wrap;
+      }
+
+      var map = L.map('map', {
+        zoomControl: false,
+        attributionControl: false,
+        zoomAnimation: false,
+        fadeAnimation: false,
+        markerZoomAnimation: false
+      });
+
+      function hasWebgl2() {
+        try { return !!document.createElement('canvas').getContext('webgl2'); } catch (e) { return false; }
+      }
+      // Same basemap the app uses, fixed in every theme (revert of 02-11).
+      if (typeof L.maplibreGL === 'function' && typeof maplibregl !== 'undefined' && hasWebgl2()) {
+        L.maplibreGL({ style: 'https://tiles.openfreemap.org/styles/liberty' }).addTo(map);
+      }
+
+      map.setView(CENTER, 16, { animate: false });
+      map.panBy([0, -Math.round(window.innerHeight * 0.2)], { animate: false });
+
+      function pinIcon(r) {
+        return L.divIcon({ html: Sketch.buildBadge(r, 'pin'), className: '', iconSize: [44, 44], popupAnchor: [0, -22] });
+      }
+
+      // Two neighbouring pins give the popup a realistic map around it.
+      var flood = Sketch.STATES.contested;
+      var road = Sketch.STATES.quiet;
+      L.marker([CENTER[0] + 0.0021, CENTER[1] + 0.0031], { icon: pinIcon(flood) }).addTo(map);
+      L.marker([CENTER[0] - 0.0014, CENTER[1] - 0.0034], { icon: pinIcon(road) }).addTo(map);
+
+      var marker = L.marker(CENTER, { icon: pinIcon(report) }).addTo(map);
+      // 300px, or the viewport less a 16px gutter each side on a 320px phone.
+      var popupWidth = Math.min((window.PopupVariant && window.PopupVariant.width) || 300, window.innerWidth - 32);
+      function buildContent(r) {
+        if (window.PopupVariant && typeof window.PopupVariant.build === 'function') {
+          return window.PopupVariant.build(r, { q: q, Sketch: Sketch, el: el, href: Sketch.commentsHref(q) });
+        }
+        return buildPopupContent(r);
+      }
+      marker.bindPopup(buildContent(report), {
+        className: Sketch.stateClasses(report),
+        minWidth: popupWidth,
+        maxWidth: popupWidth,
+        autoPan: true,
+        autoPanPaddingTopLeft: [16, 16],
+        autoPanPaddingBottomRight: [16, 16],
+        closeOnClick: false
+      });
+
+      function runChecks() {
+        var popup = document.querySelector('.leaflet-popup');
+        if (!popup) { return; }
+        var wrapper = popup.querySelector('.leaflet-popup-content-wrapper');
+        var result = SketchRules.check(wrapper, {
+          report: report,
+          extra: [popup.querySelector('.leaflet-popup-close-button')],
+          expectWidth: [popupWidth - 4, popupWidth + 6],
+          maxRadius: (window.PopupVariant && window.PopupVariant.maxRadius) || 8,
+          radiusExempt: (window.PopupVariant && window.PopupVariant.radiusExempt) || null,
+          // In the composed variant the trust block is two columns, so it reads across rows: the first count, the
+          // first signal, the second count, the second signal.
+          expectedOrder: (window.PopupVariant && window.PopupVariant.expectedOrder) ? ((!q.state || q.state === 'critical') ? window.PopupVariant.expectedOrder : null) : (!q.state || q.state === 'critical') ? (q.variant === 'c' ? Sketch.EXPECTED_ORDER.slice(0, 3).concat([Sketch.EXPECTED_ORDER[4], Sketch.EXPECTED_ORDER[3], Sketch.EXPECTED_ORDER[5]], Sketch.EXPECTED_ORDER.slice(6)) : Sketch.EXPECTED_ORDER) : null,
+          allowMixed: report.age !== 'fresh' || report.visibility !== 'live'
+        });
+        Sketch.post({ theme: q.theme || 'light', sketch: '001' }, result);
+      }
+
+      marker.on('popupopen', function () { window.setTimeout(runChecks, 900); });
+      marker.openPopup();
+    }());
+  </script>
+</body>
+</html>

@@ -1,0 +1,580 @@
+/*
+ * d4: the popup built to the owner's reference, matched closely. A clean neutral card with the severity colour kept
+ * to the left bar, the badge and the severity pill. Every rule is scoped under :root[data-variant="d4"], and every
+ * rule that touches Leaflet's own popup elements keeps the .leaflet-container ancestor so it out ranks leaflet.css.
+ *
+ * Grid: one 16px gutter on both sides of the card. Title, meta and the trust rows sit 4px further in, as in the
+ * reference, where the badge and the hairlines run flush to the gutter. The card is 340px wide so the two signals
+ * share a row. Icons are 16px at 2px beside text and 20px at 2px on the buttons, the footer and the close button.
+ * The owner's reference overrides the earlier pill ban for the severity label, and sets the card radius to 12px.
+ */
+
+/* ---- Leaflet chrome ------------------------------------------------------------------------------ */
+/* The footer surface differs from the card in dark mode only (muted text fails 4.5:1 on --color-surface in light).
+   The popup tip takes the footer surface because it sits under it. */
+:root[data-variant="d4"] {
+  --d4-footer-bg: var(--color-bg);
+}
+
+:root[data-variant="d4"][data-theme="dark"] {
+  --d4-footer-bg: var(--color-surface);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-variant="d4"]:not([data-theme="light"]) {
+    --d4-footer-bg: var(--color-surface);
+  }
+}
+
+/* The base files tint the whole wrapper with the severity colour. This card is neutral, so the wrapper goes back
+   to the plain page surface. */
+:root[data-variant="d4"] .leaflet-container .leaflet-popup-content-wrapper {
+  padding: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-popup);
+}
+
+:root[data-variant="d4"] .leaflet-container .leaflet-popup-tip {
+  background: var(--d4-footer-bg);
+  box-shadow: var(--shadow-popup);
+}
+
+:root[data-variant="d4"] .leaflet-container .leaflet-popup-content {
+  margin: 0;
+}
+
+/* Close button: Leaflet's own anchor, its multiplication sign hidden and an X icon drawn in its place, in the
+   muted grey of the reference. The 44px target is centred on the badge row (top 10 + 22 = 32) and its icon edge
+   lands on the 16px gutter (right 4). */
+:root[data-variant="d4"] .leaflet-container .leaflet-popup a.leaflet-popup-close-button {
+  top: 10px;
+  right: var(--space-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  padding: 0;
+  border-radius: 8px;
+  color: var(--color-text-muted);
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+:root[data-variant="d4"] .leaflet-container .leaflet-popup a.leaflet-popup-close-button > span {
+  display: none;
+}
+
+:root[data-variant="d4"] .leaflet-container .leaflet-popup a.leaflet-popup-close-button::before {
+  content: "";
+  display: block;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask-image: var(--d4-x);
+  mask-image: var(--d4-x);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+:root[data-variant="d4"] .leaflet-container .leaflet-popup a.leaflet-popup-close-button:hover,
+:root[data-variant="d4"] .leaflet-container .leaflet-popup a.leaflet-popup-close-button:focus-visible {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+:root[data-variant="d4"] .leaflet-container .leaflet-popup a.leaflet-popup-close-button:active {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
+/* ---- Card ---------------------------------------------------------------------------------------- */
+/* The 4px severity bar runs the full height of the card, footer included. */
+:root[data-variant="d4"] .d4-card {
+  border-left: 4px solid var(--severity-current, var(--color-border));
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+:root[data-variant="d4"] .d4-body {
+  padding: var(--space-md);
+}
+
+/* ---- Icons --------------------------------------------------------------------------------------- */
+:root[data-variant="d4"] .d4-icon {
+  display: block;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+/* The small icon is 16px in a 20px tall box, so it centres on a 14px text line. */
+:root[data-variant="d4"] .d4-icon--sm {
+  width: 16px;
+  height: 20px;
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+}
+
+/* ---- Header: badge, pills ------------------------------------------------------------------------ */
+:root[data-variant="d4"] .d4-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: 32px;
+  padding-right: var(--space-2xl); /* keeps the pills clear of the close button */
+}
+
+/* The glyph is white on the red circle in both themes, as in the reference. In light that is the base file's
+   default (--color-bg). In dark --color-bg is near black, so the glyph takes the light text colour. */
+:root[data-variant="d4"][data-theme="dark"] .d4-header .icon-badge {
+  --badge-glyph-fg: var(--color-text);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-variant="d4"]:not([data-theme="light"]) .d4-header .icon-badge {
+    --badge-glyph-fg: var(--color-text);
+  }
+}
+
+:root[data-variant="d4"] .d4-header .icon-badge .icon-glyph {
+  width: 20px;
+  height: 20px;
+}
+
+/* The pill: fully rounded, on a faint severity tint. */
+:root[data-variant="d4"] .d4-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 0 var(--space-sm);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: var(--font-size-label);
+  line-height: 22px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+:root[data-variant="d4"] .d4-chip--severity {
+  background: var(--severity-tint, var(--color-surface));
+}
+
+/* Critical matches the reference: the severity red on its pink tint (4.6:1 in light, 5.0:1 in dark). */
+:root[data-variant="d4"] .d4-chip--critical {
+  color: var(--color-severity-critical);
+}
+
+/* Low and medium: the hue stays on the tint and this dot, the word stays in the text colour. */
+:root[data-variant="d4"] .d4-chip__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--severity-current, var(--color-border));
+}
+
+:root[data-variant="d4"] .d4-chip--neutral {
+  border-color: var(--color-border);
+  background: var(--color-bg);
+}
+
+/* ---- Title and meta ------------------------------------------------------------------------------ */
+:root[data-variant="d4"] .d4-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  margin: var(--space-sm) 0 0;
+  padding: 0 var(--space-xs);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+:root[data-variant="d4"] .d4-meta {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  margin: var(--space-xs) 0 var(--space-xs);
+  padding: 0 var(--space-xs);
+  color: var(--color-text-muted);
+}
+
+:root[data-variant="d4"] .d4-meta__lines {
+  flex: 1;
+  min-width: 0;
+}
+
+:root[data-variant="d4"] .d4-meta__line {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+}
+
+/* ---- Trust block: one disclosure over two rows --------------------------------------------------- */
+:root[data-variant="d4"] .d4-trust {
+  margin-top: var(--space-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+/* One button spans both rows (at least 44px tall) and looks like plain text: no border, no fill. */
+:root[data-variant="d4"] .d4-trust__toggle {
+  display: block;
+  width: 100%;
+  min-height: var(--touch-target-min);
+  margin: 0;
+  padding: var(--space-sm) var(--space-xs);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-family: var(--font-family);
+  text-align: left;
+  color: var(--color-text);
+  cursor: pointer;
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+
+:root[data-variant="d4"] .d4-trust__toggle:hover {
+  text-decoration: underline;
+}
+
+:root[data-variant="d4"] .d4-trust__toggle:active {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+
+:root[data-variant="d4"] .d4-trust__toggle:focus-visible {
+  outline-offset: -2px;
+}
+
+:root[data-variant="d4"] .d4-row {
+  display: flex;
+  align-items: center;
+}
+
+/* Counts: the first column holds its text, the hairline sits just under half way as in the reference, and the
+   second count starts a clear 24px after it. The word is regular weight and the number inside it is semibold
+   (.d4-num), the same pairing the signals row uses. */
+:root[data-variant="d4"] .d4-row--counts {
+  display: grid;
+  grid-template-columns: minmax(max-content, 47fr) minmax(0, 53fr);
+  font-size: var(--font-size-body);
+  line-height: 32px;
+  font-weight: var(--font-weight-regular);
+}
+
+:root[data-variant="d4"] .d4-count-cell {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+:root[data-variant="d4"] .d4-count-cell--second {
+  padding-left: var(--space-lg);
+}
+
+:root[data-variant="d4"] .d4-count-cell--second::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 0;
+  width: 1px;
+  background: var(--color-border);
+}
+
+:root[data-variant="d4"] .d4-count {
+  white-space: nowrap;
+}
+
+/* Signals: icon, quiet words, strong number, a hairline, the second signal. If the pair cannot share the row the
+   second one wraps under the first. The row clips its own overflow, and the hairline sits in the gap before the
+   second signal, so a wrapped signal is clipped off its line and no stray hairline shows (the same method the
+   meta line uses for its dots). */
+:root[data-variant="d4"] .d4-row--signals {
+  flex-wrap: wrap;
+  column-gap: var(--space-md);
+  overflow: hidden;
+  font-size: var(--font-size-label);
+  line-height: 28px;
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+}
+
+:root[data-variant="d4"] .d4-signal {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  white-space: nowrap;
+}
+
+:root[data-variant="d4"] .d4-signal--second::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: -8px; /* the middle of the 16px gap */
+  width: 1px;
+  background: var(--color-border);
+}
+
+/* Words stay quiet, numbers carry the weight. */
+:root[data-variant="d4"] .d4-num {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+/* The four sentences, plain text under the block, never a floating tooltip. */
+:root[data-variant="d4"] .d4-explain:not([hidden]) {
+  display: grid;
+  gap: var(--space-xs);
+  margin: 0;
+  padding: 0 var(--space-xs) var(--space-sm);
+}
+
+:root[data-variant="d4"] .d4-explain__line {
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+}
+
+/* ---- Actions ------------------------------------------------------------------------------------- */
+:root[data-variant="d4"] .d4-actions {
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+:root[data-variant="d4"] .d4-card .vote-controls:not([hidden]) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+:root[data-variant="d4"] .d4-card .vote-btn--resolve,
+:root[data-variant="d4"] .d4-card .resolve-confirm {
+  grid-column: 1 / -1;
+}
+
+:root[data-variant="d4"] .d4-card .vote-btn:not([hidden]) {
+  gap: var(--space-sm);
+  min-width: 0;
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+:root[data-variant="d4"] .d4-card .vote-btn:not([hidden]):not(:disabled):not([aria-pressed="true"]):hover {
+  background: var(--color-border);
+}
+
+:root[data-variant="d4"] .d4-card .vote-btn:not([hidden]):not(:disabled):not([aria-pressed="true"]):active {
+  border-color: var(--color-text-muted);
+}
+
+/* Pressed: an inverted fill, not a hue. Confirm and Dispute look the same when on, and aria-pressed carries
+   the state for screen readers. */
+:root[data-variant="d4"] .d4-card .vote-btn--confirm[aria-pressed="true"]:not([hidden]),
+:root[data-variant="d4"] .d4-card .vote-btn--dispute[aria-pressed="true"]:not([hidden]) {
+  border-color: var(--color-text);
+  background: var(--color-text);
+  color: var(--color-bg);
+}
+
+/* Too far away: the buttons lose their fill and their text goes quiet. The reason sentence stays full contrast. */
+:root[data-variant="d4"] .d4-card .vote-btn:disabled:not([hidden]) {
+  border-color: var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+:root[data-variant="d4"] .d4-card .vote-note:not([hidden]) {
+  margin: var(--space-sm) 0 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text);
+}
+
+/* Inline confirmation: replaces the three buttons. The question takes the first row. Cancel (neutral) and Yes
+   (the app's critical red) share the next one, and wrap onto two rows when the card is too narrow for both. */
+:root[data-variant="d4"] .d4-card .resolve-confirm:not([hidden]) {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+:root[data-variant="d4"] .d4-card .resolve-confirm p {
+  flex: 0 0 100%;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+:root[data-variant="d4"] .d4-card .resolve-confirm .vote-btn:not([hidden]) {
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+
+:root[data-variant="d4"] .d4-card .resolve-confirm .vote-btn--confirm-resolve:not([hidden]) {
+  flex-grow: 2;
+}
+
+:root[data-variant="d4"] .d4-card .vote-btn.vote-btn--confirm-resolve:not([hidden]) {
+  border-color: var(--color-severity-critical);
+  background: var(--color-severity-critical);
+  color: var(--color-bg);
+}
+
+:root[data-variant="d4"] .d4-card .vote-btn.vote-btn--confirm-resolve:not([hidden]):not(:disabled):hover {
+  border-color: var(--color-severity-critical);
+  background: color-mix(in srgb, var(--color-severity-critical) 85%, var(--color-text));
+}
+
+/* ---- Footer: one link ---------------------------------------------------------------------------- */
+/* A slightly different surface under a hairline. Leaflet paints every link blue through .leaflet-container a,
+   so the row names that ancestor. */
+:root[data-variant="d4"] .leaflet-container a.d4-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: var(--touch-target-min);
+  padding: var(--space-sm) var(--space-md);
+  border-top: 1px solid var(--color-border);
+  background: var(--d4-footer-bg);
+  color: var(--color-text);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+/* Hover and press fill the row. The muted count turns to the main colour at the same time, because muted text
+   measures under 4.5:1 on --color-surface in light mode. */
+:root[data-variant="d4"] .leaflet-container a.d4-footer:hover {
+  background: var(--color-surface);
+}
+
+:root[data-variant="d4"][data-theme="dark"] .leaflet-container a.d4-footer:hover {
+  background: var(--color-border);
+}
+
+:root[data-variant="d4"] .leaflet-container a.d4-footer:active {
+  background: var(--color-border);
+}
+
+:root[data-variant="d4"] .leaflet-container a.d4-footer:hover .d4-footer__count,
+:root[data-variant="d4"] .leaflet-container a.d4-footer:active .d4-footer__count {
+  color: var(--color-text);
+}
+
+:root[data-variant="d4"] .leaflet-container a.d4-footer:focus-visible {
+  outline-offset: -2px; /* inset, so the popup's clipped edge cannot cut the ring */
+}
+
+/* The speech bubble sits in a 24px box so the words start 32px in, as in the reference. */
+:root[data-variant="d4"] .d4-footer > .d4-icon {
+  width: 24px;
+  -webkit-mask-size: 20px 20px;
+  mask-size: 20px 20px;
+}
+
+:root[data-variant="d4"] .d4-footer__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+:root[data-variant="d4"] .d4-footer__title {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+/* Muted grey like the reference. It measures 4.8:1 on --color-bg (light footer) and 7:1 on --color-surface (dark). */
+:root[data-variant="d4"] .d4-footer__count {
+  font-weight: var(--font-weight-regular);
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  transition: color 150ms ease;
+}
+
+:root[data-variant="d4"] .d4-footer__action {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+}
+
+:root[data-variant="d4"] .d4-footer__action > .d4-icon {
+  width: 20px;
+  -webkit-mask-size: 20px 20px;
+  mask-size: 20px 20px;
+  transition: transform 150ms ease;
+}
+
+:root[data-variant="d4"] .d4-footer__label {
+  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+:root[data-variant="d4"] .leaflet-container a.d4-footer:hover .d4-footer__label {
+  text-decoration-thickness: 2px;
+}
+
+:root[data-variant="d4"] .leaflet-container a.d4-footer:hover .d4-footer__action > .d4-icon {
+  transform: translateX(2px);
+}
+
+:root[data-variant="d4"] .leaflet-container a.d4-footer:active .d4-footer__label {
+  font-weight: var(--font-weight-semibold);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-variant="d4"] .d4-card .vote-btn,
+  :root[data-variant="d4"] .d4-footer__count,
+  :root[data-variant="d4"] .d4-footer__action > .d4-icon,
+  :root[data-variant="d4"] .leaflet-container a.d4-footer,
+  :root[data-variant="d4"] .leaflet-container .leaflet-popup a.leaflet-popup-close-button {
+    transition: none;
+  }
+}
