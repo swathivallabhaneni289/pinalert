@@ -205,7 +205,11 @@ Architecture not yet mapped. Follow existing patterns found in the codebase.
 
 ## Project Skills
 
-No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, `.github/skills/`, or `.codex/skills/` with a `SKILL.md` index file.
+| Skill | Description | Path |
+|-------|-------------|------|
+| sketch-findings-pinalert | Validated design decisions, CSS patterns and visual direction from the Pinalert sketches, covering the map pin popup and its trust block (variant d4, built from the owner's reference). Load during UI work on report popups, feed rows and the Activity trust block. | `.claude/skills/sketch-findings-pinalert/SKILL.md` |
+
+- **Sketch findings for pinalert** (design decisions, CSS patterns, visual direction) → `Skill("sketch-findings-pinalert")`
 <!-- GSD:skills-end -->
 
 <!-- GSD:workflow-start source:GSD defaults -->

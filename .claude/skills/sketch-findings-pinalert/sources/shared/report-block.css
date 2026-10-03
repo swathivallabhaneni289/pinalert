@@ -1,0 +1,114 @@
+/*
+ * Proposed production CSS: the trust block. In the app this belongs in web/static/css/trust.css.
+ * Tokens only: no raw colour, no size or weight outside the four sizes and two weights, spacing from the
+ * scale. All text uses --color-text because muted text fails 4.5:1 on the severity tints.
+ */
+.trust-block__counts:not([hidden]),
+.trust-block__signals:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  margin: 0;
+  color: var(--color-text);
+}
+
+.trust-block__counts {
+  column-gap: var(--space-md);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.trust-block__signals {
+  column-gap: var(--space-md);
+  overflow: hidden; /* clips the separator of an item that wrapped to the start of a line */
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+/* The separator between the two signals sits in the middle of the gap. When the second signal wraps onto its
+   own line its separator lands left of the container and is clipped, so a stacked pair shows no stray bar. */
+.trust-block__signal + .trust-block__signal {
+  position: relative;
+}
+
+.trust-block__signal + .trust-block__signal::before {
+  content: "";
+  position: absolute;
+  top: 0.25em;
+  bottom: 0.25em;
+  left: calc(var(--space-md) / -2);
+  width: 1px;
+  background: var(--color-text-muted);
+}
+
+/* A number is semibold and its word regular, in both lines, so the rule is learned once. */
+.trust-block__num {
+  font-weight: var(--font-weight-semibold);
+}
+
+.trust-block:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+/* Items wrap as whole units, never mid phrase, so a narrow phone stacks the two signals. */
+.trust-block__count,
+.trust-block__signal {
+  white-space: nowrap;
+}
+
+/* One sentence under the buttons: the too far reason and the resolved outcome. */
+.vote-note:not([hidden]) {
+  margin: var(--space-sm) 0 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text);
+}
+
+/* The filled Mark resolved rule in trust.css ties with .vote-btn:disabled on specificity and wins on source
+   order, so a disabled Mark resolved would still look pressable. This rule outranks it. */
+.vote-btn--resolve:disabled:not([hidden]) {
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  cursor: not-allowed;
+}
+
+/* trust.css sets the pressed text to the severity hue (--color-severity-low on --color-severity-low-bg is
+   3.01:1 in light mode, under the 4.5:1 floor). The hue stays on the border and fill, and the text goes back to
+   the main colour. In the app this is an edit to trust.css lines 61 to 72, not an extra rule. */
+.vote-btn--confirm[aria-pressed="true"],
+.vote-btn--dispute[aria-pressed="true"] {
+  color: var(--color-text);
+}
+
+/* trust.css declares the Yes, mark resolved button critical red, but .vote-btn:not([hidden]) (0,2,0) beats
+   .vote-btn--confirm-resolve (0,1,0), so today it renders identical to Cancel. This rule (0,3,0) restores the
+   documented destructive treatment. Keep trust.css's own rule, its exact head is asserted by a test. */
+.vote-btn.vote-btn--confirm-resolve:not([hidden]) {
+  background: var(--color-severity-critical);
+  color: var(--color-bg);
+  border-color: var(--color-severity-critical);
+}
+
+/* Meta lines: the segments wrap as whole units. Each separator dot sits in the middle of the gap before its
+   segment, and the line clips it when that segment lands at the start of a row, so 'Storm/Cyclone damage ·
+   3 hours ago ·' never strands a dot at the end of a row. */
+.meta-line:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-md); /* the same gap as the signals line, so both separators breathe alike */
+  overflow: hidden;
+}
+
+.meta-line__seg {
+  position: relative;
+  white-space: nowrap;
+}
+
+.meta-line__dot {
+  position: absolute;
+  left: calc(var(--space-md) / -2);
+  transform: translateX(-50%);
+}
