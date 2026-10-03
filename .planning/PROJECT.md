@@ -107,7 +107,7 @@ output from that mechanic.
 - [ ] Human-contact verification tier — a volunteer who phoned the person can mark
       "contacted at HH:MM" with a field-verified priority that outranks passive voting, subject to
       the same expiry/reversibility requirement as the responder claim above
-- [ ] Authority badge for GDACS-sourced official pins — cheap, ships alongside the official feed
+- [ ] Authority badge for official pins and SACHET alerts: cheap, ships alongside the official feed
       integration below (distinct from a verified-authority-*account* flow for municipal/NDRF
       accounts, which stays deferred — see Out of Scope)
 
@@ -125,14 +125,31 @@ output from that mechanic.
       product exists for. Rate-limit per anonymous session first, with IP as a looser backstop.
 - [ ] Official open-data feed integration (GDACS) — idempotent upsert on `(source, external_id)`,
       bypassing the trust/vote pipeline entirely (crowd disputes must not be able to hide an
-      official pin) — background "official" pins so the map is never empty. IMD/CWC bulletins are
-      a separate follow-up spike (feed format unverified), not assumed available alongside GDACS.
+      official pin), as background "official" pins so the map is never empty. NDMA SACHET (checked 2026-10-03: an open RSS of CAP
+      alerts that carries IMD, CWC and state authority warnings) is the primary official source for
+      India, with GDACS second. IMD's own APIs need a key or an allow-listed IP, so they are not used. SACHET alerts are area based with a validity window,
+      so they get their own table, an Alerts view and a banner; GDACS pins go on the map.
 - [ ] Demo/replay mode — seeded past-event timeline + "simulate a report" button, so a first-time
       visitor sees the product working immediately
 - [ ] Explicit disclaimer — not affiliated with any government agency, not a substitute for
       calling emergency services
 - [ ] OpenAPI/Swagger docs for the JSON API
 - [ ] GitHub Actions CI (`go test`, `go vet`, build)
+
+**Reader-facing views and updates (added 2026-10-03 after the Phase 3 popup sketch; roadmap
+Phases 3.1, 3.2, 5, 8 and 9):**
+- [ ] Report history views: one View selector (Active, Resolved, Disputed, Past) replaces the
+      disputed checkbox, so resolved and expired reports stay visible as labelled history, plus a
+      "check another area" search and category and severity filters (Phase 3.1)
+- [ ] Official alerts: NDMA SACHET alerts (IMD, CWC, state authorities) in an Alerts view and a
+      banner for Severe or Extreme alerts, read only and clearly badged (Phase 5)
+- [ ] In-app updates: a bell and Updates list for state changes on reports you posted or voted
+      on, plus opt-in alerts when a Reliable reporter posts nearby (Phase 3.2)
+- [ ] Report page and comments: each report opens into its own page with a trust history
+      timeline, then moderated comments once Phase 4's moderation exists (Phase 8). Raised during
+      Phase 1.1 and deferred until moderation and free text abuse were scoped.
+- [ ] Followable reporter profiles: opt-in, nickname only, Reliable reporters only, private
+      follows and no follower counts; first to cut if time runs short (Phase 9)
 
 ### Out of Scope
 
@@ -163,11 +180,8 @@ output from that mechanic.
   radius/push feature first
 - Targeted confirm-nudge to already-engaged sessions — deferred, needs push infra first
   (re-raised during Phase 1.1 as "notify a reporter when someone confirms/disputes their report" —
-  same underlying idea, still blocked on the same push infrastructure)
-- Comment/discussion thread under each report (free-text, distinct from confirm/dispute voting) —
-  raised during Phase 1.1 discussion; deferred, not currently in REQUIREMENTS.md at all — needs
-  its own scoping (moderation surface, abuse vectors on free text tied to a real account) before
-  it becomes a phase
+  same underlying idea; the in-app version is now roadmap Phase 3.2, and only the push
+  version waits on push infrastructure)
 - Crowd-translation queue for report free text — deferred past v1
 - Multi-language UI toggle (Hindi + one regional language) — deferred past v1
 - Rapid swipe-triage queue — deferred, the filtered triage list view covers v1 needs
@@ -281,6 +295,8 @@ Decision below.
 | Vector basemap migration: Leaflet + MapLibre GL rendering OpenFreeMap tiles, OSM raster as WebGL-less fallback (`01-11-RESEARCH.md`) | User-chosen mid-Phase-1 quality upgrade over the original plain-Leaflet/OSM-raster plan; sharper rendering with no paid API key, `@maplibre/maplibre-gl-leaflet` bridge keeps all existing Leaflet marker/popup code unchanged | ✓ Good — Phase 1, capability-probed WebGL2 fallback verified working |
 | Confirmer location-capture method for diversity weighting (GPS prompt vs. IP-derived geohash) | Materially different UX/signal-quality tradeoff — flagged by research as needing an explicit decision, not left implicit | ⚠️ Unresolved — decide in Phase 2/3 planning |
 | Repo public on GitHub (`swathivallabhaneni289/pinalert`) | Portfolio project — needs to be visible to recruiters/interviewers | ✓ Good |
+| NDMA SACHET (CAP RSS) as the primary official alert source, GDACS second, IMD's own APIs not used | Checked 2026-10-03: SACHET's India-wide RSS answers without a key, declares itself public domain, links to CAP 1.2 messages and aggregates IMD, CWC and state authority alerts (99 alerts that day). IMD's APIs answer "API key missing" or "IP needs to be whitelisted". Alerts are area based with a validity window, so they get their own table and not the reports table | Decided 2026-10-03 for roadmap Phase 5, pending a one day spike on polygons versus area names and NDMA's terms |
+| Following people is opt-in and limited to Reliable reporters, with no follower counts; Reliable-reporter alerts by tag come first | A public nickname makes one person's reports linkable, which turns a follow with notifications into a location tracker, and a notification on an unconfirmed report would bypass the provisional gate. Phase 3 D-10's "not a privacy risk" holds only while no nickname is shown | Decided 2026-10-03: tag based alerts in Phase 3.2, opt-in profiles and follows in Phase 9 (first to cut) |
 
 ## Evolution
 
@@ -300,4 +316,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-10 — mandatory email+OTP login decision (Phase 1.1 inserted before Phase 2)*
+*Last updated: 2026-10-03 after the Phase 3 popup sketch: roadmap Phases 3.1, 3.2, 8 and 9 added, Phase 5 now leads with NDMA SACHET, comments moved from Out of Scope to Active (Phase 8)*

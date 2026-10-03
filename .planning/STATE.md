@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 3
 status: not_started
-stopped_at: "Sketch 001 closed (d4 wins, 124d34c). Next: sketch wrap-up, report page and comments phase, then /gsd-ui-phase 3"
-last_updated: "2026-10-03T06:48:05.560Z"
+stopped_at: "Roadmap additions reviewed, fixed and committed. Next: /gsd-ui-phase 3 (best started in a fresh session)"
+last_updated: "2026-10-03T09:39:36.888Z"
 progress:
-  total_phases: 8
+  total_phases: 12
   completed_phases: 4
   total_plans: 42
   completed_plans: 42
-  percent: 50
+  percent: 33
 current_phase_name: trust-model-hardening-diversity-weighted-trust
 ---
 
@@ -19,7 +19,7 @@ current_phase_name: trust-model-hardening-diversity-weighted-trust
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-10)
+See: .planning/PROJECT.md (updated 2026-10-03)
 
 **Core value:** A report showing "confirmed by N nearby" must be verifiably backed by N
 independent nearby confirmations, resistant to trivial gaming.
@@ -39,7 +39,7 @@ waves, full regression suite green, 1 code-review Critical (CR-01 staleness guar
 fixed, 6/6 UAT tests passed (including a live layout bug found and fixed mid-session — see
 `07-UAT.md`), security review closed with threats_open: 0 (`07-SECURITY.md`).
 
-Progress: [██████████████░░░░░░] 4/8 phases complete (1, 1.1, 2, 07)
+Progress: [███████░░░░░░░░░░░░░] 4/12 phases complete (1, 1.1, 2, 7)
 
 ## Performance Metrics
 
@@ -185,8 +185,9 @@ Recent decisions affecting current work:
   legal/mentor review before any wide public promotion; not required before initial deploy
   (Phase 4 ships the disclaimer, not a legal clearance).
 
-- **IMD/CWC bulletin integration is unverified** — GDACS (Phase 5) is the safer first official-feed
-  integration; treat IMD/CWC as a follow-up spike, not assumed available in Phase 5.
+- **Official feeds (checked 2026-10-03)**: NDMA SACHET (an open RSS of CAP alerts that carries IMD, CWC and state
+  warnings) is the first Phase 5 integration, pending a spike on polygons versus area names, the scheduler on a
+  sleeping host and NDMA's terms. IMD's own APIs need a key or an allow-listed IP and are not used. GDACS is second.
 
 - **REQUIREMENTS.md coverage count corrected**: the file's own Coverage block stated "27 total"
   v1 requirements, but 33 unique requirement IDs are actually enumerated (FOUND 6, TRUST 9,
@@ -215,6 +216,18 @@ Recent decisions affecting current work:
 | 260923-qwi | Replace the wordy Theme text label with a two-state sun/moon icon toggle, dropping System mode | 2026-09-23 | 3ace168 | [260923-qwi-replace-the-wordy-theme-text-label-with-](./quick/260923-qwi-replace-the-wordy-theme-text-label-with-/) |
 | 260923-rra | Move the theme toggle out of the account menu into a floating button below the report FAB (which moved up to make room) | 2026-09-29 | 3330dda | [260923-rra-move-the-theme-toggle-out-of-the-account](./quick/260923-rra-move-the-theme-toggle-out-of-the-account/) |
 
+### Roadmap Evolution
+
+- Phase 03.1 inserted after Phase 3: Report history views (not urgent: placed after Phase 3 because it consumes Phase 3's outcome labels)
+- Phase 03.2 inserted after Phase 3: In-app updates and trusted-reporter alerts (placed after Phase 3 because it uses the trust object and reliability tag)
+- Phase 5 edited: edited fields: goal, requirements, success_criteria (now leads with NDMA SACHET official alerts, GDACS second)
+- Phase 8 edited: edited fields: goal, depends_on, requirements, success_criteria (page and timeline first, comments after Phase 4 moderation)
+- Phase 9 added: Followable reporter profiles (opt-in, Reliable reporters only; first to cut)
+- Phase 999.3 added: PWA shell and Web Push (backlog)
+- Phase 999.4 added: Email digests for updates (backlog)
+- Phase 999.5 added: Replay the last 24 hours (backlog)
+- Phase 8 edited: review fixes: notify only once Live, views partition, Phase 8 before Phase 6, Phase 5 spike gate, Phase 9 lifecycle
+
 ## Deferred Items
 
 Items acknowledged and carried forward from previous milestone close:
@@ -225,21 +238,23 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-03T06:48:05.549Z
-Stopped at: Sketch 001 closed (d4 wins, 124d34c). Next: sketch wrap-up, report page and comments phase, then /gsd-ui-phase 3
+Last session: 2026-10-03T09:39:36.857Z
+Stopped at: Roadmap additions reviewed, fixed and committed. Next: /gsd-ui-phase 3 (best started in a fresh session)
 Phase 3 so far: context (D-01 to D-23, R-01 to R-08), research, a draft validation plan (V-01 to V-42) and
 the design brief are committed. The popup was then sketched (sketches 001 and 002 in `.planning/sketches/`,
 four independent reviews) and the owner chose variant d4, built from their own reference image. Sketch 001 is
 closed and committed (`124d34c`). Its README lists where d4 departs from locked decisions D-18, D-19, D-20 and
 D-22 and from validation rows V-39 and V-40 (a pill severity label, grey signal words, one disclosure button
-instead of per word reasons, a 340px neutral card, an always visible too far sentence, a comments footer with
-no phase behind it). The UI contract has to record each of those as an explicit amendment. Sketch 002 (report
-page and thread) stays open until a separate report page and comments phase exists.
+instead of per word reasons, a 340px neutral card, an always visible too far sentence, a comments footer whose
+backend is Phase 8). The UI contract has to record each of those as an explicit amendment. Sketch 002 (report
+page and thread) stays open until Phase 8 (report page and comments) is scoped.
 
-Order of work from here: package the sketch findings (`/gsd-sketch --wrap-up`), add the report page and
-comments phase (`/gsd-phase`), write the UI contract (`/gsd-ui-phase 3`), then plan (`/gsd-plan-phase 3`).
-`/gsd-plan-phase 3` exits at the UI gate until a UI-SPEC exists, and `/gsd-ui-phase 3` only reads sketches that
-the wrap-up has packaged into a findings skill.
+Order of work from here: write the UI contract (`/gsd-ui-phase 3`, which now sees the packaged sketch
+findings), then plan (`/gsd-plan-phase 3`). `/gsd-plan-phase 3` exits at the UI gate until a UI-SPEC exists.
+Done since the sketch: findings packaged (`93f2088`). On 2026-10-03 the roadmap also gained Phase 3.1 (report
+history views), Phase 3.2 (in-app updates and trusted-reporter alerts) and Phase 9 (followable reporter
+profiles), Phase 5 now leads with NDMA SACHET alerts, Phase 8 got its goal, dependencies and a timeline-first
+split, and three backlog items were captured (PWA and Web Push, email digests, replay). See Roadmap Evolution.
 
 Open items that do not block planning: Phase 2's live retests (`02-UAT.md` is still
 `fixes_shipped_pending_retest`; wanted before Phase 3 is executed, because Phase 3 rewrites the popup that the

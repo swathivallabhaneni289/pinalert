@@ -126,7 +126,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **ROBUST-05**: The map displays official pins ingested from the GDACS open-data feed
       alongside crowd reports, unaffected by crowd confirm/dispute votes
 
-- [ ] **ROBUST-06**: GDACS-sourced pins display a distinct authority badge, visually
+- [ ] **ROBUST-06**: GDACS-sourced pins and SACHET alerts display a distinct authority badge, visually
       distinguishable from crowd reports and from demo-mode reports
 
 - [ ] **ROBUST-07**: A first-time visitor sees a populated, working demo (seeded past-event
@@ -134,6 +134,91 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **ROBUST-08**: Every page displays a persistent disclaimer that Pinalert is unofficial, not
       affiliated with any government agency, and not a substitute for calling emergency services
+
+### Report History
+
+- [ ] **HIST-01**: User can switch the list and the map between Active, Resolved, Disputed and Past
+      reports with one View selector in place of the disputed checkbox; Active is the default. The four
+      views are a disjoint partition (Active: Live and Provisional; Disputed: Hidden; Resolved: closed
+      by people; Past: expired), and voting stays available in Active and Disputed, so a Hidden report
+      can still be confirmed back, but not in Resolved or Past (added 2026-10-03)
+
+- [ ] **HIST-02**: The Resolved view lists reports that people closed within the same bounded window
+      as Past, each labelled with when it was resolved and who closed it (the reporter alone or
+      independent confirmers) and showing the Phase 3 counters, so self-resolving cannot hide a
+      dispute; rescue-needed rows are shown at a coarse location
+
+- [ ] **HIST-03**: The Past view lists reports that expired in the last 24 hours, 3 days or 7 days,
+      each labelled with its outcome (confirmed by N places, expired unconfirmed, or disputed),
+      using the same outcome rules as the reporter rating; critical and rescue-needed reports that
+      expire unconfirmed get a neutral "Expired" label, never a negative one, and rescue-needed rows are
+      shown at a coarse location
+
+- [ ] **HIST-04**: When no active reports exist, the list says what happened recently using real
+      counts only (for example "2 were resolved today") and links to the Resolved view
+
+- [ ] **HIST-05**: User can search for a place on the main map and see reports for that area, not
+      only reports near their own location
+
+- [ ] **HIST-06**: User can filter the list and map by category and by severity
+
+### Official Alerts
+
+- [ ] **ALERT-01**: An Alerts view lists the official alerts that cover the reader's district,
+      ingested server side from NDMA's SACHET feed (IMD, CWC and state authority alerts), read
+      only and unaffected by crowd votes (added 2026-10-03)
+
+- [ ] **ALERT-02**: Each official alert shows its issuer, when it was issued and when it expires,
+      carries the authority badge, and disappears when it expires
+
+- [ ] **ALERT-03**: A banner appears at the top of the list only when a Severe or Extreme official
+      alert covers the reader's area
+
+- [ ] **ALERT-04**: The app shows when each official feed was last checked and says plainly when a
+      feed is unavailable, so a stale alert never looks current
+
+### Updates & Following
+
+- [ ] **NOTIF-01**: A signed-in user sees a bell with an unread count and an Updates list;
+      tapping an update opens the report (added 2026-10-03)
+
+- [ ] **NOTIF-02**: A user automatically follows a report they posted or voted on and can mute any
+      report
+
+- [ ] **NOTIF-03**: Updates about a followed report are sent for state changes only (the report
+      reaches Live, is hidden by disputes, is resolved, or is within 1 hour of expiring), at most one
+      per report per hour, decided by the single visibility resolver, worded anonymously from the
+      same server trust object the popup uses, and never naming a voter, an account or a location;
+      time based events are evaluated lazily when the bell refreshes
+
+- [ ] **NOTIF-04**: User can filter the feed to Reliable reporters only; critical and rescue-needed
+      reports always stay visible
+
+- [ ] **NOTIF-05**: User can opt in to an update when a Reliable reporter posts within a chosen
+      distance of where the reader is looking; non-critical reports notify only once Live,
+      critical and rescue-needed reports immediately, with a cap on alerts per reporter per
+      recipient per hour
+
+- [ ] **PROF-01**: A user can opt in to a public reporter profile with a nickname (never the
+      email); it is off by default and available only to Reliable reporters, and nicknames are unique,
+      screened and exclude reserved words such as agency names
+
+- [ ] **PROF-02**: A profile shows the reliability tag with its counts, member since, and recent
+      finished reports at a coarse location, with no email and no follower counts
+
+- [ ] **PROF-03**: A user can follow and unfollow opted-in reporters privately, mute or block,
+      see their reports in a Following view and get updates when they post (non-critical only once
+      Live, no coordinates or address in the text); switching the profile off, or losing the Reliable
+      tag, ends all follows and pending alerts, and a reporter can remove all followers without
+      seeing who they are
+
+### Report Page & Comments
+
+- [ ] **PAGE-01**: A report opens into its own page with the shared trust block and a history
+      timeline built from the vote log (posted, confirmed from N places, disputed, resolved)
+
+- [ ] **PAGE-02**: A signed-in user can read and add short comments on a report page, each screened
+      by moderation and rate-limited per account; commenting makes the user follow that report
 
 ### Ops
 
@@ -166,6 +251,15 @@ Deferred to future release. Tracked but not in current roadmap.
 
 - **PWA-05**: Background Sync (Chromium-only enhancement layered on the IndexedDB baseline from
   ROBUST-02)
+
+- **PWA-06**: Phase 3.2's updates and Severe or Extreme official alerts for the reader's district are
+  delivered as Web Push to installed PWAs
+
+- **PWA-07**: Opt-in email digests of updates (needs a DNS verified sending domain)
+
+### History & Replay
+
+- **HIST-07**: A time slider rebuilds the map as it looked at any past moment, from the vote log
 
 ### Data Richness
 
@@ -266,6 +360,17 @@ Populated during roadmap creation.
 | UX-01 | Phase 2 | Complete (gap-closure plan 02-10) |
 | TRUST-05 | Phase 3 | Pending |
 | TRUST-07 | Phase 3 | Pending |
+| HIST-01 | Phase 3.1 | Pending |
+| HIST-02 | Phase 3.1 | Pending |
+| HIST-03 | Phase 3.1 | Pending |
+| HIST-04 | Phase 3.1 | Pending |
+| HIST-05 | Phase 3.1 | Pending |
+| HIST-06 | Phase 3.1 | Pending |
+| NOTIF-01 | Phase 3.2 | Pending |
+| NOTIF-02 | Phase 3.2 | Pending |
+| NOTIF-03 | Phase 3.2 | Pending |
+| NOTIF-04 | Phase 3.2 | Pending |
+| NOTIF-05 | Phase 3.2 | Pending |
 | ROBUST-01 | Phase 4 | Pending |
 | ROBUST-02 | Phase 4 | Pending |
 | ROBUST-03 | Phase 4 | Pending |
@@ -274,6 +379,10 @@ Populated during roadmap creation.
 | ROBUST-05 | Phase 5 | Pending |
 | ROBUST-06 | Phase 5 | Pending |
 | ROBUST-07 | Phase 5 | Pending |
+| ALERT-01 | Phase 5 | Pending |
+| ALERT-02 | Phase 5 | Pending |
+| ALERT-03 | Phase 5 | Pending |
+| ALERT-04 | Phase 5 | Pending |
 | COORD-01 | Phase 6 | Pending |
 | COORD-02 | Phase 6 | Pending |
 | COORD-03 | Phase 6 | Pending |
@@ -282,19 +391,28 @@ Populated during roadmap creation.
 | COORD-06 | Phase 6 | Pending |
 | COORD-07 | Phase 6 | Pending |
 | COORD-08 | Phase 6 | Pending |
+| PAGE-01 | Phase 8 | Pending |
+| PAGE-02 | Phase 8 | Pending |
+| PROF-01 | Phase 9 | Pending |
+| PROF-02 | Phase 9 | Pending |
+| PROF-03 | Phase 9 | Pending |
 
 **Coverage:**
 
-- v1 requirements: 39 total (33 original + 5 new IDENT-01..05 added 2026-09-10 for the inserted
-  Phase 1.1: Identity & Login + 1 new UX-01 added 2026-09-18 from Phase 2 UAT — Foundation 6,
-  Identity 5, Trust Engine 9, Coordination 8, Robustness 8, Ops 2, Presentation 1)
+- v1 requirements: 59 total (33 original + 5 new IDENT-01..05 added 2026-09-10 for the inserted
+  Phase 1.1: Identity & Login + 1 new UX-01 added 2026-09-18 from Phase 2 UAT + 20 new added
+  2026-10-03 for roadmap Phases 3.1, 3.2, 5, 8 and 9: HIST 6, ALERT 4, NOTIF 5, PAGE 2, PROF 3.
+  By group: Foundation 6, Identity 5, Trust Engine 9, Coordination 8, Robustness 8, Ops 2,
+  Presentation 1, Report History 6, Official Alerts 4, Updates & Following 8, Report Page 2)
 
-- Mapped to phases: 39 (100%)
+- Mapped to phases: 59 (100%)
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-09-05*
-*Last updated: 2026-09-18 — added UX-01 (in-app light/dark toggle) surfaced by Phase 2's UAT gap
+*Last updated: 2026-10-03: added HIST-01..06, ALERT-01..04, NOTIF-01..05, PAGE-01..02 and PROF-01..03
+for roadmap Phases 3.1, 3.2, 5, 8 and 9 (raised by the owner after the Phase 3 popup sketch), plus
+v2 items PWA-06, PWA-07 and HIST-07. Earlier update, 2026-09-18: added UX-01 (in-app light/dark toggle) surfaced by Phase 2's UAT gap
 closure round, linked to plan 02-10; added IDENT-01..05 for Phase 1.1 (mandatory email+OTP login,
 inserted before Phase 2 after the user decided anonymous voting was too gameable); FOUND-01
 marked superseded, not removed (it shipped and was verified as originally specified in Phase 1)*
