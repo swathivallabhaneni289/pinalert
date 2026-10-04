@@ -603,7 +603,7 @@ Also test symmetry, and an optional DB parity test against `NearbyReports`' `dis
 | 7 (chosen) | 18, 17 | 152.7 m | 148.7 m |
 | 8 | 20, 20 | 19.1 m | 37.2 m |
 
-Precision 7 width by city: Chennai 148.7 m, Bengaluru 148.8 m, Kolkata 141.0 m, Delhi 134.1 m, Srinagar 126.5 m. Witness simulation (500 trials, seed 42, uniform points in a 300 m radius circle, precision 7): 5 witnesses give 2 to 5 distinct cells (mean 4.4); 50 witnesses 12 to 21 (mean about 16.5); 200 witnesses 17 to 22 (mean about 20). So even a very large crowd in a 300 m circle can only ever show about 22 distinct places, which is the honest statement of "N is a lower bound on people". Assert generous bounds in the test (for example at most 24 distinct cells at every one of the five latitudes, and a fixed seed) rather than exact means.
+Precision 7 width by city: Chennai 148.7 m, Bengaluru 148.8 m, Kolkata 141.0 m, Delhi 134.1 m, Srinagar 126.5 m. Witness simulation (500 trials, seed 42, uniform points in a 300 m radius circle, precision 7): 5 witnesses give 2 to 5 distinct cells (mean 4.4); 50 witnesses 12 to 21 (mean about 16.5); 200 witnesses 17 to 22 (mean about 20). So even a very large crowd in a 300 m circle can only ever show about 22 distinct places, which is the honest statement of "N is a lower bound on people". Assert generous bounds in the test (for example at most 24 distinct cells at every one of the five latitudes, and a fixed seed) rather than exact means. **Corrected 2026-10-04 (plan 03-02):** the 17 to 22 range and the bound of 24 hold only for a circle centred on the city point. With the circle at any alignment on the cell grid, the most cells a 300 m circle can touch is 23 at Chennai and Bengaluru and 26 at Kolkata, Delhi and Srinagar (an independent sweep at 60 and 120 offset steps gives the same figures), so the test asserts each city's ceiling and never above 26.
 
 ## Score formulas (ask 4)
 
@@ -951,7 +951,7 @@ Not a rename or migration phase. Stored data: one new index only, no data migrat
 | V-07 D-01 | Handler returns 403 `field: location`, fixed copy, no distance in body | e2e (DB) | `go test ./internal/api/handlers/ -run TestCastVoteTooFar -count=1` | Wave 0 |
 | V-08 D-01 | Existing vote e2e still pass with C = 12.9686,77.5946 | e2e (DB) | `go test ./internal/api/handlers/ -count=1` | edit existing |
 | V-09 D-01 | `ReportVoteContext` returns report coordinates | store (DB) | `go test ./internal/store/ -run TestReportVoteContextReturnsCoordinates` | Wave 0 |
-| V-10 D-03 | Cell width and witness test (at most 24 distinct cells from 200 witnesses in 300 m at five latitudes) | unit | `go test ./internal/service/ -run TestGeohashPrecisionWitnesses` | Wave 0 |
+| V-10 D-03 | Cell width and witness test (no trial from 200 witnesses in 300 m exceeds its latitude's ceiling: 23 cells at Chennai and Bengaluru, 26 at Kolkata, Delhi and Srinagar; corrected 2026-10-04 from "at most 24") | unit | `go test ./internal/service/ -run TestGeohashPrecisionWitnesses` | Wave 0 |
 | V-11 D-04 TRUST-05 | `ConfirmedPlaces == ConfirmCells`, dedupe, permutation, reporter excluded | property | `-run TestBuildTrustCountsMatchTally` | Wave 0 |
 | V-12 D-16 R-04 TRUST-05 | Count line grammar (0, 1, 2, 99, 100, disputes, N=0 with M) | unit | `-run TestTrustCountLabel` | Wave 0 |
 | V-13 D-05 R-01 TRUST-07 | Currency boundary table (W-1ns, W, W+1ns, 2W, 2W+1ns, 4W, skew) for 8 h and 24 h | unit | `-run TestCurrencyScoreBoundaries` | Wave 0 |

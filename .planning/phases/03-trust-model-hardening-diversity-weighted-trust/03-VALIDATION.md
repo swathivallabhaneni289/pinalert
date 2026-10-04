@@ -54,7 +54,7 @@ map TRUST-05, TRUST-07, decisions D-01 to D-22 and derived rules R-01 to R-08 to
 | V-07 D-01 | Handler returns 403 `field: location`, fixed copy, no distance in body | e2e (DB) | `go test ./internal/api/handlers/ -run TestCastVoteTooFar -count=1` | Wave 0 |
 | V-08 D-01 | Existing vote e2e still pass with C = 12.9686,77.5946 | e2e (DB) | `go test ./internal/api/handlers/ -count=1` | edit existing |
 | V-09 D-01 | `ReportVoteContext` returns report coordinates | store (DB) | `go test ./internal/store/ -run TestReportVoteContextReturnsCoordinates` | Wave 0 |
-| V-10 D-03 | Cell width and witness test (at most 24 distinct cells from 200 witnesses in 300 m at five latitudes) | unit | `go test ./internal/service/ -run TestGeohashPrecisionWitnesses` | Wave 0 |
+| V-10 D-03 | Cell width and witness test (no trial from 200 witnesses in 300 m exceeds its latitude's ceiling: 23 cells at Chennai and Bengaluru, 26 at Kolkata, Delhi and Srinagar; corrected 2026-10-04 from "at most 24") | unit | `go test ./internal/service/ -run TestGeohashPrecisionWitnesses` | Wave 0 |
 | V-11 D-04 TRUST-05 | `ConfirmedPlaces == ConfirmCells`, dedupe, permutation, reporter excluded | property | `-run TestBuildTrustCountsMatchTally` | Wave 0 |
 | V-12 D-16 R-04 TRUST-05 | Counter labels for confirmed and disputed (0, 1, 2, 99, 100, both always shown, zeros included) | unit | `-run TestTrustCountLabel` | Wave 0 |
 | V-13 D-05 R-01 TRUST-07 | Currency boundary table (W-1ns, W, W+1ns, 2W, 2W+1ns, 4W, skew) for 8 h and 24 h | unit | `-run TestCurrencyScoreBoundaries` | Wave 0 |
