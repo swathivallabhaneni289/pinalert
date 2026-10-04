@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 3
 status: not_started
-stopped_at: "Roadmap additions reviewed, fixed and committed. Next: /gsd-ui-phase 3 (best started in a fresh session)"
-last_updated: "2026-10-03T09:39:36.888Z"
+stopped_at: "Phase 3 UI-SPEC approved (6 of 6, committed 065684f). Next: /gsd-plan-phase 3. Before planning, decide the Mode: mvp goal wording and give the owner OK on the row title overflow-wrap (UI-SPEC open item 9)"
+last_updated: "2026-10-04T10:41:22.292Z"
 progress:
   total_phases: 12
   completed_phases: 4
@@ -238,8 +238,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-03T09:39:36.857Z
-Stopped at: Roadmap additions reviewed, fixed and committed. Next: /gsd-ui-phase 3 (best started in a fresh session)
+Last session: 2026-10-04T10:41:22.271Z
+Stopped at: Phase 3 UI-SPEC approved (6 of 6, committed 065684f). Next: /gsd-plan-phase 3. Before planning, decide the Mode: mvp goal wording and give the owner OK on the row title overflow-wrap (UI-SPEC open item 9)
 Phase 3 so far: context (D-01 to D-23, R-01 to R-08), research, a draft validation plan (V-01 to V-42) and
 the design brief are committed. The popup was then sketched (sketches 001 and 002 in `.planning/sketches/`,
 four independent reviews) and the owner chose variant d4, built from their own reference image. Sketch 001 is
@@ -263,4 +263,4 @@ flag on Phase 3 has a Goal that is not written as a user story, the same guard t
 between rewriting the goal and clearing the flag before planning. Build, review and verification history for
 Phases 1.1 and 2 lives in their phase directories and in git history.
 
-Resume file: .planning/sketches/001-map-pin-popup/README.md
+Resume file: .planning/phases/03-trust-model-hardening-diversity-weighted-trust/03-UI-SPEC.md
