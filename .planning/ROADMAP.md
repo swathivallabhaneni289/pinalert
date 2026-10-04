@@ -246,7 +246,7 @@ Plans:
 
 ### Phase 3: Trust-Model Hardening — Diversity-Weighted Trust
 
-**Goal**: The "confirmed by N nearby" number and trust signals shown to users are resistant to trivial gaming — a real reflection of distinct nearby corroboration, not raw vote count.
+**Goal**: As a person reading the feed during an emergency, I want to see how many different nearby people confirmed or disputed each report, and whether it is still current and its reporter reliable, so that a few accounts cannot make a weak report look well corroborated.
 **Mode:** mvp
 **Depends on**: Phase 2
 **Requirements**: TRUST-05, TRUST-07
