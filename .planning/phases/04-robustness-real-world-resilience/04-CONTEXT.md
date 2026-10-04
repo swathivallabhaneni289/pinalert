@@ -333,8 +333,8 @@ separately reviewed by the owner.
   cell), D-10 to D-14 and D-23 (reporter rating, judged reports, display only), D-20 and D-21 (one trust block, one server trust
   object), deferred list (vote rate limiting is this phase), cross phase hand offs
 - `.planning/phases/03-trust-model-hardening-diversity-weighted-trust/03-UI-SPEC.md` - the approved Phase 3 UI contract (it was
-  untracked in git when this context was gathered, and was not reviewed during this discussion; read it before the Phase 4 UI
-  contract). Also `03-DESIGN-BRIEF.md`
+  untracked in git when this discussion started and was committed as 065684f while it ran; it was not reviewed during this
+  discussion, so read it before the Phase 4 UI contract). Also `03-DESIGN-BRIEF.md`
 - `.planning/phases/07-address-search-box-for-report-location/07-CONTEXT.md` - the geocoder proxy and its process wide one request
   per second limit, which the typed place on the Low data view shares
 
