@@ -255,8 +255,56 @@ Plans:
   1. The feed displays "confirmed by N nearby" computed from the count of distinct confirming geohash cells/sessions — using a deliberately chosen, documented geohash precision — not the raw number of votes cast.
   2. A report displays two distinct trust signals side by side: a fast-decaying "is this still current" confidence score and a slow-decaying "is this source reliable" score.
 
-**Plans**: TBD
+**Plans**: 0/20 plans complete
 **UI hint**: yes
+
+Plans:
+**Wave 1**
+
+- [ ] 03-01-PLAN.md: A vote cast from more than 1 km from the report is refused by `CastVote` before anything is written, for all four... (wave 1)
+- [ ] 03-02-PLAN.md: Geohash precision 7 is a tested, documented choice: a seeded witness simulation bounds the distinct cells a 300 m... (wave 1)
+- [ ] 03-03-PLAN.md: Every judged outcome and every reporter rating is decided by pure functions: the classifier reuses `Resolve` with... (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 03-04-PLAN.md: A voter more than 1 km away gets HTTP 403 with field `location` and the fixed too far sentence, and the browser... (wave 2)
+- [ ] 03-05-PLAN.md: One server built `Trust` object carries the distinct confirming and disputing place counts N and M, their capped... (wave 2)
+- [ ] 03-06-PLAN.md: The latest expired reports of a batch of reporter accounts are read in one bounded, index backed query keyed by the... (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 03-07-PLAN.md: `GET /api/reports` and every vote response carry the same `trust` object with both counters and their sentences, the... (wave 3)
+- [ ] 03-08-PLAN.md: Every trust object carries the still current band, a 0 to 100 score that stays null until 2 distinct places have... (wave 3)
+- [ ] 03-09-PLAN.md: One vote control builder serves the feed row, the popup and the Activity page: icon and label spans on every vote... (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 03-10-PLAN.md: A reporter's rating is composed from their bounded history rows and current votes into the reporter signal (tag,... (wave 4)
+- [ ] 03-11-PLAN.md: Vote buttons share one outlined style on all three surfaces with 20px glyphs, an inverted pressed fill, a destructive... (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 03-12-PLAN.md: Every read path loads the reporter history once per request, so the feed, the vote response and the Activity page... (wave 5)
+- [ ] 03-13-PLAN.md: A reader sees the trust block on every feed row and map popup: two counters always shown, the still current word and... (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 03-14-PLAN.md: The feed and every vote response expose the still current and reporter signals in the pinned wire shape, equal... (wave 6)
+- [ ] 03-15-PLAN.md: A reporter sees the same trust block on each of their own reports on the Activity page, rendered from the server's... (wave 6)
+- [ ] 03-16-PLAN.md: Every feed row and Activity row names its severity in a visible rounded label read before the title, read only labels... (wave 6)
+- [ ] 03-18-PLAN.md: Once the viewer's location is known, Confirm, Dispute and Mark resolved on a report farther than the server's radius... (wave 6)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 03-17-PLAN.md: Opening a pin shows one neutral popup card, built once and updated in place on every poll, with the close button... (wave 7)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 03-19-PLAN.md: A keyboard or screen reader user can open a pin with Enter or Space, land in a named popup dialog, close the panel... (wave 8)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 03-20-PLAN.md: The trust model is documented end to end, the earlier UI contracts point at this one, regenerated code matches its... (wave 9)
 
 ### Phase 03.1: Report history views (INSERTED)
 
@@ -383,7 +431,7 @@ Phases execute in numeric order: 1 → 1.1 → 2 → 3 → 3.1 → 3.2 → 4 →
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
 | 1.1 Identity & Login — Mandatory Email Verification | 8/8 | Complete   | 2026-09-12 |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 15/15 | Complete   | 2026-09-23 |
-| 3. Trust-Model Hardening — Diversity-Weighted Trust | 0/TBD | Not started | - |
+| 3. Trust-Model Hardening — Diversity-Weighted Trust | 0/20 | Not started | - |
 | 3.1 Report history views | 0/TBD | Not started | - |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
@@ -518,6 +566,7 @@ Plans:
 Plans:
 
 - [ ] TBD (run /gsd-plan-phase 8 to break down)
+
 ### Phase 9: Followable reporter profiles
 
 **Goal:** People who choose to be public, and have earned the Reliable reporter tag, can be followed, and a follower is told when they post, without exposing anyone who did not opt in. Raised by the owner on 2026-10-03, it takes up the "public reporter profile page" that Phase 3 deferred. First to cut if time runs short, because Phase 3.2's Reliable-reporter alerts already deliver most of the value without profiles.
