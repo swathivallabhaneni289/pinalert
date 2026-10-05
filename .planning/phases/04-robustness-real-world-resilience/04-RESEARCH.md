@@ -24,6 +24,22 @@ A 32 agent read only check of this file and `04-PATTERNS.md` against the real co
 12. **Phase 3 status**: all 20 plan files exist on disk now (03-16 and 03-19 were not yet committed); none of Phases 3, 3.1, 3.2 is built. Fixed in the collisions intro.
 13. **Minor**: `NearbyReports` is held fixed by convention (not a byte pin); the Flag wire slugs are chosen here; the mailer loader test has five cases; the exempt route list has seven entries with the two new routes; no test reads the body of `feed.js` `render`; `votes.js` `getCurrentPosition(` is pinned only inside `getVoterLocation()`; Phase 3 edit order notes for `votes.js` and `app.js` (collisions rows 10 and 17).
 
+### UI contract code facts (the same check, run on 04-UI-SPEC.md the same day)
+
+246 claims the approved contract makes about today's code and tests were checked: 234 confirmed, no design level errors, 11 minor factual points. The approved contract file is NOT edited; where it differs from today's code, plans use this list.
+
+U1. **No 429 exists on the report or vote routes today.** The report handler (`internal/api/handlers/reports.go`) is a Phase 4 edit: its own limiter, the 429 JSON body (`retry_after_seconds`, `serious`, the primary number) and `Retry-After`. `criticalBypass()` is unexported, so handlers use the exported `ReportMeta.Serious()` wrapper.
+U2. **README has no "launch checklist" heading.** Add "set the contact email" and "check the emergency numbers on the live government pages" to the numbered list "Before sharing a deployed instance with real visitors" under "## Email delivery (Resend)", or create a Launch checklist section and move that list into it.
+U3. **`TestTrustDisclosure`** (Phase 3 plan 03-13, extended by 03-19) and **`TestPopupPaddingTokensAgree`** (03-19) do not exist until Phase 3 is built; Phase 4's edits to them come after those plans.
+U4. **`account-menu.js` has pins that new measurement code can break:** the text "Pinalert" must not appear anywhere in it, comments included (`TestAccountMenuJSHasNoAppShellDependency`); no markup parsing sink; at least two `addEventListener` sites and a `removeEventListener` (`TestAccountMenuJSOutsideClickListenerIsTornDown`). The Tab and Escape test only checks that those strings appear.
+U5. **`buildMetaText` is private to `feed.js`** (not loaded on the Low data view or the Activity page; the popup meta is built separately in `map.js`). Put the shared "Written ..." formatter in `app.js` on `window.Pinalert` beside `relativeTime`; the Activity row gets the same wording from its server twin `profileRelativeTime` in `internal/api/handlers/auth.go`.
+U6. **The shipped submit in flight label is "Posting…"** (with the ellipsis character) in `modal.js`; the State Matrix drops the ellipsis but means to keep the shipped label.
+U7. **The Low data row meta line** is "{Category} · {time}" plus, for Shelter open reports, " · {capacity status}" and " · {N} people" when a headcount is set, exactly as `feed.js` `buildMetaText` produces today.
+U8. **Typed place search on the Low data view.** Today's `runSearch` in `modal.js` has no timeout and shows the server's message for any non ok answer (including the geocode limiter's 429 sentence). The shared search code adds a timeout (planner value); on the Low data view a timeout, a network error or ANY non 200 answer shows the Low unavailable message and ignores the server text; the main form keeps showing the server message.
+U9. **The resolve confirmation's "Cancel"** is a shipped Phase 2 label (`RESOLVE_CONFIRM_CANCEL_LABEL` in `votes.js`) that Phase 3 A16 restyles; Phase 4 does not touch it.
+U10. **Contract gap (not a code fact):** the Copywriting Contract lists the Low validation message "Still finding your position. Wait a moment, or type a place." but the Low data validation table (UI-SPEC lines 541 to 547) does not; the plan adds it to its contracts with the Copywriting Contract wording.
+U11. **"Constant round trip test"** in UI-SPEC open item 5 is not a test name; it means `TestNearbyBatchesVoteReadsOnce` (`internal/service/feed_test.go`), amended for `ReportExtrasForReports`.
+
 <user_constraints>
 ## User Constraints (from CONTEXT.md)
 
