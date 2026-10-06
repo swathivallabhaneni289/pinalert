@@ -5,7 +5,7 @@ milestone_name: milestone
 current_phase: 3
 status: ready_to_execute
 stopped_at: "Phase 3 planned: 20 plans in 9 waves, all committed, decision coverage 23 of 23. Next: /gsd-verify-work 2 (Phase 2 retests are pending), then /gsd-execute-phase 3 with separate worktrees. Phase 4 UI-SPEC approved (6 of 6, committed 14f87e1). Next for Phase 4: before /gsd-plan-phase 4, edit Phase 4 in ROADMAP.md and REQUIREMENTS.md with /gsd-phase (the added scope) and decide the Mode."
-last_updated: "2026-10-05T13:17:33.321Z"
+last_updated: "2026-10-06T07:42:52.980Z"
 progress:
   total_phases: 12
   completed_phases: 4
@@ -227,6 +227,7 @@ Recent decisions affecting current work:
 - Phase 999.4 added: Email digests for updates (backlog)
 - Phase 999.5 added: Replay the last 24 hours (backlog)
 - Phase 8 edited: review fixes: notify only once Live, views partition, Phase 8 before Phase 6, Phase 5 spike gate, Phase 9 lifecycle
+- Phase 4 edited: edited fields: goal, depends_on, requirements, success_criteria (added the Phase 4 scope from 04-CONTEXT.md: moderator screen with the Flag control, Disclaimer and Policy pages, vote throttling, posting and voting on the Low data view; goal reworded as a user story; ROBUST-09 and ROBUST-10 added)
 
 ## Deferred Items
 

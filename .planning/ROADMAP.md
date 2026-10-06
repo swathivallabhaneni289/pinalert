@@ -364,17 +364,19 @@ Plans:
 
 ### Phase 4: Robustness — Real-World Resilience
 
-**Goal**: The reporting loop keeps working for real users on shaky networks, under abuse pressure, and with clear legal footing.
+**Goal**: As a person reading or reporting during an emergency, often on a weak phone connection, I want to keep reading, posting and confirming reports when the signal is bad, knowing abusive posts are screened out and that the site says plainly it is unofficial, so that the reporting loop keeps working and I am not misled about what Pinalert is.
 **Mode:** mvp
-**Depends on**: Phase 1, Phase 2
-**Requirements**: ROBUST-01, ROBUST-02, ROBUST-03, ROBUST-04, ROBUST-08
+**Depends on**: Phase 1, Phase 2, Phase 3, Phase 3.1
+**Requirements**: ROBUST-01, ROBUST-02, ROBUST-03, ROBUST-04, ROBUST-08, ROBUST-09, ROBUST-10
 **Success Criteria** (what must be TRUE):
 
-  1. A user on a degraded connection can switch to a low-bandwidth, text-only feed view with no map or photos.
+  1. A user on a degraded connection can switch to a low-bandwidth, text-only feed view with no map or photos, and can post a report and confirm or dispute one from it.
   2. A report submitted while offline is queued on-device (IndexedDB) and automatically sent once connectivity returns.
-  3. A submitted report's text is automatically screened for toxicity/spam before publishing; critical/rescue-needed reports stay visible while the check is pending, other categories stay provisional until it clears.
-  4. Rapid repeated submissions from the same anonymous session are throttled before a shared IP is penalized, so many legitimate phones behind one carrier-grade NAT IP aren't collectively blocked.
+  3. A submitted report's text is automatically screened before publishing: clearly abusive text is rejected with the form kept open, and borderline text posts normally and is listed for moderators. If the check cannot finish, a critical or rescue-needed report stays visible while the check retries, and any other report is held off every feed until the check finishes.
+  4. Rapid repeated submissions, votes, vote changes and flags from the same verified account are throttled, with a message that says how long to wait, before a shared IP is penalized, so many legitimate phones behind one carrier-grade NAT IP aren't collectively blocked.
   5. Every page displays a persistent disclaimer that Pinalert is unofficial, not affiliated with any government agency, and not a substitute for calling emergency services.
+  6. A moderator (the owner, or anyone on the server list) can open a screen that everyone else gets a plain 404 for, see automatically flagged posts, user flags and posts whose text check has not finished, and Keep or Remove any post; any signed-in reader can flag a post with a reason from a quiet control, and a flag alone never hides a post.
+  7. A public Disclaimer page and a public Policy page, readable without logging in, state what Pinalert is not, the emergency numbers, what is screened and kept, and how to complain or ask for removal, and both are linked from the bar on every page.
 
 **Plans**: TBD
 **UI hint**: yes

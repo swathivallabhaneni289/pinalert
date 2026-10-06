@@ -110,18 +110,20 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Robustness
 
 - [ ] **ROBUST-01**: User can view a low-bandwidth, text-only fallback feed (no map, no photos) on
-      a degraded connection
+      a degraded connection, and can post a report and confirm or dispute from it
 
 - [ ] **ROBUST-02**: A report submitted while offline is queued locally (IndexedDB) and
       automatically sent once connectivity returns
 
 - [ ] **ROBUST-03**: A submitted report's text is screened by an automated toxicity/spam check
-      before publishing, calibrated to a documented false-positive target; critical/rescue-needed
-      reports fail open (visible while the check is pending), other categories fail closed
-      (provisional)
+      before publishing, calibrated to a documented false-positive target; clearly abusive text is
+      rejected at submit for every severity and borderline text is listed for moderators;
+      critical/rescue-needed reports fail open (visible while the check is pending), other
+      categories fail closed (held off every feed until the check finishes)
 
-- [ ] **ROBUST-04**: Report submission is rate-limited primarily per anonymous session, with IP
-      as a secondary, looser limit — not primary IP-based limiting
+- [ ] **ROBUST-04**: Report submission, votes, vote changes and flags are rate-limited primarily
+      per verified account, with the network address only as a very loose secondary limit, never
+      primary IP-based limiting
 
 - [ ] **ROBUST-05**: The map displays official pins ingested from the GDACS open-data feed
       alongside crowd reports, unaffected by crowd confirm/dispute votes
@@ -134,6 +136,15 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **ROBUST-08**: Every page displays a persistent disclaimer that Pinalert is unofficial, not
       affiliated with any government agency, and not a substitute for calling emergency services
+
+- [ ] **ROBUST-09**: A moderator (the owner, or anyone on a server-side list) can open a screen no
+      one else can open, see automatically flagged posts, user flags and posts whose text check
+      has not finished, and Keep or Remove any post; any signed-in reader can flag a post with a
+      reason, and a flag never hides a post by itself
+
+- [ ] **ROBUST-10**: Public Disclaimer and Policy pages, readable without logging in and carrying
+      no account data, state what Pinalert is not, the emergency numbers, what is screened and
+      kept, and how to complain or ask for removal
 
 ### Report History
 
@@ -376,6 +387,8 @@ Populated during roadmap creation.
 | ROBUST-03 | Phase 4 | Pending |
 | ROBUST-04 | Phase 4 | Pending |
 | ROBUST-08 | Phase 4 | Pending |
+| ROBUST-09 | Phase 4 | Pending |
+| ROBUST-10 | Phase 4 | Pending |
 | ROBUST-05 | Phase 5 | Pending |
 | ROBUST-06 | Phase 5 | Pending |
 | ROBUST-07 | Phase 5 | Pending |
@@ -399,18 +412,19 @@ Populated during roadmap creation.
 
 **Coverage:**
 
-- v1 requirements: 59 total (33 original + 5 new IDENT-01..05 added 2026-09-10 for the inserted
+- v1 requirements: 61 total (33 original + 5 new IDENT-01..05 added 2026-09-10 for the inserted
   Phase 1.1: Identity & Login + 1 new UX-01 added 2026-09-18 from Phase 2 UAT + 20 new added
-  2026-10-03 for roadmap Phases 3.1, 3.2, 5, 8 and 9: HIST 6, ALERT 4, NOTIF 5, PAGE 2, PROF 3.
-  By group: Foundation 6, Identity 5, Trust Engine 9, Coordination 8, Robustness 8, Ops 2,
+  2026-10-03 for roadmap Phases 3.1, 3.2, 5, 8 and 9: HIST 6, ALERT 4, NOTIF 5, PAGE 2, PROF 3
+  + 2 new ROBUST-09 and ROBUST-10 added 2026-10-06 for the Phase 4 scope the owner added in discussion.
+  By group: Foundation 6, Identity 5, Trust Engine 9, Coordination 8, Robustness 10, Ops 2,
   Presentation 1, Report History 6, Official Alerts 4, Updates & Following 8, Report Page 2)
 
-- Mapped to phases: 59 (100%)
+- Mapped to phases: 61 (100%)
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-09-05*
-*Last updated: 2026-10-03: added HIST-01..06, ALERT-01..04, NOTIF-01..05, PAGE-01..02 and PROF-01..03
+*Last updated: 2026-10-06: added ROBUST-09 and ROBUST-10 for the Phase 4 scope the owner added in discussion (the moderator screen with the Flag control, and the public Disclaimer and Policy pages) and reworded ROBUST-01, ROBUST-03 and ROBUST-04 to match. Earlier update, 2026-10-03: added HIST-01..06, ALERT-01..04, NOTIF-01..05, PAGE-01..02 and PROF-01..03
 for roadmap Phases 3.1, 3.2, 5, 8 and 9 (raised by the owner after the Phase 3 popup sketch), plus
 v2 items PWA-06, PWA-07 and HIST-07. Earlier update, 2026-09-18: added UX-01 (in-app light/dark toggle) surfaced by Phase 2's UAT gap
 closure round, linked to plan 02-10; added IDENT-01..05 for Phase 1.1 (mandatory email+OTP login,
