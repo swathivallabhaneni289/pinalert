@@ -549,7 +549,7 @@ None block planning. Each has a recommendation.
 | Framework | Go `testing` (go1.26.4). Package `web` contract tests parse embedded files (no browser). e2e tests drive `api.NewRouter` over `httptest` against real Postgres via `testutil.NewTestDB` |
 | Config file | none; `sqlc.yaml` for codegen; `Makefile` targets `test`, `test-short` |
 | Quick run (no database) | `env -u DATABASE_URL go test ./... -count=1` (the `env -u` prefix is mandatory: if the owner's shell exports a URL pointing at `pinalert_test`, a bare run would truncate it; every database backed test skips without `DATABASE_URL` through `testutil.NewTestDB`, and `./...` never fails on a package that does not exist yet) |
-| Database form (per plan N) | `dropdb --if-exists p4_04NN; createdb p4_04NN && DATABASE_URL="postgres://localhost:5432/p4_04NN?sslmode=disable" go test <pkgs> -run '<regex>' -count=1 -p 1; status=$?; dropdb --if-exists p4_04NN; exit $status` (Phase 3's form; `NewTestDB` applies embedded migrations) |
+| Database form (per plan N) | `dropdb --if-exists p4_04NN; createdb p4_04NN && DATABASE_URL="postgres://localhost:5432/p4_04NN?sslmode=disable" go test <pkgs> -run '<regex>' -count=1 -p 1; rc=$?; dropdb --if-exists p4_04NN; exit $rc` (Phase 3's form; `NewTestDB` applies embedded migrations) |
 | Race | add `-race` to the database form for limiter and idempotency tests |
 | Phase gate | database form over `./...` `-p 1` on scratch database `p4_04full`, dropped afterwards, then the UI-SPEC V-42 manual script on port 8792 with `ENV=development` |
 

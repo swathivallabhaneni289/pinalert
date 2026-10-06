@@ -94,7 +94,7 @@ Read the section "Corrections after the code check" at the top of 04-RESEARCH.md
 - **Plan ids and files.** `04-NN-PLAN.md`. Plans in the same wave never share a file (the outline's File ownership table decides). Only one plan per
   wave runs `make sqlc` or `make swag`, and that plan commits the regenerated files because CI has neither tool. Never edit generated files by hand.
 - **Disposable database, one per plan.** Every verify command that touches Postgres uses the plan's own database `p4_04NN` in the canonical form of
-  04-VALIDATION.md (`dropdb --if-exists p4_04NN; createdb p4_04NN && DATABASE_URL=... go test ... -count=1 -p 1; status=$?; dropdb --if-exists p4_04NN; exit $status`).
+  04-VALIDATION.md (`dropdb --if-exists p4_04NN; createdb p4_04NN && DATABASE_URL=... go test ... -count=1 -p 1; rc=$?; dropdb --if-exists p4_04NN; exit $rc`).
   The quick run is `env -u DATABASE_URL go test ... -count=1`. NEVER `pinalert_test` or `pinalert` (the test suite truncates `pinalert_test`, which holds
   the owner's manual testing data). Any run or manual step uses `PORT=8792`, `BASE_URL=http://127.0.0.1:8792`, `ENV=development` and a disposable database.
   NEVER ports 8080 or 8090.
