@@ -24,6 +24,8 @@ A 32 agent read only check of this file and `04-PATTERNS.md` against the real co
 12. **Phase 3 status**: all 20 plan files exist on disk now (03-16 and 03-19 were not yet committed); none of Phases 3, 3.1, 3.2 is built. Fixed in the collisions intro.
 13. **Minor**: `NearbyReports` is held fixed by convention (not a byte pin); the Flag wire slugs are chosen here; the mailer loader test has five cases; the exempt route list has seven entries with the two new routes; no test reads the body of `feed.js` `render`; `votes.js` `getCurrentPosition(` is pinned only inside `getVoterLocation()`; Phase 3 edit order notes for `votes.js` and `app.js` (collisions rows 10 and 17).
 
+14. **Superseded by the outline review (2026-10-06).** The claim that the `ReportMeta.Moderation` zero value alone "is exactly R-02" is wrong: R-02 also needs the Phase 3 reporter history query to carry `moderation_state` and `ClassifyOutcome` to return neutral when `ReportMeta.Withheld()` (plan 04-29). A `written_at` older than 14 days is clamped to 14 days, not stored as NULL (Area E and A10); a malformed value is stored as NULL; none of these is ever a 400.
+
 ### UI contract code facts (the same check, run on 04-UI-SPEC.md the same day)
 
 246 claims the approved contract makes about today's code and tests were checked: 234 confirmed, no design level errors, 11 minor factual points. The approved contract file is NOT edited; where it differs from today's code, plans use this list.
