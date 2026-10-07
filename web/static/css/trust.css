@@ -434,17 +434,12 @@
  *    outright. That shadow is theme-neutral and needs no override, so it
  *    is deliberately left to cascade from the vendor rule — this rule
  *    declares background and color only.
- * 3. The close button IS now overridden, to --color-text-muted at rest and
- *    --color-text on hover and focus. A severity tinted wrapper moves the
- *    surface the glyph sits on, so the old resting figures (roughly 4.2:1
- *    and 4.6:1) no longer describe what ships: Leaflet's own resting
- *    #757575 measures about 2.88:1 on the dark low severity tint and
- *    2.90:1 on the dark medium one, both under the 3:1 graphical-object
- *    floor this block already invokes, and its hover #585858 is worse
- *    still. The override rules live directly below the tint rules, each
- *    carrying the ancestor field for the same reason point 1 above gives,
- *    at a specificity that beats Leaflet's own base rule (0,2,1) and
- *    hover/focus pair (0,3,1) regardless of link order.
+ * 3. The close button is overridden further down this file (plan 03-17).
+ *    Since Phase 3 the popup is a neutral card on --color-bg and the severity
+ *    tint stays on the feed row, so the close glyph sits on one surface in
+ *    every state and its contrast is measured against --color-bg only. The
+ *    override heads carry the ancestor field so they beat Leaflet's own base
+ *    rule regardless of link order.
  * 4. This rule lives here, not in main.css, for the same reason auth.css's
  *    own "Styled here rather than in main.css" comment gives for itself:
  *    main.css is covered by four computed contract tests including an
@@ -456,7 +451,7 @@
  * ---------------------------------------------------------------------- */
 .leaflet-container .leaflet-popup-content-wrapper,
 .leaflet-container .leaflet-popup-tip {
-  background: var(--severity-tint, var(--color-bg));
+  background: var(--color-bg);
   color: var(--color-text);
 }
 
@@ -1030,6 +1025,187 @@
 
   .severity-label.severity-label--medium::before,
   .severity-label.severity-label--low::before {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * Phase 3 popup card (plan 03-17; A2, A9, A10, A11, A25, A54, A62, A65, RR-5,
+ * RR-7). The popup is one neutral card on the page surface with a 12px
+ * radius, the shared shadow token and a 4px severity bar on its left edge.
+ * The severity colour stays on the bar, the badge and the labels. Every head
+ * that touches a Leaflet class keeps the ancestor field, so it outranks
+ * leaflet.css whatever the link order. The wrapper and the tip are styled
+ * apart from the combined surface rule above, which stays at two
+ * declarations. Spacing values are tokens and the 44px sizes read
+ * --touch-target-min.
+ * ---------------------------------------------------------------------- */
+
+.leaflet-container .leaflet-popup-content-wrapper {
+  padding: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow-popup);
+}
+
+.leaflet-container .leaflet-popup-tip {
+  box-shadow: var(--shadow-popup);
+}
+
+/* Content: no margin, the app font and a max height that scrolls inside the
+   card. The 70vh line is the fallback for engines without dvh or max(). The
+   20px is the margin-bottom Leaflet adds when it measures the popup for the
+   keep in view pan. The wrapper padding and these content margins are zero,
+   so Leaflet's own 28px of vertical chrome is not in the reserve. */
+.leaflet-container .leaflet-popup-content {
+  margin: 0;
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  overflow-y: auto;
+  max-width: calc(100vw - var(--space-md) - var(--space-md));
+  max-height: 70vh;
+  max-height: max(120px, calc(100dvh - var(--space-md) - var(--space-md) - 20px));
+}
+
+/* The paragraph reset is the floor. The spacing rules below carry at least
+   three classes, so they outrank it where a popup paragraph needs a margin. */
+.leaflet-container .leaflet-popup-content p {
+  margin: 0;
+}
+
+/* Header glyph (A54). Four classes beat the two class 48 percent rule in
+   main.css, so the feed and Activity glyphs keep 48 percent. No colour here,
+   so the badge default foreground stays (A25). */
+.leaflet-container .popup-card .icon-badge .icon-glyph {
+  width: 20px;
+  height: 20px;
+}
+
+.popup-card:not([hidden]) {
+  display: block;
+  border-left: 4px solid var(--severity-current, var(--color-border));
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.popup-card__body {
+  padding: var(--space-md);
+}
+
+/* The right padding keeps the labels clear of the close button. */
+.popup-card__header:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: 32px;
+  padding-right: var(--space-2xl);
+}
+
+/* Three classes so the title margin outranks the paragraph reset. Four lines
+   at most, and a long unbroken word wraps (RR-5). */
+.leaflet-container .popup-card .popup-card__title:not([hidden]) {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  margin: var(--space-sm) 0 0;
+  padding: 0 var(--space-xs);
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.popup-card__meta:not([hidden]) {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+  padding: 0 var(--space-xs);
+  color: var(--color-text-muted);
+}
+
+.popup-card__meta .icon-glyph {
+  flex: none;
+  width: 16px;
+  height: 20px;
+}
+
+.popup-card__meta-lines {
+  min-width: 0;
+}
+
+.leaflet-container .popup-card .popup-card__meta-line {
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.leaflet-container .popup-card .popup-card__meta-line + .popup-card__meta-line {
+  margin-top: var(--space-xs);
+}
+
+.popup-card__actions {
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+/* The popup paragraph reset has a specificity of (0,2,1), which beats the
+   shared note and error margins at (0,2,0). These heads carry three classes
+   to take the margins back inside the card. */
+.leaflet-container .popup-card__actions .vote-controls:not([hidden]) {
+  margin-top: 0;
+}
+
+.leaflet-container .popup-card .vote-note {
+  margin-top: var(--space-sm);
+}
+
+.leaflet-container .popup-card .vote-error:not([hidden]) {
+  margin-top: var(--space-xs);
+}
+
+/* An inset ring, because the wrapper clips an outset one (A62). */
+.leaflet-container .popup-card:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Below 900px the fixed controls cover the top and bottom of the map, so the
+   card scrolls inside a shorter box. The two sums are the autopan reserves
+   plus the 20px Leaflet margin. 899.98px is the exact complement of the
+   shipped 900px query. */
+@media (max-width: 899.98px) {
+  .leaflet-container .leaflet-popup-content {
+    max-height: max(120px, calc(100dvh - (var(--space-md) + var(--touch-target-min) + var(--space-md)) - (var(--space-lg) + var(--touch-target-min) + var(--space-md)) - 20px));
+  }
+}
+
+/* A landscape phone or 400 percent reflow: the reserve goes back to the
+   16 and 16 form and the card scrolls inside itself. Declared last. */
+@media (max-height: 359px) {
+  .leaflet-container .leaflet-popup-content {
+    max-height: max(120px, calc(100dvh - var(--space-md) - var(--space-md) - 20px));
+  }
+}
+
+/* Windows high contrast (RR-7). The bar, the badge outline and the glyph keep
+   a visible colour. System colour keywords stay inside forced colors blocks. */
+@media (forced-colors: active) {
+  .popup-card:not([hidden]) {
+    border-left-color: CanvasText;
+  }
+
+  .leaflet-container .popup-card .icon-badge {
+    outline: 1px solid CanvasText;
+  }
+
+  .leaflet-container .popup-card .icon-glyph {
     forced-color-adjust: none;
     background-color: CanvasText;
   }

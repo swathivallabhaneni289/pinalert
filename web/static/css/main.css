@@ -36,6 +36,9 @@
   /* WCAG 2.5.5 accessibility floor — FAB, category tiles, slider thumb */
   --touch-target-min: 44px;
 
+  /* Shadow under the map popup card and its tip. The same value the FAB uses. */
+  --shadow-popup: 0 2px 8px rgb(0 0 0 / 25%);
+
   /* Typography — system UI stack, no web-font request (render-blocking fetch is the wrong
      trade for an emergency tool). Exactly four size roles, exactly two weights. */
   --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
