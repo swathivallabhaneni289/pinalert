@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -541,5 +542,112 @@ func TestTrustResponseOmitsIdentifiers(t *testing.T) {
 			t.Fatalf("report %d not listed for the %s", reportID, name)
 		}
 		p07AssertTrustKeys(t, tr)
+	}
+}
+
+// TestTrustCountUnderConcurrentVotes is TRUST-05 criterion 1 under load
+// (D-04, V-41): many concurrent votes, then one read, equals the distinct
+// places of the committed rows. 24 verified accounts confirm at the same
+// moment from 12 distinct places, two accounts per place.
+func TestTrustCountUnderConcurrentVotes(t *testing.T) {
+	srv, mailer, pool := newTrustE2EServer(t, p07FixedClock())
+
+	const (
+		places   = 12
+		accounts = 24
+	)
+	a := newVerifiedClient(t, srv, mailer, "p07-concurrent-reporter@example.com")
+
+	// A 3 by 4 grid. The 0.002 degree spacing exceeds the precision 7 cell
+	// size of 0.001373 degrees in both axes, so no two points share a cell,
+	// and the farthest point is about 0.39 km from the report, inside the
+	// 1 km rule.
+	var pts [][2]float64
+	for _, lat := range []float64{12.9696, 12.9716, 12.9736} {
+		for _, lon := range []float64{77.5916, 77.5936, 77.5956, 77.5976} {
+			pts = append(pts, [2]float64{lat, lon})
+		}
+	}
+	cells := map[string]bool{}
+	for _, p := range pts {
+		cells[geohash.EncodeWithPrecision(p[0], p[1], voterGeohashPrecision)] = true
+	}
+	if len(pts) != places || len(cells) != places {
+		t.Fatalf("grid has %d points in %d distinct precision 7 cells, want %d of each", len(pts), len(cells), places)
+	}
+
+	reportID := submitReportGetID(t, a, srv.URL, floodReportBody(p07ReportLat, p07ReportLon))
+
+	clients := make([]*http.Client, accounts)
+	for i := range clients {
+		email := "p07-concurrent-" + strconv.Itoa(i/10) + strconv.Itoa(i%10) + "@example.com"
+		clients[i] = newVerifiedClient(t, srv, mailer, email)
+	}
+
+	type result struct {
+		status int
+		body   []byte
+		err    error
+	}
+	results := make([]result, accounts)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < accounts; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			p := pts[i%places]
+			status, body, err := p07PostVoteRaw(clients[i], srv.URL, reportID, "confirm", p[0], p[1])
+			results[i] = result{status, body, err}
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	maxConfirmed := 0
+	for i, r := range results {
+		if r.err != nil {
+			t.Fatalf("voter %d: %v", i, r.err)
+		}
+		if r.status != http.StatusOK {
+			t.Fatalf("voter %d: status %d, body %s", i, r.status, r.body)
+		}
+		var out struct {
+			Trust json.RawMessage `json:"trust"`
+		}
+		if err := json.Unmarshal(r.body, &out); err != nil || len(out.Trust) == 0 {
+			t.Fatalf("voter %d: no trust in %s (%v)", i, r.body, err)
+		}
+		tr := p07DecodeTrust(t, out.Trust)
+		if tr.ConfirmedPlaces < 1 || tr.ConfirmedPlaces > places || tr.DisputedPlaces != 0 {
+			t.Fatalf("voter %d: confirmed_places %d, disputed_places %d, want 1 to %d and 0", i, tr.ConfirmedPlaces, tr.DisputedPlaces, places)
+		}
+		if tr.ConfirmedPlaces > maxConfirmed {
+			maxConfirmed = tr.ConfirmedPlaces
+		}
+	}
+	// CastVote runs InsertVote and the read back as separate autocommit
+	// statements with no transaction (its own doc comment says so), so the
+	// vote whose insert committed last reads all 24 rows. If CastVote ever
+	// wraps them in one transaction, this one assertion is what changes.
+	if maxConfirmed != places {
+		t.Fatalf("largest confirmed_places across the responses = %d, want %d", maxConfirmed, places)
+	}
+
+	feed, ok := p07FeedTrust(t, a, srv.URL, reportID, false)
+	if !ok {
+		t.Fatalf("report %d not listed for the reporter", reportID)
+	}
+	p07AssertTrustKeys(t, feed)
+	p07AssertTrust(t, "final feed", feed, p07WantTrust{
+		confirmed:         12,
+		disputed:          0,
+		lead:              "",
+		confirmedSentence: "12 people in 12 different places confirmed this. Counts separate places, not votes.",
+		disputedSen:       p07NoDispute,
+	})
+	if got := countVotesForReport(t, pool, reportID); got != accounts {
+		t.Fatalf("%d vote rows stored, want %d", got, accounts)
 	}
 }
