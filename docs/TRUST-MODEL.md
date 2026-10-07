@@ -82,6 +82,122 @@ Votes written before this phase were never distance checked. They cannot be chec
 
 A database created before this phase may therefore hold votes cast from far away. The distance tests always run on a fresh disposable database for this reason.
 
+## Still current signal
+
+Every report carries a second signal beside the counters: is this report still current? It is built by `buildCurrency` in `internal/service/currency.go` from vote times, the report's lifetime, its visibility, its category and severity, and an injected clock. It is display data only. It never hides, blocks or reorders a report.
+
+### Window
+
+The window is the report's lifetime divided by `CurrencyWindowDivisor` (4). That is 2 hours for an 8 hour report and 6 hours for a 24 hour report (D-05). The window itself is exact. The window length sent to the browser is rounded to the nearest whole minute.
+
+`ExpiryDuration` depends on severity only. A low severity rescue needed report therefore lives 8 hours and gets a 2 hour window, even though the critical bypass treats it as critical elsewhere.
+
+The places that count come from the same row filter as the confirmed counter: the reporter is excluded, each account has one current row, and only content confirms count. Resolve and reopen votes never refresh the signal.
+
+### Score formula
+
+N is the number of distinct confirming places over the whole life of the report. It is the same number the confirmed counter shows, from the same `independentCellCount`. A place's time is the time of its latest confirm.
+
+D is the number of distinct dispute places inside the window, and k is `IndependentAgreementThreshold` plus D. A is the age of the k-th most recent confirming place, clamped to between 0 and four windows.
+
+The score is 100 minus the ceiling of `CurrencyPointsPerWindow` (25) times A over the window, computed in integer nanoseconds by `currencyScore`. It is null when N is below 2, and 0 when fewer than k places exist. `buildCurrency` applies these rules in a fixed order, and its doc comment numbers them.
+
+### Bands and words
+
+| Score | Band | Word |
+|-------|------|------|
+| 75 or more (`UpToDateMinScore`) | Up to date | Up to date |
+| 50 to 74 (`GettingOldMinScore`) | Getting old | Getting old |
+| 49 or less | Needs re-confirming | Needs re-confirming |
+
+Below 2 places the band is not yet corroborated. Critical and rescue needed reports then read Too early to tell. Every other report shows its Unconfirmed label and no word (D-18). The word is cut from the integer score, so the word and the number cannot disagree.
+
+With no dispute, Up to date means exactly that at least 2 different places confirmed inside the window (R-01).
+
+### Boundary table
+
+A is the age of the k-th most recent place and W is the window. The rows are identical for 8 hour and 24 hour reports.
+
+| Age of the k-th most recent place | Score | Band |
+|-----------------------------------|-------|------|
+| 0 | 100 | Up to date |
+| 1 ns | 99 | Up to date |
+| W / 25 | 99 | Up to date |
+| W / 25 plus 1 ns | 98 | Up to date |
+| W minus 1 ns | 75 | Up to date |
+| W | 75 | Up to date |
+| W plus 1 ns | 74 | Getting old |
+| 1.5 W | 62 | Getting old |
+| 2 W | 50 | Getting old |
+| 2 W plus 1 ns | 49 | Needs re-confirming |
+| 3 W | 25 | Needs re-confirming |
+| 4 W (the whole lifetime) | 0 | Needs re-confirming |
+| 5 s in the future (clock skew) | 100 | Up to date |
+
+One point is lost per started 1/25 of a window: 4 minutes 48 seconds on an 8 hour report, 14 minutes 24 seconds on a 24 hour report. `TestCurrencyScoreBoundaries` pins every row.
+
+### Worked example
+
+An 8 hour report created at 10:00. Three different places confirm it, at 10:30, 11:00 and 13:00. The window is 2 hours.
+
+| Now | Places | Score | Band |
+|-----|--------|-------|------|
+| 10:45 | 1 | null | Not yet corroborated |
+| 11:00 | 2 | 93 | Up to date |
+| 11:30 | 2 | 87 | Up to date |
+| 13:00 | 3 | 75 | Up to date |
+| 13:30 | 3 | 68 | Getting old |
+| 15:00 | 3 | 50 | Getting old |
+| 16:00 | 3 | 37 | Needs re-confirming |
+| 17:59 | 3 | 12 | Needs re-confirming |
+
+At 11:00 the second most recent place is the one from 10:30, which is 30 minutes old, so the score is 100 minus the ceiling of 25 times 30 over 120, which is 93.
+
+### A standing dispute
+
+Each distinct dispute place inside the window raises k by one, so it cancels one confirming place. A dispute never refreshes the signal.
+
+- Confirms at 10:30 and 11:00 and a dispute at 11:30 give 0 from 11:30 to 13:30. The dispute leaves the window at 13:31, and the score is then 62.
+- With a third confirm at 13:00 and the same dispute, the score at 13:00 is 68, where it would be 75 without the dispute.
+
+Because a dispute leaving the window lowers the bar, time alone can raise a contested score. The monotone property that `TestCurrencyMonotone` pins is therefore stated for rows with no dispute: with no dispute, advancing the clock never raises the score. At a fixed clock, adding a confirm never lowers the score and adding a dispute never raises it. This differs from the unconditional wording in the research notes.
+
+### Fade stage
+
+Up to date and not yet corroborated give fresh, Getting old gives aging, and Needs re-confirming gives stale (R-02).
+
+- Critical and rescue needed reports get no fade stage and keep only the time based fade. Their word shows as plain text with no extra dimming (D-07).
+- Hidden, Retracted and expired reports get none.
+- The browser takes the worse of this stage and its own time stage, and holds no threshold.
+- As intended, a non critical report that no 2 places have reconfirmed inside the window dims earlier than the last quarter time rule.
+
+### When no score is shown
+
+- The score is null for not yet corroborated. It is never 0 there, and the report shows no negative word (R-01).
+- It is also null for not applicable, the band of Hidden reports (R-03), Retracted reports and expired reports. Only the Activity page shows the last two (R-08).
+- A lifetime that is not positive is treated as not applicable, so the function never divides by zero. `Submit` never produces one.
+- The facts still carried in those cases are the window in minutes and the places inside it.
+
+### Clocks
+
+Vote times come from the database clock, and now comes from the service's injected clock. An age that comes out negative because of clock skew is treated as 0. The score is recomputed on every read and never stored (Phase 2 D-08). Two reads a moment apart can differ by one step of the score.
+
+### How the roadmap word score is met
+
+The roadmap asks for a fast decaying "is this still current" confidence score (TRUST-07, D-08).
+
+- It is an integer from 0 to 100 per report, from a documented formula over real vote times, recomputed on every read and never stored.
+- The word is cut from the integer, so the two cannot disagree.
+- It decays one point per started 1/25 of a window and reaches 0 over the report's lifetime. That is the fast decaying half. The reporter half is slow.
+- It is null below 2 places, and Phase 6 treats null as unknown.
+- The feed row shows only the word. The popup shows the number and the score sentence (D-09, A50).
+
+### What it costs to fake
+
+One account re-tapping Confirm moves only its own place's time, so it cannot refresh the signal without a second, genuinely different place (D-05). Faking Up to date costs 2 verified accounts and 2 claimed locations, the same as forging Live. A spoofed location defeats it exactly as it defeats the place rule. See "Honest limits" below.
+
+The tests that pin this section are `TestCurrencyScoreBoundaries`, `TestCurrencyNotYetCorroborated`, `TestCurrencyRetapCannotRefresh`, `TestCurrencyDisputes`, `TestCurrencyWindowFollowsLifetime`, `TestCurrencyMonotone`, `TestFadeStageMapping` and `TestTrustCopyCurrencyIsPlainText`, rerun with `go test ./internal/service/ -run 'TestCurrency|TestFadeStageMapping|TestTrustCopyCurrencyIsPlainText' -count=1`.
+
 ## Honest limits
 
 - Two accounts a few metres apart on either side of a cell edge count as two places. The subtest "cell edge pair counts as two places" shows it: points 1 m apart across a precision 7 cell edge count as two places through `independentCellCount`.
