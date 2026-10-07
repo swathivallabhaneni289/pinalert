@@ -83,3 +83,56 @@ func ClassifyOutcome(meta ReportMeta, tally VoteTally, expiresAt, now time.Time)
 	// rating, so any other value is safe to ignore.
 	return OutcomeNeutral
 }
+
+// ReporterTag is the closed set of reliability tags a reporter can carry.
+type ReporterTag string
+
+const (
+	ReporterReliable   ReporterTag = "reliable"
+	ReporterMixed      ReporterTag = "mixed"
+	ReporterUnreliable ReporterTag = "unreliable"
+	ReporterNew        ReporterTag = "new"
+	// ReporterNone is for accountless reports and reports past the account
+	// cap. ScoreReliability never returns it; the reporter signal does.
+	ReporterNone ReporterTag = "none"
+)
+
+// ReporterTags is the ordered, canonical list of every valid reporter tag.
+var ReporterTags = []ReporterTag{ReporterReliable, ReporterMixed, ReporterUnreliable, ReporterNew, ReporterNone}
+
+// Valid reports whether t is one of the five canonical reporter tags.
+func (t ReporterTag) Valid() bool {
+	return false
+}
+
+const (
+	// ReliabilityMinJudged is the number of judged reports needed before a
+	// reporter gets a score (D-13).
+	ReliabilityMinJudged = 5
+	// ReliabilityHalfLife is the age, measured from expires_at, at which a
+	// report's weight has halved (D-13).
+	ReliabilityHalfLife = 30 * 24 * time.Hour
+	// ReliabilityWindow is how far back the history reaches (D-13, R-05).
+	ReliabilityWindow = 90 * 24 * time.Hour
+	// ReliabilityRowCap is the most expired reports considered (D-13, Q4).
+	ReliabilityRowCap = 30
+	// UnconfirmedCredit is the credit an unconfirmed report earns (D-23).
+	UnconfirmedCredit = 0.25
+	// ReliableMinScore is the lowest score tagged Reliable reporter (D-15, Q2).
+	ReliableMinScore = 75
+	// MixedMinScore is the lowest score tagged Mixed record (D-15, Q2).
+	MixedMinScore = 35
+)
+
+// Reliability is a reporter's public rating. Score is nil for a New reporter.
+type Reliability struct {
+	Tag          ReporterTag
+	Score        *int
+	Judged       int
+	Corroborated int
+}
+
+// ScoreReliability is not implemented yet.
+func ScoreReliability(outcomes []JudgedOutcome, now time.Time) Reliability {
+	return Reliability{}
+}
