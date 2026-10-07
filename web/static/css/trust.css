@@ -58,19 +58,21 @@
   cursor: pointer;
 }
 
-/* Reuses the existing green hue's established low-severity valence ("this
-   checks out") rather than introducing a fifth color. */
+/* Inverted neutral fill (03-UI-SPEC A13), the same look for Confirm and
+   Dispute: aria-pressed carries the meaning, not a hue. Later higher
+   specificity rules keep this look while busy or too far (A46). */
 .vote-btn--confirm[aria-pressed="true"] {
-  border-color: var(--color-severity-low);
-  color: var(--color-severity-low);
-  background: var(--color-severity-low-bg);
+  background: var(--color-text);
+  color: var(--color-bg);
+  border-color: var(--color-text);
 }
 
-/* Mirrors the confirm rule above with the established critical hue. */
+/* Inverted neutral fill (03-UI-SPEC A13), identical to the Confirm rule
+   above. */
 .vote-btn--dispute[aria-pressed="true"] {
-  border-color: var(--color-severity-critical);
-  color: var(--color-severity-critical);
-  background: var(--color-severity-critical-bg);
+  background: var(--color-text);
+  color: var(--color-bg);
+  border-color: var(--color-text);
 }
 
 /* Serves every non-actionable state this block can be in: in flight,
@@ -326,7 +328,9 @@
    02-UI-SPEC.md's Destructive row. Mark Resolved is the highest-
    consequence action this phase introduces, so it borrows the same
    critical-severity token Phase 1 already reserved for the discard-draft
-   confirmation, not a fifth colour. */
+   confirmation, not a fifth colour. This (0,1,0) head loses to the base
+   rule, is kept because a test reads it, and the live destructive head is in
+   the plan 03-11 section at the end of this file. */
 .vote-btn--confirm-resolve {
   background: var(--color-severity-critical);
   color: var(--color-bg);
@@ -351,18 +355,21 @@
   grid-column: 1 / -1;
 }
 
-/* The confirmation block's layout — wraps rather than overflowing inside a
-   Leaflet popup's fixed max-width, matching .vote-controls' own
-   flex-wrap. The [hidden] guard is this repo's fourth encounter with the
-   specificity trap documented at the top of this file. */
+/* The confirmation block is a wrapping row (03-UI-SPEC A16): the question on
+   its own full width line, then Cancel, then a wider Yes that wraps under
+   Cancel on a narrow row, and it spans both grid tracks. The [hidden] guard
+   is this repo's fourth encounter with the specificity trap documented at
+   the top of this file. */
 .resolve-confirm:not([hidden]) {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
   gap: var(--space-sm);
-  margin-top: var(--space-sm);
-  padding: var(--space-md);
+  grid-column: 1 / -1;
+  margin-top: 0;
+  padding: var(--space-sm);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: 8px;
   /* Gap closure (02-UAT.md Test 3, gap 2), belt-and-braces: paints its own
      base-surface background rather than depending on an ancestor it does
      not own, the same way the base vote-button rule and the visibility-tag
@@ -371,6 +378,7 @@
 }
 
 .resolve-confirm p {
+  flex: 1 1 100%;
   margin: 0;
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
@@ -528,4 +536,95 @@
 .vote-btn__label {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* Hover, resting buttons only (A18). Every exclusion is a :not() so a
+   pressed, too far, busy or destructive button never gets a hover fill. */
+.vote-btn:not([hidden]):not([aria-pressed="true"]):not([aria-disabled="true"]):not(:disabled):not(.vote-btn--confirm-resolve):hover {
+  background: var(--color-border);
+}
+
+/* Press, same exclusions as the hover rule above (A18). */
+.vote-btn:not([hidden]):not([aria-pressed="true"]):not([aria-disabled="true"]):not(:disabled):not(.vote-btn--confirm-resolve):active {
+  background: var(--color-border);
+  border-color: var(--color-text-muted);
+}
+
+/* Pressed and in flight keeps the inverted look (A46). The generic disabled
+   rule ties the pressed rule at (0,2,0) and wins on order, so these (0,4,0)
+   heads put the pressed look back. No opacity. */
+.vote-btn[aria-pressed="true"]:disabled:not([hidden]) {
+  background: var(--color-text);
+  color: var(--color-bg);
+  border-color: var(--color-text);
+  cursor: progress;
+}
+
+/* Pressed and too far keeps the inverted look (A46). Declared after the
+   in flight rule above so aria-disabled decides the cursor. */
+.vote-btn[aria-pressed="true"][aria-disabled="true"]:not([hidden]) {
+  background: var(--color-text);
+  color: var(--color-bg);
+  border-color: var(--color-text);
+  cursor: not-allowed;
+}
+
+/* Too far and not pressed reads as disabled (A18). Keyed on the value true of
+   aria-disabled, never on a data attribute, and no pointer-events, so the
+   button stays focusable and the global focus ring still draws. */
+.vote-btn[aria-disabled="true"]:not([aria-pressed="true"]):not([hidden]) {
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  cursor: not-allowed;
+}
+
+/* Destructive Yes (A43, A40). The (0,1,0) head earlier in this file loses to
+   the base rule, so this (0,3,0) head is the live one. */
+.vote-btn.vote-btn--confirm-resolve:not([hidden]) {
+  background: var(--color-severity-critical);
+  color: var(--color-bg);
+  border-color: var(--color-severity-critical);
+}
+
+/* Yes while the request is in flight keeps its red and shows a progress
+   cursor. */
+.vote-btn.vote-btn--confirm-resolve:disabled:not([hidden]) {
+  cursor: progress;
+}
+
+/* Yes hover darkens the critical fill toward the text colour. */
+.vote-btn.vote-btn--confirm-resolve:not([hidden]):not(:disabled):hover {
+  background: color-mix(in srgb, var(--color-severity-critical) 85%, var(--color-text) 15%);
+  border-color: color-mix(in srgb, var(--color-severity-critical) 85%, var(--color-text) 15%);
+}
+
+/* Disabled Mark resolved (A72). Declared after the resolve rule and the Yes
+   head so the (0,4,0) heads win on specificity and order. Neither names the
+   Yes class. */
+.vote-btn.vote-btn--resolve:disabled:not([hidden]) {
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  cursor: not-allowed;
+}
+
+.vote-btn.vote-btn--resolve[aria-disabled="true"]:not([hidden]) {
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  cursor: not-allowed;
+}
+
+/* Confirmation children (A16). Cancel takes one share, Yes about two, and
+   both outrank the base rule's min-width of 0 so Yes wraps under Cancel on a
+   narrow row. */
+.resolve-confirm .vote-btn--cancel-resolve:not([hidden]) {
+  flex: 1 1 0;
+  min-width: 96px;
+}
+
+.resolve-confirm .vote-btn--confirm-resolve:not([hidden]) {
+  flex: 2 1 0;
+  min-width: 144px;
 }
