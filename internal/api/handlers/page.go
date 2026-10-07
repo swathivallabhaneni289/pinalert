@@ -20,6 +20,12 @@ type PageConfig struct {
 	FallbackLat     float64
 	FallbackLon     float64
 	DefaultRadiusKm float64
+	// VoteRadiusKm is the distance rule's radius, taken from
+	// service.MaxVoteDistanceKm in cmd/server/main.go. It is rendered as the
+	// shell's vote radius attribute so votes.js can mark far reports and build
+	// the too far sentence from the server's own number (D-22). The server
+	// still refuses far votes on its own (D-01); this only feeds a hint.
+	VoteRadiusKm float64
 	// AssetVersion is appended as a "?v=" query string to every local
 	// static asset the template links (CSS, JS — not the third-party CDN
 	// tags, which are already content-hashed by their pinned version and
@@ -38,6 +44,7 @@ type pageViewModel struct {
 	FallbackLat     float64
 	FallbackLon     float64
 	DefaultRadiusKm float64
+	VoteRadiusKm    float64
 	AssetVersion    string
 	// Email is the verified caller's account email, read per request from
 	// the gate's context (DEC-P) — never from PageConfig, which is
@@ -79,6 +86,7 @@ func Page(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 			FallbackLat:     cfg.FallbackLat,
 			FallbackLon:     cfg.FallbackLon,
 			DefaultRadiusKm: cfg.DefaultRadiusKm,
+			VoteRadiusKm:    cfg.VoteRadiusKm,
 			AssetVersion:    cfg.AssetVersion,
 			Email:           acc.Email,
 		}
