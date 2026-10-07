@@ -3,6 +3,8 @@ package service_test
 import (
 	"context"
 	"errors"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -58,6 +60,15 @@ type fakeAuthQuerier struct {
 	votesRows      []sqlcgen.CurrentVotesForReportsRow
 	votesErr       error
 	votesCallCount int
+	// votesArg is the id slice the last CurrentVotesForReports call received.
+	votesArg []int64
+
+	// historyRows/historyErr/historyArgs drive ReporterHistoryReports (plan
+	// 03-12). The fake returns only the rows of the requested accounts, like
+	// the query, and an empty result when nothing is configured.
+	historyRows []sqlcgen.ReporterHistoryReportsRow
+	historyErr  error
+	historyArgs []sqlcgen.ReporterHistoryReportsParams
 }
 
 func (f *fakeAuthQuerier) InsertMagicLinkToken(ctx context.Context, arg sqlcgen.InsertMagicLinkTokenParams) (sqlcgen.InsertMagicLinkTokenRow, error) {
@@ -148,10 +159,28 @@ func (f *fakeAuthQuerier) ReportsByAccount(ctx context.Context, accountID *int64
 func (f *fakeAuthQuerier) CurrentVotesForReports(ctx context.Context, reportIDs []int64) ([]sqlcgen.CurrentVotesForReportsRow, error) {
 	*f.calls = append(*f.calls, "CurrentVotesForReports")
 	f.votesCallCount++
+	f.votesArg = reportIDs
 	if f.votesErr != nil {
 		return nil, f.votesErr
 	}
 	return f.votesRows, nil
+}
+
+// ReporterHistoryReports records the call and returns the rows of the
+// requested accounts, which is the query's own account filter.
+func (f *fakeAuthQuerier) ReporterHistoryReports(ctx context.Context, arg sqlcgen.ReporterHistoryReportsParams) ([]sqlcgen.ReporterHistoryReportsRow, error) {
+	*f.calls = append(*f.calls, "ReporterHistoryReports")
+	f.historyArgs = append(f.historyArgs, arg)
+	if f.historyErr != nil {
+		return nil, f.historyErr
+	}
+	var out []sqlcgen.ReporterHistoryReportsRow
+	for _, row := range f.historyRows {
+		if slices.Contains(arg.AccountIds, row.AccountID) {
+			out = append(out, row)
+		}
+	}
+	return out, nil
 }
 
 type fakeMailer struct {
@@ -791,4 +820,88 @@ func TestRequestLinkUsesInjectedClockForExpiry(t *testing.T) {
 	if !q.lastArg.ExpiresAt.Equal(wantExpiry) {
 		t.Fatalf("ExpiresAt = %v, want %v", q.lastArg.ExpiresAt, wantExpiry)
 	}
+}
+
+// TestActivityForAccountReadsReporterHistoryOnce proves the Activity page reads
+// the account's history once, keyed by the gate's account id, folds the history
+// ids into its one vote read, and gives every row the account's signal.
+func TestActivityForAccountReadsReporterHistoryOnce(t *testing.T) {
+	ctx := context.Background()
+	const account int64 = 42
+
+	t.Run("one history call and one vote call over own and history ids", func(t *testing.T) {
+		q, m, calls := newFakes()
+		q.reportsRows = []sqlcgen.ReportsByAccountRow{p12ActivityRow(1), p12ActivityRow(2), p12ActivityRow(3)}
+		history, votes := p12Corroborated(account, 4, 5)
+		q.historyRows = history
+		q.votesRows = votes
+		svc := service.NewAuthService(q, m, "https://pinalert.example", service.WithClock(p12Clock))
+
+		acts, err := svc.ActivityForAccount(ctx, account)
+		if err != nil {
+			t.Fatalf("ActivityForAccount: %v", err)
+		}
+		wantCalls := []string{"ReportsByAccount", "ReporterHistoryReports", "CurrentVotesForReports"}
+		if !slices.Equal(*calls, wantCalls) {
+			t.Fatalf("calls = %v, want %v", *calls, wantCalls)
+		}
+		wantArgs := sqlcgen.ReporterHistoryReportsParams{
+			Now:         p12Now,
+			WindowStart: p12Now.Add(-service.ReliabilityWindow),
+			RowCap:      int32(service.ReliabilityRowCap),
+			AccountIds:  []int64{account},
+		}
+		if len(q.historyArgs) != 1 || !reflect.DeepEqual(q.historyArgs[0], wantArgs) {
+			t.Errorf("historyArgs = %+v, want one entry %+v", q.historyArgs, wantArgs)
+		}
+		if want := []int64{1, 2, 3, 4, 5, 6, 7, 8}; !slices.Equal(q.votesArg, want) {
+			t.Errorf("votesArg = %v, want %v", q.votesArg, want)
+		}
+		if q.votesCallCount != 1 {
+			t.Errorf("votesCallCount = %d, want 1", q.votesCallCount)
+		}
+		want := service.ReporterSignals([]int64{account}, history, votes, p12Now)[account]
+		if want.Tag != service.ReporterReliable {
+			t.Fatalf("expected signal tag = %q, want reliable", want.Tag)
+		}
+		if len(acts) != 3 {
+			t.Fatalf("got %d rows, want 3", len(acts))
+		}
+		for _, a := range acts {
+			if !reflect.DeepEqual(a.Trust.Reporter, want) {
+				t.Errorf("row %d reporter = %+v, want %+v", a.Row.ID, a.Trust.Reporter, want)
+			}
+		}
+	})
+
+	t.Run("an account with no reports reads no history", func(t *testing.T) {
+		q, m, calls := newFakes()
+		svc := service.NewAuthService(q, m, "https://pinalert.example", service.WithClock(p12Clock))
+
+		acts, err := svc.ActivityForAccount(ctx, account)
+		if err != nil {
+			t.Fatalf("ActivityForAccount: %v", err)
+		}
+		if len(acts) != 0 {
+			t.Errorf("got %d rows, want 0", len(acts))
+		}
+		if len(q.historyArgs) != 0 {
+			t.Errorf("history called %d times, want 0 (%v)", len(q.historyArgs), *calls)
+		}
+	})
+
+	t.Run("a failed history read is wrapped and no votes are read", func(t *testing.T) {
+		boom := errors.New("history unavailable")
+		q, m, _ := newFakes()
+		q.reportsRows = []sqlcgen.ReportsByAccountRow{p12ActivityRow(1)}
+		q.historyErr = boom
+		svc := service.NewAuthService(q, m, "https://pinalert.example", service.WithClock(p12Clock))
+
+		if _, err := svc.ActivityForAccount(ctx, account); !errors.Is(err, boom) {
+			t.Fatalf("err = %v, want it to wrap %v", err, boom)
+		}
+		if q.votesCallCount != 0 {
+			t.Errorf("votesCallCount = %d, want 0", q.votesCallCount)
+		}
+	})
 }

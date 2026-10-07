@@ -13,6 +13,8 @@ import (
 	"context"
 	"errors"
 	"math"
+	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -393,6 +395,17 @@ type fakeVotingQuerier struct {
 
 	insertVoteErr error
 	insertedVotes []sqlcgen.InsertVoteParams
+
+	// currentVotesIDs is the id slice the last CurrentVotesForReports call
+	// received.
+	currentVotesIDs []int64
+
+	// historyRows/historyErr/historyArgs drive ReporterHistoryReports (plan
+	// 03-12). The fake returns only the rows of the requested accounts, like
+	// the query, and an empty result when nothing is configured.
+	historyRows []sqlcgen.ReporterHistoryReportsRow
+	historyErr  error
+	historyArgs []sqlcgen.ReporterHistoryReportsParams
 }
 
 func (f *fakeVotingQuerier) ReportVoteContext(ctx context.Context, reportID int64) (sqlcgen.ReportVoteContextRow, error) {
@@ -411,10 +424,155 @@ func (f *fakeVotingQuerier) InsertVote(ctx context.Context, arg sqlcgen.InsertVo
 
 func (f *fakeVotingQuerier) CurrentVotesForReports(ctx context.Context, reportIDs []int64) ([]sqlcgen.CurrentVotesForReportsRow, error) {
 	f.calls = append(f.calls, "CurrentVotesForReports")
+	f.currentVotesIDs = reportIDs
 	if f.currentVotesErr != nil {
 		return nil, f.currentVotesErr
 	}
 	return f.currentVotesRows, nil
+}
+
+// ReporterHistoryReports records the call and returns the rows of the
+// requested accounts, which is the query's own account filter.
+func (f *fakeVotingQuerier) ReporterHistoryReports(ctx context.Context, arg sqlcgen.ReporterHistoryReportsParams) ([]sqlcgen.ReporterHistoryReportsRow, error) {
+	f.calls = append(f.calls, "ReporterHistoryReports")
+	f.historyArgs = append(f.historyArgs, arg)
+	if f.historyErr != nil {
+		return nil, f.historyErr
+	}
+	var out []sqlcgen.ReporterHistoryReportsRow
+	for _, row := range f.historyRows {
+		if slices.Contains(arg.AccountIds, row.AccountID) {
+			out = append(out, row)
+		}
+	}
+	return out, nil
+}
+
+// p12CastNow is the clock of the plan 03-12 vote tests.
+var p12CastNow = time.Date(2031, 3, 1, 12, 0, 0, 0, time.UTC)
+
+// p12CastHistory returns n judged history reports of one account, each
+// confirmed by accounts 21 and 22 in two distinct cells, with those votes.
+func p12CastHistory(accountID, firstReportID int64, n int) ([]sqlcgen.ReporterHistoryReportsRow, []sqlcgen.CurrentVotesForReportsRow) {
+	history := make([]sqlcgen.ReporterHistoryReportsRow, 0, n)
+	var votes []sqlcgen.CurrentVotesForReportsRow
+	for i := 0; i < n; i++ {
+		id := firstReportID + int64(i)
+		history = append(history, sqlcgen.ReporterHistoryReportsRow{
+			AccountID: accountID,
+			ReportID:  id,
+			Severity:  string(SeverityLow),
+			Category:  string(CategoryFlood),
+			ExpiresAt: p12CastNow.Add(-48 * time.Hour),
+		})
+		for j, account := range []int64{21, 22} {
+			votes = append(votes, sqlcgen.CurrentVotesForReportsRow{
+				ReportID:    id,
+				AccountID:   account,
+				Kind:        string(VoteKindContent),
+				Value:       string(VoteConfirm),
+				GeohashCell: "p12cell" + string(rune('A'+j)),
+				CreatedAt:   p12CastNow.Add(-72 * time.Hour),
+			})
+		}
+	}
+	return history, votes
+}
+
+// TestCastVoteReadsReporterHistoryOnce proves CastVote reads the reporter's
+// history once, after every refusal and before the insert, keyed by the
+// report's reporter account, and that its ids join the one read back.
+func TestCastVoteReadsReporterHistoryOnce(t *testing.T) {
+	clock := func() time.Time { return p12CastNow }
+	confirm := func(q *fakeVotingQuerier, lat float64) (CastVoteResult, error) {
+		svc := NewVotingService(q, WithVotingClock(clock))
+		return svc.CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: 9, Kind: VoteKindContent, Value: VoteConfirm,
+			Latitude: lat, Longitude: testReportLon,
+		})
+	}
+	expires := p12CastNow.Add(7 * time.Hour)
+
+	t.Run("a reporter account gives one history read between the context and the insert", func(t *testing.T) {
+		history, votes := p12CastHistory(7, 101, 5)
+		q := &fakeVotingQuerier{
+			voteContextRow:   testVoteContext(expires, acctPtr(7)),
+			currentVotesRows: votes,
+			historyRows:      history,
+		}
+		res, err := confirm(q, testReportLat)
+		if err != nil {
+			t.Fatalf("CastVote: %v", err)
+		}
+		wantCalls := []string{"ReportVoteContext", "ReporterHistoryReports", "InsertVote", "CurrentVotesForReports"}
+		if !slices.Equal(q.calls, wantCalls) {
+			t.Fatalf("calls = %v, want %v", q.calls, wantCalls)
+		}
+		wantArgs := sqlcgen.ReporterHistoryReportsParams{
+			Now:         p12CastNow,
+			WindowStart: p12CastNow.Add(-ReliabilityWindow),
+			RowCap:      int32(ReliabilityRowCap),
+			AccountIds:  []int64{7},
+		}
+		if len(q.historyArgs) != 1 || !reflect.DeepEqual(q.historyArgs[0], wantArgs) {
+			t.Errorf("historyArgs = %+v, want one entry %+v", q.historyArgs, wantArgs)
+		}
+		if want := []int64{1, 101, 102, 103, 104, 105}; !slices.Equal(q.currentVotesIDs, want) {
+			t.Errorf("currentVotesIDs = %v, want %v", q.currentVotesIDs, want)
+		}
+		want := ReporterSignals([]int64{7}, history, votes, p12CastNow)[7]
+		if want.Tag != ReporterReliable || !reflect.DeepEqual(res.Trust.Reporter, want) {
+			t.Errorf("reporter = %+v, want reliable %+v", res.Trust.Reporter, want)
+		}
+	})
+
+	t.Run("a report with no reporter account reads no history", func(t *testing.T) {
+		q := &fakeVotingQuerier{voteContextRow: testVoteContext(expires, nil)}
+		res, err := confirm(q, testReportLat)
+		if err != nil {
+			t.Fatalf("CastVote: %v", err)
+		}
+		wantCalls := []string{"ReportVoteContext", "InsertVote", "CurrentVotesForReports"}
+		if !slices.Equal(q.calls, wantCalls) {
+			t.Fatalf("calls = %v, want %v", q.calls, wantCalls)
+		}
+		if want := []int64{1}; !slices.Equal(q.currentVotesIDs, want) {
+			t.Errorf("currentVotesIDs = %v, want %v", q.currentVotesIDs, want)
+		}
+		if !reflect.DeepEqual(res.Trust.Reporter, ReporterSignal{Tag: ReporterNone}) {
+			t.Errorf("reporter = %+v, want none", res.Trust.Reporter)
+		}
+	})
+
+	t.Run("a failed history read writes no vote", func(t *testing.T) {
+		boom := errors.New("history unavailable")
+		q := &fakeVotingQuerier{voteContextRow: testVoteContext(expires, acctPtr(7)), historyErr: boom}
+		res, err := confirm(q, testReportLat)
+		if !errors.Is(err, boom) {
+			t.Fatalf("err = %v, want %v", err, boom)
+		}
+		if len(q.insertedVotes) != 0 {
+			t.Errorf("insertedVotes = %v, want none", q.insertedVotes)
+		}
+		wantCalls := []string{"ReportVoteContext", "ReporterHistoryReports"}
+		if !slices.Equal(q.calls, wantCalls) {
+			t.Errorf("calls = %v, want %v", q.calls, wantCalls)
+		}
+		if !reflect.DeepEqual(res, CastVoteResult{}) {
+			t.Errorf("result = %+v, want the zero CastVoteResult", res)
+		}
+	})
+
+	t.Run("a refused vote reads no history", func(t *testing.T) {
+		q := &fakeVotingQuerier{voteContextRow: testVoteContext(expires, acctPtr(7))}
+		_, err := confirm(q, 12.9806)
+		if !errors.Is(err, ErrVoterTooFar) {
+			t.Fatalf("err = %v, want ErrVoterTooFar", err)
+		}
+		if want := []string{"ReportVoteContext"}; !slices.Equal(q.calls, want) {
+			t.Errorf("calls = %v, want %v", q.calls, want)
+		}
+	})
 }
 
 func TestCastVoteRejectsReporterContentVote(t *testing.T) {

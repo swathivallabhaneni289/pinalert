@@ -64,6 +64,9 @@ type AuthQuerier interface {
 	// (idiomatic Go: each interface stays small enough to fake without a
 	// real Postgres, deliberately not deduplicated into a shared one).
 	CurrentVotesForReports(ctx context.Context, reportIDs []int64) ([]sqlcgen.CurrentVotesForReportsRow, error)
+	// ReporterHistoryReports gives the Activity page the account's bounded
+	// history, so every row carries the account's reporter signal.
+	ReporterHistoryReports(ctx context.Context, arg sqlcgen.ReporterHistoryReportsParams) ([]sqlcgen.ReporterHistoryReportsRow, error)
 }
 
 // ErrRateLimited is returned by RequestLink when a second verification-
@@ -344,7 +347,9 @@ type ActivityReport struct {
 // can never disagree (T-01-17).
 //
 // Each row also carries its trust object, built by BuildTrust from the same
-// batched rows and the service clock, which WithClock can pin (D-21).
+// batched rows and the service clock, which WithClock can pin (D-21). Every
+// row carries the account's own reporter signal, composed from one history
+// read keyed by the verified account id (D-10).
 func (s *AuthService) ActivityForAccount(ctx context.Context, accountID int64) ([]ActivityReport, error) {
 	rows, err := s.ReportsForAccount(ctx, accountID)
 	if err != nil {
@@ -359,12 +364,21 @@ func (s *AuthService) ActivityForAccount(ctx context.Context, accountID int64) (
 		ids[i] = row.ID
 	}
 
-	voteRows, err := s.q.CurrentVotesForReports(ctx, ids)
+	now := s.now().UTC()
+
+	history, err := s.q.ReporterHistoryReports(ctx, reporterHistoryParams([]int64{accountID}, now))
+	if err != nil {
+		return nil, fmt.Errorf("service: reading reporter history for account %d: %w", accountID, err)
+	}
+
+	// In production the history ids are a subset of the page ids, because both
+	// reads key on the same account, but the union keeps one rule across paths.
+	voteRows, err := s.q.CurrentVotesForReports(ctx, voteReadIDs(ids, history))
 	if err != nil {
 		return nil, fmt.Errorf("service: reading current votes for account %d's reports: %w", accountID, err)
 	}
+	signals := ReporterSignals([]int64{accountID}, history, voteRows, now)
 
-	now := s.now().UTC()
 	reports := make([]ActivityReport, 0, len(rows))
 	for _, row := range rows {
 		category := Category(row.Category)
@@ -398,6 +412,7 @@ func (s *AuthService) ActivityForAccount(ctx context.Context, accountID int64) (
 				CreatedAt:         row.CreatedAt,
 				ExpiresAt:         row.ExpiresAt,
 				Now:               now,
+				Reporter:          reporterSignalRef(signals, &accountID),
 			}),
 		})
 	}
