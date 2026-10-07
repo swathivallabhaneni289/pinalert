@@ -36,7 +36,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation — Report & Map** - Anonymous visitors can submit and view location-tagged reports on a live map, with read-time auto-expiry, OpenAPI docs, and CI in place. (original 10 plans completed 2026-09-06; reopened for the vector basemap migration, plans 01-11/01-12; gap-closure round 2 (01-13) fixed the solid-black-icon defect; gap-closure round 3 (01-14) landed 2026-09-09 — raised glyph ink coverage and fixed badge contrast across all 18 severity/age/theme pairings; gap-closure round 4 (01-15) landed 2026-09-09 — live-tested fix for dark-mode category-tile glyph color, the actual root cause 01-14's stroke-width diagnosis missed, plus two caching-bug fixes; see `01-UAT.md`) (all 15 plans complete; UAT passed 10/10 with 0 open issues; verification passed including MVP-mode User Flow Coverage, security SECURED with 0 open threats, Nyquist validation compliant) (completed 2026-09-10) — **note:** this phase's anonymous/no-signup access model (FOUND-01) was superseded 2026-09-10 by Phase 1.1's mandatory login decision; the shipped code is unaffected, but the product's access model changes starting Phase 1.1
 - [x] **Phase 1.1: Identity & Login — Mandatory Email Verification** *(INSERTED 2026-09-10 — urgent insertion, decided during Phase 2 discussion)* - A visitor must verify an email address via a magic link before they can submit a report or cast a confirm/dispute vote; supersedes Phase 1's anonymous-access model. (completed 2026-09-12)
-- [x] **Phase 2: Trust Mechanic Core — Confirm/Dispute & Visibility** - Users can confirm/dispute reports through one shared, concurrency-safe visibility resolver with a provisional gate and resolved marking. (original 8 plans completed 2026-09-15; **reopened 2026-09-17** for gap-closure round 1 — a human UAT walkthrough found 6 gaps, 3 major and 3 minor, all diagnosed in `02-UAT.md`: the inline resolve confirmation never replaced the button row, its prompt was illegible in the map popup, a Safari Back navigation showed a stale feed after Reopen, the Activity page had no way back to the map, plus two user-requested scope changes — a persisting "Show disputed" filter and an in-app light/dark toggle. Plans 02-08, 02-09 and 02-10, all wave 8, mutually parallel, executed and merged 2026-09-18) — **all 11 plans complete, but re-verification (02-VERIFICATION.md) returned `human_needed`: 8 rendered-browser behaviors still require a live UAT pass (in progress as a second `02-UAT.md` round, tests 4-11) before this phase can be marked complete** (completed 2026-09-23)
+- [x] **Phase 2: Trust Mechanic Core — Confirm/Dispute & Visibility** - Users can confirm/dispute reports through one shared, concurrency-safe visibility resolver with a provisional gate and resolved marking. (original 8 plans completed 2026-09-15; **reopened 2026-09-17** for gap-closure round 1 — a human UAT walkthrough found 6 gaps, 3 major and 3 minor, all diagnosed in `02-UAT.md`: the inline resolve confirmation never replaced the button row, its prompt was illegible in the map popup, a Safari Back navigation showed a stale feed after Reopen, the Activity page had no way back to the map, plus two user-requested scope changes — a persisting "Show disputed" filter and an in-app light/dark toggle. Plans 02-08, 02-09 and 02-10, all wave 8, mutually parallel, executed and merged 2026-09-18; gap-closure round 2, plans 02-11 to 02-14, wave 9, merged 2026-09-23) **All 15 plans complete. The live UAT passed 12 of 12 on 2026-10-06 and the verification report was re-run and returned `passed` (21 of 21, with eight accepted limitations written down in `02-VERIFICATION.md`).** (completed 2026-10-06)
 - [ ] **Phase 3: Trust-Model Hardening — Diversity-Weighted Trust** - "Confirmed by N nearby" and the reliability/currency signals reflect distinct nearby corroboration, resistant to trivial gaming.
 - [ ] **Phase 3.1: Report history views** *(INSERTED 2026-10-03)* - A reader can switch the list and map between Active, Resolved, Disputed and Past reports, search another area, and filter by category and severity.
 - [ ] **Phase 3.2: In-app updates and trusted-reporter alerts** *(INSERTED 2026-10-03)* - A signed-in person is told inside the app when a report they care about changes, and can ask to hear when a Reliable reporter posts nearby.
@@ -189,7 +189,7 @@ Plans:
 **Goal**: A user can confirm or dispute a report, and the resulting Hidden/Provisional/Live/Retracted visibility is computed by one shared, concurrency-safe resolver everywhere it's shown.
 **Mode:** mvp
 **Depends on**: Phase 1.1
-**Requirements**: TRUST-01, TRUST-02, TRUST-03, TRUST-04, TRUST-06, TRUST-08, TRUST-09
+**Requirements**: TRUST-01, TRUST-02, TRUST-03, TRUST-04, TRUST-06, TRUST-08, TRUST-09, UX-01
 **Success Criteria** (what must be TRUE):
 
   1. A user can confirm or dispute another user's report, and concurrent votes submitted on the same report at the same time never silently lose an update, verified by an automated concurrency test.
@@ -432,7 +432,7 @@ Phases execute in numeric order: 1 → 1.1 → 2 → 3 → 3.1 → 3.2 → 4 →
 |-------|----------------|--------|-----------|
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
 | 1.1 Identity & Login — Mandatory Email Verification | 8/8 | Complete   | 2026-09-12 |
-| 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 15/15 | Complete   | 2026-09-23 |
+| 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 15/15 | Complete   | 2026-10-06 |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 0/20 | Not started | - |
 | 3.1 Report history views | 0/TBD | Not started | - |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
@@ -507,6 +507,56 @@ Plans:
 
 **Goal:** [Captured for future planning] A time slider that rebuilds the map as it looked at any past moment. A report's state is a pure function of its votes (Phase 2 D-08) and the vote log keeps every vote with its timestamp, so no new storage is needed. It strengthens Phase 5's demo mode and needs the history queries from Phase 3.1. Raised by the owner's discussion on 2026-10-03.
 **Requirements:** HIST-07 (v2)
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.6: Report form: a tap on the map should move the pin (BACKLOG)
+
+**Goal:** [Captured for future planning] On the report form's small map, a tap anywhere moves the pin in every case. Today the tap handler is only registered when location is off (`showLocationDenied` in `web/static/js/modal.js`), so with location on the pin can only be dragged. Raised by the owner during Phase 2 UAT on 2026-10-06 (finding F1 in `02-UAT.md`). Small, one quick task.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.7: Address search: look near the reader first and retry with fewer words (BACKLOG)
+
+**Goal:** [Captured for future planning] Phase 7's address search finds nothing for longer addresses (Nominatim needs every word to exist) and ranks results worldwide ("Ring Road" returned five roads in Hanoi). Send `countrycodes=in`, look in a box around the pin first and widen only when empty, then retry once with the leading words dropped and label it a closest match; keep the one request per second policy limit; evaluate Photon if results stay poor. Raised by the owner on 2026-10-06 (finding F2 in `02-UAT.md`, with the evidence). The owner should approve the behaviour first.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.8: Long dashes in the generated API reference (BACKLOG)
+
+**Goal:** [Captured for future planning] `docs/docs.go`, `docs/swagger.json` and `docs/swagger.yaml` carry long dashes copied from handler comments, and `/swagger` is public. Rewrite the source comments in plain punctuation, run `make swag`, and extend the standing dash test (`web/design_rules_contract_test.go`) to scan the generated docs. Found by the Phase 2 verification review on 2026-10-07 (finding F6). Small, one quick task.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.9: Location permission prompt on every page reload (BACKLOG)
+
+**Goal:** [Captured for future planning] `centerOnVisitor()` in `web/static/js/map.js` asks the browser for location on every load, and Safari does not remember the answer for plain http test addresses. Options: leave as is, check the Permissions API and start on the fallback centre until the reader taps a locate button, or remember the last known position. Owner decision, not urgent. Raised on 2026-10-06 (finding F4 in `02-UAT.md`).
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.10: App-wide design pass (BACKLOG, owner priority)
+
+**Goal:** [Captured for future planning] Make the whole app look intentionally designed: a radius, shadow and motion token scale, smooth restrained transitions on buttons and surfaces, background and surface elevation, and light and dark polish across every page. Phase 3's UI contract already redesigns the popup card, vote buttons, trust block and Activity rows, so this covers everything else. The owner said on 2026-10-06 "we should concentrate on the designing part of this project too". Where it goes is undecided: recommended right after Phase 3, so the new popup is styled once. Open part of gap `ui-visual-polish` (see `.planning/debug/ui-visual-polish.md` and `02-UAT.md` finding F5). Needs `/gsd-ui-phase` first.
+**Requirements:** TBD
 **Plans:** 0 plans
 
 Plans:

@@ -241,7 +241,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Presentation
 
-- [x] **UX-01**: A user can choose Light, Dark, or follow-the-OS appearance from inside the app
+- [x] **UX-01**: A user can switch between Light and Dark appearance from inside the app with one
+      round icon button. The operating system setting only picks the very first value, after that
+      the choice is remembered. (Changed on 2026-09-23 from "Light, Dark, or follow-the-OS" by the
+      owner's decision, quick task 260923-qwi.)
       (added 2026-09-18 from Phase 2 UAT — the app already renders both palettes via
       `prefers-color-scheme`/`[data-theme]`, but nothing lets a user choose independently of the
       OS setting)
