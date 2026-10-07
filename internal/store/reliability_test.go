@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	sqlcgen "pinalert/internal/store/sqlc"
 	"pinalert/internal/testutil"
 )
@@ -457,4 +459,108 @@ func TestReporterHistoryUsesAccountNotSession(t *testing.T) {
 	check("[X]", []int64{accX}, []int64{x1, x2, x3})
 	check("[Y]", []int64{accY}, []int64{y1})
 	check("[X, Y]", []int64{accX, accY}, []int64{x1, x2, x3, y1})
+}
+
+// TestSessionExpiresIndexExists proves migration 00005 was applied (V-27).
+func TestSessionExpiresIndexExists(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+
+	var indexDef string
+	err := pool.QueryRow(ctx,
+		`SELECT indexdef FROM pg_indexes WHERE tablename = 'reports' AND indexname = 'idx_reports_session_expires'`,
+	).Scan(&indexDef)
+	if err != nil {
+		t.Fatalf("idx_reports_session_expires not found on reports; migration 00005 missing: %v", err)
+	}
+	const wantSuffix = "USING btree (session_id, expires_at DESC, id DESC)"
+	if !strings.HasSuffix(indexDef, wantSuffix) {
+		t.Fatalf("index definition = %q, want it to end with %q", indexDef, wantSuffix)
+	}
+
+	var count int
+	if err := pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM pg_indexes WHERE tablename = 'reports' AND indexname = 'idx_reports_expires_at'`,
+	).Scan(&count); err != nil {
+		t.Fatalf("counting idx_reports_expires_at: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("idx_reports_expires_at count = %d, want 1 (the 00001 index must stay)", count)
+	}
+}
+
+// histExplain runs EXPLAIN ANALYZE of the hand copied history statement with
+// the production parameter shape and returns the plan text.
+func histExplain(t *testing.T, pool *pgxpool.Pool, accountIDs []int64) string {
+	t.Helper()
+	rows, err := pool.Query(context.Background(),
+		"EXPLAIN (ANALYZE, FORMAT TEXT) "+reporterHistorySQLForExplain,
+		histNow, histNow.Add(-histWindow), histRowCap, accountIDs,
+	)
+	if err != nil {
+		t.Fatalf("EXPLAIN failed: %v", err)
+	}
+	defer rows.Close()
+
+	var plan strings.Builder
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			t.Fatalf("scanning EXPLAIN output: %v", err)
+		}
+		plan.WriteString(line)
+		plan.WriteString("\n")
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("reading EXPLAIN output: %v", err)
+	}
+	return plan.String()
+}
+
+// TestReporterHistoryUsesSessionIndex asserts the index by name (V-24). A
+// generic "some index scan" check would pass without migration 00005, because
+// the planner would use idx_reports_expires_at instead.
+func TestReporterHistoryUsesSessionIndex(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	accountIDs := testutil.SeedReporterHistory(t, pool,
+		testutil.HistorySeedAccounts, testutil.HistorySeedSessionsPerAccount, testutil.HistorySeedReportsPerSession, histNow)
+	testutil.MustExec(t, pool, "ANALYZE reports")
+	testutil.MustExec(t, pool, "ANALYZE sessions")
+
+	// 200 is the per read account cap plan 03-12 introduces; it is not imported.
+	for _, size := range []int{10, 200} {
+		plan := histExplain(t, pool, accountIDs[:size])
+		if !strings.Contains(plan, "idx_reports_session_expires") {
+			t.Fatalf("%d accounts: plan does not name idx_reports_session_expires:\n%s", size, plan)
+		}
+		if strings.Contains(plan, "Seq Scan on reports") {
+			t.Fatalf("%d accounts: plan has a sequential scan of reports:\n%s", size, plan)
+		}
+		for _, line := range strings.Split(plan, "\n") {
+			if strings.Contains(line, "idx_reports_session_expires") {
+				t.Logf("%d accounts: %s", size, strings.TrimSpace(line))
+			}
+		}
+	}
+
+	rows, err := sqlcgen.New(pool).ReporterHistoryReports(context.Background(), histArg(accountIDs, histRowCap))
+	if err != nil {
+		t.Fatalf("ReporterHistoryReports over %d accounts: %v", len(accountIDs), err)
+	}
+	if len(rows) != 6000 {
+		t.Fatalf("got %d rows, want 6000 (30 for each of 200 accounts)", len(rows))
+	}
+	perAccount := map[int64]int{}
+	for _, r := range rows {
+		perAccount[r.AccountID]++
+	}
+	if len(perAccount) != 200 {
+		t.Fatalf("rows span %d accounts, want 200", len(perAccount))
+	}
+	for id, n := range perAccount {
+		if n != 30 {
+			t.Errorf("account %d has %d rows, want exactly 30", id, n)
+		}
+	}
+	histAssertRows(t, rows)
 }
