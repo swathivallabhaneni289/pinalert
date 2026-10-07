@@ -255,7 +255,7 @@ Plans:
   1. The feed displays "confirmed by N nearby" computed from the count of distinct confirming geohash cells/sessions — using a deliberately chosen, documented geohash precision — not the raw number of votes cast.
   2. A report displays two distinct trust signals side by side: a fast-decaying "is this still current" confidence score and a slow-decaying "is this source reliable" score.
 
-**Plans**: 18/20 plans executed
+**Plans**: 19/20 plans executed
 **UI hint**: yes
 
 Plans:
@@ -300,7 +300,7 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 03-19-PLAN.md: A keyboard or screen reader user can open a pin with Enter or Space, land in a named popup dialog, close the panel... (wave 8)
+- [x] 03-19-PLAN.md: A keyboard or screen reader user can open a pin with Enter or Space, land in a named popup dialog, close the panel... (wave 8)
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
@@ -433,7 +433,7 @@ Phases execute in numeric order: 1 → 1.1 → 2 → 3 → 3.1 → 3.2 → 4 →
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
 | 1.1 Identity & Login — Mandatory Email Verification | 8/8 | Complete   | 2026-09-12 |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 15/15 | Complete | 2026-10-07 |
-| 3. Trust-Model Hardening — Diversity-Weighted Trust | 18/20 | In Progress|  |
+| 3. Trust-Model Hardening — Diversity-Weighted Trust | 19/20 | In Progress|  |
 | 3.1 Report history views | 0/TBD | Not started | - |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
