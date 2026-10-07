@@ -72,6 +72,31 @@ func newReporterSignal(r Reliability) ReporterSignal {
 	return s
 }
 
+// noneReporterSignal is the canonical none signal (A47): tag none, null score,
+// empty words and zero counts. The browser renders nothing for it.
+func noneReporterSignal() ReporterSignal {
+	return ReporterSignal{Tag: ReporterNone}
+}
+
+// reporterSignalFor turns the optional input signal into the one a trust
+// object carries. A nil pointer is the real rule for accountless reports and
+// for reports past the account cap, which the read paths leave unset (Q7).
+// A none or invalid tag also gives the canonical none, so none never carries
+// a word, a number or a count. Otherwise the result is a copy with its own
+// Score pointer, so no two trust objects share one and a caller cannot change
+// a built trust object through its input.
+func reporterSignalFor(p *ReporterSignal) ReporterSignal {
+	if p == nil || p.Tag == ReporterNone || !p.Tag.Valid() {
+		return noneReporterSignal()
+	}
+	out := *p
+	if p.Score != nil {
+		score := *p.Score
+		out.Score = &score
+	}
+	return out
+}
+
 // ReporterSignals rates every requested account from its history rows and a
 // batch of current vote rows (D-10, D-13, D-15, D-23, R-05).
 //

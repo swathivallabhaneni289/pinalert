@@ -5,8 +5,10 @@
 // object holds the two counters (D-04, R-04, D-16), the lead line (D-17), the
 // confirmed and disputed panel sentences (D-19, A5, A6) and the still current
 // signal (D-05, D-06, D-07, D-08, R-01, R-02, R-03, R-08), which is built from
-// the same vote buckets as the counters. The browser renders these values as
-// text and holds no rule of its own.
+// the same vote buckets as the counters, and the reporter signal (D-10, D-14,
+// D-15, A47), which is display only and is the none signal when the report
+// has no rated account. The browser renders these values as text and holds no
+// rule of its own.
 
 package service
 
@@ -38,9 +40,11 @@ type Trust struct {
 	// DisputedSentence is the panel line for M (A56).
 	DisputedSentence string
 	// Currency is the still current signal (D-05 to D-08, R-01 to R-03,
-	// R-08), built by buildCurrency from the same buckets as N. Plan 03-10
-	// appends Reporter after it.
+	// R-08), built by buildCurrency from the same buckets as N.
 	Currency CurrencySignal
+	// Reporter is the reporter signal (D-10, D-15, A47). It is display only
+	// (D-14) and is the none signal when the report has no rated account.
+	Reporter ReporterSignal
 }
 
 // TrustInput is everything BuildTrust reads. Visibility is the caller's own
@@ -57,6 +61,10 @@ type TrustInput struct {
 	CreatedAt         time.Time
 	ExpiresAt         time.Time
 	Now               time.Time
+	// Reporter is the reporter's composed signal. Nil yields the none
+	// signal, which is the rule for accountless reports and for reports past
+	// the account cap. The read paths set it from ReporterSignals.
+	Reporter *ReporterSignal
 }
 
 // trustLeadSentence implements the lead line rule in order. Retracted wins
@@ -101,5 +109,6 @@ func BuildTrust(in TrustInput) Trust {
 		ExpiresAt:  in.ExpiresAt,
 		Now:        in.Now,
 	})
+	t.Reporter = reporterSignalFor(in.Reporter)
 	return t
 }
