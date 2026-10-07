@@ -277,9 +277,10 @@ func TestIndependentConfirmsFlipProvisionalToLive(t *testing.T) {
 	reportID := submitReportGetID(t, clientA, srv.URL, floodReportBody(12.9716, 77.5946))
 
 	// B votes from a few hundred metres away from A's report location; C
-	// votes from a clearly distinct location several kilometres away.
+	// votes from about 330 m south of it, inside the 1 km vote radius (D-01),
+	// in a precision 7 cell distinct from B's.
 	bLat, bLon := 12.9746, 77.5946 // roughly 330m north of the report
-	cLat, cLon := 13.0500, 77.6500 // several km away, clearly distinct
+	cLat, cLon := 12.9686, 77.5946 // about 330m south, inside the 1 km radius, distinct cell
 	assertDistinctCells(t, bLat, bLon, cLat, cLon)
 
 	respB := postVote(t, clientB, srv.URL, reportID, "confirm", map[string]any{"latitude": bLat, "longitude": bLon})
@@ -352,7 +353,7 @@ func TestReopenRequiresIndependentAgreement(t *testing.T) {
 	}
 
 	bLat, bLon := 12.9746, 77.5946
-	cLat, cLon := 13.0500, 77.6500
+	cLat, cLon := 12.9686, 77.5946
 	assertDistinctCells(t, bLat, bLon, cLat, cLon)
 
 	respB := postVote(t, clientB, srv.URL, reportID, "reopen", map[string]any{"latitude": bLat, "longitude": bLon})

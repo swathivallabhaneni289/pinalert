@@ -84,7 +84,7 @@ func TestFeedExcludesHiddenByDefault(t *testing.T) {
 	controlID := submitReportGetID(t, clientA, srv.URL, floodReportBody(lat, lon))
 
 	bLat, bLon := 12.9746, 77.5946
-	cLat, cLon := 13.0500, 77.6500
+	cLat, cLon := 12.9686, 77.5946
 	assertDistinctCells(t, bLat, bLon, cLat, cLon)
 
 	decodeVoteResponse(t, postVote(t, clientB, srv.URL, reportID, "dispute", map[string]any{"latitude": bLat, "longitude": bLon}))
@@ -129,7 +129,7 @@ func TestShowDisputedRevealsHiddenReports(t *testing.T) {
 	controlID := submitReportGetID(t, clientA, srv.URL, floodReportBody(lat, lon))
 
 	bLat, bLon := 12.9746, 77.5946
-	cLat, cLon := 13.0500, 77.6500
+	cLat, cLon := 12.9686, 77.5946
 	assertDistinctCells(t, bLat, bLon, cLat, cLon)
 
 	decodeVoteResponse(t, postVote(t, clientB, srv.URL, reportID, "dispute", map[string]any{"latitude": bLat, "longitude": bLon}))
@@ -285,7 +285,7 @@ func TestFeedVisibilityMatchesCastVoteResponse(t *testing.T) {
 	reportID := submitReportGetID(t, clientA, srv.URL, floodReportBody(lat, lon))
 
 	bLat, bLon := 12.9746, 77.5946
-	cLat, cLon := 13.0500, 77.6500
+	cLat, cLon := 12.9686, 77.5946
 	assertDistinctCells(t, bLat, bLon, cLat, cLon)
 
 	voteVisB, voteReasonB := decodeVoteResponse(t, postVote(t, clientB, srv.URL, reportID, "confirm", map[string]any{"latitude": bLat, "longitude": bLon}))

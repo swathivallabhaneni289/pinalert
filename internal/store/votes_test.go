@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	sqlcgen "pinalert/internal/store/sqlc"
@@ -466,5 +468,46 @@ ON CONFLICT (report_id, account_id, kind) DO UPDATE SET value = EXCLUDED.value;
 `
 	if got := forbiddenClauseIn(knownBad); got != "ON CONFLICT" {
 		t.Fatalf("forbiddenClauseIn(knownBad) = %q, want %q — the guard must detect a real forbidden clause in the statement body, not be fooled by the comment line naming it", got, "ON CONFLICT")
+	}
+}
+
+// TestReportVoteContextReturnsCoordinates proves the vote context read
+// returns the report's latitude, longitude and creation time alongside the
+// reporter, severity, category and expiry (D-01, V-09). CastVote reads the
+// report point from here, never from the client.
+func TestReportVoteContextReturnsCoordinates(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	reportID := seedReportForVotes(t, pool, "TestReportVoteContextReturnsCoordinates report")
+
+	created := time.Date(2026, 10, 1, 6, 0, 0, 0, time.UTC)
+	testutil.MustExec(t, pool, "UPDATE reports SET created_at = $1 WHERE id = $2", created, reportID)
+
+	q := sqlcgen.New(pool)
+	row, err := q.ReportVoteContext(ctx, reportID)
+	if err != nil {
+		t.Fatalf("ReportVoteContext: %v", err)
+	}
+	if row.Latitude != 12.9716 {
+		t.Errorf("Latitude = %v, want 12.9716", row.Latitude)
+	}
+	if row.Longitude != 77.5946 {
+		t.Errorf("Longitude = %v, want 77.5946", row.Longitude)
+	}
+	if !row.CreatedAt.Equal(created) {
+		t.Errorf("CreatedAt = %v, want %v", row.CreatedAt, created)
+	}
+	if row.Severity != "low" {
+		t.Errorf("Severity = %q, want low", row.Severity)
+	}
+	if row.Category != "flood" {
+		t.Errorf("Category = %q, want flood", row.Category)
+	}
+	if row.ReporterAccountID != nil {
+		t.Errorf("ReporterAccountID = %v, want nil (no sessions row)", *row.ReporterAccountID)
+	}
+
+	if _, err := q.ReportVoteContext(ctx, 999999); !errors.Is(err, pgx.ErrNoRows) {
+		t.Errorf("missing report error = %v, want pgx.ErrNoRows", err)
 	}
 }
