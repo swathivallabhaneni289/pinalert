@@ -359,3 +359,271 @@ func TestTrustDisclosure(t *testing.T) {
 	p13MustNotContain(t, "trust.js", trust,
 		"aria-live", "tooltip", "mouseenter", "mouseover", "'title'", ".title")
 }
+
+// p13CSSRule is one parsed rule: the at-rule prelude it sits in (empty at top
+// level), its whitespace normalised head and its declarations.
+type p13CSSRule struct {
+	Media string
+	Head  string
+	Decls map[string]string
+}
+
+// p13ParseCSS parses a stylesheet into rules, one level of at-rule nesting
+// deep. Every rule inside a block opened by an at-rule carries that at-rule's
+// prelude as its Media.
+func p13ParseCSS(raw string) []p13CSSRule {
+	var rules []p13CSSRule
+	var walk func(s, media string)
+	walk = func(s, media string) {
+		for {
+			open := strings.Index(s, "{")
+			if open == -1 {
+				return
+			}
+			prelude := strings.Join(strings.Fields(s[:open]), " ")
+			depth := 1
+			i := open + 1
+			for ; i < len(s) && depth > 0; i++ {
+				switch s[i] {
+				case '{':
+					depth++
+				case '}':
+					depth--
+				}
+			}
+			body := s[open+1 : i-1]
+			if strings.HasPrefix(prelude, "@") {
+				walk(body, prelude)
+			} else {
+				rules = append(rules, p13CSSRule{Media: media, Head: prelude, Decls: declsOf(body)})
+			}
+			s = s[i:]
+		}
+	}
+	walk(stripCSSComments(raw), "")
+	return rules
+}
+
+// p13Rule returns the rule whose head equals head exactly and whose Media
+// contains media (an empty media means top level only), with its index in
+// parse order. It fails the test when no rule matches.
+func p13Rule(t *testing.T, rules []p13CSSRule, media, head string) (p13CSSRule, int) {
+	t.Helper()
+	for i, r := range rules {
+		if r.Head != head {
+			continue
+		}
+		if media == "" && r.Media == "" {
+			return r, i
+		}
+		if media != "" && strings.Contains(r.Media, media) {
+			return r, i
+		}
+	}
+	t.Fatalf("no rule with head %q in media %q", head, media)
+	return p13CSSRule{}, -1
+}
+
+// TestTrustCSS pins the look of the trust block (V-40): geometry from tokens,
+// the normal text colour only, the hidden guard on every display rule, the
+// press fill, the inset ring, the glyph masks, and the forced colours and
+// reduced motion rules.
+func TestTrustCSS(t *testing.T) {
+	raw := p13ReadStatic(t, "static/css/trust.css")
+	rules := p13ParseCSS(raw)
+
+	isTrust := func(r p13CSSRule) bool { return strings.Contains(r.Head, ".trust-") }
+
+	// 1. Every display declaration carries the hidden guard.
+	for _, r := range rules {
+		if !isTrust(r) {
+			continue
+		}
+		if _, ok := r.Decls["display"]; !ok {
+			continue
+		}
+		for _, part := range strings.Split(r.Head, ",") {
+			if !strings.Contains(part, ":not([hidden])") {
+				t.Errorf("%q declares display without the :not([hidden]) guard", strings.TrimSpace(part))
+			}
+		}
+	}
+
+	// 2 and 3. Tokens, type sizes and weights, colour, no severity colour.
+	allowedSizes := map[string]bool{
+		"var(--font-size-label)": true, "var(--font-size-body)": true,
+		"var(--font-size-heading)": true, "var(--font-size-display)": true,
+	}
+	allowedWeights := map[string]bool{
+		"var(--font-weight-regular)": true, "var(--font-weight-semibold)": true,
+	}
+	for _, r := range rules {
+		if !isTrust(r) {
+			continue
+		}
+		if strings.Contains(r.Head, ".icon-glyph--") {
+			t.Errorf("%q uses the category glyph prefix (A39)", r.Head)
+		}
+		for prop, value := range r.Decls {
+			if strings.Contains(value, "!important") || strings.Contains(value, "999px") {
+				t.Errorf("%q %s: %q uses !important or 999px", r.Head, prop, value)
+			}
+			for _, banned := range []string{"--color-text-muted", "--color-severity", "--severity-"} {
+				if strings.Contains(value, banned) {
+					t.Errorf("%q %s: %q uses %s, but colour is reserved for severity (A3, D-18)", r.Head, prop, value, banned)
+				}
+			}
+			switch prop {
+			case "font-size":
+				if !allowedSizes[value] {
+					t.Errorf("%q font-size %q is not one of the four type sizes", r.Head, value)
+				}
+			case "font-weight":
+				if !allowedWeights[value] {
+					t.Errorf("%q font-weight %q is not one of the two weights", r.Head, value)
+				}
+			case "color":
+				if value != "var(--color-text)" {
+					t.Errorf("%q color %q is not the normal text colour", r.Head, value)
+				}
+			}
+		}
+	}
+
+	// 4. Exact heads and values, in source order.
+	maskBase := map[string]string{
+		"-webkit-mask-size": "contain", "mask-size": "contain",
+		"-webkit-mask-repeat": "no-repeat", "mask-repeat": "no-repeat",
+		"-webkit-mask-position": "center", "mask-position": "center",
+	}
+	iconBase := map[string]string{
+		"display": "block", "flex": "none", "width": "16px", "height": "20px",
+		"background-color": "currentColor",
+	}
+	for k, v := range maskBase {
+		iconBase[k] = v
+	}
+	table := []struct {
+		head string
+		want map[string]string
+	}{
+		{".trust-block:not([hidden])", map[string]string{
+			"display": "block", "margin-top": "var(--space-sm)",
+			"border-top": "1px solid var(--color-border)"}},
+		{".trust-block__toggle:not([hidden])", map[string]string{
+			"display": "block", "width": "100%", "min-height": "var(--touch-target-min)",
+			"padding": "var(--space-sm) var(--space-xs)", "border-radius": "8px",
+			"background": "transparent", "color": "var(--color-text)",
+			"font-family": "var(--font-family)", "font-size": "var(--font-size-body)",
+			"text-align": "start", "text-underline-offset": "4px",
+			"transition": "background-color 150ms ease"}},
+		{".trust-block__toggle:hover", map[string]string{"text-decoration": "underline"}},
+		{".trust-block__toggle:active", map[string]string{"background-color": "var(--color-border)"}},
+		{".trust-block__toggle:focus-visible", map[string]string{"outline-offset": "-2px"}},
+		{".trust-block__counts:not([hidden])", map[string]string{
+			"display": "flex", "flex-wrap": "wrap", "align-items": "center",
+			"column-gap": "var(--space-lg)", "min-height": "32px", "overflow": "hidden",
+			"font-size": "var(--font-size-body)", "line-height": "var(--line-height-body)"}},
+		{".trust-block__count", map[string]string{
+			"position": "relative", "min-width": "0", "overflow-wrap": "anywhere"}},
+		{".trust-block__count--second::before", map[string]string{
+			"content": `""`, "position": "absolute", "top": "var(--space-sm)",
+			"bottom": "var(--space-sm)", "left": "calc(-0.5 * var(--space-lg))",
+			"width": "1px", "background-color": "var(--color-border)"}},
+		{".trust-num", map[string]string{
+			"font-weight": "var(--font-weight-semibold)", "color": "var(--color-text)"}},
+		{".trust-block__signals:not([hidden])", map[string]string{
+			"display": "flex", "flex-wrap": "wrap", "align-items": "center",
+			"column-gap": "var(--space-md)", "min-height": "28px", "overflow": "hidden",
+			"font-size": "var(--font-size-label)", "line-height": "var(--line-height-label)",
+			"font-weight": "var(--font-weight-regular)", "color": "var(--color-text)"}},
+		{".trust-signal:not([hidden])", map[string]string{
+			"display": "flex", "position": "relative", "align-items": "center",
+			"gap": "var(--space-sm)", "min-width": "0"}},
+		{".trust-signal--second::before", map[string]string{
+			"content": `""`, "position": "absolute", "top": "var(--space-xs)",
+			"bottom": "var(--space-xs)", "left": "calc(-1 * var(--space-sm))",
+			"width": "1px", "background-color": "var(--color-border)"}},
+		{".trust-signal__text", map[string]string{
+			"min-width": "0", "overflow-wrap": "anywhere"}},
+		{".trust-icon:not([hidden])", iconBase},
+		{".trust-icon--clock", map[string]string{
+			"-webkit-mask-image": `url("/static/icons/clock.svg")`,
+			"mask-image":         `url("/static/icons/clock.svg")`}},
+		{".trust-icon--user", map[string]string{
+			"-webkit-mask-image": `url("/static/icons/user.svg")`,
+			"mask-image":         `url("/static/icons/user.svg")`}},
+		{".trust-block__panel:not([hidden])", map[string]string{
+			"display": "grid", "gap": "var(--space-xs)",
+			"padding": "0 var(--space-xs) var(--space-sm)", "margin": "0"}},
+		{".trust-block__panel .trust-block__line", map[string]string{
+			"margin": "0", "font-size": "var(--font-size-label)",
+			"line-height": "var(--line-height-label)",
+			"font-weight": "var(--font-weight-regular)", "color": "var(--color-text)",
+			"overflow-wrap": "anywhere"}},
+	}
+	index := map[string]int{}
+	for _, row := range table {
+		r, i := p13Rule(t, rules, "", row.head)
+		index[row.head] = i
+		for prop, want := range row.want {
+			if got, ok := r.Decls[prop]; !ok || got != want {
+				t.Errorf("%q %s = %q, want %q", row.head, prop, got, want)
+			}
+		}
+	}
+	hover, _ := p13Rule(t, rules, "", ".trust-block__toggle:hover")
+	if _, ok := hover.Decls["text-decoration-thickness"]; ok {
+		t.Errorf("the toggle hover rule sets text-decoration-thickness, which the spec leaves out")
+	}
+
+	// 4a. The press fill ties the base toggle rule on specificity, so it must
+	// come later in the file.
+	if index[".trust-block__toggle:active"] <= index[".trust-block__toggle:not([hidden])"] {
+		t.Errorf("the :active rule must come after the base toggle rule, or the press fill never shows")
+	}
+
+	// 5. Reduced motion and forced colours.
+	motion, motionIdx := p13Rule(t, rules, "prefers-reduced-motion: reduce", ".trust-block__toggle:not([hidden])")
+	if motion.Decls["transition"] != "none" {
+		t.Errorf("reduced motion toggle transition = %q, want none", motion.Decls["transition"])
+	}
+	if motionIdx <= index[".trust-block__toggle:not([hidden])"] {
+		t.Errorf("the reduced motion rule must come after the base toggle rule")
+	}
+	icon, iconIdx := p13Rule(t, rules, "forced-colors: active", ".trust-icon:not([hidden])")
+	if icon.Decls["forced-color-adjust"] != "none" || icon.Decls["background-color"] != "CanvasText" {
+		t.Errorf("forced colours icon rule = %v, want forced-color-adjust none and CanvasText", icon.Decls)
+	}
+	if iconIdx <= index[".trust-icon:not([hidden])"] {
+		t.Errorf("the forced colours icon rule must come after the base icon rule")
+	}
+	sep, sepIdx := p13Rule(t, rules, "forced-colors: active",
+		".trust-block__count--second::before, .trust-signal--second::before")
+	if sep.Decls["forced-color-adjust"] != "none" || sep.Decls["background-color"] != "CanvasText" {
+		t.Errorf("forced colours separator rule = %v, want forced-color-adjust none and CanvasText", sep.Decls)
+	}
+	if sepIdx <= index[".trust-signal--second::before"] {
+		t.Errorf("the forced colours separator rule must come after the base separator rules")
+	}
+
+	// 6. System colour keywords stay inside forced colours blocks.
+	system := regexp.MustCompile(`\b(Canvas|CanvasText|GrayText|Highlight|HighlightText|ButtonFace|ButtonText|LinkText)\b`)
+	for _, r := range rules {
+		if strings.Contains(r.Media, "forced-colors: active") {
+			continue
+		}
+		for prop, value := range r.Decls {
+			if system.MatchString(value) {
+				t.Errorf("%q %s: %q uses a system colour outside a forced colours block", r.Head, prop, value)
+			}
+		}
+	}
+
+	// 7. Declarations and content values carry no long dash (A69). Comments
+	// are stripped first, so the older comment dashes are not scanned.
+	stripped := stripCSSComments(raw)
+	if strings.ContainsRune(stripped, '\u2014') || strings.ContainsRune(stripped, '\u2013') {
+		t.Errorf("trust.css has a long dash outside its comments (A69)")
+	}
+}

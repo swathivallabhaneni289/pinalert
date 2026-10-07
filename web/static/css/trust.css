@@ -732,3 +732,196 @@
     background-color: CanvasText;
   }
 }
+
+/* -------------------------------------------------------------------------
+ * Phase 3 trust block (plan 03-13; D-16, D-18, A4, A22, A48, A61). One block
+ * serves the feed row, the map popup and the Activity page: a hairline, a
+ * full width toggle, two counters and up to two signals, then a plain panel.
+ * Text stays in the normal text colour because colour is reserved for
+ * severity, and the fade changes severity tokens only, so the block is never
+ * dimmed. Every spacing value is a token (A53).
+ * ---------------------------------------------------------------------- */
+
+.trust-block:not([hidden]) {
+  display: block;
+  margin-top: var(--space-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+/* The toggle is the whole block face. It keeps the 44px floor, and its press
+   fill and inset focus ring come from the two rules after it. */
+.trust-block__toggle:not([hidden]) {
+  display: block;
+  width: 100%;
+  min-height: var(--touch-target-min);
+  padding: var(--space-sm) var(--space-xs);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  text-align: start;
+  text-underline-offset: 4px;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.trust-block__toggle:hover {
+  text-decoration: underline;
+}
+
+/* The press fill uses the border token and never the surface token, so the
+   press still shows on a Provisional row (A48). It ties the base toggle rule
+   on specificity and wins by coming later. */
+.trust-block__toggle:active {
+  background-color: var(--color-border);
+}
+
+/* The ring sits inside the box (A61), so the row and the popup never clip it. */
+.trust-block__toggle:focus-visible {
+  outline-offset: -2px;
+}
+
+/* The counters always show, zeros included (D-16). The row clips, so the
+   separator of a counter that wraps to a new line disappears with it (A22). */
+.trust-block__counts:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-lg);
+  min-height: 32px;
+  overflow: hidden;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+}
+
+.trust-block__count {
+  position: relative;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A 1px separator centred in the 24px gap before the second counter. */
+.trust-block__count--second::before {
+  content: "";
+  position: absolute;
+  top: var(--space-sm);
+  bottom: var(--space-sm);
+  left: calc(-0.5 * var(--space-lg));
+  width: 1px;
+  background-color: var(--color-border);
+}
+
+.trust-num {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.trust-block__signals:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-md);
+  min-height: 28px;
+  overflow: hidden;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+}
+
+.trust-signal:not([hidden]) {
+  display: flex;
+  position: relative;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+/* The signals row has its own separator, centred in its 16px gap and clipped
+   the same way. */
+.trust-signal--second::before {
+  content: "";
+  position: absolute;
+  top: var(--space-xs);
+  bottom: var(--space-xs);
+  left: calc(-1 * var(--space-sm));
+  width: 1px;
+  background-color: var(--color-border);
+}
+
+.trust-signal__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Glyph mask base for the two signal icons (A39). The icon takes the text
+   colour through currentColor. */
+.trust-icon:not([hidden]) {
+  display: block;
+  flex: none;
+  width: 16px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.trust-icon--clock {
+  -webkit-mask-image: url("/static/icons/clock.svg");
+  mask-image: url("/static/icons/clock.svg");
+}
+
+.trust-icon--user {
+  -webkit-mask-image: url("/static/icons/user.svg");
+  mask-image: url("/static/icons/user.svg");
+}
+
+.trust-block__panel:not([hidden]) {
+  display: grid;
+  gap: var(--space-xs);
+  padding: 0 var(--space-xs) var(--space-sm);
+  margin: 0;
+}
+
+/* Two classes on purpose: Leaflet's popup paragraph margin rule has a
+   specificity of (0,1,1), so a single class head would lose inside the
+   popup. */
+.trust-block__panel .trust-block__line {
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+/* Reduced motion removes the press transition. */
+@media (prefers-reduced-motion: reduce) {
+  .trust-block__toggle:not([hidden]) {
+    transition: none;
+  }
+}
+
+/* Windows high contrast (RR-7). The glyph masks and the separators opt out of
+   forced colour adjustment so they stay visible. System colour keywords
+   appear only in this block. */
+@media (forced-colors: active) {
+  .trust-icon:not([hidden]) {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+
+  .trust-block__count--second::before,
+  .trust-signal--second::before {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}
