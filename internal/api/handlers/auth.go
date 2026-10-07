@@ -248,6 +248,27 @@ var categoryLabels = map[service.Category]string{
 // client update and a fresh page load agree on what the class is called.
 const profileVisibilityStateClassPrefix = "vis-"
 
+// profileExpiredDisplayState is the fifth display state, the one visibility.js
+// displayState writes after load for an expired report that is not Retracted
+// (A57). It is never a resolver visibility, so the row's own Visibility field
+// keeps the resolver's state.
+const profileExpiredDisplayState = "expired"
+
+// severityWord is the Activity page's visible severity word. The Go side owns
+// it because the app.js word table is not reachable from the template (A58).
+// The low fallback matches the one ActivityForAccount applies when it
+// validates severity.
+func severityWord(s service.Severity) string {
+	switch s {
+	case service.SeverityCritical:
+		return "Critical"
+	case service.SeverityMedium:
+		return "Medium"
+	default:
+		return "Low"
+	}
+}
+
 // profileReport is exactly what profile.html.tmpl's Activity section reads
 // for one row — Phase 1's existing .report-row markup and classes, reused
 // verbatim rather than reinvented for this account-scoped listing
@@ -255,16 +276,23 @@ const profileVisibilityStateClassPrefix = "vis-"
 // VisibilityReason, VisibilityClass and CanReopen are 02-07's additions:
 // the first four give activity.js the hooks it needs to render the trust
 // chip; CanReopen (Task 3) gates the Reopen control to rows that are both
-// retracted AND not yet expired.
+// retracted AND not yet expired. SeverityWord, SeverityLevel, TrustJSON and
+// Expired are plan 03-15's (D-20, A44, A58): the visible severity word, its
+// level for the label modifier class, the shared trust object as JSON, and
+// the server's own expiry decision.
 type profileReport struct {
 	ReportID         int64
 	CategoryGlyph    string
 	SeverityClass    string
+	SeverityWord     string
+	SeverityLevel    string
 	Description      string
 	MetaText         string
 	Visibility       string
 	VisibilityReason string
 	VisibilityClass  string
+	TrustJSON        string
+	Expired          bool
 	CanReopen        bool
 }
 
@@ -345,7 +373,14 @@ func capitalizeASCII(s string) string {
 // expiry-blind (expiry is not one of the four states), which is why this
 // clause lives here rather than in the resolver, and why it gates the
 // BUTTON alone, never the "Resolved" label.
-func newProfileReport(ar service.ActivityReport, now time.Time) profileReport {
+//
+// TrustJSON is the same object the feed and the vote response carry, from the
+// same mapper, never re derived here (D-20, V-33). Expired is the only expiry
+// rule the Activity page has, so activity.js compares no dates (A44). An
+// expired report that is not Retracted gets the expired row class on first
+// paint; a Retracted one keeps its retracted class, so Resolved wins over
+// Expired (State Matrix 10a and 10b).
+func newProfileReport(ar service.ActivityReport, now time.Time) (profileReport, error) {
 	row := ar.Row
 	category := ar.Category
 	severity := ar.Severity
@@ -376,19 +411,34 @@ func newProfileReport(ar service.ActivityReport, now time.Time) profileReport {
 		visibility = service.VisibilityProvisional
 	}
 
-	canReopen := visibility == service.VisibilityRetracted && row.ExpiresAt.After(now)
+	expired := !row.ExpiresAt.After(now)
+	canReopen := visibility == service.VisibilityRetracted && !expired
+
+	visibilityClass := profileVisibilityStateClassPrefix + string(visibility)
+	if expired && visibility != service.VisibilityRetracted {
+		visibilityClass = profileVisibilityStateClassPrefix + profileExpiredDisplayState
+	}
+
+	trustJSON, err := json.Marshal(trustToResponse(ar.Trust))
+	if err != nil {
+		return profileReport{}, fmt.Errorf("handlers: encoding trust for report %d: %w", row.ID, err)
+	}
 
 	return profileReport{
 		ReportID:         row.ID,
 		CategoryGlyph:    "icon-glyph--" + string(category),
 		SeverityClass:    "sev-" + string(severity),
+		SeverityWord:     severityWord(severity),
+		SeverityLevel:    string(severity),
 		Description:      row.Description,
 		MetaText:         meta,
 		Visibility:       string(visibility),
 		VisibilityReason: string(ar.Reason),
-		VisibilityClass:  profileVisibilityStateClassPrefix + string(visibility),
+		VisibilityClass:  visibilityClass,
+		TrustJSON:        string(trustJSON),
+		Expired:          expired,
 		CanReopen:        canReopen,
-	}
+	}, nil
 }
 
 // Profile handles GET /profile: every report the caller's verified account
@@ -424,7 +474,13 @@ func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) 
 		now := time.Now()
 		reports := make([]profileReport, 0, len(activityReports))
 		for _, ar := range activityReports {
-			reports = append(reports, newProfileReport(ar, now))
+			pr, err := newProfileReport(ar, now)
+			if err != nil {
+				log.Printf("handlers: Profile: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			reports = append(reports, pr)
 		}
 
 		vm := profileViewModel{

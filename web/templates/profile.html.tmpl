@@ -29,11 +29,14 @@
             data-report-id="{{.ReportID}}"
             data-visibility="{{.Visibility}}"
             data-visibility-reason="{{.VisibilityReason}}"
+            data-expired="{{.Expired}}"
+            data-trust="{{.TrustJSON}}"
             {{if .CanReopen}}data-can-reopen="true"{{end}}>
           <span class="icon-badge icon-badge--sm">
             <span class="icon-glyph {{.CategoryGlyph}}" aria-hidden="true"></span>
           </span>
           <div class="report-row__body">
+            <span class="severity-label severity-label--{{.SeverityLevel}}">{{.SeverityWord}}</span>
             <p class="report-row__title">{{.Description}}</p>
             <p class="report-row__meta">{{.MetaText}}</p>
           </div>
