@@ -598,6 +598,65 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.CurrencyResponse": {
+            "type": "object",
+            "properties": {
+                "band": {
+                    "description": "Band is the still current band, written by the server.",
+                    "type": "string",
+                    "enum": [
+                        "up_to_date",
+                        "getting_old",
+                        "needs_reconfirming",
+                        "not_yet_corroborated",
+                        "not_applicable"
+                    ],
+                    "example": "up_to_date"
+                },
+                "fade_stage": {
+                    "description": "FadeStage is fresh, aging or stale, or null for critical and rescue needed reports and for rows with no still current word. The browser takes the worse of it and its own time stage.",
+                    "type": "string",
+                    "enum": [
+                        "fresh",
+                        "aging",
+                        "stale"
+                    ],
+                    "x-nullable": true,
+                    "example": "fresh"
+                },
+                "label": {
+                    "description": "Label is the everyday word for the band, written by the server, empty when no word shows.",
+                    "type": "string",
+                    "example": "Up to date"
+                },
+                "recent_places": {
+                    "description": "RecentPlaces is how many distinct places confirmed the report inside the window.",
+                    "type": "integer",
+                    "example": 3
+                },
+                "score": {
+                    "description": "Score is a whole number from 0 to 100, or null while there is no rating (band not_yet_corroborated or not_applicable).",
+                    "type": "integer",
+                    "x-nullable": true,
+                    "example": 92
+                },
+                "score_sentence": {
+                    "description": "ScoreSentence is the popup line that explains the score, empty when the score is null.",
+                    "type": "string",
+                    "example": "Score 92 out of 100, based on how recently different places confirmed this."
+                },
+                "sentence": {
+                    "description": "Sentence is the panel line for the band, written by the server, empty when no word shows.",
+                    "type": "string",
+                    "example": "3 different places confirmed this in the last 2 hours."
+                },
+                "window_minutes": {
+                    "description": "WindowMinutes is the length of the window in whole minutes.",
+                    "type": "integer",
+                    "example": 120
+                }
+            }
+        },
         "handlers.ErrorDetail": {
             "type": "object",
             "properties": {
@@ -860,6 +919,54 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.ReporterResponse": {
+            "type": "object",
+            "properties": {
+                "corroborated_reports": {
+                    "description": "CorroboratedReports is how many of the judged reports were confirmed by people nearby.",
+                    "type": "integer",
+                    "example": 5
+                },
+                "judged_reports": {
+                    "description": "JudgedReports is how many earlier reports have a clear result.",
+                    "type": "integer",
+                    "example": 5
+                },
+                "label": {
+                    "description": "Label is the everyday word for the tag, written by the server, empty when no word shows.",
+                    "type": "string",
+                    "example": "Reliable reporter"
+                },
+                "score": {
+                    "description": "Score is a whole number from 0 to 100, or null while there is no rating (tag new or none).",
+                    "type": "integer",
+                    "x-nullable": true,
+                    "example": 86
+                },
+                "score_sentence": {
+                    "description": "ScoreSentence is the popup line that explains the score, empty when the score is null.",
+                    "type": "string",
+                    "example": "Score 86 out of 100, based on how often their reports with a clear result were confirmed."
+                },
+                "sentence": {
+                    "description": "Sentence is the panel line for the tag, written by the server, empty when no word shows.",
+                    "type": "string",
+                    "example": "5 of 5 earlier reports were confirmed by people nearby."
+                },
+                "tag": {
+                    "description": "Tag is the reporter tag, written by the server.",
+                    "type": "string",
+                    "enum": [
+                        "reliable",
+                        "mixed",
+                        "unreliable",
+                        "new",
+                        "none"
+                    ],
+                    "example": "reliable"
+                }
+            }
+        },
         "handlers.RequestLinkRequest": {
             "type": "object",
             "properties": {
@@ -967,6 +1074,14 @@ const docTemplate = `{
                     "type": "string",
                     "example": "1"
                 },
+                "currency": {
+                    "description": "Currency is the still current signal: a band, the facts behind it (how many different places confirmed recently, over what window) and a whole number score from 0 to 100, or null while there is no rating. The feed and every vote response carry the same object.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/handlers.CurrencyResponse"
+                        }
+                    ]
+                },
                 "disputed_places": {
                     "description": "DisputedPlaces is how many distinct places dispute the report, counted the same way.",
                     "type": "integer",
@@ -986,6 +1101,14 @@ const docTemplate = `{
                     "description": "LeadSentence is the panel's first line, empty when there is none.",
                     "type": "string",
                     "example": "Needs 2 confirmations before this counts as confirmed."
+                },
+                "reporter": {
+                    "description": "Reporter is the reporter signal: a tag, the facts behind it (how many earlier reports had a clear result and how many of those people nearby confirmed) and a whole number score from 0 to 100, or null while there is no rating. The feed and every vote response carry the same object.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/handlers.ReporterResponse"
+                        }
+                    ]
                 }
             }
         }
