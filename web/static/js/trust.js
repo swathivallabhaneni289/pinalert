@@ -125,6 +125,37 @@
     return { el: el, word: word, score: score, num: num };
   }
 
+  // createSeverityLabel builds the read only severity word shared by the feed
+  // row, the Activity row and the popup (A26, A45). It starts hidden and
+  // empty, carries no aria attribute and takes no focus, and
+  // updateSeverityLabel is always called after it.
+  function createSeverityLabel() {
+    var label = document.createElement('span');
+    label.className = 'severity-label';
+    label.setAttribute('hidden', '');
+    return label;
+  }
+
+  // updateSeverityLabel writes the class and the word only. The word comes
+  // from the fixed table in app.js and the value reaches the class name only
+  // when it is one of that table's own keys, so an unexpected value never
+  // reads as a severity (T-03-06).
+  function updateSeverityLabel(label, report) {
+    if (!label) {
+      return;
+    }
+    var severity = report && report.severity;
+    if (Object.prototype.hasOwnProperty.call(Pinalert.SEVERITY_WORDS, severity)) {
+      label.className = 'severity-label severity-label--' + severity;
+      Pinalert.setText(label, Pinalert.SEVERITY_WORDS[severity]);
+      label.removeAttribute('hidden');
+      return;
+    }
+    label.className = 'severity-label';
+    Pinalert.setText(label, '');
+    label.setAttribute('hidden', '');
+  }
+
   // createTrustBlock is the one builder for every surface (D-20). Only the
   // popup asks for scores (D-09). The block starts hidden and empty, and
   // updateTrustBlock is always called after it.
@@ -416,6 +447,8 @@
   document.addEventListener('keydown', onDocumentEscape, true);
 
   window.PinalertTrust = {
+    createSeverityLabel: createSeverityLabel,
+    updateSeverityLabel: updateSeverityLabel,
     createTrustBlock: createTrustBlock,
     updateTrustBlock: updateTrustBlock,
     fadeStage: fadeStage,

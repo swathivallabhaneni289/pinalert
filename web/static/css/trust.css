@@ -253,18 +253,27 @@
    either: unlike .age-fresh, which exists to reset a property the other
    age stages override, the live state overrides nothing, so there is
    nothing to declare. */
+/* Phase 3 rounded read only label (A1, A37): min-height never height, inline
+   padding only, and the hidden guard kept because display is inline-flex. */
 .visibility-tag:not([hidden]) {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 24px;
+  min-width: 0;
   margin: var(--space-xs) 0 0;
-  padding: var(--space-xs) var(--space-sm);
+  padding: 0 var(--space-sm);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: 12px;
   background: var(--color-bg);
-  color: var(--color-text-muted);
+  color: var(--color-text);
   font-family: var(--font-family);
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
   font-weight: var(--font-weight-semibold);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: top;
 }
 
 /* The disputed empty state's own [hidden] override — the OTHER guard form
@@ -921,6 +930,106 @@
 
   .trust-block__count--second::before,
   .trust-signal--second::before {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * Phase 3 read only labels and expired rows (plan 03-16; A1, A26, A40, A44,
+ * A45, RR-7). The severity label states Critical, Medium or Low in words and
+ * the state labels above share its rounded shape. Every label uses
+ * min-height and never height, so it grows with text only enlargement. The
+ * Expired state label stays neutral like the others.
+ * ---------------------------------------------------------------------- */
+
+.severity-label:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  box-sizing: border-box;
+  min-height: 24px;
+  min-width: 0;
+  padding: 0 var(--space-sm);
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+/* The popup fills read the literal per level token, never the row tint, so a
+   Provisional or Hidden popup keeps a visible label shape. Both heads tie, so
+   the Critical colour wins by source order. */
+.severity-label.severity-label--critical {
+  background: var(--color-severity-critical-bg);
+  color: var(--color-severity-critical);
+}
+
+.severity-label.severity-label--medium {
+  background: var(--color-severity-medium-bg);
+}
+
+.severity-label.severity-label--low {
+  background: var(--color-severity-low-bg);
+}
+
+/* Medium and Low carry an 8px dot in the current severity colour. It is a
+   pseudo element, so the script and the Activity template emit the same one
+   text node of markup. */
+.severity-label.severity-label--medium::before,
+.severity-label.severity-label--low::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--severity-current);
+}
+
+/* On a feed row or an Activity row the fill is the page colour with a 1px
+   border in the current severity colour. At (0,3,0) this beats the level
+   fills above and sets no colour, so the Critical text stays red. */
+.report-row .severity-label:not([hidden]) {
+  margin: 0 0 var(--space-xs);
+  background: var(--color-bg);
+  border-color: var(--severity-current);
+}
+
+/* Expired (A44, Activity page only). The server writes the class for first
+   paint and applyVisibilityClass writes it after load. The declarations are
+   identical to the retracted state and checked by
+   TestExpiredRowTreatmentMatchesRetracted. */
+.vis-expired {
+  --severity-current: var(--color-border);
+  --severity-tint: transparent;
+  --badge-glyph-fg: var(--color-text-muted);
+}
+
+.icon-badge.vis-expired,
+.vis-expired .icon-badge {
+  background: transparent;
+  outline: 1px solid var(--color-border);
+}
+
+/* Forced colors (RR-7). The labels keep a visible rounded border and the
+   system text colour, and the dot opts out of colour adjustment. System
+   colour keywords stay inside forced colors blocks. */
+@media (forced-colors: active) {
+  .severity-label:not([hidden]),
+  .report-row .severity-label:not([hidden]),
+  .visibility-tag:not([hidden]) {
+    border: 1px solid CanvasText;
+    color: CanvasText;
+  }
+
+  .severity-label.severity-label--medium::before,
+  .severity-label.severity-label--low::before {
     forced-color-adjust: none;
     background-color: CanvasText;
   }
