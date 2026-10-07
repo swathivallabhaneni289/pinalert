@@ -125,7 +125,9 @@ func TestVoteTransportHasNoLocationFallback(t *testing.T) {
 // TestVoterLocationIsCachedPerSession proves D-17: the voter's location is
 // read from a sessionStorage cache before the native geolocation prompt is
 // ever raised, and the cache lives for the browser session rather than
-// across visits.
+// across visits. D-02 adds a capture time to the same cache entry without a
+// second read or write: the body still holds exactly one storage read and one
+// storage write.
 func TestVoterLocationIsCachedPerSession(t *testing.T) {
 	raw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
 	if err != nil {
@@ -138,7 +140,7 @@ func TestVoterLocationIsCachedPerSession(t *testing.T) {
 			"only, not across visits; a person's coordinates must not outlive the tab")
 	}
 
-	getVoterLocationBody := jsFunctionBody(t, text, "getVoterLocation()")
+	getVoterLocationBody := jsFunctionBody(t, text, "getVoterLocation(opts)")
 
 	const getItemCall = "sessionStorage.getItem("
 	const setItemCall = "sessionStorage.setItem("
@@ -166,6 +168,89 @@ func TestVoterLocationIsCachedPerSession(t *testing.T) {
 			"at %d and %d) — the cache must be consulted before the prompt is raised, which is "+
 			"the whole of \"asked once per session and cached, not re-prompted on every vote\"",
 			getItemCall, promptCall, getIdx, promptIdx)
+	}
+}
+
+// TestVoteTransportRefreshesAndRetriesOnce is V-35 for D-02: the voter's
+// cached fix carries a capture time, a fix younger than the freshness bound
+// is reused, an already granted permission is refreshed silently, and a vote
+// the server refused with error field location is retried exactly once with a
+// fresh fix. All permission logic lives in getVoterLocation, and castVote
+// holds no loop, so the retry is bounded by construction.
+//
+// Honest limit, in the style of the neighbouring tests: static inspection
+// proves the shapes, not a real browser's permission behaviour, which the
+// end of phase human check covers.
+func TestVoteTransportRefreshesAndRetriesOnce(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/votes.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+
+	if n := strings.Count(text, "var VOTER_LOCATION_FRESH_MS = 60000;"); n != 1 {
+		t.Errorf("expected exactly one declaration of VOTER_LOCATION_FRESH_MS = 60000, found %d", n)
+	}
+	if n := strings.Count(text, "navigator.permissions.query("); n != 1 {
+		t.Errorf("expected exactly one navigator.permissions.query call in the module, found %d", n)
+	}
+
+	stateBody := jsFunctionBody(t, text, "geolocationPermissionState()")
+	for _, want := range []string{
+		"navigator.permissions.query(", "name: 'geolocation'",
+		"'granted'", "'denied'", "'prompt'", "'unknown'", "catch",
+	} {
+		if !strings.Contains(stateBody, want) {
+			t.Errorf("geolocationPermissionState's body is missing %q", want)
+		}
+	}
+
+	locBody := jsFunctionBody(t, text, "getVoterLocation(opts)")
+	for _, want := range []string{
+		"opts.fresh", "geolocationPermissionState()", "'granted'", "'denied'",
+		"VOTER_LOCATION_FRESH_MS", "parseVoterLocation(", "isFreshVoterLocation(",
+		"maximumAge: 0", "at: Date.now()",
+	} {
+		if !strings.Contains(locBody, want) {
+			t.Errorf("getVoterLocation's body is missing %q", want)
+		}
+	}
+	getIdx := strings.Index(locBody, "sessionStorage.getItem(")
+	stateIdx := strings.Index(locBody, "geolocationPermissionState()")
+	if getIdx == -1 || stateIdx == -1 || getIdx >= stateIdx {
+		t.Errorf("getVoterLocation must read the session cache (at %d) before asking for the permission state (at %d)",
+			getIdx, stateIdx)
+	}
+
+	castBody := jsFunctionBody(t, text, "castVote(reportId, action)")
+	if n := strings.Count(castBody, "getVoterLocation({ fresh: false })"); n != 1 {
+		t.Errorf("castVote must call getVoterLocation with fresh false exactly once, found %d", n)
+	}
+	if n := strings.Count(castBody, "getVoterLocation({ fresh: true })"); n != 1 {
+		t.Errorf("castVote must call getVoterLocation with fresh true exactly once, found %d", n)
+	}
+	if n := strings.Count(castBody, "getVoterLocation("); n != 2 {
+		t.Errorf("castVote must call getVoterLocation exactly twice (one attempt, one retry), found %d", n)
+	}
+	if n := strings.Count(castBody, "err.field !== 'location'"); n != 1 {
+		t.Errorf("castVote must key its one retry on err.field !== 'location' exactly once, found %d", n)
+	}
+	guardIdx := strings.Index(castBody, "err.field !== 'location'")
+	freshIdx := strings.Index(castBody, "getVoterLocation({ fresh: true })")
+	if guardIdx == -1 || freshIdx == -1 || guardIdx >= freshIdx {
+		t.Errorf("the location guard (at %d) must come before the fresh retry (at %d)", guardIdx, freshIdx)
+	}
+	if n := strings.Count(castBody, "function postVote(coords)"); n != 1 {
+		t.Errorf("castVote must declare function postVote(coords) exactly once, found %d", n)
+	}
+	const wantBody = "JSON.stringify({ latitude: coords.latitude, longitude: coords.longitude })"
+	if n := strings.Count(castBody, wantBody); n != 1 {
+		t.Errorf("castVote's request body must be built from exactly latitude and longitude (%q), found %d", wantBody, n)
+	}
+	for _, banned := range []string{"while (", "for (", "navigator.geolocation", "navigator.permissions"} {
+		if strings.Contains(castBody, banned) {
+			t.Errorf("castVote must not contain %q: the retry is bounded and all permission logic lives in getVoterLocation", banned)
+		}
 	}
 }
 
