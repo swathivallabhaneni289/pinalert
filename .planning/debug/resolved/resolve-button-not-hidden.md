@@ -1,5 +1,7 @@
 ---
-status: diagnosed
+status: resolved
+resolved: 2026-10-07
+resolution: "Not reproduced after the defensive hidden guard from plan 02-13. Live retest passed 2026-10-06, UAT test 6. The original cause was never identified, a stale server in the earlier session is the most likely explanation."
 trigger: "resolve-button-not-hidden: When Mark resolved is tapped, Confirm/Dispute buttons correctly hide behind the inline Yes/Cancel confirmation, but the Mark resolved button itself (.vote-btn--resolve) stays visibly rendered next to the confirmation, stretched tall by flexbox, rendering as an odd tall rectangle against the dark theme."
 created: 2026-09-22T00:00:00Z
 updated: 2026-09-22T08:15:00Z

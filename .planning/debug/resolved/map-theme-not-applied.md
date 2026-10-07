@@ -1,5 +1,7 @@
 ---
-status: diagnosed
+status: resolved
+resolved: 2026-10-07
+resolution: "Diagnosis was correct. The fix (plan 02-11) shipped and was then reverted by the owner on 2026-09-23 (commit 77b9804): the basemap stays the same in every theme. Gap withdrawn, no further action."
 trigger: "map-theme-not-applied: The map's basemap does not visibly change when the user switches the app's Light/Dark theme; it always renders the same light-colored style."
 created: 2026-09-22T07:46:53Z
 updated: 2026-09-22T08:05:00Z

@@ -1,5 +1,7 @@
 ---
-status: diagnosed
+status: resolved
+resolved: 2026-10-07
+resolution: "Fixed by plan 02-12 (ListableInFeed is an exclusive partition). Live retest passed 2026-10-06, UAT test 9."
 trigger: "disputed-filter-not-exclusive: With Show disputed reports ticked, a report nobody has disputed still appears in that view, because the toggle is additive (adds Hidden reports on top of the normal feed) rather than exclusive (shows only actually-disputed reports)."
 created: 2026-09-22T00:00:00Z
 updated: 2026-09-22T00:10:00Z

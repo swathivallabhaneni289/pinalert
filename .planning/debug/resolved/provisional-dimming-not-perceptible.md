@@ -1,5 +1,7 @@
 ---
-status: diagnosed
+status: resolved
+resolved: 2026-10-07
+resolution: "Fixed by plan 02-13 (20/80 mix toward stale and a neutral row wash). Live retest passed 2026-10-06, UAT tests 5 (dark) and 12 (light)."
 trigger: "provisional-dimming-not-perceptible: A fresh, unconfirmed (Provisional) report's badge/border is supposed to look visibly desaturated compared to a normal report, but the user cannot perceive any fading, on either the feed row or the map popup, even though the Unconfirmed chip itself displays correctly."
 created: 2026-09-22T00:00:00Z
 updated: 2026-09-22T00:00:00Z

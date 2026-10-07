@@ -3,7 +3,7 @@ status: complete
 phase: 02-trust-mechanic-core-confirm-dispute-visibility
 source: [02-VERIFICATION.md]
 started: 2026-09-16T14:42:29Z
-updated: 2026-10-06T10:17:29Z
+updated: 2026-10-07T15:48:21Z
 ---
 
 <!-- Gap-closure round 2 (plans 02-11..02-14, wave 9) shipped 2026-09-23. Full commit range:
@@ -408,6 +408,15 @@ gap_closure_round_2: |
   not_planned: "Everything outside Phase 3's surfaces: buttons and surfaces in general, a radius, shadow and motion token scale, smooth transitions, background and surface elevation, and light and dark polish across the whole app. This is the open part of gap ui-visual-polish."
   route: "Owner decision on where the design pass goes. Recommended: add it right after Phase 3 as its own inserted phase, so it styles the new popup and vote buttons once instead of twice."
 
+- id: F6
+  title: "Long dashes in the public API reference page"
+  raised: "2026-10-07 by the second review round of the Phase 2 verification report, not by the owner."
+  belongs_to: "Plan 02-14's dash cleanup, which scanned templates and client scripts but not generated docs"
+  observed: "docs/docs.go (7 lines), docs/swagger.json (7) and docs/swagger.yaml (8) carry long dashes copied from handler and struct comments (for example the show_disputed description). The router serves /swagger/* to any visitor. The owner's rule is no long dashes anywhere a reader can see them."
+  fix_sketch: "Rewrite those source comments in plain punctuation, run make swag, and extend TestUserVisibleCopyUsesPlainPunctuation to scan the generated docs so it cannot regress."
+
+tracked_as: "Added to ROADMAP.md as backlog items on 2026-10-07: F1 is 999.6, F2 is 999.7, F6 is 999.8, F4 is 999.9, and the design pass (F5 plus the open part of gap ui-visual-polish) is 999.10. The owner has not yet said whether the design pass goes before or after Phase 3."
+
 ## Gaps
 
 - truth: "The map basemap itself visibly changes to match the app's Light/Dark theme, not just the surrounding chrome (badges, buttons, panels)."
@@ -490,7 +499,7 @@ gap_closure_round_2: |
 - truth: "A fresh non-critical report's badge/border is visibly desaturated (D-09 Provisional dimming) on both the feed row and the map pin popup, in addition to the Unconfirmed chip."
   status: resolved
   fix_shipped: "2026-09-23, plan 02-13, commits 8c5f391/9e5a97b/79cd442. .vis-provisional's color-mix strengthened from 50/50 to 20/80 toward --color-age-stale, plus --severity-tint neutralized on the feed row so the background wash no longer stays full-strength green. Measured chroma ratios after the fix: 0.15-0.23 (well under the 0.30 ceiling), luminance contrast 2.93-3.16:1 dark mode and 1.71-1.83:1 light mode (both above their floors). A new standing test, TestProvisionalDimmingIsPerceptiblyDistinctFromLive, was confirmed RED against the old 50/50 mix (chroma ~0.46-0.52, matching the diagnosis's prediction almost exactly) and GREEN after the fix. A computed contrast number is not the same thing as the user perceiving it, which is exactly what this gap is about, so this is NOT marked resolved. Retest: look at a fresh unconfirmed report's badge and border on the feed row and the map marker icon (not the popup, which never had a badge by design), in both themes, and confirm it now visibly reads as faded next to a normal report."
-  live_retest: "PASSED 2026-10-06. Dark mode (test 5, user: 'I think the colors thing is fine') and light mode (test 12, user: 'they're all visible', which included the Low report looking clearly faded with a readable Unconfirmed chip). The pin badge and the grey popup box were not asked about one by one."
+  live_retest: "PASSED 2026-10-06. Dark mode (test 5, user: 'I think the colors thing is fine') and light mode (test 12, user: 'they're all visible', a general answer to a checklist whose first item asked about the Low report looking faded with a readable Unconfirmed chip; the user did not separately say it looked faded, and light mode is the numerically weaker case, so this half rests on that general answer plus the contrast gate). The pin badge and the grey popup box were not asked about one by one."
   reason: "User reported: I don't see the faded look but I definitely see the unconfirmed chip to it. The user does not see any fading on a fresh unconfirmed report, on the feed row or the map popup, so the desaturation half of the Provisional treatment does not work for them."
   severity: major
   test: 5
