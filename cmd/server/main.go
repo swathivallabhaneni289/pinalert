@@ -145,6 +145,7 @@ func main() {
 			FallbackLat:     fallbackLat,
 			FallbackLon:     fallbackLon,
 			DefaultRadiusKm: defaultRadiusKm,
+			VoteRadiusKm:    service.MaxVoteDistanceKm,
 			AssetVersion:    assetVersion,
 		},
 		Dev: env == "development",

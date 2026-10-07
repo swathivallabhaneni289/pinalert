@@ -3,10 +3,15 @@ package handlers
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
 	"pinalert/internal/account"
+	"pinalert/internal/service"
 )
 
 // pageTestAccount is the verified account seeded into every page_test.go
@@ -225,5 +230,72 @@ func TestPageShellEscapesAccountEmail(t *testing.T) {
 	body := rec.Body.String()
 	if strings.Contains(body, "<script>alert(1)</script>") {
 		t.Fatalf("account email rendered unescaped into the response body — stored XSS (T-01-88): %s", body)
+	}
+}
+
+// p18AppShellTag returns the opening tag of the #app-shell element, from the
+// last "<" before id="app-shell" to the next ">". It fails the test when the
+// shell is missing from the body.
+func p18AppShellTag(t *testing.T, body string) string {
+	t.Helper()
+	at := strings.Index(body, `id="app-shell"`)
+	if at == -1 {
+		t.Fatalf(`body has no id="app-shell"`)
+	}
+	start := strings.LastIndex(body[:at], "<")
+	end := strings.Index(body[at:], ">")
+	if start == -1 || end == -1 {
+		t.Fatalf("could not bound the app-shell opening tag")
+	}
+	return body[start : at+end+1]
+}
+
+// TestPageShellCarriesVoteRadius is V-34, server half (D-22): the shell tells
+// the browser the server's vote radius, taken from the one constant CastVote
+// enforces, never from a number typed into the template or the wiring.
+func TestPageShellCarriesVoteRadius(t *testing.T) {
+	tmpl, err := ParsePageTemplate()
+	if err != nil {
+		t.Fatalf("ParsePageTemplate: %v", err)
+	}
+
+	render := func(radius float64) string {
+		handler := Page(tmpl, PageConfig{
+			FallbackLat:     12.9716,
+			FallbackLon:     77.5946,
+			DefaultRadiusKm: 10,
+			VoteRadiusKm:    radius,
+		})
+		rec := httptest.NewRecorder()
+		handler(rec, newPageTestRequest())
+		if rec.Result().StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want %d", rec.Result().StatusCode, http.StatusOK)
+		}
+		return p18AppShellTag(t, rec.Body.String())
+	}
+
+	// (a) the constant reaches the shell.
+	want := `data-vote-radius-km="` + strconv.FormatFloat(service.MaxVoteDistanceKm, 'f', -1, 64) + `"`
+	if tag := render(service.MaxVoteDistanceKm); !strings.Contains(tag, want) {
+		t.Errorf("app-shell tag %q does not contain %q", tag, want)
+	}
+
+	// (b) the attribute follows the config, so it is not a literal in the template.
+	if tag := render(2.5); !strings.Contains(tag, `data-vote-radius-km="2.5"`) {
+		t.Errorf("app-shell tag %q does not follow the configured radius 2.5", tag)
+	}
+
+	// (c) cmd/server/main.go wires the service constant and types no number.
+	src, err := os.ReadFile(filepath.Join("..", "..", "..", "cmd", "server", "main.go"))
+	if err != nil {
+		t.Fatalf("read cmd/server/main.go: %v", err)
+	}
+	wired := regexp.MustCompile(`(?m)^\s*VoteRadiusKm:\s+service\.MaxVoteDistanceKm,\s*$`)
+	if n := len(wired.FindAll(src, -1)); n != 1 {
+		t.Errorf("cmd/server/main.go has %d lines wiring VoteRadiusKm to service.MaxVoteDistanceKm, want exactly 1", n)
+	}
+	typed := regexp.MustCompile(`VoteRadiusKm:\s*[0-9]`)
+	if n := len(typed.FindAll(src, -1)); n != 0 {
+		t.Errorf("cmd/server/main.go types a number into VoteRadiusKm %d times, want 0", n)
 	}
 }
