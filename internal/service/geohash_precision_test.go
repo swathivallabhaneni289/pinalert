@@ -236,7 +236,9 @@ func TestGeohashPrecisionWitnesses(t *testing.T) {
 	t.Run("precision 6 merges independent witnesses", func(t *testing.T) {
 		for _, c := range witnessCities {
 			rng := rand.New(rand.NewSource(42))
-			for _, crowd := range []int{2, 200} {
+			// All four crowd sizes are logged so docs/TRUST-MODEL.md can
+			// quote a full table; only crowds 2 and 200 are asserted.
+			for _, crowd := range []int{2, 5, 50, 200} {
 				s := simulateWitnesses(rng, c, 6, crowd)
 				witnessLog(t, c, 6, crowd, s)
 				if crowd == 2 && s.onePlaceTrials < 200 {
@@ -252,10 +254,14 @@ func TestGeohashPrecisionWitnesses(t *testing.T) {
 	t.Run("precision 8 counts a crowd nearly one by one", func(t *testing.T) {
 		for _, c := range witnessCities {
 			rng := rand.New(rand.NewSource(42))
-			s := simulateWitnesses(rng, c, 8, 200)
-			witnessLog(t, c, 8, 200, s)
-			if s.meanPlaces < 100 {
-				t.Errorf("%s p8 crowd 200: mean places %.2f, want at least 100", c.name, s.meanPlaces)
+			// All four crowd sizes are logged for the document; only
+			// crowd 200 is asserted.
+			for _, crowd := range []int{2, 5, 50, 200} {
+				s := simulateWitnesses(rng, c, 8, crowd)
+				witnessLog(t, c, 8, crowd, s)
+				if crowd == 200 && s.meanPlaces < 100 {
+					t.Errorf("%s p8 crowd 200: mean places %.2f, want at least 100", c.name, s.meanPlaces)
+				}
 			}
 		}
 	})
