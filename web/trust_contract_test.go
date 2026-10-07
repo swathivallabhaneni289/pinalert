@@ -358,6 +358,32 @@ func TestTrustDisclosure(t *testing.T) {
 	// live region because the 30 second poll would re-announce it.
 	p13MustNotContain(t, "trust.js", trust,
 		"aria-live", "tooltip", "mouseenter", "mouseover", "'title'", ".title")
+
+	// Plan 03-19 adds the popup branch (A23, A70): the owner of the open popup
+	// is found through the data-popup-open attribute map.js writes, a
+	// confirmation is cancelled only for focus inside the owner, and the popup
+	// panel closes before the popup does.
+	level := jsFunctionBody(t, code, "closeOneLevel()")
+	p13Ordered(t, level, "closeOneLevel popup branch", "'report-modal'", "'account-menu'", "openPopupEl()",
+		"isPopupMarker(", "PinalertVotes.cancelResolveConfirm(", "closePopupLevel(", "closeRowPanel(")
+	p13MustContain(t, "closeOneLevel popup branch", level, "var focusInside", "document.body", "surfaceIsDisplayed(")
+
+	popupLevel := jsFunctionBody(t, code, "closePopupLevel(popupEl, mayClose)")
+	p13Ordered(t, popupLevel, "closePopupLevel", "closeRowPanel(popupEl)", "!mayClose", "closeOpenPopup(popupEl)")
+	closeOpen := jsFunctionBody(t, code, "closeOpenPopup(popupEl)")
+	p13MustContain(t, "closeOpenPopup", closeOpen, ".leaflet-popup-close-button", ".click()")
+	openEl := jsFunctionBody(t, code, "openPopupEl()")
+	p13MustContain(t, "openPopupEl", openEl, "data-popup-open", "surfaceIsDisplayed(")
+	marker := jsFunctionBody(t, code, "isPopupMarker(el)")
+	p13MustContain(t, "isPopupMarker", marker, "leaflet-marker-icon", "data-popup-open")
+
+	collapse := jsFunctionBody(t, code, "collapsePanelsIn(surface)")
+	p13MustContain(t, "collapsePanelsIn", collapse, "aria-expanded", "trust-block__panel", "setPanelOpen(")
+	p13MustNotContain(t, "collapsePanelsIn", collapse, ".focus(")
+	p13MustContain(t, "trust.js code", code, "collapsePanelsIn: collapsePanelsIn")
+	if n := strings.Count(code, "document.addEventListener("); n != 1 {
+		t.Errorf("trust.js has %d document listeners after the popup branch, want exactly 1", n)
+	}
 }
 
 // p13CSSRule is one parsed rule: the at-rule prelude it sits in (empty at top

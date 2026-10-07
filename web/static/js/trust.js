@@ -285,10 +285,67 @@
     return true;
   }
 
+  // openPopupEl returns the open popup container while it is shown, or null.
+  // map.js writes the data attribute on open and removes it on close.
+  function openPopupEl() {
+    var el = document.querySelector('.leaflet-popup[data-popup-open="true"]');
+    return surfaceIsDisplayed(el) ? el : null;
+  }
+
+  // isPopupMarker is true for the pin whose popup is open. It accepts a
+  // missing element, because the active element can be absent.
+  function isPopupMarker(el) {
+    return !!el && !!el.classList && el.classList.contains('leaflet-marker-icon') &&
+      el.getAttribute('data-popup-open') === 'true';
+  }
+
+  // closeOpenPopup presses the popup's own close button, so Leaflet closes it
+  // and map.js returns focus to the opener. It says whether a button was found.
+  function closeOpenPopup(popupEl) {
+    var button = popupEl.querySelector('.leaflet-popup-close-button');
+    if (!button) {
+      return false;
+    }
+    button.click();
+    return true;
+  }
+
+  // closePopupLevel closes the popup's own open panel first. Only when no
+  // panel is open, and only when focus is in the popup or on its pin, does the
+  // popup itself close. Focus on the page body closes a panel and nothing more.
+  function closePopupLevel(popupEl, mayClose) {
+    if (closeRowPanel(popupEl)) {
+      return true;
+    }
+    if (!mayClose) {
+      return false;
+    }
+    return closeOpenPopup(popupEl);
+  }
+
+  // collapsePanelsIn closes every open panel inside one surface without moving
+  // focus. The panel is found beside its toggle, because a closing popup may
+  // already be detached from the document.
+  function collapsePanelsIn(surface) {
+    if (!surface || typeof surface.querySelectorAll !== 'function') {
+      return;
+    }
+    var toggles = surface.querySelectorAll('.trust-block__toggle[aria-expanded="true"]');
+    for (var i = 0; i < toggles.length; i++) {
+      var parent = toggles[i].parentNode;
+      var panel = parent ? parent.querySelector('.trust-block__panel') : null;
+      if (panel) {
+        setPanelOpen({ toggle: toggles[i], panel: panel }, false);
+      }
+    }
+  }
+
   // closeOneLevel resolves one Escape level and returns true only when it
-  // acted (A23). The report modal and the account menu keep their own Escape,
-  // so this stays out of their way while either is open. Plan 03-19 adds the
-  // popup owner to the owner step and the popup close step to this function.
+  // acted (A23, A70). The report modal and the account menu keep their own
+  // Escape, so this stays out of their way while either is open. The owner is
+  // the popup or row holding focus, or the open popup when focus is on its pin
+  // or on the page body. An open confirmation goes first, then the owner's
+  // open panel, then (for focus inside the popup or on its pin) the popup.
   function closeOneLevel() {
     var modal = document.getElementById('report-modal');
     if (modal && !modal.hidden) {
@@ -299,19 +356,28 @@
       return false;
     }
 
-    var focused = document.activeElement;
-    if (!focused || focused === document.body) {
-      return false;
+    var active = document.activeElement;
+    var popupEl = openPopupEl();
+    var owner = null;
+    if (active && active !== document.body) {
+      owner = active.closest('.report-row, .leaflet-popup');
     }
-    var owner = focused.closest('.report-row, .leaflet-popup');
+    if (!owner && popupEl && (!active || active === document.body || isPopupMarker(active))) {
+      owner = popupEl;
+    }
     if (!owner) {
       return false;
     }
+    var focusInside = !!active && owner.contains(active);
 
     // An open Mark resolved confirmation goes first, by its Cancel path.
-    if (window.PinalertVotes && typeof PinalertVotes.cancelResolveConfirm === 'function' &&
+    if (focusInside && window.PinalertVotes && typeof PinalertVotes.cancelResolveConfirm === 'function' &&
         PinalertVotes.cancelResolveConfirm(owner)) {
       return true;
+    }
+
+    if (owner.classList.contains('leaflet-popup')) {
+      return closePopupLevel(owner, focusInside || isPopupMarker(active));
     }
 
     // A row owns the panel only while its list pane is displayed, so focus
@@ -452,6 +518,7 @@
     createTrustBlock: createTrustBlock,
     updateTrustBlock: updateTrustBlock,
     fadeStage: fadeStage,
-    focusToggle: focusToggle
+    focusToggle: focusToggle,
+    collapsePanelsIn: collapsePanelsIn
   };
 }());

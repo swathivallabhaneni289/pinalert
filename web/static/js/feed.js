@@ -120,7 +120,7 @@
     Pinalert.select(id, 'list');
     applySelectionHighlight(id, false);
     if (window.PinalertMap && typeof PinalertMap.flyTo === 'function') {
-      PinalertMap.flyTo(id);
+      PinalertMap.flyTo(id, { opener: 'list' });
     }
     if (appShellEl && appShellEl.getAttribute('data-view') === 'list') {
       switchView('map');
@@ -436,6 +436,10 @@
   function moveFocusIntoView(view) {
     var target;
     if (view === 'map') {
+      // An open popup card takes focus first (A51).
+      if (window.PinalertMap && typeof PinalertMap.focusOpenPopup === 'function' && PinalertMap.focusOpenPopup()) {
+        return;
+      }
       target = document.getElementById('fab-report');
     } else {
       target = reportListEl && reportListEl.querySelector('.report-row');

@@ -473,8 +473,9 @@ func TestPopupCloseButtonComesFirst(t *testing.T) {
 	open := jsFunctionBody(t, mapJS, "onPopupOpen(evt)")
 	p17MustContain(t, "onPopupOpen", open,
 		"getElement()", "'.leaflet-popup-close-button'", "insertBefore(", "firstChild")
-	// Focus, the dialog role and the content refresh belong to plan 03-19.
-	p17MustNotContain(t, "onPopupOpen", open, ".focus(", "setAttribute('role'", "update()")
+	// Plan 03-19 intentionally added the focus move and the dialog role to
+	// this handler (A23), so only the content refresh stays out of it (A59).
+	p17MustNotContain(t, "onPopupOpen", open, "update()")
 
 	css := p17ReadStatic(t, "static/css/trust.css")
 	rules := parseCSSRules(css)
@@ -547,4 +548,99 @@ func TestPopupCloseButtonComesFirst(t *testing.T) {
 	text := string(svg)
 	p17MustContain(t, "x.svg", text, `d="M18 6 6 18"`, `d="m6 6 12 12"`)
 	p17MustNotContain(t, "x.svg", text, "<script", "href")
+}
+
+// Plan 03-19 makes the popup usable from the keyboard and a screen reader and
+// keeps focus off the page body through polls, closes and re-measures. Like
+// the tests above these are static inspection of the embedded bytes. Every
+// helper carries the p19 prefix.
+
+// p19Code returns one embedded script with block comments and whole line
+// comments removed, so every count, order and body below sees code lines only.
+func p19Code(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := fs.ReadFile(StaticFS, path)
+	if err != nil {
+		t.Fatalf("failed to read embedded %s: %v", path, err)
+	}
+	return p13CodeLines(stripCSSComments(string(raw)))
+}
+
+// TestPopupDialogFocusAndOpener pins A23 (popup dialog), A51 and A74: the open
+// popup is a named non modal dialog that takes focus when shown, the opener is
+// recorded and focus returns to it when the popup closes.
+func TestPopupDialogFocusAndOpener(t *testing.T) {
+	code := p19Code(t, "static/js/map.js")
+
+	open := jsFunctionBody(t, code, "onPopupOpen(evt)")
+	p13MustContain(t, "onPopupOpen", open,
+		"var popup = evt.popup;", "activePopup = popup;", "'role', 'dialog'", "'aria-modal', 'false'",
+		"'aria-labelledby'", ".popup-card__title", "'data-popup-open', 'true'", "listOpenerId = null",
+		"openedWhileHidden = ", "offsetParent === null", "preventScroll: true")
+	p13Ordered(t, open, "onPopupOpen", "activePopup = popup;", "popupOpener = ", ".focus(")
+
+	closeBody := jsFunctionBody(t, code, "onPopupClose(evt)")
+	p13MustContain(t, "onPopupClose", closeBody,
+		"removeAttribute('data-popup-open')", "PinalertTrust.collapsePanelsIn(", "activePopup = null", "var lost = ")
+	p13Ordered(t, closeBody, "onPopupClose", "popupFocusInside", "document.activeElement", "returnFocusToOpener(")
+
+	out := jsFunctionBody(t, code, "onMapFocusOut(evt)")
+	p13MustContain(t, "onMapFocusOut", out, "evt.relatedTarget", "!el.contains(evt.relatedTarget)", "popupFocusInside = ")
+	in := jsFunctionBody(t, code, "onMapFocusIn(evt)")
+	p13MustContain(t, "onMapFocusIn", in, "popupFocusInside = ", "contains(evt.target)")
+
+	ret := jsFunctionBody(t, code, "returnFocusToOpener(opener)")
+	p13Ordered(t, ret, "returnFocusToOpener", "'list'", "dataset.reportId", "isConnected", "offsetParent",
+		"getElement()", "preventScroll: true")
+
+	fly := jsFunctionBody(t, code, "flyTo(id, opts)")
+	p13Ordered(t, fly, "flyTo", "opts.opener === 'list'", "listOpenerId = String(id)", "marker.openPopup()",
+		"isPopupOpen()", "popupOpener = ")
+
+	focus := jsFunctionBody(t, code, "focusOpenPopup()")
+	p13MustContain(t, "focusOpenPopup", focus, "offsetParent === null", "return false", "return true", "preventScroll: true")
+
+	initBody := jsFunctionBody(t, code, "init()")
+	p13MustContain(t, "init", initBody,
+		"map.on('popupopen', onPopupOpen)", "map.on('popupclose', onPopupClose)",
+		"addEventListener('focusin', onMapFocusIn)", "addEventListener('focusout', onMapFocusOut)")
+	if n := strings.Count(code, "map.on('popupopen'"); n != 1 {
+		t.Errorf("map.js registers popupopen %d times, want exactly 1", n)
+	}
+	if n := strings.Count(code, "function onPopupOpen("); n != 1 {
+		t.Errorf("map.js declares onPopupOpen %d times, want exactly 1", n)
+	}
+	p13MustContain(t, "map.js", code, "flyTo: flyTo", "highlight: highlight", "focusOpenPopup: focusOpenPopup")
+
+	feed := p19Code(t, "static/js/feed.js")
+	activate := jsFunctionBody(t, feed, "activateRow(id)")
+	p13MustContain(t, "activateRow", activate, "PinalertMap.flyTo(id, { opener: 'list' })")
+	moveFocus := jsFunctionBody(t, feed, "moveFocusIntoView(view)")
+	p13Ordered(t, moveFocus, "moveFocusIntoView", "PinalertMap.focusOpenPopup()", "'fab-report'")
+}
+
+// TestPinOpensOnSpace pins A49 and A45: Space opens a pin and activates the
+// popup close button, and every pin carries a name in words.
+func TestPinOpensOnSpace(t *testing.T) {
+	code := p19Code(t, "static/js/map.js")
+
+	key := jsFunctionBody(t, code, "onMapKeydown(evt)")
+	p13MustContain(t, "onMapKeydown", key,
+		"' '", "'Spacebar'", "preventDefault()", "leaflet-popup-close-button", "closePopup()",
+		"leaflet-marker-icon", "markerForElement(", "openPopup()")
+	forEl := jsFunctionBody(t, code, "markerForElement(el)")
+	p13MustContain(t, "markerForElement", forEl, "getElement()")
+	initBody := jsFunctionBody(t, code, "init()")
+	p13MustContain(t, "init", initBody, "addEventListener('keydown', onMapKeydown)")
+
+	name := jsFunctionBody(t, code, "pinName(report)")
+	p13MustContain(t, "pinName", name,
+		"Pinalert.CATEGORY_LABELS", "Pinalert.SEVERITY_WORDS", "Pinalert.relativeTime(",
+		"PinalertVisibility.stateWord(", "', '")
+	apply := jsFunctionBody(t, code, "applyPinName(marker, report)")
+	p13MustContain(t, "applyPinName", apply, "'aria-label'", "pinName(report)")
+	upsert := jsFunctionBody(t, code, "upsertMarker(report)")
+	if n := strings.Count(upsert, "applyPinName("); n < 2 {
+		t.Errorf("upsertMarker calls applyPinName %d times, want at least 2 (existing and new marker paths)", n)
+	}
 }

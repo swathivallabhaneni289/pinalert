@@ -27,6 +27,18 @@ window.PinalertMap = (function () {
   var cards = {}; // report id -> popup card (see buildPopupCard)
   var popupTitleSeq = 0;
 
+  // The open Leaflet popup, or null.
+  var activePopup = null;
+  // True while focus sits inside the open popup. Kept by focusin and focusout
+  // because Leaflet can remove the container before popupclose fires.
+  var popupFocusInside = false;
+  // Who opened the open popup, as { id, kind } with kind 'list' or 'marker' (A74).
+  var popupOpener = null;
+  // The report id a list row asked flyTo to open, consumed by the next popupopen.
+  var listOpenerId = null;
+  // True when the popup opened while its pane was hidden, so it was measured empty (A59).
+  var openedWhileHidden = false;
+
   // replacePrefixedClass is a deliberate third copy of feed.js's and
   // visibility.js's private helper of the same name and behaviour, not an
   // extraction: feed.js's copy is private to its own IIFE, map.js had none
@@ -121,6 +133,10 @@ window.PinalertMap = (function () {
     }
 
     map.on('popupopen', onPopupOpen);
+    map.on('popupclose', onPopupClose);
+    container.addEventListener('focusin', onMapFocusIn);
+    container.addEventListener('focusout', onMapFocusOut);
+    container.addEventListener('keydown', onMapKeydown);
 
     Pinalert.subscribe(render);
     Pinalert.onSelect(function (id, source) {
@@ -332,12 +348,14 @@ window.PinalertMap = (function () {
     popup.setLatLng(popup.getLatLng());
   }
 
-  // onPopupOpen moves Leaflet's close anchor in front of the card, so the
-  // close button is the first element a keyboard or screen reader user meets
-  // in the popup (A20). Leaflet builds the anchor once per popup and appends it
-  // last, so the move happens on the first open and later opens find it
-  // already first. Moving the node keeps Leaflet's own click listener. Plan
-  // 03-19 extends this same handler.
+  // onPopupOpen is the one popupopen handler. It moves Leaflet's close anchor
+  // in front of the card, so the close button is the first element a keyboard
+  // or screen reader user meets in the popup (A20). Leaflet builds the anchor
+  // once per popup and appends it last, so the move happens on the first open
+  // and later opens find it already first. Moving the node keeps Leaflet's own
+  // click listener. It then names the popup as a non modal dialog, marks the
+  // popup and its pin for the Escape handler in trust.js, records who opened
+  // it and puts focus on the card when the map pane is shown (A23, A74).
   function onPopupOpen(evt) {
     var container = evt.popup.getElement();
     if (!container) {
@@ -347,6 +365,195 @@ window.PinalertMap = (function () {
     if (close && close !== container.firstChild) {
       container.insertBefore(close, container.firstChild);
     }
+
+    var popup = evt.popup;
+    activePopup = popup;
+    var id = reportIdForPopup(popup);
+    popupOpener = { id: id, kind: listOpenerId !== null && listOpenerId === id ? 'list' : 'marker' };
+    listOpenerId = null;
+
+    container.setAttribute('role', 'dialog');
+    container.setAttribute('aria-modal', 'false');
+    container.setAttribute('data-popup-open', 'true');
+    var title = container.querySelector('.popup-card__title');
+    if (title && title.id) {
+      container.setAttribute('aria-labelledby', title.id);
+    }
+    var pin = id !== null && markers[id] ? markers[id].getElement() : null;
+    if (pin) {
+      pin.setAttribute('data-popup-open', 'true');
+    }
+
+    var card = popupCardOf(popup);
+    openedWhileHidden = !card || card.offsetParent === null;
+    if (!openedWhileHidden) {
+      card.focus({ preventScroll: true });
+    }
+  }
+
+  // reportIdForPopup returns the id of the marker that owns this popup, or
+  // null.
+  function reportIdForPopup(popup) {
+    var ids = Object.keys(markers);
+    for (var i = 0; i < ids.length; i++) {
+      if (markers[ids[i]].getPopup() === popup) {
+        return ids[i];
+      }
+    }
+    return null;
+  }
+
+  // markerForElement returns the marker whose pin element is el, or null.
+  function markerForElement(el) {
+    var ids = Object.keys(markers);
+    for (var i = 0; i < ids.length; i++) {
+      if (markers[ids[i]].getElement() === el) {
+        return markers[ids[i]];
+      }
+    }
+    return null;
+  }
+
+  // popupCardOf returns the card element inside an open popup, or null.
+  function popupCardOf(popup) {
+    var el = popup ? popup.getElement() : null;
+    return el ? el.querySelector('.popup-card') : null;
+  }
+
+  // pinName is the accessible name of a pin: the category, the severity word,
+  // the relative time and, when one shows, the state word (A45). Pins stay
+  // colour only to the eye (owner decision Q5). Every part comes from a fixed
+  // table or the shared time formatter.
+  function pinName(report) {
+    var parts = [Pinalert.CATEGORY_LABELS[report.category] || report.category];
+    if (Object.prototype.hasOwnProperty.call(Pinalert.SEVERITY_WORDS, report.severity)) {
+      parts.push(Pinalert.SEVERITY_WORDS[report.severity]);
+    }
+    parts.push(Pinalert.relativeTime(report.created_at));
+    var state = PinalertVisibility.stateWord(report);
+    if (typeof state === 'string' && state !== '') {
+      parts.push(state);
+    }
+    return parts.join(', ');
+  }
+
+  // applyPinName writes the name as an attribute, never as markup.
+  function applyPinName(marker, report) {
+    var el = marker.getElement();
+    if (el) {
+      el.setAttribute('aria-label', pinName(report));
+    }
+  }
+
+  // onMapFocusIn keeps popupFocusInside true while focus is in the open popup.
+  function onMapFocusIn(evt) {
+    var el = activePopup ? activePopup.getElement() : null;
+    popupFocusInside = !!(el && el.contains(evt.target));
+  }
+
+  // onMapFocusOut clears the flag only when focus moves to a node outside the
+  // popup. A null target leaves it alone, because some browsers fire focusout
+  // with no target when Leaflet removes a focused container at once.
+  function onMapFocusOut(evt) {
+    var el = activePopup ? activePopup.getElement() : null;
+    if (el && evt.relatedTarget && !el.contains(evt.relatedTarget)) {
+      popupFocusInside = false;
+    }
+  }
+
+  // onMapKeydown adds Space to what Enter already does on the map (A49):
+  // Space opens a focused pin and presses the popup close button. Enter stays
+  // Leaflet's own.
+  function onMapKeydown(evt) {
+    if (evt.key !== ' ' && evt.key !== 'Spacebar') {
+      return;
+    }
+    var target = evt.target;
+    if (!target || !target.classList) {
+      return;
+    }
+    if (target.classList.contains('leaflet-popup-close-button')) {
+      evt.preventDefault();
+      map.closePopup();
+      return;
+    }
+    if (target.classList.contains('leaflet-marker-icon')) {
+      var marker = markerForElement(target);
+      if (marker) {
+        evt.preventDefault();
+        marker.openPopup();
+      }
+    }
+  }
+
+  // onPopupClose clears the marks, collapses the popup's trust panel so a
+  // reopened pin never comes back with a stale open panel, and returns focus
+  // to the opener when focus was in the popup and has not gone elsewhere (A74).
+  function onPopupClose(evt) {
+    var popup = evt.popup;
+    var el = popup.getElement();
+    var id = reportIdForPopup(popup);
+    var hadFocus = popupFocusInside;
+    var opener = popupOpener;
+
+    if (el) {
+      el.removeAttribute('data-popup-open');
+    }
+    var pin = id !== null && markers[id] ? markers[id].getElement() : null;
+    if (pin) {
+      pin.removeAttribute('data-popup-open');
+    }
+    if (el && window.PinalertTrust && typeof PinalertTrust.collapsePanelsIn === 'function') {
+      PinalertTrust.collapsePanelsIn(el);
+    }
+
+    popupFocusInside = false;
+    popupOpener = null;
+    openedWhileHidden = false;
+    if (activePopup === popup) {
+      activePopup = null;
+    }
+
+    var active = document.activeElement;
+    var lost = !active || active === document.body || !!(el && el.contains(active));
+    if (hadFocus && lost) {
+      returnFocusToOpener(opener);
+    }
+  }
+
+  // returnFocusToOpener sends focus back to the list row that opened the
+  // popup when that row is connected and displayed, else to the pin (A74). The
+  // row is found by comparing its data attribute, never by a selector built
+  // from report data.
+  function returnFocusToOpener(opener) {
+    if (!opener) {
+      return;
+    }
+    if (opener.kind === 'list') {
+      var rows = document.querySelectorAll('.report-row');
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].dataset.reportId === String(opener.id) && rows[i].isConnected && rows[i].offsetParent !== null) {
+          rows[i].focus();
+          return;
+        }
+      }
+    }
+    var marker = opener.id !== null ? markers[opener.id] : null;
+    var pin = marker ? marker.getElement() : null;
+    if (pin) {
+      pin.focus({ preventScroll: true });
+    }
+  }
+
+  // focusOpenPopup lands focus on the open card when its pane is shown and
+  // says whether it did (A51).
+  function focusOpenPopup() {
+    var card = popupCardOf(activePopup);
+    if (!card || card.offsetParent === null) {
+      return false;
+    }
+    card.focus({ preventScroll: true });
+    return true;
   }
 
   // popupStateClasses returns the space joined triple of state classes this
@@ -422,12 +629,14 @@ window.PinalertMap = (function () {
         existing.setLatLng([report.latitude, report.longitude]);
       }
       existing.setIcon(icon);
+      applyPinName(existing, report);
       updatePopupCard(cards[report.id], report);
       syncPopupState(existing, report);
       return;
     }
 
     var marker = L.marker([report.latitude, report.longitude], { icon: icon }).addTo(map);
+    applyPinName(marker, report);
     var card = buildPopupCard(report);
     cards[report.id] = card;
     marker.bindPopup(card.el, { className: popupStateClasses(report), minWidth: 340, maxWidth: 340, keepInView: true });
@@ -474,13 +683,23 @@ window.PinalertMap = (function () {
 
   // flyTo pans to a report at zoom 16 and opens its popup — the wide-screen
   // "clicking a list row pans/flies the map" half of D-06's sync contract.
-  function flyTo(id) {
+  // The list names itself as the opener through opts (A74). The selection
+  // callback may already have opened the popup, in which case no popupopen
+  // fires again and the opener is claimed here.
+  function flyTo(id, opts) {
     var marker = markers[id];
     if (!marker || !map) {
       return;
     }
+    if (opts && opts.opener === 'list') {
+      listOpenerId = String(id);
+    }
     map.flyTo(marker.getLatLng(), 16);
     marker.openPopup();
+    if (listOpenerId !== null && marker.isPopupOpen()) {
+      popupOpener = { id: listOpenerId, kind: 'list' };
+      listOpenerId = null;
+    }
   }
 
   // highlight briefly rings the pin at id — plan 01-06 calls this the other
@@ -508,6 +727,7 @@ window.PinalertMap = (function () {
 
   return {
     flyTo: flyTo,
-    highlight: highlight
+    highlight: highlight,
+    focusOpenPopup: focusOpenPopup
   };
 }());
