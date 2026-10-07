@@ -128,7 +128,7 @@ const docTemplate = `{
         },
         "/reports": {
             "get": {
-                "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance,\nthen resolves each report's visibility fresh via the shared resolver and returns\nonly listable ones, nearest first. This single endpoint serves both the map and the\nlist views — there is no separate map-only route. A resolved (retracted) report is\nnever returned by either view. show_disputed=true switches to the disputed-only\nview: only reports currently hidden by disputes, on the list and among the map pins\ntogether, replacing the default Live-and-Provisional view rather than adding to it.\nA critical or rescue-needed report stays Live however heavily it is disputed, so it\nappears only in the default view, never in the disputed one. Every report carries\nyour_vote and is_own_report relative to the calling verified account. Requires a\nsession verified by email through the magic-link flow; an unverified caller receives\n401 and no report data.",
+                "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance,\nthen resolves each report's visibility fresh via the shared resolver and returns\nonly listable ones, nearest first. This single endpoint serves both the map and the\nlist views — there is no separate map-only route. A resolved (retracted) report is\nnever returned by either view. show_disputed=true switches to the disputed-only\nview: only reports currently hidden by disputes, on the list and among the map pins\ntogether, replacing the default Live-and-Provisional view rather than adding to it.\nA critical or rescue-needed report stays Live however heavily it is disputed, so it\nappears only in the default view, never in the disputed one. Every report carries\nyour_vote and is_own_report relative to the calling verified account. Requires a\nsession verified by email through the magic-link flow; an unverified caller receives\n401 and no report data.\nEvery report also carries a trust object: how many distinct nearby places confirmed and disputed it, counted as places, not votes.",
                 "produces": [
                     "application/json"
                 ],
@@ -241,7 +241,7 @@ const docTemplate = `{
         },
         "/reports/{id}/confirm": {
             "post": {
-                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.",
+                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.\nThe response also carries the same trust object GET /reports returns for this report.",
                 "consumes": [
                     "application/json"
                 ],
@@ -318,7 +318,7 @@ const docTemplate = `{
         },
         "/reports/{id}/dispute": {
             "post": {
-                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.",
+                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.\nThe response also carries the same trust object GET /reports returns for this report.",
                 "consumes": [
                     "application/json"
                 ],
@@ -395,7 +395,7 @@ const docTemplate = `{
         },
         "/reports/{id}/reopen": {
             "post": {
-                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.",
+                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.\nThe response also carries the same trust object GET /reports returns for this report.",
                 "consumes": [
                     "application/json"
                 ],
@@ -472,7 +472,7 @@ const docTemplate = `{
         },
         "/reports/{id}/resolve": {
             "post": {
-                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.",
+                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.\nThe response also carries the same trust object GET /reports returns for this report.",
                 "consumes": [
                     "application/json"
                 ],
@@ -577,6 +577,14 @@ const docTemplate = `{
                         "confirmed"
                     ],
                     "example": "confirmed"
+                },
+                "trust": {
+                    "description": "Trust is the server built trust object for this report, the same value\nthe feed returns (D-21). It is present on every successful vote.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/handlers.TrustResponse"
+                        }
+                    ]
                 },
                 "visibility": {
                     "type": "string",
@@ -689,6 +697,14 @@ const docTemplate = `{
                 "shelter_headcount": {
                     "type": "integer",
                     "example": 42
+                },
+                "trust": {
+                    "description": "Trust is the server built trust object the vote response also carries\nfor this report (D-21). It is always present, the same for every\nviewer, and never contains an identifier.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/handlers.TrustResponse"
+                        }
+                    ]
                 },
                 "visibility": {
                     "description": "Visibility is the resolver's own answer, serialised verbatim from\nservice.ReportView.Visibility; the client renders it and never\nrecomputes it (TRUST-02, T-02-04). \"retracted\" is in the declared\nenum — it is one of the four values of the shared type — but can\nnever actually appear here: D-12 removes retracted reports from both\nthe default and the show_disputed view.",
@@ -930,6 +946,46 @@ const docTemplate = `{
             "properties": {
                 "report": {
                     "$ref": "#/definitions/handlers.ReportResponse"
+                }
+            }
+        },
+        "handlers.TrustResponse": {
+            "type": "object",
+            "properties": {
+                "confirmed_places": {
+                    "description": "ConfirmedPlaces is how many distinct places confirm the report, counting places, not votes, so several people in one place count once (D-04).",
+                    "type": "integer",
+                    "example": 1
+                },
+                "confirmed_sentence": {
+                    "description": "ConfirmedSentence is the panel line that explains the confirmed count.",
+                    "type": "string",
+                    "example": "1 person in 1 place confirmed this. Counts separate places, not votes."
+                },
+                "confirmed_text": {
+                    "description": "ConfirmedText is the confirmed count as the surface shows it, from 0 to 99 or 99+ above 99, written by the server (A27).",
+                    "type": "string",
+                    "example": "1"
+                },
+                "disputed_places": {
+                    "description": "DisputedPlaces is how many distinct places dispute the report, counted the same way.",
+                    "type": "integer",
+                    "example": 0
+                },
+                "disputed_sentence": {
+                    "description": "DisputedSentence is the panel line that explains the disputed count.",
+                    "type": "string",
+                    "example": "No one nearby has disputed this. Counts separate places, not votes."
+                },
+                "disputed_text": {
+                    "description": "DisputedText is the disputed count as the surface shows it, from 0 to 99 or 99+ above 99, written by the server (A27).",
+                    "type": "string",
+                    "example": "0"
+                },
+                "lead_sentence": {
+                    "description": "LeadSentence is the panel's first line, empty when there is none.",
+                    "type": "string",
+                    "example": "Needs 2 confirmations before this counts as confirmed."
                 }
             }
         }

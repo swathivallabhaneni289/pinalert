@@ -48,12 +48,16 @@ type CastVoteRequest struct {
 // serialised verbatim from service.CastVoteResult — the client renders them
 // and never recomputes them (D-04, TRUST-02). The enum tags are the
 // published form of the two closed sets visibility.go declares, so 02-06's
-// display-copy mapping has a documented contract to key off. It deliberately
-// carries no vote counts: the weighted "confirmed by N nearby" number is
-// Phase 3 / TRUST-05.
+// display-copy mapping has a documented contract to key off. Trust is the
+// same trust object GET /reports carries for this report (D-21): distinct
+// place counts and server written sentences, never a raw vote total, a
+// voter's place or an account id.
 type CastVoteResponse struct {
 	Visibility string `json:"visibility" enums:"hidden,provisional,live,retracted" example:"live"`
 	Reason     string `json:"reason" enums:"resolved,critical_bypasses_gates,disputed,awaiting_second_independent_confirmation,confirmed" example:"confirmed"`
+	// Trust is the server built trust object for this report, the same value
+	// the feed returns (D-21). It is present on every successful vote.
+	Trust TrustResponse `json:"trust"`
 }
 
 // parseReportID reads the {id} path parameter, parses it, and on an empty,
@@ -87,6 +91,7 @@ func parseReportID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 // @Description A voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose
 // @Description error field is location, on all four votes, with one fixed sentence that never
 // @Description carries the distance. The reporter's own resolve and reopen are exempt.
+// @Description The response also carries the same trust object GET /reports returns for this report.
 // @Tags reports
 // @Accept json
 // @Produce json
@@ -191,6 +196,7 @@ func CastVote(svc *service.VotingService, kind service.VoteKind, value service.V
 		writeJSON(w, http.StatusOK, CastVoteResponse{
 			Visibility: string(res.Visibility),
 			Reason:     string(res.Reason),
+			Trust:      trustToResponse(res.Trust),
 		})
 	}
 }
