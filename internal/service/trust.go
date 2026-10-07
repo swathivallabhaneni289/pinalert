@@ -18,16 +18,20 @@ import (
 )
 
 // voterGeohashPrecision is the geohash precision used to compute a
-// VOTER's own cell for the independence predicate (TRUST-03) —
+// VOTER's own cell for the independence predicate (TRUST-03), and it is
 // deliberately DIFFERENT from report.go's geohashPrecision = 8. The two
 // constants answer different questions: geohashPrecision locates where a
 // report happened; voterGeohashPrecision decides how far apart two voters
-// must stand to count as independent confirmers. 7 is roughly a 153m
-// cell, chosen against PITFALLS.md's ~100-300m realistic incident radius.
-// This is an interim, documented choice logged as assumption A3 in
-// 02-RESEARCH.md, which Phase 3 revisits with a benchmarked value
-// (TRUST-05) — it is explicitly not a library default. Reusing precision
-// 8 here is the mistake this comment exists to prevent.
+// must stand to count as independent confirmers. Precision 7 is the
+// deliberate, documented choice (D-03): a cell is about 153 m tall and about
+// 125 to 151 m wide at Indian latitudes, because the width is 152.9 m times
+// the cosine of the latitude (about 134 m at Delhi and about 149 m at
+// Chennai). Phase 3 closes assumption A3 from 02-RESEARCH.md with this
+// decision. The derivation table for precisions 5 to 8 lives in
+// docs/TRUST-MODEL.md, and the 300 m witness simulation lives in
+// TestGeohashPrecisionWitnesses; plan 03-02 writes both in this wave. It is
+// explicitly not a library default. Reusing precision 8 here is the mistake
+// this comment exists to prevent.
 const voterGeohashPrecision = 7
 
 // VoteKind discriminates the two independently-tracked signals a vote can
@@ -252,35 +256,40 @@ type CastVoteResult struct {
 }
 
 // CastVote authorizes, records, and resolves a single confirm/dispute/
-// resolve/reopen vote. The steps run in this exact order — the order is
+// resolve/reopen vote. The steps run in this exact order, and the order is
 // part of the specification:
 //
-//  1. Validate the input, before touching the store — garbage input then
-//     costs zero database round trips.
-//  2. Load the report's vote context (severity/category/expiry/reporter)
-//     in one round trip.
-//  3. Apply D-03's self-vote block, scoped to VoteKindContent alone —
-//     resolve and reopen are both VoteKindResolution values the reporter
-//     is always allowed to cast on their own report (D-13, D-16
-//     amended). This sits above the expiry check because it is the
-//     authorisation decision and should not depend on a state check that
-//     might later move.
-//  4. Reject an expired report — RESEARCH Open Question 2's locked
-//     answer: reject, do not accept-and-ignore.
-//  5. Compute the voter's geohash cell server-side from raw coordinates —
-//     the T-02-01 control: CastVoteInput has no geohash field for a
-//     client to populate.
-//  6. Append the vote.
-//  7. Read the current votes back — AFTER the insert, so the response
-//     carries the POST-vote state (D-04).
-//  8. Build the tally and resolve. CastVote contains NO branch of its own
-//     for the reporter's instant resolve or instant reopen: both arrive
-//     as flags on the tally BuildVoteTally builds and are adjudicated by
-//     isRetracted() inside Resolve. A reporter reopening their own
-//     Retracted report therefore gets the un-retracted visibility back
-//     through the ordinary path, with no special case anywhere in this
-//     function — adding one here would create the second visibility
-//     authority T-02-04 exists to prevent.
+//  1. Validate the input, before touching the store, so garbage input costs
+//     zero database round trips.
+//  2. Load the report's vote context (severity, category, expiry, reporter,
+//     coordinates and creation time) in one round trip.
+//  3. Apply D-03's self-vote block, scoped to VoteKindContent alone: resolve
+//     and reopen are both VoteKindResolution values the reporter is always
+//     allowed to cast on their own report (D-13, D-16 amended). This sits
+//     above the expiry check because it is the authorisation decision and
+//     should not depend on a state check that might later move.
+//  4. Decide the reporter resolution exemption. It is true only for a
+//     resolution vote whose account is the report's reporter, read from the
+//     database against the authenticated account (T-03-01). It skips step 6
+//     and nothing else.
+//  5. Reject an expired report. This is RESEARCH Open Question 2's locked
+//     answer: reject, do not accept-and-ignore. The exemption never skips it.
+//  6. Reject a voter farther than MaxVoteDistanceKm from the report (D-01),
+//     unless step 4 exempted the vote. This runs before the cell is computed
+//     and before anything is written, and a NaN or Inf coordinate fails
+//     closed (T-03-02).
+//  7. Compute the voter's geohash cell server-side from raw coordinates (the
+//     T-02-01 control: CastVoteInput has no geohash field for a client to
+//     populate), append the vote, read the current votes back AFTER the
+//     insert so the response carries the POST-vote state (D-04), then build
+//     the tally and resolve. CastVote contains NO branch of its own for the
+//     reporter's instant resolve or instant reopen: both arrive as flags on
+//     the tally BuildVoteTally builds and are adjudicated by isRetracted()
+//     inside Resolve. A reporter reopening their own Retracted report
+//     therefore gets the un-retracted visibility back through the ordinary
+//     path, with no special case anywhere in this function. Adding one here
+//     would create the second visibility authority T-02-04 exists to
+//     prevent.
 //
 // CastVote calls Resolve rather than deciding visibility itself, so the
 // vote-cast response and 02-04's feed read give byte-identical answers
@@ -315,28 +324,42 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 	// load-bearing in both directions: dropping it would break the
 	// reporter's instant resolution path, and widening it past content
 	// votes would silently disable the two actions that path exists to
-	// grant — D-13's instant resolve and D-16-amended's instant reopen.
-	// The nil check is not defensive noise — a pre-Phase-1.1 report
+	// grant, D-13's instant resolve and D-16-amended's instant reopen.
+	// The nil check is not defensive noise: a pre-Phase-1.1 report
 	// legitimately has no reporter account, and a nil pointer must never
 	// compare equal to a caller.
 	if in.Kind == VoteKindContent && rc.ReporterAccountID != nil && *rc.ReporterAccountID == in.AccountID {
 		return CastVoteResult{}, ErrCannotVoteOwnReport
 	}
 
-	// 4. Reject an expired report. now is captured once, here, as the
-	// authoritative clock — never a client-supplied timestamp, matching
+	// 4. The reporter resolution exemption (T-03-01). It compares the
+	// reporter identity the database returned with the authenticated
+	// account, for the resolution kind only, and reads nothing from the
+	// request body. A nil reporter exempts nobody. It skips the distance
+	// check in step 6 and nothing else.
+	isReporterResolutionVote := in.Kind == VoteKindResolution && rc.ReporterAccountID != nil && *rc.ReporterAccountID == in.AccountID
+
+	// 5. Reject an expired report. now is captured once, here, as the
+	// authoritative clock, never a client-supplied timestamp, matching
 	// Submit's own convention.
 	now := time.Now().UTC()
 	if !rc.ExpiresAt.After(now) {
 		return CastVoteResult{}, ErrReportExpired
 	}
 
-	// 5. Compute the voter's cell server-side. Any geohash string a
-	// client might invent has nowhere to enter — CastVoteInput has no
+	// 6. D-01's distance refusal, before the cell is computed and before
+	// anything is written. The check is written as a negated within test so
+	// a NaN or Inf coordinate on either side is refused (T-03-02).
+	if !isReporterResolutionVote && !withinVoteRadius(rc.Latitude, rc.Longitude, in.Latitude, in.Longitude) {
+		return CastVoteResult{}, ErrVoterTooFar
+	}
+
+	// 7. Compute the voter's cell server-side. Any geohash string a
+	// client might invent has nowhere to enter, because CastVoteInput has no
 	// such field.
 	cell := geohash.EncodeWithPrecision(in.Latitude, in.Longitude, voterGeohashPrecision)
 
-	// 6. Append the vote.
+	// Append the vote.
 	if err := s.q.InsertVote(ctx, sqlcgen.InsertVoteParams{
 		ReportID:    in.ReportID,
 		AccountID:   in.AccountID,
@@ -347,15 +370,14 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 		return CastVoteResult{}, err
 	}
 
-	// 7. Read the current votes back. This must come after the insert —
-	// the response's whole purpose (D-04) is to carry the POST-vote
-	// state.
+	// Read the current votes back. This must come after the insert: the
+	// response's whole purpose (D-04) is to carry the POST-vote state.
 	rows, err := s.q.CurrentVotesForReports(ctx, []int64{in.ReportID})
 	if err != nil {
 		return CastVoteResult{}, err
 	}
 
-	// 8. Build the tally and resolve.
+	// Build the tally and resolve.
 	tally := BuildVoteTally(rows, in.ReportID, rc.ReporterAccountID)
 	meta := ReportMeta{Severity: Severity(rc.Severity), Category: Category(rc.Category)}
 	vis, reason := Resolve(meta, tally, now)
