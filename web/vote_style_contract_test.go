@@ -927,3 +927,312 @@ func TestResolveConfirmWrapsCancelBeforeYes(t *testing.T) {
 		"flex": "2 1 0", "min-width": "144px",
 	}, "A16 Yes about twice as wide")
 }
+
+// ---------------------------------------------------------------------------
+// Task 3: the vote error, the note slot, forced colours and reduced motion.
+// ---------------------------------------------------------------------------
+
+const (
+	p11ErrorHead       = `.vote-error:not([hidden])`
+	p11ErrorBeforeHead = `.vote-error:not([hidden])::before`
+	p11NoteHead        = `.vote-note:not([hidden])`
+	p11ReducedMedia    = "@media (prefers-reduced-motion: reduce)"
+)
+
+// TestVoteErrorAlertGlyph (A73, A41) pins the error row: normal text colour, a
+// 4px critical left border, and an alert glyph drawn by a CSS pseudo element
+// so Pinalert.setText on the paragraph can never wipe it.
+func TestVoteErrorAlertGlyph(t *testing.T) {
+	rules := p11ParseRules(t, p11ReadCSS(t, "static/css/trust.css"))
+
+	p11ExpectDecls(t, p11MustTop(t, rules, p11ErrorHead), map[string]string{
+		"display":      "flex",
+		"gap":          "var(--space-sm)",
+		"color":        "var(--color-text)",
+		"border-left":  "4px solid var(--color-severity-critical)",
+		"padding-left": "var(--space-sm)",
+		"margin":       "var(--space-xs) 0 0",
+		"font-size":    "var(--font-size-body)",
+		"line-height":  "var(--line-height-body)",
+	}, "A41 error row")
+
+	const maskURL = `url("/static/icons/circle-alert.svg")`
+	before := map[string]string{
+		"content":            `""`,
+		"flex":               "none",
+		"width":              "16px",
+		"height":             "16px",
+		"background-color":   "currentColor",
+		"-webkit-mask-image": maskURL,
+		"mask-image":         maskURL,
+	}
+	for k, v := range p11MaskBase {
+		before[k] = v
+	}
+	beforeRule := p11MustTop(t, rules, p11ErrorBeforeHead)
+	p11ExpectDecls(t, beforeRule, before, "A73 alert glyph")
+	if _, has := declsOf(beforeRule.body)["display"]; has {
+		t.Errorf("%s must not declare display (a flex item is blockified)", p11ErrorBeforeHead)
+	}
+	if _, err := fs.Stat(StaticFS, "static/icons/circle-alert.svg"); err != nil {
+		t.Errorf("static/icons/circle-alert.svg is missing from the embedded tree: %v", err)
+	}
+
+	forcedBefore, ok := p11InMedia(rules, p11ForcedMedia, p11ErrorBeforeHead)
+	if !ok {
+		t.Fatalf("no %s rule inside the forced colours block", p11ErrorBeforeHead)
+	}
+	p11ExpectDecls(t, forcedBefore, map[string]string{
+		"forced-color-adjust": "none",
+		"background-color":    "CanvasText",
+	}, "RR-7 error glyph stays visible")
+	forcedError, ok := p11InMedia(rules, p11ForcedMedia, p11ErrorHead)
+	if !ok {
+		t.Fatalf("no %s rule inside the forced colours block", p11ErrorHead)
+	}
+	p11ExpectDecls(t, forcedError, map[string]string{
+		"color":             "CanvasText",
+		"border-left-color": "CanvasText",
+	}, "RR-7 error text and border")
+}
+
+var p11VarRE = regexp.MustCompile(`var\((--[a-z0-9-]+)\)`)
+
+// TestVoteErrorContrastAcrossThemes (A41) proves the error text and the note
+// text clear 4.5:1 and the error border clears 3:1 on the three row tints, the
+// provisional tint and the background surface, in all four theme sources.
+func TestVoteErrorContrastAcrossThemes(t *testing.T) {
+	trustRules := parseCSSRules(p11ReadCSS(t, "static/css/trust.css"))
+	mainRules := parseCSSRules(p11ReadCSS(t, "static/css/main.css"))
+
+	declOf := func(head, prop string) string {
+		r, ok := ruleBySelector(trustRules, head)
+		if !ok {
+			t.Fatalf("no exact %q rule in trust.css", head)
+		}
+		return declsOf(r.declBody)[prop]
+	}
+	errorToken, ok := bareVarName(declOf(p11ErrorHead, "color"))
+	if !ok {
+		t.Fatalf("%s color is not a bare var()", p11ErrorHead)
+	}
+	noteToken, ok := bareVarName(declOf(p11NoteHead, "color"))
+	if !ok {
+		t.Fatalf("%s color is not a bare var()", p11NoteHead)
+	}
+	m := p11VarRE.FindStringSubmatch(declOf(p11ErrorHead, "border-left"))
+	if m == nil {
+		t.Fatalf("%s border-left holds no var() token", p11ErrorHead)
+	}
+	borderToken := m[1]
+
+	surfaces := map[string]string{}
+	tintOf := func(rules []cssRule, head string) string {
+		r, ok := ruleBySelector(rules, head)
+		if !ok {
+			t.Fatalf("no exact %q rule", head)
+		}
+		tok, ok := bareVarName(declsOf(r.declBody)["--severity-tint"])
+		if !ok {
+			t.Fatalf("%s --severity-tint is not a bare var()", head)
+		}
+		return tok
+	}
+	surfaces["sev-low"] = tintOf(mainRules, ".sev-low")
+	surfaces["sev-medium"] = tintOf(mainRules, ".sev-medium")
+	surfaces["sev-critical"] = tintOf(mainRules, ".sev-critical")
+	surfaces["vis-provisional"] = tintOf(trustRules, ".vis-provisional")
+	surfaces["background"] = "--color-bg"
+
+	needed := []string{errorToken, noteToken, borderToken}
+	for _, tok := range surfaces {
+		needed = append(needed, tok)
+	}
+	light1, light2, dark1, dark2 := extractThemeTokens(mainRules, needed)
+	sources := map[string]themeTokens{
+		"light :root":                     light1,
+		`light :root[data-theme="light"]`: light2,
+		"dark @media":                     dark1,
+		`dark :root[data-theme="dark"]`:   dark2,
+	}
+	for themeName, tokens := range sources {
+		for state, surfaceTok := range surfaces {
+			surface := tokens[surfaceTok]
+			ctx := state + " / " + themeName
+			for _, tok := range []string{errorToken, noteToken, borderToken, surfaceTok} {
+				if !strings.HasPrefix(tokens[tok], "#") {
+					t.Fatalf("%s: token %s resolved to %q, not a hex literal", ctx, tok, tokens[tok])
+				}
+			}
+			if r := wcagContrastRatio(t, surface, tokens[errorToken], ctx); r < 4.5 {
+				t.Errorf("%s: error text %s is %.2f:1 on %s, below 4.5:1", ctx, errorToken, r, surface)
+			}
+			if r := wcagContrastRatio(t, surface, tokens[noteToken], ctx); r < 4.5 {
+				t.Errorf("%s: note text %s is %.2f:1 on %s, below 4.5:1", ctx, noteToken, r, surface)
+			}
+			if r := wcagContrastRatio(t, surface, tokens[borderToken], ctx); r < 3.0 {
+				t.Errorf("%s: error border %s is %.2f:1 on %s, below 3:1", ctx, borderToken, r, surface)
+			}
+		}
+	}
+}
+
+// TestVoteNoteReadsAsPlainText (A66 slot) pins the too far sentence slot as 14px
+// plain text in the normal text colour.
+func TestVoteNoteReadsAsPlainText(t *testing.T) {
+	rules := p11ParseRules(t, p11ReadCSS(t, "static/css/trust.css"))
+	note := p11MustTop(t, rules, p11NoteHead)
+	p11ExpectDecls(t, note, map[string]string{
+		"margin":      "var(--space-sm) 0 0",
+		"font-size":   "var(--font-size-label)",
+		"line-height": "var(--line-height-label)",
+		"font-weight": "var(--font-weight-regular)",
+		"color":       "var(--color-text)",
+	}, "plain text slot, never muted")
+	if _, has := declsOf(note.body)["display"]; has {
+		t.Errorf("%s must not declare display", p11NoteHead)
+	}
+}
+
+// TestVoteAccentStaysOnTheClosedList (A40, A13, A41) proves that among the vote
+// rules only the Yes heads and the error's left border carry a severity token,
+// and that no top level vote rule names a system colour.
+func TestVoteAccentStaysOnTheClosedList(t *testing.T) {
+	rules := p11ParseRules(t, p11ReadCSS(t, "static/css/trust.css"))
+	allowed := map[string]bool{
+		`.vote-btn--confirm-resolve`: true,
+		p11YesHead:                   true,
+		p11YesHoverHead:              true,
+		p11ErrorHead:                 true,
+	}
+	systemColours := []string{"CanvasText", "GrayText", "Highlight", "ButtonFace", "ButtonText"}
+	for _, r := range rules {
+		if r.media != "" || !p11VoteHead(r.head) {
+			continue
+		}
+		for _, d := range p11Decls(r.body) {
+			if strings.Contains(d.value, "--color-severity-") {
+				if !allowed[r.head] {
+					t.Errorf("%s: %s carries a severity token, but only the Yes heads and the error border may (A40)", r.head, d.name)
+				}
+				if r.head == p11ErrorHead && d.name != "border-left" {
+					t.Errorf("%s: only border-left may carry the severity token, found it in %s (A41)", r.head, d.name)
+				}
+			}
+			for _, sys := range systemColours {
+				if strings.Contains(d.value, sys) {
+					t.Errorf("%s: %s names the system colour %s outside the forced colours block", r.head, d.name, sys)
+				}
+			}
+		}
+	}
+}
+
+// TestVoteStyleSurvivesForcedColors (RR-7) pins the forced colours block by
+// exact head and resolves the forced mode for the pressed, disabled and
+// destructive states.
+func TestVoteStyleSurvivesForcedColors(t *testing.T) {
+	rules := p11ParseRules(t, p11ReadCSS(t, "static/css/trust.css"))
+
+	icon, ok := p11InMedia(rules, p11ForcedMedia, `.vote-btn__icon`)
+	if !ok {
+		t.Fatalf("no .vote-btn__icon rule inside the forced colours block")
+	}
+	p11ExpectDecls(t, icon, map[string]string{"forced-color-adjust": "none", "background-color": "CanvasText"}, "glyph stays visible")
+	pressedIcon, ok := p11InMedia(rules, p11ForcedMedia, `.vote-btn[aria-pressed="true"] .vote-btn__icon`)
+	if !ok {
+		t.Fatalf("no pressed glyph rule inside the forced colours block")
+	}
+	p11ExpectDecls(t, pressedIcon, map[string]string{"background-color": "HighlightText"}, "pressed glyph")
+
+	const grayIconHead = `.vote-btn:disabled:not([aria-pressed="true"]) .vote-btn__icon, .vote-btn[aria-disabled="true"]:not([aria-pressed="true"]) .vote-btn__icon`
+	grayIcon, ok := p11InMedia(rules, p11ForcedMedia, grayIconHead)
+	if !ok {
+		t.Fatalf("no disabled glyph rule inside the forced colours block")
+	}
+	p11ExpectDecls(t, grayIcon, map[string]string{"background-color": "GrayText"}, "disabled glyph")
+	for _, part := range p11Split(grayIcon.head, true) {
+		if !strings.Contains(part, `:not([aria-pressed="true"])`) {
+			t.Errorf("disabled glyph head part %q must exclude the pressed state", part)
+		}
+	}
+
+	const pressedHead = `.vote-btn--confirm[aria-pressed="true"], .vote-btn--dispute[aria-pressed="true"], ` +
+		`.vote-btn[aria-pressed="true"]:disabled:not([hidden]), .vote-btn[aria-pressed="true"][aria-disabled="true"]:not([hidden])`
+	pressed, ok := p11InMedia(rules, p11ForcedMedia, pressedHead)
+	if !ok {
+		t.Fatalf("no pressed button rule inside the forced colours block")
+	}
+	p11ExpectDecls(t, pressed, map[string]string{
+		"forced-color-adjust": "none",
+		"background":          "Highlight",
+		"border-color":        "Highlight",
+		"color":               "HighlightText",
+	}, "pressed vote")
+
+	const grayHead = `.vote-btn:disabled:not([aria-pressed="true"]):not(.vote-btn--confirm-resolve), ` +
+		`.vote-btn[aria-disabled="true"]:not([aria-pressed="true"]):not([hidden])`
+	gray, ok := p11InMedia(rules, p11ForcedMedia, grayHead)
+	if !ok {
+		t.Fatalf("no disabled button rule inside the forced colours block")
+	}
+	p11ExpectDecls(t, gray, map[string]string{"color": "GrayText", "border-color": "GrayText"}, "disabled vote")
+
+	yes, ok := p11InMedia(rules, p11ForcedMedia, `.resolve-confirm .vote-btn.vote-btn--confirm-resolve:not([hidden])`)
+	if !ok {
+		t.Fatalf("no Yes rule inside the forced colours block")
+	}
+	p11ExpectDecls(t, yes, map[string]string{
+		"background": "ButtonFace",
+		"color":      "ButtonText",
+		"border":     "1px solid ButtonText",
+	}, "Yes keeps a visible border")
+
+	for _, r := range rules {
+		if strings.HasPrefix(r.media, p11ForcedMedia) {
+			if _, has := declsOf(r.body)["display"]; has {
+				t.Errorf("forced colours rule %q must not declare display", r.head)
+			}
+		}
+	}
+
+	for _, modifier := range []string{"vote-btn--confirm", "vote-btn--dispute"} {
+		for _, states := range p11Subsets([]string{"hover", "active", "disabled", "aria-disabled"}) {
+			el := p11Btn(modifier, "true", states...)
+			p11Expect(t, rules, "forced "+modifier+" pressed + "+strings.Join(states, "+"), el, true, map[string]string{
+				"fill": "Highlight", "text": "HighlightText", "stroke": "Highlight"})
+		}
+	}
+	grayCase := map[string]p11Element{
+		"Confirm disabled":       p11Btn("vote-btn--confirm", "false", "disabled"),
+		"Confirm too far":        p11Btn("vote-btn--confirm", "false", "aria-disabled"),
+		"Mark resolved disabled": p11Btn("vote-btn--resolve", "", "disabled"),
+		"Mark resolved too far":  p11Btn("vote-btn--resolve", "", "aria-disabled"),
+	}
+	for name, el := range grayCase {
+		p11Expect(t, rules, "forced "+name, el, true, map[string]string{"text": "GrayText", "stroke": "GrayText"})
+	}
+	for _, states := range [][]string{{}, {"disabled"}} {
+		el := p11Btn("vote-btn--confirm-resolve", "", states...)
+		p11Expect(t, rules, "forced Yes "+strings.Join(states, "+"), el, true, map[string]string{
+			"fill": "ButtonFace", "text": "ButtonText", "stroke": "ButtonText"})
+	}
+}
+
+// TestVoteButtonMotionRespectsReducedMotion (Motion) pins the colour
+// transitions and the single rule that removes them.
+func TestVoteButtonMotionRespectsReducedMotion(t *testing.T) {
+	rules := p11ParseRules(t, p11ReadCSS(t, "static/css/trust.css"))
+	btn := p11MustTop(t, rules, `.vote-btn:not([hidden])`)
+	transition := declsOf(btn.body)["transition"]
+	for _, want := range []string{"background-color 150ms ease", "border-color 150ms ease", "color 150ms ease"} {
+		if !strings.Contains(transition, want) {
+			t.Errorf(".vote-btn:not([hidden]) transition %q must contain %q", transition, want)
+		}
+	}
+	reduced, ok := p11InMedia(rules, p11ReducedMedia, `.vote-btn:not([hidden])`)
+	if !ok {
+		t.Fatalf("no .vote-btn:not([hidden]) rule inside %s", p11ReducedMedia)
+	}
+	p11ExpectDecls(t, reduced, map[string]string{"transition": "none"}, "reduced motion removes the colour transitions")
+}

@@ -56,6 +56,7 @@
   line-height: var(--line-height-body);
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
 /* Inverted neutral fill (03-UI-SPEC A13), the same look for Confirm and
@@ -86,13 +87,22 @@
 
 /* Unlike #form-error, this does not reserve a line of height: a feed row
    is dense, and a permanently reserved empty line under every row costs
-   more than the layout shift it would prevent. */
+   more than the layout shift it would prevent. The words read in the normal
+   text colour and the critical colour moves to a non text left border
+   (03-UI-SPEC A41). The alert glyph is a pseudo element in the plan 03-11
+   section because the message is written as text and a child node would be
+   wiped (A73). */
 .vote-error:not([hidden]) {
-  display: block;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
   margin: var(--space-xs) 0 0;
+  padding-left: var(--space-sm);
+  border-left: 4px solid var(--color-severity-critical);
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
-  color: var(--color-severity-critical);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
 }
 
 /* -------------------------------------------------------------------------
@@ -552,7 +562,7 @@
 
 /* Pressed and in flight keeps the inverted look (A46). The generic disabled
    rule ties the pressed rule at (0,2,0) and wins on order, so these (0,4,0)
-   heads put the pressed look back. No opacity. */
+   heads put the pressed look back. No fade of any kind. */
 .vote-btn[aria-pressed="true"]:disabled:not([hidden]) {
   background: var(--color-text);
   color: var(--color-bg);
@@ -570,8 +580,8 @@
 }
 
 /* Too far and not pressed reads as disabled (A18). Keyed on the value true of
-   aria-disabled, never on a data attribute, and no pointer-events, so the
-   button stays focusable and the global focus ring still draws. */
+   aria-disabled, never on a data attribute, and it blocks no pointer input,
+   so the button stays focusable and the global focus ring still draws. */
 .vote-btn[aria-disabled="true"]:not([aria-pressed="true"]):not([hidden]) {
   background: var(--color-bg);
   color: var(--color-text-muted);
@@ -627,4 +637,98 @@
 .resolve-confirm .vote-btn--confirm-resolve:not([hidden]) {
   flex: 2 1 0;
   min-width: 144px;
+}
+
+/* Vote error alert glyph (A73). A pseudo element, so Pinalert.setText on the
+   paragraph can never wipe it. No display (a flex item is blockified), no new
+   icon file and no DOM node. The margin centres the 16px glyph on the first
+   24px line. */
+.vote-error:not([hidden])::before {
+  content: "";
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: var(--space-xs);
+  background-color: currentColor;
+  -webkit-mask-image: url("/static/icons/circle-alert.svg");
+  mask-image: url("/static/icons/circle-alert.svg");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+/* The too far sentence slot that plan 03-18 fills (A66). Plain text in the
+   normal text colour, never muted. */
+.vote-note:not([hidden]) {
+  margin: var(--space-sm) 0 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+}
+
+/* Reduced motion removes the vote button colour transitions. Exactly one rule
+   in this block, so the shared test parser keeps the media prefix on its
+   head. */
+@media (prefers-reduced-motion: reduce) {
+  .vote-btn:not([hidden]) {
+    transition: none;
+  }
+}
+
+/* Windows high contrast (RR-7). System colour keywords appear only in this
+   block. Glyph masks and the pressed state opt out of forced colour
+   adjustment so they stay visible, the disabled state reads as GrayText, and
+   Yes loses its red but keeps a visible border. The pressed head repeats the
+   top level pressed heads so each part ties its counterpart and wins by
+   source order. The global focus ring is left to the system colour. */
+@media (forced-colors: active) {
+  .vote-btn__icon {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+
+  .vote-btn[aria-pressed="true"] .vote-btn__icon {
+    background-color: HighlightText;
+  }
+
+  .vote-btn:disabled:not([aria-pressed="true"]) .vote-btn__icon,
+  .vote-btn[aria-disabled="true"]:not([aria-pressed="true"]) .vote-btn__icon {
+    background-color: GrayText;
+  }
+
+  .vote-btn--confirm[aria-pressed="true"],
+  .vote-btn--dispute[aria-pressed="true"],
+  .vote-btn[aria-pressed="true"]:disabled:not([hidden]),
+  .vote-btn[aria-pressed="true"][aria-disabled="true"]:not([hidden]) {
+    forced-color-adjust: none;
+    background: Highlight;
+    border-color: Highlight;
+    color: HighlightText;
+  }
+
+  .vote-btn:disabled:not([aria-pressed="true"]):not(.vote-btn--confirm-resolve),
+  .vote-btn[aria-disabled="true"]:not([aria-pressed="true"]):not([hidden]) {
+    color: GrayText;
+    border-color: GrayText;
+  }
+
+  .resolve-confirm .vote-btn.vote-btn--confirm-resolve:not([hidden]) {
+    background: ButtonFace;
+    color: ButtonText;
+    border: 1px solid ButtonText;
+  }
+
+  .vote-error:not([hidden]) {
+    color: CanvasText;
+    border-left-color: CanvasText;
+  }
+
+  .vote-error:not([hidden])::before {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
 }
