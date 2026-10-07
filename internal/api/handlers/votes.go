@@ -84,6 +84,9 @@ func parseReportID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 // @Description caller receives 401. The reporter receives 403 on confirm/dispute but may resolve
 // @Description or reopen their own report instantly. The response carries the freshly recomputed
 // @Description visibility and reason so the client can render the outcome without guessing.
+// @Description A voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose
+// @Description error field is location, on all four votes, with one fixed sentence that never
+// @Description carries the distance. The reporter's own resolve and reopen are exempt.
 // @Tags reports
 // @Accept json
 // @Produce json
@@ -160,6 +163,15 @@ func CastVote(svc *service.VotingService, kind service.VoteKind, value service.V
 				// owner's Activity history; 400 was rejected because
 				// nothing about the request itself is malformed.
 				writeFieldError(w, http.StatusConflict, "report", "This report has expired.")
+				return
+			case errors.Is(err, service.ErrVoterTooFar):
+				// 403 rather than 400: the request is well formed and the
+				// caller is authenticated, and the server refuses it because
+				// the voter stands farther than service.MaxVoteDistanceKm
+				// from the report (D-01). The field is location so the
+				// browser can key its one silent retry on it (D-02), and the
+				// message is the fixed sentence with no computed distance.
+				writeFieldError(w, http.StatusForbidden, "location", service.TooFarMessage())
 				return
 			}
 			var ve service.ValidationError

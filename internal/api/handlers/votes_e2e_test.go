@@ -15,11 +15,13 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mmcloughlin/geohash"
 
+	"pinalert/internal/service"
 	"pinalert/internal/testutil"
 )
 
@@ -437,4 +439,107 @@ func TestCastVoteOnMissingReportIs404(t *testing.T) {
 		t.Fatalf("expected 404, got %d: %s", resp.StatusCode, b)
 	}
 	resp.Body.Close()
+}
+
+// TestCastVoteTooFar is V-07 for D-01: a non reporter voting from more than
+// 1 km away is refused on all four routes with 403, error field location and
+// the one fixed sentence, and nothing is written. The 403 body carries no
+// distance. The reporter's own resolve stays exempt at any distance (T-03-01)
+// and an expired report still answers 409 before distance is considered.
+//
+// Distances (haversine, R = 6371 km) from the report at (12.9716, 77.5946):
+// (12.9746, 77.5946) is 0.3336 km north, (12.9896, 77.5946) is 2.0015 km
+// north, Chennai (13.0827, 80.2707) is 290.1720 km away.
+func TestCastVoteTooFar(t *testing.T) {
+	srv, mailer, pool := newE2EServer(t)
+	clientA := newVerifiedClient(t, srv, mailer, "too-far-reporter@example.com")
+	clientB := newVerifiedClient(t, srv, mailer, "too-far-voter@example.com")
+
+	reportLat, reportLon := 12.9716, 77.5946
+	nearLat, nearLon := 12.9746, 77.5946
+	farLat, farLon := 12.9896, 77.5946
+	chennaiLat, chennaiLon := 13.0827, 80.2707
+
+	const wantMessage = "Too far to vote. You need to be within 1 km of this report."
+	if service.TooFarMessage() != wantMessage {
+		t.Fatalf("service.TooFarMessage() = %q, want %q", service.TooFarMessage(), wantMessage)
+	}
+
+	reportID := submitReportGetID(t, clientA, srv.URL, floodReportBody(reportLat, reportLon))
+
+	for _, action := range []string{"confirm", "dispute", "resolve", "reopen"} {
+		t.Run(action, func(t *testing.T) {
+			resp := postVote(t, clientB, srv.URL, reportID, action, map[string]any{"latitude": farLat, "longitude": farLon})
+			raw, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				t.Fatalf("reading body: %v", err)
+			}
+			if resp.StatusCode != http.StatusForbidden {
+				t.Fatalf("expected 403 on /%s from 2 km, got %d: %s", action, resp.StatusCode, raw)
+			}
+			var top map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &top); err != nil {
+				t.Fatalf("unmarshalling body %s: %v", raw, err)
+			}
+			if len(top) != 1 {
+				t.Fatalf("body has %d top level keys, want exactly 1 (error): %s", len(top), raw)
+			}
+			inner, ok := top["error"]
+			if !ok {
+				t.Fatalf("body has no error key: %s", raw)
+			}
+			var detail map[string]any
+			if err := json.Unmarshal(inner, &detail); err != nil {
+				t.Fatalf("unmarshalling error object %s: %v", inner, err)
+			}
+			if len(detail) != 2 {
+				t.Fatalf("error object has %d keys, want exactly field and message: %s", len(detail), raw)
+			}
+			if detail["field"] != "location" {
+				t.Fatalf("error.field = %v, want location", detail["field"])
+			}
+			if detail["message"] != wantMessage || detail["message"] != service.TooFarMessage() {
+				t.Fatalf("error.message = %v, want %q", detail["message"], wantMessage)
+			}
+			if strings.Contains(string(raw), "distance") {
+				t.Fatalf("body must not mention a distance: %s", raw)
+			}
+		})
+	}
+	if got := countVotesForReport(t, pool, reportID); got != 0 {
+		t.Fatalf("votes row count after four refusals = %d, want 0", got)
+	}
+
+	respNear := postVote(t, clientB, srv.URL, reportID, "confirm", map[string]any{"latitude": nearLat, "longitude": nearLon})
+	vis, _ := decodeVoteResponse(t, respNear)
+	if vis != "provisional" {
+		t.Fatalf("confirm from 0.3336 km: visibility = %q, want provisional", vis)
+	}
+
+	respOwn := postVote(t, clientA, srv.URL, reportID, "resolve", map[string]any{"latitude": chennaiLat, "longitude": chennaiLon})
+	vis, _ = decodeVoteResponse(t, respOwn)
+	if vis != "retracted" {
+		t.Fatalf("reporter resolve from Chennai: visibility = %q, want retracted (exempt, T-03-01)", vis)
+	}
+	if got := countVotesForReport(t, pool, reportID); got != 2 {
+		t.Fatalf("votes row count = %d, want 2", got)
+	}
+
+	t.Run("expired report from far", func(t *testing.T) {
+		expiredID := testutil.SeedExpiringReport(t, pool, -3600)
+		resp := postVote(t, clientB, srv.URL, expiredID, "confirm", map[string]any{"latitude": farLat, "longitude": farLon})
+		if resp.StatusCode != http.StatusConflict {
+			b, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			t.Fatalf("expected 409, got %d: %s", resp.StatusCode, b)
+		}
+		_, message := decodeErrorResponse(t, resp)
+		if message != "This report has expired." {
+			t.Fatalf("error.message = %q, want %q", message, "This report has expired.")
+		}
+		if got := countVotesForReport(t, pool, expiredID); got != 0 {
+			t.Fatalf("votes row count for expired report = %d, want 0", got)
+		}
+	})
 }
