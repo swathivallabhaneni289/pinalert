@@ -14,6 +14,10 @@ next.
 
 How confirmations are counted, why a place is a precision 7 geohash cell, the 1 km voting rule and the honest limits of all of it are written up in [docs/TRUST-MODEL.md](./docs/TRUST-MODEL.md).
 
+- The two counters, confirmed and disputed, count distinct places within 1 km of the report, not votes.
+- The still current word says whether different places confirmed the report recently, and the map popup shows a 0 to 100 score for it.
+- The reporter tag rates how the reporter's earlier reports turned out, and the map popup shows a 0 to 100 score for it as well.
+
 ## Run locally
 
 1. **Provision Postgres.** Either use a local Postgres 16/17 instance (Homebrew's `postgresql@16`
@@ -62,6 +66,7 @@ How confirmations are counted, why a place is a precision 7 geohash cell, the 1 
 - `make test-short` — skips any test that needs a database; safe to run with no `DATABASE_URL` set.
 - `make test` — the full suite, including store-layer tests against a real Postgres; requires
   `DATABASE_URL`.
+- Point `DATABASE_URL` at a throwaway database created for the run, because the suite truncates every table it touches, and drop it afterwards.
 
 ### CI
 
