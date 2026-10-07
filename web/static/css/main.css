@@ -389,6 +389,7 @@ body {
   line-height: var(--line-height-heading);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text);
+  overflow-wrap: anywhere;
   margin: 0 0 var(--space-xs) 0;
 }
 
@@ -396,7 +397,7 @@ body {
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
   font-weight: var(--font-weight-regular);
-  color: var(--color-text-muted);
+  color: var(--color-text);
   margin: 0;
 }
 
