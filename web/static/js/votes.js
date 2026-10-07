@@ -44,6 +44,12 @@
 
   var VOTER_LOCATION_CACHE_KEY = 'pinalert_voter_location';
 
+  // How long a cached fix is reused without asking again, in milliseconds
+  // (outline UI-SPEC open item 6). This is a client side timer for location
+  // freshness, not a trust rule: the server's 1 km check stays the only
+  // authority on whether a vote counts (D-02).
+  var VOTER_LOCATION_FRESH_MS = 60000;
+
   // The Copywriting Contract's GPS-denial sentence, verbatim. Its tone
   // deliberately differs from the submission path's location notice: that
   // copy offers a workaround because one exists; this copy must not imply
@@ -88,70 +94,190 @@
   // array by TestResolutionOutcomeSlugMatchesVisibilityStates.
   var RETRACTED_VISIBILITY_SLUG = 'retracted';
 
-  // getVoterLocation resolves a Promise of {latitude, longitude}. It
-  // consults the per-session cache before ever raising the browser's own
-  // geolocation prompt (D-17), and REJECTS — never resolves a substitute
-  // position — when the prompt is denied, unsupported, or times out
-  // (D-18). Every rejection carries fieldMessage set to GPS_DENIED_MESSAGE,
-  // matching app.js's submitReport convention so one catch clause upstream
-  // handles a denied prompt and a server refusal identically.
-  function getVoterLocation() {
-    return new Promise(function (resolve, reject) {
+  // Reads one cache entry, as stored text, into latitude, longitude and the
+  // capture time in epoch milliseconds, or null. Unparsable text and a
+  // non finite coordinate give null. A missing or non numeric capture time
+  // gives a null time, so an entry written before capture times existed
+  // counts as stale but is still usable as a stale fix (D-02).
+  function parseVoterLocation(raw) {
+    if (!raw) {
+      return null;
+    }
+    var parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+    if (!parsed || !isFinite(parsed.latitude) || !isFinite(parsed.longitude)) {
+      return null;
+    }
+    return {
+      latitude: parsed.latitude,
+      longitude: parsed.longitude,
+      at: (typeof parsed.at === 'number' && isFinite(parsed.at)) ? parsed.at : null
+    };
+  }
+
+  // True only for a parsed entry with a capture time that is not in the
+  // future and is younger than maxAgeMs. A capture time ahead of the clock
+  // counts as stale. Plan 03-18's hint reuses this with its own bound.
+  function isFreshVoterLocation(entry, maxAgeMs) {
+    if (!entry || entry.at === null) {
+      return false;
+    }
+    var age = Date.now() - entry.at;
+    return age >= 0 && age < maxAgeMs;
+  }
+
+  // Resolves to 'granted', 'denied', 'prompt' or 'unknown' and never
+  // rejects. 'unknown' covers a browser without the Permissions API, a query
+  // that throws or rejects, and any state outside the closed list. Where the
+  // API is missing the silent refresh of D-02 simply does not run and the
+  // cached fix is reused (RESEARCH A7).
+  function geolocationPermissionState() {
+    return new Promise(function (resolve) {
       try {
-        var cached = sessionStorage.getItem(VOTER_LOCATION_CACHE_KEY);
-        if (cached) {
-          var parsed = JSON.parse(cached);
-          if (parsed && isFinite(parsed.latitude) && isFinite(parsed.longitude)) {
-            resolve({ latitude: parsed.latitude, longitude: parsed.longitude });
-            return;
-          }
+        if (!navigator.permissions || typeof navigator.permissions.query !== 'function') {
+          resolve('unknown');
+          return;
         }
+        navigator.permissions.query({ name: 'geolocation' }).then(function (status) {
+          var state = status && status.state;
+          if (state === 'granted' || state === 'denied' || state === 'prompt') {
+            resolve(state);
+          } else {
+            resolve('unknown');
+          }
+        }, function () {
+          resolve('unknown');
+        });
       } catch (e) {
-        // A browser in a privacy mode can throw on storage access, and a
-        // corrupted cached value must not throw past this caller. A cache
+        resolve('unknown');
+      }
+    });
+  }
+
+  // Resolves a Promise of latitude and longitude only. The capture time is
+  // never resolved. The rules, in order (D-02, builds on D-17 and D-18):
+  //  1. A cached fix younger than VOTER_LOCATION_FRESH_MS is reused without
+  //     asking, unless the caller passed fresh true.
+  //  2. Otherwise the permission state decides. Denied rejects outright.
+  //     Granted takes a silent fix with maximumAge 0 and, if that fails,
+  //     reuses the stale cached fix unless fresh was asked for.
+  //  3. Prompt or unknown (no Permissions API) reuses any cached fix and
+  //     never asks the browser again. Only a session with no cached fix at
+  //     all raises the browser's own prompt, exactly as the first vote of a
+  //     session always has. A fresh request in this state rejects: a retry
+  //     never prompts.
+  // Every rejection carries fieldMessage set to GPS_DENIED_MESSAGE, matching
+  // the submitReport convention in app.js so one catch clause upstream
+  // handles a denied prompt and a server refusal identically. No rejection
+  // is ever turned into a substitute position (D-18).
+  function getVoterLocation(opts) {
+    var fresh = !!(opts && opts.fresh);
+    return new Promise(function (resolve, reject) {
+      var cached = null;
+      try {
+        cached = parseVoterLocation(sessionStorage.getItem(VOTER_LOCATION_CACHE_KEY));
+      } catch (e) {
+        // A browser in a privacy mode can throw on storage access. A cache
         // that cannot be read is treated as absent: a fresh prompt
         // follows below, degrading D-17's convenience while D-18 still
         // holds, which is the property that actually matters.
       }
 
-      if (!navigator.geolocation) {
-        var unsupportedErr = new Error(GPS_DENIED_MESSAGE);
-        unsupportedErr.fieldMessage = GPS_DENIED_MESSAGE;
-        reject(unsupportedErr);
+      function useCached() {
+        resolve({ latitude: cached.latitude, longitude: cached.longitude });
+      }
+
+      function deny() {
+        var deniedErr = new Error(GPS_DENIED_MESSAGE);
+        deniedErr.fieldMessage = GPS_DENIED_MESSAGE;
+        reject(deniedErr);
+      }
+
+      // The one and only place the module asks the browser for a position.
+      // onFailure runs when the browser has no geolocation support or the
+      // request fails. There is no recentring, no notice, no default
+      // position and no second attempt here. D-18 is a hard stop.
+      function requestPosition(onFailure) {
+        if (!navigator.geolocation) {
+          onFailure();
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(
+          function (pos) {
+            var coords = {
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude
+            };
+            try {
+              sessionStorage.setItem(VOTER_LOCATION_CACHE_KEY, JSON.stringify({
+                latitude: coords.latitude,
+                longitude: coords.longitude,
+                at: Date.now()
+              }));
+            } catch (e) {
+              // Same privacy-mode/quota concern as the read above. A cache
+              // write that fails costs only the next vote's convenience,
+              // never this vote's correctness.
+            }
+            resolve(coords);
+          },
+          function () {
+            onFailure();
+          },
+          { timeout: 8000, maximumAge: 0 }
+        );
+      }
+
+      if (!fresh && isFreshVoterLocation(cached, VOTER_LOCATION_FRESH_MS)) {
+        useCached();
         return;
       }
 
-      navigator.geolocation.getCurrentPosition(
-        function (pos) {
-          var coords = {
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude
-          };
-          try {
-            sessionStorage.setItem(VOTER_LOCATION_CACHE_KEY, JSON.stringify(coords));
-          } catch (e) {
-            // Same privacy-mode/quota concern as the read above — a cache
-            // write that fails costs only the next vote's convenience,
-            // never this vote's correctness.
-          }
-          resolve(coords);
-        },
-        function () {
-          // No recentring, no notice, no default position, no second
-          // attempt. D-18 is a hard stop.
-          var deniedErr = new Error(GPS_DENIED_MESSAGE);
-          deniedErr.fieldMessage = GPS_DENIED_MESSAGE;
-          reject(deniedErr);
-        },
-        { timeout: 8000 }
-      );
+      function decide(state) {
+        if (state === 'denied') {
+          deny();
+          return;
+        }
+        if (state === 'granted') {
+          requestPosition(function () {
+            if (!fresh && cached) {
+              useCached();
+            } else {
+              deny();
+            }
+          });
+          return;
+        }
+        // Prompt or unknown. A retry never prompts.
+        if (fresh) {
+          deny();
+          return;
+        }
+        if (cached) {
+          useCached();
+          return;
+        }
+        requestPosition(deny);
+      }
+
+      geolocationPermissionState().then(decide, function () {
+        decide('unknown');
+      });
     });
   }
 
   // castVote POSTs a vote and resolves with the parsed 200 body
-  // ({visibility, reason}). Transport only — no DOM, no refetch, no
-  // decision about what to show. Keeping this function DOM-free is what
-  // lets a future resolve/reopen control reuse it unchanged.
+  // ({visibility, reason}). It retries once, and only when the server
+  // refused the vote with error field location (too far from the report),
+  // using a fix taken silently now under an already granted permission. If
+  // no such fix can be taken, the server's own sentence is what the caller
+  // sees. Transport only: no DOM, no refetch, no decision about what to
+  // show. Keeping this function DOM-free is what lets a future
+  // resolve/reopen control reuse it unchanged (D-02).
   function castVote(reportId, action) {
     if (VOTE_ACTIONS.indexOf(action) === -1) {
       var actionErr = new Error(GENERIC_FAILURE_MESSAGE);
@@ -159,7 +285,20 @@
       return Promise.reject(actionErr);
     }
 
-    return getVoterLocation().then(function (coords) {
+    return getVoterLocation({ fresh: false }).then(postVote).catch(function (err) {
+      // A location denial carries no field, a transport failure carries
+      // none either and a 400 carries another field, so none of those is
+      // retried. The retry never prompts: a fresh fix is taken only under
+      // an already granted permission.
+      if (!err || err.field !== 'location') {
+        throw err;
+      }
+      return getVoterLocation({ fresh: true }).then(postVote, function () {
+        throw err;
+      });
+    });
+
+    function postVote(coords) {
       return fetch('/api/reports/' + encodeURIComponent(String(reportId)) + '/' + action, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -167,8 +306,8 @@
         // decoder runs with an unknown-field guard, so any extra key here
         // would be a loud 400 rather than a silently dropped field. The
         // voter's cell is computed server-side and must never be sent
-        // from here (T-02-01).
-        body: JSON.stringify(coords)
+        // from here (T-02-01). The cached capture time stays out of it.
+        body: JSON.stringify({ latitude: coords.latitude, longitude: coords.longitude })
       }).then(function (res) {
         return res.json().catch(function () {
           return {};
@@ -186,7 +325,7 @@
           return body;
         });
       });
-    });
+    }
   }
 
   // createVoteBlock builds the DOM for one report's controls: two buttons

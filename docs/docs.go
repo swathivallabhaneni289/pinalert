@@ -241,7 +241,7 @@ const docTemplate = `{
         },
         "/reports/{id}/confirm": {
             "post": {
-                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.",
+                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.",
                 "consumes": [
                     "application/json"
                 ],
@@ -318,7 +318,7 @@ const docTemplate = `{
         },
         "/reports/{id}/dispute": {
             "post": {
-                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.",
+                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.",
                 "consumes": [
                     "application/json"
                 ],
@@ -395,7 +395,7 @@ const docTemplate = `{
         },
         "/reports/{id}/reopen": {
             "post": {
-                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.",
+                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.",
                 "consumes": [
                     "application/json"
                 ],
@@ -472,7 +472,7 @@ const docTemplate = `{
         },
         "/reports/{id}/resolve": {
             "post": {
-                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.",
+                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.",
                 "consumes": [
                     "application/json"
                 ],

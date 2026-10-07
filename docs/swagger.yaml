@@ -520,6 +520,9 @@ paths:
         caller receives 401. The reporter receives 403 on confirm/dispute but may resolve
         or reopen their own report instantly. The response carries the freshly recomputed
         visibility and reason so the client can render the outcome without guessing.
+        A voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose
+        error field is location, on all four votes, with one fixed sentence that never
+        carries the distance. The reporter's own resolve and reopen are exempt.
       parameters:
       - description: Report id
         in: path
@@ -577,6 +580,9 @@ paths:
         caller receives 401. The reporter receives 403 on confirm/dispute but may resolve
         or reopen their own report instantly. The response carries the freshly recomputed
         visibility and reason so the client can render the outcome without guessing.
+        A voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose
+        error field is location, on all four votes, with one fixed sentence that never
+        carries the distance. The reporter's own resolve and reopen are exempt.
       parameters:
       - description: Report id
         in: path
@@ -634,6 +640,9 @@ paths:
         caller receives 401. The reporter receives 403 on confirm/dispute but may resolve
         or reopen their own report instantly. The response carries the freshly recomputed
         visibility and reason so the client can render the outcome without guessing.
+        A voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose
+        error field is location, on all four votes, with one fixed sentence that never
+        carries the distance. The reporter's own resolve and reopen are exempt.
       parameters:
       - description: Report id
         in: path
@@ -691,6 +700,9 @@ paths:
         caller receives 401. The reporter receives 403 on confirm/dispute but may resolve
         or reopen their own report instantly. The response carries the freshly recomputed
         visibility and reason so the client can render the outcome without guessing.
+        A voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose
+        error field is location, on all four votes, with one fixed sentence that never
+        carries the distance. The reporter's own resolve and reopen are exempt.
       parameters:
       - description: Report id
         in: path
