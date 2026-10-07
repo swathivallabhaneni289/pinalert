@@ -44,6 +44,14 @@ window.PinalertMap = (function () {
   // True only while render removes a marker, so the popup close does not also
   // pull focus back to a pin that is gone.
   var removingPopup = false;
+  // Reduced motion is read once. It turns off the map's fade and zoom
+  // animations, the animated fly and Leaflet's own autopan (A60, A68).
+  var reducedMotion = mediaMatches('(prefers-reduced-motion: reduce)');
+  // The two media conditions trust.css switches the popup max height at (A65).
+  var NARROW_QUERY = '(max-width: 899.98px)';
+  var SHORT_QUERY = '(max-height: 359px)';
+  // Autopan paddings in pixels, derived from the spacing tokens (A60).
+  var panPad = { topLeft: [0, 0], bottomRight: [0, 0] };
 
   // replacePrefixedClass is a deliberate third copy of feed.js's and
   // visibility.js's private helper of the same name and behaviour, not an
@@ -61,6 +69,46 @@ window.PinalertMap = (function () {
     }
     kept.push(newClass);
     el.className = kept.join(' ');
+  }
+
+  // mediaMatches says whether a media query holds right now.
+  function mediaMatches(query) {
+    return !!(window.matchMedia && window.matchMedia(query).matches);
+  }
+
+  // readSpaceToken reads one spacing token from the root element as a pixel
+  // number, or 0 when it is not a number.
+  function readSpaceToken(name) {
+    var value = parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue(name));
+    return isNaN(value) ? 0 : value;
+  }
+
+  // refreshPanPadding derives the autopan paddings from the same tokens and
+  // media conditions as the popup max height in trust.css (A60, A65). Below
+  // 900px the card must clear the account trigger at the top and the column of
+  // floating buttons at the bottom; elsewhere, and on a very short screen,
+  // every side is one medium space.
+  function refreshPanPadding() {
+    var spaceMd = readSpaceToken('--space-md');
+    var spaceLg = readSpaceToken('--space-lg');
+    var touchMin = readSpaceToken('--touch-target-min');
+    var top = spaceMd;
+    var bottom = spaceMd;
+    if (mediaMatches(NARROW_QUERY) && !mediaMatches(SHORT_QUERY)) {
+      top = spaceMd + touchMin + spaceMd;
+      bottom = spaceLg + touchMin + spaceMd;
+    }
+    panPad = { topLeft: [spaceMd, top], bottomRight: [spaceMd, bottom] };
+  }
+
+  // applyPanPadding writes the current paddings onto one popup, because a popup
+  // reads its options when it opens and the viewport may have changed since.
+  function applyPanPadding(popup) {
+    if (!popup) {
+      return;
+    }
+    popup.options.autoPanPaddingTopLeft = panPad.topLeft;
+    popup.options.autoPanPaddingBottomRight = panPad.bottomRight;
   }
 
   // hasVectorBasemap reports whether this browser can render the
@@ -97,6 +145,8 @@ window.PinalertMap = (function () {
       return;
     }
 
+    refreshPanPadding();
+
     // maxBounds/maxBoundsViscosity/minZoom are the vector bridge
     // maintainers' own boilerplate, copied verbatim from their published
     // example — maxBounds' inverted-looking lat/lng ordering prevents a
@@ -108,7 +158,10 @@ window.PinalertMap = (function () {
       maxBounds: [[180, -Infinity], [-180, Infinity]],
       maxBoundsViscosity: 1,
       minZoom: 1,
-      maxZoom: 19
+      maxZoom: 19,
+      fadeAnimation: !reducedMotion,
+      markerZoomAnimation: !reducedMotion,
+      zoomAnimation: !reducedMotion
     });
 
     if (hasVectorBasemap()) {
@@ -140,6 +193,8 @@ window.PinalertMap = (function () {
 
     map.on('popupopen', onPopupOpen);
     map.on('popupclose', onPopupClose);
+    map.on('resize', onMapResize);
+    map.on('moveend', onMapMoveEnd);
     container.addEventListener('focusin', onMapFocusIn);
     container.addEventListener('focusout', onMapFocusOut);
     container.addEventListener('keydown', onMapKeydown);
@@ -352,6 +407,7 @@ window.PinalertMap = (function () {
       return;
     }
     popup.setLatLng(popup.getLatLng());
+    panPopupIntoView(popup);
   }
 
   // onPopupOpen is the one popupopen handler. It moves Leaflet's close anchor
@@ -392,6 +448,9 @@ window.PinalertMap = (function () {
 
     var card = popupCardOf(popup);
     openedWhileHidden = !card || card.offsetParent === null;
+    refreshPanPadding();
+    applyPanPadding(popup);
+    panPopupIntoView(popup);
     if (!openedWhileHidden) {
       card.focus({ preventScroll: true });
     }
@@ -571,12 +630,98 @@ window.PinalertMap = (function () {
     return had;
   }
 
+  // onMapResize recomputes the autopan paddings, applies them to every bound
+  // popup so one first opened after a breakpoint change pans with current
+  // values, and re-measures the open popup, but never while focus is inside it
+  // (A59, A68). Leaflet fires the resize event from its size check, which the
+  // window resize event and a phone rotation both reach.
+  function onMapResize() {
+    refreshPanPadding();
+    var ids = Object.keys(markers);
+    for (var i = 0; i < ids.length; i++) {
+      applyPanPadding(markers[ids[i]].getPopup());
+    }
+    var el = activePopup ? activePopup.getElement() : null;
+    if (el && !el.contains(document.activeElement)) {
+      activePopup.update();
+      var card = popupCardOf(activePopup);
+      if (card && card.offsetParent !== null) {
+        openedWhileHidden = false;
+      }
+    }
+  }
+
+  // onMapMoveEnd stands in for the keep in view pan that Leaflet skips when
+  // autopan is off under reduced motion (A68).
+  function onMapMoveEnd() {
+    if (activePopup) {
+      panPopupIntoView(activePopup);
+    }
+  }
+
+  // panPopupIntoView moves the map at once, with no animation, so the open
+  // card sits inside the padded view (A68). It acts only under reduced motion,
+  // when Leaflet's own autopan is off. The offset is clamped per axis with the
+  // top left edge winning, as Leaflet does, so a card larger than the padded
+  // view settles with its top left inside and two calls in a row can never
+  // pan back and forth.
+  function panPopupIntoView(popup) {
+    if (!reducedMotion || !map || !popup || !popup.isOpen()) {
+      return;
+    }
+    if (map.dragging && map.dragging.moving()) {
+      return;
+    }
+    var el = popup.getElement();
+    if (!el) {
+      return;
+    }
+    var box = map.getContainer().getBoundingClientRect();
+    var rect = el.getBoundingClientRect();
+    if (box.width === 0 || box.height === 0 || rect.width === 0 || rect.height === 0) {
+      return;
+    }
+    var left = rect.left - box.left;
+    var right = rect.right - box.left;
+    var top = rect.top - box.top;
+    var bottom = rect.bottom - box.top;
+    var padL = panPad.topLeft[0];
+    var padT = panPad.topLeft[1];
+    var padR = panPad.bottomRight[0];
+    var padB = panPad.bottomRight[1];
+    var dx = 0;
+    var dy = 0;
+    if (right > box.width - padR) {
+      dx = right - (box.width - padR);
+    }
+    if (left - dx < padL) {
+      dx = left - padL;
+    }
+    if (bottom > box.height - padB) {
+      dy = bottom - (box.height - padB);
+    }
+    if (top - dy < padT) {
+      dy = top - padT;
+    }
+    dx = Math.round(dx);
+    dy = Math.round(dy);
+    if (dx !== 0 || dy !== 0) {
+      map.panBy([dx, dy], { animate: false });
+    }
+  }
+
   // focusOpenPopup lands focus on the open card when its pane is shown and
-  // says whether it did (A51).
+  // says whether it did (A51). A popup opened while its pane was hidden was
+  // measured empty, so it is re-measured here, unless focus is already inside
+  // it (A59).
   function focusOpenPopup() {
     var card = popupCardOf(activePopup);
     if (!card || card.offsetParent === null) {
       return false;
+    }
+    if (openedWhileHidden && !activePopup.getElement().contains(document.activeElement)) {
+      activePopup.update();
+      openedWhileHidden = false;
     }
     card.focus({ preventScroll: true });
     return true;
@@ -665,7 +810,7 @@ window.PinalertMap = (function () {
     applyPinName(marker, report);
     var card = buildPopupCard(report);
     cards[report.id] = card;
-    marker.bindPopup(card.el, { className: popupStateClasses(report), minWidth: 340, maxWidth: 340, keepInView: true });
+    marker.bindPopup(card.el, { className: popupStateClasses(report), minWidth: 340, maxWidth: 340, keepInView: true, autoPan: !reducedMotion, autoPanPaddingTopLeft: panPad.topLeft, autoPanPaddingBottomRight: panPad.bottomRight });
     marker.on('click', function () {
       Pinalert.select(report.id, 'map');
     });
@@ -726,7 +871,11 @@ window.PinalertMap = (function () {
     if (opts && opts.opener === 'list') {
       listOpenerId = String(id);
     }
-    map.flyTo(marker.getLatLng(), 16);
+    if (reducedMotion) {
+      map.setView(marker.getLatLng(), 16, { animate: false });
+    } else {
+      map.flyTo(marker.getLatLng(), 16);
+    }
     marker.openPopup();
     if (listOpenerId !== null && marker.isPopupOpen()) {
       popupOpener = { id: listOpenerId, kind: 'list' };
