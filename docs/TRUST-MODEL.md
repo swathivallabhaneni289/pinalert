@@ -74,13 +74,40 @@ A refused vote returns the service error `ErrVoterTooFar`, which the API answers
 
 1 km was chosen over 2 km and over having no distance rule. The check runs when the vote is written, so no schema change was needed.
 
-The tests are `TestWithinVoteRadiusBoundary`, `TestCastVoteRejectsTooFar`, `TestCastVoteCheckOrder` and `TestCastVoteReporterExemption`.
+The sentence is written by the function `TooFarMessage` in `internal/service/geo.go`, from `MaxVoteDistanceKm`, so the number in the sentence and the number in the rule cannot differ.
+
+The tests are `TestHaversine`, `TestWithinVoteRadiusBoundary`, `TestCastVoteRejectsTooFar`, `TestCastVoteCheckOrder` and `TestCastVoteReporterExemption`.
 
 ## Votes cast before the 1 km rule
 
 Votes written before this phase were never distance checked. They cannot be checked now, because the votes table stores only the voter's cell and never the coordinates. They are grandfathered: they keep counting toward N, the resolver gate and reporter ratings.
 
 A database created before this phase may therefore hold votes cast from far away. The distance tests always run on a fresh disposable database for this reason.
+
+## The two counters
+
+Every report shows two counters, `N confirmed` and `M disputed`. Both always show, also at 0.
+
+- The confirmed count N is the number of distinct confirming places, `ConfirmCells` from `BuildVoteTally`. The disputed count M is `DisputeCells`.
+- Both are built by `filterVoteRows`, which skips the reporter's own content votes, keeps one current row per account, keeps confirm and dispute rows only, and uses the voter's place as the server computed it at precision 7.
+- The same N gates Live, drives the display, the still current signal and the reporter classifier. There is one counting rule, in one function, and nothing recounts it.
+- The surface numerals are written by the server as `confirmed_text` and `disputed_text`: "0" to "99", then "99+". The exact counts stay in `confirmed_places` and `disputed_places`, and the panel sentences always carry the real number.
+- N is a lower bound on people, not a headcount. See "Honest limits" below.
+
+The panel sentences are written by the server. T is `IndependentAgreementThreshold`.
+
+| Line | Case | Text |
+|------|------|------|
+| Lead | Provisional | `Needs {T} confirmations before this counts as confirmed.` |
+| Lead | expired, not retracted (Activity page) | `This report has expired. It can no longer be confirmed.` |
+| Confirmed | N is 0 | `No one has confirmed this yet. Counts separate places, not votes.` |
+| Confirmed | N is 1 | `1 person in 1 place confirmed this. Counts separate places, not votes.` |
+| Confirmed | N is 2 or more | `{N} people in {N} different places confirmed this. Counts separate places, not votes.` |
+| Disputed | M is 0 | `No one nearby has disputed this. Counts separate places, not votes.` |
+| Disputed | M is 1 | `1 person in 1 place disputed this. Counts separate places, not votes.` |
+| Disputed | M is 2 or more | `{M} people in {M} different places disputed this. Counts separate places, not votes.` |
+
+The tests that pin this section are `TestBuildTrustCountsMatchTally`, `TestTrustCountLabel`, `TestTrustCountsDistinctPlacesNotVotes` and `TestTrustCountUnderConcurrentVotes`. The last one casts votes from many places at once and needs a disposable database.
 
 ## Still current signal
 
@@ -196,7 +223,7 @@ The roadmap asks for a fast decaying "is this still current" confidence score (T
 
 One account re-tapping Confirm moves only its own place's time, so it cannot refresh the signal without a second, genuinely different place (D-05). Faking Up to date costs 2 verified accounts and 2 claimed locations, the same as forging Live. A spoofed location defeats it exactly as it defeats the place rule. See "Honest limits" below.
 
-The tests that pin this section are `TestCurrencyScoreBoundaries`, `TestCurrencyNotYetCorroborated`, `TestCurrencyRetapCannotRefresh`, `TestCurrencyDisputes`, `TestCurrencyWindowFollowsLifetime`, `TestCurrencyMonotone`, `TestFadeStageMapping` and `TestTrustCopyCurrencyIsPlainText`, rerun with `go test ./internal/service/ -run 'TestCurrency|TestFadeStageMapping|TestTrustCopyCurrencyIsPlainText' -count=1`.
+The tests that pin this section are `TestCurrencyScoreBoundaries`, `TestCurrencyNotYetCorroborated`, `TestCurrencyRetapCannotRefresh`, `TestCurrencyDisputes`, `TestCurrencyWindowFollowsLifetime`, `TestCurrencyMonotone`, `TestFadeStageMapping` and `TestTrustCopyCurrencyIsPlainText`, rerun with `go test ./internal/service/ -run 'TestCurrencyScoreBoundaries|TestCurrencyNotYetCorroborated|TestCurrencyRetapCannotRefresh|TestCurrencyDisputes|TestCurrencyWindowFollowsLifetime|TestCurrencyMonotone|TestFadeStageMapping|TestTrustCopyCurrencyIsPlainText' -count=1`.
 
 ## Reporter reliability
 
@@ -334,7 +361,108 @@ The roadmap asks for a slow decaying "is this source reliable" score (TRUST-07, 
 - A public rating links one person's reports together. This is intended (D-10), and no account id or email is shown.
 - A faked location defeats the place rule behind every outcome exactly as it defeats the counters. See "Honest limits" below. The rating claims no protection against it.
 
-The tests that pin this section are `TestClassifyOutcome`, `TestReliabilityTable`, `TestReliabilityInvariants`, `TestReliabilityDecayAndWindow`, `TestReporterSignalsGroupByAccount`, `TestReporterSignalsNewAndNone` and `TestTrustCopyReporterIsPlainText`, rerun with `go test ./internal/service/ -run 'TestClassifyOutcome|TestReliability|TestReporterSignals|TestTrustCopyReporterIsPlainText' -count=1` (no database needed). The history read tests `TestReporterHistoryBounds` and `TestReporterHistoryUsesAccountNotSession` need a disposable database.
+The tests that pin this section are `TestClassifyOutcome`, `TestReliabilityTable`, `TestReliabilityInvariants`, `TestReliabilityDecayAndWindow`, `TestReporterSignalsGroupByAccount`, `TestReporterSignalsNewAndNone` and `TestTrustCopyReporterIsPlainText`, rerun with `go test ./internal/service/ -run 'TestClassifyOutcome|TestReliabilityTable|TestReliabilityInvariants|TestReliabilityDecayAndWindow|TestReporterSignalsGroupByAccount|TestReporterSignalsNewAndNone|TestTrustCopyReporterIsPlainText' -count=1` (no database needed). The history read tests `TestReporterHistoryBounds` and `TestReporterHistoryUsesAccountNotSession` need a disposable database, and so does `TestReporterSignalFromSeededHistory`, which seeds a real history and reads the signal through the API.
+
+## One trust object on every surface
+
+`BuildTrust` in `internal/service/trustview.go` builds one `Trust` per report. `Nearby`, `CastVote` and `ActivityForAccount` call it with `now` captured once per request, so a feed row, a vote response and an Activity row read the same clock. The handler function `trustToResponse` maps it to the `trust` key of `GET /api/reports`, of every vote response and of the Activity page `data-trust` attribute. The object is always present.
+
+| Key | Type | Rule |
+|-----|------|------|
+| `confirmed_places` | int | N, the distinct confirming places. |
+| `disputed_places` | int | M, the distinct disputing places. |
+| `confirmed_text` | string | "0" to "99", then "99+". |
+| `disputed_text` | string | The same rule. |
+| `lead_sentence` | string | Empty for a retracted report. For an expired one the expiry line. For a Provisional one the lead sentence. Otherwise empty. |
+| `confirmed_sentence` | string | Always set. |
+| `disputed_sentence` | string | Always set. |
+| `currency.band` | string | `up_to_date`, `getting_old`, `needs_reconfirming`, `not_yet_corroborated` or `not_applicable`. |
+| `currency.score` | int or null | Null for `not_yet_corroborated` and `not_applicable`. |
+| `currency.label` | string | The word, or empty when no word shows. |
+| `currency.sentence` | string | Empty exactly when `label` is empty. |
+| `currency.score_sentence` | string | Empty exactly when the score is null. |
+| `currency.recent_places` | int | Distinct confirming places inside the window. |
+| `currency.window_minutes` | int | The window in whole minutes. |
+| `currency.fade_stage` | string or null | `fresh`, `aging` or `stale`; null for critical, rescue needed, Hidden, Retracted and `not_applicable` reports. |
+| `reporter.tag` | string | `reliable`, `mixed`, `unreliable`, `new` or `none`. |
+| `reporter.score` | int or null | Null for `new` and `none`. |
+| `reporter.label` | string | Empty for `none`. |
+| `reporter.sentence` | string | Empty for `none`. |
+| `reporter.score_sentence` | string | Empty when the score is null. |
+| `reporter.judged_reports` | int | J, the judged reports. |
+| `reporter.corroborated_reports` | int | C, the corroborated reports. |
+
+What never leaves the server: the account id, the email, the voter's place, the session id and any raw vote total. `TestTrustResponseOmitsIdentifiers` checks the live response, and `TestSwaggerSpecCoversRoutes` checks the documented field names against the same rule.
+
+The same object reaches every surface, and these tests prove it: `TestTrustAttachedOnEveryReadPath`, `TestFeedTrustMatchesCastVoteTrust`, `TestFeedSignalsMatchCastVoteSignals`, `TestCastVoteTrustMatchesNearbyTrust` and `TestProfileRowsCarryTrustJSON`.
+
+Cost bounds: a feed read makes one batched vote read and one history read, and rates at most `MaxReporterAccountsPerRead` reporter accounts, nearest first. Reports past the cap read `none`. `TestNearbyBatchesVoteReadsOnceWithReporters` and `TestNearbyReporterAccountCap` pin this.
+
+Display only: neither signal hides a report, dims it beyond the time fade or reorders it. Critical and rescue needed rows keep the time fade only (D-14). `TestNearbyRatingNeverChangesVisibilityOrOrder` and `TestFadeUsesCombinedStage` pin this, and `TestTrustModuleHasNoThresholdsOrSinks` pins that the browser holds no threshold of its own.
+
+## Browser hints, server decisions
+
+The server decides every vote. The browser only helps the voter get a fresh location to the server and shows a hint.
+
+- The refusal: a vote from beyond 1 km gets HTTP 403, field `location`, and the sentence `TooFarMessage()` returns: "Too far to vote. You need to be within 1 km of this report." The body never holds a distance. The distance itself comes from `haversineKm` and the comparison from `withinVoteRadius`. `TestCastVoteTooFar` pins the response.
+- The silent refresh (D-02): a cached fix younger than 60 seconds is reused. Otherwise, if location permission is already granted, the browser takes one silent fresh fix. After a refusal with field `location` it retries once with a fresh fix. It never prompts for each vote. `TestVoteTransportRefreshesAndRetriesOnce` pins this.
+- The too far hint (D-22): the page carries `data-vote-radius-km`, which equals `MaxVoteDistanceKm` (`TestPageShellCarriesVoteRadius`). With a cached fix younger than 120 seconds, Confirm, Dispute and Mark resolved on a report farther than that radius get `aria-disabled` and the same sentence as visible text. The reporter's own Mark resolved stays enabled, and a stale fix never disables a button. `TestVoteHint` pins this.
+
+The hint is advisory. A forced vote is still refused by the server.
+
+## Where the roadmap words are met
+
+| Roadmap words | What ships | Where in code | Test |
+|---------------|------------|---------------|------|
+| "confirmed by N nearby" | The counter `N confirmed`: N distinct places, every vote cast from within 1 km | `BuildTrust`, `CastVote` | `TestBuildTrustCountsMatchTally`, `TestCastVoteRejectsTooFar` |
+| deliberately chosen, documented geohash precision | Precision 7, with the reasoning in "What counts as a place" | `voterGeohashPrecision` | `TestGeohashPrecisionWitnesses` |
+| not the raw number of votes | Distinct places, so repeat votes and a crowd in one place count once | `BuildVoteTally` | `TestTrustCountsDistinctPlacesNotVotes` |
+| two distinct trust signals side by side | The still current word and the reporter tag in one signals row | `BuildTrust` | `TestFeedSignalsMatchCastVoteSignals`, `TestTrustBlockMountedOnBothSurfaces` |
+| fast decaying still current confidence score | `currency.score` | `buildCurrency` | `TestCurrencyScoreBoundaries` |
+| slow decaying source reliable score | `reporter.score` | `ScoreReliability` | `TestReliabilityTable`, `TestReliabilityDecayAndWindow` |
+
+How the word score is met (D-08, TRUST-07), for both halves: each score is an integer from 0 to 100 (`currency.score` and `reporter.score`) from a documented formula over real votes. It is recomputed on every read and never stored. The band or tag is cut from the same integer, so the word and the number cannot disagree. A score is null when there is no basis for one: fewer than 2 confirming places over the life of the report, or `not_applicable`, for the still current score, and New reporter or none for the reporter score. The numbers show on screen in the map popup only (D-09), and Phase 6 can sort on them server side. The two subsections called "How the roadmap word score is met" in the still current and reporter sections give the detail, so it is not repeated here.
+
+The visible form of "confirmed by N nearby" is the counter `N confirmed`, with the panel sentence explaining that N counts places. That is the form CONTEXT records for the first roadmap criterion.
+
+## Hand offs to later phases
+
+- Phase 03.1 reuses `ClassifyOutcome` as a pure function, so history labels cannot disagree with the rating.
+- Phase 03.2 builds update wording from the same trust object. It should treat the Reliable reporter tag as farmable at the price stated in "Honest limits": extra verified accounts plus a claimed location.
+- Phase 4 owns vote rate limiting.
+- Phase 5 demo mode has to handle far away visitors, who cannot vote on seeded reports under the 1 km rule. It should place simulated reports near the visitor or exempt demo reports. It may seed clearly labelled demo accounts to show a rated reporter.
+- Phase 6 may sort on the integer scores server side. It must never use them to bury a critical or rescue needed report (D-14), and must never bake a count or a rating into a shareable card image.
+- Phase 8's report page reuses the trust block unchanged.
+
+## Keeping this document true
+
+`TestTrustModelDocMatchesCode` in `internal/service/trust_model_doc_test.go` guards this document. It checks the constants table below against the compiled values, that every named identifier is declared where it is said to be, that `CastVote`'s refusal maps to HTTP 403 with field `location` and the sentence above, that every test named here exists, the heading order and the plain text rules (no long dashes, no claim that fake locations are stopped).
+
+| Constant | File | Value |
+|----------|------|-------|
+| `MaxVoteDistanceKm` | `internal/service/geo.go` | 1 km |
+| `voterGeohashPrecision` | `internal/service/trust.go` | 7 |
+| `IndependentAgreementThreshold` | `internal/service/visibility.go` | 2 |
+| `CurrencyWindowDivisor` | `internal/service/currency.go` | 4 |
+| `CurrencyPointsPerWindow` | `internal/service/currency.go` | 25 |
+| `UpToDateMinScore` | `internal/service/currency.go` | 75 |
+| `GettingOldMinScore` | `internal/service/currency.go` | 50 |
+| `ReliabilityMinJudged` | `internal/service/reliability.go` | 5 |
+| `ReliabilityHalfLife` | `internal/service/reliability.go` | 30 days |
+| `ReliabilityWindow` | `internal/service/reliability.go` | 90 days |
+| `ReliabilityRowCap` | `internal/service/reliability.go` | 30 |
+| `UnconfirmedCredit` | `internal/service/reliability.go` | 0.25 |
+| `ReliableMinScore` | `internal/service/reliability.go` | 75 |
+| `MixedMinScore` | `internal/service/reliability.go` | 35 |
+| `MaxReporterAccountsPerRead` | `internal/service/report.go` | 200 |
+
+When you change one of these, change the table in the same commit. The test fails with the row name when they differ.
+
+Generated code: run `make sqlc` after editing a `.sql` query and `make swag` after changing a handler annotation or a response struct, and commit the output. `git status --porcelain` should then stay empty for `internal/store/sqlc` and for `docs/docs.go`, `docs/swagger.json` and `docs/swagger.yaml`.
+
+Databases: tests that need Postgres run against a database created for the run and dropped after it, never the one a dev server uses, because `testutil.NewTestDB` truncates every table.
+
+Upgrading: an existing database needs `make migrate` once after this phase merges, to add `idx_reports_session_expires` from migration 00005. Votes cast before the 1 km rule keep counting. See "Votes cast before the 1 km rule".
 
 ## Honest limits
 
@@ -344,6 +472,9 @@ The tests that pin this section are `TestClassifyOutcome`, `TestReliabilityTable
 - The real cost of adding a place is one more verified email account plus a claimed location for it.
 - Client coordinates cannot be verified. A spoofed location defeats both the cell rule and the 1 km rule.
 - Pinalert does not read GPS accuracy and does not look for mock locations.
+- Phone GPS error of tens of metres can put an honest voter standing near the 1 km line on the wrong side of it. Accuracy is not sent with a vote, and the silent refresh only replaces a stale fix, it does not make a fix more exact.
+- Counters, bands and fades update on the 30 second poll, so a screen can be one poll behind the server.
+- The too far hint in the browser is advisory. Only the server decides whether a vote counts.
 
 ## Out of scope for this model
 
@@ -353,3 +484,10 @@ The tests that pin this section are `TestClassifyOutcome`, `TestReliabilityTable
 - Vote rate limiting (Phase 4).
 - Email alias normalisation and disposable email blocking.
 - Re-confirmation extending a report's expiry.
+- A report page with comments (Phase 8).
+- Demoting stale non critical reports to Provisional, or dropping them before they expire.
+- Push notifications when a count crosses a threshold, or when a confirmed report goes quiet or is retracted.
+- A public reporter profile page, or badge tiers beyond the four tags.
+- A stored or materialised reliability score refreshed by a job. Both scores are recomputed on every read.
+- Triage ordering by these signals (Phase 6).
+- Demo mode (Phase 5).
