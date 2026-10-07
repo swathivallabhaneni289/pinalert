@@ -449,7 +449,8 @@ func TestIconGlyphsAreClassDriven(t *testing.T) {
 // age, visibility) onto a marker's popup at the moment it is first bound,
 // keeps them current on every reconcile pass afterward through the popup's
 // own live container element, and never unbinds an already open popup to
-// do it. render()'s own comment names dropping an open popup a reader is
+// do it. Since plan 03-17 the popup content is built once and updated in
+// place instead of being replaced on every poll. render()'s own comment names dropping an open popup a reader is
 // looking at as exactly the failure its reconcile-by-id loop exists to
 // prevent.
 //
@@ -464,10 +465,10 @@ func TestMapPopupCarriesReportStateClasses(t *testing.T) {
 	}
 	text := stripCSSComments(string(raw))
 
-	// The content argument passed to bindPopup( itself contains a nested
-	// call (buildPopupContent(report)), so a paren-based terminator would
-	// read past the one call this window means to scope. marker.on( is the
-	// statement that always immediately follows a new marker's bindPopup(
+	// The content argument passed to bindPopup( is the prebuilt card's
+	// element (card.el), and the options object follows it on the same line,
+	// so a paren-based terminator would stop inside the options. marker.on( is
+	// the statement that always immediately follows a new marker's bindPopup(
 	// call in this file, so it is the deliberate terminator instead.
 	const bindAnchor = "bindPopup("
 	const bindTerminator = "marker.on("
@@ -503,11 +504,22 @@ func TestMapPopupCarriesReportStateClasses(t *testing.T) {
 			"path that reaches an already-opened popup's live container", getElementAccessor)
 	}
 
-	const reconcileUpdate = "setPopupContent("
-	if !strings.Contains(text, reconcileUpdate) {
-		t.Errorf("static/js/map.js no longer calls %q on the reconcile path, the mechanism that "+
-			"keeps an already-bound marker's popup content current on every 30 second poll",
-			reconcileUpdate)
+	// A19: the card is built once and every poll updates it in place, so the
+	// reconcile path calls updatePopupCard and Leaflet's content setter is
+	// gone. The setter literal is split so this file does not name it whole.
+	if !strings.Contains(text, "function updatePopupCard(card, report)") {
+		t.Errorf("static/js/map.js has no updatePopupCard(card, report), the mechanism that keeps an " +
+			"already-bound marker's popup current on every 30 second poll")
+	}
+	upsertBody := jsFunctionBody(t, text, "upsertMarker(report)")
+	if !strings.Contains(upsertBody, "updatePopupCard(") {
+		t.Errorf("upsertMarker does not call updatePopupCard( on the reconcile path")
+	}
+	reconcileSetter := "set" + "PopupContent("
+	if strings.Contains(text, reconcileSetter) {
+		t.Errorf("static/js/map.js still calls %q. The card is built once per marker and updated in "+
+			"place, which is what keeps an open panel and an open confirmation across a poll (A19)",
+			reconcileSetter)
 	}
 
 	// The negative form of render()'s never-drop-an-open-popup constraint:

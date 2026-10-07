@@ -1035,19 +1035,19 @@ func TestBothSurfacesMountTheSameVisibilityTag(t *testing.T) {
 			"insertion point 02-05's artifact table reserved", metaIdx, tagIdx, voteBlockIdx)
 	}
 
-	popupBody := jsFunctionBody(t, texts["static/js/map.js"], "buildPopupContent(report)")
-	descIdx := strings.Index(popupBody, "wrap.appendChild(description)")
-	popupTagIdx := strings.Index(popupBody, "PinalertVisibility.createVisibilityTag(")
+	popupBody := jsFunctionBody(t, texts["static/js/map.js"], "buildPopupCard(report)")
+	headerIdx := strings.Index(popupBody, "PinalertVisibility.createVisibilityTag(")
+	titleIdx := strings.Index(popupBody, "Pinalert.setText(titleEl, report.description)")
 	popupVoteBlockIdx := strings.Index(popupBody, "PinalertVotes.createVoteBlock(")
-	if descIdx == -1 || popupTagIdx == -1 || popupVoteBlockIdx == -1 {
-		t.Fatalf("buildPopupContent's own body is missing one of the three anchors needed to check "+
-			"insertion order (description append=%d, tag builder=%d, vote block builder=%d)",
-			descIdx, popupTagIdx, popupVoteBlockIdx)
+	if headerIdx == -1 || titleIdx == -1 || popupVoteBlockIdx == -1 {
+		t.Fatalf("buildPopupCard's own body is missing one of the three anchors needed to check "+
+			"insertion order (tag builder=%d, title text=%d, vote block builder=%d)",
+			headerIdx, titleIdx, popupVoteBlockIdx)
 	}
-	if !(descIdx < popupTagIdx && popupTagIdx < popupVoteBlockIdx) {
-		t.Errorf("buildPopupContent's own body must append the visibility tag after the description "+
-			"and before the vote block is built (found description=%d, tag=%d, vote block=%d)",
-			descIdx, popupTagIdx, popupVoteBlockIdx)
+	if !(headerIdx < titleIdx && titleIdx < popupVoteBlockIdx) {
+		t.Errorf("buildPopupCard's own body must build the visibility tag in the header, then write "+
+			"the title, then build the vote block (found tag=%d, title=%d, vote block=%d)",
+			headerIdx, titleIdx, popupVoteBlockIdx)
 	}
 
 	// Honest limits of this test's claim: static inspection proves the
@@ -1673,13 +1673,10 @@ func TestResolveControlsMeetTouchTargetAndUseTokensOnly(t *testing.T) {
 // resolves through clears WCAG AA contrast in both themes — the
 // machine-checkable form of "legible in both themes", not a hope.
 //
-// The background is now severity aware: it reads var(--severity-tint,
-// var(--color-bg)) rather than a bare var(--color-bg), so the popup box
-// picks up the same tint the feed row already reads. This test only proves
-// the declaration itself and the fallback pairing; resolving each actual
-// tint value (severity, provisional, hidden/retracted, across both themes)
-// is TestMapPopupTintTracksFeedRowAcrossStatesAndThemes's own job, placed
-// directly after this test.
+// Since plan 03-17 (A10) the popup is a neutral card: the background reads
+// var(--color-bg) and the severity tint stays on the feed row. This test
+// proves the declaration itself. TestMapPopupTintTracksFeedRowAcrossStatesAndThemes
+// below proves the row still reads the tint and the popup does not.
 //
 // Honest limit of this test's claim, matching this package's convention:
 // static inspection proves the declarations exist and resolve through
@@ -1731,8 +1728,8 @@ func TestMapPopupSurfaceIsThemeAware(t *testing.T) {
 		t.Fatalf("expected the popup-surface rule to declare exactly 2 properties (background, "+
 			"color), found %d: %v", len(decls), decls)
 	}
-	if v := decls["background"]; v != "var(--severity-tint, var(--color-bg))" {
-		t.Errorf("popup-surface rule must declare background: var(--severity-tint, var(--color-bg)), found %q", v)
+	if v := decls["background"]; v != "var(--color-bg)" {
+		t.Errorf("popup-surface rule must declare background: var(--color-bg), the neutral card (A10), found %q", v)
 	}
 	if v := decls["color"]; v != "var(--color-text)" {
 		t.Errorf("popup-surface rule must declare color: var(--color-text), found %q", v)
@@ -1779,16 +1776,14 @@ func TestMapPopupSurfaceIsThemeAware(t *testing.T) {
 	}
 }
 
-// TestMapPopupTintTracksFeedRowAcrossStatesAndThemes closes the remaining
-// half of the gap TestMapPopupSurfaceIsThemeAware above leaves open: that
-// test proves the popup surface rule's declaration shape, this one proves
-// the popup is wired to the SAME system the feed row reads rather than a
-// parallel one, that the hidden/retracted override reproduces the row's
-// actual RENDERED result (not only its declared keyword), that every
-// resolved tint traces back to the same shipped severity/provisional rules
-// main.css and trust.css already declare, and that popup body copy and the
-// close glyph both clear WCAG contrast against every one of those tints in
-// every theme.
+// TestMapPopupTintTracksFeedRowAcrossStatesAndThemes still proves the feed row
+// reads its background through --severity-tint, and since plan 03-17 (A10) it
+// also proves the popup surface does not: the popup is a neutral card on
+// --color-bg. The hidden/retracted override reproduces the row's actual
+// RENDERED result (not only its declared keyword), every resolved tint traces
+// back to the same shipped severity/provisional rules main.css and trust.css
+// already declare, and the popup's text and muted meta text both clear WCAG
+// contrast on --color-bg in every theme.
 //
 // Honest limit of this test's claim, matching this package's convention:
 // static resolution proves the declarations exist and resolve to these
@@ -1807,8 +1802,8 @@ func TestMapPopupTintTracksFeedRowAcrossStatesAndThemes(t *testing.T) {
 	}
 	trustRules := parseCSSRules(string(trustRaw))
 
-	// Claim one: same system, not a parallel one. Both the feed row and the
-	// popup surface must read their background through --severity-tint.
+	// Claim one: the feed row reads its background through --severity-tint.
+	// The popup surface, checked below, no longer does (A10).
 	rowRule, ok := ruleBySelector(mainRules, ".report-row")
 	if !ok {
 		t.Fatalf("no exact %q rule found in static/css/main.css", ".report-row")
@@ -1833,10 +1828,13 @@ func TestMapPopupTintTracksFeedRowAcrossStatesAndThemes(t *testing.T) {
 		t.Fatalf("no rule in trust.css covers both %q and %q", wrapperClass, tipClass)
 	}
 	popupBackground := declsOf(popupSurfaceRule.declBody)["background"]
-	if !strings.Contains(popupBackground, "--severity-tint") {
-		t.Fatalf("popup surface rule's background %q does not reference --severity-tint. A future "+
-			"edit gave the popup its own private property instead of reusing the feed row's system",
+	if popupBackground != "var(--color-bg)" {
+		t.Fatalf("popup surface rule's background %q must be var(--color-bg), the neutral card (A10)",
 			popupBackground)
+	}
+	if strings.Contains(popupBackground, "--severity-tint") {
+		t.Fatalf("popup surface rule's background %q still reads --severity-tint, but the tint left "+
+			"the popup in Phase 3 (A10)", popupBackground)
 	}
 
 	// Claim two: the hidden/retracted popup override resolves to the same
@@ -1871,103 +1869,44 @@ func TestMapPopupTintTracksFeedRowAcrossStatesAndThemes(t *testing.T) {
 			"reveal map tiles rather than the app's own base surface", popupVisTintToken, bodyBackgroundToken)
 	}
 
-	// Claim three: the tint values themselves come from the shipped severity
-	// rules, resolved down to a token name rather than assumed.
-	type severityCase struct {
-		state    string
-		rules    []cssRule
-		selector string
-	}
-	sevCases := []severityCase{
-		{"sev-low", mainRules, ".sev-low"},
-		{"sev-medium", mainRules, ".sev-medium"},
-		{"sev-critical", mainRules, ".sev-critical"},
-		{"vis-provisional", trustRules, ".vis-provisional"},
-	}
-
-	surfaceTokens := map[string]string{} // state name -> resolved token name
-	for _, c := range sevCases {
-		rule, ok := ruleBySelector(c.rules, c.selector)
-		if !ok {
-			t.Fatalf("no exact %q rule found", c.selector)
-		}
-		val, ok := declsOf(rule.declBody)["--severity-tint"]
-		if !ok {
-			t.Fatalf("%q does not declare --severity-tint", c.selector)
-		}
-		token, ok := bareVarName(val)
-		if !ok {
-			t.Fatalf("%q's --severity-tint value %q is not a bare var() reference", c.selector, val)
-		}
-		surfaceTokens[c.state] = token
-	}
-	// The base surface the hidden/retracted popup state resolves to, from
-	// claim two above. Included here so claim four's contrast matrix covers
-	// it alongside the three severity tints and the provisional tint.
-	surfaceTokens["hidden-retracted"] = popupVisTintToken
-
-	needed := []string{"--color-text", "--color-text-muted"}
-	for _, token := range surfaceTokens {
-		needed = append(needed, token)
-	}
-	light1, light2, dark1, dark2 := extractThemeTokens(mainRules, needed)
+	// Claims three and four (A10): the popup is a neutral card, so one matrix
+	// over the four theme sources replaces the old per tint matrix. The text
+	// colour is the popup body copy and the muted colour is the meta text and
+	// the resting close glyph, so each must clear 4.5:1 on --color-bg.
+	light1, light2, dark1, dark2 := extractThemeTokens(mainRules,
+		[]string{"--color-bg", "--color-text", "--color-text-muted"})
 	themeSources := map[string]themeTokens{
 		`light :root`:                        light1,
 		`light :root[data-theme="light"]`:    light2,
 		`dark @media (prefers-color-scheme)`: dark1,
 		`dark :root[data-theme="dark"]`:      dark2,
 	}
-
-	for state, token := range surfaceTokens {
-		for themeName, tokens := range themeSources {
-			hex, ok := tokens[token]
-			if !ok {
-				t.Fatalf("%s / %s: token %q not found in theme token table", state, themeName, token)
-			}
-			if !strings.HasPrefix(hex, "#") {
-				t.Fatalf("%s / %s: token %q resolved to %q, not a hex literal", state, themeName, token, hex)
-			}
+	for themeName, tokens := range themeSources {
+		bgHex, ok := tokens["--color-bg"]
+		if !ok {
+			t.Fatalf("%s: --color-bg not found", themeName)
 		}
-	}
-
-	// Claim four: the contrast matrix. Every resolved surface from claim
-	// three, plus the base surface from claim two, across all four theme
-	// sources: --color-text must clear 4.5:1 (the popup's body copy) and
-	// --color-text-muted must clear 3.0:1 (the close glyph, whose colour
-	// Task 1 moved onto that token).
-	for state, token := range surfaceTokens {
-		for themeName, tokens := range themeSources {
-			surfaceHex := tokens[token]
-			textHex, ok := tokens["--color-text"]
+		for _, name := range []string{"--color-text", "--color-text-muted"} {
+			fgHex, ok := tokens[name]
 			if !ok {
-				t.Fatalf("%s: --color-text not found", themeName)
+				t.Fatalf("%s: %s not found", themeName, name)
 			}
-			mutedHex, ok := tokens["--color-text-muted"]
-			if !ok {
-				t.Fatalf("%s: --color-text-muted not found", themeName)
-			}
-			ctx := state + " / " + themeName
-			textRatio := wcagContrastRatio(t, surfaceHex, textHex, ctx)
-			if textRatio < 4.5 {
-				t.Errorf("%s: --color-text on the %s tint (%s) contrast is %.2f:1, below the 4.5:1 "+
-					"WCAG AA floor for popup body copy", ctx, state, surfaceHex, textRatio)
-			}
-			mutedRatio := wcagContrastRatio(t, surfaceHex, mutedHex, ctx)
-			if mutedRatio < 3.0 {
-				t.Errorf("%s: --color-text-muted on the %s tint (%s) contrast is %.2f:1, below the "+
-					"3.0:1 graphical-object floor for the close glyph", ctx, state, surfaceHex, mutedRatio)
+			if ratio := wcagContrastRatio(t, bgHex, fgHex, themeName+" / "+name); ratio < 4.5 {
+				t.Errorf("%s: %s on --color-bg contrast is %.2f:1, below the 4.5:1 WCAG AA floor for "+
+					"the popup meta text and the close glyph at rest", themeName, name, ratio)
 			}
 		}
 	}
 
 	// Both close button rules must exist by their exact selector heads, so
-	// the specificity ladder Task 1 built cannot be silently shortened back
-	// under Leaflet's own.
-	const closeBaseSelector = ".leaflet-container .leaflet-popup a.leaflet-popup-close-button"
+	// the specificity ladder cannot be silently shortened back under Leaflet's
+	// own. Plan 03-17 (A20) moved the heads to the :not([hidden]) form and
+	// replaced the focus state with focus-visible.
+	const closeBaseSelector = ".leaflet-container .leaflet-popup a.leaflet-popup-close-button:not([hidden])"
 	if _, ok := ruleBySelector(trustRules, closeBaseSelector); !ok {
 		t.Errorf("no exact %q rule found in static/css/trust.css", closeBaseSelector)
 	}
-	const closeHoverFocusSelector = closeBaseSelector + ":hover,\n" + closeBaseSelector + ":focus"
+	const closeHoverFocusSelector = closeBaseSelector + ":hover,\n" + closeBaseSelector + ":focus-visible"
 	if _, ok := ruleBySelector(trustRules, closeHoverFocusSelector); !ok {
 		t.Errorf("no exact %q rule found in static/css/trust.css", closeHoverFocusSelector)
 	}

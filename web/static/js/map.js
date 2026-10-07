@@ -4,25 +4,28 @@
 // reports fetch. map.js only subscribes to the shared store and reconciles
 // Leaflet markers against Pinalert.state.reports.
 //
-// SECURITY (T-01-03, T-01-17): marker badge markup is assembled from fixed
-// strings and Pinalert.iconClass's validated class name only — no report-
-// authored value ever appears in it. Popups are built as DOM elements
-// (never a markup string) and passed to Leaflet's bindPopup/setPopupContent,
-// which appendChild()s an Element instead of using innerHTML when given one.
-// The popup now carries interactive controls too, still assembled as DOM
-// elements and handed to that same Leaflet API, so adding buttons changes
-// nothing about that guarantee. The popup and the pin badge now also carry
-// a server-supplied state value, validated against a fixed list before it
-// is reflected into a class name or an attribute — the same discipline the
-// category value has always been under here. The popup's own OUTER Leaflet
-// container now carries that same set of three validated state classes too
-// (severity, age, visibility), the same values buildBadgeElement already
-// puts on the pin badge, so no new class of value ever reaches the DOM.
+// SECURITY (T-01-03, T-01-17, T-03-06): marker badge markup is assembled from
+// fixed strings and Pinalert.iconClass's validated class name only, with no
+// report-authored value anywhere in it. Each popup is built exactly once per
+// marker as a tree of DOM elements (never a markup string) and handed to
+// Leaflet as an Element. Every 30 second poll then calls updatePopupCard,
+// which writes text, classes and attributes on the existing nodes, so an open
+// popup, an open confirmation and an open trust panel survive a poll. Strings
+// reach the card only through Pinalert.setText and class names only through
+// validated helpers. The pin badge and the popup container carry a
+// server-supplied state value, validated against a fixed list before it is
+// reflected into a class name or an attribute, the same discipline the
+// category value has always been under here. The popup's own outer Leaflet
+// container carries the same set of three validated state classes (severity,
+// age, visibility) that buildBadgeElement puts on the pin badge, so no new
+// class of value ever reaches the DOM.
 window.PinalertMap = (function () {
   'use strict';
 
   var map = null;
   var markers = {}; // report id -> L.Marker
+  var cards = {}; // report id -> popup card (see buildPopupCard)
+  var popupTitleSeq = 0;
 
   // replacePrefixedClass is a deliberate third copy of feed.js's and
   // visibility.js's private helper of the same name and behaviour, not an
@@ -117,6 +120,8 @@ window.PinalertMap = (function () {
       map.setMaxZoom(rasterLayer.options.maxZoom);
     }
 
+    map.on('popupopen', onPopupOpen);
+
     Pinalert.subscribe(render);
     Pinalert.onSelect(function (id, source) {
       if (source === 'list') {
@@ -185,57 +190,163 @@ window.PinalertMap = (function () {
     return badge;
   }
 
-  // buildPopupContent constructs the popup as DOM nodes: category label,
-  // severity label, relative time, and the description set via
-  // Pinalert.setText — never a markup string.
-  function buildPopupContent(report) {
-    var wrap = document.createElement('div');
-    wrap.className = 'map-popup';
+  // buildPopupCard constructs the popup card once per marker, as DOM nodes
+  // only (D-20, A21). The order is the header (badge, severity label, state
+  // label), the title, the meta lines, the trust block and the actions. The
+  // card has no footer and no comments link (A11). The report text is the
+  // title and reports have no edit path, so it is written once here. Every
+  // other field is written by updatePopupCard, which this builder ends with.
+  function buildPopupCard(report) {
+    var el = document.createElement('div');
+    el.className = 'popup-card';
+    el.setAttribute('tabindex', '-1');
 
-    var meta = document.createElement('p');
-    meta.className = 'map-popup__meta';
-    var categoryLabel = Pinalert.CATEGORY_LABELS[report.category] || report.category;
-    var severityLabel = Pinalert.SEVERITY_LABELS[report.severity] || report.severity;
-    Pinalert.setText(meta, categoryLabel + ' · ' + severityLabel + ' · ' + Pinalert.relativeTime(report.created_at));
+    var body = document.createElement('div');
+    body.className = 'popup-card__body';
 
-    var description = document.createElement('p');
-    description.className = 'map-popup__description';
-    Pinalert.setText(description, report.description);
-
-    wrap.appendChild(meta);
-    wrap.appendChild(description);
-
-    // Unlike the feed row, this surface builds and updates the tag in one
-    // call: upsertMarker rebuilds the popup's content on every render
-    // rather than updating it in place.
+    var header = document.createElement('div');
+    header.className = 'popup-card__header';
+    var badge = document.createElement('span');
+    badge.className = 'icon-badge icon-badge--sm';
+    var glyph = document.createElement('span');
+    glyph.setAttribute('aria-hidden', 'true');
+    badge.appendChild(glyph);
+    var severity = PinalertTrust.createSeverityLabel();
     var tag = PinalertVisibility.createVisibilityTag();
-    PinalertVisibility.updateVisibilityTag(tag, report);
-    wrap.appendChild(tag);
+    header.appendChild(badge);
+    header.appendChild(severity);
+    header.appendChild(tag);
 
-    // The same trust block the feed row mounts, from the same builder, plus
-    // the two numbers the popup alone shows (D-09, R-07). Built and filled in
-    // one call because upsertMarker rebuilds this content on every render,
-    // until plan 03-17's build once card keeps an open panel across polls.
+    var titleEl = document.createElement('p');
+    titleEl.className = 'popup-card__title';
+    titleEl.id = 'pinalert-popup-title-' + (++popupTitleSeq);
+    Pinalert.setText(titleEl, report.description);
+
+    var meta = document.createElement('div');
+    meta.className = 'popup-card__meta';
+    var metaGlyph = document.createElement('span');
+    metaGlyph.setAttribute('aria-hidden', 'true');
+    var metaLines = document.createElement('div');
+    metaLines.className = 'popup-card__meta-lines';
+    var metaLine = document.createElement('p');
+    metaLine.className = 'popup-card__meta-line';
+    var shelterLine = document.createElement('p');
+    shelterLine.className = 'popup-card__meta-line';
+    shelterLine.hidden = true;
+    metaLines.appendChild(metaLine);
+    metaLines.appendChild(shelterLine);
+    meta.appendChild(metaGlyph);
+    meta.appendChild(metaLines);
+
+    // The popup alone asks for the two scores (D-09).
     var trust = PinalertTrust.createTrustBlock({ showScores: true });
-    PinalertTrust.updateTrustBlock(trust, report.trust);
-    wrap.appendChild(trust.el);
 
-    // The same vote controls block the feed row mounts, from the same
-    // builder — what makes the shared confirm/dispute mechanic
-    // structural rather than a convention two call sites have to
-    // remember. Unlike the feed row, this surface builds and updates in
-    // one call: upsertMarker rebuilds the popup's content on every
-    // render rather than updating it in place, an accepted limitation
-    // votes.js's own click orchestration documents.
+    var actions = document.createElement('div');
+    actions.className = 'popup-card__actions';
     var block = PinalertVotes.createVoteBlock(report.id);
-    PinalertVotes.updateVoteBlock(block, report);
-    wrap.appendChild(block.controls);
-    // The too far sentence slot sits between the buttons and the error and
-    // is owned by votes.js.
-    wrap.appendChild(block.note);
-    wrap.appendChild(block.error);
+    actions.appendChild(block.controls);
+    // The too far sentence slot sits between the buttons and the error and is
+    // owned by votes.js.
+    actions.appendChild(block.note);
+    actions.appendChild(block.error);
 
-    return wrap;
+    body.appendChild(header);
+    body.appendChild(titleEl);
+    body.appendChild(meta);
+    body.appendChild(trust.el);
+    body.appendChild(actions);
+    el.appendChild(body);
+
+    var card = {
+      el: el,
+      glyph: glyph,
+      severity: severity,
+      tag: tag,
+      title: titleEl,
+      metaGlyph: metaGlyph,
+      metaLine: metaLine,
+      shelterLine: shelterLine,
+      trust: trust,
+      votes: block,
+      observer: null,
+      frame: 0
+    };
+    updatePopupCard(card, report);
+    return card;
+  }
+
+  // updatePopupCard refreshes the card on every poll by writing text, classes
+  // and attributes on the nodes buildPopupCard made. It builds nothing and
+  // never touches focus, the trust panel's open state or the vote controls'
+  // own state, which is what lets a poll leave an open popup alone (A19).
+  function updatePopupCard(card, report) {
+    card.glyph.className = Pinalert.iconClass(report.category);
+    card.metaGlyph.className = Pinalert.iconClass(report.category);
+
+    PinalertTrust.updateSeverityLabel(card.severity, report);
+    PinalertVisibility.updateVisibilityTag(card.tag, report);
+
+    // Category and relative time only: no severity word (the label above
+    // says it) and no distance (A24, A31).
+    var categoryLabel = Pinalert.CATEGORY_LABELS[report.category] || report.category;
+    Pinalert.setText(card.metaLine, categoryLabel + ' \u00b7 ' + Pinalert.relativeTime(report.created_at));
+
+    // A shelter adds a second line. The shared formatter returns an empty
+    // string for any other category, and an empty line stays hidden (RR-6).
+    var shelter = Pinalert.formatShelterLine(report);
+    Pinalert.setText(card.shelterLine, shelter || '');
+    card.shelterLine.hidden = !shelter;
+
+    PinalertTrust.updateTrustBlock(card.trust, report.trust);
+    PinalertVotes.updateVoteBlock(card.votes, report);
+  }
+
+  // observePopupCard repositions an open popup when its card changes height,
+  // for example when the resolve confirmation opens (A32). Browsers without
+  // ResizeObserver keep the last position.
+  function observePopupCard(marker, card) {
+    if (typeof ResizeObserver !== 'function') {
+      return;
+    }
+    card.observer = new ResizeObserver(function () {
+      if (card.frame) {
+        return;
+      }
+      card.frame = window.requestAnimationFrame(function () {
+        card.frame = 0;
+        relayoutOpenPopup(marker, card);
+      });
+    });
+    card.observer.observe(card.el);
+  }
+
+  // relayoutOpenPopup moves the open popup to where it already is, which
+  // makes Leaflet recompute its position and re-run the keep in view pan. It
+  // never calls the popup content refresh, because that re-appends the card
+  // and drops keyboard focus (A32).
+  function relayoutOpenPopup(marker, card) {
+    var popup = marker.getPopup();
+    if (!popup || !popup.isOpen()) {
+      return;
+    }
+    popup.setLatLng(popup.getLatLng());
+  }
+
+  // onPopupOpen moves Leaflet's close anchor in front of the card, so the
+  // close button is the first element a keyboard or screen reader user meets
+  // in the popup (A20). Leaflet builds the anchor once per popup and appends it
+  // last, so the move happens on the first open and later opens find it
+  // already first. Moving the node keeps Leaflet's own click listener. Plan
+  // 03-19 extends this same handler.
+  function onPopupOpen(evt) {
+    var container = evt.popup.getElement();
+    if (!container) {
+      return;
+    }
+    var close = container.querySelector('.leaflet-popup-close-button');
+    if (close && close !== container.firstChild) {
+      container.insertBefore(close, container.firstChild);
+    }
   }
 
   // popupStateClasses returns the space joined triple of state classes this
@@ -300,23 +411,30 @@ window.PinalertMap = (function () {
     var icon = L.divIcon({
       html: buildBadgeElement(report),
       className: '',
-      iconSize: [44, 44]
+      iconSize: [44, 44],
+      popupAnchor: [0, -22]
     });
 
     var existing = markers[report.id];
     if (existing) {
-      existing.setLatLng([report.latitude, report.longitude]);
+      var at = existing.getLatLng();
+      if (at.lat !== report.latitude || at.lng !== report.longitude) {
+        existing.setLatLng([report.latitude, report.longitude]);
+      }
       existing.setIcon(icon);
-      existing.setPopupContent(buildPopupContent(report));
+      updatePopupCard(cards[report.id], report);
       syncPopupState(existing, report);
       return;
     }
 
     var marker = L.marker([report.latitude, report.longitude], { icon: icon }).addTo(map);
-    marker.bindPopup(buildPopupContent(report), { className: popupStateClasses(report) });
+    var card = buildPopupCard(report);
+    cards[report.id] = card;
+    marker.bindPopup(card.el, { className: popupStateClasses(report), minWidth: 340, maxWidth: 340, keepInView: true });
     marker.on('click', function () {
       Pinalert.select(report.id, 'map');
     });
+    observePopupCard(marker, card);
     markers[report.id] = marker;
   }
 
@@ -341,6 +459,15 @@ window.PinalertMap = (function () {
       if (!seenIds[id]) {
         map.removeLayer(markers[id]);
         delete markers[id];
+        if (cards[id]) {
+          if (cards[id].frame) {
+            window.cancelAnimationFrame(cards[id].frame);
+          }
+          if (cards[id].observer) {
+            cards[id].observer.disconnect();
+          }
+          delete cards[id];
+        }
       }
     }
   }
