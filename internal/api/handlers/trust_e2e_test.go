@@ -10,7 +10,9 @@ package handlers_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -659,5 +661,519 @@ func TestTrustCountUnderConcurrentVotes(t *testing.T) {
 	})
 	if got := countVotesForReport(t, pool, reportID); got != accounts {
 		t.Fatalf("%d vote rows stored, want %d", got, accounts)
+	}
+}
+
+// p14CurrencyWire and p14ReporterWire are the client side views of the two
+// signal objects, decoded from the JSON contract and never from the server's
+// Go types.
+type p14CurrencyWire struct {
+	Band          string  `json:"band"`
+	Score         *int    `json:"score"`
+	Label         string  `json:"label"`
+	Sentence      string  `json:"sentence"`
+	ScoreSentence string  `json:"score_sentence"`
+	RecentPlaces  int     `json:"recent_places"`
+	WindowMinutes int     `json:"window_minutes"`
+	FadeStage     *string `json:"fade_stage"`
+}
+
+type p14ReporterWire struct {
+	Tag                 string `json:"tag"`
+	Score               *int   `json:"score"`
+	Label               string `json:"label"`
+	Sentence            string `json:"sentence"`
+	ScoreSentence       string `json:"score_sentence"`
+	JudgedReports       int    `json:"judged_reports"`
+	CorroboratedReports int    `json:"corroborated_reports"`
+}
+
+// p14Str returns a pointer to s, for expected fade stages.
+func p14Str(s string) *string { return &s }
+
+// p14Int returns a pointer to n, for expected scores.
+func p14Int(n int) *int { return &n }
+
+// p14AssertSignalKeys fails unless trust.currency and trust.reporter have
+// exactly their pinned key sets, so a null score or fade stage must be present
+// as null and not omitted.
+func p14AssertSignalKeys(t *testing.T, label string, trust json.RawMessage) {
+	t.Helper()
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(trust, &top); err != nil {
+		t.Fatalf("%s: trust is not a JSON object: %v (raw %s)", label, err, trust)
+	}
+	for member, want := range map[string][]string{"currency": p14CurrencyWireKeys, "reporter": p14ReporterWireKeys} {
+		raw, ok := top[member]
+		if !ok {
+			t.Errorf("%s: trust has no %q member: %s", label, member, trust)
+			continue
+		}
+		var got map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Errorf("%s: trust.%s is not a JSON object: %v (raw %s)", label, member, err, raw)
+			continue
+		}
+		wantSet := map[string]bool{}
+		for _, k := range want {
+			wantSet[k] = true
+			if _, ok := got[k]; !ok {
+				t.Errorf("%s: trust.%s is missing key %q: %s", label, member, k, raw)
+			}
+		}
+		for k := range got {
+			if !wantSet[k] {
+				t.Errorf("%s: trust.%s has unexpected key %q: %s", label, member, k, raw)
+			}
+		}
+	}
+}
+
+// p14DecodeSignals decodes the two signal members of a trust object and fails
+// when either is missing or JSON null.
+func p14DecodeSignals(t *testing.T, trust json.RawMessage) (p14CurrencyWire, p14ReporterWire) {
+	t.Helper()
+	var top struct {
+		Currency json.RawMessage `json:"currency"`
+		Reporter json.RawMessage `json:"reporter"`
+	}
+	if err := json.Unmarshal(trust, &top); err != nil {
+		t.Fatalf("decoding trust object: %v (raw %s)", err, trust)
+	}
+	for name, raw := range map[string]json.RawMessage{"currency": top.Currency, "reporter": top.Reporter} {
+		if len(raw) == 0 || string(raw) == "null" {
+			t.Fatalf("trust.%s is missing or null: %s", name, trust)
+		}
+	}
+	var c p14CurrencyWire
+	var r p14ReporterWire
+	if err := json.Unmarshal(top.Currency, &c); err != nil {
+		t.Fatalf("decoding trust.currency: %v (raw %s)", err, top.Currency)
+	}
+	if err := json.Unmarshal(top.Reporter, &r); err != nil {
+		t.Fatalf("decoding trust.reporter: %v (raw %s)", err, top.Reporter)
+	}
+	return c, r
+}
+
+// p14AssertSameSignals fails unless the currency and reporter members of a
+// and b are deeply equal, each compared on its own so a mismatch prints the
+// two raw values.
+func p14AssertSameSignals(t *testing.T, label string, a, b json.RawMessage) {
+	t.Helper()
+	var ma, mb map[string]json.RawMessage
+	if err := json.Unmarshal(a, &ma); err != nil {
+		t.Fatalf("%s: decoding first trust: %v (raw %s)", label, err, a)
+	}
+	if err := json.Unmarshal(b, &mb); err != nil {
+		t.Fatalf("%s: decoding second trust: %v (raw %s)", label, err, b)
+	}
+	for _, member := range []string{"currency", "reporter"} {
+		var va, vb map[string]any
+		if err := json.Unmarshal(ma[member], &va); err != nil {
+			t.Fatalf("%s: decoding first %s: %v (raw %s)", label, member, err, ma[member])
+		}
+		if err := json.Unmarshal(mb[member], &vb); err != nil {
+			t.Fatalf("%s: decoding second %s: %v (raw %s)", label, member, err, mb[member])
+		}
+		if !reflect.DeepEqual(va, vb) {
+			t.Fatalf("%s: %s signals differ\n  first:  %s\n  second: %s", label, member, ma[member], mb[member])
+		}
+	}
+}
+
+// p14PtrEqual reports whether two optional values are both nil or equal.
+func p14PtrEqual[T comparable](a, b *T) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
+func p14Show[T any](p *T) string {
+	if p == nil {
+		return "null"
+	}
+	return fmt.Sprintf("%v", *p)
+}
+
+// p14AssertCurrency compares every field of two currency signals.
+func p14AssertCurrency(t *testing.T, label string, got, want p14CurrencyWire) {
+	t.Helper()
+	if got.Band != want.Band || !p14PtrEqual(got.Score, want.Score) || got.Label != want.Label ||
+		got.Sentence != want.Sentence || got.ScoreSentence != want.ScoreSentence ||
+		got.RecentPlaces != want.RecentPlaces || got.WindowMinutes != want.WindowMinutes ||
+		!p14PtrEqual(got.FadeStage, want.FadeStage) {
+		t.Fatalf("%s: currency differs\n  got:  %+v score=%s fade=%s\n  want: %+v score=%s fade=%s",
+			label, got, p14Show(got.Score), p14Show(got.FadeStage), want, p14Show(want.Score), p14Show(want.FadeStage))
+	}
+}
+
+// p14AssertReporter compares every field of two reporter signals.
+func p14AssertReporter(t *testing.T, label string, got, want p14ReporterWire) {
+	t.Helper()
+	if got.Tag != want.Tag || !p14PtrEqual(got.Score, want.Score) || got.Label != want.Label ||
+		got.Sentence != want.Sentence || got.ScoreSentence != want.ScoreSentence ||
+		got.JudgedReports != want.JudgedReports || got.CorroboratedReports != want.CorroboratedReports {
+		t.Fatalf("%s: reporter differs\n  got:  %+v score=%s\n  want: %+v score=%s",
+			label, got, p14Show(got.Score), want, p14Show(want.Score))
+	}
+}
+
+// p14UpToDate checks an Up to date currency signal whose score depends on
+// seconds of test runtime: the score only has to sit between UpToDateMinScore
+// and 100, and every other field is exact.
+func p14UpToDate(t *testing.T, label string, got p14CurrencyWire, places, windowMinutes int, window string, fade *string) {
+	t.Helper()
+	if got.Score == nil || *got.Score < service.UpToDateMinScore || *got.Score > 100 {
+		t.Fatalf("%s: currency score = %s, want %d to 100", label, p14Show(got.Score), service.UpToDateMinScore)
+	}
+	p14AssertCurrency(t, label, got, p14CurrencyWire{
+		Band:          "up_to_date",
+		Score:         got.Score,
+		Label:         "Up to date",
+		Sentence:      fmt.Sprintf("%d different places confirmed this in the last %s.", places, window),
+		ScoreSentence: fmt.Sprintf("Score %d out of 100, based on how recently different places confirmed this.", *got.Score),
+		RecentPlaces:  places,
+		WindowMinutes: windowMinutes,
+		FadeStage:     fade,
+	})
+}
+
+// p14NewReporter is the reporter signal of an account with too few judged
+// reports.
+func p14NewReporter() p14ReporterWire {
+	return p14ReporterWire{
+		Tag:      "new",
+		Label:    "New reporter",
+		Sentence: "None of their reports has had a clear result yet. A rating needs 5 reports with a clear result.",
+	}
+}
+
+// p14NoneReporter is the reporter signal of an accountless report.
+func p14NoneReporter() p14ReporterWire {
+	return p14ReporterWire{Tag: "none"}
+}
+
+// p14Step is the D-21 check at one step: every trust object has the pinned
+// keys, and the vote response's whole trust object and both signals equal each
+// feed read.
+func p14Step(t *testing.T, label string, voteTrust json.RawMessage, feedTrusts ...json.RawMessage) {
+	t.Helper()
+	p07AssertTrustKeys(t, voteTrust)
+	p14AssertSignalKeys(t, label+" vote response", voteTrust)
+	for i, ft := range feedTrusts {
+		name := label + " feed " + strconv.Itoa(i)
+		p07AssertTrustKeys(t, ft)
+		p14AssertSignalKeys(t, name, ft)
+		p07AssertSameTrust(t, name, voteTrust, ft)
+		p14AssertSameSignals(t, name, voteTrust, ft)
+	}
+}
+
+// p14FeedTrustOrFail reads the feed and returns the trust of reportID, failing
+// when the report is not listed.
+func p14FeedTrustOrFail(t *testing.T, label string, client *http.Client, baseURL string, reportID int64) json.RawMessage {
+	t.Helper()
+	tr, ok := p07FeedTrust(t, client, baseURL, reportID, false)
+	if !ok {
+		t.Fatalf("%s: report %d is not listed in the feed", label, reportID)
+	}
+	return tr
+}
+
+// TestFeedSignalsMatchCastVoteSignals is V-29 (signals part), D-08 and D-21:
+// on real votes the feed and every vote response carry the same still current
+// and reporter signals, read by the voter and by the reporter, with one pinned
+// clock for both paths.
+func TestFeedSignalsMatchCastVoteSignals(t *testing.T) {
+	srv, mailer, _ := newTrustE2EServer(t, p07FixedClock())
+
+	a := newVerifiedClient(t, srv, mailer, "p14-signals-reporter@example.com")
+	b := newVerifiedClient(t, srv, mailer, "p14-signals-b@example.com")
+	c := newVerifiedClient(t, srv, mailer, "p14-signals-c@example.com")
+	d := newVerifiedClient(t, srv, mailer, "p14-signals-d@example.com")
+	e := newVerifiedClient(t, srv, mailer, "p14-signals-e@example.com")
+
+	// Four voter places inside 1 km of the report point, each in its own
+	// precision 7 cell (03-07's measured points).
+	p2Lat, p2Lon := 12.9686, 77.5946
+	p3Lat, p3Lon := 12.9746, 77.5946
+	p4Lat, p4Lon := 12.9716, 77.5986
+	p5Lat, p5Lon := 12.9716, 77.5906
+
+	r1 := submitReportGetID(t, a, srv.URL, floodReportBody(p07ReportLat, p07ReportLon))
+	critical := floodReportBody(p07ReportLat, p07ReportLon)
+	critical["severity"] = "critical"
+	r2 := submitReportGetID(t, a, srv.URL, critical)
+
+	notYet := func(places, window int) p14CurrencyWire {
+		return p14CurrencyWire{
+			Band:          "not_yet_corroborated",
+			RecentPlaces:  places,
+			WindowMinutes: window,
+			FadeStage:     p14Str("fresh"),
+		}
+	}
+
+	// Step 0: before any vote.
+	tr := p14FeedTrustOrFail(t, "step 0", a, srv.URL, r1)
+	p14AssertSignalKeys(t, "step 0", tr)
+	cur, rep := p14DecodeSignals(t, tr)
+	p14AssertCurrency(t, "step 0", cur, notYet(0, 120))
+	p14AssertReporter(t, "step 0", rep, p14NewReporter())
+
+	// Step 1: B confirms R1 from P3. Provisional, one confirming place.
+	vis, vt := p07VoteTrust(t, b, srv.URL, r1, "confirm", p3Lat, p3Lon)
+	if vis != "provisional" {
+		t.Fatalf("step 1: visibility = %q, want provisional", vis)
+	}
+	p14Step(t, "step 1", vt,
+		p14FeedTrustOrFail(t, "step 1 B", b, srv.URL, r1),
+		p14FeedTrustOrFail(t, "step 1 A", a, srv.URL, r1))
+	cur, rep = p14DecodeSignals(t, vt)
+	p14AssertCurrency(t, "step 1", cur, notYet(1, 120))
+	p14AssertReporter(t, "step 1", rep, p14NewReporter())
+
+	// Step 2: C confirms R1 from P2. Live, two confirming places.
+	vis, vt = p07VoteTrust(t, c, srv.URL, r1, "confirm", p2Lat, p2Lon)
+	if vis != "live" {
+		t.Fatalf("step 2: visibility = %q, want live", vis)
+	}
+	p14Step(t, "step 2", vt,
+		p14FeedTrustOrFail(t, "step 2 C", c, srv.URL, r1),
+		p14FeedTrustOrFail(t, "step 2 A", a, srv.URL, r1))
+	cur, rep = p14DecodeSignals(t, vt)
+	p14UpToDate(t, "step 2", cur, 2, 120, "2 hours", p14Str("fresh"))
+	p14AssertReporter(t, "step 2", rep, p14NewReporter())
+
+	// Step 3: D disputes R1 from P4. One disputing place cannot hide two
+	// confirming ones, so it stays live. A dispute never refreshes the
+	// signal: it raises the bar to 3 places.
+	vis, vt = p07VoteTrust(t, d, srv.URL, r1, "dispute", p4Lat, p4Lon)
+	if vis != "live" {
+		t.Fatalf("step 3: visibility = %q, want live", vis)
+	}
+	p14Step(t, "step 3", vt,
+		p14FeedTrustOrFail(t, "step 3 D", d, srv.URL, r1),
+		p14FeedTrustOrFail(t, "step 3 A", a, srv.URL, r1))
+	cur, rep = p14DecodeSignals(t, vt)
+	p14AssertCurrency(t, "step 3", cur, p14CurrencyWire{
+		Band:          "needs_reconfirming",
+		Score:         p14Int(0),
+		Label:         "Needs re-confirming",
+		Sentence:      "Someone nearby disputed this, so it needs 3 places to confirm it in the last 2 hours.",
+		ScoreSentence: "Score 0 out of 100, based on how recently different places confirmed this.",
+		RecentPlaces:  2,
+		WindowMinutes: 120,
+		FadeStage:     p14Str("stale"),
+	})
+	p14AssertReporter(t, "step 3", rep, p14NewReporter())
+
+	// Step 4: E confirms R1 from P5. Three confirming places meet the raised
+	// bar, so the report reads Up to date again.
+	vis, vt = p07VoteTrust(t, e, srv.URL, r1, "confirm", p5Lat, p5Lon)
+	if vis != "live" {
+		t.Fatalf("step 4: visibility = %q, want live", vis)
+	}
+	p14Step(t, "step 4", vt,
+		p14FeedTrustOrFail(t, "step 4 E", e, srv.URL, r1),
+		p14FeedTrustOrFail(t, "step 4 A", a, srv.URL, r1))
+	cur, rep = p14DecodeSignals(t, vt)
+	p14UpToDate(t, "step 4", cur, 3, 120, "2 hours", p14Str("fresh"))
+	p14AssertReporter(t, "step 4", rep, p14NewReporter())
+
+	// Step 5: B confirms the critical R2 from P3. Critical reports bypass the
+	// provisional state, and one place is too early to tell.
+	vis, vt = p07VoteTrust(t, b, srv.URL, r2, "confirm", p3Lat, p3Lon)
+	if vis != "live" {
+		t.Fatalf("step 5: visibility = %q, want live", vis)
+	}
+	p14Step(t, "step 5", vt,
+		p14FeedTrustOrFail(t, "step 5 B", b, srv.URL, r2),
+		p14FeedTrustOrFail(t, "step 5 A", a, srv.URL, r2))
+	cur, rep = p14DecodeSignals(t, vt)
+	p14AssertCurrency(t, "step 5", cur, p14CurrencyWire{
+		Band:          "not_yet_corroborated",
+		Label:         "Too early to tell",
+		Sentence:      "Fewer than 2 places have confirmed this so far.",
+		RecentPlaces:  1,
+		WindowMinutes: 360,
+	})
+	p14AssertReporter(t, "step 5", rep, p14NewReporter())
+
+	// Step 6: C confirms R2 from P2. Critical rows never fade (D-07), so the
+	// fade stage stays null.
+	_, vt = p07VoteTrust(t, c, srv.URL, r2, "confirm", p2Lat, p2Lon)
+	p14Step(t, "step 6", vt,
+		p14FeedTrustOrFail(t, "step 6 C", c, srv.URL, r2),
+		p14FeedTrustOrFail(t, "step 6 A", a, srv.URL, r2))
+	cur, rep = p14DecodeSignals(t, vt)
+	p14UpToDate(t, "step 6", cur, 2, 360, "6 hours", nil)
+	p14AssertReporter(t, "step 6", rep, p14NewReporter())
+}
+
+const (
+	// p14HistoryCellA and p14HistoryCellB are the two voter cells written on
+	// the seeded history votes. Neither may appear on the wire.
+	p14HistoryCellA = "tdr1v8y"
+	p14HistoryCellB = "tdr1vc3"
+)
+
+// TestReporterSignalFromSeededHistory is D-08 (reporter half) on real history:
+// one account with six expired reports over two sessions reads Reliable
+// reporter on the feed and on the vote response alike, a fresh account reads
+// New reporter, an accountless report reads none, and a report expired 91 days
+// ago is not counted.
+//
+// Provenance of the numbers: six equal weight outcomes (all expire at one
+// instant) give p = 5.25 / 6 = 0.875 and a raw score of 78.125, rounded 78. A
+// leaked 91 day row would show as judged 7 and "5 of 7". Keying history by
+// session instead of account would leave the first session's four corroborated
+// reports, J = 4, and read New reporter.
+func TestReporterSignalFromSeededHistory(t *testing.T) {
+	clock := p07FixedClock()
+	srv, mailer, pool := newTrustE2EServer(t, clock)
+	now := clock()
+	ctx := context.Background()
+
+	const (
+		aEmail = "p14-history-reporter@example.com"
+		rEmail = "p14-history-reader@example.com"
+	)
+	a := newVerifiedClient(t, srv, mailer, aEmail)
+	f := newVerifiedClient(t, srv, mailer, "p14-history-fresh@example.com")
+	r := newVerifiedClient(t, srv, mailer, rEmail)
+
+	// Fail fast on identity: A's session must be bound to an account, then a
+	// second device session joins the same account.
+	aSession := p07SessionID(t, a, srv.URL)
+	var accountID *int64
+	if err := pool.QueryRow(ctx, "SELECT account_id FROM sessions WHERE session_id = $1", aSession).Scan(&accountID); err != nil {
+		t.Fatalf("reading the account of A's session: %v", err)
+	}
+	if accountID == nil {
+		t.Fatalf("A's session %q has no account id", aSession)
+	}
+	const secondDevice = "p14-history-second-device"
+	testutil.MustExec(t, pool, "INSERT INTO sessions (session_id, account_id) VALUES ($1, $2)", secondDevice, *accountID)
+
+	seedVoterA := testutil.SeedReporterAccount(t, pool, "p14-history-voter-a@example.com")
+	seedVoterB := testutil.SeedReporterAccount(t, pool, "p14-history-voter-b@example.com")
+
+	// Six expired reports in the 90 day window, all expiring at one instant:
+	// four on A's session, two on the second device. Five are corroborated by
+	// the two seed voters from two cells, the sixth has no vote.
+	expiresAt := now.Add(-time.Hour)
+	sessions := []string{aSession, aSession, aSession, aSession, secondDevice, secondDevice}
+	for i, sid := range sessions {
+		id := testutil.SeedHistoryReport(t, pool, sid, "low", "flood", expiresAt)
+		if i == len(sessions)-1 {
+			continue
+		}
+		for _, v := range []struct {
+			account int64
+			cell    string
+		}{{seedVoterA, p14HistoryCellA}, {seedVoterB, p14HistoryCellB}} {
+			testutil.MustExec(t, pool,
+				`INSERT INTO votes (report_id, account_id, kind, value, geohash_cell, created_at) VALUES ($1, $2, 'content', 'confirm', $3, $4)`,
+				id, v.account, v.cell, expiresAt.Add(-2*time.Hour))
+		}
+	}
+
+	// One more report that expired 91 days ago, with disputes. It is outside
+	// the 90 day window and must not count.
+	oldExpiry := now.Add(-91 * 24 * time.Hour)
+	oldID := testutil.SeedHistoryReport(t, pool, aSession, "low", "flood", oldExpiry)
+	for _, v := range []struct {
+		account int64
+		cell    string
+	}{{seedVoterA, p14HistoryCellA}, {seedVoterB, p14HistoryCellB}} {
+		testutil.MustExec(t, pool,
+			`INSERT INTO votes (report_id, account_id, kind, value, geohash_cell, created_at) VALUES ($1, $2, 'content', 'dispute', $3, $4)`,
+			oldID, v.account, v.cell, oldExpiry.Add(-2*time.Hour))
+	}
+
+	ra := submitReportGetID(t, a, srv.URL, floodReportBody(p07ReportLat, p07ReportLon))
+	rf := submitReportGetID(t, f, srv.URL, floodReportBody(p07ReportLat, p07ReportLon))
+	ro := testutil.SeedHistoryReport(t, pool, "p14-orphan-session", "low", "flood", now.Add(7*time.Hour))
+
+	reliable := p14ReporterWire{
+		Tag:                 "reliable",
+		Score:               p14Int(78),
+		Label:               "Reliable reporter",
+		Sentence:            "5 of 6 earlier reports were confirmed by people nearby.",
+		ScoreSentence:       "Score 78 out of 100, based on how often their reports with a clear result were confirmed.",
+		JudgedReports:       6,
+		CorroboratedReports: 5,
+	}
+	want := map[int64]p14ReporterWire{ra: reliable, rf: p14NewReporter(), ro: p14NoneReporter()}
+	names := map[int64]string{ra: "RA", rf: "RF", ro: "RO"}
+
+	// The feed read by R lists all three and carries the expected reporters.
+	for id, exp := range want {
+		tr := p14FeedTrustOrFail(t, names[id]+" before votes", r, srv.URL, id)
+		p14AssertSignalKeys(t, names[id]+" before votes", tr)
+		_, rep := p14DecodeSignals(t, tr)
+		p14AssertReporter(t, names[id]+" before votes", rep, exp)
+	}
+
+	p3Lat, p3Lon := 12.9746, 77.5946
+	p2Lat, p2Lon := 12.9686, 77.5946
+	p4Lat, p4Lon := 12.9716, 77.5986
+	votes := []struct {
+		id       int64
+		lat, lon float64
+	}{{ra, p3Lat, p3Lon}, {rf, p2Lat, p2Lon}, {ro, p4Lat, p4Lon}}
+	var raVoteBody []byte
+	for _, v := range votes {
+		status, body, err := p07PostVoteRaw(r, srv.URL, v.id, "confirm", v.lat, v.lon)
+		if err != nil || status != http.StatusOK {
+			t.Fatalf("%s confirm: status %d, err %v, body %s", names[v.id], status, err, body)
+		}
+		var out struct {
+			Visibility string          `json:"visibility"`
+			Trust      json.RawMessage `json:"trust"`
+		}
+		if err := json.Unmarshal(body, &out); err != nil || len(out.Trust) == 0 {
+			t.Fatalf("%s confirm: no trust in %s (%v)", names[v.id], body, err)
+		}
+		_, rep := p14DecodeSignals(t, out.Trust)
+		p14AssertReporter(t, names[v.id]+" vote response", rep, want[v.id])
+		p14Step(t, names[v.id]+" vote", out.Trust,
+			p14FeedTrustOrFail(t, names[v.id]+" feed R", r, srv.URL, v.id),
+			p14FeedTrustOrFail(t, names[v.id]+" feed A", a, srv.URL, v.id))
+		if v.id == ra {
+			raVoteBody = body
+			// D-14: the Reliable rating is display only. One confirming
+			// place leaves the report provisional.
+			if out.Visibility != "provisional" {
+				t.Fatalf("RA visibility = %q after one confirming place, want provisional", out.Visibility)
+			}
+		}
+	}
+
+	// V-31 with a rated reporter: no identifier key at any depth and none of
+	// the private values anywhere in the raw text.
+	banned := []string{aEmail, rEmail, "@", aSession, secondDevice, p14HistoryCellA, p14HistoryCellB, "account_id", "geohash_cell"}
+	bodies := []struct {
+		label string
+		raw   []byte
+	}{
+		{"vote response for RA", raVoteBody},
+		{"feed read by the reader", p07GetFeedRaw(t, r, srv.URL, false)},
+	}
+	for _, bd := range bodies {
+		var decoded any
+		if err := json.Unmarshal(bd.raw, &decoded); err != nil {
+			t.Fatalf("%s: not JSON: %v (body %s)", bd.label, err, bd.raw)
+		}
+		p07WalkJSONKeys(t, bd.label, decoded)
+		text := string(bd.raw)
+		for _, b := range banned {
+			if strings.Contains(text, b) {
+				t.Errorf("%s contains %q: %s", bd.label, b, bd.raw)
+			}
+		}
 	}
 }
