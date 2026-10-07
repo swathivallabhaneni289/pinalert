@@ -125,6 +125,86 @@ func independentCellCount(cells []string) int {
 	return len(seen)
 }
 
+// placeVote is one counted vote: the place it was cast in and the time it was
+// cast. The time is kept for plan 03-08's still current window and plays no
+// part in any count here.
+type placeVote struct {
+	Cell      string
+	CreatedAt time.Time
+}
+
+// voteBuckets is the output of filterVoteRows: the counted votes of one
+// report in four buckets, plus the reporter's own resolution state.
+type voteBuckets struct {
+	Confirms, Disputes, Resolves, Reopens []placeVote
+	ReporterResolved, ReporterReopened    bool
+}
+
+// filterVoteRows is the one routing of vote rows. Both BuildVoteTally and
+// BuildTrust read it, so the resolver's gate and the displayed counters
+// cannot drift (D-04, RESEARCH Pattern 1). Rows of other reports are skipped,
+// the reporter's own content rows are skipped, and the reporter's resolution
+// row sets the two reporter flags instead of entering a bucket. Unrecognised
+// kinds and values are ignored. Callers must pass rows already deduplicated
+// per account by CurrentVotesForReports.
+func filterVoteRows(rows []sqlcgen.CurrentVotesForReportsRow, reportID int64, reporterAccountID *int64) voteBuckets {
+	var b voteBuckets
+
+	for _, row := range rows {
+		if row.ReportID != reportID {
+			continue
+		}
+		isReporter := reporterAccountID != nil && row.AccountID == *reporterAccountID
+		pv := placeVote{Cell: row.GeohashCell, CreatedAt: row.CreatedAt}
+
+		switch VoteKind(row.Kind) {
+		case VoteKindContent:
+			if isReporter {
+				// T-02-05 defence in depth: D-03 stops these at write
+				// time, and this covers any row that predates the check.
+				continue
+			}
+			switch VoteValue(row.Value) {
+			case VoteConfirm:
+				b.Confirms = append(b.Confirms, pv)
+			case VoteDispute:
+				b.Disputes = append(b.Disputes, pv)
+			}
+		case VoteKindResolution:
+			if isReporter {
+				// D-13's instant resolve and the amended D-16 instant
+				// reopen are one privilege with two values, not a
+				// privilege plus a special case. Both assignments read
+				// off this same row, side by side, in the same shape,
+				// because the symmetry is the amended decision.
+				// CurrentVotesForReports keeps at most one resolution row
+				// per account, so at most one of these flags can be set.
+				// 02-01 forbids a defensive check for the both true case,
+				// and none is added.
+				b.ReporterResolved = VoteValue(row.Value) == VoteResolve
+				b.ReporterReopened = VoteValue(row.Value) == VoteReopen
+				continue
+			}
+			switch VoteValue(row.Value) {
+			case VoteResolve:
+				b.Resolves = append(b.Resolves, pv)
+			case VoteReopen:
+				b.Reopens = append(b.Reopens, pv)
+			}
+		}
+	}
+	return b
+}
+
+// placeVoteCells returns the cells of votes, in order.
+func placeVoteCells(votes []placeVote) []string {
+	cells := make([]string, 0, len(votes))
+	for _, v := range votes {
+		cells = append(cells, v.Cell)
+	}
+	return cells
+}
+
 // BuildVoteTally turns a batch of current-vote rows into the six-field
 // VoteTally visibility.go's Resolve consumes. The reportID parameter
 // exists because 02-04 loads votes for a whole page of reports in ONE
@@ -141,63 +221,17 @@ func independentCellCount(cells []string) int {
 // account ReportVoteContext resolved, never from anything a client can
 // assert, because a client able to set ReporterReopened could un-retract
 // any report in the system (T-02-03). This function performs no I/O and
-// takes no context.Context, so it is as testable as Resolve itself.
+// takes no context.Context, so it is as testable as Resolve itself. The row
+// routing now lives in filterVoteRows, which BuildTrust reads too.
 func BuildVoteTally(rows []sqlcgen.CurrentVotesForReportsRow, reportID int64, reporterAccountID *int64) VoteTally {
-	var confirmCells, disputeCells, resolveCells, reopenCells []string
-	var reporterResolved, reporterReopened bool
-
-	for _, row := range rows {
-		if row.ReportID != reportID {
-			continue
-		}
-		isReporter := reporterAccountID != nil && row.AccountID == *reporterAccountID
-
-		switch VoteKind(row.Kind) {
-		case VoteKindContent:
-			if isReporter {
-				// T-02-05 defence in depth: D-03 stops these at write
-				// time, and this covers any row that predates the check.
-				continue
-			}
-			switch VoteValue(row.Value) {
-			case VoteConfirm:
-				confirmCells = append(confirmCells, row.GeohashCell)
-			case VoteDispute:
-				disputeCells = append(disputeCells, row.GeohashCell)
-			}
-		case VoteKindResolution:
-			if isReporter {
-				// D-13's instant resolve and D-16-amended's instant
-				// reopen are one privilege with two values, not a
-				// privilege plus a special case — both assignments read
-				// off this SAME row, side by side, in the same shape:
-				// the symmetry IS the amended decision.
-				// CurrentVotesForReports' DISTINCT ON (report_id,
-				// account_id, kind) guarantees at most one resolution
-				// row per account survives the read, so at most one of
-				// these two flags can ever be set here; 02-01 forbids
-				// adding a defensive invariant check for the both-true
-				// case, and none is added.
-				reporterResolved = VoteValue(row.Value) == VoteResolve
-				reporterReopened = VoteValue(row.Value) == VoteReopen
-				continue
-			}
-			switch VoteValue(row.Value) {
-			case VoteResolve:
-				resolveCells = append(resolveCells, row.GeohashCell)
-			case VoteReopen:
-				reopenCells = append(reopenCells, row.GeohashCell)
-			}
-		}
-	}
-
+	b := filterVoteRows(rows, reportID, reporterAccountID)
 	return VoteTally{
-		ConfirmCells:     independentCellCount(confirmCells),
-		DisputeCells:     independentCellCount(disputeCells),
-		ResolveCells:     independentCellCount(resolveCells),
-		ReopenCells:      independentCellCount(reopenCells),
-		ReporterResolved: reporterResolved,
-		ReporterReopened: reporterReopened,
+		ConfirmCells:     independentCellCount(placeVoteCells(b.Confirms)),
+		DisputeCells:     independentCellCount(placeVoteCells(b.Disputes)),
+		ResolveCells:     independentCellCount(placeVoteCells(b.Resolves)),
+		ReopenCells:      independentCellCount(placeVoteCells(b.Reopens)),
+		ReporterResolved: b.ReporterResolved,
+		ReporterReopened: b.ReporterReopened,
 	}
 }
 
