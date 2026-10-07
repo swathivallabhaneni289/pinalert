@@ -239,14 +239,99 @@
     PinalertVotes.updateVoteBlock(row.votes, report);
   }
 
+  // elementIsShown is true for a connected element that takes part in layout,
+  // so a row in a hidden list pane is never a focus candidate.
+  function elementIsShown(el) {
+    return !!el && el.isConnected && el.getClientRects().length > 0;
+  }
+
+  // takeMapPopupFocus asks the map whether a poll just removed the popup that
+  // held focus (A67). The map reconciles first, so the answer is ready.
+  function takeMapPopupFocus() {
+    return !!(window.PinalertMap && typeof PinalertMap.takeRemovedPopupFocus === 'function' &&
+      PinalertMap.takeRemovedPopupFocus());
+  }
+
+  // focusAfterRemoval is the one place focus is chosen after a poll removed
+  // the report that owned it (A67, in the A52 order): the first displayed
+  // row among the candidates, else the map, else the view toggle, else the
+  // empty state. It acts only when focus fell to the page body, and the
+  // browser decides only where focus goes, never which reports exist.
+  function focusAfterRemoval(candidates) {
+    var active = document.activeElement;
+    if (active && active !== document.body) {
+      return;
+    }
+    for (var i = 0; i < candidates.length; i++) {
+      var candidate = candidates[i];
+      if (candidate && candidate.classList && candidate.classList.contains('report-row') &&
+          elementIsShown(candidate)) {
+        candidate.focus();
+        return;
+      }
+    }
+    var mapEl = document.getElementById('map');
+    if (elementIsShown(mapEl)) {
+      mapEl.focus();
+      return;
+    }
+    if (elementIsShown(viewToggleBtn)) {
+      viewToggleBtn.focus();
+      return;
+    }
+    var empties = [emptyEl, disputedEmptyEl];
+    for (var k = 0; k < empties.length; k++) {
+      if (elementIsShown(empties[k])) {
+        empties[k].setAttribute('tabindex', '-1');
+        empties[k].focus();
+        return;
+      }
+    }
+  }
+
+  // renderRows keeps focus on a real control through a poll (A67, A71).
+  // Departed rows are removed before the rest are placed. A row moves only
+  // when its position changed, with moveBefore where the browser has it (it
+  // keeps focus and an open panel), and a moved row's focused element is
+  // focused again afterwards.
   function renderRows(reports) {
     var sorted = sortReports(reports);
     var seen = {};
+    for (var s = 0; s < sorted.length; s++) {
+      seen[String(sorted[s].id)] = true;
+    }
 
+    var active = document.activeElement;
+    var nexts = [];
+    var prevs = [];
+    var focusNext = null;
+    var focusPrev = null;
+    var rowHadFocus = false;
+    var existingIds = Object.keys(rowsById);
+    for (var j = 0; j < existingIds.length; j++) {
+      var rid = existingIds[j];
+      if (seen[rid]) {
+        continue;
+      }
+      var gone = rowsById[rid].el;
+      nexts.push(gone.nextElementSibling);
+      prevs.push(gone.previousElementSibling);
+      if (active && gone.contains(active)) {
+        focusNext = gone.nextElementSibling;
+        focusPrev = gone.previousElementSibling;
+        rowHadFocus = true;
+      }
+      gone.remove();
+      delete rowsById[rid];
+    }
+
+    var popupHadFocus = takeMapPopupFocus();
+
+    var activeBefore = document.activeElement;
+    var movedFocus = false;
     for (var i = 0; i < sorted.length; i++) {
       var report = sorted[i];
       var idKey = String(report.id);
-      seen[idKey] = true;
 
       var row = rowsById[idKey];
       if (!row) {
@@ -257,25 +342,42 @@
 
       var expected = reportListEl.children[i];
       if (expected !== row.el) {
-        reportListEl.insertBefore(row.el, expected || null);
+        if (row.el.parentNode === reportListEl && typeof reportListEl.moveBefore === 'function') {
+          reportListEl.moveBefore(row.el, expected || null);
+        } else {
+          if (row.el.parentNode === reportListEl && row.el.contains(activeBefore)) {
+            movedFocus = true;
+          }
+          reportListEl.insertBefore(row.el, expected || null);
+        }
       }
     }
 
-    var existingIds = Object.keys(rowsById);
-    for (var j = 0; j < existingIds.length; j++) {
-      var rid = existingIds[j];
-      if (!seen[rid]) {
-        rowsById[rid].el.remove();
-        delete rowsById[rid];
-      }
+    if (movedFocus && activeBefore && activeBefore.isConnected &&
+        (!document.activeElement || document.activeElement === document.body)) {
+      activeBefore.focus();
+    }
+    if (rowHadFocus || popupHadFocus) {
+      focusAfterRemoval([focusNext, focusPrev].concat(nexts, prevs));
     }
   }
 
   function clearRows() {
     var ids = Object.keys(rowsById);
+    var active = document.activeElement;
+    var rowHadFocus = false;
     for (var i = 0; i < ids.length; i++) {
-      rowsById[ids[i]].el.remove();
-      delete rowsById[ids[i]];
+      if (active && rowsById[ids[i]].el.contains(active)) {
+        rowHadFocus = true;
+      }
+    }
+    var popupHadFocus = takeMapPopupFocus();
+    for (var j = 0; j < ids.length; j++) {
+      rowsById[ids[j]].el.remove();
+      delete rowsById[ids[j]];
+    }
+    if (rowHadFocus || popupHadFocus) {
+      focusAfterRemoval([]);
     }
   }
 

@@ -644,3 +644,53 @@ func TestPinOpensOnSpace(t *testing.T) {
 		t.Errorf("upsertMarker calls applyPinName %d times, want at least 2 (existing and new marker paths)", n)
 	}
 }
+
+// TestRenderRowsRemovesBeforePlacing pins A67 and A71: departed rows are
+// removed before the rest are placed, a moved row keeps or regains focus, and
+// a poll that removes the report owning focus moves focus to a real control
+// instead of the page body.
+func TestRenderRowsRemovesBeforePlacing(t *testing.T) {
+	feed := p19Code(t, "static/js/feed.js")
+
+	rows := jsFunctionBody(t, feed, "renderRows(reports)")
+	remove := strings.Index(rows, ".remove()")
+	move := strings.Index(rows, "moveBefore(")
+	insert := strings.Index(rows, "insertBefore(")
+	if remove == -1 || move == -1 || insert == -1 {
+		t.Errorf("renderRows: needs .remove(), moveBefore( and insertBefore( (found %d, %d, %d)", remove, move, insert)
+	} else if remove > move || remove > insert {
+		t.Errorf("renderRows: the first .remove() (at %d) must come before moveBefore( (%d) and insertBefore( (%d)", remove, move, insert)
+	}
+	p13MustContain(t, "renderRows", rows,
+		"typeof reportListEl.moveBefore === 'function'", "nextElementSibling", "previousElementSibling",
+		"takeMapPopupFocus()", "focusAfterRemoval(")
+	p13Ordered(t, rows, "renderRows", "var activeBefore = document.activeElement", "insertBefore(", "activeBefore.focus()")
+
+	clear := jsFunctionBody(t, feed, "clearRows()")
+	p13MustContain(t, "clearRows", clear, "document.activeElement", "takeMapPopupFocus()", "focusAfterRemoval(")
+
+	after := jsFunctionBody(t, feed, "focusAfterRemoval(candidates)")
+	p13Ordered(t, after, "focusAfterRemoval", "document.activeElement", "candidates.length", "getElementById('map')",
+		"viewToggleBtn", "'tabindex', '-1'")
+	p13MustContain(t, "focusAfterRemoval", after, "report-row", "elementIsShown(")
+	if n := strings.Count(feed, "setHidden(emptyEl"); n != 1 {
+		t.Errorf("feed.js has %d setHidden(emptyEl calls, want exactly 1 (only setEmptyState shows or hides an empty state)", n)
+	}
+
+	shown := jsFunctionBody(t, feed, "elementIsShown(el)")
+	p13MustContain(t, "elementIsShown", shown, "isConnected", "getClientRects()")
+	take := jsFunctionBody(t, feed, "takeMapPopupFocus()")
+	p13MustContain(t, "takeMapPopupFocus", take, "PinalertMap.takeRemovedPopupFocus()")
+
+	mapCode := p19Code(t, "static/js/map.js")
+	render := jsFunctionBody(t, mapCode, "render(state)")
+	p13Ordered(t, render, "render", "removedPopupFocus = false", "isPopupOpen()", "popupHoldsFocus(",
+		"removingPopup = true", "map.removeLayer(", "removingPopup = false")
+	holds := jsFunctionBody(t, mapCode, "popupHoldsFocus(popup)")
+	p13MustContain(t, "popupHoldsFocus", holds, "popupFocusInside", "contains(document.activeElement)", "getClientRects()")
+	taken := jsFunctionBody(t, mapCode, "takeRemovedPopupFocus()")
+	p13Ordered(t, taken, "takeRemovedPopupFocus", "var had = removedPopupFocus", "removedPopupFocus = false", "return had")
+	p13MustContain(t, "map.js", mapCode, "takeRemovedPopupFocus: takeRemovedPopupFocus")
+	closeBody := jsFunctionBody(t, mapCode, "onPopupClose(evt)")
+	p13Ordered(t, closeBody, "onPopupClose", "removingPopup", "returnFocusToOpener(")
+}

@@ -38,6 +38,12 @@ window.PinalertMap = (function () {
   var listOpenerId = null;
   // True when the popup opened while its pane was hidden, so it was measured empty (A59).
   var openedWhileHidden = false;
+  // True when a poll removed the report whose popup held focus. feed.js reads
+  // and clears it through takeRemovedPopupFocus (A67).
+  var removedPopupFocus = false;
+  // True only while render removes a marker, so the popup close does not also
+  // pull focus back to a pin that is gone.
+  var removingPopup = false;
 
   // replacePrefixedClass is a deliberate third copy of feed.js's and
   // visibility.js's private helper of the same name and behaviour, not an
@@ -516,7 +522,7 @@ window.PinalertMap = (function () {
 
     var active = document.activeElement;
     var lost = !active || active === document.body || !!(el && el.contains(active));
-    if (hadFocus && lost) {
+    if (hadFocus && lost && !removingPopup) {
       returnFocusToOpener(opener);
     }
   }
@@ -543,6 +549,26 @@ window.PinalertMap = (function () {
     if (pin) {
       pin.focus({ preventScroll: true });
     }
+  }
+
+  // popupHoldsFocus is true only when focus is inside this popup right now and
+  // on a control that still takes part in layout. A focus already lost before
+  // the refetch, such as the hidden Mark resolved button, is not claimed here,
+  // so the Mark resolved focus path keeps sending it to the map (A52).
+  function popupHoldsFocus(popup) {
+    var el = popup ? popup.getElement() : null;
+    if (!popupFocusInside || !el || !el.contains(document.activeElement)) {
+      return false;
+    }
+    return document.activeElement.getClientRects().length > 0;
+  }
+
+  // takeRemovedPopupFocus says whether a poll just removed the popup that held
+  // focus, and clears the answer so it is read once (A67).
+  function takeRemovedPopupFocus() {
+    var had = removedPopupFocus;
+    removedPopupFocus = false;
+    return had;
   }
 
   // focusOpenPopup lands focus on the open card when its pane is shown and
@@ -654,6 +680,7 @@ window.PinalertMap = (function () {
     if (!map) {
       return;
     }
+    removedPopupFocus = false;
 
     var seenIds = {};
     for (var i = 0; i < state.reports.length; i++) {
@@ -666,7 +693,12 @@ window.PinalertMap = (function () {
     for (var j = 0; j < existingIds.length; j++) {
       var id = existingIds[j];
       if (!seenIds[id]) {
+        if (markers[id].isPopupOpen()) {
+          removedPopupFocus = popupHoldsFocus(markers[id].getPopup());
+        }
+        removingPopup = true;
         map.removeLayer(markers[id]);
+        removingPopup = false;
         delete markers[id];
         if (cards[id]) {
           if (cards[id].frame) {
@@ -728,6 +760,7 @@ window.PinalertMap = (function () {
   return {
     flyTo: flyTo,
     highlight: highlight,
-    focusOpenPopup: focusOpenPopup
+    focusOpenPopup: focusOpenPopup,
+    takeRemovedPopupFocus: takeRemovedPopupFocus
   };
 }());
