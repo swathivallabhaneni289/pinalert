@@ -10,6 +10,10 @@
 // same visibility.js builders — never a second implementation, never a
 // second label map, never a fetch of its own.
 //
+// The page also renders the shared trust block on each row, from the trust
+// object the server wrote into the row, through the same trust.js builder the
+// feed and the map popup use. This module still computes and fetches nothing.
+//
 // SECURITY (T-01-03): every string reaching the DOM goes through
 // visibility.js's own builders (which themselves go through
 // Pinalert.setText), never a markup-parsing sink.
@@ -29,6 +33,10 @@
   // listener.
   var reopenBlocks = {};
 
+  // trustBlocks maps a report id to the trust block instance built for that
+  // row, so the Reopen success path can refresh the right one.
+  var trustBlocks = {};
+
   var rows = list.querySelectorAll('.report-row');
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
@@ -39,9 +47,13 @@
     // wired in. The Activity page performs no fetch of its own, so this
     // object is built from the row's own server-rendered attributes and
     // nothing else.
+    //
+    // The server decided expiry and wrote it as the row's expired attribute,
+    // so this is an attribute read and not a date comparison (A44).
     var report = {
       visibility: row.dataset.visibility,
-      visibility_reason: row.dataset.visibilityReason
+      visibility_reason: row.dataset.visibilityReason,
+      expired: row.dataset.expired === 'true'
     };
 
     var tag = PinalertVisibility.createVisibilityTag();
@@ -51,6 +63,16 @@
     }
     PinalertVisibility.updateVisibilityTag(tag, report);
     PinalertVisibility.applyVisibilityClass(row, report);
+
+    // The shared trust block sits after the state label and before the
+    // Reopen control. It takes no options, so this page shows the two
+    // counters and the panel but no score numbers (D-09, A50).
+    if (body) {
+      var trustBlock = PinalertTrust.createTrustBlock();
+      body.appendChild(trustBlock.el);
+      PinalertTrust.updateTrustBlock(trustBlock, readRowTrust(row));
+      trustBlocks[row.dataset.reportId] = trustBlock;
+    }
 
     // Reopen (Task 3, D-16 amended). The button's render condition is the
     // server-rendered retracted-and-unexpired hook and NOTHING else —
@@ -127,10 +149,23 @@
       PinalertVisibility.updateVisibilityTag(tag, updated);
       PinalertVisibility.applyVisibilityClass(row, updated);
 
+      // R-08: the trust block refreshes from the trust object in the same
+      // response. The updater never touches the open state, so an open panel
+      // stays open.
+      var rowTrust = trustBlocks[row.dataset.reportId];
+      if (rowTrust) {
+        PinalertTrust.updateTrustBlock(rowTrust, result && result.trust);
+      }
+
       PinalertVotes.setBlockBusy(block, false);
       if (updated.visibility !== PinalertVotes.RETRACTED_VISIBILITY_SLUG) {
         block.controls.remove();
         block.error.remove();
+        // The control that held focus is gone, so focus moves to this row's
+        // trust toggle rather than falling back to the page body (A64).
+        if (rowTrust) {
+          PinalertTrust.focusToggle(rowTrust);
+        }
       } else if (reopenBtn) {
         PinalertVotes.setReopenLabel(reopenBtn, PinalertVotes.REOPEN_BUTTON_LABEL);
       }
@@ -141,5 +176,17 @@
       }
       PinalertVotes.showVoteError(block, (err && err.fieldMessage) || PinalertVotes.GENERIC_FAILURE_MESSAGE);
     });
+  }
+
+  // readRowTrust parses the row's trust attribute, which is the server's
+  // trust object escaped by the template. This module validates nothing
+  // itself because trust.js does; a missing or malformed attribute yields
+  // null, which hides the block while the rest of the row still renders.
+  function readRowTrust(row) {
+    try {
+      return JSON.parse(row.dataset.trust);
+    } catch (err) {
+      return null;
+    }
   }
 }());

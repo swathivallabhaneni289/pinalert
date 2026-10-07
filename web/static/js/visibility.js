@@ -10,6 +10,10 @@
 // the resolver bypass T-02-04 names — the whole reason 02-01 wrote exactly
 // one Resolve function.
 //
+// The module also reads one more server authored boolean, expired, which only
+// the Activity page sets, from its row attribute. The feed and the map never
+// set it.
+//
 // SECURITY (T-01-03): every string reaching the DOM goes through
 // Pinalert.setText, a text-node assignment, never a markup-parsing sink.
 //
@@ -56,12 +60,14 @@
   // no "Confirmed" chip, that number being Phase 3 / TRUST-05's job. The
   // Retracted entry is declared for 02-07's Activity page and is
   // unreachable from this plan's two surfaces (D-12 removes Retracted
-  // reports from both before this client ever sees them).
+  // reports from both before this client ever sees them). The Expired word
+  // serves the Activity page only.
   var VISIBILITY_TAG_LABELS = {
     live: '',
     provisional: 'Unconfirmed',
     hidden: 'Disputed',
-    retracted: 'Resolved'
+    retracted: 'Resolved',
+    expired: 'Expired'
   };
 
   // replacePrefixedClass is a deliberate second copy of feed.js's private
@@ -97,6 +103,29 @@
     return value;
   }
 
+  // displayState is the one rule for the shown state word and the row class
+  // (A57). A Resolved report stays Resolved, so Resolved wins over Expired
+  // (State Matrix 10a). Otherwise a report the server marked expired reads
+  // expired, and anything else keeps the resolver's own state. Only the
+  // Activity page sets expired; the feed and the map never do. The state
+  // allowlist and visibilityState stay at the four resolver values.
+  function displayState(report) {
+    var state = visibilityState(report);
+    if (state === 'retracted') {
+      return state;
+    }
+    if (report && report.expired === true) {
+      return 'expired';
+    }
+    return state;
+  }
+
+  // stateWord is the one accessor for the state word shown to people, the
+  // empty string when there is none.
+  function stateWord(report) {
+    return VISIBILITY_TAG_LABELS[displayState(report)] || '';
+  }
+
   // visibilityReason is the same shape against VISIBILITY_REASONS,
   // returning the empty string when unrecognised so an unvalidated slug is
   // never reflected into the chip's data attribute.
@@ -115,7 +144,7 @@
   // itself (there being no row) — the same split main.css's .icon-badge
   // comment already documents for the age ramp.
   function applyVisibilityClass(el, report) {
-    replacePrefixedClass(el, VISIBILITY_CLASS_PREFIX, VISIBILITY_CLASS_PREFIX + visibilityState(report));
+    replacePrefixedClass(el, VISIBILITY_CLASS_PREFIX, VISIBILITY_CLASS_PREFIX + displayState(report));
   }
 
   // createVisibilityTag returns a span built with document.createElement,
@@ -143,7 +172,7 @@
       return;
     }
 
-    var state = visibilityState(report);
+    var state = displayState(report);
     var label = VISIBILITY_TAG_LABELS[state];
 
     if (!label) {
@@ -156,7 +185,9 @@
 
     Pinalert.setText(tag, label);
     replacePrefixedClass(tag, VISIBILITY_TAG_CLASS_PREFIX, VISIBILITY_TAG_CLASS_PREFIX + state);
-    var reason = visibilityReason(report);
+    // The reason slug explains the resolver state, not expiry, so an expired
+    // tag carries none.
+    var reason = state === 'expired' ? '' : visibilityReason(report);
     if (reason) {
       tag.setAttribute('data-visibility-reason', reason);
     } else {
@@ -169,6 +200,8 @@
     VISIBILITY_STATES: VISIBILITY_STATES,
     VISIBILITY_TAG_LABELS: VISIBILITY_TAG_LABELS,
     visibilityState: visibilityState,
+    displayState: displayState,
+    stateWord: stateWord,
     applyVisibilityClass: applyVisibilityClass,
     createVisibilityTag: createVisibilityTag,
     updateVisibilityTag: updateVisibilityTag
