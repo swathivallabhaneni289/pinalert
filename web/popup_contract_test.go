@@ -2,6 +2,7 @@ package web
 
 import (
 	"io/fs"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -131,7 +132,9 @@ func TestPopupCardBuiltOnceUpdatedInPlace(t *testing.T) {
 		t.Errorf("bind call className must be popupStateClasses(report), found %q (present=%v)", v, ok)
 	}
 	p17MustContain(t, "bind call", bind, "card.el", "minWidth: 340", "maxWidth: 340", "keepInView: true")
-	p17MustNotContain(t, "bind call", bind, "closeOnClick", "maxHeight", "autoPan")
+	// Plan 03-19 intentionally added the autopan options here (A60), so only
+	// the close on click and the Leaflet max height options stay banned.
+	p17MustNotContain(t, "bind call", bind, "closeOnClick", "maxHeight")
 
 	upsert := jsFunctionBody(t, text, "upsertMarker(report)")
 	p17MustContain(t, "upsertMarker", upsert,
@@ -473,8 +476,9 @@ func TestPopupCloseButtonComesFirst(t *testing.T) {
 	open := jsFunctionBody(t, mapJS, "onPopupOpen(evt)")
 	p17MustContain(t, "onPopupOpen", open,
 		"getElement()", "'.leaflet-popup-close-button'", "insertBefore(", "firstChild")
-	// Focus, the dialog role and the content refresh belong to plan 03-19.
-	p17MustNotContain(t, "onPopupOpen", open, ".focus(", "setAttribute('role'", "update()")
+	// Plan 03-19 intentionally added the focus move and the dialog role to
+	// this handler (A23), so only the content refresh stays out of it (A59).
+	p17MustNotContain(t, "onPopupOpen", open, "update()")
 
 	css := p17ReadStatic(t, "static/css/trust.css")
 	rules := parseCSSRules(css)
@@ -547,4 +551,304 @@ func TestPopupCloseButtonComesFirst(t *testing.T) {
 	text := string(svg)
 	p17MustContain(t, "x.svg", text, `d="M18 6 6 18"`, `d="m6 6 12 12"`)
 	p17MustNotContain(t, "x.svg", text, "<script", "href")
+}
+
+// Plan 03-19 makes the popup usable from the keyboard and a screen reader and
+// keeps focus off the page body through polls, closes and re-measures. Like
+// the tests above these are static inspection of the embedded bytes. Every
+// helper carries the p19 prefix.
+
+// p19Code returns one embedded script with block comments and whole line
+// comments removed, so every count, order and body below sees code lines only.
+func p19Code(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := fs.ReadFile(StaticFS, path)
+	if err != nil {
+		t.Fatalf("failed to read embedded %s: %v", path, err)
+	}
+	return p13CodeLines(stripCSSComments(string(raw)))
+}
+
+// TestPopupDialogFocusAndOpener pins A23 (popup dialog), A51 and A74: the open
+// popup is a named non modal dialog that takes focus when shown, the opener is
+// recorded and focus returns to it when the popup closes.
+func TestPopupDialogFocusAndOpener(t *testing.T) {
+	code := p19Code(t, "static/js/map.js")
+
+	open := jsFunctionBody(t, code, "onPopupOpen(evt)")
+	p13MustContain(t, "onPopupOpen", open,
+		"var popup = evt.popup;", "activePopup = popup;", "'role', 'dialog'", "'aria-modal', 'false'",
+		"'aria-labelledby'", ".popup-card__title", "'data-popup-open', 'true'", "listOpenerId = null",
+		"openedWhileHidden = ", "offsetParent === null", "preventScroll: true")
+	p13Ordered(t, open, "onPopupOpen", "activePopup = popup;", "popupOpener = ", ".focus(")
+
+	closeBody := jsFunctionBody(t, code, "onPopupClose(evt)")
+	p13MustContain(t, "onPopupClose", closeBody,
+		"removeAttribute('data-popup-open')", "PinalertTrust.collapsePanelsIn(", "activePopup = null", "var lost = ")
+	p13Ordered(t, closeBody, "onPopupClose", "popupFocusInside", "document.activeElement", "returnFocusToOpener(")
+
+	out := jsFunctionBody(t, code, "onMapFocusOut(evt)")
+	p13MustContain(t, "onMapFocusOut", out, "evt.relatedTarget", "!el.contains(evt.relatedTarget)", "popupFocusInside = ")
+	in := jsFunctionBody(t, code, "onMapFocusIn(evt)")
+	p13MustContain(t, "onMapFocusIn", in, "popupFocusInside = ", "contains(evt.target)")
+
+	ret := jsFunctionBody(t, code, "returnFocusToOpener(opener)")
+	p13Ordered(t, ret, "returnFocusToOpener", "'list'", "dataset.reportId", "isConnected", "offsetParent",
+		"getElement()", "preventScroll: true")
+
+	fly := jsFunctionBody(t, code, "flyTo(id, opts)")
+	p13Ordered(t, fly, "flyTo", "opts.opener === 'list'", "listOpenerId = String(id)", "marker.openPopup()",
+		"isPopupOpen()", "popupOpener = ")
+
+	focus := jsFunctionBody(t, code, "focusOpenPopup()")
+	p13MustContain(t, "focusOpenPopup", focus, "offsetParent === null", "return false", "return true", "preventScroll: true")
+
+	initBody := jsFunctionBody(t, code, "init()")
+	p13MustContain(t, "init", initBody,
+		"map.on('popupopen', onPopupOpen)", "map.on('popupclose', onPopupClose)",
+		"addEventListener('focusin', onMapFocusIn)", "addEventListener('focusout', onMapFocusOut)")
+	if n := strings.Count(code, "map.on('popupopen'"); n != 1 {
+		t.Errorf("map.js registers popupopen %d times, want exactly 1", n)
+	}
+	if n := strings.Count(code, "function onPopupOpen("); n != 1 {
+		t.Errorf("map.js declares onPopupOpen %d times, want exactly 1", n)
+	}
+	p13MustContain(t, "map.js", code, "flyTo: flyTo", "highlight: highlight", "focusOpenPopup: focusOpenPopup")
+
+	feed := p19Code(t, "static/js/feed.js")
+	activate := jsFunctionBody(t, feed, "activateRow(id)")
+	p13MustContain(t, "activateRow", activate, "PinalertMap.flyTo(id, { opener: 'list' })")
+	moveFocus := jsFunctionBody(t, feed, "moveFocusIntoView(view)")
+	p13Ordered(t, moveFocus, "moveFocusIntoView", "PinalertMap.focusOpenPopup()", "'fab-report'")
+}
+
+// TestPinOpensOnSpace pins A49 and A45: Space opens a pin and activates the
+// popup close button, and every pin carries a name in words.
+func TestPinOpensOnSpace(t *testing.T) {
+	code := p19Code(t, "static/js/map.js")
+
+	key := jsFunctionBody(t, code, "onMapKeydown(evt)")
+	p13MustContain(t, "onMapKeydown", key,
+		"' '", "'Spacebar'", "preventDefault()", "leaflet-popup-close-button", "closePopup()",
+		"leaflet-marker-icon", "markerForElement(", "openPopup()")
+	forEl := jsFunctionBody(t, code, "markerForElement(el)")
+	p13MustContain(t, "markerForElement", forEl, "getElement()")
+	initBody := jsFunctionBody(t, code, "init()")
+	p13MustContain(t, "init", initBody, "addEventListener('keydown', onMapKeydown)")
+
+	name := jsFunctionBody(t, code, "pinName(report)")
+	p13MustContain(t, "pinName", name,
+		"Pinalert.CATEGORY_LABELS", "Pinalert.SEVERITY_WORDS", "Pinalert.relativeTime(",
+		"PinalertVisibility.stateWord(", "', '")
+	apply := jsFunctionBody(t, code, "applyPinName(marker, report)")
+	p13MustContain(t, "applyPinName", apply, "'aria-label'", "pinName(report)")
+	upsert := jsFunctionBody(t, code, "upsertMarker(report)")
+	if n := strings.Count(upsert, "applyPinName("); n < 2 {
+		t.Errorf("upsertMarker calls applyPinName %d times, want at least 2 (existing and new marker paths)", n)
+	}
+}
+
+// TestRenderRowsRemovesBeforePlacing pins A67 and A71: departed rows are
+// removed before the rest are placed, a moved row keeps or regains focus, and
+// a poll that removes the report owning focus moves focus to a real control
+// instead of the page body.
+func TestRenderRowsRemovesBeforePlacing(t *testing.T) {
+	feed := p19Code(t, "static/js/feed.js")
+
+	rows := jsFunctionBody(t, feed, "renderRows(reports)")
+	remove := strings.Index(rows, ".remove()")
+	move := strings.Index(rows, "moveBefore(")
+	insert := strings.Index(rows, "insertBefore(")
+	if remove == -1 || move == -1 || insert == -1 {
+		t.Errorf("renderRows: needs .remove(), moveBefore( and insertBefore( (found %d, %d, %d)", remove, move, insert)
+	} else if remove > move || remove > insert {
+		t.Errorf("renderRows: the first .remove() (at %d) must come before moveBefore( (%d) and insertBefore( (%d)", remove, move, insert)
+	}
+	p13MustContain(t, "renderRows", rows,
+		"typeof reportListEl.moveBefore === 'function'", "nextElementSibling", "previousElementSibling",
+		"takeMapPopupFocus()", "focusAfterRemoval(")
+	p13Ordered(t, rows, "renderRows", "var activeBefore = document.activeElement", "insertBefore(", "activeBefore.focus()")
+
+	clear := jsFunctionBody(t, feed, "clearRows()")
+	p13MustContain(t, "clearRows", clear, "document.activeElement", "takeMapPopupFocus()", "focusAfterRemoval(")
+
+	after := jsFunctionBody(t, feed, "focusAfterRemoval(candidates)")
+	p13Ordered(t, after, "focusAfterRemoval", "document.activeElement", "candidates.length", "getElementById('map')",
+		"viewToggleBtn", "'tabindex', '-1'")
+	p13MustContain(t, "focusAfterRemoval", after, "report-row", "elementIsShown(")
+	if n := strings.Count(feed, "setHidden(emptyEl"); n != 1 {
+		t.Errorf("feed.js has %d setHidden(emptyEl calls, want exactly 1 (only setEmptyState shows or hides an empty state)", n)
+	}
+
+	shown := jsFunctionBody(t, feed, "elementIsShown(el)")
+	p13MustContain(t, "elementIsShown", shown, "isConnected", "getClientRects()")
+	take := jsFunctionBody(t, feed, "takeMapPopupFocus()")
+	p13MustContain(t, "takeMapPopupFocus", take, "PinalertMap.takeRemovedPopupFocus()")
+
+	mapCode := p19Code(t, "static/js/map.js")
+	render := jsFunctionBody(t, mapCode, "render(state)")
+	p13Ordered(t, render, "render", "removedPopupFocus = false", "isPopupOpen()", "popupHoldsFocus(",
+		"removingPopup = true", "map.removeLayer(", "removingPopup = false")
+	holds := jsFunctionBody(t, mapCode, "popupHoldsFocus(popup)")
+	p13MustContain(t, "popupHoldsFocus", holds, "popupFocusInside", "contains(document.activeElement)", "getClientRects()")
+	taken := jsFunctionBody(t, mapCode, "takeRemovedPopupFocus()")
+	p13Ordered(t, taken, "takeRemovedPopupFocus", "var had = removedPopupFocus", "removedPopupFocus = false", "return had")
+	p13MustContain(t, "map.js", mapCode, "takeRemovedPopupFocus: takeRemovedPopupFocus")
+	closeBody := jsFunctionBody(t, mapCode, "onPopupClose(evt)")
+	p13Ordered(t, closeBody, "onPopupClose", "removingPopup", "returnFocusToOpener(")
+}
+
+// p19NoSpace drops every whitespace rune, so a value written on several lines
+// or with different spacing compares equal.
+func p19NoSpace(s string) string {
+	return strings.Join(strings.Fields(s), "")
+}
+
+// p19Condition returns the first "(feature: VALUEpx)" group in a media
+// prelude, and fails the test when there is none.
+func p19Condition(t *testing.T, media, feature string) string {
+	t.Helper()
+	re := regexp.MustCompile(`\(` + regexp.QuoteMeta(feature) + `:\s*[0-9.]+px\)`)
+	found := re.FindString(media)
+	if found == "" {
+		t.Fatalf("media %q has no (%s: Npx) condition", media, feature)
+	}
+	return found
+}
+
+// TestPopupResizeUpdatesOnlyWithoutFocus pins A59: the popup content refresh
+// runs at exactly two points, the map resize handler and focusOpenPopup, and
+// never while focus is inside the popup, so the card built once keeps its
+// focus, panel and confirmation state.
+func TestPopupResizeUpdatesOnlyWithoutFocus(t *testing.T) {
+	code := p19Code(t, "static/js/map.js")
+
+	resize := jsFunctionBody(t, code, "onMapResize()")
+	focus := jsFunctionBody(t, code, "focusOpenPopup()")
+	inResize := strings.Count(resize, ".update()")
+	inFocus := strings.Count(focus, ".update()")
+	if inResize != 1 || inFocus != 1 {
+		t.Errorf("onMapResize holds %d and focusOpenPopup holds %d update calls, want 1 each", inResize, inFocus)
+	}
+	if total := strings.Count(code, ".update()"); total != inResize+inFocus {
+		t.Errorf("map.js holds %d update calls, want only the %d in onMapResize and focusOpenPopup", total, inResize+inFocus)
+	}
+	p13Ordered(t, resize, "onMapResize", "refreshPanPadding()", "applyPanPadding(", "contains(document.activeElement)", ".update()")
+	p13Ordered(t, focus, "focusOpenPopup", "offsetParent === null", "openedWhileHidden", "contains(document.activeElement)",
+		".update()", ".focus(")
+
+	initBody := jsFunctionBody(t, code, "init()")
+	p13MustContain(t, "init", initBody, "map.on('resize', onMapResize)")
+	if n := strings.Count(code, "new ResizeObserver("); n != 1 {
+		t.Errorf("map.js creates %d ResizeObservers, want exactly 1", n)
+	}
+}
+
+// TestPopupPaddingTokensAgree pins A60 and A65: the autopan paddings are
+// derived from the same tokens and media conditions as the popup max height
+// calc in trust.css, so the card clears the fixed controls at the same widths
+// and heights the stylesheet switches at.
+func TestPopupPaddingTokensAgree(t *testing.T) {
+	rules := p13ParseCSS(p13ReadStatic(t, "static/css/trust.css"))
+	const contentHead = ".leaflet-container .leaflet-popup-content"
+	narrow, _ := p13Rule(t, rules, "max-width", contentHead)
+	short, _ := p13Rule(t, rules, "max-height", contentHead)
+	for label, rule := range map[string]p13CSSRule{"narrow": narrow, "short": short} {
+		if !strings.Contains(rule.Decls["max-height"], "100dvh") {
+			t.Errorf("%s max height %q does not use 100dvh", label, rule.Decls["max-height"])
+		}
+	}
+
+	code := p19Code(t, "static/js/map.js")
+	flat := p19NoSpace(code)
+	condNarrow := p19Condition(t, narrow.Media, "max-width")
+	condShort := p19Condition(t, short.Media, "max-height")
+	for _, cond := range []string{condNarrow, condShort} {
+		if !strings.Contains(flat, p19NoSpace("'"+cond+"'")) {
+			t.Errorf("map.js does not quote the CSS media condition %q", cond)
+		}
+	}
+
+	narrowFlat := p19NoSpace(narrow.Decls["max-height"])
+	for _, want := range []string{
+		"(var(--space-md)+var(--touch-target-min)+var(--space-md))",
+		"(var(--space-lg)+var(--touch-target-min)+var(--space-md))",
+	} {
+		if !strings.Contains(narrowFlat, want) {
+			t.Errorf("narrow max height lacks the reserve group %q", want)
+		}
+	}
+	if !strings.Contains(p19NoSpace(short.Decls["max-height"]), "100dvh-var(--space-md)-var(--space-md)-20px") {
+		t.Errorf("short max height %q lacks the 16 and 16 form", short.Decls["max-height"])
+	}
+
+	cssNames := map[string]bool{}
+	for _, m := range regexp.MustCompile(`var\((--[a-z-]+)\)`).FindAllStringSubmatch(narrow.Decls["max-height"], -1) {
+		cssNames[m[1]] = true
+	}
+	refresh := jsFunctionBody(t, code, "refreshPanPadding()")
+	jsNames := map[string]bool{}
+	for _, m := range regexp.MustCompile(`'(--[a-z-]+)'`).FindAllStringSubmatch(refresh, -1) {
+		jsNames[m[1]] = true
+	}
+	if len(cssNames) == 0 || len(cssNames) != len(jsNames) {
+		t.Errorf("token names differ: narrow max height %v, refreshPanPadding %v", cssNames, jsNames)
+	}
+	for name := range cssNames {
+		if !jsNames[name] {
+			t.Errorf("refreshPanPadding does not read %s, which the narrow max height uses", name)
+		}
+	}
+	p13MustContain(t, "refreshPanPadding", refresh,
+		"spaceMd + touchMin + spaceMd", "spaceLg + touchMin + spaceMd",
+		"mediaMatches(NARROW_QUERY)", "mediaMatches(SHORT_QUERY)")
+
+	bind, anchorFound, termFound := windowAfter(code, "bindPopup(", "marker.on(")
+	if !anchorFound || !termFound {
+		t.Fatalf("map.js: could not bound the bind call window (anchor=%v terminator=%v)", anchorFound, termFound)
+	}
+	p13MustContain(t, "bind call", bind,
+		"autoPan: !reducedMotion", "autoPanPaddingTopLeft: panPad.topLeft",
+		"autoPanPaddingBottomRight: panPad.bottomRight", "keepInView: true")
+	p13MustNotContain(t, "bind call", bind, "autoPanPadding:", "maxHeight")
+}
+
+// TestPopupReducedMotionPansWithoutAnimation pins A60, A68 and Motion: under
+// prefers-reduced-motion the map has no fade or zoom animation, the list path
+// sets the view without animation, Leaflet autopan is off, and the card is
+// panned into view at once from three points with an edge clamped offset.
+func TestPopupReducedMotionPansWithoutAnimation(t *testing.T) {
+	code := p19Code(t, "static/js/map.js")
+	p13MustContain(t, "map.js", code, "var reducedMotion = mediaMatches('(prefers-reduced-motion: reduce)')")
+
+	options, anchorFound, termFound := windowAfter(code, "L.map(", ");")
+	if !anchorFound || !termFound {
+		t.Fatalf("map.js: could not bound the map construction window (anchor=%v terminator=%v)", anchorFound, termFound)
+	}
+	p13MustContain(t, "map options", options,
+		"fadeAnimation: !reducedMotion", "markerZoomAnimation: !reducedMotion", "zoomAnimation: !reducedMotion")
+
+	fly := jsFunctionBody(t, code, "flyTo(id, opts)")
+	p13MustContain(t, "flyTo", fly, "reducedMotion", "setView(", "animate: false")
+
+	pan := jsFunctionBody(t, code, "panPopupIntoView(popup)")
+	p13MustContain(t, "panPopupIntoView", pan,
+		"reducedMotion", "isOpen()", "dragging", "moving()", "getBoundingClientRect()", "panPad",
+		"Math.round(", "animate: false")
+	p13Ordered(t, pan, "panPopupIntoView", "right > ", "left - dx < ", "bottom > ", "top - dy < ", "panBy(")
+
+	if n := strings.Count(code, "panPopupIntoView("); n != 4 {
+		t.Errorf("map.js has %d panPopupIntoView( occurrences, want 4 (one declaration and three call points)", n)
+	}
+	for _, name := range []string{"onPopupOpen(evt)", "onMapMoveEnd()", "relayoutOpenPopup(marker, card)"} {
+		body := jsFunctionBody(t, code, name)
+		if n := strings.Count(body, "panPopupIntoView("); n != 1 {
+			t.Errorf("%s holds %d panPopupIntoView( calls, want 1", name, n)
+		}
+	}
+	relayout := jsFunctionBody(t, code, "relayoutOpenPopup(marker, card)")
+	p13Ordered(t, relayout, "relayoutOpenPopup", "setLatLng(", "panPopupIntoView(")
+
+	initBody := jsFunctionBody(t, code, "init()")
+	p13MustContain(t, "init", initBody, "map.on('moveend', onMapMoveEnd)")
 }
