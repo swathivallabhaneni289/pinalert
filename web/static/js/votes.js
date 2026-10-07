@@ -347,26 +347,19 @@
   // order) inside a .vote-controls container, plus a hidden .vote-error
   // paragraph. It applies no state of its own — updateVoteBlock is always
   // called immediately after it. Built entirely with document.createElement,
-  // never a markup string (T-01-03).
+  // never a markup string (T-01-03). It returns the controls, the note and
+  // the error, and the consumers append them in that order.
   function createVoteBlock(reportId) {
     var seq = ++voteBlockSeq;
     var controls = document.createElement('div');
     controls.className = 'vote-controls';
     controls.dataset.reportId = String(reportId);
 
-    var confirmBtn = document.createElement('button');
-    confirmBtn.type = 'button';
-    confirmBtn.className = 'vote-btn vote-btn--confirm';
-    confirmBtn.dataset.action = 'confirm';
+    var confirmBtn = createVoteButton('vote-btn vote-btn--confirm', 'confirm', 'vote-btn__icon--check', 'Confirm');
     confirmBtn.setAttribute('aria-pressed', 'false');
-    Pinalert.setText(confirmBtn, 'Confirm');
 
-    var disputeBtn = document.createElement('button');
-    disputeBtn.type = 'button';
-    disputeBtn.className = 'vote-btn vote-btn--dispute';
-    disputeBtn.dataset.action = 'dispute';
+    var disputeBtn = createVoteButton('vote-btn vote-btn--dispute', 'dispute', 'vote-btn__icon--ban', 'Dispute');
     disputeBtn.setAttribute('aria-pressed', 'false');
-    Pinalert.setText(disputeBtn, 'Dispute');
 
     controls.appendChild(confirmBtn);
     controls.appendChild(disputeBtn);
@@ -376,11 +369,7 @@
     // renders for the reporter and the non-reporter alike — the server's
     // response (via resolutionOutcomeMessage) is what distinguishes D-13's
     // instant path from D-14's threshold-gated one, never the markup.
-    var resolveBtn = document.createElement('button');
-    resolveBtn.type = 'button';
-    resolveBtn.className = 'vote-btn vote-btn--resolve';
-    resolveBtn.dataset.action = 'resolve';
-    Pinalert.setText(resolveBtn, RESOLVE_BUTTON_LABEL);
+    var resolveBtn = createVoteButton('vote-btn vote-btn--resolve', 'resolve', 'vote-btn__icon--shield-check', RESOLVE_BUTTON_LABEL);
     controls.appendChild(resolveBtn);
 
     // The inline destructive confirmation (D-15). Mounted INSIDE
@@ -429,7 +418,14 @@
     error.setAttribute('role', 'alert');
     error.hidden = true;
 
-    var block = { controls: controls, error: error };
+    // The slot for the too far sentence. It ships hidden and empty, and is
+    // a sibling of the controls, never a child of them.
+    var note = document.createElement('p');
+    note.className = 'vote-note';
+    note.id = 'pinalert-vote-note-' + seq;
+    note.hidden = true;
+
+    var block = { controls: controls, note: note, error: error };
 
     // One listener on the container, not one per button. Delegation at
     // this level is what lets a future third button be appended with no
@@ -564,6 +560,44 @@
     }
     var confirmBlock = block.controls.querySelector('.resolve-confirm');
     confirmBlock.hidden = true;
+  }
+
+  // setVoteButtonLabel writes the visible word of a vote button into its
+  // label span. It never writes on the button itself, because the text
+  // setter replaces every child and would delete the icon span.
+  function setVoteButtonLabel(button, text) {
+    if (!button) {
+      return;
+    }
+    var label = button.querySelector('.vote-btn__label');
+    if (label) {
+      Pinalert.setText(label, text);
+    }
+  }
+
+  // createVoteButton builds one icon plus word vote button: an aria-hidden
+  // icon span, then a label span holding the word, so a screen reader hears
+  // the word alone. The icon modifier class is a literal passed by the
+  // builders (check, ban, shield-check or rotate-ccw), never report data.
+  // The icon span carries no shared glyph base class: the vote button icon
+  // rule in the stylesheet repeats its own mask base.
+  function createVoteButton(className, action, iconClass, labelText) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = className;
+    button.dataset.action = action;
+
+    var icon = document.createElement('span');
+    icon.className = 'vote-btn__icon ' + iconClass;
+    icon.setAttribute('aria-hidden', 'true');
+
+    var label = document.createElement('span');
+    label.className = 'vote-btn__label';
+
+    button.appendChild(icon);
+    button.appendChild(label);
+    setVoteButtonLabel(button, labelText);
+    return button;
   }
 
   // isDisplayed is true only for an element that is attached to the page and

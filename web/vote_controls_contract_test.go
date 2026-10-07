@@ -253,3 +253,119 @@ func TestEscapeCancelHookIsExported(t *testing.T) {
 
 	p09MustNotContain(t, "createVoteBlock", p09FuncBody(t, text, "createVoteBlock(reportId)"), "'Escape'")
 }
+
+// TestVoteButtonsCarryIconAndLabelSpans pins amendments A12 and A36. Confirm,
+// Dispute and Mark resolved are built by one helper that gives each button an
+// aria-hidden icon span and a label span holding the visible word, and every
+// later label write goes to the label span, because the text setter replaces
+// every child and would delete the icon. Yes and Cancel carry no icon and
+// keep plain text writes. Static inspection proves the construction and the
+// absence of direct writes. It cannot show the icon, which plan 03-11 draws
+// with CSS masks, so the look is left to that plan and the human check.
+func TestVoteButtonsCarryIconAndLabelSpans(t *testing.T) {
+	text := p09ReadJS(t, "static/js/votes.js")
+
+	buttonBody := p09FuncBody(t, text, "createVoteButton(className, action, iconClass, labelText)")
+	p09MustContain(t, "createVoteButton", buttonBody,
+		"document.createElement('button')", "button.type = 'button'", "'vote-btn__icon '",
+		"setAttribute('aria-hidden', 'true')", "'vote-btn__label'", "setVoteButtonLabel(button, labelText)")
+	p09MustNotContain(t, "createVoteButton", buttonBody, "Pinalert.setText(button")
+
+	labelBody := p09FuncBody(t, text, "setVoteButtonLabel(button, text)")
+	p09MustContain(t, "setVoteButtonLabel", labelBody, "'.vote-btn__label'", "Pinalert.setText(")
+
+	blockBody := p09FuncBody(t, text, "createVoteBlock(reportId)")
+	if n := strings.Count(blockBody, "createVoteButton("); n != 3 {
+		t.Errorf("createVoteBlock must build exactly three buttons through createVoteButton, found %d", n)
+	}
+	p09MustContain(t, "createVoteBlock", blockBody,
+		"createVoteButton('vote-btn vote-btn--confirm', 'confirm', 'vote-btn__icon--check', 'Confirm')",
+		"createVoteButton('vote-btn vote-btn--dispute', 'dispute', 'vote-btn__icon--ban', 'Dispute')",
+		"createVoteButton('vote-btn vote-btn--resolve', 'resolve', 'vote-btn__icon--shield-check', RESOLVE_BUTTON_LABEL)",
+		"Pinalert.setText(affirmBtn, RESOLVE_CONFIRM_AFFIRM_LABEL)",
+		"Pinalert.setText(cancelBtn, RESOLVE_CONFIRM_CANCEL_LABEL)")
+
+	direct := regexp.MustCompile(`Pinalert\.setText\(\s*(confirmBtn|disputeBtn|resolveBtn|reopenBtn)\b`)
+	if loc := direct.FindStringIndex(text); loc != nil {
+		t.Errorf("votes.js writes text straight onto a vote button at offset %d, which would wipe its icon span", loc[0])
+	}
+	p09MustContain(t, "onControlsClick", p09FuncBody(t, text, "onControlsClick(block, button)"),
+		"Pinalert.setText(affirmBtn, RESOLVE_BUTTON_LABEL_IN_FLIGHT)")
+}
+
+// TestVoteBlockReturnsNoteAndConsumersAppendInOrder pins amendments A66 and
+// A8 for the note node. createVoteBlock returns controls, note and error; the
+// note is a hidden, empty paragraph whose id comes from the same counter as
+// the question id; the feed row and the popup append controls, then note,
+// then error, and neither types the note class or touches its hidden state.
+// Static inspection proves the order and the absences. It cannot show the
+// sentence, which plan 03-18 writes, nor the spacing, which plan 03-11 styles.
+func TestVoteBlockReturnsNoteAndConsumersAppendInOrder(t *testing.T) {
+	text := p09ReadJS(t, "static/js/votes.js")
+	body := p09FuncBody(t, text, "createVoteBlock(reportId)")
+
+	seqMatch := regexp.MustCompile(`(\w+)\s*=\s*\+\+voteBlockSeq`).FindStringSubmatch(body)
+	if seqMatch == nil {
+		t.Fatalf("createVoteBlock does not assign ++voteBlockSeq to a local")
+	}
+	noteID := regexp.MustCompile(`note\.id\s*=\s*'pinalert-vote-note-'\s*\+\s*(\w+);`).FindStringSubmatch(body)
+	if noteID == nil || noteID[1] != seqMatch[1] {
+		t.Errorf("note.id must be 'pinalert-vote-note-' plus the counter local %q, got %v", seqMatch[1], noteID)
+	}
+	p09MustContain(t, "createVoteBlock", body,
+		"'vote-note'", "note.hidden = true", "var block = { controls: controls, note: note, error: error };")
+
+	for _, path := range []string{"static/js/feed.js", "static/js/map.js"} {
+		consumer := p09ReadJS(t, path)
+		first := regexp.MustCompile(`appendChild\((\w+)\.controls\)`).FindStringSubmatch(consumer)
+		if first == nil {
+			t.Errorf("%s does not append block.controls", path)
+			continue
+		}
+		p09Ordered(t, consumer, path+" vote block mount order",
+			first[0], "appendChild("+first[1]+".note)", "appendChild("+first[1]+".error)")
+		p09MustNotContain(t, path, consumer, "vote-note", "note.hidden")
+	}
+}
+
+// TestVoteErrorGetsNoChildNodes pins amendment A73 on the JavaScript side.
+// The vote error paragraph only ever receives text through Pinalert.setText,
+// so its alert glyph can live in CSS as a pseudo element. Static inspection
+// proves no code appends a child to a node named error and that no file names
+// the glyph. It cannot see a child added through some other variable name,
+// which review covers.
+func TestVoteErrorGetsNoChildNodes(t *testing.T) {
+	appendRe := regexp.MustCompile(`\berror\.(appendChild|append|prepend|insertBefore|replaceChildren|insertAdjacentElement)\(`)
+	for _, path := range []string{
+		"static/js/votes.js", "static/js/activity.js", "static/js/feed.js", "static/js/map.js",
+	} {
+		text := p09ReadJS(t, path)
+		if loc := appendRe.FindStringIndex(text); loc != nil {
+			t.Errorf("%s adds a child node to the error paragraph at offset %d", path, loc[0])
+		}
+		p09MustNotContain(t, path, text, "circle-alert")
+	}
+
+	text := p09ReadJS(t, "static/js/votes.js")
+	for _, anchor := range []string{"showVoteError(block, message)", "clearVoteError(block)"} {
+		body := p09FuncBody(t, text, anchor)
+		p09MustContain(t, anchor, body, "Pinalert.setText(block.error")
+		p09MustNotContain(t, anchor, body, "createElement")
+	}
+}
+
+// TestRetapResendsTheSameVote pins amendment A34, the Phase 2 re-tap
+// contract. Re-tapping the pressed Confirm or Dispute sends the same vote
+// again: there is no take back, no toggle off, and no unvote request. The
+// click handler never reads the pressed state, and the transport action is
+// still derived only from the clicked action. Static inspection proves the
+// absence of such a branch. It cannot prove the server's reply to a repeated
+// vote, which the Go service tests cover.
+func TestRetapResendsTheSameVote(t *testing.T) {
+	text := p09ReadJS(t, "static/js/votes.js")
+	body := p09FuncBody(t, text, "onControlsClick(block, button)")
+
+	p09MustNotContain(t, "onControlsClick", body, "aria-pressed")
+	p09MustContain(t, "onControlsClick", body, "var transportAction = isResolveAffirm ? 'resolve' : action;")
+	p09MustNotContain(t, "votes.js", text, "'DELETE'", "unvote")
+}

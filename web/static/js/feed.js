@@ -179,6 +179,9 @@
 
     var block = PinalertVotes.createVoteBlock(id);
     body.appendChild(block.controls);
+    // The too far sentence slot sits between the buttons and the error and
+    // is owned by votes.js.
+    body.appendChild(block.note);
     body.appendChild(block.error);
 
     li.appendChild(badge);
