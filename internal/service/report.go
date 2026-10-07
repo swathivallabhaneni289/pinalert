@@ -428,8 +428,20 @@ func voteReadIDs(pageIDs []int64, history []sqlcgen.ReporterHistoryReportsRow) [
 	return out
 }
 
+// MaxReporterAccountsPerRead is the most distinct reporter accounts a feed
+// read loads history for, counted over the reports in the order NearbyReports
+// returns them, which is nearest first. A report whose reporter is past the cap
+// carries the none signal and is still listed, in its place (RESOLVED Q7). The
+// cap bounds the history read and the vote read that a 50 km feed can trigger
+// on every 30 second poll (T-03-05). Only Nearby can reach it, because
+// CastVote and ActivityForAccount read one account.
+const MaxReporterAccountsPerRead = 200
+
 // pageReporterAccounts collects each non nil reporter account of the page
-// once, in the order the ids are given and of first appearance.
+// once, in the order the ids are given and of first appearance. It stops once
+// MaxReporterAccountsPerRead accounts are collected. An account already
+// collected still maps to its signal on a farther report, because
+// reporterSignalRef looks signals up by account.
 func pageReporterAccounts(ids []int64, reporterByReport map[int64]*int64) []int64 {
 	var accounts []int64
 	seen := make(map[int64]struct{})
@@ -440,6 +452,9 @@ func pageReporterAccounts(ids []int64, reporterByReport map[int64]*int64) []int6
 		}
 		if _, ok := seen[*reporterID]; ok {
 			continue
+		}
+		if len(accounts) >= MaxReporterAccountsPerRead {
+			break
 		}
 		seen[*reporterID] = struct{}{}
 		accounts = append(accounts, *reporterID)
@@ -502,7 +517,7 @@ func voteRowsByReport(rows []sqlcgen.CurrentVotesForReportsRow) map[int64][]sqlc
 //     because the history read takes it as a parameter.
 //  5. ReporterAccountsForReports once for the whole page.
 //  6. Collect the distinct reporter accounts in the order the reports came
-//     back, nearest first.
+//     back, nearest first, capped at MaxReporterAccountsPerRead (Q7).
 //  7. When there is at least one account, ReporterHistoryReports once for
 //     those accounts, keyed by verified account and never by session (D-10),
 //     with the window and cap built by reporterHistoryParams (D-13).
