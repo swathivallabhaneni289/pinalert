@@ -399,4 +399,29 @@ func TestTrustCopyReporterIsPlainText(t *testing.T) {
 			check(fmt.Sprintf("random %d", i), ReporterSignals(ids, h, v, p10Now))
 		}
 	})
+
+	t.Run("trust object grid", func(t *testing.T) {
+		ids, h, v := p10GroupFixture()
+		signals := ReporterSignals(ids, h, v, p10Now)
+		stray := ReporterSignal{Tag: ReporterNone, Label: "stray", Sentence: "stray"}
+		inputs := map[string]*ReporterSignal{"nil": nil, "stray none": &stray}
+		for _, id := range []int64{101, 102, 103, 104, 105, 106} {
+			s := signals[id]
+			inputs[fmt.Sprintf("account %d", id)] = &s
+		}
+		for _, vis := range Visibilities {
+			for name, in := range inputs {
+				got := BuildTrust(p10TrustInput(vis, in)).Reporter
+				assertPlainCopy(t, got.Label)
+				assertPlainCopy(t, got.Sentence)
+				assertPlainCopy(t, got.ScoreSentence)
+				if (got.Label == "") != (got.Tag == ReporterNone) {
+					t.Errorf("%s/%s: label %q with tag %q", vis, name, got.Label, got.Tag)
+				}
+				if (got.ScoreSentence == "") != (got.Score == nil) {
+					t.Errorf("%s/%s: score sentence %q with score %v", vis, name, got.ScoreSentence, p10Deref(got.Score))
+				}
+			}
+		}
+	})
 }
