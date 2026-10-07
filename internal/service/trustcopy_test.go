@@ -8,6 +8,7 @@ package service
 import (
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -50,11 +51,16 @@ func p05DistinctRows(n int, value VoteValue, firstAccount int64) []sqlcgen.Curre
 	return rows
 }
 
-// p05StringFields collects every string field of v, walking nested structs.
+// p05StringFields collects every copy string field of v, walking nested
+// structs. Fields of a named string type, such as CurrencyBand and FadeStage,
+// are enum slugs that go on the wire as identifiers, not authored copy, so
+// they are skipped (plan 03-08).
 func p05StringFields(v reflect.Value, path string, out map[string]string) {
 	switch v.Kind() {
 	case reflect.String:
-		out[path] = v.String()
+		if v.Type() == reflect.TypeOf("") {
+			out[path] = v.String()
+		}
 	case reflect.Struct:
 		for i := 0; i < v.NumField(); i++ {
 			p05StringFields(v.Field(i), path+"."+v.Type().Field(i).Name, out)
@@ -64,6 +70,122 @@ func p05StringFields(v reflect.Value, path string, out map[string]string) {
 			p05StringFields(v.Elem(), path, out)
 		}
 	}
+}
+
+// TestTrustCopyCurrencyIsPlainText is the V-32 extension for the still current
+// copy (A50, D-19, T-03-07): the exact strings, the builder grid and every
+// currency string BuildTrust can produce stay inside the closed set.
+func TestTrustCopyCurrencyIsPlainText(t *testing.T) {
+	t.Run("exact copy", func(t *testing.T) {
+		exact := []struct{ got, want string }{
+			{currencyLabelUpToDate, "Up to date"},
+			{currencyLabelGettingOld, "Getting old"},
+			{currencyLabelNeedsReconfirming, "Needs re-confirming"},
+			{currencyLabelTooEarly, "Too early to tell"},
+			{upToDateSentence(2, "2 hours"), "2 different places confirmed this in the last 2 hours."},
+			{gettingOldSentence("6 hours"), "Confirmed earlier, but fewer than 2 places confirmed it in the last 6 hours."},
+			{needsReconfirmingSentence, "Confirmed earlier, but it has gone quiet. People nearby can confirm it again."},
+			{disputeRaisedBarSentence(3, "2 hours"), "Someone nearby disputed this, so it needs 3 places to confirm it in the last 2 hours."},
+			{tooEarlySentence(), "Fewer than 2 places have confirmed this so far."},
+			{currencyScoreSentence(82), "Score 82 out of 100, based on how recently different places confirmed this."},
+		}
+		for _, e := range exact {
+			if e.got != e.want {
+				t.Errorf("copy = %q, want %q", e.got, e.want)
+			}
+		}
+		threshold := " " + strconv.Itoa(IndependentAgreementThreshold) + " "
+		for _, s := range []string{gettingOldSentence("2 hours"), tooEarlySentence(), upToDateSentence(IndependentAgreementThreshold, "2 hours")} {
+			if !strings.Contains(s, threshold) && !strings.HasPrefix(s, strings.TrimSpace(threshold)+" ") {
+				t.Errorf("copy %q does not carry the threshold", s)
+			}
+		}
+	})
+
+	t.Run("builder grid", func(t *testing.T) {
+		var phrases []string
+		for _, m := range []int{0, 1, 2, 45, 59, 60, 61, 90, 120, 360, 1440} {
+			p := windowPhrase(m)
+			assertPlainCopy(t, p)
+			phrases = append(phrases, p)
+		}
+		for _, p := range phrases {
+			for _, r := range []int{2, 3, 10, 99, 100, 12345} {
+				assertPlainCopy(t, upToDateSentence(r, p))
+			}
+			assertPlainCopy(t, gettingOldSentence(p))
+			for _, k := range []int{3, 4, 10, 100} {
+				assertPlainCopy(t, disputeRaisedBarSentence(k, p))
+			}
+		}
+		for _, s := range []int{0, 1, 12, 49, 50, 62, 74, 75, 93, 99, 100} {
+			assertPlainCopy(t, currencyScoreSentence(s))
+		}
+		assertPlainCopy(t, tooEarlySentence())
+		assertPlainCopy(t, needsReconfirmingSentence)
+		for _, b := range CurrencyBands {
+			assertPlainCopy(t, currencyLabel(b))
+		}
+	})
+
+	t.Run("BuildTrust grid", func(t *testing.T) {
+		metas := []ReportMeta{p08Low, p08Medium, p08Critical, p08RescueLow}
+		for _, vis := range Visibilities {
+			for _, meta := range metas {
+				life := ExpiryDuration(meta.Severity)
+				window := life / CurrencyWindowDivisor
+				expires := p08Created.Add(life)
+				inLife := p08Created.Add(3*window + time.Minute)
+
+				at := func(back time.Duration) time.Time { return inLife.Add(-back) }
+				confirm := func(account int64, cell string, when time.Time) sqlcgen.CurrentVotesForReportsRow {
+					return p05VoteAt(1, account, VoteKindContent, VoteConfirm, cell, when)
+				}
+				dispute := func(account int64, cell string, when time.Time) sqlcgen.CurrentVotesForReportsRow {
+					return p05VoteAt(1, account, VoteKindContent, VoteDispute, cell, when)
+				}
+				twoAt := func(back time.Duration) []sqlcgen.CurrentVotesForReportsRow {
+					return []sqlcgen.CurrentVotesForReportsRow{confirm(101, "g1", at(back)), confirm(102, "g2", at(back))}
+				}
+				rowSets := map[string][]sqlcgen.CurrentVotesForReportsRow{
+					"none":                nil,
+					"one confirm":         {confirm(101, "g1", at(0))},
+					"two fresh":           twoAt(0),
+					"two 1.5 windows old": twoAt(window * 3 / 2),
+					"two 3 windows old":   twoAt(3 * window),
+					"three and a dispute": {
+						confirm(101, "g1", at(0)), confirm(102, "g2", at(time.Minute)),
+						confirm(103, "g3", at(2*time.Minute)), dispute(201, "g4", at(time.Minute)),
+					},
+					"two and a dispute": append(twoAt(0), dispute(201, "g4", at(time.Minute))),
+				}
+				for name, rows := range rowSets {
+					for _, now := range []time.Time{inLife, expires} {
+						in := TrustInput{
+							Rows: rows, ReportID: 1, Meta: meta, Visibility: vis,
+							CreatedAt: p08Created, ExpiresAt: expires, Now: now,
+						}
+						cur := BuildTrust(in).Currency
+						label := fmt.Sprintf("%s/%v/%s/%v", vis, meta, name, now.Equal(expires))
+						for _, s := range []string{cur.Label, cur.Sentence, cur.ScoreSentence} {
+							assertPlainCopy(t, s)
+							for _, banned := range []string{"fades", "first report", "/100"} {
+								if strings.Contains(s, banned) {
+									t.Errorf("%s: copy %q contains %q", label, s, banned)
+								}
+							}
+						}
+						if (cur.Label == "") != (cur.Sentence == "") {
+							t.Errorf("%s: Label %q and Sentence %q disagree", label, cur.Label, cur.Sentence)
+						}
+						if (cur.ScoreSentence == "") != (cur.Score == nil) {
+							t.Errorf("%s: ScoreSentence %q and Score %v disagree", label, cur.ScoreSentence, cur.Score)
+						}
+					}
+				}
+			}
+		}
+	})
 }
 
 // TestTrustCountLabel is V-12: the capped numerals are always present, and

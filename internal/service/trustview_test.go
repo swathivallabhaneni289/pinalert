@@ -151,6 +151,145 @@ func TestBuildTrustCountsMatchTally(t *testing.T) {
 	})
 }
 
+// TestBuildTrustCarriesCurrency proves BuildTrust sets Currency from the same
+// filterVoteRows buckets that give N, that the reporter, resolution rows and
+// other reports never refresh it (D-05), and that a vote caller sees it move
+// with the injected clock.
+func TestBuildTrustCarriesCurrency(t *testing.T) {
+	t.Run("equals buildCurrency over the shared buckets", func(t *testing.T) {
+		rng := rand.New(rand.NewPCG(8, 5))
+		cells := []string{"cellA", "cellB", "cellC", "cellD", "cellE", "cellF"}
+		kinds := []VoteKind{VoteKindContent, VoteKindResolution, VoteKind("bogus")}
+		values := []VoteValue{VoteConfirm, VoteDispute, VoteResolve, VoteReopen, VoteValue("bogus")}
+		metas := []ReportMeta{
+			{Severity: SeverityLow, Category: CategoryFlood},
+			{Severity: SeverityCritical, Category: CategoryFlood},
+			{Severity: SeverityLow, Category: CategoryRescueNeeded},
+		}
+
+		for i := 0; i < 300; i++ {
+			meta := metas[rng.IntN(len(metas))]
+			life := ExpiryDuration(meta.Severity)
+			created := p08Created
+			expires := created.Add(life)
+			now := created.Add(time.Duration(rng.Int64N(int64(life + time.Hour + 1))))
+			vis := Visibilities[rng.IntN(len(Visibilities))]
+
+			n := rng.IntN(31)
+			rows := make([]sqlcgen.CurrentVotesForReportsRow, 0, n)
+			for j := 0; j < n; j++ {
+				at := created.Add(time.Duration(rng.Int64N(int64(now.Sub(created)) + 1)))
+				rows = append(rows, p05VoteAt(
+					int64(1+rng.IntN(2)),
+					int64(1+rng.IntN(12)),
+					kinds[rng.IntN(len(kinds))],
+					values[rng.IntN(len(values))],
+					cells[rng.IntN(len(cells))],
+					at,
+				))
+			}
+			var reporter *int64
+			if rng.IntN(2) == 0 {
+				reporter = acctPtr(int64(1 + rng.IntN(12)))
+			}
+
+			in := TrustInput{
+				Rows: rows, ReportID: 1, ReporterAccountID: reporter, Meta: meta,
+				Visibility: vis, CreatedAt: created, ExpiresAt: expires, Now: now,
+			}
+			b := filterVoteRows(in.Rows, in.ReportID, in.ReporterAccountID)
+			want := buildCurrency(currencyInput{
+				Confirms: b.Confirms, Disputes: b.Disputes, Meta: meta, Visibility: vis,
+				CreatedAt: created, ExpiresAt: expires, Now: now,
+			})
+			got := BuildTrust(in)
+			if !reflect.DeepEqual(got.Currency, want) {
+				t.Fatalf("iteration %d: Currency differs from buildCurrency:\n%+v\n%+v", i, got.Currency, want)
+			}
+
+			shuffled := append([]sqlcgen.CurrentVotesForReportsRow(nil), rows...)
+			rng.Shuffle(len(shuffled), func(a, b int) { shuffled[a], shuffled[b] = shuffled[b], shuffled[a] })
+			in.Rows = shuffled
+			if again := BuildTrust(in); !reflect.DeepEqual(got.Currency, again.Currency) {
+				t.Fatalf("iteration %d: shuffled rows changed Currency:\n%+v\n%+v", i, got.Currency, again.Currency)
+			}
+		}
+	})
+
+	t.Run("the reporter, resolution rows and other reports never refresh it", func(t *testing.T) {
+		build := func(extra ...sqlcgen.CurrentVotesForReportsRow) Trust {
+			rows := []sqlcgen.CurrentVotesForReportsRow{
+				p05VoteAt(1, 11, VoteKindContent, VoteConfirm, "p08-a", p05Now),
+				p05VoteAt(1, 12, VoteKindContent, VoteConfirm, "p08-b", p05Now.Add(-5*time.Hour).Add(30*time.Minute)),
+			}
+			rows = append(rows, extra...)
+			return BuildTrust(p05Input(rows, acctPtr(7), VisibilityLive, p05Now.Add(3*time.Hour)))
+		}
+		base := build().Currency
+		if base.Score == nil || *base.Score != 43 || base.Band != CurrencyNeedsReconfirming || base.RecentPlaces != 1 {
+			t.Fatalf("base = %+v, want 43 needs_reconfirming with 1 recent place", base)
+		}
+
+		cases := map[string]sqlcgen.CurrentVotesForReportsRow{
+			"reporter confirm":        p05VoteAt(1, 7, VoteKindContent, VoteConfirm, "p08-c", p05Now),
+			"resolve":                 p05VoteAt(1, 13, VoteKindResolution, VoteResolve, "p08-c", p05Now),
+			"reopen":                  p05VoteAt(1, 14, VoteKindResolution, VoteReopen, "p08-c", p05Now),
+			"confirm on other report": p05VoteAt(2, 15, VoteKindContent, VoteConfirm, "p08-c", p05Now),
+		}
+		for name, row := range cases {
+			if got := build(row).Currency; !reflect.DeepEqual(got, base) {
+				t.Errorf("%s changed Currency:\n%+v\n%+v", name, got, base)
+			}
+		}
+
+		control := build(p05VoteAt(1, 16, VoteKindContent, VoteConfirm, "p08-c", p05Now)).Currency
+		if control.Score == nil || *control.Score != 100 || control.Band != CurrencyUpToDate || control.RecentPlaces != 2 {
+			t.Errorf("control = %+v, want 100 up_to_date with 2 recent places", control)
+		}
+	})
+
+	t.Run("the cast vote result carries the signal", func(t *testing.T) {
+		rows := []sqlcgen.CurrentVotesForReportsRow{
+			p05VoteAt(1, 11, VoteKindContent, VoteConfirm, "p08-a", p05Now.Add(-30*time.Minute)),
+			p05VoteAt(1, 12, VoteKindContent, VoteConfirm, "p08-b", p05Now.Add(-10*time.Minute)),
+		}
+		cast := func(now time.Time) Trust {
+			q := &fakeVotingQuerier{
+				voteContextRow:   testVoteContext(p05Now.Add(7*time.Hour), acctPtr(7)),
+				currentVotesRows: rows,
+			}
+			svc := NewVotingService(q, WithVotingClock(func() time.Time { return now }))
+			res, err := svc.CastVote(context.Background(), CastVoteInput{
+				ReportID: 1, AccountID: 12, Kind: VoteKindContent, Value: VoteConfirm,
+				Latitude: testReportLat, Longitude: testReportLon,
+			})
+			if err != nil {
+				t.Fatalf("CastVote: %v", err)
+			}
+			return res.Trust
+		}
+
+		fresh := cast(p05Now).Currency
+		if fresh.Band != CurrencyUpToDate || fresh.Score == nil || *fresh.Score != 93 ||
+			fresh.Label != "Up to date" ||
+			fresh.Sentence != "2 different places confirmed this in the last 2 hours." ||
+			fresh.ScoreSentence != "Score 93 out of 100, based on how recently different places confirmed this." ||
+			fresh.RecentPlaces != 2 || fresh.WindowMinutes != 120 ||
+			fresh.FadeStage == nil || *fresh.FadeStage != FadeFresh {
+			t.Errorf("at the vote: Currency = %+v", fresh)
+		}
+
+		later := cast(p05Now.Add(2*time.Hour + 10*time.Minute)).Currency
+		if later.Band != CurrencyGettingOld || later.Score == nil || *later.Score != 66 ||
+			later.Label != "Getting old" ||
+			later.Sentence != "Confirmed earlier, but fewer than 2 places confirmed it in the last 2 hours." ||
+			later.RecentPlaces != 0 ||
+			later.FadeStage == nil || *later.FadeStage != FadeAging {
+			t.Errorf("2 hours 10 minutes later: Currency = %+v", later)
+		}
+	})
+}
+
 // TestTrustLeadSentence covers the lead line rule through BuildTrust.
 func TestTrustLeadSentence(t *testing.T) {
 	const expiredLine = "This report has expired. It can no longer be confirmed."

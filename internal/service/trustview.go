@@ -2,9 +2,11 @@
 // feed, the vote response and the Activity page each call BuildTrust once per
 // report over their one batched vote read, so for the same data and clock the
 // three carry the same value, and the value is the same for every viewer. The
-// object holds the two counters (D-04, R-04, D-16), the lead line (D-17) and
-// the confirmed and disputed panel sentences (D-19, A5, A6). The browser
-// renders these values as text and holds no rule of its own.
+// object holds the two counters (D-04, R-04, D-16), the lead line (D-17), the
+// confirmed and disputed panel sentences (D-19, A5, A6) and the still current
+// signal (D-05, D-06, D-07, D-08, R-01, R-02, R-03, R-08), which is built from
+// the same vote buckets as the counters. The browser renders these values as
+// text and holds no rule of its own.
 
 package service
 
@@ -35,6 +37,10 @@ type Trust struct {
 	ConfirmedSentence string
 	// DisputedSentence is the panel line for M (A56).
 	DisputedSentence string
+	// Currency is the still current signal (D-05 to D-08, R-01 to R-03,
+	// R-08), built by buildCurrency from the same buckets as N. Plan 03-10
+	// appends Reporter after it.
+	Currency CurrencySignal
 }
 
 // TrustInput is everything BuildTrust reads. Visibility is the caller's own
@@ -86,5 +92,14 @@ func BuildTrust(in TrustInput) Trust {
 	t.LeadSentence = trustLeadSentence(in.Visibility, in.ExpiresAt, in.Now)
 	t.ConfirmedSentence = confirmedSentence(confirmed)
 	t.DisputedSentence = disputedSentence(disputed)
+	t.Currency = buildCurrency(currencyInput{
+		Confirms:   buckets.Confirms,
+		Disputes:   buckets.Disputes,
+		Meta:       in.Meta,
+		Visibility: in.Visibility,
+		CreatedAt:  in.CreatedAt,
+		ExpiresAt:  in.ExpiresAt,
+		Now:        in.Now,
+	})
 	return t
 }
