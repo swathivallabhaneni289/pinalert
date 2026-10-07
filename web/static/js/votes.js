@@ -94,6 +94,20 @@
   // array by TestResolutionOutcomeSlugMatchesVisibilityStates.
   var RETRACTED_VISIBILITY_SLUG = 'retracted';
 
+  // Numbers the vote blocks this page builds, so the question id and the
+  // too far sentence id are unique per block. They are never built from
+  // report data.
+  var voteBlockSeq = 0;
+
+  // Which button takes focus back once a vote is released, keyed by the
+  // action that was sent. Confirm and Dispute return to the pressed button
+  // (UI-SPEC Busy state). Yes returns to Mark resolved (A52).
+  var RELEASE_FOCUS_SELECTORS = {
+    confirm: '.vote-btn--confirm',
+    dispute: '.vote-btn--dispute',
+    'confirm-resolve': '.vote-btn--resolve'
+  };
+
   // Reads one cache entry, as stored text, into latitude, longitude and the
   // capture time in epoch milliseconds, or null. Unparsable text and a
   // non finite coordinate give null. A missing or non numeric capture time
@@ -335,6 +349,7 @@
   // called immediately after it. Built entirely with document.createElement,
   // never a markup string (T-01-03).
   function createVoteBlock(reportId) {
+    var seq = ++voteBlockSeq;
     var controls = document.createElement('div');
     controls.className = 'vote-controls';
     controls.dataset.reportId = String(reportId);
@@ -375,20 +390,23 @@
     // needing a second one. Same markup, classes and copy either way; only
     // the nesting differs. Recorded in the SUMMARY as a deliberate
     // divergence.
+    //
+    // The confirmation is a group named by its question, so a screen reader
+    // reads the question before either answer (A16, A63). Cancel comes
+    // first in the DOM and takes focus when the group opens, so the safe
+    // choice is the first one reached. The question id comes from the block
+    // counter, never from the report id.
     var confirmBlock = document.createElement('div');
     confirmBlock.className = 'resolve-confirm';
     confirmBlock.hidden = true;
+    var questionId = 'pinalert-resolve-q-' + seq;
+    confirmBlock.setAttribute('role', 'group');
+    confirmBlock.setAttribute('aria-labelledby', questionId);
 
     var confirmHeading = document.createElement('p');
+    confirmHeading.id = questionId;
     Pinalert.setText(confirmHeading, RESOLVE_CONFIRM_HEADING);
     confirmBlock.appendChild(confirmHeading);
-
-    var affirmBtn = document.createElement('button');
-    affirmBtn.type = 'button';
-    affirmBtn.className = 'vote-btn vote-btn--confirm-resolve';
-    affirmBtn.dataset.action = 'confirm-resolve';
-    Pinalert.setText(affirmBtn, RESOLVE_CONFIRM_AFFIRM_LABEL);
-    confirmBlock.appendChild(affirmBtn);
 
     var cancelBtn = document.createElement('button');
     cancelBtn.type = 'button';
@@ -396,6 +414,13 @@
     cancelBtn.dataset.action = 'cancel-resolve';
     Pinalert.setText(cancelBtn, RESOLVE_CONFIRM_CANCEL_LABEL);
     confirmBlock.appendChild(cancelBtn);
+
+    var affirmBtn = document.createElement('button');
+    affirmBtn.type = 'button';
+    affirmBtn.className = 'vote-btn vote-btn--confirm-resolve';
+    affirmBtn.dataset.action = 'confirm-resolve';
+    Pinalert.setText(affirmBtn, RESOLVE_CONFIRM_AFFIRM_LABEL);
+    confirmBlock.appendChild(affirmBtn);
 
     controls.appendChild(confirmBlock);
 
@@ -508,10 +533,10 @@
 
   // openResolveConfirm implements D-15's inline destructive confirmation:
   // hides the three primary buttons via the hidden attribute, reveals
-  // .resolve-confirm, and moves focus to the affirm button. Never touches
-  // `disabled` — setBlockBusy remains its sole owner (see its own doc
-  // comment), which is what keeps a background poll landing mid-flight
-  // from re-enabling a button whose vote is in the air.
+  // .resolve-confirm, and moves focus to Cancel, the safe answer (A16).
+  // Never touches `disabled` — setBlockBusy remains its sole owner (see its
+  // own doc comment), which is what keeps a background poll landing
+  // mid-flight from re-enabling a button whose vote is in the air.
   function openResolveConfirm(block) {
     var primaryBtns = block.controls.querySelectorAll(
       '.vote-btn--confirm, .vote-btn--dispute, .vote-btn--resolve'
@@ -521,14 +546,15 @@
     }
     var confirmBlock = block.controls.querySelector('.resolve-confirm');
     confirmBlock.hidden = false;
-    var affirmBtn = block.controls.querySelector('.vote-btn--confirm-resolve');
-    if (affirmBtn) {
-      affirmBtn.focus();
+    var cancelBtn = block.controls.querySelector('.vote-btn--cancel-resolve');
+    if (cancelBtn) {
+      cancelBtn.focus();
     }
   }
 
   // closeResolveConfirm reverses openResolveConfirm. Same `disabled`
-  // discipline as above — this function never touches it either.
+  // discipline as above — this function never touches it either. It also
+  // never moves focus: each caller decides where focus goes next (A52).
   function closeResolveConfirm(block) {
     var primaryBtns = block.controls.querySelectorAll(
       '.vote-btn--confirm, .vote-btn--dispute, .vote-btn--resolve'
@@ -538,6 +564,185 @@
     }
     var confirmBlock = block.controls.querySelector('.resolve-confirm');
     confirmBlock.hidden = true;
+  }
+
+  // isDisplayed is true only for an element that is attached to the page and
+  // has at least one layout box, so it is false for anything inside a pane
+  // that is not shown.
+  function isDisplayed(el) {
+    return !!(el && el.isConnected && el.getClientRects().length > 0);
+  }
+
+  // canTakeFocus is true when the element is shown, not hidden and not
+  // natively disabled. It only reads those properties. Focus is never
+  // relied on for an element that cannot take it.
+  function canTakeFocus(el) {
+    return isDisplayed(el) && !el.hidden && !el.disabled;
+  }
+
+  // focusIsLost is true when focus sits on nothing useful: no active
+  // element, the page body, or anywhere inside scope (the controls or the
+  // row that is about to go away or was just closed).
+  function focusIsLost(scope) {
+    var active = document.activeElement;
+    return !active || active === document.body || (!!scope && scope.contains(active));
+  }
+
+  // focusResolveButton puts focus on this block's Mark resolved when it can
+  // take it. Used by the Cancel path and by the cancel hook for Escape.
+  function focusResolveButton(block) {
+    var resolveBtn = block.controls.querySelector('.vote-btn--resolve');
+    if (canTakeFocus(resolveBtn)) {
+      resolveBtn.focus();
+    }
+  }
+
+  // captureVoteOrigin records where a vote started: the report id, whether
+  // the controls sit in the map popup or in a feed row, and the controls
+  // node itself. A map redraw can replace that node while the vote is in
+  // flight, so later steps look the live node up again from this record.
+  function captureVoteOrigin(block) {
+    var inPopup = block.controls.closest('.leaflet-popup') !== null;
+    return {
+      reportId: block.controls.dataset.reportId,
+      surface: inPopup ? 'popup' : 'row',
+      controls: block.controls
+    };
+  }
+
+  // findLiveControls returns the controls node to focus into: the original
+  // one while it is still attached, else the first attached vote controls
+  // with the same report id on the same surface, else null. Ids are compared
+  // as strings and are never built into a selector.
+  function findLiveControls(origin) {
+    if (origin.controls.isConnected) {
+      return origin.controls;
+    }
+    var all = document.querySelectorAll('.vote-controls');
+    var wantPopup = origin.surface === 'popup';
+    for (var i = 0; i < all.length; i++) {
+      var inPopup = all[i].closest('.leaflet-popup') !== null;
+      if (all[i].dataset.reportId === origin.reportId && inPopup === wantPopup) {
+        return all[i];
+      }
+    }
+    return null;
+  }
+
+  // findFeedRow returns the feed row for a report id, or null. String
+  // comparison only, no selector built from the id.
+  function findFeedRow(reportId) {
+    var rows = document.querySelectorAll('.report-row');
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].dataset.reportId === reportId) {
+        return rows[i];
+      }
+    }
+    return null;
+  }
+
+  // captureRemovalFocus records the neighbours of the report's list row and
+  // the map container before a resolve can remove the report. For a vote
+  // from the popup, the list row is the row of the same report, found by id.
+  function captureRemovalFocus(origin) {
+    var row = null;
+    if (origin.surface === 'row' && origin.controls.isConnected) {
+      row = origin.controls.closest('.report-row');
+    } else {
+      row = findFeedRow(origin.reportId);
+    }
+    var map = origin.controls.closest('.leaflet-container') || document.querySelector('.leaflet-container');
+    return {
+      row: row,
+      next: row ? row.nextElementSibling : null,
+      prev: row ? row.previousElementSibling : null,
+      map: map
+    };
+  }
+
+  // focusAfterRetract moves focus when a resolve took the report out of the
+  // feed and focus was lost with it (A52). From the popup it goes to the map
+  // container. From the list it goes to the row that took the place, else
+  // the previous row, else the view toggle, else the empty state, which is
+  // made focusable for the purpose. Nothing is announced.
+  function focusAfterRetract(origin, removal) {
+    if (!focusIsLost(origin.controls) && !focusIsLost(removal.row)) {
+      return;
+    }
+    if (origin.surface === 'popup' && canTakeFocus(removal.map)) {
+      removal.map.focus();
+      return;
+    }
+    var neighbours = [removal.next, removal.prev];
+    for (var i = 0; i < neighbours.length; i++) {
+      var candidate = neighbours[i];
+      if (candidate && candidate.classList.contains('report-row') && canTakeFocus(candidate)) {
+        candidate.focus();
+        return;
+      }
+    }
+    var toggle = document.getElementById('view-toggle');
+    if (canTakeFocus(toggle)) {
+      toggle.focus();
+      return;
+    }
+    var emptyStates = [document.getElementById('feed-empty'), document.getElementById('disputed-empty')];
+    for (var j = 0; j < emptyStates.length; j++) {
+      if (isDisplayed(emptyStates[j])) {
+        emptyStates[j].setAttribute('tabindex', '-1');
+        emptyStates[j].focus();
+        return;
+      }
+    }
+  }
+
+  // focusAfterVote runs once a vote is released, after the refetch has
+  // redrawn both surfaces. If the controls are still on the page, the button
+  // that matches the action takes focus back, but only when focus fell to
+  // the body or is still on a hidden button. If the controls are gone, the
+  // report left the feed, which is read here from the live page and not
+  // from the response, and the removal steps apply when the vote was a
+  // resolve.
+  function focusAfterVote(origin, action, removal) {
+    var selector = RELEASE_FOCUS_SELECTORS[action];
+    if (!selector) {
+      return;
+    }
+    var live = findLiveControls(origin);
+    if (live) {
+      var target = live.querySelector(selector);
+      if (canTakeFocus(target) && focusIsLost(origin.controls)) {
+        target.focus();
+      }
+      return;
+    }
+    if (removal) {
+      focusAfterRetract(origin, removal);
+    }
+  }
+
+  // cancelResolveConfirm closes an open confirmation inside container by the
+  // Cancel path, sends nothing, puts focus on that block's Mark resolved and
+  // returns true. It returns false when no confirmation is open, and when
+  // the block is busy: Cancel is natively disabled while a resolve is in
+  // flight, so that path does not exist then. Plan 03-13's one key listener
+  // calls this hook.
+  function cancelResolveConfirm(container) {
+    if (!container || typeof container.querySelector !== 'function') {
+      return false;
+    }
+    var open = container.querySelector('.resolve-confirm:not([hidden])');
+    if (!open) {
+      return false;
+    }
+    var controls = open.closest('.vote-controls');
+    if (!controls || controls.getAttribute('aria-busy') === 'true') {
+      return false;
+    }
+    var block = { controls: controls };
+    closeResolveConfirm(block);
+    focusResolveButton(block);
+    return true;
   }
 
   // resolutionOutcomeMessage (Task 1, 02-07) is the only place in the
@@ -573,6 +778,7 @@
     }
     if (action === 'cancel-resolve') {
       closeResolveConfirm(block);
+      focusResolveButton(block);
       return;
     }
 
@@ -580,6 +786,8 @@
     setBlockBusy(block, true);
 
     var reportId = block.controls.dataset.reportId;
+    var origin = captureVoteOrigin(block);
+    var removal = null;
     // confirm-resolve is a UI-only dispatch key (never a member of
     // VOTE_ACTIONS) — its transport action is the ordinary 'resolve'
     // castVote already accepts, unchanged.
@@ -597,6 +805,7 @@
 
     castVote(reportId, transportAction).then(function (result) {
       if (isResolveAffirm) {
+        removal = captureRemovalFocus(origin);
         closeResolveConfirm(block);
         Pinalert.showToast(resolutionOutcomeMessage('resolve', result));
       }
@@ -613,6 +822,7 @@
         Pinalert.setText(affirmBtn, RESOLVE_CONFIRM_AFFIRM_LABEL);
       }
       setBlockBusy(block, false);
+      focusAfterVote(origin, action, removal);
     }).catch(function (err) {
       // Order is load-bearing here: clear busy BEFORE closing the
       // confirmation. Closing sets hidden on the two confirmation
@@ -628,6 +838,7 @@
         closeResolveConfirm(block);
       }
       showVoteError(block, (err && err.fieldMessage) || GENERIC_FAILURE_MESSAGE);
+      focusAfterVote(origin, action, null);
     });
 
     // One accepted limitation: map.js rebuilds its popup content on every
@@ -647,6 +858,7 @@
     getVoterLocation: getVoterLocation,
     castVote: castVote,
     createVoteBlock: createVoteBlock,
+    cancelResolveConfirm: cancelResolveConfirm,
     updateVoteBlock: updateVoteBlock,
     setBlockBusy: setBlockBusy,
     showVoteError: showVoteError,
