@@ -23,8 +23,8 @@
     return;
   }
 
-  // reopenBlocks maps a report id to its { controls, error } pair, built
-  // as rows are rendered below. One delegated click listener on `list`
+  // reopenBlocks maps a report id to the { controls, button, error } object
+  // the shared builder in votes.js returns, built as rows are rendered below. One delegated click listener on `list`
   // (Task 3) looks entries up here rather than each row carrying its own
   // listener.
   var reopenBlocks = {};
@@ -60,38 +60,15 @@
     // session's own account; the absence of any identity check here is
     // deliberate, not an oversight.
     if (row.dataset.canReopen === 'true' && body) {
-      reopenBlocks[row.dataset.reportId] = buildReopenControl(row, body);
+      // Reopen comes from the one shared builder in votes.js, so the page
+      // gets the same control, busy handling and error line the feed has.
+      // There is no confirmation step: 02-UI-SPEC.md's Destructive
+      // paragraph assigns that to Mark Resolved alone.
+      var reopenBlock = PinalertVotes.createReopenControl(row.dataset.reportId);
+      body.appendChild(reopenBlock.controls);
+      body.appendChild(reopenBlock.error);
+      reopenBlocks[row.dataset.reportId] = reopenBlock;
     }
-  }
-
-  // buildReopenControl appends the reopen button and its error line.
-  // Deliberately reuses 02-05's .vote-controls/.vote-error class pair
-  // rather than inventing an Activity-specific one, so
-  // PinalertVotes.setBlockBusy and PinalertVotes.showVoteError work on it
-  // unchanged and the GPS-denial copy has the same home it has on the
-  // feed. There is no confirmation step — 02-UI-SPEC.md's Destructive
-  // paragraph assigns that to Mark Resolved alone.
-  function buildReopenControl(row, body) {
-    var controls = document.createElement('div');
-    controls.className = 'vote-controls';
-    controls.dataset.reportId = row.dataset.reportId;
-
-    var reopenBtn = document.createElement('button');
-    reopenBtn.type = 'button';
-    reopenBtn.className = 'vote-btn vote-btn--reopen';
-    reopenBtn.dataset.action = 'reopen';
-    Pinalert.setText(reopenBtn, PinalertVotes.REOPEN_BUTTON_LABEL);
-    controls.appendChild(reopenBtn);
-
-    var error = document.createElement('p');
-    error.className = 'vote-error';
-    error.setAttribute('role', 'alert');
-    error.hidden = true;
-
-    body.appendChild(controls);
-    body.appendChild(error);
-
-    return { controls: controls, error: error };
   }
 
   // The one delegated click listener this module attaches (Task 3's own
@@ -117,9 +94,9 @@
   // from that call (D-17, D-18); no geolocation code lives in this file.
   function onReopenClick(row, block) {
     PinalertVotes.setBlockBusy(block, true);
-    var reopenBtn = block.controls.querySelector('.vote-btn--reopen');
+    var reopenBtn = block.button;
     if (reopenBtn) {
-      Pinalert.setText(reopenBtn, PinalertVotes.REOPEN_BUTTON_LABEL_IN_FLIGHT);
+      PinalertVotes.setReopenLabel(reopenBtn, PinalertVotes.REOPEN_BUTTON_LABEL_IN_FLIGHT);
     }
 
     PinalertVotes.castVote(row.dataset.reportId, 'reopen').then(function (result) {
@@ -155,12 +132,12 @@
         block.controls.remove();
         block.error.remove();
       } else if (reopenBtn) {
-        Pinalert.setText(reopenBtn, PinalertVotes.REOPEN_BUTTON_LABEL);
+        PinalertVotes.setReopenLabel(reopenBtn, PinalertVotes.REOPEN_BUTTON_LABEL);
       }
     }).catch(function (err) {
       PinalertVotes.setBlockBusy(block, false);
       if (reopenBtn) {
-        Pinalert.setText(reopenBtn, PinalertVotes.REOPEN_BUTTON_LABEL);
+        PinalertVotes.setReopenLabel(reopenBtn, PinalertVotes.REOPEN_BUTTON_LABEL);
       }
       PinalertVotes.showVoteError(block, (err && err.fieldMessage) || PinalertVotes.GENERIC_FAILURE_MESSAGE);
     });

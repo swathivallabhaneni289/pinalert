@@ -222,6 +222,9 @@ window.PinalertMap = (function () {
     var block = PinalertVotes.createVoteBlock(report.id);
     PinalertVotes.updateVoteBlock(block, report);
     wrap.appendChild(block.controls);
+    // The too far sentence slot sits between the buttons and the error and
+    // is owned by votes.js.
+    wrap.appendChild(block.note);
     wrap.appendChild(block.error);
 
     return wrap;
