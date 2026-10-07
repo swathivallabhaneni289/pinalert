@@ -282,12 +282,14 @@ func clamp(v, min, max float64) float64 {
 // VotingQuerier in trust.go declares CurrentVotesForReports too — two
 // consumer-defined interfaces naming one generated method is idiomatic Go
 // and deliberately not deduplicated into a shared interface, because each
-// stays small enough to fake without a real Postgres.
+// stays small enough to fake without a real Postgres. ReporterHistoryReports
+// is the bounded history read the feed needs to compose reporter signals.
 type Querier interface {
 	InsertReport(ctx context.Context, arg sqlcgen.InsertReportParams) (sqlcgen.InsertReportRow, error)
 	NearbyReports(ctx context.Context, arg sqlcgen.NearbyReportsParams) ([]sqlcgen.NearbyReportsRow, error)
 	CurrentVotesForReports(ctx context.Context, reportIds []int64) ([]sqlcgen.CurrentVotesForReportsRow, error)
 	ReporterAccountsForReports(ctx context.Context, reportIds []int64) ([]sqlcgen.ReporterAccountsForReportsRow, error)
+	ReporterHistoryReports(ctx context.Context, arg sqlcgen.ReporterHistoryReportsParams) ([]sqlcgen.ReporterHistoryReportsRow, error)
 }
 
 // ReportService validates, computes derived fields, and persists reports.
@@ -391,10 +393,91 @@ func reportFromInsertRow(row sqlcgen.InsertReportRow) Report {
 	}
 }
 
+// reporterHistoryParams builds the one history read of a request. It is the
+// one place the D-13 window and cap reach the query, shared by all three read
+// paths: the window starts ReliabilityWindow before now and the cap is
+// ReliabilityRowCap. A report is judged once it expired at or before this same
+// now (R-05), so the caller passes the clock it also hands to ReporterSignals.
+func reporterHistoryParams(accountIDs []int64, now time.Time) sqlcgen.ReporterHistoryReportsParams {
+	return sqlcgen.ReporterHistoryReportsParams{
+		Now:         now,
+		WindowStart: now.Add(-ReliabilityWindow),
+		RowCap:      int32(ReliabilityRowCap),
+		AccountIds:  accountIDs,
+	}
+}
+
+// voteReadIDs returns the ids for a request's one vote read: the page ids in
+// order, then each history report id not already present, in history order.
+// The history votes ride in the same read, so a request keeps one vote read
+// (V-29).
+func voteReadIDs(pageIDs []int64, history []sqlcgen.ReporterHistoryReportsRow) []int64 {
+	out := make([]int64, 0, len(pageIDs)+len(history))
+	seen := make(map[int64]struct{}, len(pageIDs)+len(history))
+	for _, id := range pageIDs {
+		out = append(out, id)
+		seen[id] = struct{}{}
+	}
+	for _, row := range history {
+		if _, ok := seen[row.ReportID]; ok {
+			continue
+		}
+		seen[row.ReportID] = struct{}{}
+		out = append(out, row.ReportID)
+	}
+	return out
+}
+
+// pageReporterAccounts collects each non nil reporter account of the page
+// once, in the order the ids are given and of first appearance.
+func pageReporterAccounts(ids []int64, reporterByReport map[int64]*int64) []int64 {
+	var accounts []int64
+	seen := make(map[int64]struct{})
+	for _, id := range ids {
+		reporterID := reporterByReport[id]
+		if reporterID == nil {
+			continue
+		}
+		if _, ok := seen[*reporterID]; ok {
+			continue
+		}
+		seen[*reporterID] = struct{}{}
+		accounts = append(accounts, *reporterID)
+	}
+	return accounts
+}
+
+// reporterSignalRef looks up the signal of one reporter account. It returns
+// nil when accountID is nil or has no entry, and a pointer to a copy of the
+// entry otherwise. Nil yields the none signal in BuildTrust, which is the rule
+// for accountless reports and for reports past the account cap (A47, Q7).
+func reporterSignalRef(signals map[int64]ReporterSignal, accountID *int64) *ReporterSignal {
+	if accountID == nil {
+		return nil
+	}
+	signal, ok := signals[*accountID]
+	if !ok {
+		return nil
+	}
+	return &signal
+}
+
+// voteRowsByReport groups vote rows by report id once, keeping input order.
+// The vote read now also carries history votes, so per report work reads only
+// its own rows instead of scanning the whole result (T-03-05).
+func voteRowsByReport(rows []sqlcgen.CurrentVotesForReportsRow) map[int64][]sqlcgen.CurrentVotesForReportsRow {
+	byReport := make(map[int64][]sqlcgen.CurrentVotesForReportsRow)
+	for _, row := range rows {
+		byReport[row.ReportID] = append(byReport[row.ReportID], row)
+	}
+	return byReport
+}
+
 // Nearby runs the indexed bounding-box prefilter followed by exact
 // Haversine distance (see internal/store/queries/reports.sql's
-// NearbyReports), loads the page's current votes and reporter identities in
-// two batched calls, asks Resolve once per report, and filters on the
+// NearbyReports), loads the page's reporter identities, the reporters' bounded
+// history and the current votes in batched calls, asks Resolve once per
+// report, and filters on the
 // answer in Go. This remains the ONE read path serving both the map and the
 // list — handlers.NearbyReports is the only route that calls it and there
 // is no map-only or list-only query (01-RESEARCH.md Pattern 3, TRUST-02).
@@ -413,14 +496,25 @@ func reportFromInsertRow(row sqlcgen.InsertReportRow) Report {
 // The order below is part of the specification:
 //
 //  1. Run the bounding-box/Haversine call and map with reportFromNearbyRow.
-//  2. Empty result -> return immediately; neither batched query runs.
+//  2. Empty result -> return immediately; no batched query runs.
 //  3. Collect ids.
-//  4. CurrentVotesForReports once for the whole page.
+//  4. Capture now once from the service clock, which WithReportClock can pin,
+//     because the history read takes it as a parameter.
 //  5. ReporterAccountsForReports once for the whole page.
-//  6. Capture now once from the service clock, which WithReportClock can pin.
-//  7. Per report: build the tally, resolve, filter, then build the trust
+//  6. Collect the distinct reporter accounts in the order the reports came
+//     back, nearest first.
+//  7. When there is at least one account, ReporterHistoryReports once for
+//     those accounts, keyed by verified account and never by session (D-10),
+//     with the window and cap built by reporterHistoryParams (D-13).
+//  8. CurrentVotesForReports once, over the page ids and then the history
+//     report ids that are not on the page (V-29).
+//  9. ReporterSignals once for all collected accounts, at the same now (R-05).
+//  10. Group the vote rows by report once.
+//  11. Per report: build the tally, resolve, filter, then build the trust
 //     object from the same batched rows for each report that is kept (D-21),
-//     and append.
+//     and append. The reporter signal is read after Resolve and never feeds
+//     visibility, filtering or order (D-14). A report with no reporter
+//     account, or one past the account cap, carries the none signal.
 func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView, error) {
 	latMin, latMax, lonMin, lonMax := BoundingBox(q.Latitude, q.Longitude, q.RadiusKm)
 
@@ -447,10 +541,10 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 		ids = append(ids, row.ID)
 	}
 
-	voteRows, err := s.q.CurrentVotesForReports(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
+	// now is captured once, before the batched reads, because the history
+	// read takes it as a parameter and ReporterSignals must see the same one.
+	now := s.now().UTC()
+
 	reporterRows, err := s.q.ReporterAccountsForReports(ctx, ids)
 	if err != nil {
 		return nil, err
@@ -460,14 +554,29 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 		reporterByReport[rr.ReportID] = rr.ReporterAccountID
 	}
 
-	now := s.now().UTC()
+	accounts := pageReporterAccounts(ids, reporterByReport)
+	var history []sqlcgen.ReporterHistoryReportsRow
+	if len(accounts) > 0 {
+		history, err = s.q.ReporterHistoryReports(ctx, reporterHistoryParams(accounts, now))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	voteRows, err := s.q.CurrentVotesForReports(ctx, voteReadIDs(ids, history))
+	if err != nil {
+		return nil, err
+	}
+	signals := ReporterSignals(accounts, history, voteRows, now)
+	votesByReport := voteRowsByReport(voteRows)
 
 	views := make([]ReportView, 0, len(rows))
 	for _, row := range rows {
 		r := reportFromNearbyRow(row)
 		reporterID := reporterByReport[r.ID]
+		reportVotes := votesByReport[r.ID]
 
-		tally := BuildVoteTally(voteRows, r.ID, reporterID)
+		tally := BuildVoteTally(reportVotes, r.ID, reporterID)
 		meta := ReportMeta{Severity: r.Severity, Category: r.Category}
 		vis, reason := Resolve(meta, tally, now)
 		if !vis.ListableInFeed(q.IncludeDisputed) {
@@ -478,10 +587,10 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 			Report:           r,
 			Visibility:       vis,
 			VisibilityReason: reason,
-			ViewerVote:       ViewerContentVote(voteRows, r.ID, q.ViewerAccountID),
+			ViewerVote:       ViewerContentVote(reportVotes, r.ID, q.ViewerAccountID),
 			IsOwnReport:      reporterID != nil && *reporterID == q.ViewerAccountID,
 			Trust: BuildTrust(TrustInput{
-				Rows:              voteRows,
+				Rows:              reportVotes,
 				ReportID:          r.ID,
 				ReporterAccountID: reporterID,
 				Meta:              meta,
@@ -489,6 +598,7 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 				CreatedAt:         r.CreatedAt,
 				ExpiresAt:         r.ExpiresAt,
 				Now:               now,
+				Reporter:          reporterSignalRef(signals, reporterID),
 			}),
 		})
 	}

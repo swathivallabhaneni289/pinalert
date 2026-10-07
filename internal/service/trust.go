@@ -248,11 +248,13 @@ const gpsDeniedMessage = "Voting needs your location, so nearby confirmations ca
 // Querier. 02-04 writes its own fake against this exact shape. The
 // parameter is named reportIDs here while sqlc emits reportIds; Go
 // matches interfaces structurally, so the names need not agree, but the
-// types must.
+// types must. ReporterHistoryReports is the bounded history read that lets the
+// vote response carry the reporter signal the feed carries.
 type VotingQuerier interface {
 	InsertVote(ctx context.Context, arg sqlcgen.InsertVoteParams) error
 	CurrentVotesForReports(ctx context.Context, reportIDs []int64) ([]sqlcgen.CurrentVotesForReportsRow, error)
 	ReportVoteContext(ctx context.Context, reportID int64) (sqlcgen.ReportVoteContextRow, error)
+	ReporterHistoryReports(ctx context.Context, arg sqlcgen.ReporterHistoryReportsParams) ([]sqlcgen.ReporterHistoryReportsRow, error)
 }
 
 // VotingService authorizes, records, and resolves confirm/dispute/
@@ -336,7 +338,9 @@ type CastVoteResult struct {
 //     populate), append the vote, read the current votes back AFTER the
 //     insert so the response carries the POST-vote state (D-04), then build
 //     the tally and resolve, then build the trust object from the same rows
-//     (D-21). CastVote contains NO branch of its own for the
+//     (D-21). The reporter's bounded history is read once, after every
+//     refusal and before the insert, and its report ids join the same read
+//     back (D-10, D-21). CastVote contains NO branch of its own for the
 //     reporter's instant resolve or instant reopen: both arrive as flags on
 //     the tally BuildVoteTally builds and are adjudicated by isRetracted()
 //     inside Resolve. A reporter reopening their own Retracted report
@@ -413,6 +417,20 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 	// such field.
 	cell := geohash.EncodeWithPrecision(in.Latitude, in.Longitude, voterGeohashPrecision)
 
+	// Read the reporter's bounded history once, keyed by the verified account
+	// the database returned (D-10). It sits after every refusal and before the
+	// insert, so a failed read writes nothing. A report with no reporter
+	// account reads no history.
+	var accounts []int64
+	var history []sqlcgen.ReporterHistoryReportsRow
+	if rc.ReporterAccountID != nil {
+		accounts = []int64{*rc.ReporterAccountID}
+		history, err = s.q.ReporterHistoryReports(ctx, reporterHistoryParams(accounts, now))
+		if err != nil {
+			return CastVoteResult{}, err
+		}
+	}
+
 	// Append the vote.
 	if err := s.q.InsertVote(ctx, sqlcgen.InsertVoteParams{
 		ReportID:    in.ReportID,
@@ -426,7 +444,7 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 
 	// Read the current votes back. This must come after the insert: the
 	// response's whole purpose (D-04) is to carry the POST-vote state.
-	rows, err := s.q.CurrentVotesForReports(ctx, []int64{in.ReportID})
+	rows, err := s.q.CurrentVotesForReports(ctx, voteReadIDs([]int64{in.ReportID}, history))
 	if err != nil {
 		return CastVoteResult{}, err
 	}
@@ -435,6 +453,7 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 	tally := BuildVoteTally(rows, in.ReportID, rc.ReporterAccountID)
 	meta := ReportMeta{Severity: Severity(rc.Severity), Category: Category(rc.Category)}
 	vis, reason := Resolve(meta, tally, now)
+	signals := ReporterSignals(accounts, history, rows, now)
 	trust := BuildTrust(TrustInput{
 		Rows:              rows,
 		ReportID:          in.ReportID,
@@ -444,6 +463,7 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 		CreatedAt:         rc.CreatedAt,
 		ExpiresAt:         rc.ExpiresAt,
 		Now:               now,
+		Reporter:          reporterSignalRef(signals, rc.ReporterAccountID),
 	})
 	return CastVoteResult{Visibility: vis, Reason: reason, Trust: trust}, nil
 }
