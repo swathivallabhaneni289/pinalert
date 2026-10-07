@@ -319,6 +319,9 @@ type ActivityReport struct {
 	Severity   Severity
 	Visibility Visibility
 	Reason     ResolveReason
+	// Trust comes from the same BuildTrust as the feed and the vote response
+	// (D-21).
+	Trust Trust
 }
 
 // ActivityForAccount is 02-07's Activity-page read: ReportsForAccount (the
@@ -339,6 +342,9 @@ type ActivityReport struct {
 // handler: the fallback this function computes is the SAME value the
 // resolver sees, so the rendered class name and the resolved trust state
 // can never disagree (T-01-17).
+//
+// Each row also carries its trust object, built by BuildTrust from the same
+// batched rows and the service clock, which WithClock can pin (D-21).
 func (s *AuthService) ActivityForAccount(ctx context.Context, accountID int64) ([]ActivityReport, error) {
 	rows, err := s.ReportsForAccount(ctx, accountID)
 	if err != nil {
@@ -358,7 +364,7 @@ func (s *AuthService) ActivityForAccount(ctx context.Context, accountID int64) (
 		return nil, fmt.Errorf("service: reading current votes for account %d's reports: %w", accountID, err)
 	}
 
-	now := time.Now().UTC()
+	now := s.now().UTC()
 	reports := make([]ActivityReport, 0, len(rows))
 	for _, row := range rows {
 		category := Category(row.Category)
@@ -383,6 +389,16 @@ func (s *AuthService) ActivityForAccount(ctx context.Context, accountID int64) (
 			Severity:   severity,
 			Visibility: vis,
 			Reason:     reason,
+			Trust: BuildTrust(TrustInput{
+				Rows:              voteRows,
+				ReportID:          row.ID,
+				ReporterAccountID: &accountID,
+				Meta:              meta,
+				Visibility:        vis,
+				CreatedAt:         row.CreatedAt,
+				ExpiresAt:         row.ExpiresAt,
+				Now:               now,
+			}),
 		})
 	}
 	return reports, nil

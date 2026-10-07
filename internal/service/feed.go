@@ -18,13 +18,16 @@ import (
 // caller (TRUST-02, T-02-04). ViewerVote and IsOwnReport are
 // viewer-specific and therefore make this type unsafe to cache across
 // callers. ViewerVote is empty when the viewer has no standing content
-// vote.
+// vote. Trust is built by BuildTrust from the same batched rows as the
+// visibility. Unlike ViewerVote and IsOwnReport, it is viewer independent
+// (D-21).
 type ReportView struct {
 	Report
 	Visibility       Visibility
 	VisibilityReason ResolveReason
 	ViewerVote       VoteValue
 	IsOwnReport      bool
+	Trust            Trust
 }
 
 // ListableInFeed reports whether a report with visibility v should appear
