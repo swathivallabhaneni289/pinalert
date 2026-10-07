@@ -602,3 +602,140 @@ func TestExpiredRowTreatmentMatchesRetracted(t *testing.T) {
 		t.Errorf("found %d expired rules with a background, want exactly 1", badgeRules)
 	}
 }
+
+// TestRowTitleWrapsLongWords pins A55 and A42: a long unbroken word wraps
+// inside the narrow row body, the title is never clamped, and the meta line
+// uses the full text colour.
+//
+// The value must be anywhere and not break-word: only anywhere lowers the
+// min-content width that sizes the row body flex item, so a pasted URL wraps
+// inside the 236px feed body and the 188px Activity body, whose page may not
+// apply the feed stylesheet min-width of 0.
+func TestRowTitleWrapsLongWords(t *testing.T) {
+	main := p16ParseCSS("static/css/main.css", p16ReadStatic(t, "static/css/main.css"))
+
+	title := p16Rule(t, main, "", ".report-row .report-row__title")
+	p16MustDecl(t, "row title", title, map[string]string{
+		"overflow-wrap": "anywhere",
+		"font-size":     "var(--font-size-heading)",
+		"font-weight":   "var(--font-weight-semibold)",
+		"color":         "var(--color-text)",
+	})
+
+	for _, r := range p16AllCSS(t) {
+		if !strings.Contains(r.Head, "report-row__title") {
+			continue
+		}
+		for _, name := range []string{"-webkit-line-clamp", "line-clamp", "text-overflow"} {
+			if _, ok := r.Decls[name]; ok {
+				t.Errorf("%s %q declares %s, a row title is never clamped (A55)", r.File, r.Head, name)
+			}
+		}
+		if r.Decls["white-space"] == "nowrap" || r.Decls["overflow"] == "hidden" {
+			t.Errorf("%s %q hides or stops wrapping the title, a long description must grow the row (A55)", r.File, r.Head)
+		}
+	}
+
+	meta := p16Rule(t, main, "", ".report-row .report-row__meta")
+	p16MustDecl(t, "row meta", meta, map[string]string{
+		"color":     "var(--color-text)",
+		"font-size": "var(--font-size-label)",
+	})
+}
+
+// TestLabelAndMetaContrastAcrossThemes pins open item 5 and A42: every label
+// and meta text pair clears 4.5:1 in all four theme sources, resolved from the
+// declared CSS rather than assumed.
+//
+// Planning time measurement with the WCAG formula over the main.css tokens:
+// Critical text on its tint is 4.639 light and 5.021 dark (margin sensitive,
+// 0.14 above the floor, which is why the real tokens are resolved), Critical
+// on --color-bg is 5.438 and 6.029, --color-text on the tints is at least
+// 14.43 light and 12.23 dark, and the old muted meta text measured 4.12 to
+// 4.37 on the light tints, the failure A42 fixes.
+func TestLabelAndMetaContrastAcrossThemes(t *testing.T) {
+	mainRaw := p16ReadStatic(t, "static/css/main.css")
+	main := p16ParseCSS("static/css/main.css", mainRaw)
+	trust := p16TrustRules(t)
+
+	needed := []string{
+		"--color-text", "--color-text-muted", "--color-bg", "--color-border", "--color-surface",
+		"--color-severity-critical", "--color-severity-low-bg", "--color-severity-medium-bg",
+		"--color-severity-critical-bg",
+	}
+	light1, light2, dark1, dark2 := extractThemeTokens(parseCSSRules(mainRaw), needed)
+	sources := []struct {
+		name   string
+		tokens themeTokens
+	}{
+		{":root", light1},
+		{`:root[data-theme="light"]`, light2},
+		{"prefers dark :root", dark1},
+		{`:root[data-theme="dark"]`, dark2},
+	}
+	for _, name := range needed {
+		for _, s := range sources {
+			if _, ok := s.tokens[name]; !ok {
+				t.Fatalf("token %s is missing from the %s source", name, s.name)
+			}
+		}
+		if light1[name] != light2[name] {
+			t.Errorf("token %s differs between the two light sources: %s and %s", name, light1[name], light2[name])
+		}
+		if dark1[name] != dark2[name] {
+			t.Errorf("token %s differs between the two dark sources: %s and %s", name, dark1[name], dark2[name])
+		}
+	}
+
+	decl := func(r p16CSSRule, name string) string {
+		v, ok := r.Decls[name]
+		if !ok {
+			t.Fatalf("rule %q declares no %s", r.Head, name)
+		}
+		return v
+	}
+	metaText := decl(p16Rule(t, main, "", ".report-row .report-row__meta"), "color")
+	baseText := decl(p16Rule(t, trust, "", p16SeverityBase), "color")
+	critText := decl(p16Rule(t, trust, "", p16LevelCrit), "color")
+	stateText := decl(p16Rule(t, trust, "", p16StateBase), "color")
+	critFill := decl(p16Rule(t, trust, "", p16LevelCrit), "background")
+	mediumFill := decl(p16Rule(t, trust, "", p16LevelMedium), "background")
+	lowFill := decl(p16Rule(t, trust, "", p16LevelLow), "background")
+	rowFill := decl(p16Rule(t, trust, "", p16RowLabelHead), "background")
+	stateFill := decl(p16Rule(t, trust, "", p16StateBase), "background")
+	tints := map[string]string{
+		"sev-low":         decl(p16Rule(t, main, "", ".sev-low"), "--severity-tint"),
+		"sev-medium":      decl(p16Rule(t, main, "", ".sev-medium"), "--severity-tint"),
+		"sev-critical":    decl(p16Rule(t, main, "", ".sev-critical"), "--severity-tint"),
+		"vis-provisional": decl(p16Rule(t, trust, "", ".vis-provisional"), "--severity-tint"),
+	}
+
+	for _, s := range sources {
+		resolve := func(value string) string {
+			name, ok := bareVarName(value)
+			if !ok {
+				t.Fatalf("%s: %q is not a bare var() reference", s.name, value)
+			}
+			hex, ok := s.tokens[name]
+			if !ok {
+				t.Fatalf("%s: token %s is not in the table", s.name, name)
+			}
+			return hex
+		}
+		check := func(pair, fg, bg string) {
+			ratio := wcagContrastRatio(t, resolve(fg), resolve(bg), s.name+" "+pair)
+			if ratio < 4.5 {
+				t.Errorf("%s: %s is %.3f:1, want at least 4.5:1", s.name, pair, ratio)
+			}
+		}
+		check("Critical text on the Critical popup fill", critText, critFill)
+		check("Critical text on the row label fill", critText, rowFill)
+		check("label text on the Medium fill", baseText, mediumFill)
+		check("label text on the Low fill", baseText, lowFill)
+		check("label text on the row label fill", baseText, rowFill)
+		check("state label text on its fill", stateText, stateFill)
+		for name, tint := range tints {
+			check("meta text on the "+name+" row tint", metaText, tint)
+		}
+	}
+}
