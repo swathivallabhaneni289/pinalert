@@ -1163,3 +1163,204 @@ func TestCastVoteTrustMatchesNearbyTrust(t *testing.T) {
 		}
 	})
 }
+
+// p12WithoutReporter returns a copy of tr with the reporter signal reset, so a
+// test can compare everything else on a trust object.
+func p12WithoutReporter(tr service.Trust) service.Trust {
+	tr.Reporter = service.ReporterSignal{}
+	return tr
+}
+
+// TestNearbyReporterAccountCap is Q7 and T-03-05: a feed read loads history
+// for at most MaxReporterAccountsPerRead accounts, nearest reports first, and a
+// report past the cap carries the none signal and stays listed in its place.
+func TestNearbyReporterAccountCap(t *testing.T) {
+	if service.MaxReporterAccountsPerRead != 200 {
+		t.Fatalf("MaxReporterAccountsPerRead = %d, want 200", service.MaxReporterAccountsPerRead)
+	}
+	const baseAccount int64 = 1000
+	const baseHistory int64 = 100000
+	n := service.MaxReporterAccountsPerRead + 1
+
+	fake := &fakeFeedQuerier{}
+	for i := 1; i <= n; i++ {
+		id := int64(i)
+		fake.nearbyRows = append(fake.nearbyRows, p12Row(id, service.SeverityLow, service.CategoryFlood, float64(i)))
+		fake.reporterRows = append(fake.reporterRows, reporterRow(id, ptrID(baseAccount+id)))
+		fake.historyRows = append(fake.historyRows, p12History(baseAccount+id, baseHistory+id, p12Judged))
+	}
+	farther := int64(n + 1)
+	farthest := int64(n + 2)
+	fake.nearbyRows = append(fake.nearbyRows,
+		p12Row(farther, service.SeverityLow, service.CategoryFlood, float64(farther)),
+		p12Row(farthest, service.SeverityLow, service.CategoryFlood, float64(farthest)),
+	)
+	fake.reporterRows = append(fake.reporterRows, reporterRow(farther, ptrID(baseAccount+1)), reporterRow(farthest, nil))
+
+	views, err := service.NewReportService(fake, service.WithReportClock(p12Clock)).Nearby(context.Background(), service.NearbyQuery{
+		Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 50,
+	})
+	if err != nil {
+		t.Fatalf("Nearby: %v", err)
+	}
+
+	if len(fake.historyArgs) != 1 {
+		t.Fatalf("ReporterHistoryReports called %d times, want 1", len(fake.historyArgs))
+	}
+	var wantAccounts []int64
+	for i := 1; i <= service.MaxReporterAccountsPerRead; i++ {
+		wantAccounts = append(wantAccounts, baseAccount+int64(i))
+	}
+	got := fake.historyArgs[0].AccountIds
+	if len(got) != service.MaxReporterAccountsPerRead || !equalIDs(got, wantAccounts) {
+		t.Errorf("history accounts: %d of them, want the nearest %d in order", len(got), service.MaxReporterAccountsPerRead)
+	}
+	if slices.Contains(got, baseAccount+int64(n)) {
+		t.Errorf("the over cap account %d was requested", baseAccount+int64(n))
+	}
+	if c := countCalls(fake.callLog, "CurrentVotesForReports"); c != 1 {
+		t.Errorf("CurrentVotesForReports called %d times, want 1", c)
+	}
+
+	none := service.ReporterSignal{Tag: service.ReporterNone}
+	if r := p12ReporterOf(t, views, int64(n)); !reflect.DeepEqual(r, none) {
+		t.Errorf("over cap report %d reporter = %+v, want none", n, r)
+	}
+	first := p12ReporterOf(t, views, 1)
+	if first.Tag == service.ReporterNone {
+		t.Fatalf("report 1 reporter = %+v, want a real signal", first)
+	}
+	if r := p12ReporterOf(t, views, farther); !reflect.DeepEqual(r, first) {
+		t.Errorf("farther report %d reporter = %+v, want report 1's %+v", farther, r, first)
+	}
+	if r := p12ReporterOf(t, views, farthest); !reflect.DeepEqual(r, none) {
+		t.Errorf("accountless report %d reporter = %+v, want none", farthest, r)
+	}
+
+	if len(views) != n+2 {
+		t.Fatalf("listed %d reports, want %d", len(views), n+2)
+	}
+	assertAscendingDistance(t, views)
+	for _, v := range views {
+		if v.Visibility != service.VisibilityProvisional {
+			t.Errorf("report %d Visibility = %q, want provisional", v.ID, v.Visibility)
+		}
+	}
+}
+
+// TestNearbyRatingNeverChangesVisibilityOrOrder is D-14: the reporter signal is
+// display only. Swapping one reporter between four ratings changes nothing but
+// Trust.Reporter, in either view.
+func TestNearbyRatingNeverChangesVisibilityOrOrder(t *testing.T) {
+	const reporter, other int64 = 7, 300
+	pageRows := []sqlcgen.NearbyReportsRow{
+		p12Row(1, service.SeverityLow, service.CategoryFlood, 1),
+		p12Row(2, service.SeverityLow, service.CategoryFlood, 2),
+		p12Row(3, service.SeverityLow, service.CategoryFlood, 3),
+		p12Row(4, service.SeverityMedium, service.CategoryFlood, 4),
+		p12Row(5, service.SeverityCritical, service.CategoryFlood, 5),
+	}
+	pageReporters := []sqlcgen.ReporterAccountsForReportsRow{
+		reporterRow(1, ptrID(reporter)), reporterRow(2, ptrID(reporter)), reporterRow(3, ptrID(other)),
+		reporterRow(4, ptrID(reporter)), reporterRow(5, ptrID(reporter)),
+	}
+	var pageVotes []sqlcgen.CurrentVotesForReportsRow
+	pageVotes = append(pageVotes, p12Places(1, service.VoteConfirm, service.IndependentAgreementThreshold, 11)...)
+	pageVotes = append(pageVotes, p12Places(2, service.VoteDispute, service.IndependentAgreementThreshold, 31)...)
+	pageVotes = append(pageVotes, p12Vote(3, other, service.VoteKindResolution, service.VoteResolve, "p12cellR"))
+
+	type variant struct {
+		name    string
+		tag     service.ReporterTag
+		score   int
+		history []sqlcgen.ReporterHistoryReportsRow
+		votes   []sqlcgen.CurrentVotesForReportsRow
+	}
+	build := func(corroborated, unconfirmed int) ([]sqlcgen.ReporterHistoryReportsRow, []sqlcgen.CurrentVotesForReportsRow) {
+		var history []sqlcgen.ReporterHistoryReportsRow
+		var votes []sqlcgen.CurrentVotesForReportsRow
+		for i, account := range []int64{reporter, other} {
+			base := int64(7000 + 1000*i)
+			h, v := p12Corroborated(account, base, corroborated)
+			history = append(history, h...)
+			votes = append(votes, v...)
+			history = append(history, p12Unconfirmed(account, base+100, unconfirmed)...)
+		}
+		return history, votes
+	}
+	var variants []variant
+	variants = append(variants, variant{name: "no history", tag: service.ReporterNew, score: -1})
+	h, v := build(5, 0)
+	variants = append(variants, variant{name: "five corroborated", tag: service.ReporterReliable, score: 86, history: h, votes: v})
+	h, v = build(3, 2)
+	variants = append(variants, variant{name: "three corroborated and two unconfirmed", tag: service.ReporterMixed, score: 64, history: h, votes: v})
+	h, v = build(0, 5)
+	variants = append(variants, variant{name: "five unconfirmed", tag: service.ReporterUnreliable, score: 32, history: h, votes: v})
+
+	run := func(t *testing.T, vr variant, includeDisputed bool) []service.ReportView {
+		t.Helper()
+		fake := &fakeFeedQuerier{
+			nearbyRows:   pageRows,
+			reporterRows: pageReporters,
+			voteRows:     append(append([]sqlcgen.CurrentVotesForReportsRow(nil), pageVotes...), vr.votes...),
+			historyRows:  vr.history,
+		}
+		views, err := service.NewReportService(fake, service.WithReportClock(p12Clock)).Nearby(context.Background(), service.NearbyQuery{
+			Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, ViewerAccountID: reporter, IncludeDisputed: includeDisputed,
+		})
+		if err != nil {
+			t.Fatalf("Nearby: %v", err)
+		}
+		return views
+	}
+
+	for _, includeDisputed := range []bool{false, true} {
+		view := "default view"
+		if includeDisputed {
+			view = "show disputed view"
+		}
+		t.Run(view, func(t *testing.T) {
+			base := run(t, variants[0], includeDisputed)
+			if len(base) == 0 {
+				t.Fatal("the baseline run lists nothing")
+			}
+			tags := map[service.ReporterTag]bool{}
+			for _, vr := range variants {
+				got := run(t, vr, includeDisputed)
+				if !equalIDs(viewIDs(got), viewIDs(base)) {
+					t.Fatalf("%s: listed ids %v, want %v", vr.name, viewIDs(got), viewIDs(base))
+				}
+				assertAscendingDistance(t, got)
+				for i := range got {
+					g, b := got[i], base[i]
+					if g.Visibility != b.Visibility || g.VisibilityReason != b.VisibilityReason ||
+						g.ViewerVote != b.ViewerVote || g.IsOwnReport != b.IsOwnReport {
+						t.Errorf("%s: report %d visibility, reason, viewer vote or ownership changed", vr.name, g.ID)
+					}
+					if !reflect.DeepEqual(p12WithoutReporter(g.Trust), p12WithoutReporter(b.Trust)) {
+						t.Errorf("%s: report %d trust changed beyond the reporter:\n%+v\n%+v", vr.name, g.ID, g.Trust, b.Trust)
+					}
+					if g.ID == 5 && g.Trust.Currency.FadeStage != nil {
+						t.Errorf("%s: critical report 5 FadeStage = %v, want nil", vr.name, *g.Trust.Currency.FadeStage)
+					}
+					if g.ID == 3 {
+						t.Errorf("%s: retracted report 3 is listed", vr.name)
+					}
+				}
+				if !includeDisputed {
+					r := p12ReporterOf(t, got, 1)
+					tags[r.Tag] = true
+					if r.Tag != vr.tag {
+						t.Errorf("%s: report 1 tag = %q, want %q", vr.name, r.Tag, vr.tag)
+					}
+					if vr.score >= 0 && (r.Score == nil || *r.Score != vr.score) {
+						t.Errorf("%s: report 1 score = %v, want %d", vr.name, r.Score, vr.score)
+					}
+				}
+			}
+			if !includeDisputed && len(tags) != len(variants) {
+				t.Errorf("report 1 showed %d distinct tags across the runs, want %d", len(tags), len(variants))
+			}
+		})
+	}
+}
