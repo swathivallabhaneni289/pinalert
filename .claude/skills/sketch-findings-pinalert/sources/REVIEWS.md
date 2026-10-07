@@ -1,5 +1,7 @@
 # Sketch Reviews, 2026-09-30
 
+**Status: historical.** This review fed the Phase 3 UI contract. Its "Build checklist, ordered by dependency" is superseded where they differ by `.planning/phases/03-trust-model-hardening-diversity-weighted-trust/03-UI-SPEC.md` amendment A32 (popup width per A9, pressed text per A13, the flattened tip and comments row per A11, the ResizeObserver rule per A59, the autopan padding per A60, the popup max height per A65). Builders read that contract, not this checklist.
+
 Four independent read only reviews of sketches 001 (map pin popup) and 002 (full report view and thread):
 spec compliance, design critique, accessibility, and production fit. This file keeps the findings the
 build needs. Everything in the first two sections is already applied to the sketches. The rest is the
@@ -50,6 +52,8 @@ handoff for the build.
    In forced colours mode the bar and tint vanish.
 
 ## Build checklist, ordered by dependency
+
+Historical: see the status note at the top and 03-UI-SPEC.md amendment A32.
 
 **Owner gate (blocks the Comments row and sketch 002)**
 - Comments have no phase, no table, no endpoint, no moderation code. `PROJECT.md` lines 167 to 170 defer

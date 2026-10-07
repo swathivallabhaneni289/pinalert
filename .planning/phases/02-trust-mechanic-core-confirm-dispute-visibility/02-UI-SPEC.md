@@ -75,6 +75,8 @@ Reuses Phase 1's full token set (`--color-bg`, `--color-surface`, `--color-borde
 | `.vote-btn--reopen` | default | border `--color-border`, text `--color-text`, bg `--color-bg` | Same neutral baseline as unvoted confirm/dispute — reopening is a corrective, not alarming, action |
 | any vote button | disabled (in-flight / reporter viewing own report / awaiting GPS) | existing `--color-text-muted` text, `--color-border` border, `--color-surface` bg (matches Phase 1's disabled-submit-button precedent) | Consistent "unavailable" treatment already implied by `.btn` but never explicitly tokenized in Phase 1 — declared here for Phase 2's four new disableable buttons |
 
+**Phase 3 update (A13, A18, A72):** the active rows for confirm and dispute and the disabled row above are restated in `.planning/phases/03-trust-model-hardening-diversity-weighted-trust/03-UI-SPEC.md`, section Color, "Vote button states", which wins where the two differ.
+
 ### Visibility state color
 
 | State | Composition | Applies to |
@@ -87,6 +89,8 @@ Reuses Phase 1's full token set (`--color-bg`, `--color-surface`, `--color-borde
 **Accent reserved for** (Phase 1's list, extended by this phase — do not add anything beyond this explicit set):
 - Everything already listed in `01-UI-SPEC.md` (category icon-badge fill, report-row left-border/tint, severity slider, map pin fill, age-ramp target)
 - **New:** the active/pressed state of `.vote-btn--confirm` (green) and `.vote-btn--dispute` (red) — reusing the existing severity hues' established valence (low=reassuring, critical=alarming), not a new color meaning
+
+**Phase 3 update (A40):** Phase 3 adds a closed list of accent uses: the 4px severity bar on the popup card, the 8px severity dot in the Low and Medium labels, the severity label fill tint and border, the Critical label text, the destructive Yes, mark resolved fill, and the 4px left border of `.vote-error`. The current list lives in `.planning/phases/03-trust-model-hardening-diversity-weighted-trust/03-UI-SPEC.md`, section Color, "Accent reserved for". The "New" entry above, the pressed green Confirm and pressed red Dispute, is superseded by A13: pressed Confirm and Dispute are now `--color-text` fill with `--color-bg` text and are not accent.
 
 **Explicitly NOT used for:** `.vote-btn--resolve`, `.vote-btn--reopen`, the "Show disputed" toggle, or any visibility-tag chip. These stay neutral (`--color-text`/`--color-bg`/`--color-border`/`--color-text-muted`) — consistent with Phase 1's "not a heavily-branded consumer look" direction and this phase's own discipline of not inventing new hues.
 
@@ -112,6 +116,8 @@ A report is never both `.vis-provisional` and `.vis-hidden` at once (a single re
 ---
 
 ## Vote controls layout
+
+**Phase 3 update (A12, A16):** the vote controls now use one outlined style on all three surfaces, with an icon span and a label span on every button and a two track grid. This is specified in `.planning/phases/03-trust-model-hardening-diversity-weighted-trust/03-UI-SPEC.md`, section "Vote Controls and Too Far", which wins where the two differ.
 
 ### Feed row extension (`report-row`, extends `feed.js`'s existing `createRow`)
 
