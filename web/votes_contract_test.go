@@ -1035,19 +1035,19 @@ func TestBothSurfacesMountTheSameVisibilityTag(t *testing.T) {
 			"insertion point 02-05's artifact table reserved", metaIdx, tagIdx, voteBlockIdx)
 	}
 
-	popupBody := jsFunctionBody(t, texts["static/js/map.js"], "buildPopupContent(report)")
-	descIdx := strings.Index(popupBody, "wrap.appendChild(description)")
-	popupTagIdx := strings.Index(popupBody, "PinalertVisibility.createVisibilityTag(")
+	popupBody := jsFunctionBody(t, texts["static/js/map.js"], "buildPopupCard(report)")
+	headerIdx := strings.Index(popupBody, "PinalertVisibility.createVisibilityTag(")
+	titleIdx := strings.Index(popupBody, "Pinalert.setText(titleEl, report.description)")
 	popupVoteBlockIdx := strings.Index(popupBody, "PinalertVotes.createVoteBlock(")
-	if descIdx == -1 || popupTagIdx == -1 || popupVoteBlockIdx == -1 {
-		t.Fatalf("buildPopupContent's own body is missing one of the three anchors needed to check "+
-			"insertion order (description append=%d, tag builder=%d, vote block builder=%d)",
-			descIdx, popupTagIdx, popupVoteBlockIdx)
+	if headerIdx == -1 || titleIdx == -1 || popupVoteBlockIdx == -1 {
+		t.Fatalf("buildPopupCard's own body is missing one of the three anchors needed to check "+
+			"insertion order (tag builder=%d, title text=%d, vote block builder=%d)",
+			headerIdx, titleIdx, popupVoteBlockIdx)
 	}
-	if !(descIdx < popupTagIdx && popupTagIdx < popupVoteBlockIdx) {
-		t.Errorf("buildPopupContent's own body must append the visibility tag after the description "+
-			"and before the vote block is built (found description=%d, tag=%d, vote block=%d)",
-			descIdx, popupTagIdx, popupVoteBlockIdx)
+	if !(headerIdx < titleIdx && titleIdx < popupVoteBlockIdx) {
+		t.Errorf("buildPopupCard's own body must build the visibility tag in the header, then write "+
+			"the title, then build the vote block (found tag=%d, title=%d, vote block=%d)",
+			headerIdx, titleIdx, popupVoteBlockIdx)
 	}
 
 	// Honest limits of this test's claim: static inspection proves the

@@ -1017,18 +1017,6 @@
       showVoteError(block, (err && err.fieldMessage) || GENERIC_FAILURE_MESSAGE);
       focusAfterVote(origin, action, null);
     });
-
-    // One accepted limitation: map.js rebuilds its popup content on every
-    // render, so a background poll landing during an in-flight vote
-    // replaces this block and leaves this handler holding a detached
-    // node — after which the freshly built block's buttons are already
-    // interactive again. The consequence is bounded: a second tap in
-    // that window sends a duplicate vote, which the append-only vote log
-    // absorbs and the current-vote read collapses to one row (re-sending
-    // the same vote is documented as harmless in 02-UI-SPEC.md's
-    // interaction contract). Engineering around it would mean holding a
-    // vote-scoped identity across a popup rebuild, which is more
-    // machinery than the outcome justifies.
   }
 
   window.PinalertVotes = {
