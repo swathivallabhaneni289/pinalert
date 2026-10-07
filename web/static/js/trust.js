@@ -235,6 +235,75 @@
     block.panel.hidden = !open;
   }
 
+  // blockFromToggle rebuilds the two parts setPanelOpen needs from a toggle
+  // found in the DOM, using the panel id the toggle already points at.
+  function blockFromToggle(toggle) {
+    return { toggle: toggle, panel: document.getElementById(toggle.getAttribute('aria-controls')) };
+  }
+
+  // closeRowPanel closes the open panel of one displayed row, puts focus back
+  // on its toggle and returns true. It returns false when the row has no open
+  // panel.
+  function closeRowPanel(row) {
+    var toggle = row.querySelector('.trust-block__toggle');
+    if (!toggle || toggle.getAttribute('aria-expanded') !== 'true') {
+      return false;
+    }
+    setPanelOpen(blockFromToggle(toggle), false);
+    toggle.focus();
+    return true;
+  }
+
+  // closeOneLevel resolves one Escape level and returns true only when it
+  // acted (A23). The report modal and the account menu keep their own Escape,
+  // so this stays out of their way while either is open. Plan 03-19 adds the
+  // popup owner to the owner step and the popup close step to this function.
+  function closeOneLevel() {
+    var modal = document.getElementById('report-modal');
+    if (modal && !modal.hidden) {
+      return false;
+    }
+    var menu = document.getElementById('account-menu');
+    if (menu && !menu.hidden) {
+      return false;
+    }
+
+    var focused = document.activeElement;
+    if (!focused || focused === document.body) {
+      return false;
+    }
+    var owner = focused.closest('.report-row, .leaflet-popup');
+    if (!owner) {
+      return false;
+    }
+
+    // An open Mark resolved confirmation goes first, by its Cancel path.
+    if (window.PinalertVotes && typeof PinalertVotes.cancelResolveConfirm === 'function' &&
+        PinalertVotes.cancelResolveConfirm(owner)) {
+      return true;
+    }
+
+    // A row owns the panel only while its list pane is displayed, so focus
+    // never moves into a hidden pane.
+    if (owner.classList.contains('report-row') && surfaceIsDisplayed(owner)) {
+      return closeRowPanel(owner);
+    }
+    return false;
+  }
+
+  // onDocumentEscape consumes the key only when a level closed.
+  function onDocumentEscape(evt) {
+    if (evt.key !== 'Escape') {
+      return;
+    }
+    var acted = closeOneLevel();
+    if (!acted) {
+      return;
+    }
+    evt.stopPropagation();
+    evt.preventDefault();
+  }
+
   // renderTrustCounts writes the server's two numerals, both always, zeros
   // included (D-16, A27).
   function renderTrustCounts(block, trust) {
@@ -342,6 +411,9 @@
     toggle.focus();
     return true;
   }
+
+  // The one capture phase key listener for the whole page (A23).
+  document.addEventListener('keydown', onDocumentEscape, true);
 
   window.PinalertTrust = {
     createTrustBlock: createTrustBlock,

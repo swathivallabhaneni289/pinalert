@@ -308,3 +308,54 @@ func TestTrustModuleHasNoThresholdsOrSinks(t *testing.T) {
 		t.Errorf("trust.js has the numeric literal %q on a code line, only 0, 1 and -1 may appear", loc)
 	}
 }
+
+// TestTrustDisclosure pins the keyboard and click behaviour of the toggle and
+// the one Escape listener (V-39, renamed per A5). Plan 03-19 later extends
+// the listener with the popup branches and must keep the single document
+// listener.
+func TestTrustDisclosure(t *testing.T) {
+	trust := p13ReadStatic(t, "static/js/trust.js")
+	code := p13CodeLines(trust)
+
+	p13MustContain(t, "trust.js code", code,
+		"aria-expanded", "aria-controls", "addEventListener('click'",
+		"'Enter'", "' '", "'Escape'", "stopPropagation", "preventDefault")
+
+	create := jsFunctionBody(t, trust, "createTrustBlock(options)")
+	p13MustContain(t, "createTrustBlock", create, "'button'", "stopPropagation", "'Enter'")
+	p13MustNotContain(t, "createTrustBlock", create, "preventDefault")
+
+	const listener = "document.addEventListener("
+	if n := strings.Count(code, listener); n != 1 {
+		t.Fatalf("trust.js has %d %s calls on code lines, want exactly 1 (A23)", n, listener)
+	}
+	for _, line := range strings.Split(code, "\n") {
+		if strings.Contains(line, listener) {
+			p13MustContain(t, "the document listener statement", line, "'keydown'", "onDocumentEscape", ", true)")
+		}
+	}
+
+	escape := jsFunctionBody(t, trust, "onDocumentEscape(evt)")
+	p13MustContain(t, "onDocumentEscape", escape, "'Escape'", "closeOneLevel()")
+	p13Ordered(t, escape, "onDocumentEscape", "if (!acted)", "stopPropagation()")
+	p13Ordered(t, escape, "onDocumentEscape", "if (!acted)", "preventDefault()")
+	if n := strings.Count(escape, "stopPropagation()"); n != 1 {
+		t.Errorf("onDocumentEscape calls stopPropagation() %d times, want exactly 1", n)
+	}
+
+	one := jsFunctionBody(t, trust, "closeOneLevel()")
+	p13Ordered(t, one, "closeOneLevel", "'report-modal'", "'account-menu'",
+		"PinalertVotes.cancelResolveConfirm(", "closeRowPanel(")
+	p13MustContain(t, "closeOneLevel", one, "surfaceIsDisplayed(")
+
+	closeRow := jsFunctionBody(t, trust, "closeRowPanel(row)")
+	p13MustContain(t, "closeRowPanel", closeRow, "aria-expanded", "setPanelOpen(", ".focus()")
+
+	displayed := jsFunctionBody(t, trust, "surfaceIsDisplayed(el)")
+	p13MustContain(t, "surfaceIsDisplayed", displayed, "getClientRects")
+
+	// A5: the hover, title and tooltip design is dropped, and there is no
+	// live region because the 30 second poll would re-announce it.
+	p13MustNotContain(t, "trust.js", trust,
+		"aria-live", "tooltip", "mouseenter", "mouseover", "'title'", ".title")
+}
