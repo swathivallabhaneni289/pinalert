@@ -292,12 +292,32 @@ type Querier interface {
 
 // ReportService validates, computes derived fields, and persists reports.
 type ReportService struct {
-	q Querier
+	q   Querier
+	now func() time.Time
 }
 
-// NewReportService constructs a ReportService backed by q.
-func NewReportService(q Querier) *ReportService {
-	return &ReportService{q: q}
+// ReportOption configures a ReportService at construction time.
+type ReportOption func(*ReportService)
+
+// WithReportClock overrides the clock the read path uses. It is named apart
+// from WithClock, which already returns AuthOption (Pitfall 6). It governs
+// the read path only: Submit keeps the wall clock, because vote times and the
+// NearbyReports expiry filter come from the database clock, and report times
+// written on a test clock would drift from both.
+func WithReportClock(fn func() time.Time) ReportOption {
+	return func(s *ReportService) {
+		s.now = fn
+	}
+}
+
+// NewReportService constructs a ReportService backed by q. The read path
+// clock defaults to time.Now unless overridden with WithReportClock.
+func NewReportService(q Querier, opts ...ReportOption) *ReportService {
+	s := &ReportService{q: q, now: time.Now}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // Submit validates in, computes expires_at (from severity, per D-14) and
@@ -397,8 +417,10 @@ func reportFromInsertRow(row sqlcgen.InsertReportRow) Report {
 //  3. Collect ids.
 //  4. CurrentVotesForReports once for the whole page.
 //  5. ReporterAccountsForReports once for the whole page.
-//  6. Capture now once, as the authoritative clock.
-//  7. Per report: build the tally, resolve, filter, append.
+//  6. Capture now once from the service clock, which WithReportClock can pin.
+//  7. Per report: build the tally, resolve, filter, then build the trust
+//     object from the same batched rows for each report that is kept (D-21),
+//     and append.
 func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView, error) {
 	latMin, latMax, lonMin, lonMax := BoundingBox(q.Latitude, q.Longitude, q.RadiusKm)
 
@@ -438,7 +460,7 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 		reporterByReport[rr.ReportID] = rr.ReporterAccountID
 	}
 
-	now := time.Now().UTC()
+	now := s.now().UTC()
 
 	views := make([]ReportView, 0, len(rows))
 	for _, row := range rows {
@@ -458,6 +480,16 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 			VisibilityReason: reason,
 			ViewerVote:       ViewerContentVote(voteRows, r.ID, q.ViewerAccountID),
 			IsOwnReport:      reporterID != nil && *reporterID == q.ViewerAccountID,
+			Trust: BuildTrust(TrustInput{
+				Rows:              voteRows,
+				ReportID:          r.ID,
+				ReporterAccountID: reporterID,
+				Meta:              meta,
+				Visibility:        vis,
+				CreatedAt:         r.CreatedAt,
+				ExpiresAt:         r.ExpiresAt,
+				Now:               now,
+			}),
 		})
 	}
 	return views, nil
