@@ -25,16 +25,6 @@
 
   var SEVERITY_RANK = { critical: 3, medium: 2, low: 1 };
 
-  var CAPACITY_LABELS = (function () {
-    var labels = {};
-    var statuses = Pinalert.CAPACITY_STATUSES || [];
-    for (var i = 0; i < statuses.length; i++) {
-      var key = statuses[i];
-      labels[key] = key.charAt(0).toUpperCase() + key.slice(1);
-    }
-    return labels;
-  }());
-
   var SVG_NS = 'http://www.w3.org/2000/svg';
 
   // DISPUTED_PARAM is the page URL's own name for the "Show disputed"
@@ -118,15 +108,9 @@
     var categoryLabel = Pinalert.CATEGORY_LABELS[report.category] || report.category;
     var text = categoryLabel + ' · ' + Pinalert.relativeTime(report.created_at);
 
-    if (report.category === 'shelter_open') {
-      var statusLabel = CAPACITY_LABELS[report.shelter_capacity_status];
-      if (statusLabel) {
-        text += ' · ' + statusLabel;
-      }
-      var headcount = report.shelter_headcount;
-      if (headcount !== null && headcount !== undefined) {
-        text += ' · ' + headcount + (headcount === 1 ? ' person' : ' people');
-      }
+    var shelterLine = Pinalert.formatShelterLine(report);
+    if (shelterLine) {
+      text += ' · ' + shelterLine;
     }
 
     return text;
@@ -166,6 +150,11 @@
     var meta = document.createElement('p');
     meta.className = 'report-row__meta';
 
+    // A26, A45: the visible severity word is the first text in the row body,
+    // read before the title. The shipped row had no severity word, so nothing
+    // is removed.
+    var severityLabel = PinalertTrust.createSeverityLabel();
+    body.appendChild(severityLabel);
     body.appendChild(title);
     body.appendChild(meta);
 
@@ -202,7 +191,7 @@
       }
     });
 
-    return { el: li, glyph: glyph, title: title, meta: meta, votes: block, tag: tag, trust: trust };
+    return { el: li, glyph: glyph, severity: severityLabel, title: title, meta: meta, votes: block, tag: tag, trust: trust };
   }
 
   // updateRow applies severity/age classes and text content only — it never
@@ -210,6 +199,7 @@
   // on rows whose identity (id) is unchanged.
   function updateRow(row, report) {
     replacePrefixedClass(row.el, 'sev-', Pinalert.severityClass(report));
+    PinalertTrust.updateSeverityLabel(row.severity, report);
     replacePrefixedClass(row.el, 'age-', 'age-' + PinalertTrust.fadeStage(report));
 
     // The visibility state class goes on the row element (inherits down to

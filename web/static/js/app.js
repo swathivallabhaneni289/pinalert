@@ -34,6 +34,10 @@ window.Pinalert = (function () {
     critical: '3 · Critical'
   };
 
+  // The plain word for the visible severity label on rows and the popup
+  // (A26, A45). One table for every client surface, keys equal to SEVERITIES.
+  var SEVERITY_WORDS = { low: 'Low', medium: 'Medium', critical: 'Critical' };
+
   var CATEGORY_LABELS = {
     flood: 'Flood',
     earthquake: 'Earthquake',
@@ -249,6 +253,27 @@ window.Pinalert = (function () {
     return 'icon-glyph icon-glyph--' + validated;
   }
 
+  // formatShelterLine is the one shelter status and headcount line for the
+  // feed meta and the popup meta (A24). It returns an empty string for any
+  // report that is not a shelter. The status word is built only for a value
+  // in the closed status list and the headcount only for an integer, so an
+  // unexpected payload value never reaches the text (T-01-17).
+  function formatShelterLine(report) {
+    if (!report || report.category !== 'shelter_open') {
+      return '';
+    }
+    var parts = [];
+    var status = report.shelter_capacity_status;
+    if (CAPACITY_STATUSES.indexOf(status) !== -1) {
+      parts.push(status.charAt(0).toUpperCase() + status.slice(1));
+    }
+    var headcount = report.shelter_headcount;
+    if (Number.isInteger(headcount)) {
+      parts.push(headcount + (headcount === 1 ? ' person' : ' people'));
+    }
+    return parts.join(' · ');
+  }
+
   function relativeTime(iso) {
     var then = new Date(iso).getTime();
     var now = Date.now();
@@ -327,6 +352,7 @@ window.Pinalert = (function () {
     SEVERITIES: SEVERITIES,
     CAPACITY_STATUSES: CAPACITY_STATUSES,
     SEVERITY_LABELS: SEVERITY_LABELS,
+    SEVERITY_WORDS: SEVERITY_WORDS,
     CATEGORY_LABELS: CATEGORY_LABELS,
     config: config,
     state: state,
@@ -340,6 +366,7 @@ window.Pinalert = (function () {
     onSelect: onSelect,
     severityClass: severityClass,
     iconClass: iconClass,
+    formatShelterLine: formatShelterLine,
     relativeTime: relativeTime,
     ageStage: ageStage,
     setText: setText,
