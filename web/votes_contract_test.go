@@ -392,7 +392,9 @@ func anyDeclReferences(decls map[string]string, token string) bool {
 // TestVoteButtonsMeetTouchTargetAndUseTokensOnly proves trust.css introduces
 // no new color and resolves every value through main.css's existing tokens,
 // and that the vote buttons and their active/disabled states are declared
-// exactly as 02-UI-SPEC.md's Color and Spacing sections specify.
+// exactly as 02-UI-SPEC.md's Color and Spacing sections specify, except that
+// the pressed and disabled looks now follow 03-UI-SPEC A13 and A18 (an
+// inverted neutral pressed fill, a background coloured disabled fill).
 //
 // Honest limit of this test's claim: static inspection proves the
 // declarations exist and are token-derived; it cannot prove the rendered
@@ -441,20 +443,31 @@ func TestVoteButtonsMeetTouchTargetAndUseTokensOnly(t *testing.T) {
 	if !ok {
 		t.Fatalf("no exact %q rule found in static/css/trust.css", `.vote-btn--confirm[aria-pressed="true"]`)
 	}
-	if !anyDeclReferences(declsOf(confirmRule.declBody), "--color-severity-low") {
-		t.Errorf(".vote-btn--confirm[aria-pressed=\"true\"] must reference --color-severity-low — "+
-			"reusing the existing green hue's established low-severity valence rather than "+
-			"inventing a fifth colour, declarations: %v", declsOf(confirmRule.declBody))
+	confirmDecls := declsOf(confirmRule.declBody)
+	if confirmDecls["background"] != "var(--color-text)" || confirmDecls["color"] != "var(--color-bg)" ||
+		confirmDecls["border-color"] != "var(--color-text)" {
+		t.Errorf(".vote-btn--confirm[aria-pressed=\"true\"] must be the inverted neutral fill "+
+			"(background var(--color-text), color var(--color-bg), border-color var(--color-text)) per "+
+			"03-UI-SPEC A13, declarations: %v", confirmDecls)
+	}
+	if anyDeclReferences(confirmDecls, "--color-severity-") {
+		t.Errorf(".vote-btn--confirm[aria-pressed=\"true\"] must carry no severity hue "+
+			"(03-UI-SPEC A13: inverted neutral fill, no hue), declarations: %v", confirmDecls)
 	}
 
 	disputeRule, ok := ruleBySelector(rules, `.vote-btn--dispute[aria-pressed="true"]`)
 	if !ok {
 		t.Fatalf("no exact %q rule found in static/css/trust.css", `.vote-btn--dispute[aria-pressed="true"]`)
 	}
-	if !anyDeclReferences(declsOf(disputeRule.declBody), "--color-severity-critical") {
-		t.Errorf(".vote-btn--dispute[aria-pressed=\"true\"] must reference --color-severity-critical "+
-			"— reusing the existing red hue's established critical-severity valence, declarations: %v",
-			declsOf(disputeRule.declBody))
+	disputeDecls := declsOf(disputeRule.declBody)
+	if disputeDecls["background"] != "var(--color-text)" || disputeDecls["color"] != "var(--color-bg)" ||
+		disputeDecls["border-color"] != "var(--color-text)" {
+		t.Errorf(".vote-btn--dispute[aria-pressed=\"true\"] must be the inverted neutral fill, the "+
+			"same look as Confirm (03-UI-SPEC A13), declarations: %v", disputeDecls)
+	}
+	if anyDeclReferences(disputeDecls, "--color-severity-") {
+		t.Errorf(".vote-btn--dispute[aria-pressed=\"true\"] must carry no severity hue "+
+			"(03-UI-SPEC A13: inverted neutral fill, no hue), declarations: %v", disputeDecls)
 	}
 
 	disabledRule, ok := ruleBySelector(rules, ".vote-btn:disabled")
@@ -464,6 +477,9 @@ func TestVoteButtonsMeetTouchTargetAndUseTokensOnly(t *testing.T) {
 	if !anyDeclReferences(declsOf(disabledRule.declBody), "--color-text-muted") {
 		t.Errorf(".vote-btn:disabled must reference --color-text-muted, declarations: %v",
 			declsOf(disabledRule.declBody))
+	}
+	if v := declsOf(disabledRule.declBody)["background"]; v != "var(--color-bg)" {
+		t.Errorf(".vote-btn:disabled background must be exactly var(--color-bg) (03-UI-SPEC A18), found %q", v)
 	}
 }
 
@@ -766,9 +782,9 @@ func TestVisibilityCascadeOverridesAgeRamp(t *testing.T) {
 	if tintVal, ok := provisionalDecls["--severity-tint"]; !ok {
 		t.Errorf(".vis-provisional does not declare --severity-tint")
 	} else if strings.TrimSpace(tintVal) == "transparent" {
-		t.Errorf(".vis-provisional's --severity-tint must not be exactly \"transparent\" — that is "+
-			".vis-hidden's own treatment below, and the two visibility states declare the same three "+
-			"properties while deliberately diverging on this one, mirroring the positive assertion "+
+		t.Errorf(".vis-provisional's --severity-tint must not be exactly \"transparent\" — that is " +
+			".vis-hidden's own treatment below, and the two visibility states declare the same three " +
+			"properties while deliberately diverging on this one, mirroring the positive assertion " +
 			"that .vis-hidden's tint IS exactly \"transparent\"")
 	}
 
@@ -1588,19 +1604,25 @@ func TestResolveControlsMeetTouchTargetAndUseTokensOnly(t *testing.T) {
 		t.Errorf(".vote-btn min-height must remain exactly var(--touch-target-min), found %q", v)
 	}
 
-	// Gap-closure plan 02-13 added the hidden-attribute guard to this rule's
-	// selector head for consistency with every sibling rule in the Mark
-	// Resolved block (see trust.css's own comment above .vote-btn--resolve).
-	// ruleBySelector matches heads exactly by design (see its own doc
-	// comment), so the lookup below tracks the guarded head rather than the
-	// bare class.
+	// Mark resolved is outlined everywhere (03-UI-SPEC A14): surface fill,
+	// normal text and the neutral border, never the inverted fill that a
+	// pressed vote now owns (A13). ruleBySelector matches heads exactly by
+	// design (see its own doc comment), so the lookup below tracks the guarded
+	// head rather than the bare class.
 	resolveRule, ok := ruleBySelector(rules, ".vote-btn--resolve:not([hidden])")
 	if !ok {
 		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vote-btn--resolve:not([hidden])")
 	}
-	if !anyDeclReferences(declsOf(resolveRule.declBody), "--color-text") {
-		t.Errorf(".vote-btn--resolve:not([hidden]) must reference --color-text (inverted neutral), "+
-			"declarations: %v", declsOf(resolveRule.declBody))
+	resolveDecls := declsOf(resolveRule.declBody)
+	if resolveDecls["background"] != "var(--color-surface)" || resolveDecls["color"] != "var(--color-text)" ||
+		resolveDecls["border-color"] != "var(--color-border)" {
+		t.Errorf(".vote-btn--resolve:not([hidden]) must be outlined (background var(--color-surface), "+
+			"color var(--color-text), border-color var(--color-border)). Mark resolved is outlined "+
+			"everywhere (03-UI-SPEC A14), not the inverted fill. Declarations: %v", resolveDecls)
+	}
+	if resolveDecls["background"] == "var(--color-text)" {
+		t.Errorf(".vote-btn--resolve:not([hidden]) background must not be var(--color-text), the " +
+			"inverted fill now belongs to a pressed vote only (03-UI-SPEC A13, A14)")
 	}
 
 	// The sibling colour-only rules below (.vote-btn--confirm-resolve,
@@ -1612,6 +1634,8 @@ func TestResolveControlsMeetTouchTargetAndUseTokensOnly(t *testing.T) {
 	// artefact, and broadening the change would put more surface under a
 	// fix whose live cause is unconfirmed. Left unguarded on purpose.
 
+	// This head is dead at (0,1,0) and kept for this lookup only;
+	// TestDestructiveYesHeadWins asserts the live (0,3,0) head (A43).
 	affirmRule, ok := ruleBySelector(rules, ".vote-btn--confirm-resolve")
 	if !ok {
 		t.Fatalf("no exact %q rule found in static/css/trust.css", ".vote-btn--confirm-resolve")
@@ -1732,8 +1756,8 @@ func TestMapPopupSurfaceIsThemeAware(t *testing.T) {
 	light1, light2, dark1, dark2 := extractThemeTokens(mainRules, []string{"--color-bg", "--color-text"})
 
 	themes := map[string]themeTokens{
-		`light :root`:                       light1,
-		`light :root[data-theme="light"]`:   light2,
+		`light :root`:                        light1,
+		`light :root[data-theme="light"]`:    light2,
 		`dark @media (prefers-color-scheme)`: dark1,
 		`dark :root[data-theme="dark"]`:      dark2,
 	}
