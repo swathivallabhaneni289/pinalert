@@ -7,6 +7,7 @@ package service
 
 import (
 	"fmt"
+	"math/rand/v2"
 	"reflect"
 	"strconv"
 	"strings"
@@ -292,4 +293,135 @@ func TestTrustCopyIsPlainText(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestTrustCopyReporterIsPlainText is the V-32 extension for the reporter
+// copy (D-15, D-19, A50, T-03-06, T-03-07). It covers the exact copy, the
+// builder grid, the composition grid and the trust object grid.
+func TestTrustCopyReporterIsPlainText(t *testing.T) {
+	minJudged := strconv.Itoa(ReliabilityMinJudged)
+	const (
+		confirmedOf = " earlier reports were confirmed by people nearby."
+		needs       = " A rating needs 5 reports with a clear result."
+	)
+
+	t.Run("exact copy", func(t *testing.T) {
+		for tag, want := range map[ReporterTag]string{
+			ReporterReliable:     "Reliable reporter",
+			ReporterMixed:        "Mixed record",
+			ReporterUnreliable:   "Unreliable reporter",
+			ReporterNew:          "New reporter",
+			ReporterNone:         "",
+			ReporterTag("bogus"): "",
+		} {
+			if got := reporterLabel(tag); got != want {
+				t.Errorf("reporterLabel(%q) = %q, want %q", tag, got, want)
+			}
+		}
+		cases := []struct {
+			tag  ReporterTag
+			j, c int
+			want string
+		}{
+			{ReporterReliable, 5, 5, "5 of 5" + confirmedOf},
+			{ReporterMixed, 5, 4, "4 of 5" + confirmedOf},
+			{ReporterUnreliable, 5, 0, "0 of 5" + confirmedOf},
+			{ReporterNew, 0, 0, "None of their reports has had a clear result yet." + needs},
+			{ReporterNew, 1, 1, "Only 1 of their reports has had a clear result so far." + needs},
+			{ReporterNew, 2, 0, "Only 2 of their reports have had a clear result so far." + needs},
+			{ReporterNew, 4, 3, "Only 4 of their reports have had a clear result so far." + needs},
+			{ReporterNone, 5, 5, ""},
+			{ReporterTag("bogus"), 5, 5, ""},
+		}
+		for _, c := range cases {
+			if got := reporterSentence(c.tag, c.j, c.c); got != c.want {
+				t.Errorf("reporterSentence(%q, %d, %d) = %q, want %q", c.tag, c.j, c.c, got, c.want)
+			}
+			if c.tag == ReporterNew && !strings.Contains(c.want, "A rating needs "+minJudged+" reports with a clear result.") {
+				t.Errorf("the New reporter minimum in %q is not %s", c.want, minJudged)
+			}
+		}
+		if got, want := reporterScoreSentence(86), "Score 86 out of 100, based on how often their reports with a clear result were confirmed."; got != want {
+			t.Errorf("reporterScoreSentence(86) = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("builder grid", func(t *testing.T) {
+		check := func(s string) {
+			t.Helper()
+			assertPlainCopy(t, s)
+			for _, banned := range []string{"first report", "/100", "fades"} {
+				if strings.Contains(s, banned) {
+					t.Errorf("copy %q holds %q", s, banned)
+				}
+			}
+		}
+		tags := append(append([]ReporterTag(nil), ReporterTags...), ReporterTag("bogus"))
+		for _, tag := range tags {
+			check(reporterLabel(tag))
+			for _, j := range []int{0, 1, 2, 4, 5, 30, 99, 100, 12345} {
+				for _, c := range []int{0, 1, j} {
+					if c > j {
+						continue
+					}
+					check(reporterSentence(tag, j, c))
+				}
+			}
+		}
+		for _, score := range []int{0, 1, 14, 25, 27, 32, 34, 35, 71, 74, 75, 86, 97, 99, 100} {
+			check(reporterScoreSentence(score))
+		}
+	})
+
+	t.Run("composition grid", func(t *testing.T) {
+		check := func(label string, signals map[int64]ReporterSignal) {
+			t.Helper()
+			for id, s := range signals {
+				assertPlainCopy(t, s.Label)
+				assertPlainCopy(t, s.Sentence)
+				assertPlainCopy(t, s.ScoreSentence)
+				if s.Tag == ReporterNone || s.Label == "" {
+					t.Errorf("%s account %d: tag %q label %q, a composed signal is never none", label, id, s.Tag, s.Label)
+				}
+				if (s.ScoreSentence == "") != (s.Score == nil) {
+					t.Errorf("%s account %d: score sentence %q with score %v", label, id, s.ScoreSentence, p10Deref(s.Score))
+				}
+				if (s.Score == nil) != (s.Tag == ReporterNew) {
+					t.Errorf("%s account %d: score %v with tag %q", label, id, p10Deref(s.Score), s.Tag)
+				}
+			}
+		}
+		ids, h, v := p10GroupFixture()
+		check("fixture", ReporterSignals(ids, h, v, p10Now))
+		rng := rand.New(rand.NewPCG(10, 3))
+		for i := 0; i < 300; i++ {
+			ids, h, v := p10RandomHistory(rng)
+			check(fmt.Sprintf("random %d", i), ReporterSignals(ids, h, v, p10Now))
+		}
+	})
+
+	t.Run("trust object grid", func(t *testing.T) {
+		ids, h, v := p10GroupFixture()
+		signals := ReporterSignals(ids, h, v, p10Now)
+		stray := ReporterSignal{Tag: ReporterNone, Label: "stray", Sentence: "stray"}
+		inputs := map[string]*ReporterSignal{"nil": nil, "stray none": &stray}
+		for _, id := range []int64{101, 102, 103, 104, 105, 106} {
+			s := signals[id]
+			inputs[fmt.Sprintf("account %d", id)] = &s
+		}
+		for _, vis := range Visibilities {
+			for name, in := range inputs {
+				got := BuildTrust(p10TrustInput(vis, in)).Reporter
+				assertPlainCopy(t, got.Label)
+				assertPlainCopy(t, got.Sentence)
+				assertPlainCopy(t, got.ScoreSentence)
+				if (got.Label == "") != (got.Tag == ReporterNone) {
+					t.Errorf("%s/%s: label %q with tag %q", vis, name, got.Label, got.Tag)
+				}
+				if (got.ScoreSentence == "") != (got.Score == nil) {
+					t.Errorf("%s/%s: score sentence %q with score %v", vis, name, got.ScoreSentence, p10Deref(got.Score))
+				}
+			}
+		}
+	})
 }

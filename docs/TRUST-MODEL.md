@@ -198,6 +198,144 @@ One account re-tapping Confirm moves only its own place's time, so it cannot ref
 
 The tests that pin this section are `TestCurrencyScoreBoundaries`, `TestCurrencyNotYetCorroborated`, `TestCurrencyRetapCannotRefresh`, `TestCurrencyDisputes`, `TestCurrencyWindowFollowsLifetime`, `TestCurrencyMonotone`, `TestFadeStageMapping` and `TestTrustCopyCurrencyIsPlainText`, rerun with `go test ./internal/service/ -run 'TestCurrency|TestFadeStageMapping|TestTrustCopyCurrencyIsPlainText' -count=1`.
 
+## Reporter reliability
+
+Every report also carries a slow signal beside the still current one: is the person who posted it a reliable source? It is built from how that person's earlier reports turned out. The function that composes it is `ReporterSignals` in `internal/service/reporter.go`. It decides no rule itself. `ClassifyOutcome` and `ScoreReliability` in `internal/service/reliability.go` own every rule, and `internal/service/trustcopy.go` owns every word.
+
+### Who is rated
+
+The rating is public and person level. It is keyed to the verified account through `sessions.account_id`, across every session the account has used, and never to a session. Someone who signs in on a second phone keeps one record.
+
+The tag and the counts behind it are visible to everyone on every report, and the popup also shows the number. The account id and the email are never shown. The signal carries only the tag, the score, the two counts and server written sentences.
+
+Accountless reports, and official pins in a later phase, have no rating. They carry the tag `none` and show nothing (A47). A feed read rates at most 200 reporter accounts, taken from the nearest reports first, and reports by accounts past that cap also carry none.
+
+The history is read in one query per request for all reporters on the page, backed by the index `idx_reports_session_expires`, with one batch of current votes beside it. `ReporterSignals` groups those votes by report once, so the work grows with the history rows plus the vote rows and not with their product.
+
+### Outcomes
+
+Each finished report gets one outcome from `ClassifyOutcome`. It asks `Resolve` itself, with neutral metadata (low severity, other category) and the tally's resolve and reopen fields zeroed. Live maps to corroborated, Hidden to contradicted and Provisional to unconfirmed. No threshold is copied, so the rating can never disagree with the visibility ladder.
+
+For each history report, the reporter is the account being scored, passed to `BuildVoteTally`. So the reporter's own confirmations never count, and their own resolve or reopen cannot erase a record. A report its reporter marked resolved is still judged by the content votes of other people.
+
+A critical or rescue needed report that expires unconfirmed is neutral, because those reports skip the Provisional gate and an unconfirmed one says nothing about the reporter (D-12). A critical or rescue needed report that independent places out dispute counts as contradicted for the rating only. On the read path it is still never Hidden (R-06).
+
+### What counts as judged
+
+A report is judged once its expiry time is at or before now, whether or not it was resolved (R-05). A report still in flight is neutral. Neutral outcomes are not judged.
+
+At least 5 judged reports (`ReliabilityMinJudged`) are needed, counted without weights, inside the window and the cap. Below that the reporter is a New reporter with no number and never a default score. The real judged count is still reported, so the sentence can say how far along they are.
+
+### Window, half life and the 30 report cap
+
+Only reports that expired within the last 90 days count (`ReliabilityWindow`). A report exactly 90 days old is out, and one that expires exactly now is in. Age is measured from the expiry time, and each outcome's weight halves every 30 days (`ReliabilityHalfLife`).
+
+The read keeps the latest 30 expired reports per account (`ReliabilityRowCap`) across all of its sessions, newest expiry first. The cap counts the latest 30 expired reports in the window, not 30 judged reports.
+
+That is a decision, and the reasoning is this:
+
+- The decision's own wording says 30 judged reports. SQL cannot know which reports are judged without their votes, so the read caps expired reports and Go classifies them.
+- The two readings differ only for a reporter with many critical or rescue needed reports that expired unconfirmed, which are neutral.
+- The exact alternative, reading 60 and keeping the first 30 judged in Go, doubles the read cost and was not taken.
+- `ScoreReliability` applies the same cap to whatever rows it receives, neutral rows included, so the result is the same whether or not the read was capped.
+- The test case that shows 30 newer neutral reports pushing 5 corroborated ones out is in `TestReporterSignalsNewAndNone`, beside the case with 29 neutral reports where one corroborated report survives.
+
+The owner may still choose the exact reading.
+
+### Reporter score formula
+
+Credits are 1 for corroborated, 0 for contradicted and 0.25 for unconfirmed (`UnconfirmedCredit`). Let p be the recency weighted mean credit, with weight 2 to the power of minus the age over 30 days. The score is round(100 (n p + 1) / (n + 2)) with n the judged count, so a short record is pulled toward 50.
+
+The code computes this as integer arithmetic and not as a floating point formula:
+
+- each weight is computed once with `math.Exp2`, scaled by 2 to the 30th power and rounded to an integer;
+- credits are whole hundredths (100, 0 and 25);
+- the sums are 64 bit integers;
+- the score is an integer division that rounds half up.
+
+So the boundaries 75, 35 and 25 are exact (4 corroborated and 1 unconfirmed is exactly 5.25 / 7, which is 75), equal ages give equal weights, and the order of reports never changes the result. `ScoreReliability` is the one function that does this.
+
+### Tags and sentences
+
+Tags are cut from the rounded integer. 75 or more (`ReliableMinScore`) is Reliable reporter, 35 to 74 (`MixedMinScore`) is Mixed record, and 34 or less is Unreliable reporter. Fewer than 5 judged is New reporter with no number.
+
+New reporter never looks like a good tag. It is the same plain text as the others, with no check, star or colour. The feed row and the Activity page show the tag. The panel shows the reporter sentence. The popup also shows the number and the score sentence.
+
+The templates, in the server's exact words:
+
+- `{C} of {J} earlier reports were confirmed by people nearby.`
+- `Only {J} of their reports have had a clear result so far. A rating needs {MIN} reports with a clear result.` for J of 2 or more
+- `Only 1 of their reports has had a clear result so far. A rating needs {MIN} reports with a clear result.` for J of 1
+- `None of their reports has had a clear result yet. A rating needs {MIN} reports with a clear result.` for J of 0
+- `Score {SCORE} out of 100, based on how often their reports with a clear result were confirmed.`
+
+C is the number of corroborated reports, J the number of judged reports, MIN the judged minimum and SCORE the integer score. The score sentence exists only when the score is not null.
+
+The copy lives in `trustcopy.go` and reaches the browser as plain strings on the trust object's `reporter` key: the tag, the score, the label, the sentence, the score sentence and the judged and corroborated counts. The browser holds no rule and no number of its own.
+
+### Anchor table
+
+Weights are fresh unless a row says otherwise. Uniform ageing gives the same scores, because equal ages give equal weights.
+
+| History (n) | p | Score | Tag |
+|-------------|---|-------|-----|
+| 5 corroborated (any ages inside the window) | 1.00 | 86 | Reliable |
+| 30 corroborated | 1.00 | 97 | Reliable |
+| 4 corroborated, 1 unconfirmed (5) | 0.85 | 75 (exact boundary, 5.25 / 7) | Reliable |
+| 4 corroborated, 1 contradicted (5) | 0.80 | 71 | Mixed |
+| 3 corroborated, 2 unconfirmed (5) | 0.70 | 64 | Mixed |
+| 3 corroborated, 2 contradicted (5) | 0.60 | 57 | Mixed |
+| 5 corroborated, 5 unconfirmed (10) | 0.625 | 60 | Mixed |
+| 2 corroborated, 3 contradicted (5) | 0.40 | 43 | Mixed |
+| 5 unconfirmed only (5) | 0.25 | 32 | Unreliable |
+| 30 unconfirmed only (30) | 0.25 | 27 | Unreliable |
+| 1 contradicted, 4 unconfirmed (5) | 0.20 | 29 | Unreliable |
+| 2 contradicted, 3 unconfirmed (5) | 0.15 | 25 | Unreliable |
+| 1 corroborated, 4 contradicted (5) | 0.20 | 29 | Unreliable |
+| 5 contradicted (5) | 0.00 | 14 | Unreliable |
+| 8 corroborated, 2 contradicted (10) | 0.80 | 75 (exact) | Reliable |
+| 6 corroborated, 12 contradicted (18) | 0.333 | 35 (exact) | Mixed |
+| corroborated at 5, 20, 50 days, contradicted at 10 days, unconfirmed at 40 days (5) | 0.6394 | 60 | Mixed |
+| 5 corroborated at 80 days, 2 contradicted at 1 day (7) | 0.287 | 33 | Unreliable |
+| 5 contradicted at 80 days, 2 corroborated at 1 day (7) | 0.713 | 67 | Mixed |
+
+`TestReliabilityTable` pins these rows against the code.
+
+### Invariants
+
+- I1: a history with no contradicted and no unconfirmed outcome (5 to 30 judged, any ages) scores at least 85.7 and is Reliable.
+- I2, restated for a credit of 0.25: a history of only unconfirmed outcomes with at least 5 judged always reads Unreliable reporter. Its score is 100 (0.25 n + 1) / (n + 2), which is 32.14 at n = 5 and falls toward 25, whatever the weights.
+- I3: replacing an outcome by a better class never lowers the score, and order never matters.
+- I4: the score lies in [100 / (n + 2), 100 (n + 1) / (n + 2)].
+
+`TestReliabilityInvariants` pins all four.
+
+### Display only
+
+The tag appears on every report, including critical and rescue needed ones, as the same plain text. It never hides, dims, blocks, reorders or filters anything (D-14). A Hidden report in the Show disputed view shows the tag and no still current word. A later triage phase may use it as one soft input.
+
+### How the roadmap word score is met for the reporter
+
+The roadmap asks for a slow decaying "is this source reliable" score (TRUST-07, D-08).
+
+- It is an integer from 0 to 100 per reporter, from the documented formula, recomputed on every read and never stored.
+- It decays with a 30 day half life inside 90 days. That is the slow half beside the fast still current score.
+- It is null for a New reporter, and a later phase treats null as unknown.
+- The feed row shows the tag. The popup shows the number with its score sentence (D-09, A50). The two signals sit side by side on every report.
+
+### Known limits of the rating
+
+- A liar can start over with a fresh email. They then read New reporter, which never looks good (D-15).
+- Two colluding accounts could dispute an honest reporter. Burst and brigading detection is deferred (TRUSTX-03).
+- Confirmer accuracy is not scored (TRUSTX-01).
+- Votes cast before the 1 km rule are grandfathered and may inflate old records. See the section "Votes cast before the 1 km rule".
+- A newcomer in a quiet area can read Unreliable reporter after five quiet reports that are not critical. The owner accepted this cost (D-23).
+- On a small deployment most reporters will read New reporter (D-13).
+- A public rating links one person's reports together. This is intended (D-10), and no account id or email is shown.
+- A faked location defeats the place rule behind every outcome exactly as it defeats the counters. See "Honest limits" below. The rating claims no protection against it.
+
+The tests that pin this section are `TestClassifyOutcome`, `TestReliabilityTable`, `TestReliabilityInvariants`, `TestReliabilityDecayAndWindow`, `TestReporterSignalsGroupByAccount`, `TestReporterSignalsNewAndNone` and `TestTrustCopyReporterIsPlainText`, rerun with `go test ./internal/service/ -run 'TestClassifyOutcome|TestReliability|TestReporterSignals|TestTrustCopyReporterIsPlainText' -count=1` (no database needed). The history read tests `TestReporterHistoryBounds` and `TestReporterHistoryUsesAccountNotSession` need a disposable database.
+
 ## Honest limits
 
 - Two accounts a few metres apart on either side of a cell edge count as two places. The subtest "cell edge pair counts as two places" shows it: points 1 m apart across a precision 7 cell edge count as two places through `independentCellCount`.

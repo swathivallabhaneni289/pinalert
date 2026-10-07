@@ -1,5 +1,5 @@
-// trustcopy.go is the one home of the server authored trust copy (D-19,
-// RESEARCH Pattern 3). Every string here is built only from the constants in
+// trustcopy.go is the one home of the server authored trust copy (D-15, D-19,
+// A50, RESEARCH Pattern 3). Every string here is built only from the constants in
 // this file and integers formatted with strconv.Itoa, so no report text can
 // ever enter one (T-03-06). The closed character set is ASCII letters,
 // digits, space, comma, full stop, apostrophe and plus, plus a hyphen only
@@ -138,4 +138,60 @@ func tooEarlySentence() string {
 // currencyScoreSentence is the popup score line (A50).
 func currencyScoreSentence(score int) string {
 	return "Score " + strconv.Itoa(score) + " out of 100, based on how recently different places confirmed this."
+}
+
+// The reporter reliability words (D-15). None has no word, because a report
+// with no rated account shows nothing (A47).
+const (
+	reporterLabelReliable   = "Reliable reporter"
+	reporterLabelMixed      = "Mixed record"
+	reporterLabelUnreliable = "Unreliable reporter"
+	reporterLabelNew        = "New reporter"
+)
+
+// reporterLabel returns the word for a tag, and an empty string for none and
+// for any value outside the closed tag set.
+func reporterLabel(t ReporterTag) string {
+	switch t {
+	case ReporterReliable:
+		return reporterLabelReliable
+	case ReporterMixed:
+		return reporterLabelMixed
+	case ReporterUnreliable:
+		return reporterLabelUnreliable
+	case ReporterNew:
+		return reporterLabelNew
+	default:
+		return ""
+	}
+}
+
+// reporterSentence is the panel line for a reporter (D-19). A rated reporter
+// reads how many of their judged reports were corroborated. A New reporter
+// reads how many reports have had a clear result so far, in one of three
+// forms, followed by the judged minimum. Neither form calls any report a
+// first report. None and any invalid tag give an empty string.
+func reporterSentence(t ReporterTag, judged, corroborated int) string {
+	switch t {
+	case ReporterReliable, ReporterMixed, ReporterUnreliable:
+		return strconv.Itoa(corroborated) + " of " + strconv.Itoa(judged) + " earlier reports were confirmed by people nearby."
+	case ReporterNew:
+		var lead string
+		switch {
+		case judged >= 2:
+			lead = "Only " + strconv.Itoa(judged) + " of their reports have had a clear result so far."
+		case judged == 1:
+			lead = "Only 1 of their reports has had a clear result so far."
+		default:
+			lead = "None of their reports has had a clear result yet."
+		}
+		return lead + " A rating needs " + strconv.Itoa(ReliabilityMinJudged) + " reports with a clear result."
+	default:
+		return ""
+	}
+}
+
+// reporterScoreSentence is the popup score line for a rated reporter (A50).
+func reporterScoreSentence(score int) string {
+	return "Score " + strconv.Itoa(score) + " out of 100, based on how often their reports with a clear result were confirmed."
 }
