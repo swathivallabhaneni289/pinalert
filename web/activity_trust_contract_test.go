@@ -172,3 +172,82 @@ func TestActivityMountsTheTrustBlock(t *testing.T) {
 	p15InOrder(t, "profile.html.tmpl scripts", tmpl,
 		"/static/js/visibility.js", "/static/js/trust.js", "/static/js/activity.js")
 }
+
+// TestDisplayStateDecidesExpired proves one rule decides the state word and
+// row class: Retracted wins, then the server's expired flag, then the
+// resolver's own state, with the four resolver states left alone (A57).
+func TestDisplayStateDecidesExpired(t *testing.T) {
+	code := p15CodeLines(p15ReadStatic(t, "static/js/visibility.js"))
+
+	if !strings.Contains(code, "function displayState(report)") || !strings.Contains(code, "function stateWord(report)") {
+		t.Fatalf("visibility.js must declare displayState(report) and stateWord(report)")
+	}
+
+	display := jsFunctionBody(t, code, "displayState(report)")
+	for _, want := range []string{"visibilityState(report)", "'retracted'", "report.expired === true", "'expired'"} {
+		if !strings.Contains(display, want) {
+			t.Errorf("displayState does not contain %q", want)
+		}
+	}
+	p15InOrder(t, "displayState", display, "'retracted'", "report.expired === true")
+
+	for _, name := range []string{"applyVisibilityClass(el, report)", "updateVisibilityTag(tag, report)"} {
+		body := jsFunctionBody(t, code, name)
+		if !strings.Contains(body, "displayState(report)") {
+			t.Errorf("%s does not read displayState(report)", name)
+		}
+		if strings.Contains(body, "visibilityState(") {
+			t.Errorf("%s still reads visibilityState directly", name)
+		}
+	}
+	if word := jsFunctionBody(t, code, "stateWord(report)"); !strings.Contains(word, "VISIBILITY_TAG_LABELS[displayState(report)]") {
+		t.Errorf("stateWord does not read the label table through displayState")
+	}
+
+	if !strings.Contains(code, "expired: 'Expired'") {
+		t.Errorf("VISIBILITY_TAG_LABELS has no expired label")
+	}
+	if !strings.Contains(code, "var VISIBILITY_STATES = ['live', 'provisional', 'hidden', 'retracted'];") {
+		t.Errorf("VISIBILITY_STATES must stay at exactly the four resolver states")
+	}
+	if strings.Contains(jsFunctionBody(t, code, "visibilityState(report)"), "expired") {
+		t.Errorf("visibilityState must not know about expired")
+	}
+
+	for _, want := range []string{"displayState: displayState", "stateWord: stateWord", "visibilityState: visibilityState"} {
+		if !strings.Contains(code, want) {
+			t.Errorf("the export object does not contain %q", want)
+		}
+	}
+}
+
+// TestActivityReadsExpiredFromTheServer proves the Activity page reads the
+// server's expiry decision from the row attribute and compares no dates
+// (A44, A57, V-33).
+func TestActivityReadsExpiredFromTheServer(t *testing.T) {
+	raw := p15ReadStatic(t, "static/js/activity.js")
+	code := p15CodeLines(raw)
+
+	const read = "expired: row.dataset.expired === 'true'"
+	if n := strings.Count(code, read); n != 1 {
+		t.Fatalf("activity.js contains %q %d times, want 1", read, n)
+	}
+	p15InOrder(t, "activity.js report object", code,
+		"visibility_reason: row.dataset.visibilityReason",
+		read,
+		"PinalertVisibility.updateVisibilityTag(tag, report)")
+	if strings.Contains(raw, "vis-"+"expired") {
+		t.Errorf("activity.js types the expired row class, applyVisibilityClass writes it through displayState")
+	}
+	if regexp.MustCompile(`\bDate\b|getTime\(|expires_?[aA]t|ExpiresAt`).MatchString(code) {
+		t.Errorf("activity.js compares dates, the server decides expiry")
+	}
+	if strings.Contains(jsFunctionBody(t, code, "onReopenClick(row, block)"), "expired") {
+		t.Errorf("onReopenClick must not carry expired, Reopen exists only on unexpired rows")
+	}
+	for _, call := range []string{"PinalertVisibility.updateVisibilityTag(tag, report)", "PinalertVisibility.applyVisibilityClass(row, report)"} {
+		if !strings.Contains(code, call) {
+			t.Errorf("activity.js no longer calls %s", call)
+		}
+	}
+}

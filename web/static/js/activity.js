@@ -47,9 +47,13 @@
     // wired in. The Activity page performs no fetch of its own, so this
     // object is built from the row's own server-rendered attributes and
     // nothing else.
+    //
+    // The server decided expiry and wrote it as the row's expired attribute,
+    // so this is an attribute read and not a date comparison (A44).
     var report = {
       visibility: row.dataset.visibility,
-      visibility_reason: row.dataset.visibilityReason
+      visibility_reason: row.dataset.visibilityReason,
+      expired: row.dataset.expired === 'true'
     };
 
     var tag = PinalertVisibility.createVisibilityTag();
