@@ -206,12 +206,22 @@ func p07DecodeTrust(t *testing.T, raw json.RawMessage) p07TrustWire {
 }
 
 // p07TrustWireKeys is the exact key set of the trust object. Plan 03-14
-// appends currency and reporter to this one list, so it stays a single
-// package level slice.
+// appended currency and reporter, the two signal objects, to this one list, so
+// it stays a single package level slice.
 var p07TrustWireKeys = []string{
 	"confirmed_places", "disputed_places", "confirmed_text", "disputed_text",
 	"lead_sentence", "confirmed_sentence", "disputed_sentence",
+	"currency", "reporter",
 }
+
+// p14CurrencyWireKeys is the exact key set of trust.currency, the eight rows
+// of the phase outline's "The trust wire object" table. The spec test and the
+// runtime tests both read this one list.
+var p14CurrencyWireKeys = []string{"band", "score", "label", "sentence", "score_sentence", "recent_places", "window_minutes", "fade_stage"}
+
+// p14ReporterWireKeys is the exact key set of trust.reporter, the seven rows
+// of the same outline table.
+var p14ReporterWireKeys = []string{"tag", "score", "label", "sentence", "score_sentence", "judged_reports", "corroborated_reports"}
 
 // p07AssertTrustKeys fails unless the object's key set equals
 // p07TrustWireKeys exactly.

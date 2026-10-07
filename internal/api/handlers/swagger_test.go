@@ -113,9 +113,9 @@ func TestSwaggerDocServed(t *testing.T) {
 
 // p07GuardedSwaggerRoots are the definitions whose property names the trust
 // guard checks, together with every definition they reference. Plan 03-14
-// appends handlers.CurrencyResponse and handlers.ReporterResponse here. The
+// appended handlers.CurrencyResponse and handlers.ReporterResponse here. The
 // auth definitions, which carry email by design, are never roots.
-var p07GuardedSwaggerRoots = []string{"handlers.TrustResponse", "handlers.FeedReportResponse", "handlers.CastVoteResponse"}
+var p07GuardedSwaggerRoots = []string{"handlers.TrustResponse", "handlers.FeedReportResponse", "handlers.CastVoteResponse", "handlers.CurrencyResponse", "handlers.ReporterResponse"}
 
 // p07IdentifierPropertyName is the name pattern no guarded property may match.
 var p07IdentifierPropertyName = regexp.MustCompile(`(?i)cell|account|session|email`)
@@ -187,6 +187,70 @@ func p07WalkSwaggerDefinitions(t *testing.T, defs map[string]json.RawMessage, ro
 		}
 	}
 	return visited, props
+}
+
+// p14SwaggerProp returns one decoded property of a walked definition and fails
+// when the definition or the property is missing.
+func p14SwaggerProp(t *testing.T, props map[string]map[string]json.RawMessage, def, key string) map[string]any {
+	t.Helper()
+	ps, ok := props[def]
+	if !ok {
+		t.Fatalf("the guard walk never visited %s", def)
+	}
+	raw, ok := ps[key]
+	if !ok {
+		t.Fatalf("%s is missing property %q", def, key)
+	}
+	var prop map[string]any
+	if err := json.Unmarshal(raw, &prop); err != nil {
+		t.Fatalf("parsing %s property %q: %v", def, key, err)
+	}
+	return prop
+}
+
+// p14AssertPropKeys fails unless the definition has exactly the wanted
+// property names.
+func p14AssertPropKeys(t *testing.T, props map[string]map[string]json.RawMessage, def string, want []string) {
+	t.Helper()
+	ps, ok := props[def]
+	if !ok {
+		t.Fatalf("the guard walk never visited %s", def)
+	}
+	wantSet := map[string]bool{}
+	for _, k := range want {
+		wantSet[k] = true
+		if _, ok := ps[k]; !ok {
+			t.Errorf("%s is missing property %q", def, k)
+		}
+	}
+	for k := range ps {
+		if !wantSet[k] {
+			t.Errorf("%s has unexpected property %q", def, k)
+		}
+	}
+}
+
+// p14AssertEnum fails unless the property's enum equals want element by
+// element, in order.
+func p14AssertEnum(t *testing.T, prop map[string]any, want []string) {
+	t.Helper()
+	raw, ok := prop["enum"].([]any)
+	if !ok {
+		t.Fatalf("property has no enum array: %#v", prop)
+	}
+	got := make([]string, 0, len(raw))
+	for _, v := range raw {
+		s, _ := v.(string)
+		got = append(got, s)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("enum = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("enum[%d] = %q, want %q (enum %v)", i, got[i], want[i], got)
+		}
+	}
 }
 
 // TestSwaggerSpecCoversRoutes is the drift guard: it loads the committed
@@ -361,23 +425,98 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 	visited, defProps := p07WalkSwaggerDefinitions(t, defSpec.Definitions, p07GuardedSwaggerRoots)
 	trustProps := defProps["handlers.TrustResponse"]
 	for _, key := range p07TrustWireKeys {
-		pv, ok := trustProps[key]
-		if !ok {
+		if _, ok := trustProps[key]; !ok {
 			t.Errorf("handlers.TrustResponse is missing property %q", key)
-			continue
 		}
-		var typed struct {
-			Type string `json:"type"`
+	}
+	if len(trustProps) != len(p07TrustWireKeys) {
+		t.Errorf("handlers.TrustResponse has %d properties, want %d", len(trustProps), len(p07TrustWireKeys))
+	}
+	// 03-14: the types are named explicitly. The two signal objects are
+	// checked as references, because they have no scalar type.
+	for key, wantType := range map[string]string{
+		"confirmed_places":   "integer",
+		"disputed_places":    "integer",
+		"confirmed_text":     "string",
+		"disputed_text":      "string",
+		"lead_sentence":      "string",
+		"confirmed_sentence": "string",
+		"disputed_sentence":  "string",
+	} {
+		prop := p14SwaggerProp(t, defProps, "handlers.TrustResponse", key)
+		if got, _ := prop["type"].(string); got != wantType {
+			t.Errorf("handlers.TrustResponse property %q has type %q, want %q", key, got, wantType)
 		}
-		if err := json.Unmarshal(pv, &typed); err != nil {
-			t.Fatalf("parsing handlers.TrustResponse property %q: %v", key, err)
+	}
+	for key, want := range map[string]struct{ ref, words string }{
+		"currency": {"handlers.CurrencyResponse", "still current signal"},
+		"reporter": {"handlers.ReporterResponse", "reporter signal"},
+	} {
+		prop := p14SwaggerProp(t, defProps, "handlers.TrustResponse", key)
+		refs := map[string]bool{}
+		p07SwaggerRefs(prop, refs)
+		if !refs[want.ref] {
+			t.Errorf("handlers.TrustResponse property %q does not reference %s", key, want.ref)
 		}
-		wantType := "string"
-		if key == "confirmed_places" || key == "disputed_places" {
-			wantType = "integer"
+		if desc, _ := prop["description"].(string); !strings.Contains(desc, want.words) {
+			t.Errorf("handlers.TrustResponse property %q has description %q, want it to contain %q", key, desc, want.words)
 		}
-		if typed.Type != wantType {
-			t.Errorf("handlers.TrustResponse property %q has type %q, want %q", key, typed.Type, wantType)
+	}
+
+	// 03-14 (V-30 extension): the two signal definitions, their exact key
+	// sets, their enums tied element by element to the service lists, and
+	// x-nullable as the boolean true on exactly the three nullable properties.
+	p14AssertPropKeys(t, defProps, "handlers.CurrencyResponse", p14CurrencyWireKeys)
+	p14AssertPropKeys(t, defProps, "handlers.ReporterResponse", p14ReporterWireKeys)
+	var bands, stages, tags []string
+	for _, b := range service.CurrencyBands {
+		bands = append(bands, string(b))
+	}
+	for _, s := range service.FadeStages {
+		stages = append(stages, string(s))
+	}
+	for _, g := range service.ReporterTags {
+		tags = append(tags, string(g))
+	}
+	nullable := map[string]bool{
+		"handlers.CurrencyResponse.score":      true,
+		"handlers.CurrencyResponse.fade_stage": true,
+		"handlers.ReporterResponse.score":      true,
+	}
+	signalTypes := map[string]map[string]string{
+		"handlers.CurrencyResponse": {
+			"band": "string", "score": "integer", "label": "string", "sentence": "string",
+			"score_sentence": "string", "recent_places": "integer", "window_minutes": "integer", "fade_stage": "string",
+		},
+		"handlers.ReporterResponse": {
+			"tag": "string", "score": "integer", "label": "string", "sentence": "string",
+			"score_sentence": "string", "judged_reports": "integer", "corroborated_reports": "integer",
+		},
+	}
+	for def, types := range signalTypes {
+		for key, wantType := range types {
+			prop := p14SwaggerProp(t, defProps, def, key)
+			if got, _ := prop["type"].(string); got != wantType {
+				t.Errorf("%s property %q has type %q, want %q", def, key, got, wantType)
+			}
+		}
+	}
+	p14AssertEnum(t, p14SwaggerProp(t, defProps, "handlers.CurrencyResponse", "band"), bands)
+	p14AssertEnum(t, p14SwaggerProp(t, defProps, "handlers.CurrencyResponse", "fade_stage"), stages)
+	p14AssertEnum(t, p14SwaggerProp(t, defProps, "handlers.ReporterResponse", "tag"), tags)
+	// x-nullable must be the boolean true on the three nullable properties and
+	// absent from every other property of the five guarded definitions.
+	for def, ps := range defProps {
+		for key := range ps {
+			prop := p14SwaggerProp(t, defProps, def, key)
+			v, present := prop["x-nullable"]
+			if nullable[def+"."+key] {
+				if b, isBool := v.(bool); !present || !isBool || !b {
+					t.Errorf("%s property %q must carry x-nullable as the boolean true, got %#v", def, key, v)
+				}
+			} else if present {
+				t.Errorf("%s property %q carries x-nullable, only the three nullable values may", def, key)
+			}
 		}
 	}
 	for _, owner := range []string{"handlers.FeedReportResponse", "handlers.CastVoteResponse"} {
@@ -396,7 +535,7 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 			t.Errorf("%s trust property does not reference handlers.TrustResponse", owner)
 		}
 	}
-	for _, root := range []string{"handlers.TrustResponse", "handlers.FeedReportResponse", "handlers.CastVoteResponse"} {
+	for _, root := range p07GuardedSwaggerRoots {
 		if !visited[root] {
 			t.Errorf("guard walk never visited %s", root)
 		}
