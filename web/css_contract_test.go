@@ -694,7 +694,25 @@ var nonCategoryIcons = map[string]bool{
 	// exemption reasoning.
 	"static/icons/sun.svg":  true,
 	"static/icons/moon.svg": true,
+	// Phase 3 vote button glyphs (plan 03-11, 03-UI-SPEC A12 and A39): styled
+	// through the vote button icon modifier classes in trust.css rather than
+	// the category glyph prefix, same exemption reasoning as the auth glyphs
+	// above. TestPhase3TrustGlyphMasksReferenceEveryExemptIcon proves each
+	// one is masked by a literal url.
+	"static/icons/check.svg":        true,
+	"static/icons/ban.svg":          true,
+	"static/icons/shield-check.svg": true,
+	"static/icons/rotate-ccw.svg":   true,
 }
+
+// phase3TrustGlyphIcons lists the Phase 3 glyph files exempted from the
+// category walk through nonCategoryIcons. Plan 03-13 appends clock.svg and
+// plan 03-17 appends x.svg, each together with its nonCategoryIcons entry.
+// The exemption skips only the reverse walk in
+// TestCategoryGlyphMaskRulesCoverEveryCategory, so an orphan or a typo in a
+// mask path could hide behind it; TestPhase3TrustGlyphMasksReferenceEveryExemptIcon
+// closes that gap.
+var phase3TrustGlyphIcons = []string{"check.svg", "ban.svg", "shield-check.svg", "rotate-ccw.svg"}
 
 // TestCategoryGlyphMaskRulesCoverEveryCategory guards the 01-13 fix's own
 // core claim: every category in Pinalert.CATEGORIES has exactly one CSS
@@ -800,6 +818,75 @@ func TestCategoryGlyphMaskRulesCoverEveryCategory(t *testing.T) {
 
 	assertBaseGlyphRule(t)
 	assertGlyphSizingAndNoOrphanedImageSelectors(t)
+}
+
+// TestPhase3TrustGlyphMasksReferenceEveryExemptIcon (A39, A12) proves each
+// Phase 3 glyph file exempted from the category walk is a well formed Lucide
+// file and is masked by a literal url pair in trust.css. The exemption skips
+// only the reverse walk above, which is why this test exists: without it a
+// typo in a mask path, or an orphaned file, would hide behind the exemption.
+//
+// Honest limit of this test's claim, in this file's style: static inspection
+// proves the files and the rules line up, not that a browser paints them.
+func TestPhase3TrustGlyphMasksReferenceEveryExemptIcon(t *testing.T) {
+	if len(phase3TrustGlyphIcons) == 0 {
+		t.Fatalf("phase3TrustGlyphIcons is empty, so every assertion below would pass vacuously")
+	}
+
+	refRaw, err := fs.ReadFile(StaticFS, "static/icons/circle-alert.svg")
+	if err != nil {
+		t.Fatalf("failed to read the reference glyph static/icons/circle-alert.svg: %v", err)
+	}
+	refFirstLine, _, _ := strings.Cut(string(refRaw), "\n")
+
+	trustRaw, err := fs.ReadFile(StaticFS, "static/css/trust.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/css/trust.css: %v", err)
+	}
+	trustRules := parseCSSRules(string(trustRaw))
+
+	for _, name := range phase3TrustGlyphIcons {
+		path := "static/icons/" + name
+		raw, err := fs.ReadFile(StaticFS, path)
+		if err != nil {
+			t.Errorf("%s: listed in phase3TrustGlyphIcons but missing from the embedded tree: %v", path, err)
+			continue
+		}
+		if !nonCategoryIcons[path] {
+			t.Errorf("%s: listed in phase3TrustGlyphIcons but absent from nonCategoryIcons, so the "+
+				"category walk would report it as an orphan", path)
+		}
+		text := string(raw)
+		firstLine, _, _ := strings.Cut(text, "\n")
+		if firstLine != refFirstLine {
+			t.Errorf("%s: first line %q differs from circle-alert.svg's licence line %q", path, firstLine, refFirstLine)
+		}
+		if !strings.Contains(text, `viewBox="0 0 24 24"`) {
+			t.Errorf("%s: missing viewBox=\"0 0 24 24\"", path)
+		}
+		if !strings.Contains(text, `stroke="currentColor"`) {
+			t.Errorf("%s: missing stroke=\"currentColor\"", path)
+		}
+		if strings.Contains(text, "<script") || strings.Contains(text, "href") {
+			t.Errorf("%s: contains <script or href, which a mask glyph must never carry (T-03-06)", path)
+		}
+
+		want := `url("/static/icons/` + name + `")`
+		found := false
+		for _, r := range trustRules {
+			if strings.Contains(r.selectorHead, ".icon-glyph--") {
+				continue
+			}
+			decls := declsOf(r.declBody)
+			if decls["-webkit-mask-image"] == want && decls["mask-image"] == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%s: no rule in trust.css declares both -webkit-mask-image and mask-image as %s", path, want)
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------

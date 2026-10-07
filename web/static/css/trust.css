@@ -21,10 +21,10 @@
  * why every `display` rule below carries `:not([hidden])`.
  */
 .vote-controls:not([hidden]) {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-sm);
-  margin-top: var(--space-md);
+  margin-top: var(--space-sm);
 }
 
 /* Gap closure (02-UAT.md Test 3, gap 1): this rule's own header comment
@@ -45,13 +45,15 @@
      padding is 0 on purpose: min-height plus the flex centring already own
      the button's height. */
   padding: 0 var(--space-sm);
+  gap: var(--space-sm);
+  min-width: 0;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-bg);
+  border-radius: 8px;
+  background: var(--color-surface);
   color: var(--color-text);
   font-family: var(--font-family);
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
 }
@@ -76,7 +78,7 @@
 .vote-btn:disabled {
   color: var(--color-text-muted);
   border-color: var(--color-border);
-  background: var(--color-surface);
+  background: var(--color-bg);
   cursor: not-allowed;
 }
 
@@ -295,9 +297,8 @@
  * above — none of these color-only rules needs to redeclare it.
  * ---------------------------------------------------------------------- */
 
-/* Inverted neutral fill — matches Phase 1's FAB/primary-submit-button
-   treatment. Mark Resolved is a primary-weight action, not a severity
-   signal, so it deliberately does not borrow a severity hue.
+/* Mark resolved is outlined everywhere (03-UI-SPEC A14) and takes the
+   grid's full width row (A17).
 
    Gap closure (02-UAT.md Test 6, gap-closure plan 02-13): this was the
    only rule in the Mark Resolved block without the [hidden] specificity
@@ -315,9 +316,10 @@
    full investigation and 02-13-PLAN.md's human-check for the decisive next
    step (a live DevTools capture at the moment the rectangle is observed). */
 .vote-btn--resolve:not([hidden]) {
-  background: var(--color-text);
-  color: var(--color-bg);
-  border-color: var(--color-text);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-border);
+  grid-column: 1 / -1;
 }
 
 /* Destructive — the inline confirmation's affirm button only, per
@@ -334,17 +336,19 @@
 /* Neutral outline — identical to .vote-btn's own unvoted default. Declared
    explicitly rather than left implicit so a reader scanning this file's
    selector list sees the full contract for both buttons, and so each has
-   an exact selector head to assert against. */
+   an exact selector head to assert against. This (0,1,0) head loses to the
+   base rule and only restates the resting look. */
 .vote-btn--cancel-resolve {
-  background: var(--color-bg);
+  background: var(--color-surface);
   color: var(--color-text);
   border-color: var(--color-border);
 }
 
 .vote-btn--reopen {
-  background: var(--color-bg);
+  background: var(--color-surface);
   color: var(--color-text);
   border-color: var(--color-border);
+  grid-column: 1 / -1;
 }
 
 /* The confirmation block's layout — wraps rather than overflowing inside a
@@ -473,4 +477,55 @@
 .leaflet-container .leaflet-popup a.leaflet-popup-close-button:hover,
 .leaflet-container .leaflet-popup a.leaflet-popup-close-button:focus {
   color: var(--color-text);
+}
+
+/* -------------------------------------------------------------------------
+ * Phase 3 vote button style (plan 03-11, 03-UI-SPEC Vote Controls and Too
+ * Far). One outlined button serves the feed row, the map popup and the
+ * Activity page. Every top level rule of this section stays above the two
+ * @media blocks that close it, because the shared test parser keeps an
+ * at-rule prefix only on the first rule of a block.
+ * ---------------------------------------------------------------------- */
+
+/* Glyph mask base (A12, A39). Plan 03-09 gives the span no icon-glyph class,
+   so the full mask base lives here. No display: a flex item of the inline
+   flex button is blockified. */
+.vote-btn__icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.vote-btn__icon--check {
+  -webkit-mask-image: url("/static/icons/check.svg");
+  mask-image: url("/static/icons/check.svg");
+}
+
+.vote-btn__icon--ban {
+  -webkit-mask-image: url("/static/icons/ban.svg");
+  mask-image: url("/static/icons/ban.svg");
+}
+
+.vote-btn__icon--shield-check {
+  -webkit-mask-image: url("/static/icons/shield-check.svg");
+  mask-image: url("/static/icons/shield-check.svg");
+}
+
+.vote-btn__icon--rotate-ccw {
+  -webkit-mask-image: url("/static/icons/rotate-ccw.svg");
+  mask-image: url("/static/icons/rotate-ccw.svg");
+}
+
+/* Content driven fallback (A28): a long word such as Reopen wraps to two
+   lines inside its button instead of clipping. */
+.vote-btn__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
