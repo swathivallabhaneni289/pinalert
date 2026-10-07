@@ -479,28 +479,6 @@
   --severity-tint: var(--color-bg);
 }
 
-/* Close glyph override. The specificity ladder is the whole point: Leaflet's
-   own base rule (.leaflet-container a.leaflet-popup-close-button) carries a
-   type field plus two classes for (0,2,1), and this rule's ancestor field
-   plus its own two classes plus the type field gives (0,3,1), so it wins
-   regardless of the fact that leaflet.css links after this file. Leaflet's
-   hover/focus pair sits at (0,3,1); this rule's own hover/focus pair below
-   adds the ancestor field to reach (0,4,1), winning the same way. The
-   override exists now, and did not before, because Leaflet's resting
-   #757575 measures about 2.88:1 on the dark low severity tint and 2.90:1 on
-   the dark medium one, both under the 3:1 graphical-object floor, and its
-   hover #585858 is worse still: a severity tinted wrapper moves the surface
-   the glyph sits on, so the untinted surface's old passing figures no
-   longer apply. */
-.leaflet-container .leaflet-popup a.leaflet-popup-close-button {
-  color: var(--color-text-muted);
-}
-
-.leaflet-container .leaflet-popup a.leaflet-popup-close-button:hover,
-.leaflet-container .leaflet-popup a.leaflet-popup-close-button:focus {
-  color: var(--color-text);
-}
-
 /* -------------------------------------------------------------------------
  * Phase 3 vote button style (plan 03-11, 03-UI-SPEC Vote Controls and Too
  * Far). One outlined button serves the feed row, the map popup and the
@@ -1176,6 +1154,63 @@
   outline-offset: -2px;
 }
 
+/* Close button (A20). The anchor is Leaflet's own, moved to the front of the
+   popup by map.js. The specificity ladder is the point: Leaflet's base rule
+   carries a type field plus two classes for (0,2,1) and its hover and focus
+   pair sits at (0,3,1). The base head here has the ancestor field, the popup
+   class, the anchor classes and the hidden guard for (0,4,1), and the state
+   heads add a pseudo class for (0,5,1), so they win whatever the link order.
+   The multiplication sign is hidden and the X is a 20px mask of x.svg. The
+   accessible name stays on the anchor. Leaflet paints every link blue through
+   its container rule, so the anchor names its own colour. */
+.leaflet-container .leaflet-popup a.leaflet-popup-close-button:not([hidden]) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  top: var(--space-sm);
+  right: var(--space-xs);
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  padding: 0;
+  border-radius: 8px;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.leaflet-container .leaflet-popup a.leaflet-popup-close-button span:not([hidden]) {
+  display: none;
+}
+
+.leaflet-container .leaflet-popup a.leaflet-popup-close-button:not([hidden])::before {
+  content: "";
+  display: block;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask-image: url("/static/icons/x.svg");
+  mask-image: url("/static/icons/x.svg");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.leaflet-container .leaflet-popup a.leaflet-popup-close-button:not([hidden]):hover,
+.leaflet-container .leaflet-popup a.leaflet-popup-close-button:not([hidden]):focus-visible {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+/* The press fill uses the border token, which stays visible on the surface
+   fill of the hover state. It comes after the hover rule at the same weight. */
+.leaflet-container .leaflet-popup a.leaflet-popup-close-button:not([hidden]):active {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
 /* Below 900px the fixed controls cover the top and bottom of the map, so the
    card scrolls inside a shorter box. The two sums are the autopan reserves
    plus the 20px Leaflet margin. 899.98px is the exact complement of the
@@ -1194,6 +1229,13 @@
   }
 }
 
+/* Reduced motion removes the close button colour transition. */
+@media (prefers-reduced-motion: reduce) {
+  .leaflet-container .leaflet-popup a.leaflet-popup-close-button:not([hidden]) {
+    transition: none;
+  }
+}
+
 /* Windows high contrast (RR-7). The bar, the badge outline and the glyph keep
    a visible colour. System colour keywords stay inside forced colors blocks. */
 @media (forced-colors: active) {
@@ -1206,6 +1248,11 @@
   }
 
   .leaflet-container .popup-card .icon-glyph {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+
+  .leaflet-container .leaflet-popup a.leaflet-popup-close-button:not([hidden])::before {
     forced-color-adjust: none;
     background-color: CanvasText;
   }

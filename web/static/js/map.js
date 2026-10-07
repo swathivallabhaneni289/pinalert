@@ -120,6 +120,8 @@ window.PinalertMap = (function () {
       map.setMaxZoom(rasterLayer.options.maxZoom);
     }
 
+    map.on('popupopen', onPopupOpen);
+
     Pinalert.subscribe(render);
     Pinalert.onSelect(function (id, source) {
       if (source === 'list') {
@@ -328,6 +330,23 @@ window.PinalertMap = (function () {
       return;
     }
     popup.setLatLng(popup.getLatLng());
+  }
+
+  // onPopupOpen moves Leaflet's close anchor in front of the card, so the
+  // close button is the first element a keyboard or screen reader user meets
+  // in the popup (A20). Leaflet builds the anchor once per popup and appends it
+  // last, so the move happens on the first open and later opens find it
+  // already first. Moving the node keeps Leaflet's own click listener. Plan
+  // 03-19 extends this same handler.
+  function onPopupOpen(evt) {
+    var container = evt.popup.getElement();
+    if (!container) {
+      return;
+    }
+    var close = container.querySelector('.leaflet-popup-close-button');
+    if (close && close !== container.firstChild) {
+      container.insertBefore(close, container.firstChild);
+    }
   }
 
   // popupStateClasses returns the space joined triple of state classes this

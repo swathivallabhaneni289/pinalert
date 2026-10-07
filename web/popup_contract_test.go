@@ -458,3 +458,93 @@ func TestPopupCardSurfaceAndGeometry(t *testing.T) {
 	p17MustNotContain(t, "map.js", mapJS, "popup-card__footer", "__footer", "-footer")
 	p17MustNotContain(t, "trust.css", css, "popup-card__footer", "__footer", ".footer", "-footer")
 }
+
+// TestPopupCloseButtonComesFirst pins A20, A39 and RR-7: Leaflet's close
+// anchor is moved to the first child of the popup container, drawn as a 44px
+// X button, and it keeps hover, focus and press states, a reduced motion rule
+// and a forced colours rule. Static inspection cannot prove the order in a
+// live DOM or the paint, which the V-42 owner script covers.
+func TestPopupCloseButtonComesFirst(t *testing.T) {
+	mapJS := p17ReadStatic(t, "static/js/map.js")
+
+	initBody := jsFunctionBody(t, mapJS, "init()")
+	p17MustContain(t, "init", initBody, "map.on('popupopen', onPopupOpen)")
+
+	open := jsFunctionBody(t, mapJS, "onPopupOpen(evt)")
+	p17MustContain(t, "onPopupOpen", open,
+		"getElement()", "'.leaflet-popup-close-button'", "insertBefore(", "firstChild")
+	// Focus, the dialog role and the content refresh belong to plan 03-19.
+	p17MustNotContain(t, "onPopupOpen", open, ".focus(", "setAttribute('role'", "update()")
+
+	css := p17ReadStatic(t, "static/css/trust.css")
+	rules := parseCSSRules(css)
+
+	const base = ".leaflet-container .leaflet-popup a.leaflet-popup-close-button:not([hidden])"
+	p17MustRule(t, "trust.css", rules, base, map[string]string{
+		"display":         "flex",
+		"align-items":     "center",
+		"justify-content": "center",
+		"top":             "var(--space-sm)",
+		"right":           "var(--space-xs)",
+		"width":           "var(--touch-target-min)",
+		"height":          "var(--touch-target-min)",
+		"padding":         "0",
+		"border-radius":   "8px",
+		"color":           "var(--color-text-muted)",
+		"text-decoration": "none",
+		"transition":      "background-color 150ms ease, color 150ms ease",
+	})
+	p17MustRule(t, "trust.css", rules, ".leaflet-container .leaflet-popup a.leaflet-popup-close-button span:not([hidden])",
+		map[string]string{"display": "none"})
+
+	const mask = `url("/static/icons/x.svg")`
+	p17MustRule(t, "trust.css", rules, base+"::before", map[string]string{
+		"content":               `""`,
+		"display":               "block",
+		"width":                 "20px",
+		"height":                "20px",
+		"background-color":      "currentColor",
+		"-webkit-mask-image":    mask,
+		"mask-image":            mask,
+		"-webkit-mask-size":     "contain",
+		"mask-size":             "contain",
+		"-webkit-mask-repeat":   "no-repeat",
+		"mask-repeat":           "no-repeat",
+		"-webkit-mask-position": "center",
+		"mask-position":         "center",
+	})
+
+	hoverHead := base + ":hover,\n" + base + ":focus-visible"
+	p17MustRule(t, "trust.css", rules, hoverHead, map[string]string{
+		"background": "var(--color-surface)", "color": "var(--color-text)",
+	})
+	p17MustRule(t, "trust.css", rules, base+":active", map[string]string{
+		"background": "var(--color-border)", "color": "var(--color-text)",
+	})
+	hoverAt, pressAt := p17RuleIndex(rules, hoverHead), p17RuleIndex(rules, base+":active")
+	if hoverAt == -1 || pressAt == -1 || pressAt < hoverAt {
+		t.Errorf("the press rule must come after the hover rule (found %d and %d)", hoverAt, pressAt)
+	}
+
+	// The old heads are replaced, not kept beside the new ones.
+	const oldBase = ".leaflet-container .leaflet-popup a.leaflet-popup-close-button"
+	if _, ok := ruleBySelector(rules, oldBase); ok {
+		t.Errorf("the old close button head %q still exists", oldBase)
+	}
+	if _, ok := ruleBySelector(rules, oldBase+":hover,\n"+oldBase+":focus"); ok {
+		t.Errorf("the old close button hover and focus pair still exists")
+	}
+
+	p17MustRule(t, "reduced motion", p17MediaRules(css, "(prefers-reduced-motion: reduce)"), base,
+		map[string]string{"transition": "none"})
+	p17MustRule(t, "forced colors", p17MediaRules(css, "(forced-colors: active)"), base+"::before",
+		map[string]string{"forced-color-adjust": "none", "background-color": "CanvasText"})
+
+	svg, err := fs.ReadFile(StaticFS, "static/icons/x.svg")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/icons/x.svg: %v", err)
+	}
+	text := string(svg)
+	p17MustContain(t, "x.svg", text, `d="M18 6 6 18"`, `d="m6 6 12 12"`)
+	p17MustNotContain(t, "x.svg", text, "<script", "href")
+}

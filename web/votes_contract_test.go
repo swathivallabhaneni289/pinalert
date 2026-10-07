@@ -1899,13 +1899,14 @@ func TestMapPopupTintTracksFeedRowAcrossStatesAndThemes(t *testing.T) {
 	}
 
 	// Both close button rules must exist by their exact selector heads, so
-	// the specificity ladder Task 1 built cannot be silently shortened back
-	// under Leaflet's own.
-	const closeBaseSelector = ".leaflet-container .leaflet-popup a.leaflet-popup-close-button"
+	// the specificity ladder cannot be silently shortened back under Leaflet's
+	// own. Plan 03-17 (A20) moved the heads to the :not([hidden]) form and
+	// replaced the focus state with focus-visible.
+	const closeBaseSelector = ".leaflet-container .leaflet-popup a.leaflet-popup-close-button:not([hidden])"
 	if _, ok := ruleBySelector(trustRules, closeBaseSelector); !ok {
 		t.Errorf("no exact %q rule found in static/css/trust.css", closeBaseSelector)
 	}
-	const closeHoverFocusSelector = closeBaseSelector + ":hover,\n" + closeBaseSelector + ":focus"
+	const closeHoverFocusSelector = closeBaseSelector + ":hover,\n" + closeBaseSelector + ":focus-visible"
 	if _, ok := ruleBySelector(trustRules, closeHoverFocusSelector); !ok {
 		t.Errorf("no exact %q rule found in static/css/trust.css", closeHoverFocusSelector)
 	}
