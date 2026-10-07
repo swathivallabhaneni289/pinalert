@@ -15,11 +15,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/mmcloughlin/geohash"
 
 	"pinalert/internal/api"
 	"pinalert/internal/api/handlers"
@@ -434,4 +437,109 @@ func TestTrustCountsDistinctPlacesNotVotes(t *testing.T) {
 
 	// 2 confirming plus 2 disputing places came from 7 rows cast by 5 accounts.
 	t.Logf("2 confirmed places and 2 disputed places came from 7 vote rows cast by 5 accounts")
+}
+
+// p07WireIdentifierKey is the key name pattern no feed or vote body may carry
+// at any depth.
+var p07WireIdentifierKey = regexp.MustCompile(`(?i)cell|account|session|email|voter`)
+
+// p07WalkJSONKeys fails on any object key matching p07WireIdentifierKey,
+// recursing through maps and slices.
+func p07WalkJSONKeys(t *testing.T, label string, v any) {
+	t.Helper()
+	switch x := v.(type) {
+	case map[string]any:
+		for k, val := range x {
+			if p07WireIdentifierKey.MatchString(k) {
+				t.Errorf("%s: JSON key %q looks like an identifier", label, k)
+			}
+			p07WalkJSONKeys(t, label, val)
+		}
+	case []any:
+		for _, val := range x {
+			p07WalkJSONKeys(t, label, val)
+		}
+	}
+}
+
+// p07SessionID returns the id part of the client's pinalert_session cookie,
+// read the way sessionIDFromJar and TestNearbyResponseOmitsSessionID read it.
+// It fails when the cookie or the id is missing.
+func p07SessionID(t *testing.T, client *http.Client, baseURL string) string {
+	t.Helper()
+	id := sessionIDFromJar(t, client, baseURL)
+	if id == "" {
+		t.Fatalf("empty session id for %s", baseURL)
+	}
+	return id
+}
+
+// TestTrustResponseOmitsIdentifiers is V-31 and T-03-04: no account id,
+// email, voter cell or session id appears in a feed or vote response, either
+// as a key at any depth or as a value anywhere in the raw text.
+func TestTrustResponseOmitsIdentifiers(t *testing.T) {
+	srv, mailer, _ := newTrustE2EServer(t, p07FixedClock())
+
+	const reporterEmail = "p07-omit-reporter@example.com"
+	const voterEmail = "p07-omit-voter@example.com"
+	a := newVerifiedClient(t, srv, mailer, reporterEmail)
+	b := newVerifiedClient(t, srv, mailer, voterEmail)
+
+	reportID := submitReportGetID(t, a, srv.URL, floodReportBody(p07ReportLat, p07ReportLon))
+
+	p3Lat, p3Lon := 12.9746, 77.5946
+	voterCell := geohash.EncodeWithPrecision(p3Lat, p3Lon, voterGeohashPrecision)
+	reportCell := geohash.EncodeWithPrecision(p07ReportLat, p07ReportLon, 8)
+	if strings.Contains(reportCell, voterCell) {
+		t.Fatalf("the voter cell %q is a substring of the report's own geohash %q, so the check could match by accident", voterCell, reportCell)
+	}
+
+	status, voteBody, err := p07PostVoteRaw(b, srv.URL, reportID, "confirm", p3Lat, p3Lon)
+	if err != nil || status != http.StatusOK {
+		t.Fatalf("confirm vote: status %d, err %v, body %s", status, err, voteBody)
+	}
+	feedAsB := p07GetFeedRaw(t, b, srv.URL, false)
+	feedAsA := p07GetFeedRaw(t, a, srv.URL, false)
+
+	sessionA := p07SessionID(t, a, srv.URL)
+	sessionB := p07SessionID(t, b, srv.URL)
+
+	bodies := []struct {
+		label string
+		raw   []byte
+	}{
+		{"vote response", voteBody},
+		{"feed read by the voter", feedAsB},
+		{"feed read by the reporter", feedAsA},
+	}
+	for _, bd := range bodies {
+		var decoded any
+		if err := json.Unmarshal(bd.raw, &decoded); err != nil {
+			t.Fatalf("%s: not JSON: %v (body %s)", bd.label, err, bd.raw)
+		}
+		p07WalkJSONKeys(t, bd.label, decoded)
+
+		text := string(bd.raw)
+		for _, banned := range []string{reporterEmail, voterEmail, "@", voterCell, "account_id", "geohash_cell", sessionA, sessionB} {
+			if strings.Contains(text, banned) {
+				t.Errorf("%s contains %q: %s", bd.label, banned, bd.raw)
+			}
+		}
+	}
+
+	// Each trust object carries exactly the pinned keys.
+	var vote struct {
+		Trust json.RawMessage `json:"trust"`
+	}
+	if err := json.Unmarshal(voteBody, &vote); err != nil {
+		t.Fatalf("decoding vote body: %v", err)
+	}
+	p07AssertTrustKeys(t, vote.Trust)
+	for name, c := range map[string]*http.Client{"voter": b, "reporter": a} {
+		tr, ok := p07FeedTrust(t, c, srv.URL, reportID, false)
+		if !ok {
+			t.Fatalf("report %d not listed for the %s", reportID, name)
+		}
+		p07AssertTrustKeys(t, tr)
+	}
 }

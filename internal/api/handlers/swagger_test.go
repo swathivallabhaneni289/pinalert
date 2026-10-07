@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -108,6 +109,84 @@ func TestSwaggerDocServed(t *testing.T) {
 	if ct := resp2.Header.Get("Content-Type"); !strings.Contains(ct, "text/html") {
 		t.Fatalf("GET /swagger/index.html Content-Type = %q, want it to contain %q", ct, "text/html")
 	}
+}
+
+// p07GuardedSwaggerRoots are the definitions whose property names the trust
+// guard checks, together with every definition they reference. Plan 03-14
+// appends handlers.CurrencyResponse and handlers.ReporterResponse here. The
+// auth definitions, which carry email by design, are never roots.
+var p07GuardedSwaggerRoots = []string{"handlers.TrustResponse", "handlers.FeedReportResponse", "handlers.CastVoteResponse"}
+
+// p07IdentifierPropertyName is the name pattern no guarded property may match.
+var p07IdentifierPropertyName = regexp.MustCompile(`(?i)cell|account|session|email`)
+
+// p07SwaggerRefs walks a decoded JSON value and records the definition name
+// of every "$ref" that points at #/definitions/, wherever it sits (a bare
+// ref, an allOf wrapper, an array items entry).
+func p07SwaggerRefs(v any, out map[string]bool) {
+	const prefix = "#/definitions/"
+	switch x := v.(type) {
+	case map[string]any:
+		for k, val := range x {
+			if s, ok := val.(string); ok && k == "$ref" && strings.HasPrefix(s, prefix) {
+				out[strings.TrimPrefix(s, prefix)] = true
+				continue
+			}
+			p07SwaggerRefs(val, out)
+		}
+	case []any:
+		for _, val := range x {
+			p07SwaggerRefs(val, out)
+		}
+	}
+}
+
+// p07WalkSwaggerDefinitions works breadth first from roots, following every
+// reference found inside a property value, and returns the visited
+// definitions with their decoded properties. A missing root is fatal.
+func p07WalkSwaggerDefinitions(t *testing.T, defs map[string]json.RawMessage, roots []string) (visited map[string]bool, props map[string]map[string]json.RawMessage) {
+	t.Helper()
+	visited = map[string]bool{}
+	props = map[string]map[string]json.RawMessage{}
+	queue := append([]string(nil), roots...)
+	for _, r := range roots {
+		if _, ok := defs[r]; !ok {
+			t.Fatalf("docs/swagger.json is missing the guarded definition %q", r)
+		}
+	}
+	for len(queue) > 0 {
+		name := queue[0]
+		queue = queue[1:]
+		if visited[name] {
+			continue
+		}
+		raw, ok := defs[name]
+		if !ok {
+			continue
+		}
+		visited[name] = true
+		var def struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		}
+		if err := json.Unmarshal(raw, &def); err != nil {
+			t.Fatalf("parsing definition %q: %v", name, err)
+		}
+		props[name] = def.Properties
+		for _, pv := range def.Properties {
+			var decoded any
+			if err := json.Unmarshal(pv, &decoded); err != nil {
+				t.Fatalf("parsing a property of %q: %v", name, err)
+			}
+			refs := map[string]bool{}
+			p07SwaggerRefs(decoded, refs)
+			for ref := range refs {
+				if _, exists := defs[ref]; exists && !visited[ref] {
+					queue = append(queue, ref)
+				}
+			}
+		}
+	}
+	return visited, props
 }
 
 // TestSwaggerSpecCoversRoutes is the drift guard: it loads the committed
@@ -265,6 +344,73 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 	for _, field := range []string{"place_id", "osm_id", "place_rank", "boundingbox"} {
 		if strings.Contains(body, field) {
 			t.Fatalf("docs/swagger.json must never document Nominatim-internal field %q", field)
+		}
+	}
+
+	// 03-07: the trust object (V-30). The definition must carry the seven
+	// wire keys, and the two response shapes that return it must reference
+	// it. The name guard walks only the guarded roots and what they
+	// reference, so the auth definitions that carry email by design are
+	// never visited.
+	var defSpec struct {
+		Definitions map[string]json.RawMessage `json:"definitions"`
+	}
+	if err := json.Unmarshal(raw, &defSpec); err != nil {
+		t.Fatalf("parsing docs/swagger.json definitions: %v", err)
+	}
+	visited, defProps := p07WalkSwaggerDefinitions(t, defSpec.Definitions, p07GuardedSwaggerRoots)
+	trustProps := defProps["handlers.TrustResponse"]
+	for _, key := range p07TrustWireKeys {
+		pv, ok := trustProps[key]
+		if !ok {
+			t.Errorf("handlers.TrustResponse is missing property %q", key)
+			continue
+		}
+		var typed struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(pv, &typed); err != nil {
+			t.Fatalf("parsing handlers.TrustResponse property %q: %v", key, err)
+		}
+		wantType := "string"
+		if key == "confirmed_places" || key == "disputed_places" {
+			wantType = "integer"
+		}
+		if typed.Type != wantType {
+			t.Errorf("handlers.TrustResponse property %q has type %q, want %q", key, typed.Type, wantType)
+		}
+	}
+	for _, owner := range []string{"handlers.FeedReportResponse", "handlers.CastVoteResponse"} {
+		pv, ok := defProps[owner]["trust"]
+		if !ok {
+			t.Errorf("%s is missing the trust property", owner)
+			continue
+		}
+		var decoded any
+		if err := json.Unmarshal(pv, &decoded); err != nil {
+			t.Fatalf("parsing %s trust property: %v", owner, err)
+		}
+		refs := map[string]bool{}
+		p07SwaggerRefs(decoded, refs)
+		if !refs["handlers.TrustResponse"] {
+			t.Errorf("%s trust property does not reference handlers.TrustResponse", owner)
+		}
+	}
+	for _, root := range []string{"handlers.TrustResponse", "handlers.FeedReportResponse", "handlers.CastVoteResponse"} {
+		if !visited[root] {
+			t.Errorf("guard walk never visited %s", root)
+		}
+	}
+	for _, auth := range []string{"handlers.RequestLinkRequest", "handlers.RequestLinkResponse"} {
+		if visited[auth] {
+			t.Errorf("guard walk visited %s, so it is not scoped to the response definitions", auth)
+		}
+	}
+	for def, ps := range defProps {
+		for key := range ps {
+			if p07IdentifierPropertyName.MatchString(key) {
+				t.Errorf("guarded definition %s has property %q, a name that looks like an identifier", def, key)
+			}
 		}
 	}
 
