@@ -50,6 +50,21 @@
   // authority on whether a vote counts (D-02).
   var VOTER_LOCATION_FRESH_MS = 60000;
 
+  // How old a cached fix may be and still drive the too far hint, in
+  // milliseconds (UI-SPEC open item 6: a stale fix never marks a button). A
+  // client side timer, not a trust threshold: the server decides every vote.
+  var VOTER_LOCATION_HINT_MS = 120000;
+
+  // The three buttons the too far hint marks (RR-3). Yes, Cancel and Reopen
+  // are never in this list.
+  var HINT_BUTTON_SELECTORS = ['.vote-btn--confirm', '.vote-btn--dispute', '.vote-btn--resolve'];
+
+  // The too far sentence is these two literals around the radius the page
+  // supplies. The tail starts with a non breaking space so the unit never
+  // wraps alone. A Go test checks the joined sentence against the server's.
+  var TOO_FAR_LEAD = 'Too far to vote. You need to be within ';
+  var TOO_FAR_TAIL = '\u00a0km of this report.';
+
   // The Copywriting Contract's GPS-denial sentence, verbatim. Its tone
   // deliberately differs from the submission path's location notice: that
   // copy offers a workaround because one exists; this copy must not imply
@@ -492,6 +507,7 @@
     if (disputeBtn) {
       disputeBtn.setAttribute('aria-pressed', report.your_vote === 'dispute' ? 'true' : 'false');
     }
+    applyDistanceHint(block, report);
   }
 
   // setBlockBusy is the sole owner of the busy state on a vote block: it
@@ -510,6 +526,107 @@
       block.controls.setAttribute('aria-busy', 'true');
     } else {
       block.controls.removeAttribute('aria-busy');
+    }
+  }
+
+  // Reads the cached voter fix and nothing else, for the too far hint. It
+  // never asks the browser for a position, never queries the permission and
+  // never writes the cache: the silent refresh of the vote path keeps the
+  // cache current. A browser that throws on storage access gives no fix.
+  function peekVoterLocation() {
+    try {
+      return parseVoterLocation(sessionStorage.getItem(VOTER_LOCATION_CACHE_KEY));
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // The vote radius in kilometres, read straight from the page shell's
+  // attribute. A missing, empty, unreadable or zero value gives null, which
+  // means no hint. There is no default number here on purpose (D-22).
+  function readVoteRadiusKm() {
+    var shell = document.getElementById('app-shell');
+    if (!shell) {
+      return null;
+    }
+    var raw = shell.getAttribute('data-vote-radius-km');
+    if (raw === null || raw === '') {
+      return null;
+    }
+    var radius = Number(raw);
+    if (isFinite(radius) && radius > 0) {
+      return radius;
+    }
+    return null;
+  }
+
+  // One great circle distance in kilometres, the same earth radius as the
+  // server's. It is the only geometry in the browser and it grants nothing.
+  function greatCircleKm(lat1, lon1, lat2, lon2) {
+    var toRad = Math.PI / 180;
+    var dLat = (lat2 - lat1) * toRad;
+    var dLon = (lon2 - lon1) * toRad;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    a = Math.min(1, Math.max(0, a));
+    return 2 * 6371 * Math.asin(Math.sqrt(a));
+  }
+
+  // Removes the too far marks from the three hint buttons and empties and
+  // hides the note. A node that an aria reference points at is still read
+  // out, so the note is emptied as well as hidden.
+  function clearDistanceHint(block) {
+    HINT_BUTTON_SELECTORS.forEach(function (selector) {
+      var btn = block.controls.querySelector(selector);
+      if (btn) {
+        btn.removeAttribute('aria-disabled');
+        btn.removeAttribute('data-too-far');
+        btn.removeAttribute('aria-describedby');
+      }
+    });
+    if (block.note) {
+      Pinalert.setText(block.note, '');
+      block.note.hidden = true;
+    }
+  }
+
+  // Marks Confirm, Dispute and Mark resolved too far, with the reason as
+  // visible text in the note, only when the radius is known, the cached fix
+  // is younger than the hint bound and the report lies strictly farther than
+  // the radius. Every other case clears the marks, so the hint fails open and
+  // the first tap asks for location as before. The reporter's own report is
+  // never marked. Marked buttons stay focusable. The server refuses far votes
+  // on its own, so this grants and decides nothing (D-01, D-22).
+  function applyDistanceHint(block, report) {
+    if (report.is_own_report || !block.note) {
+      clearDistanceHint(block);
+      return;
+    }
+    var radiusKm = readVoteRadiusKm();
+    var fix = peekVoterLocation();
+    if (radiusKm === null || fix === null || !isFreshVoterLocation(fix, VOTER_LOCATION_HINT_MS)) {
+      clearDistanceHint(block);
+      return;
+    }
+    var distanceKm = greatCircleKm(fix.latitude, fix.longitude, report.latitude, report.longitude);
+    if (!isFinite(distanceKm)) {
+      clearDistanceHint(block);
+      return;
+    }
+    if (distanceKm > radiusKm) {
+      HINT_BUTTON_SELECTORS.forEach(function (selector) {
+        var btn = block.controls.querySelector(selector);
+        if (btn) {
+          btn.setAttribute('aria-disabled', 'true');
+          btn.setAttribute('data-too-far', 'true');
+          btn.setAttribute('aria-describedby', block.note.id);
+        }
+      });
+      Pinalert.setText(block.note, TOO_FAR_LEAD + String(radiusKm) + TOO_FAR_TAIL);
+      block.note.hidden = false;
+    } else {
+      clearDistanceHint(block);
     }
   }
 
@@ -826,6 +943,10 @@
   // any of that: opening or closing the inline confirmation posts nothing
   // and reads no location.
   function onControlsClick(block, button) {
+    // A button marked too far does nothing: no request, no toast, no error.
+    if (button.getAttribute('aria-disabled') === 'true') {
+      return;
+    }
     var action = button.dataset.action;
 
     if (action === 'resolve') {
