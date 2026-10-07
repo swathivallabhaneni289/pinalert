@@ -15,6 +15,7 @@ package web
 import (
 	"io/fs"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -140,4 +141,464 @@ func TestShelterLineFormatterIsShared(t *testing.T) {
 	p16MustContain(t, "feed.js buildMetaText", meta, "Pinalert.formatShelterLine(report)")
 	p16MustNotContain(t, "feed.js buildMetaText", meta, "' person'", "' people'", "CAPACITY_STATUSES")
 	p16MustNotContain(t, "feed.js", feed, "CAPACITY_LABELS")
+}
+
+// p16CSSRule is one parsed rule: its file, the at-rule prelude it sits in
+// (empty at top level), its whitespace collapsed head, its declarations and
+// its position in parse order within the file.
+type p16CSSRule struct {
+	File, Media, Head string
+	Decls             map[string]string
+	Index             int
+}
+
+// p16ParseCSS parses one stylesheet into rules, one level of at-rule nesting
+// deep. A top level prelude that starts with @ and holds nested rules opens a
+// block whose prelude becomes Media for every rule inside it.
+func p16ParseCSS(file, raw string) []p16CSSRule {
+	text := stripCSSComments(raw)
+	var rules []p16CSSRule
+	var walk func(s, media string)
+	walk = func(s, media string) {
+		for {
+			open := strings.Index(s, "{")
+			if open == -1 {
+				return
+			}
+			prelude := strings.Join(strings.Fields(s[:open]), " ")
+			depth := 1
+			end := open + 1
+			for end < len(s) && depth > 0 {
+				switch s[end] {
+				case '{':
+					depth++
+				case '}':
+					depth--
+				}
+				end++
+			}
+			inner := s[open+1 : end-1]
+			if strings.HasPrefix(prelude, "@") && strings.Contains(inner, "{") {
+				walk(inner, prelude)
+			} else {
+				rules = append(rules, p16CSSRule{
+					File:  file,
+					Media: media,
+					Head:  prelude,
+					Decls: declsOf(inner),
+					Index: len(rules),
+				})
+			}
+			s = s[end:]
+		}
+	}
+	walk(text, "")
+	return rules
+}
+
+// p16AllCSS parses every stylesheet under static/css in the embedded tree.
+func p16AllCSS(t *testing.T) []p16CSSRule {
+	t.Helper()
+	var all []p16CSSRule
+	err := fs.WalkDir(StaticFS, "static/css", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".css") {
+			return nil
+		}
+		all = append(all, p16ParseCSS(path, p16ReadStatic(t, path))...)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed to walk static/css: %v", err)
+	}
+	return all
+}
+
+// p16Rule returns the first rule whose Head equals head exactly and whose
+// Media is empty when media is empty, or contains media otherwise.
+func p16Rule(t *testing.T, rules []p16CSSRule, media, head string) p16CSSRule {
+	t.Helper()
+	for _, r := range rules {
+		if r.Head != head {
+			continue
+		}
+		if (media == "" && r.Media == "") || (media != "" && strings.Contains(r.Media, media)) {
+			return r
+		}
+	}
+	t.Fatalf("no rule with head %q in media %q", head, media)
+	return p16CSSRule{}
+}
+
+// p16TrustRules parses trust.css alone.
+func p16TrustRules(t *testing.T) []p16CSSRule {
+	t.Helper()
+	return p16ParseCSS("static/css/trust.css", p16ReadStatic(t, "static/css/trust.css"))
+}
+
+// p16HeadParts splits a head on commas and trims each part.
+func p16HeadParts(head string) []string {
+	var parts []string
+	for _, part := range strings.Split(head, ",") {
+		parts = append(parts, strings.TrimSpace(part))
+	}
+	return parts
+}
+
+// p16NamesLabel is true for a head that names a severity label or a state
+// label.
+func p16NamesLabel(head string) bool {
+	return strings.Contains(head, ".severity-label") || strings.Contains(head, ".visibility-tag")
+}
+
+// p16IsPseudoOnly is true when every part of the head ends in ::before.
+func p16IsPseudoOnly(head string) bool {
+	for _, part := range p16HeadParts(head) {
+		if !strings.HasSuffix(part, "::before") {
+			return false
+		}
+	}
+	return true
+}
+
+// p16MustDecl fails unless the rule declares name with exactly want.
+func p16MustDecl(t *testing.T, label string, r p16CSSRule, want map[string]string) {
+	t.Helper()
+	for name, value := range want {
+		got, ok := r.Decls[name]
+		if !ok {
+			t.Errorf("%s: missing declaration %q", label, name)
+			continue
+		}
+		if got != value {
+			t.Errorf("%s: %s is %q, want %q", label, name, got, value)
+		}
+	}
+}
+
+const (
+	p16SeverityBase = ".severity-label:not([hidden])"
+	p16StateBase    = ".visibility-tag:not([hidden])"
+	p16LevelCrit    = ".severity-label.severity-label--critical"
+	p16LevelMedium  = ".severity-label.severity-label--medium"
+	p16LevelLow     = ".severity-label.severity-label--low"
+	p16DotHead      = ".severity-label.severity-label--medium::before, .severity-label.severity-label--low::before"
+	p16RowLabelHead = ".report-row .severity-label:not([hidden])"
+	p16ForcedHead   = ".severity-label:not([hidden]), .report-row .severity-label:not([hidden]), .visibility-tag:not([hidden])"
+)
+
+var p16PxValue = regexp.MustCompile(`^(-?[0-9.]+)(px|%)$`)
+
+// TestReadOnlyLabelsRoundedControlsNot pins A1, A38 and owner Q2: read only
+// labels are rounded 12px boxes, no control is fully rounded (V-40 narrowed
+// to controls), and the labels keep a visible shape in forced colors (RR-7).
+func TestReadOnlyLabelsRoundedControlsNot(t *testing.T) {
+	trust := p16TrustRules(t)
+	all := p16AllCSS(t)
+
+	severity := p16Rule(t, trust, "", p16SeverityBase)
+	state := p16Rule(t, trust, "", p16StateBase)
+	for label, r := range map[string]p16CSSRule{"severity label": severity, "state label": state} {
+		p16MustDecl(t, label, r, map[string]string{"border-radius": "12px"})
+	}
+
+	exemptControls := []string{".fab", ".theme-toggle", ".account-trigger", ".profile-back-link", ".icon-badge"}
+	checkedHeads := map[string]bool{}
+	for _, r := range all {
+		radius, ok := r.Decls["border-radius"]
+		if !ok {
+			continue
+		}
+		if strings.Contains(r.Head, ".severity-slider") || p16NamesLabel(r.Head) {
+			continue
+		}
+		exempt := false
+		for _, name := range exemptControls {
+			if strings.Contains(r.Head, name) {
+				exempt = true
+			}
+		}
+		if exempt {
+			continue
+		}
+		checkedHeads[r.Head] = true
+		basis := 44.0
+		for _, prop := range []string{"min-height", "height"} {
+			if m := p16PxValue.FindStringSubmatch(r.Decls[prop]); m != nil && m[2] == "px" {
+				if v, err := strconv.ParseFloat(m[1], 64); err == nil {
+					basis = v
+				}
+				break
+			}
+		}
+		for _, component := range strings.Fields(radius) {
+			if component == "999px" {
+				t.Errorf("%s %q: radius %q, no control may be fully rounded (owner Q2; V-40 narrowed to controls)", r.File, r.Head, radius)
+				continue
+			}
+			m := p16PxValue.FindStringSubmatch(component)
+			if m == nil {
+				continue
+			}
+			v, err := strconv.ParseFloat(m[1], 64)
+			if err != nil {
+				continue
+			}
+			if m[2] == "%" && v >= 50 {
+				t.Errorf("%s %q: radius %q, no control may be fully rounded (owner Q2; V-40 narrowed to controls)", r.File, r.Head, radius)
+			}
+			if m[2] == "px" && v >= basis/2 {
+				t.Errorf("%s %q: radius %q is at least half the height %vpx, no control may be fully rounded (owner Q2; V-40 narrowed to controls)", r.File, r.Head, radius, basis)
+			}
+		}
+	}
+
+	// Non vacuous: the checked set holds the well known controls, and the
+	// exemptions are real rules that still declare 50 percent.
+	for _, head := range []string{".vote-btn:not([hidden])", ".btn", ".view-toggle"} {
+		if !checkedHeads[head] {
+			t.Errorf("the radius scan never checked a rule with head %q", head)
+		}
+	}
+	main := p16ParseCSS("static/css/main.css", p16ReadStatic(t, "static/css/main.css"))
+	for _, head := range []string{".severity-slider::-webkit-slider-thumb", ".severity-slider::-moz-range-thumb"} {
+		p16MustDecl(t, head, p16Rule(t, main, "", head), map[string]string{"border-radius": "50%"})
+	}
+	for _, name := range exemptControls {
+		found := false
+		for _, r := range all {
+			if strings.Contains(r.Head, name) && r.Decls["border-radius"] == "50%" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("no rule head containing %q declares border-radius: 50%%, so the exemption would pass vacuously", name)
+		}
+	}
+
+	// A1: a label is 12px, never a percentage or 999px. The dot is pseudo only.
+	for _, r := range all {
+		radius, ok := r.Decls["border-radius"]
+		if !ok || !p16NamesLabel(r.Head) || p16IsPseudoOnly(r.Head) {
+			continue
+		}
+		if strings.HasSuffix(radius, "%") || radius == "999px" {
+			t.Errorf("%s %q: label radius %q, want 12px (A1)", r.File, r.Head, radius)
+		}
+	}
+
+	// RR-7: forced colors keep the rounded shape through a visible border.
+	forcedBox := p16Rule(t, trust, "forced-colors: active", p16ForcedHead)
+	p16MustDecl(t, "forced colors label box", forcedBox, map[string]string{
+		"border": "1px solid CanvasText",
+		"color":  "CanvasText",
+	})
+	forcedDot := p16Rule(t, trust, "forced-colors: active", p16DotHead)
+	p16MustDecl(t, "forced colors dot", forcedDot, map[string]string{
+		"forced-color-adjust": "none",
+		"background-color":    "CanvasText",
+	})
+	for _, base := range []string{p16SeverityBase, p16LevelCrit, p16LevelMedium, p16LevelLow, p16DotHead, p16RowLabelHead} {
+		if r := p16Rule(t, trust, "", base); forcedBox.Index <= r.Index || forcedDot.Index <= r.Index {
+			t.Errorf("the forced colors label rules must come after %q", base)
+		}
+	}
+}
+
+// TestSeverityLabelHasNoFixedHeight pins A1, A37, A53, A40 and open item 10:
+// min-height only so a label grows with text, the pinned geometry and type,
+// and severity colour only in the closed A40 places.
+func TestSeverityLabelHasNoFixedHeight(t *testing.T) {
+	trust := p16TrustRules(t)
+	all := p16AllCSS(t)
+
+	for _, r := range all {
+		if !p16NamesLabel(r.Head) || p16IsPseudoOnly(r.Head) {
+			continue
+		}
+		if _, ok := r.Decls["height"]; ok {
+			t.Errorf("%s %q declares height, labels use min-height only (A1, A53)", r.File, r.Head)
+		}
+		if _, ok := r.Decls["display"]; ok {
+			for _, part := range p16HeadParts(r.Head) {
+				if !strings.Contains(part, ":not([hidden])") {
+					t.Errorf("%s %q declares display but %q lacks :not([hidden]) (A37)", r.File, r.Head, part)
+				}
+			}
+		}
+		for name, value := range r.Decls {
+			if strings.Contains(value, "!important") {
+				t.Errorf("%s %q: %s uses !important", r.File, r.Head, name)
+			}
+			if strings.HasPrefix(name, "--") {
+				t.Errorf("%s %q declares the custom property %s", r.File, r.Head, name)
+			}
+		}
+	}
+
+	shared := map[string]string{
+		"display":        "inline-flex",
+		"align-items":    "center",
+		"box-sizing":     "border-box",
+		"min-height":     "24px",
+		"min-width":      "0",
+		"padding":        "0 var(--space-sm)",
+		"white-space":    "normal",
+		"overflow-wrap":  "anywhere",
+		"vertical-align": "top",
+		"border-radius":  "12px",
+		"font-family":    "var(--font-family)",
+		"font-size":      "var(--font-size-label)",
+		"line-height":    "var(--line-height-label)",
+		"font-weight":    "var(--font-weight-semibold)",
+		"color":          "var(--color-text)",
+	}
+	severity := p16Rule(t, trust, "", p16SeverityBase)
+	state := p16Rule(t, trust, "", p16StateBase)
+	p16MustDecl(t, "severity label", severity, shared)
+	p16MustDecl(t, "state label", state, shared)
+	p16MustDecl(t, "severity label", severity, map[string]string{
+		"gap":    "var(--space-sm)",
+		"border": "1px solid transparent",
+	})
+	p16MustDecl(t, "state label", state, map[string]string{
+		"border":     "1px solid var(--color-border)",
+		"background": "var(--color-bg)",
+		"margin":     "var(--space-xs) 0 0",
+	})
+
+	// Both level heads are (0,2,0), so the Critical colour wins by source order.
+	crit := p16Rule(t, trust, "", p16LevelCrit)
+	medium := p16Rule(t, trust, "", p16LevelMedium)
+	low := p16Rule(t, trust, "", p16LevelLow)
+	p16MustDecl(t, "critical level", crit, map[string]string{
+		"background": "var(--color-severity-critical-bg)",
+		"color":      "var(--color-severity-critical)",
+	})
+	p16MustDecl(t, "medium level", medium, map[string]string{"background": "var(--color-severity-medium-bg)"})
+	p16MustDecl(t, "low level", low, map[string]string{"background": "var(--color-severity-low-bg)"})
+	for name, r := range map[string]p16CSSRule{"medium": medium, "low": low} {
+		if _, ok := r.Decls["color"]; ok {
+			t.Errorf("%s level declares color, its text stays --color-text", name)
+		}
+	}
+	for name, r := range map[string]p16CSSRule{"critical": crit, "medium": medium, "low": low} {
+		if r.Index <= severity.Index {
+			t.Errorf("%s level rule must come after the base severity rule", name)
+		}
+	}
+
+	dot := p16Rule(t, trust, "", p16DotHead)
+	p16MustDecl(t, "dot", dot, map[string]string{
+		"content":          `""`,
+		"flex":             "none",
+		"width":            "8px",
+		"height":           "8px",
+		"border-radius":    "50%",
+		"background-color": "var(--severity-current)",
+	})
+
+	row := p16Rule(t, trust, "", p16RowLabelHead)
+	p16MustDecl(t, "row label", row, map[string]string{
+		"margin":       "0 0 var(--space-xs)",
+		"background":   "var(--color-bg)",
+		"border-color": "var(--severity-current)",
+	})
+	for name, r := range map[string]p16CSSRule{"dot": dot, "row label": row, "critical": crit} {
+		if r.Index <= severity.Index {
+			t.Errorf("%s rule must come after the base severity rule", name)
+		}
+	}
+
+	// A40 closed accent list, over top level rules that name a label.
+	for _, r := range trust {
+		if r.Media != "" || !p16NamesLabel(r.Head) {
+			continue
+		}
+		for name, value := range r.Decls {
+			if strings.Contains(value, "--color-severity") {
+				allowed := (r.Head == p16LevelCrit || r.Head == p16LevelMedium || r.Head == p16LevelLow) && name == "background"
+				if r.Head == p16LevelCrit && name == "color" {
+					allowed = true
+				}
+				if !allowed {
+					t.Errorf("%q: %s uses a severity colour outside the closed list (A40)", r.Head, name)
+				}
+			}
+			if strings.Contains(value, "var(--severity-current)") {
+				allowed := (r.Head == p16RowLabelHead && name == "border-color") ||
+					(r.Head == p16DotHead && name == "background-color")
+				if !allowed {
+					t.Errorf("%q: %s uses --severity-current outside the row border and the dot (A40)", r.Head, name)
+				}
+			}
+			for _, banned := range []string{"--severity-tint", "--severity-base", "--color-text-muted"} {
+				if strings.Contains(value, banned) {
+					t.Errorf("%q: %s references %s (A37, A40)", r.Head, name, banned)
+				}
+			}
+		}
+	}
+
+	// Every state label modifier keeps the neutral look, Expired included.
+	for _, r := range all {
+		if !strings.Contains(r.Head, "visibility-tag--") {
+			continue
+		}
+		for _, name := range []string{"color", "background", "background-color", "border-color"} {
+			if _, ok := r.Decls[name]; ok {
+				t.Errorf("%s %q declares %s, state labels stay neutral (A1, A44)", r.File, r.Head, name)
+			}
+		}
+	}
+}
+
+// TestExpiredRowTreatmentMatchesRetracted pins A44: an expired Activity row
+// reads as inactive exactly like a retracted or hidden one, in a rule that
+// names no hidden state selector.
+func TestExpiredRowTreatmentMatchesRetracted(t *testing.T) {
+	raw := p16ReadStatic(t, "static/css/trust.css")
+	rules := parseCSSRules(raw)
+
+	expired, ok := ruleBySelector(rules, ".vis-expired")
+	if !ok {
+		t.Fatalf("trust.css has no .vis-expired rule (A44)")
+	}
+	expiredDecls := declsOf(expired.declBody)
+	for _, other := range []string{".vis-retracted", ".vis-hidden"} {
+		r, found := ruleBySelector(rules, other)
+		if !found {
+			t.Fatalf("trust.css has no %s rule", other)
+		}
+		want := declsOf(r.declBody)
+		for name, value := range want {
+			if got, has := expiredDecls[name]; !has || got != value {
+				t.Errorf(".vis-expired %s is %q, %s has %q", name, got, other, value)
+			}
+		}
+		for name := range expiredDecls {
+			if _, has := want[name]; !has {
+				t.Errorf(".vis-expired declares %s, which %s does not", name, other)
+			}
+		}
+	}
+
+	badgeRules := 0
+	for _, r := range rules {
+		if strings.Contains(r.selectorHead, "vis-expired") && strings.Contains(r.declBody, "background") {
+			badgeRules++
+			if !strings.Contains(r.selectorHead, ".icon-badge.vis-expired") || !strings.Contains(r.selectorHead, ".vis-expired .icon-badge") {
+				t.Errorf("the expired badge rule head %q must hold the compound and the descendant form", r.selectorHead)
+			}
+		}
+		if strings.Contains(r.selectorHead, "vis-expired") &&
+			(strings.Contains(r.selectorHead, "vis-hidden") || strings.Contains(r.selectorHead, "vis-retracted")) {
+			t.Errorf("rule head %q names expired together with another state", r.selectorHead)
+		}
+	}
+	if badgeRules != 1 {
+		t.Errorf("found %d expired rules with a background, want exactly 1", badgeRules)
+	}
 }
