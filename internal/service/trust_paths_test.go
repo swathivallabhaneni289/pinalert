@@ -135,9 +135,13 @@ func p05RunPaths(t *testing.T, rows []sqlcgen.CurrentVotesForReportsRow, now tim
 func TestTrustAttachedOnEveryReadPath(t *testing.T) {
 	meta := service.ReportMeta{Severity: service.SeverityLow, Category: service.CategoryFlood}
 	buildWant := func(rows []sqlcgen.CurrentVotesForReportsRow, vis service.Visibility, now time.Time) service.Trust {
+		// No history is configured in these fixtures, so every path carries the
+		// reporter's New reporter signal (plan 03-12).
+		reporter := service.ReporterSignals([]int64{p05PathReporter}, nil, rows, now)[p05PathReporter]
 		return service.BuildTrust(service.TrustInput{
 			Rows: rows, ReportID: p05PathReport, ReporterAccountID: ptrID(p05PathReporter), Meta: meta,
 			Visibility: vis, CreatedAt: p05PathCreated, ExpiresAt: p05PathExpires, Now: now,
+			Reporter: &reporter,
 		})
 	}
 	liveRows := []sqlcgen.CurrentVotesForReportsRow{

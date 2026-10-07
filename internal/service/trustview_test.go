@@ -395,9 +395,13 @@ func TestCastVoteResultCarriesTrust(t *testing.T) {
 			t.Errorf("DisputedSentence = %q, want %q", tr.DisputedSentence, want)
 		}
 		rc := q.voteContextRow
+		// The reporter has no history here, so the result carries the New
+		// reporter signal (plan 03-12).
+		reporter := ReporterSignals([]int64{*rc.ReporterAccountID}, nil, rows, p05Now)[*rc.ReporterAccountID]
 		want := BuildTrust(TrustInput{
 			Rows: rows, ReportID: 1, ReporterAccountID: rc.ReporterAccountID, Meta: meta,
 			Visibility: VisibilityLive, CreatedAt: rc.CreatedAt, ExpiresAt: rc.ExpiresAt, Now: p05Now,
+			Reporter: &reporter,
 		})
 		if !reflect.DeepEqual(tr, want) {
 			t.Errorf("result.Trust differs from BuildTrust over the same rows:\n%+v\n%+v", tr, want)
