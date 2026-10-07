@@ -47,7 +47,7 @@ requirements-completed: [TRUST-07, D-10, D-13, D-14, R-05]
 coverage:
   - id: D1
     description: "Every read path loads the reporter history once, keyed by verified account, and carries the real reporter signal"
-    requirement: "TRUST-07"
+    requirement: "D-10"
     verification:
       - kind: unit
         ref: "internal/service/feed_test.go#TestReporterSignalKeyedByAccount"
@@ -61,7 +61,7 @@ coverage:
     human_judgment: false
   - id: D2
     description: "The three paths return deeply equal trust objects, including Reporter, for the same data"
-    requirement: "D-13"
+    requirement: "TRUST-07"
     verification:
       - kind: unit
         ref: "internal/service/feed_test.go#TestCastVoteTrustMatchesNearbyTrust"
@@ -72,13 +72,24 @@ coverage:
     human_judgment: false
   - id: D3
     description: "A feed read makes one reporter, at most one history and one vote read, and rates at most 200 accounts nearest first"
-    requirement: "D-10"
+    requirement: "TRUST-07"
     verification:
       - kind: unit
         ref: "internal/service/feed_test.go#TestNearbyBatchesVoteReadsOnceWithReporters"
         status: pass
       - kind: unit
         ref: "internal/service/feed_test.go#TestNearbyReporterAccountCap"
+        status: pass
+    human_judgment: false
+  - id: D5
+    description: "History is requested with the 90 day window, the 30 row cap and the injected clock, and a report expiring exactly at now counts as judged"
+    requirement: "R-05"
+    verification:
+      - kind: unit
+        ref: "internal/service/feed_test.go#TestReporterSignalKeyedByAccount"
+        status: pass
+      - kind: unit
+        ref: "internal/service/trust_test.go#TestCastVoteReadsReporterHistoryOnce"
         status: pass
     human_judgment: false
   - id: D4
@@ -90,7 +101,7 @@ coverage:
         status: pass
     human_judgment: false
 
-duration: 45min
+duration: about 45min (estimated)
 completed: 2026-10-08
 status: complete
 ---
