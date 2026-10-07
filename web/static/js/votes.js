@@ -600,6 +600,28 @@
     return button;
   }
 
+  // createReopenControl is the one Reopen builder the Activity page uses
+  // (D-20, A64). It returns the controls, the button and the error line, with
+  // no note, because Reopen never shows the too far state (A66), and with no
+  // listener, because the Activity page attaches its own single delegated
+  // one. setBlockBusy and showVoteError work on the returned object
+  // unchanged.
+  function createReopenControl(reportId) {
+    var controls = document.createElement('div');
+    controls.className = 'vote-controls';
+    controls.dataset.reportId = String(reportId);
+
+    var reopenBtn = createVoteButton('vote-btn vote-btn--reopen', 'reopen', 'vote-btn__icon--rotate-ccw', REOPEN_BUTTON_LABEL);
+    controls.appendChild(reopenBtn);
+
+    var error = document.createElement('p');
+    error.className = 'vote-error';
+    error.setAttribute('role', 'alert');
+    error.hidden = true;
+
+    return { controls: controls, button: reopenBtn, error: error };
+  }
+
   // isDisplayed is true only for an element that is attached to the page and
   // has at least one layout box, so it is false for anything inside a pane
   // that is not shown.
@@ -893,6 +915,8 @@
     castVote: castVote,
     createVoteBlock: createVoteBlock,
     cancelResolveConfirm: cancelResolveConfirm,
+    createReopenControl: createReopenControl,
+    setReopenLabel: setVoteButtonLabel,
     updateVoteBlock: updateVoteBlock,
     setBlockBusy: setBlockBusy,
     showVoteError: showVoteError,

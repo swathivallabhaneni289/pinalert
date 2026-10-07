@@ -369,3 +369,50 @@ func TestRetapResendsTheSameVote(t *testing.T) {
 	p09MustContain(t, "onControlsClick", body, "var transportAction = isResolveAffirm ? 'resolve' : action;")
 	p09MustNotContain(t, "votes.js", text, "'DELETE'", "unvote")
 }
+
+// TestReopenControlIsSharedFromVotes pins amendments A64, A28 and A36 and
+// decision D-20. The Activity page builds Reopen through the one builder in
+// votes.js, which returns controls, button and error with no note and no
+// listener, and writes every Reopen label through the exported label helper.
+// activity.js builds no other vote control. Static inspection proves the
+// builder's shape and the absence of a second builder or a direct label
+// write. It cannot prove what the page looks like, which plan 03-11 styles,
+// nor the click behaviour, which the existing Reopen contract tests and the
+// human check cover.
+func TestReopenControlIsSharedFromVotes(t *testing.T) {
+	votes := p09ReadJS(t, "static/js/votes.js")
+
+	body := p09FuncBody(t, votes, "createReopenControl(reportId)")
+	p09MustContain(t, "createReopenControl", body,
+		"'vote-controls'",
+		"controls.dataset.reportId = String(reportId)",
+		"createVoteButton('vote-btn vote-btn--reopen', 'reopen', 'vote-btn__icon--rotate-ccw', REOPEN_BUTTON_LABEL)",
+		"controls.appendChild(reopenBtn)",
+		"'vote-error'",
+		"setAttribute('role', 'alert')",
+		"error.hidden = true",
+		"return { controls: controls, button: reopenBtn, error: error };")
+	p09MustNotContain(t, "createReopenControl", body, "vote-note", "addEventListener")
+
+	p09MustContain(t, "the export object", votes,
+		"createReopenControl: createReopenControl", "setReopenLabel: setVoteButtonLabel")
+
+	activity := p09ReadJS(t, "static/js/activity.js")
+	p09MustContain(t, "activity.js", activity,
+		"PinalertVotes.createReopenControl(row.dataset.reportId)",
+		"block.controls.remove()", "block.error.remove()")
+	if n := strings.Count(activity, "PinalertVotes.setReopenLabel("); n < 3 {
+		t.Errorf("activity.js must write Reopen labels through PinalertVotes.setReopenLabel at least 3 times, found %d", n)
+	}
+	p09MustNotContain(t, "activity.js", activity,
+		"function buildReopenControl", "createElement('button')", "'vote-controls'", "'vote-error'",
+		"PinalertVotes.createVoteBlock(")
+	for _, pattern := range []string{
+		`Pinalert\.setText\(\s*reopenBtn`,
+		`Pinalert\.setText\([^;]*REOPEN_BUTTON_LABEL`,
+	} {
+		if loc := regexp.MustCompile(pattern).FindStringIndex(activity); loc != nil {
+			t.Errorf("activity.js writes a Reopen label directly at offset %d (pattern %s)", loc[0], pattern)
+		}
+	}
+}
