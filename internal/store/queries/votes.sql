@@ -26,10 +26,10 @@ ORDER BY report_id, account_id, kind, created_at DESC, id DESC;
 -- (02-03a). Four points a later reader would otherwise "correct":
 --
 -- (a) Why one query instead of two. CastVote needs the reporter identity,
--- the severity/category pair Resolve needs as ReportMeta, and expires_at on
--- every single call. Reading all four in one statement removes a window in
--- which a report could expire or be deleted between a separate reporter
--- lookup and a separate meta read. This query supersedes the narrower
+-- the severity/category pair Resolve needs as ReportMeta, the expiry, the
+-- report's coordinates and its creation time on every single call. Reading
+-- them all in one statement removes a window in which a report could expire
+-- or be deleted between a separate reporter lookup and a separate meta read. This query supersedes the narrower
 -- ReporterAccountID query 02-02/02-PATTERNS.md/02-RESEARCH.md anticipated;
 -- that query is deliberately never created.
 --
@@ -50,8 +50,11 @@ ORDER BY report_id, account_id, kind, created_at DESC, id DESC;
 --
 -- (d) What this query is for. The reporter identity for D-03's self-vote
 -- block, the severity/category pair for ReportMeta, and expires_at for the
--- expired-report rejection.
-SELECT r.severity, r.category, r.expires_at, s.account_id AS reporter_account_id
+-- expired-report rejection. latitude and longitude feed the D-01 distance
+-- rule (a vote cast from more than 1 km from the report is refused).
+-- created_at is read here so the currency window in plan 03-08 needs no
+-- second query.
+SELECT r.severity, r.category, r.expires_at, s.account_id AS reporter_account_id, r.latitude, r.longitude, r.created_at
 FROM reports r
 LEFT JOIN sessions s ON r.session_id = s.session_id
 WHERE r.id = sqlc.arg(report_id);
