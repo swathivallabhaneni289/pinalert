@@ -255,15 +255,15 @@ Plans:
   1. The feed displays "confirmed by N nearby" computed from the count of distinct confirming geohash cells/sessions — using a deliberately chosen, documented geohash precision — not the raw number of votes cast.
   2. A report displays two distinct trust signals side by side: a fast-decaying "is this still current" confidence score and a slow-decaying "is this source reliable" score.
 
-**Plans**: 0/20 plans complete
+**Plans**: 3/20 plans executed
 **UI hint**: yes
 
 Plans:
 **Wave 1**
 
-- [ ] 03-01-PLAN.md: A vote cast from more than 1 km from the report is refused by `CastVote` before anything is written, for all four... (wave 1)
-- [ ] 03-02-PLAN.md: Geohash precision 7 is a tested, documented choice: a seeded witness simulation bounds the distinct cells a 300 m... (wave 1)
-- [ ] 03-03-PLAN.md: Every judged outcome and every reporter rating is decided by pure functions: the classifier reuses `Resolve` with... (wave 1)
+- [x] 03-01-PLAN.md: A vote cast from more than 1 km from the report is refused by `CastVote` before anything is written, for all four... (wave 1)
+- [x] 03-02-PLAN.md: Geohash precision 7 is a tested, documented choice: a seeded witness simulation bounds the distinct cells a 300 m... (wave 1)
+- [x] 03-03-PLAN.md: Every judged outcome and every reporter rating is decided by pure functions: the classifier reuses `Resolve` with... (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -433,7 +433,7 @@ Phases execute in numeric order: 1 → 1.1 → 2 → 3 → 3.1 → 3.2 → 4 →
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
 | 1.1 Identity & Login — Mandatory Email Verification | 8/8 | Complete   | 2026-09-12 |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 15/15 | Complete | 2026-10-07 |
-| 3. Trust-Model Hardening — Diversity-Weighted Trust | 0/20 | Not started | - |
+| 3. Trust-Model Hardening — Diversity-Weighted Trust | 3/20 | In Progress|  |
 | 3.1 Report history views | 0/TBD | Not started | - |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
