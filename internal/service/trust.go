@@ -258,12 +258,30 @@ type VotingQuerier interface {
 // VotingService authorizes, records, and resolves confirm/dispute/
 // resolve/reopen votes.
 type VotingService struct {
-	q VotingQuerier
+	q   VotingQuerier
+	now func() time.Time
 }
 
-// NewVotingService constructs a VotingService backed by q.
-func NewVotingService(q VotingQuerier) *VotingService {
-	return &VotingService{q: q}
+// VotingOption configures a VotingService at construction time.
+type VotingOption func(*VotingService)
+
+// WithVotingClock overrides the VotingService's clock. It is named apart from
+// WithClock, which already returns AuthOption (Pitfall 6). Tests use it to pin
+// time, and production code never needs to call it.
+func WithVotingClock(fn func() time.Time) VotingOption {
+	return func(s *VotingService) {
+		s.now = fn
+	}
+}
+
+// NewVotingService constructs a VotingService backed by q. The clock defaults
+// to time.Now unless overridden with WithVotingClock.
+func NewVotingService(q VotingQuerier, opts ...VotingOption) *VotingService {
+	s := &VotingService{q: q, now: time.Now}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // CastVoteInput is every client-settable field of a cast vote.
@@ -280,13 +298,14 @@ type CastVoteInput struct {
 	Longitude float64
 }
 
-// CastVoteResult is the two values 02-03b serialises and 02-05/02-06
-// render. A named result, rather than a bare pair, leaves room for
-// 02-04's response work to grow the shape without changing every
-// caller's arity.
+// CastVoteResult is what the vote handler serialises: the resolved
+// visibility, its reason, and the trust object built by BuildTrust from the
+// same post vote rows Resolve read, so the vote response and the feed carry
+// the same object (D-21).
 type CastVoteResult struct {
 	Visibility Visibility
 	Reason     ResolveReason
+	Trust      Trust
 }
 
 // CastVote authorizes, records, and resolves a single confirm/dispute/
@@ -316,7 +335,8 @@ type CastVoteResult struct {
 //     T-02-01 control: CastVoteInput has no geohash field for a client to
 //     populate), append the vote, read the current votes back AFTER the
 //     insert so the response carries the POST-vote state (D-04), then build
-//     the tally and resolve. CastVote contains NO branch of its own for the
+//     the tally and resolve, then build the trust object from the same rows
+//     (D-21). CastVote contains NO branch of its own for the
 //     reporter's instant resolve or instant reopen: both arrive as flags on
 //     the tally BuildVoteTally builds and are adjudicated by isRetracted()
 //     inside Resolve. A reporter reopening their own Retracted report
@@ -376,7 +396,7 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 	// 5. Reject an expired report. now is captured once, here, as the
 	// authoritative clock, never a client-supplied timestamp, matching
 	// Submit's own convention.
-	now := time.Now().UTC()
+	now := s.now().UTC()
 	if !rc.ExpiresAt.After(now) {
 		return CastVoteResult{}, ErrReportExpired
 	}
@@ -415,5 +435,15 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 	tally := BuildVoteTally(rows, in.ReportID, rc.ReporterAccountID)
 	meta := ReportMeta{Severity: Severity(rc.Severity), Category: Category(rc.Category)}
 	vis, reason := Resolve(meta, tally, now)
-	return CastVoteResult{Visibility: vis, Reason: reason}, nil
+	trust := BuildTrust(TrustInput{
+		Rows:              rows,
+		ReportID:          in.ReportID,
+		ReporterAccountID: rc.ReporterAccountID,
+		Meta:              meta,
+		Visibility:        vis,
+		CreatedAt:         rc.CreatedAt,
+		ExpiresAt:         rc.ExpiresAt,
+		Now:               now,
+	})
+	return CastVoteResult{Visibility: vis, Reason: reason, Trust: trust}, nil
 }

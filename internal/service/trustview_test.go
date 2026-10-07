@@ -7,6 +7,8 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"math/rand/v2"
 	"reflect"
 	"regexp"
@@ -205,4 +207,122 @@ func TestTrustCarriesNoIdentifiers(t *testing.T) {
 		}
 	}
 	walk("Trust", reflect.TypeOf(Trust{}))
+}
+
+// TestCastVoteResultCarriesTrust proves a vote caller gets the trust object
+// built from the post vote rows and the resolved visibility (D-21).
+func TestCastVoteResultCarriesTrust(t *testing.T) {
+	expires := p05Now.Add(7 * time.Hour)
+	clock := func() time.Time { return p05Now }
+	meta := ReportMeta{Severity: SeverityLow, Category: CategoryFlood}
+	cast := func(q *fakeVotingQuerier, account int64, kind VoteKind, value VoteValue, lat, lon float64, now func() time.Time) (CastVoteResult, error) {
+		svc := NewVotingService(q, WithVotingClock(now))
+		return svc.CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: account, Kind: kind, Value: value, Latitude: lat, Longitude: lon,
+		})
+	}
+	newQ := func(rows ...sqlcgen.CurrentVotesForReportsRow) *fakeVotingQuerier {
+		return &fakeVotingQuerier{
+			voteContextRow:   testVoteContext(expires, acctPtr(7)),
+			currentVotesRows: rows,
+		}
+	}
+
+	t.Run("live with three confirming places and one disputing", func(t *testing.T) {
+		rows := []sqlcgen.CurrentVotesForReportsRow{
+			p05VoteAt(1, 9, VoteKindContent, VoteConfirm, "tdr1v9a", p05Now),
+			p05VoteAt(1, 10, VoteKindContent, VoteConfirm, "tdr1v9b", p05Now),
+			p05VoteAt(1, 11, VoteKindContent, VoteConfirm, "tdr1v9c", p05Now),
+			p05VoteAt(1, 12, VoteKindContent, VoteConfirm, "tdr1v9a", p05Now),
+			p05VoteAt(1, 13, VoteKindContent, VoteDispute, "tdr1v9d", p05Now),
+			p05VoteAt(1, 7, VoteKindContent, VoteConfirm, "tdr1v9e", p05Now),
+		}
+		q := newQ(rows...)
+		got, err := cast(q, 9, VoteKindContent, VoteConfirm, testReportLat, testReportLon, clock)
+		if err != nil {
+			t.Fatalf("CastVote: %v", err)
+		}
+		if got.Visibility != VisibilityLive {
+			t.Fatalf("Visibility = %q, want live", got.Visibility)
+		}
+		tr := got.Trust
+		if tr.ConfirmedPlaces != 3 || tr.DisputedPlaces != 1 || tr.ConfirmedText != "3" || tr.DisputedText != "1" || tr.LeadSentence != "" {
+			t.Errorf("Trust = %+v", tr)
+		}
+		if want := "3 people in 3 different places confirmed this. Counts separate places, not votes."; tr.ConfirmedSentence != want {
+			t.Errorf("ConfirmedSentence = %q, want %q", tr.ConfirmedSentence, want)
+		}
+		if want := "1 person in 1 place disputed this. Counts separate places, not votes."; tr.DisputedSentence != want {
+			t.Errorf("DisputedSentence = %q, want %q", tr.DisputedSentence, want)
+		}
+		rc := q.voteContextRow
+		want := BuildTrust(TrustInput{
+			Rows: rows, ReportID: 1, ReporterAccountID: rc.ReporterAccountID, Meta: meta,
+			Visibility: VisibilityLive, CreatedAt: rc.CreatedAt, ExpiresAt: rc.ExpiresAt, Now: p05Now,
+		})
+		if !reflect.DeepEqual(tr, want) {
+			t.Errorf("result.Trust differs from BuildTrust over the same rows:\n%+v\n%+v", tr, want)
+		}
+	})
+
+	t.Run("provisional with one place", func(t *testing.T) {
+		q := newQ(p05VoteAt(1, 9, VoteKindContent, VoteConfirm, "tdr1v9a", p05Now))
+		got, err := cast(q, 9, VoteKindContent, VoteConfirm, testReportLat, testReportLon, clock)
+		if err != nil {
+			t.Fatalf("CastVote: %v", err)
+		}
+		if got.Visibility != VisibilityProvisional {
+			t.Fatalf("Visibility = %q, want provisional", got.Visibility)
+		}
+		tr := got.Trust
+		if tr.LeadSentence != "Needs 2 confirmations before this counts as confirmed." || tr.ConfirmedText != "1" || tr.DisputedText != "0" {
+			t.Errorf("Trust = %+v", tr)
+		}
+		if want := "No one nearby has disputed this. Counts separate places, not votes."; tr.DisputedSentence != want {
+			t.Errorf("DisputedSentence = %q, want %q", tr.DisputedSentence, want)
+		}
+	})
+
+	t.Run("the reporter's own resolve retracts and clears the lead", func(t *testing.T) {
+		q := newQ(
+			p05VoteAt(1, 7, VoteKindResolution, VoteResolve, "tdr1v9e", p05Now),
+			p05VoteAt(1, 9, VoteKindContent, VoteConfirm, "tdr1v9a", p05Now),
+		)
+		got, err := cast(q, 7, VoteKindResolution, VoteResolve, testReportLat, testReportLon, clock)
+		if err != nil {
+			t.Fatalf("CastVote: %v", err)
+		}
+		if got.Visibility != VisibilityRetracted {
+			t.Fatalf("Visibility = %q, want retracted", got.Visibility)
+		}
+		if got.Trust.LeadSentence != "" || got.Trust.ConfirmedPlaces != 1 {
+			t.Errorf("Trust = %+v", got.Trust)
+		}
+	})
+
+	t.Run("a refused vote carries no trust", func(t *testing.T) {
+		q := newQ(p05VoteAt(1, 9, VoteKindContent, VoteConfirm, "tdr1v9a", p05Now))
+		got, err := cast(q, 9, VoteKindContent, VoteConfirm, 13.0827, 80.2707, clock)
+		if !errors.Is(err, ErrVoterTooFar) {
+			t.Fatalf("err = %v, want ErrVoterTooFar", err)
+		}
+		if !reflect.DeepEqual(got, CastVoteResult{}) {
+			t.Errorf("result = %+v, want the zero CastVoteResult", got)
+		}
+	})
+
+	t.Run("the injected clock decides expiry", func(t *testing.T) {
+		build := func() *fakeVotingQuerier {
+			q := newQ(p05VoteAt(1, 9, VoteKindContent, VoteConfirm, "tdr1v9a", p05Now))
+			q.voteContextRow = testVoteContext(p05Now.Add(time.Minute), acctPtr(7))
+			return q
+		}
+		if _, err := cast(build(), 9, VoteKindContent, VoteConfirm, testReportLat, testReportLon, clock); err != nil {
+			t.Errorf("clock at now: err = %v, want nil", err)
+		}
+		late := func() time.Time { return p05Now.Add(2 * time.Minute) }
+		if _, err := cast(build(), 9, VoteKindContent, VoteConfirm, testReportLat, testReportLon, late); !errors.Is(err, ErrReportExpired) {
+			t.Errorf("clock past expiry: err = %v, want ErrReportExpired", err)
+		}
+	})
 }
