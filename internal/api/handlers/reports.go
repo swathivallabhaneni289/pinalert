@@ -85,7 +85,8 @@ type SubmitReportResponse struct {
 
 // FeedReportResponse is the public JSON shape of a report returned by GET
 // /api/reports — the twelve fields ReportResponse also carries, plus four
-// read-only fields the resolver and the viewer's own standing contribute.
+// read-only fields the resolver and the viewer's own standing contribute, plus
+// the trust object (D-21).
 // Hand-declared field by field, never embedding ReportResponse and never
 // aliasing a store row, exactly as this file's package doc comment
 // requires: each public JSON shape is declared explicitly so a change to
@@ -132,6 +133,10 @@ type FeedReportResponse struct {
 	// server looks up and never serialises: this response carries a
 	// boolean, never an account id or an email (T-01-02).
 	IsOwnReport bool `json:"is_own_report" example:"false"`
+	// Trust is the server built trust object the vote response also carries
+	// for this report (D-21). It is always present, the same for every
+	// viewer, and never contains an identifier.
+	Trust TrustResponse `json:"trust"`
 }
 
 // ReportListResponse wraps the unexpired, nearest-first reports returned by
@@ -197,6 +202,7 @@ func reportViewToResponse(v service.ReportView) FeedReportResponse {
 		VisibilityReason:      string(v.VisibilityReason),
 		YourVote:              yourVote,
 		IsOwnReport:           v.IsOwnReport,
+		Trust:                 trustToResponse(v.Trust),
 	}
 }
 
@@ -310,6 +316,7 @@ func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 // @Description your_vote and is_own_report relative to the calling verified account. Requires a
 // @Description session verified by email through the magic-link flow; an unverified caller receives
 // @Description 401 and no report data.
+// @Description Every report also carries a trust object: how many distinct nearby places confirmed and disputed it, counted as places, not votes.
 // @Tags reports
 // @Produce json
 // @Param lat query number true "Latitude of the query center (required, -90 to 90)"
