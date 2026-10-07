@@ -12,6 +12,8 @@ plan, and data model.
 Built with Go, PostgreSQL, and Leaflet.js. Deployed as a mobile-responsive website first, PWA
 next.
 
+How confirmations are counted, why a place is a precision 7 geohash cell, the 1 km voting rule and the honest limits of all of it are written up in [docs/TRUST-MODEL.md](./docs/TRUST-MODEL.md).
+
 ## Run locally
 
 1. **Provision Postgres.** Either use a local Postgres 16/17 instance (Homebrew's `postgresql@16`
