@@ -255,7 +255,7 @@ Plans:
   1. The feed displays "confirmed by N nearby" computed from the count of distinct confirming geohash cells/sessions — using a deliberately chosen, documented geohash precision — not the raw number of votes cast.
   2. A report displays two distinct trust signals side by side: a fast-decaying "is this still current" confidence score and a slow-decaying "is this source reliable" score.
 
-**Plans**: 6/20 plans executed
+**Plans**: 9/20 plans executed
 **UI hint**: yes
 
 Plans:
@@ -273,9 +273,9 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 03-07-PLAN.md: `GET /api/reports` and every vote response carry the same `trust` object with both counters and their sentences, the... (wave 3)
-- [ ] 03-08-PLAN.md: Every trust object carries the still current band, a 0 to 100 score that stays null until 2 distinct places have... (wave 3)
-- [ ] 03-09-PLAN.md: One vote control builder serves the feed row, the popup and the Activity page: icon and label spans on every vote... (wave 3)
+- [x] 03-07-PLAN.md: `GET /api/reports` and every vote response carry the same `trust` object with both counters and their sentences, the... (wave 3)
+- [x] 03-08-PLAN.md: Every trust object carries the still current band, a 0 to 100 score that stays null until 2 distinct places have... (wave 3)
+- [x] 03-09-PLAN.md: One vote control builder serves the feed row, the popup and the Activity page: icon and label spans on every vote... (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -433,7 +433,7 @@ Phases execute in numeric order: 1 → 1.1 → 2 → 3 → 3.1 → 3.2 → 4 →
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
 | 1.1 Identity & Login — Mandatory Email Verification | 8/8 | Complete   | 2026-09-12 |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 15/15 | Complete | 2026-10-07 |
-| 3. Trust-Model Hardening — Diversity-Weighted Trust | 6/20 | In Progress|  |
+| 3. Trust-Model Hardening — Diversity-Weighted Trust | 9/20 | In Progress|  |
 | 3.1 Report history views | 0/TBD | Not started | - |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
