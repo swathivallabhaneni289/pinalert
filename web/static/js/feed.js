@@ -16,11 +16,10 @@
 // SCOPE (T-01-23, TRUST-02): this list now renders the confirm/dispute
 // controls, the viewer's own standing vote, and the resolver's own
 // visibility state — in words (the visibility tag) and in the row
-// treatment (the state class) — but still shows no confirmation COUNT and
-// no trust-state number. The weighted "confirmed by N nearby" number
-// remains Phase 3 / TRUST-05, and inventing a placeholder for it would put
-// an unbacked claim in front of a reader, which is the exact failure mode
-// this product exists to counter.
+// treatment (the state class) — but it also mounts the shared trust block
+// through PinalertTrust. That block renders the server's place counts,
+// signal words and panel sentences exactly as sent, and this file computes
+// none of them: a count here is never typed, capped or bumped by the browser.
 (function () {
   'use strict';
 
@@ -177,6 +176,12 @@
     var tag = PinalertVisibility.createVisibilityTag();
     body.appendChild(tag);
 
+    // The shared trust block (D-20), built with no options so the row shows
+    // no numbers beyond the two counters (D-09). It sits between the
+    // visibility tag and the vote controls.
+    var trust = PinalertTrust.createTrustBlock();
+    body.appendChild(trust.el);
+
     var block = PinalertVotes.createVoteBlock(id);
     body.appendChild(block.controls);
     // The too far sentence slot sits between the buttons and the error and
@@ -197,7 +202,7 @@
       }
     });
 
-    return { el: li, glyph: glyph, title: title, meta: meta, votes: block, tag: tag };
+    return { el: li, glyph: glyph, title: title, meta: meta, votes: block, tag: tag, trust: trust };
   }
 
   // updateRow applies severity/age classes and text content only — it never
@@ -205,7 +210,7 @@
   // on rows whose identity (id) is unchanged.
   function updateRow(row, report) {
     replacePrefixedClass(row.el, 'sev-', Pinalert.severityClass(report));
-    replacePrefixedClass(row.el, 'age-', 'age-' + Pinalert.ageStage(report));
+    replacePrefixedClass(row.el, 'age-', 'age-' + PinalertTrust.fadeStage(report));
 
     // The visibility state class goes on the row element (inherits down to
     // its badge), not the badge itself — main.css's own .icon-badge
@@ -229,6 +234,7 @@
     Pinalert.setText(row.meta, buildMetaText(report));
 
     PinalertVisibility.updateVisibilityTag(row.tag, report);
+    PinalertTrust.updateTrustBlock(row.trust, report.trust);
 
     var selectedId = Pinalert.state.selectedId;
     var isSelected = selectedId !== null && selectedId !== undefined &&
@@ -355,7 +361,7 @@
         continue;
       }
       var row = rowsById[idKey];
-      replacePrefixedClass(row.el, 'age-', 'age-' + Pinalert.ageStage(report));
+      replacePrefixedClass(row.el, 'age-', 'age-' + PinalertTrust.fadeStage(report));
       Pinalert.setText(row.meta, buildMetaText(report));
     }
   }

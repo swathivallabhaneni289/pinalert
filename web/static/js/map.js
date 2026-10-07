@@ -165,7 +165,7 @@ window.PinalertMap = (function () {
   // `color` through the ordinary CSS cascade.
   function buildBadgeElement(report) {
     var sevClass = Pinalert.severityClass(report);
-    var ageClass = 'age-' + Pinalert.ageStage(report);
+    var ageClass = 'age-' + PinalertTrust.fadeStage(report);
 
     var badge = document.createElement('span');
     badge.className = 'icon-badge icon-badge--pin ' + sevClass + ' ' + ageClass;
@@ -212,6 +212,14 @@ window.PinalertMap = (function () {
     PinalertVisibility.updateVisibilityTag(tag, report);
     wrap.appendChild(tag);
 
+    // The same trust block the feed row mounts, from the same builder, plus
+    // the two numbers the popup alone shows (D-09, R-07). Built and filled in
+    // one call because upsertMarker rebuilds this content on every render,
+    // until plan 03-17's build once card keeps an open panel across polls.
+    var trust = PinalertTrust.createTrustBlock({ showScores: true });
+    PinalertTrust.updateTrustBlock(trust, report.trust);
+    wrap.appendChild(trust.el);
+
     // The same vote controls block the feed row mounts, from the same
     // builder — what makes the shared confirm/dispute mechanic
     // structural rather than a convention two call sites have to
@@ -233,7 +241,7 @@ window.PinalertMap = (function () {
   // popupStateClasses returns the space joined triple of state classes this
   // report's popup container must carry: severity, age and visibility, in
   // that order. All three are already validated against fixed allowlists by
-  // their own modules (Pinalert.severityClass, Pinalert.ageStage,
+  // their own modules (Pinalert.severityClass, PinalertTrust.fadeStage,
   // PinalertVisibility.visibilityState), so no report-authored value ever
   // reaches this class name, the same discipline buildBadgeElement is
   // already under. The age class is included for parity with the feed
@@ -242,7 +250,7 @@ window.PinalertMap = (function () {
   // tint, and nothing inside .map-popup consumes --severity-current or
   // --badge-glyph-fg today either.
   function popupStateClasses(report) {
-    return Pinalert.severityClass(report) + ' age-' + Pinalert.ageStage(report) +
+    return Pinalert.severityClass(report) + ' age-' + PinalertTrust.fadeStage(report) +
       ' vis-' + PinalertVisibility.visibilityState(report);
   }
 
@@ -284,7 +292,7 @@ window.PinalertMap = (function () {
       return;
     }
     replacePrefixedClass(el, 'sev-', Pinalert.severityClass(report));
-    replacePrefixedClass(el, 'age-', 'age-' + Pinalert.ageStage(report));
+    replacePrefixedClass(el, 'age-', 'age-' + PinalertTrust.fadeStage(report));
     PinalertVisibility.applyVisibilityClass(el, report);
   }
 

@@ -684,6 +684,8 @@ var nonCategoryIcons = map[string]bool{
 	// Plan 01.1-06 (D-12): the account menu's trigger and logout glyphs,
 	// styled through auth.css's .auth-icon-- prefix, same exemption
 	// reasoning as the three entries above.
+	// Plan 03-13 (A39): the trust block's reporter signal also uses the user
+	// glyph, through the trust-icon--user modifier in trust.css.
 	"static/icons/user.svg":    true,
 	"static/icons/log-out.svg": true,
 	// Activity page back control (quick task 260921-mf2): an auth-surface
@@ -703,6 +705,10 @@ var nonCategoryIcons = map[string]bool{
 	"static/icons/ban.svg":          true,
 	"static/icons/shield-check.svg": true,
 	"static/icons/rotate-ccw.svg":   true,
+	// Phase 3 trust block glyph (plan 03-13, A39): the still current clock,
+	// styled through the trust-icon prefix in trust.css, same exemption
+	// reasoning as the vote button glyphs above.
+	"static/icons/clock.svg": true,
 }
 
 // phase3TrustGlyphIcons lists the Phase 3 glyph files exempted from the
@@ -712,7 +718,7 @@ var nonCategoryIcons = map[string]bool{
 // TestCategoryGlyphMaskRulesCoverEveryCategory, so an orphan or a typo in a
 // mask path could hide behind it; TestPhase3TrustGlyphMasksReferenceEveryExemptIcon
 // closes that gap.
-var phase3TrustGlyphIcons = []string{"check.svg", "ban.svg", "shield-check.svg", "rotate-ccw.svg"}
+var phase3TrustGlyphIcons = []string{"check.svg", "ban.svg", "shield-check.svg", "rotate-ccw.svg", "clock.svg"}
 
 // TestCategoryGlyphMaskRulesCoverEveryCategory guards the 01-13 fix's own
 // core claim: every category in Pinalert.CATEGORIES has exactly one CSS
