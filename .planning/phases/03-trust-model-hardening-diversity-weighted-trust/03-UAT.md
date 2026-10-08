@@ -3,15 +3,15 @@ status: testing
 phase: 03-trust-model-hardening-diversity-weighted-trust
 source: [03-VERIFICATION.md]
 started: 2026-10-07T20:33:33.016Z
-updated: 2026-10-07T20:33:33.016Z
+updated: 2026-10-08T16:54:25.000Z
 ---
 
 ## Current Test
 
-number: 1
-name: Trust counters and words (V-42 step 5)
+number: 6
+name: Reopen on Activity (step 11, plan 03-15)
 expected: |
-  Row and popup go 0, 1, 2 confirmed. The lead sentence disappears at 2 and Up to date appears with the popup score. The critical report with one place reads Too early to tell with no extra dimming.
+  Counters show 0 and 0 with no numbers, panel opens with server sentences, Reopen and the Resolved label go, panel stays open with refreshed sentences, focus on the trust toggle.
 awaiting: user response
 
 ## Tests
@@ -20,7 +20,8 @@ awaiting: user response
 detail: Trust counters and words (V-42 step 5). As A post a low severity report at R (12.9716, 77.5946), confirm as B then C (C from 12.9686, 77.5946). Post a critical report and confirm it once as B.
 expected: Row and popup go 0, 1, 2 confirmed. The lead sentence disappears at 2 and Up to date appears with the popup score. The critical report with one place reads Too early to tell with no extra dimming.
 why_human: Needs three signed-in profiles, a live server and Chrome location overrides. Tests prove the server values, not the rendered browser result.
-result: [pending]
+note: Run 2026-10-08 in Safari on the scratch server (port 8792, database p3_uat, built from b8f0c94); Chrome is not installed on this Mac. The owner posted the low report in the browser as account A. The confirms of voters B and C, and the critical report with its one confirm by B, were sent through the API by Claude (B at the report itself, C 333 m south) while the owner watched the rendered row and popup. Server values at each step: 0 confirmed with the lead sentence; 1 confirmed with the lead sentence; 2 confirmed, Live, Up to date, score 99, no lead sentence; critical report Live by the critical rule, 1 confirmed, Too early to tell, no score. The owner confirmed the critical report row on screen (1 confirmed, Too early to tell, no Unconfirmed label, not dimmed) and answered pass. Owner design remarks from this test are listed under Gaps.
+result: pass
 
 ### 2. Panel open and close (step 6)
 detail: Panel open and close (step 6). Open the trust panel by click, tap, Enter and Space, close by Escape, on a feed row and in a popup. Listen with VoiceOver.
@@ -85,10 +86,38 @@ result: [pending]
 ## Summary
 
 total: 11
-passed: 0
+passed: 1
 issues: 0
-pending: 11
+pending: 10
 skipped: 0
 blocked: 0
 
 ## Gaps
+
+Observed live on 2026-10-08 during test 1 (Safari, scratch server on port 8792, built from b8f0c94). The counts and
+words of test 1 behaved as expected through two confirmations (0 and 1: Unconfirmed with the lead sentence; the server
+reports Live, Up to date, score 99 at 2). The three items below are owner design remarks, cosmetic, and belong with
+test 10 (look and feel). They change locked Phase 3 UI decisions, so the fix plan must record each as an explicit
+amendment to 03-UI-SPEC.md.
+
+- truth: "The words inside the trust block (confirmed, disputed, the still current word and the reporter tag) are not underlined"
+  status: failed
+  reason: "User reported: all of these are underlined, including confirmed, disputed, and new reporter. I don't understand why we are underlining it. I don't like that part. Cause found while logging: the whole two row block is one button, and web/static/css/trust.css .trust-block__toggle:hover sets text-decoration: underline, so every word in the block underlines while the pointer is over it. It comes from the d4 sketch and 03-UI-SPEC.md A48 (hover underline, press fill). Whether it also shows with the pointer away is to be confirmed with the owner."
+  severity: cosmetic
+  test: 1
+  artifacts: []
+  missing: []
+- truth: "The reporter tag (for example New reporter) sits in the top part of the box, beside the Unconfirmed label, not under the confirmed and disputed counts"
+  status: failed
+  reason: "User reported: the new reporter thing should be on the top part of the box where Unconfirmed is located, because it doesn't look really nice under the confirmed and disputed one. Note for the fix plan: the trust block is shared by the feed row, the map popup and the Activity page (D-20), and the top line is narrow on a phone (236px feed body at 320px), so a long tag such as Unreliable reporter may need to wrap."
+  severity: cosmetic
+  test: 1
+  artifacts: []
+  missing: []
+- truth: "The trust panel and block text is short enough to read at a glance"
+  status: failed
+  reason: "User reported: works fine but I feel like the text is too long. Which text (the first panel line, the Counts separate places, not votes tail, or other wording) is not yet specified. To be settled at test 10."
+  severity: cosmetic
+  test: 1
+  artifacts: []
+  missing: []
