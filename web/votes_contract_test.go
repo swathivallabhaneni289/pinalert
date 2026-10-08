@@ -1161,7 +1161,7 @@ func TestShowDisputedUsesOneSharedQueryParam(t *testing.T) {
 			"found %d", n)
 	}
 
-	fetchReportsBody := jsFunctionBody(t, appText, "fetchReports()")
+	fetchReportsBody := jsFunctionBody(t, appText, "fetchReports(options)")
 	if !strings.Contains(fetchReportsBody, "show_disputed") {
 		t.Errorf("fetchReports's own body does not reference the shared query parameter — it must " +
 			"sit inside this function's own body so the parameter is conditional on state rather " +
@@ -2432,7 +2432,7 @@ func TestFeedErrorStateKeepsStaleRows(t *testing.T) {
 		t.Fatalf("failed to read embedded static/js/app.js: %v", err)
 	}
 	appText := stripCSSComments(string(app))
-	fetchBody := jsFunctionBody(t, appText, "fetchReports()")
+	fetchBody := jsFunctionBody(t, appText, "fetchReports(options)")
 	if !strings.Contains(fetchBody, "var isBackgroundRefresh = state.status === 'ok' || state.reports.length > 0;") {
 		t.Errorf("a refetch with rows on screen must be a background refresh whatever the status is")
 	}
@@ -2457,7 +2457,7 @@ func TestFeedErrorStateKeepsStaleRows(t *testing.T) {
 		t.Errorf("the saved but not refreshed sentence must be declared once, found %d", n)
 	}
 	click := jsFunctionBody(t, votes, "onControlsClick(block, button, taken)")
-	fetchAt := strings.Index(click, "return Pinalert.fetchReports();")
+	fetchAt := strings.Index(click, "return Pinalert.fetchReports({ afterWrite: true });")
 	releaseAt := strings.Index(click, "setBlockBusy(block, false);")
 	noticeAt := strings.Index(click, "if (Pinalert.state.status === 'error') {\n        showSavedButNotRefreshed(block, action);\n      }")
 	if fetchAt == -1 || releaseAt == -1 || noticeAt == -1 || !(fetchAt < releaseAt && releaseAt < noticeAt) {
@@ -2489,7 +2489,7 @@ func TestAgeAndFadeUseTheServerClock(t *testing.T) {
 		t.Fatalf("failed to read embedded static/js/app.js: %v", err)
 	}
 	text := stripCSSComments(string(raw))
-	fetchBody := jsFunctionBody(t, text, "fetchReports()")
+	fetchBody := jsFunctionBody(t, text, "fetchReports(options)")
 	okAt := strings.Index(fetchBody, "if (!res.ok) {")
 	noteAt := strings.Index(fetchBody, "noteServerClock(res.headers && res.headers.get('Date'));")
 	jsonAt := strings.Index(fetchBody, "return res.json();")
@@ -2541,10 +2541,28 @@ func TestFetchReportsDropsOnlyResponsesOlderThanTheLastApplied(t *testing.T) {
 		t.Fatalf("failed to read embedded static/js/app.js: %v", err)
 	}
 	text := stripCSSComments(string(raw))
-	body := jsFunctionBody(t, text, "fetchReports()")
+	body := jsFunctionBody(t, text, "fetchReports(options)")
 
-	if !strings.Contains(body, "return mySeq < lastAppliedSeq || sentDisputed !== state.showDisputed;") {
-		t.Errorf("isStale must drop only a response below lastAppliedSeq or one sent with another Show disputed flag")
+	if !strings.Contains(body, "return mySeq < lastAppliedSeq || mySeq < writeFloor || sentDisputed !== state.showDisputed;") {
+		t.Errorf("isStale must drop a response below lastAppliedSeq, below writeFloor, or one sent with another Show disputed flag")
+	}
+	// The write floor is raised when a refetch that follows a write STARTS,
+	// before any await, and only by such a refetch, never by a plain poll
+	// (WR-01 V1 and V2).
+	if n := strings.Count(text, "writeFloor = mySeq;"); n != 1 {
+		t.Errorf("writeFloor must be raised in exactly one place, found %d", n)
+	}
+	floorAt := strings.Index(body, "if (options && options.afterWrite === true && mySeq > writeFloor) {\n      writeFloor = mySeq;\n    }")
+	seqAt := strings.Index(body, "var mySeq = ++fetchSeq;")
+	fetchCallAt := strings.Index(body, "pending = fetch(url)")
+	if floorAt == -1 || seqAt == -1 || fetchCallAt == -1 || !(seqAt < floorAt && floorAt < fetchCallAt) {
+		t.Errorf("writeFloor must be raised for an afterWrite call right after its number is taken and before the request is sent (seq %d, floor %d, fetch %d)", seqAt, floorAt, fetchCallAt)
+	}
+	if !strings.Contains(text, "fetchReports({ afterWrite: true }).then(") {
+		t.Errorf("submitReport must refetch with afterWrite: true")
+	}
+	if strings.Contains(text, "pollTimer = window.setInterval(function () {\n      fetchReports({") {
+		t.Errorf("the poll must never raise the write floor")
 	}
 	if strings.Contains(body, "mySeq !== fetchSeq") || strings.Contains(body, "mySeq < fetchSeq") {
 		t.Errorf("a response must never be dropped because a newer request merely started")

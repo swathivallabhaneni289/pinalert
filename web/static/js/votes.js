@@ -1150,7 +1150,7 @@
       // server's your_vote — this module never assigns it itself. D-12's
       // removal of a newly-retracted report from the feed/map happens
       // here too, via this same refetch, never a local DOM removal.
-      return Pinalert.fetchReports();
+      return Pinalert.fetchReports({ afterWrite: true });
     }).then(function () {
       if (affirmBtn) {
         Pinalert.setText(affirmBtn, RESOLVE_CONFIRM_AFFIRM_LABEL);
