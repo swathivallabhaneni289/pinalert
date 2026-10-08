@@ -396,10 +396,9 @@
     setHidden(skeletonEl, true);
 
     if (state.status === 'error') {
-      // A fetch failure keeps the rows and the map's existing pins: stale data
-      // is more useful than a blank panel to someone who just lost signal
-      // (WR-08). The one exception is unticking Show disputed, where app.js
-      // drops rows that may hold disputed reports. While there are rows to show, the list stays visible
+      // A fetch failure never clears the rows or the map's existing pins:
+      // stale data is more useful than a blank panel to someone who just lost
+      // signal (WR-08). While there are rows to show, the list stays visible
       // and the error panel appears alongside it with its Retry button. Only
       // a failure with nothing to show hides the list, and then the rows still
       // in the page are removed through clearRows, which puts focus back on a
