@@ -1,0 +1,57 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-10-08T15:06:53.366Z",
+  "phase": "03",
+  "phase_name": "trust-model-hardening-diversity-weighted-trust",
+  "phase_dir": ".planning/phases/03-trust-model-hardening-diversity-weighted-trust",
+  "plan": 20,
+  "task": 20,
+  "total_tasks": 20,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "03-01 server side 1 km vote rule", "status": "done"},
+    {"id": 2, "name": "03-02 precision 7 proof and TRUST-MODEL.md", "status": "done"},
+    {"id": 3, "name": "03-03 pure outcome and reliability functions", "status": "done"},
+    {"id": 4, "name": "03-04 too far 403 and silent retry", "status": "done"},
+    {"id": 5, "name": "03-05 server built Trust object", "status": "done"},
+    {"id": 6, "name": "03-06 bounded reporter history query, migration 00005", "status": "done"},
+    {"id": 7, "name": "03-07 trust object on the wire", "status": "done"},
+    {"id": 8, "name": "03-08 still current signal", "status": "done"},
+    {"id": 9, "name": "03-09 shared vote control builder", "status": "done"},
+    {"id": 10, "name": "03-10 reporter signal", "status": "done"},
+    {"id": 11, "name": "03-11 one vote button style", "status": "done"},
+    {"id": 12, "name": "03-12 reporter history on every read path", "status": "done"},
+    {"id": 13, "name": "03-13 trust block on rows and popups", "status": "done"},
+    {"id": 14, "name": "03-14 both signals in the wire shape", "status": "done"},
+    {"id": 15, "name": "03-15 trust block on Activity", "status": "done"},
+    {"id": 16, "name": "03-16 severity labels on rows", "status": "done"},
+    {"id": 17, "name": "03-17 neutral popup card", "status": "done"},
+    {"id": 18, "name": "03-18 too far hint on vote buttons", "status": "done"},
+    {"id": 19, "name": "03-19 keyboard and focus behaviour", "status": "done"},
+    {"id": 20, "name": "03-20 docs, phase gate, owner V-42 script", "status": "done"}
+  ],
+  "remaining_tasks": [
+    {"id": 21, "name": "Owner walks the 11 manual checks in 03-UAT.md (/gsd-verify-work 3)", "status": "not_started"},
+    {"id": 22, "name": "Security review (/gsd-secure-phase 3), security enforcement is on", "status": "not_started"},
+    {"id": 23, "name": "Close Phase 3 by hand after UAT passes: ROADMAP row, REQUIREMENTS TRUST-05 and TRUST-07, do not run phase.complete blindly", "status": "not_started"}
+  ],
+  "blockers": [
+    {"description": "Phase 3 cannot be marked complete until the owner passes the 11 manual browser, keyboard and screen reader checks", "type": "human_action", "workaround": "none, by design (verification status human_needed)"}
+  ],
+  "async_jobs": [],
+  "human_actions_pending": [
+    {"action": "Run /gsd-verify-work 3 and walk the 11 checks in 03-UAT.md", "context": "Static contract tests cannot prove browser behaviour; the checks need Chrome profiles, keyboard and VoiceOver", "blocking": true},
+    {"action": "Run make migrate once on the owner's own dev database (migration 00005, index idx_reports_session_expires)", "context": "Executors and verifiers are forbidden to touch pinalert_test or pinalert", "blocking": false},
+    {"action": "Decide on optional items: push (223 commits ahead of origin/main), the one line CI fix, the flaky Phase 2 test fix, committing STATE.md, branch and PR flow", "context": "None was done unasked", "blocking": false}
+  ],
+  "decisions": [
+    {"decision": "Executed in isolated worktrees with a custom post merge gate on a fresh scratch database per wave", "rationale": "macOS has no timeout binary and an unset DATABASE_URL silently skips DB tests", "phase": "03"},
+    {"decision": "Phase left In Progress, TRUST-05 and TRUST-07 left Pending", "rationale": "Verification is human_needed; roadmap tool ticks the phase Complete at N of N so that part was undone by hand", "phase": "03"},
+    {"decision": "Three code review fix rounds with independent skeptic workflows between them", "rationale": "Fixer self checks missed defects in 5 of 8 and then 3 of 4 fixes", "phase": "03"},
+    {"decision": "WR-05 history cap: SQL row cap 100, Go cap 30 judged rows after dropping neutral rows", "rationale": "Review option 1; 100 neutral rows can still push out an old record, bounded only by Phase 4 rate limits (documented)", "phase": "03"},
+    {"decision": "Show disputed REPLACES the default view; after a failed request clear the rows in both directions", "rationale": "ListableInFeed makes the views disjoint; the asymmetric keep rule was reverted in 9aaa925", "phase": "03"}
+  ],
+  "uncommitted_files": [".planning/STATE.md (contains another session's edit plus state.begin-phase; deliberately not committed)"],
+  "next_action": "With the owner at the machine run /gsd-verify-work 3 (use the uat-scratch-server-recipe memory: scratch database p3_uat, PORT=8792, never 8080 or 8090, never pinalert_test). Then /gsd-secure-phase 3. Read .continue-here.md in the phase directory first.",
+  "context_notes": "All 20 plans merged to main, full suite 371 tests green with zero skips, 9aaa925 is the last Phase 3 commit. Code review found 0 critical and 8 warnings, all fixed over 3 rounds. Narrow residuals and Phase 4 plan conflicts are listed in .continue-here.md. Nothing is pushed."
+}
