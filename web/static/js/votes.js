@@ -100,6 +100,10 @@
   // copies to keep in sync.
   var GENERIC_FAILURE_MESSAGE = "Couldn't record your vote. Check your connection and try again.";
 
+  // Shown in the row when the server recorded the vote but the refetch that
+  // follows it failed, so the counters on screen are the old ones (WR-08).
+  var VOTE_SAVED_REFRESH_FAILED_MESSAGE = 'Your vote was saved, but the list could not refresh. The counts shown may be out of date.';
+
   // Copywriting Contract strings for Mark Resolved (Task 1, 02-07), verbatim.
   var RESOLVE_BUTTON_LABEL = 'Mark resolved';
   var RESOLVE_BUTTON_LABEL_IN_FLIGHT = 'Marking…';
@@ -581,6 +585,12 @@
   // reads or writes the busy state; see the next function's own doc
   // comment for why that separation matters.
   function updateVoteBlock(block, report) {
+    // The saved-but-not-refreshed sentence ends with the first render that
+    // follows a good fetch. A render of stale rows, such as the map redrawing
+    // during a failed poll, leaves it in place.
+    if (block.refreshNotice && Pinalert.state.status === 'ok') {
+      clearVoteError(block);
+    }
     applyOwnReportRule(block, report);
 
     var confirmBtn = block.controls.querySelector('.vote-btn--confirm');
@@ -730,6 +740,30 @@
   function clearVoteError(block) {
     block.error.hidden = true;
     Pinalert.setText(block.error, '');
+    block.refreshNotice = false;
+  }
+
+  // showSavedButNotRefreshed is what a row shows when the server answered 200
+  // to a vote and the refetch after it then failed. The 200 is the server's own
+  // word that the vote was recorded, so for Confirm and Dispute the row takes
+  // the pressed state from the action that was just recorded, in the store as
+  // well so that a later render of the stale data does not undo it. Counters are
+  // not touched: they stay as the server last sent them, and the plain sentence
+  // beside the buttons says they may be out of date. The sentence goes away on
+  // the next render that follows a good fetch (updateVoteBlock).
+  function showSavedButNotRefreshed(block, action) {
+    if (action === 'confirm' || action === 'dispute') {
+      var reports = Pinalert.state.reports || [];
+      for (var i = 0; i < reports.length; i++) {
+        if (String(reports[i].id) === String(block.controls.dataset.reportId)) {
+          reports[i].your_vote = action;
+          updateVoteBlock(block, reports[i]);
+          break;
+        }
+      }
+    }
+    showVoteError(block, VOTE_SAVED_REFRESH_FAILED_MESSAGE);
+    block.refreshNotice = true;
   }
 
   // openResolveConfirm implements D-15's inline destructive confirmation:
@@ -1122,6 +1156,11 @@
         Pinalert.setText(affirmBtn, RESOLVE_CONFIRM_AFFIRM_LABEL);
       }
       setBlockBusy(block, false);
+      // fetchReports never rejects. A failed refetch shows up as the store's
+      // error status, and the row must then say the vote was saved (WR-08).
+      if (Pinalert.state.status === 'error') {
+        showSavedButNotRefreshed(block, action);
+      }
       focusAfterVote(origin, action, removal);
     }).catch(function (err) {
       // Order is load-bearing here: clear busy BEFORE closing the

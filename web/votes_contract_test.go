@@ -2361,8 +2361,72 @@ func TestFeedErrorStateKeepsStaleRows(t *testing.T) {
 	}
 	text := stripCSSComments(string(raw))
 	body := jsFunctionBody(t, text, "render(state)")
-	if !strings.Contains(body, "setHidden(reportListEl, state.reports.length === 0);") {
-		t.Errorf("render's error branch must hide the list only when state.reports is empty")
+	// Test change on purpose (WR-08 follow up): the error branch used to be
+	// pinned as setHidden(reportListEl, state.reports.length === 0). It now
+	// names the condition once, hides the list only without rows, and removes
+	// the stale rows through clearRows when it does, so focus is restored.
+	for _, want := range []string{
+		"var hasRows = state.reports.length > 0;",
+		"setHidden(reportListEl, !hasRows);",
+		"if (!hasRows) {\n        clearRows();\n      }",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("render's error branch must contain %q: hide the list only when state.reports is empty, and clear the rows then", want)
+		}
+	}
+
+	// The next poll or a Retry with rows on screen must not reach the loading
+	// state, which hides the list again. It is a background refresh whatever
+	// the status is.
+	app, err := fs.ReadFile(StaticFS, "static/js/app.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/app.js: %v", err)
+	}
+	appText := stripCSSComments(string(app))
+	fetchBody := jsFunctionBody(t, appText, "fetchReports()")
+	if !strings.Contains(fetchBody, "var isBackgroundRefresh = state.status === 'ok' || state.reports.length > 0;") {
+		t.Errorf("a refetch with rows on screen must be a background refresh whatever the status is")
+	}
+	// Rows fetched under the other Show disputed setting are dropped on a
+	// failure, so a ticked or unticked box never sits over the wrong set.
+	for _, want := range []string{
+		"rowsShowDisputed = sentDisputed;",
+		"if (rowsShowDisputed !== state.showDisputed) {\n          state.reports = [];\n        }",
+	} {
+		if !strings.Contains(fetchBody, want) {
+			t.Errorf("fetchReports must contain %q", want)
+		}
+	}
+
+	// A vote the server recorded whose refetch then failed says so in the row.
+	votesRaw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/votes.js: %v", err)
+	}
+	votes := stripCSSComments(string(votesRaw))
+	if n := strings.Count(votes, "var VOTE_SAVED_REFRESH_FAILED_MESSAGE = 'Your vote was saved, but the list could not refresh. The counts shown may be out of date.';"); n != 1 {
+		t.Errorf("the saved but not refreshed sentence must be declared once, found %d", n)
+	}
+	click := jsFunctionBody(t, votes, "onControlsClick(block, button, taken)")
+	fetchAt := strings.Index(click, "return Pinalert.fetchReports();")
+	releaseAt := strings.Index(click, "setBlockBusy(block, false);")
+	noticeAt := strings.Index(click, "if (Pinalert.state.status === 'error') {\n        showSavedButNotRefreshed(block, action);\n      }")
+	if fetchAt == -1 || releaseAt == -1 || noticeAt == -1 || !(fetchAt < releaseAt && releaseAt < noticeAt) {
+		t.Errorf("after the refetch, the busy release must be followed by the saved but not refreshed notice when the store is in error (fetch %d, release %d, notice %d)",
+			fetchAt, releaseAt, noticeAt)
+	}
+	notice := jsFunctionBody(t, votes, "showSavedButNotRefreshed(block, action)")
+	for _, want := range []string{
+		"reports[i].your_vote = action;", "updateVoteBlock(block, reports[i]);",
+		"showVoteError(block, VOTE_SAVED_REFRESH_FAILED_MESSAGE);", "block.refreshNotice = true;",
+	} {
+		if !strings.Contains(notice, want) {
+			t.Errorf("showSavedButNotRefreshed must contain %q", want)
+		}
+	}
+	update := jsFunctionBody(t, votes, "updateVoteBlock(block, report)")
+	if !strings.Contains(update, "if (block.refreshNotice && Pinalert.state.status === 'ok') {\n      clearVoteError(block);\n    }") {
+		t.Errorf("updateVoteBlock must clear the sentence only on a render that follows a good fetch")
 	}
 }
 

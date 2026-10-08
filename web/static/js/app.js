@@ -102,6 +102,10 @@ window.Pinalert = (function () {
   // response is dropped because the Show disputed flag changed hands this
   // promise back, so its caller waits for the data that will replace it.
   var newestFetch = null;
+  // rowsShowDisputed is the Show disputed flag the rows in state.reports were
+  // fetched with, so a failed refetch can tell rows that no longer match the
+  // checkbox from rows that are merely a little old (WR-08).
+  var rowsShowDisputed = false;
   // clockOffsetMs is the server's clock minus this device's clock, learned
   // from the Date header of every successful report response. Report ages and
   // the fade stage compare the server's created_at and expires_at with "now",
@@ -162,7 +166,10 @@ window.Pinalert = (function () {
 
   // fetchReports performs the one and only GET /api/reports call. A
   // background refresh (status already "ok") leaves status untouched so the
-  // list does not flash skeletons on every 30s poll.
+  // list does not flash skeletons on every 30s poll. A refetch while rows are
+  // on screen is a background refresh whatever the status is, so a poll or a
+  // Retry after a failure never hides the list the reader is looking at
+  // (WR-08). Only a fetch with nothing to show moves to the loading state.
   //
   // The promise resolves once the store reflects data at least as new as this
   // call started, and it never rejects. A call whose response is dropped
@@ -171,7 +178,7 @@ window.Pinalert = (function () {
   // (votes.js, the submit path) never treats the store as fresh before the
   // newest data has landed.
   function fetchReports() {
-    var isBackgroundRefresh = state.status === 'ok';
+    var isBackgroundRefresh = state.status === 'ok' || state.reports.length > 0;
     var mySeq = ++fetchSeq;
     var sentDisputed = state.showDisputed;
     var pending;
@@ -228,6 +235,7 @@ window.Pinalert = (function () {
           return whenFresh();
         }
         state.reports = (body && body.reports) || [];
+        rowsShowDisputed = sentDisputed;
         lastAppliedSeq = mySeq;
         state.status = 'ok';
         state.error = null;
@@ -236,6 +244,12 @@ window.Pinalert = (function () {
       .catch(function (err) {
         if (isStale()) {
           return whenFresh();
+        }
+        // Rows fetched under the other Show disputed setting must not stay on
+        // screen under a checkbox that no longer matches them, so they are
+        // dropped. Rows that are only a little old stay (WR-08).
+        if (rowsShowDisputed !== state.showDisputed) {
+          state.reports = [];
         }
         state.status = 'error';
         state.error = err;
