@@ -378,7 +378,7 @@ Plans:
   6. A moderator (the owner, or anyone on the server list) can open a screen that everyone else gets a plain 404 for, see automatically flagged posts, user flags and posts whose text check has not finished, and Keep or Remove any post; any signed-in reader can flag a post with a reason from a quiet control, and a flag alone never hides a post.
   7. A public Disclaimer page and a public Policy page, readable without logging in, state what Pinalert is not, the emergency numbers, what is screened and kept, and how to complain or ask for removal, and both are linked from the bar on every page.
 
-**Plans**: TBD
+**Plans**: 29 plans in 9 waves (04-01 to 04-29), outline in 04-PLAN-OUTLINE.md
 **UI hint**: yes
 
 ### Phase 5: Official Feed & Demo Mode
