@@ -86,6 +86,14 @@ separately reviewed by the owner.
   markup parsing sink, which the project already enforces through `Pinalert.setText`), and rapid repeat posting is
   handled by the rate limits, not a duplicate rule. Research note: ALL CAPS, addresses and phone numbers are common in
   genuine emergency reports (`.planning/research/PITFALLS.md` Pitfall 6).
+  Owner note (2026-10-08): people must be told to describe their problem or situation, so every report says what is
+  happening instead of just "help". The owner approved two strings, used verbatim: the hint for the description box of
+  the shared report form (main page and Low data view) "Describe what is happening, for example: water is knee deep on
+  Main Road and three people need help." and the gibberish rejection message "Say what is happening so people nearby
+  can help, for example: flood on Main Road, three people on a roof." A post of only one word is already rejected as
+  no real words (fewer than two words of two or more letters), so no new rule is added. The plans keep the letters only
+  run reading; the owner has not signed it off, and the veto recorded in the outline's "Open questions resolved during
+  planning" stays open.
 - **D-06:** One general text check, with the report rules (severity, pending, hold, spam) layered on top and nothing in
   it tied to report categories, so Phase 8 comments and Phase 9 nicknames reuse it. Phase 8 scope note 4 in
   `ROADMAP.md` asked Phase 4 to decide this. Owner chose "build it once".
