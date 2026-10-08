@@ -197,6 +197,12 @@ func TestVoteTransportRefreshesAndRetriesOnce(t *testing.T) {
 	if n := strings.Count(jsFunctionBody(t, text, "getVoterLocation(opts)"), "isFreshVoterLocation(cached, VOTER_LOCATION_STALE_MAX_MS)"); n != 2 {
 		t.Errorf("getVoterLocation must bound both cached fix fallbacks by VOTER_LOCATION_STALE_MAX_MS, found %d uses", n)
 	}
+	if n := strings.Count(text, "var VOTER_LOCATION_MAX_CACHE_ACCURACY_M = 300;"); n != 1 {
+		t.Errorf("expected exactly one declaration of VOTER_LOCATION_MAX_CACHE_ACCURACY_M = 300, found %d", n)
+	}
+	if !strings.Contains(jsFunctionBody(t, text, "getVoterLocation(opts)"), "{ enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }") {
+		t.Errorf("getVoterLocation must request a high accuracy fix with maximumAge 0")
+	}
 	if n := strings.Count(text, "navigator.permissions.query("); n != 1 {
 		t.Errorf("expected exactly one navigator.permissions.query call in the module, found %d", n)
 	}

@@ -471,8 +471,8 @@ Upgrading: an existing database needs `make migrate` once after this phase merge
 - Each account holds one current vote per report and kind (the latest vote wins in `CurrentVotesForReports`), so walking around cannot add places.
 - The real cost of adding a place is one more verified email account plus a claimed location for it.
 - Client coordinates cannot be verified. A spoofed location defeats both the cell rule and the 1 km rule.
-- Pinalert does not read GPS accuracy and does not look for mock locations.
-- Phone GPS error of tens of metres can put an honest voter standing near the 1 km line on the wrong side of it. Accuracy is not sent with a vote, and the silent refresh only replaces a stale fix, it does not make a fix more exact.
+- The server does not read GPS accuracy and does not look for mock locations. The browser reads accuracy only to decide whether a fix may be cached.
+- Phone GPS error of tens of metres can put an honest voter standing near the 1 km line on the wrong side of it. Accuracy is not sent with a vote. The browser asks for a high accuracy fix, and a fix whose reported accuracy is worse than 300 m (`VOTER_LOCATION_MAX_CACHE_ACCURACY_M`) is used for that one vote but never cached, so it cannot be reused for later votes.
 - Counters, bands and fades update on the 30 second poll, so a screen can be one poll behind the server.
 - The too far hint in the browser is advisory. Only the server decides whether a vote counts.
 

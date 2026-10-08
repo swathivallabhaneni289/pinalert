@@ -44,6 +44,14 @@
 
   var VOTER_LOCATION_CACHE_KEY = 'pinalert_voter_location';
 
+  // The worst accuracy radius, in metres, at which a fix may be cached
+  // (WR-07). 300 m is about two geohash 7 cells (a cell is roughly 150 m
+  // across), so a fix worse than this can land in a neighbouring cell and
+  // would turn one person into several places if it were reused. A fix worse
+  // than 300 m may still be used for the single vote that asked for it, but is
+  // never stored. A client side limit, not a trust rule.
+  var VOTER_LOCATION_MAX_CACHE_ACCURACY_M = 300;
+
   // The hard ceiling on reusing a cached fix as the voter's place when a new
   // fix could not be taken (10 minutes, WR-02). Beyond it the cached position
   // is no longer where the voter is, so the vote is refused with the location
@@ -250,23 +258,28 @@
               latitude: pos.coords.latitude,
               longitude: pos.coords.longitude
             };
-            try {
-              sessionStorage.setItem(VOTER_LOCATION_CACHE_KEY, JSON.stringify({
-                latitude: coords.latitude,
-                longitude: coords.longitude,
-                at: Date.now()
-              }));
-            } catch (e) {
-              // Same privacy-mode/quota concern as the read above. A cache
-              // write that fails costs only the next vote's convenience,
-              // never this vote's correctness.
+            // A fix with no accuracy figure, or one worse than the bound, is
+            // used for this vote only and never cached.
+            var accuracy = pos.coords.accuracy;
+            if (typeof accuracy === 'number' && accuracy <= VOTER_LOCATION_MAX_CACHE_ACCURACY_M) {
+              try {
+                sessionStorage.setItem(VOTER_LOCATION_CACHE_KEY, JSON.stringify({
+                  latitude: coords.latitude,
+                  longitude: coords.longitude,
+                  at: Date.now()
+                }));
+              } catch (e) {
+                // Same privacy-mode/quota concern as the read above. A cache
+                // write that fails costs only the next vote's convenience,
+                // never this vote's correctness.
+              }
             }
             resolve(coords);
           },
           function () {
             onFailure();
           },
-          { timeout: 8000, maximumAge: 0 }
+          { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
         );
       }
 
