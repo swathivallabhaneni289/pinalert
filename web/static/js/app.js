@@ -255,10 +255,12 @@ window.Pinalert = (function () {
         if (isStale()) {
           return whenFresh();
         }
-        // Rows fetched under the other Show disputed setting must not stay on
-        // screen under a checkbox that no longer matches them, so they are
-        // dropped. Rows that are only a little old stay (WR-08).
-        if (rowsShowDisputed !== state.showDisputed) {
+        // Rows that include disputed reports must not stay on screen once the
+        // reader has unticked Show disputed, so they are dropped. When the
+        // reader has just ticked it, the old rows are a harmless subset of what
+        // the new request wanted, so they stay. Rows that are only a little old
+        // stay too (WR-08).
+        if (rowsShowDisputed && !state.showDisputed) {
           state.reports = [];
         }
         state.status = 'error';

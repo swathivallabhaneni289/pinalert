@@ -2440,11 +2440,23 @@ func TestFeedErrorStateKeepsStaleRows(t *testing.T) {
 	// failure, so a ticked or unticked box never sits over the wrong set.
 	for _, want := range []string{
 		"rowsShowDisputed = sentDisputed;",
-		"if (rowsShowDisputed !== state.showDisputed) {\n          state.reports = [];\n        }",
+		"if (rowsShowDisputed && !state.showDisputed) {\n          state.reports = [];\n        }",
 	} {
 		if !strings.Contains(fetchBody, want) {
 			t.Errorf("fetchReports must contain %q", want)
 		}
+	}
+
+	// The drop is one way only: rows fetched with Show disputed on are dropped
+	// when it is now off, and kept when it has just been ticked on (the new
+	// request wants a superset, the old rows are a harmless subset).
+	if strings.Contains(fetchBody, "rowsShowDisputed !== state.showDisputed") {
+		t.Errorf("the failure drop must not be symmetric, it applies only when the old rows were fetched with Show disputed on and it is now off")
+	}
+	// The assignment belongs to the success write, not to where the request is built.
+	assignRows := strings.Index(fetchBody, "state.reports = (body && body.reports) || [];\n        rowsShowDisputed = sentDisputed;\n        lastAppliedSeq = mySeq;")
+	if assignRows == -1 {
+		t.Errorf("rowsShowDisputed must be recorded inside the success write, between the rows and lastAppliedSeq")
 	}
 
 	// A vote the server recorded whose refetch then failed says so in the row.
