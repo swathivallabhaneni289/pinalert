@@ -88,11 +88,40 @@ window.Pinalert = (function () {
   var listeners = [];
   var selectListeners = [];
   var pollTimer = null;
+  // fetchSeq numbers every fetchReports call. A response may only write
+  // state when it belongs to the newest call, because on a slow link an
+  // older response can land after a newer one and put back older rows, for
+  // example a Show disputed set while the checkbox is off, or counters from
+  // before a vote that has already been recorded (WR-01).
+  var fetchSeq = 0;
+  // clockOffsetMs is the server's clock minus this device's clock, learned
+  // from the Date header of every successful report response. Report ages and
+  // the fade stage compare the server's created_at and expires_at with "now",
+  // so "now" must be the server's now: a phone clock set a day behind would
+  // otherwise show a report about to expire as fresh (WR-06). Zero until the
+  // first response, and unchanged when a response carries no usable header.
+  var clockOffsetMs = 0;
   // toastTimer is showToast's own module-level state (Task 1, 02-07): kept
   // here rather than inside the function so repeated calls collapse onto
   // one timer, exactly as modal.js's private implementation — the one this
   // function replaces — already did.
   var toastTimer = null;
+
+  // nowMs is the current time on the server's clock, as best this device can
+  // tell. It is the only clock the age and fade code reads.
+  function nowMs() {
+    return Date.now() + clockOffsetMs;
+  }
+
+  // noteServerClock records the offset from one response's Date header. The
+  // header has one second resolution and ignores transit time, which is far
+  // finer than the day sized clock errors it exists to correct.
+  function noteServerClock(headerValue) {
+    var serverMs = headerValue ? new Date(headerValue).getTime() : NaN;
+    if (isFinite(serverMs)) {
+      clockOffsetMs = serverMs - Date.now();
+    }
+  }
 
   function notify() {
     for (var i = 0; i < listeners.length; i++) {
@@ -128,6 +157,14 @@ window.Pinalert = (function () {
   // list does not flash skeletons on every 30s poll.
   function fetchReports() {
     var isBackgroundRefresh = state.status === 'ok';
+    var mySeq = ++fetchSeq;
+    var sentDisputed = state.showDisputed;
+    // A response is stale when a newer fetch has started since, or when the
+    // reader has flipped Show disputed after this request was built. A stale
+    // response must change nothing, neither rows nor the error state.
+    function isStale() {
+      return mySeq !== fetchSeq || sentDisputed !== state.showDisputed;
+    }
     if (!isBackgroundRefresh) {
       state.status = 'loading';
       notify();
@@ -149,7 +186,7 @@ window.Pinalert = (function () {
     // unlike the three coordinate/radius parameters above, which encode
     // runtime numbers. Omitting the parameter entirely when the flag is
     // false keeps this URL byte-identical to Phase 1's.
-    if (state.showDisputed) {
+    if (sentDisputed) {
       url += '&show_disputed=true';
     }
 
@@ -158,15 +195,22 @@ window.Pinalert = (function () {
         if (!res.ok) {
           throw new Error('fetchReports: HTTP ' + res.status);
         }
+        noteServerClock(res.headers && res.headers.get('Date'));
         return res.json();
       })
       .then(function (body) {
+        if (isStale()) {
+          return;
+        }
         state.reports = (body && body.reports) || [];
         state.status = 'ok';
         state.error = null;
         notify();
       })
       .catch(function (err) {
+        if (isStale()) {
+          return;
+        }
         state.status = 'error';
         state.error = err;
         notify();
@@ -276,7 +320,7 @@ window.Pinalert = (function () {
 
   function relativeTime(iso) {
     var then = new Date(iso).getTime();
-    var now = Date.now();
+    var now = nowMs();
     var diffSeconds = Math.max(0, Math.round((now - then) / 1000));
 
     if (diffSeconds < 60) {
@@ -301,7 +345,7 @@ window.Pinalert = (function () {
   function ageStage(report) {
     var created = new Date(report.created_at).getTime();
     var expires = new Date(report.expires_at).getTime();
-    var now = Date.now();
+    var now = nowMs();
     var lifetime = expires - created;
     if (lifetime <= 0) {
       return 'stale';

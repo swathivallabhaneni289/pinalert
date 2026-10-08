@@ -75,9 +75,12 @@ type ReporterHistoryReportsRow struct {
 // statement therefore holds no clock call and no literal bound.
 //
 // (e) The cap counts the latest expired reports inside the window, not
-// judged reports (RESOLVED Q4). Neutral classification of critical and
-// rescue needed reports that expired unconfirmed (D-12) needs vote data, so
-// it happens in Go. Plan 03-10 documents the difference.
+// judged reports. Neutral classification of critical and rescue needed
+// reports that expired unconfirmed (D-12) needs vote data, so it happens in
+// Go. The caller therefore passes a read cap larger than the judged report
+// cap (100 against 30, WR-05): Go drops the neutral rows and keeps the
+// latest 30 judged ones. More than 100 neutral rows in a row can still push
+// an old record out of this read.
 //
 // (f) No session id, voter cell or text in the output, continuing T-01-02.
 // Independence is never aggregated in SQL. The votes for these report ids

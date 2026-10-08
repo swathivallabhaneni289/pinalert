@@ -396,13 +396,14 @@ func reportFromInsertRow(row sqlcgen.InsertReportRow) Report {
 // reporterHistoryParams builds the one history read of a request. It is the
 // one place the D-13 window and cap reach the query, shared by all three read
 // paths: the window starts ReliabilityWindow before now and the cap is
-// ReliabilityRowCap. A report is judged once it expired at or before this same
+// ReliabilityHistoryReadCap (neutral rows are only known after the votes are
+// read, so the read leaves room for them and Go caps the judged rows). A report is judged once it expired at or before this same
 // now (R-05), so the caller passes the clock it also hands to ReporterSignals.
 func reporterHistoryParams(accountIDs []int64, now time.Time) sqlcgen.ReporterHistoryReportsParams {
 	return sqlcgen.ReporterHistoryReportsParams{
 		Now:         now,
 		WindowStart: now.Add(-ReliabilityWindow),
-		RowCap:      int32(ReliabilityRowCap),
+		RowCap:      int32(ReliabilityHistoryReadCap),
 		AccountIds:  accountIDs,
 	}
 }

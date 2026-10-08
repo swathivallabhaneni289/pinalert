@@ -257,17 +257,14 @@ At least 5 judged reports (`ReliabilityMinJudged`) are needed, counted without w
 
 Only reports that expired within the last 90 days count (`ReliabilityWindow`). A report exactly 90 days old is out, and one that expires exactly now is in. Age is measured from the expiry time, and each outcome's weight halves every 30 days (`ReliabilityHalfLife`).
 
-The read keeps the latest 30 expired reports per account (`ReliabilityRowCap`) across all of its sessions, newest expiry first. The cap counts the latest 30 expired reports in the window, not 30 judged reports.
+The score uses the latest 30 judged reports per account (`ReliabilityRowCap`), across all of its sessions, newest expiry first. Neutral reports are dropped first and the cap of 30 applies to what is left, so a run of neutral reports cannot push a judged record out of the history. That is a decision, and the reasoning is this:
 
-That is a decision, and the reasoning is this:
-
-- The decision's own wording says 30 judged reports. SQL cannot know which reports are judged without their votes, so the read caps expired reports and Go classifies them.
-- The two readings differ only for a reporter with many critical or rescue needed reports that expired unconfirmed, which are neutral.
-- The exact alternative, reading 60 and keeping the first 30 judged in Go, doubles the read cost and was not taken.
-- `ScoreReliability` applies the same cap to whatever rows it receives, neutral rows included, so the result is the same whether or not the read was capped.
-- The test case that shows 30 newer neutral reports pushing 5 corroborated ones out is in `TestReporterSignalsNewAndNone`, beside the case with 29 neutral reports where one corroborated report survives.
-
-The owner may still choose the exact reading.
+- The earlier version capped the latest 30 expired reports and dropped neutral ones afterwards. A critical or rescue needed report that expires with fewer than 2 confirmations and fewer than 2 disputes is neutral, and critical reports publish Live at once, so an account with a poor record could file 30 of them and see the poor record replaced by "New reporter" (review finding WR-05).
+- SQL cannot know which reports are neutral without their votes. The read therefore returns up to 100 expired reports per account (`ReliabilityHistoryReadCap`), and Go classifies them, drops the neutral ones and keeps the latest 30 judged.
+- The read cap and the Go cap are separate numbers on purpose: 100 leaves room for neutral rows, 30 is the number of judged reports the score uses.
+- `ScoreReliability` applies the window, drops neutral rows and caps at 30 judged reports on whatever rows it receives, so it gives the same answer on raw rows as on the capped read unless more than 100 of the newest rows are neutral.
+- The limit that remains: 100 neutral reports in a row can still push an old record out of the read, so the Phase 4 rate limits are what bound that.
+- The test case that shows 30 newer neutral reports no longer pushing 5 corroborated ones out, and a poor record surviving the same run, is in `TestReporterSignalsNewAndNone`.
 
 ### Reporter score formula
 
@@ -405,8 +402,8 @@ Display only: neither signal hides a report, dims it beyond the time fade or reo
 The server decides every vote. The browser only helps the voter get a fresh location to the server and shows a hint.
 
 - The refusal: a vote from beyond 1 km gets HTTP 403, field `location`, and the sentence `TooFarMessage()` returns: "Too far to vote. You need to be within 1 km of this report." The body never holds a distance. The distance itself comes from `haversineKm` and the comparison from `withinVoteRadius`. `TestCastVoteTooFar` pins the response.
-- The silent refresh (D-02): a cached fix younger than 60 seconds is reused. Otherwise, if location permission is already granted, the browser takes one silent fresh fix. After a refusal with field `location` it retries once with a fresh fix. It never prompts for each vote. `TestVoteTransportRefreshesAndRetriesOnce` pins this.
-- The too far hint (D-22): the page carries `data-vote-radius-km`, which equals `MaxVoteDistanceKm` (`TestPageShellCarriesVoteRadius`). With a cached fix younger than 120 seconds, Confirm, Dispute and Mark resolved on a report farther than that radius get `aria-disabled` and the same sentence as visible text. The reporter's own Mark resolved stays enabled, and a stale fix never disables a button. `TestVoteHint` pins this.
+- The silent refresh (D-02): a cached fix younger than 60 seconds is reused. Otherwise, if location permission is already granted, the browser takes one silent fresh fix. After a refusal with field `location` it retries once with a fresh fix. It never prompts for each vote. If a new fix cannot be taken, an older cached fix is reused only while it is younger than 10 minutes (`VOTER_LOCATION_STALE_MAX_MS`); an older one, or one with no capture time, is not used and the voter sees the location sentence. `TestVoteTransportRefreshesAndRetriesOnce` pins the silent refresh. The reporter's own Mark resolved and Reopen do not ask for a location at all, because the server exempts them from the 1 km rule; the browser sends a fresh cached fix if it has one and placeholder coordinates otherwise (`TestOwnReportResolutionSkipsLocation`).
+- The too far hint (D-22): the page carries `data-vote-radius-km`, which equals `MaxVoteDistanceKm` (`TestPageShellCarriesVoteRadius`). With a cached fix younger than 120 seconds, Confirm, Dispute and Mark resolved on a report farther than that radius get `aria-disabled` and the same sentence as visible text. The reporter's own Mark resolved stays enabled, and a stale fix never disables a button. A tap on a marked button sends no vote: it takes one fresh fix, recomputes the mark, and goes on with the vote only if the button is no longer marked, so a voter who has walked closer is not locked out. `TestVoteHint` pins this.
 
 The hint is advisory. A forced vote is still refused by the server.
 
@@ -451,6 +448,7 @@ The visible form of "confirmed by N nearby" is the counter `N confirmed`, with t
 | `ReliabilityHalfLife` | `internal/service/reliability.go` | 30 days |
 | `ReliabilityWindow` | `internal/service/reliability.go` | 90 days |
 | `ReliabilityRowCap` | `internal/service/reliability.go` | 30 |
+| `ReliabilityHistoryReadCap` | `internal/service/reliability.go` | 100 |
 | `UnconfirmedCredit` | `internal/service/reliability.go` | 0.25 |
 | `ReliableMinScore` | `internal/service/reliability.go` | 75 |
 | `MixedMinScore` | `internal/service/reliability.go` | 35 |
@@ -471,9 +469,10 @@ Upgrading: an existing database needs `make migrate` once after this phase merge
 - Each account holds one current vote per report and kind (the latest vote wins in `CurrentVotesForReports`), so walking around cannot add places.
 - The real cost of adding a place is one more verified email account plus a claimed location for it.
 - Client coordinates cannot be verified. A spoofed location defeats both the cell rule and the 1 km rule.
-- Pinalert does not read GPS accuracy and does not look for mock locations.
-- Phone GPS error of tens of metres can put an honest voter standing near the 1 km line on the wrong side of it. Accuracy is not sent with a vote, and the silent refresh only replaces a stale fix, it does not make a fix more exact.
+- The server does not read GPS accuracy and does not look for mock locations. The browser reads accuracy only to decide whether a fix may be cached.
+- Phone GPS error of tens of metres can put an honest voter standing near the 1 km line on the wrong side of it. Accuracy is not sent with a vote. The browser asks for a high accuracy fix, and a fix whose reported accuracy is worse than 300 m (`VOTER_LOCATION_MAX_CACHE_ACCURACY_M`) is used for that one vote but never cached, so it cannot be reused for later votes.
 - Counters, bands and fades update on the 30 second poll, so a screen can be one poll behind the server.
+- Report age and the fade use the server's clock, taken from the Date header of each poll response, so a wrong clock on the phone does not change them. The header has one second resolution.
 - The too far hint in the browser is advisory. Only the server decides whether a vote counts.
 
 ## Out of scope for this model

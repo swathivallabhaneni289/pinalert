@@ -91,7 +91,7 @@ func TestVoteTransportHasNoLocationFallback(t *testing.T) {
 			"instead of resolving with a substitute position", "reject(")
 	}
 
-	castVoteBody := jsFunctionBody(t, text, "castVote(reportId, action)")
+	castVoteBody := jsFunctionBody(t, text, "castVote(reportId, action, opts)")
 
 	locIdx := strings.Index(castVoteBody, "getVoterLocation(")
 	fetchIdxInCastVote := strings.Index(castVoteBody, "fetch(")
@@ -191,6 +191,18 @@ func TestVoteTransportRefreshesAndRetriesOnce(t *testing.T) {
 	if n := strings.Count(text, "var VOTER_LOCATION_FRESH_MS = 60000;"); n != 1 {
 		t.Errorf("expected exactly one declaration of VOTER_LOCATION_FRESH_MS = 60000, found %d", n)
 	}
+	if n := strings.Count(text, "var VOTER_LOCATION_STALE_MAX_MS = 10 * 60 * 1000;"); n != 1 {
+		t.Errorf("expected exactly one declaration of VOTER_LOCATION_STALE_MAX_MS = 10 minutes, found %d", n)
+	}
+	if n := strings.Count(jsFunctionBody(t, text, "getVoterLocation(opts)"), "isFreshVoterLocation(cached, VOTER_LOCATION_STALE_MAX_MS)"); n != 2 {
+		t.Errorf("getVoterLocation must bound both cached fix fallbacks by VOTER_LOCATION_STALE_MAX_MS, found %d uses", n)
+	}
+	if n := strings.Count(text, "var VOTER_LOCATION_MAX_CACHE_ACCURACY_M = 300;"); n != 1 {
+		t.Errorf("expected exactly one declaration of VOTER_LOCATION_MAX_CACHE_ACCURACY_M = 300, found %d", n)
+	}
+	if !strings.Contains(jsFunctionBody(t, text, "getVoterLocation(opts)"), "{ enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }") {
+		t.Errorf("getVoterLocation must request a high accuracy fix with maximumAge 0")
+	}
 	if n := strings.Count(text, "navigator.permissions.query("); n != 1 {
 		t.Errorf("expected exactly one navigator.permissions.query call in the module, found %d", n)
 	}
@@ -222,7 +234,7 @@ func TestVoteTransportRefreshesAndRetriesOnce(t *testing.T) {
 			getIdx, stateIdx)
 	}
 
-	castBody := jsFunctionBody(t, text, "castVote(reportId, action)")
+	castBody := jsFunctionBody(t, text, "castVote(reportId, action, opts)")
 	if n := strings.Count(castBody, "getVoterLocation({ fresh: false })"); n != 1 {
 		t.Errorf("castVote must call getVoterLocation with fresh false exactly once, found %d", n)
 	}
@@ -2254,5 +2266,87 @@ func TestRetractedRowTreatmentMatchesHidden(t *testing.T) {
 	if !strings.Contains(badgeSelector, ".vis-retracted .icon-badge") {
 		t.Errorf("the retracted badge rule's selector head must contain the descendant form, found: %q",
 			badgeSelector)
+	}
+}
+
+// TestOwnReportResolutionSkipsLocation pins WR-04: the server exempts the
+// reporter's own resolve and reopen from the 1 km rule, so the browser must
+// not ask for a location for those two actions. The skip is keyed on the
+// ownReport option and limited to resolve and reopen, the Activity page
+// passes it, and the shared transport still calls getVoterLocation for
+// everything else.
+func TestOwnReportResolutionSkipsLocation(t *testing.T) {
+	votesRaw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/votes.js: %v", err)
+	}
+	votes := stripCSSComments(string(votesRaw))
+
+	castBody := jsFunctionBody(t, votes, "castVote(reportId, action, opts)")
+	for _, want := range []string{
+		"opts.ownReport", "action === 'resolve'", "action === 'reopen'",
+		"ownReportLocation()", "getVoterLocation({ fresh: false })",
+	} {
+		if !strings.Contains(castBody, want) {
+			t.Errorf("castVote's body is missing %q", want)
+		}
+	}
+
+	ownBody := jsFunctionBody(t, votes, "ownReportLocation()")
+	if !strings.Contains(ownBody, "isFreshVoterLocation(fix, VOTER_LOCATION_FRESH_MS)") {
+		t.Errorf("ownReportLocation must send only a fresh cached fix")
+	}
+	for _, banned := range []string{"getVoterLocation(", "getCurrentPosition", "navigator.permissions", "reject("} {
+		if strings.Contains(ownBody, banned) {
+			t.Errorf("ownReportLocation must never ask for or wait on a location, found %q", banned)
+		}
+	}
+
+	if !strings.Contains(votes, "{ ownReport: block.isOwnReport === true }") {
+		t.Errorf("onControlsClick must pass the block's own report flag to castVote")
+	}
+
+	actRaw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/activity.js: %v", err)
+	}
+	if !strings.Contains(string(actRaw), "castVote(row.dataset.reportId, 'reopen', { ownReport: true })") {
+		t.Errorf("activity.js must pass ownReport true: every row there is the viewer's own report")
+	}
+}
+
+// TestFeedErrorStateKeepsStaleRows pins WR-08: a failed fetch must not hide
+// a list that has rows. The error branch of render hides the list only when
+// there is nothing to show.
+func TestFeedErrorStateKeepsStaleRows(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/feed.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/feed.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+	body := jsFunctionBody(t, text, "render(state)")
+	if !strings.Contains(body, "setHidden(reportListEl, state.reports.length === 0);") {
+		t.Errorf("render's error branch must hide the list only when state.reports is empty")
+	}
+}
+
+// TestAgeAndFadeUseTheServerClock pins WR-06: app.js learns the server's
+// clock from the Date header of a successful report response and computes
+// both the relative time and the age stage from it, never from the bare
+// device clock.
+func TestAgeAndFadeUseTheServerClock(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/app.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/app.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+	if !strings.Contains(jsFunctionBody(t, text, "fetchReports()"), "noteServerClock(") {
+		t.Errorf("fetchReports must record the server clock from the response")
+	}
+	for _, fn := range []string{"relativeTime(iso)", "ageStage(report)"} {
+		body := jsFunctionBody(t, text, fn)
+		if !strings.Contains(body, "nowMs()") || strings.Contains(body, "Date.now()") {
+			t.Errorf("%s must read nowMs() and never Date.now()", fn)
+		}
 	}
 }

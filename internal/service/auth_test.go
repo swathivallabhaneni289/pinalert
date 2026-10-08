@@ -848,7 +848,7 @@ func TestActivityForAccountReadsReporterHistoryOnce(t *testing.T) {
 		wantArgs := sqlcgen.ReporterHistoryReportsParams{
 			Now:         p12Now,
 			WindowStart: p12Now.Add(-service.ReliabilityWindow),
-			RowCap:      int32(service.ReliabilityRowCap),
+			RowCap:      int32(service.ReliabilityHistoryReadCap),
 			AccountIds:  []int64{account},
 		}
 		if len(q.historyArgs) != 1 || !reflect.DeepEqual(q.historyArgs[0], wantArgs) {

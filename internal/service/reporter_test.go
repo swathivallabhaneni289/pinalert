@@ -437,9 +437,11 @@ func TestReporterSignalsNewAndNone(t *testing.T) {
 		expect(t, in, ReporterReliable, p10Int(86), 5, 5)
 	})
 
-	t.Run("cap counts expired reports, not judged ones", func(t *testing.T) {
-		// Q4: the latest 30 expired reports are all neutral, so five older
-		// corroborated reports are pushed out and the reporter reads New.
+	t.Run("cap counts judged reports, not expired ones", func(t *testing.T) {
+		// WR-05: neutral rows are dropped before the cap of 30 applies, so
+		// 30 newer neutral reports no longer push five older corroborated
+		// ones out, and a bad record cannot be wiped by a run of neutral
+		// critical reports.
 		neutral := func(n int) p10Part {
 			var p p10Part
 			for i := 0; i < n; i++ {
@@ -449,13 +451,15 @@ func TestReporterSignalsNewAndNone(t *testing.T) {
 			return p
 		}
 		older := p10Batch(acct, 1, 5, SeverityLow, CategoryFlood, p10Now.Add(-72*time.Hour), "corroborated")
-		expect(t, rate(p10Join(older, neutral(30))), ReporterNew, nil, 0, 0)
+		expect(t, rate(p10Join(older, neutral(30))), ReporterReliable, p10Int(86), 5, 5)
+		expect(t, rate(p10Join(older, neutral(29))), ReporterReliable, p10Int(86), 5, 5)
 
-		got := rate(p10Join(older, neutral(29)))
-		expect(t, got, ReporterNew, nil, 1, 1)
-		if want := "Only 1 of their reports has had a clear result so far." + needs; got.Sentence != want {
-			t.Errorf("sentence = %q, want %q", got.Sentence, want)
+		bad := p10Batch(acct, 1, 6, SeverityLow, CategoryFlood, p10Now.Add(-72*time.Hour), "contradicted")
+		without := rate(bad)
+		if without.Tag != ReporterUnreliable {
+			t.Fatalf("setup: six contradicted reports read %q, want unreliable", without.Tag)
 		}
+		expect(t, rate(p10Join(bad, neutral(30))), ReporterUnreliable, without.Score, 6, 0)
 	})
 
 	t.Run("unknown severity and category fall back to low and other", func(t *testing.T) {

@@ -396,11 +396,13 @@
     setHidden(skeletonEl, true);
 
     if (state.status === 'error') {
-      // A fetch failure hides the list in place of showing it, but never
-      // clears the rows or the map's existing pins — stale data is more
-      // useful than a blank panel to someone who just lost signal.
+      // A fetch failure never clears the rows or the map's existing pins:
+      // stale data is more useful than a blank panel to someone who just lost
+      // signal (WR-08). While there are rows to show, the list stays visible
+      // and the error panel appears alongside it with its Retry button. Only
+      // a failure with nothing to show hides the list.
       setHidden(errorEl, false);
-      setHidden(reportListEl, true);
+      setHidden(reportListEl, state.reports.length === 0);
       setEmptyState('none');
       return;
     }

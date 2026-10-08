@@ -189,13 +189,23 @@ func TestVoteHint(t *testing.T) {
 		t.Errorf("Math.asin( occurs %d times across static/js, want exactly 1 (in votes.js)", total)
 	}
 
-	// onControlsClick: a marked button does nothing, before any action branch.
+	// onControlsClick: a marked button sends no vote and only refreshes the fix
+	// and the mark (WR-03), before any action branch.
 	click := p18TightBody(t, text, "onControlsClick(block, button)")
 	p18Contains(t, "onControlsClick", click, "getAttribute('aria-disabled') === 'true'")
 	guard := "getAttribute('aria-disabled') === 'true'"
 	for _, later := range []string{"openResolveConfirm(block)", "clearVoteError(block)", "setBlockBusy(block, true)", "castVote("} {
 		p18Before(t, click, "onControlsClick guard order", guard, later)
 	}
+
+	// The marked tap hands over to refreshHintThenRetry, which takes one fresh
+	// fix, re-applies the hint and re-enters only when the mark is gone.
+	p18Contains(t, "onControlsClick", click, "refreshHintThenRetry(block, button);")
+	refresh := p18TightBody(t, text, "refreshHintThenRetry(block, button)")
+	p18Contains(t, "refreshHintThenRetry", refresh,
+		"getVoterLocation({ fresh: true })", "applyDistanceHint(block, block.lastReport)",
+		"getAttribute('aria-disabled') !== 'true'", "onControlsClick(block, button)")
+	p18Excludes(t, "refreshHintThenRetry", refresh, "castVote(", "fetch(", "getCurrentPosition")
 
 	// createVoteBlock holds none of the hint attributes.
 	create := p18TightBody(t, text, "createVoteBlock(reportId)")
