@@ -98,6 +98,13 @@ window.Pinalert = (function () {
   // exceeds the poll interval, and the list would never update.
   var fetchSeq = 0;
   var lastAppliedSeq = 0;
+  // writeFloor is the number of the newest refetch that followed a write (a
+  // vote, a submitted report). It is raised when that refetch STARTS, so it
+  // holds whether the refetch later succeeds or fails. A response from a call
+  // started before the write may carry rows the server read before the write,
+  // and is dropped even when the refetch failed and nothing newer was applied
+  // (WR-01). Plain polls never raise it, so a slow link cannot freeze the list.
+  var writeFloor = 0;
   // newestFetch is the promise of the most recently started call. A call whose
   // response is dropped because the Show disputed flag changed hands this
   // promise back, so its caller waits for the data that will replace it.
@@ -177,17 +184,20 @@ window.Pinalert = (function () {
   // the newest call's promise, so a caller that refetches after a write
   // (votes.js, the submit path) never treats the store as fresh before the
   // newest data has landed.
-  function fetchReports() {
+  function fetchReports(options) {
     var isBackgroundRefresh = state.status === 'ok' || state.reports.length > 0;
     var mySeq = ++fetchSeq;
+    if (options && options.afterWrite === true && mySeq > writeFloor) {
+      writeFloor = mySeq;
+    }
     var sentDisputed = state.showDisputed;
     var pending;
     // A response is stale when newer data was applied after this call
-    // started, or when the reader has flipped Show disputed since this request
-    // was built. A stale response must change nothing, neither rows nor the
-    // error state.
+    // started or before the newest post write refetch started, or when the
+    // reader has flipped Show disputed since this request was built. A stale
+    // response must change nothing, neither rows nor the error state.
     function isStale() {
-      return mySeq < lastAppliedSeq || sentDisputed !== state.showDisputed;
+      return mySeq < lastAppliedSeq || mySeq < writeFloor || sentDisputed !== state.showDisputed;
     }
     // What a dropped call resolves with: nothing when newer data is already
     // in the store, else the newest call's promise.
@@ -245,10 +255,12 @@ window.Pinalert = (function () {
         if (isStale()) {
           return whenFresh();
         }
-        // Rows fetched under the other Show disputed setting must not stay on
-        // screen under a checkbox that no longer matches them, so they are
-        // dropped. Rows that are only a little old stay (WR-08).
-        if (rowsShowDisputed !== state.showDisputed) {
+        // Rows that include disputed reports must not stay on screen once the
+        // reader has unticked Show disputed, so they are dropped. When the
+        // reader has just ticked it, the old rows are a harmless subset of what
+        // the new request wanted, so they stay. Rows that are only a little old
+        // stay too (WR-08).
+        if (rowsShowDisputed && !state.showDisputed) {
           state.reports = [];
         }
         state.status = 'error';
@@ -295,7 +307,7 @@ window.Pinalert = (function () {
         return (body && body.report) || null;
       });
     }).then(function (report) {
-      return fetchReports().then(function () {
+      return fetchReports({ afterWrite: true }).then(function () {
         return report;
       });
     });

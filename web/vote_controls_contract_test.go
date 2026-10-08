@@ -176,7 +176,7 @@ func TestFocusStepsAfterMarkResolved(t *testing.T) {
 		"castVote(",
 		"removal = captureRemovalFocus(origin);",
 		"closeResolveConfirm(block)",
-		"Pinalert.fetchReports()",
+		"Pinalert.fetchReports({ afterWrite: true })",
 		"setBlockBusy(block, false)",
 		"focusAfterVote(origin, action, removal)",
 		".catch(function (err) {",
