@@ -133,7 +133,7 @@ func TestResolveConfirmIsANamedGroupWithCancelFirst(t *testing.T) {
 	closeBody := p09FuncBody(t, text, "closeResolveConfirm(block)")
 	p09MustNotContain(t, "closeResolveConfirm", closeBody, ".focus(")
 
-	clickBody := p09FuncBody(t, text, "onControlsClick(block, button)")
+	clickBody := p09FuncBody(t, text, "onControlsClick(block, button, taken)")
 	p09Ordered(t, clickBody, "onControlsClick cancel branch",
 		"if (action === 'cancel-resolve') {",
 		"closeResolveConfirm(block)",
@@ -169,7 +169,7 @@ func TestFocusStepsAfterMarkResolved(t *testing.T) {
 		"dispute: '.vote-btn--dispute'",
 		"'confirm-resolve': '.vote-btn--resolve'")
 
-	clickBody := p09FuncBody(t, text, "onControlsClick(block, button)")
+	clickBody := p09FuncBody(t, text, "onControlsClick(block, button, taken)")
 	p09Ordered(t, clickBody, "onControlsClick focus steps",
 		"var origin = captureVoteOrigin(block);",
 		"var removal = null;",
@@ -289,7 +289,7 @@ func TestVoteButtonsCarryIconAndLabelSpans(t *testing.T) {
 	if loc := direct.FindStringIndex(text); loc != nil {
 		t.Errorf("votes.js writes text straight onto a vote button at offset %d, which would wipe its icon span", loc[0])
 	}
-	p09MustContain(t, "onControlsClick", p09FuncBody(t, text, "onControlsClick(block, button)"),
+	p09MustContain(t, "onControlsClick", p09FuncBody(t, text, "onControlsClick(block, button, taken)"),
 		"Pinalert.setText(affirmBtn, RESOLVE_BUTTON_LABEL_IN_FLIGHT)")
 }
 
@@ -363,7 +363,7 @@ func TestVoteErrorGetsNoChildNodes(t *testing.T) {
 // vote, which the Go service tests cover.
 func TestRetapResendsTheSameVote(t *testing.T) {
 	text := p09ReadJS(t, "static/js/votes.js")
-	body := p09FuncBody(t, text, "onControlsClick(block, button)")
+	body := p09FuncBody(t, text, "onControlsClick(block, button, taken)")
 
 	p09MustNotContain(t, "onControlsClick", body, "aria-pressed")
 	p09MustContain(t, "onControlsClick", body, "var transportAction = isResolveAffirm ? 'resolve' : action;")

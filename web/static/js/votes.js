@@ -348,6 +348,12 @@
   // those two skip the location request entirely (WR-04). The server decides
   // from the database identity, never from this flag, so a wrong flag costs
   // at most a 403 that the retry below answers with a real fix.
+  //
+  // opts.location is a fix that getVoterLocation has just resolved for this
+  // very tap (refreshHintThenRetry, WR-03): it is sent as it is, so a coarse
+  // fix that was not cached still serves the tap that took it, and the tap
+  // does not take a second fix. Only a finite latitude and longitude pair is
+  // accepted. Anything else is ignored and the normal location request runs.
   function castVote(reportId, action, opts) {
     if (VOTE_ACTIONS.indexOf(action) === -1) {
       var actionErr = new Error(GENERIC_FAILURE_MESSAGE);
@@ -356,7 +362,17 @@
     }
 
     var skipLocation = !!(opts && opts.ownReport) && (action === 'resolve' || action === 'reopen');
-    var firstFix = skipLocation ? ownReportLocation() : getVoterLocation({ fresh: false });
+    var given = opts && opts.location;
+    var haveGiven = !!given && typeof given.latitude === 'number' && isFinite(given.latitude) &&
+      typeof given.longitude === 'number' && isFinite(given.longitude);
+    var firstFix;
+    if (skipLocation) {
+      firstFix = ownReportLocation();
+    } else if (haveGiven) {
+      firstFix = Promise.resolve({ latitude: given.latitude, longitude: given.longitude });
+    } else {
+      firstFix = getVoterLocation({ fresh: false });
+    }
     return firstFix.then(postVote).catch(function (err) {
       // A location denial carries no field, a transport failure carries
       // none either and a 400 carries another field, so none of those is
@@ -642,14 +658,18 @@
   // the radius. Every other case clears the marks, so the hint fails open and
   // the first tap asks for location as before. The reporter's own report is
   // never marked. Marked buttons stay focusable. The server refuses far votes
-  // on its own, so this grants and decides nothing (D-01, D-22).
-  function applyDistanceHint(block, report) {
+  // on its own, so this grants and decides nothing (D-01, D-22). The optional
+  // third argument is a fix the caller has just taken (latitude, longitude and
+  // capture time): the mark is then computed from it and not from the session
+  // cache, because a coarse fix is never cached (WR-07) and the tap that took
+  // it must still be judged by it (WR-03).
+  function applyDistanceHint(block, report, justTaken) {
     if (report.is_own_report || !block.note) {
       clearDistanceHint(block);
       return;
     }
     var radiusKm = readVoteRadiusKm();
-    var fix = peekVoterLocation();
+    var fix = justTaken || peekVoterLocation();
     if (radiusKm === null || fix === null || !isFreshVoterLocation(fix, VOTER_LOCATION_HINT_MS)) {
       clearDistanceHint(block);
       return;
@@ -986,22 +1006,28 @@
   // (WR-03). The mark comes from a cached fix that may be minutes old, and
   // nothing else rewrites that cache while the mark blocks every tap, so a
   // voter who has walked closer would be locked out. The tap therefore asks
-  // for one fresh fix (silent: it never prompts), recomputes the mark with it
-  // and goes on with the original tap only if the button is no longer marked.
-  // If no fix can be taken, or the voter is still too far, the mark stays and
-  // nothing is sent. The server remains the only judge of every vote.
+  // for one fresh fix (silent: it never prompts), recomputes the mark from the
+  // coordinates that fix resolved with and goes on with the original tap only
+  // if the button is no longer marked. The tap sends those same coordinates and
+  // takes no second fix. The fix is used even when it was too coarse to be
+  // cached (WR-07), so a voter indoors is not locked out by an older, far fix
+  // that is still in the cache. If no fix can be taken, or the voter is still
+  // too far, the mark stays and nothing is sent. The server remains the only
+  // judge of every vote.
   function refreshHintThenRetry(block, button) {
     if (block.hintRefreshing) {
       return;
     }
     block.hintRefreshing = true;
-    getVoterLocation({ fresh: true }).then(function () {
+    getVoterLocation({ fresh: true }).then(function (coords) {
       block.hintRefreshing = false;
-      if (block.lastReport) {
-        applyDistanceHint(block, block.lastReport);
+      if (!block.lastReport) {
+        return;
       }
+      var taken = { latitude: coords.latitude, longitude: coords.longitude, at: Date.now() };
+      applyDistanceHint(block, block.lastReport, taken);
       if (button.getAttribute('aria-disabled') !== 'true') {
-        onControlsClick(block, button);
+        onControlsClick(block, button, taken);
       }
     }, function () {
       block.hintRefreshing = false;
@@ -1012,8 +1038,9 @@
   // the block's rendering changes until the server has answered. The
   // resolve/cancel-resolve branches (Task 1, 02-07) short-circuit before
   // any of that: opening or closing the inline confirmation posts nothing
-  // and reads no location.
-  function onControlsClick(block, button) {
+  // and reads no location. The optional third argument is the fix that
+  // refreshHintThenRetry just took for this tap, handed on to castVote.
+  function onControlsClick(block, button, taken) {
     // A button marked too far sends no vote. The tap refreshes the fix and
     // the mark first, and the vote follows only if the mark is gone (WR-03).
     if (button.getAttribute('aria-disabled') === 'true') {
@@ -1053,7 +1080,7 @@
       Pinalert.setText(affirmBtn, RESOLVE_BUTTON_LABEL_IN_FLIGHT);
     }
 
-    castVote(reportId, transportAction, { ownReport: block.isOwnReport === true }).then(function (result) {
+    castVote(reportId, transportAction, { ownReport: block.isOwnReport === true, location: taken }).then(function (result) {
       if (isResolveAffirm) {
         removal = captureRemovalFocus(origin);
         closeResolveConfirm(block);

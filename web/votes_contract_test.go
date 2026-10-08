@@ -1417,7 +1417,7 @@ func TestResolveIsGatedByAnInlineConfirmation(t *testing.T) {
 	}
 	text := stripCSSComments(string(raw))
 
-	body := jsFunctionBody(t, text, "onControlsClick(block, button)")
+	body := jsFunctionBody(t, text, "onControlsClick(block, button, taken)")
 
 	openIdx := strings.Index(body, "openResolveConfirm(block)")
 	closeIdx := strings.Index(body, "closeResolveConfirm(block)")
@@ -2302,7 +2302,7 @@ func TestOwnReportResolutionSkipsLocation(t *testing.T) {
 		}
 	}
 
-	if !strings.Contains(votes, "{ ownReport: block.isOwnReport === true }") {
+	if !strings.Contains(votes, "{ ownReport: block.isOwnReport === true, location: taken }") {
 		t.Errorf("onControlsClick must pass the block's own report flag to castVote")
 	}
 
