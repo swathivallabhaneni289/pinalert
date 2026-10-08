@@ -104,7 +104,7 @@ func TestVoteHint(t *testing.T) {
 		"function readVoteRadiusKm()",
 		"function greatCircleKm(lat1, lon1, lat2, lon2)",
 		"function clearDistanceHint(block)",
-		"function applyDistanceHint(block, report)",
+		"function applyDistanceHint(block, report, justTaken)",
 		"function showVoteError(block, message)",
 	}
 	for i := 0; i+1 < len(anchors); i++ {
@@ -124,7 +124,7 @@ func TestVoteHint(t *testing.T) {
 	p18Excludes(t, "updateVoteBlock span", updateSpan, "disabled", "aria-describedby", "data-too-far")
 
 	// applyDistanceHint.
-	apply := p18TightBody(t, text, "applyDistanceHint(block, report)")
+	apply := p18TightBody(t, text, "applyDistanceHint(block, report, justTaken)")
 	p18Contains(t, "applyDistanceHint", apply,
 		"report.is_own_report", "readVoteRadiusKm()", "peekVoterLocation()",
 		"isFreshVoterLocation(", "VOTER_LOCATION_HINT_MS", "greatCircleKm(",
@@ -191,7 +191,7 @@ func TestVoteHint(t *testing.T) {
 
 	// onControlsClick: a marked button sends no vote and only refreshes the fix
 	// and the mark (WR-03), before any action branch.
-	click := p18TightBody(t, text, "onControlsClick(block, button)")
+	click := p18TightBody(t, text, "onControlsClick(block, button, taken)")
 	p18Contains(t, "onControlsClick", click, "getAttribute('aria-disabled') === 'true'")
 	guard := "getAttribute('aria-disabled') === 'true'"
 	for _, later := range []string{"openResolveConfirm(block)", "clearVoteError(block)", "setBlockBusy(block, true)", "castVote("} {
@@ -202,10 +202,37 @@ func TestVoteHint(t *testing.T) {
 	// fix, re-applies the hint and re-enters only when the mark is gone.
 	p18Contains(t, "onControlsClick", click, "refreshHintThenRetry(block, button);")
 	refresh := p18TightBody(t, text, "refreshHintThenRetry(block, button)")
+	// The mark is recomputed from the coordinates the fresh fix resolved with,
+	// never from the session cache (a coarse fix is not cached, WR-07), and the
+	// tap goes on with those same coordinates, so it takes no second fix.
 	p18Contains(t, "refreshHintThenRetry", refresh,
-		"getVoterLocation({ fresh: true })", "applyDistanceHint(block, block.lastReport)",
-		"getAttribute('aria-disabled') !== 'true'", "onControlsClick(block, button)")
-	p18Excludes(t, "refreshHintThenRetry", refresh, "castVote(", "fetch(", "getCurrentPosition")
+		"getVoterLocation({ fresh: true }).then(function (coords)",
+		"var taken = { latitude: coords.latitude, longitude: coords.longitude, at: Date.now() };",
+		"applyDistanceHint(block, block.lastReport, taken)",
+		"getAttribute('aria-disabled') !== 'true'", "onControlsClick(block, button, taken)")
+	p18Excludes(t, "refreshHintThenRetry", refresh, "castVote(", "fetch(", "getCurrentPosition",
+		"peekVoterLocation(", "sessionStorage")
+	p18Contains(t, "applyDistanceHint", apply, "justTaken || peekVoterLocation()")
+	p18Once(t, "onControlsClick", click, "location: taken")
+
+	// The producer of the report the refresh judges: without it the mark would
+	// only be recomputed by the next poll.
+	own := p18TightBody(t, text, "applyOwnReportRule(block, report)")
+	p18Once(t, "applyOwnReportRule", own, "block.lastReport = report;")
+
+	// The only caller that hands castVote a location is that one tap, and
+	// castVote accepts it only as a finite number pair.
+	if n := strings.Count(text, "location: taken"); n != 1 {
+		t.Errorf("votes.js passes a location to castVote %d times, want exactly 1 (the refreshed tap)", n)
+	}
+	cast := p18TightBody(t, text, "castVote(reportId, action, opts)")
+	p18Contains(t, "castVote", cast,
+		"var given = opts && opts.location;",
+		"typeof given.latitude === 'number' && isFinite(given.latitude)",
+		"typeof given.longitude === 'number' && isFinite(given.longitude)",
+		"Promise.resolve({ latitude: given.latitude, longitude: given.longitude })")
+	activity := p18ReadStatic(t, "static/js/activity.js")
+	p18Excludes(t, "activity.js", activity, "location:")
 
 	// createVoteBlock holds none of the hint attributes.
 	create := p18TightBody(t, text, "createVoteBlock(reportId)")

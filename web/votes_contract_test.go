@@ -51,6 +51,18 @@ func jsFunctionBody(t *testing.T, text, name string) string {
 // that the promise chain resolves in the order this file's text suggests.
 // That runtime claim belongs to plan 02-05 Task 3's human-check; the two
 // are complementary, not redundant.
+//
+// Amended for WR-04 and WR-03: "downstream of a location promise" is no longer
+// true of every request, so the test now names the two sanctioned exceptions
+// and pins each one exactly. (1) The reporter's own resolve and reopen send a
+// fresh cached fix or a 0,0 placeholder from ownReportLocation, reached only
+// when the whole of skipLocation holds (opts.ownReport AND the action is
+// resolve or reopen); Confirm and Dispute can never take that path, and the
+// server derives the 1 km exemption from the database reporter identity, so
+// the flag grants nothing. (2) A tap on a too far button, after
+// refreshHintThenRetry took a fresh fix, hands castVote the finite pair that
+// getVoterLocation itself just resolved with. Any other source of coordinates
+// in castVote fails this test.
 func TestVoteTransportHasNoLocationFallback(t *testing.T) {
 	raw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
 	if err != nil {
@@ -112,6 +124,32 @@ func TestVoteTransportHasNoLocationFallback(t *testing.T) {
 		t.Errorf("expected exactly one %q call in the whole module, found %d — a second fetch "+
 			"call would mean a network request that is not structurally downstream of the "+
 			"location promise", "fetch(", n)
+	}
+
+	// The two sanctioned exceptions, pinned exactly (see the amendment above).
+	// The own report skip needs BOTH conditions: an || here would let a
+	// Confirm or Dispute go out with a 0,0 placeholder.
+	const skipExpr = "var skipLocation = !!(opts && opts.ownReport) && (action === 'resolve' || action === 'reopen');"
+	if n := strings.Count(castVoteBody, skipExpr); n != 1 {
+		t.Errorf("castVote must decide the own report skip with exactly %q, found %d", skipExpr, n)
+	}
+	if strings.Contains(castVoteBody, "opts.ownReport ||") || strings.Contains(castVoteBody, "|| (action === 'resolve'") {
+		t.Errorf("castVote must not weaken the own report skip with ||")
+	}
+	chain := "if (skipLocation) {\n      firstFix = ownReportLocation();\n    } else if (haveGiven) {\n" +
+		"      firstFix = Promise.resolve({ latitude: given.latitude, longitude: given.longitude });\n" +
+		"    } else {\n      firstFix = getVoterLocation({ fresh: false });\n    }"
+	if !strings.Contains(castVoteBody, chain) {
+		t.Errorf("castVote must take its first fix from exactly three sources, in this order: the own report skip, a fix handed in by the refreshed tap, getVoterLocation")
+	}
+	if n := strings.Count(castVoteBody, "ownReportLocation()"); n != 1 {
+		t.Errorf("castVote must call ownReportLocation() exactly once, found %d", n)
+	}
+	if n := strings.Count(text, "ownReportLocation()"); n != 2 {
+		t.Errorf("ownReportLocation() must be declared once and called only from castVote, found %d occurrences", n)
+	}
+	if n := strings.Count(castVoteBody, "Promise.resolve({"); n != 1 {
+		t.Errorf("castVote may resolve a coordinate pair by hand only in its refreshed tap branch, found %d", n)
 	}
 
 	if !strings.Contains(castVoteBody, "VOTE_ACTIONS.indexOf(") {
@@ -202,6 +240,42 @@ func TestVoteTransportRefreshesAndRetriesOnce(t *testing.T) {
 	}
 	if !strings.Contains(jsFunctionBody(t, text, "getVoterLocation(opts)"), "{ enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }") {
 		t.Errorf("getVoterLocation must request a high accuracy fix with maximumAge 0")
+	}
+	// WR-07: the accuracy bound is declared once and USED once, as the gate in
+	// front of the only cache write. Pinning only the declaration would stay
+	// green with the gate deleted.
+	if n := strings.Count(text, "VOTER_LOCATION_MAX_CACHE_ACCURACY_M"); n != 2 {
+		t.Errorf("VOTER_LOCATION_MAX_CACHE_ACCURACY_M must appear exactly twice (declaration and the cache gate), found %d", n)
+	}
+	{
+		body := jsFunctionBody(t, text, "getVoterLocation(opts)")
+		const gate = "typeof accuracy === 'number' && accuracy <= VOTER_LOCATION_MAX_CACHE_ACCURACY_M"
+		gateAt := strings.Index(body, "if ("+gate+") {")
+		setAt := strings.Index(body, "sessionStorage.setItem(")
+		resolveAt := strings.Index(body, "resolve(coords);")
+		if gateAt == -1 || setAt == -1 || resolveAt == -1 || !(gateAt < setAt && setAt < resolveAt) {
+			t.Errorf("the cache write must sit behind the accuracy gate and the fix must still be resolved after it (gate %d, write %d, resolve %d)",
+				gateAt, setAt, resolveAt)
+		}
+
+		// A timeout or position unavailable on the high accuracy attempt is not a
+		// refusal: it gets exactly one attempt at the default accuracy, and only
+		// PERMISSION_DENIED ends the request at once.
+		if n := strings.Count(text, "var GEOLOCATION_PERMISSION_DENIED = 1;"); n != 1 {
+			t.Errorf("expected exactly one declaration of GEOLOCATION_PERMISSION_DENIED = 1, found %d", n)
+		}
+		for _, want := range []string{
+			"attempt(true);",
+			"if (highAccuracy && !(err && err.code === GEOLOCATION_PERMISSION_DENIED)) {\n                attempt(false);\n                return;\n              }\n              onFailure();",
+			"{ enableHighAccuracy: false, timeout: 8000, maximumAge: 0 }",
+		} {
+			if n := strings.Count(body, want); n != 1 {
+				t.Errorf("getVoterLocation must contain %q exactly once, found %d", want, n)
+			}
+		}
+		if n := strings.Count(body, "attempt(false)"); n != 1 {
+			t.Errorf("the default accuracy retry must be a single call site, found %d", n)
+		}
 	}
 	if n := strings.Count(text, "navigator.permissions.query("); n != 1 {
 		t.Errorf("expected exactly one navigator.permissions.query call in the module, found %d", n)
@@ -1417,7 +1491,7 @@ func TestResolveIsGatedByAnInlineConfirmation(t *testing.T) {
 	}
 	text := stripCSSComments(string(raw))
 
-	body := jsFunctionBody(t, text, "onControlsClick(block, button)")
+	body := jsFunctionBody(t, text, "onControlsClick(block, button, taken)")
 
 	openIdx := strings.Index(body, "openResolveConfirm(block)")
 	closeIdx := strings.Index(body, "closeResolveConfirm(block)")
@@ -2302,8 +2376,19 @@ func TestOwnReportResolutionSkipsLocation(t *testing.T) {
 		}
 	}
 
-	if !strings.Contains(votes, "{ ownReport: block.isOwnReport === true }") {
+	if !strings.Contains(votes, "{ ownReport: block.isOwnReport === true, location: taken }") {
 		t.Errorf("onControlsClick must pass the block's own report flag to castVote")
+	}
+	// The producer of that flag. Without it block.isOwnReport is never true,
+	// ownReport is always false, and the reporter's own Mark resolved and
+	// Reopen demand a GPS fix again (the WR-04 bug) with every consumer pin
+	// still green.
+	ownRule := jsFunctionBody(t, votes, "applyOwnReportRule(block, report)")
+	if n := strings.Count(ownRule, "block.isOwnReport = !!report.is_own_report;"); n != 1 {
+		t.Errorf("applyOwnReportRule must set block.isOwnReport = !!report.is_own_report exactly once, found %d", n)
+	}
+	if n := strings.Count(votes, "block.isOwnReport = "); n != 1 {
+		t.Errorf("block.isOwnReport must be assigned in exactly one place, found %d", n)
 	}
 
 	actRaw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
@@ -2325,8 +2410,72 @@ func TestFeedErrorStateKeepsStaleRows(t *testing.T) {
 	}
 	text := stripCSSComments(string(raw))
 	body := jsFunctionBody(t, text, "render(state)")
-	if !strings.Contains(body, "setHidden(reportListEl, state.reports.length === 0);") {
-		t.Errorf("render's error branch must hide the list only when state.reports is empty")
+	// Test change on purpose (WR-08 follow up): the error branch used to be
+	// pinned as setHidden(reportListEl, state.reports.length === 0). It now
+	// names the condition once, hides the list only without rows, and removes
+	// the stale rows through clearRows when it does, so focus is restored.
+	for _, want := range []string{
+		"var hasRows = state.reports.length > 0;",
+		"setHidden(reportListEl, !hasRows);",
+		"if (!hasRows) {\n        clearRows();\n      }",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("render's error branch must contain %q: hide the list only when state.reports is empty, and clear the rows then", want)
+		}
+	}
+
+	// The next poll or a Retry with rows on screen must not reach the loading
+	// state, which hides the list again. It is a background refresh whatever
+	// the status is.
+	app, err := fs.ReadFile(StaticFS, "static/js/app.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/app.js: %v", err)
+	}
+	appText := stripCSSComments(string(app))
+	fetchBody := jsFunctionBody(t, appText, "fetchReports()")
+	if !strings.Contains(fetchBody, "var isBackgroundRefresh = state.status === 'ok' || state.reports.length > 0;") {
+		t.Errorf("a refetch with rows on screen must be a background refresh whatever the status is")
+	}
+	// Rows fetched under the other Show disputed setting are dropped on a
+	// failure, so a ticked or unticked box never sits over the wrong set.
+	for _, want := range []string{
+		"rowsShowDisputed = sentDisputed;",
+		"if (rowsShowDisputed !== state.showDisputed) {\n          state.reports = [];\n        }",
+	} {
+		if !strings.Contains(fetchBody, want) {
+			t.Errorf("fetchReports must contain %q", want)
+		}
+	}
+
+	// A vote the server recorded whose refetch then failed says so in the row.
+	votesRaw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/votes.js: %v", err)
+	}
+	votes := stripCSSComments(string(votesRaw))
+	if n := strings.Count(votes, "var VOTE_SAVED_REFRESH_FAILED_MESSAGE = 'Your vote was saved, but the list could not refresh. The counts shown may be out of date.';"); n != 1 {
+		t.Errorf("the saved but not refreshed sentence must be declared once, found %d", n)
+	}
+	click := jsFunctionBody(t, votes, "onControlsClick(block, button, taken)")
+	fetchAt := strings.Index(click, "return Pinalert.fetchReports();")
+	releaseAt := strings.Index(click, "setBlockBusy(block, false);")
+	noticeAt := strings.Index(click, "if (Pinalert.state.status === 'error') {\n        showSavedButNotRefreshed(block, action);\n      }")
+	if fetchAt == -1 || releaseAt == -1 || noticeAt == -1 || !(fetchAt < releaseAt && releaseAt < noticeAt) {
+		t.Errorf("after the refetch, the busy release must be followed by the saved but not refreshed notice when the store is in error (fetch %d, release %d, notice %d)",
+			fetchAt, releaseAt, noticeAt)
+	}
+	notice := jsFunctionBody(t, votes, "showSavedButNotRefreshed(block, action)")
+	for _, want := range []string{
+		"reports[i].your_vote = action;", "updateVoteBlock(block, reports[i]);",
+		"showVoteError(block, VOTE_SAVED_REFRESH_FAILED_MESSAGE);", "block.refreshNotice = true;",
+	} {
+		if !strings.Contains(notice, want) {
+			t.Errorf("showSavedButNotRefreshed must contain %q", want)
+		}
+	}
+	update := jsFunctionBody(t, votes, "updateVoteBlock(block, report)")
+	if !strings.Contains(update, "if (block.refreshNotice && Pinalert.state.status === 'ok') {\n      clearVoteError(block);\n    }") {
+		t.Errorf("updateVoteBlock must clear the sentence only on a render that follows a good fetch")
 	}
 }
 
@@ -2340,13 +2489,91 @@ func TestAgeAndFadeUseTheServerClock(t *testing.T) {
 		t.Fatalf("failed to read embedded static/js/app.js: %v", err)
 	}
 	text := stripCSSComments(string(raw))
-	if !strings.Contains(jsFunctionBody(t, text, "fetchReports()"), "noteServerClock(") {
-		t.Errorf("fetchReports must record the server clock from the response")
+	fetchBody := jsFunctionBody(t, text, "fetchReports()")
+	okAt := strings.Index(fetchBody, "if (!res.ok) {")
+	noteAt := strings.Index(fetchBody, "noteServerClock(res.headers && res.headers.get('Date'));")
+	jsonAt := strings.Index(fetchBody, "return res.json();")
+	if okAt == -1 || noteAt == -1 || jsonAt == -1 || !(okAt < noteAt && noteAt < jsonAt) {
+		t.Errorf("fetchReports must pass the response's Date header to noteServerClock after the ok check and before reading the body (ok %d, note %d, json %d)",
+			okAt, noteAt, jsonAt)
+	}
+	// The arithmetic: the offset is the server's time minus the device's time
+	// at the moment of the response, and "now" is the device clock plus it.
+	// Pinning the call alone would stay green with an empty noteServerClock or
+	// a nowMs that returns Date.now(), which restores the visitor clock bug.
+	if body := jsFunctionBody(t, text, "nowMs()"); !strings.Contains(body, "return Date.now() + clockOffsetMs;") {
+		t.Errorf("nowMs must return the device clock plus clockOffsetMs")
+	}
+	noteBody := jsFunctionBody(t, text, "noteServerClock(headerValue)")
+	for _, want := range []string{
+		"new Date(headerValue).getTime()", "isFinite(serverMs)", "clockOffsetMs = serverMs - Date.now();",
+	} {
+		if !strings.Contains(noteBody, want) {
+			t.Errorf("noteServerClock must contain %q", want)
+		}
+	}
+	if n := strings.Count(text, "clockOffsetMs = "); n != 2 {
+		t.Errorf("clockOffsetMs must be declared once and assigned in noteServerClock only, found %d assignments", n)
 	}
 	for _, fn := range []string{"relativeTime(iso)", "ageStage(report)"} {
 		body := jsFunctionBody(t, text, fn)
 		if !strings.Contains(body, "nowMs()") || strings.Contains(body, "Date.now()") {
 			t.Errorf("%s must read nowMs() and never Date.now()", fn)
 		}
+	}
+}
+
+// TestFetchReportsDropsOnlyResponsesOlderThanTheLastApplied pins WR-01 in its
+// follow up form. A response is dropped only when its own sequence number is
+// below the number of the newest response already applied (or when the Show
+// disputed flag it was sent with no longer matches), never because a newer
+// request merely started. Judging by the newest request started would drop
+// every response once latency exceeds the 30 second poll, and the list would
+// freeze with no error. A dropped call must also not let its caller treat the
+// store as fresh: it resolves with the newest call's promise.
+//
+// Honest limit: this is a source shape test. The behaviour (slow response
+// applied, older response dropped, dropped call waits for the newest) was
+// shown with a Node sandbox of the real app.js, recorded in 03-REVIEW-FIX-2.md.
+func TestFetchReportsDropsOnlyResponsesOlderThanTheLastApplied(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/app.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/app.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+	body := jsFunctionBody(t, text, "fetchReports()")
+
+	if !strings.Contains(body, "return mySeq < lastAppliedSeq || sentDisputed !== state.showDisputed;") {
+		t.Errorf("isStale must drop only a response below lastAppliedSeq or one sent with another Show disputed flag")
+	}
+	if strings.Contains(body, "mySeq !== fetchSeq") || strings.Contains(body, "mySeq < fetchSeq") {
+		t.Errorf("a response must never be dropped because a newer request merely started")
+	}
+	if n := strings.Count(body, "if (isStale()) {\n          return whenFresh();"); n != 2 {
+		t.Errorf("both the success and the failure path must drop through whenFresh(), found %d", n)
+	}
+	if n := strings.Count(text, "lastAppliedSeq = mySeq;"); n != 1 {
+		t.Errorf("lastAppliedSeq must be set in exactly one place, the success write, found %d", n)
+	}
+	assign := strings.Index(body, "state.reports = (body && body.reports) || [];")
+	mark := strings.Index(body, "lastAppliedSeq = mySeq;")
+	notify := strings.Index(body, "notify();\n      })\n      .catch(")
+	if assign == -1 || mark == -1 || notify == -1 || !(assign < mark && mark < notify) {
+		t.Errorf("lastAppliedSeq must be set with the success write, before notify (assign %d, mark %d, notify %d)", assign, mark, notify)
+	}
+	if !strings.Contains(body, "newestFetch = pending;") || !strings.Contains(body, "return pending;") {
+		t.Errorf("fetchReports must remember its promise as newestFetch and return it")
+	}
+	from := strings.Index(body, "function whenFresh()")
+	if from == -1 {
+		t.Fatalf("fetchReports must declare whenFresh()")
+	}
+	whenFresh := body[from:]
+	if end := strings.Index(whenFresh, "\n    }\n"); end != -1 {
+		whenFresh = whenFresh[:end]
+	}
+	if !strings.Contains(whenFresh, "if (mySeq < lastAppliedSeq) {\n        return undefined;") ||
+		!strings.Contains(whenFresh, "return newestFetch !== pending ? newestFetch : undefined;") {
+		t.Errorf("a dropped call must resolve at once when newer data is applied and otherwise with the newest call's promise")
 	}
 }

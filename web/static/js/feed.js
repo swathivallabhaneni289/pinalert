@@ -400,9 +400,18 @@
       // stale data is more useful than a blank panel to someone who just lost
       // signal (WR-08). While there are rows to show, the list stays visible
       // and the error panel appears alongside it with its Retry button. Only
-      // a failure with nothing to show hides the list.
+      // a failure with nothing to show hides the list, and then the rows still
+      // in the page are removed through clearRows, which puts focus back on a
+      // control that is still shown instead of dropping it to the page body.
+      // A later poll or Retry with rows on screen never reaches the loading
+      // branch below (app.js treats it as a background refresh), so the list a
+      // reader is scrolling or has focus in is not hidden again.
+      var hasRows = state.reports.length > 0;
       setHidden(errorEl, false);
-      setHidden(reportListEl, state.reports.length === 0);
+      setHidden(reportListEl, !hasRows);
+      if (!hasRows) {
+        clearRows();
+      }
       setEmptyState('none');
       return;
     }

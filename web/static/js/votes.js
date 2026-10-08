@@ -52,6 +52,11 @@
   // never stored. A client side limit, not a trust rule.
   var VOTER_LOCATION_MAX_CACHE_ACCURACY_M = 300;
 
+  // The code a GeolocationPositionError carries when the voter or the browser
+  // refused the request. The other two codes, position unavailable (2) and
+  // timeout (3), are not refusals (WR-07).
+  var GEOLOCATION_PERMISSION_DENIED = 1;
+
   // The hard ceiling on reusing a cached fix as the voter's place when a new
   // fix could not be taken (10 minutes, WR-02). Beyond it the cached position
   // is no longer where the voter is, so the vote is refused with the location
@@ -94,6 +99,10 @@
   // for 400/401/403/404/409, and duplicating them here would create two
   // copies to keep in sync.
   var GENERIC_FAILURE_MESSAGE = "Couldn't record your vote. Check your connection and try again.";
+
+  // Shown in the row when the server recorded the vote but the refetch that
+  // follows it failed, so the counters on screen are the old ones (WR-08).
+  var VOTE_SAVED_REFRESH_FAILED_MESSAGE = 'Your vote was saved, but the list could not refresh. The counts shown may be out of date.';
 
   // Copywriting Contract strings for Mark Resolved (Task 1, 02-07), verbatim.
   var RESOLVE_BUTTON_LABEL = 'Mark resolved';
@@ -245,42 +254,60 @@
 
       // The one and only place the module asks the browser for a position.
       // onFailure runs when the browser has no geolocation support or the
-      // request fails. There is no recentring, no notice, no default
-      // position and no second attempt here. D-18 is a hard stop.
+      // request fails. There is no recentring, no notice and no default
+      // position. D-18 is a hard stop.
+      //
+      // The first attempt asks for a high accuracy fix. A device that cannot
+      // give one within the timeout (a cold GPS start, a GPS only provider
+      // indoors) reports a timeout or "position unavailable", which is not a
+      // refusal, so it gets exactly one more attempt at the default accuracy
+      // before the vote is turned away (WR-07). Only a refusal by the voter or
+      // the browser ends the request at once, and only that is the permission
+      // case the denial sentence is about. The second attempt is a real fix
+      // taken now, never a substitute position.
       function requestPosition(onFailure) {
         if (!navigator.geolocation) {
           onFailure();
           return;
         }
-        navigator.geolocation.getCurrentPosition(
-          function (pos) {
-            var coords = {
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude
-            };
-            // A fix with no accuracy figure, or one worse than the bound, is
-            // used for this vote only and never cached.
-            var accuracy = pos.coords.accuracy;
-            if (typeof accuracy === 'number' && accuracy <= VOTER_LOCATION_MAX_CACHE_ACCURACY_M) {
-              try {
-                sessionStorage.setItem(VOTER_LOCATION_CACHE_KEY, JSON.stringify({
-                  latitude: coords.latitude,
-                  longitude: coords.longitude,
-                  at: Date.now()
-                }));
-              } catch (e) {
-                // Same privacy-mode/quota concern as the read above. A cache
-                // write that fails costs only the next vote's convenience,
-                // never this vote's correctness.
+        function attempt(highAccuracy) {
+          navigator.geolocation.getCurrentPosition(
+            function (pos) {
+              var coords = {
+                latitude: pos.coords.latitude,
+                longitude: pos.coords.longitude
+              };
+              // A fix with no accuracy figure, or one worse than the bound, is
+              // used for this vote only and never cached.
+              var accuracy = pos.coords.accuracy;
+              if (typeof accuracy === 'number' && accuracy <= VOTER_LOCATION_MAX_CACHE_ACCURACY_M) {
+                try {
+                  sessionStorage.setItem(VOTER_LOCATION_CACHE_KEY, JSON.stringify({
+                    latitude: coords.latitude,
+                    longitude: coords.longitude,
+                    at: Date.now()
+                  }));
+                } catch (e) {
+                  // Same privacy-mode/quota concern as the read above. A cache
+                  // write that fails costs only the next vote's convenience,
+                  // never this vote's correctness.
+                }
               }
-            }
-            resolve(coords);
-          },
-          function () {
-            onFailure();
-          },
-          { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-        );
+              resolve(coords);
+            },
+            function (err) {
+              if (highAccuracy && !(err && err.code === GEOLOCATION_PERMISSION_DENIED)) {
+                attempt(false);
+                return;
+              }
+              onFailure();
+            },
+            highAccuracy
+              ? { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+              : { enableHighAccuracy: false, timeout: 8000, maximumAge: 0 }
+          );
+        }
+        attempt(true);
       }
 
       if (!fresh && isFreshVoterLocation(cached, VOTER_LOCATION_FRESH_MS)) {
@@ -348,6 +375,12 @@
   // those two skip the location request entirely (WR-04). The server decides
   // from the database identity, never from this flag, so a wrong flag costs
   // at most a 403 that the retry below answers with a real fix.
+  //
+  // opts.location is a fix that getVoterLocation has just resolved for this
+  // very tap (refreshHintThenRetry, WR-03): it is sent as it is, so a coarse
+  // fix that was not cached still serves the tap that took it, and the tap
+  // does not take a second fix. Only a finite latitude and longitude pair is
+  // accepted. Anything else is ignored and the normal location request runs.
   function castVote(reportId, action, opts) {
     if (VOTE_ACTIONS.indexOf(action) === -1) {
       var actionErr = new Error(GENERIC_FAILURE_MESSAGE);
@@ -356,7 +389,17 @@
     }
 
     var skipLocation = !!(opts && opts.ownReport) && (action === 'resolve' || action === 'reopen');
-    var firstFix = skipLocation ? ownReportLocation() : getVoterLocation({ fresh: false });
+    var given = opts && opts.location;
+    var haveGiven = !!given && typeof given.latitude === 'number' && isFinite(given.latitude) &&
+      typeof given.longitude === 'number' && isFinite(given.longitude);
+    var firstFix;
+    if (skipLocation) {
+      firstFix = ownReportLocation();
+    } else if (haveGiven) {
+      firstFix = Promise.resolve({ latitude: given.latitude, longitude: given.longitude });
+    } else {
+      firstFix = getVoterLocation({ fresh: false });
+    }
     return firstFix.then(postVote).catch(function (err) {
       // A location denial carries no field, a transport failure carries
       // none either and a 400 carries another field, so none of those is
@@ -542,6 +585,12 @@
   // reads or writes the busy state; see the next function's own doc
   // comment for why that separation matters.
   function updateVoteBlock(block, report) {
+    // The saved-but-not-refreshed sentence ends with the first render that
+    // follows a good fetch. A render of stale rows, such as the map redrawing
+    // during a failed poll, leaves it in place.
+    if (block.refreshNotice && Pinalert.state.status === 'ok') {
+      clearVoteError(block);
+    }
     applyOwnReportRule(block, report);
 
     var confirmBtn = block.controls.querySelector('.vote-btn--confirm');
@@ -642,14 +691,18 @@
   // the radius. Every other case clears the marks, so the hint fails open and
   // the first tap asks for location as before. The reporter's own report is
   // never marked. Marked buttons stay focusable. The server refuses far votes
-  // on its own, so this grants and decides nothing (D-01, D-22).
-  function applyDistanceHint(block, report) {
+  // on its own, so this grants and decides nothing (D-01, D-22). The optional
+  // third argument is a fix the caller has just taken (latitude, longitude and
+  // capture time): the mark is then computed from it and not from the session
+  // cache, because a coarse fix is never cached (WR-07) and the tap that took
+  // it must still be judged by it (WR-03).
+  function applyDistanceHint(block, report, justTaken) {
     if (report.is_own_report || !block.note) {
       clearDistanceHint(block);
       return;
     }
     var radiusKm = readVoteRadiusKm();
-    var fix = peekVoterLocation();
+    var fix = justTaken || peekVoterLocation();
     if (radiusKm === null || fix === null || !isFreshVoterLocation(fix, VOTER_LOCATION_HINT_MS)) {
       clearDistanceHint(block);
       return;
@@ -687,6 +740,30 @@
   function clearVoteError(block) {
     block.error.hidden = true;
     Pinalert.setText(block.error, '');
+    block.refreshNotice = false;
+  }
+
+  // showSavedButNotRefreshed is what a row shows when the server answered 200
+  // to a vote and the refetch after it then failed. The 200 is the server's own
+  // word that the vote was recorded, so for Confirm and Dispute the row takes
+  // the pressed state from the action that was just recorded, in the store as
+  // well so that a later render of the stale data does not undo it. Counters are
+  // not touched: they stay as the server last sent them, and the plain sentence
+  // beside the buttons says they may be out of date. The sentence goes away on
+  // the next render that follows a good fetch (updateVoteBlock).
+  function showSavedButNotRefreshed(block, action) {
+    if (action === 'confirm' || action === 'dispute') {
+      var reports = Pinalert.state.reports || [];
+      for (var i = 0; i < reports.length; i++) {
+        if (String(reports[i].id) === String(block.controls.dataset.reportId)) {
+          reports[i].your_vote = action;
+          updateVoteBlock(block, reports[i]);
+          break;
+        }
+      }
+    }
+    showVoteError(block, VOTE_SAVED_REFRESH_FAILED_MESSAGE);
+    block.refreshNotice = true;
   }
 
   // openResolveConfirm implements D-15's inline destructive confirmation:
@@ -986,22 +1063,28 @@
   // (WR-03). The mark comes from a cached fix that may be minutes old, and
   // nothing else rewrites that cache while the mark blocks every tap, so a
   // voter who has walked closer would be locked out. The tap therefore asks
-  // for one fresh fix (silent: it never prompts), recomputes the mark with it
-  // and goes on with the original tap only if the button is no longer marked.
-  // If no fix can be taken, or the voter is still too far, the mark stays and
-  // nothing is sent. The server remains the only judge of every vote.
+  // for one fresh fix (silent: it never prompts), recomputes the mark from the
+  // coordinates that fix resolved with and goes on with the original tap only
+  // if the button is no longer marked. The tap sends those same coordinates and
+  // takes no second fix. The fix is used even when it was too coarse to be
+  // cached (WR-07), so a voter indoors is not locked out by an older, far fix
+  // that is still in the cache. If no fix can be taken, or the voter is still
+  // too far, the mark stays and nothing is sent. The server remains the only
+  // judge of every vote.
   function refreshHintThenRetry(block, button) {
     if (block.hintRefreshing) {
       return;
     }
     block.hintRefreshing = true;
-    getVoterLocation({ fresh: true }).then(function () {
+    getVoterLocation({ fresh: true }).then(function (coords) {
       block.hintRefreshing = false;
-      if (block.lastReport) {
-        applyDistanceHint(block, block.lastReport);
+      if (!block.lastReport) {
+        return;
       }
+      var taken = { latitude: coords.latitude, longitude: coords.longitude, at: Date.now() };
+      applyDistanceHint(block, block.lastReport, taken);
       if (button.getAttribute('aria-disabled') !== 'true') {
-        onControlsClick(block, button);
+        onControlsClick(block, button, taken);
       }
     }, function () {
       block.hintRefreshing = false;
@@ -1012,8 +1095,9 @@
   // the block's rendering changes until the server has answered. The
   // resolve/cancel-resolve branches (Task 1, 02-07) short-circuit before
   // any of that: opening or closing the inline confirmation posts nothing
-  // and reads no location.
-  function onControlsClick(block, button) {
+  // and reads no location. The optional third argument is the fix that
+  // refreshHintThenRetry just took for this tap, handed on to castVote.
+  function onControlsClick(block, button, taken) {
     // A button marked too far sends no vote. The tap refreshes the fix and
     // the mark first, and the vote follows only if the mark is gone (WR-03).
     if (button.getAttribute('aria-disabled') === 'true') {
@@ -1053,7 +1137,7 @@
       Pinalert.setText(affirmBtn, RESOLVE_BUTTON_LABEL_IN_FLIGHT);
     }
 
-    castVote(reportId, transportAction, { ownReport: block.isOwnReport === true }).then(function (result) {
+    castVote(reportId, transportAction, { ownReport: block.isOwnReport === true, location: taken }).then(function (result) {
       if (isResolveAffirm) {
         removal = captureRemovalFocus(origin);
         closeResolveConfirm(block);
@@ -1072,6 +1156,11 @@
         Pinalert.setText(affirmBtn, RESOLVE_CONFIRM_AFFIRM_LABEL);
       }
       setBlockBusy(block, false);
+      // fetchReports never rejects. A failed refetch shows up as the store's
+      // error status, and the row must then say the vote was saved (WR-08).
+      if (Pinalert.state.status === 'error') {
+        showSavedButNotRefreshed(block, action);
+      }
       focusAfterVote(origin, action, removal);
     }).catch(function (err) {
       // Order is load-bearing here: clear busy BEFORE closing the

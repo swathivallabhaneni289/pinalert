@@ -88,12 +88,24 @@ window.Pinalert = (function () {
   var listeners = [];
   var selectListeners = [];
   var pollTimer = null;
-  // fetchSeq numbers every fetchReports call. A response may only write
-  // state when it belongs to the newest call, because on a slow link an
-  // older response can land after a newer one and put back older rows, for
-  // example a Show disputed set while the checkbox is off, or counters from
-  // before a vote that has already been recorded (WR-01).
+  // fetchSeq numbers every fetchReports call and lastAppliedSeq is the number
+  // of the newest call whose success has been written to the store. A response
+  // is dropped only when its own number is below lastAppliedSeq, that is when
+  // newer data is already on screen, because on a slow link an older response
+  // can land after a newer one and put back older rows, for example counters
+  // from before a vote that has already been recorded (WR-01). Judging by the
+  // newest request started instead would drop every response whenever latency
+  // exceeds the poll interval, and the list would never update.
   var fetchSeq = 0;
+  var lastAppliedSeq = 0;
+  // newestFetch is the promise of the most recently started call. A call whose
+  // response is dropped because the Show disputed flag changed hands this
+  // promise back, so its caller waits for the data that will replace it.
+  var newestFetch = null;
+  // rowsShowDisputed is the Show disputed flag the rows in state.reports were
+  // fetched with, so a failed refetch can tell rows that no longer match the
+  // checkbox from rows that are merely a little old (WR-08).
+  var rowsShowDisputed = false;
   // clockOffsetMs is the server's clock minus this device's clock, learned
   // from the Date header of every successful report response. Report ages and
   // the fade stage compare the server's created_at and expires_at with "now",
@@ -154,16 +166,36 @@ window.Pinalert = (function () {
 
   // fetchReports performs the one and only GET /api/reports call. A
   // background refresh (status already "ok") leaves status untouched so the
-  // list does not flash skeletons on every 30s poll.
+  // list does not flash skeletons on every 30s poll. A refetch while rows are
+  // on screen is a background refresh whatever the status is, so a poll or a
+  // Retry after a failure never hides the list the reader is looking at
+  // (WR-08). Only a fetch with nothing to show moves to the loading state.
+  //
+  // The promise resolves once the store reflects data at least as new as this
+  // call started, and it never rejects. A call whose response is dropped
+  // resolves at once when newer data is already applied, and otherwise with
+  // the newest call's promise, so a caller that refetches after a write
+  // (votes.js, the submit path) never treats the store as fresh before the
+  // newest data has landed.
   function fetchReports() {
-    var isBackgroundRefresh = state.status === 'ok';
+    var isBackgroundRefresh = state.status === 'ok' || state.reports.length > 0;
     var mySeq = ++fetchSeq;
     var sentDisputed = state.showDisputed;
-    // A response is stale when a newer fetch has started since, or when the
-    // reader has flipped Show disputed after this request was built. A stale
-    // response must change nothing, neither rows nor the error state.
+    var pending;
+    // A response is stale when newer data was applied after this call
+    // started, or when the reader has flipped Show disputed since this request
+    // was built. A stale response must change nothing, neither rows nor the
+    // error state.
     function isStale() {
-      return mySeq !== fetchSeq || sentDisputed !== state.showDisputed;
+      return mySeq < lastAppliedSeq || sentDisputed !== state.showDisputed;
+    }
+    // What a dropped call resolves with: nothing when newer data is already
+    // in the store, else the newest call's promise.
+    function whenFresh() {
+      if (mySeq < lastAppliedSeq) {
+        return undefined;
+      }
+      return newestFetch !== pending ? newestFetch : undefined;
     }
     if (!isBackgroundRefresh) {
       state.status = 'loading';
@@ -190,7 +222,7 @@ window.Pinalert = (function () {
       url += '&show_disputed=true';
     }
 
-    return fetch(url)
+    pending = fetch(url)
       .then(function (res) {
         if (!res.ok) {
           throw new Error('fetchReports: HTTP ' + res.status);
@@ -200,21 +232,31 @@ window.Pinalert = (function () {
       })
       .then(function (body) {
         if (isStale()) {
-          return;
+          return whenFresh();
         }
         state.reports = (body && body.reports) || [];
+        rowsShowDisputed = sentDisputed;
+        lastAppliedSeq = mySeq;
         state.status = 'ok';
         state.error = null;
         notify();
       })
       .catch(function (err) {
         if (isStale()) {
-          return;
+          return whenFresh();
+        }
+        // Rows fetched under the other Show disputed setting must not stay on
+        // screen under a checkbox that no longer matches them, so they are
+        // dropped. Rows that are only a little old stay (WR-08).
+        if (rowsShowDisputed !== state.showDisputed) {
+          state.reports = [];
         }
         state.status = 'error';
         state.error = err;
         notify();
       });
+    newestFetch = pending;
+    return pending;
   }
 
   // startPolling refreshes on config.pollIntervalMs. Safe to call more than
