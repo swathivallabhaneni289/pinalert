@@ -519,6 +519,7 @@
   // fresh each time and tolerates their already being gone.
   function applyOwnReportRule(block, report) {
     block.isOwnReport = !!report.is_own_report;
+    block.lastReport = report;
     if (report.is_own_report) {
       var confirmBtn = block.controls.querySelector('.vote-btn--confirm');
       var disputeBtn = block.controls.querySelector('.vote-btn--dispute');
@@ -981,14 +982,42 @@
     return retracted ? REOPEN_PENDING_TOAST : REOPEN_SUCCEEDED_TOAST;
   }
 
+  // refreshHintThenRetry is what a tap on a button marked too far does
+  // (WR-03). The mark comes from a cached fix that may be minutes old, and
+  // nothing else rewrites that cache while the mark blocks every tap, so a
+  // voter who has walked closer would be locked out. The tap therefore asks
+  // for one fresh fix (silent: it never prompts), recomputes the mark with it
+  // and goes on with the original tap only if the button is no longer marked.
+  // If no fix can be taken, or the voter is still too far, the mark stays and
+  // nothing is sent. The server remains the only judge of every vote.
+  function refreshHintThenRetry(block, button) {
+    if (block.hintRefreshing) {
+      return;
+    }
+    block.hintRefreshing = true;
+    getVoterLocation({ fresh: true }).then(function () {
+      block.hintRefreshing = false;
+      if (block.lastReport) {
+        applyDistanceHint(block, block.lastReport);
+      }
+      if (button.getAttribute('aria-disabled') !== 'true') {
+        onControlsClick(block, button);
+      }
+    }, function () {
+      block.hintRefreshing = false;
+    });
+  }
+
   // onControlsClick is the only place D-04 is implemented: nothing about
   // the block's rendering changes until the server has answered. The
   // resolve/cancel-resolve branches (Task 1, 02-07) short-circuit before
   // any of that: opening or closing the inline confirmation posts nothing
   // and reads no location.
   function onControlsClick(block, button) {
-    // A button marked too far does nothing: no request, no toast, no error.
+    // A button marked too far sends no vote. The tap refreshes the fix and
+    // the mark first, and the vote follows only if the mark is gone (WR-03).
     if (button.getAttribute('aria-disabled') === 'true') {
+      refreshHintThenRetry(block, button);
       return;
     }
     var action = button.dataset.action;
