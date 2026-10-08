@@ -321,6 +321,21 @@
     });
   }
 
+  // The position a reporter's own resolve or reopen carries (WR-04). The
+  // server exempts the reporter from the 1 km rule for these two actions, so
+  // the browser must not ask for a location it does not need and must not
+  // block the action when location is denied. It still sends a cached fix
+  // that is fresh, because that is a real position. With none, it sends
+  // 0,0 as a placeholder the server never judges for the reporter. It never
+  // prompts and never rejects.
+  function ownReportLocation() {
+    var fix = peekVoterLocation();
+    if (isFreshVoterLocation(fix, VOTER_LOCATION_FRESH_MS)) {
+      return Promise.resolve({ latitude: fix.latitude, longitude: fix.longitude });
+    }
+    return Promise.resolve({ latitude: 0, longitude: 0 });
+  }
+
   // castVote POSTs a vote and resolves with the parsed 200 body
   // ({visibility, reason}). It retries once, and only when the server
   // refused the vote with error field location (too far from the report),
@@ -328,15 +343,21 @@
   // no such fix can be taken, the server's own sentence is what the caller
   // sees. Transport only: no DOM, no refetch, no decision about what to
   // show. Keeping this function DOM-free is what lets a future
-  // resolve/reopen control reuse it unchanged (D-02).
-  function castVote(reportId, action) {
+  // resolve/reopen control reuse it unchanged (D-02). opts.ownReport is true
+  // only for the viewer's own report and only matters for resolve and reopen:
+  // those two skip the location request entirely (WR-04). The server decides
+  // from the database identity, never from this flag, so a wrong flag costs
+  // at most a 403 that the retry below answers with a real fix.
+  function castVote(reportId, action, opts) {
     if (VOTE_ACTIONS.indexOf(action) === -1) {
       var actionErr = new Error(GENERIC_FAILURE_MESSAGE);
       actionErr.fieldMessage = GENERIC_FAILURE_MESSAGE;
       return Promise.reject(actionErr);
     }
 
-    return getVoterLocation({ fresh: false }).then(postVote).catch(function (err) {
+    var skipLocation = !!(opts && opts.ownReport) && (action === 'resolve' || action === 'reopen');
+    var firstFix = skipLocation ? ownReportLocation() : getVoterLocation({ fresh: false });
+    return firstFix.then(postVote).catch(function (err) {
       // A location denial carries no field, a transport failure carries
       // none either and a 400 carries another field, so none of those is
       // retried. The retry never prompts: a fresh fix is taken only under
@@ -497,6 +518,7 @@
   // every 30-second poll, so it must be idempotent: it queries the buttons
   // fresh each time and tolerates their already being gone.
   function applyOwnReportRule(block, report) {
+    block.isOwnReport = !!report.is_own_report;
     if (report.is_own_report) {
       var confirmBtn = block.controls.querySelector('.vote-btn--confirm');
       var disputeBtn = block.controls.querySelector('.vote-btn--dispute');
@@ -1002,7 +1024,7 @@
       Pinalert.setText(affirmBtn, RESOLVE_BUTTON_LABEL_IN_FLIGHT);
     }
 
-    castVote(reportId, transportAction).then(function (result) {
+    castVote(reportId, transportAction, { ownReport: block.isOwnReport === true }).then(function (result) {
       if (isResolveAffirm) {
         removal = captureRemovalFocus(origin);
         closeResolveConfirm(block);

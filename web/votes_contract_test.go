@@ -91,7 +91,7 @@ func TestVoteTransportHasNoLocationFallback(t *testing.T) {
 			"instead of resolving with a substitute position", "reject(")
 	}
 
-	castVoteBody := jsFunctionBody(t, text, "castVote(reportId, action)")
+	castVoteBody := jsFunctionBody(t, text, "castVote(reportId, action, opts)")
 
 	locIdx := strings.Index(castVoteBody, "getVoterLocation(")
 	fetchIdxInCastVote := strings.Index(castVoteBody, "fetch(")
@@ -234,7 +234,7 @@ func TestVoteTransportRefreshesAndRetriesOnce(t *testing.T) {
 			getIdx, stateIdx)
 	}
 
-	castBody := jsFunctionBody(t, text, "castVote(reportId, action)")
+	castBody := jsFunctionBody(t, text, "castVote(reportId, action, opts)")
 	if n := strings.Count(castBody, "getVoterLocation({ fresh: false })"); n != 1 {
 		t.Errorf("castVote must call getVoterLocation with fresh false exactly once, found %d", n)
 	}
@@ -2266,5 +2266,51 @@ func TestRetractedRowTreatmentMatchesHidden(t *testing.T) {
 	if !strings.Contains(badgeSelector, ".vis-retracted .icon-badge") {
 		t.Errorf("the retracted badge rule's selector head must contain the descendant form, found: %q",
 			badgeSelector)
+	}
+}
+
+// TestOwnReportResolutionSkipsLocation pins WR-04: the server exempts the
+// reporter's own resolve and reopen from the 1 km rule, so the browser must
+// not ask for a location for those two actions. The skip is keyed on the
+// ownReport option and limited to resolve and reopen, the Activity page
+// passes it, and the shared transport still calls getVoterLocation for
+// everything else.
+func TestOwnReportResolutionSkipsLocation(t *testing.T) {
+	votesRaw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/votes.js: %v", err)
+	}
+	votes := stripCSSComments(string(votesRaw))
+
+	castBody := jsFunctionBody(t, votes, "castVote(reportId, action, opts)")
+	for _, want := range []string{
+		"opts.ownReport", "action === 'resolve'", "action === 'reopen'",
+		"ownReportLocation()", "getVoterLocation({ fresh: false })",
+	} {
+		if !strings.Contains(castBody, want) {
+			t.Errorf("castVote's body is missing %q", want)
+		}
+	}
+
+	ownBody := jsFunctionBody(t, votes, "ownReportLocation()")
+	if !strings.Contains(ownBody, "isFreshVoterLocation(fix, VOTER_LOCATION_FRESH_MS)") {
+		t.Errorf("ownReportLocation must send only a fresh cached fix")
+	}
+	for _, banned := range []string{"getVoterLocation(", "getCurrentPosition", "navigator.permissions", "reject("} {
+		if strings.Contains(ownBody, banned) {
+			t.Errorf("ownReportLocation must never ask for or wait on a location, found %q", banned)
+		}
+	}
+
+	if !strings.Contains(votes, "{ ownReport: block.isOwnReport === true }") {
+		t.Errorf("onControlsClick must pass the block's own report flag to castVote")
+	}
+
+	actRaw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/activity.js: %v", err)
+	}
+	if !strings.Contains(string(actRaw), "castVote(row.dataset.reportId, 'reopen', { ownReport: true })") {
+		t.Errorf("activity.js must pass ownReport true: every row there is the viewer's own report")
 	}
 }

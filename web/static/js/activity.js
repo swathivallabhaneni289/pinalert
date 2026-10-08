@@ -111,9 +111,10 @@
   });
 
   // onReopenClick runs the identical GPS-then-POST-then-wait flow (D-04)
-  // as any other vote, through PinalertVotes.castVote unchanged — location
-  // capture, its session cache, and the hard block on denial all come
-  // from that call (D-17, D-18); no geolocation code lives in this file.
+  // as any other vote, through PinalertVotes.castVote. Every row here is the
+  // viewer's own report, and the server exempts the reporter's reopen from the
+  // 1 km rule, so the call passes ownReport and never asks for a location
+  // (WR-04). No geolocation code lives in this file.
   function onReopenClick(row, block) {
     PinalertVotes.setBlockBusy(block, true);
     var reopenBtn = block.button;
@@ -121,7 +122,7 @@
       PinalertVotes.setReopenLabel(reopenBtn, PinalertVotes.REOPEN_BUTTON_LABEL_IN_FLIGHT);
     }
 
-    PinalertVotes.castVote(row.dataset.reportId, 'reopen').then(function (result) {
+    PinalertVotes.castVote(row.dataset.reportId, 'reopen', { ownReport: true }).then(function (result) {
       // The fixed toast is this module's one deliberate exception to
       // "render the server's answer, never a guess" — licensed by two
       // structural, checkable facts: (a) this page lists ONLY the
