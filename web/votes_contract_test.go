@@ -51,6 +51,18 @@ func jsFunctionBody(t *testing.T, text, name string) string {
 // that the promise chain resolves in the order this file's text suggests.
 // That runtime claim belongs to plan 02-05 Task 3's human-check; the two
 // are complementary, not redundant.
+//
+// Amended for WR-04 and WR-03: "downstream of a location promise" is no longer
+// true of every request, so the test now names the two sanctioned exceptions
+// and pins each one exactly. (1) The reporter's own resolve and reopen send a
+// fresh cached fix or a 0,0 placeholder from ownReportLocation, reached only
+// when the whole of skipLocation holds (opts.ownReport AND the action is
+// resolve or reopen); Confirm and Dispute can never take that path, and the
+// server derives the 1 km exemption from the database reporter identity, so
+// the flag grants nothing. (2) A tap on a too far button, after
+// refreshHintThenRetry took a fresh fix, hands castVote the finite pair that
+// getVoterLocation itself just resolved with. Any other source of coordinates
+// in castVote fails this test.
 func TestVoteTransportHasNoLocationFallback(t *testing.T) {
 	raw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
 	if err != nil {
@@ -112,6 +124,32 @@ func TestVoteTransportHasNoLocationFallback(t *testing.T) {
 		t.Errorf("expected exactly one %q call in the whole module, found %d — a second fetch "+
 			"call would mean a network request that is not structurally downstream of the "+
 			"location promise", "fetch(", n)
+	}
+
+	// The two sanctioned exceptions, pinned exactly (see the amendment above).
+	// The own report skip needs BOTH conditions: an || here would let a
+	// Confirm or Dispute go out with a 0,0 placeholder.
+	const skipExpr = "var skipLocation = !!(opts && opts.ownReport) && (action === 'resolve' || action === 'reopen');"
+	if n := strings.Count(castVoteBody, skipExpr); n != 1 {
+		t.Errorf("castVote must decide the own report skip with exactly %q, found %d", skipExpr, n)
+	}
+	if strings.Contains(castVoteBody, "opts.ownReport ||") || strings.Contains(castVoteBody, "|| (action === 'resolve'") {
+		t.Errorf("castVote must not weaken the own report skip with ||")
+	}
+	chain := "if (skipLocation) {\n      firstFix = ownReportLocation();\n    } else if (haveGiven) {\n" +
+		"      firstFix = Promise.resolve({ latitude: given.latitude, longitude: given.longitude });\n" +
+		"    } else {\n      firstFix = getVoterLocation({ fresh: false });\n    }"
+	if !strings.Contains(castVoteBody, chain) {
+		t.Errorf("castVote must take its first fix from exactly three sources, in this order: the own report skip, a fix handed in by the refreshed tap, getVoterLocation")
+	}
+	if n := strings.Count(castVoteBody, "ownReportLocation()"); n != 1 {
+		t.Errorf("castVote must call ownReportLocation() exactly once, found %d", n)
+	}
+	if n := strings.Count(text, "ownReportLocation()"); n != 2 {
+		t.Errorf("ownReportLocation() must be declared once and called only from castVote, found %d occurrences", n)
+	}
+	if n := strings.Count(castVoteBody, "Promise.resolve({"); n != 1 {
+		t.Errorf("castVote may resolve a coordinate pair by hand only in its refreshed tap branch, found %d", n)
 	}
 
 	if !strings.Contains(castVoteBody, "VOTE_ACTIONS.indexOf(") {
@@ -2341,6 +2379,17 @@ func TestOwnReportResolutionSkipsLocation(t *testing.T) {
 	if !strings.Contains(votes, "{ ownReport: block.isOwnReport === true, location: taken }") {
 		t.Errorf("onControlsClick must pass the block's own report flag to castVote")
 	}
+	// The producer of that flag. Without it block.isOwnReport is never true,
+	// ownReport is always false, and the reporter's own Mark resolved and
+	// Reopen demand a GPS fix again (the WR-04 bug) with every consumer pin
+	// still green.
+	ownRule := jsFunctionBody(t, votes, "applyOwnReportRule(block, report)")
+	if n := strings.Count(ownRule, "block.isOwnReport = !!report.is_own_report;"); n != 1 {
+		t.Errorf("applyOwnReportRule must set block.isOwnReport = !!report.is_own_report exactly once, found %d", n)
+	}
+	if n := strings.Count(votes, "block.isOwnReport = "); n != 1 {
+		t.Errorf("block.isOwnReport must be assigned in exactly one place, found %d", n)
+	}
 
 	actRaw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
 	if err != nil {
@@ -2440,8 +2489,31 @@ func TestAgeAndFadeUseTheServerClock(t *testing.T) {
 		t.Fatalf("failed to read embedded static/js/app.js: %v", err)
 	}
 	text := stripCSSComments(string(raw))
-	if !strings.Contains(jsFunctionBody(t, text, "fetchReports()"), "noteServerClock(") {
-		t.Errorf("fetchReports must record the server clock from the response")
+	fetchBody := jsFunctionBody(t, text, "fetchReports()")
+	okAt := strings.Index(fetchBody, "if (!res.ok) {")
+	noteAt := strings.Index(fetchBody, "noteServerClock(res.headers && res.headers.get('Date'));")
+	jsonAt := strings.Index(fetchBody, "return res.json();")
+	if okAt == -1 || noteAt == -1 || jsonAt == -1 || !(okAt < noteAt && noteAt < jsonAt) {
+		t.Errorf("fetchReports must pass the response's Date header to noteServerClock after the ok check and before reading the body (ok %d, note %d, json %d)",
+			okAt, noteAt, jsonAt)
+	}
+	// The arithmetic: the offset is the server's time minus the device's time
+	// at the moment of the response, and "now" is the device clock plus it.
+	// Pinning the call alone would stay green with an empty noteServerClock or
+	// a nowMs that returns Date.now(), which restores the visitor clock bug.
+	if body := jsFunctionBody(t, text, "nowMs()"); !strings.Contains(body, "return Date.now() + clockOffsetMs;") {
+		t.Errorf("nowMs must return the device clock plus clockOffsetMs")
+	}
+	noteBody := jsFunctionBody(t, text, "noteServerClock(headerValue)")
+	for _, want := range []string{
+		"new Date(headerValue).getTime()", "isFinite(serverMs)", "clockOffsetMs = serverMs - Date.now();",
+	} {
+		if !strings.Contains(noteBody, want) {
+			t.Errorf("noteServerClock must contain %q", want)
+		}
+	}
+	if n := strings.Count(text, "clockOffsetMs = "); n != 2 {
+		t.Errorf("clockOffsetMs must be declared once and assigned in noteServerClock only, found %d assignments", n)
 	}
 	for _, fn := range []string{"relativeTime(iso)", "ageStage(report)"} {
 		body := jsFunctionBody(t, text, fn)

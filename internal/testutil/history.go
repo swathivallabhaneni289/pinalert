@@ -83,14 +83,15 @@ func SeedHistoryReport(t *testing.T, pool *pgxpool.Pool, sessionID, severity, ca
 // hours, minus j times 36 hours, minus s minutes, and was created 8 hours
 // earlier. Severity cycles low, medium, critical and category cycles through
 // the seed categories. At the default sizes the derivation behind the
-// store test's 6,000 rows is: j = 0 and 1 are still in flight (48 and 12
+// store test's 20,000 rows is: j = 0 and 1 are still in flight (48 and 12
 // hours ahead). j = 2 to 61 are 60 expired reports inside a 90 day window
 // ending at now; the oldest, j = 61, is 89.5 days old plus at most 2
 // minutes, which leaves 12 hours of slack. j = 62 to 79 are older than the
-// window. Each account therefore has 180 in window reports, a cap of 30 keeps
-// 30, and 200 accounts give 6,000 rows. The jitter uses the session's
-// ordinal within its account (at most 2 minutes), never a global ordinal,
-// because a global ordinal reaches about 10 hours and would eat that slack.
+// window. Each account therefore has 180 in window reports, the production
+// read cap of 100 keeps 100, and 200 accounts give 20,000 rows. The jitter
+// uses the session's ordinal within its account (at most 2 minutes), never a
+// global ordinal, because a global ordinal reaches about 10 hours and would
+// eat that slack.
 func SeedReporterHistory(t *testing.T, pool *pgxpool.Pool, accounts, sessionsPerAccount, reportsPerSession int, now time.Time) []int64 {
 	t.Helper()
 
