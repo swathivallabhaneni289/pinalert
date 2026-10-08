@@ -2350,3 +2350,58 @@ func TestAgeAndFadeUseTheServerClock(t *testing.T) {
 		}
 	}
 }
+
+// TestFetchReportsDropsOnlyResponsesOlderThanTheLastApplied pins WR-01 in its
+// follow up form. A response is dropped only when its own sequence number is
+// below the number of the newest response already applied (or when the Show
+// disputed flag it was sent with no longer matches), never because a newer
+// request merely started. Judging by the newest request started would drop
+// every response once latency exceeds the 30 second poll, and the list would
+// freeze with no error. A dropped call must also not let its caller treat the
+// store as fresh: it resolves with the newest call's promise.
+//
+// Honest limit: this is a source shape test. The behaviour (slow response
+// applied, older response dropped, dropped call waits for the newest) was
+// shown with a Node sandbox of the real app.js, recorded in 03-REVIEW-FIX-2.md.
+func TestFetchReportsDropsOnlyResponsesOlderThanTheLastApplied(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/app.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/app.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+	body := jsFunctionBody(t, text, "fetchReports()")
+
+	if !strings.Contains(body, "return mySeq < lastAppliedSeq || sentDisputed !== state.showDisputed;") {
+		t.Errorf("isStale must drop only a response below lastAppliedSeq or one sent with another Show disputed flag")
+	}
+	if strings.Contains(body, "mySeq !== fetchSeq") || strings.Contains(body, "mySeq < fetchSeq") {
+		t.Errorf("a response must never be dropped because a newer request merely started")
+	}
+	if n := strings.Count(body, "if (isStale()) {\n          return whenFresh();"); n != 2 {
+		t.Errorf("both the success and the failure path must drop through whenFresh(), found %d", n)
+	}
+	if n := strings.Count(text, "lastAppliedSeq = mySeq;"); n != 1 {
+		t.Errorf("lastAppliedSeq must be set in exactly one place, the success write, found %d", n)
+	}
+	assign := strings.Index(body, "state.reports = (body && body.reports) || [];")
+	mark := strings.Index(body, "lastAppliedSeq = mySeq;")
+	notify := strings.Index(body, "notify();\n      })\n      .catch(")
+	if assign == -1 || mark == -1 || notify == -1 || !(assign < mark && mark < notify) {
+		t.Errorf("lastAppliedSeq must be set with the success write, before notify (assign %d, mark %d, notify %d)", assign, mark, notify)
+	}
+	if !strings.Contains(body, "newestFetch = pending;") || !strings.Contains(body, "return pending;") {
+		t.Errorf("fetchReports must remember its promise as newestFetch and return it")
+	}
+	from := strings.Index(body, "function whenFresh()")
+	if from == -1 {
+		t.Fatalf("fetchReports must declare whenFresh()")
+	}
+	whenFresh := body[from:]
+	if end := strings.Index(whenFresh, "\n    }\n"); end != -1 {
+		whenFresh = whenFresh[:end]
+	}
+	if !strings.Contains(whenFresh, "if (mySeq < lastAppliedSeq) {\n        return undefined;") ||
+		!strings.Contains(whenFresh, "return newestFetch !== pending ? newestFetch : undefined;") {
+		t.Errorf("a dropped call must resolve at once when newer data is applied and otherwise with the newest call's promise")
+	}
+}
