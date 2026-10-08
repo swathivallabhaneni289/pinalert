@@ -203,6 +203,42 @@ func TestVoteTransportRefreshesAndRetriesOnce(t *testing.T) {
 	if !strings.Contains(jsFunctionBody(t, text, "getVoterLocation(opts)"), "{ enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }") {
 		t.Errorf("getVoterLocation must request a high accuracy fix with maximumAge 0")
 	}
+	// WR-07: the accuracy bound is declared once and USED once, as the gate in
+	// front of the only cache write. Pinning only the declaration would stay
+	// green with the gate deleted.
+	if n := strings.Count(text, "VOTER_LOCATION_MAX_CACHE_ACCURACY_M"); n != 2 {
+		t.Errorf("VOTER_LOCATION_MAX_CACHE_ACCURACY_M must appear exactly twice (declaration and the cache gate), found %d", n)
+	}
+	{
+		body := jsFunctionBody(t, text, "getVoterLocation(opts)")
+		const gate = "typeof accuracy === 'number' && accuracy <= VOTER_LOCATION_MAX_CACHE_ACCURACY_M"
+		gateAt := strings.Index(body, "if ("+gate+") {")
+		setAt := strings.Index(body, "sessionStorage.setItem(")
+		resolveAt := strings.Index(body, "resolve(coords);")
+		if gateAt == -1 || setAt == -1 || resolveAt == -1 || !(gateAt < setAt && setAt < resolveAt) {
+			t.Errorf("the cache write must sit behind the accuracy gate and the fix must still be resolved after it (gate %d, write %d, resolve %d)",
+				gateAt, setAt, resolveAt)
+		}
+
+		// A timeout or position unavailable on the high accuracy attempt is not a
+		// refusal: it gets exactly one attempt at the default accuracy, and only
+		// PERMISSION_DENIED ends the request at once.
+		if n := strings.Count(text, "var GEOLOCATION_PERMISSION_DENIED = 1;"); n != 1 {
+			t.Errorf("expected exactly one declaration of GEOLOCATION_PERMISSION_DENIED = 1, found %d", n)
+		}
+		for _, want := range []string{
+			"attempt(true);",
+			"if (highAccuracy && !(err && err.code === GEOLOCATION_PERMISSION_DENIED)) {\n                attempt(false);\n                return;\n              }\n              onFailure();",
+			"{ enableHighAccuracy: false, timeout: 8000, maximumAge: 0 }",
+		} {
+			if n := strings.Count(body, want); n != 1 {
+				t.Errorf("getVoterLocation must contain %q exactly once, found %d", want, n)
+			}
+		}
+		if n := strings.Count(body, "attempt(false)"); n != 1 {
+			t.Errorf("the default accuracy retry must be a single call site, found %d", n)
+		}
+	}
 	if n := strings.Count(text, "navigator.permissions.query("); n != 1 {
 		t.Errorf("expected exactly one navigator.permissions.query call in the module, found %d", n)
 	}

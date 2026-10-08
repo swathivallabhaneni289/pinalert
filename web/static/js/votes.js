@@ -52,6 +52,11 @@
   // never stored. A client side limit, not a trust rule.
   var VOTER_LOCATION_MAX_CACHE_ACCURACY_M = 300;
 
+  // The code a GeolocationPositionError carries when the voter or the browser
+  // refused the request. The other two codes, position unavailable (2) and
+  // timeout (3), are not refusals (WR-07).
+  var GEOLOCATION_PERMISSION_DENIED = 1;
+
   // The hard ceiling on reusing a cached fix as the voter's place when a new
   // fix could not be taken (10 minutes, WR-02). Beyond it the cached position
   // is no longer where the voter is, so the vote is refused with the location
@@ -245,42 +250,60 @@
 
       // The one and only place the module asks the browser for a position.
       // onFailure runs when the browser has no geolocation support or the
-      // request fails. There is no recentring, no notice, no default
-      // position and no second attempt here. D-18 is a hard stop.
+      // request fails. There is no recentring, no notice and no default
+      // position. D-18 is a hard stop.
+      //
+      // The first attempt asks for a high accuracy fix. A device that cannot
+      // give one within the timeout (a cold GPS start, a GPS only provider
+      // indoors) reports a timeout or "position unavailable", which is not a
+      // refusal, so it gets exactly one more attempt at the default accuracy
+      // before the vote is turned away (WR-07). Only a refusal by the voter or
+      // the browser ends the request at once, and only that is the permission
+      // case the denial sentence is about. The second attempt is a real fix
+      // taken now, never a substitute position.
       function requestPosition(onFailure) {
         if (!navigator.geolocation) {
           onFailure();
           return;
         }
-        navigator.geolocation.getCurrentPosition(
-          function (pos) {
-            var coords = {
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude
-            };
-            // A fix with no accuracy figure, or one worse than the bound, is
-            // used for this vote only and never cached.
-            var accuracy = pos.coords.accuracy;
-            if (typeof accuracy === 'number' && accuracy <= VOTER_LOCATION_MAX_CACHE_ACCURACY_M) {
-              try {
-                sessionStorage.setItem(VOTER_LOCATION_CACHE_KEY, JSON.stringify({
-                  latitude: coords.latitude,
-                  longitude: coords.longitude,
-                  at: Date.now()
-                }));
-              } catch (e) {
-                // Same privacy-mode/quota concern as the read above. A cache
-                // write that fails costs only the next vote's convenience,
-                // never this vote's correctness.
+        function attempt(highAccuracy) {
+          navigator.geolocation.getCurrentPosition(
+            function (pos) {
+              var coords = {
+                latitude: pos.coords.latitude,
+                longitude: pos.coords.longitude
+              };
+              // A fix with no accuracy figure, or one worse than the bound, is
+              // used for this vote only and never cached.
+              var accuracy = pos.coords.accuracy;
+              if (typeof accuracy === 'number' && accuracy <= VOTER_LOCATION_MAX_CACHE_ACCURACY_M) {
+                try {
+                  sessionStorage.setItem(VOTER_LOCATION_CACHE_KEY, JSON.stringify({
+                    latitude: coords.latitude,
+                    longitude: coords.longitude,
+                    at: Date.now()
+                  }));
+                } catch (e) {
+                  // Same privacy-mode/quota concern as the read above. A cache
+                  // write that fails costs only the next vote's convenience,
+                  // never this vote's correctness.
+                }
               }
-            }
-            resolve(coords);
-          },
-          function () {
-            onFailure();
-          },
-          { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-        );
+              resolve(coords);
+            },
+            function (err) {
+              if (highAccuracy && !(err && err.code === GEOLOCATION_PERMISSION_DENIED)) {
+                attempt(false);
+                return;
+              }
+              onFailure();
+            },
+            highAccuracy
+              ? { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+              : { enableHighAccuracy: false, timeout: 8000, maximumAge: 0 }
+          );
+        }
+        attempt(true);
       }
 
       if (!fresh && isFreshVoterLocation(cached, VOTER_LOCATION_FRESH_MS)) {
