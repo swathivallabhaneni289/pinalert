@@ -44,6 +44,14 @@
 
   var VOTER_LOCATION_CACHE_KEY = 'pinalert_voter_location';
 
+  // The hard ceiling on reusing a cached fix as the voter's place when a new
+  // fix could not be taken (10 minutes, WR-02). Beyond it the cached position
+  // is no longer where the voter is, so the vote is refused with the location
+  // sentence rather than sent from an old place. An entry with no capture
+  // time never passes. A client side limit, not a trust rule: the server's
+  // 1 km check stays the only authority on whether a vote counts.
+  var VOTER_LOCATION_STALE_MAX_MS = 10 * 60 * 1000;
+
   // How long a cached fix is reused without asking again, in milliseconds
   // (outline UI-SPEC open item 6). This is a client side timer for location
   // freshness, not a trust rule: the server's 1 km check stays the only
@@ -126,8 +134,8 @@
   // Reads one cache entry, as stored text, into latitude, longitude and the
   // capture time in epoch milliseconds, or null. Unparsable text and a
   // non finite coordinate give null. A missing or non numeric capture time
-  // gives a null time, so an entry written before capture times existed
-  // counts as stale but is still usable as a stale fix (D-02).
+  // gives a null time, and an entry with no capture time is unusable for any
+  // vote, fresh or stale (WR-02).
   function parseVoterLocation(raw) {
     if (!raw) {
       return null;
@@ -193,12 +201,13 @@
   //     asking, unless the caller passed fresh true.
   //  2. Otherwise the permission state decides. Denied rejects outright.
   //     Granted takes a silent fix with maximumAge 0 and, if that fails,
-  //     reuses the stale cached fix unless fresh was asked for.
-  //  3. Prompt or unknown (no Permissions API) reuses any cached fix and
-  //     never asks the browser again. Only a session with no cached fix at
-  //     all raises the browser's own prompt, exactly as the first vote of a
-  //     session always has. A fresh request in this state rejects: a retry
-  //     never prompts.
+  //     reuses the cached fix unless fresh was asked for or the cached fix
+  //     is older than VOTER_LOCATION_STALE_MAX_MS.
+  //  3. Prompt or unknown (no Permissions API) reuses a cached fix that is
+  //     younger than VOTER_LOCATION_STALE_MAX_MS and does not ask the browser
+  //     again. A session with no usable cached fix raises the browser's own
+  //     prompt, exactly as the first vote of a session always has. A fresh
+  //     request in this state rejects: a retry never prompts.
   // Every rejection carries fieldMessage set to GPS_DENIED_MESSAGE, matching
   // the submitReport convention in app.js so one catch clause upstream
   // handles a denied prompt and a server refusal identically. No rejection
@@ -273,7 +282,7 @@
         }
         if (state === 'granted') {
           requestPosition(function () {
-            if (!fresh && cached) {
+            if (!fresh && isFreshVoterLocation(cached, VOTER_LOCATION_STALE_MAX_MS)) {
               useCached();
             } else {
               deny();
@@ -286,7 +295,7 @@
           deny();
           return;
         }
-        if (cached) {
+        if (isFreshVoterLocation(cached, VOTER_LOCATION_STALE_MAX_MS)) {
           useCached();
           return;
         }
