@@ -59,6 +59,12 @@ var (
 
 const histRowCap = int32(30)
 
+// histReadCap is the production read cap (service.ReliabilityHistoryReadCap,
+// WR-05): the history read leaves room for neutral rows that Go drops, so it
+// returns more than the 30 judged reports the score uses. The index and
+// EXPLAIN checks run at this value because it is what production passes.
+const histReadCap = int32(100)
+
 // histSQLBody returns the statement of src with every comment line dropped,
 // the remaining lines joined and trimmed, and one trailing semicolon removed.
 func histSQLBody(src string) string {
@@ -495,7 +501,7 @@ func histExplain(t *testing.T, pool *pgxpool.Pool, accountIDs []int64) string {
 	t.Helper()
 	rows, err := pool.Query(context.Background(),
 		"EXPLAIN (ANALYZE, FORMAT TEXT) "+reporterHistorySQLForExplain,
-		histNow, histNow.Add(-histWindow), histRowCap, accountIDs,
+		histNow, histNow.Add(-histWindow), histReadCap, accountIDs,
 	)
 	if err != nil {
 		t.Fatalf("EXPLAIN failed: %v", err)
@@ -543,12 +549,14 @@ func TestReporterHistoryUsesSessionIndex(t *testing.T) {
 		}
 	}
 
-	rows, err := sqlcgen.New(pool).ReporterHistoryReports(context.Background(), histArg(accountIDs, histRowCap))
+	rows, err := sqlcgen.New(pool).ReporterHistoryReports(context.Background(), histArg(accountIDs, histReadCap))
 	if err != nil {
 		t.Fatalf("ReporterHistoryReports over %d accounts: %v", len(accountIDs), err)
 	}
-	if len(rows) != 6000 {
-		t.Fatalf("got %d rows, want 6000 (30 for each of 200 accounts)", len(rows))
+	// Each account has 180 expired reports inside the window across its
+	// sessions, more than the read cap of 100, so the cap keeps 100.
+	if len(rows) != 20000 {
+		t.Fatalf("got %d rows, want 20000 (100 for each of 200 accounts)", len(rows))
 	}
 	perAccount := map[int64]int{}
 	for _, r := range rows {
@@ -558,8 +566,8 @@ func TestReporterHistoryUsesSessionIndex(t *testing.T) {
 		t.Fatalf("rows span %d accounts, want 200", len(perAccount))
 	}
 	for id, n := range perAccount {
-		if n != 30 {
-			t.Errorf("account %d has %d rows, want exactly 30", id, n)
+		if n != 100 {
+			t.Errorf("account %d has %d rows, want exactly 100", id, n)
 		}
 	}
 	histAssertRows(t, rows)

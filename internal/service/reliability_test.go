@@ -374,8 +374,15 @@ func TestReliabilityDecayAndWindow(t *testing.T) {
 			t.Fatalf("capped result differs from the explicit kept 30")
 		}
 	})
-	t.Run("the cap counts neutral rows like the SQL cap does", func(t *testing.T) {
-		check(t, relJoin(relHourly(relN, 0, 29), relOutcomes(relC, 5, 10*relDay)), service.ReporterNew, -1, 0)
+	t.Run("the cap counts judged rows, so newer neutral rows push nothing out", func(t *testing.T) {
+		with := service.ScoreReliability(relJoin(relHourly(relN, 0, 40), relOutcomes(relC, 5, 10*relDay)), relNow)
+		without := service.ScoreReliability(relOutcomes(relC, 5, 10*relDay), relNow)
+		if !relSame(with, without) {
+			t.Fatalf("40 newer neutral rows changed the rating: %+v versus %+v", with, without)
+		}
+		if with.Judged != 5 {
+			t.Fatalf("Judged = %d, want 5", with.Judged)
+		}
 	})
 	t.Run("a tie at the cap boundary keeps the contradicted row, for either input order", func(t *testing.T) {
 		base := relHourly(relC, 0, 28)

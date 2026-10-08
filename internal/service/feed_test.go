@@ -852,7 +852,7 @@ func TestNearbyBatchesVoteReadsOnceWithReporters(t *testing.T) {
 		wantArgs := sqlcgen.ReporterHistoryReportsParams{
 			Now:         p12Now,
 			WindowStart: p12Now.Add(-service.ReliabilityWindow),
-			RowCap:      int32(service.ReliabilityRowCap),
+			RowCap:      int32(service.ReliabilityHistoryReadCap),
 			AccountIds:  []int64{7, 8, 9},
 		}
 		if len(fake.historyArgs) != 1 || !reflect.DeepEqual(fake.historyArgs[0], wantArgs) {
@@ -1024,7 +1024,7 @@ func TestReporterSignalKeyedByAccount(t *testing.T) {
 		wantArgs := sqlcgen.ReporterHistoryReportsParams{
 			Now:         p12Now,
 			WindowStart: p12Now.Add(-service.ReliabilityWindow),
-			RowCap:      int32(service.ReliabilityRowCap),
+			RowCap:      int32(service.ReliabilityHistoryReadCap),
 			AccountIds:  []int64{7},
 		}
 		if !reflect.DeepEqual(q.historyArgs[0], wantArgs) {

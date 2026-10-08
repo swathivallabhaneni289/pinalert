@@ -257,17 +257,14 @@ At least 5 judged reports (`ReliabilityMinJudged`) are needed, counted without w
 
 Only reports that expired within the last 90 days count (`ReliabilityWindow`). A report exactly 90 days old is out, and one that expires exactly now is in. Age is measured from the expiry time, and each outcome's weight halves every 30 days (`ReliabilityHalfLife`).
 
-The read keeps the latest 30 expired reports per account (`ReliabilityRowCap`) across all of its sessions, newest expiry first. The cap counts the latest 30 expired reports in the window, not 30 judged reports.
+The score uses the latest 30 judged reports per account (`ReliabilityRowCap`), across all of its sessions, newest expiry first. Neutral reports are dropped first and the cap of 30 applies to what is left, so a run of neutral reports cannot push a judged record out of the history. That is a decision, and the reasoning is this:
 
-That is a decision, and the reasoning is this:
-
-- The decision's own wording says 30 judged reports. SQL cannot know which reports are judged without their votes, so the read caps expired reports and Go classifies them.
-- The two readings differ only for a reporter with many critical or rescue needed reports that expired unconfirmed, which are neutral.
-- The exact alternative, reading 60 and keeping the first 30 judged in Go, doubles the read cost and was not taken.
-- `ScoreReliability` applies the same cap to whatever rows it receives, neutral rows included, so the result is the same whether or not the read was capped.
-- The test case that shows 30 newer neutral reports pushing 5 corroborated ones out is in `TestReporterSignalsNewAndNone`, beside the case with 29 neutral reports where one corroborated report survives.
-
-The owner may still choose the exact reading.
+- The earlier version capped the latest 30 expired reports and dropped neutral ones afterwards. A critical or rescue needed report that expires with fewer than 2 confirmations and fewer than 2 disputes is neutral, and critical reports publish Live at once, so an account with a poor record could file 30 of them and see the poor record replaced by "New reporter" (review finding WR-05).
+- SQL cannot know which reports are neutral without their votes. The read therefore returns up to 100 expired reports per account (`ReliabilityHistoryReadCap`), and Go classifies them, drops the neutral ones and keeps the latest 30 judged.
+- The read cap and the Go cap are separate numbers on purpose: 100 leaves room for neutral rows, 30 is the number of judged reports the score uses.
+- `ScoreReliability` applies the window, drops neutral rows and caps at 30 judged reports on whatever rows it receives, so it gives the same answer on raw rows as on the capped read unless more than 100 of the newest rows are neutral.
+- The limit that remains: 100 neutral reports in a row can still push an old record out of the read, so the Phase 4 rate limits are what bound that.
+- The test case that shows 30 newer neutral reports no longer pushing 5 corroborated ones out, and a poor record surviving the same run, is in `TestReporterSignalsNewAndNone`.
 
 ### Reporter score formula
 
@@ -451,6 +448,7 @@ The visible form of "confirmed by N nearby" is the counter `N confirmed`, with t
 | `ReliabilityHalfLife` | `internal/service/reliability.go` | 30 days |
 | `ReliabilityWindow` | `internal/service/reliability.go` | 90 days |
 | `ReliabilityRowCap` | `internal/service/reliability.go` | 30 |
+| `ReliabilityHistoryReadCap` | `internal/service/reliability.go` | 100 |
 | `UnconfirmedCredit` | `internal/service/reliability.go` | 0.25 |
 | `ReliableMinScore` | `internal/service/reliability.go` | 75 |
 | `MixedMinScore` | `internal/service/reliability.go` | 35 |

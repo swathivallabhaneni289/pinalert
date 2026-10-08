@@ -511,7 +511,7 @@ func TestCastVoteReadsReporterHistoryOnce(t *testing.T) {
 		wantArgs := sqlcgen.ReporterHistoryReportsParams{
 			Now:         p12CastNow,
 			WindowStart: p12CastNow.Add(-ReliabilityWindow),
-			RowCap:      int32(ReliabilityRowCap),
+			RowCap:      int32(ReliabilityHistoryReadCap),
 			AccountIds:  []int64{7},
 		}
 		if len(q.historyArgs) != 1 || !reflect.DeepEqual(q.historyArgs[0], wantArgs) {

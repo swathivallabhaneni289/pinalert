@@ -105,9 +105,11 @@ func reporterSignalFor(p *ReporterSignal) ReporterSignal {
 // account, so that account's own content votes never count, and its own
 // resolve or reopen cannot erase a record, because ClassifyOutcome clears the
 // resolution fields. Every classified row, neutral included, goes on to
-// ScoreReliability, which applies the window and the cap of the latest 30
-// expired reports, so the answer on raw rows is the same as on the capped SQL
-// read (RESOLVED Q4: the read caps expired reports, not judged ones).
+// ScoreReliability, which applies the window, drops the neutral rows and caps
+// the latest 30 judged reports (WR-05). The SQL read caps at
+// ReliabilityHistoryReadCap expired reports, neutral included, so the answer
+// on raw rows is the same as on the capped read unless more than that many
+// rows are neutral.
 //
 // The caller passes one vote slice that includes the history report ids. The
 // votes are grouped by report once, so the work grows with history rows plus

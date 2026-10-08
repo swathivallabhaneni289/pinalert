@@ -124,8 +124,17 @@ const (
 	ReliabilityHalfLife = 30 * 24 * time.Hour
 	// ReliabilityWindow is how far back the history reaches (D-13, R-05).
 	ReliabilityWindow = 90 * 24 * time.Hour
-	// ReliabilityRowCap is the most expired reports considered (D-13, Q4).
+	// ReliabilityRowCap is the most JUDGED reports considered (D-13). Neutral
+	// rows are dropped first and the cap applies to what is left, so a run
+	// of neutral reports cannot push a judged record out of the history
+	// (WR-05).
 	ReliabilityRowCap = 30
+	// ReliabilityHistoryReadCap is the most expired reports the history read
+	// returns per account, neutral rows included. It is larger than
+	// ReliabilityRowCap because neutral rows are only known after the votes
+	// are read, so the read leaves room for them (WR-05). More than this many
+	// neutral rows in a row can still push an old record out of the read.
+	ReliabilityHistoryReadCap = 100
 	// UnconfirmedCredit is the credit an unconfirmed report earns (D-23).
 	UnconfirmedCredit = 0.25
 	// ReliableMinScore is the lowest score tagged Reliable reporter (D-15, Q2).
@@ -203,14 +212,16 @@ func reporterTagForScore(score int) ReporterTag {
 // from expires_at (D-13).
 //
 // The history first keeps only reports with now - 90 days < expires_at <= now
-// (so a report exactly 90 days old is out and one at now is in), then keeps
-// the latest 30 by expires_at. The cap counts neutral rows too, which mirrors
-// the SQL that caps the latest 30 expired reports (Q4), so the function gives
-// the same answer on raw input and on SQL capped input. Ties on expires_at
-// are broken by outcome slug, a total order, so input order never changes
-// which rows survive. Only judged outcomes (not neutral) then count, and with
-// fewer than 5 of them (unweighted) the reporter is New with a nil score and
-// the real Judged and Corroborated counts.
+// (so a report exactly 90 days old is out and one at now is in), drops the
+// neutral rows, then keeps the latest 30 judged reports by expires_at. The cap
+// counts judged rows only (WR-05), so a run of neutral reports cannot erase a
+// record. The SQL read caps at ReliabilityHistoryReadCap expired reports per
+// account, neutral included, so the function gives the same answer on raw
+// input and on SQL capped input unless more than that many rows are neutral.
+// Ties on expires_at are broken by outcome slug, a total order, so input
+// order never changes which rows survive. With fewer than 5 judged outcomes
+// (unweighted) the reporter is New with a nil score and the real Judged and
+// Corroborated counts.
 //
 // The tag is cut from the rounded integer score: 75 or more is Reliable
 // reporter, 35 to 74 Mixed record, 34 or less Unreliable reporter (D-15).
@@ -240,9 +251,6 @@ func ScoreReliability(outcomes []JudgedOutcome, now time.Time) Reliability {
 		}
 		return cmp.Compare(string(a.Outcome), string(b.Outcome))
 	})
-	if len(kept) > ReliabilityRowCap {
-		kept = kept[:ReliabilityRowCap]
-	}
 
 	var n, corroborated int
 	var sum, weights int64
@@ -250,6 +258,9 @@ func ScoreReliability(outcomes []JudgedOutcome, now time.Time) Reliability {
 		credit, judged := outcomeCredit(e.Outcome)
 		if !judged {
 			continue
+		}
+		if n == ReliabilityRowCap {
+			break
 		}
 		n++
 		if e.Outcome == OutcomeCorroborated {
