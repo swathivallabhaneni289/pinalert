@@ -2329,3 +2329,24 @@ func TestFeedErrorStateKeepsStaleRows(t *testing.T) {
 		t.Errorf("render's error branch must hide the list only when state.reports is empty")
 	}
 }
+
+// TestAgeAndFadeUseTheServerClock pins WR-06: app.js learns the server's
+// clock from the Date header of a successful report response and computes
+// both the relative time and the age stage from it, never from the bare
+// device clock.
+func TestAgeAndFadeUseTheServerClock(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/app.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/app.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+	if !strings.Contains(jsFunctionBody(t, text, "fetchReports()"), "noteServerClock(") {
+		t.Errorf("fetchReports must record the server clock from the response")
+	}
+	for _, fn := range []string{"relativeTime(iso)", "ageStage(report)"} {
+		body := jsFunctionBody(t, text, fn)
+		if !strings.Contains(body, "nowMs()") || strings.Contains(body, "Date.now()") {
+			t.Errorf("%s must read nowMs() and never Date.now()", fn)
+		}
+	}
+}
