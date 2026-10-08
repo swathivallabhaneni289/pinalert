@@ -2314,3 +2314,18 @@ func TestOwnReportResolutionSkipsLocation(t *testing.T) {
 		t.Errorf("activity.js must pass ownReport true: every row there is the viewer's own report")
 	}
 }
+
+// TestFeedErrorStateKeepsStaleRows pins WR-08: a failed fetch must not hide
+// a list that has rows. The error branch of render hides the list only when
+// there is nothing to show.
+func TestFeedErrorStateKeepsStaleRows(t *testing.T) {
+	raw, err := fs.ReadFile(StaticFS, "static/js/feed.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/feed.js: %v", err)
+	}
+	text := stripCSSComments(string(raw))
+	body := jsFunctionBody(t, text, "render(state)")
+	if !strings.Contains(body, "setHidden(reportListEl, state.reports.length === 0);") {
+		t.Errorf("render's error branch must hide the list only when state.reports is empty")
+	}
+}
