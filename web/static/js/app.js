@@ -88,6 +88,12 @@ window.Pinalert = (function () {
   var listeners = [];
   var selectListeners = [];
   var pollTimer = null;
+  // fetchSeq numbers every fetchReports call. A response may only write
+  // state when it belongs to the newest call, because on a slow link an
+  // older response can land after a newer one and put back older rows, for
+  // example a Show disputed set while the checkbox is off, or counters from
+  // before a vote that has already been recorded (WR-01).
+  var fetchSeq = 0;
   // toastTimer is showToast's own module-level state (Task 1, 02-07): kept
   // here rather than inside the function so repeated calls collapse onto
   // one timer, exactly as modal.js's private implementation — the one this
@@ -128,6 +134,14 @@ window.Pinalert = (function () {
   // list does not flash skeletons on every 30s poll.
   function fetchReports() {
     var isBackgroundRefresh = state.status === 'ok';
+    var mySeq = ++fetchSeq;
+    var sentDisputed = state.showDisputed;
+    // A response is stale when a newer fetch has started since, or when the
+    // reader has flipped Show disputed after this request was built. A stale
+    // response must change nothing, neither rows nor the error state.
+    function isStale() {
+      return mySeq !== fetchSeq || sentDisputed !== state.showDisputed;
+    }
     if (!isBackgroundRefresh) {
       state.status = 'loading';
       notify();
@@ -149,7 +163,7 @@ window.Pinalert = (function () {
     // unlike the three coordinate/radius parameters above, which encode
     // runtime numbers. Omitting the parameter entirely when the flag is
     // false keeps this URL byte-identical to Phase 1's.
-    if (state.showDisputed) {
+    if (sentDisputed) {
       url += '&show_disputed=true';
     }
 
@@ -161,12 +175,18 @@ window.Pinalert = (function () {
         return res.json();
       })
       .then(function (body) {
+        if (isStale()) {
+          return;
+        }
         state.reports = (body && body.reports) || [];
         state.status = 'ok';
         state.error = null;
         notify();
       })
       .catch(function (err) {
+        if (isStale()) {
+          return;
+        }
         state.status = 'error';
         state.error = err;
         notify();
