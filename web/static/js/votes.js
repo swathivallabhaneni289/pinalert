@@ -905,19 +905,34 @@
     };
   }
 
+  // isInOpenPopup says whether the controls sit in a map popup that is still
+  // open. map.js sets data-popup-open on the popup element when it opens and
+  // clears it synchronously when it closes, which the render does for a
+  // retracted report before the refetch resolves. Leaflet then keeps the
+  // closing node attached for a 200 ms fade, so isConnected alone would call
+  // that dying popup live. The mark is the truthful signal at that moment, and
+  // reading it needs no timer, animation event or style.
+  function isInOpenPopup(controls) {
+    var popup = controls.closest('.leaflet-popup');
+    return popup !== null && popup.getAttribute('data-popup-open') === 'true';
+  }
+
   // findLiveControls returns the controls node to focus into: the original
   // one while it is still attached, else the first attached vote controls
-  // with the same report id on the same surface, else null. Ids are compared
-  // as strings and are never built into a selector.
+  // with the same report id on the same surface, else null. A popup that
+  // map.js has marked closed is not live even while its node stays attached
+  // for the fade. Ids are compared as strings and are never built into a
+  // selector.
   function findLiveControls(origin) {
-    if (origin.controls.isConnected) {
+    var wantPopup = origin.surface === 'popup';
+    if (origin.controls.isConnected && (!wantPopup || isInOpenPopup(origin.controls))) {
       return origin.controls;
     }
     var all = document.querySelectorAll('.vote-controls');
-    var wantPopup = origin.surface === 'popup';
     for (var i = 0; i < all.length; i++) {
       var inPopup = all[i].closest('.leaflet-popup') !== null;
-      if (all[i].dataset.reportId === origin.reportId && inPopup === wantPopup) {
+      if (all[i].dataset.reportId === origin.reportId && inPopup === wantPopup &&
+          (!wantPopup || isInOpenPopup(all[i]))) {
         return all[i];
       }
     }
