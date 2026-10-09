@@ -3,7 +3,7 @@ status: testing
 phase: 03-trust-model-hardening-diversity-weighted-trust
 source: [03-VERIFICATION.md]
 started: 2026-10-07T20:33:33.016Z
-updated: 2026-10-09T17:39:44.000Z
+updated: 2026-10-09T18:24:23.000Z
 ---
 
 ## Current Test
@@ -12,7 +12,7 @@ number: 5
 name: Mark resolved confirmation and focus (step 10, plan 03-09)
 expected: |
   Focus lands on Cancel, the group name is announced, focus returns to Mark resolved, and after removal focus goes to the replacement or previous row or the view toggle, never the body.
-awaiting: the popup focus fix (see Gaps, test 5), then one human session for VoiceOver and the other human only parts
+awaiting: one human session at the end of Phase 3 (VoiceOver, Ask in Safari, look and feel, make migrate), after the open redesign decision
 
 ## Tests
 
@@ -39,19 +39,15 @@ result: [pending]
 detail: Too far hint and refusal (steps 8 and 9, plans 03-04 and 03-18). Vote from 2 km, check the buttons, force a POST from the console, test the 0.9896 km and 1.0008 km boundary pair, wait out the 120 second bound, test silent refresh, Ask and Block location states.
 expected: Refusal text 'Too far to vote. You need to be within 1 km of this report.' with HTTP 403 field location. Buttons show off within one poll, stay Tab reachable, send no vote on click, Enter or Space, and a tap first refreshes the cached fix silently (WR-03), so the vote goes ahead only if the fresh fix is within the radius. 12.9805 accepted, 12.9806 refused. Hint clears after the bound. Own Mark resolved stays enabled from far. Blocked location shows the locked sentence and sends no POST.
 why_human: Needs Chrome Sensors, permission prompts and the Network panel. Server refusal is proven by TestCastVoteTooFar, but the browser hint and cache are not.
-note: Scripted browser run 2026-10-09 (Chromium and WebKit, server built from 99d246d, own database and port, nothing in the repo touched). Chromium 23 PASS, 1 FAIL, 1 NEEDS A PERSON. WebKit 22 PASS, 1 FAIL, 2 NEEDS A PERSON. Proven in both engines: the buttons go off within one poll (aria-disabled) and stay reachable by Tab, click, Enter and Space send nothing, a forced POST gets 403 with field location and the exact sentence, the boundary pair (12.9806 refused, 12.9805 accepted), the 120 second bound (on at 30, 60 and 90 seconds, off at 120, on a fake clock), the silent refresh, the Block state (no POST, locked sentence) and own Mark resolved enabled from far. Chromium also proves the Ask state sends no location request. One cosmetic FAIL, see Gaps. Still needs a person: Ask in Safari (no permission prompt pops up) and the prompt UI itself. Step 8(f) in 03-20-SUMMARY.md was corrected by plan 03-25, since a tap on a too far button does refresh the fix silently (WR-03).
-result: issue
-reported: "Scripted run, not typed by the owner: after the hint clears at the 120 second bound, the earlier refusal line 'Too far to vote. You need to be within 1 km of this report.' is still on screen (check T4 S1.11b, both engines)."
-severity: cosmetic
+note: Scripted browser run 2026-10-09 (Chromium and WebKit, server built from 99d246d, own database and port, nothing in the repo touched). Chromium 23 PASS, 1 FAIL, 1 NEEDS A PERSON. WebKit 22 PASS, 1 FAIL, 2 NEEDS A PERSON. Proven in both engines: the buttons go off within one poll (aria-disabled) and stay reachable by Tab, click, Enter and Space send nothing, a forced POST gets 403 with field location and the exact sentence, the boundary pair (12.9806 refused, 12.9805 accepted), the 120 second bound (on at 30, 60 and 90 seconds, off at 120, on a fake clock), the silent refresh, the Block state (no POST, locked sentence) and own Mark resolved enabled from far. Chromium also proves the Ask state sends no location request. One cosmetic FAIL before the fix, see Gaps. Re-run on 2026-10-09 after the fix (plan 03-25, merged in 584cef3) on the merged code: Chromium 24 PASS, 0 FAIL, 1 NEEDS A PERSON and WebKit 23 PASS, 0 FAIL, 2 NEEDS A PERSON. S1.11b now passes in both engines (the refusal line is not visible after the 120 second bound, on a fake clock). Still needs a person: Ask in Safari (no permission prompt pops up) and the prompt UI itself. Step 8(f) in 03-20-SUMMARY.md was corrected by plan 03-25, since a tap on a too far button does refresh the fix silently (WR-03).
+result: [pending]
 
 ### 5. Mark resolved confirmation and focus (step 10, plan 03-09)
 detail: Mark resolved confirmation and focus (step 10, plan 03-09). Keyboard only on a feed row, then as reporter in list view at phone width and from the map popup at desktop width.
 expected: Focus lands on Cancel, the group name is announced, focus returns to Mark resolved, and after removal focus goes to the replacement or previous row or the view toggle, never the body.
 why_human: Focus management and screen reader announcement.
-note: Scripted browser run 2026-10-09 (Chromium and WebKit). Chromium 34 PASS, 1 FAIL, 2 NEEDS A PERSON. WebKit 30 PASS, 1 FAIL, 2 NEEDS A PERSON. Proven in both engines at desktop and phone width: focus lands on Cancel, the group has its accessible name in the accessibility tree, Cancel returns focus to Mark resolved, Escape works, Yes with a pending resolve keeps focus on that row's Mark resolved, and removal from the list moves focus to the next row, the previous row or the view toggle. One FAIL: resolving from the map popup at default motion leaves focus on the page body (reduced motion passes), see Gaps. Still needs a person: VoiceOver speaking "Mark this report resolved?, group, Cancel, button", and a re-check of the popup resolve after the fix. Tip for the owner: in Safari plain Tab skips buttons, so hold Option while pressing Tab, or tick the Advanced setting.
-result: issue
-reported: "Scripted run, not typed by the owner: resolving from the map popup at default motion ends with focus on the page body instead of the map container (check T5 P4, both engines)."
-severity: major
+note: Scripted browser run 2026-10-09 (Chromium and WebKit). Chromium 34 PASS, 1 FAIL, 2 NEEDS A PERSON. WebKit 30 PASS, 1 FAIL, 2 NEEDS A PERSON. Proven in both engines at desktop and phone width: focus lands on Cancel, the group has its accessible name in the accessibility tree, Cancel returns focus to Mark resolved, Escape works, Yes with a pending resolve keeps focus on that row's Mark resolved, and removal from the list moves focus to the next row, the previous row or the view toggle. One FAIL before the fix: resolving from the map popup at default motion left focus on the page body (reduced motion passed), see Gaps. Re-run on 2026-10-09 after the fix (plan 03-25, merged in 584cef3) on the merged code: Chromium 35 PASS, 0 FAIL, 2 NEEDS A PERSON and WebKit 31 PASS, 0 FAIL, 2 NEEDS A PERSON. Check P4 now lands focus on the map container at default motion and at reduced motion in both engines. Still needs a person: VoiceOver speaking "Mark this report resolved?, group, Cancel, button". Tip for the owner: in Safari plain Tab skips buttons, so hold Option while pressing Tab, or tick the Advanced setting.
+result: [pending]
 
 ### 6. Reopen on Activity (step 11, plan 03-15)
 detail: Reopen on Activity (step 11, plan 03-15). Resolve own report, open Activity, open the panel, press Reopen.
@@ -95,8 +91,8 @@ result: [pending]
 
 total: 11
 passed: 2
-issues: 2
-pending: 7
+issues: 0
+pending: 9
 skipped: 0
 blocked: 0
 
@@ -130,7 +126,8 @@ amendment to 03-UI-SPEC.md.
   artifacts: []
   missing: []
 - truth: "After Mark resolved from the map popup, keyboard focus lands on the map container, never the page body, at default motion as well as at reduced motion (V-42 step 10, A52)"
-  status: failed
+  status: resolved
+  fix_shipped: "2026-10-09, plan 03-25, commits 53fb069 (code and TestPopupResolveFocusIgnoresAFadingPopup) merged in 584cef3. A closed map popup is no longer treated as live, so focusAfterRetract runs and focus goes to the map container. Verified three ways: the web contract tests, the full suite on a fresh scratch database (373 PASS, 0 FAIL, 0 SKIP), and the scripted browser check T5 P4 re-run on the merged code, PASS at default and reduced motion in Chromium and WebKit (focus on div#map)."
   reason: "Scripted browser run 2026-10-09, not typed by the owner (Chromium and WebKit): the resolve answers 200, the popup node is gone and focus is on the page body at default motion. The same check passes under reduced motion. Root cause read from the code and consistent with the run: while Leaflet's 200 ms popup fade runs, the popup controls are still attached, so findLiveControls returns the dying controls, focusAfterVote focuses the dying button and returns before focusAfterRetract runs, and when the popup node is removed focus falls to the body."
   severity: major
   test: 5
@@ -141,7 +138,8 @@ amendment to 03-UI-SPEC.md.
     - "After a resolve from the popup retracts the report, focus goes to the map container even while the fading popup node is still attached; the feed row, Cancel and Yes pending paths stay unchanged"
     - "A contract test that pins that decision without depending on the fade timing; the scripted check T5 P4 is the live proof and fails today in both engines"
 - truth: "The refusal line from an earlier too far vote goes away when the too far hint clears at the 120 second bound"
-  status: failed
+  status: resolved
+  fix_shipped: "2026-10-09, plan 03-25, commit a001850 (code and TestTooFarRefusalClearsWithTheHint) merged in 584cef3. The refusal line clears together with the hint, but only when the hint was showing before a render, is hidden after it, and the line holds the server's too far refusal; every other error message is left alone. Verified by the web contract tests, the full suite (373 PASS, 0 SKIP) and the scripted check T4 S1.11b, PASS in Chromium and WebKit."
   reason: "Scripted browser run 2026-10-09, not typed by the owner (Chromium and WebKit): after the bound the button marks and the hint are off, but the error line holding 'Too far to vote. You need to be within 1 km of this report.' from the earlier refused Confirm is still on screen."
   severity: cosmetic
   test: 4
