@@ -48,18 +48,12 @@
   }
 }
 
-/* Even spacing (owner, 2026-10-09: the label and the words felt too compact). One 16px step between the state label
-   and the reporter words, one 8px step between the lines of the header. Phones 340px wide or narrower keep the 8px
-   gap on rows, where 16px would push the words under the label. */
-:root[data-header="beside"] .popup-card__stateline,
-:root[data-header="beside"] .report-row__stateline {
-  column-gap: var(--space-md);
-}
+/* Heading to title (owner, 2026-10-09: the heading sat too close to the words below it). The gap between the label and
+   the reporter words stays as it was (8px). The popup gap goes from 8px to 16px and the row gap from 0 to 8px. */
 :root[data-header="beside"] .popup-card__header:not([hidden]) {
-  row-gap: var(--space-sm);
+  /* The title already has an 8px top margin and adjacent margins merge, so only a larger value changes the gap. */
+  margin-bottom: var(--space-md);
 }
-@media (max-width: 340px) {
-  :root[data-header="beside"] .report-row__stateline {
-    column-gap: var(--space-sm);
-  }
+:root[data-header="beside"] .report-row__top:not([hidden]) {
+  margin-bottom: var(--space-sm);
 }

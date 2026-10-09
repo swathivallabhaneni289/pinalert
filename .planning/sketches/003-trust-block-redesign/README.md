@@ -537,4 +537,4 @@ Suggested fixes that were not taken, and why. "Chevron on the first row only": t
 loses 24px. A 16px chevron: it frees 4px and the count needs 5px more at 200 percent. Dropping the extra 4px of right padding: it
 fixes "7 confirmed" but not "99+ confirmed", and it moves the 100 percent geometry. A rows only E: see finding 2.
 
-Spacing, also the owner's call (2026-10-09): 16px between the state label and the reporter words, 8px between the lines of the header; phones 340px wide or narrower keep 8px between the label and the words on rows so they stay on one line. Winner: H.
+Spacing, also the owner's call (2026-10-09): the gap between the state label and the reporter words stays 8px, as drawn. What felt too compact was the heading against the title, so the heading gets more air above the title: 16px in the popup (was 8px) and 8px on rows (was 0). Winner: H.
