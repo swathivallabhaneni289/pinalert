@@ -1,7 +1,7 @@
 ---
 phase: 03-trust-model-hardening-diversity-weighted-trust
 fixed_at: 2026-10-08T00:00:00Z
-review_path: .planning/phases/03-trust-model-hardening-diversity-weighted-trust/03-FIX-VERIFICATION.md
+review_path: .planning/phases/03-trust-model-hardening-diversity-weighted-trust/03-FIX-VERIFICATION-1.md
 iteration: 2
 findings_in_scope: 5
 fixed: 5
@@ -11,7 +11,7 @@ status: all_fixed
 
 # Phase 3: Code Review Fix Report, round 2
 
-**Source:** `03-FIX-VERIFICATION.md` (independent skeptics on the round 1 fixes)
+**Source:** `03-FIX-VERIFICATION-1.md` (independent skeptics on the round 1 fixes)
 **Base:** `ef2376e`. Five commits plus this report. WR-02, WR-04 and WR-06 were judged sound and are untouched. WR-05 is out of scope by instruction.
 
 ## Fixed

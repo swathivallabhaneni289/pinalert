@@ -46,7 +46,7 @@ From the 04-29 revision:
 - 04-07-PLAN.md: Nothing false. 04-07 edits TestNearbyBatchesVoteReadsOnceWithReporters and TestActivityForAccountReadsReporterHistoryOnce to add the trailing ReportExtrasForReports call log entry. 04-29 relies on the RowCap: ReliabilityHistoryReadCap expectations in those two tests (and in ...
 - 04-05-PLAN.md: Nothing false about the cap. Its Cross-phase row for the 03-06 query still says 'not built yet', which is stale because 03-06 is built, but its claim that make sqlc must leave reliability.sql.go byte identical in 04-05 stays true (04-29 owns that query). Not caused by this revision.
 - 04-01-PLAN.md, 04-10-PLAN.md, 04-16-PLAN.md, 04-28-PLAN.md: They cite 04-29 only by test name (TestModeratedReportsAreNeutralForRating), by the single neutral Resolve line, or by file prefix p429. All of those are unchanged, so nothing becomes false.
-- .continue-here.md and 03-FIX-VERIFICATION.md: The cross phase note ('Plan 04-29 pins the old reporter cap rule') and finding WR-05-V2 are resolved by this revision of the plan. I did not edit them; their owner can drop the note.
+- .continue-here.md and 03-FIX-VERIFICATION-1.md: The cross phase note ('Plan 04-29 pins the old reporter cap rule') and finding WR-05-V2 are resolved by this revision of the plan. I did not edit them; their owner can drop the note.
 
 ## Deviations from stock quick mode, on purpose
 

@@ -11,7 +11,7 @@ status: narrow_residuals
 
 # Phase 3 review fixes, round 2: adversarial verification
 
-Two independent read only skeptics per fix (one asked whether the fix closes the finding, one asked whether it introduces a new problem), plus one auditor for weakened tests. Defects are listed with the skeptic's scenario. The previous round (03-FIX-VERIFICATION.md) found defects in 5 of 8 fixes; this round checks the four follow up fixes. Residuals are narrow (display truth, an asymmetric drop rule, a documentation line) and none touches the server side trust math.
+Two independent read only skeptics per fix (one asked whether the fix closes the finding, one asked whether it introduces a new problem), plus one auditor for weakened tests. Defects are listed with the skeptic's scenario. The previous round (03-FIX-VERIFICATION-1.md) found defects in 5 of 8 fixes; this round checks the four follow up fixes. Residuals are narrow (display truth, an asymmetric drop rule, a documentation line) and none touches the server side trust math.
 
 ## WR-01 (commit 0fdbc1e): DEFECTS FOUND
 
