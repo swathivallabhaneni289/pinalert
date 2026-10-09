@@ -1,0 +1,47 @@
+/*
+ * h.css: header H, the reporter words directly beside the state label (the owner's choice, 2026-10-09).
+ *
+ * Popup: the words are one more item of the labels group, so they sit right after Unconfirmed on the same line and
+ * wrap under it when there is no room. Rows and Activity: the state label and the words share one line under the
+ * meta line, so they stay together; a Live report has no state label and the words sit alone on that line.
+ */
+:root[data-header="beside"] .report-row__stateline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-sm);
+  row-gap: var(--space-xs);
+}
+
+/* The words sit beside the label, so they drop the side padding the other variants give them: 8px is the difference
+   between fitting next to Unconfirmed on a 320px phone and wrapping under it. */
+:root[data-header="beside"] .popup-card__pills .trust-reporter:not([hidden]),
+:root[data-header="beside"] .report-row__stateline .trust-reporter:not([hidden]) {
+  padding: 0;
+}
+
+/* Popup: the badge row keeps the 48px the close button needs; the state line under it uses the full width. */
+:root[data-header="beside"] .popup-card__header:not([hidden]) {
+  padding-right: 0;
+}
+:root[data-header="beside"] .popup-card__pills:not([hidden]) {
+  flex: 1 1 100%;
+  padding-right: var(--space-2xl);
+}
+:root[data-header="beside"] .popup-card__stateline {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-sm);
+  row-gap: var(--space-xs);
+  min-width: 0;
+}
+
+/* On the narrowest phones the Activity row body is 188px wide and the label plus the words need 199px. The line may
+   reach 12px into the card's right padding there, so the words stay beside the label instead of dropping under it. */
+@media (max-width: 340px) {
+  :root[data-header="beside"] .report-row__stateline {
+    margin-right: -12px;
+  }
+}

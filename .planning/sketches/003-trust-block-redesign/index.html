@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sketch 003: Trust block redesign</title>
+  <style>
+    /* Review board chrome only. Not part of the product, so it does not use the app's tokens. */
+    :root { color-scheme: light dark; --bd: #c9ccd1; --muted: #565c66; --bg: #f4f5f6; --card: #ffffff; --fg: #15181c; --accent: #15181c; --warn: #9b2c1f; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bd: #3a3e44; --muted: #a3a9b3; --bg: #101215; --card: #181b1f; --fg: #eceef1; --accent: #eceef1; --warn: #f0a79d; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 72px 24px 48px; background: var(--bg); color: var(--fg);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    #variant-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 10; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      padding: 12px 24px; background: var(--card); border-bottom: 1px solid var(--bd); }
+    #variant-nav .title { font-weight: 600; margin-right: 16px; }
+    button, select { font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--bd); border-radius: 6px;
+      padding: 6px 12px; cursor: pointer; transition: background-color 150ms ease, border-color 150ms ease; }
+    button:hover, select:hover { border-color: var(--muted); }
+    button.on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+    button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: center; margin-bottom: 24px; }
+    .controls .group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
+    .controls .group > span { color: var(--muted); }
+    .controls .group[hidden] { display: none; }
+    .frames { display: flex; flex-wrap: wrap; gap: 32px; align-items: flex-start; overflow-x: auto; }
+    figure { margin: 0; }
+    select { max-width: 100%; }
+    #state { width: 520px; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    @media (max-width: 480px) { body { padding-left: 16px; padding-right: 16px; } #variant-nav { padding-left: 16px; padding-right: 16px; } }
+    figcaption { font-weight: 600; margin-bottom: 8px; }
+    iframe { display: block; height: 320px; border: 1px solid var(--bd); border-radius: 8px; background: #fff; }
+    .rules { margin: 8px 0 0; max-width: 440px; color: var(--muted); font-size: 13px; }
+    .rules.bad { color: var(--warn); }
+    .rules ul { margin: 4px 0 0; padding-left: 16px; }
+    .rules .exp { color: var(--muted); }
+    .notes { max-width: 860px; margin-top: 32px; }
+    .notes h2 { font-size: 16px; margin: 24px 0 8px; }
+    .notes h2:first-child { margin-top: 0; }
+    .notes p, .notes li { color: var(--muted); }
+    .notes strong { color: var(--fg); }
+  </style>
+</head>
+<body>
+  <div id="variant-nav">
+    <span class="title">Sketch 003: Trust block redesign</span>
+    <span id="tabs"></span>
+  </div>
+
+  <div class="controls">
+    <div class="group"><span>Surface</span>
+      <button data-key="surface" data-value="popup">Map popup</button>
+      <button data-key="surface" data-value="row">Feed row</button>
+      <button data-key="surface" data-value="activity">Activity row</button>
+    </div>
+    <div class="group"><span>Report state</span>
+      <select id="state" aria-label="Report state"></select>
+    </div>
+    <div class="group"><span>Phone width</span>
+      <button data-key="width" data-value="320">320</button>
+      <button data-key="width" data-value="360">360</button>
+      <button data-key="width" data-value="wide">Wide</button>
+    </div>
+    <div class="group"><span>Panel</span>
+      <button data-key="open" data-value="0">Closed</button>
+      <button data-key="open" data-value="1">Open</button>
+    </div>
+    <div class="group"><span>Show state</span>
+      <button data-key="preview" data-value="rest">Rest</button>
+      <button data-key="preview" data-value="hover">Hover</button>
+      <button data-key="preview" data-value="press">Press</button>
+      <button data-key="preview" data-value="focus">Focus</button>
+    </div>
+    <div class="group"><span>Text size</span>
+      <button data-key="text" data-value="100">100%</button>
+      <button data-key="text" data-value="150">150%</button>
+      <button data-key="text" data-value="175">175%</button>
+      <button data-key="text" data-value="200">200%</button>
+    </div>
+    <div class="group"><span>Panel wording</span>
+      <button data-key="wording" data-value="proposed">Proposed</button>
+      <button data-key="wording" data-value="current">Current</button>
+    </div>
+    <div class="group" id="statepos-group"><span>Unconfirmed label on rows</span>
+      <button data-key="statepos" data-value="today">Under the meta (today)</button>
+      <button data-key="statepos" data-value="top">Beside the severity label</button>
+    </div>
+  </div>
+
+  <div class="frames">
+    <figure><figcaption>Light</figcaption><iframe id="frame-light" title="Light theme frame"></iframe><div class="rules" id="rules-light">Checking the rules...</div></figure>
+    <figure><figcaption>Dark</figcaption><iframe id="frame-dark" title="Dark theme frame"></iframe><div class="rules" id="rules-dark">Checking the rules...</div></figure>
+  </div>
+
+  <div class="notes">
+    <h2 id="note-title"></h2>
+    <p id="note-body"></p>
+    <h2>Known weaknesses</h2>
+    <ul id="note-weak"></ul>
+    <h2>What to look for</h2>
+    <ul>
+      <li>Move the pointer over the trust block, then press it (or use Show state). Is anything underlined anywhere? Without hover, as on a phone, is it clear that the block opens?</li>
+      <li>Where do the reporter words sit, and do they read as plain words and not as a tag?</li>
+      <li>Open the panel and use Panel wording to compare the proposed sentences with today's. Is it short enough now?</li>
+      <li>Try the 320 width on the Activity row (the narrowest, 188px of text) at 150%, 175% and 200% text size. Does anything clip, push sideways or split a count into "7" and "confirmed"? From about 145% the chevron moves under the text on that row. Does it still read as the end of the button?</li>
+    </ul>
+    <p>The surfaces use the real stylesheets from web/static/css, so the tokens, sizes and states are the app's own. All names, numbers and sentences are sample data. The vote buttons are only there for context: Confirm and Dispute flip their pressed look and never change a count, because the app never predicts a vote. Activity states 7 and 8 only show on the Activity page in the app.</p>
+  </div>
+
+  <script src="variants/current.js"></script>
+  <script src="variants/e.js"></script>
+  <script src="variants/f.js"></script>
+  <script src="variants/g.js"></script>
+  <script src="variants/h.js"></script>
+  <script src="data.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      var S3 = window.S3;
+      var ORDER = ['current', 'e', 'f', 'g', 'h'];
+      var DEFAULTS = { variant: 'h', surface: 'popup', state: '1', width: '320', open: '0', preview: 'rest', text: '100', wording: 'proposed', statepos: 'today' };
+      var st = {};
+      Object.keys(DEFAULTS).forEach(function (k) { st[k] = DEFAULTS[k]; });
+
+      // The address keeps the choices, so a refresh or a pasted link lands on the same picture.
+      (function readHash() {
+        var h = new URLSearchParams(location.hash.replace(/^#/, ''));
+        Object.keys(DEFAULTS).forEach(function (k) { if (h.get(k)) { st[k] = h.get(k); } });
+        if (!S3.variants[st.variant]) { st.variant = DEFAULTS.variant; }
+        if (!h.get('wording')) { st.wording = S3.variants[st.variant].redesign ? 'proposed' : 'current'; }
+      }());
+
+      var tabsEl = document.getElementById('tabs');
+      ORDER.forEach(function (key) {
+        var b = document.createElement('button');
+        b.className = 'variant-tab';
+        b.setAttribute('data-variant', key);
+        b.textContent = S3.variants[key].tab;
+        b.addEventListener('click', function () {
+          st.variant = key;
+          st.wording = S3.variants[key].redesign ? 'proposed' : 'current';
+          render();
+        });
+        tabsEl.appendChild(b);
+      });
+
+      var stateEl = document.getElementById('state');
+      S3.STATES.forEach(function (s) {
+        var o = document.createElement('option');
+        o.value = String(s.id);
+        o.textContent = s.menu;
+        stateEl.appendChild(o);
+      });
+      stateEl.addEventListener('change', function (e) { st.state = e.target.value; render(); });
+
+      document.querySelectorAll('[data-key]').forEach(function (b) {
+        b.addEventListener('click', function () { st[b.getAttribute('data-key')] = b.getAttribute('data-value'); render(); });
+      });
+
+      // The frame is as wide as the phone, so the app's real media queries and widths run. Wide is the two pane layout:
+      // the list pane at 434px, or the 640px Activity page.
+      function frameWidth() {
+        if (st.width !== 'wide') { return parseInt(st.width, 10); }
+        return st.surface === 'activity' ? 640 : (st.surface === 'row' ? 434 : 412);
+      }
+
+      function url(theme) {
+        var p = new URLSearchParams({
+          theme: theme, id: theme, variant: st.variant, surface: st.surface, state: st.state, open: st.open,
+          preview: st.preview, text: st.text, wording: st.wording, statepos: st.statepos
+        });
+        return 'stage.html?' + p.toString();
+      }
+
+      function mark() {
+        document.querySelectorAll('.variant-tab').forEach(function (b) {
+          var on = b.getAttribute('data-variant') === st.variant;
+          b.classList.toggle('on', on);
+          b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        document.querySelectorAll('[data-key]').forEach(function (b) {
+          var on = st[b.getAttribute('data-key')] === b.getAttribute('data-value');
+          b.classList.toggle('on', on);
+          b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        stateEl.value = st.state;
+        // The label position only matters on a row of a new variant.
+        document.getElementById('statepos-group').hidden = !(S3.variants[st.variant].redesign && st.surface !== 'popup');
+      }
+
+      function render() {
+        var spec = S3.variants[st.variant];
+        ['light', 'dark'].forEach(function (theme) {
+          var frame = document.getElementById('frame-' + theme);
+          frame.style.width = (frameWidth() + 2) + 'px'; // the frame border takes 2px, so the page inside is exactly the phone width
+          frame.style.height = '320px';
+          frame.src = url(theme);
+          var slot = document.getElementById('rules-' + theme);
+          slot.className = 'rules';
+          slot.textContent = 'Checking the rules...';
+        });
+        mark();
+        document.getElementById('note-title').textContent = spec.tab;
+        document.getElementById('note-body').textContent = spec.summary;
+        var weak = document.getElementById('note-weak');
+        weak.textContent = '';
+        spec.weaknesses.forEach(function (w) {
+          var li = document.createElement('li');
+          li.textContent = w;
+          weak.appendChild(li);
+        });
+        var h = new URLSearchParams(st);
+        try { history.replaceState(null, '', '#' + h.toString()); } catch (e) { /* a file page in some browsers */ }
+      }
+
+      window.addEventListener('message', function (e) {
+        var d = e.data;
+        if (!d || (d.type !== 'rules' && d.type !== 'size')) { return; }
+        var frame = document.getElementById('frame-' + d.id);
+        if (!frame) { return; }
+        if (d.type === 'size') {
+          frame.style.height = Math.max(160, d.height + 2) + 'px';
+          return;
+        }
+        var slot = document.getElementById('rules-' + d.id);
+        var r = d.result;
+        var failed = r.results.filter(function (x) { return !x.ok; });
+        var real = failed.filter(function (x) { return !x.expected; });
+        slot.textContent = '';
+        slot.className = real.length ? 'rules bad' : 'rules';
+        var head = 'Rules check: ' + r.stats.passed + ' of ' + r.stats.checks + ' checks passed on ' + r.stats.elements + ' elements. Surface ' + r.width + ' x ' + r.height + ' px.';
+        slot.appendChild(document.createTextNode(head));
+        if (failed.length) {
+          var list = document.createElement('ul');
+          failed.forEach(function (x) {
+            var li = document.createElement('li');
+            if (x.expected) { li.className = 'exp'; }
+            li.textContent = (x.expected ? 'Today\'s design, as expected: ' : 'Violation: ') + x.name + '. ' + x.details.slice(0, 2).join('; ');
+            list.appendChild(li);
+          });
+          slot.appendChild(list);
+        }
+      });
+
+      render();
+    }());
+  </script>
+</body>
+</html>

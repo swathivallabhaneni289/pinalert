@@ -1,0 +1,10 @@
+/*
+ * f.css: header F (and G), the reporter words as a quiet second line under the labels.
+ *
+ * The words take a whole line of the header zone, so they always sit in the same place: directly under the labels,
+ * left aligned with the title.
+ */
+:root[data-header="byline"] .popup-card__header:not([hidden]) .trust-reporter:not([hidden]),
+:root[data-header="byline"] .report-row__top .trust-reporter:not([hidden]) {
+  flex: 0 0 100%;
+}

@@ -1,0 +1,15 @@
+/*
+ * current.css: the baseline needs no styles of its own. It is the shipped web/static/css/trust.css, linked unchanged.
+ *
+ * The only rules here are the three preview classes, so a still picture can show the hover, press and focus states
+ * that the real :hover, :active and :focus-visible rules draw. Each one copies the shipped declaration:
+ *   .trust-block__toggle:hover   { text-decoration: underline; }
+ *   .trust-block__toggle:active  { background-color: var(--color-border); }
+ */
+:root[data-variant="current"] .trust-block__toggle.is-hover {
+  text-decoration: underline;
+}
+
+:root[data-variant="current"] .trust-block__toggle.is-press {
+  background-color: var(--color-border);
+}

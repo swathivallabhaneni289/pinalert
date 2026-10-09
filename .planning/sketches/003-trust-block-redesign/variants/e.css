@@ -1,0 +1,12 @@
+/*
+ * e.css: header E, the reporter words at the far end of the label row.
+ *
+ * The labels are one flex item (the pills group) and the reporter words are the other. justify-content: space-between
+ * puts the words at the far end when both fit on one line. When they do not fit, the words wrap to a line of their own,
+ * and a space-between line that holds a single item starts at the left edge, so they drop under the labels, left
+ * aligned, with no script and no measuring.
+ */
+:root[data-header="far"] .popup-card__header:not([hidden]),
+:root[data-header="far"] .report-row__top {
+  justify-content: space-between;
+}

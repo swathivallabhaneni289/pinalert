@@ -1,0 +1,22 @@
+/*
+ * g.css: button G, the compact line.
+ *
+ * The face becomes one wrapping line that holds the counts and the still current words, with the chevron at the end of
+ * the button. Whole units wrap, never a phrase, and the chevron stays centred against one line or two. When the width
+ * runs out the line falls back to the two rows of E and F.
+ */
+:root[data-button="line"] .trust-block__face:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-lg);
+}
+
+/* Shipped: the signals row has overflow hidden and a 28px floor for its own two signal layout. Alone on a line it
+   needs neither. */
+:root[data-button="line"] .trust-block__signals:not([hidden]) {
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: visible;
+}

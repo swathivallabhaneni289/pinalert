@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sketch 003 stage</title>
+  <script>
+    // The theme is read from the address before first paint, so a frame never flashes.
+    (function () {
+      var q = new URLSearchParams(location.search);
+      document.documentElement.setAttribute('data-theme', q.get('theme') === 'dark' ? 'dark' : 'light');
+    }());
+  </script>
+  <!-- Same order as the app: tokens first, then the real stylesheets. The theme file only imports web/static/css/main.css. -->
+  <link rel="stylesheet" href="../themes/default.css">
+  <link rel="stylesheet" href="../../../web/static/css/feed.css">
+  <link rel="stylesheet" href="../../../web/static/css/trust.css">
+  <link rel="stylesheet" href="../../../web/static/css/auth.css">
+  <!-- Mockup chrome, then the proposed CSS for the new variants. -->
+  <link rel="stylesheet" href="sketch.css">
+  <link rel="stylesheet" href="variants/current.css">
+  <link rel="stylesheet" href="variants/common.css">
+  <link rel="stylesheet" href="variants/e.css">
+  <link rel="stylesheet" href="variants/f.css">
+  <link rel="stylesheet" href="variants/g.css">
+  <link rel="stylesheet" href="variants/h.css">
+</head>
+<body>
+  <div id="stage"></div>
+
+  <script src="data.js"></script>
+  <script src="lib.js"></script>
+  <script src="variants/current.js"></script>
+  <script src="variants/e.js"></script>
+  <script src="variants/f.js"></script>
+  <script src="variants/g.js"></script>
+  <script src="variants/h.js"></script>
+  <script src="../shared/rules-check.js"></script>
+  <script src="rules.js"></script>
+  <script src="stage.js"></script>
+</body>
+</html>

@@ -1,0 +1,162 @@
+/*
+ * common.css: what the three new variants (E, F, G) share. Proposed production CSS, written as overrides of the shipped
+ * web/static/css/trust.css, which the stage links first. Every rule is scoped to :root[data-redesign] only so the baseline
+ * can sit beside it; in the app the prefix is dropped and each rule edits the shipped rule it names.
+ *
+ * What changes, in one place:
+ *   - No underline in any state. The shipped hover rule sets text-decoration: underline, and the whole button is one
+ *     element, so every word underlined. Feedback is now a background fill only.
+ *   - Hover is the border colour at half strength and press is the border colour (the shipped press fill, unchanged),
+ *     so hover is always the softer step of the same fill on every surface and theme.
+ *   - A chevron is the disclosure cue, because a phone has no hover. It turns when the panel opens.
+ *   - The reporter words leave the button. They are plain text at the top of the report.
+ *   - Only tokens: no new colour, no new size, spacing from the scale. No custom property is declared.
+ */
+
+/* ---- The button ---------------------------------------------------------------------------------------------- */
+/* Shipped: display: block, width 100%, 8px by 4px padding. Now a wrapping flex row, the face (counts and still current
+   words) and the chevron. The box is 4px wider on each side and the left padding 4px deeper, so the words stay exactly
+   where they are today while a fill or a focus ring gets room around them instead of hugging the text. The other
+   shipped declarations (44px floor, vertical padding, 8px corners, transition) are kept.
+
+   The chevron and its gap take 24px beside the text. At a large text size that would squeeze the counts until a number
+   lands on one line and its word on the next ("7" then "confirmed"), which the shipped button never does. So the face
+   asks for 6.85em as its flex base, and the chevron wraps onto a line of its own, right aligned, whenever the room
+   beside the face is under that. The face grows to fill every other line, so justify-content: flex-end only ever moves
+   a chevron that is alone on its line, and no auto margin is needed.
+
+   6.85em is the widest count the server can send ("99+ confirmed" is 6.53em in WebKit and Chromium on macOS) plus
+   about 5 percent for other system fonts, nudged so that no surface and text size the board offers sits within 4px of
+   the point where the chevron flips. It is tied to the text size and to nothing in the report, so on one page the
+   chevron sits in the same place for every report. At 100 percent text the chevron is beside the face on every
+   surface down to the 188px Activity row, so nothing changes there. It drops under the text from about 145 percent on
+   the 188px Activity row, and at 200 percent on the 228px Activity row and the 236px feed row. It never drops on the
+   popup or on the wider panes. */
+:root[data-redesign] .trust-block__toggle:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  align-content: center;
+  column-gap: var(--space-xs);
+  row-gap: var(--space-xs);
+  width: calc(100% + var(--space-sm));
+  margin-inline: calc(-1 * var(--space-xs));
+  padding-inline: var(--space-sm) var(--space-xs);
+  text-decoration: none;
+}
+
+/* Shipped: .trust-block__toggle:hover { text-decoration: underline; }. Hover is half of the press fill. A mix of the
+   border token with transparent keeps the severity tint showing through on a tinted row, and it stays softer than
+   the press fill whatever sits behind it. */
+:root[data-redesign] .trust-block__toggle:hover,
+:root[data-redesign] .trust-block__toggle.is-hover {
+  text-decoration: none;
+  background-color: color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+
+/* Press is the shipped fill, var(--color-border). It follows the hover rule at the same weight so it wins while the
+   button is held. */
+:root[data-redesign] .trust-block__toggle:active,
+:root[data-redesign] .trust-block__toggle.is-press {
+  text-decoration: none;
+  background-color: var(--color-border);
+}
+
+/* The inset focus ring is the shipped :focus-visible rule and is not repeated here. */
+
+:root[data-redesign] .trust-block__face:not([hidden]) {
+  display: block;
+  flex: 1 1 6.85em;
+  min-width: 0;
+}
+
+/* ---- The chevron --------------------------------------------------------------------------------------------- */
+/* A 20px mask in the normal text colour, the same drawing method as every other icon. It points down while the panel
+   is shut and up once it is open. The mask file is new: chevron-down.svg. */
+:root[data-redesign] .trust-block__chevron:not([hidden]) {
+  display: block;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  transition: transform 150ms ease;
+}
+
+:root[data-redesign] .trust-block__toggle[aria-expanded="true"] .trust-block__chevron {
+  transform: rotate(180deg);
+}
+
+/* ---- The reporter words ------------------------------------------------------------------------------------- */
+/* Plain text. Regular weight, normal text colour, no border, no fill, no icon. The popup insets it 4px so it lines up
+   with the title and the meta, the same inset the trust text uses. */
+:root[data-redesign] .trust-reporter:not([hidden]) {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+:root[data-redesign] .popup-card .trust-reporter:not([hidden]) {
+  padding: 0 var(--space-xs);
+}
+
+/* ---- The top of the report: a group of labels and the reporter words ------------------------------------------ */
+/* Shipped .popup-card__header keeps its flex, wrap, 32px floor and 48px right clearance for the close button. The
+   badge and the labels move into one group so the reporter words can sit beside it or under it as a unit. */
+:root[data-redesign] .popup-card__header:not([hidden]) {
+  column-gap: var(--space-sm);
+  row-gap: var(--space-xs);
+}
+
+:root[data-redesign] .popup-card__pills:not([hidden]),
+:root[data-redesign] .report-row__pills:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+/* The row has no header today: the severity label is the first thing in the body. The same group, on its own line,
+   with the 4px the label's own bottom margin gave the title. */
+:root[data-redesign] .report-row__top:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-sm);
+  row-gap: var(--space-xs);
+  margin-bottom: var(--space-xs);
+}
+
+/* Inside the group the labels drop the margins the shipped row rules gave them when they stood alone. */
+:root[data-redesign] .report-row__top .severity-label:not([hidden]),
+:root[data-redesign] .report-row__top .visibility-tag:not([hidden]) {
+  margin: 0;
+}
+
+/* ---- Reduced motion and forced colours ------------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-redesign] .trust-block__chevron:not([hidden]) {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  :root[data-redesign] .trust-block__chevron:not([hidden]) {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}
