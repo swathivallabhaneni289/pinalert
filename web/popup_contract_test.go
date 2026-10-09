@@ -597,8 +597,8 @@ func TestPopupDialogFocusAndOpener(t *testing.T) {
 		"getElement()", "preventScroll: true")
 
 	fly := jsFunctionBody(t, code, "flyTo(id, opts)")
-	p13Ordered(t, fly, "flyTo", "opts.opener === 'list'", "listOpenerId = String(id)", "marker.openPopup()",
-		"isPopupOpen()", "popupOpener = ")
+	p13Ordered(t, fly, "flyTo", "opts.opener === 'list'", "listOpenerId = String(id)", "isPopupOpen()",
+		"marker.openPopup()", "popupOpener = ")
 
 	focus := jsFunctionBody(t, code, "focusOpenPopup()")
 	p13MustContain(t, "focusOpenPopup", focus, "offsetParent === null", "return false", "return true", "preventScroll: true")
@@ -620,6 +620,36 @@ func TestPopupDialogFocusAndOpener(t *testing.T) {
 	p13MustContain(t, "activateRow", activate, "PinalertMap.flyTo(id, { opener: 'list' })")
 	moveFocus := jsFunctionBody(t, feed, "moveFocusIntoView(view)")
 	p13Ordered(t, moveFocus, "moveFocusIntoView", "PinalertMap.focusOpenPopup()", "'fab-report'")
+}
+
+// TestListRowActivationOpensThePopupOnce pins A74: a row activation reaches
+// flyTo twice (the selection callback and the explicit opener seam), and flyTo
+// must ask Leaflet to open the popup only when it is closed, because an open
+// call on an open popup removes and appends the card node again and drops the
+// focus that popupopen just gave it. Static inspection cannot run a browser;
+// the scripted check T9.14 is the live proof.
+func TestListRowActivationOpensThePopupOnce(t *testing.T) {
+	code := p19Code(t, "static/js/map.js")
+
+	fly := jsFunctionBody(t, code, "flyTo(id, opts)")
+	p13Ordered(t, fly, "flyTo", "opts.opener === 'list'", "listOpenerId = String(id)",
+		"if (!marker.isPopupOpen()) {", "marker.openPopup();",
+		"if (listOpenerId !== null && marker.isPopupOpen()) {",
+		"popupOpener = { id: listOpenerId, kind: 'list' };", "listOpenerId = null;")
+	p13MustMatch(t, "flyTo", fly, `if \(!marker\.isPopupOpen\(\)\) \{\s*marker\.openPopup\(\);\s*\}`)
+	if n := strings.Count(fly, "openPopup("); n != 1 {
+		t.Errorf("flyTo calls openPopup %d times, want exactly 1", n)
+	}
+
+	initBody := jsFunctionBody(t, code, "init()")
+	p13MustContain(t, "init", initBody, "Pinalert.onSelect(", "source === 'list'", "flyTo(id)")
+
+	feed := p19Code(t, "static/js/feed.js")
+	activate := jsFunctionBody(t, feed, "activateRow(id)")
+	p13Ordered(t, activate, "activateRow", "Pinalert.select(id, 'list')", "PinalertMap.flyTo(id, { opener: 'list' })")
+	if strings.Contains(activate, "openPopup(") {
+		t.Errorf("activateRow must not call openPopup directly")
+	}
 }
 
 // TestPinOpensOnSpace pins A49 and A45: Space opens a pin and activates the
@@ -696,6 +726,35 @@ func TestRenderRowsRemovesBeforePlacing(t *testing.T) {
 	p13MustContain(t, "map.js", mapCode, "takeRemovedPopupFocus: takeRemovedPopupFocus")
 	closeBody := jsFunctionBody(t, mapCode, "onPopupClose(evt)")
 	p13Ordered(t, closeBody, "onPopupClose", "removingPopup", "returnFocusToOpener(")
+}
+
+// TestFocusAfterRemovalIgnoresAFadingPopup pins A67 and A52: when a poll
+// removes the report whose popup holds focus, Leaflet keeps the closing card
+// attached for a 200 ms fade, so focusAfterRemoval must treat a focused node
+// inside a popup that map.js already marked closed as lost focus, like the
+// page body. Static inspection cannot run a browser, and this test pins the
+// decision (read the synchronous data-popup-open mark), not the fade timing.
+// The scripted check T9.13, in real time, is the live proof.
+func TestFocusAfterRemovalIgnoresAFadingPopup(t *testing.T) {
+	feed := p19Code(t, "static/js/feed.js")
+
+	lost := jsFunctionBody(t, feed, "focusIsLost(active)")
+	p13Ordered(t, lost, "focusIsLost", "document.body", ".closest('.leaflet-popup')",
+		"getAttribute('data-popup-open') !== 'true'")
+	p13MustContain(t, "focusIsLost", lost, "return true", "return false")
+	p13MustNotContain(t, "focusIsLost", lost, "setTimeout", "setInterval", "requestAnimationFrame",
+		"transitionend", "animationend", "getComputedStyle", "opacity", ".visibility")
+
+	after := jsFunctionBody(t, feed, "focusAfterRemoval(candidates)")
+	p13Ordered(t, after, "focusAfterRemoval", "var active = document.activeElement;", "if (!focusIsLost(active)) {",
+		"candidates.length", "getElementById('map')")
+	p13MustMatch(t, "focusAfterRemoval", after, `if \(!focusIsLost\(active\)\) \{\s*return;\s*\}`)
+	p13MustNotContain(t, "focusAfterRemoval", after, "active !== document.body")
+
+	mapCode := p19Code(t, "static/js/map.js")
+	closeBody := jsFunctionBody(t, mapCode, "onPopupClose(evt)")
+	p13MustContain(t, "onPopupClose", closeBody, "removeAttribute('data-popup-open')")
+	p13MustNotContain(t, "onPopupClose", closeBody, "setTimeout", "requestAnimationFrame")
 }
 
 // p19NoSpace drops every whitespace rune, so a value written on several lines

@@ -245,6 +245,24 @@
     return !!el && el.isConnected && el.getClientRects().length > 0;
   }
 
+  // focusIsLost is true when focus is on the page body or on a node inside a
+  // popup that is no longer open. map.js sets data-popup-open when a popup
+  // opens and clears it synchronously when it closes, which the poll's render
+  // does for a removed report. Leaflet then keeps the closing node attached
+  // for a 200 ms fade, so a focused node there is not live although it is
+  // attached and is not the body. A popup without the mark is treated as
+  // closed. Reading the mark needs no timer, animation event or style.
+  function focusIsLost(active) {
+    if (!active || active === document.body) {
+      return true;
+    }
+    var popup = active.closest('.leaflet-popup');
+    if (popup !== null && popup.getAttribute('data-popup-open') !== 'true') {
+      return true;
+    }
+    return false;
+  }
+
   // takeMapPopupFocus asks the map whether a poll just removed the popup that
   // held focus (A67). The map reconciles first, so the answer is ready.
   function takeMapPopupFocus() {
@@ -255,11 +273,12 @@
   // focusAfterRemoval is the one place focus is chosen after a poll removed
   // the report that owned it (A67, in the A52 order): the first displayed
   // row among the candidates, else the map, else the view toggle, else the
-  // empty state. It acts only when focus fell to the page body, and the
-  // browser decides only where focus goes, never which reports exist.
+  // empty state. It acts when focus fell to the page body or sits in a popup
+  // that map.js already marked closed, and the browser decides only where
+  // focus goes, never which reports exist.
   function focusAfterRemoval(candidates) {
     var active = document.activeElement;
-    if (active && active !== document.body) {
+    if (!focusIsLost(active)) {
       return;
     }
     for (var i = 0; i < candidates.length; i++) {

@@ -858,11 +858,13 @@ window.PinalertMap = (function () {
     }
   }
 
-  // flyTo pans to a report at zoom 16 and opens its popup — the wide-screen
-  // "clicking a list row pans/flies the map" half of D-06's sync contract.
-  // The list names itself as the opener through opts (A74). The selection
-  // callback may already have opened the popup, in which case no popupopen
-  // fires again and the opener is claimed here.
+  // flyTo pans to a report at zoom 16 and opens its popup only when the popup
+  // is closed. That is the wide-screen "clicking a list row pans/flies the
+  // map" half of D-06's sync contract. The selection callback has usually
+  // opened the popup already, and Leaflet's open call on an open popup removes
+  // the card node and appends it again, which drops the focus popupopen just
+  // gave it and fires no second popupopen. The list names itself as the opener
+  // through opts (A74) and the opener is claimed here either way.
   function flyTo(id, opts) {
     var marker = markers[id];
     if (!marker || !map) {
@@ -876,7 +878,9 @@ window.PinalertMap = (function () {
     } else {
       map.flyTo(marker.getLatLng(), 16);
     }
-    marker.openPopup();
+    if (!marker.isPopupOpen()) {
+      marker.openPopup();
+    }
     if (listOpenerId !== null && marker.isPopupOpen()) {
       popupOpener = { id: listOpenerId, kind: 'list' };
       listOpenerId = null;
