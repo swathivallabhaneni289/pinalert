@@ -310,6 +310,10 @@ Plans:
 
 - [x] 03-25-PLAN.md: After Mark resolved from the map popup at default motion focus lands on the map container, the earlier too far refusal line clears with the hint, and V-42 step 8(f) says a tap refreshes the fix silently (gap closure, wave 10)
 
+**Wave 11** *(gap closure)*
+
+- [ ] 03-26-PLAN.md: A feed row opens its map popup once so focus stays on the popup card and Escape returns it to the row, and a poll that removes the report whose popup holds focus moves focus to a row or the map, never the page body (gap closure, wave 11)
+
 ### Phase 03.1: Report history views (INSERTED)
 
 **Goal:** A reader can switch the list and the map between Active, Resolved, Disputed and Past reports, so resolved and expired reports stay visible as clearly labelled history instead of vanishing, and can check another area or narrow the list by category and severity. Raised by the owner on 2026-10-03 while looking at the main screen, which today offers only the live list and a "Show disputed reports" checkbox. Inserted right after Phase 3 because it consumes Phase 3's outcome labels and trust object, not because it is urgent.
