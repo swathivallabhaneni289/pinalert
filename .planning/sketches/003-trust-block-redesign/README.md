@@ -2,7 +2,7 @@
 sketch: 003
 name: trust-block-redesign
 question: "With nothing underlined, the reporter words as plain text at the top of the report, a cue that is not an underline to say the block opens, and shorter panel wording, does the trust block still read at a glance on the map popup, the feed row and the Activity row, in light and dark, down to 188px of text and at 200 percent text size?"
-winner: null
+winner: "H"
 tags: [trust-block, popup, feed-row, activity-row, reporter-words, disclosure, wording, light-dark]
 ---
 
@@ -537,3 +537,4 @@ Suggested fixes that were not taken, and why. "Chevron on the first row only": t
 loses 24px. A 16px chevron: it frees 4px and the count needs 5px more at 200 percent. Dropping the extra 4px of right padding: it
 fixes "7 confirmed" but not "99+ confirmed", and it moves the 100 percent geometry. A rows only E: see finding 2.
 
+Spacing, also the owner's call (2026-10-09): 16px between the state label and the reporter words, 8px between the lines of the header; phones 340px wide or narrower keep 8px between the label and the words on rows so they stay on one line. Winner: H.
