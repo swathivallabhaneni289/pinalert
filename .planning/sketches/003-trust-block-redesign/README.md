@@ -79,6 +79,7 @@ button, since each is a few lines of CSS scoped by `data-header` and `data-butto
 | E: Pill row words | Far end of the label row, under the labels when there is no room | Two rows, chevron |
 | F: Header byline | Own line under the labels, left aligned with the title | Two rows, chevron |
 | G: Compact line | As F | One wrapping line, chevron |
+| H: Beside the label (the owner's choice) | Beside the state label, on the line it shares with it | Two rows, chevron |
 
 **Current d4 (as built).** The block as the owner saw it: the whole two row button underlines every word on hover, and
 the reporter words sit in its second row beside a small user icon. The only sign that it opens is that hover underline, so
@@ -114,7 +115,16 @@ and a chevron at the end. It wraps to two lines when the width runs out, which o
 Weaknesses: one line never happens on a phone (measured below); where it does fit, rows in one list get different heights
 depending on how long the still current word is; three kinds of text (16px counts, 14px words, a chevron) share one line.
 
+**H: Beside the label (added 2026-10-09, the owner's choice).** The reporter words are plain text directly beside the state
+label, on the same line as it. In the popup the state label and the words share a line of their own under the badge row; on the
+feed row and the Activity row they share the line under the meta line, and a Live report, which has no state label, shows the
+words alone on that line. They wrap under the label only when there is no room. The button is the same as E and F. H's own rules
+are in `variants/h.css` and `variants/h.js`.
+
 ### Recommendation
+
+*Written for E, F and G. The owner has since chosen H, see Owner decision at the end. F's reasoning about the words keeping one
+place applies to H as well.*
 
 **F with the proposed wording**, the chevron on, and the Unconfirmed label left where it is today on rows.
 
@@ -334,27 +344,55 @@ What changes in meaning, said plainly:
 
 ## Notes for the implementer
 
-Everything below is for the build, once the owner picks. The sketch changes no app file.
+Everything below is for the build, once the layout is final. The owner chose H (see Owner decision at the end), so the notes are
+written for H and say where E, F or G would differ. The sketch changes no app file. Function names, call sites and test pins were
+read from the files cited, and nothing was run in the repository. The test failures were found by reading each test against the
+markup and CSS the sketch draws; a reviewer's dry run on a scratch copy found the same ones for E, F and G.
 
 **CSS, `web/static/css/trust.css`** (the sketch's `variants/common.css` is written as overrides of these rules, so drop the
 `:root[data-redesign]` prefix and edit each in place):
 
-- `.trust-block__toggle:not([hidden])`: `display: grid`, two columns (`minmax(0, 1fr) auto`), `column-gap: var(--space-xs)`,
-  `width: calc(100% + var(--space-sm))`, `margin-inline: calc(-1 * var(--space-xs))`, `padding-inline: var(--space-sm)
-  var(--space-xs)`. Keep the 44px floor, vertical padding, 8px corners and the 150ms transition. Drop `text-underline-offset`.
+- `.trust-block__toggle:not([hidden])`: `display: flex`, `flex-wrap: wrap`, `justify-content: flex-end`, `align-items: center`,
+  `align-content: center`, `column-gap` and `row-gap` of `var(--space-xs)`, `width: calc(100% + var(--space-sm))`,
+  `margin-inline: calc(-1 * var(--space-xs))`, `padding-inline: var(--space-sm) var(--space-xs)`. Keep the 44px floor, vertical
+  padding, 8px corners and the 150ms transition. Drop `text-underline-offset`.
+- `.trust-block__face:not([hidden])`: `display: block`, `flex: 1 1 6.85em`, `min-width: 0`. The 6.85em is load bearing: it is what
+  moves the chevron under the text before a count is squeezed, so a plain `flex: 1` brings the "7" then "confirmed" split back at
+  175 and 200 percent. (G only: its `display: flex` face rule, in `variants/g.css`.)
 - `.trust-block__toggle:hover`: replace `text-decoration: underline` with
   `background-color: color-mix(in srgb, var(--color-border) 50%, transparent)`. Keep `:active` as `var(--color-border)` and
   after the hover rule. The focus ring stays inset.
-- New: `.trust-block__face`, `.trust-block__chevron` (20px mask, `transform: rotate(180deg)` on `aria-expanded="true"`, a
-  reduced motion rule and a forced colours rule), `.trust-reporter`, `.popup-card__pills`, `.report-row__top`,
-  `.report-row__pills`. Remove `.trust-icon--user`, `.trust-signal--second::before` and its forced colours entry (the
-  reporter signal leaves the button). Every new display rule keeps `:not([hidden])`. G only: the `data-button="line"` rules
-  in `variants/g.css`. E only: `variants/e.css`. F: `variants/f.css`.
-- No custom property is declared and no colour is new, so the `trust.css` allowlist test still holds. `color-mix` is
-  already used in `trust.css` (the Yes button hover), so no browser floor moves.
+- New: `.trust-block__chevron` (20px mask, `transform: rotate(180deg)` on `aria-expanded="true"`, a reduced motion rule and a
+  forced colours rule) and `.trust-reporter`. H adds one state line per surface (`variants/h.css`). E, F and G add
+  `.popup-card__pills`, `.report-row__top` and `.report-row__pills` (see Wrappers). Remove `.trust-icon--user`,
+  `.trust-signal--second::before` and its forced colours entry (the reporter signal leaves the button). G only: the
+  `data-button="line"` rules in `variants/g.css`. E only: `variants/e.css`. F: `variants/f.css`.
+- Every new rule that declares `display` keeps `:not([hidden])`. The sketch's own face, pills, row top and G face rules lacked
+  the guard until the repair pass, although this note said they had it.
+- No custom property is declared and no colour is new, so the `trust.css` allowlist test still holds. `color-mix` is already
+  used in `trust.css` (the Yes button hover), so no browser floor moves. A wrapping flex `<button>` was checked in WebKit 26.6
+  and Chromium 153 only.
+- `TestPopupCardSurfaceAndGeometry` (`web/popup_contract_test.go`, line 307) pins things the sketch's rules do not meet as
+  written. (1) It bans `.trust-`, `.icon-glyph--`, `.severity-label` and `.visibility-tag` in any rule head that names
+  `popup-card` or `leaflet-popup`, so `.popup-card .trust-reporter` (common.css), `.popup-card__header .trust-reporter` (f.css)
+  and h.css's `.popup-card__pills .trust-reporter` cannot be copied: write the reporter rules on `.trust-reporter` alone (a
+  modifier class set where `showScores` is true, such as `trust-reporter--scored`, can carry a popup only difference). (2) It pins
+  `gap: var(--space-sm)` on `.popup-card__header:not([hidden])`, so keep that declaration and add `row-gap` after it, never
+  replace it with two longhands. (3) It pins `padding-right: var(--space-2xl)` on that header; H's popup moves the 48px for the
+  close button to the badge row, so that pin changes with H. (4) Every popup rule that declares `display` keeps the hidden guard.
 - Worth deciding at build time: no hover rule in the app is guarded for touch, so on an iPhone a tap can leave the hover fill
   showing until the next tap elsewhere. Wrapping the hover fill in `@media (hover: hover)` avoids it. The sketch leaves it
   unwrapped, like the vote buttons, and has not been tried on a phone.
+
+**Wrappers.** E, F and G draw a pills group (popup) and a row top (rows) around the labels because E needs them for its
+`space-between` trick. F and G do not: the popup header is already a wrapping flex row, so the words need only `flex-basis: 100%`,
+and on rows the words are a block placed after the severity label with `margin-bottom: var(--space-xs)`. This was tested by
+taking the wrapper out of the live DOM, in WebKit and Chromium, for F and G on all three surfaces at 320 and 360 with states 1, 3,
+4, 6 and 9: 58 of 60 renders are identical to the pixel, and the 2 that differ are the 320px popup with an Unconfirmed label, where
+the label that wraps sits 4px closer to Low. It buys three things: the severity label stays the first child of the row body, the
+profile template stays as it is, and so `TestRowSeverityLabelMountsFirst`, `TestProfileTemplateUsesServerSeverityAndTrust` and
+the database test `TestProfileRendersSeverityLabel` need no change. H's rows add only a state line under the meta, so a label
+wrapper is not needed there either (the unwrap test ran for F and G, not for H).
 
 **Icon:** add `web/static/icons/chevron-down.svg` (Lucide `chevron-down`, `<path d="m6 9 6 6 6-6"/>`), an entry in
 `nonCategoryIcons` in `web/css_contract_test.go`, and a literal `url("/static/icons/chevron-down.svg")` mask in
@@ -362,19 +400,32 @@ Everything below is for the build, once the owner picks. The sketch changes no a
 
 **JavaScript:**
 
-- `trust.js` `createTrustBlock`: drop the reporter signal and its `trust-signal--second` class, wrap the counts and the still
-  current signal in a face span, add the chevron span (`aria-hidden="true"`), keep the hint, the panel and `PANEL_LINES`
-  as they are. Add a builder and an updater for the reporter words (a `trust-reporter` span with the label and, on the popup,
-  the hidden ", score" prefix and the number as plain text), exported beside `createTrustBlock`. Consumers never type a
-  `trust-` class, so they append the element the builder returns.
-- `map.js` `buildPopupCard`: wrap the badge, severity label and state label in `popup-card__pills`, then append the reporter
-  element to the header. `feed.js` `createRow`: put the severity label in `report-row__top` and `report-row__pills`, append
-  the reporter element, leave the state label under the meta.
-- Activity: the severity label is rendered by `profile.html.tmpl`. Either wrap it there in the same two elements and let
-  `activity.js` append the reporter element from `data-trust`, or have `activity.js` build the wrapper around the label.
+- Fold the reporter words into the `createTrustBlock` instance. The instance already holds `reporter` (a `createSignal` result with
+  `.el`) and `updateTrustBlock` already refreshes it through `renderTrustSignal`, so no new export, no new call site and no new
+  refresh path are needed. In `trust.js`: (a) build it plainly, a `trust-reporter` span with no `trust-icon` and no
+  `trust-signal--second`, and on the popup the number as plain text behind the visually hidden ", score" prefix and not in
+  `trust-num` (semibold); that is its own small builder, because `createSignal` adds the icon and the semibold number; (b) do not
+  append it into `signals`, since consumers place `instance.reporter.el` themselves; (c) in `updateTrustBlock`, the early return
+  for a failed `validTrust` hides only `block.el` and the words live outside it, so add `block.reporter.el.hidden = true` there,
+  or the words stay on screen next to a hidden block, against the file's rule that an invalid trust object hides the whole block;
+  (d) `block.signals.hidden = !state.currency`, since the reporter no longer lives in it.
+- Not a separate exported builder and updater, which is what the first draft of these notes said. That adds four refresh paths
+  (`feed.js` `updateRow`, `map.js` `updatePopupCard`, and the two in `activity.js`, first fill and `onReopenClick`) and a hide
+  rule for the same invalid case, and it breaks `TestActivityMountsTheTrustBlock` (`web/activity_trust_contract_test.go`), which
+  pins one `createTrustBlock()` with no options, exactly two `updateTrustBlock(` calls and the order createTrustBlock then
+  createReopenControl. `updatePopupCard` also must not contain `createElement(` or `appendChild(` (`popup_contract_test.go`),
+  so placement stays in the builders.
+- A held or removed Activity row (Phase 4 plan 04-16, lines 24 and 45) has no `data-trust` and mounts no trust block, so it has no
+  reporter element either.
+- Placement is all a consumer does, and it never types a `trust-` class (`web/trust_contract_test.go` bans those literals in
+  `feed.js` and `map.js`). `map.js buildPopupCard`: put `trust.reporter.el` after the state label in the header (H: in the state
+  line that holds the label and the words). `feed.js createRow`: H puts the state label and `trust.reporter.el` in one state line
+  under the meta, built where the label is built today, so the call order that `votes_contract_test.go` and `trust_contract_test.go`
+  pin (meta, then `createVisibilityTag`, then `createTrustBlock`, then `createVoteBlock`) is kept. `activity.js` builds its own state
+  label (line 59) and block (line 71), so it builds the same state line there, and the profile template needs no change.
 - The reporter element is hidden for a `none` signal (A47) and shows nothing, no icon and no text.
 
-**Tests and documents these changes touch** (found by search, not run):
+**Tests and documents these changes touch** (found by reading the tests, not by running them):
 
 - `web/trust_contract_test.go`: `TestTrustCSS` pins the toggle base rule (`display: block`, `width: 100%`, the padding,
   `text-underline-offset: 4px`), `.trust-block__toggle:hover` as `text-decoration: underline`, the no thickness check,
@@ -382,10 +433,29 @@ Everything below is for the build, once the owner picks. The sketch changes no a
   `TestTrustBlockMountedOnBothSurfaces` requires `trust-icon trust-icon--user` and `trust-signal--second` in `trust.js`.
   `TestTrustDisclosure` needs no change as long as `createTrustBlock` keeps a button, `stopPropagation` and `'Enter'`.
 - `web/css_contract_test.go`: the `nonCategoryIcons` map and the user glyph comment.
-- Wording: `internal/service/trustcopy.go`, `trustcopy_test.go`, `trustview_test.go`, `trust_paths_test.go`,
-  `internal/api/handlers/trust.go` (swagger examples), `trust_e2e_test.go`, `docs/swagger.*`, `docs/docs.go` and the
-  sentence table in `docs/TRUST-MODEL.md`. `web/trust_contract_test.go` lists "Counts separate places" among strings that
-  must not appear in `trust.js`, which stays true.
+- `web/popup_contract_test.go` `TestPopupCardSurfaceAndGeometry`: the pins listed under CSS.
+- Only if the severity label gets a wrapper (E, F and G as drawn; not F or G built without it, and not H on rows):
+  `web/labels_contract_test.go` `TestRowSeverityLabelMountsFirst` (line 77: `body.appendChild(severityLabel)` must be the first
+  `body.appendChild(` in `feed.js createRow`), `web/activity_trust_contract_test.go` `TestProfileTemplateUsesServerSeverityAndTrust`
+  (line 38, the regex at line 61: the row body starts with the severity label span, then `report-row__title`), and the database
+  test `internal/api/handlers/activity_e2e_test.go` `TestProfileRendersSeverityLabel` (line 466, the same regex on the rendered
+  page). That one needs a database through `testutil.NewTestDB`, so it does not run without one, and it must only ever be pointed
+  at a disposable database.
+- Wording, code: `internal/service/trustcopy.go` holds every sentence. `reporter.go` only mentions "clear result" in a comment.
+- Wording, tests that pin the old sentences, in `internal/service`: `trustcopy_test.go`, `currency_test.go`, `reporter_test.go`,
+  `trustview_test.go`, `feed_test.go` and `trust_paths_test.go`. A reviewer's dry run with only `trustcopy.go` changed gave 18
+  failures in those six files, all old sentence mismatches or the caveat rule near line 265 of `trustcopy_test.go`, none a
+  character set failure. Database tests: `internal/api/handlers/trust_e2e_test.go` and `activity_e2e_test.go` (line 412, the expiry
+  line). `web/trust_contract_test.go` lists "Counts separate places" among strings that must not appear in `trust.js`, which
+  stays true.
+- Wording, documents: `internal/api/handlers/trust.go` (swagger examples), `docs/docs.go`, `docs/swagger.json`,
+  `docs/swagger.yaml`, the sentence tables in `docs/TRUST-MODEL.md` (the two counters table at lines 99 to 108, the still current
+  section from line 112, the reporter section from line 228) and the copywriting table in `03-UI-SPEC.md`. Nothing catches stale
+  documents today: `TestTrustModelDocMatchesCode` still passes with the old table, so add a checklist line to the change, or extend
+  that test to compare the table with `trustcopy.go`.
+- Wording, a coupling: `internal/api/handlers/votes.go` (line 170) returns "This report has expired." as a vote error and
+  `votes_e2e_test.go` pins it (lines 390 and 538). The proposed lead for an expired report is "Expired, so it can no longer be
+  confirmed.", so one screen could say two things about an expired report. Leave the vote error or align it, at build time.
 - `03-UI-SPEC.md` needs explicit amendments: D-18 (the reporter tag leaves line two of the block), A4 (the user icon goes),
   A48 (hover underline replaced by a hover fill, press and focus unchanged), A7, A56 and RR-1 (caveat once, shorter
   wording), D-19 and A50 (sentence wording, the reporter number in regular weight), A21 and A26 (the top zone), and a new
@@ -393,20 +463,42 @@ Everything below is for the build, once the owner picks. The sketch changes no a
 - The popup tab order is unchanged: close, trust button, Confirm, Dispute, Mark resolved. The reporter words are not
   focusable.
 
+**Phase 4 plans that depend on this change** (recorded here only, the plans are untouched):
+
+- `04-12-PLAN.md` builds `DisclaimerGlossary` from `countsCaveat`, `provisionalLeadSentence`, `expiredLeadSentence`,
+  `needsReconfirmingSentence` and `tooEarlySentence` (lines 70, 137 and 228) and pins the old sentences in its acceptance criteria
+  (line 238: entry 1 ends with " confirmations before this counts as confirmed.", entry 2 ends with "Counts separate places, not
+  votes.", entry 8 is "This report has expired. It can no longer be confirmed."). `04-UI-SPEC.md` line 392 names the same
+  anchors, including that the caveat appears "under the confirmed and disputed entry". If the wording is accepted, keep the five
+  identifiers and change the 04-12 acceptance strings and the 04-UI-SPEC anchors in the same change; the caveat then appears once,
+  so the "confirmed and disputed entry" anchor changes too.
+- `04-18-PLAN.md` (lines 77 to 84) mounts the shared trust block on a fourth surface, the Low data rows: `createLowRow` calls
+  `PinalertTrust.createTrustBlock` and `updateLowRow` calls `updateTrustBlock(row.trust, report.trust)`. With the reporter words in
+  the top zone, `createLowRow` must place `row.trust.reporter.el` too, or those rows lose the reporter words the other three
+  surfaces show. D-20 then covers four surfaces.
+
 **What the sketch cannot show:** Leaflet geometry, autopan and the `100dvh` scroll of an open popup (the card heights
-above are the card, not the viewport); the 30 second poll updating the words in place (the reporter updater must rewrite
-text only and never touch the open state); real touch input.
+above are the card, not the viewport); the 30 second poll updating the words in place (the reporter words refresh through
+`updateTrustBlock`, which rewrites text only and never touches the open state); real touch input.
 
 ## Verified
 
-- 2592 renders per engine, in WebKit 26.6 and Chromium 153, pass the live check with no unexpected failure: four tabs, three
-  surfaces, nine states, light and dark, three widths per surface, panel closed and open, the Unconfirmed label in both
-  places, and 200 percent text at 320. The baseline fails only the four checks that are the point of this sketch (three on
-  the report with no reporter signal, which has no reporter words to judge).
-- 19 deliberate breakages (an underline, a bold reporter word, a chip, a 400ms transition, a missing press fill, a hover as
-  strong as press, sideways scroll, clipped counts, a live region, a second tab stop, a missing or fixed chevron, the caveat
-  twice, a long dash in a sentence, off scale spacing, a stray colour) are all caught, in both engines.
-- A real pointer and the keyboard, not the preview classes, in both engines (276 checks each): no underline on the toggle, any
+- After the repair, the four original tabs (the baseline, E, F, G) pass the live check with no unexpected failure: 4536 renders per
+  engine, in WebKit 26.6 and Chromium 153, over three surfaces, nine states, light and dark, three widths per surface, panel closed
+  and open, the Unconfirmed label in both places, text at 150, 175 and 200 percent at 320 and 200 percent at 360. The baseline fails
+  only the four checks that are the point of this sketch (three on the report with no reporter signal, which has no reporter words
+  to judge).
+- The identity gate for the repair: the geometry of the button, face, counts, chevron, panel, reporter words, labels, titles and vote
+  controls at 100 percent text, before and after the CSS change, 756 configurations per engine, all within 0.01px. The diff tool
+  does detect change: it reports 818 differences between the two engines.
+- The count census: no avoidable split at 150, 175 or 200 percent, on every surface and width, in all nine states, in both engines.
+  The same census on the first version found the splits tabulated under Measured.
+- H, which was added during the repair pass, after that one line fix: 216 renders per engine pass the live check (three surfaces,
+  three widths, nine states, light and dark, and 200 percent text at 320), the census finds no avoidable count split at 150, 175 or
+  200 percent, and 80 real pointer and keyboard checks pass, in both engines.
+- 21 deliberate breakages (the earlier 19, plus the chevron column as a fixed grid column and a squeezed count, which the new rule
+  catches) are all caught, in both engines.
+- A real pointer and the keyboard, not the preview classes, in both engines (300 checks each): no underline on the toggle, any
   ancestor or any descendant at rest, on `:hover`, on `:active` and on `:focus-visible`; a fill appears on hover and a
   different one on press; the focus ring is the 2px inset ring; Enter and Space open and close; Escape closes the panel,
   including after a mouse click with focus on the body (Safari does not focus a button on click); a second Escape closes the
@@ -415,10 +507,33 @@ text only and never touch the open state); real touch input.
   The layout figures in this README were measured in both engines and match. Forced colours were checked in Chromium. The
   accessible names were read in both: the button reads "7 confirmed 1 disputed Getting old, score 52. Shows what these
   mean.", the reporter words read "Reliable reporter, score 78" before the title.
-- Not run: the real Safari app, VoiceOver, a touch device, the Go tests against the proposed sentences (the closed set was
+- Not run: the real Safari app, VoiceOver, a touch device, a dry run of the Go tests against the build notes above, the Go tests against the proposed sentences (the closed set was
   mirrored by hand from `trustcopy_test.go`), and real browser text zoom (200 percent is simulated by doubling the type
   tokens).
 
 ## Owner decision (2026-10-09)
 
 The owner chose where the reporter words go: directly beside the Unconfirmed label, as plain words (no tag look, no underline). Variant **H: Beside the label** draws exactly that and is the default tab. E, F and G stay for comparison. The shorter wording is a separate decision from the layout (it breaks existing tests and touches the Phase 4 disclaimer plan).
+
+## Repair pass
+
+Independent reviewers checked the first version of this sketch and raised six problems. Each was checked against the running
+sketch before anything was changed. Variant H was added to the board by a separate change while this pass ran. It shares the
+button, so the button fix applies to it. The one change this pass made to H's own files is one line in `variants/h.css`: the
+12px reach of its state line into the row padding on a 320px phone is now one spacing step (`calc(-1 * var(--space-md))`),
+because the live check reads margins against the scale and failed 72 of 216 H renders (every row and Activity render at 320,
+in both engines). The line has no fill or border, so nothing looks different.
+
+| # | Finding | Verdict | What changed |
+|---|---|---|---|
+| 1 | In E, F and G the chevron column squeezes a count until "7" and "confirmed" land on separate lines at large text sizes | Real, fixed | `variants/common.css`: a wrapping flex button, the face asks for 6.85em, and the chevron drops under the text when less is left beside it. A new live check, "Counts keep their number and word together", two new negative controls, and 150% and 175% on the board. The census and the numbers are under Measured. |
+| 2 | E puts the words in different places and next to the close X | Partly real: documented, behaviour not changed | The numbers were right and the X adjacency was missing from the README, so it is now in the E text and on the board (16px short of the button box, about 30px short of the X mark). E stays as briefed, and the row only option is written down as an option. Changing E would remove the most literal answer to "on the top part of the box where Unconfirmed is located" from the comparison, and E was already not the recommendation. |
+| 3 | The test list missed three web tests and one database test | Real, fixed in the notes | All four are listed with their cause. The sketch's CSS also lacked the `:not([hidden])` guard on the face, pills, row top and G face rules, which the README said it had: fixed, with no pixel change. |
+| 4 | A separate reporter builder adds four refresh paths and leaves the words on screen when the block hides | Real, fixed in the notes | The notes fold the element into the `createTrustBlock` instance, hide it in the invalid trust branch of `updateTrustBlock`, and name the call sites and tests that must not change. |
+| 5 | The wording change breaks 18 tests in six files, three of them unnamed | Real, fixed in the notes | All six files, the database tests, the documents and swagger files, the vote error coupling, and a checklist line for the document table. |
+| 6 | Phase 4 plans depend on the old sentences and on the block | Real, recorded, plans untouched | 04-12, 04-UI-SPEC line 392, 04-18 and 04-16 are named in the notes. |
+
+Suggested fixes that were not taken, and why. "Chevron on the first row only": the first count is on the first row, so it still
+loses 24px. A 16px chevron: it frees 4px and the count needs 5px more at 200 percent. Dropping the extra 4px of right padding: it
+fixes "7 confirmed" but not "99+ confirmed", and it moves the 100 percent geometry. A rows only E: see finding 2.
+

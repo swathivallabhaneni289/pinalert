@@ -39,9 +39,11 @@
 }
 
 /* On the narrowest phones the Activity row body is 188px wide and the label plus the words need 199px. The line may
-   reach 12px into the card's right padding there, so the words stay beside the label instead of dropping under it. */
+   reach into the card's right padding there, so the words stay beside the label instead of dropping under it. The reach is
+   one spacing step (16px, the nearest step above the 11px needed) and not 12px, so the live rules check, which reads
+   margins against the scale, passes. The line has no fill or border, so only the 199px of words show. */
 @media (max-width: 340px) {
   :root[data-header="beside"] .report-row__stateline {
-    margin-right: -12px;
+    margin-right: calc(-1 * var(--space-md));
   }
 }
