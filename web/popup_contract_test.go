@@ -728,6 +728,35 @@ func TestRenderRowsRemovesBeforePlacing(t *testing.T) {
 	p13Ordered(t, closeBody, "onPopupClose", "removingPopup", "returnFocusToOpener(")
 }
 
+// TestFocusAfterRemovalIgnoresAFadingPopup pins A67 and A52: when a poll
+// removes the report whose popup holds focus, Leaflet keeps the closing card
+// attached for a 200 ms fade, so focusAfterRemoval must treat a focused node
+// inside a popup that map.js already marked closed as lost focus, like the
+// page body. Static inspection cannot run a browser, and this test pins the
+// decision (read the synchronous data-popup-open mark), not the fade timing.
+// The scripted check T9.13, in real time, is the live proof.
+func TestFocusAfterRemovalIgnoresAFadingPopup(t *testing.T) {
+	feed := p19Code(t, "static/js/feed.js")
+
+	lost := jsFunctionBody(t, feed, "focusIsLost(active)")
+	p13Ordered(t, lost, "focusIsLost", "document.body", ".closest('.leaflet-popup')",
+		"getAttribute('data-popup-open') !== 'true'")
+	p13MustContain(t, "focusIsLost", lost, "return true", "return false")
+	p13MustNotContain(t, "focusIsLost", lost, "setTimeout", "setInterval", "requestAnimationFrame",
+		"transitionend", "animationend", "getComputedStyle", "opacity", ".visibility")
+
+	after := jsFunctionBody(t, feed, "focusAfterRemoval(candidates)")
+	p13Ordered(t, after, "focusAfterRemoval", "var active = document.activeElement;", "if (!focusIsLost(active)) {",
+		"candidates.length", "getElementById('map')")
+	p13MustMatch(t, "focusAfterRemoval", after, `if \(!focusIsLost\(active\)\) \{\s*return;\s*\}`)
+	p13MustNotContain(t, "focusAfterRemoval", after, "active !== document.body")
+
+	mapCode := p19Code(t, "static/js/map.js")
+	closeBody := jsFunctionBody(t, mapCode, "onPopupClose(evt)")
+	p13MustContain(t, "onPopupClose", closeBody, "removeAttribute('data-popup-open')")
+	p13MustNotContain(t, "onPopupClose", closeBody, "setTimeout", "requestAnimationFrame")
+}
+
 // p19NoSpace drops every whitespace rune, so a value written on several lines
 // or with different spacing compares equal.
 func p19NoSpace(s string) string {
