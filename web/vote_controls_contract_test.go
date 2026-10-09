@@ -416,3 +416,55 @@ func TestReopenControlIsSharedFromVotes(t *testing.T) {
 		}
 	}
 }
+
+// TestPopupResolveFocusIgnoresAFadingPopup pins amendment A52 for the map
+// popup at default motion. Leaflet keeps a closing popup node attached for its
+// 200 ms fade, so an isConnected check alone returned the dying controls, and
+// focus then went to the page body when the node left. The signal that is
+// already correct at that moment is the data-popup-open mark: map.js sets it
+// when a popup opens and clears it synchronously when the popup closes, which
+// the render does for a retracted report before the refetch promise resolves.
+// Static inspection proves the shapes and the order. It cannot run a browser,
+// so the live proof is the scripted check T5 P4, run after the merge.
+func TestPopupResolveFocusIgnoresAFadingPopup(t *testing.T) {
+	text := p09ReadJS(t, "static/js/votes.js")
+
+	open := p09FuncBody(t, text, "isInOpenPopup(controls)")
+	p09MustContain(t, "isInOpenPopup", open,
+		".closest('.leaflet-popup')", "getAttribute('data-popup-open') === 'true'")
+
+	live := p09FuncBody(t, text, "findLiveControls(origin)")
+	p09Ordered(t, live, "findLiveControls",
+		"var wantPopup = origin.surface === 'popup';",
+		"origin.controls.isConnected && (!wantPopup || isInOpenPopup(origin.controls))",
+		"return origin.controls;",
+		"document.querySelectorAll('.vote-controls')",
+		"(!wantPopup || isInOpenPopup(all[i]))",
+		"return all[i];",
+		"return null;")
+	if n := strings.Count(live, "isInOpenPopup("); n != 2 {
+		t.Errorf("findLiveControls must call isInOpenPopup( exactly twice, found %d", n)
+	}
+
+	timing := []string{"setTimeout", "setInterval", "requestAnimationFrame", "transitionend",
+		"animationend", "getComputedStyle", "opacity", ".visibility"}
+	p09MustNotContain(t, "isInOpenPopup", open, timing...)
+	p09MustNotContain(t, "findLiveControls", live, timing...)
+
+	afterVote := p09FuncBody(t, text, "focusAfterVote(origin, action, removal)")
+	p09MustNotContain(t, "focusAfterVote", afterVote, "isInOpenPopup(")
+
+	afterRetract := p09FuncBody(t, text, "focusAfterRetract(origin, removal)")
+	p09Ordered(t, afterRetract, "focusAfterRetract",
+		"origin.surface === 'popup' && canTakeFocus(removal.map)",
+		"removal.map.focus()",
+		"removal.next")
+
+	mapJS := p09ReadJS(t, "static/js/map.js")
+	p09MustContain(t, "onPopupOpen", p09FuncBody(t, mapJS, "onPopupOpen(evt)"),
+		"container.setAttribute('data-popup-open', 'true')")
+	closeBody := p09FuncBody(t, mapJS, "onPopupClose(evt)")
+	p09MustContain(t, "onPopupClose", closeBody, "el.removeAttribute('data-popup-open')")
+	p09MustNotContain(t, "onPopupClose", closeBody, "setTimeout", "requestAnimationFrame")
+	p09MustContain(t, "map.js", mapJS, "map.on('popupclose', onPopupClose)")
+}
