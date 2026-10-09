@@ -597,8 +597,8 @@ func TestPopupDialogFocusAndOpener(t *testing.T) {
 		"getElement()", "preventScroll: true")
 
 	fly := jsFunctionBody(t, code, "flyTo(id, opts)")
-	p13Ordered(t, fly, "flyTo", "opts.opener === 'list'", "listOpenerId = String(id)", "marker.openPopup()",
-		"isPopupOpen()", "popupOpener = ")
+	p13Ordered(t, fly, "flyTo", "opts.opener === 'list'", "listOpenerId = String(id)", "isPopupOpen()",
+		"marker.openPopup()", "popupOpener = ")
 
 	focus := jsFunctionBody(t, code, "focusOpenPopup()")
 	p13MustContain(t, "focusOpenPopup", focus, "offsetParent === null", "return false", "return true", "preventScroll: true")
@@ -620,6 +620,36 @@ func TestPopupDialogFocusAndOpener(t *testing.T) {
 	p13MustContain(t, "activateRow", activate, "PinalertMap.flyTo(id, { opener: 'list' })")
 	moveFocus := jsFunctionBody(t, feed, "moveFocusIntoView(view)")
 	p13Ordered(t, moveFocus, "moveFocusIntoView", "PinalertMap.focusOpenPopup()", "'fab-report'")
+}
+
+// TestListRowActivationOpensThePopupOnce pins A74: a row activation reaches
+// flyTo twice (the selection callback and the explicit opener seam), and flyTo
+// must ask Leaflet to open the popup only when it is closed, because an open
+// call on an open popup removes and appends the card node again and drops the
+// focus that popupopen just gave it. Static inspection cannot run a browser;
+// the scripted check T9.14 is the live proof.
+func TestListRowActivationOpensThePopupOnce(t *testing.T) {
+	code := p19Code(t, "static/js/map.js")
+
+	fly := jsFunctionBody(t, code, "flyTo(id, opts)")
+	p13Ordered(t, fly, "flyTo", "opts.opener === 'list'", "listOpenerId = String(id)",
+		"if (!marker.isPopupOpen()) {", "marker.openPopup();",
+		"if (listOpenerId !== null && marker.isPopupOpen()) {",
+		"popupOpener = { id: listOpenerId, kind: 'list' };", "listOpenerId = null;")
+	p13MustMatch(t, "flyTo", fly, `if \(!marker\.isPopupOpen\(\)\) \{\s*marker\.openPopup\(\);\s*\}`)
+	if n := strings.Count(fly, "openPopup("); n != 1 {
+		t.Errorf("flyTo calls openPopup %d times, want exactly 1", n)
+	}
+
+	initBody := jsFunctionBody(t, code, "init()")
+	p13MustContain(t, "init", initBody, "Pinalert.onSelect(", "source === 'list'", "flyTo(id)")
+
+	feed := p19Code(t, "static/js/feed.js")
+	activate := jsFunctionBody(t, feed, "activateRow(id)")
+	p13Ordered(t, activate, "activateRow", "Pinalert.select(id, 'list')", "PinalertMap.flyTo(id, { opener: 'list' })")
+	if strings.Contains(activate, "openPopup(") {
+		t.Errorf("activateRow must not call openPopup directly")
+	}
 }
 
 // TestPinOpensOnSpace pins A49 and A45: Space opens a pin and activates the
