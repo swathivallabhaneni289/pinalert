@@ -2,6 +2,7 @@
 phase: 03-trust-model-hardening-diversity-weighted-trust
 verified: 2026-10-08T00:00:00Z
 reverified: 2026-10-10T00:00:00Z
+reverified_again: 2026-10-10T00:00:00Z
 status: human_needed
 score: 9/9 must-haves verified
 behavior_unverified: 0
@@ -12,7 +13,7 @@ re_verification:
   gaps_closed: []
   gaps_remaining: []
   regressions: []
-  note: "Focused re-run after gap closure plan 03-25 (merged in 584cef3). See Re-verification after 03-25."
+  note: "Focused re-runs after gap closure plans 03-25 (merged in 584cef3) and 03-26 (merged in 2cc0158). See Re-verification after 03-25 and Re-verification after 03-26."
 gaps: []
 deferred: []
 human_verification:
@@ -56,7 +57,7 @@ human_verification:
 **Phase Goal (MVP):** As a person reading the feed during an emergency, I want to see how many different nearby people confirmed or disputed each report, and whether it is still current and its reporter reliable, so that a few accounts cannot make a weak report look well corroborated.
 **Verified:** 2026-10-08
 **Status:** human_needed
-**Re-verification:** Initial verification 2026-10-08; focused re-verification after plan 03-25 on 2026-10-10 (see the section near the end)
+**Re-verification:** Initial verification 2026-10-08; focused re-verifications after plans 03-25 and 03-26 on 2026-10-10 (see the sections near the end)
 
 Every automated check passes. The only open items are the browser, two profile, keyboard, screen reader and visual checks that plans 03-04, 03-09, 03-11, 03-13, 03-15 to 03-19 deliberately deferred to the owner's V-42 script (folded into 03-20-SUMMARY.md). None is a gap.
 
@@ -201,8 +202,45 @@ Pending: test 2 (panel open and close, VoiceOver), 3 (Escape by surface ownershi
 
 Owner decisions to raise: the three cosmetic remarks from test 1 (underline on hover, reporter tag position, text length) change locked UI decisions and belong with the on-hold redesign decision.
 
+## Re-verification after 03-26
+
+**Date:** 2026-10-10. **Scope:** second focused re-run after gap closure plan 03-26 (code commits a6d1b9a and 9531778, merged in 2cc0158, summary ae59bb4), with 03-SECURITY.md (d715a6c) now present. Plans in `held-redesign-drafts/` are drafts of a redesign on hold and were not read.
+
+**Result:** status stays `human_needed`, score 9/9, 0 gaps, 0 regressions. No new human items.
+
+### The nine truths against the current code
+
+`internal/`, `docs/` and `cmd/` have no diff between 2f669c4 (the 03-25 re-run base) and HEAD, so truths 1 to 5 and 7 to 9 rest on unchanged server code. The gate log below shows each named test as `--- PASS`: `TestTrustCountsDistinctPlacesNotVotes`, `TestTrustModelDocMatchesCode`, `TestCurrencyScoreBoundaries`, `TestReliabilityTable`, `TestFeedTrustMatchesCastVoteTrust`, `TestCastVoteTooFar`, `TestTrustCountUnderConcurrentVotes`, `TestTrustResponseOmitsIdentifiers`. Truth 6 (browser renders both signals) is unaffected by 03-26 (`trust.js`, `trust.css`, templates, `votes.js` and `activity.js` untouched); the only web diff since 2f669c4 is `map.js`, `feed.js` and `popup_contract_test.go`. All nine stay VERIFIED, with browser rendering of truth 6 in the human items.
+
+### What 03-26 touched, read from the current code
+
+- `web/static/js/map.js`, `flyTo` (line 868): the open call is now `if (!marker.isPopupOpen()) { marker.openPopup(); }` (lines 881 to 883), after the pan or fly and before the unchanged opener claim `if (listOpenerId !== null && marker.isPopupOpen())` that sets `popupOpener = { id: listOpenerId, kind: 'list' }`. `openPopup(` appears once in the function. The `Pinalert.onSelect` subscriber (line 203, `source === 'list'` then `flyTo(id)`) is unchanged, and `onPopupOpen` still consumes `listOpenerId` and sets `data-popup-open` (line 439). Effect: a row activation reaches `flyTo` twice (the selection callback, then the A74 seam in `activateRow`, `feed.js:119 to 124`), and the second call no longer re-opens an open popup, so the card keeps the focus `popupopen` gave it and the list still claims the opener. A repeat activation on an already open popup keeps focus where it is (noted in the SUMMARY, not a defect of the contract).
+- `web/static/js/feed.js`, `focusIsLost(active)` (line 255): true for null or the body, true when `active.closest('.leaflet-popup')` is not null and its `data-popup-open` is not `'true'`, else false. `focusAfterRemoval` (line 279) now returns early only when `!focusIsLost(active)`; the candidate loop (next or previous row, then `#map`, then the view toggle, then the empty states) is unchanged. `clearRows` shares it. The signal is the mark that `onPopupClose` clears synchronously (`map.js:565`), with no timer, animation event or style read, so it does not depend on Leaflet's 200 ms fade. Focus on a live open popup (mark `'true'`) or any other element is still left alone. This is the same class and the same signal as the 03-25 fix in `votes.js`.
+- Debt markers (TBD, FIXME, XXX) in `feed.js`, `map.js` and `popup_contract_test.go`: none. No em or en dash was added to this report.
+
+### New contract tests
+
+- `TestListRowActivationOpensThePopupOnce` (`web/popup_contract_test.go:631`) and `TestFocusAfterRemovalIgnoresAFadingPopup` (line 738) exist and PASS in the gate log. The order assertion in `TestPopupDialogFocusAndOpener` (line 575) was amended to expect `isPopupOpen()` before `marker.openPopup()`; it also PASSES.
+- Both new tests are static source checks like their neighbours (`p19Code`, `jsFunctionBody`, `p13Ordered`, `p13MustContain`, `p13MustMatch`, `p13MustNotContain` over `map.js` and `feed.js` text); no browser, server or database is used. Honest limit: being static they pin the decision and the call arrangement, not the runtime focus result; the scripted run is the live proof.
+- Fail-before check against the pre-fix code: `git show "a6d1b9a^:web/static/js/map.js"` has `marker.openPopup()` unguarded (line 879, `isPopupOpen()` only after it at line 880), so the new `flyTo` pattern `if \(!marker\.isPopupOpen\(\)\) \{\s*marker\.openPopup\(\);\s*\}` and the amended order assertion cannot match. `git show "9531778^:web/static/js/feed.js"` has zero occurrences of `focusIsLost` and still holds `active !== document.body` (line 262), so `jsFunctionBody(..., "focusIsLost(active)")` fails and the `MustNotContain "active !== document.body"` check fails. Both tests also do not exist in the pre-fix test files (0 matches). So the tests would fail against the old code.
+
+### Evidence
+
+- Verifier ran the full suite once through the gate script on a fresh scratch database (`p3_ver2_gate`, created and dropped by the script): build and vet clean, 375 top level tests PASS, 0 FAIL, 0 SKIP, every package `ok`. This matches the expected 375. The gate's gofmt listing is the same three files as before (`internal/api/handlers/geocode_test.go`, `internal/mailer/resend.go`, `web/js_contract_test.go`), none in the 03-26 diff; Info only.
+- Scripted browser run on the merged code, cited not re-run: tests 2 to 10 in one run, 309 PASS, 0 FAIL, 18 NEEDS A PERSON (Chromium and WebKit). T9.14 and T9.13 now pass in both engines. T9.16 passes in Chromium and is a NOTE in WebKit, the accepted browser difference recorded under Gaps in `03-UAT.md` (no code change, not a gap).
+- `03-SECURITY.md` (d715a6c): `status: verified`, `threats_open: 0`. Its scope note covers the register of plans 03-01 to 03-20 and 03-25; plan 03-26 carries its own three accepted low threats (T-03-26-01 to T-03-26-03, no data, vote or permission touched), which this verification read and agrees with.
+
+### Requirements cross-reference
+
+TRUST-05 (`.planning/REQUIREMENTS.md:72`, traceability row 375) and TRUST-07 (line 78, row 376) are both mapped to Phase 3 and both declared in the 03-26 plan frontmatter, with earlier plans accounting for them as listed in Requirements Coverage. Plan 03-26 declares `requirements-completed: []`. No orphaned ID. Both still read Pending in REQUIREMENTS.md, which this verification did not edit; update them after the owner's human pass.
+
+### Items that remain for a person (from 03-UAT.md, nothing new)
+
+Pending: tests 2, 3, 4, 5, 7, 8, 9, 10 and 11. Passed: tests 1 and 6. The test 9 remainder is how the popup card looks (T9.17). The three cosmetic owner remarks under Gaps in `03-UAT.md` (underline on hover, reporter tag position, text length) still belong with the on-hold redesign decision. All scripted gaps in `03-UAT.md` are now resolved or accepted.
+
 ---
 
 _Verified: 2026-10-08_
 _Re-verified: 2026-10-10 after plan 03-25_
+_Re-verified: 2026-10-10 after plan 03-26_
 _Verifier: Claude (gsd-verifier)_
