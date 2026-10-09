@@ -255,7 +255,7 @@ Plans:
   1. The feed displays "confirmed by N nearby" computed from the count of distinct confirming geohash cells/sessions — using a deliberately chosen, documented geohash precision — not the raw number of votes cast.
   2. A report displays two distinct trust signals side by side: a fast-decaying "is this still current" confidence score and a slow-decaying "is this source reliable" score.
 
-**Plans**: 21/21 plans executed (verification and the owner's final checks pending)
+**Plans**: 22/22 plans executed (verification and the owner's final checks pending)
 **UI hint**: yes
 
 Plans:
@@ -312,7 +312,7 @@ Plans:
 
 **Wave 11** *(gap closure)*
 
-- [ ] 03-26-PLAN.md: A feed row opens its map popup once so focus stays on the popup card and Escape returns it to the row, and a poll that removes the report whose popup holds focus moves focus to a row or the map, never the page body (gap closure, wave 11)
+- [x] 03-26-PLAN.md: A feed row opens its map popup once so focus stays on the popup card and Escape returns it to the row, and a poll that removes the report whose popup holds focus moves focus to a row or the map, never the page body (gap closure, wave 11)
 
 ### Phase 03.1: Report history views (INSERTED)
 
@@ -441,7 +441,7 @@ Phases execute in numeric order: 1 → 1.1 → 2 → 3 → 3.1 → 3.2 → 4 →
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
 | 1.1 Identity & Login — Mandatory Email Verification | 8/8 | Complete   | 2026-09-12 |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 15/15 | Complete | 2026-10-07 |
-| 3. Trust-Model Hardening — Diversity-Weighted Trust | 21/21 | In Progress|  |
+| 3. Trust-Model Hardening — Diversity-Weighted Trust | 22/22 | In Progress|  |
 | 3.1 Report history views | 0/TBD | Not started | - |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
