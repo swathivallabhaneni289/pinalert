@@ -1,11 +1,18 @@
 ---
 phase: 03-trust-model-hardening-diversity-weighted-trust
 verified: 2026-10-08T00:00:00Z
+reverified: 2026-10-10T00:00:00Z
 status: human_needed
 score: 9/9 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
-re_verification: false
+re_verification:
+  previous_status: human_needed
+  previous_score: 9/9
+  gaps_closed: []
+  gaps_remaining: []
+  regressions: []
+  note: "Focused re-run after gap closure plan 03-25 (merged in 584cef3). See Re-verification after 03-25."
 gaps: []
 deferred: []
 human_verification:
@@ -49,7 +56,7 @@ human_verification:
 **Phase Goal (MVP):** As a person reading the feed during an emergency, I want to see how many different nearby people confirmed or disputed each report, and whether it is still current and its reporter reliable, so that a few accounts cannot make a weak report look well corroborated.
 **Verified:** 2026-10-08
 **Status:** human_needed
-**Re-verification:** No, initial verification
+**Re-verification:** Initial verification 2026-10-08; focused re-verification after plan 03-25 on 2026-10-10 (see the section near the end)
 
 Every automated check passes. The only open items are the browser, two profile, keyboard, screen reader and visual checks that plans 03-04, 03-09, 03-11, 03-13, 03-15 to 03-19 deliberately deferred to the owner's V-42 script (folded into 03-20-SUMMARY.md). None is a gap.
 
@@ -148,7 +155,54 @@ Eleven items are in the frontmatter (the V-42 script steps 5 to 20 grouped by co
 
 No gaps. Both ROADMAP success criteria are met by shipped, wired, tested code. The status is human_needed only because the deliberately deferred browser, keyboard, screen reader and visual checks have not yet been run by the owner.
 
+## Re-verification after 03-25
+
+**Date:** 2026-10-10. **Scope:** focused re-run after gap closure plan 03-25 (code commits 53fb069 and a001850, merged in 584cef3). The first run above is kept as written. Plans in `held-redesign-drafts/` are drafts of a redesign on hold and were not read as part of this check.
+
+**Result:** status stays `human_needed`, score 9/9, 0 gaps, 0 regressions.
+
+### The nine truths against the current code
+
+| # | Truth | Re-check | Status |
+| --- | --- | --- | --- |
+| 1 | Distinct place count N | `independentCellCount` still the single implementation, called from `currency.go:207`, `currency.go:251` and the three read paths. `TestTrustCountsDistinctPlacesNotVotes` PASS. | VERIFIED |
+| 2 | Precision chosen and documented | `voterGeohashPrecision = 7` (`trust.go:35`). `TestTrustModelDocMatchesCode` PASS on the current tree. | VERIFIED |
+| 3 | Fast decaying currency | `CurrencyWindowDivisor = 4`, `CurrencyPointsPerWindow = 25` (`currency.go:78,81`). `TestCurrencyScoreBoundaries` PASS. | VERIFIED |
+| 4 | Slow decaying reliability | 90 day window, minimum 5 judged (`reliability.go:121,126`). Review fix WR-05 since the first run added `ReliabilityRowCap = 30` judged rows (line 131); the window, minimum and tags are unchanged. `TestReliabilityTable` PASS. | VERIFIED |
+| 5 | Both signals on the wire together | `TestFeedTrustMatchesCastVoteTrust` PASS. | VERIFIED |
+| 6 | Browser renders both from server values | `trust.js` untouched by 03-25. Browser rendering stays a human item. | VERIFIED (server side); browser in human items |
+| 7 | 1 km rule server side, fail closed | `MaxVoteDistanceKm = 1.0`, `withinVoteRadius` uses `<=` (`geo.go:27,60`). `TestCastVoteTooFar` PASS. | VERIFIED |
+| 8 | Concurrent votes never skew N | `TestTrustCountUnderConcurrentVotes` PASS. | VERIFIED |
+| 9 | Identical for every viewer, no identifiers | `TestTrustResponseOmitsIdentifiers` PASS. | VERIFIED |
+
+Between the first run (HEAD 560a883) and now, `internal/` and `docs/` changed only through review fixes WR-02 to WR-08 and the reliability row cap (14 files, mostly tests). None changes a must-have, and the doc test keeps `docs/TRUST-MODEL.md` true to the code.
+
+### What 03-25 touched, read from the current code
+
+- `web/static/js/votes.js`: `isInOpenPopup(controls)` (line 928) returns true only when the controls sit in a `.leaflet-popup` carrying `data-popup-open="true"`. `findLiveControls` (line 939) uses it in both branches for popup origins; row origins are unchanged. No timer, animation event or style read is involved. `focusAfterVote` (line 1029) is unchanged: when no live controls remain and a removal was captured it calls `focusAfterRetract`, which sends popup origins to the map container (line 995). `focusIsLost` treats focus inside the dying controls as lost, so the map container takes focus.
+- `web/static/js/map.js`: `onPopupOpen` sets `data-popup-open` (line 439) and `onPopupClose` removes it synchronously (line 565), before Leaflet's 200 ms fade ends and before the refetch resolves. This is the signal `isInOpenPopup` reads.
+- `refusedTooFar`: set in the `onControlsClick` catch branch from `err.field === 'location'` (line 1210), reset in `clearVoteError` (line 746). `clearRefusalWithHint` (line 753) clears the line only when the hint was showing before the render, is hidden after it and the line holds the too far refusal. It runs after `applyDistanceHint` in `updateVoteBlock` (line 606) and in `refreshHintThenRetry` (line 1115). GPS denied and generic failure lines carry no `location` field, so they are never cleared by it.
+- New contract tests exist and PASS: `TestPopupResolveFocusIgnoresAFadingPopup` (`web/vote_controls_contract_test.go:429`) and `TestTooFarRefusalClearsWithTheHint` (`web/vote_hint_contract_test.go:346`). Both are static source checks. Against the code before the fix (`git show 53fb069^` and `a001850^`) `votes.js` has zero occurrences of `isInOpenPopup`, `refusedTooFar` or `clearRefusalWithHint`, so both tests would fail there, as the SUMMARY says. Being static, they do not run the browser; the live proof is the scripted run below.
+
+### Evidence
+
+- Verifier ran the full suite once on a fresh scratch database (`p3_ver_gate`, created and dropped by the gate script): build and vet clean, 373 top level tests PASS, 0 FAIL, 0 SKIP, every package `ok`. This matches the orchestrator's 373 of 373.
+- Scripted browser run on the merged code, cited not re-run: 164 PASS, 0 FAIL, 8 NEEDS A PERSON (Chromium and WebKit). UAT test 4 check S1.11b and test 5 check P4 now pass in both engines.
+- `gofmt -l` lists `internal/api/handlers/geocode_test.go`, `internal/mailer/resend.go` and `web/js_contract_test.go`. None is in the 03-25 diff; this is an Info item and not a Phase 3 gap.
+- Debt markers (TBD, FIXME, XXX) in `votes.js`, `map.js`, `internal`, `docs` and `cmd`: none.
+
+### Requirements cross-reference
+
+Plan 03-25 declares `requirements-completed: []` and the first run's coverage stands. TRUST-05 and TRUST-07 are both present in `.planning/REQUIREMENTS.md` (lines 72 and 78, traceability rows 375 and 376), both mapped to Phase 3, both accounted for by the plans listed in Requirements Coverage above. No orphaned ID. Both still read Pending there; REQUIREMENTS.md was not edited by this verification.
+
+### Items that remain for a person (from 03-UAT.md, nothing new)
+
+Pending: test 2 (panel open and close, VoiceOver), 3 (Escape by surface ownership), 4 (Ask in Safari and the prompt UI; scripted part proven), 5 (VoiceOver announcement of the Mark resolved confirmation; scripted part proven), 7 (width and wrapping at 320px, 200 percent text), 8 (button look in Safari, real Windows High Contrast not available), 9 (popup card, position, reduced motion, keyboard and focus), 10 (look and feel, plain language check, plus the three cosmetic owner remarks logged under Gaps in 03-UAT.md that need explicit UI-SPEC amendments), 11 (owner housekeeping: migrate 00005 on the dev database, drop p3_uat). Passed: tests 1 and 6. The two scripted gaps in 03-UAT.md are resolved.
+
+Owner decisions to raise: the three cosmetic remarks from test 1 (underline on hover, reporter tag position, text length) change locked UI decisions and belong with the on-hold redesign decision.
+
 ---
 
 _Verified: 2026-10-08_
+_Re-verified: 2026-10-10 after plan 03-25_
 _Verifier: Claude (gsd-verifier)_
