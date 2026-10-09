@@ -3,7 +3,7 @@ status: testing
 phase: 03-trust-model-hardening-diversity-weighted-trust
 source: [03-VERIFICATION.md]
 started: 2026-10-07T20:33:33.016Z
-updated: 2026-10-09T18:24:23.000Z
+updated: 2026-10-09T18:46:00.000Z
 ---
 
 ## Current Test
@@ -27,12 +27,14 @@ result: pass
 detail: Panel open and close (step 6). Open the trust panel by click, tap, Enter and Space, close by Escape, on a feed row and in a popup. Listen with VoiceOver.
 expected: Panel opens and closes on all four inputs. VoiceOver reads the toggle name then the hint 'Shows what these mean.'
 why_human: Keyboard and screen reader behavior. The web contract tests are static source checks and do not run the browser JS.
+note: Scripted browser run 2026-10-10 (Chromium and WebKit, server built from head 52d9825, own database and port, nothing in the repo touched). Chromium 10 PASS, 0 FAIL, 1 NEEDS A PERSON. WebKit 10 PASS, 0 FAIL, 1 NEEDS A PERSON. Proven in both engines, on a feed row and in the popup: the toggle is a button whose accessible name is its counters followed by the hint "Shows what these mean." (read from the browser accessibility tree, aria-expanded false), and the panel opens by click, tap, Enter and Space and closes by Escape with focus on the toggle (T2.3, all four inputs on both surfaces). Still needs a person: VoiceOver speaking the toggle name, then the hint, then collapsed or expanded (T2.2).
 result: [pending]
 
 ### 3. Escape by surface ownership (step 7, plan 03-19)
 detail: Escape by surface ownership (step 7, plan 03-19). Walk each focus position with a popup panel and a row panel open.
 expected: First Escape closes the panel and focuses the toggle, the second closes the popup. Popup panel closes before a row panel when focus is in the popup.
 why_human: Focus order across two surfaces is runtime browser behavior.
+note: Scripted browser run 2026-10-10 (same run as test 2). Chromium 9 PASS, 0 FAIL, 0 NEEDS A PERSON. WebKit 9 PASS, 0 FAIL, 0 NEEDS A PERSON. Proven in both engines: with the popup panel open, focus on Confirm, on the popup card, on the popup close button or on the pin each give the same result, where the first Escape closes the panel and focuses its toggle and the second closes the popup (T3.1). With a row panel open, focus on Confirm or on the row itself, Escape closes the row panel and focuses its toggle (T3.2). With a popup panel and a row panel open at once and focus in the popup, Escape closes the popup panel first, the next Escape closes the popup and leaves the row panel open, and with focus back on the row Escape closes the row panel (T3.3 to T3.5). No human only part is left in this test beyond the owner accepting the scripted evidence.
 result: [pending]
 
 ### 4. Too far hint and refusal (steps 8 and 9, plans 03-04 and 03-18)
@@ -60,6 +62,7 @@ result: pass
 detail: Width and wrapping (step 12, plan 03-16). At 320px and 200 percent text size, with a long unbroken title and URL.
 expected: No horizontal scroll in the 236px feed body or the 188px Activity body. Severity word shows before the title and is read first by a screen reader. Labels stay readable and unclipped.
 why_human: Layout and screen reader order.
+note: Scripted browser run 2026-10-10 (same run as test 2). Chromium 10 PASS, 0 FAIL, 1 NEEDS A PERSON. WebKit 10 PASS, 0 FAIL, 1 NEEDS A PERSON. Proven in both engines at 320px with a long unbroken title and a long URL: the feed row body is 236px and the Activity row body is 188px, there is no horizontal overflow at 100 percent text with panels closed and open, and none at 200 percent text (the script doubles the font size tokens) with panels open. The severity word sits before the title in the layout and in the accessibility snapshot order, and every read only label grows with the text (font 14px to 28px) and none is clipped. Still needs a person: the same on a real phone with the system text size at 200 percent, and a screen reader speaking the severity word first (T7.4).
 result: [pending]
 
 ### 8. Vote layout and button look (steps 13 and 14, plan 03-11)
@@ -73,12 +76,16 @@ result: [pending]
 detail: Popup card, position, reduced motion, keyboard and focus (steps 15 to 18, plans 03-17 and 03-19).
 expected: Panel and confirmation survive a 30 second poll with focus unmoved. Popup tip centred and card inside the view at 320 and 360px, controls not covered after autopan, no animated pan under reduced motion. Pins have names and open on Enter and Space. Focus survives poll removal and reorder. Focus returns to the marker or row on close.
 why_human: Map geometry, autopan, poll timing and focus are runtime browser behavior.
-result: [pending]
+note: Scripted browser run 2026-10-10 (same run as test 2). Chromium 34 PASS, 2 FAIL, 1 NEEDS A PERSON. WebKit 33 PASS, 3 FAIL, 1 NEEDS A PERSON. Proven in both engines: at 320x568 and 360x740, at default and at reduced motion, the popup tip is centred on the pin, the card is inside the view and the close button and trust toggle are not covered, when opened, with the panel open and with the confirmation open, and also after a tap on a list row (T9.1, T9.3); there is no animated pan under reduced motion, while default motion does animate, which proves the detector (T9.2, T9.2c); at 320x256 the card scrolls inside itself and stays inside the view, and Escape closes the panel first and the popup second (T9.4, T9.5); rotating across 900px keeps the popup placed, with the tip 6.5px off centre after the rotation, which is the documented A59 trade off while focus is inside the card (T9.7); the trust panel and the Mark resolved confirmation survive a 30 second poll with focus unmoved, in the popup and in a row (T9.8); pins are keyboard buttons named with category, severity word, age and state, and Enter and Space open a dialog named by its title (T9.9, T9.10); Space on the close button closes the popup (T9.6, T9.11); focus on a later row's trust toggle survives a poll that removes an earlier row and a poll that adds a row above it (T9.12); a popup opened from its pin returns focus to the marker on Escape (T9.15). Failed, see Gaps: T9.14 (both engines), T9.13 (both engines) and T9.16 (WebKit only). Still needs a person: how the popup card looks (T9.17), in light and dark, in forced colours, at 320 and 360px.
+result: issue
+reported: "Scripted browser run 2026-10-10, not typed by the owner. At 1000px, Enter on a feed row opens the popup but focus ends on the page body, and after one Escape focus is still on the body, not on the row (T9.14, both engines). A poll that removes the report whose popup holds focus leaves focus on the page body 900 ms later (T9.13, both engines). Closing a pin opened popup with the mouse on its close button returns focus to the map container, not to the marker (T9.16, WebKit only)."
+severity: major
 
 ### 10. Look and feel and plain language check (step 19)
 detail: Look and feel and plain language check (step 19). Check the toggle press fill on a Provisional row, forced colors, both themes. Ask someone who has not seen the app what the numbers mean.
 expected: The two signals read as separate things (still current versus reporter) and the person finds the panel without help.
 why_human: Visual judgment and comprehension, which no automated check can give. This is the check that the goal of a reader understanding the signals is met in practice.
+note: Scripted browser run 2026-10-10 (same run as test 2). Chromium 10 PASS, 0 FAIL, 2 NEEDS A PERSON. WebKit 6 PASS, 0 FAIL, 2 NEEDS A PERSON (forced colors is not run in WebKit, since macOS Safari has no forced colors mode to test). The mechanical half is proven on a Provisional row (Unconfirmed): hovering the trust toggle shows a cue, an underline, in light and dark in both engines; pressing it fills it with the border token (rgb 225, 228, 232 in light, rgb 42, 45, 49 in dark), and press differs from hover by the fill and not by line thickness (T10.1 to T10.3); under forced colors in Chromium, in light and dark, the toggle still shows a non colour cue (underline plus border) on hover and on press. Still needs a person: whether the two signals (still current, reporter) read as separate facts in both themes and in forced colors (T10.4), and the plain language check with someone who has not seen the app (T10.5).
 result: [pending]
 
 ### 11. Owner housekeeping (step 20 and reminders)
@@ -91,8 +98,8 @@ result: [pending]
 
 total: 11
 passed: 2
-issues: 0
-pending: 9
+issues: 1
+pending: 8
 skipped: 0
 blocked: 0
 
@@ -148,3 +155,24 @@ amendment to 03-UI-SPEC.md.
       issue: "the error line left by a refused vote is not cleared when the too far hint clears"
   missing:
     - "Decide from 03-UI-SPEC.md which rule covers the error line (clear with the hint, or on the next action), then implement it; the scripted check T4 S1.11b fails today in both engines"
+- truth: "At 1000px and wider, pressing Enter on a feed row opens the popup with focus on the popup card, and one Escape closes it with focus back on that row (A74, V-42 step 18)"
+  status: failed
+  reason: "Scripted browser run 2026-10-10, not typed by the owner (Chromium and WebKit, check T9.14): Enter on the row opens the popup, but focus ends on the page body and not on the popup card, and after one Escape the popup is closed and focus is still on the body, not on the row. The focus event log is the same in both engines: call focus() on div.popup-card, out li.report-row, in div.popup-card, then out div.popup-card in Chromium (WebKit logs no blur because the node is removed). The card takes focus and loses it again with nothing to catch it, as if the popup were opened twice. Root cause: under diagnosis."
+  severity: major
+  test: 9
+  artifacts: []
+  missing: []
+- truth: "When a poll removes the report whose popup holds keyboard focus, focus does not fall to the page body"
+  status: failed
+  reason: "Scripted browser run 2026-10-10, not typed by the owner (Chromium and WebKit, check T9.13): focus was on the popup card, the next poll removed that report (the report is gone), and 900 ms later focus is on the page body. The focus event log ends with the card losing focus (out div.popup-card in Chromium) and nothing taking it. Root cause: under diagnosis."
+  severity: minor
+  test: 9
+  artifacts: []
+  missing: []
+- truth: "Closing a pin opened popup with the mouse on its close button returns focus to the marker (A74)"
+  status: failed
+  reason: "Scripted browser run 2026-10-10, not typed by the owner (WebKit only, check T9.16): the popup closes, and focus is on the map container (div#map) and not on the marker. Chromium passes the same check, and Escape from the pin passes in both engines (T9.15). Safari does not focus a button on a mouse click, so this may be correct under A74, which restores focus only when focus was inside the popup. To be decided from the spec text and the code. Root cause: under diagnosis."
+  severity: cosmetic
+  test: 9
+  artifacts: []
+  missing: []
