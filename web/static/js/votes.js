@@ -601,7 +601,9 @@
     if (disputeBtn) {
       disputeBtn.setAttribute('aria-pressed', report.your_vote === 'dispute' ? 'true' : 'false');
     }
+    var hintWasShowing = !!block.note && !block.note.hidden;
     applyDistanceHint(block, report);
+    clearRefusalWithHint(block, hintWasShowing);
   }
 
   // setBlockBusy is the sole owner of the busy state on a vote block: it
@@ -741,6 +743,17 @@
     block.error.hidden = true;
     Pinalert.setText(block.error, '');
     block.refreshNotice = false;
+    block.refusedTooFar = false;
+  }
+
+  // clearRefusalWithHint removes the earlier too far refusal line together
+  // with the hint (A8, D-22). When the hint was showing before a render, is
+  // hidden after it, and the error line holds the server's too far refusal,
+  // the line goes. Every other message sharing the line is left alone.
+  function clearRefusalWithHint(block, hintWasShowing) {
+    if (hintWasShowing && block.note && block.note.hidden && block.refusedTooFar) {
+      clearVoteError(block);
+    }
   }
 
   // showSavedButNotRefreshed is what a row shows when the server answered 200
@@ -1097,7 +1110,9 @@
         return;
       }
       var taken = { latitude: coords.latitude, longitude: coords.longitude, at: Date.now() };
+      var hintWasShowing = !!block.note && !block.note.hidden;
       applyDistanceHint(block, block.lastReport, taken);
+      clearRefusalWithHint(block, hintWasShowing);
       if (button.getAttribute('aria-disabled') !== 'true') {
         onControlsClick(block, button, taken);
       }
@@ -1192,6 +1207,7 @@
         closeResolveConfirm(block);
       }
       showVoteError(block, (err && err.fieldMessage) || GENERIC_FAILURE_MESSAGE);
+      block.refusedTooFar = !!(err && err.field === 'location');
       focusAfterVote(origin, action, null);
     });
   }

@@ -334,3 +334,61 @@ func TestVoteRadiusReadWithoutConfig(t *testing.T) {
 		t.Errorf("profile.html.tmpl must carry no vote radius attribute (no hint on the Activity page)")
 	}
 }
+
+// TestTooFarRefusalClearsWithTheHint pins amendment A8 and D-22: the error
+// line that holds the server's too far refusal clears when the too far hint
+// goes from showing to cleared. No UI-SPEC row gives that line a lifetime, so
+// the fallback applies and it leaves together with the hint, narrowly: only a
+// refusal the server marked with the location field is cleared, so the GPS
+// denied, generic failure and saved-but-not-refreshed lines survive. This is a
+// static check of the shapes and their order. It cannot run a browser, so the
+// live proof is the scripted check T4 S1.11b, run after the merge.
+func TestTooFarRefusalClearsWithTheHint(t *testing.T) {
+	text := p18ReadStatic(t, "static/js/votes.js")
+
+	click := p18TightBody(t, text, "onControlsClick(block, button, taken)")
+	catchAt := strings.Index(click, ".catch(function (err) {")
+	if catchAt == -1 {
+		t.Fatalf("onControlsClick has no .catch(function (err) { branch")
+	}
+	catchPart := click[catchAt:]
+	pos := 0
+	for _, needle := range []string{
+		"showVoteError(block,",
+		"block.refusedTooFar = !!(err && err.field === 'location');",
+		"focusAfterVote(origin, action, null)",
+	} {
+		idx := strings.Index(catchPart[pos:], needle)
+		if idx == -1 {
+			t.Errorf("onControlsClick catch branch: %q is missing or out of order", needle)
+			break
+		}
+		pos += idx + len(needle)
+	}
+
+	clearErr := p18TightBody(t, text, "clearVoteError(block)")
+	p18Contains(t, "clearVoteError", clearErr, "block.refusedTooFar = false;", "Pinalert.setText(block.error")
+
+	p18Before(t, text, "clearRefusalWithHint placement",
+		"function clearVoteError(block)", "function clearRefusalWithHint(block, hintWasShowing)")
+	refusal := p18TightBody(t, text, "clearRefusalWithHint(block, hintWasShowing)")
+	p18Contains(t, "clearRefusalWithHint", refusal,
+		"hintWasShowing", "block.note", ".hidden", "block.refusedTooFar", "clearVoteError(block)")
+	p18Excludes(t, "clearRefusalWithHint", refusal, "showVoteError(", "setAttribute(")
+
+	const wasShowing = "var hintWasShowing = !!block.note && !block.note.hidden;"
+	update := p18TightBody(t, text, "updateVoteBlock(block, report)")
+	p18Before(t, update, "updateVoteBlock hint snapshot", wasShowing, "applyDistanceHint(block, report);")
+	p18Before(t, update, "updateVoteBlock refusal clear",
+		"applyDistanceHint(block, report);", "clearRefusalWithHint(block, hintWasShowing);")
+
+	retry := p18TightBody(t, text, "refreshHintThenRetry(block, button)")
+	p18Before(t, retry, "refreshHintThenRetry hint snapshot",
+		wasShowing, "applyDistanceHint(block, block.lastReport, taken);")
+	p18Before(t, retry, "refreshHintThenRetry refusal clear",
+		"applyDistanceHint(block, block.lastReport, taken);", "clearRefusalWithHint(block, hintWasShowing);")
+
+	locate := p18TightBody(t, text, "getVoterLocation(opts)")
+	p18Contains(t, "getVoterLocation", locate, "deniedErr.fieldMessage = GPS_DENIED_MESSAGE")
+	p18Excludes(t, "getVoterLocation", locate, "deniedErr.field =")
+}
