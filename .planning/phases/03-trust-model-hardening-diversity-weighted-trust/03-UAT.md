@@ -157,21 +157,30 @@ amendment to 03-UI-SPEC.md.
     - "Decide from 03-UI-SPEC.md which rule covers the error line (clear with the hint, or on the next action), then implement it; the scripted check T4 S1.11b fails today in both engines"
 - truth: "At 1000px and wider, pressing Enter on a feed row opens the popup with focus on the popup card, and one Escape closes it with focus back on that row (A74, V-42 step 18)"
   status: failed
-  reason: "Scripted browser run 2026-10-10, not typed by the owner (Chromium and WebKit, check T9.14): Enter on the row opens the popup, but focus ends on the page body and not on the popup card, and after one Escape the popup is closed and focus is still on the body, not on the row. The focus event log is the same in both engines: call focus() on div.popup-card, out li.report-row, in div.popup-card, then out div.popup-card in Chromium (WebKit logs no blur because the node is removed). The card takes focus and loses it again with nothing to catch it, as if the popup were opened twice. Root cause: under diagnosis."
+  reason: "Scripted browser run 2026-10-10, not typed by the owner (Chromium and WebKit, check T9.14): Enter on the row opens the popup, but focus ends on the page body and not on the popup card, and after one Escape the popup is closed and focus is still on the body, not on the row. The focus event log is the same in both engines: call focus() on div.popup-card, out li.report-row, in div.popup-card, then out div.popup-card in Chromium (WebKit logs no blur because the node is removed). The card takes focus and loses it again with nothing to catch it, as if the popup were opened twice. Root cause, read from the code and then confirmed by a throwaway copy where the fix made T9.14 pass in both engines: the popup is opened twice. activateRow in feed.js calls Pinalert.select(id, 'list'), whose map.js subscriber calls flyTo(id) and opens the popup (popupopen focuses the card). Then activateRow calls PinalertMap.flyTo(id, { opener: 'list' }), the A74 seam, and flyTo calls marker.openPopup() a second time on a popup that is already open. Leaflet's openPopup runs update() on an open popup, which removes the card node and appends it again, so the focused card loses focus, and no second popupopen fires to give it back. With focus on the body, Escape reaches nothing and the popup stays open."
   severity: major
   test: 9
-  artifacts: []
-  missing: []
+  artifacts:
+    - path: "web/static/js/map.js"
+      issue: "flyTo calls marker.openPopup() even when the popup is already open, and Leaflet re appends the card, dropping its focus"
+  missing:
+    - "A row activation opens the popup once: flyTo does not call openPopup on a popup that is already open, and the list still claims the opener (A74), so focus ends on the card and one Escape returns it to the row"
+    - "A contract test that pins the guard in flyTo; the scripted check T9.14 is the live proof and fails today in both engines"
 - truth: "When a poll removes the report whose popup holds keyboard focus, focus does not fall to the page body"
   status: failed
-  reason: "Scripted browser run 2026-10-10, not typed by the owner (Chromium and WebKit, check T9.13): focus was on the popup card, the next poll removed that report (the report is gone), and 900 ms later focus is on the page body. The focus event log ends with the card losing focus (out div.popup-card in Chromium) and nothing taking it. Root cause: under diagnosis."
+  reason: "Scripted browser run 2026-10-10, not typed by the owner (Chromium and WebKit, check T9.13): focus was on the popup card, the next poll removed that report (the report is gone), and 900 ms later focus is on the page body. The focus event log ends with the card losing focus (out div.popup-card in Chromium) and nothing taking it. Root cause, read from the code and then confirmed by a throwaway copy where the fix made T9.13 pass in both engines (focus 900 ms later on the neighbouring row): the same class as the Mark resolved defect fixed by plan 03-25. The poll's render removes the marker, so the popup closes and map.js clears data-popup-open at once, but Leaflet keeps the closing popup node attached for a 200 ms fade. focusAfterRemoval in feed.js returns early because document.activeElement is the fading card, which is not the body and is still attached. When Leaflet removes the node 200 ms later, focus falls to the body and nothing catches it. A frozen clock hides the fade, which is why T9.12 and the earlier tests pass."
   severity: minor
   test: 9
-  artifacts: []
-  missing: []
+  artifacts:
+    - path: "web/static/js/feed.js"
+      issue: "focusAfterRemoval treats focus on the fading popup card as live, so the row, map and view toggle fallbacks never run"
+  missing:
+    - "A poll that removes the report whose popup holds focus moves focus to the next or previous row, else the map, even while the fading popup node is still attached; focus on a live element is still left alone"
+    - "A contract test that pins that decision without depending on the fade timing; the scripted check T9.13 (real time) is the live proof and fails today in both engines"
 - truth: "Closing a pin opened popup with the mouse on its close button returns focus to the marker (A74)"
-  status: failed
-  reason: "Scripted browser run 2026-10-10, not typed by the owner (WebKit only, check T9.16): the popup closes, and focus is on the map container (div#map) and not on the marker. Chromium passes the same check, and Escape from the pin passes in both engines (T9.15). Safari does not focus a button on a mouse click, so this may be correct under A74, which restores focus only when focus was inside the popup. To be decided from the spec text and the code. Root cause: under diagnosis."
+  status: accepted
+  decision: "2026-10-10, accepted as a browser difference, no code change. A74 and the popup surface section of 03-UI-SPEC.md return focus to the opener on popupclose only when the existing focus inside flag is set, that is, only when focus was in the popup when it closed. In WebKit it was not: the engine does not focus an anchor on a mouse click, so the mousedown on the close anchor (which sits outside the popup card, in front of it) focuses the nearest focusable ancestor, the map container, and map.js onMapFocusIn clears the flag because the new target is outside the popup. Chromium focuses the anchor on a click, so the flag stays set and the marker takes focus. The people A74 exists for are unaffected: the keyboard closes (Enter, Space on the close button, Escape) pass in both engines (T9.6, T9.11, T9.15), and a mouse user has no focus ring to lose. Focus lands on the map container, a sensible place, never on the page body."
+  reason: "Scripted browser run 2026-10-10, not typed by the owner (WebKit only, check T9.16): the popup closes, and focus is on the map container (div#map) and not on the marker. Chromium passes the same check, and Escape from the pin passes in both engines (T9.15). The scripted check keeps expecting the marker, so it reports this one FAIL in WebKit by design; the cause (focus moving to the map container on mouse down) is recorded in the decision above."
   severity: cosmetic
   test: 9
   artifacts: []
