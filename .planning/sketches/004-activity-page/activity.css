@@ -1,0 +1,335 @@
+/*
+ * activity.css: the proposed CSS for the redesigned Activity page (sketch 004). Proposed production CSS, written as
+ * additions to the shipped auth.css (.profile-page, .profile-activity, .profile-report-list) and main.css (.report-row),
+ * which the stage links first. The trust block itself comes from sketch 003 variant H (common.css and h.css), unchanged.
+ *
+ * Only tokens: no new colour, no new size, spacing from the scale, corners at 8px or less except the 12px row card and
+ * the two 12px labels the shipped design already has. No custom property is declared. In the app these rules would live
+ * in auth.css beside the shipped Activity rules, and the .act prefix would go.
+ *
+ * What changes on the page, in one place:
+ *   - A heading, one line of help, then three tabs (All, My posts, My votes) and, inside My posts, an Active and Resolved
+ *     filter. The selected tab is the semibold one with a 1px dark underline: the shared rules allow hairlines and the
+ *     4px severity bar and nothing thicker, so the picture's 2px bar is not used.
+ *   - Each row becomes a neutral card (page colour, hairline, 12px corners) that keeps the 4px severity bar. The shipped
+ *     flat row tinted by severity is not used on this page.
+ *   - A source label (Your post, Your vote, Your dispute, Update) and the severity label share the first line. The title
+ *     has an arrow that opens the report on the map. The first two lines are one link, so the target is the whole block.
+ */
+
+/* ---- The page head ------------------------------------------------------------------------------------------ */
+.profile-activity.act h2 {
+  margin: 0 0 var(--space-xs) 0;
+}
+
+.act-intro {
+  margin: 0 0 var(--space-md);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+}
+
+/* ---- Tabs ---------------------------------------------------------------------------------------------------- */
+/* The hairline under the strip is drawn by each tab's own bottom border and by a filler after the last tab, so no tab
+   needs a negative margin to sit on a shared line. The selected tab swaps its hairline for the text colour. The strip
+   scrolls sideways only as a safety net at very large text sizes. */
+.act-tabs {
+  display: flex;
+  align-items: stretch;
+  margin: 0 0 var(--space-md);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.act-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.act-tabs::after {
+  content: "";
+  flex: 1 0 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.act-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  gap: var(--space-sm);
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-sm);
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+/* The label reserves its semibold width, so choosing a tab never moves the tabs beside it. */
+.act-tab__label {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.act-tab__label::after {
+  content: attr(data-label);
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  font-weight: var(--font-weight-semibold);
+}
+
+.act-tab:hover {
+  background: color-mix(in srgb, var(--color-border) 50%, transparent);
+  color: var(--color-text);
+}
+
+.act-tab:active {
+  background: var(--color-border);
+}
+
+.act-tab[aria-selected="true"] {
+  border-bottom-color: var(--color-text);
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* The strip scrolls, so the global 2px ring at offset 2px would be clipped above and below. The ring sits inside. */
+.act-tab:focus-visible {
+  outline-offset: -2px;
+}
+
+/* At 340px and below the three tabs, their two counts and their padding add up to 6px more than the page has. The tabs
+   give up one spacing step of padding and gap there, so nothing scrolls at the normal text size. A larger text size still
+   scrolls the strip sideways, which is the safety net it was built with. */
+@media (max-width: 340px) {
+  .act-tab {
+    gap: var(--space-xs);
+    padding: 0 var(--space-xs);
+  }
+}
+
+.act-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 var(--space-xs);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* ---- The Active and Resolved filter (inside My posts) ------------------------------------------------------- */
+/* The same inverted neutral fill the vote buttons use for a pressed button (03-UI-SPEC A13): the meaning is carried by
+   the fill and the weight, not by a hue. */
+.act-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin: 0 0 var(--space-md);
+}
+
+.act-filter[hidden] {
+  display: none;
+}
+
+.act-filter__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.act-filter__btn:hover:not([aria-pressed="true"]) {
+  background: var(--color-border);
+}
+
+.act-filter__btn:active:not([aria-pressed="true"]) {
+  border-color: var(--color-text-muted);
+}
+
+.act-filter__btn[aria-pressed="true"] {
+  background: var(--color-text);
+  color: var(--color-bg);
+  border-color: var(--color-text);
+}
+
+/* ---- The list and the card ---------------------------------------------------------------------------------- */
+.act-list[hidden],
+.act .empty-state[hidden],
+.act-note[hidden] {
+  display: none;
+}
+
+/* Shipped .report-row: a flat row, tinted by severity, with a 4px bar on the left, 16px padding and a 16px gap between
+   the badge and the body. Kept: the bar, the padding, the gap and the severity and age ramps (they travel as custom
+   properties). Changed: the tint becomes the page colour, the corners and the hairline are new. */
+.act-row {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--severity-current, var(--severity-base));
+  border-radius: 12px;
+  transition: border-color 150ms ease;
+}
+
+.act-row:hover {
+  border-color: var(--color-text-muted);
+  border-left-color: var(--severity-current, var(--severity-base));
+}
+
+/* An update row only exists once Phase 3.2 ships, so the sketch draws it with a dashed outline. The severity bar stays. */
+.act-row.is-later {
+  border-top-style: dashed;
+  border-right-style: dashed;
+  border-bottom-style: dashed;
+}
+
+/* The first line: the source label on the left, the severity label on the right. */
+.act-row__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  column-gap: var(--space-sm);
+  row-gap: var(--space-xs);
+  min-width: 0;
+  margin: 0 0 var(--space-xs);
+}
+
+.act-row__source {
+  min-width: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+/* Shipped: .report-row .severity-label has a 4px bottom margin because the label stood alone above the title. Here the
+   head line owns the spacing. Same specificity as the shipped rule, later in the cascade. */
+.act-row__head .severity-label:not([hidden]) {
+  flex: none;
+  margin: 0;
+}
+
+/* The link is the head line and the title. It reaches 8px past the body on each side and 4px above and below, with the
+   same amount of padding, so the text does not move and a hover fill has room around it. */
+.act-row__link {
+  display: block;
+  margin: calc(-1 * var(--space-xs)) calc(-1 * var(--space-sm));
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 150ms ease;
+}
+
+.act-row__link:hover {
+  background: color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+
+.act-row__link:active {
+  background: var(--color-border);
+}
+
+.act-row__titleline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.act-row__titleline .report-row__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+/* A 20px mask in the muted text colour, the same drawing method as every other icon. It says "this opens". It is not
+   the trust block's chevron: that one points down and turns. This one points right and stays. */
+.act-row__chevron {
+  display: block;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: var(--color-text-muted);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.act-row .report-row__meta {
+  margin-top: var(--space-xs);
+}
+
+/* ---- Counts kept or dropped (a board switch, not a product setting) ----------------------------------------- */
+:root[data-counts="0"] .act-row .trust-block,
+:root[data-counts="0"] .act-row .report-row__stateline {
+  display: none;
+}
+
+/* ---- Notes and empty states --------------------------------------------------------------------------------- */
+.act-note {
+  margin: var(--space-md) 0 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+}
+
+/* ---- Reduced motion and forced colours ---------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .act-tab,
+  .act-filter__btn,
+  .act-row,
+  .act-row__link {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .act-tab[aria-selected="true"] {
+    border-bottom-color: CanvasText;
+  }
+
+  .act-count {
+    border: 1px solid CanvasText;
+  }
+
+  .act-row__chevron {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}

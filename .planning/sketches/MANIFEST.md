@@ -25,9 +25,12 @@ is a summary of one report, and comments live on a larger report view, never ins
 | 001 | map-pin-popup | Does the seven level hierarchy (badge, title, meta, trust, signals, actions, comments) scan quickly in a 300px Leaflet popup on a phone, in light and dark? | d4 (From your reference) | popup, leaflet, trust-block, comments-entry, light-dark |
 | 002 | full-report-view-and-thread | What does View comments open, and how does a plain chronological thread look? | none yet, waits for the report page and comments phase | report-view, comments, thread, layout |
 | 003 | trust-block-redesign | With nothing underlined, the reporter words as plain text at the top of the report and shorter panel wording, does the trust block still read at a glance on the popup, the feed row and the Activity row, in light and dark? | H: Beside the label | trust-block, popup, feed-row, activity-row, reporter-words, disclosure, wording, light-dark |
+| 004 | activity-page | With the owner's reference picture adapted to Pinalert's own tokens, does the Activity page still read at a glance at 360 and 640 wide, in light and dark, while keeping the confirmed counts, the state word and the Reopen button on each row? | none yet, one variant waiting for the owner | activity, tabs, rows, trust-block, light-dark |
 
 Sketch 001 is closed: D4 won. Its README lists where D4 departs from the locked Phase 3 decisions. Sketch 002
-stays open until the report page and comments phase is scoped.
+stays open until the report page and comments phase is scoped. Sketch 004 is open: it holds the owner's Activity page
+reference as text, the decisions taken, and the open points for the Phase 3.2 discussion. It reuses sketch 003's
+variant H by reference, so it must be read after 003.
 
 ## Tooling
 
