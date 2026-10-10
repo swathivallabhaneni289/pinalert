@@ -99,7 +99,7 @@ These are not owner questions. Both the locked decision and the d4 design can be
 
 ## Amendments to locked decisions
 
-One row per change. **Resolution** is "amend" (the locked item changes), "align" (the sketch changes to meet the locked item) or "unchanged, deferred" (kept until a separate owner decision, A84). The table has 84 rows, A1 to A84 (A39 to A53 were added in revision round 1, A54 to A64 in round 2, A65 to A74 in round 3, and A75 to A84 in gap closure round 4 on 2026-10-09, from sketch 003 variant H and the owner remarks under Gaps in `03-UAT.md`; existing rows are not renumbered). Test names are the real names in `web/*_test.go` or the V rows in `03-VALIDATION.md`.
+One row per change. **Resolution** is "amend" (the locked item changes), "align" (the sketch changes to meet the locked item) or "unchanged, deferred" (kept until a separate owner decision, A84). The table has 85 rows, A1 to A85 (A85 added on 2026-10-10 by plan 03-28, amended by A85; A39 to A53 were added in revision round 1, A54 to A64 in round 2, A65 to A74 in round 3, and A75 to A84 in gap closure round 4 on 2026-10-09, from sketch 003 variant H and the owner remarks under Gaps in `03-UAT.md`; existing rows are not renumbered). Test names are the real names in `web/*_test.go` or the V rows in `03-VALIDATION.md`.
 
 | ID | Change | Locked item it amends | Resolution | Follow on |
 |----|--------|-----------------------|------------|-----------|
@@ -187,6 +187,7 @@ One row per change. **Resolution** is "amend" (the locked item changes), "align"
 | A82 | The popup reporter number follows the words on the state line behind the same visually hidden `, score` prefix, regular weight, `--color-text`, not in `trust-num` ("Reliable reporter, score 78", sample data). The still current number stays semibold in `trust-num`. A null score shows no number, prefix or sentence. Feed row and Activity page show no number (D-09 unchanged); the reporter score sentence stays panel line 7, wording unchanged (A84). | D-09 and A50 (popup numbers, one score sentence per signal), Typography Label strong | amend (number weight); the sentence part of A50 is unchanged, deferred (A84) | Plan 03-23 builds the number as a plain span; the browser check after the merge reads weight 400. |
 | A83 | An empty state line takes no space. A Live report with a `none` reporter keeps a line whose children are all hidden, which would add the 4px popup header row gap. Each state line class gets a rule after its display rule that sets `display: none` when no child lacks `hidden`, using `:has()` with a class free argument and no comma, for example `.popup-card__stateline:not([hidden]):not(:has(> :not([hidden])))`; a script would add writes to pinned refresh paths. Floor: `:has()` needs Chromium 105, Safari 15.4, Firefox 121; the shipped `color-mix()` already needs Chromium 111, Safari 16.2, Firefox 113, so only Firefox moves. Without `:has()` nothing hides. | none (a new rule and its `:has()` browser floor) | amend (new rule) | Plan 03-23 writes it for both state line classes; the browser check after the merge compares a Live `none` report with a header that has no state line. |
 | A84 | Wording, considered and deferred to a separate owner decision. Unchanged here: the caveat tail "Counts separate places, not votes." (A7, RR-1), the disputed sentences (A56), every panel sentence (D-19), the two score sentences (A50), the five identifiers in `internal/service/trustcopy.go` (`countsCaveat`, `provisionalLeadSentence`, `expiredLeadSentence`, `needsReconfirmingSentence`, `tooEarlySentence`), the wording tests, the Copywriting Contract and the Panel sentence templates. UAT Gap 3 ("the text is too long"; which text is not yet named) stays open. | A7, A56, RR-1, D-19 (sentence wording), A50 (score sentence wording), Copywriting Contract | unchanged, deferred | The owner settles the wording separately (03-UAT.md test 10). Plans 03-21 to 03-24 change no sentence, identifier or wording test. |
+| A85 | The shorter panel wording of sketch 003 ("Wording proposals", column Proposed), accepted by the owner on 2026-10-10, supersedes A84's "unchanged, deferred" for the wording only (A84 stays as the record of the layout plans). The caveat "Counts places, not votes." ends the confirmed sentence only, once; the disputed sentences carry no caveat and are still counts of places; the counter sentences name places only; Getting old and Needs re-confirming say only what is different now; the dispute sentence keeps both numbers and its reason; the New reporter sentence states the rule once and the count once; both score sentences lose their long tails. Every number stays real (N, M, R, the window, K, T, C, J, MIN, the score), the closed character set holds, and the five identifiers in `internal/service/trustcopy.go` keep their names. The full text is the Panel sentence templates table. UAT Gap 3 ("the text is too long") stays open until the owner confirms the shorter wording at the final session. | A7, A56, RR-1 (the caveat on both counter sentences), RR-2 (the Unconfirmed sentence), D-19 (sentence wording), A50 (score sentence wording), A84 (deferred), Copywriting Contract | amend (owner, 2026-10-10) | Plan 03-28 changes trustcopy.go, the wording tests, the swagger examples, docs/TRUST-MODEL.md, this contract and the Phase 4 anchors (04-12, 04-UI-SPEC); the vote error for an expired report stays as it is (an API error, not panel wording). The owner's look check at the final session closes Gap 3. |
 
 ---
 
@@ -379,9 +380,9 @@ Opened and closed by the toggle (click, tap, Enter, Space). Plain text directly 
 2. The confirmed sentence.
 3. The disputed sentence.
 4. The still current sentence, only while a still current word is showing.
-5. Popup only: the still current score sentence "Score {SCORE} out of 100, based on how recently different places confirmed this.", omitted when that score is null.
+5. Popup only: the still current score sentence "Score {SCORE} out of 100, based on recent confirmations.", omitted when that score is null. (amended by A85)
 6. The reporter sentence, only while a reporter tag is showing.
-7. Popup only: the reporter score sentence "Score {SCORE} out of 100, based on how often their reports with a clear result were confirmed.", omitted when that score is null.
+7. Popup only: the reporter score sentence "Score {SCORE} out of 100, based on how often their reports were confirmed.", omitted when that score is null. (amended by A85)
 
 The score sentences are authored by the server and the browser never computes or holds them. The words "out of 100" live in the sentence only, so R-07's ban on "/100" beside the number holds. **Traceability:** the panel sentence is the replacement for D-09's "no extra sentence" and for R-07's hover reason that explained the popup numbers, so no reader sees a contradiction (amendment A50).
 
@@ -590,7 +591,7 @@ Template: `profile.html.tmpl`, script: `activity.js`, frame: the existing `.prof
 * **Who renders Expired.** `visibility.js` owns the label and the row class decision after load. `PinalertVisibility` gains a helper `displayState(report)` (A57) and an expired variant (class `visibility-tag--expired`, word Expired, `VISIBILITY_TAG_LABELS.expired`). `activity.js` builds its report object with `expired: row.dataset.expired === 'true'` next to `visibility` and calls `applyVisibilityClass` and the tag updater as it does today; it never types `vis-expired`. `displayState` returns Resolved (retracted) first, otherwise Expired when `report.expired === true`, which suppresses the Unconfirmed and Disputed labels on an expired row. Reading a boolean attribute is not comparing dates, so V-33 still holds. The row class `vis-expired` is written by the server in the template for first paint and no JS, and must equal what `applyVisibilityClass` writes after load.
 * **Four state labels.** Unconfirmed and Disputed as on the feed. Resolved (a read only rounded label, a word and not a colour) and Expired (the same shape as Resolved, neutral `--color-bg` fill and `--color-border` outline). **Precedence:** Resolved first when the visibility is retracted (an expired resolved report shows only Resolved, with no Reopen); otherwise an expired report shows Expired in place of Unconfirmed and Disputed, so RR-2's sentence is never rendered for a report that can no longer be confirmed.
 * **Row class.** The server sets the visibility class. A retracted report keeps `vis-retracted` (resolved). An expired report that is not retracted gets a distinct `vis-expired` (never `vis-retracted`, which means resolved), with the same outline and neutral bar treatment as `vis-hidden` and no severity tint: the declarations match `.vis-hidden` exactly (neutral `--severity-current`, transparent `--severity-tint`, the existing badge rule pattern), in light and dark through the same tokens with no per theme exception. In forced colors the 4px bar stays `solid CanvasText` and the Expired label keeps its `1px solid CanvasText` border. `vis-expired` is a separate rule and names no `vis-hidden` selector, so the "exactly one rule that names `vis-hidden` and declares a background" test is unaffected.
-* **Panel for an expired report.** The counter sentences stay (RR-1 and A56 wording, both the confirmed and the disputed sentence keeping the tail "Counts separate places, not votes."). RR-2's Unconfirmed line is replaced by "This report has expired. It can no longer be confirmed." and there is no still current sentence.
+* **Panel for an expired report.** The counter sentences stay (RR-1 and A56 as amended by A85: the confirmed sentence ends with the caveat "Counts places, not votes.", the disputed sentence carries none). RR-2's Unconfirmed line is replaced by "Expired, so it can no longer be confirmed." and there is no still current sentence. (amended by A85)
 * **Width:** the row body is only 188px at 320px (the frame's 24px side padding comes off the 84px row chrome) and 228px at 360px. The severity label (about 68 to 84px) fits. The same wrap fallbacks apply: counters wrap under each other, signals stack, the Reopen label wraps to two lines. (Amended by A79, A81: the face and the chevron wrap by the 6.85em rule, and the state line keeps label and words on one line through the 340px rule.)
 * **Content:** counters and reporter tag always. The still current word only while the report is live and unexpired and has no Unconfirmed or Disputed label. A Retracted (Resolved) or Expired report shows counters and the reporter tag only, with no still current word (R-08). No numbers and no score sentences on this page (D-09, A50). (Amended by A75: the reporter words sit on the state line, not in the counters and tag rows.)
 * **Reopen is the only vote control.** It is built by the one shared Reopen builder exported from `votes.js` (A64) and is the shared outlined vote button (A28): rotate-ccw icon, label "Reopen · not actually resolved", full width of the row body, shown only where the server marks the row `data-can-reopen` (retracted and unexpired; an Expired report never shows it). No Confirm, no Dispute, no Mark resolved. In its grid it spans `grid-column: 1 / -1`.
@@ -709,7 +710,7 @@ Locked Phase 2 copy is reused word for word. All new strings are plain text with
 | Error state: report expired | This report has expired. (locked) |
 | Error state: feed did not load | Couldn't load reports. Check your connection and try again. (unchanged Phase 1, with the Retry button) |
 | Destructive confirmation | Mark resolved: "Mark this report resolved?" then Cancel and "Yes, mark resolved". Cancel is only the secondary dismiss of this inherited Phase 2 confirmation, whose primary label is "Yes, mark resolved". It is not a primary CTA anywhere. |
-| Expired report on the Activity page | Label: Expired. Panel line: This report has expired. It can no longer be confirmed. |
+| Expired report on the Activity page | Label: Expired. Panel line: Expired, so it can no longer be confirmed. (amended by A85) |
 | Toasts (locked Phase 2) | Report marked resolved. Report reopened. The two pending toasts are unchanged. |
 
 Phase 3 introduces no new empty list. The zero state of the trust block is the counters `0 confirmed` and `0 disputed` plus the panel sentences below.
@@ -735,27 +736,27 @@ Placeholders: `{N}` distinct confirming places, `{M}` distinct disputing places,
 
 | Line | Case | Sentence |
 |------|------|----------|
-| Unconfirmed | label showing | Needs {T} confirmations before this counts as confirmed. |
-| Confirmed | N is 0 | No one has confirmed this yet. Counts separate places, not votes. |
-| Confirmed | N is 1 | 1 person in 1 place confirmed this. Counts separate places, not votes. |
-| Confirmed | N is 2 or more (real number, even above 99) | {N} people in {N} different places confirmed this. Counts separate places, not votes. |
-| Disputed | M is 0 | No one nearby has disputed this. Counts separate places, not votes. |
-| Disputed | M is 1 | 1 person in 1 place disputed this. Counts separate places, not votes. |
-| Disputed | M is 2 or more (real number, even above 99) | {M} people in {M} different places disputed this. Counts separate places, not votes. |
-| Still current | Up to date | {R} different places confirmed this in the last {WINDOW}. |
-| Still current | Getting old | Confirmed earlier, but fewer than {T} places confirmed it in the last {WINDOW}. |
-| Still current | Needs re-confirming | Confirmed earlier, but it has gone quiet. People nearby can confirm it again. |
-| Still current | Getting old or Needs re-confirming when a standing dispute raised the bar | Someone nearby disputed this, so it needs {K} places to confirm it in the last {WINDOW}. |
-| Still current | Too early to tell | Fewer than {T} places have confirmed this so far. |
+| Unconfirmed | label showing | Needs {T} confirmations to count as confirmed. |
+| Confirmed | N is 0 | No one has confirmed this yet. Counts places, not votes. |
+| Confirmed | N is 1 | 1 place confirmed this. Counts places, not votes. |
+| Confirmed | N is 2 or more (real number, even above 99) | {N} different places confirmed this. Counts places, not votes. |
+| Disputed | M is 0 | No one nearby has disputed this. |
+| Disputed | M is 1 | 1 place disputed this. |
+| Disputed | M is 2 or more (real number, even above 99) | {M} different places disputed this. |
+| Still current | Up to date | {R} places confirmed this in the last {WINDOW}. |
+| Still current | Getting old | Fewer than {T} places confirmed it in the last {WINDOW}. |
+| Still current | Needs re-confirming | Gone quiet. People nearby can confirm it again. |
+| Still current | Getting old or Needs re-confirming when a standing dispute raised the bar | Disputed nearby, so it needs {K} places in the last {WINDOW}. |
+| Still current | Too early to tell | Fewer than {T} places have confirmed this. |
 | Reporter | Reliable, Mixed or Unreliable | {C} of {J} earlier reports were confirmed by people nearby. |
-| Reporter | New reporter, J of 2 or more | Only {J} of their reports have had a clear result so far. A rating needs {MIN} reports with a clear result. |
-| Reporter | New reporter, J is 1 | Only 1 of their reports has had a clear result so far. A rating needs {MIN} reports with a clear result. |
-| Reporter | New reporter, J is 0 | None of their reports has had a clear result yet. A rating needs {MIN} reports with a clear result. |
-| Score (popup only) | Still current score not null | Score {SCORE} out of 100, based on how recently different places confirmed this. |
-| Score (popup only) | Reporter score not null | Score {SCORE} out of 100, based on how often their reports with a clear result were confirmed. |
-| Expired (Activity page only) | Report expired and not resolved | This report has expired. It can no longer be confirmed. |
+| Reporter | New reporter, J of 2 or more | A rating needs {MIN} reports with a clear result. They have {J} so far. |
+| Reporter | New reporter, J is 1 | A rating needs {MIN} reports with a clear result. They have 1 so far. |
+| Reporter | New reporter, J is 0 | A rating needs {MIN} reports with a clear result. They have none so far. |
+| Score (popup only) | Still current score not null | Score {SCORE} out of 100, based on recent confirmations. |
+| Score (popup only) | Reporter score not null | Score {SCORE} out of 100, based on how often their reports were confirmed. |
+| Expired (Activity page only) | Report expired and not resolved | Expired, so it can no longer be confirmed. |
 
-Rules: both counter sentences, confirmed and disputed, always keep the tail "Counts separate places, not votes." because N and M are place counts and so lower bounds on people (D-04, R-04, D-19). The disputed sentence is fixed by this contract (A56) and must not be reworded to drop the tail or to state an exact head count. Never use "fades unless re-confirmed" (known stale wording, expiry is flat by severity). Never say "first report" for a New reporter (it is false for one to four judged reports). The New reporter sentences say what J counts (reports with a clear result) and give MIN its noun. Only the still current wording (the four still current cases and the standing dispute variant) stays the planner's to finalise in `trustcopy.go`, within these placeholders and this plain style.
+Rules (amended by A85): the Text column above carries the shorter wording accepted on 2026-10-10. Only the confirmed sentence ends with the caveat "Counts places, not votes.", exactly once, because N and M are place counts and so lower bounds on people (D-04, R-04, D-19). The disputed sentence carries no caveat; it sits one line under the confirmed sentence and is still a count of places (A56 as amended by A85). Neither sentence states an exact head count. Never use "fades unless re-confirmed" (known stale wording, expiry is flat by severity). Never say "first report" for a New reporter (it is false for one to four judged reports). The New reporter sentences say what J counts (reports with a clear result) and give MIN its noun. Only the still current wording (the four still current cases and the standing dispute variant) stays the planner's to finalise in `trustcopy.go`, within these placeholders and this plain style.
 
 ---
 

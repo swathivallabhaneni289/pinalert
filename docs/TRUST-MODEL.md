@@ -98,14 +98,14 @@ The panel sentences are written by the server. T is `IndependentAgreementThresho
 
 | Line | Case | Text |
 |------|------|------|
-| Lead | Provisional | `Needs {T} confirmations before this counts as confirmed.` |
-| Lead | expired, not retracted (Activity page) | `This report has expired. It can no longer be confirmed.` |
-| Confirmed | N is 0 | `No one has confirmed this yet. Counts separate places, not votes.` |
-| Confirmed | N is 1 | `1 person in 1 place confirmed this. Counts separate places, not votes.` |
-| Confirmed | N is 2 or more | `{N} people in {N} different places confirmed this. Counts separate places, not votes.` |
-| Disputed | M is 0 | `No one nearby has disputed this. Counts separate places, not votes.` |
-| Disputed | M is 1 | `1 person in 1 place disputed this. Counts separate places, not votes.` |
-| Disputed | M is 2 or more | `{M} people in {M} different places disputed this. Counts separate places, not votes.` |
+| Lead | Provisional | `Needs {T} confirmations to count as confirmed.` |
+| Lead | expired, not retracted (Activity page) | `Expired, so it can no longer be confirmed.` |
+| Confirmed | N is 0 | `No one has confirmed this yet. Counts places, not votes.` |
+| Confirmed | N is 1 | `1 place confirmed this. Counts places, not votes.` |
+| Confirmed | N is 2 or more | `{N} different places confirmed this. Counts places, not votes.` |
+| Disputed | M is 0 | `No one nearby has disputed this.` |
+| Disputed | M is 1 | `1 place disputed this.` |
+| Disputed | M is 2 or more | `{M} different places disputed this.` |
 
 The tests that pin this section are `TestBuildTrustCountsMatchTally`, `TestTrustCountLabel`, `TestTrustCountsDistinctPlacesNotVotes` and `TestTrustCountUnderConcurrentVotes`. The last one casts votes from many places at once and needs a disposable database.
 
@@ -288,10 +288,10 @@ New reporter never looks like a good tag. It is the same plain text as the other
 The templates, in the server's exact words:
 
 - `{C} of {J} earlier reports were confirmed by people nearby.`
-- `Only {J} of their reports have had a clear result so far. A rating needs {MIN} reports with a clear result.` for J of 2 or more
-- `Only 1 of their reports has had a clear result so far. A rating needs {MIN} reports with a clear result.` for J of 1
-- `None of their reports has had a clear result yet. A rating needs {MIN} reports with a clear result.` for J of 0
-- `Score {SCORE} out of 100, based on how often their reports with a clear result were confirmed.`
+- `A rating needs {MIN} reports with a clear result. They have {J} so far.` for J of 2 or more
+- `A rating needs {MIN} reports with a clear result. They have 1 so far.` for J of 1
+- `A rating needs {MIN} reports with a clear result. They have none so far.` for J of 0
+- `Score {SCORE} out of 100, based on how often their reports were confirmed.`
 
 C is the number of corroborated reports, J the number of judged reports, MIN the judged minimum and SCORE the integer score. The score sentence exists only when the score is not null.
 
