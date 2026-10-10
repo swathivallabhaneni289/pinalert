@@ -652,6 +652,36 @@ func TestListRowActivationOpensThePopupOnce(t *testing.T) {
 	}
 }
 
+// TestPopupClosePressKeepsTheFocusAnswer pins A74 for a mouse close in WebKit.
+// A press on the popup close button does not focus it there; focus goes to the
+// map container, which clears popupFocusInside before the click closes the
+// popup. A pointerdown flag records that the press happened while focus was
+// inside the popup, and only then does onPopupClose count focus on the map
+// container as lost. The live proof is the scripted check T9.16, strict in
+// both engines.
+func TestPopupClosePressKeepsTheFocusAnswer(t *testing.T) {
+	code := p19Code(t, "static/js/map.js")
+
+	p13MustContain(t, "map.js", code, "var closePressHadFocus = false;")
+
+	initBody := jsFunctionBody(t, code, "init()")
+	p13MustContain(t, "init", initBody, "addEventListener('pointerdown', onMapPointerDown)")
+
+	press := jsFunctionBody(t, code, "onMapPointerDown(evt)")
+	p13Ordered(t, press, "onMapPointerDown",
+		"closePressHadFocus = ", "popupFocusInside", ".closest('.leaflet-popup-close-button')")
+
+	closeBody := jsFunctionBody(t, code, "onPopupClose(evt)")
+	p13Ordered(t, closeBody, "onPopupClose",
+		"var pressedClose = closePressHadFocus;",
+		"var hadFocus = popupFocusInside || pressedClose;",
+		"closePressHadFocus = false;",
+		"var lost = ",
+		"pressedClose && active === map.getContainer()",
+		"returnFocusToOpener(")
+	p13MustNotContain(t, "onPopupClose", closeBody, "setTimeout")
+}
+
 // TestPinOpensOnSpace pins A49 and A45: Space opens a pin and activates the
 // popup close button, and every pin carries a name in words.
 func TestPinOpensOnSpace(t *testing.T) {
@@ -668,13 +698,31 @@ func TestPinOpensOnSpace(t *testing.T) {
 
 	name := jsFunctionBody(t, code, "pinName(report)")
 	p13MustContain(t, "pinName", name,
-		"Pinalert.CATEGORY_LABELS", "Pinalert.SEVERITY_WORDS", "Pinalert.relativeTime(",
+		"Pinalert.categoryLabel(", "Pinalert.SEVERITY_WORDS", "Pinalert.relativeTime(",
 		"PinalertVisibility.stateWord(", "', '")
 	apply := jsFunctionBody(t, code, "applyPinName(marker, report)")
 	p13MustContain(t, "applyPinName", apply, "'aria-label'", "pinName(report)")
 	upsert := jsFunctionBody(t, code, "upsertMarker(report)")
 	if n := strings.Count(upsert, "applyPinName("); n < 2 {
 		t.Errorf("upsertMarker calls applyPinName %d times, want at least 2 (existing and new marker paths)", n)
+	}
+}
+
+// TestCategoryLabelNeverShowsRawText pins UF-03-01: the category word on the
+// popup card, the pin name and the feed meta line comes from one helper that
+// returns a table entry for an own property and the Other label for anything
+// else, so an unexpected API value is never printed raw.
+func TestCategoryLabelNeverShowsRawText(t *testing.T) {
+	app := p19Code(t, "static/js/app.js")
+	body := jsFunctionBody(t, app, "categoryLabel(category)")
+	p13MustContain(t, "categoryLabel", body,
+		"Object.prototype.hasOwnProperty.call(CATEGORY_LABELS, category)", "CATEGORY_LABELS.other")
+	p13MustContain(t, "app.js", app, "categoryLabel: categoryLabel")
+
+	for _, path := range []string{"static/js/map.js", "static/js/feed.js"} {
+		code := p19Code(t, path)
+		p13MustContain(t, path, code, "Pinalert.categoryLabel(")
+		p13MustNotContain(t, path, code, "|| report.category", "Pinalert.CATEGORY_LABELS[")
 	}
 }
 

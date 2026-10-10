@@ -105,7 +105,7 @@
   }
 
   function buildMetaText(report) {
-    var categoryLabel = Pinalert.CATEGORY_LABELS[report.category] || report.category;
+    var categoryLabel = Pinalert.categoryLabel(report.category);
     var text = categoryLabel + ' · ' + Pinalert.relativeTime(report.created_at);
 
     var shelterLine = Pinalert.formatShelterLine(report);

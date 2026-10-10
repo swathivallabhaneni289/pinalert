@@ -580,11 +580,11 @@ func TestLocationSearchUsesTextSinksAndExistingPinPlacement(t *testing.T) {
 			"secondary line), found %d", setTextSink, n)
 	}
 	if !strings.Contains(rowBody, "placeMarker(") {
-		t.Errorf("renderResultRow's own body must call placeMarker(, the existing pin-placement "+
+		t.Errorf("renderResultRow's own body must call placeMarker(, the existing pin-placement " +
 			"function, rather than constructing a marker itself")
 	}
 	if !strings.Contains(rowBody, "modalMap.setView(") {
-		t.Errorf("renderResultRow's own body must call modalMap.setView(, matching the same pair "+
+		t.Errorf("renderResultRow's own body must call modalMap.setView(, matching the same pair " +
 			"initLocation's GPS success callback calls (D-03)")
 	}
 
