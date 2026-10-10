@@ -14,7 +14,7 @@ import (
 // acceptance-criteria greps in 01.1-03-PLAN.md have a single, stable source
 // to match against.
 const (
-	verificationSubject = "Verify your email for Pinalert"
+	verificationSubject  = "Verify your email for Pinalert"
 	verificationBodyText = "Click the link below to verify your email and start using Pinalert. " +
 		"This link expires in 5 minutes and can only be used once."
 	verificationButtonLabel = "Verify email"

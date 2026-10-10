@@ -84,7 +84,7 @@ func TestGeocode_ValidatesQueryLength(t *testing.T) {
 // counts UTF-8 runes, not bytes — a byte-length check would incorrectly
 // accept a 2-rune Devanagari query and reject a legitimate longer one.
 func TestGeocode_CountsQueryLengthInRunes(t *testing.T) {
-	twoRunes := "कम"   // 2 Devanagari runes, 6 bytes
+	twoRunes := "कम"    // 2 Devanagari runes, 6 bytes
 	threeRunes := "कमल" // 3 Devanagari runes, 9 bytes
 
 	t.Run("2-rune Devanagari refused", func(t *testing.T) {
