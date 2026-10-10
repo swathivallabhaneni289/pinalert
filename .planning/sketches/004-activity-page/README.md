@@ -19,6 +19,13 @@ accordingly." So **variant B is the direction** and variant A is kept only for c
 sketch (three tabs, counts kept, no distance, no side menu, icon colour for severity) are withdrawn. Where the picture
 conflicts with the house rules, this README records the conflict instead of adapting the design.
 
+**Size, same day.** The owner then asked: "i want it to look like the picture but decrease the size accordingly and update it."
+Variant B now draws the desktop page at 80 percent of the picture's measured size: title 32 instead of 40, rows about 98
+high instead of 122, round icons 51 instead of 64, side menu 221 wide instead of 276. It is one unit, `--u` (0.8px), in
+`picture.css` and in the board, so the size moves with one number (the phone layout breakpoint follows it, 900 times 0.8 is
+720). The phone layout keeps the picture's own phone sizes, which are already about 80 percent of the desktop ones. The sizes
+quoted under "Departures" are the picture's own, so multiply them by 0.8 for what is drawn.
+
 ## How to view
 
 Serve the repo root with a server that sends `Cache-Control: no-store` (Safari blocks `file://` pages, and variant A links the
@@ -28,7 +35,7 @@ app's real stylesheets by relative path), then open the board. Variant B is the 
 http://127.0.0.1:8799/.planning/sketches/004-activity-page/index.html
 ```
 
-`picture.html` is variant B alone: a responsive page, desktop layout from 900px wide and phone layout below it. `stage.html`
+`picture.html` is variant B alone: a responsive page, desktop layout from 720px wide and phone layout below it. `stage.html`
 is one frame of variant A.
 
 ## The reference, in words (the project keeps no images)
@@ -51,7 +58,7 @@ inside My posts. Picture 1's own box lists six top level tabs, which is what var
 ## Variant B: exactly the picture
 
 Built in the picture's own sizes and colours, measured from it, with the system font stack. The board shows the picture's
-composition scaled to the window: the page at 1152 wide, the phone layout at 446 wide, and "What each tab shows" as board text
+composition scaled to the window: the page at 922 wide (1152 at 80 percent), the phone layout at 446 wide, and "What each tab shows" as board text
 beside them, never in the page. The seven rows and the six tab counts are the picture's. A tab selects itself and filters the
 seven rows with the meaning the picture's box gives it (My votes is confirmed or disputed, My disputes is disputed, Resolved is
 marked resolved, Not resolved is still active). The counts do not add up to the seven rows, and no rows were invented to make
@@ -103,8 +110,8 @@ light and dark.
 
 ## What was checked
 
-Variant B was driven in WebKit (Safari's engine) and Chromium: no console errors, no sideways scroll at 1152, 900, 446 and 360
-wide, the desktop layout from 900 up and the phone layout below it, tabs by mouse and by keyboard, a row press, and the board
+Variant B was driven in WebKit (Safari's engine) and Chromium: no console errors, no sideways scroll at 1152, 900, 730, 700, 446 and 360
+wide, the desktop layout from 720 up and the phone layout below it, tabs by mouse and by keyboard, a row press, and the board
 composition scaling to a 1300 wide window. It was compared by eye with the picture, region by region, in two rounds. It has not
 been opened in the owner's own Safari window. In Safari the Tab key skips buttons and links unless "Press Tab to highlight each
 item on a webpage" is ticked in Settings, Advanced.
