@@ -133,9 +133,9 @@ The score is 100 minus the ceiling of `CurrencyPointsPerWindow` (25) times A ove
 
 | Score | Band | Word |
 |-------|------|------|
-| 75 or more (`UpToDateMinScore`) | Up to date | Up to date |
-| 50 to 74 (`GettingOldMinScore`) | Getting old | Getting old |
-| 49 or less | Needs re-confirming | Needs re-confirming |
+| 75 or more (`UpToDateMinScore`) | Up to date | Report up to date |
+| 50 to 74 (`GettingOldMinScore`) | Getting old | Report getting old |
+| 49 or less | Needs re-confirming | Report needs re-confirming |
 
 Below 2 places the band is not yet corroborated. Critical and rescue needed reports then read Too early to tell. Every other report shows its Unconfirmed label and no word (D-18). The word is cut from the integer score, so the word and the number cannot disagree.
 
