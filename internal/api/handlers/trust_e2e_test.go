@@ -288,13 +288,13 @@ func p07AssertTrust(t *testing.T, label string, raw json.RawMessage, want p07Wan
 }
 
 const (
-	p07Lead           = "Needs 2 confirmations before this counts as confirmed."
-	p07NoDispute      = "No one nearby has disputed this. Counts separate places, not votes."
-	p07Confirmed1     = "1 person in 1 place confirmed this. Counts separate places, not votes."
-	p07Confirmed2     = "2 people in 2 different places confirmed this. Counts separate places, not votes."
-	p07Confirmed3     = "3 people in 3 different places confirmed this. Counts separate places, not votes."
-	p07Disputed1      = "1 person in 1 place disputed this. Counts separate places, not votes."
-	p07Disputed2      = "2 people in 2 different places disputed this. Counts separate places, not votes."
+	p07Lead           = "Needs 2 confirmations to count as confirmed."
+	p07NoDispute      = "No one nearby has disputed this."
+	p07Confirmed1     = "1 place confirmed this. Counts places, not votes."
+	p07Confirmed2     = "2 different places confirmed this. Counts places, not votes."
+	p07Confirmed3     = "3 different places confirmed this. Counts places, not votes."
+	p07Disputed1      = "1 place disputed this."
+	p07Disputed2      = "2 different places disputed this."
 	p07FeedCompareTag = "vote response vs feed"
 )
 
@@ -656,7 +656,7 @@ func TestTrustCountUnderConcurrentVotes(t *testing.T) {
 		confirmed:         12,
 		disputed:          0,
 		lead:              "",
-		confirmedSentence: "12 people in 12 different places confirmed this. Counts separate places, not votes.",
+		confirmedSentence: "12 different places confirmed this. Counts places, not votes.",
 		disputedSen:       p07NoDispute,
 	})
 	if got := countVotesForReport(t, pool, reportID); got != accounts {
@@ -832,8 +832,8 @@ func p14UpToDate(t *testing.T, label string, got p14CurrencyWire, places, window
 		Band:          "up_to_date",
 		Score:         got.Score,
 		Label:         "Up to date",
-		Sentence:      fmt.Sprintf("%d different places confirmed this in the last %s.", places, window),
-		ScoreSentence: fmt.Sprintf("Score %d out of 100, based on how recently different places confirmed this.", *got.Score),
+		Sentence:      fmt.Sprintf("%d places confirmed this in the last %s.", places, window),
+		ScoreSentence: fmt.Sprintf("Score %d out of 100, based on recent confirmations.", *got.Score),
 		RecentPlaces:  places,
 		WindowMinutes: windowMinutes,
 		FadeStage:     fade,
@@ -846,7 +846,7 @@ func p14NewReporter() p14ReporterWire {
 	return p14ReporterWire{
 		Tag:      "new",
 		Label:    "New reporter",
-		Sentence: "None of their reports has had a clear result yet. A rating needs 5 reports with a clear result.",
+		Sentence: "A rating needs 5 reports with a clear result. They have none so far.",
 	}
 }
 
@@ -962,8 +962,8 @@ func TestFeedSignalsMatchCastVoteSignals(t *testing.T) {
 		Band:          "needs_reconfirming",
 		Score:         p14Int(0),
 		Label:         "Needs re-confirming",
-		Sentence:      "Someone nearby disputed this, so it needs 3 places to confirm it in the last 2 hours.",
-		ScoreSentence: "Score 0 out of 100, based on how recently different places confirmed this.",
+		Sentence:      "Disputed nearby, so it needs 3 places in the last 2 hours.",
+		ScoreSentence: "Score 0 out of 100, based on recent confirmations.",
 		RecentPlaces:  2,
 		WindowMinutes: 120,
 		FadeStage:     p14Str("stale"),
@@ -996,7 +996,7 @@ func TestFeedSignalsMatchCastVoteSignals(t *testing.T) {
 	p14AssertCurrency(t, "step 5", cur, p14CurrencyWire{
 		Band:          "not_yet_corroborated",
 		Label:         "Too early to tell",
-		Sentence:      "Fewer than 2 places have confirmed this so far.",
+		Sentence:      "Fewer than 2 places have confirmed this.",
 		RecentPlaces:  1,
 		WindowMinutes: 360,
 	})
@@ -1103,7 +1103,7 @@ func TestReporterSignalFromSeededHistory(t *testing.T) {
 		Score:               p14Int(78),
 		Label:               "Reliable reporter",
 		Sentence:            "5 of 6 earlier reports were confirmed by people nearby.",
-		ScoreSentence:       "Score 78 out of 100, based on how often their reports with a clear result were confirmed.",
+		ScoreSentence:       "Score 78 out of 100, based on how often their reports were confirmed.",
 		JudgedReports:       6,
 		CorroboratedReports: 5,
 	}

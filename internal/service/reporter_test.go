@@ -205,15 +205,15 @@ func TestReporterSignalsGroupByAccount(t *testing.T) {
 
 	const (
 		confirmedOf = " earlier reports were confirmed by people nearby."
-		scoreTail   = " out of 100, based on how often their reports with a clear result were confirmed."
+		scoreTail   = " out of 100, based on how often their reports were confirmed."
 	)
 	want := map[int64]ReporterSignal{
 		101: {Tag: ReporterReliable, Score: p10Int(86), Label: "Reliable reporter", Sentence: "5 of 5" + confirmedOf, ScoreSentence: "Score 86" + scoreTail, JudgedReports: 5, CorroboratedReports: 5},
 		102: {Tag: ReporterMixed, Score: p10Int(71), Label: "Mixed record", Sentence: "4 of 5" + confirmedOf, ScoreSentence: "Score 71" + scoreTail, JudgedReports: 5, CorroboratedReports: 4},
 		103: {Tag: ReporterUnreliable, Score: p10Int(32), Label: "Unreliable reporter", Sentence: "0 of 5" + confirmedOf, ScoreSentence: "Score 32" + scoreTail, JudgedReports: 5, CorroboratedReports: 0},
 		104: {Tag: ReporterReliable, Score: p10Int(75), Label: "Reliable reporter", Sentence: "4 of 5" + confirmedOf, ScoreSentence: "Score 75" + scoreTail, JudgedReports: 5, CorroboratedReports: 4},
-		105: {Tag: ReporterNew, Label: "New reporter", Sentence: "Only 4 of their reports have had a clear result so far. A rating needs 5 reports with a clear result.", JudgedReports: 4, CorroboratedReports: 4},
-		106: {Tag: ReporterNew, Label: "New reporter", Sentence: "None of their reports has had a clear result yet. A rating needs 5 reports with a clear result."},
+		105: {Tag: ReporterNew, Label: "New reporter", Sentence: "A rating needs 5 reports with a clear result. They have 4 so far.", JudgedReports: 4, CorroboratedReports: 4},
+		106: {Tag: ReporterNew, Label: "New reporter", Sentence: "A rating needs 5 reports with a clear result. They have none so far."},
 	}
 
 	t.Run("six signals", func(t *testing.T) {
@@ -385,12 +385,12 @@ func TestReporterSignalsNewAndNone(t *testing.T) {
 				got.Tag, p10Deref(got.Score), got.JudgedReports, got.CorroboratedReports, tag, p10Deref(score), judged, corroborated)
 		}
 	}
-	const needs = " A rating needs 5 reports with a clear result."
+	const needs = "A rating needs 5 reports with a clear result."
 
 	t.Run("one unconfirmed report", func(t *testing.T) {
 		got := rate(p10Batch(acct, 1, 1, SeverityLow, CategoryFlood, p10Judged, "none"))
 		expect(t, got, ReporterNew, nil, 1, 0)
-		if want := "Only 1 of their reports has had a clear result so far." + needs; got.Sentence != want {
+		if want := needs + " They have 1 so far."; got.Sentence != want {
 			t.Errorf("sentence = %q, want %q", got.Sentence, want)
 		}
 	})
@@ -401,7 +401,7 @@ func TestReporterSignalsNewAndNone(t *testing.T) {
 			p10Batch(acct, 2, 1, SeverityLow, CategoryFlood, p10Judged, "contradicted"),
 		))
 		expect(t, got, ReporterNew, nil, 2, 1)
-		if want := "Only 2 of their reports have had a clear result so far." + needs; got.Sentence != want {
+		if want := needs + " They have 2 so far."; got.Sentence != want {
 			t.Errorf("sentence = %q, want %q", got.Sentence, want)
 		}
 	})

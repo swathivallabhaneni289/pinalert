@@ -409,7 +409,7 @@ func TestProfileMarksExpiredReports(t *testing.T) {
 			t.Errorf("%s: currency label = %v, want empty", name, cur["label"])
 		}
 	}
-	const expiryLine = "This report has expired. It can no longer be confirmed."
+	const expiryLine = "Expired, so it can no longer be confirmed."
 
 	expiredRow := p15ProfileRow(t, body, expiredID)
 	tokens := p15ClassTokens(t, expiredRow)

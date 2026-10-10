@@ -272,8 +272,8 @@ func TestBuildTrustCarriesCurrency(t *testing.T) {
 		fresh := cast(p05Now).Currency
 		if fresh.Band != CurrencyUpToDate || fresh.Score == nil || *fresh.Score != 93 ||
 			fresh.Label != "Up to date" ||
-			fresh.Sentence != "2 different places confirmed this in the last 2 hours." ||
-			fresh.ScoreSentence != "Score 93 out of 100, based on how recently different places confirmed this." ||
+			fresh.Sentence != "2 places confirmed this in the last 2 hours." ||
+			fresh.ScoreSentence != "Score 93 out of 100, based on recent confirmations." ||
 			fresh.RecentPlaces != 2 || fresh.WindowMinutes != 120 ||
 			fresh.FadeStage == nil || *fresh.FadeStage != FadeFresh {
 			t.Errorf("at the vote: Currency = %+v", fresh)
@@ -282,7 +282,7 @@ func TestBuildTrustCarriesCurrency(t *testing.T) {
 		later := cast(p05Now.Add(2*time.Hour + 10*time.Minute)).Currency
 		if later.Band != CurrencyGettingOld || later.Score == nil || *later.Score != 66 ||
 			later.Label != "Getting old" ||
-			later.Sentence != "Confirmed earlier, but fewer than 2 places confirmed it in the last 2 hours." ||
+			later.Sentence != "Fewer than 2 places confirmed it in the last 2 hours." ||
 			later.RecentPlaces != 0 ||
 			later.FadeStage == nil || *later.FadeStage != FadeAging {
 			t.Errorf("2 hours 10 minutes later: Currency = %+v", later)
@@ -292,9 +292,9 @@ func TestBuildTrustCarriesCurrency(t *testing.T) {
 
 // TestTrustLeadSentence covers the lead line rule through BuildTrust.
 func TestTrustLeadSentence(t *testing.T) {
-	const expiredLine = "This report has expired. It can no longer be confirmed."
-	needs := "Needs " + strconv.Itoa(IndependentAgreementThreshold) + " confirmations before this counts as confirmed."
-	if needs != "Needs 2 confirmations before this counts as confirmed." {
+	const expiredLine = "Expired, so it can no longer be confirmed."
+	needs := "Needs " + strconv.Itoa(IndependentAgreementThreshold) + " confirmations to count as confirmed."
+	if needs != "Needs 2 confirmations to count as confirmed." {
 		t.Fatalf("threshold sentence = %q", needs)
 	}
 	future := p05Now.Add(time.Hour)
@@ -388,10 +388,10 @@ func TestCastVoteResultCarriesTrust(t *testing.T) {
 		if tr.ConfirmedPlaces != 3 || tr.DisputedPlaces != 1 || tr.ConfirmedText != "3" || tr.DisputedText != "1" || tr.LeadSentence != "" {
 			t.Errorf("Trust = %+v", tr)
 		}
-		if want := "3 people in 3 different places confirmed this. Counts separate places, not votes."; tr.ConfirmedSentence != want {
+		if want := "3 different places confirmed this. Counts places, not votes."; tr.ConfirmedSentence != want {
 			t.Errorf("ConfirmedSentence = %q, want %q", tr.ConfirmedSentence, want)
 		}
-		if want := "1 person in 1 place disputed this. Counts separate places, not votes."; tr.DisputedSentence != want {
+		if want := "1 place disputed this."; tr.DisputedSentence != want {
 			t.Errorf("DisputedSentence = %q, want %q", tr.DisputedSentence, want)
 		}
 		rc := q.voteContextRow
@@ -418,10 +418,10 @@ func TestCastVoteResultCarriesTrust(t *testing.T) {
 			t.Fatalf("Visibility = %q, want provisional", got.Visibility)
 		}
 		tr := got.Trust
-		if tr.LeadSentence != "Needs 2 confirmations before this counts as confirmed." || tr.ConfirmedText != "1" || tr.DisputedText != "0" {
+		if tr.LeadSentence != "Needs 2 confirmations to count as confirmed." || tr.ConfirmedText != "1" || tr.DisputedText != "0" {
 			t.Errorf("Trust = %+v", tr)
 		}
-		if want := "No one nearby has disputed this. Counts separate places, not votes."; tr.DisputedSentence != want {
+		if want := "No one nearby has disputed this."; tr.DisputedSentence != want {
 			t.Errorf("DisputedSentence = %q, want %q", tr.DisputedSentence, want)
 		}
 	})
