@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -317,6 +318,7 @@ func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 // @Description session verified by email through the magic-link flow; an unverified caller receives
 // @Description 401 and no report data.
 // @Description Every report also carries a trust object: how many distinct nearby places confirmed and disputed it, counted as places, not votes.
+// @Description lat, lon and radius_km must be finite numbers; NaN is refused with 400 and the name of the parameter.
 // @Tags reports
 // @Produce json
 // @Param lat query number true "Latitude of the query center (required, -90 to 90)"
@@ -375,7 +377,9 @@ func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 		radiusKm := defaultRadiusKm
 		if raw := q.Get("radius_km"); raw != "" {
 			parsed, err := strconv.ParseFloat(raw, 64)
-			if err != nil {
+			// ParseFloat accepts the unsigned words NaN and nan, and NaN
+			// passes every < and > range check below, so refuse it here.
+			if err != nil || math.IsNaN(parsed) {
 				writeFieldError(w, http.StatusBadRequest, "radius_km", "radius_km must be a number.")
 				return
 			}
@@ -441,7 +445,7 @@ func parseCoordinate(w http.ResponseWriter, q map[string][]string, name string, 
 		return 0, false
 	}
 	parsed, err := strconv.ParseFloat(raw, 64)
-	if err != nil {
+	if err != nil || math.IsNaN(parsed) {
 		writeFieldError(w, http.StatusBadRequest, name, name+" must be a number.")
 		return 0, false
 	}
