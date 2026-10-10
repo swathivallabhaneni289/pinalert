@@ -831,7 +831,7 @@ func p14UpToDate(t *testing.T, label string, got p14CurrencyWire, places, window
 	p14AssertCurrency(t, label, got, p14CurrencyWire{
 		Band:          "up_to_date",
 		Score:         got.Score,
-		Label:         "Up to date",
+		Label:         "Report up to date",
 		Sentence:      fmt.Sprintf("%d places confirmed this in the last %s.", places, window),
 		ScoreSentence: fmt.Sprintf("Score %d out of 100, based on recent confirmations.", *got.Score),
 		RecentPlaces:  places,
@@ -961,7 +961,7 @@ func TestFeedSignalsMatchCastVoteSignals(t *testing.T) {
 	p14AssertCurrency(t, "step 3", cur, p14CurrencyWire{
 		Band:          "needs_reconfirming",
 		Score:         p14Int(0),
-		Label:         "Needs re-confirming",
+		Label:         "Report needs re-confirming",
 		Sentence:      "Disputed nearby, so it needs 3 places in the last 2 hours.",
 		ScoreSentence: "Score 0 out of 100, based on recent confirmations.",
 		RecentPlaces:  2,
@@ -971,7 +971,7 @@ func TestFeedSignalsMatchCastVoteSignals(t *testing.T) {
 	p14AssertReporter(t, "step 3", rep, p14NewReporter())
 
 	// Step 4: E confirms R1 from P5. Three confirming places meet the raised
-	// bar, so the report reads Up to date again.
+	// bar, so the report reads Report up to date again.
 	vis, vt = p07VoteTrust(t, e, srv.URL, r1, "confirm", p5Lat, p5Lon)
 	if vis != "live" {
 		t.Fatalf("step 4: visibility = %q, want live", vis)

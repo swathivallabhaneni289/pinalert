@@ -289,6 +289,7 @@ func TestTrustModuleHasNoThresholdsOrSinks(t *testing.T) {
 		"fetch(", "XMLHttpRequest", "Date.now", "new Date", "getTime", "created_at", "expires_at")
 	p13MustNotContain(t, "trust.js server copy", trust,
 		"Up to date", "Getting old", "re-confirming", "Too early", "Reliable reporter",
+		"Report up to date", "Report getting old", "Report needs re-confirming",
 		"Mixed record", "Unreliable reporter", "New reporter", "Counts separate places",
 		"out of 100", "Unconfirmed", "confirmations before")
 	p13MustContain(t, "trust.js", trust, "Pinalert.setText(", "'use strict'")

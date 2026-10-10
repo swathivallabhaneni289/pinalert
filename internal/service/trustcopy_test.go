@@ -79,9 +79,9 @@ func p05StringFields(v reflect.Value, path string, out map[string]string) {
 func TestTrustCopyCurrencyIsPlainText(t *testing.T) {
 	t.Run("exact copy", func(t *testing.T) {
 		exact := []struct{ got, want string }{
-			{currencyLabelUpToDate, "Up to date"},
-			{currencyLabelGettingOld, "Getting old"},
-			{currencyLabelNeedsReconfirming, "Needs re-confirming"},
+			{currencyLabelUpToDate, "Report up to date"},
+			{currencyLabelGettingOld, "Report getting old"},
+			{currencyLabelNeedsReconfirming, "Report needs re-confirming"},
 			{currencyLabelTooEarly, "Too early to tell"},
 			{upToDateSentence(2, "2 hours"), "2 places confirmed this in the last 2 hours."},
 			{gettingOldSentence("6 hours"), "Fewer than 2 places confirmed it in the last 6 hours."},
