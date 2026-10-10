@@ -121,7 +121,7 @@
         },
         "/reports": {
             "get": {
-                "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance,\nthen resolves each report's visibility fresh via the shared resolver and returns\nonly listable ones, nearest first. This single endpoint serves both the map and the\nlist views — there is no separate map-only route. A resolved (retracted) report is\nnever returned by either view. show_disputed=true switches to the disputed-only\nview: only reports currently hidden by disputes, on the list and among the map pins\ntogether, replacing the default Live-and-Provisional view rather than adding to it.\nA critical or rescue-needed report stays Live however heavily it is disputed, so it\nappears only in the default view, never in the disputed one. Every report carries\nyour_vote and is_own_report relative to the calling verified account. Requires a\nsession verified by email through the magic-link flow; an unverified caller receives\n401 and no report data.\nEvery report also carries a trust object: how many distinct nearby places confirmed and disputed it, counted as places, not votes.\nlat, lon and radius_km must be finite numbers; NaN is refused with 400 and the name of the parameter.",
+                "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance,\nthen resolves each report's visibility fresh via the shared resolver and returns\nonly listable ones, nearest first. This single endpoint serves both the map and the\nlist views — there is no separate map-only route. A resolved (retracted) report is\nnever returned by either view. show_disputed=true switches to the disputed-only\nview: only reports currently hidden by disputes, on the list and among the map pins\ntogether, replacing the default Live-and-Provisional view rather than adding to it.\nA critical or rescue-needed report stays Live however heavily it is disputed, so it\nappears only in the default view, never in the disputed one. Every report carries\nyour_vote and is_own_report relative to the calling verified account. Requires a\nsession verified by email through the magic-link flow; an unverified caller receives\n401 and no report data.\nEvery report also carries a trust object: how many people at different nearby spots confirmed and disputed it, counted once per spot and not once per vote.\nlat, lon and radius_km must be finite numbers; NaN is refused with 400 and the name of the parameter.",
                 "produces": [
                     "application/json"
                 ],
@@ -623,7 +623,7 @@
                     "example": "Report up to date"
                 },
                 "recent_places": {
-                    "description": "RecentPlaces is how many distinct places confirmed the report inside the window.",
+                    "description": "RecentPlaces is how many different spots confirmed the report inside the window.",
                     "type": "integer",
                     "example": 3
                 },
@@ -636,12 +636,12 @@
                 "score_sentence": {
                     "description": "ScoreSentence is the popup line that explains the score, empty when the score is null.",
                     "type": "string",
-                    "example": "Score 92 out of 100, based on recent confirmations."
+                    "example": "Score 92 out of 100."
                 },
                 "sentence": {
                     "description": "Sentence is the panel line for the band, written by the server, empty when no word shows.",
                     "type": "string",
-                    "example": "3 places confirmed this in the last 2 hours."
+                    "example": "3 confirmations in the last 2 hours."
                 },
                 "window_minutes": {
                     "description": "WindowMinutes is the length of the window in whole minutes.",
@@ -939,12 +939,12 @@
                 "score_sentence": {
                     "description": "ScoreSentence is the popup line that explains the score, empty when the score is null.",
                     "type": "string",
-                    "example": "Score 86 out of 100, based on how often their reports were confirmed."
+                    "example": "Score 86 out of 100."
                 },
                 "sentence": {
                     "description": "Sentence is the panel line for the tag, written by the server, empty when no word shows.",
                     "type": "string",
-                    "example": "5 of 5 earlier reports were confirmed by people nearby."
+                    "example": "5 of their last 5 reports were confirmed."
                 },
                 "tag": {
                     "description": "Tag is the reporter tag, written by the server.",
@@ -1053,14 +1053,14 @@
             "type": "object",
             "properties": {
                 "confirmed_places": {
-                    "description": "ConfirmedPlaces is how many distinct places confirm the report, counting places, not votes, so several people in one place count once (D-04).",
+                    "description": "ConfirmedPlaces is how many different spots have someone who confirmed the report, so several people at one spot count once (D-04).",
                     "type": "integer",
                     "example": 1
                 },
                 "confirmed_sentence": {
                     "description": "ConfirmedSentence is the panel line that explains the confirmed count.",
                     "type": "string",
-                    "example": "1 place confirmed this. Counts places, not votes."
+                    "example": "1 person confirmed this."
                 },
                 "confirmed_text": {
                     "description": "ConfirmedText is the confirmed count as the surface shows it, from 0 to 99 or 99+ above 99, written by the server (A27).",
@@ -1068,7 +1068,7 @@
                     "example": "1"
                 },
                 "currency": {
-                    "description": "Currency is the still current signal: a band, the facts behind it (how many different places confirmed recently, over what window) and a whole number score from 0 to 100, or null while there is no rating. The feed and every vote response carry the same object.",
+                    "description": "Currency is the still current signal: a band, the facts behind it (how many confirmations came from different spots recently, over what window) and a whole number score from 0 to 100, or null while there is no rating. The feed and every vote response carry the same object.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/handlers.CurrencyResponse"
@@ -1076,14 +1076,14 @@
                     ]
                 },
                 "disputed_places": {
-                    "description": "DisputedPlaces is how many distinct places dispute the report, counted the same way.",
+                    "description": "DisputedPlaces is how many different spots have someone who disputed the report, counted the same way.",
                     "type": "integer",
                     "example": 0
                 },
                 "disputed_sentence": {
                     "description": "DisputedSentence is the panel line that explains the disputed count.",
                     "type": "string",
-                    "example": "No one nearby has disputed this."
+                    "example": "No one has disputed this."
                 },
                 "disputed_text": {
                     "description": "DisputedText is the disputed count as the surface shows it, from 0 to 99 or 99+ above 99, written by the server (A27).",
@@ -1093,7 +1093,7 @@
                 "lead_sentence": {
                     "description": "LeadSentence is the panel's first line, empty when there is none.",
                     "type": "string",
-                    "example": "Needs 2 confirmations to count as confirmed."
+                    "example": "Needs 2 people at different spots to confirm it."
                 },
                 "reporter": {
                     "description": "Reporter is the reporter signal: a tag, the facts behind it (how many earlier reports had a clear result and how many of those people nearby confirmed) and a whole number score from 0 to 100, or null while there is no rating. The feed and every vote response carry the same object.",
