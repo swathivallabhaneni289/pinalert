@@ -273,8 +273,9 @@ window.PinalertMap = (function () {
   }
 
   // buildPopupCard constructs the popup card once per marker, as DOM nodes
-  // only (D-20, A21). The order is the header (badge, severity label, state
-  // label), the title, the meta lines, the trust block and the actions. The
+  // only (D-20, A21). The header is the badge row (badge, severity label)
+  // then the state line (state label, reporter words) (A80), then come the
+  // title, the meta lines, the trust block and the actions. The
   // card has no footer and no comments link (A11). The report text is the
   // title and reports have no edit path, so it is written once here. Every
   // other field is written by updatePopupCard, which this builder ends with.
@@ -288,6 +289,8 @@ window.PinalertMap = (function () {
 
     var header = document.createElement('div');
     header.className = 'popup-card__header';
+    var pills = document.createElement('div');
+    pills.className = 'popup-card__pills';
     var badge = document.createElement('span');
     badge.className = 'icon-badge icon-badge--sm';
     var glyph = document.createElement('span');
@@ -295,9 +298,9 @@ window.PinalertMap = (function () {
     badge.appendChild(glyph);
     var severity = PinalertTrust.createSeverityLabel();
     var tag = PinalertVisibility.createVisibilityTag();
-    header.appendChild(badge);
-    header.appendChild(severity);
-    header.appendChild(tag);
+    pills.appendChild(badge);
+    pills.appendChild(severity);
+    header.appendChild(pills);
 
     var titleEl = document.createElement('p');
     titleEl.className = 'popup-card__title';
@@ -320,8 +323,10 @@ window.PinalertMap = (function () {
     meta.appendChild(metaGlyph);
     meta.appendChild(metaLines);
 
-    // The popup alone asks for the two scores (D-09).
+    // The popup alone asks for the two scores (D-09); its reporter words join
+    // the state label in the header (A75).
     var trust = PinalertTrust.createTrustBlock({ showScores: true });
+    header.appendChild(PinalertTrust.createStateLine('popup-card__stateline', tag, trust));
 
     var actions = document.createElement('div');
     actions.className = 'popup-card__actions';

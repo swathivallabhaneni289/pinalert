@@ -718,8 +718,9 @@
 /* -------------------------------------------------------------------------
  * Phase 3 trust block (plan 03-13; D-16, D-18, A4, A22, A48, A61). One block
  * serves the feed row, the map popup and the Activity page: a hairline, a
- * full width toggle, two counters and up to two signals, then a plain panel.
- * Text stays in the normal text colour because colour is reserved for
+ * full width toggle, two counters and one signal row (the clock and the still
+ * current word), then a plain panel. The reporter words sit outside the block
+ * on the state line (A75, A76). Text stays in the normal text colour because colour is reserved for
  * severity, and the fade changes severity tokens only, so the block is never
  * dimmed. Every spacing value is a token (A53). Plan 03-22 (A77, A78, A79)
  * made the toggle a wrapping flex row with a face and a chevron and replaced
@@ -871,25 +872,29 @@
   min-width: 0;
 }
 
-/* The signals row has its own separator, centred in its 16px gap and clipped
-   the same way. */
-.trust-signal--second::before {
-  content: "";
-  position: absolute;
-  top: var(--space-xs);
-  bottom: var(--space-xs);
-  left: calc(-1 * var(--space-sm));
-  width: 1px;
-  background-color: var(--color-border);
-}
-
 .trust-signal__text {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-/* Glyph mask base for the two signal icons (A39). The icon takes the text
-   colour through currentColor. */
+/* The reporter words: plain text beside the state label, regular weight, the
+   normal text colour, no border, fill or icon. The popup number inherits the
+   regular weight (A75, A82). */
+.trust-reporter:not([hidden]) {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+/* Glyph mask base for the signal icon (A39). The icon takes the text colour
+   through currentColor. */
 .trust-icon:not([hidden]) {
   display: block;
   flex: none;
@@ -907,11 +912,6 @@
 .trust-icon--clock {
   -webkit-mask-image: url("/static/icons/clock.svg");
   mask-image: url("/static/icons/clock.svg");
-}
-
-.trust-icon--user {
-  -webkit-mask-image: url("/static/icons/user.svg");
-  mask-image: url("/static/icons/user.svg");
 }
 
 .trust-block__panel:not([hidden]) {
@@ -944,7 +944,7 @@
   }
 }
 
-/* Windows high contrast (RR-7). The glyph masks and the separators opt out of
+/* Windows high contrast (RR-7). The clock glyph and the counter separator opt out of
    forced colour adjustment so they stay visible. Forced colours replace the
    fills, so hover and press show a border instead (A77); the rest border is
    Canvas, so nothing moves on hover. The chevron opts out of the adjustment so
@@ -955,8 +955,7 @@
     background-color: CanvasText;
   }
 
-  .trust-block__count--second::before,
-  .trust-signal--second::before {
+  .trust-block__count--second::before {
     forced-color-adjust: none;
     background-color: CanvasText;
   }
@@ -1034,12 +1033,32 @@
 }
 
 /* On a feed row or an Activity row the fill is the page colour with a 1px
-   border in the current severity colour. At (0,3,0) this beats the level
-   fills above and sets no colour, so the Critical text stays red. */
+   border in the current severity colour, and 8px sit between the label and
+   the title (A81). At (0,3,0) this beats the level fills above and sets no
+   colour, so the Critical text stays red. */
 .report-row .severity-label:not([hidden]) {
-  margin: 0 0 var(--space-xs);
+  margin: 0 0 var(--space-sm);
   background: var(--color-bg);
   border-color: var(--severity-current);
+}
+
+/* The state label and the reporter words share this line under the meta
+   line, 8px apart. A Live report shows the words alone (A75, A81). */
+.report-row__stateline:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-sm);
+  row-gap: var(--space-xs);
+}
+
+/* A83: a line whose children are all hidden takes no space. It can only hide
+   a line whose every child is already hidden, so a showing state label is
+   never hidden. Engines without the has selector, before Chromium 105, Safari
+   15.4 and Firefox 121, drop the rule, and an empty row line has no height
+   anyway. */
+.report-row__stateline:not([hidden]):not(:has(> :not([hidden]))) {
+  display: none;
 }
 
 /* Expired (A44, Activity page only). The server writes the class for first
@@ -1056,6 +1075,15 @@
 .vis-expired .icon-badge {
   background: transparent;
   outline: 1px solid var(--color-border);
+}
+
+/* The 188px Activity body on a 320px phone is narrower than a label plus the
+   words, so the line reaches one spacing step into the row padding and the
+   words stay beside the label. The line has no fill or border (A81). */
+@media (max-width: 340px) {
+  .report-row__stateline:not([hidden]) {
+    margin-right: calc(-1 * var(--space-md));
+  }
 }
 
 /* Forced colors (RR-7). The labels keep a visible rounded border and the
@@ -1140,14 +1168,47 @@
   padding: var(--space-md);
 }
 
-/* The right padding keeps the labels clear of the close button. */
+/* The badge row keeps the close button clearance and the state line uses the
+   full width (A80). The bottom margin merges with the title's 8px top margin,
+   so heading to title is 16px (A81). */
 .popup-card__header:not([hidden]) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-sm);
+  column-gap: var(--space-sm);
+  row-gap: var(--space-xs);
   min-height: 32px;
+  margin-bottom: var(--space-md);
+}
+
+.popup-card__pills:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  flex: 1 1 100%;
   padding-right: var(--space-2xl);
+}
+
+.popup-card__stateline:not([hidden]) {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-sm);
+  row-gap: var(--space-xs);
+  min-width: 0;
+}
+
+/* A83: an empty flex line would add the 4px row gap above the title, so a
+   line whose children are all hidden takes no space. It can only hide a line
+   whose every child is already hidden, so a showing state label is never
+   hidden. Engines before Chromium 105, Safari 15.4 and Firefox 121 drop the
+   rule and pay those 4px. */
+.popup-card__stateline:not([hidden]):not(:has(> :not([hidden]))) {
+  display: none;
 }
 
 /* Three classes so the title margin outranks the paragraph reset. Four lines

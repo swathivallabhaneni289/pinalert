@@ -502,7 +502,7 @@ func TestSeverityLabelHasNoFixedHeight(t *testing.T) {
 
 	row := p16Rule(t, trust, "", p16RowLabelHead)
 	p16MustDecl(t, "row label", row, map[string]string{
-		"margin":       "0 0 var(--space-xs)",
+		"margin":       "0 0 var(--space-sm)",
 		"background":   "var(--color-bg)",
 		"border-color": "var(--severity-current)",
 	})
