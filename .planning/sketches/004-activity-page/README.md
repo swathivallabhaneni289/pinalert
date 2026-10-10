@@ -26,6 +26,9 @@ high instead of 122, round icons 51 instead of 64, side menu 221 wide instead of
 720). The phone layout keeps the picture's own phone sizes, which are already about 80 percent of the desktop ones. The sizes
 quoted under "Departures" are the picture's own, so multiply them by 0.8 for what is drawn.
 
+**Approved.** The owner answered "ok" to variant B at 80 percent on 2026-10-10. Nothing in this sketch is pending with them.
+The build comes with Phase 3.2, after Phase 3 closes and Phase 3.1 adds the report link.
+
 ## How to view
 
 Serve the repo root with a server that sends `Cache-Control: no-store` (Safari blocks `file://` pages, and variant A links the
