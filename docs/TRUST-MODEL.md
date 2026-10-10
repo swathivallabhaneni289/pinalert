@@ -1,10 +1,12 @@
 # Pinalert trust model
 
-This document explains how Pinalert decides that a confirmation is independent and nearby. "N confirmed" on a report means N different places, not N votes. Every number in it comes from a named test that anyone can rerun, and the limits of the model are written down next to the rules.
+This document explains how Pinalert decides that a confirmation is independent and nearby. "N confirmed" on a report means N different places, not N votes. The panel is written for people, so it calls a place a spot and says "people at different spots", never the word place. Every number in it comes from a named test that anyone can rerun, and the limits of the model are written down next to the rules.
 
 ## What counts as a place
 
 The server computes each vote's cell as the geohash of the voter's coordinates at precision 7 (`voterGeohashPrecision` in `internal/service/trust.go`). It never accepts a cell from the client. The confirmed count N is the number of distinct cells among the current confirm votes of verified accounts other than the reporter (`ConfirmCells` from `BuildVoteTally`, counted by `independentCellCount`). The disputed count M is `DisputeCells` under the same rule.
+
+People at the same place count once. Several people standing in one cell are one place, so N is a lower bound on people and never a headcount, and a crowd cannot raise the number. The panel does not carry a caveat for this. Its sentences name who is counted, for example "Confirmed by 3 people at different spots.", and the rule is explained here (amendment A88 in `03-UI-SPEC.md`).
 
 One precision constant and one counting rule serve the resolver gate (`IndependentAgreementThreshold` is 2), the two counters, the still current signal and the reporter rating. Reports themselves are located at precision 8 (`geohashPrecision` in `internal/service/report.go`), which answers a different question: where a report is, not how many separate places agree with it.
 
@@ -94,20 +96,23 @@ Every report shows two counters, `N confirmed` and `M disputed`. Both always sho
 - The surface numerals are written by the server as `confirmed_text` and `disputed_text`: "0" to "99", then "99+". The exact counts stay in `confirmed_places` and `disputed_places`, and the panel sentences always carry the real number.
 - N is a lower bound on people, not a headcount. See "Honest limits" below.
 
-The panel sentences are written by the server. T is `IndependentAgreementThreshold`.
+The panel sentences are written by the server. T is `IndependentAgreementThreshold`. They say people at different spots and never the word place (A88).
 
 | Line | Case | Text |
 |------|------|------|
-| Lead | Provisional | `Needs {T} confirmations to count as confirmed.` |
+| Lead | Provisional, nobody has confirmed | `Needs {T} people at different spots to confirm it.` |
+| Lead | Provisional, T minus N is 1 | `Needs 1 more person at a different spot to confirm it.` |
 | Lead | expired, not retracted (Activity page) | `Expired, so it can no longer be confirmed.` |
-| Confirmed | N is 0 | `No one has confirmed this yet. Counts places, not votes.` |
-| Confirmed | N is 1 | `1 place confirmed this. Counts places, not votes.` |
-| Confirmed | N is 2 or more | `{N} different places confirmed this. Counts places, not votes.` |
-| Disputed | M is 0 | `No one nearby has disputed this.` |
-| Disputed | M is 1 | `1 place disputed this.` |
-| Disputed | M is 2 or more | `{M} different places disputed this.` |
+| Confirmed | N is 0 | `No one has confirmed this yet.` |
+| Confirmed | N is 1 | `1 person confirmed this.` |
+| Confirmed | N is 2 or more | `Confirmed by {N} people at different spots.` |
+| Disputed | M is 0 | `No one has disputed this.` |
+| Disputed | M is 1 | `1 person nearby disputed this.` |
+| Disputed | M is 2 or more | `{M} people at different spots disputed this.` |
 
-The tests that pin this section are `TestBuildTrustCountsMatchTally`, `TestTrustCountLabel`, `TestTrustCountsDistinctPlacesNotVotes` and `TestTrustCountUnderConcurrentVotes`. The last one casts votes from many places at once and needs a disposable database.
+The lead follows the confirming count. A Provisional report has fewer than T confirming places, so it needs T people, or 1 more person after one place; a larger threshold would read `Needs {K} more people at different spots to confirm it.`. The words changed in amendment A88 and no line was hidden: every sentence that was filled before is still filled in the same states.
+
+The tests that pin this section are `TestBuildTrustCountsMatchTally`, `TestTrustCountLabel`, `TestTrustCountsDistinctPlacesNotVotes` and `TestTrustCountUnderConcurrentVotes`. The last one casts votes from many places at once and needs a disposable database. The wording itself is pinned by `TestTrustCounterSentences`, `TestPanelWordingEveryState`, `TestPanelWordingNamesNoPlace`, `TestPanelWordingStaysFilled` and `TestPanelWordingSingularAndPlural`.
 
 ## Still current signal
 
@@ -251,7 +256,7 @@ A critical or rescue needed report that expires unconfirmed is neutral, because 
 
 A report is judged once its expiry time is at or before now, whether or not it was resolved (R-05). A report still in flight is neutral. Neutral outcomes are not judged.
 
-At least 5 judged reports (`ReliabilityMinJudged`) are needed, counted without weights, inside the window and the cap. Below that the reporter is a New reporter with no number and never a default score. The real judged count is still reported, so the sentence can say how far along they are.
+At least 5 judged reports (`ReliabilityMinJudged`) are needed, counted without weights, inside the window and the cap. Below that the reporter is a New reporter with no number and never a default score. The real judged count is still reported in `reporter.judged_reports`. The sentence does not show it: a New reporter reads that they are not rated yet and how many reports a rating needs.
 
 ### Window, half life and the 30 report cap
 
@@ -287,11 +292,9 @@ New reporter never looks like a good tag. It is the same plain text as the other
 
 The templates, in the server's exact words:
 
-- `{C} of {J} earlier reports were confirmed by people nearby.`
-- `A rating needs {MIN} reports with a clear result. They have {J} so far.` for J of 2 or more
-- `A rating needs {MIN} reports with a clear result. They have 1 so far.` for J of 1
-- `A rating needs {MIN} reports with a clear result. They have none so far.` for J of 0
-- `Score {SCORE} out of 100, based on how often their reports were confirmed.`
+- `{C} of their last {J} reports were confirmed.` for a rated reporter, `was confirmed` when C is 1
+- `Not rated yet. It needs {MIN} reports with a clear result.` for a New reporter, whatever J is
+- `Score {SCORE} out of 100.`
 
 C is the number of corroborated reports, J the number of judged reports, MIN the judged minimum and SCORE the integer score. The score sentence exists only when the score is not null.
 
@@ -420,7 +423,7 @@ The hint is advisory. A forced vote is still refused by the server.
 
 How the word score is met (D-08, TRUST-07), for both halves: each score is an integer from 0 to 100 (`currency.score` and `reporter.score`) from a documented formula over real votes. It is recomputed on every read and never stored. The band or tag is cut from the same integer, so the word and the number cannot disagree. A score is null when there is no basis for one: fewer than 2 confirming places over the life of the report, or `not_applicable`, for the still current score, and New reporter or none for the reporter score. The numbers show on screen in the map popup only (D-09), and Phase 6 can sort on them server side. The two subsections called "How the roadmap word score is met" in the still current and reporter sections give the detail, so it is not repeated here.
 
-The visible form of "confirmed by N nearby" is the counter `N confirmed`, with the panel sentence explaining that N counts places. That is the form CONTEXT records for the first roadmap criterion.
+The visible form of "confirmed by N nearby" is the counter `N confirmed`, with the panel sentence "Confirmed by {N} people at different spots." naming who is counted. That is the form CONTEXT records for the first roadmap criterion.
 
 ## Hand offs to later phases
 
