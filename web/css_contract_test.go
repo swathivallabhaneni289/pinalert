@@ -713,16 +713,21 @@ var nonCategoryIcons = map[string]bool{
 	// close anchor through the close button rule in trust.css, same
 	// exemption reasoning as the glyphs above.
 	"static/icons/x.svg": true,
+	// Phase 3 trust toggle cue (plan 03-22, A78): the chevron that says the
+	// block opens, styled through the trust block chevron rule in trust.css,
+	// same exemption reasoning as the glyphs above.
+	"static/icons/chevron-down.svg": true,
 }
 
 // phase3TrustGlyphIcons lists the Phase 3 glyph files exempted from the
 // category walk through nonCategoryIcons. Plan 03-13 appends clock.svg and
-// plan 03-17 appends x.svg, each together with its nonCategoryIcons entry.
+// plan 03-17 appends x.svg and plan 03-22 appends chevron-down.svg, each
+// together with its nonCategoryIcons entry.
 // The exemption skips only the reverse walk in
 // TestCategoryGlyphMaskRulesCoverEveryCategory, so an orphan or a typo in a
 // mask path could hide behind it; TestPhase3TrustGlyphMasksReferenceEveryExemptIcon
 // closes that gap.
-var phase3TrustGlyphIcons = []string{"check.svg", "ban.svg", "shield-check.svg", "rotate-ccw.svg", "clock.svg", "x.svg"}
+var phase3TrustGlyphIcons = []string{"check.svg", "ban.svg", "shield-check.svg", "rotate-ccw.svg", "clock.svg", "x.svg", "chevron-down.svg"}
 
 // TestCategoryGlyphMaskRulesCoverEveryCategory guards the 01-13 fix's own
 // core claim: every category in Pinalert.CATEGORIES has exactly one CSS
