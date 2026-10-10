@@ -318,6 +318,22 @@ Plans:
 
 - [ ] 03-27-PLAN.md: Small fixes bundle: a mouse close of a pin opened popup returns focus to the marker in WebKit too, an unknown category shows Other instead of raw text, NaN lat, lon and radius_km are a 400 field error, a vote without coordinates is a 400 unless it is the reporter's own resolve or reopen, and three files are gofmt clean (gap closure, wave 12)
 
+**Wave 13** *(gap closure)*
+
+- [ ] 03-21-PLAN.md: The Phase 3 UI contract records the trust block redesign as explicit amendments A75 to A84: reporter words beside the state label, no underline anywhere, a hover fill, a chevron cue, label to words and heading to title spacing, wording unchanged (gap closure, wave 13)
+
+**Wave 14** *(gap closure)*
+
+- [ ] 03-22-PLAN.md: The trust toggle underlines nothing: a hover fill, the existing press fill, a chevron that says the block opens, and a wrapping face that never splits a count from its word (gap closure, wave 14)
+
+**Wave 15** *(gap closure)*
+
+- [ ] 03-23-PLAN.md: The reporter words sit as plain text beside the state label on the feed row, the map popup and the Activity page, 8px from the label, with 16px (popup) or 8px (rows) between the heading and the title (gap closure, wave 15)
+
+**Wave 16** *(gap closure)*
+
+- [ ] 03-24-PLAN.md: The trust model document says where the two signals sit after the redesign (gap closure, wave 16)
+
 ### Phase 03.1: Report history views (INSERTED)
 
 **Goal:** A reader can switch the list and the map between Active, Resolved, Disputed and Past reports, so resolved and expired reports stay visible as clearly labelled history instead of vanishing, and can check another area or narrow the list by category and severity. Raised by the owner on 2026-10-03 while looking at the main screen, which today offers only the live list and a "Show disputed reports" checkbox. Inserted right after Phase 3 because it consumes Phase 3's outcome labels and trust object, not because it is urgent.
