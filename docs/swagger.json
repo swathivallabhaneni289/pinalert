@@ -636,12 +636,12 @@
                 "score_sentence": {
                     "description": "ScoreSentence is the popup line that explains the score, empty when the score is null.",
                     "type": "string",
-                    "example": "Score 92 out of 100, based on how recently different places confirmed this."
+                    "example": "Score 92 out of 100, based on recent confirmations."
                 },
                 "sentence": {
                     "description": "Sentence is the panel line for the band, written by the server, empty when no word shows.",
                     "type": "string",
-                    "example": "3 different places confirmed this in the last 2 hours."
+                    "example": "3 places confirmed this in the last 2 hours."
                 },
                 "window_minutes": {
                     "description": "WindowMinutes is the length of the window in whole minutes.",
@@ -939,7 +939,7 @@
                 "score_sentence": {
                     "description": "ScoreSentence is the popup line that explains the score, empty when the score is null.",
                     "type": "string",
-                    "example": "Score 86 out of 100, based on how often their reports with a clear result were confirmed."
+                    "example": "Score 86 out of 100, based on how often their reports were confirmed."
                 },
                 "sentence": {
                     "description": "Sentence is the panel line for the tag, written by the server, empty when no word shows.",
@@ -1060,7 +1060,7 @@
                 "confirmed_sentence": {
                     "description": "ConfirmedSentence is the panel line that explains the confirmed count.",
                     "type": "string",
-                    "example": "1 person in 1 place confirmed this. Counts separate places, not votes."
+                    "example": "1 place confirmed this. Counts places, not votes."
                 },
                 "confirmed_text": {
                     "description": "ConfirmedText is the confirmed count as the surface shows it, from 0 to 99 or 99+ above 99, written by the server (A27).",
@@ -1083,7 +1083,7 @@
                 "disputed_sentence": {
                     "description": "DisputedSentence is the panel line that explains the disputed count.",
                     "type": "string",
-                    "example": "No one nearby has disputed this. Counts separate places, not votes."
+                    "example": "No one nearby has disputed this."
                 },
                 "disputed_text": {
                     "description": "DisputedText is the disputed count as the surface shows it, from 0 to 99 or 99+ above 99, written by the server (A27).",
@@ -1093,7 +1093,7 @@
                 "lead_sentence": {
                     "description": "LeadSentence is the panel's first line, empty when there is none.",
                     "type": "string",
-                    "example": "Needs 2 confirmations before this counts as confirmed."
+                    "example": "Needs 2 confirmations to count as confirmed."
                 },
                 "reporter": {
                     "description": "Reporter is the reporter signal: a tag, the facts behind it (how many earlier reports had a clear result and how many of those people nearby confirmed) and a whole number score from 0 to 100, or null while there is no rating. The feed and every vote response carry the same object.",
