@@ -272,8 +272,8 @@ func TestBuildTrustCarriesCurrency(t *testing.T) {
 		fresh := cast(p05Now).Currency
 		if fresh.Band != CurrencyUpToDate || fresh.Score == nil || *fresh.Score != 93 ||
 			fresh.Label != "Report up to date" ||
-			fresh.Sentence != "2 places confirmed this in the last 2 hours." ||
-			fresh.ScoreSentence != "Score 93 out of 100, based on recent confirmations." ||
+			fresh.Sentence != "2 confirmations in the last 2 hours." ||
+			fresh.ScoreSentence != "Score 93 out of 100." ||
 			fresh.RecentPlaces != 2 || fresh.WindowMinutes != 120 ||
 			fresh.FadeStage == nil || *fresh.FadeStage != FadeFresh {
 			t.Errorf("at the vote: Currency = %+v", fresh)
@@ -282,7 +282,7 @@ func TestBuildTrustCarriesCurrency(t *testing.T) {
 		later := cast(p05Now.Add(2*time.Hour + 10*time.Minute)).Currency
 		if later.Band != CurrencyGettingOld || later.Score == nil || *later.Score != 66 ||
 			later.Label != "Report getting old" ||
-			later.Sentence != "Fewer than 2 places confirmed it in the last 2 hours." ||
+			later.Sentence != "Fewer than 2 confirmations in the last 2 hours." ||
 			later.RecentPlaces != 0 ||
 			later.FadeStage == nil || *later.FadeStage != FadeAging {
 			t.Errorf("2 hours 10 minutes later: Currency = %+v", later)
@@ -290,37 +290,50 @@ func TestBuildTrustCarriesCurrency(t *testing.T) {
 	})
 }
 
-// TestTrustLeadSentence covers the lead line rule through BuildTrust.
+// TestTrustLeadSentence covers the lead line rule through BuildTrust. The
+// Provisional line follows the confirming count (A88): the threshold form
+// while nobody has confirmed, the one more person form after one place.
 func TestTrustLeadSentence(t *testing.T) {
 	const expiredLine = "Expired, so it can no longer be confirmed."
-	needs := "Needs " + strconv.Itoa(IndependentAgreementThreshold) + " confirmations to count as confirmed."
-	if needs != "Needs 2 confirmations to count as confirmed." {
+	const oneMore = "Needs 1 more person at a different spot to confirm it."
+	needs := "Needs " + strconv.Itoa(IndependentAgreementThreshold) + " people at different spots to confirm it."
+	if needs != "Needs 2 people at different spots to confirm it." {
 		t.Fatalf("threshold sentence = %q", needs)
 	}
 	future := p05Now.Add(time.Hour)
+	confirms := func(n int) []sqlcgen.CurrentVotesForReportsRow {
+		return p05DistinctRows(n, VoteConfirm, 100)
+	}
 
 	cases := []struct {
 		name    string
 		vis     Visibility
+		rows    []sqlcgen.CurrentVotesForReportsRow
 		expires time.Time
 		want    string
 	}{
-		{"provisional unexpired", VisibilityProvisional, future, needs},
-		{"live unexpired", VisibilityLive, future, ""},
-		{"hidden unexpired", VisibilityHidden, future, ""},
-		{"retracted unexpired", VisibilityRetracted, future, ""},
-		{"retracted wins over expired", VisibilityRetracted, p05Now.Add(-time.Hour), ""},
-		{"provisional expiring exactly now", VisibilityProvisional, p05Now, expiredLine},
-		{"live one nanosecond before now", VisibilityLive, p05Now.Add(-time.Nanosecond), expiredLine},
-		{"live one nanosecond after now", VisibilityLive, p05Now.Add(time.Nanosecond), ""},
-		{"hidden expired", VisibilityHidden, p05Now.Add(-time.Hour), expiredLine},
+		{"provisional unexpired", VisibilityProvisional, nil, future, needs},
+		{"provisional with one confirming place", VisibilityProvisional, confirms(1), future, oneMore},
+		{"provisional with two places, which the resolver never allows", VisibilityProvisional, confirms(2), future, oneMore},
+		{"provisional with 150 places, which the resolver never allows", VisibilityProvisional, confirms(150), future, oneMore},
+		{"live unexpired", VisibilityLive, nil, future, ""},
+		{"live with confirms unexpired", VisibilityLive, confirms(2), future, ""},
+		{"hidden unexpired", VisibilityHidden, nil, future, ""},
+		{"retracted unexpired", VisibilityRetracted, nil, future, ""},
+		{"retracted wins over expired", VisibilityRetracted, nil, p05Now.Add(-time.Hour), ""},
+		{"provisional expiring exactly now", VisibilityProvisional, nil, p05Now, expiredLine},
+		{"provisional with one place expiring exactly now", VisibilityProvisional, confirms(1), p05Now, expiredLine},
+		{"live one nanosecond before now", VisibilityLive, nil, p05Now.Add(-time.Nanosecond), expiredLine},
+		{"live one nanosecond after now", VisibilityLive, nil, p05Now.Add(time.Nanosecond), ""},
+		{"hidden expired", VisibilityHidden, nil, p05Now.Add(-time.Hour), expiredLine},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := BuildTrust(p05Input(nil, nil, tc.vis, tc.expires)).LeadSentence
+			got := BuildTrust(p05Input(tc.rows, nil, tc.vis, tc.expires)).LeadSentence
 			if got != tc.want {
 				t.Errorf("LeadSentence = %q, want %q", got, tc.want)
 			}
+			assertPlainCopy(t, got)
 		})
 	}
 }
@@ -388,10 +401,10 @@ func TestCastVoteResultCarriesTrust(t *testing.T) {
 		if tr.ConfirmedPlaces != 3 || tr.DisputedPlaces != 1 || tr.ConfirmedText != "3" || tr.DisputedText != "1" || tr.LeadSentence != "" {
 			t.Errorf("Trust = %+v", tr)
 		}
-		if want := "3 different places confirmed this. Counts places, not votes."; tr.ConfirmedSentence != want {
+		if want := "Confirmed by 3 people at different spots."; tr.ConfirmedSentence != want {
 			t.Errorf("ConfirmedSentence = %q, want %q", tr.ConfirmedSentence, want)
 		}
-		if want := "1 place disputed this."; tr.DisputedSentence != want {
+		if want := "1 person nearby disputed this."; tr.DisputedSentence != want {
 			t.Errorf("DisputedSentence = %q, want %q", tr.DisputedSentence, want)
 		}
 		rc := q.voteContextRow
@@ -418,10 +431,10 @@ func TestCastVoteResultCarriesTrust(t *testing.T) {
 			t.Fatalf("Visibility = %q, want provisional", got.Visibility)
 		}
 		tr := got.Trust
-		if tr.LeadSentence != "Needs 2 confirmations to count as confirmed." || tr.ConfirmedText != "1" || tr.DisputedText != "0" {
+		if tr.LeadSentence != "Needs 1 more person at a different spot to confirm it." || tr.ConfirmedText != "1" || tr.DisputedText != "0" {
 			t.Errorf("Trust = %+v", tr)
 		}
-		if want := "No one nearby has disputed this."; tr.DisputedSentence != want {
+		if want := "No one has disputed this."; tr.DisputedSentence != want {
 			t.Errorf("DisputedSentence = %q, want %q", tr.DisputedSentence, want)
 		}
 	})
