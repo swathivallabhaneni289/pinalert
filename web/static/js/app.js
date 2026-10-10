@@ -349,6 +349,16 @@ window.Pinalert = (function () {
     return 'icon-glyph icon-glyph--' + validated;
   }
 
+  // categoryLabel gives the display word for a category: the table entry for
+  // an own property, else the Other label. An unexpected API value is never
+  // printed raw, and an inherited key such as constructor is not a category.
+  function categoryLabel(category) {
+    if (Object.prototype.hasOwnProperty.call(CATEGORY_LABELS, category)) {
+      return CATEGORY_LABELS[category];
+    }
+    return CATEGORY_LABELS.other;
+  }
+
   // formatShelterLine is the one shelter status and headcount line for the
   // feed meta and the popup meta (A24). It returns an empty string for any
   // report that is not a shelter. The status word is built only for a value
@@ -450,6 +460,7 @@ window.Pinalert = (function () {
     SEVERITY_LABELS: SEVERITY_LABELS,
     SEVERITY_WORDS: SEVERITY_WORDS,
     CATEGORY_LABELS: CATEGORY_LABELS,
+    categoryLabel: categoryLabel,
     config: config,
     state: state,
     subscribe: subscribe,

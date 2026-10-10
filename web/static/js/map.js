@@ -365,7 +365,7 @@ window.PinalertMap = (function () {
 
     // Category and relative time only: no severity word (the label above
     // says it) and no distance (A24, A31).
-    var categoryLabel = Pinalert.CATEGORY_LABELS[report.category] || report.category;
+    var categoryLabel = Pinalert.categoryLabel(report.category);
     Pinalert.setText(card.metaLine, categoryLabel + ' \u00b7 ' + Pinalert.relativeTime(report.created_at));
 
     // A shelter adds a second line. The shared formatter returns an empty
@@ -490,7 +490,7 @@ window.PinalertMap = (function () {
   // colour only to the eye (owner decision Q5). Every part comes from a fixed
   // table or the shared time formatter.
   function pinName(report) {
-    var parts = [Pinalert.CATEGORY_LABELS[report.category] || report.category];
+    var parts = [Pinalert.categoryLabel(report.category)];
     if (Object.prototype.hasOwnProperty.call(Pinalert.SEVERITY_WORDS, report.severity)) {
       parts.push(Pinalert.SEVERITY_WORDS[report.severity]);
     }

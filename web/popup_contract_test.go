@@ -668,13 +668,31 @@ func TestPinOpensOnSpace(t *testing.T) {
 
 	name := jsFunctionBody(t, code, "pinName(report)")
 	p13MustContain(t, "pinName", name,
-		"Pinalert.CATEGORY_LABELS", "Pinalert.SEVERITY_WORDS", "Pinalert.relativeTime(",
+		"Pinalert.categoryLabel(", "Pinalert.SEVERITY_WORDS", "Pinalert.relativeTime(",
 		"PinalertVisibility.stateWord(", "', '")
 	apply := jsFunctionBody(t, code, "applyPinName(marker, report)")
 	p13MustContain(t, "applyPinName", apply, "'aria-label'", "pinName(report)")
 	upsert := jsFunctionBody(t, code, "upsertMarker(report)")
 	if n := strings.Count(upsert, "applyPinName("); n < 2 {
 		t.Errorf("upsertMarker calls applyPinName %d times, want at least 2 (existing and new marker paths)", n)
+	}
+}
+
+// TestCategoryLabelNeverShowsRawText pins UF-03-01: the category word on the
+// popup card, the pin name and the feed meta line comes from one helper that
+// returns a table entry for an own property and the Other label for anything
+// else, so an unexpected API value is never printed raw.
+func TestCategoryLabelNeverShowsRawText(t *testing.T) {
+	app := p19Code(t, "static/js/app.js")
+	body := jsFunctionBody(t, app, "categoryLabel(category)")
+	p13MustContain(t, "categoryLabel", body,
+		"Object.prototype.hasOwnProperty.call(CATEGORY_LABELS, category)", "CATEGORY_LABELS.other")
+	p13MustContain(t, "app.js", app, "categoryLabel: categoryLabel")
+
+	for _, path := range []string{"static/js/map.js", "static/js/feed.js"} {
+		code := p19Code(t, path)
+		p13MustContain(t, path, code, "Pinalert.categoryLabel(")
+		p13MustNotContain(t, path, code, "|| report.category", "Pinalert.CATEGORY_LABELS[")
 	}
 }
 
