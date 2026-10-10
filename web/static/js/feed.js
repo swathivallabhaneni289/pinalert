@@ -118,7 +118,7 @@
 
   function activateRow(id) {
     Pinalert.select(id, 'list');
-    applySelectionHighlight(id, false);
+    applySelectionHighlight(id);
     if (window.PinalertMap && typeof PinalertMap.flyTo === 'function') {
       PinalertMap.flyTo(id, { opener: 'list' });
     }
@@ -488,10 +488,12 @@
   }
 
   // applySelectionHighlight is the shared implementation for both selection
-  // directions: a list click applies it without scrolling (the row is
-  // already in view — the user just activated it), while a map-originated
-  // selection scrolls the matching row into view.
-  function applySelectionHighlight(id, scroll) {
+  // directions: it marks the row of the selected report and clears the mark
+  // from every other row, and it never scrolls the page or the list. On a
+  // wide screen the document itself scrolls, so bringing the row into view
+  // would carry the map away from the reader who just clicked a pin (A87).
+  // A reader who wants the list goes there by hand.
+  function applySelectionHighlight(id) {
     var idKey = id === null || id === undefined ? null : String(id);
     var ids = Object.keys(rowsById);
     for (var i = 0; i < ids.length; i++) {
@@ -499,9 +501,6 @@
       var el = rowsById[rid].el;
       if (idKey !== null && rid === idKey) {
         el.classList.add('report-row--selected');
-        if (scroll) {
-          el.scrollIntoView({ block: 'nearest' });
-        }
       } else {
         el.classList.remove('report-row--selected');
       }
@@ -709,10 +708,12 @@
   }
 
   Pinalert.onSelect(function (id, source) {
-    // Guard on source so a list-originated selection does not bounce back
-    // and re-scroll the list it came from.
+    // A selection that starts from the map applies the row highlight only
+    // and never scrolls the page or the list (A87). Guard on source so a
+    // list-originated selection, which activateRow already highlighted, is
+    // not highlighted a second time.
     if (source === 'map') {
-      applySelectionHighlight(id, true);
+      applySelectionHighlight(id);
     }
   });
 
