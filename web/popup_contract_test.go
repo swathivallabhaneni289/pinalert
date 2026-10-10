@@ -670,6 +670,42 @@ func TestListRowActivationOpensThePopupOnce(t *testing.T) {
 	}
 }
 
+// TestMapSelectionNeverScrollsThePage pins A87 (owner request at the final
+// UAT, 2026-10-10): a selection that starts from the map applies the row
+// highlight and nothing else. On a wide screen the document itself scrolls,
+// because the list grows the page while the map sits at its top, so asking
+// the browser to bring the matching row into view carried the map out of
+// the viewport. The highlight stays and the scroll is gone. The list
+// direction (activateRow) is unchanged. The feed.js text is checked raw for
+// the call, so a comment cannot leave one behind. Static inspection cannot
+// run a browser; the scripted check T9.18 is the live proof.
+func TestMapSelectionNeverScrollsThePage(t *testing.T) {
+	raw := p13ReadStatic(t, "static/js/feed.js")
+	p13MustNotContain(t, "feed.js", raw, "scrollIntoView(")
+
+	code := p19Code(t, "static/js/feed.js")
+
+	highlight := jsFunctionBody(t, code, "applySelectionHighlight(")
+	p13MustContain(t, "applySelectionHighlight", highlight,
+		"function applySelectionHighlight(id) {",
+		"classList.add('report-row--selected')", "classList.remove('report-row--selected')")
+	p13MustNotContain(t, "applySelectionHighlight", highlight, "scroll")
+
+	if n := strings.Count(code, "Pinalert.onSelect("); n != 1 {
+		t.Fatalf("feed.js subscribes to Pinalert.onSelect %d times, want exactly 1", n)
+	}
+	subscriber, anchorFound, terminatorFound := windowAfter(code, "Pinalert.onSelect(", "});")
+	if !anchorFound || !terminatorFound {
+		t.Fatalf("could not bound the Pinalert.onSelect subscriber in feed.js (anchor %v, terminator %v)",
+			anchorFound, terminatorFound)
+	}
+	p13Ordered(t, subscriber, "onSelect subscriber", "source === 'map'", "applySelectionHighlight(id);")
+	p13MustNotContain(t, "onSelect subscriber", subscriber, "scroll")
+
+	activate := jsFunctionBody(t, code, "activateRow(id)")
+	p13MustContain(t, "activateRow", activate, "applySelectionHighlight(id);")
+}
+
 // TestPopupClosePressKeepsTheFocusAnswer pins A74 for a mouse close in WebKit.
 // A press on the popup close button does not focus it there; focus goes to the
 // map container, which clears popupFocusInside before the click closes the
