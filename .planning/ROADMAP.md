@@ -255,7 +255,7 @@ Plans:
   1. The feed displays "confirmed by N nearby" computed from the count of distinct confirming geohash cells/sessions — using a deliberately chosen, documented geohash precision — not the raw number of votes cast.
   2. A report displays two distinct trust signals side by side: a fast-decaying "is this still current" confidence score and a slow-decaying "is this source reliable" score.
 
-**Plans**: 22/22 plans executed (verification and the owner's final checks pending)
+**Plans**: 23/27 plans executed (verification and the owner's final checks pending)
 **UI hint**: yes
 
 Plans:
@@ -316,7 +316,7 @@ Plans:
 
 **Wave 12** *(gap closure)*
 
-- [ ] 03-27-PLAN.md: Small fixes bundle: a mouse close of a pin opened popup returns focus to the marker in WebKit too, an unknown category shows Other instead of raw text, NaN lat, lon and radius_km are a 400 field error, a vote without coordinates is a 400 unless it is the reporter's own resolve or reopen, and three files are gofmt clean (gap closure, wave 12)
+- [x] 03-27-PLAN.md: Small fixes bundle: a mouse close of a pin opened popup returns focus to the marker in WebKit too, an unknown category shows Other instead of raw text, NaN lat, lon and radius_km are a 400 field error, a vote without coordinates is a 400 unless it is the reporter's own resolve or reopen, and three files are gofmt clean (gap closure, wave 12)
 
 **Wave 13** *(gap closure)*
 
@@ -461,7 +461,7 @@ Phases execute in numeric order: 1 → 1.1 → 2 → 3 → 3.1 → 3.2 → 4 →
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
 | 1.1 Identity & Login — Mandatory Email Verification | 8/8 | Complete   | 2026-09-12 |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 15/15 | Complete | 2026-10-07 |
-| 3. Trust-Model Hardening — Diversity-Weighted Trust | 22/22 | In Progress|  |
+| 3. Trust-Model Hardening — Diversity-Weighted Trust | 23/27 | In Progress|  |
 | 3.1 Report history views | 0/TBD | Not started | - |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
