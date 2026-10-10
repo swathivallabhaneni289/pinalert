@@ -99,7 +99,7 @@ These are not owner questions. Both the locked decision and the d4 design can be
 
 ## Amendments to locked decisions
 
-One row per change. **Resolution** is "amend" (the locked item changes), "align" (the sketch changes to meet the locked item) or "unchanged, deferred" (kept until a separate owner decision, A84). The table has 85 rows, A1 to A85 (A85 added on 2026-10-10 by plan 03-28, amended by A85; A39 to A53 were added in revision round 1, A54 to A64 in round 2, A65 to A74 in round 3, and A75 to A84 in gap closure round 4 on 2026-10-09, from sketch 003 variant H and the owner remarks under Gaps in `03-UAT.md`; existing rows are not renumbered). Test names are the real names in `web/*_test.go` or the V rows in `03-VALIDATION.md`.
+One row per change. **Resolution** is "amend" (the locked item changes), "align" (the sketch changes to meet the locked item) or "unchanged, deferred" (kept until a separate owner decision, A84). The table has 86 rows, A1 to A86 (A86 added on 2026-10-10 by plan 03-29, amended by A86; A85 added on 2026-10-10 by plan 03-28, amended by A85; A39 to A53 were added in revision round 1, A54 to A64 in round 2, A65 to A74 in round 3, and A75 to A84 in gap closure round 4 on 2026-10-09, from sketch 003 variant H and the owner remarks under Gaps in `03-UAT.md`; existing rows are not renumbered). Test names are the real names in `web/*_test.go` or the V rows in `03-VALIDATION.md`.
 
 | ID | Change | Locked item it amends | Resolution | Follow on |
 |----|--------|-----------------------|------------|-----------|
@@ -188,6 +188,7 @@ One row per change. **Resolution** is "amend" (the locked item changes), "align"
 | A83 | An empty state line takes no space. A Live report with a `none` reporter keeps a line whose children are all hidden, which would add the 4px popup header row gap. Each state line class gets a rule after its display rule that sets `display: none` when no child lacks `hidden`, using `:has()` with a class free argument and no comma, for example `.popup-card__stateline:not([hidden]):not(:has(> :not([hidden])))`; a script would add writes to pinned refresh paths. Floor: `:has()` needs Chromium 105, Safari 15.4, Firefox 121; the shipped `color-mix()` already needs Chromium 111, Safari 16.2, Firefox 113, so only Firefox moves. Without `:has()` nothing hides. | none (a new rule and its `:has()` browser floor) | amend (new rule) | Plan 03-23 writes it for both state line classes; the browser check after the merge compares a Live `none` report with a header that has no state line. |
 | A84 | Wording, considered and deferred to a separate owner decision. Unchanged here: the caveat tail "Counts separate places, not votes." (A7, RR-1), the disputed sentences (A56), every panel sentence (D-19), the two score sentences (A50), the five identifiers in `internal/service/trustcopy.go` (`countsCaveat`, `provisionalLeadSentence`, `expiredLeadSentence`, `needsReconfirmingSentence`, `tooEarlySentence`), the wording tests, the Copywriting Contract and the Panel sentence templates. UAT Gap 3 ("the text is too long"; which text is not yet named) stays open. | A7, A56, RR-1, D-19 (sentence wording), A50 (score sentence wording), Copywriting Contract | unchanged, deferred | The owner settles the wording separately (03-UAT.md test 10). Plans 03-21 to 03-24 change no sentence, identifier or wording test. |
 | A85 | The shorter panel wording of sketch 003 ("Wording proposals", column Proposed), accepted by the owner on 2026-10-10, supersedes A84's "unchanged, deferred" for the wording only (A84 stays as the record of the layout plans). The caveat "Counts places, not votes." ends the confirmed sentence only, once; the disputed sentences carry no caveat and are still counts of places; the counter sentences name places only; Getting old and Needs re-confirming say only what is different now; the dispute sentence keeps both numbers and its reason; the New reporter sentence states the rule once and the count once; both score sentences lose their long tails. Every number stays real (N, M, R, the window, K, T, C, J, MIN, the score), the closed character set holds, and the five identifiers in `internal/service/trustcopy.go` keep their names. The full text is the Panel sentence templates table. UAT Gap 3 ("the text is too long") stays open until the owner confirms the shorter wording at the final session. | A7, A56, RR-1 (the caveat on both counter sentences), RR-2 (the Unconfirmed sentence), D-19 (sentence wording), A50 (score sentence wording), A84 (deferred), Copywriting Contract | amend (owner, 2026-10-10) | Plan 03-28 changes trustcopy.go, the wording tests, the swagger examples, docs/TRUST-MODEL.md, this contract and the Phase 4 anchors (04-12, 04-UI-SPEC); the vote error for an expired report stays as it is (an API error, not panel wording). The owner's look check at the final session closes Gap 3. |
+| A86 | The three scored still current words name their subject, the report (owner, 2026-10-10, test 10 plain language check: "It's really confusing, I don't understand what is getting old."): Up to date, Getting old and Needs re-confirming become "Report up to date", "Report getting old" and "Report needs re-confirming" (the third an assumption, owner to confirm). Unchanged: "Too early to tell", every panel sentence, the band names and slugs, the JSON shape (only `label` text changes) and the popup number with its hidden ", score" prefix, so the popup reads "Report getting old 56" (accessible name "Report getting old, score 56"). The Case column of Panel sentence templates names bands and stays. The closed character set and every identifier in `internal/service/trustcopy.go` hold. No CSS change: the word fits one line or wraps to two unclipped (two lines for the third word in the 188px Activity body). | D-18 (the still current words), Copywriting Contract, State Matrix (states 1, 4, 5), Trust Block samples | amend (owner, 2026-10-10) | Plan 03-29 changes trustcopy.go, the word tests, the trust.js ban list, the swagger example, the TRUST-MODEL Word column, this contract, the V-42 notes and the Phase 4 glossary terms (04-12, 04-UI-SPEC); panel sentences and the vote error stay. The owner confirms the third word at the final session. |
 
 ---
 
@@ -352,13 +353,13 @@ One block, one builder, identical on the feed row, the map popup and the Activit
 
 Row 1, the counters (always both, zeros included): `{N} confirmed` and `{M} disputed`. The number is 16px semibold, the word 16px regular, both `--color-text`. N is the distinct confirming place count (D-04), M the distinct disputing place count (R-04). Raw vote totals never appear. A count above 99 shows as `99+` on the surface (the panel sentence carries the real number). The two counters sit on one line with a 24px gap and a 1px separator in the middle of the gap. If the pair cannot fit (for example `99+ confirmed` and `99+ disputed` in the 236px row, where the toggle's inner width is about 228px), the second counter wraps under the first and its separator is clipped away (amendment A22). (Amended by A79: the chevron takes 24px beside the face, so a pair of counts near the limit wraps sooner.)
 
-Row 2, the signals: a 16px clock icon and the still current word, then a 16px user icon and the reporter tag, 14px, words regular, all `--color-text`. The popup adds a 14px semibold number directly after each word when that signal's score is not null (D-09, R-07): `Up to date 82`, `Reliable reporter 78` (sample data). Each number carries a visually hidden prefix, so the accessible name reads "Up to date, score 82" and "Reliable reporter, score 78" (decided: a prefix, the names are not left bare; the prefix is the fixed literal `, score` in `trust.js`, inside the V-32 closed character set). The panel explains what the number means (a score sentence per signal, see The panel). The feed row and the Activity page never show numbers. No "/100", no bar, no extra icon. A signal with a null score shows no number, no prefix and no score sentence. When the two signals do not fit on one line the reporter signal drops under the first and its separator is clipped. (Amended by A75, A76, A82: the reporter words moved to the state line, with no user icon; the popup number follows them in regular weight.)
+Row 2, the signals: a 16px clock icon and the still current word, then a 16px user icon and the reporter tag, 14px, words regular, all `--color-text`. The popup adds a 14px semibold number directly after each word when that signal's score is not null (D-09, R-07): `Report up to date 82`, `Reliable reporter 78` (sample data). Each number carries a visually hidden prefix, so the accessible name reads "Report up to date, score 82" and "Reliable reporter, score 78" (decided: a prefix, the names are not left bare; the prefix is the fixed literal `, score` in `trust.js`, inside the V-32 closed character set). The panel explains what the number means (a score sentence per signal, see The panel). The feed row and the Activity page never show numbers. No "/100", no bar, no extra icon. A signal with a null score shows no number, no prefix and no score sentence. When the two signals do not fit on one line the reporter signal drops under the first and its separator is clipped. (Amended by A75, A76, A82: the reporter words moved to the state line, with no user icon; the popup number follows them in regular weight.) (amended by A86)
 
 ### Which signals show
 
 | Condition | Still current signal | Reporter signal |
 |-----------|----------------------|-----------------|
-| Live row with 2 or more confirming places | Up to date, Getting old or Needs re-confirming (server band) | tag |
+| Live row with 2 or more confirming places | Report up to date, Report getting old or Report needs re-confirming (server band) (amended by A86) | tag |
 | Critical or rescue needed row with fewer than 2 confirming places (no Unconfirmed label) | Too early to tell | tag |
 | Provisional row (Unconfirmed label showing) | none | tag |
 | Hidden row (Show disputed view, Disputed label showing, R-03) | none | tag |
@@ -368,7 +369,7 @@ Row 2, the signals: a 16px clock icon and the still current word, then a 16px us
 
 The `none` row is a deliberate departure from "the tag on every report" (amendment A47): a report with no accountable reporter has nothing to rate, so no tag, no icon and no text is drawn for it.
 
-The server decides which words show. The browser renders the server's label strings and holds no rule, no threshold and no formula. Words: Up to date, Getting old, Needs re-confirming, Too early to tell. Tags: Reliable reporter, Mixed record, Unreliable reporter, New reporter. New reporter must never look like a good tag: it is the same plain text as the others, with no check, star or colour.
+The server decides which words show. The browser renders the server's label strings and holds no rule, no threshold and no formula. Words: Report up to date, Report getting old, Report needs re-confirming, Too early to tell (amended by A86). Tags: Reliable reporter, Mixed record, Unreliable reporter, New reporter. New reporter must never look like a good tag: it is the same plain text as the others, with no check, star or colour.
 
 If the `trust` object is missing or fails validation, the block is not rendered at all (the block element carries `hidden`). The browser never invents `0 confirmed` for data it did not receive. The rest of the surface (label, vote controls) still renders.
 
@@ -390,7 +391,7 @@ Sentence templates, placeholders and every variant are in the Copywriting Contra
 
 ### Markup (reference, sample data)
 
-**Round 4 markup (A75, A76, A78, A79):** below is the round 3 markup; the button now holds a `trust-block__face` span, an empty `aria-hidden` `trust-block__chevron` span, then the hint; the reporter words are a `trust-reporter` span on the state line.
+**Round 4 markup (A75, A76, A78, A79):** below is the round 3 markup; the button now holds a `trust-block__face` span, an empty `aria-hidden` `trust-block__chevron` span, then the hint; the reporter words are a `trust-reporter` span on the state line. (amended by A86)
 
 ```html
 <div class="trust-block">
@@ -400,7 +401,7 @@ Sentence templates, placeholders and every variant are in the Copywriting Contra
       <span class="trust-block__count trust-block__count--second"><span class="trust-num">0</span> disputed</span>
     </span>
     <span class="trust-block__signals">
-      <span class="trust-signal"><span class="trust-icon trust-icon--clock" aria-hidden="true"></span><span class="trust-signal__text">Up to date<span class="visually-hidden">, score</span> <span class="trust-num">82</span></span></span>
+      <span class="trust-signal"><span class="trust-icon trust-icon--clock" aria-hidden="true"></span><span class="trust-signal__text">Report up to date<span class="visually-hidden">, score</span> <span class="trust-num">82</span></span></span>
       <span class="trust-signal trust-signal--second"><span class="trust-icon trust-icon--user" aria-hidden="true"></span><span class="trust-signal__text">Reliable reporter<span class="visually-hidden">, score</span> <span class="trust-num">78</span></span></span>
     </span>
     <span class="visually-hidden">. Shows what these mean.</span>
@@ -413,7 +414,7 @@ Sentence templates, placeholders and every variant are in the Copywriting Contra
 
 Rules for the markup:
 
-* The toggle is a real `<button type="button">` and holds only phrasing content (spans), so the HTML stays valid. Separate sibling pieces with a literal space text node so the accessible name reads "12 confirmed 0 disputed Up to date, score 82 Reliable reporter, score 78. Shows what these mean." (Amended by A75, A78: the reporter words are no longer in the name.)
+* The toggle is a real `<button type="button">` and holds only phrasing content (spans), so the HTML stays valid. Separate sibling pieces with a literal space text node so the accessible name reads "12 confirmed 0 disputed Report up to date, score 82 Reliable reporter, score 78. Shows what these mean." (Amended by A75, A78: the reporter words are no longer in the name.) (amended by A86)
 * The visually hidden hint is exactly `. Shows what these mean.` (it uses the existing `.visually-hidden` class).
 * The panel id comes from a module counter, never the report id, because one report renders in both the list and the popup.
 * The numbers in the sample are sample data. The feed row and the Activity page omit the two `trust-num` spans and their hidden `, score` prefixes inside the signals. (Amended by A82: the reporter number is a plain span on the state line, regular weight, not in `trust-num`.)
@@ -562,7 +563,7 @@ Every rule keeps the `.leaflet-container` ancestor so it out ranks `leaflet.css`
 
 ### Popup numbers
 
-The two numbers (0 to 100) appear only in this popup, only after their word, and only when the signal's score is not null (R-01, R-07). Hidden row and Provisional row show only the reporter number. A null score shows no number, no hidden prefix, no score sentence and no placeholder. Each number has a visually hidden `, score` prefix (accessible name "Up to date, score 82") and its meaning is explained by the server authored score sentence in the panel (Trust Block, The panel). (Amended by A82: the reporter number is regular weight and follows the words on the state line.)
+The two numbers (0 to 100) appear only in this popup, only after their word, and only when the signal's score is not null (R-01, R-07). Hidden row and Provisional row show only the reporter number. A null score shows no number, no hidden prefix, no score sentence and no placeholder. Each number has a visually hidden `, score` prefix (accessible name "Report up to date, score 82") and its meaning is explained by the server authored score sentence in the panel (Trust Block, The panel). (Amended by A82: the reporter number is regular weight and follows the words on the state line.) (amended by A86)
 
 ### Keyboard and screen reader
 
@@ -657,11 +658,11 @@ The 12 states of `03-DESIGN-BRIEF.md` section 5 (state 10 is split into 10a and 
 
 | # | State | Counters | Signals | State label | Fade and treatment | Vote controls |
 |---|-------|----------|---------|-------------|--------------------|---------------|
-| 1 | Live, well confirmed, current | `12 confirmed`, `0 disputed` | `Up to date`, `Reliable reporter` | none | time stage fresh, full severity colour | Confirm, Dispute, Mark resolved |
+| 1 | Live, well confirmed, current | `12 confirmed`, `0 disputed` | `Report up to date`, `Reliable reporter` (amended by A86) | none | time stage fresh, full severity colour | Confirm, Dispute, Mark resolved |
 | 2 | New non critical, not yet confirmed (Provisional) | `0 confirmed`, `0 disputed` | reporter tag only | Unconfirmed (panel line 1 explains it) | Feed row and Activity row: `.vis-provisional` dimming (20 percent severity, 80 percent stale gray) on the bar and badge plus the `--color-surface` row tint, independent of age. Popup: the dimmed bar and badge only, the card stays `--color-bg`. | all three |
 | 3 | Exactly 1 confirmation | `1 confirmed`, `0 disputed` | reporter tag only | Unconfirmed and `1 confirmed` together (accepted, D-17) | as state 2 (row and Activity row: dimmed bar and badge plus the `--color-surface` row tint; popup: dimmed bar and badge only, card stays `--color-bg`) | all three |
-| 4 | Confirmed earlier, gone quiet | `4 confirmed`, `0 disputed` | `Needs re-confirming`, `Mixed record` | none | non critical: worse of time stage and server stage, so stale (gray bar and badge) | all three |
-| 5 | Contested but still live | `5 confirmed`, `4 disputed` | `Getting old`, `Reliable reporter` | none | non critical: aging from the server stage | all three |
+| 4 | Confirmed earlier, gone quiet | `4 confirmed`, `0 disputed` | `Report needs re-confirming`, `Mixed record` (amended by A86) | none | non critical: worse of time stage and server stage, so stale (gray bar and badge) | all three |
+| 5 | Contested but still live | `5 confirmed`, `4 disputed` | `Report getting old`, `Reliable reporter` (amended by A86) | none | non critical: aging from the server stage | all three |
 | 6 | Critical report, no confirmations | `0 confirmed`, `0 disputed` | `Too early to tell`, `New reporter` | none (a critical report never shows Unconfirmed) | time stage only, severity red kept, no extra dimming | all three |
 | 7 | Critical report others out dispute | `1 confirmed`, `3 disputed` | `Too early to tell` (fewer than 2 confirming places, R-01), reporter tag | none | time stage only, red styling stays, never hidden | all three |
 | 8 | Disputed and hidden (Show disputed view only) | both counters | reporter tag only (R-03) | Disputed | `.vis-hidden`: outlined badge, neutral bar, transparent tint, no still current fade | all three |
@@ -722,9 +723,9 @@ Phase 3 introduces no new empty list. The zero state of the trust block is the c
 | Counters | `{N} confirmed`, `{M} disputed`. Both always shown. Surface cap `99+`. |
 | Severity label (popup, feed row and Activity row) | Critical, Medium, Low (map pins carry the word only in their accessible name) |
 | State labels | Unconfirmed, Disputed, Resolved, Expired (Expired on the Activity page only) |
-| Popup score prefix (visually hidden) | `, score` before each number, so the name reads "Up to date, score 82" (sample) |
+| Popup score prefix (visually hidden) | `, score` before each number, so the name reads "Report up to date, score 82" (sample) (amended by A86) |
 | Shelter second line (popup meta, shelter only) | `{Status} · {N} people`, `{Status}`, or `{N} person` / `{N} people`. Samples: Limited · 150 people, Full, 1 person. Never the word Capacity. |
-| Still current words | Up to date, Getting old, Needs re-confirming, Too early to tell |
+| Still current words | Report up to date, Report getting old, Report needs re-confirming, Too early to tell (amended by A86) |
 | Reporter tags | Reliable reporter, Mixed record, Unreliable reporter, New reporter |
 | Panel toggle hint (visually hidden) | `. Shows what these mean.` |
 | Pin accessible name | `{Category label}, {Severity word}, {relative time}` plus the state word when a state label shows (`, Unconfirmed` or `, Disputed`; every pin in the Show disputed view is Disputed). Samples: Fire, Critical, 4 min ago. Fire, Critical, 4 min ago, Disputed. |

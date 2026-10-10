@@ -325,7 +325,7 @@ func TestCurrencyRetapCannotRefresh(t *testing.T) {
 		if got := p08Score(t, sig); got != 43 {
 			t.Errorf("Score = %d, want 43", got)
 		}
-		if sig.Band != CurrencyNeedsReconfirming || sig.Label != "Needs re-confirming" || sig.RecentPlaces != 1 {
+		if sig.Band != CurrencyNeedsReconfirming || sig.Label != "Report needs re-confirming" || sig.RecentPlaces != 1 {
 			t.Errorf("Band, Label, RecentPlaces = %q, %q, %d", sig.Band, sig.Label, sig.RecentPlaces)
 		}
 	})
@@ -372,7 +372,7 @@ func TestCurrencyDisputes(t *testing.T) {
 		if got := p08Score(t, sig); got != 0 {
 			t.Errorf("Score = %d, want 0", got)
 		}
-		if sig.Band != CurrencyNeedsReconfirming || sig.Label != "Needs re-confirming" {
+		if sig.Band != CurrencyNeedsReconfirming || sig.Label != "Report needs re-confirming" {
 			t.Errorf("Band, Label = %q, %q", sig.Band, sig.Label)
 		}
 		if want := "Disputed nearby, so it needs 3 places in the last 2 hours."; sig.Sentence != want {
@@ -450,7 +450,7 @@ func TestCurrencyDisputes(t *testing.T) {
 		if got := p08Score(t, sig); got != 0 {
 			t.Errorf("Score = %d, want 0", got)
 		}
-		if sig.Band != CurrencyNeedsReconfirming || sig.Label != "Needs re-confirming" || sig.FadeStage != nil {
+		if sig.Band != CurrencyNeedsReconfirming || sig.Label != "Report needs re-confirming" || sig.FadeStage != nil {
 			t.Errorf("Band, Label, FadeStage = %q, %q, %v", sig.Band, sig.Label, sig.FadeStage)
 		}
 		if want := "Disputed nearby, so it needs 3 places in the last 6 hours."; sig.Sentence != want {

@@ -271,7 +271,7 @@ func TestBuildTrustCarriesCurrency(t *testing.T) {
 
 		fresh := cast(p05Now).Currency
 		if fresh.Band != CurrencyUpToDate || fresh.Score == nil || *fresh.Score != 93 ||
-			fresh.Label != "Up to date" ||
+			fresh.Label != "Report up to date" ||
 			fresh.Sentence != "2 places confirmed this in the last 2 hours." ||
 			fresh.ScoreSentence != "Score 93 out of 100, based on recent confirmations." ||
 			fresh.RecentPlaces != 2 || fresh.WindowMinutes != 120 ||
@@ -281,7 +281,7 @@ func TestBuildTrustCarriesCurrency(t *testing.T) {
 
 		later := cast(p05Now.Add(2*time.Hour + 10*time.Minute)).Currency
 		if later.Band != CurrencyGettingOld || later.Score == nil || *later.Score != 66 ||
-			later.Label != "Getting old" ||
+			later.Label != "Report getting old" ||
 			later.Sentence != "Fewer than 2 places confirmed it in the last 2 hours." ||
 			later.RecentPlaces != 0 ||
 			later.FadeStage == nil || *later.FadeStage != FadeAging {

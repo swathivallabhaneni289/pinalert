@@ -79,9 +79,9 @@ const (
 	// CurrencyPointsPerWindow is how many score points one window costs
 	// (D-08). The score reaches 0 after CurrencyWindowDivisor windows.
 	CurrencyPointsPerWindow = 25
-	// UpToDateMinScore is the lowest score still read as Up to date.
+	// UpToDateMinScore is the lowest score in the Up to date band.
 	UpToDateMinScore = 75
-	// GettingOldMinScore is the lowest score still read as Getting old.
+	// GettingOldMinScore is the lowest score in the Getting old band.
 	GettingOldMinScore = 50
 	// currencyFullScore is the score of a place that confirmed just now.
 	currencyFullScore = 100
