@@ -1,121 +1,110 @@
 ---
 sketch: 004
 name: activity-page
-question: "With the owner's reference picture adapted to Pinalert's own tokens, does the Activity page still read at a glance at 360 and 640 wide, in light and dark, while keeping the confirmed counts, the state word and the Reopen button on each row?"
-winner: null
-tags: [activity, tabs, rows, trust-block, light-dark]
+question: "Can the Activity page look exactly like the owner's picture, as a working page at desktop and phone width, and what does copying it change for the build?"
+winner: "B"
+tags: [activity, tabs, rows, side-menu, picture, light-dark]
 ---
 
 # Sketch 004: Activity page
 
-Sample data throughout. Every name, number and sentence is made up. Nothing in this folder changes the app, and no
-file under `web/` or `internal/` was touched.
+Sample data throughout. Every name, number and sentence is made up. Nothing in this folder changes the app, and no file
+under `web/` or `internal/` was touched.
 
-## Design question
+## Owner direction, 2026-10-10: exactly as pasted
 
-The owner supplied two pictures on 2026-10-09 as the look they want for the Activity page. This sketch adapts that look
-to Pinalert's own colours, sizes and corners and asks one thing: does the page still read at a glance at 360 and 640 wide,
-in light and dark, with the trust pieces Phase 3 requires still on each row?
+The owner sent two pictures on 2026-10-09 as the look they want for the Activity page. The first preview adapted that look to
+Pinalert's own tokens and kept the confirmed counts. The owner's answer was: "I wanted to look exactly how I pasted so do that
+accordingly." So **variant B is the direction** and variant A is kept only for comparison. The earlier decisions in this
+sketch (three tabs, counts kept, no distance, no side menu, icon colour for severity) are withdrawn. Where the picture
+conflicts with the house rules, this README records the conflict instead of adapting the design.
 
 ## How to view
 
-Serve the repo root with a server that sends `Cache-Control: no-store` (Safari blocks `file://` pages, and the stage links
-the app's real stylesheets by relative path), then open the board:
+Serve the repo root with a server that sends `Cache-Control: no-store` (Safari blocks `file://` pages, and variant A links the
+app's real stylesheets by relative path), then open the board. Variant B is the default tab.
 
 ```
 http://127.0.0.1:8799/.planning/sketches/004-activity-page/index.html
 ```
 
-The board shows the page at phone width and at 640, in light and dark, with the rules check live under each frame.
-`stage.html` is one frame, driven by the query parameters `theme`, `tab`, `filter`, `counts`, `data`, `text` and `id`.
+`picture.html` is variant B alone: a responsive page, desktop layout from 900px wide and phone layout below it. `stage.html`
+is one frame of variant A.
 
 ## The reference, in words (the project keeps no images)
 
-**Picture 1, the look.** A page called Activity with one line of help under it. A row of text tabs with a count chip on
-each: All, My posts 3, My votes 5, My disputes 2, Resolved 8, Not resolved 4. The selected tab (All) is a white bordered
-button with a dark underline. Under the tabs, a list of white cards with a thin coloured bar on the left. Each card has a
-round coloured icon (flame, tick, chat bubble, house, ban sign, clock, link), a small grey tag (Your post, Your vote, Your
-dispute, System update), a bold title, a grey line such as "You posted this report, 4 min ago, 0.6 km", a chip on the right
-(Critical, Medium, Low, or Resolved and Not resolved on the system rows) and an arrow. A left side menu (Map, Reports,
-Alerts, Activity, Account), a top bar with a bell and an account icon, a panel called "What each tab shows" and a phone
-example complete the picture.
+**Picture 1, the look.** A screen with a top bar (a dark logo square and "Pinalert", a pill with "127.0.0.1" and a reload icon,
+a bell with a red dot, a round account button), a side menu (Map, Reports, Alerts, Activity highlighted, Account), a page
+called Activity with one line of help, six text tabs with a count chip on each (All, My posts 3, My votes 5, My disputes 2,
+Resolved 8, Not resolved 4) with All as a white pill with a dark bar under it, and seven white cards with a thin bar on the
+left. Each card has a round coloured icon (flame, tick, chat bubble, house, ban sign, clock, link), a grey tag (Your post, Your
+vote, Your dispute, System update), a bold title, a grey line ("You posted this report, 4 min ago, 0.6 km"), a chip on the
+right (Critical, Medium, Low, Resolved, Not resolved) and an arrow. To the right of the screen, a box titled "What each tab
+shows" with a chip and one sentence for each of the six tabs, and below it a phone example (status bar, back arrow and
+Activity, tabs clipped at "My dispu", three rows with shorter sub lines).
 
-**Picture 2, the tab meanings.** All: a chronological feed combining your reports, votes, disputes and important updates
-to reports you follow. My posts: every report you created, including whether it is active, resolved, expired or hidden.
-My votes: reports you confirmed or disputed, each entry showing what you did and the report's current status. Resolved and
-Active: quick filters for the current state of reports you posted, kept as filters within My posts and not as separate
-top level tabs.
+**Picture 2, the tab meanings.** All: a chronological feed of your reports, votes, disputes and important updates to reports
+you follow. My posts: every report you created, active, resolved, expired or hidden. My votes: reports you confirmed or
+disputed, with what you did and the report's current status. Resolved and Active: quick filters for reports you posted, kept
+inside My posts. Picture 1's own box lists six top level tabs, which is what variant B draws.
 
-## Variant
+## Variant B: exactly the picture
 
-One variant, **A: The picture, adapted**, on purpose: the owner's decisions were already made (see below), so there was
-nothing to compare. The one live choice is a board switch, "Counts, state word and reporter words on each row", set to
-Kept (the sketch's recommendation) or Like the picture.
+Built in the picture's own sizes and colours, measured from it, with the system font stack. The board shows the picture's
+composition scaled to the window: the page at 1152 wide, the phone layout at 446 wide, and "What each tab shows" as board text
+beside them, never in the page. The seven rows and the six tab counts are the picture's. A tab selects itself and filters the
+seven rows with the meaning the picture's box gives it (My votes is confirmed or disputed, My disputes is disputed, Resolved is
+marked resolved, Not resolved is still active). The counts do not add up to the seven rows, and no rows were invented to make
+them. Tabs work by mouse and by keyboard (arrow keys, Home, End), and a press on a row says where it would go.
 
-## Decisions taken in this sketch (the owner can veto each in one word)
+**Choices where the picture contradicts itself.** The image generator drew rows 5 to 7 shorter, with a lighter title weight, and
+gave the left bars a mix of grey, amber and black. Variant B uses the height of rows 1 to 3 for every row, one semibold title
+weight, one rule for the left bar (it takes the colour of the round icon, which gives the red bar the phone example shows on
+its first row and the amber bar row 6 has), and one column for the sentences in the right box. The chevron, the typeface (the
+picture's is not one the app ships) and exact letter widths differ a little for the same reason. The 127.0.0.1 pill is the
+browser's own address bar, captured from the screenshot the picture was made from. It is drawn because the owner asked for
+exact, it does nothing, and it cannot ship as a dead control.
 
-| Decision | Why |
-|----------|-----|
-| Three tabs: All, My posts, My votes. My posts has an All, Active, Resolved filter. Disputes sit inside My votes. Say "six" for the picture's six tabs. | Picture 2 recommends exactly this, and three tabs fit at 320 wide with no scrolling. |
-| Each row keeps the trust block, the state word and the reporter words, and the poster's resolved row keeps Reopen. Say "like the picture" to drop them. | Dropping them leaves nowhere to reopen a report, and the counts are the point of the app. TRUST-07 and D-20 require both trust signals on every report without opening anything, so dropping them needs a recorded amendment. |
-| No distance on rows. | The server stores no reader location and this page is server rendered. |
-| No left side menu or top bar. | That belongs to the app wide design pass (backlog 999.10) and to Phase 5's Alerts work. |
-| The round icon keeps its colour for severity, not for the kind of event. The kind is the small label (Your post, Your vote, Your dispute, Update). | The design rule is colour for severity only. |
-| The small label is plain text, not a tag. | The row already has two rounded labels (severity and state), and sketch 003 took the tag look off the reporter words for the same reason. |
-| Update rows are drawn dashed and labelled as arriving with Phase 3.2. | They need the in app updates, which do not exist yet. Phase 8 adds the "Comment added" kind. |
-| The arrow opens `/?report=ID`, the link Phase 3.1 adds. The whole card also opens it for a pointer or a finger. | The link is the keyboard and screen reader way in, and it is one target and one name for the head line and the title together. |
+## Departures the build must record
 
-## What to look for
+One run of `shared/rules-check.js` on variant B, not a pass or fail gate. It fails on most items by design, because the picture
+does not use the app's tokens. Each item needs a recorded amendment to the UI contract, or a change to the picture, before the
+page is built in the app. For this page only, the owner's picture overrides the house rules.
 
-1. At 360 wide, does a row read in one pass: who did what (the small label), how serious (the severity label), what it is
-   (the title), when (the line under it), how well backed (state word, reporter words, counts)?
-2. Switch the counts switch to Like the picture. The page is calmer, and also says nothing about Disputed or Resolved.
-3. Do two chevrons on one row confuse? The one beside the title points right and opens the report. The one in the trust block
-   points down and turns.
-4. Larger text (150 and 200 percent): the tab strip scrolls sideways instead of wrapping, and the label pair wraps onto two lines.
-5. The wide frame: the title and the trust block use the full width.
+- **Type sizes** off the 14, 16, 18, 24 scale: 40 (title), 23 (logo name), 19.5 and 19 (help line, side menu), 15, 14.5 (phone
+  title), 13, 12, and 26 (phone title). **Weights** 500 and 700, where the house has 400 and 600.
+- **Spacing** off the 4, 8, 16, 24, 32, 48 scale in about 160 places (35, 43, 20, 17, 27 and others).
+- **Corners** over 8px: 9, 10, 14 and 16 on cards, tags, chips and the selected tab, and fully round count chips, which are the
+  pill shapes the site design rules forbid for buttons.
+- **Targets** under 44px: the bell (40), the account button (41), the phone tabs (38), the back arrow (22).
+- **Contrast** under 4.5 to 1 in two places, both from the picture's own colours: the amber "Medium" chip text on its tint
+  (about 3.0 to 1) and one grey line (about 4.2 to 1). The app's own rule is 4.5 to 1 for every piece of text.
+- **Colours**: every colour is the picture's own, none is an app token, and the round icons and bars are coloured by the kind
+  of event, where the house rule is colour for severity only.
+- **Borders**: a 2px left bar on every card, where the house allows hairlines and the 4px severity bar.
 
-## What changes from the Activity page that ships today (the UI contract has to record each)
+## Consequences for the build (carried into the Phase 3.2 note)
 
-1. Rows are neutral cards (page colour, hairline, 12px corners) with the 4px severity bar, not flat rows tinted by severity.
-   The map list rows keep their tint, so the two now differ until the design pass.
-2. The first line is the small label on the left and the severity label on the right. The severity label was the first line
-   of the body. The title carries an arrow, and the first two lines are one link.
-3. The email line leaves the page. The account menu already shows it.
-4. Tabs, count chips (8px corners) and the Active and Resolved filter are new. The selected tab is underlined with a 1px line,
-   not the picture's 2px, because the shared rules allow hairlines and the 4px severity bar and nothing thicker.
-5. The trust block is variant H of sketch 003, unchanged, reused by reference.
+- The rows show no confirmed counts, no state word and no reporter words, so the Phase 3 rule that both trust signals show on
+  every report without opening anything (TRUST-07, D-20) and `activity_trust_contract_test.go` need an amendment first.
+- Reopen has no place on the row. The poster's way to undo a resolve needs a new home, most likely the opened report.
+- The distance needs a reader location. The server stores none and the page is server rendered.
+- The side menu and top bar mean a new app shell, which is the design pass (backlog 999.10) or part of Phase 3.2.
+- The address bar pill needs a decision at the discuss step: drop it, or turn it into search.
+- Five of the six tabs and the "System update" rows need data that does not exist yet: votes by account, and the updates of
+  Phase 3.2. "Comment added" needs Phase 8.
 
-## Data this needs (for the Phase 3.2 planner)
+## Variant A: adapted to Pinalert's look (kept for comparison)
 
-- **My posts** is already served: `ActivityForAccount` returns every report the account filed.
-- **My votes** is a new account scoped read over the `votes` table: the latest content vote (confirm or dispute) per report.
-  The poster's own resolve and reopen belong under My posts. The only votes index is report first, so an account scoped read
-  would want a new index, which is a migration the owner runs.
-- **Tab counts** are real: My posts is the number of reports filed, My votes the number of distinct reports voted on.
-- **All** is built from posts, votes and, once Phase 3.2 exists, updates, newest first. One report can appear more than once
-  (posted, then updated).
-- **The arrow target** is Phase 3.1's `report` query name. Held or removed reports appear in no view.
-- **Update rows** need Phase 3.2's updates table. "Comment added" needs Phase 8.
+The first preview. Neutral cards, three tabs, the confirmed counts, the state word and Reopen kept, no distance, no side menu,
+icon colour for severity. It reuses sketch 003's trust block (variant H). Its README sections from the first round are
+superseded by the owner direction above. Its live rules check passes at the normal text size at 320, 360 and 640 wide, in
+light and dark.
 
-## Open points for the Phase 3.2 discussion
+## What was checked
 
-1. Past (expired) posts show under All only in this sketch. Do they need a filter of their own?
-2. A Disputed (hidden) post counts as Active here, because nothing has closed it. Is that right?
-3. Should All carry a count? The picture's All has none.
-4. Should the tab and the filter live in the address (`?tab=posts&filter=resolved`) so Back and a bookmark land on the same view?
-5. Should the whole card open the report, or only the title line?
-6. If the owner chooses Like the picture, TRUST-07, D-20 and `activity_trust_contract_test.go` need a recorded amendment first.
-
-## Rules check
-
-`shared/rules-check.js` (sizes 14, 16, 18, 24, weights 400 and 600, spacing scale, contrast 4.5 to 1, hairlines and the 4px
-bar, no gradients, no heavy shadows, 44px targets, tokens, no long dashes, no emoji, no sideways overflow) plus this
-sketch's own checks (corners of 8px or less on tabs, chips and filter buttons, the tab pattern, one 44px link per row, the
-trust pieces as asked, Reopen only on the poster's resolved row, the two labels on one line, nothing scrolls sideways).
-
-Measured in WebKit (Safari's engine) on 2026-10-09: widths 320, 360 and 640, light and dark, the three tabs, counts kept and
-dropped, the posts filters, and the empty state, all clean at the normal text size. At 150 and 200 percent text the tab strip
-scrolls sideways and the label pair wraps, by design. Pointer and keyboard behaviour (tabs, arrow keys, Home and End, the
-filter, the row press, the trust toggle, Reopen) was driven in WebKit and Chromium. In Safari the Tab key skips buttons and
-links unless "Press Tab to highlight each item on a webpage" is ticked in Settings, Advanced.
+Variant B was driven in WebKit (Safari's engine) and Chromium: no console errors, no sideways scroll at 1152, 900, 446 and 360
+wide, the desktop layout from 900 up and the phone layout below it, tabs by mouse and by keyboard, a row press, and the board
+composition scaling to a 1300 wide window. It was compared by eye with the picture, region by region, in two rounds. It has not
+been opened in the owner's own Safari window. In Safari the Tab key skips buttons and links unless "Press Tab to highlight each
+item on a webpage" is ticked in Settings, Advanced.
