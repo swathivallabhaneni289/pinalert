@@ -1,5 +1,7 @@
 # Trust block (variant d4)
 
+**Superseded by Phase 3 gap closure (sketch 003 variant H), 2026-10-09.** Where this d4 reference and the shipped contract differ, follow amendments A75 to A84 in `.planning/phases/03-trust-model-hardening-diversity-weighted-trust/03-UI-SPEC.md` and `.planning/sketches/003-trust-block-redesign/README.md`: nothing in the block is underlined and hover is a fill (A77); the reporter words sit as plain text beside the state label, with no user icon (A75, A76); a chevron says the button opens (A78); the toggle is a wrapping flex row with a face wrapper (A79). The d4 text below is the record of the first design.
+
 ## Design Decisions
 
 The trust block is two rows of plain text inside ONE button. Tapping or clicking it opens an inline panel of short
