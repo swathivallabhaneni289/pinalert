@@ -32,6 +32,10 @@ window.PinalertMap = (function () {
   // True while focus sits inside the open popup. Kept by focusin and focusout
   // because Leaflet can remove the container before popupclose fires.
   var popupFocusInside = false;
+  // True from a press on the popup close button, made while focus was inside
+  // the popup, until that popup closes. WebKit moves focus to the map
+  // container on that press, which clears popupFocusInside first (A74).
+  var closePressHadFocus = false;
   // Who opened the open popup, as { id, kind } with kind 'list' or 'marker' (A74).
   var popupOpener = null;
   // The report id a list row asked flyTo to open, consumed by the next popupopen.
@@ -197,6 +201,7 @@ window.PinalertMap = (function () {
     map.on('moveend', onMapMoveEnd);
     container.addEventListener('focusin', onMapFocusIn);
     container.addEventListener('focusout', onMapFocusOut);
+    container.addEventListener('pointerdown', onMapPointerDown);
     container.addEventListener('keydown', onMapKeydown);
 
     Pinalert.subscribe(render);
@@ -526,6 +531,15 @@ window.PinalertMap = (function () {
     }
   }
 
+  // onMapPointerDown records whether a press landed on the popup close button
+  // while focus was inside the popup. The press comes before the browser moves
+  // focus, so popupFocusInside is still true here. Every press sets the answer
+  // again.
+  function onMapPointerDown(evt) {
+    var target = evt.target;
+    closePressHadFocus = !!(popupFocusInside && target && target.closest && target.closest('.leaflet-popup-close-button'));
+  }
+
   // onMapKeydown adds Space to what Enter already does on the map (A49):
   // Space opens a focused pin and presses the popup close button. Enter stays
   // Leaflet's own.
@@ -554,12 +568,16 @@ window.PinalertMap = (function () {
   // onPopupClose clears the marks, collapses the popup's trust panel so a
   // reopened pin never comes back with a stale open panel, and returns focus
   // to the opener when focus was in the popup and has not gone elsewhere (A74).
+  // Focus on the map container counts as lost only after a close button press,
+  // because that is where WebKit puts it on a mouse press.
   function onPopupClose(evt) {
     var popup = evt.popup;
     var el = popup.getElement();
     var id = reportIdForPopup(popup);
-    var hadFocus = popupFocusInside;
+    var pressedClose = closePressHadFocus;
+    var hadFocus = popupFocusInside || pressedClose;
     var opener = popupOpener;
+    closePressHadFocus = false;
 
     if (el) {
       el.removeAttribute('data-popup-open');
@@ -580,7 +598,8 @@ window.PinalertMap = (function () {
     }
 
     var active = document.activeElement;
-    var lost = !active || active === document.body || !!(el && el.contains(active));
+    var lost = !active || active === document.body || !!(el && el.contains(active)) ||
+      (pressedClose && active === map.getContainer());
     if (hadFocus && lost && !removingPopup) {
       returnFocusToOpener(opener);
     }
