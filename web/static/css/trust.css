@@ -721,7 +721,9 @@
  * full width toggle, two counters and up to two signals, then a plain panel.
  * Text stays in the normal text colour because colour is reserved for
  * severity, and the fade changes severity tokens only, so the block is never
- * dimmed. Every spacing value is a token (A53).
+ * dimmed. Every spacing value is a token (A53). Plan 03-22 (A77, A78, A79)
+ * made the toggle a wrapping flex row with a face and a chevron and replaced
+ * the hover underline with a fill.
  * ---------------------------------------------------------------------- */
 
 .trust-block:not([hidden]) {
@@ -730,13 +732,25 @@
   border-top: 1px solid var(--color-border);
 }
 
-/* The toggle is the whole block face. It keeps the 44px floor, and its press
-   fill and inset focus ring come from the two rules after it. */
+/* The toggle is the whole block face. It keeps the 44px floor, and its hover
+   fill, press fill and inset focus ring come from the rules after it. The box
+   is 4px wider on each side and its start padding 4px deeper, so the words stay
+   where they were while a fill or the inset ring gets room around them; the
+   face asks for 6.85em and the chevron wraps under it when less is left
+   (A79). */
 .trust-block__toggle:not([hidden]) {
-  display: block;
-  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  align-content: center;
+  column-gap: var(--space-xs);
+  row-gap: var(--space-xs);
+  width: calc(100% + var(--space-sm));
+  margin-inline: calc(-1 * var(--space-xs));
   min-height: var(--touch-target-min);
   padding: var(--space-sm) var(--space-xs);
+  padding-inline: var(--space-sm) var(--space-xs);
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -745,13 +759,15 @@
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
   text-align: start;
-  text-underline-offset: 4px;
   cursor: pointer;
   transition: background-color 150ms ease;
 }
 
+/* The border colour at half strength over whatever is behind it, so hover is
+   always the softer step before the press fill and a tinted row shows through
+   (A77). Not wrapped in a hover media query, like the vote buttons. */
 .trust-block__toggle:hover {
-  text-decoration: underline;
+  background-color: color-mix(in srgb, var(--color-border) 50%, transparent);
 }
 
 /* The press fill uses the border token and never the surface token, so the
@@ -764,6 +780,38 @@
 /* The ring sits inside the box (A61), so the row and the popup never clip it. */
 .trust-block__toggle:focus-visible {
   outline-offset: -2px;
+}
+
+/* 6.85em is load bearing: the widest count plus about 5 percent. A plain
+   flex 1 lets a count split into its number and its word at 175 and 200
+   percent text (A79). */
+.trust-block__face:not([hidden]) {
+  display: block;
+  flex: 1 1 6.85em;
+  min-width: 0;
+}
+
+.trust-block__chevron:not([hidden]) {
+  display: block;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask-image: url("/static/icons/chevron-down.svg");
+  mask-image: url("/static/icons/chevron-down.svg");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  transition: transform 150ms ease;
+}
+
+/* The cue works on touch, keyboard and in a screenshot: down while shut, up
+   while open (A78). */
+.trust-block__toggle[aria-expanded="true"] .trust-block__chevron {
+  transform: rotate(180deg);
 }
 
 /* The counters always show, zeros included (D-16). The row clips, so the
@@ -885,16 +933,22 @@
   overflow-wrap: anywhere;
 }
 
-/* Reduced motion removes the press transition. */
+/* Reduced motion removes the press transition and the chevron turn. */
 @media (prefers-reduced-motion: reduce) {
   .trust-block__toggle:not([hidden]) {
+    transition: none;
+  }
+
+  .trust-block__chevron:not([hidden]) {
     transition: none;
   }
 }
 
 /* Windows high contrast (RR-7). The glyph masks and the separators opt out of
-   forced colour adjustment so they stay visible. System colour keywords
-   appear only in this block. */
+   forced colour adjustment so they stay visible. Forced colours replace the
+   fills, so hover and press show a border instead (A77); the rest border is
+   Canvas, so nothing moves on hover. The chevron opts out of the adjustment so
+   it stays visible (A78). System colour keywords appear only in this block. */
 @media (forced-colors: active) {
   .trust-icon:not([hidden]) {
     forced-color-adjust: none;
@@ -903,6 +957,20 @@
 
   .trust-block__count--second::before,
   .trust-signal--second::before {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+
+  .trust-block__toggle:not([hidden]) {
+    border: 1px solid Canvas;
+  }
+
+  .trust-block__toggle:hover,
+  .trust-block__toggle:active {
+    border-color: CanvasText;
+  }
+
+  .trust-block__chevron:not([hidden]) {
     forced-color-adjust: none;
     background-color: CanvasText;
   }
