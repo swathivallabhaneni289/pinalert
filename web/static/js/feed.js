@@ -158,17 +158,16 @@
     body.appendChild(title);
     body.appendChild(meta);
 
-    // This is the insertion point 02-05's artifact table reserved for the
-    // visibility tag: between the meta line and the vote controls. The tag
-    // ships hidden from its own builder, so a Live report's row is
-    // byte-identical to what Phase 1 rendered.
+    // The state label is built here and placed, with the reporter words, on
+    // the state line under the meta line (A75, A81). The tag ships hidden from
+    // its own builder.
     var tag = PinalertVisibility.createVisibilityTag();
-    body.appendChild(tag);
 
     // The shared trust block (D-20), built with no options so the row shows
-    // no numbers beyond the two counters (D-09). It sits between the
-    // visibility tag and the vote controls.
+    // no numbers beyond the two counters (D-09). It sits between the state
+    // line and the vote controls.
     var trust = PinalertTrust.createTrustBlock();
+    body.appendChild(PinalertTrust.createStateLine('report-row__stateline', tag, trust));
     body.appendChild(trust.el);
 
     var block = PinalertVotes.createVoteBlock(id);

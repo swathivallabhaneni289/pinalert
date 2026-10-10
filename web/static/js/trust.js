@@ -1,8 +1,9 @@
 // trust.js: window.PinalertTrust, the shared trust block. One builder serves
 // the feed row and the map popup (D-20), so a report reads the same on both
 // surfaces: two counters that are always shown, an optional "still current"
-// word and an optional reporter tag, and a panel of plain sentences that
-// explains them.
+// word and a panel of plain sentences that explains them. The reporter words
+// belong to the same instance but sit outside the button, and each consumer
+// places them with the state label through createStateLine (A75).
 //
 // This module computes nothing the server did not send (T-02-04). The two
 // counter numerals, every word and every panel sentence are authored by the
@@ -125,6 +126,36 @@
     return { el: el, word: word, score: score, num: num };
   }
 
+  // createReporterWords builds the reporter words as plain text outside the
+  // button (A75), with no icon (A76). In the popup the number follows behind
+  // the visually hidden score prefix as plain text, not in the semibold number
+  // class (A82). Everything starts hidden.
+  function createReporterWords(showScores) {
+    var el = document.createElement('span');
+    el.className = 'trust-reporter';
+    el.hidden = true;
+
+    var word = document.createElement('span');
+    el.appendChild(word);
+
+    var score = null;
+    var num = null;
+    if (showScores) {
+      score = document.createElement('span');
+      score.hidden = true;
+      var prefix = document.createElement('span');
+      prefix.className = 'visually-hidden';
+      Pinalert.setText(prefix, ', score');
+      num = document.createElement('span');
+      score.appendChild(prefix);
+      score.appendChild(document.createTextNode(' '));
+      score.appendChild(num);
+      el.appendChild(score);
+    }
+
+    return { el: el, word: word, score: score, num: num };
+  }
+
   // createSeverityLabel builds the read only severity word shared by the feed
   // row, the Activity row and the popup (A26, A45). It starts hidden and
   // empty, carries no aria attribute and takes no focus, and
@@ -197,11 +228,9 @@
     signals.className = 'trust-block__signals';
     signals.hidden = true;
     var currency = createSignal('trust-icon trust-icon--clock', '', showScores);
-    var reporter = createSignal('trust-icon trust-icon--user', 'trust-signal--second', showScores);
+    var reporter = createReporterWords(showScores);
     signals.appendChild(document.createTextNode(' '));
     signals.appendChild(currency.el);
-    signals.appendChild(document.createTextNode(' '));
-    signals.appendChild(reporter.el);
 
     var hint = document.createElement('span');
     hint.className = 'visually-hidden';
@@ -269,6 +298,24 @@
     });
 
     return instance;
+  }
+
+  // createStateLine is the one placement helper for the line that holds the
+  // state label and the reporter words (D-20, A75, A80). Each consumer passes
+  // a fixed class literal it owns. The space keeps label and words two words
+  // for a screen reader and is not rendered between flex items. Script never
+  // hides the line: the stylesheet removes it when every child is hidden (A83).
+  function createStateLine(className, tag, block) {
+    var line = document.createElement('div');
+    line.className = className;
+    if (tag) {
+      line.appendChild(tag);
+    }
+    line.appendChild(document.createTextNode(' '));
+    if (block && block.reporter) {
+      line.appendChild(block.reporter.el);
+    }
+    return line;
   }
 
   // setPanelOpen is the only writer of aria-expanded and of the panel's
@@ -475,6 +522,9 @@
     }
     if (!validTrust(trust)) {
       block.el.hidden = true;
+      // The words live outside the block, so an invalid trust object hides
+      // them too.
+      block.reporter.el.hidden = true;
       return;
     }
     var state = signalState(trust);
@@ -485,7 +535,7 @@
     renderTrustSignal(block.reporter, state.reporter,
       state.reporter ? trust.reporter.label : '',
       state.reporter ? trust.reporter.score : null);
-    block.signals.hidden = !(state.currency || state.reporter);
+    block.signals.hidden = !state.currency;
     renderTrustPanel(block, trust);
     block.el.hidden = false;
   }
@@ -529,6 +579,7 @@
     createSeverityLabel: createSeverityLabel,
     updateSeverityLabel: updateSeverityLabel,
     createTrustBlock: createTrustBlock,
+    createStateLine: createStateLine,
     updateTrustBlock: updateTrustBlock,
     fadeStage: fadeStage,
     focusToggle: focusToggle,

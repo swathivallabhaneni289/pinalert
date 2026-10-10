@@ -58,17 +58,15 @@
 
     var tag = PinalertVisibility.createVisibilityTag();
     var body = row.querySelector('.report-row__body');
-    if (body) {
-      body.appendChild(tag);
-    }
     PinalertVisibility.updateVisibilityTag(tag, report);
     PinalertVisibility.applyVisibilityClass(row, report);
 
-    // The shared trust block sits after the state label and before the
-    // Reopen control. It takes no options, so this page shows the two
-    // counters and the panel but no score numbers (D-09, A50).
+    // The state label and the reporter words share the state line above the
+    // trust block (A75). The block takes no options, so this page shows the
+    // two counters and the panel but no score numbers (D-09, A50).
     if (body) {
       var trustBlock = PinalertTrust.createTrustBlock();
+      body.appendChild(PinalertTrust.createStateLine('report-row__stateline', tag, trustBlock));
       body.appendChild(trustBlock.el);
       PinalertTrust.updateTrustBlock(trustBlock, readRowTrust(row));
       trustBlocks[row.dataset.reportId] = trustBlock;
