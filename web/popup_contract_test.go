@@ -371,9 +371,27 @@ func TestPopupCardSurfaceAndGeometry(t *testing.T) {
 		"color":       "var(--color-text)",
 	})
 	top(".popup-card__body", map[string]string{"padding": "var(--space-md)"})
-	top(".popup-card__header:not([hidden])", map[string]string{
+	// A80, A81: the header keeps its gap and adds the two longhands after it,
+	// loses the close button clearance (the pills row owns it) and carries the
+	// 16px bottom margin to the title.
+	header := top(".popup-card__header:not([hidden])", map[string]string{
 		"display": "flex", "flex-wrap": "wrap", "align-items": "center", "gap": "var(--space-sm)",
-		"min-height": "32px", "padding-right": "var(--space-2xl)",
+		"min-height": "32px", "column-gap": "var(--space-sm)", "row-gap": "var(--space-xs)",
+		"margin-bottom": "var(--space-md)",
+	})
+	if _, ok := p17Decls(header)["padding-right"]; ok {
+		t.Errorf("the popup header must not declare padding-right, the pills row owns the clearance (A80)")
+	}
+	headerBody := p17Squash(header.declBody)
+	gapAt := regexp.MustCompile(`(^|;)\s*gap:`).FindStringIndex(headerBody)
+	colAt := strings.Index(headerBody, "column-gap:")
+	rowAt := strings.Index(headerBody, "row-gap:")
+	if gapAt == nil || colAt == -1 || rowAt == -1 || gapAt[0] > colAt || gapAt[0] > rowAt {
+		t.Errorf("the popup header must declare gap before column-gap and row-gap (found %v, %d, %d)", gapAt, colAt, rowAt)
+	}
+	top(".popup-card__pills:not([hidden])", map[string]string{
+		"display": "flex", "flex-wrap": "wrap", "align-items": "center", "gap": "var(--space-sm)",
+		"min-width": "0", "flex": "1 1 100%", "padding-right": "var(--space-2xl)",
 	})
 	top(".leaflet-container .popup-card .popup-card__title:not([hidden])", map[string]string{
 		"display": "-webkit-box", "-webkit-box-orient": "vertical", "-webkit-line-clamp": "4",

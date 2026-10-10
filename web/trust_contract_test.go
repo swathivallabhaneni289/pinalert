@@ -197,10 +197,8 @@ func TestTrustBlockMountedOnBothSurfaces(t *testing.T) {
 		"visually-hidden",
 		"aria-hidden",
 		"trust-icon trust-icon--clock",
-		"trust-icon trust-icon--user",
 		"trust-num",
 		"trust-block__count--second",
-		"trust-signal--second",
 		"trust-block__panel",
 		"trust-block__line",
 	)
@@ -574,19 +572,12 @@ func TestTrustCSS(t *testing.T) {
 		{".trust-signal:not([hidden])", map[string]string{
 			"display": "flex", "position": "relative", "align-items": "center",
 			"gap": "var(--space-sm)", "min-width": "0"}},
-		{".trust-signal--second::before", map[string]string{
-			"content": `""`, "position": "absolute", "top": "var(--space-xs)",
-			"bottom": "var(--space-xs)", "left": "calc(-1 * var(--space-sm))",
-			"width": "1px", "background-color": "var(--color-border)"}},
 		{".trust-signal__text", map[string]string{
 			"min-width": "0", "overflow-wrap": "anywhere"}},
 		{".trust-icon:not([hidden])", iconBase},
 		{".trust-icon--clock", map[string]string{
 			"-webkit-mask-image": `url("/static/icons/clock.svg")`,
 			"mask-image":         `url("/static/icons/clock.svg")`}},
-		{".trust-icon--user", map[string]string{
-			"-webkit-mask-image": `url("/static/icons/user.svg")`,
-			"mask-image":         `url("/static/icons/user.svg")`}},
 		{".trust-block__panel:not([hidden])", map[string]string{
 			"display": "grid", "gap": "var(--space-xs)",
 			"padding": "0 var(--space-xs) var(--space-sm)", "margin": "0"}},
@@ -633,11 +624,11 @@ func TestTrustCSS(t *testing.T) {
 		t.Errorf("the forced colours icon rule must come after the base icon rule")
 	}
 	sep, sepIdx := p13Rule(t, rules, "forced-colors: active",
-		".trust-block__count--second::before, .trust-signal--second::before")
+		".trust-block__count--second::before")
 	if sep.Decls["forced-color-adjust"] != "none" || sep.Decls["background-color"] != "CanvasText" {
 		t.Errorf("forced colours separator rule = %v, want forced-color-adjust none and CanvasText", sep.Decls)
 	}
-	if sepIdx <= index[".trust-signal--second::before"] {
+	if sepIdx <= index[".trust-block__count--second::before"] {
 		t.Errorf("the forced colours separator rule must come after the base separator rules")
 	}
 

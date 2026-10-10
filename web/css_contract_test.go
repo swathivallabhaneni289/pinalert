@@ -684,8 +684,8 @@ var nonCategoryIcons = map[string]bool{
 	// Plan 01.1-06 (D-12): the account menu's trigger and logout glyphs,
 	// styled through auth.css's .auth-icon-- prefix, same exemption
 	// reasoning as the three entries above.
-	// Plan 03-13 (A39): the trust block's reporter signal also uses the user
-	// glyph, through the trust-icon--user modifier in trust.css.
+	// Plan 03-23 (A76) removed the user glyph from the trust block; the
+	// account menu still uses it through the auth icon prefix.
 	"static/icons/user.svg":    true,
 	"static/icons/log-out.svg": true,
 	// Activity page back control (quick task 260921-mf2): an auth-surface
