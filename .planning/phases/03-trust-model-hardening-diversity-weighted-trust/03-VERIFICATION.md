@@ -3,6 +3,7 @@ phase: 03-trust-model-hardening-diversity-weighted-trust
 verified: 2026-10-08T00:00:00Z
 reverified: 2026-10-10T00:00:00Z
 reverified_again: 2026-10-10T00:00:00Z
+reverified_after_redesign: 2026-10-10T00:00:00Z
 status: human_needed
 score: 9/9 must-haves verified
 behavior_unverified: 0
@@ -13,12 +14,12 @@ re_verification:
   gaps_closed: []
   gaps_remaining: []
   regressions: []
-  note: "Focused re-runs after gap closure plans 03-25 (merged in 584cef3) and 03-26 (merged in 2cc0158). See Re-verification after 03-25 and Re-verification after 03-26."
+  note: "Focused re-runs after gap closure plans 03-25 (merged in 584cef3) and 03-26 (merged in 2cc0158), then after the redesign and the shorter wording (plans 03-21 to 03-24, 03-27, 03-28 and 03-29, last merge 28d6f3d, HEAD fde18f2). See Re-verification after 03-25, Re-verification after 03-26 and Re-verification after the redesign."
 gaps: []
 deferred: []
 human_verification:
   - test: "Trust counters and words (V-42 step 5). As A post a low severity report at R (12.9716, 77.5946), confirm as B then C (C from 12.9686, 77.5946). Post a critical report and confirm it once as B."
-    expected: "Row and popup go 0, 1, 2 confirmed. The lead sentence disappears at 2 and Up to date appears with the popup score. The critical report with one place reads Too early to tell with no extra dimming."
+    expected: "Row and popup go 0, 1, 2 confirmed. The lead sentence disappears at 2 and Report up to date (A86, was Up to date) appears with the popup score. The critical report with one place reads Too early to tell with no extra dimming."
     why_human: "Needs three signed-in profiles, a live server and Chrome location overrides. Tests prove the server values, not the rendered browser result."
   - test: "Panel open and close (step 6). Open the trust panel by click, tap, Enter and Space, close by Escape, on a feed row and in a popup. Listen with VoiceOver."
     expected: "Panel opens and closes on all four inputs. VoiceOver reads the toggle name then the hint 'Shows what these mean.'"
@@ -44,7 +45,7 @@ human_verification:
   - test: "Popup card, position, reduced motion, keyboard and focus (steps 15 to 18, plans 03-17 and 03-19)."
     expected: "Panel and confirmation survive a 30 second poll with focus unmoved. Popup tip centred and card inside the view at 320 and 360px, controls not covered after autopan, no animated pan under reduced motion. Pins have names and open on Enter and Space. Focus survives poll removal and reorder. Focus returns to the marker or row on close."
     why_human: "Map geometry, autopan, poll timing and focus are runtime browser behavior."
-  - test: "Look and feel and plain language check (step 19). Check the toggle press fill on a Provisional row, forced colors, both themes. Ask someone who has not seen the app what the numbers mean."
+  - test: "Look and feel and plain language check (step 19). Check the toggle press fill on a Provisional row, forced colors, both themes. Ask someone who has not seen the app what the numbers mean. Judge whether the shorter wording (A85) reads short enough."
     expected: "The two signals read as separate things (still current versus reporter) and the person finds the panel without help."
     why_human: "Visual judgment and comprehension, which no automated check can give. This is the check that the goal of a reader understanding the signals is met in practice."
   - test: "Owner housekeeping (step 20 and reminders). Run migrate once on the owner dev database for migration 00005 after merge. Drop p3_uat when finished."
@@ -57,7 +58,7 @@ human_verification:
 **Phase Goal (MVP):** As a person reading the feed during an emergency, I want to see how many different nearby people confirmed or disputed each report, and whether it is still current and its reporter reliable, so that a few accounts cannot make a weak report look well corroborated.
 **Verified:** 2026-10-08
 **Status:** human_needed
-**Re-verification:** Initial verification 2026-10-08; focused re-verifications after plans 03-25 and 03-26 on 2026-10-10 (see the sections near the end)
+**Re-verification:** Initial verification 2026-10-08; focused re-verifications after plans 03-25 and 03-26 on 2026-10-10, and after the redesign and the shorter wording (plans 03-21 to 03-24, 03-27, 03-28 and 03-29) on 2026-10-10 (see the sections near the end)
 
 Every automated check passes. The only open items are the browser, two profile, keyboard, screen reader and visual checks that plans 03-04, 03-09, 03-11, 03-13, 03-15 to 03-19 deliberately deferred to the owner's V-42 script (folded into 03-20-SUMMARY.md). None is a gap.
 
@@ -238,9 +239,117 @@ TRUST-05 (`.planning/REQUIREMENTS.md:72`, traceability row 375) and TRUST-07 (li
 
 Pending: tests 2, 3, 4, 5, 7, 8, 9, 10 and 11. Passed: tests 1 and 6. The test 9 remainder is how the popup card looks (T9.17). The three cosmetic owner remarks under Gaps in `03-UAT.md` (underline on hover, reporter tag position, text length) still belong with the on-hold redesign decision. All scripted gaps in `03-UAT.md` are now resolved or accepted.
 
+## Re-verification after the redesign (plans 03-21 to 03-24, 03-27, 03-28 and 03-29)
+
+**Date:** 2026-10-10. **Scope:** third focused re-run, goal backward, against HEAD fde18f2. Plans covered: 03-27 (merge 745ebda), 03-21 (7bc0b59), 03-22 (444bff3), 03-23 (e3dea5a), 03-24 (69c25f8), 03-28 (eb21b76, follow up 25391c6) and 03-29 (28d6f3d, amendment A86). The base of this check is the 03-26 merge 2cc0158. `git diff 28d6f3d..HEAD` over `internal`, `web`, `docs` and `cmd` is empty, so the gate and the scripted run below were made on the same code as HEAD. The summaries were not taken as evidence; every claim below was read from the current files.
+
+**Result:** status stays `human_needed`, score 9/9, 0 gaps, 0 regressions. No new person items beyond those already in `03-UAT.md`; two owner flags are noted at the end.
+
+### The nine truths against the current code
+
+Server code changed since 2cc0158 only in `internal/service/trustcopy.go` (wording), `internal/service/trust.go` (+16 lines, the 03-27 location rule), `internal/service/currency.go` (two comment lines), `internal/api/handlers/trust.go` (swagger example tags only), `votes.go` and `reports.go` (03-27 validation). `trustview.go`, `reliability.go`, `reporter.go`, `geo.go` and `report.go` are unchanged.
+
+| # | Truth | Re-check | Status |
+| --- | --- | --- | --- |
+| 1 | Distinct place count N | `func independentCellCount` (`trust.go:120`) is still the one implementation. `TestTrustCountsDistinctPlacesNotVotes` `--- PASS` in `gate-w18.log`. Counter sentences now name places only (`trustcopy.go:35 to 59`), which states the same rule more exactly. | VERIFIED |
+| 2 | Precision chosen and documented | `const voterGeohashPrecision = 7` (`trust.go:35`). `TestTrustModelDocMatchesCode` PASS in the verifier's own run of `./internal/service/` and in `gate-w18.log`. | VERIFIED |
+| 3 | Fast decaying currency | `CurrencyWindowDivisor = 4`, `CurrencyPointsPerWindow = 25` (`currency.go:78,81`). `TestCurrencyScoreBoundaries` and `TestFadeStageMapping` PASS (verifier's run). | VERIFIED |
+| 4 | Slow decaying reliability | `ReliabilityMinJudged = 5`, `ReliabilityWindow = 90 * 24 * time.Hour`, `ReliabilityRowCap = 30` (`reliability.go:121,126,131`), unchanged. `TestReliabilityTable` PASS (verifier's run), `TestReporterSignalFromSeededHistory` PASS (`gate-w18.log`). | VERIFIED |
+| 5 | Both signals on the wire together | `TrustResponse` still carries `currency` and `reporter`; only example tags changed. `TestFeedTrustMatchesCastVoteTrust` PASS (`gate-w18.log`). | VERIFIED |
+| 6 | Browser renders both from server values, both at once on every report | See the next section. The still current word is the one `createSignal` in the toggle face (`trust.js:230`); the reporter words are `createReporterWords` (`trust.js:133`), owned by the same instance (`reporter: reporter`, line 280), placed by `createStateLine` on each surface and filled by `updateTrustBlock` (`renderTrustSignal(block.reporter, ...)`, line 535). Neither needs the panel opened. Where a signal is absent this is the server's decision as before (Provisional rows get no currency word, R-03, D-18; a reporter tag of none draws nothing, A47). | VERIFIED (static); live rendering in the human items |
+| 7 | 1 km rule server side, fail closed | `MaxVoteDistanceKm = 1.0`, `<= MaxVoteDistanceKm` (`geo.go:27,60`). 03-27 adds a stricter rule before it: a vote with no coordinates is refused (`if in.LocationMissing && !isReporterResolutionVote`, `trust.go:420`), so a missing location can no longer be read as the point 0,0. `TestCastVoteTooFar` PASS (`gate-w18.log`), `TestCastVoteRequiresALocationExceptForTheReportersOwnResolution` PASS (verifier's run). | VERIFIED |
+| 8 | Concurrent votes never skew N | `TestTrustCountUnderConcurrentVotes` PASS (`gate-w18.log`). | VERIFIED |
+| 9 | Identical for every viewer, no identifiers | `TestTrustResponseOmitsIdentifiers` PASS (`gate-w18.log`). The wording is still built only from constants and `strconv.Itoa` (`trustcopy.go`), with no viewer input. | VERIFIED |
+
+TRUST-07 and ROADMAP Success Criterion 2: every report still shows both signals without opening anything, the still current word inside the trust block and the reporter words beside the state label. They are no longer in one signals row: on a row the state line sits above the block, and in the popup the reporter words are in the header while the still current word sits in the block under the title and meta. The roadmap wording "side by side" is therefore met as "both at once, separately labelled", which `docs/TRUST-MODEL.md` now states in those words (A75). This is recorded as an owner flag below, not a gap.
+
+### What these plans touched, read from the current code
+
+**D-20, one block, one builder, three surfaces (03-23).**
+- `createTrustBlock(options)` (`trust.js:193`) builds the toggle, the face, the chevron and the panel, and also builds the reporter element through `createReporterWords(showScores)` (line 231) without mounting it (`TestTrustStateLineMarkup` bans `reporter.el` and `createStateLine(` inside `createTrustBlock`).
+- `createStateLine(className, tag, block)` (`trust.js:308`) appends the state label, a space and `block.reporter.el`; it never sets `hidden` or text. Each consumer calls it exactly once with its own class literal: `feed.js:170` (`'report-row__stateline'`), `map.js:329` (`'popup-card__stateline'`), `activity.js:69` (`'report-row__stateline'`). The test counts one call per file.
+- Consumers type no `trust-` class literal: grep of `'trust-` and `"trust-` in `feed.js`, `map.js`, `activity.js` and `votes.js` returns nothing, and `TestTrustBlockMountedOnBothSurfaces` bans it for feed and map.
+- `updateTrustBlock` (`trust.js:519`): the invalid trust branch hides both `block.el` and `block.reporter.el` (line 527); a valid object sets the reporter through `renderTrustSignal`, then `block.signals.hidden = !state.currency` (line 538), so an empty signals row takes no space while the reporter words still show.
+- Focus and announcements: `createReporterWords` makes a plain `span` with no `tabindex`, button or icon (`TestTrustStateLineMarkup` bans `tabindex`, `'button'`, `aria-hidden` and the icon classes in it), so the toggle stays the only focus stop of the block and the Tab order is unchanged. The chevron is `aria-hidden="true"` (`trust.js:250`). `git diff 2cc0158..HEAD -- web/static web/templates` adds no `aria-live`.
+
+**No underline, hover fill, press, ring, forced colours, reduced motion (03-22).**
+- `trust.css` declares `text-decoration` only as `none` (lines 892 and 1306) and no `text-underline-offset`. `TestTrustToggleFaceStyle` fails on any other `text-decoration` value or any of the underline longhands.
+- `.trust-block__toggle:hover` is `background-color: color-mix(in srgb, var(--color-border) 50%, transparent)` (line 771); `.trust-block__toggle:active` follows it at line 777 with `var(--color-border)`, so press wins by order; `:focus-visible` has `outline-offset: -2px` (line 783), an inset ring.
+- Forced colours (line 952): the toggle has a `Canvas` border at rest and `CanvasText` on hover and press, and the chevron opts out of adjustment with `CanvasText`. Reduced motion (line 937) removes the toggle transition and the chevron turn.
+- The A83 empty line rule `:not([hidden]):not(:has(> :not([hidden])))` is present for both `.report-row__stateline` (line 1060) and `.popup-card__stateline` (line 1210).
+
+**The 03-25, 03-26 and 03-27 fixes still hold.**
+- 03-25: `isInOpenPopup` (`votes.js:928`) reads `data-popup-open === 'true'`, set at `map.js:449` and removed in `onPopupClose` at `map.js:588`.
+- 03-26: `flyTo` guards the open with `if (!marker.isPopupOpen())` (`map.js:905`); `focusIsLost` (`feed.js:254`) is used by `focusAfterRemoval` (line 280).
+- 03-27: `math.IsNaN(parsed)` refuses NaN lat, lon and radius_km (`reports.go:382`, `448`); a body with neither coordinate sets `in.LocationMissing = true` (`votes.go:157`) and one missing key is a 400 naming it; `categoryLabel` (`app.js:355`) returns the table entry for an own property, else `CATEGORY_LABELS.other`, and `map.js` and `feed.js` call it; `onMapPointerDown` (`map.js:543`) sets `closePressHadFocus`, which `onPopupClose` reads and clears (lines 582 to 585). The tests for each (listed under New contract tests and in the 03-25 and 03-26 sections) are present and PASS.
+
+**The shorter wording and the labels with a subject (03-28, 03-29).**
+- `internal/service/trustcopy.go` holds the Proposed column of `.planning/sketches/003-trust-block-redesign/README.md` "Wording proposals" for every row: the caveat `Counts places, not votes.` ends `confirmedSentence` only; `disputedSentence` carries none; the lead is `Needs 2 confirmations to count as confirmed.`; the expiry lead is `Expired, so it can no longer be confirmed.`; the still current, dispute, too early, score and New reporter sentences match the table word for word.
+- The five identifiers named in the 03-28 plan (`countsCaveat`, `provisionalLeadSentence`, `expiredLeadSentence`, `needsReconfirmingSentence`, `tooEarlySentence`) all exist with their old names.
+- `currencyLabel` returns `Report up to date`, `Report getting old`, `Report needs re-confirming` (`trustcopy.go:77 to 79`); `Too early to tell` is unchanged (line 80) and is used outside `currencyLabel`, as before. The vote error `This report has expired.` is unchanged (`votes.go:193`).
+- The swagger examples (`docs/swagger.yaml:68` `Report up to date`, `:446`, `:477`) and `docs/TRUST-MODEL.md` (sentence table lines 103 to 105, label table line 136) carry the new text.
+- No old fragment is left: grep of `Counts separate places`, `before this counts as confirmed`, `It can no longer be confirmed` and `Confirmed earlier, but` over `internal`, `web`, `docs` and `cmd` outside tests returns nothing. The only test hit is the ban list in `TestTrustModuleHasNoThresholdsOrSinks`, which forbids it in `trust.js`. The bare old labels do not appear as display text in `web/static/js`, `web/templates` or the swagger files.
+
+**`docs/TRUST-MODEL.md` (03-24):** says that both signals show at once on every report without opening anything, the still current word in the trust block and the reporter tag beside the state label, and that Phase 8 places the words with `createStateLine`. `TestTrustModelDocMatchesCode` keeps it tied to the code.
+
+**Phase boundary.** Every code commit since 2cc0158 is a 03-21 to 03-29 commit (`git log --no-merges 2cc0158..HEAD -- internal web docs cmd`). The three files `gofmt`'d by 03-27 (`geocode_test.go`, `mailer/resend.go`, `js_contract_test.go`) are whitespace only. Phase 4 and 3.x changes are planning text only: 04-12, 04-16, 04-18 and 04-UI-SPEC.md follow the new wording (08f5e61, 25391c6 for 03-28; 997aad2 for 03-29), 04-29-PLAN.md changes only a file name after the rename commit 9664064, and the sketch 004 and 03.2 reference edits are owner sketch commits. No Phase 3.1 or Phase 4 code exists in the diff.
+
+### New contract tests
+
+| Test | File | Pins | Result |
+| --- | --- | --- | --- |
+| `TestTrustToggleFaceMarkup` | `web/trust_face_contract_test.go:20` | face, chevron `aria-hidden`, hint (03-22) | PASS (verifier's run) |
+| `TestTrustToggleFaceStyle` | `web/trust_face_contract_test.go:47` | hover fill, press after hover, inset ring, underline ban, forced colours, reduced motion (03-22) | PASS |
+| `TestTrustStateLineMarkup` | `web/trust_topzone_contract_test.go:35` | `createReporterWords`, `createStateLine`, one call per surface, retired classes banned (03-23) | PASS |
+| `TestTrustStateLineStyle` | `web/trust_topzone_contract_test.go:151` | state line layout, A83 empty line rule, spacing (03-23) | PASS |
+| `TestPopupClosePressKeepsTheFocusAnswer` | `web/popup_contract_test.go:680` | `onMapPointerDown`, `closePressHadFocus` order, no timer (03-27) | PASS |
+| `TestCategoryLabelNeverShowsRawText` | `web/popup_contract_test.go:733` | Other fallback, no raw category (03-27) | PASS |
+| `TestCastVoteRequiresALocationExceptForTheReportersOwnResolution` | `internal/service/trust_test.go:1284` | location rule in `CastVote` (03-27) | PASS (verifier's run) |
+| `TestVoteBodyWithoutCoordinates` | `internal/api/handlers/votes_body_test.go:100` | handler 400s (03-27) | PASS (`gate-w18.log`) |
+| `TestNearbyRejectsNaNQueryValues` | `internal/api/handlers/nearby_validation_test.go:42` | NaN 400s (03-27) | PASS (`gate-w18.log`) |
+| `TestTrustCopy*IsPlainText` (three) | `internal/service/trustcopy_test.go` | new sentences and labels, caveat once, character set (03-28, 03-29) | PASS (verifier's run) |
+
+Fail-before, read with `git show <commit>^:<file>`: `a6caee1^` `trust.css` has `text-decoration: underline` (1, now 0) and `trust.js` has no `trust-block__chevron`; `e6c0724^` `trust.js` has no `createStateLine`; `072a3f4^` `trustcopy.go` has `Counts separate places`; `b2b1e1b^` has no `Report up to date`; `3e8ba86^` `reports.go` has no `IsNaN`; `d3bf109^` `trust.go` has no `LocationMissing`; `0c65f0d^` `app.js` has no `function categoryLabel`; `50092af^` `map.js` has no `closePressHadFocus`. Each new test would fail on the code before its fix.
+
+Assertions removed or weakened (`git diff 2cc0158..HEAD` over all `*_test.go`, every removed non-comment line read):
+- The `.trust-icon--user` and `.trust-signal--second::before` rows of `TestTrustCSS`, and `trust-icon trust-icon--user` and `trust-signal--second` in the `trust.js` must-contain list, went with the user glyph and second separator (A76). They are replaced by a ban: `p23RetiredClasses` must not appear in `trust.js` or the CSS.
+- The underline expectations (`text-decoration: underline` on hover, `text-underline-offset: 4px`) were replaced by the fill and by an underline ban, so the pin is stronger.
+- The old "both counter sentences end with the caveat" check became "the confirmed sentence ends with the caveat exactly once" plus "the disputed sentence contains no Counts", which pins A85 more tightly.
+- The popup header `padding-right` moved to `.popup-card__pills` with an explicit "header must not declare padding-right" check.
+- All other removed lines are expected strings replaced one for one with the new wording in `trust_e2e_test.go`, `activity_e2e_test.go`, `currency_test.go`, `trustview_test.go`, `reporter_test.go`, `feed_test.go`, `trust_paths_test.go` and `trustcopy_test.go`.
+None of them leaves a must-have unpinned.
+
+### Evidence
+
+- Verifier's own runs on HEAD fde18f2, one command each: `go build ./...` exit 0; `go vet ./...` exit 0; `go test ./web/ -count=1 -v` ok, 141 top level PASS, 0 FAIL, 0 SKIP; `go test ./internal/service/ -count=1 -v` ok, 104 top level PASS, 0 FAIL, 0 SKIP (fakes only, no database); `gofmt -l internal cmd web docs` lists nothing (the three earlier Info files are now clean).
+- Post merge gates on fresh scratch databases, cited not re-run: `gate-w13.out` 380 PASS, `gate-w14.out` 382, `gate-w15.out` 384, `gate-w16.out` 384, `gate-w17.out` and `gate-w18.out` 384 with 0 FAIL and 0 SKIP and every package `ok`. The verifier read `gate-w18.log` for the database tests named above (all `--- PASS`, 0 `--- FAIL` or `--- SKIP` lines).
+- Scripted browser run on the final build, cited not re-run: `final-harness-2.log`, repo head 8210287 (same code as HEAD), tests 2 to 11, Chromium and WebKit, 442 PASS, 0 FAIL, 20 NEEDS A PERSON, 42 NOTE.
+- Debt markers (TBD, FIXME, XXX) in `trust.js`, `trust.css`, `feed.js`, `map.js`, `activity.js`, `app.js`, `trustcopy.go`, `trust.go`, `currency.go`, `votes.go`, `reports.go`, `handlers/trust.go` and `docs/TRUST-MODEL.md`: none. No em or en dash was added to this report.
+
+### Requirements cross-reference
+
+All seven plans declare requirements in frontmatter: 03-21 `[TRUST-07, D-09, D-18, D-19, D-20]`, 03-22 `[TRUST-05, TRUST-07]`, 03-23 `[TRUST-07]`, 03-24 `[TRUST-07]`, 03-27 `[TRUST-05, TRUST-07]`, 03-28 `[TRUST-07]`, 03-29 `[TRUST-07]`; each summary has `requirements-completed: []`. TRUST-05 (`.planning/REQUIREMENTS.md:72`, row 375) is still met by truths 1, 2, 7 and 8; TRUST-07 (line 78, row 376) by truths 3 to 6, with truth 6 now resting on the state line plus the block. No orphaned ID; the D-nn IDs are decision references. Both still read Pending in REQUIREMENTS.md, which this verification did not edit.
+
+### Items that remain for a person (from 03-UAT.md, nothing invented)
+
+- VoiceOver: test 2 (toggle name and hint) and test 5 (announcement of the Mark resolved confirmation).
+- Ask in Safari and the prompt UI: test 4.
+- A real device at 200 percent text: test 7. The scripted NOTE rows show `Report needs re-confirming` taking 3 lines at 200 percent in the 320px popup and the 320px Activity row, with no clipping; whether that is acceptable is for the owner.
+- Button style and real Windows High Contrast: test 8.
+- How the popup card looks: test 9.
+- Look and feel, the plain language check, and whether the shorter wording reads short enough: test 10, which also closes UAT Gap 3.
+- `make migrate` for 00005 on the dev database and dropping `p3_uat`: test 11.
+
+Test 3 (Escape by surface ownership) is fully proven by the script in both engines with 0 NEEDS A PERSON, but `03-UAT.md` still reads pending until the owner records it. Passed: tests 1 and 6.
+
+Owner flags, not gaps:
+- ROADMAP Success Criterion 2 says "side by side". The redesign shows both signals at once but in two places (the state line and the block). The roadmap wording could be brought in line with A75, or the owner can confirm it reads as meant.
+- The step 5 frontmatter item now expects `Report up to date` (A86) where it used to say `Up to date`.
+
 ---
 
 _Verified: 2026-10-08_
 _Re-verified: 2026-10-10 after plan 03-25_
 _Re-verified: 2026-10-10 after plan 03-26_
+_Re-verified: 2026-10-10 after the redesign (plans 03-21 to 03-24, 03-27, 03-28 and 03-29)_
 _Verifier: Claude (gsd-verifier)_
