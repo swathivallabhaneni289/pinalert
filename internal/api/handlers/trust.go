@@ -40,7 +40,7 @@ type CurrencyResponse struct {
 	// Score is a whole number from 0 to 100, or null while there is no rating (band not_yet_corroborated or not_applicable).
 	Score *int `json:"score" extensions:"x-nullable" example:"92"`
 	// Label is the everyday word for the band, written by the server, empty when no word shows.
-	Label string `json:"label" example:"Up to date"`
+	Label string `json:"label" example:"Report up to date"`
 	// Sentence is the panel line for the band, written by the server, empty when no word shows.
 	Sentence string `json:"sentence" example:"3 places confirmed this in the last 2 hours."`
 	// ScoreSentence is the popup line that explains the score, empty when the score is null.

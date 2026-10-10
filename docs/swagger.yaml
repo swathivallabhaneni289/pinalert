@@ -65,7 +65,7 @@ definitions:
       label:
         description: Label is the everyday word for the band, written by the server,
           empty when no word shows.
-        example: Up to date
+        example: Report up to date
         type: string
       recent_places:
         description: RecentPlaces is how many distinct places confirmed the report

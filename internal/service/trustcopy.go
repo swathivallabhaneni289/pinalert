@@ -1,5 +1,5 @@
 // trustcopy.go is the one home of the server authored trust copy (D-15, D-19,
-// A50, A85, RESEARCH Pattern 3). Every string here is built only from the constants in
+// A50, A85, A86, RESEARCH Pattern 3). Every string here is built only from the constants in
 // this file and integers formatted with strconv.Itoa, so no report text can
 // ever enter one (T-03-06). The closed character set is ASCII letters,
 // digits, space, comma, full stop, apostrophe and plus, plus a hyphen only
@@ -69,13 +69,14 @@ func provisionalLeadSentence() string {
 // expiry (D-17).
 const expiredLeadSentence = "Expired, so it can no longer be confirmed."
 
-// The still current words (D-18). Too early to tell is shown only on critical
-// and rescue needed reports with fewer than 2 confirming places, which never
-// show the Unconfirmed label.
+// The still current words (D-18). The three scored words name their subject,
+// the report, so a reader knows what is up to date or getting old (A86). Too
+// early to tell is shown only on critical and rescue needed reports with fewer
+// than 2 confirming places, which never show the Unconfirmed label.
 const (
-	currencyLabelUpToDate          = "Up to date"
-	currencyLabelGettingOld        = "Getting old"
-	currencyLabelNeedsReconfirming = "Needs re-confirming"
+	currencyLabelUpToDate          = "Report up to date"
+	currencyLabelGettingOld        = "Report getting old"
+	currencyLabelNeedsReconfirming = "Report needs re-confirming"
 	currencyLabelTooEarly          = "Too early to tell"
 )
 
