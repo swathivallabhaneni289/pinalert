@@ -255,7 +255,7 @@ Plans:
   1. The feed displays "confirmed by N nearby" computed from the count of distinct confirming geohash cells/sessions — using a deliberately chosen, documented geohash precision — not the raw number of votes cast.
   2. A report displays two distinct trust signals side by side: a fast-decaying "is this still current" confidence score and a slow-decaying "is this source reliable" score.
 
-**Plans**: 28/29 plans executed (verification and the owner's final checks pending)
+**Plans**: 29/29 plans executed (verification and the owner's final checks pending)
 **UI hint**: yes
 
 Plans:
@@ -340,7 +340,7 @@ Plans:
 
 **Wave 18** *(gap closure)*
 
-- [ ] 03-29-PLAN.md: The time based still current labels say what they describe (Report up to date, Report getting old, Report needs re-confirming), and every test, document, swagger example and Phase 4 text that quotes the old words follows (gap closure, wave 18)
+- [x] 03-29-PLAN.md: The time based still current labels say what they describe (Report up to date, Report getting old, Report needs re-confirming), and every test, document, swagger example and Phase 4 text that quotes the old words follows (gap closure, wave 18)
 
 ### Phase 03.1: Report history views (INSERTED)
 
@@ -469,7 +469,7 @@ Phases execute in numeric order: 1 → 1.1 → 2 → 3 → 3.1 → 3.2 → 4 →
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
 | 1.1 Identity & Login — Mandatory Email Verification | 8/8 | Complete   | 2026-09-12 |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 15/15 | Complete | 2026-10-07 |
-| 3. Trust-Model Hardening — Diversity-Weighted Trust | 28/29 | In Progress|  |
+| 3. Trust-Model Hardening — Diversity-Weighted Trust | 29/29 | In Progress|  |
 | 3.1 Report history views | 0/TBD | Not started | - |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
