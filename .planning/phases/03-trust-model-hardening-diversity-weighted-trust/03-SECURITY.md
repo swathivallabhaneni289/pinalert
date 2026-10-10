@@ -122,3 +122,20 @@ These were found while verifying the register. None was a threat in a Phase 3 pl
 - [x] `status: verified` set in frontmatter
 
 **Approval:** verified 2026-10-10 (the register only; what remains outside it is in the section above)
+
+---
+
+## Residuals fixed in 03-27
+
+Added 2026-10-10 after plan 03-27 (merged in 745ebda). The verdict above (`status: verified`, `threats_open: 0`) is unchanged: these items were never in the register, and fixing them does not change what the register says. Each row names the commit and the test that pins it.
+
+| Id | State | What changed | Proof |
+|----|-------|--------------|-------|
+| UF-03-01 | fixed | `Pinalert.categoryLabel` in `web/static/js/app.js` returns the table word for an own property of `CATEGORY_LABELS` and the word for other for anything else. The popup card and the pin name (`map.js`) and the feed meta line (`feed.js`) call it, so no raw category is printed and an inherited key such as `constructor` reads as Other. | commit 0c65f0d, `TestCategoryLabelNeverShowsRawText`, `TestPinOpensOnSpace` |
+| UF-03-03 | fixed | `parseCoordinate` and the `radius_km` block refuse a NaN with 400, the parameter name as the field and `<name> must be a number.` as the message. Only the unsigned spellings `NaN`, `nan` and `NAN` got through; Go's `strconv.ParseFloat` already rejects a signed NaN such as `+NaN` or `-nan`, and infinity was already refused by the range checks. The generated API docs carry a new description line. | commit 3e8ba86, `TestNearbyRejectsNaNQueryValues` (14 cases), `TestSwaggerSpecCoversRoutes` |
+| IN-01 | partly fixed | The missing coordinates part. A vote body with neither key (or JSON null) is a 400 with field `latitude` unless the caller is the reporter making a resolve or reopen, and a body with one key is a 400 naming the other. The rule is narrower than a blanket rejection because the exemption is decided in the service from the database reporter id (`CastVoteInput.LocationMissing`, checked after the expiry check and before the distance check), so the reporter's own resolve and reopen keep working for a client that sends no location. The browser was never affected: it sends an explicit 0,0 placeholder for those two actions. | commit d3bf109, `TestCastVoteRequiresALocationExceptForTheReportersOwnResolution`, `TestVoteBodyWithoutCoordinates` |
+| gofmt (test run notes) | fixed | `internal/api/handlers/geocode_test.go`, `internal/mailer/resend.go` and `web/js_contract_test.go` are formatted, whitespace only. | commit f5289b2, `gofmt -l cmd internal web` prints nothing |
+
+Still open and unchanged: UF-03-02, UF-03-04, CR-01, WR-01 and the WR-05 residual (Phase 4 or the pre promotion checklist), and the second clause of IN-01, trailing data after the JSON object of a vote body, which is still accepted. One sibling of UF-03-01 that this review did not list was left alone on purpose: `web/static/js/modal.js` line 250 has the same raw fallback on the submit form, which offers only its fixed chip list, so it is unreachable today.
+
+Evidence: the full suite on a fresh scratch database after the merge, 380 top level tests PASS, 0 FAIL, 0 SKIP, with build, vet and `gofmt -l` clean; no server or database was touched by the plan's executor, whose tests use fakes and `httptest`.
