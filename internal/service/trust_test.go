@@ -1275,3 +1275,108 @@ func TestCastVoteReporterExemption(t *testing.T) {
 		}
 	})
 }
+
+// TestCastVoteRequiresALocationExceptForTheReportersOwnResolution pins IN-01.
+// A vote that carried no coordinates (LocationMissing) is a ValidationError on
+// the latitude field, with nothing written, for every voter except the
+// reporter casting their own resolve or reopen. That exemption is decided from
+// the reporter id the database returned, never from the request.
+func TestCastVoteRequiresALocationExceptForTheReportersOwnResolution(t *testing.T) {
+	reporterID := int64(7)
+	newQ := func() *fakeVotingQuerier {
+		return &fakeVotingQuerier{voteContextRow: testVoteContext(time.Now().Add(time.Hour), &reporterID)}
+	}
+
+	wantMissing := func(t *testing.T, q *fakeVotingQuerier, err error) {
+		t.Helper()
+		var ve ValidationError
+		if !errors.As(err, &ve) {
+			t.Fatalf("err = %v, want a ValidationError", err)
+		}
+		if ve.Field != "latitude" {
+			t.Errorf("field = %q, want latitude", ve.Field)
+		}
+		if len(q.insertedVotes) != 0 {
+			t.Errorf("InsertVote called %d times, want 0", len(q.insertedVotes))
+		}
+	}
+
+	nonReporter := []struct {
+		name  string
+		kind  VoteKind
+		value VoteValue
+	}{
+		{"confirm", VoteKindContent, VoteConfirm},
+		{"dispute", VoteKindContent, VoteDispute},
+		{"resolve", VoteKindResolution, VoteResolve},
+		{"reopen", VoteKindResolution, VoteReopen},
+	}
+	for _, tc := range nonReporter {
+		t.Run("non reporter "+tc.name+" without a location is refused", func(t *testing.T) {
+			q := newQ()
+			_, err := NewVotingService(q).CastVote(context.Background(), CastVoteInput{
+				ReportID: 1, AccountID: 9, Kind: tc.kind, Value: tc.value,
+				LocationMissing: true,
+			})
+			wantMissing(t, q, err)
+		})
+	}
+
+	for _, v := range []VoteValue{VoteResolve, VoteReopen} {
+		t.Run("reporter own "+string(v)+" without a location succeeds", func(t *testing.T) {
+			q := newQ()
+			_, err := NewVotingService(q).CastVote(context.Background(), CastVoteInput{
+				ReportID: 1, AccountID: 7, Kind: VoteKindResolution, Value: v,
+				LocationMissing: true,
+			})
+			if err != nil {
+				t.Fatalf("err = %v, want nil", err)
+			}
+			if len(q.insertedVotes) != 1 {
+				t.Errorf("InsertVote called %d times, want 1", len(q.insertedVotes))
+			}
+		})
+	}
+
+	t.Run("reporter own resolve at an explicit 0,0 succeeds", func(t *testing.T) {
+		q := newQ()
+		_, err := NewVotingService(q).CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: 7, Kind: VoteKindResolution, Value: VoteResolve,
+			Latitude: 0, Longitude: 0,
+		})
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if len(q.insertedVotes) != 1 {
+			t.Errorf("InsertVote called %d times, want 1", len(q.insertedVotes))
+		}
+	})
+
+	t.Run("reporter confirm without a location is still the own report refusal", func(t *testing.T) {
+		q := newQ()
+		_, err := NewVotingService(q).CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: 7, Kind: VoteKindContent, Value: VoteConfirm,
+			LocationMissing: true,
+		})
+		if !errors.Is(err, ErrCannotVoteOwnReport) {
+			t.Fatalf("err = %v, want ErrCannotVoteOwnReport", err)
+		}
+		if len(q.insertedVotes) != 0 {
+			t.Errorf("InsertVote called %d times, want 0", len(q.insertedVotes))
+		}
+	})
+
+	t.Run("an expired report is still expired for a non reporter without a location", func(t *testing.T) {
+		q := &fakeVotingQuerier{voteContextRow: testVoteContext(time.Now().Add(-time.Hour), &reporterID)}
+		_, err := NewVotingService(q).CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: 9, Kind: VoteKindContent, Value: VoteConfirm,
+			LocationMissing: true,
+		})
+		if !errors.Is(err, ErrReportExpired) {
+			t.Fatalf("err = %v, want ErrReportExpired", err)
+		}
+		if len(q.insertedVotes) != 0 {
+			t.Errorf("InsertVote called %d times, want 0", len(q.insertedVotes))
+		}
+	})
+}

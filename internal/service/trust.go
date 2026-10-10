@@ -298,6 +298,12 @@ type CastVoteInput struct {
 	Value     VoteValue
 	Latitude  float64
 	Longitude float64
+
+	// LocationMissing is true when the request carried no coordinates at all.
+	// CastVote refuses it with a latitude validation error, except for the
+	// reporter's own resolve or reopen. The zero value is false, so every
+	// caller that supplies coordinates is unchanged.
+	LocationMissing bool
 }
 
 // CastVoteResult is what the vote handler serialises: the resolved
@@ -329,6 +335,8 @@ type CastVoteResult struct {
 //     and nothing else.
 //  5. Reject an expired report. This is RESEARCH Open Question 2's locked
 //     answer: reject, do not accept-and-ignore. The exemption never skips it.
+//     Between 5 and 6, a vote that carried no coordinates is refused as a
+//     validation error on latitude unless step 4 exempted it.
 //  6. Reject a voter farther than MaxVoteDistanceKm from the report (D-01),
 //     unless step 4 exempted the vote. This runs before the cell is computed
 //     and before anything is written, and a NaN or Inf coordinate fails
@@ -403,6 +411,14 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 	now := s.now().UTC()
 	if !rc.ExpiresAt.After(now) {
 		return CastVoteResult{}, ErrReportExpired
+	}
+
+	// 5b. A vote with no coordinates cannot be placed, so it is refused as a
+	// validation error rather than read as the point 0,0 and answered with a
+	// misleading "too far". Only the reporter's own resolve or reopen is
+	// excused, using the step 4 answer taken from the database.
+	if in.LocationMissing && !isReporterResolutionVote {
+		return CastVoteResult{}, ValidationError{Field: "latitude", Message: "latitude and longitude are required."}
 	}
 
 	// 6. D-01's distance refusal, before the cell is computed and before

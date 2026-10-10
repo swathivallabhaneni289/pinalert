@@ -3,11 +3,13 @@ definitions:
   handlers.CastVoteRequest:
     properties:
       latitude:
-        description: Latitude must be between -90 and 90.
+        description: Latitude must be between -90 and 90. Required, except on the
+          reporter's own resolve and reopen.
         example: 13.0827
         type: number
       longitude:
-        description: Longitude must be between -180 and 180.
+        description: Longitude must be between -180 and 180. Required, except on the
+          reporter's own resolve and reopen.
         example: 80.2707
         type: number
     type: object
@@ -689,6 +691,9 @@ paths:
         error field is location, on all four votes, with one fixed sentence that never
         carries the distance. The reporter's own resolve and reopen are exempt.
         The response also carries the same trust object GET /reports returns for this report.
+        A location is required on every vote except the reporter's own resolve and reopen.
+        A body with no latitude and no longitude is 400 with error field latitude, and a body
+        with only one of the two is 400 naming the missing one.
       parameters:
       - description: Report id
         in: path
@@ -750,6 +755,9 @@ paths:
         error field is location, on all four votes, with one fixed sentence that never
         carries the distance. The reporter's own resolve and reopen are exempt.
         The response also carries the same trust object GET /reports returns for this report.
+        A location is required on every vote except the reporter's own resolve and reopen.
+        A body with no latitude and no longitude is 400 with error field latitude, and a body
+        with only one of the two is 400 naming the missing one.
       parameters:
       - description: Report id
         in: path
@@ -811,6 +819,9 @@ paths:
         error field is location, on all four votes, with one fixed sentence that never
         carries the distance. The reporter's own resolve and reopen are exempt.
         The response also carries the same trust object GET /reports returns for this report.
+        A location is required on every vote except the reporter's own resolve and reopen.
+        A body with no latitude and no longitude is 400 with error field latitude, and a body
+        with only one of the two is 400 naming the missing one.
       parameters:
       - description: Report id
         in: path
@@ -872,6 +883,9 @@ paths:
         error field is location, on all four votes, with one fixed sentence that never
         carries the distance. The reporter's own resolve and reopen are exempt.
         The response also carries the same trust object GET /reports returns for this report.
+        A location is required on every vote except the reporter's own resolve and reopen.
+        A body with no latitude and no longitude is 400 with error field latitude, and a body
+        with only one of the two is 400 naming the missing one.
       parameters:
       - description: Report id
         in: path

@@ -37,11 +37,14 @@ const maxVoteBodyBytes = 4 * 1024
 // cell or a visibility is a loud 400 rather than a silently dropped field —
 // the same protection SubmitReportRequest already gives an attempt to set
 // expires_at/created_at.
+//
+// Both coordinates are pointers so an absent key or a JSON null can be told
+// apart from a real 0.
 type CastVoteRequest struct {
-	// Latitude must be between -90 and 90.
-	Latitude float64 `json:"latitude" example:"13.0827"`
-	// Longitude must be between -180 and 180.
-	Longitude float64 `json:"longitude" example:"80.2707"`
+	// Latitude must be between -90 and 90. Required, except on the reporter's own resolve and reopen.
+	Latitude *float64 `json:"latitude" example:"13.0827"`
+	// Longitude must be between -180 and 180. Required, except on the reporter's own resolve and reopen.
+	Longitude *float64 `json:"longitude" example:"80.2707"`
 }
 
 // CastVoteResponse is the resolver's own answer and its own explanation,
@@ -92,6 +95,9 @@ func parseReportID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 // @Description error field is location, on all four votes, with one fixed sentence that never
 // @Description carries the distance. The reporter's own resolve and reopen are exempt.
 // @Description The response also carries the same trust object GET /reports returns for this report.
+// @Description A location is required on every vote except the reporter's own resolve and reopen.
+// @Description A body with no latitude and no longitude is 400 with error field latitude, and a body
+// @Description with only one of the two is 400 naming the missing one.
 // @Tags reports
 // @Accept json
 // @Produce json
@@ -136,14 +142,31 @@ func CastVote(svc *service.VotingService, kind service.VoteKind, value service.V
 			return
 		}
 
-		res, err := svc.CastVote(r.Context(), service.CastVoteInput{
+		// Both keys absent leaves the decision to the service, which excuses
+		// only the reporter's own resolve or reopen, judged from the database
+		// reporter id. Exactly one key absent is a 400 naming the missing key
+		// here, because no vote of any kind can use half a location.
+		in := service.CastVoteInput{
 			ReportID:  reportID,
 			AccountID: acc.ID,
 			Kind:      kind,
 			Value:     value,
-			Latitude:  req.Latitude,
-			Longitude: req.Longitude,
-		})
+		}
+		switch {
+		case req.Latitude == nil && req.Longitude == nil:
+			in.LocationMissing = true
+		case req.Latitude == nil:
+			writeFieldError(w, http.StatusBadRequest, "latitude", "latitude is required.")
+			return
+		case req.Longitude == nil:
+			writeFieldError(w, http.StatusBadRequest, "longitude", "longitude is required.")
+			return
+		default:
+			in.Latitude = *req.Latitude
+			in.Longitude = *req.Longitude
+		}
+
+		res, err := svc.CastVote(r.Context(), in)
 		if err != nil {
 			// The errors.Is sentinel branches are ordered ahead of the
 			// errors.As validation branch below, and deliberately so: the

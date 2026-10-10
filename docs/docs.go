@@ -241,7 +241,7 @@ const docTemplate = `{
         },
         "/reports/{id}/confirm": {
             "post": {
-                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.\nThe response also carries the same trust object GET /reports returns for this report.",
+                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.\nThe response also carries the same trust object GET /reports returns for this report.\nA location is required on every vote except the reporter's own resolve and reopen.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.",
                 "consumes": [
                     "application/json"
                 ],
@@ -318,7 +318,7 @@ const docTemplate = `{
         },
         "/reports/{id}/dispute": {
             "post": {
-                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.\nThe response also carries the same trust object GET /reports returns for this report.",
+                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.\nThe response also carries the same trust object GET /reports returns for this report.\nA location is required on every vote except the reporter's own resolve and reopen.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.",
                 "consumes": [
                     "application/json"
                 ],
@@ -395,7 +395,7 @@ const docTemplate = `{
         },
         "/reports/{id}/reopen": {
             "post": {
-                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.\nThe response also carries the same trust object GET /reports returns for this report.",
+                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.\nThe response also carries the same trust object GET /reports returns for this report.\nA location is required on every vote except the reporter's own resolve and reopen.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.",
                 "consumes": [
                     "application/json"
                 ],
@@ -472,7 +472,7 @@ const docTemplate = `{
         },
         "/reports/{id}/resolve": {
             "post": {
-                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.\nThe response also carries the same trust object GET /reports returns for this report.",
+                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.\nThe response also carries the same trust object GET /reports returns for this report.\nA location is required on every vote except the reporter's own resolve and reopen.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.",
                 "consumes": [
                     "application/json"
                 ],
@@ -553,12 +553,12 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "latitude": {
-                    "description": "Latitude must be between -90 and 90.",
+                    "description": "Latitude must be between -90 and 90. Required, except on the reporter's own resolve and reopen.",
                     "type": "number",
                     "example": 13.0827
                 },
                 "longitude": {
-                    "description": "Longitude must be between -180 and 180.",
+                    "description": "Longitude must be between -180 and 180. Required, except on the reporter's own resolve and reopen.",
                     "type": "number",
                     "example": 80.2707
                 }
