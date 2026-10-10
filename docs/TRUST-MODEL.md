@@ -283,7 +283,7 @@ So the boundaries 75, 35 and 25 are exact (4 corroborated and 1 unconfirmed is e
 
 Tags are cut from the rounded integer. 75 or more (`ReliableMinScore`) is Reliable reporter, 35 to 74 (`MixedMinScore`) is Mixed record, and 34 or less is Unreliable reporter. Fewer than 5 judged is New reporter with no number.
 
-New reporter never looks like a good tag. It is the same plain text as the others, with no check, star or colour. The feed row and the Activity page show the tag. The panel shows the reporter sentence. The popup also shows the number and the score sentence.
+New reporter never looks like a good tag. It is the same plain text as the others, with no check, star or colour. The feed row, the Activity page and the popup show the tag as plain words beside the state label, at the top of the report and outside the trust block's button, alone on that line when the report has no state label (03-UI-SPEC.md A75). The panel shows the reporter sentence. The popup also shows the number and the score sentence.
 
 The templates, in the server's exact words:
 
@@ -345,7 +345,7 @@ The roadmap asks for a slow decaying "is this source reliable" score (TRUST-07, 
 - It is an integer from 0 to 100 per reporter, from the documented formula, recomputed on every read and never stored.
 - It decays with a 30 day half life inside 90 days. That is the slow half beside the fast still current score.
 - It is null for a New reporter, and a later phase treats null as unknown.
-- The feed row shows the tag. The popup shows the number with its score sentence (D-09, A50). The two signals sit side by side on every report.
+- The feed row shows the tag. The popup shows the number with its score sentence (D-09, A50). Both signals show at once on every report without opening anything: the still current word in the trust block and the reporter tag beside the state label (A75).
 
 ### Known limits of the rating
 
@@ -414,7 +414,7 @@ The hint is advisory. A forced vote is still refused by the server.
 | "confirmed by N nearby" | The counter `N confirmed`: N distinct places, every vote cast from within 1 km | `BuildTrust`, `CastVote` | `TestBuildTrustCountsMatchTally`, `TestCastVoteRejectsTooFar` |
 | deliberately chosen, documented geohash precision | Precision 7, with the reasoning in "What counts as a place" | `voterGeohashPrecision` | `TestGeohashPrecisionWitnesses` |
 | not the raw number of votes | Distinct places, so repeat votes and a crowd in one place count once | `BuildVoteTally` | `TestTrustCountsDistinctPlacesNotVotes` |
-| two distinct trust signals side by side | The still current word and the reporter tag in one signals row | `BuildTrust` | `TestFeedSignalsMatchCastVoteSignals`, `TestTrustBlockMountedOnBothSurfaces` |
+| two distinct trust signals side by side | The still current word in the trust block and the reporter tag beside the state label, both shown at once on every report without opening anything (A75) | `BuildTrust`, `createStateLine` | `TestFeedSignalsMatchCastVoteSignals`, `TestTrustBlockMountedOnBothSurfaces`, `TestTrustStateLineMarkup` |
 | fast decaying still current confidence score | `currency.score` | `buildCurrency` | `TestCurrencyScoreBoundaries` |
 | slow decaying source reliable score | `reporter.score` | `ScoreReliability` | `TestReliabilityTable`, `TestReliabilityDecayAndWindow` |
 
@@ -429,7 +429,7 @@ The visible form of "confirmed by N nearby" is the counter `N confirmed`, with t
 - Phase 4 owns vote rate limiting.
 - Phase 5 demo mode has to handle far away visitors, who cannot vote on seeded reports under the 1 km rule. It should place simulated reports near the visitor or exempt demo reports. It may seed clearly labelled demo accounts to show a rated reporter.
 - Phase 6 may sort on the integer scores server side. It must never use them to bury a critical or rescue needed report (D-14), and must never bake a count or a rating into a shareable card image.
-- Phase 8's report page reuses the trust block unchanged.
+- Phase 8's report page reuses the trust block unchanged and places the reporter words with the same helper as the other surfaces, `createStateLine`.
 
 ## Keeping this document true
 
