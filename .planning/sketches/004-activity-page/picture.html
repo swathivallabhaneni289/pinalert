@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Activity</title>
+  <link rel="stylesheet" href="picture.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo"><span data-icon="logo"></span></span>
+        <span class="brand__name">Pinalert</span>
+      </div>
+      <div class="urlbar" aria-hidden="true">
+        <span>127.0.0.1</span>
+        <span data-icon="reload"></span>
+      </div>
+      <div class="actions">
+        <button class="bell" type="button" aria-label="Updates, there are new ones"><span data-icon="bell"></span><span class="bell__dot"></span></button>
+        <button class="avatar" type="button" aria-label="Account"><span data-icon="user"></span></button>
+      </div>
+    </header>
+
+    <div class="shell">
+      <nav class="sidebar" aria-label="Main">
+        <a class="nav__item" href="/"><span data-icon="map"></span>Map</a>
+        <a class="nav__item" href="/reports"><span data-icon="reports"></span>Reports</a>
+        <a class="nav__item" href="/alerts"><span data-icon="bell" data-solid></span>Alerts</a>
+        <a class="nav__item" href="/profile" aria-current="page"><span data-icon="zap"></span>Activity</a>
+        <a class="nav__item" href="/account"><span data-icon="user"></span>Account</a>
+      </nav>
+
+      <main class="content">
+        <div class="pagehead">
+          <a class="back" href="/" aria-label="Back to the map"><span data-icon="arrowLeft"></span></a>
+          <h1>Activity</h1>
+        </div>
+        <p class="subtitle">A quick view of what's happening with your reports.</p>
+        <div class="tabs" id="tabs" role="tablist" aria-label="Activity views"></div>
+        <ol class="rows" id="rows" role="tabpanel"></ol>
+      </main>
+    </div>
+  </div>
+
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+  <script src="picture.js"></script>
+</body>
+</html>

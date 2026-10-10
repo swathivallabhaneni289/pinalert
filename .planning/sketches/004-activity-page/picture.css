@@ -1,0 +1,356 @@
+/*
+ * picture.css: the Activity page copied from the owner's picture (2026-10-09, sent again 2026-10-10 as "exactly how I
+ * pasted"). Sketch 004 variant B. Written in the picture's own sizes and colours, measured from it, so it does not use
+ * the app's tokens, type scale, spacing scale or colour rules. Where that departs from the house rules, the README lists
+ * it as a departure the build has to record. The system font stack is used on purpose (the app loads no web fonts), so
+ * the letter shapes differ a little from the picture's typeface.
+ *
+ * Choices made where the picture contradicts itself (the image generator drew rows 5 to 7 shorter, with a lighter title
+ * weight and bars in grey, amber and black): every row has the height of rows 1 to 3, one title weight, and the left bar
+ * takes the colour of the round icon.
+ *
+ * Two layouts from one page. 900px and up is the desktop screen: top bar, side menu and content. Below 900px is the phone
+ * layout the picture shows: a back arrow and the title, a tab strip that clips and scrolls, and shorter sub lines.
+ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+:root {
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --head-bg: #F9FAFC;
+  --side-bg: #F7F9FB;
+  --main-bg: #FAFBFD;
+  --card-bg: #FCFDFE;
+  --line: #E9EDF3;
+  --hair: #EDF0F4;
+  --ink: #0A1020;
+  --h1: #060F1C;
+  --title: #0B1120;
+  --nav: #5B667B;
+  --nav-icon: #3F4B5E;
+  --sub: #6B7385;
+  --subtitle: #5B6779;
+  --tab: #616D7B;
+  --tag-bg: #E4EAF4;
+  --tag-ink: #4E586B;
+  --count-bg: #E7ECF2;
+  --count-ink: #414A58;
+}
+
+html, body { margin: 0; height: 100%; }
+
+body {
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--main-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; }
+
+/* Icons are inline SVG drawn with the stroke of the colour around them. */
+.ic { display: inline-flex; flex: none; }
+.ic svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ic--solid svg { fill: currentColor; }
+
+.app { display: flex; flex-direction: column; height: 100%; }
+
+/* ---- Top bar ------------------------------------------------------------------------------------------------ */
+.topbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 86px;
+  padding: 0 43px 0 35px;
+  background: var(--head-bg);
+  border-bottom: 1px solid #ECEFF3;
+}
+
+.brand { display: flex; align-items: center; flex: 0 1 322px; min-width: 0; }
+
+.logo {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 39px;
+  border-radius: 9px;
+  background: #18222F;
+}
+
+.logo svg { width: 26px; height: 29px; fill: none; stroke: #fff; stroke-width: 3.4; stroke-linecap: round; stroke-linejoin: round; }
+
+.brand__name { margin-left: 20px; white-space: nowrap; font-size: 23px; line-height: 28px; font-weight: 600; letter-spacing: -0.01em; color: #0A1020; }
+
+/* The pill is a copy of the browser's own address bar in the picture. It does nothing here. */
+.urlbar {
+  position: relative;
+  flex: 0 1 446px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 120px;
+  height: 40px;
+  border: 1px solid #ECEFF4;
+  border-radius: 20px;
+  background: #F4F6F9;
+  padding-right: 14px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #5F697B;
+}
+
+.urlbar .ic { position: absolute; right: 16px; top: 50%; width: 16px; height: 16px; margin-top: -8px; color: #5B667B; }
+
+.actions { display: flex; align-items: center; gap: 20px; margin-left: auto; }
+
+.bell, .avatar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #3F4B5E;
+}
+
+.bell .ic { width: 30px; height: 30px; }
+.bell .ic svg { stroke-width: 2.2; }
+.bell__dot { position: absolute; left: 23px; top: -1px; width: 15px; height: 15px; border-radius: 50%; background: #D55D4C; }
+.avatar { border-radius: 50%; background: #EDF0F4; color: #111A29; }
+.avatar { width: 41px; height: 41px; }
+.avatar .ic { width: 28px; height: 28px; }
+
+/* ---- Side menu ---------------------------------------------------------------------------------------------- */
+.shell { flex: 1; display: flex; min-height: 0; }
+
+.sidebar {
+  flex: none;
+  width: 276px;
+  padding: 20px 15px 0 17px;
+  border-right: 1px solid #EDF0F5;
+  background: var(--side-bg);
+}
+
+.nav__item {
+  display: flex;
+  align-items: center;
+  height: 55px;
+  margin-bottom: 8px;
+  padding-left: 17px;
+  border-radius: 14px;
+  font-size: 19px;
+  font-weight: 500;
+  color: var(--nav);
+  transition: background-color 150ms ease;
+}
+
+.nav__item:hover { background: #EEF1F6; }
+.nav__item .ic { width: 30px; height: 30px; margin-right: 23px; color: var(--nav-icon); }
+.nav__item[aria-current="page"] { background: #E8ECF1; font-weight: 600; color: #060B13; }
+.nav__item[aria-current="page"] .ic { color: #0A1220; }
+.nav__item[aria-current="page"] .ic svg { stroke-width: 2.2; }
+
+/* ---- Content ------------------------------------------------------------------------------------------------ */
+.content { flex: 1; min-width: 0; padding: 26px 33px 48px 27px; overflow-y: auto; background: var(--main-bg); }
+
+.pagehead { display: flex; align-items: center; }
+.back { display: none; }
+.pagehead h1 { margin: 0; font-size: 40px; line-height: 44px; font-weight: 700; letter-spacing: -0.01em; color: var(--h1); }
+.subtitle { margin: 8px 0 0; font-size: 19.5px; line-height: 26px; color: var(--subtitle); }
+
+/* ---- Tabs --------------------------------------------------------------------------------------------------- */
+.tabs {
+  display: flex;
+  align-items: center;
+  margin-top: 33px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--hair);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar { display: none; }
+
+.tab {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 0 15px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background: none;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--tab);
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.tab:hover { background: #F1F4F8; }
+.tab:first-child { min-width: 67px; margin-right: 6px; }
+
+/* A faint divider between neighbours, left out beside the selected pill. */
+.tab + .tab::before { content: ""; position: absolute; left: -3px; top: 10px; bottom: 10px; width: 1px; background: var(--hair); }
+.tab[aria-selected="true"]::before,
+.tab[aria-selected="true"] + .tab::before { display: none; }
+
+.tab__count {
+  display: grid;
+  place-items: center;
+  min-width: 25px;
+  height: 26px;
+  margin-left: 11px;
+  padding: 0 7px;
+  border-radius: 13px;
+  background: var(--count-bg);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--count-ink);
+}
+
+/* The selected tab is a white pill with a dark bar under it. */
+.tab[aria-selected="true"] {
+  padding: 0 22px;
+  border-color: #EAEDF2;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+  font-weight: 600;
+  color: #0A0D1A;
+}
+
+.tab[aria-selected="true"]::after { content: ""; position: absolute; left: 18%; right: 18%; bottom: -11px; height: 3px; border-radius: 2px; background: #161C2A; }
+
+/* ---- Rows --------------------------------------------------------------------------------------------------- */
+.rows { display: flex; flex-direction: column; gap: 16px; margin: 30px 0 0 5px; padding: 0; list-style: none; }
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  height: 122px;
+  padding: 17px 10px 17px 28px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--bar, #98A0A8);
+  border-radius: 14px;
+  background: var(--card-bg);
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05);
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.row:hover { background: #FFFFFF; }
+
+.row__icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 64px;
+  height: 64px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--tone);
+  color: #fff;
+}
+
+.row__icon .ic { width: 38px; height: 38px; }
+.row__icon .ic svg { stroke-width: 2; }
+.row__icon .ic--solid svg { fill: #fff; stroke: #fff; stroke-width: 1.2; }
+
+.row__body { flex: 1; min-width: 0; margin-left: 26px; }
+
+.row__tag {
+  display: inline-block;
+  height: 26px;
+  padding: 0 13px;
+  border-radius: 10px;
+  background: var(--tag-bg);
+  font-size: 14px;
+  line-height: 26px;
+  font-weight: 500;
+  color: var(--tag-ink);
+}
+
+.row__title { margin: 5px 0 0; font-size: 18px; line-height: 26px; font-weight: 600; color: var(--title); overflow-wrap: anywhere; }
+.row__sub { margin: 4px 0 0; font-size: 16px; line-height: 22px; color: var(--sub); }
+.row__sub .sep { padding: 0 5px; }
+
+.row__chip {
+  flex: none;
+  height: 30px;
+  margin: 7px 13px 0 16px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font-size: 15px;
+  line-height: 30px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.row__chip--critical { background: #FAEDEC; color: #C6473E; }
+.row__chip--medium { background: #FAEFDD; color: #C37A32; }
+.row__chip--low { background: #E4F1EC; color: #39775A; }
+.row__chip--resolved { background: #EDF0F3; color: #596579; }
+.row__chip--notresolved { background: #F9ECEB; color: #BE3F34; }
+
+.row__go { align-self: center; flex: none; width: 40px; height: 40px; color: #2B3547; }
+.row__go svg { stroke-width: 1.4; }
+
+/* ---- The phone layout (the picture's mobile example) -------------------------------------------------------- */
+@media (max-width: 899px) {
+  .topbar, .sidebar, .subtitle { display: none; }
+  body { background: #FDFDFF; }
+  .app { height: auto; min-height: 100%; }
+  .shell { display: block; }
+  .content { padding: 0 17px 32px; overflow: visible; background: transparent; }
+
+  .pagehead { height: 46px; }
+  .back { display: inline-flex; width: 22px; height: 22px; margin: 0 15px; color: #1B2433; }
+  .back .ic { width: 22px; height: 22px; }
+  .pagehead h1 { font-size: 26px; line-height: 32px; }
+
+  .tabs { margin: 13px -17px 0; padding: 0 17px 10px; border-bottom: 0; }
+  .tab { height: 38px; padding: 0 15px; border-radius: 14px; font-size: 16px; }
+  .tab:first-child { min-width: 75px; margin-right: 4px; }
+  .tab[aria-selected="true"] { padding: 0 18px; }
+  .tab__count { min-width: 24px; height: 24px; margin-left: 8px; padding: 0 6px; border-radius: 12px; font-size: 13px; }
+  .tab[aria-selected="true"]::after { bottom: -10px; }
+
+  .rows { margin: 16px 0 0; gap: 12px; }
+  .row { height: auto; min-height: 98px; padding: 14px 44px 14px 18px; border-radius: 12px; }
+  .row__icon { width: 48px; height: 48px; margin-top: 4px; }
+  .row__icon .ic { width: 24px; height: 24px; }
+  .row__body { margin-left: 19px; }
+  .row__tag { height: 19px; padding: 0 9px; border-radius: 8px; font-size: 12px; line-height: 19px; }
+  .row__title { margin-top: 6px; font-size: 14.5px; line-height: 22px; }
+  .row__sub { margin-top: 2px; font-size: 13px; line-height: 19px; }
+  .row--personal .row__sub .act, .row--personal .row__sub .act-sep { display: none; }
+  .row__chip { position: absolute; top: 19px; right: 45px; height: 23px; margin: 0; padding: 0 11px; border-radius: 8px; font-size: 13px; line-height: 23px; }
+  .row__go { position: absolute; top: 50%; right: 10px; width: 26px; height: 26px; margin-top: -13px; }
+}
+
+/* The sketch's own message when something is pressed (nothing here goes anywhere). */
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 10;
+  max-width: calc(100% - 32px);
+  padding: 10px 18px;
+  border-radius: 10px;
+  background: #131B2B;
+  color: #fff;
+  font-size: 14px;
+  line-height: 20px;
+  transform: translateX(-50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav__item, .tab, .row { transition: none; }
+}
