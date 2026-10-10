@@ -81,13 +81,12 @@ definitions:
       score_sentence:
         description: ScoreSentence is the popup line that explains the score, empty
           when the score is null.
-        example: Score 92 out of 100, based on how recently different places confirmed
-          this.
+        example: Score 92 out of 100, based on recent confirmations.
         type: string
       sentence:
         description: Sentence is the panel line for the band, written by the server,
           empty when no word shows.
-        example: 3 different places confirmed this in the last 2 hours.
+        example: 3 places confirmed this in the last 2 hours.
         type: string
       window_minutes:
         description: WindowMinutes is the length of the window in whole minutes.
@@ -342,8 +341,7 @@ definitions:
       score_sentence:
         description: ScoreSentence is the popup line that explains the score, empty
           when the score is null.
-        example: Score 86 out of 100, based on how often their reports with a clear
-          result were confirmed.
+        example: Score 86 out of 100, based on how often their reports were confirmed.
         type: string
       sentence:
         description: Sentence is the panel line for the tag, written by the server,
@@ -445,7 +443,7 @@ definitions:
       confirmed_sentence:
         description: ConfirmedSentence is the panel line that explains the confirmed
           count.
-        example: 1 person in 1 place confirmed this. Counts separate places, not votes.
+        example: 1 place confirmed this. Counts places, not votes.
         type: string
       confirmed_text:
         description: ConfirmedText is the confirmed count as the surface shows it,
@@ -467,7 +465,7 @@ definitions:
       disputed_sentence:
         description: DisputedSentence is the panel line that explains the disputed
           count.
-        example: No one nearby has disputed this. Counts separate places, not votes.
+        example: No one nearby has disputed this.
         type: string
       disputed_text:
         description: DisputedText is the disputed count as the surface shows it, from
@@ -476,7 +474,7 @@ definitions:
         type: string
       lead_sentence:
         description: LeadSentence is the panel's first line, empty when there is none.
-        example: Needs 2 confirmations before this counts as confirmed.
+        example: Needs 2 confirmations to count as confirmed.
         type: string
       reporter:
         allOf:

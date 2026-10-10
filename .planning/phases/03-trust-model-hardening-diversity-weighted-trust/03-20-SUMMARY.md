@@ -105,7 +105,7 @@ Run this yourself at the end of the phase. It uses a fresh disposable database a
 
 ### What you can see live and what tests prove instead
 
-Seen live on a fresh database: the two counters at 0, 1 and 2; the Unconfirmed lead sentence; Up to date with its popup score after 2 places confirm; Too early to tell on a critical or rescue needed report with fewer than 2 places; New reporter with "None of their reports has had a clear result yet."; the panel; the hint and the refusal; Reopen on the Activity page.
+Seen live on a fresh database: the two counters at 0, 1 and 2; the Unconfirmed lead sentence; Up to date with its popup score after 2 places confirm; Too early to tell on a critical or rescue needed report with fewer than 2 places; New reporter with "None of their reports has had a clear result yet."; the panel; the hint and the refusal; Reopen on the Activity page. (wording updated by plan 03-28: the New reporter line now reads "A rating needs 5 reports with a clear result. They have none so far." and the Unconfirmed lead sentence reads "Needs 2 confirmations to count as confirmed.")
 
 Proven by named tests because they need hours or history: Getting old and Needs re-confirming (`TestCurrencyScoreBoundaries`, `TestFadeStageMapping`), Reliable reporter, Mixed record and Unreliable reporter (`TestReporterSignalFromSeededHistory`, `TestReliabilityTable`), Expired Activity rows (`TestProfileMarksExpiredReports`).
 

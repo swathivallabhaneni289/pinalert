@@ -228,16 +228,16 @@ func TestCurrencyScoreBoundaries(t *testing.T) {
 		sentenceAt := func(now time.Time) CurrencySignal {
 			return buildCurrency(p08Input(p08Until(p08Worked, now), nil, p08Low, VisibilityLive, p08Life8, now))
 		}
-		if got, want := sentenceAt(p08At(1, 0)).Sentence, "2 different places confirmed this in the last 2 hours."; got != want {
+		if got, want := sentenceAt(p08At(1, 0)).Sentence, "2 places confirmed this in the last 2 hours."; got != want {
 			t.Errorf("11:00 Sentence = %q, want %q", got, want)
 		}
-		if got, want := sentenceAt(p08At(3, 30)).Sentence, "Confirmed earlier, but fewer than 2 places confirmed it in the last 2 hours."; got != want {
+		if got, want := sentenceAt(p08At(3, 30)).Sentence, "Fewer than 2 places confirmed it in the last 2 hours."; got != want {
 			t.Errorf("13:30 Sentence = %q, want %q", got, want)
 		}
-		if got, want := sentenceAt(p08At(6, 0)).Sentence, "Confirmed earlier, but it has gone quiet. People nearby can confirm it again."; got != want {
+		if got, want := sentenceAt(p08At(6, 0)).Sentence, "Gone quiet. People nearby can confirm it again."; got != want {
 			t.Errorf("16:00 Sentence = %q, want %q", got, want)
 		}
-		if got, want := sentenceAt(p08At(1, 0)).ScoreSentence, "Score 93 out of 100, based on how recently different places confirmed this."; got != want {
+		if got, want := sentenceAt(p08At(1, 0)).ScoreSentence, "Score 93 out of 100, based on recent confirmations."; got != want {
 			t.Errorf("11:00 ScoreSentence = %q, want %q", got, want)
 		}
 	})
@@ -274,17 +274,17 @@ func TestCurrencyNotYetCorroborated(t *testing.T) {
 		check(t, buildCurrency(p08Input(one, nil, p08Low, VisibilityProvisional, p08Life8, now)), "", "", "fresh")
 	})
 	t.Run("critical live", func(t *testing.T) {
-		const word, line = "Too early to tell", "Fewer than 2 places have confirmed this so far."
+		const word, line = "Too early to tell", "Fewer than 2 places have confirmed this."
 		check(t, buildCurrency(p08Input(nil, nil, p08Critical, VisibilityLive, p08Life24, now)), word, line, "nil")
 		check(t, buildCurrency(p08Input(one, nil, p08Critical, VisibilityLive, p08Life24, now)), word, line, "nil")
 	})
 	t.Run("low rescue needed live", func(t *testing.T) {
-		const word, line = "Too early to tell", "Fewer than 2 places have confirmed this so far."
+		const word, line = "Too early to tell", "Fewer than 2 places have confirmed this."
 		check(t, buildCurrency(p08Input(one, nil, p08RescueLow, VisibilityLive, p08Life8, now)), word, line, "nil")
 	})
 	t.Run("disputes never turn null into 0", func(t *testing.T) {
 		disputes := []placeVote{p08Place("x", now), p08Place("y", now), p08Place("z", now)}
-		const word, line = "Too early to tell", "Fewer than 2 places have confirmed this so far."
+		const word, line = "Too early to tell", "Fewer than 2 places have confirmed this."
 		check(t, buildCurrency(p08Input(one, disputes, p08Critical, VisibilityLive, p08Life24, now)), word, line, "nil")
 	})
 	t.Run("two accounts in one cell are one place", func(t *testing.T) {
@@ -351,7 +351,7 @@ func TestCurrencyRetapCannotRefresh(t *testing.T) {
 		if sig.Band != CurrencyUpToDate || sig.RecentPlaces != 2 {
 			t.Errorf("Band, RecentPlaces = %q, %d", sig.Band, sig.RecentPlaces)
 		}
-		if want := "2 different places confirmed this in the last 2 hours."; sig.Sentence != want {
+		if want := "2 places confirmed this in the last 2 hours."; sig.Sentence != want {
 			t.Errorf("Sentence = %q, want %q", sig.Sentence, want)
 		}
 	})
@@ -365,7 +365,7 @@ func TestCurrencyDisputes(t *testing.T) {
 	low := func(confirms, disputes []placeVote, now time.Time) CurrencySignal {
 		return buildCurrency(p08Input(confirms, disputes, p08Low, VisibilityLive, p08Life8, now))
 	}
-	const quiet = "Confirmed earlier, but fewer than 2 places confirmed it in the last 2 hours."
+	const quiet = "Fewer than 2 places confirmed it in the last 2 hours."
 
 	t.Run("contested", func(t *testing.T) {
 		sig := low([]placeVote{a, b}, []placeVote{x}, p08At(1, 30))
@@ -375,7 +375,7 @@ func TestCurrencyDisputes(t *testing.T) {
 		if sig.Band != CurrencyNeedsReconfirming || sig.Label != "Needs re-confirming" {
 			t.Errorf("Band, Label = %q, %q", sig.Band, sig.Label)
 		}
-		if want := "Someone nearby disputed this, so it needs 3 places to confirm it in the last 2 hours."; sig.Sentence != want {
+		if want := "Disputed nearby, so it needs 3 places in the last 2 hours."; sig.Sentence != want {
 			t.Errorf("Sentence = %q, want %q", sig.Sentence, want)
 		}
 		if got := p08Fade(sig.FadeStage); got != "stale" {
@@ -402,7 +402,7 @@ func TestCurrencyDisputes(t *testing.T) {
 		if got := p08Score(t, sig); got != 68 {
 			t.Errorf("Score = %d, want 68", got)
 		}
-		if want := "Someone nearby disputed this, so it needs 3 places to confirm it in the last 2 hours."; sig.Band != CurrencyGettingOld || sig.Sentence != want || sig.RecentPlaces != 2 {
+		if want := "Disputed nearby, so it needs 3 places in the last 2 hours."; sig.Band != CurrencyGettingOld || sig.Sentence != want || sig.RecentPlaces != 2 {
 			t.Errorf("Band, Sentence, RecentPlaces = %q, %q, %d", sig.Band, sig.Sentence, sig.RecentPlaces)
 		}
 		clean := low([]placeVote{a, b, c}, nil, p08At(3, 0))
@@ -421,7 +421,7 @@ func TestCurrencyDisputes(t *testing.T) {
 		if got := p08Score(t, sig); got != 0 || sig.Band != CurrencyNeedsReconfirming {
 			t.Errorf("Score, Band = %d, %q, want 0 needs_reconfirming", got, sig.Band)
 		}
-		if want := "Someone nearby disputed this, so it needs 4 places to confirm it in the last 2 hours."; sig.Sentence != want {
+		if want := "Disputed nearby, so it needs 4 places in the last 2 hours."; sig.Sentence != want {
 			t.Errorf("Sentence = %q, want %q", sig.Sentence, want)
 		}
 	})
@@ -437,7 +437,7 @@ func TestCurrencyDisputes(t *testing.T) {
 		if got := p08Score(t, sig); got != 31 {
 			t.Errorf("Score = %d, want 31", got)
 		}
-		if want := "Confirmed earlier, but it has gone quiet. People nearby can confirm it again."; sig.Sentence != want {
+		if want := "Gone quiet. People nearby can confirm it again."; sig.Sentence != want {
 			t.Errorf("Sentence = %q, want %q", sig.Sentence, want)
 		}
 		fresh := p08Place("x", p08At(6, 0))
@@ -453,7 +453,7 @@ func TestCurrencyDisputes(t *testing.T) {
 		if sig.Band != CurrencyNeedsReconfirming || sig.Label != "Needs re-confirming" || sig.FadeStage != nil {
 			t.Errorf("Band, Label, FadeStage = %q, %q, %v", sig.Band, sig.Label, sig.FadeStage)
 		}
-		if want := "Someone nearby disputed this, so it needs 3 places to confirm it in the last 6 hours."; sig.Sentence != want {
+		if want := "Disputed nearby, so it needs 3 places in the last 6 hours."; sig.Sentence != want {
 			t.Errorf("Sentence = %q, want %q", sig.Sentence, want)
 		}
 	})
@@ -518,7 +518,7 @@ func TestCurrencyWindowFollowsLifetime(t *testing.T) {
 			if sig.WindowMinutes != 120 {
 				t.Errorf("lifetime %s: WindowMinutes = %d, want 120", life, sig.WindowMinutes)
 			}
-			if want := "2 different places confirmed this in the last 2 hours."; sig.Sentence != want {
+			if want := "2 places confirmed this in the last 2 hours."; sig.Sentence != want {
 				t.Errorf("lifetime %s: Sentence = %q, want %q", life, sig.Sentence, want)
 			}
 		}

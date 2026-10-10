@@ -989,7 +989,7 @@ func TestReporterSignalKeyedByAccount(t *testing.T) {
 	t.Run("a report expiring exactly at now counts as judged and another account's history does not leak", func(t *testing.T) {
 		got := p12ReporterOf(t, views, 3)
 		if got.Tag != service.ReporterNew || got.Score != nil || got.JudgedReports != 2 ||
-			got.Sentence != "Only 2 of their reports have had a clear result so far. A rating needs 5 reports with a clear result." {
+			got.Sentence != "A rating needs 5 reports with a clear result. They have 2 so far." {
 			t.Errorf("report 3 reporter = %+v", got)
 		}
 	})
@@ -1145,7 +1145,7 @@ func TestCastVoteTrustMatchesNearbyTrust(t *testing.T) {
 		}
 		r := got.nearby.Reporter
 		if r.Tag != service.ReporterNew || r.JudgedReports != 0 ||
-			r.Sentence != "None of their reports has had a clear result yet. A rating needs 5 reports with a clear result." {
+			r.Sentence != "A rating needs 5 reports with a clear result. They have none so far." {
 			t.Errorf("reporter = %+v, want new with no judged reports", r)
 		}
 	})
