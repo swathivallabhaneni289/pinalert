@@ -207,8 +207,21 @@
     hint.className = 'visually-hidden';
     Pinalert.setText(hint, '. Shows what these mean.');
 
-    toggle.appendChild(counts);
-    toggle.appendChild(signals);
+    // The face holds the counts and the signals so the chevron can move under
+    // the text at a large text size (A79). The chevron is the visual cue that
+    // the block opens; it is hidden from screen readers because the hint
+    // already says it (A78).
+    var face = document.createElement('span');
+    face.className = 'trust-block__face';
+    face.appendChild(counts);
+    face.appendChild(signals);
+
+    var chevron = document.createElement('span');
+    chevron.className = 'trust-block__chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+
+    toggle.appendChild(face);
+    toggle.appendChild(chevron);
     toggle.appendChild(hint);
 
     var panel = document.createElement('div');
