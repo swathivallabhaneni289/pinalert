@@ -116,7 +116,9 @@ func TestClaimEmailCooldownAllowsAfterWindow(t *testing.T) {
 	ctx := context.Background()
 	q := sqlcgen.New(pool)
 
-	firstRequestedAt := time.Now()
+	// Postgres keeps microseconds. On Linux time.Now() has nanoseconds, so the
+	// value read back would never Equal the one sent unless it is truncated.
+	firstRequestedAt := time.Now().Truncate(time.Microsecond)
 	if _, err := q.ClaimEmailCooldown(ctx, sqlcgen.ClaimEmailCooldownParams{
 		Email:          "allowed-after-window@example.com",
 		RequestedAt:    firstRequestedAt,
