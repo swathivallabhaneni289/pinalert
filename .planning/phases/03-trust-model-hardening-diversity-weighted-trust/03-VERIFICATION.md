@@ -5,7 +5,8 @@ reverified: 2026-10-10T00:00:00Z
 reverified_again: 2026-10-10T00:00:00Z
 reverified_after_redesign: 2026-10-10T00:00:00Z
 reverified_after_tick_marks: 2026-10-13T00:00:00Z
-status: human_needed
+human_verification_completed: 2026-10-13T00:00:00Z
+status: passed
 score: 9/9 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
@@ -436,6 +437,20 @@ VoiceOver on the toggle and on the Mark resolved confirmation; VoiceOver on the 
 - `needsDetail` (`trustfacts.go:92`) repeats the threshold subtraction of `provisionalLeadSentenceFor` (`trustcopy.go:76`), both from `IndependentAgreementThreshold`, and `raisedBar` (`trustfacts.go:143`) reads a raised bar by comparing sentences. Both are pinned by the facts grid test, so a drift fails, but they are the two places a later change to the threshold wording has to touch together.
 - Phase 4 candidate, not a Phase 3 gap: `POST /api/reports` accepts a null or absent latitude and longitude and files the report at 0,0. `SubmitReportRequest` declares `Latitude` and `Longitude` as plain `float64` (`internal/api/handlers/reports.go:50` and `:52`), `SubmitReport` copies them straight into `SubmitInput` (`:276` and `:277`), and the service only range checks them (`internal/service/report.go:207`), so 0 passes. The vote endpoint answers "latitude is required." through pointer fields (`internal/api/handlers/votes.go:158` to `:163`). A pointer field with the same 400 in the report handler would close it.
 
+## Human verification completed
+
+**Date:** 2026-10-13. **Result:** the status moves from `human_needed` to `passed`. `03-UAT.md` reads 11 of 11 pass, 0 issues, 0 pending, and the UAT predicate (`phase uat-passed 03 --require-verification`) had no blocker other than this file's status. No code changed in this step, so the nine truths and the evidence above stand as they were verified on HEAD 8b9c802.
+
+How each human item was closed (the details are in the `owner_check` lines of `03-UAT.md`):
+
+- Done by the owner live in Safari: tests 1, 6, 8 and 9 (counters and words, reopen on Activity, button look, popup card), and test 10 on 2026-10-13 (the tick mark card and the new words, with the chosen picture open beside it, answer "yes").
+- Accepted by the owner on the scripted evidence in both engines, and written down as such: tests 2 and 5 (VoiceOver skipped, "mainly going to be used in the phone"), test 4 (the Ask state was not switched in Safari, location was already allowed), test 3 (Escape, one level in the popup since plan 03-31) and test 7 (200 percent text at 320px).
+- Done by Claude with the owner's go ahead: test 11, migration 00005 on the dev database `pinalert_test` (index present, row counts unchanged). The scratch database was dropped afterwards.
+
+Not done, and noted to do before the app is shown widely: a real phone at 200 percent system text with a screen reader speaking the severity word first (T7.4), VoiceOver on the toggle, on the popup card and on the Mark resolved confirmation (T2.2, T2.4, V3x), the plain language check with someone who has not seen the app (T10.5), and real Windows High Contrast (C9).
+
+Owner flags carried forward, none of them a gap: the two score lines in the popup (A50, D-09); "side by side" in ROADMAP Success Criterion 2 against the two places the signals now sit; human items 2 and 3 in the frontmatter describe the older popup panel, and since plan 03-31 the popup has no panel and one Escape closes it (the 2026-10-13 notes of tests 2 and 3 in `03-UAT.md` carry the current wording); and the popup height on a small phone (a deferred gap in `03-UAT.md`, which goes to the phone first redesign).
+
 ---
 
 _Verified: 2026-10-08_
@@ -443,4 +458,5 @@ _Re-verified: 2026-10-10 after plan 03-25_
 _Re-verified: 2026-10-10 after plan 03-26_
 _Re-verified: 2026-10-10 after the redesign (plans 03-21 to 03-24, 03-27, 03-28 and 03-29)_
 _Re-verified: 2026-10-13 after plans 03-30 and 03-31 and quick task 261010-psc_
+_Human verification completed: 2026-10-13 (03-UAT.md, 11 of 11 pass)_
 _Verifier: Claude (gsd-verifier)_
