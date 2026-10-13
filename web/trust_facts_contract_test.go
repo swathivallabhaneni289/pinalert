@@ -353,8 +353,12 @@ func TestFactsCSS(t *testing.T) {
 		"font-size": "var(--font-size-label)", "line-height": "var(--line-height-label)",
 		"font-weight": "var(--font-weight-regular)", "color": "var(--color-text-muted)",
 	})
+	// The glyph box is centred on the first title line: 0 at the normal size,
+	// and it follows the title when the text is enlarged (visual proof of plan
+	// 03-31, 200 percent text).
 	want(".trust-fact__glyph", map[string]string{
 		"width": "var(--space-lg)", "height": "var(--space-lg)",
+		"margin-top": "calc((var(--font-size-body) * var(--line-height-body) - var(--space-lg)) / 2)",
 	})
 	want(".trust-fact__disc", map[string]string{"fill": "currentColor"})
 	want(".trust-fact__mark", map[string]string{
@@ -375,7 +379,14 @@ func TestFactsCSS(t *testing.T) {
 		"display": "flex", "flex-wrap": "wrap", "justify-content": "space-between",
 		"align-items": "baseline", "border-bottom": "1px solid var(--color-border)",
 	})
+	want(".trust-card:not([hidden])", map[string]string{
+		"padding": "0 var(--space-md) var(--space-sm)",
+	})
 	want(".trust-card__counts", map[string]string{"min-width": "0", "font-size": "var(--font-size-body)"})
+	// Each counter is one box, so a break never separates a number from its word.
+	want(".trust-card__counts > span:not(.trust-card__dot):not([hidden])", map[string]string{
+		"display": "inline-block",
+	})
 	want(".trust-card__state", map[string]string{
 		"min-width": "0", "margin-left": "auto", "font-size": "var(--font-size-label)",
 		"font-weight": "var(--font-weight-semibold)", "overflow-wrap": "anywhere",
@@ -385,9 +396,11 @@ func TestFactsCSS(t *testing.T) {
 	want(".trust-card__state--bad", map[string]string{"color": "var(--color-tone-bad)"})
 
 	// The row panel is the same white card on the tinted row, so the muted
-	// detail text keeps its contrast there too.
+	// detail text keeps its contrast there too. The bottom padding balances
+	// the top (visual proof of plan 03-31: the last line sat 8px above the
+	// border, the first 11px below it).
 	want(".trust-block__panel:not([hidden])", map[string]string{
-		"display": "block", "margin": "var(--space-sm) 0 0", "padding": "0 var(--space-sm)",
+		"display": "block", "margin": "var(--space-sm) 0 0", "padding": "0 var(--space-sm) var(--space-xs)",
 		"border": "1px solid var(--color-border)", "border-radius": "12px",
 		"background": "var(--color-bg)", "color": "var(--color-text)",
 	})

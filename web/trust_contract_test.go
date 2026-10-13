@@ -606,7 +606,7 @@ func TestTrustCSS(t *testing.T) {
 			"-webkit-mask-image": `url("/static/icons/clock.svg")`,
 			"mask-image":         `url("/static/icons/clock.svg")`}},
 		{".trust-block__panel:not([hidden])", map[string]string{
-			"display": "block", "margin": "var(--space-sm) 0 0", "padding": "0 var(--space-sm)",
+			"display": "block", "margin": "var(--space-sm) 0 0", "padding": "0 var(--space-sm) var(--space-xs)",
 			"border": "1px solid var(--color-border)", "border-radius": "12px",
 			"background": "var(--color-bg)", "color": "var(--color-text)"}},
 	}

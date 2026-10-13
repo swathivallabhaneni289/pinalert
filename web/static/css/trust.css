@@ -916,11 +916,13 @@
 
 /* The panel is the same white card as the popup's, so the muted detail text
    keeps its contrast on a tinted row too (A96). It is closed with the toggle,
-   and the card look is the facts list's own, never the row's tint. */
+   and the card look is the facts list's own, never the row's tint. The bottom
+   padding balances the top: the last line of text sat about 8px above the
+   border while the first sat about 11px below it. */
 .trust-block__panel:not([hidden]) {
   display: block;
   margin: var(--space-sm) 0 0;
-  padding: 0 var(--space-sm);
+  padding: 0 var(--space-sm) var(--space-xs);
   border: 1px solid var(--color-border);
   border-radius: 12px;
   background: var(--color-bg);
@@ -978,10 +980,14 @@
 
 /* The glyph is a 24px box holding a 21px disc. The disc takes the tone colour
    through currentColor and the mark takes the card colour, so the shape reads
-   in light and dark. Four tones, four marks (A93). */
+   in light and dark. Four tones, four marks (A93). The top margin centres the
+   box on the first title line: it is half of the title line height minus the
+   box, which is 0 at the normal size and grows when the text is enlarged, so
+   the disc never sits above the words at 200 percent text. */
 .trust-fact__glyph {
   width: var(--space-lg);
   height: var(--space-lg);
+  margin-top: calc((var(--font-size-body) * var(--line-height-body) - var(--space-lg)) / 2);
 }
 
 .trust-fact__disc {
@@ -1013,12 +1019,14 @@
 }
 
 /* The popup's trust card (A91, A92): always showing, a hairline edge and 12px
-   corners on the page surface, so it reads as a card on the neutral popup. */
+   corners on the page surface, so it reads as a card on the neutral popup.
+   The bottom padding gives the last row the same air as the header has above
+   it, about 16px from the text to the edge as in the owner's picture. */
 .trust-card:not([hidden]) {
   display: block;
   margin-top: var(--space-md);
   margin-bottom: var(--space-sm);
-  padding: 0 var(--space-md);
+  padding: 0 var(--space-md) var(--space-sm);
   border: 1px solid var(--color-border);
   border-radius: 12px;
   background: var(--color-bg);
@@ -1044,6 +1052,13 @@
   line-height: var(--line-height-body);
   font-weight: var(--font-weight-regular);
   overflow-wrap: anywhere;
+}
+
+/* Each counter stays in one piece, so enlarged text or a narrow card breaks
+   between the two counters and never between a number and its word. A counter
+   that is wider than the line still wraps inside its own box. */
+.trust-card__counts > span:not(.trust-card__dot):not([hidden]) {
+  display: inline-block;
 }
 
 .trust-card__state {
