@@ -443,12 +443,12 @@ window.Pinalert = (function () {
     if (remainingMs <= 0) {
       return '';
     }
-    var minutes = Math.ceil(remainingMs / 60000);
-    if (minutes < 60) {
-      return 'Fades in ' + minutes + ' min.';
+    var hourMs = 3600000;
+    if (remainingMs >= hourMs) {
+      var hours = Math.floor(remainingMs / hourMs);
+      return 'Fades in ' + hours + (hours === 1 ? ' hr.' : ' hrs.');
     }
-    var hours = Math.floor(minutes / 60);
-    return 'Fades in ' + hours + (hours === 1 ? ' hr.' : ' hrs.');
+    return 'Fades in ' + Math.ceil(remainingMs / 60000) + ' min.';
   }
 
   // ageStage implements D-15/D-17: a report fades over roughly the last

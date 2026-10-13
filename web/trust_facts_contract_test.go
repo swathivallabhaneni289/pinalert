@@ -335,7 +335,7 @@ func TestFactsCSS(t *testing.T) {
 	want(".trust-facts", map[string]string{"margin": "0", "padding": "0", "list-style": "none"})
 	want(".trust-fact:not([hidden])", map[string]string{
 		"display": "grid", "grid-template-columns": "var(--space-lg) minmax(0, 1fr)",
-		"column-gap": "var(--space-sm)", "padding": "var(--space-sm) 0",
+		"column-gap": "var(--space-sm)", "padding": "var(--space-xs) 0",
 	})
 	want(".trust-fact:not([hidden]) ~ .trust-fact:not([hidden])", map[string]string{
 		"border-top": "1px solid var(--color-border)",

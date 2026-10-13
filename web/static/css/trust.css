@@ -941,7 +941,7 @@
   grid-template-columns: var(--space-lg) minmax(0, 1fr);
   column-gap: var(--space-sm);
   align-items: start;
-  padding: var(--space-sm) 0;
+  padding: var(--space-xs) 0;
 }
 
 .trust-fact:not([hidden]) ~ .trust-fact:not([hidden]) {
@@ -1034,7 +1034,7 @@
   align-items: baseline;
   column-gap: var(--space-sm);
   row-gap: var(--space-xs);
-  padding: var(--space-md) 0 var(--space-sm);
+  padding: var(--space-sm) 0;
   border-bottom: 1px solid var(--color-border);
 }
 
