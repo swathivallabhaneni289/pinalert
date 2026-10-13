@@ -629,14 +629,18 @@
     var dot = document.createElement('span');
     dot.className = 'trust-card__dot';
     dot.setAttribute('aria-hidden', 'true');
-    Pinalert.setText(dot, ' \u00b7 ');
+    Pinalert.setText(dot, '\u00b7');
     var second = document.createElement('span');
     var disputedNum = document.createElement('span');
     disputedNum.className = 'trust-num';
     second.appendChild(disputedNum);
     second.appendChild(document.createTextNode(' disputed'));
+    // The spaces are real text nodes outside the hidden dot, so a screen
+    // reader still hears two separate counters.
     counts.appendChild(first);
+    counts.appendChild(document.createTextNode(' '));
     counts.appendChild(dot);
+    counts.appendChild(document.createTextNode(' '));
     counts.appendChild(second);
 
     var state = document.createElement('span');
