@@ -439,9 +439,9 @@ The score line follows D-09 and A50: only the popup shows it, and it is empty ex
 | `disputes` | M is 1 | bad | Disputed by 1 person | `Someone nearby says this is wrong.` |
 | `disputes` | M is 2 or more | bad | Disputed by {M} people | `At different spots nearby.` |
 | `currency` | Report up to date | good | Still happening | `{R} confirmations in the last {W}.` |
-| `currency` | Report getting old | caution | Getting old | `Fewer than {T} confirmations in the last {W}.` |
-| `currency` | Report needs re-confirming | bad | Gone quiet | `People nearby can confirm it again.` |
-| `currency` | a standing dispute raised the bar | caution | Needs more confirmations | `Disputed nearby, so it needs {K} confirmations in the last {W}.` |
+| `currency` | Report getting old, no standing dispute raised the bar | caution | Getting old | `Fewer than {T} confirmations in the last {W}.` |
+| `currency` | Report needs re-confirming, no standing dispute raised the bar | bad | Gone quiet | `People nearby can confirm it again.` |
+| `currency` | Report getting old or needs re-confirming, and a standing dispute raised the bar | caution | Needs more confirmations | `Disputed nearby, so it needs {K} confirmations in the last {W}.` |
 | `currency` | Too early to tell | neutral | Too early to tell | `Fewer than {T} people have confirmed this yet.` |
 | `reporter` | Reliable | good | Reliable reporter | `{C} of their last {J} reports were confirmed.` |
 | `reporter` | Mixed | caution | Mixed record | `{C} of their last {J} reports were confirmed.` |
