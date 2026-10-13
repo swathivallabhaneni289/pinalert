@@ -686,6 +686,17 @@ func TestListRowActivationOpensThePopupOnce(t *testing.T) {
 // direction (activateRow) is unchanged. The feed.js text is checked raw for
 // the call, so a comment cannot leave one behind. Static inspection cannot
 // run a browser; the scripted check T9.18 is the live proof.
+//
+// Phone amendment (quick task 261013-lrw): below 900px the list is its own
+// scroll box under a fixed height map, so moving it never moves the map,
+// which was A87's reason. The onSelect map branch therefore also calls
+// revealRowInListPane, a separate function that sets only the list pane's
+// own scroll position and does nothing at 900px and up. Every assertion
+// below is kept: the subscriber text still names no scroll call, and
+// applySelectionHighlight stays free of any scroll. The new function is
+// pinned by TestPhoneFeedScriptContract in phone_layout_contract_test.go
+// and the departure is written in
+// .planning/sketches/005-phone-layout/README.md.
 func TestMapSelectionNeverScrollsThePage(t *testing.T) {
 	raw := p13ReadStatic(t, "static/js/feed.js")
 	p13MustNotContain(t, "feed.js", raw, "scrollIntoView(")

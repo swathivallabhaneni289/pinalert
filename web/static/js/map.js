@@ -52,8 +52,13 @@ window.PinalertMap = (function () {
   // animations, the animated fly and Leaflet's own autopan (A60, A68).
   var reducedMotion = mediaMatches('(prefers-reduced-motion: reduce)');
   // The two media conditions trust.css switches the popup max height at (A65).
+  // NARROW_QUERY is also the condition phone.css lays the report detail out as
+  // a full screen sheet at, so the pane choice below follows the stylesheet.
   var NARROW_QUERY = '(max-width: 899.98px)';
   var SHORT_QUERY = '(max-height: 359px)';
+  // The last answer to NARROW_QUERY, so a resize that crosses 900px closes the
+  // open popup and one that does not (an address bar, a keyboard) leaves it.
+  var lastNarrow = false;
   // Autopan paddings in pixels, derived from the spacing tokens (A60).
   var panPad = { topLeft: [0, 0], bottomRight: [0, 0] };
 
@@ -115,6 +120,27 @@ window.PinalertMap = (function () {
     popup.options.autoPanPaddingBottomRight = panPad.bottomRight;
   }
 
+  // phoneDetail says whether the report detail opens as the full screen sheet
+  // of phone.css: the same condition the stylesheet switches at.
+  function phoneDetail() {
+    return mediaMatches(NARROW_QUERY);
+  }
+
+  // applyPopupPlacement writes where one popup opens and whether Leaflet pans
+  // for it. A popup reads both options every time it opens, and the viewport
+  // may have crossed 900px since it was bound. On a phone the popup opens in
+  // the detail pane, which sits outside the map pane's transform and which
+  // phone.css lays out as a sheet, so Leaflet's own autopan must be off before
+  // the open: it runs inside the open, ahead of the popupopen event.
+  function applyPopupPlacement(popup) {
+    if (!popup) {
+      return;
+    }
+    var phone = phoneDetail();
+    popup.options.pane = phone ? 'detailPane' : 'popupPane';
+    popup.options.autoPan = !reducedMotion && !phone;
+  }
+
   // hasVectorBasemap reports whether this browser can render the
   // OpenFreeMap vector basemap through the MapLibre bridge: both vendor
   // globals must have loaded, and the browser must grant a WebGL2
@@ -167,6 +193,16 @@ window.PinalertMap = (function () {
       markerZoomAnimation: !reducedMotion,
       zoomAnimation: !reducedMotion
     });
+
+    // The report detail pane is a child of the map container itself, so it sits
+    // outside the map pane's transform and a fixed position popup inside it is
+    // laid out against the screen. Presses and wheel turns on the sheet stop
+    // here, the same protection Leaflet gives its own popup container, so they
+    // never reach the map under it.
+    var detailPane = map.createPane('detailPane', container);
+    L.DomEvent.disableClickPropagation(detailPane);
+    L.DomEvent.disableScrollPropagation(detailPane);
+    lastNarrow = phoneDetail();
 
     if (hasVectorBasemap()) {
       L.maplibreGL({
@@ -487,6 +523,26 @@ window.PinalertMap = (function () {
     if (!openedWhileHidden) {
       card.focus({ preventScroll: true });
     }
+    if (phoneDetail()) {
+      centerPinInStrip(popup, container);
+    }
+  }
+
+  // centerPinInStrip puts the open report's pin in the middle of the short map
+  // strip that shows above the sheet on a phone. The strip height is read from
+  // where the sheet starts, not assumed. setView stops a running fly, and the
+  // offset then moves the pin from the middle of the whole map to the middle
+  // of the strip. It runs at once, with no animation.
+  function centerPinInStrip(popup, popupEl) {
+    if (!map || !popup) {
+      return;
+    }
+    var strip = popupEl.getBoundingClientRect().top - map.getContainer().getBoundingClientRect().top;
+    if (!(strip > 0)) {
+      return;
+    }
+    map.setView(popup.getLatLng(), Math.max(map.getZoom(), 16), { animate: false });
+    map.panBy([0, Math.round(map.getSize().y / 2 - strip / 2)], { animate: false });
   }
 
   // reportIdForPopup returns the id of the marker that owns this popup, or
@@ -681,9 +737,19 @@ window.PinalertMap = (function () {
   // window resize event and a phone rotation both reach.
   function onMapResize() {
     refreshPanPadding();
+    // A resize that crosses 900px closes the open popup through the existing
+    // close path, which returns focus to the opener, so the next open lands in
+    // the right pane. A resize that does not cross it does nothing new.
+    var narrow = phoneDetail();
+    var crossed = narrow !== lastNarrow;
+    lastNarrow = narrow;
+    if (crossed && activePopup) {
+      map.closePopup();
+    }
     var ids = Object.keys(markers);
     for (var i = 0; i < ids.length; i++) {
       applyPanPadding(markers[ids[i]].getPopup());
+      applyPopupPlacement(markers[ids[i]].getPopup());
     }
     var el = activePopup ? activePopup.getElement() : null;
     if (el && !el.contains(document.activeElement)) {
@@ -711,6 +777,11 @@ window.PinalertMap = (function () {
   // pan back and forth.
   function panPopupIntoView(popup) {
     if (!reducedMotion || !map || !popup || !popup.isOpen()) {
+      return;
+    }
+    // On a phone the detail is a fixed sheet, so there is nothing to pan into
+    // view.
+    if (phoneDetail()) {
       return;
     }
     if (map.dragging && map.dragging.moving()) {
@@ -855,6 +926,7 @@ window.PinalertMap = (function () {
     var card = buildPopupCard(report);
     cards[report.id] = card;
     marker.bindPopup(card.el, { className: popupStateClasses(report), minWidth: 340, maxWidth: 340, keepInView: true, autoPan: !reducedMotion, autoPanPaddingTopLeft: panPad.topLeft, autoPanPaddingBottomRight: panPad.bottomRight });
+    applyPopupPlacement(marker.getPopup());
     marker.on('click', function () {
       Pinalert.select(report.id, 'map');
     });

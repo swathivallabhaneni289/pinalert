@@ -498,3 +498,102 @@ func TestProfileRendersSeverityLabel(t *testing.T) {
 		}
 	}
 }
+
+// --- Quick task 261013-lrw: the phone Activity page ---
+
+// TestProfileRendersTheReporterRecord proves the record card is built from the
+// account's own reporter signal: a fresh account with one report gets the
+// server's New reporter label and its real counts (nothing invented), and the
+// page keeps the back link, the email, the Activity heading and the row with
+// its data attributes.
+func TestProfileRendersTheReporterRecord(t *testing.T) {
+	srv, mailer, _ := newE2EServer(t)
+	client := newVerifiedClient(t, srv, mailer, "activity-record@example.com")
+
+	reportID := submitReportGetID(t, client, srv.URL, floodReportBody(12.9716, 77.5946))
+	body := getProfile(t, client, srv.URL)
+
+	section := regexp.MustCompile(`(?s)<section class="profile-record"[^>]*>(.*?)</section>`).FindStringSubmatch(body)
+	if section == nil {
+		t.Fatalf("/profile has no reporter record card: %s", body)
+	}
+	for _, want := range []string{"Your reporter record", "New reporter", "0 of 0 confirmed"} {
+		if !strings.Contains(section[1], want) {
+			t.Errorf("record card does not contain %q: %s", want, section[1])
+		}
+	}
+	if !strings.Contains(body, `aria-label="Your reporter record"`) {
+		t.Errorf("record card has no accessible name: %s", body)
+	}
+
+	for _, want := range []string{
+		`class="profile-back-link"`, "activity-record@example.com", "<h2>Activity</h2>",
+		`data-report-id="` + strconv.FormatInt(reportID, 10) + `"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/profile lost %q: %s", want, body)
+		}
+	}
+}
+
+// TestProfileWithoutReportsRendersNoRecord proves nothing is invented for an
+// account that has filed nothing: no record card, and the existing empty state
+// still shows.
+func TestProfileWithoutReportsRendersNoRecord(t *testing.T) {
+	srv, mailer, _ := newE2EServer(t)
+	client := newVerifiedClient(t, srv, mailer, "activity-norecord@example.com")
+
+	body := getProfile(t, client, srv.URL)
+	if strings.Contains(body, `class="profile-record"`) || strings.Contains(body, "Your reporter record") {
+		t.Errorf("/profile renders a record card for an account with no reports: %s", body)
+	}
+	if !strings.Contains(body, "No reports yet") {
+		t.Errorf("/profile lost its empty state: %s", body)
+	}
+}
+
+// TestProfileRendersLogoutAndBottomNav proves the phone page frame: a Log out
+// form that posts to the existing logout route from inside the Activity
+// section, and the bottom bar with Activity the current tab.
+func TestProfileRendersLogoutAndBottomNav(t *testing.T) {
+	srv, mailer, _ := newE2EServer(t)
+	client := newVerifiedClient(t, srv, mailer, "activity-frame@example.com")
+
+	submitReportGetID(t, client, srv.URL, floodReportBody(12.9716, 77.5946))
+	body := getProfile(t, client, srv.URL)
+
+	form := regexp.MustCompile(`(?s)<form class="profile-logout" method="post"\s+action="/auth/logout">(.*?)</form>`).FindStringSubmatch(body)
+	if form == nil {
+		t.Fatalf("/profile has no Log out form posting to /auth/logout: %s", body)
+	}
+	if !strings.Contains(form[1], `type="submit"`) || !strings.Contains(form[1], "Log out") {
+		t.Errorf("Log out form has no submit button: %s", form[1])
+	}
+	if n := strings.Count(form[1], "<input"); n != 0 {
+		t.Errorf("Log out form carries %d input fields, want none", n)
+	}
+	activity := strings.Index(body, `class="profile-activity"`)
+	logout := strings.Index(body, `class="profile-logout"`)
+	list := strings.Index(body, `class="profile-report-list"`)
+	if activity < 0 || logout < activity || list < logout {
+		t.Errorf("Log out form is not inside the Activity section before the list (section %d, form %d, list %d)", activity, logout, list)
+	}
+
+	nav := regexp.MustCompile(`(?s)<nav class="bottom-nav"[^>]*>(.*?)</nav>`).FindStringSubmatch(body)
+	if nav == nil {
+		t.Fatalf("/profile has no bottom nav: %s", body)
+	}
+	tabs := regexp.MustCompile(`<a class="bottom-nav__tab"([^>]*)>([^<]*)</a>`).FindAllStringSubmatch(nav[1], -1)
+	if len(tabs) != 2 {
+		t.Fatalf("bottom nav has %d tabs, want 2: %s", len(tabs), nav[1])
+	}
+	if strings.Contains(tabs[0][1], "aria-current") || strings.TrimSpace(tabs[0][2]) != "Feed" || !strings.Contains(tabs[0][1], `href="/"`) {
+		t.Errorf("first tab is %q %q, want a plain Feed link to /", tabs[0][1], tabs[0][2])
+	}
+	if !strings.Contains(tabs[1][1], `aria-current="page"`) || strings.TrimSpace(tabs[1][2]) != "Activity" {
+		t.Errorf("second tab is %q %q, want the current Activity tab", tabs[1][1], tabs[1][2])
+	}
+	if strings.Contains(nav[1], "Past") {
+		t.Errorf("bottom nav names a Past tab")
+	}
+}

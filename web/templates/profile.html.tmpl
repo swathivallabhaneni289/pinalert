@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/static/css/feed.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/trust.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
   <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
 </head>
 <body>
@@ -21,6 +22,18 @@
 
     <section class="profile-activity">
       <h2>Activity</h2>
+
+      <form class="profile-logout" method="post" action="/auth/logout">
+        <button type="submit" class="profile-logout__button">Log out</button>
+      </form>
+
+      {{with .Record}}
+      <section class="profile-record" aria-label="Your reporter record">
+        <p class="profile-record__kicker">Your reporter record</p>
+        <p class="profile-record__label">{{.Label}}</p>
+        <p class="profile-record__counts">{{.Counts}}</p>
+      </section>
+      {{end}}
 
       {{if .Reports}}
       <ol class="profile-report-list">
@@ -51,6 +64,11 @@
       {{end}}
     </section>
   </main>
+
+  <nav class="bottom-nav" aria-label="Main">
+    <a class="bottom-nav__tab" href="/">Feed</a>
+    <a class="bottom-nav__tab" href="/profile" aria-current="page">Activity</a>
+  </nav>
 
   <div id="toast" role="status" aria-live="polite" hidden></div>
 

@@ -1,0 +1,925 @@
+/*
+ * Pinalert phone.css
+ *
+ * Every phone rule lives here, inside one max-width 899.98px block, except
+ * the base rules that hide the phone only elements at 900px and up. The file
+ * loads after every other app stylesheet. It overrides the narrow data-view
+ * rules of main.css instead of editing main.css, so the contract tests that
+ * read main.css still read untouched rules. The departures from the
+ * owner's pictures and from the house rules are written in
+ * .planning/sketches/005-phone-layout/README.md.
+ *
+ * Every phone head carries a container prefix (#report-list, #map, body >,
+ * .app-shell >) so it never equals a head that another contract test looks
+ * up by its exact text in main.css, feed.css, trust.css or auth.css.
+ * Sizes are tokens, never measurements read off the pictures.
+ */
+
+/* Phone only elements. They are built into the markup and shown only below
+   900px, so the layout at 900px and up has nothing new in it. */
+.feed-heading,
+.bottom-nav,
+.report-row__away,
+.profile-logout,
+.profile-record {
+  display: none;
+}
+
+@media (max-width: 899.98px) {
+  /* ---- Page frame: the map on top, the list under it, both always shown ---- */
+
+  /* Two rows: the map takes 40 percent of the height and the list takes the
+     rest. The legacy unit comes first and the dynamic unit second, the same
+     pairing main.css uses, so the page itself never scrolls. */
+  body > .app-shell {
+    height: 100vh;
+    height: 100dvh;
+    grid-template-rows: 40vh minmax(0, 1fr);
+    grid-template-rows: 40dvh minmax(0, 1fr);
+    gap: 0;
+  }
+
+  /* main.css shows one pane at a time below 900px. Both panes show here
+     whatever data-view says, so the switch button is gone. */
+  .app-shell[data-view] .pane--map {
+    display: block;
+  }
+
+  .app-shell[data-view] .pane--list {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--space-md) var(--space-md) calc(var(--touch-target-min) * 2 + var(--space-sm) + var(--space-md) * 2);
+  }
+
+  .pane--map #map {
+    height: 40vh;
+    height: 40dvh;
+  }
+
+  .app-shell > .view-toggle {
+    display: none;
+  }
+
+  /* The account button hides on phones. Activity is a tab in the bottom bar
+     and the email and Log out live on the Activity page. */
+  body > .app-header {
+    display: none;
+  }
+
+  /* The theme toggle moves to the top right corner of the map. The bottom
+     right corner holds only the add button above the bar. */
+  body > .theme-toggle {
+    top: var(--space-md);
+    right: var(--space-md);
+    bottom: auto;
+  }
+
+  .pane--map > .fab {
+    right: var(--space-md);
+    bottom: calc(var(--touch-target-min) + var(--space-sm) + var(--space-md));
+  }
+
+  #toast:not([hidden]) {
+    bottom: calc(var(--touch-target-min) + var(--space-sm) + var(--space-md));
+  }
+
+  /* ---- The heading of the list ---- */
+
+  .pane--list > .feed-heading {
+    display: flex;
+    flex: none;
+    justify-content: space-between;
+    align-items: baseline;
+    column-gap: var(--space-sm);
+    margin-bottom: var(--space-sm);
+  }
+
+  .feed-heading .feed-heading__title {
+    margin: 0;
+    font-size: var(--font-size-heading);
+    line-height: var(--line-height-heading);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+  }
+
+  .feed-heading .feed-heading__count {
+    margin: 0;
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+    font-weight: var(--font-weight-regular);
+    color: var(--color-text-muted);
+  }
+
+  .pane--list #report-list {
+    flex: none;
+    padding-bottom: 0;
+  }
+
+  /* ---- Report rows as rounded cards ---- */
+
+  /* The tint comes from the existing severity token. A provisional or hidden
+     card is white with a hairline, as drawn. The left bar is gone. */
+  #report-list .report-row {
+    display: block;
+    padding: var(--space-md);
+    border: 0;
+    border-radius: 8px;
+  }
+
+  #report-list .report-row.vis-provisional,
+  #report-list .report-row.vis-hidden {
+    padding: calc(var(--space-md) - 1px);
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+  }
+
+  #report-list .report-row > .icon-badge {
+    display: none;
+  }
+
+  #report-list .report-row .report-row__body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: var(--space-sm);
+    row-gap: var(--space-xs);
+  }
+
+  /* The state line gives its children to the body, so the state word and the
+     reporter words join the body's flex order. */
+  #report-list .report-row .report-row__stateline:not([hidden]) {
+    display: contents;
+  }
+
+  /* Line one: the severity label, the state word, the meta line, the
+     distance. Then the title on its own line. Then the trust line and the
+     reporter words. */
+  #report-list .report-row .severity-label:not([hidden]) {
+    order: 1;
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    gap: var(--space-xs);
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--color-text);
+  }
+
+  /* Critical gets the same dot the other two levels already carry. */
+  #report-list .severity-label.severity-label--critical::before {
+    content: "";
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--severity-current);
+  }
+
+  #report-list .report-row .visibility-tag:not([hidden]) {
+    order: 2;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  #report-list .report-row .report-row__meta {
+    order: 3;
+  }
+
+  #report-list .report-row .report-row__away:not([hidden]) {
+    display: block;
+    order: 4;
+    margin: 0;
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+    color: var(--color-text);
+  }
+
+  #report-list .report-row .report-row__title {
+    order: 5;
+    flex: 0 0 100%;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    margin: var(--space-xs) 0 0;
+  }
+
+  #report-list .report-row .trust-block:not([hidden]) {
+    order: 6;
+    flex: 0 1 auto;
+    min-width: 0;
+    margin: 0;
+    border-top: 0;
+  }
+
+  #report-list .report-row .trust-reporter:not([hidden]) {
+    order: 7;
+  }
+
+  /* The dot between the parts of a line. The alternative text is empty, so
+     a screen reader does not read it. The first declaration is the fallback
+     for an engine that does not know the alternative form. */
+  #report-list .report-row .visibility-tag:not([hidden])::before,
+  #report-list .report-row .report-row__meta::before,
+  #report-list .report-row .report-row__away:not([hidden])::before {
+    content: "\00b7";
+    content: "\00b7" / "";
+    margin-right: var(--space-xs);
+  }
+
+  #report-list .report-row .report-row__meta,
+  #report-list .report-row .report-row__title {
+    min-width: 0;
+  }
+
+  /* Voting happens in the detail, as drawn. */
+  #report-list .report-row .vote-controls:not([hidden]),
+  #report-list .report-row .vote-note:not([hidden]),
+  #report-list .report-row .vote-error:not([hidden]) {
+    display: none;
+  }
+
+  /* The trust face reads as one line of text: the counts, the currency word,
+     then the reporter words. The chevron and the clock are not drawn. */
+  #report-list .report-row .trust-block__toggle:not([hidden]) {
+    width: auto;
+    margin-inline: 0;
+    padding: 0;
+    justify-content: flex-start;
+  }
+
+  #report-list .report-row .trust-block__face:not([hidden]) {
+    display: flex;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--space-sm);
+  }
+
+  #report-list .report-row .trust-block__chevron:not([hidden]),
+  #report-list .report-row .trust-icon:not([hidden]) {
+    display: none;
+  }
+
+  #report-list .report-row .trust-block__counts:not([hidden]) {
+    min-height: 0;
+    column-gap: var(--space-sm);
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+  }
+
+  #report-list .report-row .trust-block__count--second::before {
+    content: "\00b7";
+    content: "\00b7" / "";
+    position: static;
+    width: auto;
+    margin-right: var(--space-sm);
+    background-color: transparent;
+  }
+
+  #report-list .report-row .trust-block__signals:not([hidden]) {
+    min-height: 0;
+    column-gap: var(--space-xs);
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+  }
+
+  #report-list .report-row .trust-block__signals:not([hidden])::before {
+    content: "\00b7";
+    content: "\00b7" / "";
+    margin-right: var(--space-sm);
+  }
+
+  #report-list .report-row .trust-reporter:not([hidden]),
+  #report-list .report-row .trust-signal:not([hidden]) {
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+  }
+
+  #report-list .report-row .trust-num {
+    color: inherit;
+  }
+
+  /* White cards: the muted colour clears 4.5 to 1 on the page colour in both
+     themes. A tinted card keeps the normal text colour for the meta line and
+     the distance, because muted fails on every tint. */
+  #report-list .report-row.vis-provisional .report-row__meta,
+  #report-list .report-row.vis-provisional .report-row__away:not([hidden]),
+  #report-list .report-row.vis-hidden .report-row__meta,
+  #report-list .report-row.vis-hidden .report-row__away:not([hidden]) {
+    color: var(--color-text-muted);
+  }
+
+  #report-list .report-row.vis-provisional .trust-block__toggle:not([hidden]),
+  #report-list .report-row.vis-provisional .trust-block__signals:not([hidden]),
+  #report-list .report-row.vis-provisional .trust-reporter:not([hidden]) {
+    color: var(--color-text-muted);
+  }
+
+  /* A current report shows the trust line in the good tone, only where the
+     tone clears 4.5 to 1 on the card colour in both themes: not on the
+     critical tint. */
+  #report-list .report-row:not(.sev-critical):not(.vis-provisional):has(.trust-fact--currency .trust-fact__glyph--good) .trust-block__toggle:not([hidden]),
+  #report-list .report-row:not(.sev-critical):not(.vis-provisional):has(.trust-fact--currency .trust-fact__glyph--good) .trust-block__signals:not([hidden]),
+  #report-list .report-row:not(.sev-critical):not(.vis-provisional):has(.trust-fact--currency .trust-fact__glyph--good) .trust-reporter:not([hidden]) {
+    color: var(--color-tone-good);
+  }
+
+  /* ---- Pins as round dots with a ring ---- */
+
+  /* The marker box stays 44 by 44, so the tap target does not shrink. The
+     badge is a dot centred in it. */
+  #map .icon-badge--pin {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    box-sizing: content-box;
+    width: 20px;
+    height: 20px;
+    border: 3px solid var(--color-bg);
+    transform: translate(-50%, -50%);
+  }
+
+  #map .icon-badge--pin .icon-glyph {
+    display: none;
+  }
+
+  #map .leaflet-marker-icon[data-popup-open="true"] .icon-badge--pin,
+  #map .leaflet-marker-icon.map-pin--highlight .icon-badge--pin {
+    outline: 3px solid var(--color-text);
+    outline-offset: 0;
+  }
+
+  /* ---- The bottom bar ---- */
+
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 1010;
+    min-height: calc(var(--touch-target-min) + var(--space-sm));
+    background: var(--color-bg);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .bottom-nav .bottom-nav__tab {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-xs);
+    min-height: var(--touch-target-min);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+    font-weight: var(--font-weight-regular);
+    text-decoration: none;
+  }
+
+  .bottom-nav .bottom-nav__tab[aria-current="page"] {
+    color: var(--color-text);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .bottom-nav .bottom-nav__tab[aria-current="page"]::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: currentColor;
+  }
+
+  /* ---- The Activity page ----
+     The page background stays the page colour, because the picture's grey
+     page would put the muted email and the grey Log out under 4.5 to 1. The
+     white cards get the border token hairline instead and still read as
+     white rounded cards. Everything the laptop page has stays: the email,
+     the rows with their severity word, state word, both counters, trust
+     panel and Reopen. */
+
+  main.profile-page {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "title logout"
+      "email email"
+      "record record"
+      "list list";
+    align-items: center;
+    padding: var(--space-md) var(--space-md) calc(var(--touch-target-min) + var(--space-sm) + var(--space-md));
+  }
+
+  /* The bottom bar replaces the back link. The markup stays for its test. */
+  main.profile-page > .profile-back-link {
+    display: none;
+  }
+
+  main.profile-page > .profile-activity {
+    display: contents;
+  }
+
+  main.profile-page .profile-activity > h2 {
+    grid-area: title;
+    margin: 0;
+    min-height: var(--touch-target-min);
+    display: flex;
+    align-items: center;
+  }
+
+  main.profile-page > .profile-email {
+    grid-area: email;
+    margin: 0 0 var(--space-md);
+  }
+
+  /* The theme toggle stays fixed at the top right, so Log out keeps a right
+     margin of the touch target plus the small space. */
+  main.profile-page .profile-logout {
+    display: block;
+    grid-area: logout;
+    margin: 0 calc(var(--touch-target-min) + var(--space-sm)) 0 0;
+  }
+
+  main.profile-page .profile-logout .profile-logout__button {
+    min-height: var(--touch-target-min);
+    padding: 0 var(--space-sm);
+    border: 0;
+    background: transparent;
+    color: var(--color-text-muted);
+    font-family: var(--font-family);
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+    font-weight: var(--font-weight-regular);
+    cursor: pointer;
+  }
+
+  main.profile-page .profile-logout .profile-logout__button:hover {
+    color: var(--color-text);
+  }
+
+  main.profile-page .profile-record {
+    display: grid;
+    grid-area: record;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--space-md);
+    align-items: center;
+    margin: 0 0 var(--space-md);
+    padding: var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-bg);
+  }
+
+  main.profile-page .profile-record .profile-record__kicker {
+    grid-column: 1;
+    margin: 0;
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+    font-weight: var(--font-weight-regular);
+    color: var(--color-text-muted);
+  }
+
+  main.profile-page .profile-record .profile-record__label {
+    grid-column: 1;
+    margin: 0;
+    font-size: var(--font-size-heading);
+    line-height: var(--line-height-heading);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+  }
+
+  main.profile-page .profile-record .profile-record__counts {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    margin: 0;
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+    font-weight: var(--font-weight-regular);
+    color: var(--color-text);
+  }
+
+  main.profile-page > .profile-activity > .profile-report-list,
+  main.profile-page > .profile-activity > .profile-empty-state {
+    grid-area: list;
+  }
+
+  /* White cards with the hairline, 8px corners, no left bar, for every state
+     (picture B draws white cards). The category badge is not drawn. */
+  main.profile-page .profile-report-list .report-row {
+    display: block;
+    padding: var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-bg);
+  }
+
+  main.profile-page .profile-report-list .report-row > .icon-badge {
+    display: none;
+  }
+
+  main.profile-page .profile-report-list .report-row .report-row__body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: var(--space-sm);
+    row-gap: var(--space-xs);
+  }
+
+  main.profile-page .profile-report-list .report-row .report-row__stateline:not([hidden]) {
+    display: contents;
+  }
+
+  /* Line one: the severity dot and bold word on the left, the state word on
+     the right. Live shows no word: the app gives Live no word by contract, so
+     the picture's green Active is not drawn. */
+  main.profile-page .profile-report-list .report-row .severity-label:not([hidden]) {
+    order: 1;
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    gap: var(--space-xs);
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--color-text);
+  }
+
+  .profile-report-list .severity-label.severity-label--critical::before {
+    content: "";
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--severity-current);
+  }
+
+  main.profile-page .profile-report-list .report-row .visibility-tag:not([hidden]) {
+    order: 2;
+    min-height: 0;
+    margin: 0 0 0 auto;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--color-text-muted);
+  }
+
+  /* Unconfirmed reads amber and Disputed red, as the picture colours Waiting.
+     Resolved and Expired stay muted. All four clear 4.5 to 1 on the page
+     colour in both themes (amber 5.24 light, 9.33 dark; red 5.44 light, 6.03
+     dark; muted 4.83 light, 7.66 dark). */
+  main.profile-page .profile-report-list .report-row.vis-provisional .visibility-tag:not([hidden]) {
+    color: var(--color-tone-caution);
+  }
+
+  main.profile-page .profile-report-list .report-row.vis-hidden .visibility-tag:not([hidden]) {
+    color: var(--color-tone-bad);
+  }
+
+  main.profile-page .profile-report-list .report-row .report-row__title {
+    order: 3;
+    flex: 0 0 100%;
+    margin: var(--space-xs) 0 0;
+  }
+
+  /* One muted line: both counters and the currency word, then the meta line.
+     The reporter words are hidden because the record card above shows the
+     same server label once. The chevron and the clock are not drawn, and the
+     toggle still opens the panel in place. */
+  main.profile-page .profile-report-list .report-row .trust-block:not([hidden]) {
+    order: 4;
+    flex: 0 1 auto;
+    min-width: 0;
+    margin: 0;
+    border-top: 0;
+  }
+
+  main.profile-page .profile-report-list .report-row .trust-block__toggle:not([hidden]) {
+    width: auto;
+    margin-inline: 0;
+    padding: 0;
+    justify-content: flex-start;
+    color: var(--color-text-muted);
+  }
+
+  main.profile-page .profile-report-list .report-row .trust-block__face:not([hidden]) {
+    display: flex;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--space-sm);
+  }
+
+  main.profile-page .profile-report-list .report-row .trust-block__chevron:not([hidden]),
+  main.profile-page .profile-report-list .report-row .trust-icon:not([hidden]),
+  main.profile-page .profile-report-list .report-row .trust-reporter:not([hidden]) {
+    display: none;
+  }
+
+  main.profile-page .profile-report-list .report-row .trust-block__counts:not([hidden]) {
+    min-height: 0;
+    column-gap: var(--space-sm);
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+  }
+
+  main.profile-page .profile-report-list .report-row .trust-block__count--second::before {
+    content: "\00b7";
+    content: "\00b7" / "";
+    position: static;
+    width: auto;
+    margin-right: var(--space-sm);
+    background-color: transparent;
+  }
+
+  main.profile-page .profile-report-list .report-row .trust-block__signals:not([hidden]) {
+    min-height: 0;
+    column-gap: var(--space-xs);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+  }
+
+  main.profile-page .profile-report-list .report-row .trust-block__signals:not([hidden])::before {
+    content: "\00b7";
+    content: "\00b7" / "";
+    margin-right: var(--space-sm);
+  }
+
+  main.profile-page .profile-report-list .report-row .trust-signal:not([hidden]) {
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+  }
+
+  main.profile-page .profile-report-list .report-row .trust-num {
+    color: inherit;
+  }
+
+  main.profile-page .profile-report-list .report-row .report-row__meta {
+    order: 5;
+    margin: 0;
+    color: var(--color-text-muted);
+  }
+
+  /* Reopen keeps its existing control and error under the line. */
+  main.profile-page .profile-report-list .report-row .vote-controls:not([hidden]) {
+    order: 6;
+    flex: 0 0 100%;
+  }
+
+  main.profile-page .profile-report-list .report-row .vote-error:not([hidden]) {
+    order: 7;
+    flex: 0 0 100%;
+  }
+
+  /* ---- The report detail: a full screen sheet under a short map strip ----
+     map.js opens the popup in the detail pane, a child of the map container
+     that sits outside the map pane's transform, so a fixed position popup
+     inside it is laid out against the screen. Nothing in the card's markup,
+     focus handling or Escape handling changes. Every head starts with
+     .leaflet-container .leaflet-detail-pane, so it never equals a trust.css
+     head. The strip is three times the 64px token, 192px. */
+
+  .leaflet-container .leaflet-detail-pane {
+    z-index: 1080;
+  }
+
+  .leaflet-container .leaflet-detail-pane .leaflet-popup {
+    position: fixed;
+    top: calc(var(--space-3xl) * 3);
+    right: 0;
+    margin: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+  }
+
+  /* Leaflet writes bottom, left and the transform as inline styles on every
+     update, zoom and view reset, so these three need the important flag to
+     keep the sheet full width and glued to the bottom. */
+  .leaflet-container .leaflet-detail-pane .leaflet-popup {
+    left: 0 !important;
+    bottom: 0 !important;
+    transform: none !important;
+  }
+
+  /* The 200ms fade after a close keeps the old popup attached. It must not
+     take a press meant for the page under it. */
+  .leaflet-container .leaflet-detail-pane .leaflet-popup:not([data-popup-open="true"]) {
+    pointer-events: none;
+  }
+
+  /* The wrapper fills the sheet and keeps the severity tint the popup
+     container carries (a Low report reads as a very light green page). */
+  .leaflet-container .leaflet-detail-pane .leaflet-popup-content-wrapper {
+    min-height: 100%;
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--severity-tint, var(--color-bg));
+  }
+
+  .leaflet-container .leaflet-detail-pane .leaflet-popup-tip-container {
+    display: none;
+  }
+
+  /* Leaflet writes the content width inline (341px here), so the width needs
+     the important flag too. */
+  .leaflet-container .leaflet-detail-pane .leaflet-popup-content {
+    width: auto !important;
+  }
+
+  .leaflet-container .leaflet-detail-pane .leaflet-popup-content {
+    margin: 0 var(--space-md) var(--space-lg);
+    max-width: none;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .leaflet-container .leaflet-detail-pane .popup-card:not([hidden]) {
+    border-left: 0;
+    background: transparent;
+  }
+
+  .leaflet-container .leaflet-detail-pane .popup-card__body {
+    padding: var(--space-md) 0 0;
+  }
+
+  /* The picture shows the severity pill alone and a plain meta line, so the
+     category badge and the meta glyph are not drawn. */
+  .leaflet-container .leaflet-detail-pane .popup-card__pills > .icon-badge,
+  .leaflet-container .leaflet-detail-pane .popup-card__meta > .icon-glyph {
+    display: none;
+  }
+
+  .leaflet-container .leaflet-detail-pane .popup-card__pills:not([hidden]) {
+    padding-right: 0;
+  }
+
+  /* The pill is an outlined dot and word: the page colour inside and the
+     current severity colour as the outline, so it reads on a tinted sheet. */
+  .leaflet-container .leaflet-detail-pane .severity-label:not([hidden]) {
+    background: var(--color-bg);
+    border-color: var(--severity-current);
+  }
+
+  .leaflet-container .leaflet-detail-pane .severity-label.severity-label--critical::before {
+    content: "";
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--severity-current);
+  }
+
+  .leaflet-container .leaflet-detail-pane .popup-card .popup-card__title:not([hidden]) {
+    display: block;
+    overflow: visible;
+    font-size: var(--font-size-display);
+    line-height: var(--line-height-display);
+  }
+
+  /* Meta line and fade line: the normal text colour, because the sheet is
+     tinted and muted fails 4.5 to 1 on every tint in the light theme. The
+     trust card keeps its white surface, so its own muted lines stay muted. */
+  .leaflet-container .leaflet-detail-pane .popup-card .popup-card__meta-line,
+  .leaflet-container .leaflet-detail-pane .popup-card .popup-card__fade:not([hidden]) {
+    color: var(--color-text);
+  }
+
+  /* ---- The vote block: Confirm and Dispute side by side ---- */
+
+  .leaflet-container .leaflet-detail-pane .popup-card__actions {
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .leaflet-container .leaflet-detail-pane .popup-card__actions .vote-controls:not([hidden]) {
+    gap: var(--space-md);
+  }
+
+  /* The button icons are not drawn at rest. A pressed button shows its own
+     mark, so a Confirm that is pressed still reads differently from one that
+     is not, although both are the filled look. */
+  .leaflet-container .leaflet-detail-pane .vote-btn__icon:not([hidden]) {
+    display: none;
+  }
+
+  .leaflet-container .leaflet-detail-pane .vote-btn[aria-pressed="true"] .vote-btn__icon:not([hidden]) {
+    display: block;
+  }
+
+  /* A pressed button keeps trust.css's filled look and adds its mark and an
+     inset ring in the page colour, so a pressed Confirm differs from the
+     filled Confirm at rest in both themes. */
+  .leaflet-container .leaflet-detail-pane .vote-btn[aria-pressed="true"]:not([hidden]) {
+    box-shadow: inset 0 0 0 2px var(--color-bg);
+  }
+
+  /* Confirm at rest is the filled look. Disabled, busy and too far Confirm
+     keep trust.css's outlined muted look, because this head excludes them. */
+  .leaflet-container .leaflet-detail-pane .vote-btn--confirm:not([hidden]):not([aria-pressed="true"]):not([aria-disabled="true"]):not(:disabled) {
+    background: var(--color-text);
+    color: var(--color-bg);
+    border-color: var(--color-text);
+  }
+
+  .leaflet-container .leaflet-detail-pane .vote-btn--confirm:not([hidden]):not([aria-pressed="true"]):not([aria-disabled="true"]):not(:disabled):hover,
+  .leaflet-container .leaflet-detail-pane .vote-btn--confirm:not([hidden]):not([aria-pressed="true"]):not([aria-disabled="true"]):not(:disabled):active {
+    background: color-mix(in srgb, var(--color-text) 85%, var(--color-bg) 15%);
+    color: var(--color-bg);
+    border-color: var(--color-text);
+  }
+
+  /* Dispute at rest stays the page colour with the hairline, so it reads as
+     the second choice next to the filled Confirm. */
+  .leaflet-container .leaflet-detail-pane .vote-btn--dispute:not([hidden]):not([aria-pressed="true"]):not([aria-disabled="true"]):not(:disabled) {
+    background: var(--color-bg);
+    color: var(--color-text);
+    border-color: var(--color-border);
+  }
+
+  /* Mark resolved spans both columns as a centred text link. The good tone is
+     used where it clears 4.5 to 1 on the sheet tint in both themes: Low,
+     Medium and the provisional surface. A Critical sheet keeps the normal
+     text colour (4.35 to 1 light). It is still a 44px tall button for touch. */
+  .leaflet-container .leaflet-detail-pane .vote-btn--resolve:not([hidden]):not([aria-disabled="true"]):not(:disabled) {
+    background: transparent;
+    border-color: transparent;
+    color: var(--color-tone-good);
+    text-decoration: underline;
+  }
+
+  .leaflet-container .leaflet-detail-pane .leaflet-popup.sev-critical .vote-btn--resolve:not([hidden]):not([aria-disabled="true"]):not(:disabled) {
+    color: var(--color-text);
+  }
+
+  .leaflet-container .leaflet-detail-pane .vote-btn--resolve:not([hidden]):not([aria-disabled="true"]):not(:disabled):hover,
+  .leaflet-container .leaflet-detail-pane .vote-btn--resolve:not([hidden]):not([aria-disabled="true"]):not(:disabled):active {
+    background: transparent;
+    border-color: currentColor;
+  }
+
+  .leaflet-container .leaflet-detail-pane .popup-card .vote-note:not([hidden]) {
+    text-align: center;
+  }
+
+  .leaflet-container .leaflet-detail-pane .popup-card .vote-error:not([hidden]) {
+    justify-content: center;
+    text-align: center;
+  }
+
+  /* ---- The close anchor becomes the round back arrow on the strip ----
+     Leaflet's accessible name Close popup stays on the anchor. The head adds
+     the sheet's own class, so it outranks trust.css's (0,4,1) close rule. */
+
+  .leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden]) {
+    position: fixed;
+    top: var(--space-md);
+    right: auto;
+    left: var(--space-md);
+    border-radius: 50%;
+    background: var(--color-bg);
+    color: var(--color-text);
+    box-shadow: var(--shadow-popup);
+  }
+
+  .leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden])::before {
+    -webkit-mask-image: url("/static/icons/arrow-left.svg");
+    mask-image: url("/static/icons/arrow-left.svg");
+  }
+
+  .leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden]):hover,
+  .leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden]):focus-visible {
+    background: var(--color-surface);
+  }
+
+  .leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden]):active {
+    background: var(--color-border);
+  }
+
+  /* While the sheet is open the strip shows only the map, the pin and the
+     back arrow, so the zoom control and the theme toggle step aside. */
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) .leaflet-control-zoom,
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) > .theme-toggle {
+    display: none;
+  }
+}
+
+/* A landscape phone has little height, so the strip shrinks to one token. */
+@media (max-width: 899.98px) and (max-height: 359px) {
+  .leaflet-container .leaflet-detail-pane .leaflet-popup {
+    top: var(--space-3xl);
+  }
+}

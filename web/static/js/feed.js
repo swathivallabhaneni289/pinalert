@@ -43,6 +43,13 @@
   var viewToggleBtn = document.getElementById('view-toggle');
   var appShellEl = document.getElementById('app-shell');
   var showDisputedToggleEl = document.getElementById('show-disputed-toggle');
+  var feedCountEl = document.getElementById('feed-count');
+
+  // PHONE_QUERY is the same 899.98px complement of the 900px query that
+  // main.css, trust.css and phone.css use. Below it the list is its own scroll
+  // box under a fixed height map (phone.css), so moving the list never moves
+  // the map.
+  var PHONE_QUERY = '(max-width: 899.98px)';
 
   // rowsById reconciles rendered <li> nodes by report id across polls,
   // rather than clearing and rebuilding the list every 30 seconds, so
@@ -150,6 +157,13 @@
     var meta = document.createElement('p');
     meta.className = 'report-row__meta';
 
+    // The distance line, drawn on phones only (phone.css hides it at 900px
+    // and up). It is filled by updateRow and stays hidden when the feed is
+    // not around the reader's own position (A94).
+    var away = document.createElement('p');
+    away.className = 'report-row__away';
+    away.hidden = true;
+
     // A26, A45: the visible severity word is the first text in the row body,
     // read before the title. The shipped row had no severity word, so nothing
     // is removed.
@@ -157,6 +171,7 @@
     body.appendChild(severityLabel);
     body.appendChild(title);
     body.appendChild(meta);
+    body.appendChild(away);
 
     // The state label is built here and placed, with the reporter words, on
     // the state line under the meta line (A75, A81). The tag ships hidden from
@@ -190,7 +205,7 @@
       }
     });
 
-    return { el: li, glyph: glyph, severity: severityLabel, title: title, meta: meta, votes: block, tag: tag, trust: trust };
+    return { el: li, glyph: glyph, severity: severityLabel, title: title, meta: meta, away: away, votes: block, tag: tag, trust: trust };
   }
 
   // updateRow applies severity/age classes and text content only — it never
@@ -221,6 +236,12 @@
 
     Pinalert.setText(row.title, report.description);
     Pinalert.setText(row.meta, buildMetaText(report));
+
+    // The distance is the reader's own only when the feed is around the
+    // reader's position, the same rule the popup follows (A94).
+    var away = Pinalert.feedIsAroundReader() ? Pinalert.formatDistance(report.distance_km) : '';
+    Pinalert.setText(row.away, away);
+    row.away.hidden = !away;
 
     PinalertVisibility.updateVisibilityTag(row.tag, report);
     PinalertTrust.updateTrustBlock(row.trust, report.trust);
@@ -399,10 +420,42 @@
     }
   }
 
+  // formatRadius writes the feed radius as a whole number when it is whole and
+  // with one decimal otherwise. The number is the one the page carries, never
+  // a fixed one (no invented figures).
+  function formatRadius(km) {
+    if (typeof km !== 'number' || !isFinite(km)) {
+      return '';
+    }
+    return Math.round(km) === km ? String(km) : km.toFixed(1);
+  }
+
+  // updateFeedCount writes the count line under the list heading, for
+  // example "5 active \u00b7 10 km". The number is the count of rendered
+  // reports and the radius is the one the feed was asked for. It is empty
+  // while the feed is loading and on an error with no rows to count. It goes
+  // through Pinalert.setText, a text node assignment (T-01-03).
+  function updateFeedCount(state) {
+    if (!feedCountEl) {
+      return;
+    }
+    var text = '';
+    var counted = state.status === 'error' ? state.reports.length > 0
+      : state.status !== 'idle' && state.status !== 'loading';
+    var radius = formatRadius(Pinalert.config.defaultRadiusKm);
+    if (counted && radius !== '') {
+      var word = Pinalert.state.showDisputed ? 'disputed' : 'active';
+      text = state.reports.length + ' ' + word + ' \u00b7 ' + radius + ' km';
+    }
+    Pinalert.setText(feedCountEl, text);
+  }
+
   // render is the single state machine driving the list, the skeleton, the
   // empty state, and the error state — driven entirely by state.status, so
   // there is exactly one place that decides which of the four is showing.
   function render(state) {
+    updateFeedCount(state);
+
     if (state.status === 'idle' || state.status === 'loading') {
       setHidden(skeletonEl, false);
       setHidden(reportListEl, true);
@@ -505,6 +558,32 @@
         el.classList.remove('report-row--selected');
       }
     }
+  }
+
+  // revealRowInListPane brings the row of a pin the reader just picked into the
+  // list pane's own box, on a phone only. Below 900px the list is a scroll box
+  // under a fixed height map (phone.css), so moving the list never moves the
+  // map, which was the reason A87 gave for leaving the list alone. It sets the
+  // PANE's scroll position and nothing else: the page is never scrolled, and
+  // applySelectionHighlight above stays free of any scroll.
+  function revealRowInListPane(id) {
+    if (!window.matchMedia || !window.matchMedia(PHONE_QUERY).matches) {
+      return;
+    }
+    var row = rowsById[String(id)];
+    var pane = reportListEl ? reportListEl.closest('.pane--list') : null;
+    if (!row || !pane || pane.scrollHeight <= pane.clientHeight) {
+      return;
+    }
+    var gap = parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue('--space-sm'));
+    if (isNaN(gap)) {
+      gap = 0;
+    }
+    var paneBox = pane.getBoundingClientRect();
+    var rowBox = row.el.getBoundingClientRect();
+    var top = rowBox.top - paneBox.top + pane.scrollTop - gap;
+    var calm = !!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    pane.scrollTo({ top: Math.max(0, top), behavior: calm ? 'auto' : 'smooth' });
   }
 
   // createToggleIcon builds a minimal inline glyph for the view-toggle
@@ -714,6 +793,7 @@
     // not highlighted a second time.
     if (source === 'map') {
       applySelectionHighlight(id);
+      revealRowInListPane(id);
     }
   });
 
