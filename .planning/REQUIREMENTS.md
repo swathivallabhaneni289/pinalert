@@ -69,13 +69,13 @@ Requirements for initial release. Each maps to roadmap phases.
       second independent confirmation arrives; critical/rescue-needed reports publish at full
       visibility immediately, with no gate
 
-- [ ] **TRUST-05**: The feed displays "confirmed by N nearby" computed from the count of distinct
+- [x] **TRUST-05**: The feed displays "confirmed by N nearby" computed from the count of distinct
       confirming geohash cells/sessions, not the raw number of votes
 
 - [x] **TRUST-06**: A report's severity is used for triage sort order only, and cannot by itself
       bypass the provisional visibility gate (TRUST-04)
 
-- [ ] **TRUST-07**: A report displays two distinct trust signals — a fast-decaying "is this still
+- [x] **TRUST-07**: A report displays two distinct trust signals — a fast-decaying "is this still
       current" confidence score and a slow-decaying "is this source reliable" score
 
 - [x] **TRUST-08**: User (reporter or a nearby confirmer) can mark a report resolved, removing it
@@ -372,8 +372,8 @@ Populated during roadmap creation.
 | TRUST-08 | Phase 2 | Complete |
 | TRUST-09 | Phase 2 | Complete |
 | UX-01 | Phase 2 | Complete (gap-closure plan 02-10) |
-| TRUST-05 | Phase 3 | Pending |
-| TRUST-07 | Phase 3 | Pending |
+| TRUST-05 | Phase 3 | Complete |
+| TRUST-07 | Phase 3 | Complete |
 | HIST-01 | Phase 3.1 | Pending |
 | HIST-02 | Phase 3.1 | Pending |
 | HIST-03 | Phase 3.1 | Pending |
@@ -427,7 +427,7 @@ Populated during roadmap creation.
 
 ---
 *Requirements defined: 2026-09-05*
-*Last updated: 2026-10-06: added ROBUST-09 and ROBUST-10 for the Phase 4 scope the owner added in discussion (the moderator screen with the Flag control, and the public Disclaimer and Policy pages) and reworded ROBUST-01, ROBUST-03 and ROBUST-04 to match. Earlier update, 2026-10-03: added HIST-01..06, ALERT-01..04, NOTIF-01..05, PAGE-01..02 and PROF-01..03
+*Last updated: 2026-10-13: TRUST-05 and TRUST-07 marked complete when Phase 3 closed (UAT 11 of 11, verification passed). Earlier update, 2026-10-06: added ROBUST-09 and ROBUST-10 for the Phase 4 scope the owner added in discussion (the moderator screen with the Flag control, and the public Disclaimer and Policy pages) and reworded ROBUST-01, ROBUST-03 and ROBUST-04 to match. Earlier update, 2026-10-03: added HIST-01..06, ALERT-01..04, NOTIF-01..05, PAGE-01..02 and PROF-01..03
 for roadmap Phases 3.1, 3.2, 5, 8 and 9 (raised by the owner after the Phase 3 popup sketch), plus
 v2 items PWA-06, PWA-07 and HIST-07. Earlier update, 2026-09-18: added UX-01 (in-app light/dark toggle) surfaced by Phase 2's UAT gap
 closure round, linked to plan 02-10; added IDENT-01..05 for Phase 1.1 (mandatory email+OTP login,

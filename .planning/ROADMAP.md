@@ -37,7 +37,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Foundation — Report & Map** - Anonymous visitors can submit and view location-tagged reports on a live map, with read-time auto-expiry, OpenAPI docs, and CI in place. (original 10 plans completed 2026-09-06; reopened for the vector basemap migration, plans 01-11/01-12; gap-closure round 2 (01-13) fixed the solid-black-icon defect; gap-closure round 3 (01-14) landed 2026-09-09 — raised glyph ink coverage and fixed badge contrast across all 18 severity/age/theme pairings; gap-closure round 4 (01-15) landed 2026-09-09 — live-tested fix for dark-mode category-tile glyph color, the actual root cause 01-14's stroke-width diagnosis missed, plus two caching-bug fixes; see `01-UAT.md`) (all 15 plans complete; UAT passed 10/10 with 0 open issues; verification passed including MVP-mode User Flow Coverage, security SECURED with 0 open threats, Nyquist validation compliant) (completed 2026-09-10) — **note:** this phase's anonymous/no-signup access model (FOUND-01) was superseded 2026-09-10 by Phase 1.1's mandatory login decision; the shipped code is unaffected, but the product's access model changes starting Phase 1.1
 - [x] **Phase 1.1: Identity & Login — Mandatory Email Verification** *(INSERTED 2026-09-10 — urgent insertion, decided during Phase 2 discussion)* - A visitor must verify an email address via a magic link before they can submit a report or cast a confirm/dispute vote; supersedes Phase 1's anonymous-access model. (completed 2026-09-12)
 - [x] **Phase 2: Trust Mechanic Core — Confirm/Dispute & Visibility** - Users can confirm/dispute reports through one shared, concurrency-safe visibility resolver with a provisional gate and resolved marking. (original 8 plans completed 2026-09-15; **reopened 2026-09-17** for gap-closure round 1 — a human UAT walkthrough found 6 gaps, 3 major and 3 minor, all diagnosed in `02-UAT.md`: the inline resolve confirmation never replaced the button row, its prompt was illegible in the map popup, a Safari Back navigation showed a stale feed after Reopen, the Activity page had no way back to the map, plus two user-requested scope changes — a persisting "Show disputed" filter and an in-app light/dark toggle. Plans 02-08, 02-09 and 02-10, all wave 8, mutually parallel, executed and merged 2026-09-18; gap-closure round 2, plans 02-11 to 02-14, wave 9, merged 2026-09-23) **All 15 plans complete. The live UAT passed 12 of 12 on 2026-10-06 and the verification report was re-run and returned `passed` (21 of 21, with eight accepted limitations written down in `02-VERIFICATION.md`).** The security review (`/gsd-secure-phase 2`) closed on 2026-10-07 with `threats_open: 0` against the plan-time register (`02-SECURITY.md`). The code review's CR-01 (no vote throttle, voter location cannot be proven) sits outside that register, is not accepted, and stays open, tracked in Phase 4 (ROBUST-04) and Phase 3 (TRUST-05, TRUST-07). (completed 2026-10-07)
-- [ ] **Phase 3: Trust-Model Hardening — Diversity-Weighted Trust** - "Confirmed by N nearby" and the reliability/currency signals reflect distinct nearby corroboration, resistant to trivial gaming.
+- [x] **Phase 3: Trust-Model Hardening — Diversity-Weighted Trust** - "Confirmed by N nearby" and the reliability/currency signals reflect distinct nearby corroboration, resistant to trivial gaming. (31 plans, completed 2026-10-13)
 - [ ] **Phase 3.1: Report history views** *(INSERTED 2026-10-03)* - A reader can switch the list and map between Active, Resolved, Disputed and Past reports, search another area, and filter by category and severity.
 - [ ] **Phase 3.2: In-app updates and trusted-reporter alerts** *(INSERTED 2026-10-03)* - A signed-in person is told inside the app when a report they care about changes, and can ask to hear when a Reliable reporter posts nearby.
 - [ ] **Phase 4: Robustness — Real-World Resilience** - The app stays usable on degraded networks, under abuse/moderation pressure, and with clear legal footing.
@@ -255,7 +255,7 @@ Plans:
   1. The feed displays "confirmed by N nearby" computed from the count of distinct confirming geohash cells/sessions — using a deliberately chosen, documented geohash precision — not the raw number of votes cast.
   2. A report displays two distinct trust signals side by side: a fast-decaying "is this still current" confidence score and a slow-decaying "is this source reliable" score.
 
-**Plans**: 29/29 plans executed (verification and the owner's final checks pending)
+**Plans**: 31/31 plans executed (verified 9 of 9, the owner's hands-on checks 11 of 11, completed 2026-10-13)
 **UI hint**: yes
 
 Plans:
@@ -341,6 +341,14 @@ Plans:
 **Wave 18** *(gap closure)*
 
 - [x] 03-29-PLAN.md: The time based still current labels say what they describe (Report up to date, Report getting old, Report needs re-confirming), and every test, document, swagger example and Phase 4 text that quotes the old words follows (gap closure, wave 18)
+
+**Wave 19** *(gap closure)*
+
+- [x] 03-30-PLAN.md: The panel sentences say people at different spots and never places, shorter, with no caveat, and every line that was filled stays filled (gap closure, wave 19)
+
+**Wave 20** *(gap closure)*
+
+- [x] 03-31-PLAN.md: The owner's chosen tick mark card: a facts list on the trust object, an always open card on the map popup and the same tick rows in the feed and Activity row panels, with the distance for the reader's own position and a fade line (gap closure, wave 20)
 
 ### Phase 03.1: Report history views (INSERTED)
 
@@ -469,7 +477,7 @@ Phases execute in numeric order: 1 → 1.1 → 2 → 3 → 3.1 → 3.2 → 4 →
 | 1. Foundation — Report & Map | 15/15 | Complete    | 2026-09-10 |
 | 1.1 Identity & Login — Mandatory Email Verification | 8/8 | Complete   | 2026-09-12 |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 15/15 | Complete | 2026-10-07 |
-| 3. Trust-Model Hardening — Diversity-Weighted Trust | 29/29 | In Progress|  |
+| 3. Trust-Model Hardening — Diversity-Weighted Trust | 31/31 | Complete | 2026-10-13 |
 | 3.1 Report history views | 0/TBD | Not started | - |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
