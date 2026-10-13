@@ -3,16 +3,16 @@ status: testing
 phase: 03-trust-model-hardening-diversity-weighted-trust
 source: [03-VERIFICATION.md]
 started: 2026-10-07T20:33:33.016Z
-updated: 2026-10-13T10:19:00.000Z
+updated: 2026-10-13T15:57:00.000Z
 ---
 
 ## Current Test
 
-number: 3
-name: Escape by surface ownership (step 7, plan 03-19)
+number: 11
+name: Owner housekeeping (step 20 and reminders)
 expected: |
-  One Escape closes the popup and puts focus back on its pin. A row panel closes on its own Escape and focuses its toggle. (Since plan 03-31 the popup has no trust panel, so it has one Escape level.)
-awaiting: the owner's yes to accept the scripted proof for tests 3 and 7 (both engines), then test 11 (migration 00005 on the dev database, then drop p3_uat). Test 10 passed on 2026-10-13.
+  Index idx_reports_session_expires exists on the dev database.
+awaiting: the owner's go ahead to run migration 00005 on the dev database (it only adds one index), then drop p3_uat. Tests 3 and 7 were accepted on the scripted evidence on 2026-10-13.
 
 ## Tests
 
@@ -36,7 +36,8 @@ detail: Escape by surface ownership (step 7, plan 03-19). Walk each focus positi
 expected: First Escape closes the panel and focuses the toggle, the second closes the popup. Popup panel closes before a row panel when focus is in the popup.
 why_human: Focus order across two surfaces is runtime browser behavior.
 note: Scripted browser run 2026-10-10 (same run as test 2). Chromium 9 PASS, 0 FAIL, 0 NEEDS A PERSON. WebKit 9 PASS, 0 FAIL, 0 NEEDS A PERSON. Proven in both engines: with the popup panel open, focus on Confirm, on the popup card, on the popup close button or on the pin each give the same result, where the first Escape closes the panel and focuses its toggle and the second closes the popup (T3.1). With a row panel open, focus on Confirm or on the row itself, Escape closes the row panel and focuses its toggle (T3.2). With a popup panel and a row panel open at once and focus in the popup, Escape closes the popup panel first, the next Escape closes the popup and leaves the row panel open, and with focus back on the row Escape closes the row panel (T3.3 to T3.5). No human only part is left in this test beyond the owner accepting the scripted evidence. Re-run on 2026-10-10 after the trust block redesign and the label subject (plans 03-21 to 03-24, 03-27, 03-28 and 03-29, each gated on a fresh scratch database, the last gate 384 PASS, 0 FAIL, 0 SKIP) on the final build (head 8210287), tests 2 to 11 in one run: 442 PASS, 0 FAIL, 20 NEEDS A PERSON, 42 NOTE. Chromium 9 PASS, 0 FAIL, 0 NEEDS A PERSON and WebKit 9 PASS, 0 FAIL, 0 NEEDS A PERSON, unchanged. RE-RUN 2026-10-13 on merged main 8b9c802. Plan 03-31 changed the popup (A91, A92): it has no trust panel any more, so it has one Escape level, and checks 3.1, 3.3 and 3.4 were rewritten on purpose. Chromium 9 PASS, 0 FAIL, 0 NEEDS A PERSON and WebKit 9 PASS, 0 FAIL, 0 NEEDS A PERSON. Proven in both engines: with the popup open and focus on Confirm, on the popup card, on its close button or on its pin, one Escape closes the popup and focus is back on its pin, and a second Escape does nothing (T3.1); with a row panel open and focus on Confirm or on the row, Escape closes the row panel and focuses its toggle (T3.2); with a popup and a row panel open at once and focus in the popup, one Escape closes the popup and leaves the row panel open (T3.3), the next Escape with focus on the pin closes nothing (T3.4), and with focus back on the row Escape closes the row panel (T3.5). The expected line above describes the older popup panel and is superseded by this note.
-result: [pending]
+owner_check: Final session, afternoon of 2026-10-13. The owner was told what the script proved (one Escape closes the popup, a row panel closes on its own Escape, both engines, 9 PASS each, 0 FAIL, 0 NEEDS A PERSON) and was asked to accept it: 'yes'. RECORDED AS: the owner accepted the scripted evidence. The focus order was not walked by hand in Safari.
+result: pass
 
 ### 4. Too far hint and refusal (steps 8 and 9, plans 03-04 and 03-18)
 detail: Too far hint and refusal (steps 8 and 9, plans 03-04 and 03-18). Vote from 2 km, check the buttons, force a POST from the console, test the 0.9896 km and 1.0008 km boundary pair, wait out the 120 second bound, test silent refresh, Ask and Block location states.
@@ -66,8 +67,8 @@ detail: Width and wrapping (step 12, plan 03-16). At 320px and 200 percent text 
 expected: No horizontal scroll in the 236px feed body or the 188px Activity body. Severity word shows before the title and is read first by a screen reader. Labels stay readable and unclipped.
 why_human: Layout and screen reader order.
 note: Scripted browser run 2026-10-10 (same run as test 2). Chromium 10 PASS, 0 FAIL, 1 NEEDS A PERSON. WebKit 10 PASS, 0 FAIL, 1 NEEDS A PERSON. Proven in both engines at 320px with a long unbroken title and a long URL: the feed row body is 236px and the Activity row body is 188px, there is no horizontal overflow at 100 percent text with panels closed and open, and none at 200 percent text (the script doubles the font size tokens) with panels open. The severity word sits before the title in the layout and in the accessibility snapshot order, and every read only label grows with the text (font 14px to 28px) and none is clipped. Still needs a person: the same on a real phone with the system text size at 200 percent, and a screen reader speaking the severity word first (T7.4). Re-run on 2026-10-10 after the trust block redesign and the label subject (plans 03-21 to 03-24, 03-27, 03-28 and 03-29, each gated on a fresh scratch database, the last gate 384 PASS, 0 FAIL, 0 SKIP) on the final build (head 8210287), tests 2 to 11 in one run: 442 PASS, 0 FAIL, 20 NEEDS A PERSON, 42 NOTE. Chromium 10 PASS, 0 FAIL, 1 NEEDS A PERSON and WebKit 10 PASS, 0 FAIL, 1 NEEDS A PERSON. CHANGED CHECK MEANING (T7.1): the old rule was that nothing leaves the body at all (body overflow at most 1px, no element sticking out of the body). The redesign leaves two things out of the body on purpose, and the first run on the merged code showed it (12 T7.1 FAILs, all exactly this, with row, list and page overflow 0): the trust toggle is 4px wider on each side (A79) and, at viewports of 340px and below, the state line reaches 16px into the row padding (A81). T7.1 now allows exactly those two amounts (toggle 4px each side, state line 16px to the right at 340px and below, nothing at wider viewports) and nothing else. Row, list and page overflow are still held to 1px, any other element outside the body is still an offender, and the check label now states the allowance. At 320px the body is still 236px (feed) and 188px (Activity) wide, with no horizontal scroll at 100 and 200 percent text, panels closed and open. Still needs a person: the same on a real phone with the system text size at 200 percent, and a screen reader speaking the severity word first (T7.4). CHANGED EXPECTATION (plan 03-29, A86): the harness word list that finds the still current label (lib/selectors.js, used by the clipped labels check of T7.1) now names Report up to date, Report getting old, Report needs re-confirming and Too early to tell; before it named the old words, and a label it cannot find is skipped silently, so the list had to follow. RE-RUN 2026-10-13 on merged main 8b9c802 (test 7: Chromium 10 PASS, 0 FAIL, 1 NEEDS A PERSON; WebKit 10 PASS, 0 FAIL, 1 NEEDS A PERSON), with the new tick rows in the row panels included: at 320px the feed row body is 236px and the Activity row body 188px, there is no horizontal scroll at 100 percent text with panels closed and open and none at 200 percent text with panels open, the severity word sits before the title, and every read only label grows with the text (14px to 28px) and none is clipped. The popup card was also measured at 200 percent text at 390 by 844, 360 by 740 and 320 by 640 (test 12, T12.15): no clipping and no sideways scroll. Still needs a person: a real phone at 200 percent text (T7.4).
-owner_check: Final session, evening of 2026-10-10. The screen reader half (T7.4, the severity word spoken first) was skipped by the owner with the same decision as test 2 and is accepted on the accessibility tree order shown by the scripted run. STILL OPEN in this test: the layout on a real phone with the system text size at 200 percent.
-result: [pending]
+owner_check: Final session, evening of 2026-10-10. The screen reader half (T7.4, the severity word spoken first) was skipped by the owner with the same decision as test 2 and is accepted on the accessibility tree order shown by the scripted run. STILL OPEN in this test: the layout on a real phone with the system text size at 200 percent. FINAL ANSWER, afternoon of 2026-10-13: the owner was told that with the text doubled at 320px nothing is cut off and nothing scrolls sideways (both engines, panels open, the new tick rows included) and was asked to accept the scripted proof: 'yes'. RECORDED AS: accepted on the scripted evidence. NOT DONE: a real phone with the system text size at 200 percent and a screen reader speaking the severity word first (T7.4); noted to do before the app is shown widely, the same as tests 2 and 5.
+result: pass
 
 ### 8. Vote layout and button look (steps 13 and 14, plan 03-11)
 detail: Vote layout and button look (steps 13 and 14, plan 03-11). 600px row, 900px two pane layout, 320px Activity Reopen, light and dark, forced colors, reduced motion.
@@ -102,9 +103,9 @@ result: [pending]
 ## Summary
 
 total: 11
-passed: 8
+passed: 10
 issues: 0
-pending: 3
+pending: 1
 skipped: 0
 blocked: 0
 
