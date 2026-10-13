@@ -914,23 +914,157 @@
   mask-image: url("/static/icons/clock.svg");
 }
 
+/* The panel is the same white card as the popup's, so the muted detail text
+   keeps its contrast on a tinted row too (A91). It is closed with the toggle,
+   and the card look is the facts list's own, never the row's tint. */
 .trust-block__panel:not([hidden]) {
-  display: grid;
-  gap: var(--space-xs);
-  padding: 0 var(--space-xs) var(--space-sm);
-  margin: 0;
+  display: block;
+  margin: var(--space-sm) 0 0;
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg);
+  color: var(--color-text);
 }
 
-/* Two classes on purpose: Leaflet's popup paragraph margin rule has a
-   specificity of (0,1,1), so a single class head would lose inside the
-   popup. */
-.trust-block__panel .trust-block__line {
+/* The facts list (A89, A92): one list for the popup card and the row panel.
+   A row is a tone glyph beside a bold title, a muted detail line and, on the
+   card only, a muted score line. A divider sits between visible rows. */
+.trust-facts {
   margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trust-fact:not([hidden]) {
+  display: grid;
+  grid-template-columns: var(--space-lg) minmax(0, 1fr);
+  column-gap: var(--space-sm);
+  align-items: start;
+  padding: var(--space-sm) 0;
+}
+
+.trust-fact:not([hidden]) ~ .trust-fact:not([hidden]) {
+  border-top: 1px solid var(--color-border);
+}
+
+.trust-fact__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.trust-fact__title {
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+/* The muted lines sit on the card surface only, where --color-text-muted
+   clears 4.5:1 in every theme (checked by the tone contrast test). */
+.trust-fact__detail {
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
   font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+}
+
+.trust-fact__score {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+}
+
+/* The glyph is a 24px box holding a 21px disc. The disc takes the tone colour
+   through currentColor and the mark takes the card colour, so the shape reads
+   in light and dark. Four tones, four marks (A92). */
+.trust-fact__glyph {
+  width: var(--space-lg);
+  height: var(--space-lg);
+}
+
+.trust-fact__disc {
+  fill: currentColor;
+}
+
+.trust-fact__mark {
+  fill: none;
+  stroke: var(--color-bg);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.trust-fact__glyph--good {
+  color: var(--color-tone-good);
+}
+
+.trust-fact__glyph--caution {
+  color: var(--color-tone-caution);
+}
+
+.trust-fact__glyph--bad {
+  color: var(--color-tone-bad);
+}
+
+.trust-fact__glyph--neutral {
+  color: var(--color-text-muted);
+}
+
+/* The popup's trust card (A90): always showing, a hairline edge and 12px
+   corners on the page surface, so it reads as a card on the neutral popup. */
+.trust-card:not([hidden]) {
+  display: block;
+  margin-top: var(--space-md);
+  margin-bottom: var(--space-sm);
+  padding: 0 var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg);
   color: var(--color-text);
+}
+
+/* The state word wraps below the counters when the width is too small and
+   never clips. */
+.trust-card__header:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  column-gap: var(--space-sm);
+  row-gap: var(--space-xs);
+  padding: var(--space-md) 0 var(--space-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.trust-card__counts {
+  min-width: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
   overflow-wrap: anywhere;
+}
+
+.trust-card__state {
+  min-width: 0;
+  margin-left: auto;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.trust-card__state--good {
+  color: var(--color-tone-good);
+}
+
+.trust-card__state--caution {
+  color: var(--color-tone-caution);
+}
+
+.trust-card__state--bad {
+  color: var(--color-tone-bad);
 }
 
 /* Reduced motion removes the press transition and the chevron turn. */
@@ -972,6 +1106,25 @@
   .trust-block__chevron:not([hidden]) {
     forced-color-adjust: none;
     background-color: CanvasText;
+  }
+
+  /* The tone glyphs keep their four shapes: the disc is CanvasText and the
+     mark is cut out in Canvas. The card and the panel keep a border (A96). */
+  .trust-fact__glyph {
+    forced-color-adjust: none;
+    color: CanvasText;
+  }
+
+  .trust-fact__mark {
+    stroke: Canvas;
+  }
+
+  .trust-card:not([hidden]) {
+    border-color: CanvasText;
+  }
+
+  .trust-block__panel:not([hidden]) {
+    border-color: CanvasText;
   }
 }
 
@@ -1256,6 +1409,19 @@
 
 .leaflet-container .popup-card .popup-card__meta-line + .popup-card__meta-line {
   margin-top: var(--space-xs);
+}
+
+/* The fade line under the trust card (A94): a small muted paragraph, never a
+   button or a link. Three classes and the ancestor field, so it outranks the
+   popup paragraph reset above. The card's own bottom margin gives the gap when
+   the line is hidden. */
+.leaflet-container .popup-card .popup-card__fade:not([hidden]) {
+  display: block;
+  margin: var(--space-sm) var(--space-xs);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
 }
 
 .popup-card__actions {

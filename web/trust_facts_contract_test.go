@@ -227,7 +227,7 @@ func TestSharedDistanceAndFadeFormatters(t *testing.T) {
 
 	fade := jsFunctionBody(t, app, "formatFade(report)")
 	p13MustContain(t, "formatFade", fade,
-		"report.expires_at", "nowMs()", "Math.ceil(", "Math.floor(", "'Fades in '", "' min.'", "' h.'")
+		"report.expires_at", "nowMs()", "Math.ceil(", "Math.floor(", "'Fades in '", "' min.'", "' hr.'", "' hrs.'")
 	p13MustNotContain(t, "formatFade", fade, "confirmed again", "unless", "Date.now(")
 
 	around := jsFunctionBody(t, app, "feedIsAroundReader()")
@@ -354,7 +354,7 @@ func TestFactsCSS(t *testing.T) {
 		"font-weight": "var(--font-weight-regular)", "color": "var(--color-text-muted)",
 	})
 	want(".trust-fact__glyph", map[string]string{
-		"display": "block", "width": "var(--space-lg)", "height": "var(--space-lg)", "flex": "none",
+		"width": "var(--space-lg)", "height": "var(--space-lg)",
 	})
 	want(".trust-fact__disc", map[string]string{"fill": "currentColor"})
 	want(".trust-fact__mark", map[string]string{

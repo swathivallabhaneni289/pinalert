@@ -93,7 +93,7 @@ func TestPopupCardBuiltOnceUpdatedInPlace(t *testing.T) {
 		"PinalertTrust.createSeverityLabel(",
 		"PinalertVisibility.createVisibilityTag(",
 		"Pinalert.setText(titleEl, report.description)",
-		"PinalertTrust.createTrustBlock({ showScores: true })",
+		"PinalertTrust.createTrustCard()",
 		"PinalertVotes.createVoteBlock(",
 		"actions.appendChild(block.controls)",
 		"actions.appendChild(block.note)",
@@ -111,16 +111,21 @@ func TestPopupCardBuiltOnceUpdatedInPlace(t *testing.T) {
 	p17MustContain(t, "updatePopupCard", update,
 		"PinalertTrust.updateSeverityLabel(",
 		"PinalertVisibility.updateVisibilityTag(",
-		"PinalertTrust.updateTrustBlock(",
+		"PinalertTrust.updateTrustCard(",
 		"PinalertVotes.updateVoteBlock(",
 		"Pinalert.formatShelterLine(report)",
 		"Pinalert.relativeTime(",
 		"Pinalert.iconClass(",
 	)
+	// Plan 03-31 (A93, A95): the popup meta line shows the distance, so the
+	// A31 ban on distance_km is replaced by the gate and the shared formatter
+	// (TestPopupBuildsTheCardAndTheFadeLine pins both).
+	p17MustContain(t, "updatePopupCard", update,
+		"Pinalert.feedIsAroundReader()", "Pinalert.formatDistance(report.distance_km)")
 	p17MustNotContain(t, "updatePopupCard", update,
 		"createElement(", "appendChild(",
-		"createVisibilityTag(", "createTrustBlock(", "createVoteBlock(", "createSeverityLabel(",
-		"innerHTML", "SEVERITY_LABELS", "distance_km",
+		"createVisibilityTag(", "createTrustBlock(", "createTrustCard(", "createVoteBlock(", "createSeverityLabel(",
+		"innerHTML", "SEVERITY_LABELS",
 		"setBlockBusy(", "disabled", ".focus(", "update()",
 	)
 
@@ -602,7 +607,9 @@ func TestPopupDialogFocusAndOpener(t *testing.T) {
 
 	closeBody := jsFunctionBody(t, code, "onPopupClose(evt)")
 	p13MustContain(t, "onPopupClose", closeBody,
-		"removeAttribute('data-popup-open')", "PinalertTrust.collapsePanelsIn(", "activePopup = null", "var lost = ")
+		"removeAttribute('data-popup-open')", "activePopup = null", "var lost = ")
+	// The card is always showing, so there is no panel to collapse (plan 03-31).
+	p13MustNotContain(t, "onPopupClose", closeBody, "collapsePanelsIn")
 	p13Ordered(t, closeBody, "onPopupClose", "popupFocusInside", "document.activeElement", "returnFocusToOpener(")
 
 	out := jsFunctionBody(t, code, "onMapFocusOut(evt)")

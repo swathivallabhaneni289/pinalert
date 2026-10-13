@@ -137,15 +137,17 @@ func TestTrustBlockMountedOnBothSurfaces(t *testing.T) {
 	mapJS := stripCSSComments(p13ReadStatic(t, "static/js/map.js"))
 	trust := p13ReadStatic(t, "static/js/trust.js")
 
-	for label, text := range map[string]string{"feed.js": feed, "map.js": mapJS} {
-		p13MustContain(t, label, text,
-			"PinalertTrust.createTrustBlock(", "PinalertTrust.updateTrustBlock(")
-	}
+	// Plan 03-31: the rows mount the toggle block, the popup mounts the
+	// always open trust card (A90, A91).
+	p13MustContain(t, "feed.js", feed,
+		"PinalertTrust.createTrustBlock(", "PinalertTrust.updateTrustBlock(")
+	p13MustContain(t, "map.js", mapJS,
+		"PinalertTrust.createTrustCard(", "PinalertTrust.updateTrustCard(")
 
 	p13MustContain(t, "feed.js", feed, "PinalertTrust.createTrustBlock()")
 	p13MustNotContain(t, "feed.js", feed, "showScores")
-	p13MustMatch(t, "map.js", mapJS,
-		`PinalertTrust\.createTrustBlock\(\s*\{\s*showScores:\s*true\s*\}\s*\)`)
+	p13MustNotContain(t, "map.js", mapJS, "showScores", "createTrustBlock(", "updateTrustBlock(")
+	p13MustMatch(t, "map.js", mapJS, `PinalertTrust\.createTrustCard\(\s*\)`)
 
 	createRow := jsFunctionBody(t, feed, "createRow(id)")
 	p13Ordered(t, createRow, "feed.js createRow",
@@ -155,7 +157,7 @@ func TestTrustBlockMountedOnBothSurfaces(t *testing.T) {
 	)
 	p13Ordered(t, p13CodeLines(mapJS), "map.js popup builder",
 		"PinalertVisibility.createVisibilityTag(",
-		"PinalertTrust.createTrustBlock(",
+		"PinalertTrust.createTrustCard(",
 		"PinalertVotes.createVoteBlock(",
 	)
 
@@ -185,7 +187,7 @@ func TestTrustBlockMountedOnBothSurfaces(t *testing.T) {
 		"focusToggle: focusToggle",
 	)
 
-	create := jsFunctionBody(t, trust, "createTrustBlock(options)")
+	create := jsFunctionBody(t, trust, "createTrustBlock()")
 	p13MustContain(t, "createTrustBlock", create, "'trust-panel-'")
 	if regexp.MustCompile(`\breport\b`).MatchString(p13CodeLines(create)) {
 		t.Errorf("createTrustBlock names a report, so a panel id could come from the report id")
@@ -200,13 +202,13 @@ func TestTrustBlockMountedOnBothSurfaces(t *testing.T) {
 		"trust-num",
 		"trust-block__count--second",
 		"trust-block__panel",
-		"trust-block__line",
+		"trust-fact__title",
 	)
-	p13MustMatch(t, "trust.js PANEL_LINES", trust,
-		`PANEL_LINES\s*=\s*\[\s*'lead',\s*'confirmed',\s*'disputed',\s*'currency',\s*'currency_score',\s*'reporter',\s*'reporter_score'\s*\]`)
 
+	// The panel holds the facts list and no sentence is read (A89, A91).
 	panel := jsFunctionBody(t, trust, "renderTrustPanel(block, trust)")
-	p13MustContain(t, "renderTrustPanel", panel,
+	p13MustContain(t, "renderTrustPanel", panel, "renderFacts(block.facts, trust.facts)")
+	p13MustNotContain(t, "renderTrustPanel", panel,
 		"showScores", "lead_sentence", "confirmed_sentence", "disputed_sentence", "score_sentence")
 
 	update := jsFunctionBody(t, trust, "updateTrustBlock(block, trust)")
@@ -217,7 +219,7 @@ func TestTrustBlockMountedOnBothSurfaces(t *testing.T) {
 	for _, name := range []string{
 		"updateTrustBlock(block, trust)",
 		"renderTrustCounts(block, trust)",
-		"renderTrustSignal(signal, shown, label, score)",
+		"renderTrustSignal(signal, shown, label)",
 		"renderTrustPanel(block, trust)",
 	} {
 		body := jsFunctionBody(t, trust, name)
@@ -305,7 +307,12 @@ func TestTrustModuleHasNoThresholdsOrSinks(t *testing.T) {
 	if regexp.MustCompile(`(?i)threshold|cutoff|min_?score|half_?life|window_minutes|recent_places|judged_reports|corroborated_reports`).MatchString(code) {
 		t.Errorf("trust.js names a threshold or a server fact field on a code line")
 	}
-	if loc := regexp.MustCompile(`\b(?:[2-9]|[1-9][0-9]+)\b`).FindString(code); loc != "" {
+	// The tone glyph geometry table is the one exempt region (A92): path data
+	// and a viewBox are geometry, never a threshold. TestToneGlyphsAreFourShapes
+	// pins the table's content.
+	table := p31GlyphTable(t, code)
+	scanned := strings.Replace(code, table, "", 1)
+	if loc := regexp.MustCompile(`\b(?:[2-9]|[1-9][0-9]+)\b`).FindString(scanned); loc != "" {
 		t.Errorf("trust.js has the numeric literal %q on a code line, only 0, 1 and -1 may appear", loc)
 	}
 }
@@ -322,7 +329,7 @@ func TestTrustDisclosure(t *testing.T) {
 		"aria-expanded", "aria-controls", "addEventListener('click'",
 		"'Enter'", "' '", "'Escape'", "stopPropagation", "preventDefault")
 
-	create := jsFunctionBody(t, trust, "createTrustBlock(options)")
+	create := jsFunctionBody(t, trust, "createTrustBlock()")
 	p13MustContain(t, "createTrustBlock", create, "'button'", "stopPropagation", "'Enter'")
 	p13MustNotContain(t, "createTrustBlock", create, "preventDefault")
 
@@ -358,7 +365,7 @@ func TestTrustDisclosure(t *testing.T) {
 	// A5: the hover, title and tooltip design is dropped, and there is no
 	// live region because the 30 second poll would re-announce it.
 	p13MustNotContain(t, "trust.js", trust,
-		"aria-live", "tooltip", "mouseenter", "mouseover", "'title'", ".title")
+		"aria-live", "tooltip", "mouseenter", "mouseover", "setAttribute('title'", ".title =")
 
 	// Plan 03-19 adds the popup branch (A23, A70): the owner of the open popup
 	// is found through the data-popup-open attribute map.js writes, a
@@ -370,7 +377,9 @@ func TestTrustDisclosure(t *testing.T) {
 	p13MustContain(t, "closeOneLevel popup branch", level, "var focusInside", "document.body", "surfaceIsDisplayed(")
 
 	popupLevel := jsFunctionBody(t, code, "closePopupLevel(popupEl, mayClose)")
-	p13Ordered(t, popupLevel, "closePopupLevel", "closeRowPanel(popupEl)", "!mayClose", "closeOpenPopup(popupEl)")
+	// Plan 03-31: the popup holds no panel, so one Escape closes the popup.
+	p13Ordered(t, popupLevel, "closePopupLevel", "!mayClose", "closeOpenPopup(popupEl)")
+	p13MustNotContain(t, "closePopupLevel", popupLevel, "closeRowPanel(")
 	closeOpen := jsFunctionBody(t, code, "closeOpenPopup(popupEl)")
 	p13MustContain(t, "closeOpenPopup", closeOpen, ".leaflet-popup-close-button", ".click()")
 	openEl := jsFunctionBody(t, code, "openPopupEl()")
@@ -378,10 +387,8 @@ func TestTrustDisclosure(t *testing.T) {
 	marker := jsFunctionBody(t, code, "isPopupMarker(el)")
 	p13MustContain(t, "isPopupMarker", marker, "leaflet-marker-icon", "data-popup-open")
 
-	collapse := jsFunctionBody(t, code, "collapsePanelsIn(surface)")
-	p13MustContain(t, "collapsePanelsIn", collapse, "aria-expanded", "trust-block__panel", "setPanelOpen(")
-	p13MustNotContain(t, "collapsePanelsIn", collapse, ".focus(")
-	p13MustContain(t, "trust.js code", code, "collapsePanelsIn: collapsePanelsIn")
+	// The popup has no panel to collapse on close (plan 03-31).
+	p13MustNotContain(t, "trust.js code", code, "collapsePanelsIn")
 	if n := strings.Count(code, "document.addEventListener("); n != 1 {
 		t.Errorf("trust.js has %d document listeners after the popup branch, want exactly 1", n)
 	}
@@ -484,6 +491,15 @@ func TestTrustCSS(t *testing.T) {
 	allowedWeights := map[string]bool{
 		"var(--font-weight-regular)": true, "var(--font-weight-semibold)": true,
 	}
+	// Plan 03-31 (A92): the muted detail lines and the neutral glyph may use
+	// the muted text colour (they sit on the card surface, contrast checked by
+	// TestToneTokensClearTheContrastFloors), and the glyph and the state word
+	// may use the three tone tokens. Nothing else leaves the normal text colour.
+	mutedHeads := map[string]bool{
+		".trust-fact__detail": true, ".trust-fact__score": true, ".trust-fact__glyph--neutral": true,
+	}
+	toneValue := regexp.MustCompile(`^var\(--color-tone-(good|caution|bad)\)$`)
+	toneHead := regexp.MustCompile(`^\.trust-(fact__glyph|card__state)--(good|caution|bad)$`)
 	for _, r := range rules {
 		if !isTrust(r) {
 			continue
@@ -496,6 +512,9 @@ func TestTrustCSS(t *testing.T) {
 				t.Errorf("%q %s: %q uses !important or 999px", r.Head, prop, value)
 			}
 			for _, banned := range []string{"--color-text-muted", "--color-severity", "--severity-"} {
+				if banned == "--color-text-muted" && mutedHeads[r.Head] {
+					continue
+				}
 				if strings.Contains(value, banned) {
 					t.Errorf("%q %s: %q uses %s, but colour is reserved for severity (A3, D-18)", r.Head, prop, value, banned)
 				}
@@ -510,8 +529,13 @@ func TestTrustCSS(t *testing.T) {
 					t.Errorf("%q font-weight %q is not one of the two weights", r.Head, value)
 				}
 			case "color":
-				if value != "var(--color-text)" {
-					t.Errorf("%q color %q is not the normal text colour", r.Head, value)
+				switch {
+				case value == "var(--color-text)":
+				case mutedHeads[r.Head] && value == "var(--color-text-muted)":
+				case toneHead.MatchString(r.Head) && toneValue.MatchString(value):
+				case strings.Contains(r.Media, "forced-colors: active") && value == "CanvasText":
+				default:
+					t.Errorf("%q color %q is not the normal text colour or an allowed tone colour", r.Head, value)
 				}
 			}
 		}
@@ -582,13 +606,9 @@ func TestTrustCSS(t *testing.T) {
 			"-webkit-mask-image": `url("/static/icons/clock.svg")`,
 			"mask-image":         `url("/static/icons/clock.svg")`}},
 		{".trust-block__panel:not([hidden])", map[string]string{
-			"display": "grid", "gap": "var(--space-xs)",
-			"padding": "0 var(--space-xs) var(--space-sm)", "margin": "0"}},
-		{".trust-block__panel .trust-block__line", map[string]string{
-			"margin": "0", "font-size": "var(--font-size-label)",
-			"line-height": "var(--line-height-label)",
-			"font-weight": "var(--font-weight-regular)", "color": "var(--color-text)",
-			"overflow-wrap": "anywhere"}},
+			"display": "block", "margin": "var(--space-sm) 0 0", "padding": "0 var(--space-sm)",
+			"border": "1px solid var(--color-border)", "border-radius": "12px",
+			"background": "var(--color-bg)", "color": "var(--color-text)"}},
 	}
 	index := map[string]int{}
 	for _, row := range table {

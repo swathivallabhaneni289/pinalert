@@ -1,14 +1,17 @@
-// trust.js: window.PinalertTrust, the shared trust block. One builder serves
-// the feed row and the map popup (D-20), so a report reads the same on both
-// surfaces: two counters that are always shown, an optional "still current"
-// word and a panel of plain sentences that explains them. The reporter words
-// belong to the same instance but sit outside the button, and each consumer
-// places them with the state label through createStateLine (A75).
+// trust.js: window.PinalertTrust, the shared trust block. The feed row and the
+// Activity row get a compact toggle (two counters that are always shown, an
+// optional "still current" word) whose panel holds the facts list. The map
+// popup gets the trust card, which is always showing and holds the same facts
+// list under a header of counters and the state word (A90, A91). One list
+// builder serves both (D-20), so a report reads the same everywhere. The
+// reporter words of a row sit outside the button, and each row consumer places
+// them with the state label through createStateLine (A75).
 //
 // This module computes nothing the server did not send (T-02-04). The two
-// counter numerals, every word and every panel sentence are authored by the
-// server and rendered here as they arrive. There is no cap, no count, no
-// score cut and no date arithmetic in this file. A vote changes a number only
+// counter numerals, the state word and every fact row (title, detail and
+// score detail) are authored by the server in trust.facts and rendered here
+// as they arrive. There is no cap, no count, no score cut, no wording of its
+// own and no date arithmetic in this file. A vote changes a number only
 // through the refetch votes.js already runs (A33).
 //
 // SECURITY (T-03-06): every string reaching the DOM goes through
@@ -37,10 +40,26 @@
   ];
   var REPORTER_TAGS = ['reliable', 'mixed', 'unreliable', 'new', 'none'];
 
-  // The panel lines in their fixed order: the lead sentence, the confirmed
-  // sentence, the disputed sentence, the still current sentence and its
-  // score sentence, then the reporter sentence and its score sentence.
-  var PANEL_LINES = ['lead', 'confirmed', 'disputed', 'currency', 'currency_score', 'reporter', 'reporter_score'];
+  // The kinds of fact row in the server's order, which is also the order of
+  // the slots the list builds, and the tones a row can carry (A89).
+  var FACT_KINDS = ['status', 'confirmations', 'disputes', 'currency', 'reporter'];
+  var FACT_TONES = ['good', 'neutral', 'caution', 'bad'];
+
+  // The tone glyphs (A92): a disc and one mark per tone, drawn in a square
+  // box. The marks are four different shapes so a tone is never colour alone.
+  // This table is the only place in this file that holds numbers other than 0
+  // and 1, and they are geometry, not thresholds.
+  var TONE_GLYPHS = {
+    ns: 'http://www.w3.org/2000/svg',
+    viewBox: '0 0 24 24',
+    disc: { cx: '12', cy: '12', r: '10.5' },
+    marks: {
+      good: 'M7.5 12.3l3 3.2 6-6.6',
+      neutral: 'M8 12h8',
+      caution: 'M12 7v6M12 16.5h.01',
+      bad: 'M8.5 8.5l7 7M15.5 8.5l-7 7'
+    }
+  };
 
   // A module counter gives every panel its id, never the report id, because
   // one report renders in both the list and the popup.
@@ -50,9 +69,37 @@
     return typeof v === 'string' && v.length > 0;
   }
 
+  // validFacts is true only for an ordered array the list can draw without
+  // guessing: an object per fact, its kind and tone from the closed lists,
+  // kinds in the fixed order with none repeated, a title and both detail
+  // lines as strings (an empty detail is allowed).
+  function validFacts(facts) {
+    if (!Array.isArray(facts)) {
+      return false;
+    }
+    var last = -1;
+    for (var i = 0; i < facts.length; i++) {
+      var fact = facts[i];
+      if (!fact || typeof fact !== 'object') {
+        return false;
+      }
+      var at = FACT_KINDS.indexOf(fact.kind);
+      if (at === -1 || at <= last || FACT_TONES.indexOf(fact.tone) === -1) {
+        return false;
+      }
+      last = at;
+      if (!isNonEmptyString(fact.title) || typeof fact.detail !== 'string' ||
+          typeof fact.score_detail !== 'string') {
+        return false;
+      }
+    }
+    return true;
+  }
+
   // validTrust is true only for an object carrying the fields the block
-  // cannot render without. A missing currency or reporter is not a failure:
-  // the block simply shows no second line.
+  // cannot render without: the two counters and a valid facts array. A
+  // missing currency or reporter is not a failure: the block simply shows no
+  // second line, and a facts array without those kinds shows no such row.
   function validTrust(trust) {
     if (!trust || typeof trust !== 'object') {
       return false;
@@ -61,9 +108,7 @@
       Number.isInteger(trust.disputed_places) && trust.disputed_places >= 0 &&
       isNonEmptyString(trust.confirmed_text) &&
       isNonEmptyString(trust.disputed_text) &&
-      typeof trust.lead_sentence === 'string' &&
-      typeof trust.confirmed_sentence === 'string' &&
-      typeof trust.disputed_sentence === 'string';
+      validFacts(trust.facts);
   }
 
   // signalState says which of the two signals shows. The server decides the
@@ -88,10 +133,10 @@
     return !!el && el.getClientRects().length > 0;
   }
 
-  // createSignal builds one signal: an icon, then the word, then (popup only)
-  // the number behind a visually hidden ", score" prefix. The number sits
-  // after its word with no icon of its own (R-07). Everything starts hidden.
-  function createSignal(iconClass, extraClass, showScores) {
+  // createSignal builds one signal: an icon, then the word. The score numbers
+  // are gone from the signals (A91): score_detail rows of the card carry them.
+  // Everything starts hidden.
+  function createSignal(iconClass, extraClass) {
     var el = document.createElement('span');
     el.className = extraClass ? 'trust-signal ' + extraClass : 'trust-signal';
     el.hidden = true;
@@ -105,32 +150,15 @@
     text.className = 'trust-signal__text';
     var word = document.createElement('span');
     text.appendChild(word);
-
-    var score = null;
-    var num = null;
-    if (showScores) {
-      score = document.createElement('span');
-      score.hidden = true;
-      var prefix = document.createElement('span');
-      prefix.className = 'visually-hidden';
-      Pinalert.setText(prefix, ', score');
-      num = document.createElement('span');
-      num.className = 'trust-num';
-      score.appendChild(prefix);
-      score.appendChild(document.createTextNode(' '));
-      score.appendChild(num);
-      text.appendChild(score);
-    }
     el.appendChild(text);
 
-    return { el: el, word: word, score: score, num: num };
+    return { el: el, word: word };
   }
 
   // createReporterWords builds the reporter words as plain text outside the
-  // button (A75), with no icon (A76). In the popup the number follows behind
-  // the visually hidden score prefix as plain text, not in the semibold number
-  // class (A82). Everything starts hidden.
-  function createReporterWords(showScores) {
+  // button (A75), with no icon (A76) and no number (A91). Everything starts
+  // hidden.
+  function createReporterWords() {
     var el = document.createElement('span');
     el.className = 'trust-reporter';
     el.hidden = true;
@@ -138,22 +166,7 @@
     var word = document.createElement('span');
     el.appendChild(word);
 
-    var score = null;
-    var num = null;
-    if (showScores) {
-      score = document.createElement('span');
-      score.hidden = true;
-      var prefix = document.createElement('span');
-      prefix.className = 'visually-hidden';
-      Pinalert.setText(prefix, ', score');
-      num = document.createElement('span');
-      score.appendChild(prefix);
-      score.appendChild(document.createTextNode(' '));
-      score.appendChild(num);
-      el.appendChild(score);
-    }
-
-    return { el: el, word: word, score: score, num: num };
+    return { el: el, word: word };
   }
 
   // createSeverityLabel builds the read only severity word shared by the feed
@@ -187,12 +200,10 @@
     label.setAttribute('hidden', '');
   }
 
-  // createTrustBlock is the one builder for every surface (D-20). Only the
-  // popup asks for scores (D-09). The block starts hidden and empty, and
-  // updateTrustBlock is always called after it.
-  function createTrustBlock(options) {
-    var showScores = !!(options && options.showScores === true);
-
+  // createTrustBlock is the row builder, for the feed row and the Activity row
+  // (D-20). It shows no score numbers (D-09). The block starts hidden and
+  // empty, and updateTrustBlock is always called after it.
+  function createTrustBlock() {
     var block = document.createElement('div');
     block.className = 'trust-block';
     block.hidden = true;
@@ -227,8 +238,8 @@
     var signals = document.createElement('span');
     signals.className = 'trust-block__signals';
     signals.hidden = true;
-    var currency = createSignal('trust-icon trust-icon--clock', '', showScores);
-    var reporter = createReporterWords(showScores);
+    var currency = createSignal('trust-icon trust-icon--clock', '');
+    var reporter = createReporterWords();
     signals.appendChild(document.createTextNode(' '));
     signals.appendChild(currency.el);
 
@@ -257,14 +268,8 @@
     panel.className = 'trust-block__panel';
     panel.id = panelId;
     panel.hidden = true;
-    var lines = {};
-    for (var i = 0; i < PANEL_LINES.length; i++) {
-      var line = document.createElement('p');
-      line.className = 'trust-block__line';
-      line.hidden = true;
-      panel.appendChild(line);
-      lines[PANEL_LINES[i]] = line;
-    }
+    var facts = createFactsList(false);
+    panel.appendChild(facts.el);
 
     block.appendChild(toggle);
     block.appendChild(panel);
@@ -278,8 +283,7 @@
       signals: signals,
       currency: currency,
       reporter: reporter,
-      lines: lines,
-      showScores: showScores
+      facts: facts
     };
 
     toggle.addEventListener('click', function () {
@@ -370,34 +374,14 @@
     return true;
   }
 
-  // closePopupLevel closes the popup's own open panel first. Only when no
-  // panel is open, and only when focus is in the popup or on its pin, does the
-  // popup itself close. Focus on the page body closes a panel and nothing more.
+  // closePopupLevel closes the popup itself, and only when focus is in the
+  // popup or on its pin (A23, A70). The popup holds no panel, so one Escape
+  // closes it. Focus on the page body closes nothing here.
   function closePopupLevel(popupEl, mayClose) {
-    if (closeRowPanel(popupEl)) {
-      return true;
-    }
     if (!mayClose) {
       return false;
     }
     return closeOpenPopup(popupEl);
-  }
-
-  // collapsePanelsIn closes every open panel inside one surface without moving
-  // focus. The panel is found beside its toggle, because a closing popup may
-  // already be detached from the document.
-  function collapsePanelsIn(surface) {
-    if (!surface || typeof surface.querySelectorAll !== 'function') {
-      return;
-    }
-    var toggles = surface.querySelectorAll('.trust-block__toggle[aria-expanded="true"]');
-    for (var i = 0; i < toggles.length; i++) {
-      var parent = toggles[i].parentNode;
-      var panel = parent ? parent.querySelector('.trust-block__panel') : null;
-      if (panel) {
-        setPanelOpen({ toggle: toggles[i], panel: panel }, false);
-      }
-    }
   }
 
   // closeOneLevel resolves one Escape level and returns true only when it
@@ -468,49 +452,121 @@
     Pinalert.setText(block.disputedNum, trust.disputed_text);
   }
 
-  // renderTrustSignal shows or hides one signal and writes its word. On the
-  // popup it also shows the number, but only for an integer score.
-  function renderTrustSignal(signal, shown, label, score) {
+  // renderTrustSignal shows or hides one signal and writes its word.
+  function renderTrustSignal(signal, shown, label) {
     signal.el.hidden = !shown;
     if (shown) {
       Pinalert.setText(signal.word, label);
     }
-    if (signal.score) {
-      var showNum = shown && Number.isInteger(score) && score >= 0;
-      signal.score.hidden = !showNum;
-      if (showNum) {
-        Pinalert.setText(signal.num, String(score));
+  }
+
+  // createToneGlyph builds one tone glyph with the DOM API: a disc and the
+  // mark of the tone, aria-hidden because the row text carries the meaning
+  // (A92). The colours come from classes in trust.css, never from here.
+  function createToneGlyph(tone) {
+    var svg = document.createElementNS(TONE_GLYPHS.ns, 'svg');
+    svg.setAttribute('class', 'trust-fact__glyph trust-fact__glyph--' + tone);
+    svg.setAttribute('viewBox', TONE_GLYPHS.viewBox);
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+
+    var disc = document.createElementNS(TONE_GLYPHS.ns, 'circle');
+    disc.setAttribute('class', 'trust-fact__disc');
+    disc.setAttribute('cx', TONE_GLYPHS.disc.cx);
+    disc.setAttribute('cy', TONE_GLYPHS.disc.cy);
+    disc.setAttribute('r', TONE_GLYPHS.disc.r);
+    svg.appendChild(disc);
+
+    var mark = document.createElementNS(TONE_GLYPHS.ns, 'path');
+    mark.setAttribute('class', 'trust-fact__mark');
+    mark.setAttribute('d', TONE_GLYPHS.marks[tone]);
+    svg.appendChild(mark);
+    return svg;
+  }
+
+  // createFactsList builds the one list of tick rows (A89): a slot per kind
+  // in the fixed order, all hidden and empty, filled by renderFacts. The
+  // score line exists only when the caller asks for it (the card, A50). Fact
+  // rows are divs inside list items so Leaflet's paragraph rules never apply.
+  function createFactsList(showScoreDetail) {
+    var list = document.createElement('ul');
+    list.className = 'trust-facts';
+    list.setAttribute('role', 'list');
+
+    var slots = {};
+    for (var i = 0; i < FACT_KINDS.length; i++) {
+      var item = document.createElement('li');
+      item.className = 'trust-fact trust-fact--' + FACT_KINDS[i];
+      item.hidden = true;
+
+      var text = document.createElement('div');
+      text.className = 'trust-fact__text';
+      var title = document.createElement('div');
+      title.className = 'trust-fact__title';
+      var detail = document.createElement('div');
+      detail.className = 'trust-fact__detail';
+      detail.hidden = true;
+      text.appendChild(title);
+      text.appendChild(detail);
+
+      var score = null;
+      if (showScoreDetail) {
+        score = document.createElement('div');
+        score.className = 'trust-fact__score';
+        score.hidden = true;
+        text.appendChild(score);
+      }
+      item.appendChild(text);
+      list.appendChild(item);
+      slots[FACT_KINDS[i]] = { el: item, text: text, glyph: null, tone: '', title: title, detail: detail, score: score };
+    }
+    return { el: list, slots: slots };
+  }
+
+  // fillFactLine writes one muted line of a row and hides it when the server
+  // sent an empty string for it.
+  function fillFactLine(line, value) {
+    line.hidden = value.length === 0;
+    Pinalert.setText(line, value);
+  }
+
+  // renderFacts fills the slots from a facts array that validFacts already
+  // passed. A kind the array does not carry stays hidden. The glyph is swapped
+  // only when the tone changed, so a poll rewrites text and nothing else.
+  function renderFacts(list, facts) {
+    var shown = {};
+    for (var i = 0; i < facts.length; i++) {
+      var fact = facts[i];
+      var slot = list.slots[fact.kind];
+      shown[fact.kind] = true;
+      if (slot.tone !== fact.tone) {
+        var glyph = createToneGlyph(fact.tone);
+        if (slot.glyph) {
+          slot.el.replaceChild(glyph, slot.glyph);
+        } else {
+          slot.el.insertBefore(glyph, slot.text);
+        }
+        slot.glyph = glyph;
+        slot.tone = fact.tone;
+      }
+      Pinalert.setText(slot.title, fact.title);
+      fillFactLine(slot.detail, fact.detail);
+      if (slot.score) {
+        fillFactLine(slot.score, fact.score_detail);
+      }
+      slot.el.hidden = false;
+    }
+    for (var k = 0; k < FACT_KINDS.length; k++) {
+      if (!shown[FACT_KINDS[k]]) {
+        list.slots[FACT_KINDS[k]].el.hidden = true;
       }
     }
   }
 
-  // fillLine writes one panel line and hides it when the server sent no
-  // sentence for it.
-  function fillLine(block, key, value, allowed) {
-    var line = block.lines[key];
-    var show = allowed && isNonEmptyString(value);
-    line.hidden = !show;
-    Pinalert.setText(line, show ? value : '');
-  }
-
-  // renderTrustPanel fills the panel from the server's sentences, in the
-  // fixed order (D-19 as amended by A5, A6, A50). A sentence for a signal
-  // that does not show stays hidden, and a score sentence shows only where
-  // the score does, which is the popup alone.
+  // renderTrustPanel fills the row panel with the facts list (A91). The old
+  // sentences are not read any more.
   function renderTrustPanel(block, trust) {
-    var state = signalState(trust);
-    var cur = state.currency ? trust.currency : null;
-    var rep = state.reporter ? trust.reporter : null;
-
-    fillLine(block, 'lead', trust.lead_sentence, true);
-    fillLine(block, 'confirmed', trust.confirmed_sentence, true);
-    fillLine(block, 'disputed', trust.disputed_sentence, true);
-    fillLine(block, 'currency', cur && cur.sentence, !!cur);
-    fillLine(block, 'currency_score', cur && cur.score_sentence,
-      !!cur && block.showScores && Number.isInteger(cur.score));
-    fillLine(block, 'reporter', rep && rep.sentence, !!rep);
-    fillLine(block, 'reporter_score', rep && rep.score_sentence,
-      !!rep && block.showScores && Number.isInteger(rep.score));
+    renderFacts(block.facts, trust.facts);
   }
 
   // updateTrustBlock is the one place server state reaches the block. It
@@ -530,14 +586,95 @@
     var state = signalState(trust);
     renderTrustCounts(block, trust);
     renderTrustSignal(block.currency, state.currency,
-      state.currency ? trust.currency.label : '',
-      state.currency ? trust.currency.score : null);
+      state.currency ? trust.currency.label : '');
     renderTrustSignal(block.reporter, state.reporter,
-      state.reporter ? trust.reporter.label : '',
-      state.reporter ? trust.reporter.score : null);
+      state.reporter ? trust.reporter.label : '');
     block.signals.hidden = !state.currency;
     renderTrustPanel(block, trust);
     block.el.hidden = false;
+  }
+
+  // currencyTone reads the tone of the currency fact, which colours the state
+  // word of the card. No currency fact means the neutral look (A92).
+  function currencyTone(facts) {
+    for (var i = 0; i < facts.length; i++) {
+      var fact = facts[i];
+      if (fact.kind === 'currency') {
+        return fact.tone;
+      }
+    }
+    return '';
+  }
+
+  // createTrustCard is the popup builder (A90): one white card that is always
+  // showing, a header of the two counters and the state word, then the facts
+  // list with its score lines. It has no toggle, no chevron, no panel and no
+  // expanded state, and nothing in it takes focus. The card starts hidden and
+  // empty, and updateTrustCard is always called after it.
+  function createTrustCard() {
+    var el = document.createElement('div');
+    el.className = 'trust-card';
+    el.hidden = true;
+
+    var header = document.createElement('div');
+    header.className = 'trust-card__header';
+
+    var counts = document.createElement('span');
+    counts.className = 'trust-card__counts';
+    var first = document.createElement('span');
+    var confirmedNum = document.createElement('span');
+    confirmedNum.className = 'trust-num';
+    first.appendChild(confirmedNum);
+    first.appendChild(document.createTextNode(' confirmed'));
+    var dot = document.createElement('span');
+    dot.className = 'trust-card__dot';
+    dot.setAttribute('aria-hidden', 'true');
+    Pinalert.setText(dot, ' \u00b7 ');
+    var second = document.createElement('span');
+    var disputedNum = document.createElement('span');
+    disputedNum.className = 'trust-num';
+    second.appendChild(disputedNum);
+    second.appendChild(document.createTextNode(' disputed'));
+    counts.appendChild(first);
+    counts.appendChild(dot);
+    counts.appendChild(second);
+
+    var state = document.createElement('span');
+    state.className = 'trust-card__state';
+    state.hidden = true;
+
+    header.appendChild(counts);
+    header.appendChild(state);
+
+    var facts = createFactsList(true);
+    el.appendChild(header);
+    el.appendChild(facts.el);
+
+    return { el: el, confirmedNum: confirmedNum, disputedNum: disputedNum, state: state, facts: facts };
+  }
+
+  // updateTrustCard is the one place server state reaches the card. The state
+  // word is the server's still current label and its colour class comes from
+  // the currency fact's tone, both through closed lists. It runs again on
+  // every poll and only writes text and classes.
+  function updateTrustCard(card, trust) {
+    if (!card) {
+      return;
+    }
+    if (!validTrust(trust)) {
+      card.el.hidden = true;
+      return;
+    }
+    renderTrustCounts(card, trust);
+
+    var word = signalState(trust).currency ? trust.currency.label : '';
+    var tone = currencyTone(trust.facts);
+    card.state.hidden = word.length === 0;
+    card.state.className = tone ? 'trust-card__state trust-card__state--' + tone : 'trust-card__state';
+    Pinalert.setText(card.state, word);
+
+    renderFacts(card.facts, trust.facts);
+    card.el.hidden = false;
   }
 
   // fadeStage returns the worse of the time stage and the server's stage, in
@@ -579,10 +716,11 @@
     createSeverityLabel: createSeverityLabel,
     updateSeverityLabel: updateSeverityLabel,
     createTrustBlock: createTrustBlock,
+    createTrustCard: createTrustCard,
     createStateLine: createStateLine,
     updateTrustBlock: updateTrustBlock,
+    updateTrustCard: updateTrustCard,
     fadeStage: fadeStage,
-    focusToggle: focusToggle,
-    collapsePanelsIn: collapsePanelsIn
+    focusToggle: focusToggle
   };
 }());
