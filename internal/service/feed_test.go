@@ -1164,10 +1164,18 @@ func TestCastVoteTrustMatchesNearbyTrust(t *testing.T) {
 	})
 }
 
-// p12WithoutReporter returns a copy of tr with the reporter signal reset, so a
-// test can compare everything else on a trust object.
+// p12WithoutReporter returns a copy of tr with the reporter signal reset, and
+// the reporter row of its facts (plan 03-31) taken out, so a test can compare
+// everything else on a trust object.
 func p12WithoutReporter(tr service.Trust) service.Trust {
 	tr.Reporter = service.ReporterSignal{}
+	var facts []service.TrustFact
+	for _, f := range tr.Facts {
+		if f.Kind != service.FactReporter {
+			facts = append(facts, f)
+		}
+	}
+	tr.Facts = facts
 	return tr
 }
 

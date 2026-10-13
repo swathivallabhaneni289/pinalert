@@ -45,6 +45,10 @@ type Trust struct {
 	// Reporter is the reporter signal (D-10, D-15, A47). It is display only
 	// (D-14) and is the none signal when the report has no rated account.
 	Reporter ReporterSignal
+	// Facts is the ordered list of tick rows every surface shows (A89). The
+	// server authors every word, so the browser holds none. It always holds
+	// the confirmations row and the disputes row (A90).
+	Facts []TrustFact
 }
 
 // TrustInput is everything BuildTrust reads. Visibility is the caller's own
@@ -111,5 +115,6 @@ func BuildTrust(in TrustInput) Trust {
 		Now:        in.Now,
 	})
 	t.Reporter = reporterSignalFor(in.Reporter)
+	t.Facts = buildTrustFacts(t, in.Visibility, in.ExpiresAt, in.Now)
 	return t
 }
