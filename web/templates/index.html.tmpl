@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/static/css/feed.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/trust.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
         crossorigin="anonymous">
@@ -37,6 +38,10 @@
 
     <section class="pane pane--list">
       <button type="button" class="view-toggle" id="view-toggle">List</button>
+      <div class="feed-heading">
+        <h2 class="feed-heading__title">Nearby now</h2>
+        <p class="feed-heading__count" id="feed-count"></p>
+      </div>
       <label class="filter-toggle">
         <input type="checkbox" id="show-disputed-toggle" autocomplete="off">
         Show disputed reports
@@ -121,6 +126,11 @@
 
     <div id="toast" role="status" aria-live="polite" hidden></div>
   </div>
+
+  <nav class="bottom-nav" aria-label="Main">
+    <a class="bottom-nav__tab" href="/" aria-current="page">Feed</a>
+    <a class="bottom-nav__tab" href="/profile">Activity</a>
+  </nav>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="

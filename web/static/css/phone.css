@@ -1,0 +1,403 @@
+/*
+ * Pinalert phone.css
+ *
+ * Every phone rule lives here, inside one max-width 899.98px block, except
+ * the base rules that hide the phone only elements at 900px and up. The file
+ * loads after every other app stylesheet. It overrides the narrow data-view
+ * rules of main.css instead of editing main.css, so the contract tests that
+ * read main.css still read untouched rules. The departures from the
+ * owner's pictures and from the house rules are written in
+ * .planning/sketches/005-phone-layout/README.md.
+ *
+ * Every phone head carries a container prefix (#report-list, #map, body >,
+ * .app-shell >) so it never equals a head that another contract test looks
+ * up by its exact text in main.css, feed.css, trust.css or auth.css.
+ * Sizes are tokens, never measurements read off the pictures.
+ */
+
+/* Phone only elements. They are built into the markup and shown only below
+   900px, so the layout at 900px and up has nothing new in it. */
+.feed-heading,
+.bottom-nav,
+.report-row__away,
+.profile-logout,
+.profile-record {
+  display: none;
+}
+
+@media (max-width: 899.98px) {
+  /* ---- Page frame: the map on top, the list under it, both always shown ---- */
+
+  /* Two rows: the map takes 40 percent of the height and the list takes the
+     rest. The legacy unit comes first and the dynamic unit second, the same
+     pairing main.css uses, so the page itself never scrolls. */
+  body > .app-shell {
+    height: 100vh;
+    height: 100dvh;
+    grid-template-rows: 40vh minmax(0, 1fr);
+    grid-template-rows: 40dvh minmax(0, 1fr);
+    gap: 0;
+  }
+
+  /* main.css shows one pane at a time below 900px. Both panes show here
+     whatever data-view says, so the switch button is gone. */
+  .app-shell[data-view] .pane--map {
+    display: block;
+  }
+
+  .app-shell[data-view] .pane--list {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--space-md) var(--space-md) calc(var(--touch-target-min) * 2 + var(--space-sm) + var(--space-md) * 2);
+  }
+
+  .pane--map #map {
+    height: 40vh;
+    height: 40dvh;
+  }
+
+  .app-shell > .view-toggle {
+    display: none;
+  }
+
+  /* The account button hides on phones. Activity is a tab in the bottom bar
+     and the email and Log out live on the Activity page. */
+  body > .app-header {
+    display: none;
+  }
+
+  /* The theme toggle moves to the top right corner of the map. The bottom
+     right corner holds only the add button above the bar. */
+  body > .theme-toggle {
+    top: var(--space-md);
+    right: var(--space-md);
+    bottom: auto;
+  }
+
+  .pane--map > .fab {
+    right: var(--space-md);
+    bottom: calc(var(--touch-target-min) + var(--space-sm) + var(--space-md));
+  }
+
+  #toast:not([hidden]) {
+    bottom: calc(var(--touch-target-min) + var(--space-sm) + var(--space-md));
+  }
+
+  /* ---- The heading of the list ---- */
+
+  .pane--list > .feed-heading {
+    display: flex;
+    flex: none;
+    justify-content: space-between;
+    align-items: baseline;
+    column-gap: var(--space-sm);
+    margin-bottom: var(--space-sm);
+  }
+
+  .feed-heading .feed-heading__title {
+    margin: 0;
+    font-size: var(--font-size-heading);
+    line-height: var(--line-height-heading);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+  }
+
+  .feed-heading .feed-heading__count {
+    margin: 0;
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+    font-weight: var(--font-weight-regular);
+    color: var(--color-text-muted);
+  }
+
+  .pane--list #report-list {
+    flex: none;
+    padding-bottom: 0;
+  }
+
+  /* ---- Report rows as rounded cards ---- */
+
+  /* The tint comes from the existing severity token. A provisional or hidden
+     card is white with a hairline, as drawn. The left bar is gone. */
+  #report-list .report-row {
+    display: block;
+    padding: var(--space-md);
+    border: 0;
+    border-radius: 8px;
+  }
+
+  #report-list .report-row.vis-provisional,
+  #report-list .report-row.vis-hidden {
+    padding: calc(var(--space-md) - 1px);
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+  }
+
+  #report-list .report-row > .icon-badge {
+    display: none;
+  }
+
+  #report-list .report-row .report-row__body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: var(--space-sm);
+    row-gap: var(--space-xs);
+  }
+
+  /* The state line gives its children to the body, so the state word and the
+     reporter words join the body's flex order. */
+  #report-list .report-row .report-row__stateline:not([hidden]) {
+    display: contents;
+  }
+
+  /* Line one: the severity label, the state word, the meta line, the
+     distance. Then the title on its own line. Then the trust line and the
+     reporter words. */
+  #report-list .report-row .severity-label:not([hidden]) {
+    order: 1;
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    gap: var(--space-xs);
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--color-text);
+  }
+
+  /* Critical gets the same dot the other two levels already carry. */
+  #report-list .severity-label.severity-label--critical::before {
+    content: "";
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--severity-current);
+  }
+
+  #report-list .report-row .visibility-tag:not([hidden]) {
+    order: 2;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  #report-list .report-row .report-row__meta {
+    order: 3;
+  }
+
+  #report-list .report-row .report-row__away:not([hidden]) {
+    display: block;
+    order: 4;
+    margin: 0;
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+    color: var(--color-text);
+  }
+
+  #report-list .report-row .report-row__title {
+    order: 5;
+    flex: 0 0 100%;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    margin: var(--space-xs) 0 0;
+  }
+
+  #report-list .report-row .trust-block:not([hidden]) {
+    order: 6;
+    flex: 0 1 auto;
+    min-width: 0;
+    margin: 0;
+    border-top: 0;
+  }
+
+  #report-list .report-row .trust-reporter:not([hidden]) {
+    order: 7;
+  }
+
+  /* The dot between the parts of a line. The alternative text is empty, so
+     a screen reader does not read it. The first declaration is the fallback
+     for an engine that does not know the alternative form. */
+  #report-list .report-row .visibility-tag:not([hidden])::before,
+  #report-list .report-row .report-row__meta::before,
+  #report-list .report-row .report-row__away:not([hidden])::before {
+    content: "\00b7";
+    content: "\00b7" / "";
+    margin-right: var(--space-xs);
+  }
+
+  #report-list .report-row .report-row__meta,
+  #report-list .report-row .report-row__title {
+    min-width: 0;
+  }
+
+  /* Voting happens in the detail, as drawn. */
+  #report-list .report-row .vote-controls:not([hidden]),
+  #report-list .report-row .vote-note:not([hidden]),
+  #report-list .report-row .vote-error:not([hidden]) {
+    display: none;
+  }
+
+  /* The trust face reads as one line of text: the counts, the currency word,
+     then the reporter words. The chevron and the clock are not drawn. */
+  #report-list .report-row .trust-block__toggle:not([hidden]) {
+    width: auto;
+    margin-inline: 0;
+    padding: 0;
+    justify-content: flex-start;
+  }
+
+  #report-list .report-row .trust-block__face:not([hidden]) {
+    display: flex;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--space-sm);
+  }
+
+  #report-list .report-row .trust-block__chevron:not([hidden]),
+  #report-list .report-row .trust-icon:not([hidden]) {
+    display: none;
+  }
+
+  #report-list .report-row .trust-block__counts:not([hidden]) {
+    min-height: 0;
+    column-gap: var(--space-sm);
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+  }
+
+  #report-list .report-row .trust-block__count--second::before {
+    content: "\00b7";
+    content: "\00b7" / "";
+    position: static;
+    width: auto;
+    margin-right: var(--space-sm);
+    background-color: transparent;
+  }
+
+  #report-list .report-row .trust-block__signals:not([hidden]) {
+    min-height: 0;
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+  }
+
+  #report-list .report-row .trust-block__signals:not([hidden])::before {
+    content: "\00b7";
+    content: "\00b7" / "";
+    margin-right: var(--space-sm);
+  }
+
+  #report-list .report-row .trust-reporter:not([hidden]),
+  #report-list .report-row .trust-signal:not([hidden]) {
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+  }
+
+  #report-list .report-row .trust-num {
+    color: inherit;
+  }
+
+  /* White cards: the muted colour clears 4.5 to 1 on the page colour in both
+     themes. A tinted card keeps the normal text colour for the meta line and
+     the distance, because muted fails on every tint. */
+  #report-list .report-row.vis-provisional .report-row__meta,
+  #report-list .report-row.vis-provisional .report-row__away:not([hidden]),
+  #report-list .report-row.vis-hidden .report-row__meta,
+  #report-list .report-row.vis-hidden .report-row__away:not([hidden]) {
+    color: var(--color-text-muted);
+  }
+
+  #report-list .report-row.vis-provisional .trust-block__toggle:not([hidden]),
+  #report-list .report-row.vis-provisional .trust-block__signals:not([hidden]),
+  #report-list .report-row.vis-provisional .trust-reporter:not([hidden]) {
+    color: var(--color-text-muted);
+  }
+
+  /* A current report shows the trust line in the good tone, only where the
+     tone clears 4.5 to 1 on the card colour in both themes: not on the
+     critical tint. */
+  #report-list .report-row:not(.sev-critical):not(.vis-provisional):has(.trust-fact--currency .trust-fact__glyph--good) .trust-block__toggle:not([hidden]),
+  #report-list .report-row:not(.sev-critical):not(.vis-provisional):has(.trust-fact--currency .trust-fact__glyph--good) .trust-block__signals:not([hidden]),
+  #report-list .report-row:not(.sev-critical):not(.vis-provisional):has(.trust-fact--currency .trust-fact__glyph--good) .trust-reporter:not([hidden]) {
+    color: var(--color-tone-good);
+  }
+
+  /* ---- Pins as round dots with a ring ---- */
+
+  /* The marker box stays 44 by 44, so the tap target does not shrink. The
+     badge is a dot centred in it. */
+  #map .icon-badge--pin {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    box-sizing: content-box;
+    width: 20px;
+    height: 20px;
+    border: 3px solid var(--color-bg);
+    transform: translate(-50%, -50%);
+  }
+
+  #map .icon-badge--pin .icon-glyph {
+    display: none;
+  }
+
+  #map .leaflet-marker-icon[data-popup-open="true"] .icon-badge--pin,
+  #map .leaflet-marker-icon.map-pin--highlight .icon-badge--pin {
+    outline: 3px solid var(--color-text);
+    outline-offset: 0;
+  }
+
+  /* ---- The bottom bar ---- */
+
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 1010;
+    min-height: calc(var(--touch-target-min) + var(--space-sm));
+    background: var(--color-bg);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .bottom-nav .bottom-nav__tab {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-xs);
+    min-height: var(--touch-target-min);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+    font-weight: var(--font-weight-regular);
+    text-decoration: none;
+  }
+
+  .bottom-nav .bottom-nav__tab[aria-current="page"] {
+    color: var(--color-text);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .bottom-nav .bottom-nav__tab[aria-current="page"]::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: currentColor;
+  }
+}

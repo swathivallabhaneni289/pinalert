@@ -291,9 +291,24 @@ const (
 
 var p16PxValue = regexp.MustCompile(`^(-?[0-9.]+)(px|%)$`)
 
+// The two phone.css heads (quick task 261013-lrw) that the owner's phone
+// pictures need and that a house rule here would otherwise refuse. Each is
+// matched exactly, in phone.css only, and each is a departure written in
+// .planning/sketches/005-phone-layout/README.md.
+const (
+	// phoneTabDotHead is the dot above the current tab word of the bottom bar.
+	phoneTabDotHead = `.bottom-nav .bottom-nav__tab[aria-current="page"]::before`
+	// phoneFeedTitleHead is the feed card title, drawn up to two lines.
+	phoneFeedTitleHead = "#report-list .report-row .report-row__title"
+)
+
 // TestReadOnlyLabelsRoundedControlsNot pins A1, A38 and owner Q2: read only
 // labels are rounded 12px boxes, no control is fully rounded (V-40 narrowed
 // to controls), and the labels keep a visible shape in forced colors (RR-7).
+//
+// Phone departure (quick task 261013-lrw): the one phone.css head named by
+// phoneTabDotHead draws the bottom bar's current tab dot round. It is a mark
+// above the word, not a control shape.
 func TestReadOnlyLabelsRoundedControlsNot(t *testing.T) {
 	trust := p16TrustRules(t)
 	all := p16AllCSS(t)
@@ -312,6 +327,13 @@ func TestReadOnlyLabelsRoundedControlsNot(t *testing.T) {
 			continue
 		}
 		if strings.Contains(r.Head, ".severity-slider") || p16NamesLabel(r.Head) {
+			continue
+		}
+		if r.File == "static/css/phone.css" && r.Head == phoneTabDotHead {
+			// The bottom bar's current tab indicator: a 6px dot drawn as a
+			// pseudo element above the word. It is a mark, not a control
+			// shape, and the owner's picture draws it round. Departure
+			// recorded in .planning/sketches/005-phone-layout/README.md.
 			continue
 		}
 		exempt := false
@@ -607,6 +629,10 @@ func TestExpiredRowTreatmentMatchesRetracted(t *testing.T) {
 // inside the narrow row body, the title is never clamped, and the meta line
 // uses the full text colour.
 //
+// Phone departure (quick task 261013-lrw): the one phone.css head named by
+// phoneFeedTitleHead clamps the feed card title to two lines, as the owner's
+// picture draws it. Every other head still may not clamp.
+//
 // The value must be anywhere and not break-word: only anywhere lowers the
 // min-content width that sizes the row body flex item, so a pasted URL wraps
 // inside the 236px feed body and the 188px Activity body, whose page may not
@@ -624,6 +650,13 @@ func TestRowTitleWrapsLongWords(t *testing.T) {
 
 	for _, r := range p16AllCSS(t) {
 		if !strings.Contains(r.Head, "report-row__title") {
+			continue
+		}
+		if r.File == "static/css/phone.css" && r.Head == phoneFeedTitleHead {
+			// The owner's phone picture draws the feed card title up to two
+			// lines, so phone.css clamps this one head and no other. The
+			// detail shows the whole text. Departure recorded in
+			// .planning/sketches/005-phone-layout/README.md.
 			continue
 		}
 		for _, name := range []string{"-webkit-line-clamp", "line-clamp", "text-overflow"} {
