@@ -19,7 +19,7 @@ import (
 // toggle stays the block's only focus stop (A78, A79, D-20).
 func TestTrustToggleFaceMarkup(t *testing.T) {
 	// Code lines only, so a comment above the next function cannot count.
-	create := jsFunctionBody(t, p13CodeLines(p13ReadStatic(t, "static/js/trust.js")), "createTrustBlock(options)")
+	create := jsFunctionBody(t, p13CodeLines(p13ReadStatic(t, "static/js/trust.js")), "createTrustBlock()")
 
 	p13MustContain(t, "createTrustBlock", create,
 		"'trust-block__face'",

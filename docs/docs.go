@@ -678,6 +678,49 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.FactResponse": {
+            "type": "object",
+            "properties": {
+                "detail": {
+                    "description": "Detail is the muted line under the title, written by the server, empty when the row shows only its title.",
+                    "type": "string",
+                    "example": "At different spots nearby."
+                },
+                "kind": {
+                    "description": "Kind is what the row is about.",
+                    "type": "string",
+                    "enum": [
+                        "status",
+                        "confirmations",
+                        "disputes",
+                        "currency",
+                        "reporter"
+                    ],
+                    "example": "confirmations"
+                },
+                "score_detail": {
+                    "description": "ScoreDetail is the line that explains a score, empty when there is no score. Only the map popup shows it.",
+                    "type": "string",
+                    "example": "Score 86 out of 100."
+                },
+                "title": {
+                    "description": "Title is the bold line of the row, written by the server.",
+                    "type": "string",
+                    "example": "Confirmed by 2 people"
+                },
+                "tone": {
+                    "description": "Tone picks the row's glyph. Each tone is a different shape, so colour is never the only cue.",
+                    "type": "string",
+                    "enum": [
+                        "good",
+                        "neutral",
+                        "caution",
+                        "bad"
+                    ],
+                    "example": "good"
+                }
+            }
+        },
         "handlers.FeedReportResponse": {
             "type": "object",
             "properties": {
@@ -1096,6 +1139,13 @@ const docTemplate = `{
                     "description": "DisputedText is the disputed count as the surface shows it, from 0 to 99 or 99+ above 99, written by the server (A27).",
                     "type": "string",
                     "example": "0"
+                },
+                "facts": {
+                    "description": "Facts is the ordered list of tick rows the trust card shows on the map popup, the feed rows and the Activity rows: what is confirmed, what is disputed, whether it is still current and how reliable the reporter is. The server writes every word. The confirmed and disputed rows are always there, and the others are left out when they do not apply.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.FactResponse"
+                    }
                 },
                 "lead_sentence": {
                     "description": "LeadSentence is the panel's first line, empty when there is none.",

@@ -77,6 +77,14 @@
   --color-severity-medium-bg: #FCF3DC;
   --color-severity-critical-bg: #FBE9E7;
 
+  /* Tone palette (plan 03-31, A93): the glyph disc and the state word of the
+     trust card and the tick rows. Each value clears 4.5:1 on --color-bg, so
+     the word and the glyph read on the card surface; the bad tone is the
+     Critical red. */
+  --color-tone-good: #3A7B4D;
+  --color-tone-caution: #946200;
+  --color-tone-bad: var(--color-severity-critical);
+
   /* Age ramp target color (D-17) — plan 01-06 mixes toward this to desaturate an ageing
      report's severity color. Declared here even though this plan renders no rows: that's the
      whole point of the contract. */
@@ -105,6 +113,12 @@
     --color-severity-medium-bg: #3A2C10;
     --color-severity-critical-bg: #3A1512;
 
+    /* Tone palette, dark values: the severity greens, ambers and reds already
+       clear 4.5:1 on the dark card surface. */
+    --color-tone-good: #34D399;
+    --color-tone-caution: #E5A93B;
+    --color-tone-bad: var(--color-severity-critical);
+
     /* Age ramp target color — dark value */
     --color-age-stale: #4B4F55;
   }
@@ -131,6 +145,12 @@
   --color-severity-medium-bg: #3A2C10;
   --color-severity-critical-bg: #3A1512;
 
+  /* Tone palette, dark values: the severity greens, ambers and reds already
+     clear 4.5:1 on the dark card surface. */
+  --color-tone-good: #34D399;
+  --color-tone-caution: #E5A93B;
+  --color-tone-bad: var(--color-severity-critical);
+
   --color-age-stale: #4B4F55;
 }
 
@@ -150,6 +170,14 @@
   --color-severity-low-bg: #E7F5EC;
   --color-severity-medium-bg: #FCF3DC;
   --color-severity-critical-bg: #FBE9E7;
+
+  /* Tone palette (plan 03-31, A93): the glyph disc and the state word of the
+     trust card and the tick rows. Each value clears 4.5:1 on --color-bg, so
+     the word and the glyph read on the card surface; the bad tone is the
+     Critical red. */
+  --color-tone-good: #3A7B4D;
+  --color-tone-caution: #946200;
+  --color-tone-bad: var(--color-severity-critical);
 
   --color-age-stale: #C9CDD1;
 }

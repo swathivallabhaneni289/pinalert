@@ -37,28 +37,27 @@ func TestTrustStateLineMarkup(t *testing.T) {
 	code := p13CodeLines(trust)
 
 	p13MustContain(t, "trust.js", trust,
-		"function createReporterWords(showScores)",
+		"function createReporterWords()",
 		"function createStateLine(className, tag, block)",
 		"createStateLine: createStateLine",
 		"trust-icon trust-icon--clock",
 	)
 	p13MustNotContain(t, "trust.js", trust, p23RetiredClasses...)
 
-	words := jsFunctionBody(t, code, "createReporterWords(showScores)")
+	// Plan 03-31 (A89): the reporter words carry no score number any more.
+	words := jsFunctionBody(t, code, "createReporterWords()")
 	p13MustContain(t, "createReporterWords", words,
 		"'trust-reporter'",
 		"el.hidden = true",
-		"'visually-hidden'",
-		"', score'",
-		"document.createTextNode(' ')",
-		"return { el: el, word: word, score: score, num: num };",
+		"return { el: el, word: word };",
 	)
 	p13MustNotContain(t, "createReporterWords", words,
 		"trust-icon", "trust-num", "trust-signal", "aria-hidden", "'button'", "tabindex",
+		"'visually-hidden'", "score",
 	)
 
-	create := jsFunctionBody(t, code, "createTrustBlock(options)")
-	p13MustContain(t, "createTrustBlock", create, "createReporterWords(showScores)", "reporter: reporter")
+	create := jsFunctionBody(t, code, "createTrustBlock()")
+	p13MustContain(t, "createTrustBlock", create, "createReporterWords()", "reporter: reporter")
 	p13MustNotContain(t, "createTrustBlock", create, "reporter.el", "createStateLine(")
 
 	line := jsFunctionBody(t, code, "createStateLine(className, tag, block)")
@@ -108,7 +107,7 @@ func TestTrustStateLineMarkup(t *testing.T) {
 		"pills.appendChild(badge)",
 		"pills.appendChild(severity)",
 		"header.appendChild(pills)",
-		"PinalertTrust.createTrustBlock({ showScores: true })",
+		"PinalertTrust.createTrustCard()",
 		"header.appendChild(PinalertTrust.createStateLine('popup-card__stateline', tag, trust))",
 		"PinalertVotes.createVoteBlock(",
 	)

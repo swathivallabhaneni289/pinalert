@@ -79,7 +79,9 @@ window.Pinalert = (function () {
     status: 'idle', // idle | loading | ok | error
     error: null,
     selectedId: null,
-    center: { lat: config.fallbackLat, lon: config.fallbackLon },
+    // own is true only when the centre is the reader's own position, a fix the
+    // browser gave. The fallback centre is never the reader (A94).
+    center: { lat: config.fallbackLat, lon: config.fallbackLon, own: false },
     // The client half of D-10's closed default: a visitor who has not
     // asked for disputed reports never sees them.
     showDisputed: false
@@ -160,8 +162,17 @@ window.Pinalert = (function () {
     };
   }
 
-  function setCenter(lat, lon) {
-    state.center = { lat: lat, lon: lon };
+  // setCenter stores the feed centre and where it came from. The caller says
+  // own only for the reader's own position, so a distance read from this feed
+  // is shown as "away" only when it is the reader's distance (A94).
+  function setCenter(lat, lon, own) {
+    state.center = { lat: lat, lon: lon, own: own === true };
+  }
+
+  // feedIsAroundReader is true when the feed was loaded around the reader's
+  // own position, the only time distance_km is the reader's distance.
+  function feedIsAroundReader() {
+    return state.center.own === true;
   }
 
   // setShowDisputed mirrors setCenter's shape exactly: a single coerced
@@ -400,6 +411,46 @@ window.Pinalert = (function () {
     return diffDays + (diffDays === 1 ? ' day ago' : ' days ago');
   }
 
+  // formatDistance turns a feed report's distance_km into the "away" words of
+  // the popup meta line (A94): one decimal under 10 km, "under 100 m" below a
+  // tenth of a km and a whole number from 10 km. It returns an empty string for
+  // a missing or invalid value, so nothing is invented for it.
+  function formatDistance(km) {
+    if (typeof km !== 'number' || !isFinite(km) || km < 0) {
+      return '';
+    }
+    if (km < 0.1) {
+      return 'under 100 m away';
+    }
+    if (km < 9.95) {
+      return km.toFixed(1) + ' km away';
+    }
+    return Math.round(km) + ' km away';
+  }
+
+  // formatFade is the fade line of the popup (A95), from the report's own
+  // expires_at on the server's clock, like relativeTime. One hour or more
+  // reads in whole hours rounded down, under an hour in minutes rounded up,
+  // and an expired report or a missing expires_at reads nothing. It never says
+  // that a confirmation extends a report's life, because nothing updates
+  // expires_at after creation (T-03-31-03).
+  function formatFade(report) {
+    var expires = new Date(report && report.expires_at).getTime();
+    if (!isFinite(expires)) {
+      return '';
+    }
+    var remainingMs = expires - nowMs();
+    if (remainingMs <= 0) {
+      return '';
+    }
+    var hourMs = 3600000;
+    if (remainingMs >= hourMs) {
+      var hours = Math.floor(remainingMs / hourMs);
+      return 'Fades in ' + hours + (hours === 1 ? ' hr.' : ' hrs.');
+    }
+    return 'Fades in ' + Math.ceil(remainingMs / 60000) + ' min.';
+  }
+
   // ageStage implements D-15/D-17: a report fades over roughly the last
   // quarter of its lifetime, expressed as three discrete desaturation
   // stages. remainingFraction > 0.25 -> fresh; 0.125 <= remainingFraction
@@ -465,6 +516,7 @@ window.Pinalert = (function () {
     state: state,
     subscribe: subscribe,
     setCenter: setCenter,
+    feedIsAroundReader: feedIsAroundReader,
     setShowDisputed: setShowDisputed,
     fetchReports: fetchReports,
     startPolling: startPolling,
@@ -475,6 +527,8 @@ window.Pinalert = (function () {
     iconClass: iconClass,
     formatShelterLine: formatShelterLine,
     relativeTime: relativeTime,
+    formatDistance: formatDistance,
+    formatFade: formatFade,
     ageStage: ageStage,
     setText: setText,
     showToast: showToast

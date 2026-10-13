@@ -31,6 +31,22 @@ type TrustResponse struct {
 	Currency CurrencyResponse `json:"currency"`
 	// Reporter is the reporter signal: a tag, the facts behind it (how many earlier reports had a clear result and how many of those people nearby confirmed) and a whole number score from 0 to 100, or null while there is no rating. The feed and every vote response carry the same object.
 	Reporter ReporterResponse `json:"reporter"`
+	// Facts is the ordered list of tick rows the trust card shows on the map popup, the feed rows and the Activity rows: what is confirmed, what is disputed, whether it is still current and how reliable the reporter is. The server writes every word. The confirmed and disputed rows are always there, and the others are left out when they do not apply.
+	Facts []FactResponse `json:"facts"`
+}
+
+// FactResponse is one tick row of the trust card.
+type FactResponse struct {
+	// Kind is what the row is about.
+	Kind string `json:"kind" enums:"status,confirmations,disputes,currency,reporter" example:"confirmations"`
+	// Tone picks the row's glyph. Each tone is a different shape, so colour is never the only cue.
+	Tone string `json:"tone" enums:"good,neutral,caution,bad" example:"good"`
+	// Title is the bold line of the row, written by the server.
+	Title string `json:"title" example:"Confirmed by 2 people"`
+	// Detail is the muted line under the title, written by the server, empty when the row shows only its title.
+	Detail string `json:"detail" example:"At different spots nearby."`
+	// ScoreDetail is the line that explains a score, empty when there is no score. Only the map popup shows it.
+	ScoreDetail string `json:"score_detail" example:"Score 86 out of 100."`
 }
 
 // CurrencyResponse is the still current signal of one report.
@@ -84,7 +100,24 @@ func trustToResponse(t service.Trust) TrustResponse {
 		DisputedSentence:  t.DisputedSentence,
 		Currency:          currencyToResponse(t.Currency),
 		Reporter:          reporterToResponse(t.Reporter),
+		Facts:             factsToResponse(t.Facts),
 	}
+}
+
+// factsToResponse copies the facts one by one. The result is never nil, so the
+// wire carries an empty array and never null.
+func factsToResponse(facts []service.TrustFact) []FactResponse {
+	out := make([]FactResponse, 0, len(facts))
+	for _, f := range facts {
+		out = append(out, FactResponse{
+			Kind:        string(f.Kind),
+			Tone:        string(f.Tone),
+			Title:       f.Title,
+			Detail:      f.Detail,
+			ScoreDetail: f.ScoreDetail,
+		})
+	}
+	return out
 }
 
 // currencyToResponse copies the still current signal field by field.

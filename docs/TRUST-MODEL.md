@@ -110,7 +110,7 @@ The panel sentences are written by the server. T is `IndependentAgreementThresho
 | Disputed | M is 1 | `1 person nearby disputed this.` |
 | Disputed | M is 2 or more | `{M} people at different spots disputed this.` |
 
-The lead follows the confirming count. A Provisional report has fewer than T confirming places, so it needs T people, or 1 more person after one place; a larger threshold would read `Needs {K} more people at different spots to confirm it.`. The words changed in amendment A88 and no line was hidden: every sentence that was filled before is still filled in the same states.
+The lead follows the confirming count. A Provisional report has fewer than T confirming places, so it needs T people, or 1 more person after one place; a larger threshold would read `Needs {K} more people at different spots to confirm it.`. The words changed in amendment A88 and no line was hidden: every sentence that was filled before is still filled in the same states. Since plan 03-31 these sentences are the wire's older fields (`lead_sentence`, `confirmed_sentence` and `disputed_sentence`). The trust card shows the same facts as the rows of `facts`, described under "One trust object on every surface" below.
 
 The tests that pin this section are `TestBuildTrustCountsMatchTally`, `TestTrustCountLabel`, `TestTrustCountsDistinctPlacesNotVotes` and `TestTrustCountUnderConcurrentVotes`. The last one casts votes from many places at once and needs a disposable database. The wording itself is pinned by `TestTrustCounterSentences`, `TestPanelWordingEveryState`, `TestPanelWordingNamesNoPlace`, `TestPanelWordingStaysFilled` and `TestPanelWordingSingularAndPlural`.
 
@@ -222,7 +222,7 @@ The roadmap asks for a fast decaying "is this still current" confidence score (T
 - The word is cut from the integer, so the two cannot disagree.
 - It decays one point per started 1/25 of a window and reaches 0 over the report's lifetime. That is the fast decaying half. The reporter half is slow.
 - It is null below 2 places, and Phase 6 treats null as unknown.
-- The feed row shows only the word. The popup shows the number and the score sentence (D-09, A50).
+- The feed row shows only the word. The popup shows the score as the score line of the still current row, "Score {SCORE} out of 100." (D-09, A50, A92).
 
 ### What it costs to fake
 
@@ -238,7 +238,7 @@ Every report also carries a slow signal beside the still current one: is the per
 
 The rating is public and person level. It is keyed to the verified account through `sessions.account_id`, across every session the account has used, and never to a session. Someone who signs in on a second phone keeps one record.
 
-The tag and the counts behind it are visible to everyone on every report, and the popup also shows the number. The account id and the email are never shown. The signal carries only the tag, the score, the two counts and server written sentences.
+The tag and the counts behind it are visible to everyone on every report, and the popup also shows the score line. The account id and the email are never shown. The signal carries only the tag, the score, the two counts and server written sentences.
 
 Accountless reports, and official pins in a later phase, have no rating. They carry the tag `none` and show nothing (A47). A feed read rates at most 200 reporter accounts, taken from the nearest reports first, and reports by accounts past that cap also carry none.
 
@@ -288,7 +288,7 @@ So the boundaries 75, 35 and 25 are exact (4 corroborated and 1 unconfirmed is e
 
 Tags are cut from the rounded integer. 75 or more (`ReliableMinScore`) is Reliable reporter, 35 to 74 (`MixedMinScore`) is Mixed record, and 34 or less is Unreliable reporter. Fewer than 5 judged is New reporter with no number.
 
-New reporter never looks like a good tag. It is the same plain text as the others, with no check, star or colour. The feed row, the Activity page and the popup show the tag as plain words beside the state label, at the top of the report and outside the trust block's button, alone on that line when the report has no state label (03-UI-SPEC.md A75). The panel shows the reporter sentence. The popup also shows the number and the score sentence.
+New reporter never looks like a good tag. It is the same plain text as the others, with no check, star or colour. The feed row and the Activity page show the tag as plain words beside the state label, at the top of the report and outside the trust block's button, alone on that line when the report has no state label (03-UI-SPEC.md A75). The popup shows the tag as the title of the last row of its card, with the reporter sentence as the detail and, when the score is not null, the score sentence as the score line (A91, A92). The panel of a row shows the same reporter row without the score line.
 
 The templates, in the server's exact words:
 
@@ -348,7 +348,7 @@ The roadmap asks for a slow decaying "is this source reliable" score (TRUST-07, 
 - It is an integer from 0 to 100 per reporter, from the documented formula, recomputed on every read and never stored.
 - It decays with a 30 day half life inside 90 days. That is the slow half beside the fast still current score.
 - It is null for a New reporter, and a later phase treats null as unknown.
-- The feed row shows the tag. The popup shows the number with its score sentence (D-09, A50). Both signals show at once on every report without opening anything: the still current word in the trust block and the reporter tag beside the state label (A75).
+- The feed row shows the tag. The popup shows the score as the score line of the reporter row (D-09, A50, A92). Both signals show at once on every report without opening anything: the still current word and the reporter tag beside the state label on rows and the Activity page (A75), and the state word and the last row of the always showing card in the popup (A91, A92).
 
 ### Known limits of the rating
 
@@ -391,6 +391,12 @@ The tests that pin this section are `TestClassifyOutcome`, `TestReliabilityTable
 | `reporter.score_sentence` | string | Empty when the score is null. |
 | `reporter.judged_reports` | int | J, the judged reports. |
 | `reporter.corroborated_reports` | int | C, the corroborated reports. |
+| `facts` | array | The ordered tick rows of the trust card, never null. Kinds in order: `status`, `confirmations`, `disputes`, `currency`, `reporter`. See "The facts list" below. |
+| `facts[].kind` | string | `status`, `confirmations`, `disputes`, `currency` or `reporter`. |
+| `facts[].tone` | string | `good`, `neutral`, `caution` or `bad`. It picks the row's icon. |
+| `facts[].title` | string | The bold line of the row. Always set. |
+| `facts[].detail` | string | The muted line under the title. Empty when the row has none. |
+| `facts[].score_detail` | string | The score line, "Score {SCORE} out of 100.". Empty when there is no score. Only the map popup shows it. |
 
 What never leaves the server: the account id, the email, the voter's place, the session id and any raw vote total. `TestTrustResponseOmitsIdentifiers` checks the live response, and `TestSwaggerSpecCoversRoutes` checks the documented field names against the same rule.
 
@@ -399,6 +405,50 @@ The same object reaches every surface, and these tests prove it: `TestTrustAttac
 Cost bounds: a feed read makes one batched vote read and one history read, and rates at most `MaxReporterAccountsPerRead` reporter accounts, nearest first. Reports past the cap read `none`. `TestNearbyBatchesVoteReadsOnceWithReporters` and `TestNearbyReporterAccountCap` pin this.
 
 Display only: neither signal hides a report, dims it beyond the time fade or reorders it. Critical and rescue needed rows keep the time fade only (D-14). `TestNearbyRatingNeverChangesVisibilityOrOrder` and `TestFadeUsesCombinedStage` pin this, and `TestTrustModuleHasNoThresholdsOrSinks` pins that the browser holds no threshold of its own.
+
+### The facts list
+
+`facts` is the list of rows the trust card shows. A row has a bold title, an optional muted detail line, an optional score line and a tone. The map popup always shows the rows. The feed row and the Activity row show the same rows when their panel is opened. `buildTrustFacts` in `internal/service/trustfacts.go` builds the list once, inside `BuildTrust`, so the feed, the vote response and the Activity row carry the same list for every viewer (plan 03-31, amendments A89 and A90 in `03-UI-SPEC.md`). The field is additive: every other key and every sentence above is unchanged.
+
+The kinds, always in this order:
+
+1. `status`, only for an expired report that is not resolved. A resolved report reads as resolved and not as expired, the same precedence as the lead sentence.
+2. `confirmations`, always.
+3. `disputes`, always.
+4. `currency`, exactly when the still current signal shows a word. It is left out for a Hidden, Retracted or expired report, and for a non critical report that is not yet corroborated, which is the Provisional case.
+5. `reporter`, for every tag except `none`.
+
+So the list always holds the two counter rows, also at 0 confirmed and 0 disputed. A row that does not apply is left out and never sent empty.
+
+The tone is `good`, `neutral`, `caution` or `bad`. It is the server's pick, and the browser turns it into a glyph: a check, a dash, an exclamation or a cross. Each tone has its own shape, so colour is never the only cue, and the row text carries the meaning.
+
+The server writes every word, so the browser holds no wording, threshold or rule for a fact. The strings are built from constants and integers only, so no report text can enter them. They use the same closed character set as the other copy, and none of them contains the word place. Two rules keep the facts from drifting away from the signals:
+
+- The currency and reporter rows carry the signals' own sentences. Their `detail` is `currency.sentence` or `reporter.sentence`, and their `score_detail` is the score sentence. Nothing is recomputed. A dispute that raised the bar is read from the signal itself, because its sentence is not the plain sentence of its band. The one exception is the Gone quiet row, whose detail drops the words its title already says.
+- The count rows use the same N and M as the counters. A title carries the real number even above 99 ("Confirmed by 120 people"), while `confirmed_text` stops at "99+". The "Needs" detail of a confirmations row is left empty for a Hidden, Retracted or expired report, because nobody can act on it.
+
+The score line follows D-09 and A50: only the popup shows it, and it is empty exactly when the score is null. The old sentence fields (`lead_sentence`, `confirmed_sentence`, `disputed_sentence` and the sentences of the two signals) stay on the wire unchanged for the API, and the Phase 4 Low data view should read `facts` instead. In this table T is `IndependentAgreementThreshold`, MIN is `ReliabilityMinJudged`, W the window phrase, R the confirming places inside the window, K the number of confirmations a standing dispute makes necessary, C the corroborated and J the judged reports.
+
+| Kind | Case | Tone | Title | Detail |
+|------|------|------|-------|--------|
+| `status` | expired and not resolved | neutral | Expired | `It can no longer be confirmed.` |
+| `confirmations` | N is 0 (the detail is empty for a Hidden, Retracted or expired report) | neutral | Not confirmed yet | `Needs {T} people at different spots.` |
+| `confirmations` | N is 1 (the detail is empty for a Hidden, Retracted or expired report) | neutral | Confirmed by 1 person | `Needs 1 more person at a different spot.` |
+| `confirmations` | N is 2 or more | good | Confirmed by {N} people | `At different spots nearby.` |
+| `disputes` | M is 0 | good | No disputes | `No one nearby has disputed this.` |
+| `disputes` | M is 1 | bad | Disputed by 1 person | `Someone nearby says this is wrong.` |
+| `disputes` | M is 2 or more | bad | Disputed by {M} people | `At different spots nearby.` |
+| `currency` | Report up to date | good | Still happening | `{R} confirmations in the last {W}.` |
+| `currency` | Report getting old, no standing dispute raised the bar | caution | Getting old | `Fewer than {T} confirmations in the last {W}.` |
+| `currency` | Report needs re-confirming, no standing dispute raised the bar | bad | Gone quiet | `People nearby can confirm it again.` |
+| `currency` | Report getting old or needs re-confirming, and a standing dispute raised the bar | caution | Needs more confirmations | `Disputed nearby, so it needs {K} confirmations in the last {W}.` |
+| `currency` | Too early to tell | neutral | Too early to tell | `Fewer than {T} people have confirmed this yet.` |
+| `reporter` | Reliable | good | Reliable reporter | `{C} of their last {J} reports were confirmed.` |
+| `reporter` | Mixed | caution | Mixed record | `{C} of their last {J} reports were confirmed.` |
+| `reporter` | Unreliable | bad | Unreliable reporter | `{C} of their last {J} reports were confirmed.` |
+| `reporter` | New | neutral | New reporter | `Not rated yet. It needs {MIN} reports with a clear result.` |
+
+The currency and reporter score line is `Score {SCORE} out of 100.` when the score is not null. The tests that pin the list are `TestTrustFactsEveryState`, `TestTrustFactsRulesOverTheGrid`, `TestTrustFactsPlurals` and `TestTrustFactsAreDeterministic`, and `TestTrustCarriesFactsOnTheWire` shows that the feed and the vote response carry equal lists.
 
 ## Browser hints, server decisions
 
@@ -417,13 +467,13 @@ The hint is advisory. A forced vote is still refused by the server.
 | "confirmed by N nearby" | The counter `N confirmed`: N distinct places, every vote cast from within 1 km | `BuildTrust`, `CastVote` | `TestBuildTrustCountsMatchTally`, `TestCastVoteRejectsTooFar` |
 | deliberately chosen, documented geohash precision | Precision 7, with the reasoning in "What counts as a place" | `voterGeohashPrecision` | `TestGeohashPrecisionWitnesses` |
 | not the raw number of votes | Distinct places, so repeat votes and a crowd in one place count once | `BuildVoteTally` | `TestTrustCountsDistinctPlacesNotVotes` |
-| two distinct trust signals side by side | The still current word in the trust block and the reporter tag beside the state label, both shown at once on every report without opening anything (A75) | `BuildTrust`, `createStateLine` | `TestFeedSignalsMatchCastVoteSignals`, `TestTrustBlockMountedOnBothSurfaces`, `TestTrustStateLineMarkup` |
+| two distinct trust signals side by side | The still current word and the reporter tag, both shown at once on every report without opening anything: beside the state label on rows and the Activity page (A75), and as the state word and the last row of the popup card (A91, A92) | `BuildTrust`, `createStateLine` | `TestFeedSignalsMatchCastVoteSignals`, `TestTrustBlockMountedOnBothSurfaces`, `TestTrustStateLineMarkup` |
 | fast decaying still current confidence score | `currency.score` | `buildCurrency` | `TestCurrencyScoreBoundaries` |
 | slow decaying source reliable score | `reporter.score` | `ScoreReliability` | `TestReliabilityTable`, `TestReliabilityDecayAndWindow` |
 
 How the word score is met (D-08, TRUST-07), for both halves: each score is an integer from 0 to 100 (`currency.score` and `reporter.score`) from a documented formula over real votes. It is recomputed on every read and never stored. The band or tag is cut from the same integer, so the word and the number cannot disagree. A score is null when there is no basis for one: fewer than 2 confirming places over the life of the report, or `not_applicable`, for the still current score, and New reporter or none for the reporter score. The numbers show on screen in the map popup only (D-09), and Phase 6 can sort on them server side. The two subsections called "How the roadmap word score is met" in the still current and reporter sections give the detail, so it is not repeated here.
 
-The visible form of "confirmed by N nearby" is the counter `N confirmed`, with the panel sentence "Confirmed by {N} people at different spots." naming who is counted. That is the form CONTEXT records for the first roadmap criterion.
+The visible form of "confirmed by N nearby" is the counter `N confirmed`, with the confirmations row of the trust card, titled "Confirmed by {N} people" with the detail "At different spots nearby.", naming who is counted. The older sentence "Confirmed by {N} people at different spots." stays on the wire as `confirmed_sentence`. That is the form CONTEXT records for the first roadmap criterion.
 
 ## Hand offs to later phases
 
@@ -433,6 +483,7 @@ The visible form of "confirmed by N nearby" is the counter `N confirmed`, with t
 - Phase 5 demo mode has to handle far away visitors, who cannot vote on seeded reports under the 1 km rule. It should place simulated reports near the visitor or exempt demo reports. It may seed clearly labelled demo accounts to show a rated reporter.
 - Phase 6 may sort on the integer scores server side. It must never use them to bury a critical or rescue needed report (D-14), and must never bake a count or a rating into a shareable card image.
 - Phase 8's report page reuses the trust block unchanged and places the reporter words with the same helper as the other surfaces, `createStateLine`.
+- Phase 4's Low data view should read `facts` for the rows of its trust block, not the older sentence fields. The server already writes every word of a row.
 
 ## Keeping this document true
 

@@ -213,7 +213,7 @@ func p07DecodeTrust(t *testing.T, raw json.RawMessage) p07TrustWire {
 var p07TrustWireKeys = []string{
 	"confirmed_places", "disputed_places", "confirmed_text", "disputed_text",
 	"lead_sentence", "confirmed_sentence", "disputed_sentence",
-	"currency", "reporter",
+	"currency", "reporter", "facts",
 }
 
 // p14CurrencyWireKeys is the exact key set of trust.currency, the eight rows
@@ -1176,4 +1176,94 @@ func TestReporterSignalFromSeededHistory(t *testing.T) {
 			}
 		}
 	}
+}
+
+// p31FactWire is the client side view of one tick row.
+type p31FactWire struct {
+	Kind        string `json:"kind"`
+	Tone        string `json:"tone"`
+	Title       string `json:"title"`
+	Detail      string `json:"detail"`
+	ScoreDetail string `json:"score_detail"`
+}
+
+// p31Facts decodes trust.facts and fails unless it is a JSON array whose
+// objects carry exactly the five keys.
+func p31Facts(t *testing.T, label string, trust json.RawMessage) []p31FactWire {
+	t.Helper()
+	var outer struct {
+		Facts json.RawMessage `json:"facts"`
+	}
+	if err := json.Unmarshal(trust, &outer); err != nil {
+		t.Fatalf("%s: decoding trust: %v", label, err)
+	}
+	if len(outer.Facts) == 0 || outer.Facts[0] != '[' {
+		t.Fatalf("%s: facts is not a JSON array: %s", label, outer.Facts)
+	}
+	var objs []map[string]json.RawMessage
+	if err := json.Unmarshal(outer.Facts, &objs); err != nil {
+		t.Fatalf("%s: decoding facts: %v", label, err)
+	}
+	for i, o := range objs {
+		if len(o) != 5 {
+			t.Errorf("%s: fact %d has %d keys, want 5: %v", label, i, len(o), o)
+		}
+		for _, k := range []string{"kind", "tone", "title", "detail", "score_detail"} {
+			if _, ok := o[k]; !ok {
+				t.Errorf("%s: fact %d is missing key %q", label, i, k)
+			}
+		}
+	}
+	var out []p31FactWire
+	if err := json.Unmarshal(outer.Facts, &out); err != nil {
+		t.Fatalf("%s: decoding facts: %v", label, err)
+	}
+	return out
+}
+
+// TestTrustCarriesFactsOnTheWire is plan 03-31: the trust object carries the
+// ordered facts list on the vote response and on the feed alike, the lists are
+// equal (p07CompareWithFeed compares the whole object), and the rows follow
+// the votes.
+func TestTrustCarriesFactsOnTheWire(t *testing.T) {
+	srv, mailer, _ := newTrustE2EServer(t, p07FixedClock())
+
+	a := newVerifiedClient(t, srv, mailer, "p31-facts-a@example.com")
+	b := newVerifiedClient(t, srv, mailer, "p31-facts-b@example.com")
+	c := newVerifiedClient(t, srv, mailer, "p31-facts-c@example.com")
+	d := newVerifiedClient(t, srv, mailer, "p31-facts-d@example.com")
+
+	reportID := submitReportGetID(t, a, srv.URL, floodReportBody(p07ReportLat, p07ReportLon))
+
+	// One confirming place: Provisional, a neutral row that says what is missing.
+	_, tr := p07VoteTrust(t, b, srv.URL, reportID, "confirm", 12.9746, 77.5946)
+	got := p31Facts(t, "one confirmed", tr)
+	want := []p31FactWire{
+		{"confirmations", "neutral", "Confirmed by 1 person", "Needs 1 more person at a different spot.", ""},
+		{"disputes", "good", "No disputes", "No one nearby has disputed this.", ""},
+	}
+	if !reflect.DeepEqual(got[:min(len(got), 2)], want) {
+		t.Errorf("one confirmed: facts %+v, want the rows %+v first", got, want)
+	}
+	p07CompareWithFeed(t, "facts, one confirmed", tr, srv.URL, reportID, map[string]*http.Client{"B": b, "A": a})
+
+	// A second place: Live, the confirmations row turns good and the still
+	// current row appears.
+	_, tr = p07VoteTrust(t, c, srv.URL, reportID, "confirm", 12.9686, 77.5946)
+	got = p31Facts(t, "two confirmed", tr)
+	if len(got) < 3 || got[0] != (p31FactWire{"confirmations", "good", "Confirmed by 2 people", "At different spots nearby.", ""}) {
+		t.Fatalf("two confirmed: facts %+v", got)
+	}
+	if got[2].Kind != "currency" || got[2].Tone != "good" || got[2].Title != "Still happening" {
+		t.Errorf("two confirmed: third fact %+v, want the still happening row", got[2])
+	}
+	p07CompareWithFeed(t, "facts, two confirmed", tr, srv.URL, reportID, map[string]*http.Client{"C": c, "A": a})
+
+	// A dispute turns the disputes row.
+	_, tr = p07VoteTrust(t, d, srv.URL, reportID, "dispute", 12.9716, 77.5986)
+	got = p31Facts(t, "disputed", tr)
+	if len(got) < 2 || got[1] != (p31FactWire{"disputes", "bad", "Disputed by 1 person", "Someone nearby says this is wrong.", ""}) {
+		t.Fatalf("disputed: facts %+v", got)
+	}
+	p07CompareWithFeed(t, "facts, disputed", tr, srv.URL, reportID, map[string]*http.Client{"D": d, "A": a})
 }

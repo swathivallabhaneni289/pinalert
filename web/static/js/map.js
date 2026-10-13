@@ -216,14 +216,16 @@ window.PinalertMap = (function () {
 
   // centerOnVisitor centres on the visitor's geolocation when granted, and
   // on Pinalert.config's fallback otherwise, then hands the resolved centre
-  // to the shared store so the one fetch + polling loop can start.
+  // to the shared store so the one fetch + polling loop can start. The own
+  // flag tells the store whether the centre is the reader's own position, so
+  // the popup shows a distance only when it is the reader's (A94).
   function centerOnVisitor() {
     var fallbackLat = Pinalert.config.fallbackLat;
     var fallbackLon = Pinalert.config.fallbackLon;
 
-    function boot(lat, lon, zoom) {
+    function boot(lat, lon, zoom, own) {
       map.setView([lat, lon], zoom);
-      Pinalert.setCenter(lat, lon);
+      Pinalert.setCenter(lat, lon, own);
       Pinalert.fetchReports();
       Pinalert.startPolling();
     }
@@ -231,15 +233,15 @@ window.PinalertMap = (function () {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         function (pos) {
-          boot(pos.coords.latitude, pos.coords.longitude, 13);
+          boot(pos.coords.latitude, pos.coords.longitude, 13, true);
         },
         function () {
-          boot(fallbackLat, fallbackLon, 11);
+          boot(fallbackLat, fallbackLon, 11, false);
         },
         { timeout: 8000 }
       );
     } else {
-      boot(fallbackLat, fallbackLon, 11);
+      boot(fallbackLat, fallbackLon, 11, false);
     }
   }
 
@@ -323,10 +325,16 @@ window.PinalertMap = (function () {
     meta.appendChild(metaGlyph);
     meta.appendChild(metaLines);
 
-    // The popup alone asks for the two scores (D-09); its reporter words join
-    // the state label in the header (A75).
-    var trust = PinalertTrust.createTrustBlock({ showScores: true });
+    // The popup holds the always showing trust card (A91, A92). It has no reporter
+    // words, so the state line carries the state label alone and the reporter
+    // is the last tick row.
+    var trust = PinalertTrust.createTrustCard();
     header.appendChild(PinalertTrust.createStateLine('popup-card__stateline', tag, trust));
+
+    // The fade line sits under the card, above the vote buttons (A95).
+    var fade = document.createElement('p');
+    fade.className = 'popup-card__fade';
+    fade.hidden = true;
 
     var actions = document.createElement('div');
     actions.className = 'popup-card__actions';
@@ -341,6 +349,7 @@ window.PinalertMap = (function () {
     body.appendChild(titleEl);
     body.appendChild(meta);
     body.appendChild(trust.el);
+    body.appendChild(fade);
     body.appendChild(actions);
     el.appendChild(body);
 
@@ -354,6 +363,7 @@ window.PinalertMap = (function () {
       metaLine: metaLine,
       shelterLine: shelterLine,
       trust: trust,
+      fade: fade,
       votes: block,
       observer: null,
       frame: 0
@@ -373,10 +383,23 @@ window.PinalertMap = (function () {
     PinalertTrust.updateSeverityLabel(card.severity, report);
     PinalertVisibility.updateVisibilityTag(card.tag, report);
 
-    // Category and relative time only: no severity word (the label above
-    // says it) and no distance (A24, A31).
+    // Category, relative time and, only when the feed was loaded around the
+    // reader's own position, the distance. No severity word: the label above
+    // says it (A24, A94).
     var categoryLabel = Pinalert.categoryLabel(report.category);
-    Pinalert.setText(card.metaLine, categoryLabel + ' \u00b7 ' + Pinalert.relativeTime(report.created_at));
+    var away = Pinalert.feedIsAroundReader() ? Pinalert.formatDistance(report.distance_km) : '';
+    var meta = categoryLabel + ' \u00b7 ' + Pinalert.relativeTime(report.created_at);
+    if (away) {
+      meta += ' \u00b7 ' + away;
+    }
+    Pinalert.setText(card.metaLine, meta);
+
+    // The fade line is computed from expires_at in the shared formatter and
+    // refreshed on every store update, like the relative time above. An empty
+    // line stays hidden (A95).
+    var fadeText = Pinalert.formatFade(report);
+    Pinalert.setText(card.fade, fadeText);
+    card.fade.hidden = !fadeText;
 
     // A shelter adds a second line. The shared formatter returns an empty
     // string for any other category, and an empty line stays hidden (RR-6).
@@ -384,7 +407,7 @@ window.PinalertMap = (function () {
     Pinalert.setText(card.shelterLine, shelter || '');
     card.shelterLine.hidden = !shelter;
 
-    PinalertTrust.updateTrustBlock(card.trust, report.trust);
+    PinalertTrust.updateTrustCard(card.trust, report.trust);
     PinalertVotes.updateVoteBlock(card.votes, report);
   }
 
@@ -570,9 +593,9 @@ window.PinalertMap = (function () {
     }
   }
 
-  // onPopupClose clears the marks, collapses the popup's trust panel so a
-  // reopened pin never comes back with a stale open panel, and returns focus
-  // to the opener when focus was in the popup and has not gone elsewhere (A74).
+  // onPopupClose clears the marks and returns focus to the opener when focus
+  // was in the popup and has not gone elsewhere (A74). The popup's trust card
+  // is always showing, so there is no panel to collapse.
   // Focus on the map container counts as lost only after a close button press,
   // because that is where WebKit puts it on a mouse press.
   function onPopupClose(evt) {
@@ -590,9 +613,6 @@ window.PinalertMap = (function () {
     var pin = id !== null && markers[id] ? markers[id].getElement() : null;
     if (pin) {
       pin.removeAttribute('data-popup-open');
-    }
-    if (el && window.PinalertTrust && typeof PinalertTrust.collapsePanelsIn === 'function') {
-      PinalertTrust.collapsePanelsIn(el);
     }
 
     popupFocusInside = false;
