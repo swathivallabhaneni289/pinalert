@@ -528,11 +528,11 @@ func TestReporterSignalsNewAndNone(t *testing.T) {
 			inputs = append(inputs, &s)
 		}
 		for _, vis := range Visibilities {
-			base := BuildTrust(p10TrustInput(vis, nil))
-			base.Reporter = ReporterSignal{}
+			// The reporter row of the facts carries the signal, so it goes
+			// with the signal (plan 03-31).
+			base := p31WithoutReporter(BuildTrust(p10TrustInput(vis, nil)))
 			for _, in := range inputs {
-				got := BuildTrust(p10TrustInput(vis, in))
-				got.Reporter = ReporterSignal{}
+				got := p31WithoutReporter(BuildTrust(p10TrustInput(vis, in)))
 				if !reflect.DeepEqual(got, base) {
 					t.Errorf("%s: a reporter signal changed the rest of the trust object: %+v vs %+v", vis, got, base)
 				}
@@ -563,9 +563,10 @@ func TestReporterSignalsNewAndNone(t *testing.T) {
 			}
 		}
 		tt := reflect.TypeOf(Trust{})
-		last, prev := tt.Field(tt.NumField()-1), tt.Field(tt.NumField()-2)
-		if last.Name != "Reporter" || last.Type != reflect.TypeOf(ReporterSignal{}) || prev.Name != "Currency" {
-			t.Errorf("Trust ends with %s then %s, want Currency then Reporter ReporterSignal", prev.Name, last.Name)
+		// Facts (plan 03-31) is the last field, after Currency and Reporter.
+		facts, rep, cur := tt.Field(tt.NumField()-1), tt.Field(tt.NumField()-2), tt.Field(tt.NumField()-3)
+		if facts.Name != "Facts" || rep.Name != "Reporter" || rep.Type != reflect.TypeOf(ReporterSignal{}) || cur.Name != "Currency" {
+			t.Errorf("Trust ends with %s, %s, %s, want Currency, Reporter ReporterSignal, Facts", cur.Name, rep.Name, facts.Name)
 		}
 		f, ok := reflect.TypeOf(TrustInput{}).FieldByName("Reporter")
 		if !ok || f.Type != reflect.TypeOf((*ReporterSignal)(nil)) {

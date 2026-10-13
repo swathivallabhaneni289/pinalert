@@ -22,6 +22,21 @@ func p31Fact(kind FactKind, tone FactTone, title, detail, score string) TrustFac
 	return TrustFact{Kind: kind, Tone: tone, Title: title, Detail: detail, ScoreDetail: score}
 }
 
+// p31WithoutReporter returns a copy of tr with the reporter signal reset and
+// the reporter row of its facts taken out, so a test can compare everything
+// else on a trust object.
+func p31WithoutReporter(tr Trust) Trust {
+	tr.Reporter = ReporterSignal{}
+	var facts []TrustFact
+	for _, f := range tr.Facts {
+		if f.Kind != FactReporter {
+			facts = append(facts, f)
+		}
+	}
+	tr.Facts = facts
+	return tr
+}
+
 // p31Check holds one fact to the closed character set, the no place rule and
 // the shape rules: a closed kind and tone, and a title that is never empty.
 func p31Check(t *testing.T, label string, f TrustFact) {
