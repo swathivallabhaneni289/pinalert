@@ -1,18 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 03-trust-model-hardening-diversity-weighted-trust
 source: [03-VERIFICATION.md]
 started: 2026-10-07T20:33:33.016Z
-updated: 2026-10-13T15:57:00.000Z
+updated: 2026-10-13T16:02:00.000Z
 ---
 
 ## Current Test
 
-number: 11
-name: Owner housekeeping (step 20 and reminders)
-expected: |
-  Index idx_reports_session_expires exists on the dev database.
-awaiting: the owner's go ahead to run migration 00005 on the dev database (it only adds one index), then drop p3_uat. Tests 3 and 7 were accepted on the scripted evidence on 2026-10-13.
+[testing complete]
 
 ## Tests
 
@@ -98,14 +94,15 @@ result: pass
 detail: Owner housekeeping (step 20 and reminders). Run migrate once on the owner dev database for migration 00005 after merge. Drop p3_uat when finished.
 expected: Index idx_reports_session_expires exists on the dev database.
 why_human: Touches the owner's own database, which the executors and this verifier are not allowed to use.
-result: [pending]
+owner_check: Final session, 2026-10-13 about 21:30 IST. The owner said 'yes' to Claude running the migration on their own dev database pinalert_test (the one the dev server on port 8090 uses; no server was listening on 8090 at that moment). Before: migrations 00001 to 00004 applied, 00005_add_reports_session_expires_index.sql pending, index absent. `go run ./cmd/migrate` (goose up): OK 00005 in 19.52 ms, version 5. After: index idx_reports_session_expires exists on public.reports (btree on session_id, expires_at DESC, id DESC) and the row counts are unchanged (reports 1, votes 0). Only pinalert_test was touched; the database named pinalert was not. The scratch database p3_uat was dropped after its server on port 8792 was stopped, and the scratch server log, cookie jars and login link file were deleted. The database p3_view was not touched.
+result: pass
 
 ## Summary
 
 total: 11
-passed: 10
+passed: 11
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
