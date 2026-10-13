@@ -607,6 +607,27 @@ Plans:
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)
 
+
+### Phase 999.11: Report submission accepts missing coordinates as 0,0 (BACKLOG, Phase 4 candidate)
+
+**Goal:** [Captured for future planning] A report posted without a latitude or longitude, or with null for either, is refused with a 400 that names the missing field, the way the vote endpoints already answer "latitude is required." Today `POST /api/reports` decodes a null or absent coordinate to 0 and files the report at 0,0: `SubmitReportRequest` holds plain float64 fields in `internal/api/handlers/reports.go` (lines 50 and 52, copied at lines 276 and 277) and `internal/service/report.go` only range checks them. Found by the plan 03-31 browser run and confirmed by the Phase 3 re-verification on 2026-10-13. It is an input validation gap and not a trust rule, so it fits Phase 4's robustness scope. The fix is pointer fields in the request type and a 400 in the handler, with the contract test written first.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.12: Should a fresh confirmation keep a report alive longer (BACKLOG, owner decision)
+
+**Goal:** [Captured for future planning] A report fades at the `expires_at` it was given when it was created, and confirming it again does not move that time, so the popup says only "Fades in 7 hrs." The picture the owner chose said "unless confirmed again", which is not true today. Decide whether a confirmation from a new spot should extend a report's life, by how much, and under what cap so a crowd cannot keep a false report alive, or whether the line stays as it is. This changes the trust model (`docs/TRUST-MODEL.md`) and the expiry sweep, so it needs the owner's decision before it is planned. Raised by the plan 03-31 build on 2026-10-13.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
 ### Phase 7: Address search box for report location
 
 **Goal:** Add a text/address search box for setting a report's location, using OSM Nominatim
