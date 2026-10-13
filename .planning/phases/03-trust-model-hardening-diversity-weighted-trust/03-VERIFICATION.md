@@ -4,6 +4,7 @@ verified: 2026-10-08T00:00:00Z
 reverified: 2026-10-10T00:00:00Z
 reverified_again: 2026-10-10T00:00:00Z
 reverified_after_redesign: 2026-10-10T00:00:00Z
+reverified_after_tick_marks: 2026-10-13T00:00:00Z
 status: human_needed
 score: 9/9 must-haves verified
 behavior_unverified: 0
@@ -14,7 +15,7 @@ re_verification:
   gaps_closed: []
   gaps_remaining: []
   regressions: []
-  note: "Focused re-runs after gap closure plans 03-25 (merged in 584cef3) and 03-26 (merged in 2cc0158), then after the redesign and the shorter wording (plans 03-21 to 03-24, 03-27, 03-28 and 03-29, last merge 28d6f3d, HEAD fde18f2). See Re-verification after 03-25, Re-verification after 03-26 and Re-verification after the redesign."
+  note: "Focused re-runs after gap closure plans 03-25 (merged in 584cef3) and 03-26 (merged in 2cc0158), then after the redesign and the shorter wording (plans 03-21 to 03-24, 03-27, 03-28 and 03-29, last merge 28d6f3d, HEAD fde18f2). See Re-verification after 03-25, Re-verification after 03-26 and Re-verification after the redesign. Fourth run on 2026-10-13 after plans 03-30 and 03-31 and quick task 261010-psc (HEAD 8b9c802): 9/9, no regressions, see Re-verification after plans 03-30 and 03-31."
 gaps: []
 deferred: []
 human_verification:
@@ -58,7 +59,7 @@ human_verification:
 **Phase Goal (MVP):** As a person reading the feed during an emergency, I want to see how many different nearby people confirmed or disputed each report, and whether it is still current and its reporter reliable, so that a few accounts cannot make a weak report look well corroborated.
 **Verified:** 2026-10-08
 **Status:** human_needed
-**Re-verification:** Initial verification 2026-10-08; focused re-verifications after plans 03-25 and 03-26 on 2026-10-10, and after the redesign and the shorter wording (plans 03-21 to 03-24, 03-27, 03-28 and 03-29) on 2026-10-10 (see the sections near the end)
+**Re-verification:** Initial verification 2026-10-08; focused re-verifications after plans 03-25 and 03-26 on 2026-10-10, and after the redesign and the shorter wording (plans 03-21 to 03-24, 03-27, 03-28 and 03-29) on 2026-10-10, and after plans 03-30 and 03-31 and quick task 261010-psc on 2026-10-13 (see the sections near the end)
 
 Every automated check passes. The only open items are the browser, two profile, keyboard, screen reader and visual checks that plans 03-04, 03-09, 03-11, 03-13, 03-15 to 03-19 deliberately deferred to the owner's V-42 script (folded into 03-20-SUMMARY.md). None is a gap.
 
@@ -346,10 +347,100 @@ Owner flags, not gaps:
 - ROADMAP Success Criterion 2 says "side by side". The redesign shows both signals at once but in two places (the state line and the block). The roadmap wording could be brought in line with A75, or the owner can confirm it reads as meant.
 - The step 5 frontmatter item now expects `Report up to date` (A86) where it used to say `Up to date`.
 
+## Re-verification after plans 03-30 and 03-31 (and quick task 261010-psc)
+
+**Date:** 2026-10-13. **Scope:** fourth focused re-run, goal backward, against HEAD 8b9c802. The base is fde18f2 (the redesign re-run above). Covered: quick task 261010-psc (merge 99ce2d8, commits 4cf8367 and 69470d6, A87), plan 03-30 (merge 4a6ae83, commits 6751799, 194c56b and ea1aee4, A88) and plan 03-31 (merge 8b9c802, commits 9d8b84f to 41ade6c, A89 to A96). `git diff 945ecea 8b9c802 -- internal web cmd docs` is empty, so the builder's final commit and HEAD hold the same code. The summaries were not taken as evidence; every claim below was read from the current files.
+
+**Result:** status stays `human_needed`, score 9/9, 0 gaps, 0 regressions. No new person items beyond those already in `03-UAT.md`, plus three owner flags and one Info item at the end.
+
+### The nine truths against the current code
+
+`internal/service/trust.go`, `geo.go`, `currency.go`, `reliability.go`, `reporter.go` and `report.go` have no diff since fde18f2, so truths 1 to 4, 7 and 8 rest on unchanged server code. The server files that changed are `trustcopy.go` (words only), `trustview.go` (a lead sentence parameter and one added field), the new `trustfacts.go`, and `handlers/trust.go` (one added field, plus example tags).
+
+| # | Truth | Re-check | Status |
+| --- | --- | --- | --- |
+| 1 | Distinct place count N | `func independentCellCount` (`trust.go:120`) is still the one implementation; its callers are `currency.go:207`, `currency.go:251` and `trust.go:229 to 232`. No new counting code: `trustfacts.go` reads `t.ConfirmedPlaces` and `t.DisputedPlaces` that `BuildTrust` already set. | VERIFIED |
+| 2 | Precision chosen and documented | `trust.go` untouched. `docs/TRUST-MODEL.md` changed (98 lines) and `TestTrustModelDocMatchesCode` is in the cited full run, 0 FAIL. | VERIFIED |
+| 3 | Fast decaying currency | `currency.go` untouched (constants at `:78` and `:81` as before). | VERIFIED |
+| 4 | Slow decaying reliability | `reliability.go` and `reporter.go` untouched. | VERIFIED |
+| 5 | Both signals on the wire together | `TrustResponse` still carries `currency` and `reporter` with every field of both unchanged in name and type (`handlers/trust.go`); `Facts []FactResponse` is a new last field (`json:"facts"`), always an array, never null (`factsToResponse`). `p07TrustWireKeys` gained `"facts"`, and `p14CurrencyWireKeys` and the reporter key set are not touched, so the old keys stay pinned. The three producers still go through the one `trustToResponse` (`reports.go:206`, `votes.go:222`, `auth.go:422`). `TestTrustCarriesFactsOnTheWire` compares vote response and feed whole object. | VERIFIED |
+| 6 | Browser renders both from server values, both at once on every report | Feed row and Activity row: the toggle face (`trust.js:254 to 257`) still holds the counters and the still current word (`createSignal`, line 241, filled at `updateTrustBlock` 588, `signals.hidden = !state.currency` at 592); the reporter words are `createReporterWords` (line 161), placed beside the state label by `createStateLine` (line 312, one call each in `feed.js:170` and `activity.js:69`) and filled at line 590. Neither needs the panel opened. Popup: `createTrustCard` (line 614) has no toggle, no chevron and no panel, so the card is always showing; the state word is the currency label (`updateTrustCard` 674 to 678) and the currency and reporter rows are in the always open facts list (`renderFacts`, line 680). A Provisional or none case is still the server's decision (a `currency` fact exists only when the label is filled, `trustfacts.go:157`, and none gives no reporter row, `:193`). | VERIFIED (static); live rendering in the human items |
+| 7 | 1 km rule server side, fail closed | `geo.go` and `trust.go` untouched. | VERIFIED |
+| 8 | Concurrent votes never skew N | Code untouched; test in the cited run. | VERIFIED |
+| 9 | Identical for every viewer, no identifiers | `TrustInput` has no viewer field (unchanged). `buildTrustFacts(t, vis, expiresAt, now)` (`trustfacts.go:205`) reads only the built `Trust`, the visibility and the clock. Every fact string is a constant, `strconv.Itoa` of a count, or the existing signal's own sentence (themselves from constants and counts). `TestTrustFactsAreDeterministic` (`trustfacts_test.go:424`) checks that the same input gives the same facts, regardless of vote row order. `TestTrustResponseOmitsIdentifiers` (`trust_e2e_test.go:493`) scans the whole raw feed and vote bodies, which now contain `facts`, for emails, `@`, the voter cell, `account_id`, `geohash_cell` and both session ids, and walks every key at any depth. | VERIFIED |
+
+TRUST-07 and Success Criterion 2 still hold in the form noted in the last re-run ("both at once, separately labelled"): on a row the word and the reporter words are in the state line and the face, and in the popup both are rows of the always open card.
+
+### What these plans touched, read from the current code
+
+**Quick task 261010-psc (A87).** `feed.js`: `applySelectionHighlight(id)` has lost its scroll parameter and the `scrollIntoView` call; both call sites follow (`activateRow`, line 121, and the `onSelect` subscriber for `source === 'map'`). It marks the row selected and clears the others, nothing else. A list originated selection is unchanged (it still flies the map and opens the popup). No CSS, markup or `map.js` change.
+
+**Plan 03-30 (A88).** Copy only. `trustcopy.go` sentences name people at different spots, the word place is in no sentence, `countsCaveat` is retired, and the Provisional lead follows the confirming count through `provisionalLeadSentenceFor` (`trustcopy.go:76`), with `trustview.go` passing `confirmed`. No JSON key or shape changed (`confirmed_places`, `disputed_places`, `recent_places` stay). `TestPanelWordingStaysFilled` (`trustwording_test.go:207`) pins that every line that was filled before is still filled, and `TestPanelWordingNamesNoPlace` (line 148) bans the word place.
+
+**Plan 03-31 (A89 to A96).**
+- `trustfacts.go` is the one list builder, called once at the end of `BuildTrust`. The status row is for an expired report that is not retracted; the confirmations and disputes rows are always there (`:213`); the currency row carries `c.Sentence` and `c.ScoreSentence` of the existing signal (`:160`); the reporter row carries `r.Label`, `r.Sentence` and `r.ScoreSentence` (`:196 to 199`). The only own wording for those two kinds is the title word and, for Gone quiet, a fixed detail that drops the words its title says (`:173`). The test grid compares each fact against the signal's own fields (`trustfacts_test.go:349 to 384`), so a drift fails.
+- `trust.js` is 730 lines. It holds no sentence and no rule: `validFacts` (line 76) checks the closed lists, `renderFacts` (line 536) writes server titles and details with `Pinalert.setText`, and the tone glyph table (line 52) is the one region exempt from the numeric literal ban. `TestTrustModuleHasNoThresholdsOrSinks` (`trust_contract_test.go:315`) removes exactly that table by `p31GlyphTable` before scanning for any numeral from 2 up, so the exemption does not widen. The ban list on server wording in `trust.js` grew (`Counts places`, `people at different spots`, `of their last` and the rest) rather than shrank. `TestToneGlyphsAreFourShapes` pins the table's content.
+- Distance is shown only when the feed was loaded around the reader's own position: `setCenter(lat, lon, own)` is called with `true` only from the geolocation success branch (`map.js:236`, the fallback branches at 239 and 244 pass `false`), and `map.js:390` asks `Pinalert.feedIsAroundReader()` before `formatDistance`. The fade line (`app.js:437`) says only "Fades in N hrs." or "Fades in N min." from `expires_at` and an expired or missing value reads nothing; it never says a confirmation extends the life, as its comment records (T-03-31-03).
+- Row panels and Activity panels render the same list with `createFactsList(false)`, so no score detail line exists there (A96, D-09); the popup uses `createFactsList(true)` (A50).
+
+### Behaviour changes worth saying plainly
+
+- `trust.js` `validTrust` (line 111) now requires a valid `facts` array. A trust object without `facts` hides the whole block rather than inventing a zero. All three server producers send it, and `TestTrustCarriesFactsOnTheWire` and `TestTrustResponseOmitsIdentifiers` (through `p07AssertTrustKeys`) pin the key on the feed and vote responses. Info, not a gap.
+- The map popup has no trust panel any more. The popup close path no longer calls `collapsePanelsIn` and its pin is now a ban (`TestPopupDialogFocusAndOpener`). The 03-25 and 03-26 signals are still in place and still pinned: `data-popup-open` is set (`map.js:472`) and removed (`map.js:611`) and `TestPopupDialogFocusAndOpener` requires the removal; `isInOpenPopup` (`votes.js:921`) and `focusIsLost` (`feed.js:254`) are not in this diff.
+
+### New contract tests
+
+| Test | File | Pins | Result |
+| --- | --- | --- | --- |
+| `TestTrustFactsEveryState`, `TestTrustFactsRulesOverTheGrid`, `TestTrustFactsPlurals`, `TestTrustFactsAreDeterministic` | `internal/service/trustfacts_test.go` | order, tones, plurals, closed character set, no place word, equality with the signals' own sentences, determinism (A90) | cited full run, all PASS |
+| `TestTrustCarriesFactsOnTheWire` | `internal/api/handlers/trust_e2e_test.go` | five keys per fact, array never null, feed equals vote response, rows follow votes | cited full run, PASS |
+| `TestPanelWordingNamesNoPlace`, `...StaysFilled`, `...EveryState`, `...SingularAndPlural`, `...PluralConstants` | `internal/service/trustwording_test.go` | A88 words, every filled line still filled | cited full run, PASS |
+| `TestFactsListIsTheOnlySourceOfRows`, `TestToneGlyphsAreFourShapes`, `TestTrustCardIsAlwaysOpen`, `TestRowPanelHoldsTheFactsList`, `TestPopupBuildsTheCardAndTheFadeLine`, `TestSharedDistanceAndFadeFormatters`, `TestToneTokensClearTheContrastFloors`, `TestFactsCSS` | `web/trust_facts_contract_test.go` | one list builder, glyph shapes, no toggle in the card, shared distance and fade formatters, contrast floors 4.5:1 and 3:1 in all four theme sources, card and row look | verifier's own run of `./web/`, ok |
+| `TestMapSelectionNeverScrollsThePage` | `web/popup_contract_test.go:689` (quick task 261010-psc) | A87 | verifier's own run of `./web/`, ok |
+
+### Assertions removed or weakened
+
+`git diff 89221f7..8b9c802 -- '*_test.go'` (plan 03-31) and `git diff fde18f2..89221f7 -- '*_test.go'` (plan 03-30), every removed non-comment line read. None leaves a must-have unpinned.
+- 03-30: every removed line is an old expected sentence, replaced one for one by the new wording (`trust_e2e_test.go`, `currency_test.go`, `feed_test.go`, `reporter_test.go`, `trust_paths_test.go`, `trustcopy_test.go`, `trustview_test.go`). The pin "the confirmed sentence ends with the caveat exactly once" and "the disputed sentence carries no caveat" is retired on purpose because A88 retires the caveat; its replacement is the no place guard plus the plural and singular tests. The lead sentence table in `trustview_test.go` keeps the same cases (for example `retracted wins over expired`, line 323, and `provisional expiring exactly now`, line 324) with one extra input column.
+- 03-31 `trust_e2e_test.go`: `"currency", "reporter"` became `"currency", "reporter", "facts"`, so the key set got stricter.
+- 03-31 `reporter_test.go`: the "reporter signal changes nothing else" comparison now removes the reporter row of the facts together with the signal (`p31WithoutReporter`), because the row carries the signal; the same property is still pinned. The "Trust ends with Currency then Reporter" check became "ends with Currency, Reporter, Facts".
+- 03-31 `feed_test.go`: `p12WithoutReporter` also drops the reporter fact. Same property.
+- 03-31 `popup_contract_test.go`: `createTrustBlock({ showScores: true })` and `updateTrustBlock(` became `createTrustCard()` and `updateTrustCard(` (the same ordered positions, and `createTrustCard(` is banned in the update function). The A31 ban on `distance_km` in `updatePopupCard` was replaced by a must-contain of the gate `Pinalert.feedIsAroundReader()` and the formatter call, which the ban could not coexist with. `collapsePanelsIn` in the close path became a ban.
+- 03-31 `trust_contract_test.go`: the `PANEL_LINES` list, the old panel line class and the sentence field reads in `renderTrustPanel` are replaced by the facts list pins (A89). The numeric literal scan still runs over all of `trust.js` except the glyph table. The old colour pin (`color` must equal `var(--color-text)` on panel lines, plus the grid gap of sentence lines) is replaced by `TestToneTokensClearTheContrastFloors` and `TestFactsCSS`, which compute contrast from the declared values.
+- 03-31 `trust_topzone_contract_test.go` and `trust_face_contract_test.go`: `createReporterWords(showScores)` and its `, score` pieces are gone with the numbers on the signals (A92); the function is now pinned without options and the face test pins `createTrustBlock()` with no options. The reporter words are still plain text outside the button with no tab stop.
+
+### Evidence
+
+- Verifier's own runs on HEAD 8b9c802: `go build ./...` exit 0; `go vet ./...` exit 0; `gofmt -l internal cmd web docs` lists nothing; `go test ./web/ -count=1` ok; `go test ./internal/service/ -count=1` ok.
+- Whole Go suite on a fresh scratch database at the builder's final commit 945ecea (same code as HEAD), cited, not re-run: 403 top level PASS, 0 FAIL, 0 SKIP, every package ok, vet and gofmt clean (`gate31.txt`).
+- Scripted browser run on merged main 8b9c802, Chromium and WebKit, tests 0 and 2 to 12, cited, not re-run: 508 PASS, 0 FAIL, 24 NEEDS A PERSON, 60 NOTE (`h31-main-final.txt`). The 24 are the same kinds as before plus T2.4 (VoiceOver on the popup card, once per engine) and T12.17 (the look against the picture).
+- Debt markers (TBD, FIXME, XXX) across `internal`, `web`, `docs` and `cmd`: none.
+- Phase boundary: the code diff since fde18f2 is 29 files, all trust copy, trust facts, the trust and popup surfaces, swagger and docs, and one comment line in `reports.go`. No Phase 3.1 or Phase 4 code. Phase 4 changes are planning text only (04-12, 04-16, 04-18 and 04-UI-SPEC.md, labelled).
+
+### Requirements cross-reference
+
+TRUST-05 (`.planning/REQUIREMENTS.md:72`, traceability row 375) is met by truths 1, 2, 7 and 8, which rest on unchanged code. TRUST-07 (line 78, row 376) is met by truths 3 to 6, with truth 6 now resting on the face and state line on rows and the always open card in the popup. No orphaned ID. Both still read Pending in REQUIREMENTS.md, which this verification did not edit.
+
+### Items that remain for a person (from 03-UAT.md, nothing invented)
+
+VoiceOver on the toggle and on the Mark resolved confirmation; VoiceOver on the popup card (T2.4); Ask in Safari and the prompt UI; a real device at 200 percent text; button style and real Windows High Contrast; how the card looks against the owner's picture (T12.17); the plain language check, including whether the shorter people wording reads short enough; `make migrate` for 00005 on the dev database and dropping `p3_uat`. Tests 1 and 6 passed earlier.
+
+### Owner flags, not gaps
+
+- The popup still shows two score lines ("Score S out of 100.", the `score_detail` rows) that the owner's chosen picture does not show. That is A50 and D-09 kept on purpose by decision, and TRUST-07 says "score", so the lines stay unless the owner decides otherwise.
+- The popup has no panel any more, so the wording of human items 2 and 3 in the frontmatter ("popup panel closes before a row panel") no longer describes a popup behaviour; only the row panel and the popup close remain. Worth a one line edit of those items by the owner.
+- The fade number is computed in the browser (`app.js:437`, `Math.floor` over the server's `expires_at` and the server clock), the same class as `relativeTime` and `ageStage`. No trust rule lives there, but the line is not authored by the server like the facts are.
+
+### Info only
+
+- `needsDetail` (`trustfacts.go:92`) repeats the threshold subtraction of `provisionalLeadSentenceFor` (`trustcopy.go:76`), both from `IndependentAgreementThreshold`, and `raisedBar` (`trustfacts.go:143`) reads a raised bar by comparing sentences. Both are pinned by the facts grid test, so a drift fails, but they are the two places a later change to the threshold wording has to touch together.
+- Phase 4 candidate, not a Phase 3 gap: `POST /api/reports` accepts a null or absent latitude and longitude and files the report at 0,0. `SubmitReportRequest` declares `Latitude` and `Longitude` as plain `float64` (`internal/api/handlers/reports.go:50` and `:52`), `SubmitReport` copies them straight into `SubmitInput` (`:276` and `:277`), and the service only range checks them (`internal/service/report.go:207`), so 0 passes. The vote endpoint answers "latitude is required." through pointer fields (`internal/api/handlers/votes.go:158` to `:163`). A pointer field with the same 400 in the report handler would close it.
+
 ---
 
 _Verified: 2026-10-08_
 _Re-verified: 2026-10-10 after plan 03-25_
 _Re-verified: 2026-10-10 after plan 03-26_
 _Re-verified: 2026-10-10 after the redesign (plans 03-21 to 03-24, 03-27, 03-28 and 03-29)_
+_Re-verified: 2026-10-13 after plans 03-30 and 03-31 and quick task 261010-psc_
 _Verifier: Claude (gsd-verifier)_
