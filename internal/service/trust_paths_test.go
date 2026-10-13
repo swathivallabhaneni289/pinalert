@@ -173,10 +173,10 @@ func TestTrustAttachedOnEveryReadPath(t *testing.T) {
 			if got.ConfirmedPlaces != 2 || got.DisputedPlaces != 1 || got.ConfirmedText != "2" || got.DisputedText != "1" || got.LeadSentence != "" {
 				t.Errorf("%s trust = %+v", name, got)
 			}
-			if w := "2 different places confirmed this. Counts places, not votes."; got.ConfirmedSentence != w {
+			if w := "Confirmed by 2 people at different spots."; got.ConfirmedSentence != w {
 				t.Errorf("%s ConfirmedSentence = %q", name, got.ConfirmedSentence)
 			}
-			if w := "1 place disputed this."; got.DisputedSentence != w {
+			if w := "1 person nearby disputed this."; got.DisputedSentence != w {
 				t.Errorf("%s DisputedSentence = %q", name, got.DisputedSentence)
 			}
 		}
@@ -197,7 +197,7 @@ func TestTrustAttachedOnEveryReadPath(t *testing.T) {
 		if res.nearbyCount != 1 {
 			t.Fatalf("Nearby returned %d views, want 1", res.nearbyCount)
 		}
-		lead := "Needs 2 confirmations to count as confirmed."
+		lead := "Needs 1 more person at a different spot to confirm it."
 		for name, got := range map[string]service.Trust{
 			"nearby": res.nearby.Trust, "activity": res.activity.Trust, "cast": res.cast.Trust,
 		} {

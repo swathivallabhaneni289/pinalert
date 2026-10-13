@@ -68,7 +68,7 @@ definitions:
         example: Report up to date
         type: string
       recent_places:
-        description: RecentPlaces is how many distinct places confirmed the report
+        description: RecentPlaces is how many different spots confirmed the report
           inside the window.
         example: 3
         type: integer
@@ -81,12 +81,12 @@ definitions:
       score_sentence:
         description: ScoreSentence is the popup line that explains the score, empty
           when the score is null.
-        example: Score 92 out of 100, based on recent confirmations.
+        example: Score 92 out of 100.
         type: string
       sentence:
         description: Sentence is the panel line for the band, written by the server,
           empty when no word shows.
-        example: 3 places confirmed this in the last 2 hours.
+        example: 3 confirmations in the last 2 hours.
         type: string
       window_minutes:
         description: WindowMinutes is the length of the window in whole minutes.
@@ -341,12 +341,12 @@ definitions:
       score_sentence:
         description: ScoreSentence is the popup line that explains the score, empty
           when the score is null.
-        example: Score 86 out of 100, based on how often their reports were confirmed.
+        example: Score 86 out of 100.
         type: string
       sentence:
         description: Sentence is the panel line for the tag, written by the server,
           empty when no word shows.
-        example: 5 of 5 earlier reports were confirmed by people nearby.
+        example: 5 of their last 5 reports were confirmed.
         type: string
       tag:
         description: Tag is the reporter tag, written by the server.
@@ -436,14 +436,14 @@ definitions:
   handlers.TrustResponse:
     properties:
       confirmed_places:
-        description: ConfirmedPlaces is how many distinct places confirm the report,
-          counting places, not votes, so several people in one place count once (D-04).
+        description: ConfirmedPlaces is how many different spots have someone who
+          confirmed the report, so several people at one spot count once (D-04).
         example: 1
         type: integer
       confirmed_sentence:
         description: ConfirmedSentence is the panel line that explains the confirmed
           count.
-        example: 1 place confirmed this. Counts places, not votes.
+        example: 1 person confirmed this.
         type: string
       confirmed_text:
         description: ConfirmedText is the confirmed count as the surface shows it,
@@ -454,18 +454,18 @@ definitions:
         allOf:
         - $ref: '#/definitions/handlers.CurrencyResponse'
         description: 'Currency is the still current signal: a band, the facts behind
-          it (how many different places confirmed recently, over what window) and
-          a whole number score from 0 to 100, or null while there is no rating. The
-          feed and every vote response carry the same object.'
+          it (how many confirmations came from different spots recently, over what
+          window) and a whole number score from 0 to 100, or null while there is no
+          rating. The feed and every vote response carry the same object.'
       disputed_places:
-        description: DisputedPlaces is how many distinct places dispute the report,
-          counted the same way.
+        description: DisputedPlaces is how many different spots have someone who disputed
+          the report, counted the same way.
         example: 0
         type: integer
       disputed_sentence:
         description: DisputedSentence is the panel line that explains the disputed
           count.
-        example: No one nearby has disputed this.
+        example: No one has disputed this.
         type: string
       disputed_text:
         description: DisputedText is the disputed count as the surface shows it, from
@@ -474,7 +474,7 @@ definitions:
         type: string
       lead_sentence:
         description: LeadSentence is the panel's first line, empty when there is none.
-        example: Needs 2 confirmations to count as confirmed.
+        example: Needs 2 people at different spots to confirm it.
         type: string
       reporter:
         allOf:
@@ -594,7 +594,7 @@ paths:
         your_vote and is_own_report relative to the calling verified account. Requires a
         session verified by email through the magic-link flow; an unverified caller receives
         401 and no report data.
-        Every report also carries a trust object: how many distinct nearby places confirmed and disputed it, counted as places, not votes.
+        Every report also carries a trust object: how many people at different nearby spots confirmed and disputed it, counted once per spot and not once per vote.
         lat, lon and radius_km must be finite numbers; NaN is refused with 400 and the name of the parameter.
       parameters:
       - description: Latitude of the query center (required, -90 to 90)

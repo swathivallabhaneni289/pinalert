@@ -317,7 +317,7 @@ func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 // @Description your_vote and is_own_report relative to the calling verified account. Requires a
 // @Description session verified by email through the magic-link flow; an unverified caller receives
 // @Description 401 and no report data.
-// @Description Every report also carries a trust object: how many distinct nearby places confirmed and disputed it, counted as places, not votes.
+// @Description Every report also carries a trust object: how many people at different nearby spots confirmed and disputed it, counted once per spot and not once per vote.
 // @Description lat, lon and radius_km must be finite numbers; NaN is refused with 400 and the name of the parameter.
 // @Tags reports
 // @Produce json

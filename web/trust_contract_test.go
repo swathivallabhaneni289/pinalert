@@ -291,7 +291,9 @@ func TestTrustModuleHasNoThresholdsOrSinks(t *testing.T) {
 		"Up to date", "Getting old", "re-confirming", "Too early", "Reliable reporter",
 		"Report up to date", "Report getting old", "Report needs re-confirming",
 		"Mixed record", "Unreliable reporter", "New reporter", "Counts separate places",
-		"out of 100", "Unconfirmed", "confirmations before")
+		"out of 100", "Unconfirmed", "confirmations before",
+		"Counts places", "people at different spots", "at a different spot", "Not rated yet",
+		"of their last", "confirmations in the last", "have confirmed this yet")
 	p13MustContain(t, "trust.js", trust, "Pinalert.setText(", "'use strict'")
 	p13MustMatch(t, "trust.js REPORTER_TAGS", trust,
 		`REPORTER_TAGS\s*=\s*\[\s*'reliable',\s*'mixed',\s*'unreliable',\s*'new',\s*'none'\s*\]`)

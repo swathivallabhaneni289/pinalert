@@ -13,21 +13,21 @@ import "pinalert/internal/service"
 // the place counts and panel sentences, then the two signals side by side: the
 // still current signal and the reporter signal.
 type TrustResponse struct {
-	// ConfirmedPlaces is how many distinct places confirm the report, counting places, not votes, so several people in one place count once (D-04).
+	// ConfirmedPlaces is how many different spots have someone who confirmed the report, so several people at one spot count once (D-04).
 	ConfirmedPlaces int `json:"confirmed_places" example:"1"`
-	// DisputedPlaces is how many distinct places dispute the report, counted the same way.
+	// DisputedPlaces is how many different spots have someone who disputed the report, counted the same way.
 	DisputedPlaces int `json:"disputed_places" example:"0"`
 	// ConfirmedText is the confirmed count as the surface shows it, from 0 to 99 or 99+ above 99, written by the server (A27).
 	ConfirmedText string `json:"confirmed_text" example:"1"`
 	// DisputedText is the disputed count as the surface shows it, from 0 to 99 or 99+ above 99, written by the server (A27).
 	DisputedText string `json:"disputed_text" example:"0"`
 	// LeadSentence is the panel's first line, empty when there is none.
-	LeadSentence string `json:"lead_sentence" example:"Needs 2 confirmations to count as confirmed."`
+	LeadSentence string `json:"lead_sentence" example:"Needs 2 people at different spots to confirm it."`
 	// ConfirmedSentence is the panel line that explains the confirmed count.
-	ConfirmedSentence string `json:"confirmed_sentence" example:"1 place confirmed this. Counts places, not votes."`
+	ConfirmedSentence string `json:"confirmed_sentence" example:"1 person confirmed this."`
 	// DisputedSentence is the panel line that explains the disputed count.
-	DisputedSentence string `json:"disputed_sentence" example:"No one nearby has disputed this."`
-	// Currency is the still current signal: a band, the facts behind it (how many different places confirmed recently, over what window) and a whole number score from 0 to 100, or null while there is no rating. The feed and every vote response carry the same object.
+	DisputedSentence string `json:"disputed_sentence" example:"No one has disputed this."`
+	// Currency is the still current signal: a band, the facts behind it (how many confirmations came from different spots recently, over what window) and a whole number score from 0 to 100, or null while there is no rating. The feed and every vote response carry the same object.
 	Currency CurrencyResponse `json:"currency"`
 	// Reporter is the reporter signal: a tag, the facts behind it (how many earlier reports had a clear result and how many of those people nearby confirmed) and a whole number score from 0 to 100, or null while there is no rating. The feed and every vote response carry the same object.
 	Reporter ReporterResponse `json:"reporter"`
@@ -42,10 +42,10 @@ type CurrencyResponse struct {
 	// Label is the everyday word for the band, written by the server, empty when no word shows.
 	Label string `json:"label" example:"Report up to date"`
 	// Sentence is the panel line for the band, written by the server, empty when no word shows.
-	Sentence string `json:"sentence" example:"3 places confirmed this in the last 2 hours."`
+	Sentence string `json:"sentence" example:"3 confirmations in the last 2 hours."`
 	// ScoreSentence is the popup line that explains the score, empty when the score is null.
-	ScoreSentence string `json:"score_sentence" example:"Score 92 out of 100, based on recent confirmations."`
-	// RecentPlaces is how many distinct places confirmed the report inside the window.
+	ScoreSentence string `json:"score_sentence" example:"Score 92 out of 100."`
+	// RecentPlaces is how many different spots confirmed the report inside the window.
 	RecentPlaces int `json:"recent_places" example:"3"`
 	// WindowMinutes is the length of the window in whole minutes.
 	WindowMinutes int `json:"window_minutes" example:"120"`
@@ -62,9 +62,9 @@ type ReporterResponse struct {
 	// Label is the everyday word for the tag, written by the server, empty when no word shows.
 	Label string `json:"label" example:"Reliable reporter"`
 	// Sentence is the panel line for the tag, written by the server, empty when no word shows.
-	Sentence string `json:"sentence" example:"5 of 5 earlier reports were confirmed by people nearby."`
+	Sentence string `json:"sentence" example:"5 of their last 5 reports were confirmed."`
 	// ScoreSentence is the popup line that explains the score, empty when the score is null.
-	ScoreSentence string `json:"score_sentence" example:"Score 86 out of 100, based on how often their reports were confirmed."`
+	ScoreSentence string `json:"score_sentence" example:"Score 86 out of 100."`
 	// JudgedReports is how many earlier reports have a clear result.
 	JudgedReports int `json:"judged_reports" example:"5"`
 	// CorroboratedReports is how many of the judged reports were confirmed by people nearby.

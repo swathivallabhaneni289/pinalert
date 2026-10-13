@@ -1,10 +1,13 @@
 // trustcopy.go is the one home of the server authored trust copy (D-15, D-19,
-// A50, A85, A86, RESEARCH Pattern 3). Every string here is built only from the constants in
-// this file and integers formatted with strconv.Itoa, so no report text can
-// ever enter one (T-03-06). The closed character set is ASCII letters,
-// digits, space, comma, full stop, apostrophe and plus, plus a hyphen only
-// inside the word re-confirming. No string carries a relative time, so a
-// feed read and a vote response a moment apart stay equal (Pitfall 8).
+// A50, A85, A86, A88, RESEARCH Pattern 3). Every string here is built only
+// from the constants in this file and integers formatted with strconv.Itoa,
+// so no report text can ever enter one (T-03-06). The closed character set is
+// ASCII letters, digits, space, comma, full stop, apostrophe and plus, plus a
+// hyphen only inside the word re-confirming. No string carries a relative
+// time, so a feed read and a vote response a moment apart stay equal
+// (Pitfall 8). People confirm and dispute, never places (A88): a count of
+// places is worded as people at different spots, and the word place appears
+// in no sentence.
 
 package service
 
@@ -25,44 +28,61 @@ func trustCountText(n int) string {
 	return strconv.Itoa(n)
 }
 
-// countsCaveat ends the confirmed panel sentence only, once (A7 as amended by
-// A85). It tells a reader the numbers count places and not raw votes.
-const countsCaveat = "Counts places, not votes."
-
 // confirmedSentence is the panel line for the confirming place count n (A7,
-// RR-1, A85). It has one form for none, one for a single place and one for two
-// or more, it always repeats the real number, and it ends with the caveat.
+// RR-1, A88). It has one form for none, one for a single person and one for
+// two or more, and it always repeats the real number. The count is of distinct
+// places, a lower bound on people (D-04), and the sentence says people at
+// different spots, so several people at one spot count once without a caveat.
 func confirmedSentence(n int) string {
 	switch {
 	case n <= 0:
-		return "No one has confirmed this yet. " + countsCaveat
+		return "No one has confirmed this yet."
 	case n == 1:
-		return "1 place confirmed this. " + countsCaveat
+		return "1 person confirmed this."
 	default:
-		return strconv.Itoa(n) + " different places confirmed this. " + countsCaveat
+		return "Confirmed by " + strconv.Itoa(n) + " people at different spots."
 	}
 }
 
 // disputedSentence is the panel line for the disputing place count m (A56,
-// RR-1, A85), built on the same shape as confirmedSentence. The disputed line
-// is a count of places too and carries no caveat, because the confirmed line
-// above it does (A56 as amended by A85).
+// RR-1, A88), built on the same shape as confirmedSentence. The one person
+// form says nearby.
 func disputedSentence(m int) string {
 	switch {
 	case m <= 0:
-		return "No one nearby has disputed this."
+		return "No one has disputed this."
 	case m == 1:
-		return "1 place disputed this."
+		return "1 person nearby disputed this."
 	default:
-		return strconv.Itoa(m) + " different places disputed this."
+		return strconv.Itoa(m) + " people at different spots disputed this."
 	}
 }
 
-// provisionalLeadSentence is the lead line of a Provisional report (D-17, A6,
-// RR-2). The number comes from IndependentAgreementThreshold, so the copy
-// follows the constant the resolver gates on.
+// provisionalLeadSentence is the lead line of a Provisional report that
+// nobody has confirmed yet (D-17, A6, RR-2, A88). The number comes from
+// IndependentAgreementThreshold, so the copy follows the constant the resolver
+// gates on. The Phase 4 glossary reuses it as the threshold sentence.
 func provisionalLeadSentence() string {
-	return "Needs " + strconv.Itoa(IndependentAgreementThreshold) + " confirmations to count as confirmed."
+	return "Needs " + strconv.Itoa(IndependentAgreementThreshold) + " people at different spots to confirm it."
+}
+
+// provisionalLeadSentenceFor is the lead line of a Provisional report that
+// has the given count of confirming places (A88). It says how many more
+// people the report needs: the threshold form while nobody has confirmed, one
+// more person after one place, and a plural form for a larger threshold. The
+// number needed is clamped to the range 1 to the threshold, so the line stays
+// plain text even for a Provisional report that already shows the threshold,
+// which the resolver never produces.
+func provisionalLeadSentenceFor(confirmed int) string {
+	need := IndependentAgreementThreshold - confirmed
+	switch {
+	case need >= IndependentAgreementThreshold:
+		return provisionalLeadSentence()
+	case need <= 1:
+		return "Needs 1 more person at a different spot to confirm it."
+	default:
+		return "Needs " + strconv.Itoa(need) + " more people at different spots to confirm it."
+	}
 }
 
 // expiredLeadSentence is the lead line once a report is at or past its
@@ -111,36 +131,47 @@ func windowPhrase(minutes int) string {
 	return strconv.Itoa(minutes) + " minutes"
 }
 
-// upToDateSentence is the panel line of an Up to date report (D-19).
+// confirmationsPhrase is a count of confirmations with its noun in the right
+// number: 1 confirmation, 2 confirmations (A88).
+func confirmationsPhrase(n int) string {
+	if n == 1 {
+		return "1 confirmation"
+	}
+	return strconv.Itoa(n) + " confirmations"
+}
+
+// upToDateSentence is the panel line of a Report up to date report (D-19,
+// A88). recent is the confirming count inside the window.
 func upToDateSentence(recent int, window string) string {
-	return strconv.Itoa(recent) + " places confirmed this in the last " + window + "."
+	return confirmationsPhrase(recent) + " in the last " + window + "."
 }
 
-// gettingOldSentence is the panel line of a Getting old report with no
-// standing dispute (D-19).
+// gettingOldSentence is the panel line of a Report getting old report with no
+// standing dispute (D-19, A88).
 func gettingOldSentence(window string) string {
-	return "Fewer than " + strconv.Itoa(IndependentAgreementThreshold) + " places confirmed it in the last " + window + "."
+	return "Fewer than " + confirmationsPhrase(IndependentAgreementThreshold) + " in the last " + window + "."
 }
 
-// needsReconfirmingSentence is the panel line of a Needs re-confirming report
-// with no standing dispute (D-19).
+// needsReconfirmingSentence is the panel line of a Report needs re-confirming
+// report with no standing dispute (D-19).
 const needsReconfirmingSentence = "Gone quiet. People nearby can confirm it again."
 
-// disputeRaisedBarSentence is the panel line when a standing dispute place
-// raised the bar to k confirming places (D-19).
+// disputeRaisedBarSentence is the panel line when a standing dispute raised
+// the bar to k confirmations (D-19, A88).
 func disputeRaisedBarSentence(k int, window string) string {
-	return "Disputed nearby, so it needs " + strconv.Itoa(k) + " places in the last " + window + "."
+	return "Disputed nearby, so it needs " + confirmationsPhrase(k) + " in the last " + window + "."
 }
 
 // tooEarlySentence is the panel line of a critical or rescue needed report
-// with too few confirming places (D-19).
+// with too few confirming people (D-19, A88). The threshold is 2 or more, so
+// the plural is fixed (TestPanelWordingPluralConstants).
 func tooEarlySentence() string {
-	return "Fewer than " + strconv.Itoa(IndependentAgreementThreshold) + " places have confirmed this."
+	return "Fewer than " + strconv.Itoa(IndependentAgreementThreshold) + " people have confirmed this yet."
 }
 
-// currencyScoreSentence is the popup score line (A50).
+// currencyScoreSentence is the popup score line (A50, A88).
 func currencyScoreSentence(score int) string {
-	return "Score " + strconv.Itoa(score) + " out of 100, based on recent confirmations."
+	return "Score " + strconv.Itoa(score) + " out of 100."
 }
 
 // The reporter reliability words (D-15). None has no word, because a report
@@ -169,27 +200,32 @@ func reporterLabel(t ReporterTag) string {
 	}
 }
 
-// reporterSentence is the panel line for a reporter (D-19). A rated reporter
-// reads how many of their judged reports were corroborated. A New reporter
-// reads the judged minimum first, then how many reports have had a clear
-// result, as a number or none (A85). Neither form calls any report a first
-// report. None and any invalid tag give an empty string.
+// reporterSentence is the panel line for a reporter (D-19, A88). A rated
+// reporter reads how many of their last judged reports were confirmed, with
+// the verb and the noun in the right number. A New reporter reads that they
+// are not rated yet and the judged minimum, and the count so far is not in the
+// sentence. Neither form calls any report a first report. None and any invalid
+// tag give an empty string.
 func reporterSentence(t ReporterTag, judged, corroborated int) string {
 	switch t {
 	case ReporterReliable, ReporterMixed, ReporterUnreliable:
-		return strconv.Itoa(corroborated) + " of " + strconv.Itoa(judged) + " earlier reports were confirmed by people nearby."
-	case ReporterNew:
-		count := "none"
-		if judged >= 1 {
-			count = strconv.Itoa(judged)
+		reports, verb := "reports", "were"
+		if judged == 1 {
+			reports = "report"
 		}
-		return "A rating needs " + strconv.Itoa(ReliabilityMinJudged) + " reports with a clear result. They have " + count + " so far."
+		if corroborated == 1 {
+			verb = "was"
+		}
+		return strconv.Itoa(corroborated) + " of their last " + strconv.Itoa(judged) + " " + reports + " " + verb + " confirmed."
+	case ReporterNew:
+		return "Not rated yet. It needs " + strconv.Itoa(ReliabilityMinJudged) + " reports with a clear result."
 	default:
 		return ""
 	}
 }
 
-// reporterScoreSentence is the popup score line for a rated reporter (A50).
+// reporterScoreSentence is the popup score line for a rated reporter (A50,
+// A88).
 func reporterScoreSentence(score int) string {
-	return "Score " + strconv.Itoa(score) + " out of 100, based on how often their reports were confirmed."
+	return "Score " + strconv.Itoa(score) + " out of 100."
 }

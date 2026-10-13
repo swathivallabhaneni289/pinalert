@@ -83,12 +83,14 @@ func TestTrustCopyCurrencyIsPlainText(t *testing.T) {
 			{currencyLabelGettingOld, "Report getting old"},
 			{currencyLabelNeedsReconfirming, "Report needs re-confirming"},
 			{currencyLabelTooEarly, "Too early to tell"},
-			{upToDateSentence(2, "2 hours"), "2 places confirmed this in the last 2 hours."},
-			{gettingOldSentence("6 hours"), "Fewer than 2 places confirmed it in the last 6 hours."},
+			{upToDateSentence(2, "2 hours"), "2 confirmations in the last 2 hours."},
+			{upToDateSentence(1, "2 hours"), "1 confirmation in the last 2 hours."},
+			{gettingOldSentence("6 hours"), "Fewer than 2 confirmations in the last 6 hours."},
 			{needsReconfirmingSentence, "Gone quiet. People nearby can confirm it again."},
-			{disputeRaisedBarSentence(3, "2 hours"), "Disputed nearby, so it needs 3 places in the last 2 hours."},
-			{tooEarlySentence(), "Fewer than 2 places have confirmed this."},
-			{currencyScoreSentence(82), "Score 82 out of 100, based on recent confirmations."},
+			{disputeRaisedBarSentence(3, "2 hours"), "Disputed nearby, so it needs 3 confirmations in the last 2 hours."},
+			{disputeRaisedBarSentence(1, "2 hours"), "Disputed nearby, so it needs 1 confirmation in the last 2 hours."},
+			{tooEarlySentence(), "Fewer than 2 people have confirmed this yet."},
+			{currencyScoreSentence(82), "Score 82 out of 100."},
 		}
 		for _, e := range exact {
 			if e.got != e.want {
@@ -111,11 +113,11 @@ func TestTrustCopyCurrencyIsPlainText(t *testing.T) {
 			phrases = append(phrases, p)
 		}
 		for _, p := range phrases {
-			for _, r := range []int{2, 3, 10, 99, 100, 12345} {
+			for _, r := range []int{0, 1, 2, 3, 10, 99, 100, 12345} {
 				assertPlainCopy(t, upToDateSentence(r, p))
 			}
 			assertPlainCopy(t, gettingOldSentence(p))
-			for _, k := range []int{3, 4, 10, 100} {
+			for _, k := range []int{1, 3, 4, 10, 100} {
 				assertPlainCopy(t, disputeRaisedBarSentence(k, p))
 			}
 		}
@@ -217,7 +219,7 @@ func TestTrustCountLabel(t *testing.T) {
 		if got.ConfirmedPlaces != 150 || got.ConfirmedText != "99+" {
 			t.Errorf("ConfirmedPlaces = %d, ConfirmedText = %q", got.ConfirmedPlaces, got.ConfirmedText)
 		}
-		want := "150 different places confirmed this. Counts places, not votes."
+		want := "Confirmed by 150 people at different spots."
 		if got.ConfirmedSentence != want {
 			t.Errorf("ConfirmedSentence = %q, want %q", got.ConfirmedSentence, want)
 		}
@@ -225,20 +227,22 @@ func TestTrustCountLabel(t *testing.T) {
 }
 
 // TestTrustCounterSentences pins the confirmed and disputed sentences
-// exactly (RR-1, A7, A56).
+// exactly (RR-1, A7, A56 as amended by A88: people at different spots, no
+// caveat on either line).
 func TestTrustCounterSentences(t *testing.T) {
-	const tail = " Counts places, not votes."
 	confirmed := map[int]string{
-		0:   "No one has confirmed this yet." + tail,
-		1:   "1 place confirmed this." + tail,
-		2:   "2 different places confirmed this." + tail,
-		100: "100 different places confirmed this." + tail,
+		-1:  "No one has confirmed this yet.",
+		0:   "No one has confirmed this yet.",
+		1:   "1 person confirmed this.",
+		2:   "Confirmed by 2 people at different spots.",
+		100: "Confirmed by 100 people at different spots.",
 	}
 	disputed := map[int]string{
-		0:   "No one nearby has disputed this.",
-		1:   "1 place disputed this.",
-		2:   "2 different places disputed this.",
-		100: "100 different places disputed this.",
+		-1:  "No one has disputed this.",
+		0:   "No one has disputed this.",
+		1:   "1 person nearby disputed this.",
+		2:   "2 people at different spots disputed this.",
+		100: "100 people at different spots disputed this.",
 	}
 	for n, want := range confirmed {
 		if got := confirmedSentence(n); got != want {
@@ -255,17 +259,21 @@ func TestTrustCounterSentences(t *testing.T) {
 // TestTrustCopyIsPlainText is V-32: every string the trust code can produce
 // stays inside the closed character set.
 func TestTrustCopyIsPlainText(t *testing.T) {
-	const tail = "Counts places, not votes."
 	for _, n := range []int{0, 1, 2, 3, 10, 99, 100, 101, 999, 12345} {
 		assertPlainCopy(t, trustCountText(n))
 		c, d := confirmedSentence(n), disputedSentence(n)
 		assertPlainCopy(t, c)
 		assertPlainCopy(t, d)
-		if !strings.HasSuffix(c, tail) || strings.Count(c, tail) != 1 {
-			t.Errorf("the confirmed sentence for %d must end with the caveat exactly once: %q", n, c)
-		}
-		if strings.Contains(d, "Counts") {
-			t.Errorf("the disputed sentence for %d must carry no caveat: %q", n, d)
+		// A88 retires the caveat: neither counter sentence carries it, and
+		// neither names a place. This replaces the A85 rule that the
+		// confirmed sentence ended with it exactly once.
+		for name, s := range map[string]string{"confirmed": c, "disputed": d} {
+			if strings.Contains(s, "Counts") || strings.Contains(s, "votes") {
+				t.Errorf("the %s sentence for %d must carry no caveat: %q", name, n, s)
+			}
+			if strings.Contains(strings.ToLower(s), "place") {
+				t.Errorf("the %s sentence for %d must not name a place: %q", name, n, s)
+			}
 		}
 	}
 	assertPlainCopy(t, provisionalLeadSentence())
@@ -303,10 +311,7 @@ func TestTrustCopyIsPlainText(t *testing.T) {
 // builder grid, the composition grid and the trust object grid.
 func TestTrustCopyReporterIsPlainText(t *testing.T) {
 	minJudged := strconv.Itoa(ReliabilityMinJudged)
-	const (
-		confirmedOf = " earlier reports were confirmed by people nearby."
-		needs       = "A rating needs 5 reports with a clear result."
-	)
+	const needs = "Not rated yet. It needs 5 reports with a clear result."
 
 	t.Run("exact copy", func(t *testing.T) {
 		for tag, want := range map[ReporterTag]string{
@@ -326,13 +331,15 @@ func TestTrustCopyReporterIsPlainText(t *testing.T) {
 			j, c int
 			want string
 		}{
-			{ReporterReliable, 5, 5, "5 of 5" + confirmedOf},
-			{ReporterMixed, 5, 4, "4 of 5" + confirmedOf},
-			{ReporterUnreliable, 5, 0, "0 of 5" + confirmedOf},
-			{ReporterNew, 0, 0, needs + " They have none so far."},
-			{ReporterNew, 1, 1, needs + " They have 1 so far."},
-			{ReporterNew, 2, 0, needs + " They have 2 so far."},
-			{ReporterNew, 4, 3, needs + " They have 4 so far."},
+			{ReporterReliable, 5, 5, "5 of their last 5 reports were confirmed."},
+			{ReporterMixed, 5, 4, "4 of their last 5 reports were confirmed."},
+			{ReporterMixed, 5, 1, "1 of their last 5 reports was confirmed."},
+			{ReporterUnreliable, 5, 0, "0 of their last 5 reports were confirmed."},
+			{ReporterReliable, 30, 29, "29 of their last 30 reports were confirmed."},
+			{ReporterNew, 0, 0, needs},
+			{ReporterNew, 1, 1, needs},
+			{ReporterNew, 2, 0, needs},
+			{ReporterNew, 4, 3, needs},
 			{ReporterNone, 5, 5, ""},
 			{ReporterTag("bogus"), 5, 5, ""},
 		}
@@ -340,11 +347,11 @@ func TestTrustCopyReporterIsPlainText(t *testing.T) {
 			if got := reporterSentence(c.tag, c.j, c.c); got != c.want {
 				t.Errorf("reporterSentence(%q, %d, %d) = %q, want %q", c.tag, c.j, c.c, got, c.want)
 			}
-			if c.tag == ReporterNew && !strings.Contains(c.want, "A rating needs "+minJudged+" reports with a clear result.") {
+			if c.tag == ReporterNew && !strings.Contains(c.want, "It needs "+minJudged+" reports with a clear result.") {
 				t.Errorf("the New reporter minimum in %q is not %s", c.want, minJudged)
 			}
 		}
-		if got, want := reporterScoreSentence(86), "Score 86 out of 100, based on how often their reports were confirmed."; got != want {
+		if got, want := reporterScoreSentence(86), "Score 86 out of 100."; got != want {
 			t.Errorf("reporterScoreSentence(86) = %q, want %q", got, want)
 		}
 	})

@@ -14,8 +14,8 @@ next.
 
 How confirmations are counted, why a place is a precision 7 geohash cell, the 1 km voting rule and the honest limits of all of it are written up in [docs/TRUST-MODEL.md](./docs/TRUST-MODEL.md).
 
-- The two counters, confirmed and disputed, count distinct places within 1 km of the report, not votes.
-- The still current word says whether different places confirmed the report recently, and the map popup shows a 0 to 100 score for it.
+- The two counters, confirmed and disputed, count people at different spots within 1 km of the report, not votes. Several people at the same spot count once, so a crowd in one place cannot raise the number.
+- The still current word says whether people at different spots confirmed the report recently, and the map popup shows a 0 to 100 score for it.
 - The reporter tag rates how the reporter's earlier reports turned out, and the map popup shows a 0 to 100 score for it as well.
 
 ## Run locally

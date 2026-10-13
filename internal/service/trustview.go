@@ -69,8 +69,9 @@ type TrustInput struct {
 
 // trustLeadSentence implements the lead line rule in order. Retracted wins
 // over expired, and the expiry test is the same at or after rule CastVote
-// refuses with.
-func trustLeadSentence(vis Visibility, expiresAt, now time.Time) string {
+// refuses with. A Provisional report reads how many more people it needs, so
+// the line follows the confirming count (A88).
+func trustLeadSentence(vis Visibility, confirmed int, expiresAt, now time.Time) string {
 	if vis == VisibilityRetracted {
 		return ""
 	}
@@ -78,7 +79,7 @@ func trustLeadSentence(vis Visibility, expiresAt, now time.Time) string {
 		return expiredLeadSentence
 	}
 	if vis == VisibilityProvisional {
-		return provisionalLeadSentence()
+		return provisionalLeadSentenceFor(confirmed)
 	}
 	return ""
 }
@@ -97,7 +98,7 @@ func BuildTrust(in TrustInput) Trust {
 	t.DisputedPlaces = disputed
 	t.ConfirmedText = trustCountText(confirmed)
 	t.DisputedText = trustCountText(disputed)
-	t.LeadSentence = trustLeadSentence(in.Visibility, in.ExpiresAt, in.Now)
+	t.LeadSentence = trustLeadSentence(in.Visibility, confirmed, in.ExpiresAt, in.Now)
 	t.ConfirmedSentence = confirmedSentence(confirmed)
 	t.DisputedSentence = disputedSentence(disputed)
 	t.Currency = buildCurrency(currencyInput{

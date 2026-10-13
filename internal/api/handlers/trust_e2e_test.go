@@ -288,13 +288,13 @@ func p07AssertTrust(t *testing.T, label string, raw json.RawMessage, want p07Wan
 }
 
 const (
-	p07Lead           = "Needs 2 confirmations to count as confirmed."
-	p07NoDispute      = "No one nearby has disputed this."
-	p07Confirmed1     = "1 place confirmed this. Counts places, not votes."
-	p07Confirmed2     = "2 different places confirmed this. Counts places, not votes."
-	p07Confirmed3     = "3 different places confirmed this. Counts places, not votes."
-	p07Disputed1      = "1 place disputed this."
-	p07Disputed2      = "2 different places disputed this."
+	p07Lead           = "Needs 1 more person at a different spot to confirm it."
+	p07NoDispute      = "No one has disputed this."
+	p07Confirmed1     = "1 person confirmed this."
+	p07Confirmed2     = "Confirmed by 2 people at different spots."
+	p07Confirmed3     = "Confirmed by 3 people at different spots."
+	p07Disputed1      = "1 person nearby disputed this."
+	p07Disputed2      = "2 people at different spots disputed this."
 	p07FeedCompareTag = "vote response vs feed"
 )
 
@@ -656,7 +656,7 @@ func TestTrustCountUnderConcurrentVotes(t *testing.T) {
 		confirmed:         12,
 		disputed:          0,
 		lead:              "",
-		confirmedSentence: "12 different places confirmed this. Counts places, not votes.",
+		confirmedSentence: "Confirmed by 12 people at different spots.",
 		disputedSen:       p07NoDispute,
 	})
 	if got := countVotesForReport(t, pool, reportID); got != accounts {
@@ -832,8 +832,8 @@ func p14UpToDate(t *testing.T, label string, got p14CurrencyWire, places, window
 		Band:          "up_to_date",
 		Score:         got.Score,
 		Label:         "Report up to date",
-		Sentence:      fmt.Sprintf("%d places confirmed this in the last %s.", places, window),
-		ScoreSentence: fmt.Sprintf("Score %d out of 100, based on recent confirmations.", *got.Score),
+		Sentence:      fmt.Sprintf("%d confirmations in the last %s.", places, window),
+		ScoreSentence: fmt.Sprintf("Score %d out of 100.", *got.Score),
 		RecentPlaces:  places,
 		WindowMinutes: windowMinutes,
 		FadeStage:     fade,
@@ -846,7 +846,7 @@ func p14NewReporter() p14ReporterWire {
 	return p14ReporterWire{
 		Tag:      "new",
 		Label:    "New reporter",
-		Sentence: "A rating needs 5 reports with a clear result. They have none so far.",
+		Sentence: "Not rated yet. It needs 5 reports with a clear result.",
 	}
 }
 
@@ -962,8 +962,8 @@ func TestFeedSignalsMatchCastVoteSignals(t *testing.T) {
 		Band:          "needs_reconfirming",
 		Score:         p14Int(0),
 		Label:         "Report needs re-confirming",
-		Sentence:      "Disputed nearby, so it needs 3 places in the last 2 hours.",
-		ScoreSentence: "Score 0 out of 100, based on recent confirmations.",
+		Sentence:      "Disputed nearby, so it needs 3 confirmations in the last 2 hours.",
+		ScoreSentence: "Score 0 out of 100.",
 		RecentPlaces:  2,
 		WindowMinutes: 120,
 		FadeStage:     p14Str("stale"),
@@ -996,7 +996,7 @@ func TestFeedSignalsMatchCastVoteSignals(t *testing.T) {
 	p14AssertCurrency(t, "step 5", cur, p14CurrencyWire{
 		Band:          "not_yet_corroborated",
 		Label:         "Too early to tell",
-		Sentence:      "Fewer than 2 places have confirmed this.",
+		Sentence:      "Fewer than 2 people have confirmed this yet.",
 		RecentPlaces:  1,
 		WindowMinutes: 360,
 	})
@@ -1102,8 +1102,8 @@ func TestReporterSignalFromSeededHistory(t *testing.T) {
 		Tag:                 "reliable",
 		Score:               p14Int(78),
 		Label:               "Reliable reporter",
-		Sentence:            "5 of 6 earlier reports were confirmed by people nearby.",
-		ScoreSentence:       "Score 78 out of 100, based on how often their reports were confirmed.",
+		Sentence:            "5 of their last 6 reports were confirmed.",
+		ScoreSentence:       "Score 78 out of 100.",
 		JudgedReports:       6,
 		CorroboratedReports: 5,
 	}

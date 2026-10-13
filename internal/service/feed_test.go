@@ -934,7 +934,7 @@ func TestNearbyBatchesVoteReadsOnceWithReporters(t *testing.T) {
 func TestReporterSignalKeyedByAccount(t *testing.T) {
 	ctx := context.Background()
 	query := service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5}
-	wantSentence := "5 of 5 earlier reports were confirmed by people nearby."
+	wantSentence := "5 of their last 5 reports were confirmed."
 
 	hist7, votes7 := p12Corroborated(7, 701, 5)
 	hist8 := []sqlcgen.ReporterHistoryReportsRow{
@@ -989,7 +989,7 @@ func TestReporterSignalKeyedByAccount(t *testing.T) {
 	t.Run("a report expiring exactly at now counts as judged and another account's history does not leak", func(t *testing.T) {
 		got := p12ReporterOf(t, views, 3)
 		if got.Tag != service.ReporterNew || got.Score != nil || got.JudgedReports != 2 ||
-			got.Sentence != "A rating needs 5 reports with a clear result. They have 2 so far." {
+			got.Sentence != "Not rated yet. It needs 5 reports with a clear result." {
 			t.Errorf("report 3 reporter = %+v", got)
 		}
 	})
@@ -1145,7 +1145,7 @@ func TestCastVoteTrustMatchesNearbyTrust(t *testing.T) {
 		}
 		r := got.nearby.Reporter
 		if r.Tag != service.ReporterNew || r.JudgedReports != 0 ||
-			r.Sentence != "A rating needs 5 reports with a clear result. They have none so far." {
+			r.Sentence != "Not rated yet. It needs 5 reports with a clear result." {
 			t.Errorf("reporter = %+v, want new with no judged reports", r)
 		}
 	})
