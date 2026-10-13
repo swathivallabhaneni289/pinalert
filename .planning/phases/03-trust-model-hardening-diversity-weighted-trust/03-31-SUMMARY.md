@@ -146,11 +146,64 @@ Three tone tokens in all four theme blocks of `main.css`: `--color-tone-good` (l
 
 RED before any code: the Go build failed on the missing builder (`undefined: FactKind`, `undefined: TrustFact`, `undefined: FactKinds` and the tone names) with `trustfacts_test.go` written first. The web contract tests went in red first too: 8 new tests failed (`TestFactsListIsTheOnlySourceOfRows`, `TestToneTokensClearTheContrastFloors`, `TestToneGlyphsAreFourShapes`, `TestTrustCardIsAlwaysOpen`, `TestRowPanelHoldsTheFactsList`, `TestPopupBuildsTheCardAndTheFadeLine`, `TestSharedDistanceAndFadeFormatters`, `TestFactsCSS`) and all 142 old ones passed.
 
-- Whole Go suite on the scratch database `p3_ticks`: FINAL_GO_COUNTS
+- Whole Go suite on the scratch database `p3_ticks`: 403 PASS, 0 FAIL, 0 SKIP at top level (390 on the base commit, plus 4 service tests, 1 handler test and 8 web tests), every package ok.
 - `go vet ./...` clean, `gofmt -l web internal cmd` lists nothing.
 - The tool guard refused `env -i`, so the suite ran as `DATABASE_URL=... go test ./... -p 1 -count=1 -v`.
 - Swagger: `make swag` changed 50, 50 and 46 lines, all of them the new `FactResponse` type and the new `facts` property.
-- Browser harness: HARNESS_PENDING
+- Browser harness: whole suite on the final code, 508 PASS, 0 FAIL, 24 NEEDS A PERSON, 59 NOTE (section below).
+
+## Browser harness (outside the repo, `~/code/pinalert-browser-checks`)
+
+Whole suite on the final code (repo HEAD 5c8854f, identical to 41ade6c under web, internal and cmd), both engines: `PINALERT_DB=p3_ticks_auto PINALERT_PORT=8803 run.sh --tests 0,2,3,4,5,6,7,8,9,10,11,12 --browsers chromium,webkit`, 311 seconds: **508 PASS, 0 FAIL, 24 NEEDS A PERSON, 59 NOTE** and the run header NOTE (Chromium 267 PASS, WebKit 241 PASS). Tests 2 to 11 only: 444 PASS (the base 442 plus the 2 for T9.18), 0 FAIL, 22 NEEDS A PERSON, 41 NOTE plus the header NOTE. The original harness against the base build gave exactly 444 PASS, 0 FAIL, 20 NEEDS A PERSON, 41 NOTE plus the header, so the only count change in tests 2 to 11 is NEEDS A PERSON 20 to 22: T2.4, VoiceOver on the popup card, once per engine.
+
+| Test | PASS | FAIL | NEEDS A PERSON | NOTE |
+|------|------|------|----------------|------|
+| 0 | 2 | 0 | 0 | 0 |
+| 2 | 20 | 0 | 4 | 0 |
+| 3 | 18 | 0 | 0 | 0 |
+| 4 | 47 | 0 | 3 | 4 |
+| 5 | 66 | 0 | 4 | 1 |
+| 6 | 10 | 0 | 0 | 2 |
+| 7 | 20 | 0 | 2 | 2 |
+| 8 | 41 | 0 | 1 | 4 |
+| 9 (with T9.18) | 78 | 0 | 2 | 4 |
+| 10 | 16 | 0 | 4 | 1 |
+| 11 | 128 | 0 | 2 | 23 |
+| 12 (new) | 62 | 0 | 2 | 18 |
+
+Only the popup parts changed; the feed row and Activity row checks run exactly as before. `lib/selectors.js` only gained a section (no line removed).
+
+| Check | Old expectation | New expectation | Why |
+|-------|-----------------|-----------------|-----|
+| T0 | the popup trust toggle resolves to 1 | it resolves to 0; the card, header, counters, dot, state word, list, 5 slots, score lines, glyphs, fade line resolve (55 selectors on both engines) | the popup has no toggle |
+| T2.1 popup | a button named by the counters then the hint, aria-expanded false | no toggle and no aria-expanded; the counters read "N confirmed" then "M disputed"; no focus stop | no toggle |
+| T2.3 popup | click, Enter, Space or tap opens the panel, Escape closes it | the card shows at least 3 rows before any input and no input changes anything | nothing to open |
+| T2.3 feed row | counted the panel's sentences | counts displayed tick rows | the panel holds one list |
+| T2.4 | none | NEEDS A PERSON: VoiceOver on the popup card | new |
+| T3.1 | the first Escape closes the popup panel, the second the popup | one Escape closes the popup and focus is on its pin; a second does nothing | no panel level |
+| T3.3 | with a popup panel and a row panel open, Escape closes the popup panel first | Escape closes the popup, its only level, and leaves the row panel | same |
+| T3.4 | the next Escape closes the popup and the row panel stays | the next Escape (focus on the pin, no popup) closes nothing and the row panel stays | same |
+| T6.2, T6.4 | "server sentences", "refreshed sentences" | "tick rows", "refreshed tick rows", read from displayed rows | one list |
+| T9.1 (8 runs) | tip centred, card inside the view, close button and trust toggle uncovered, in three states (opened, panel open, confirmation open) | the same with the card counters in place of the toggle, in two states (opened with the card showing, confirmation open) | no panel step |
+| T9.2, T9.2c | three steps with no animated pan under reduced motion | two steps; the detector control is unchanged | no panel step |
+| T9.3, T9.7 | verdict with the toggle | verdict with the counters | no toggle |
+| T9.4 | at 320x256 open the panel, then the card scrolls inside itself | the card is open already and scrolls inside itself | no panel step |
+| T9.5 | Escape closes the panel, a second closes the popup | one Escape closes the popup | no panel level |
+| T9.8 popup | the open panel and the open confirmation survive a poll | the always showing card with the same rows and the open confirmation survive a poll; focus does not move | no panel |
+| T11.1 | no underline on the toggle at rest, hover, press, focus | no underline anywhere in the card at rest, hover on a row, press on a row, focus on the card | no toggle |
+| T11.2a | the Unconfirmed label and the reporter words share one line, 8px apart | the state line holds Unconfirmed alone and the reporter words are the title of the last tick row | A92 |
+| T11.2b | the reporter words are plain text outside the toggle with no border, fill or icon | the reporter row title is in the text colour, has no focus stop, fill or shadow, and the glyph is an aria-hidden, non focusable svg | the title is semibold by design and has an icon |
+| T11.2d | a Live report shows the words alone on their line | a Live report has no state label, the state line takes no room, the reporter row is last | A92, A83 |
+| T11.5 | hover is a fill, press the border token fill | the card is not a control: hover and press change nothing and the pointer is not a hand | no toggle |
+| T11.3a, b, c | a 20px chevron turns 180 degrees; no transition under reduced motion; visible in forced colours | no chevron, toggle, button or aria-expanded; nothing in the card animates; the tone glyphs are visible in forced colours (disc 21:1 against Canvas) | A91, A93 |
+| T11.5f | forced colours: hover or press shows a border cue | forced colours: the card border is CanvasText | no hover |
+| T11.8 a to d, i to l | the longest still current labels fit the popup's signal | the same 7 labels at 100 and 200 percent text injected into the card's state word may wrap under the counters but must not clip, scroll sideways or overlap | the state word is the right half of the header |
+| T11.8 q to t | the toggle name reads "label, score 56" | the card reads counters, state word, still current row, "Score 56 out of 100." in text order and in the accessibility snapshot | A92 |
+| T11.8 u, v | the toggle height | the card header height | no toggle |
+
+New checks, test 12 (run against the base build they fail, 24 FAIL and 1 PASS per engine; T12.7 cannot fail there because A88 already removed the word): T12.1 four tick rows in order with the status slot hidden; T12.1b an unconfirmed report has 3 rows and no state word; T12.2 the counters read "2 confirmed · 0 disputed" with an aria-hidden dot and no focus stop; T12.3 the counters agree with the rows; T12.4 the state word colour equals its row tone and the four glyph shapes differ; T12.5 the feed row opens to the same rows (no score line); T12.6 the same for the Activity row; T12.7 no word place on six surfaces; T12.8 "0.4 km away" for the reader's own position; T12.9 no distance for a refused location; T12.10 and T12.10b an address search never moves the feed centre and the distance follows the reader; T12.11 the distance formatter; T12.12 the fade line equals the contract and never says "unless confirmed again"; T12.13 the hour boundaries (1 hr., 2 hrs. at 179.5 minutes, 46 min.); T12.14 no fade line for an expired report; T12.15 no sideways scroll or clipped text at 390, 360, 320x640 and 320x568 and at 200 percent text, with the glyph on the first title line (proven able to fail on the commit before the margin fix: 6 FAIL, offset -12px); T12.16 popup Tab order Close, Confirm, Dispute, Mark resolved; T12.17 NEEDS A PERSON: the look against the picture, with the neutral popup surface as the known difference.
+
+The changed checks run against the base build fail as they should (Chromium: T0 1, T2 7, T3 4, T6 2, T9 15, T11 23 FAIL). Post compaction popup heights (both engines identical): 390x844 650px in a 650px box (nothing hidden; with a 100 letter title 697 in 664); 360x740 650 in 560 (90px below the fold); 320x640 689 in 460 (229px); 320x568 689 in 388 (301px). The popup stays inside the map and the close button is clear at all four sizes; at 320x256 the close button is under a fixed control, the accepted A65 exception, unchanged.
 
 ## Pins changed on purpose
 
