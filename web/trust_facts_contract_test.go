@@ -92,7 +92,7 @@ func TestFactsListIsTheOnlySourceOfRows(t *testing.T) {
 	}
 }
 
-// TestToneGlyphsAreFourShapes pins the tone icons (A92, T-03-31-02): DOM built
+// TestToneGlyphsAreFourShapes pins the tone icons (A93, T-03-31-02): DOM built
 // SVG, one mark per tone, never colour alone, no style attribute, no emoji.
 func TestToneGlyphsAreFourShapes(t *testing.T) {
 	raw := p13ReadStatic(t, "static/js/trust.js")
@@ -131,7 +131,7 @@ func TestToneGlyphsAreFourShapes(t *testing.T) {
 	}
 }
 
-// TestTrustCardIsAlwaysOpen pins the popup card (A90, A91): header row with
+// TestTrustCardIsAlwaysOpen pins the popup card (A91, A92): header row with
 // the counters and the state word, the facts list with the score lines, and no
 // toggle, chevron, panel or expanded state anywhere in it.
 func TestTrustCardIsAlwaysOpen(t *testing.T) {
@@ -167,7 +167,7 @@ func TestTrustCardIsAlwaysOpen(t *testing.T) {
 
 // TestRowPanelHoldsTheFactsList pins that the row toggle and its focus rules
 // are unchanged while its panel now holds the same facts list, without the
-// score lines (A91, D-09, A70).
+// score lines (A96, D-09, A50, A70).
 func TestRowPanelHoldsTheFactsList(t *testing.T) {
 	code := p31Trust(t)
 	create := jsFunctionBody(t, code, "createTrustBlock()")
@@ -184,7 +184,7 @@ func TestRowPanelHoldsTheFactsList(t *testing.T) {
 	p13MustContain(t, "closeOneLevel", one, "closeRowPanel(owner)", "closePopupLevel(owner")
 }
 
-// TestPopupBuildsTheCardAndTheFadeLine pins the popup consumer (A90, A93, A94).
+// TestPopupBuildsTheCardAndTheFadeLine pins the popup consumer (A91, A94, A95).
 func TestPopupBuildsTheCardAndTheFadeLine(t *testing.T) {
 	mapJS := p23CodeOf(t, "static/js/map.js")
 
@@ -217,7 +217,7 @@ func TestPopupBuildsTheCardAndTheFadeLine(t *testing.T) {
 }
 
 // TestSharedDistanceAndFadeFormatters pins the app.js helpers and the centre
-// source flag (A93, A94, A95, T-03-31-03).
+// source flag (A94, A95, T-03-31-03).
 func TestSharedDistanceAndFadeFormatters(t *testing.T) {
 	app := p23CodeOf(t, "static/js/app.js")
 
@@ -270,7 +270,7 @@ func p31Resolve(t *testing.T, tokens themeTokens, name string) string {
 
 // TestToneTokensClearTheContrastFloors pins the three tone tokens in all four
 // theme sources and the contrast of every tone pair on the card surface, from
-// the real declared values (A92, A96): text 4.5:1, icon and mark 3:1.
+// the real declared values (A93): text 4.5:1, icon and mark 3:1.
 func TestToneTokensClearTheContrastFloors(t *testing.T) {
 	mainRaw := p13ReadStatic(t, "static/css/main.css")
 	needed := []string{
@@ -317,7 +317,7 @@ func TestToneTokensClearTheContrastFloors(t *testing.T) {
 	}
 }
 
-// TestFactsCSS pins the declared look of the card and the rows (A92, A96).
+// TestFactsCSS pins the declared look of the card and the rows (A92, A93, A96).
 func TestFactsCSS(t *testing.T) {
 	raw := p13ReadStatic(t, "static/css/trust.css")
 	rules := p13ParseCSS(raw)
@@ -392,7 +392,7 @@ func TestFactsCSS(t *testing.T) {
 		"background": "var(--color-bg)", "color": "var(--color-text)",
 	})
 
-	// Forced colours keep the glyph shapes and a border (A96).
+	// Forced colours keep the glyph shapes and a border (A93).
 	forcedGlyph, _ := p13Rule(t, rules, "forced-colors: active", ".trust-fact__glyph")
 	if forcedGlyph.Decls["forced-color-adjust"] != "none" || forcedGlyph.Decls["color"] != "CanvasText" {
 		t.Errorf("forced colours glyph rule = %v, want forced-color-adjust none and CanvasText", forcedGlyph.Decls)

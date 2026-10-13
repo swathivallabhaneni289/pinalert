@@ -117,7 +117,7 @@ func TestPopupCardBuiltOnceUpdatedInPlace(t *testing.T) {
 		"Pinalert.relativeTime(",
 		"Pinalert.iconClass(",
 	)
-	// Plan 03-31 (A93, A95): the popup meta line shows the distance, so the
+	// Plan 03-31 (A94): the popup meta line shows the distance, so the
 	// A31 ban on distance_km is replaced by the gate and the shared formatter
 	// (TestPopupBuildsTheCardAndTheFadeLine pins both).
 	p17MustContain(t, "updatePopupCard", update,

@@ -77,7 +77,7 @@
   --color-severity-medium-bg: #FCF3DC;
   --color-severity-critical-bg: #FBE9E7;
 
-  /* Tone palette (plan 03-31, A92): the glyph disc and the state word of the
+  /* Tone palette (plan 03-31, A93): the glyph disc and the state word of the
      trust card and the tick rows. Each value clears 4.5:1 on --color-bg, so
      the word and the glyph read on the card surface; the bad tone is the
      Critical red. */
@@ -171,7 +171,7 @@
   --color-severity-medium-bg: #FCF3DC;
   --color-severity-critical-bg: #FBE9E7;
 
-  /* Tone palette (plan 03-31, A92): the glyph disc and the state word of the
+  /* Tone palette (plan 03-31, A93): the glyph disc and the state word of the
      trust card and the tick rows. Each value clears 4.5:1 on --color-bg, so
      the word and the glyph read on the card surface; the bad tone is the
      Critical red. */

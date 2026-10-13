@@ -218,7 +218,7 @@ window.PinalertMap = (function () {
   // on Pinalert.config's fallback otherwise, then hands the resolved centre
   // to the shared store so the one fetch + polling loop can start. The own
   // flag tells the store whether the centre is the reader's own position, so
-  // the popup shows a distance only when it is the reader's (A95).
+  // the popup shows a distance only when it is the reader's (A94).
   function centerOnVisitor() {
     var fallbackLat = Pinalert.config.fallbackLat;
     var fallbackLon = Pinalert.config.fallbackLon;
@@ -325,13 +325,13 @@ window.PinalertMap = (function () {
     meta.appendChild(metaGlyph);
     meta.appendChild(metaLines);
 
-    // The popup holds the always showing trust card (A90). It has no reporter
+    // The popup holds the always showing trust card (A91, A92). It has no reporter
     // words, so the state line carries the state label alone and the reporter
     // is the last tick row.
     var trust = PinalertTrust.createTrustCard();
     header.appendChild(PinalertTrust.createStateLine('popup-card__stateline', tag, trust));
 
-    // The fade line sits under the card, above the vote buttons (A94).
+    // The fade line sits under the card, above the vote buttons (A95).
     var fade = document.createElement('p');
     fade.className = 'popup-card__fade';
     fade.hidden = true;
@@ -385,7 +385,7 @@ window.PinalertMap = (function () {
 
     // Category, relative time and, only when the feed was loaded around the
     // reader's own position, the distance. No severity word: the label above
-    // says it (A24, A93, A95).
+    // says it (A24, A94).
     var categoryLabel = Pinalert.categoryLabel(report.category);
     var away = Pinalert.feedIsAroundReader() ? Pinalert.formatDistance(report.distance_km) : '';
     var meta = categoryLabel + ' \u00b7 ' + Pinalert.relativeTime(report.created_at);
@@ -396,7 +396,7 @@ window.PinalertMap = (function () {
 
     // The fade line is computed from expires_at in the shared formatter and
     // refreshed on every store update, like the relative time above. An empty
-    // line stays hidden (A94).
+    // line stays hidden (A95).
     var fadeText = Pinalert.formatFade(report);
     Pinalert.setText(card.fade, fadeText);
     card.fade.hidden = !fadeText;

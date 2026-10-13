@@ -2,7 +2,7 @@
 // Activity row get a compact toggle (two counters that are always shown, an
 // optional "still current" word) whose panel holds the facts list. The map
 // popup gets the trust card, which is always showing and holds the same facts
-// list under a header of counters and the state word (A90, A91). One list
+// list under a header of counters and the state word (A91, A96). One list
 // builder serves both (D-20), so a report reads the same everywhere. The
 // reporter words of a row sit outside the button, and each row consumer places
 // them with the state label through createStateLine (A75).
@@ -45,7 +45,7 @@
   var FACT_KINDS = ['status', 'confirmations', 'disputes', 'currency', 'reporter'];
   var FACT_TONES = ['good', 'neutral', 'caution', 'bad'];
 
-  // The tone glyphs (A92): a disc and one mark per tone, drawn in a square
+  // The tone glyphs (A93): a disc and one mark per tone, drawn in a square
   // box. The marks are four different shapes so a tone is never colour alone.
   // This table is the only place in this file that holds numbers other than 0
   // and 1, and they are geometry, not thresholds.
@@ -134,7 +134,7 @@
   }
 
   // createSignal builds one signal: an icon, then the word. The score numbers
-  // are gone from the signals (A91): score_detail rows of the card carry them.
+  // are gone from the signals (A92): score_detail rows of the card carry them.
   // Everything starts hidden.
   function createSignal(iconClass, extraClass) {
     var el = document.createElement('span');
@@ -156,7 +156,7 @@
   }
 
   // createReporterWords builds the reporter words as plain text outside the
-  // button (A75), with no icon (A76) and no number (A91). Everything starts
+  // button (A75), with no icon (A76) and no number (A92). Everything starts
   // hidden.
   function createReporterWords() {
     var el = document.createElement('span');
@@ -462,7 +462,7 @@
 
   // createToneGlyph builds one tone glyph with the DOM API: a disc and the
   // mark of the tone, aria-hidden because the row text carries the meaning
-  // (A92). The colours come from classes in trust.css, never from here.
+  // (A93). The colours come from classes in trust.css, never from here.
   function createToneGlyph(tone) {
     var svg = document.createElementNS(TONE_GLYPHS.ns, 'svg');
     svg.setAttribute('class', 'trust-fact__glyph trust-fact__glyph--' + tone);
@@ -563,7 +563,7 @@
     }
   }
 
-  // renderTrustPanel fills the row panel with the facts list (A91). The old
+  // renderTrustPanel fills the row panel with the facts list (A96). The old
   // sentences are not read any more.
   function renderTrustPanel(block, trust) {
     renderFacts(block.facts, trust.facts);
@@ -595,7 +595,7 @@
   }
 
   // currencyTone reads the tone of the currency fact, which colours the state
-  // word of the card. No currency fact means the neutral look (A92).
+  // word of the card. No currency fact means the neutral look (A92, A93).
   function currencyTone(facts) {
     for (var i = 0; i < facts.length; i++) {
       var fact = facts[i];
@@ -606,7 +606,7 @@
     return '';
   }
 
-  // createTrustCard is the popup builder (A90): one white card that is always
+  // createTrustCard is the popup builder (A91, A92): one white card that is always
   // showing, a header of the two counters and the state word, then the facts
   // list with its score lines. It has no toggle, no chevron, no panel and no
   // expanded state, and nothing in it takes focus. The card starts hidden and

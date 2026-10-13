@@ -138,7 +138,7 @@ func TestTrustBlockMountedOnBothSurfaces(t *testing.T) {
 	trust := p13ReadStatic(t, "static/js/trust.js")
 
 	// Plan 03-31: the rows mount the toggle block, the popup mounts the
-	// always open trust card (A90, A91).
+	// always open trust card (A91, A96).
 	p13MustContain(t, "feed.js", feed,
 		"PinalertTrust.createTrustBlock(", "PinalertTrust.updateTrustBlock(")
 	p13MustContain(t, "map.js", mapJS,
@@ -205,7 +205,7 @@ func TestTrustBlockMountedOnBothSurfaces(t *testing.T) {
 		"trust-fact__title",
 	)
 
-	// The panel holds the facts list and no sentence is read (A89, A91).
+	// The panel holds the facts list and no sentence is read (A89, A96).
 	panel := jsFunctionBody(t, trust, "renderTrustPanel(block, trust)")
 	p13MustContain(t, "renderTrustPanel", panel, "renderFacts(block.facts, trust.facts)")
 	p13MustNotContain(t, "renderTrustPanel", panel,
@@ -307,7 +307,7 @@ func TestTrustModuleHasNoThresholdsOrSinks(t *testing.T) {
 	if regexp.MustCompile(`(?i)threshold|cutoff|min_?score|half_?life|window_minutes|recent_places|judged_reports|corroborated_reports`).MatchString(code) {
 		t.Errorf("trust.js names a threshold or a server fact field on a code line")
 	}
-	// The tone glyph geometry table is the one exempt region (A92): path data
+	// The tone glyph geometry table is the one exempt region (A93): path data
 	// and a viewBox are geometry, never a threshold. TestToneGlyphsAreFourShapes
 	// pins the table's content.
 	table := p31GlyphTable(t, code)
@@ -491,7 +491,7 @@ func TestTrustCSS(t *testing.T) {
 	allowedWeights := map[string]bool{
 		"var(--font-weight-regular)": true, "var(--font-weight-semibold)": true,
 	}
-	// Plan 03-31 (A92): the muted detail lines and the neutral glyph may use
+	// Plan 03-31 (A93): the muted detail lines and the neutral glyph may use
 	// the muted text colour (they sit on the card surface, contrast checked by
 	// TestToneTokensClearTheContrastFloors), and the glyph and the state word
 	// may use the three tone tokens. Nothing else leaves the normal text colour.

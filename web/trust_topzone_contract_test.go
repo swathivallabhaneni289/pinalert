@@ -44,7 +44,7 @@ func TestTrustStateLineMarkup(t *testing.T) {
 	)
 	p13MustNotContain(t, "trust.js", trust, p23RetiredClasses...)
 
-	// Plan 03-31 (A91): the reporter words carry no score number any more.
+	// Plan 03-31 (A89): the reporter words carry no score number any more.
 	words := jsFunctionBody(t, code, "createReporterWords()")
 	p13MustContain(t, "createReporterWords", words,
 		"'trust-reporter'",

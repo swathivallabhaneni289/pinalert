@@ -80,7 +80,7 @@ window.Pinalert = (function () {
     error: null,
     selectedId: null,
     // own is true only when the centre is the reader's own position, a fix the
-    // browser gave. The fallback centre is never the reader (A95).
+    // browser gave. The fallback centre is never the reader (A94).
     center: { lat: config.fallbackLat, lon: config.fallbackLon, own: false },
     // The client half of D-10's closed default: a visitor who has not
     // asked for disputed reports never sees them.
@@ -164,7 +164,7 @@ window.Pinalert = (function () {
 
   // setCenter stores the feed centre and where it came from. The caller says
   // own only for the reader's own position, so a distance read from this feed
-  // is shown as "away" only when it is the reader's distance (A95).
+  // is shown as "away" only when it is the reader's distance (A94).
   function setCenter(lat, lon, own) {
     state.center = { lat: lat, lon: lon, own: own === true };
   }
@@ -412,7 +412,7 @@ window.Pinalert = (function () {
   }
 
   // formatDistance turns a feed report's distance_km into the "away" words of
-  // the popup meta line (A93): one decimal under 10 km, "under 100 m" below a
+  // the popup meta line (A94): one decimal under 10 km, "under 100 m" below a
   // tenth of a km and a whole number from 10 km. It returns an empty string for
   // a missing or invalid value, so nothing is invented for it.
   function formatDistance(km) {
@@ -428,7 +428,7 @@ window.Pinalert = (function () {
     return Math.round(km) + ' km away';
   }
 
-  // formatFade is the fade line of the popup (A94), from the report's own
+  // formatFade is the fade line of the popup (A95), from the report's own
   // expires_at on the server's clock, like relativeTime. One hour or more
   // reads in whole hours rounded down, under an hour in minutes rounded up,
   // and an expired report or a missing expires_at reads nothing. It never says
