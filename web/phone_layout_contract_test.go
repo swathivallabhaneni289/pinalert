@@ -92,9 +92,12 @@ func TestPhoneRulesLiveInTheNarrowBlock(t *testing.T) {
 					t.Errorf("base rule head %q is not one of the five phone only classes", part)
 				}
 			}
-		case phoneBlockMedia:
 		default:
-			t.Errorf("rule %q sits in %q, want only the %s block", r.Head, r.Media, phoneBlockMedia)
+			// The phone block, and the short screen block that adds one
+			// condition to it, both bounded by the 899.98px query.
+			if !strings.HasPrefix(r.Media, phoneBlockMedia) {
+				t.Errorf("rule %q sits in %q, want only the %s block", r.Head, r.Media, phoneBlockMedia)
+			}
 		}
 
 		for prop, value := range r.Decls {
@@ -118,8 +121,13 @@ func TestPhoneRulesLiveInTheNarrowBlock(t *testing.T) {
 					}
 				}
 			}
+			// The important flag is for the four properties Leaflet writes as
+			// inline styles on the detail sheet, and nowhere else.
 			if strings.Contains(value, "!important") {
-				t.Errorf("%q %s: the important flag is not allowed here", r.Head, prop)
+				allowed := map[string]bool{"left": true, "bottom": true, "transform": true, "width": true}
+				if !strings.Contains(r.Head, ".leaflet-detail-pane") || !allowed[prop] {
+					t.Errorf("%q %s: the important flag is allowed only on left, bottom, transform and width of a detail pane head", r.Head, prop)
+				}
 			}
 		}
 	}
@@ -243,4 +251,156 @@ func TestPhoneFeedScriptContract(t *testing.T) {
 
 	activate := jsFunctionBody(t, code, "activateRow(id)")
 	p13MustNotContain(t, "activateRow", activate, "revealRowInListPane")
+}
+
+// TestPhoneDetailSheetStylesheet pins the sheet: a fixed popup in the detail
+// pane starting under the 192px strip, the three Leaflet written properties
+// carrying the important flag, the back arrow mask, and the detail mode that
+// steps the zoom control and the theme toggle aside.
+func TestPhoneDetailSheetStylesheet(t *testing.T) {
+	rules := phoneRules(t)
+	byHead := func(media, head string) []p16CSSRule {
+		var found []p16CSSRule
+		for _, r := range rules {
+			if r.Head == head && strings.HasPrefix(r.Media, media) {
+				found = append(found, r)
+			}
+		}
+		return found
+	}
+	must := func(head string) []p16CSSRule {
+		t.Helper()
+		found := byHead(phoneBlockMedia, head)
+		if len(found) == 0 {
+			t.Fatalf("phone.css has no rule with head %q", head)
+		}
+		return found
+	}
+	declared := func(rs []p16CSSRule, prop string) string {
+		for _, r := range rs {
+			if v, ok := r.Decls[prop]; ok {
+				return v
+			}
+		}
+		return ""
+	}
+
+	pane := must(".leaflet-container .leaflet-detail-pane")
+	if v := declared(pane, "z-index"); v != "1080" {
+		t.Errorf("detail pane z-index is %q, want 1080 (above the bar at 1010, below the modal at 1100)", v)
+	}
+
+	popup := must(".leaflet-container .leaflet-detail-pane .leaflet-popup")
+	for prop, want := range map[string]string{
+		"position": "fixed", "top": "calc(var(--space-3xl) * 3)", "right": "0",
+		"overflow-y": "auto", "overscroll-behavior": "contain", "touch-action": "pan-y",
+		"left": "0 !important", "bottom": "0 !important", "transform": "none !important",
+	} {
+		if got := declared(popup, prop); got != want {
+			t.Errorf("sheet %s is %q, want %q", prop, got, want)
+		}
+	}
+
+	content := must(".leaflet-container .leaflet-detail-pane .leaflet-popup-content")
+	if got := declared(content, "width"); got != "auto !important" {
+		t.Errorf("sheet content width is %q, want auto !important (Leaflet writes it inline)", got)
+	}
+	if got := declared(content, "max-height"); got != "none" {
+		t.Errorf("sheet content max-height is %q, want none", got)
+	}
+
+	short := byHead("@media (max-width: 899.98px) and (max-height: 359px)", ".leaflet-container .leaflet-detail-pane .leaflet-popup")
+	if len(short) != 1 || short[0].Decls["top"] != "var(--space-3xl)" {
+		t.Errorf("short screen block must set the strip to var(--space-3xl), got %v", short)
+	}
+
+	back := must(".leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden])::before")
+	if got := declared(back, "mask-image"); got != `url("/static/icons/arrow-left.svg")` {
+		t.Errorf("back arrow mask is %q, want the arrow-left icon", got)
+	}
+	arrow := must(".leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden])")
+	if got := declared(arrow, "position"); got != "fixed" {
+		t.Errorf("back arrow position is %q, want fixed", got)
+	}
+
+	var detailMode bool
+	for _, r := range rules {
+		if strings.HasPrefix(r.Head, `body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"])`) &&
+			r.Decls["display"] == "none" &&
+			strings.Contains(r.Head, ".leaflet-control-zoom") && strings.Contains(r.Head, "> .theme-toggle") {
+			detailMode = true
+		}
+	}
+	if !detailMode {
+		t.Errorf("phone.css has no detail mode rule hiding the zoom control and the theme toggle")
+	}
+
+	// The markup the sheet restyles is never edited by the sheet: no rule here
+	// generates content that adds words, apart from the dots and the empty
+	// content of the marks.
+	for _, r := range rules {
+		if v, ok := r.Decls["content"]; ok {
+			switch v {
+			case `""`, `"\00b7"`, `"\00b7" / ""`:
+			default:
+				t.Errorf("%q declares content %q, phone.css adds no words", r.Head, v)
+			}
+		}
+	}
+}
+
+// TestPhoneDetailMapScript pins map.js: the detail pane is created inside the
+// map container, every popup gets its pane and autoPan written before it can
+// open, a resize across 900px closes the open popup, the pan helper stands
+// down on phones, and the pin is centred in the strip only behind the phone
+// check.
+func TestPhoneDetailMapScript(t *testing.T) {
+	code := p19Code(t, "static/js/map.js")
+
+	initBody := jsFunctionBody(t, code, "init()")
+	p13Ordered(t, initBody, "init",
+		"map = L.map(container,",
+		"map.createPane('detailPane', container)",
+		"L.DomEvent.disableClickPropagation(detailPane)",
+		"L.DomEvent.disableScrollPropagation(detailPane)",
+		"if (hasVectorBasemap())")
+
+	place := jsFunctionBody(t, code, "applyPopupPlacement(popup)")
+	p13MustContain(t, "applyPopupPlacement", place,
+		"popup.options.pane = phone ? 'detailPane' : 'popupPane'",
+		"popup.options.autoPan = !reducedMotion && !phone")
+
+	upsert := jsFunctionBody(t, code, "upsertMarker(report)")
+	p13Ordered(t, upsert, "upsertMarker", "marker.bindPopup(", "applyPopupPlacement(marker.getPopup());", "marker.on('click'")
+	p13MustContain(t, "upsertMarker bind literal", upsert, "autoPan: !reducedMotion", "keepInView: true")
+
+	resize := jsFunctionBody(t, code, "onMapResize()")
+	p13Ordered(t, resize, "onMapResize",
+		"var narrow = phoneDetail();", "var crossed = narrow !== lastNarrow;", "lastNarrow = narrow;",
+		"map.closePopup();", "applyPopupPlacement(markers[ids[i]].getPopup());")
+	p13MustContain(t, "onMapResize", resize, "applyPanPadding(markers[ids[i]].getPopup());")
+
+	pan := jsFunctionBody(t, code, "panPopupIntoView(popup)")
+	p13Ordered(t, pan, "panPopupIntoView", "if (!reducedMotion ||", "if (phoneDetail()) {\n      return;\n    }", "var el = popup.getElement();")
+
+	open := jsFunctionBody(t, code, "onPopupOpen(evt)")
+	p13Ordered(t, open, "onPopupOpen",
+		"card.focus({ preventScroll: true });", "if (phoneDetail()) {", "centerPinInStrip(popup, container);")
+	p13MustNotContain(t, "onPopupOpen", open, "setView(", "panBy(")
+	if n := strings.Count(code, "centerPinInStrip("); n != 2 {
+		t.Errorf("centerPinInStrip appears %d times (definition and one call), want 2", n)
+	}
+
+	strip := jsFunctionBody(t, code, "centerPinInStrip(popup, popupEl)")
+	p13Ordered(t, strip, "centerPinInStrip",
+		"getBoundingClientRect().top", "map.setView(popup.getLatLng(), Math.max(map.getZoom(), 16), { animate: false });",
+		"map.panBy([0, Math.round(map.getSize().y / 2 - strip / 2)], { animate: false });")
+
+	// The parts the sheet must leave alone.
+	closeBody := jsFunctionBody(t, code, "onPopupClose(evt)")
+	p13MustNotContain(t, "onPopupClose", closeBody, "phoneDetail", "detailPane")
+	returnFocus := jsFunctionBody(t, code, "returnFocusToOpener(opener)")
+	p13MustNotContain(t, "returnFocusToOpener", returnFocus, "phoneDetail", "detailPane")
+	fly := jsFunctionBody(t, code, "flyTo(id, opts)")
+	p13MustNotContain(t, "flyTo", fly, "phoneDetail", "detailPane")
 }

@@ -157,13 +157,85 @@ named with the exact head it now lets through, and every other assertion in it i
 16. **The state word next to the severity word is plain text.** On phone cards the visibility tag (Unconfirmed) loses its
     rounded outline and reads as a bold word after the severity word.
 
-## Contract tests updated in Task 1
+## Departures from the house rules (Task 2: the report detail)
+
+The detail is the existing popup card, opened on phones as a full screen sheet under a short map strip. One card, one set
+of focus rules, one Escape path. Nothing in the card's markup, focus handling or Escape handling changed.
+
+1. **Mechanism.** `map.js` creates a pane named `detailPane` inside the map container (a child of `#map`, outside the map
+   pane's transform) and writes `options.pane` and `options.autoPan` onto every popup before it can open: the detail pane
+   and no Leaflet autopan under 900px, the normal popup pane and the old autopan at 900px and up. A resize that crosses
+   900px closes the open popup through the existing close path, so focus returns to its opener. The sheet itself is
+   `phone.css` only: a fixed popup, with `left`, `bottom` and `transform` carrying the important flag because Leaflet
+   rewrites those three inline on every update and zoom, and the content `width` the same for the same reason. Those four
+   are the only important flags anywhere, each under a `.leaflet-detail-pane` head, and a contract test pins that.
+2. **The strip.** 192px (three times the 64px token), 64px when the screen is under 360px tall. The sheet starts under it
+   and runs to the bottom of the screen, covering the list, the add button and the bottom bar. The z index is 1080, above
+   the bar (1010) and the account header (1050), below the modal (1100) and the toast (1200).
+3. **Where the pin sits.** `onPopupOpen` sets the view and offsets the map so the pin is in the middle of the strip (96px
+   down). A tap on a list row also runs the list opener's second `flyTo` (in `activateRow`), which this task must not change
+   and which puts the pin back in the middle of the whole map, 169px down, still inside the strip. A tap on a pin keeps
+   it at 96px. Both are inside the strip, which the probe checks.
+4. **Not drawn in the detail.** The category badge and the meta glyph (the picture shows the severity pill alone and a
+   plain grey meta line). The card has no left severity bar. The title is not clamped (the popup clamps at four lines on a
+   wide screen) and takes the display size in the semibold weight.
+5. **Meta line and fade line colour.** The picture draws them grey. The sheet is tinted and muted fails 4.5 to 1 on every
+   tint in the light theme, so both take the normal text colour. The trust card keeps its white surface, so its own muted
+   sub lines stay muted there.
+6. **The tint.** The sheet takes the severity tint the popup container already carries, which gives the very light green
+   page on a confirmed Low report. An Unconfirmed report's sheet takes the surface grey (the app's own treatment of a
+   provisional report) and a hidden report's sheet the page colour, not green.
+7. **The severity pill** is the page colour with an outline in the current severity colour and the dot, so it reads on a
+   tinted sheet as drawn. A Critical pill gets the dot too.
+8. **Vote buttons.** Confirm and Dispute sit side by side, 44px tall each. Confirm at rest is the filled look (the text
+   colour fill), Dispute at rest is the page colour with the hairline. The button icons are not drawn at rest. States,
+   checked in both themes and both engines:
+   - Confirm at rest: filled, no mark. Hover: the fill moves 15 percent toward the page colour.
+   - Pressed (Confirm or Dispute): trust.css's filled look kept, plus the button's own mark (check or ban) and a 2px inset
+     ring in the page colour. This is what tells a pressed Confirm from the filled Confirm at rest.
+   - Busy (disabled): the outlined muted look of trust.css, so a busy Confirm no longer looks filled. A pressed button that
+     is busy stays filled (A46).
+   - Too far (aria-disabled): the same outlined muted look. A pressed button that is too far stays filled.
+9. **Mark resolved** is a centred text link look: no fill, no border at rest, underlined, in the good tone on a Low,
+   Medium or provisional sheet (4.53, 4.61 and 4.58 to 1 in the light theme, 7.00 or more in the dark theme) and in the
+   normal text colour on a Critical sheet (the good tone is 4.35 to 1 there). It is still a 44px tall button, spans both
+   columns, and keeps the disabled and too far looks of trust.css. This departs from A14 (outlined everywhere).
+   The resolve confirmation and Reopen keep their look. The too far note and the vote error are centred.
+10. **The back arrow.** Leaflet's close anchor is moved to the top left of the strip as a round white 44px arrow with the
+    popup shadow token. It keeps the accessible name `Close popup` (the picture draws no word). Updated:
+    `TestReadOnlyLabelsRoundedControlsNot` in `web/labels_contract_test.go` (exact head, `phone.css` only), the same kind of
+    exemption `.profile-back-link` already has.
+11. **Zoom control and theme toggle.** Both step aside while the sheet is open, so the strip shows only the map, the pin
+    and the back arrow.
+12. **The too far sentence.** The picture draws an always shown grey hint "You need to be within 1 km to confirm or
+    dispute." The app's own sentence `Too far to vote. You need to be within 1 km of this report.` is shown only when the
+    reader is too far, as everywhere else (A66). No second hint was added.
+### Browser harness checks that changed by design
+
+`~/code/pinalert-browser-checks` was run against a build of this worktree (`BUILD_FROM=worktree`), 359 PASS and 68 FAIL
+in the first full run. The FAILs were separated by re-running on an idle machine: T2 and T5 P failed only while another
+browser was running and pass alone. Every remaining FAIL comes from a change the owner's pictures require, none from a
+defect:
+
+| Checks | Why they changed |
+|---|---|
+| T5 V0 and L0 (Tab to the view toggle) | The map and list switch button is dropped on phones, so Tab cannot reach it. |
+| T7 feed, T8 layout, pressed look light and dark, forced colors near, motion reduce, motion no-preference and C8, T9 B 320 and B 360, T11 feed row at 320px (T11.8e, 8f, 8m, 8n), T12 widths 320x568, 320x640, 360x740 and 390x844 | Each opens the app at a width under 900px and starts by clicking `#view-toggle`, or presses Confirm on a feed row. The switch is dropped on phones and the row vote controls are hidden there (voting is in the detail, as drawn). C8 fails only because the Confirm press before it never happened. |
+| T9.1 (popup tip centred on the pin, card inside the view), T9.2c (control: the autopan IS animated), T9.4 (320x256 the card scrolls inside itself, tip under the pin), T9.7 (rotating across 900px keeps the tip near the pin), all at 320x568 and 360x740 | These measure a floating popup with a tip beside its pin and Leaflet's own autopan. Under 900px the detail is a full screen sheet with no tip and autopan off. The sheet geometry they report (top 192, full width, bottom at the screen edge) is the one the probe checks. |
+
+The checks at 900px and up are unchanged and pass.
+
+## Contract tests updated
 
 | Test | File | Change |
 |---|---|---|
 | `TestRowTitleWrapsLongWords` | `web/labels_contract_test.go` | Lets exactly `#report-list .report-row .report-row__title` in `phone.css` clamp |
-| `TestReadOnlyLabelsRoundedControlsNot` | `web/labels_contract_test.go` | Lets exactly the current tab dot head in `phone.css` use a 50 percent radius |
+| `TestReadOnlyLabelsRoundedControlsNot` | `web/labels_contract_test.go` | Lets exactly two `phone.css` heads use a 50 percent radius: the current tab dot and the detail back arrow |
 | `TestMapSelectionNeverScrollsThePage` | `web/popup_contract_test.go` | Doc comment only, names the phone amendment of A87 |
+
+`web/phone_layout_contract_test.go` also pins, for the detail: the sheet rules and the four important flags, the detail
+pane creation, the per popup pane and autoPan writes, the resize close, the pan helper standing down and the pin centred
+in the strip only behind the phone check. No other existing assertion was weakened.
 
 New file `web/phone_layout_contract_test.go` pins: the stylesheet load order, that every phone rule sits in the 899.98px
 block (apart from the one grouped hide rule), token only values, no head equal to an exact lookup head, the bottom bar

@@ -298,6 +298,9 @@ var p16PxValue = regexp.MustCompile(`^(-?[0-9.]+)(px|%)$`)
 const (
 	// phoneTabDotHead is the dot above the current tab word of the bottom bar.
 	phoneTabDotHead = `.bottom-nav .bottom-nav__tab[aria-current="page"]::before`
+	// phoneBackArrowHead is the round back arrow that Leaflet's close anchor
+	// becomes on the report detail sheet.
+	phoneBackArrowHead = ".leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden])"
 	// phoneFeedTitleHead is the feed card title, drawn up to two lines.
 	phoneFeedTitleHead = "#report-list .report-row .report-row__title"
 )
@@ -306,9 +309,11 @@ const (
 // labels are rounded 12px boxes, no control is fully rounded (V-40 narrowed
 // to controls), and the labels keep a visible shape in forced colors (RR-7).
 //
-// Phone departure (quick task 261013-lrw): the one phone.css head named by
-// phoneTabDotHead draws the bottom bar's current tab dot round. It is a mark
-// above the word, not a control shape.
+// Phone departure (quick task 261013-lrw): the phone.css heads named by
+// phoneTabDotHead and phoneBackArrowHead draw the bottom bar's current tab dot
+// and the report detail's back arrow round, as the owner's pictures do. The
+// dot is a mark above the word, and the arrow is a round icon control of the
+// same kind as the exempt .profile-back-link.
 func TestReadOnlyLabelsRoundedControlsNot(t *testing.T) {
 	trust := p16TrustRules(t)
 	all := p16AllCSS(t)
@@ -329,11 +334,13 @@ func TestReadOnlyLabelsRoundedControlsNot(t *testing.T) {
 		if strings.Contains(r.Head, ".severity-slider") || p16NamesLabel(r.Head) {
 			continue
 		}
-		if r.File == "static/css/phone.css" && r.Head == phoneTabDotHead {
-			// The bottom bar's current tab indicator: a 6px dot drawn as a
-			// pseudo element above the word. It is a mark, not a control
-			// shape, and the owner's picture draws it round. Departure
-			// recorded in .planning/sketches/005-phone-layout/README.md.
+		if r.File == "static/css/phone.css" && (r.Head == phoneTabDotHead || r.Head == phoneBackArrowHead) {
+			// The bottom bar's current tab indicator (a 6px dot drawn as a
+			// pseudo element above the word) and the report detail's back
+			// arrow (a round 44px control on the map strip, like the round
+			// .profile-back-link the list above already exempts). The
+			// owner's pictures draw both round. Departures recorded in
+			// .planning/sketches/005-phone-layout/README.md.
 			continue
 		}
 		exempt := false
