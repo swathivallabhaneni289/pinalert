@@ -253,6 +253,111 @@ func TestPhoneFeedScriptContract(t *testing.T) {
 	p13MustNotContain(t, "activateRow", activate, "revealRowInListPane")
 }
 
+// TestPhoneActivityPageMarkup pins the phone Activity page's markup: phone.css
+// follows auth.css, the Log out form is a copy of the account header's form
+// (same method and action, one submit button, no other field), the record card
+// sits inside the with block that skips it for an account with no signal, the
+// bottom nav has two tabs with Activity current and no Past, and the back link
+// is still there exactly once.
+func TestPhoneActivityPageMarkup(t *testing.T) {
+	profile := p13ReadTemplate(t, "profile.html.tmpl")
+	header := p13ReadTemplate(t, "account_header.html.tmpl")
+
+	headerForm := regexp.MustCompile(`<form method="(\w+)" action="([^"]+)">`).FindStringSubmatch(header)
+	if headerForm == nil {
+		t.Fatal("account_header.html.tmpl has no logout form")
+	}
+	pageForm := regexp.MustCompile(`(?s)<form class="profile-logout" method="(\w+)"\s+action="([^"]+)">(.*?)</form>`).FindStringSubmatch(profile)
+	if pageForm == nil {
+		t.Fatal("profile.html.tmpl has no .profile-logout form")
+	}
+	if pageForm[1] != headerForm[1] || pageForm[2] != headerForm[2] {
+		t.Errorf("Log out form is %s %s, the account header's is %s %s", pageForm[1], pageForm[2], headerForm[1], headerForm[2])
+	}
+	if n := strings.Count(pageForm[3], "<button"); n != 1 || strings.Contains(pageForm[3], "<input") {
+		t.Errorf("Log out form holds %d buttons or an input, want exactly one submit button and no other field", n)
+	}
+	p13Ordered(t, profile, "profile.html.tmpl",
+		`<section class="profile-activity">`, `<h2>Activity</h2>`, `<form class="profile-logout"`,
+		`{{with .Record}}`, `<section class="profile-record"`, `{{.Label}}`, `{{.Counts}}`, `{{end}}`,
+		`<ol class="profile-report-list">`)
+
+	nav := regexp.MustCompile(`(?s)<nav class="bottom-nav"[^>]*>(.*?)</nav>`).FindStringSubmatch(profile)
+	if nav == nil {
+		t.Fatal("profile.html.tmpl has no bottom nav")
+	}
+	tabs := regexp.MustCompile(`<a class="bottom-nav__tab"([^>]*)>([^<]*)</a>`).FindAllStringSubmatch(nav[1], -1)
+	if len(tabs) != 2 {
+		t.Fatalf("bottom nav has %d tabs, want 2", len(tabs))
+	}
+	if strings.Contains(tabs[0][1], "aria-current") || strings.TrimSpace(tabs[0][2]) != "Feed" {
+		t.Errorf("first tab is %q %q, want a plain Feed tab", tabs[0][1], tabs[0][2])
+	}
+	if !strings.Contains(tabs[1][1], `aria-current="page"`) || strings.TrimSpace(tabs[1][2]) != "Activity" {
+		t.Errorf("second tab is %q %q, want the current Activity tab", tabs[1][1], tabs[1][2])
+	}
+	if strings.Contains(nav[1], "Past") {
+		t.Errorf("bottom nav names a Past tab")
+	}
+
+	if n := strings.Count(profile, `class="profile-back-link"`); n != 1 {
+		t.Errorf("profile.html.tmpl has the back link %d times, want exactly 1", n)
+	}
+	p13Ordered(t, profile, "profile.html.tmpl", `class="profile-back-link"`, `class="profile-email"`)
+}
+
+// TestPhoneActivityStylesheet pins the Activity rules: the title and Log out
+// share the first grid row, the back link is not drawn, the record card and
+// the cards use the border token hairline on the page colour, and Log out
+// keeps the margin that clears the fixed theme toggle.
+func TestPhoneActivityStylesheet(t *testing.T) {
+	rules := phoneRules(t)
+	find := func(head string) p16CSSRule {
+		t.Helper()
+		for _, r := range rules {
+			if r.Head == head && r.Media == phoneBlockMedia {
+				return r
+			}
+		}
+		t.Fatalf("phone.css has no rule with head %q", head)
+		return p16CSSRule{}
+	}
+
+	page := find("main.profile-page")
+	if page.Decls["display"] != "grid" {
+		t.Errorf("main.profile-page display is %q, want grid", page.Decls["display"])
+	}
+	areas := strings.Join(strings.Fields(page.Decls["grid-template-areas"]), " ")
+	if !strings.HasPrefix(areas, `"title logout" "email email" "record record" "list list"`) {
+		t.Errorf("grid-template-areas is %q, want title and logout on the first row", areas)
+	}
+	if got := find("main.profile-page > .profile-back-link").Decls["display"]; got != "none" {
+		t.Errorf("back link display is %q on phones, want none", got)
+	}
+	if got := find("main.profile-page > .profile-activity").Decls["display"]; got != "contents" {
+		t.Errorf(".profile-activity display is %q on phones, want contents", got)
+	}
+	logout := find("main.profile-page .profile-logout")
+	if logout.Decls["margin"] != "0 calc(var(--touch-target-min) + var(--space-sm)) 0 0" {
+		t.Errorf("Log out margin is %q, want the touch target plus the small space on the right", logout.Decls["margin"])
+	}
+	button := find("main.profile-page .profile-logout .profile-logout__button")
+	if button.Decls["min-height"] != "var(--touch-target-min)" || button.Decls["color"] != "var(--color-text-muted)" {
+		t.Errorf("Log out button must be 44px tall and muted, got %v", button.Decls)
+	}
+
+	for _, head := range []string{"main.profile-page .profile-record", "main.profile-page .profile-report-list .report-row"} {
+		r := find(head)
+		if r.Decls["background"] != "var(--color-bg)" || r.Decls["border"] != "1px solid var(--color-border)" ||
+			r.Decls["border-radius"] != "8px" {
+			t.Errorf("%s must be a white card with the hairline and 8px corners, got %v", head, r.Decls)
+		}
+	}
+	if got := find("main.profile-page .profile-report-list .report-row .visibility-tag:not([hidden])").Decls["margin"]; got != "0 0 0 auto" {
+		t.Errorf("state word margin is %q, want it pushed to the right", got)
+	}
+}
+
 // TestPhoneDetailSheetStylesheet pins the sheet: a fixed popup in the detail
 // pane starting under the 192px strip, the three Leaflet written properties
 // carrying the important flag, the back arrow mask, and the detail mode that

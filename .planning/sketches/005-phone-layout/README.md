@@ -212,18 +212,67 @@ of focus rules, one Escape path. Nothing in the card's markup, focus handling or
     reader is too far, as everywhere else (A66). No second hint was added.
 ### Browser harness checks that changed by design
 
-`~/code/pinalert-browser-checks` was run against a build of this worktree (`BUILD_FROM=worktree`), 359 PASS and 68 FAIL
-in the first full run. The FAILs were separated by re-running on an idle machine: T2 and T5 P failed only while another
-browser was running and pass alone. Every remaining FAIL comes from a change the owner's pictures require, none from a
-defect:
+`~/code/pinalert-browser-checks` was run against a build of this worktree (`BUILD_FROM=worktree`). After Task 2 the first
+full run gave 359 PASS and 68 FAIL; T2 and T5 P failed only while another browser was running and pass alone. After Task 3
+the full run on an idle machine gave 351 PASS, 54 NOTE, 22 NEEDS A PERSON and 76 FAIL. Every FAIL comes from a change
+the owner's pictures require, none from a defect:
 
 | Checks | Why they changed |
 |---|---|
 | T5 V0 and L0 (Tab to the view toggle) | The map and list switch button is dropped on phones, so Tab cannot reach it. |
 | T7 feed, T8 layout, pressed look light and dark, forced colors near, motion reduce, motion no-preference and C8, T9 B 320 and B 360, T11 feed row at 320px (T11.8e, 8f, 8m, 8n), T12 widths 320x568, 320x640, 360x740 and 390x844 | Each opens the app at a width under 900px and starts by clicking `#view-toggle`, or presses Confirm on a feed row. The switch is dropped on phones and the row vote controls are hidden there (voting is in the detail, as drawn). C8 fails only because the Confirm press before it never happened. |
+| T11.2f, T11.6 (panel closed and open), T11.8g and T11.8h, all on the Activity row at 320px | They expect the old row body of 188px beside the round category badge. The badge is not drawn on phones, so the body is 254px wide, and T11.2f looks for the reporter words, which the phone card hides because the record card shows the same label once. The failing lines of T11.8g and T11.8h are only that width expectation; nothing is reported as clipped or sticking out at 100 or 200 percent text, and the probe shows no sideways scroll at 390px. |
 | T9.1 (popup tip centred on the pin, card inside the view), T9.2c (control: the autopan IS animated), T9.4 (320x256 the card scrolls inside itself, tip under the pin), T9.7 (rotating across 900px keeps the tip near the pin), all at 320x568 and 360x740 | These measure a floating popup with a tip beside its pin and Leaflet's own autopan. Under 900px the detail is a full screen sheet with no tip and autopan off. The sheet geometry they report (top 192, full width, bottom at the screen edge) is the one the probe checks. |
 
 The checks at 900px and up are unchanged and pass.
+
+## Departures and choices (Task 3: the Activity page)
+
+The laptop Activity page keeps everything it has. On a phone it is restyled in picture B's look and gains two things that
+exist only below 900px: the reporter record card and the Log out text button. Both are in the markup at every width and
+hidden by `phone.css` at 900px and up, so the page at 900px and up has the same layout, which the probe against the
+baseline confirms.
+
+1. **The record card is the server's own signal.** `internal/api/handlers/auth.go` builds `profileViewModel.Record` from
+   the account's own reporter signal (the first Activity row's `Trust.Reporter`, which `ActivityForAccount` gives every row
+   from the account's own history). The label is copied as the server wrote it and the counts are the real judged and
+   corroborated numbers. No new query, no new service call, nothing recomputed. An account with no reports, or a signal
+   with no label, gets no card.
+2. **`Reliable reporter` instead of `Reliable`.** The picture's bold word is `Reliable`. The app keeps one wording for the
+   tag, so the card shows the server's `Reliable reporter` (and `New reporter`, `Mixed record`, `Unreliable reporter`).
+3. **`0 of 0 confirmed` for a new reporter.** The picture shows `5 of 5 confirmed`. A new reporter has no judged reports
+   yet, and the real numbers are shown, nothing is invented.
+4. **Log out** is a copy of the account header's form (same method and action, one submit button, no other field), a muted
+   44px text button on the right of the title. It keeps a right margin of the touch target plus the small space so it
+   clears the theme toggle fixed at the top right. The account button itself is hidden on phones.
+5. **The email stays** under the title in the muted label size. It is not drawn, but it is an existing laptop item.
+6. **The back link is hidden** on phones (the bottom bar replaces it). Its markup stays, once, before the email.
+7. **White page, hairline cards.** The picture's grey page would put the muted email and the grey Log out at 4.34 to 1,
+   under 4.5. The page stays the page colour and the cards (the record and every report) are white with the 1px border
+   token hairline and 8px corners.
+8. **State words.** Unconfirmed is the amber tone (5.24 light, 9.33 dark on the page colour), Disputed the red tone (5.44
+   light, 6.03 dark), Resolved and Expired the muted colour (4.83 light, 7.66 dark). Live shows no word, because the app
+   gives Live no word by contract, so the picture's green Active is not drawn. `Waiting` stays `Unconfirmed`.
+9. **The trust line.** One muted line per card: both counters and the currency word, then the meta line (category and
+   time). The reporter words are hidden on each row because the record card shows the same server label once. The
+   chevron and the clock are not drawn; the toggle still opens the facts panel in place. Reopen keeps its control and its
+   error line under the line.
+10. **Status lines not built.** The picture's `Needs one more confirmation`, `Resolved by you · yesterday` and `Not
+    re-confirmed` are not app strings, so the row shows the counters, the currency word and the meta line instead.
+11. **The segmented control is not built** (see Not built). The page lists the account's own reports only, as the laptop
+    page does.
+
+## Questions for the owner
+
+Each has a recommendation, in plain words.
+
+1. **The Past tab.** The picture has Feed, Past and Activity. There is no history view yet, so the bar has two tabs.
+   Recommendation: add Past when Phase 3.1 builds the history view, and not before.
+2. **The category chips over the map.** Flood, Rescue, Shelter, Power and the rest. Recommendation: build them with Phase
+   3.1's filters once you say whether a filter may hide critical and rescue reports. Until then there is no filter that
+   could hide a rescue report.
+3. **My votes.** The segmented control on the Activity page. Nothing in the app can read votes by account yet.
+   Recommendation: plan a read of votes by account as its own small piece of work, then add the control.
 
 ## Contract tests updated
 
@@ -235,7 +284,11 @@ The checks at 900px and up are unchanged and pass.
 
 `web/phone_layout_contract_test.go` also pins, for the detail: the sheet rules and the four important flags, the detail
 pane creation, the per popup pane and autoPan writes, the resize close, the pan helper standing down and the pin centred
-in the strip only behind the phone check. No other existing assertion was weakened.
+in the strip only behind the phone check, and for the Activity page: the Log out form matching the account header's,
+the record card inside the `with` block, the two tab bar, the single back link and the grid rules. New Go tests:
+`TestNewProfileRecord` in `internal/api/handlers/profile_record_test.go`, and `TestProfileRendersTheReporterRecord`,
+`TestProfileWithoutReportsRendersNoRecord` and `TestProfileRendersLogoutAndBottomNav` in `activity_e2e_test.go`. No other
+existing assertion was weakened.
 
 New file `web/phone_layout_contract_test.go` pins: the stylesheet load order, that every phone rule sits in the 899.98px
 block (apart from the one grouped hide rule), token only values, no head equal to an exact lookup head, the bottom bar

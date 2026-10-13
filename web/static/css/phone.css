@@ -289,6 +289,7 @@
 
   #report-list .report-row .trust-block__signals:not([hidden]) {
     min-height: 0;
+    column-gap: var(--space-xs);
     font-size: var(--font-size-label);
     line-height: var(--line-height-label);
   }
@@ -399,6 +400,288 @@
     height: 6px;
     border-radius: 50%;
     background-color: currentColor;
+  }
+
+  /* ---- The Activity page ----
+     The page background stays the page colour, because the picture's grey
+     page would put the muted email and the grey Log out under 4.5 to 1. The
+     white cards get the border token hairline instead and still read as
+     white rounded cards. Everything the laptop page has stays: the email,
+     the rows with their severity word, state word, both counters, trust
+     panel and Reopen. */
+
+  main.profile-page {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "title logout"
+      "email email"
+      "record record"
+      "list list";
+    align-items: center;
+    padding: var(--space-md) var(--space-md) calc(var(--touch-target-min) + var(--space-sm) + var(--space-md));
+  }
+
+  /* The bottom bar replaces the back link. The markup stays for its test. */
+  main.profile-page > .profile-back-link {
+    display: none;
+  }
+
+  main.profile-page > .profile-activity {
+    display: contents;
+  }
+
+  main.profile-page .profile-activity > h2 {
+    grid-area: title;
+    margin: 0;
+    min-height: var(--touch-target-min);
+    display: flex;
+    align-items: center;
+  }
+
+  main.profile-page > .profile-email {
+    grid-area: email;
+    margin: 0 0 var(--space-md);
+  }
+
+  /* The theme toggle stays fixed at the top right, so Log out keeps a right
+     margin of the touch target plus the small space. */
+  main.profile-page .profile-logout {
+    display: block;
+    grid-area: logout;
+    margin: 0 calc(var(--touch-target-min) + var(--space-sm)) 0 0;
+  }
+
+  main.profile-page .profile-logout .profile-logout__button {
+    min-height: var(--touch-target-min);
+    padding: 0 var(--space-sm);
+    border: 0;
+    background: transparent;
+    color: var(--color-text-muted);
+    font-family: var(--font-family);
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+    font-weight: var(--font-weight-regular);
+    cursor: pointer;
+  }
+
+  main.profile-page .profile-logout .profile-logout__button:hover {
+    color: var(--color-text);
+  }
+
+  main.profile-page .profile-record {
+    display: grid;
+    grid-area: record;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--space-md);
+    align-items: center;
+    margin: 0 0 var(--space-md);
+    padding: var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-bg);
+  }
+
+  main.profile-page .profile-record .profile-record__kicker {
+    grid-column: 1;
+    margin: 0;
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+    font-weight: var(--font-weight-regular);
+    color: var(--color-text-muted);
+  }
+
+  main.profile-page .profile-record .profile-record__label {
+    grid-column: 1;
+    margin: 0;
+    font-size: var(--font-size-heading);
+    line-height: var(--line-height-heading);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+  }
+
+  main.profile-page .profile-record .profile-record__counts {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    margin: 0;
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+    font-weight: var(--font-weight-regular);
+    color: var(--color-text);
+  }
+
+  main.profile-page > .profile-activity > .profile-report-list,
+  main.profile-page > .profile-activity > .profile-empty-state {
+    grid-area: list;
+  }
+
+  /* White cards with the hairline, 8px corners, no left bar, for every state
+     (picture B draws white cards). The category badge is not drawn. */
+  main.profile-page .profile-report-list .report-row {
+    display: block;
+    padding: var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-bg);
+  }
+
+  main.profile-page .profile-report-list .report-row > .icon-badge {
+    display: none;
+  }
+
+  main.profile-page .profile-report-list .report-row .report-row__body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: var(--space-sm);
+    row-gap: var(--space-xs);
+  }
+
+  main.profile-page .profile-report-list .report-row .report-row__stateline:not([hidden]) {
+    display: contents;
+  }
+
+  /* Line one: the severity dot and bold word on the left, the state word on
+     the right. Live shows no word: the app gives Live no word by contract, so
+     the picture's green Active is not drawn. */
+  main.profile-page .profile-report-list .report-row .severity-label:not([hidden]) {
+    order: 1;
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    gap: var(--space-xs);
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--color-text);
+  }
+
+  .profile-report-list .severity-label.severity-label--critical::before {
+    content: "";
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--severity-current);
+  }
+
+  main.profile-page .profile-report-list .report-row .visibility-tag:not([hidden]) {
+    order: 2;
+    min-height: 0;
+    margin: 0 0 0 auto;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--color-text-muted);
+  }
+
+  /* Unconfirmed reads amber and Disputed red, as the picture colours Waiting.
+     Resolved and Expired stay muted. All four clear 4.5 to 1 on the page
+     colour in both themes (amber 5.24 light, 9.33 dark; red 5.44 light, 6.03
+     dark; muted 4.83 light, 7.66 dark). */
+  main.profile-page .profile-report-list .report-row.vis-provisional .visibility-tag:not([hidden]) {
+    color: var(--color-tone-caution);
+  }
+
+  main.profile-page .profile-report-list .report-row.vis-hidden .visibility-tag:not([hidden]) {
+    color: var(--color-tone-bad);
+  }
+
+  main.profile-page .profile-report-list .report-row .report-row__title {
+    order: 3;
+    flex: 0 0 100%;
+    margin: var(--space-xs) 0 0;
+  }
+
+  /* One muted line: both counters and the currency word, then the meta line.
+     The reporter words are hidden because the record card above shows the
+     same server label once. The chevron and the clock are not drawn, and the
+     toggle still opens the panel in place. */
+  main.profile-page .profile-report-list .report-row .trust-block:not([hidden]) {
+    order: 4;
+    flex: 0 1 auto;
+    min-width: 0;
+    margin: 0;
+    border-top: 0;
+  }
+
+  main.profile-page .profile-report-list .report-row .trust-block__toggle:not([hidden]) {
+    width: auto;
+    margin-inline: 0;
+    padding: 0;
+    justify-content: flex-start;
+    color: var(--color-text-muted);
+  }
+
+  main.profile-page .profile-report-list .report-row .trust-block__face:not([hidden]) {
+    display: flex;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--space-sm);
+  }
+
+  main.profile-page .profile-report-list .report-row .trust-block__chevron:not([hidden]),
+  main.profile-page .profile-report-list .report-row .trust-icon:not([hidden]),
+  main.profile-page .profile-report-list .report-row .trust-reporter:not([hidden]) {
+    display: none;
+  }
+
+  main.profile-page .profile-report-list .report-row .trust-block__counts:not([hidden]) {
+    min-height: 0;
+    column-gap: var(--space-sm);
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+  }
+
+  main.profile-page .profile-report-list .report-row .trust-block__count--second::before {
+    content: "\00b7";
+    content: "\00b7" / "";
+    position: static;
+    width: auto;
+    margin-right: var(--space-sm);
+    background-color: transparent;
+  }
+
+  main.profile-page .profile-report-list .report-row .trust-block__signals:not([hidden]) {
+    min-height: 0;
+    column-gap: var(--space-xs);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+  }
+
+  main.profile-page .profile-report-list .report-row .trust-block__signals:not([hidden])::before {
+    content: "\00b7";
+    content: "\00b7" / "";
+    margin-right: var(--space-sm);
+  }
+
+  main.profile-page .profile-report-list .report-row .trust-signal:not([hidden]) {
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+  }
+
+  main.profile-page .profile-report-list .report-row .trust-num {
+    color: inherit;
+  }
+
+  main.profile-page .profile-report-list .report-row .report-row__meta {
+    order: 5;
+    margin: 0;
+    color: var(--color-text-muted);
+  }
+
+  /* Reopen keeps its existing control and error under the line. */
+  main.profile-page .profile-report-list .report-row .vote-controls:not([hidden]) {
+    order: 6;
+    flex: 0 0 100%;
+  }
+
+  main.profile-page .profile-report-list .report-row .vote-error:not([hidden]) {
+    order: 7;
+    flex: 0 0 100%;
   }
 
   /* ---- The report detail: a full screen sheet under a short map strip ----

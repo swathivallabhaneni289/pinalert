@@ -296,11 +296,38 @@ type profileReport struct {
 	CanReopen        bool
 }
 
+// profileRecord is the reporter record card of the phone Activity page: the
+// account's own reporter signal as the server wrote it. Label is the signal's
+// everyday word copied unchanged, and Counts is built from the real judged and
+// corroborated numbers, so a new reporter reads 0 of 0 confirmed and nothing is
+// invented for it.
+type profileRecord struct {
+	Label  string
+	Counts string
+}
+
+// newProfileRecord builds the record card from one reporter signal. A signal
+// with no label (the none tag, an account with nothing to rate) gives no card.
+// It computes nothing: the label and both counts come from the signal as
+// service.BuildTrust already wrote them.
+func newProfileRecord(sig service.ReporterSignal) *profileRecord {
+	if sig.Label == "" {
+		return nil
+	}
+	return &profileRecord{
+		Label:  sig.Label,
+		Counts: fmt.Sprintf("%d of %d confirmed", sig.CorroboratedReports, sig.JudgedReports),
+	}
+}
+
 // profileViewModel is exactly what profile.html.tmpl reads and nothing more.
 type profileViewModel struct {
 	AssetVersion string
 	Email        string
 	Reports      []profileReport
+	// Record is the reporter record card. It is nil for an account with no
+	// reports, and the template then renders no card.
+	Record *profileRecord
 }
 
 // profileRelativeTime mirrors web/static/js/app.js's relativeTime: the same
@@ -487,6 +514,14 @@ func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) 
 			AssetVersion: cfg.AssetVersion,
 			Email:        acc.Email,
 			Reports:      reports,
+		}
+		// The record card reads the account's own reporter signal. Every row
+		// ActivityForAccount returns carries the same signal (the viewer's
+		// own, see its doc comment), so the first row's is the account's. No
+		// new query and nothing recomputed here. An account with no reports
+		// gets no card, and a signal with no label gives none either.
+		if len(activityReports) > 0 {
+			vm.Record = newProfileRecord(activityReports[0].Trust.Reporter)
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
