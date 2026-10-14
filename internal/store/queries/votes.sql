@@ -58,3 +58,38 @@ SELECT r.severity, r.category, r.expires_at, s.account_id AS reporter_account_id
 FROM reports r
 LEFT JOIN sessions s ON r.session_id = s.session_id
 WHERE r.id = sqlc.arg(report_id);
+
+-- name: VotedReportsByAccount :many
+-- The account's current content vote per report, with the report's own
+-- columns, for the Activity page's My votes and My disputes tabs. Five points
+-- a later reader would otherwise "correct":
+--
+-- (a) What it feeds. My votes lists every report the account currently
+-- confirms or disputes and My disputes the disputed ones. D-02 latest wins,
+-- so DISTINCT ON (report_id) keeps only the newest content vote per report,
+-- and an account that confirmed a report and then disputed it gets one row
+-- with value dispute.
+--
+-- (b) Why kind is a parameter. The closed vote vocabulary lives in Go
+-- (VoteKindContent), not in the schema, so the caller names the kind and a
+-- resolve or reopen vote can never appear here.
+--
+-- (c) What it leaves out. It selects no session_id (T-01-02) and no
+-- geohash_cell (00004: service internal, never serialised). The eleven report
+-- columns are in exactly ReportsByAccount's order.
+--
+-- (d) Why INNER JOIN. votes.report_id carries a foreign key to reports, so
+-- every vote has its report and a LEFT JOIN could only add NULL rows.
+--
+-- (e) The index. idx_votes_account_kind_report_created (migration 00006)
+-- serves the equality on account_id and kind and the DISTINCT ON order. The
+-- DISTINCT ON stays at the top level with no derived table so sqlc keeps
+-- voted_at as time.Time.
+SELECT DISTINCT ON (v.report_id)
+    r.id, r.category, r.severity, r.description, r.latitude, r.longitude, r.geohash,
+    r.shelter_capacity_status, r.shelter_headcount, r.created_at, r.expires_at,
+    v.value AS vote_value, v.created_at AS voted_at
+FROM votes v
+JOIN reports r ON r.id = v.report_id
+WHERE v.account_id = sqlc.arg(account_id) AND v.kind = sqlc.arg(kind)
+ORDER BY v.report_id, v.created_at DESC, v.id DESC;

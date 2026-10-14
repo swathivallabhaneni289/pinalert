@@ -109,10 +109,11 @@
   });
 
   // onReopenClick runs the identical GPS-then-POST-then-wait flow (D-04)
-  // as any other vote, through PinalertVotes.castVote. Every row here is the
-  // viewer's own report, and the server exempts the reporter's reopen from the
-  // 1 km rule, so the call passes ownReport and never asks for a location
-  // (WR-04). No geolocation code lives in this file.
+  // as any other vote, through PinalertVotes.castVote. The control exists only
+  // on a row the server marked as the account's own resolved, unexpired post,
+  // and the server exempts the reporter's reopen from the 1 km rule, so the
+  // call passes ownReport and never asks for a location (WR-04). No
+  // geolocation code lives in this file.
   function onReopenClick(row, block) {
     PinalertVotes.setBlockBusy(block, true);
     var reopenBtn = block.button;
@@ -123,10 +124,11 @@
     PinalertVotes.castVote(row.dataset.reportId, 'reopen', { ownReport: true }).then(function (result) {
       // The fixed toast is this module's one deliberate exception to
       // "render the server's answer, never a guess" — licensed by two
-      // structural, checkable facts: (a) this page lists ONLY the
-      // viewing account's own submitted reports, so this button can only
-      // ever be rendered on a row the viewer reported — there is no
-      // non-reporter path through it at all; and (b) 02-03a's amended
+      // structural, checkable facts: (a) the server sets the Reopen hook
+      // only on the account's own resolved, unexpired posts and never on a
+      // voted card, so this button can only ever be rendered on a row the
+      // viewer reported, so there is no non-reporter path through it at
+      // all; and (b) 02-03a's amended
       // CastVote makes a reporter's reopen instant and threshold-free
       // however the retraction arose (D-16 amended 2026-09-15; see
       // 02-CONTEXT.md's amendment history and 02-UI-SPEC.md's amended

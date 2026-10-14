@@ -287,13 +287,27 @@ type profileReport struct {
 	SeverityWord     string
 	SeverityLevel    string
 	Description      string
-	MetaText         string
 	Visibility       string
 	VisibilityReason string
 	VisibilityClass  string
 	TrustJSON        string
 	Expired          bool
 	CanReopen        bool
+
+	// Quick task 261013-wm5's card fields, filled by buildActivityPage. Kind is
+	// post, vote or dispute; Tag, Action and When are the words of the card's
+	// tag and sub line; Detail is the category label with the shelter words;
+	// IconGlyph is the round icon's glyph class; Tabs is the space separated
+	// tab tokens the card belongs to besides All; Hidden is true for a card
+	// outside the selected tab.
+	Kind      string
+	Tag       string
+	Action    string
+	When      string
+	Detail    string
+	IconGlyph string
+	Tabs      string
+	Hidden    bool
 }
 
 // profileRecord is the reporter record card of the phone Activity page: the
@@ -325,8 +339,11 @@ type profileViewModel struct {
 	AssetVersion string
 	Email        string
 	Reports      []profileReport
+	// Tabs are the six Activity tabs with their counts (quick task
+	// 261013-wm5).
+	Tabs []activityTab
 	// Record is the reporter record card. It is nil for an account with no
-	// reports, and the template then renders no card.
+	// posts, and the template then renders no card.
 	Record *profileRecord
 }
 
@@ -383,6 +400,28 @@ func capitalizeASCII(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
+// profileDetail builds the detail words of one card: the category label, plus
+// the shelter capacity and headcount for a shelter report, the way the meta
+// line always built them, without the time. One helper serves both the meta
+// line and the sub line of the six tab page, so the two can never drift.
+func profileDetail(capacity *string, headcount *int32, category service.Category) string {
+	detail := categoryLabels[category]
+	if category == service.CategoryShelterOpen {
+		if capacity != nil && *capacity != "" {
+			detail += " · " + capitalizeASCII(*capacity)
+		}
+		if headcount != nil {
+			n := *headcount
+			unit := "people"
+			if n == 1 {
+				unit = "person"
+			}
+			detail += fmt.Sprintf(" · %d %s", n, unit)
+		}
+	}
+	return detail
+}
+
 // newProfileReport maps one service.ActivityReport into the view struct
 // profile.html.tmpl renders. Category and severity are already validated
 // by ActivityForAccount — this handler reads those values rather than
@@ -412,20 +451,7 @@ func newProfileReport(ar service.ActivityReport, now time.Time) (profileReport, 
 	category := ar.Category
 	severity := ar.Severity
 
-	meta := categoryLabels[category] + " · " + profileRelativeTime(row.CreatedAt, now)
-	if category == service.CategoryShelterOpen {
-		if row.ShelterCapacityStatus != nil && *row.ShelterCapacityStatus != "" {
-			meta += " · " + capitalizeASCII(*row.ShelterCapacityStatus)
-		}
-		if row.ShelterHeadcount != nil {
-			n := *row.ShelterHeadcount
-			unit := "people"
-			if n == 1 {
-				unit = "person"
-			}
-			meta += fmt.Sprintf(" · %d %s", n, unit)
-		}
-	}
+	detail := profileDetail(row.ShelterCapacityStatus, row.ShelterHeadcount, category)
 
 	// Resolve cannot return an invalid Visibility, so this guard is
 	// defence in depth (T-01-17) rather than a real branch — but the
@@ -458,7 +484,7 @@ func newProfileReport(ar service.ActivityReport, now time.Time) (profileReport, 
 		SeverityWord:     severityWord(severity),
 		SeverityLevel:    string(severity),
 		Description:      row.Description,
-		MetaText:         meta,
+		Detail:           detail,
 		Visibility:       string(visibility),
 		VisibilityReason: string(ar.Reason),
 		VisibilityClass:  visibilityClass,
@@ -470,8 +496,11 @@ func newProfileReport(ar service.ActivityReport, now time.Time) (profileReport, 
 
 // Profile handles GET /profile: every report the caller's verified account
 // has ever filed, across every session/device it has ever verified on
-// (ReportsByAccount, Task 1), rendered inside one merged Activity section
-// (D-13). Profile is only ever reached through internal/api's gated
+// (ReportsByAccount, Task 1), plus every report it currently confirms or
+// disputes (VotedReportsByAccount, quick task 261013-wm5), rendered inside one
+// merged Activity section (D-13) with six tabs. The tab value in the address
+// only picks which tab is selected; it never reaches a query (T-wm5-03).
+// Profile is only ever reached through internal/api's gated
 // r.Group (requireVerifiedAccount), so the request context always carries
 // an account by the time this handler runs — a lookup miss here means the
 // gate failed to do its job, a routing bug rather than a condition a
@@ -491,37 +520,32 @@ func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) 
 			return
 		}
 
-		activityReports, err := svc.ActivityForAccount(r.Context(), acc.ID)
+		// One call per request, keyed by the gate's account id and nothing
+		// from the request: the account's posts and the reports it currently
+		// confirms or disputes (T-wm5-01).
+		activityPage, err := svc.ActivityPageForAccount(r.Context(), acc.ID)
 		if err != nil {
 			log.Printf("handlers: Profile: %v", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 
-		now := time.Now()
-		reports := make([]profileReport, 0, len(activityReports))
-		for _, ar := range activityReports {
-			pr, err := newProfileReport(ar, now)
-			if err != nil {
-				log.Printf("handlers: Profile: %v", err)
-				http.Error(w, "internal server error", http.StatusInternalServerError)
-				return
-			}
-			reports = append(reports, pr)
+		view, err := buildActivityPage(activityPage, r.URL.Query().Get("tab"), time.Now())
+		if err != nil {
+			log.Printf("handlers: Profile: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
 		}
 
+		// The record card reads the account's own reporter signal from its
+		// own posts, never from the merged card list (W-10). An account with
+		// no posts gets no card, and a signal with no label gives none either.
 		vm := profileViewModel{
 			AssetVersion: cfg.AssetVersion,
 			Email:        acc.Email,
-			Reports:      reports,
-		}
-		// The record card reads the account's own reporter signal. Every row
-		// ActivityForAccount returns carries the same signal (the viewer's
-		// own, see its doc comment), so the first row's is the account's. No
-		// new query and nothing recomputed here. An account with no reports
-		// gets no card, and a signal with no label gives none either.
-		if len(activityReports) > 0 {
-			vm.Record = newProfileRecord(activityReports[0].Trust.Reporter)
+			Reports:      view.Reports,
+			Tabs:         view.Tabs,
+			Record:       view.Record,
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

@@ -717,6 +717,10 @@ var nonCategoryIcons = map[string]bool{
 	// block opens, styled through the trust block chevron rule in trust.css,
 	// same exemption reasoning as the glyphs above.
 	"static/icons/chevron-down.svg": true,
+	// Your dispute icon of the six tab Activity page (quick task
+	// 261013-wm5): the chat bubble drawn by the .activity-glyph--dispute mask
+	// rule in activity.css, same exemption reasoning as the glyphs above.
+	"static/icons/message-square.svg": true,
 }
 
 // phase3TrustGlyphIcons lists the Phase 3 glyph files exempted from the

@@ -13,6 +13,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"net/url"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -461,8 +462,13 @@ func TestProfileMarksExpiredReports(t *testing.T) {
 	}
 }
 
-// TestProfileRendersSeverityLabel proves A26 and A58: every row starts its
-// body with the server written severity word, before the title.
+// TestProfileRendersSeverityLabel proves A26 and A58: every card carries the
+// server written severity word.
+//
+// Departure (quick task 261013-wm5, A26 and A58): the picture's card moves the
+// severity word from the start of the body into the chip on the right. The body
+// now starts with the tag and then the title, and the chip's severity span holds
+// the word. The sev class check is kept.
 func TestProfileRendersSeverityLabel(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
 	client := newVerifiedClient(t, srv, mailer, "activity-p15-severity@example.com")
@@ -482,10 +488,13 @@ func TestProfileRendersSeverityLabel(t *testing.T) {
 	page := getProfile(t, client, srv.URL)
 	for i, c := range cases {
 		row := p15ProfileRow(t, page, ids[i])
-		want := regexp.MustCompile(`<div class="report-row__body">\s*<span class="severity-label severity-label--` +
-			c.level + `">` + c.word + `</span>\s*<p class="report-row__title">`)
-		if !want.MatchString(row) {
-			t.Errorf("%s row does not start its body with the severity label: %s", c.level, row)
+		start := regexp.MustCompile(`<div class="report-row__body">\s*<span class="activity-card__tag">Your post</span>\s*<p class="report-row__title">`)
+		if !start.MatchString(row) {
+			t.Errorf("%s row does not start its body with the tag and then the title: %s", c.level, row)
+		}
+		chip := regexp.MustCompile(`<span class="activity-chip__word activity-chip__word--severity">` + c.word + `</span>`)
+		if !chip.MatchString(row) {
+			t.Errorf("%s row's chip does not hold the severity word %q: %s", c.level, c.word, row)
 		}
 		hasSev := false
 		for _, tok := range p15ClassTokens(t, row) {
@@ -496,6 +505,128 @@ func TestProfileRendersSeverityLabel(t *testing.T) {
 		if !hasSev {
 			t.Errorf("%s row lost its sev-%s class", c.level, c.level)
 		}
+	}
+}
+
+// --- Quick task 261013-wm5: the reports the account voted on ---
+
+// TestProfileListsReportsTheAccountVotedOn proves My votes and My disputes read
+// the account's own votes: account A confirmed one of B's reports and disputed
+// another, and each of A's cards carries exactly the trust the vote response
+// sent, no identifier, and no Reopen hook. A third account's vote on a third
+// report never reaches A's page.
+func TestProfileListsReportsTheAccountVotedOn(t *testing.T) {
+	srv, mailer, _ := newE2EServer(t)
+	aEmail := "activity-wm5-voter-a@example.com"
+	bEmail := "activity-wm5-poster-b@example.com"
+	a := newVerifiedClient(t, srv, mailer, aEmail)
+	b := newVerifiedClient(t, srv, mailer, bEmail)
+	c := newVerifiedClient(t, srv, mailer, "activity-wm5-third-c@example.com")
+
+	loc := map[string]any{"latitude": 12.9716, "longitude": 77.5946}
+	confirmedID := submitReportGetID(t, b, srv.URL, floodReportBody(12.9716, 77.5946))
+	disputedID := submitReportGetID(t, b, srv.URL, floodReportBody(12.9716, 77.5946))
+	thirdID := submitReportGetID(t, b, srv.URL, floodReportBody(12.9716, 77.5946))
+
+	confirmTrust := p15VoteTrust(t, postVote(t, a, srv.URL, confirmedID, "confirm", loc))
+	disputeTrust := p15VoteTrust(t, postVote(t, a, srv.URL, disputedID, "dispute", loc))
+	p15VoteTrust(t, postVote(t, c, srv.URL, thirdID, "confirm", loc))
+
+	resp, err := a.Get(srv.URL + "/profile")
+	if err != nil {
+		t.Fatalf("GET /profile: %v", err)
+	}
+	defer resp.Body.Close()
+	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+		t.Errorf("/profile Cache-Control = %q, want no-store", got)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	body := string(raw)
+
+	for _, tc := range []struct {
+		id    int64
+		trust map[string]any
+	}{{confirmedID, confirmTrust}, {disputedID, disputeTrust}} {
+		row := p15ProfileRow(t, body, tc.id)
+		rowTrust := p15ProfileTrust(t, row)
+		if !reflect.DeepEqual(rowTrust, tc.trust) {
+			t.Errorf("report %d: data-trust differs from the vote response trust:\nrow  = %v\nvote = %v", tc.id, rowTrust, tc.trust)
+		}
+		p15WalkKeys(rowTrust, func(key string) {
+			if p15IdentifierKey.MatchString(key) {
+				t.Errorf("report %d: data-trust carries an identifier-like key %q", tc.id, key)
+			}
+		})
+		attr := p15Attr(t, row, "data-trust")
+		for _, forbidden := range []string{"@", aEmail, bEmail} {
+			if strings.Contains(attr, forbidden) {
+				t.Errorf("report %d: data-trust contains %q", tc.id, forbidden)
+			}
+		}
+		if p15HasAttr(row, "data-can-reopen") {
+			t.Errorf("report %d: a voted row carries data-can-reopen", tc.id)
+		}
+	}
+	if strings.Contains(body, `data-report-id="`+strconv.FormatInt(thirdID, 10)+`"`) {
+		t.Errorf("A's page lists report %d, which only a third account voted on", thirdID)
+	}
+
+	// B's own row for the confirmed report carries the same trust A saw.
+	bRow := p15ProfileRow(t, getProfile(t, b, srv.URL), confirmedID)
+	if got := p15ProfileTrust(t, bRow); !reflect.DeepEqual(got, confirmTrust) {
+		t.Errorf("B's own row trust differs from the confirm response trust:\nrow  = %v\nvote = %v", got, confirmTrust)
+	}
+}
+
+// TestProfileVotedRowNeverOffersReopen proves the Reopen hook stays on the
+// reporter's own card: after B resolves a report A confirmed, A's card shows
+// the resolved state and no hook, and B's card carries the hook.
+func TestProfileVotedRowNeverOffersReopen(t *testing.T) {
+	srv, mailer, _ := newE2EServer(t)
+	a := newVerifiedClient(t, srv, mailer, "activity-wm5-reopen-a@example.com")
+	b := newVerifiedClient(t, srv, mailer, "activity-wm5-reopen-b@example.com")
+
+	loc := map[string]any{"latitude": 12.9716, "longitude": 77.5946}
+	reportID := submitReportGetID(t, b, srv.URL, floodReportBody(12.9716, 77.5946))
+	p15VoteTrust(t, postVote(t, a, srv.URL, reportID, "confirm", loc))
+	p15VoteTrust(t, postVote(t, b, srv.URL, reportID, "resolve", loc))
+
+	aRow := p15ProfileRow(t, getProfile(t, a, srv.URL), reportID)
+	hasRetracted := false
+	for _, tok := range p15ClassTokens(t, aRow) {
+		if tok == "vis-retracted" {
+			hasRetracted = true
+		}
+	}
+	if !hasRetracted {
+		t.Errorf("A's card is not retracted after the reporter resolved it: %s", aRow)
+	}
+	if p15HasAttr(aRow, "data-can-reopen") {
+		t.Errorf("A's voted card carries data-can-reopen: %s", aRow)
+	}
+
+	bRow := p15ProfileRow(t, getProfile(t, b, srv.URL), reportID)
+	if !p15HasAttr(bRow, "data-can-reopen") {
+		t.Errorf("B's own resolved card carries no data-can-reopen: %s", bRow)
+	}
+}
+
+// TestProfileVoterWithoutPostsHasNoRecord proves an account that only voted
+// gets its cards and no reporter record, because the record is the account's
+// own posting history.
+func TestProfileVoterWithoutPostsHasNoRecord(t *testing.T) {
+	srv, mailer, _ := newE2EServer(t)
+	a := newVerifiedClient(t, srv, mailer, "activity-wm5-norecord-a@example.com")
+	b := newVerifiedClient(t, srv, mailer, "activity-wm5-norecord-b@example.com")
+
+	loc := map[string]any{"latitude": 12.9716, "longitude": 77.5946}
+	reportID := submitReportGetID(t, b, srv.URL, floodReportBody(12.9716, 77.5946))
+	p15VoteTrust(t, postVote(t, a, srv.URL, reportID, "confirm", loc))
+
+	body := getProfile(t, a, srv.URL)
+	p15ProfileRow(t, body, reportID)
+	if strings.Contains(body, `class="profile-record"`) || strings.Contains(body, "Your reporter record") {
+		t.Errorf("a voter with no posts got a reporter record card: %s", body)
 	}
 }
 
@@ -537,8 +668,12 @@ func TestProfileRendersTheReporterRecord(t *testing.T) {
 }
 
 // TestProfileWithoutReportsRendersNoRecord proves nothing is invented for an
-// account that has filed nothing: no record card, and the existing empty state
-// still shows.
+// account that has filed nothing: no record card, and the empty state of the
+// All tab shows.
+//
+// Departure (quick task 261013-wm5): the visible empty state of an empty
+// account is the All tab's. "No reports yet" stays as the My posts tab's own
+// empty state, present in the page and hidden.
 func TestProfileWithoutReportsRendersNoRecord(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
 	client := newVerifiedClient(t, srv, mailer, "activity-norecord@example.com")
@@ -547,8 +682,190 @@ func TestProfileWithoutReportsRendersNoRecord(t *testing.T) {
 	if strings.Contains(body, `class="profile-record"`) || strings.Contains(body, "Your reporter record") {
 		t.Errorf("/profile renders a record card for an account with no reports: %s", body)
 	}
+	all := regexp.MustCompile(`<div class="[^"]*"\s+data-tab-empty="all"([^>]*)>`).FindStringSubmatch(body)
+	if all == nil || strings.Contains(all[1], "hidden") {
+		t.Errorf("/profile's All empty state is missing or hidden: %s", body)
+	}
+	if !strings.Contains(body, "No activity yet") {
+		t.Errorf("/profile lost the All empty state words: %s", body)
+	}
+	posts := regexp.MustCompile(`<div class="[^"]*"\s+data-tab-empty="posts"([^>]*)>`).FindStringSubmatch(body)
+	if posts == nil || !strings.Contains(posts[1], "hidden") {
+		t.Errorf("/profile's My posts empty state is missing or not hidden: %s", body)
+	}
 	if !strings.Contains(body, "No reports yet") {
-		t.Errorf("/profile lost its empty state: %s", body)
+		t.Errorf("/profile lost the My posts empty state words: %s", body)
+	}
+}
+
+// getProfileTab GETs /profile?tab=<raw> using client and returns the body.
+func getProfileTab(t *testing.T, client *http.Client, baseURL, raw string) string {
+	t.Helper()
+	resp, err := client.Get(baseURL + "/profile?tab=" + url.QueryEscape(raw))
+	if err != nil {
+		t.Fatalf("GET /profile?tab=%s: %v", raw, err)
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading /profile?tab=%s body: %v", raw, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /profile?tab=%s status = %d, want 200: %s", raw, resp.StatusCode, b)
+	}
+	return string(b)
+}
+
+// TestProfileTabsRenderFromTheAddress proves the server renders the tab named
+// in the address (quick task 261013-wm5): the selected link, the hidden flags
+// of the cards and the counts. Account one holds two posts (one resolved) and
+// votes on two of account two's reports (one confirm, one dispute), so the
+// counts are All 4, My posts 2, My votes 2, My disputes 1, Resolved 1 and Not
+// resolved 3.
+func TestProfileTabsRenderFromTheAddress(t *testing.T) {
+	srv, mailer, _ := newE2EServer(t)
+	one := newVerifiedClient(t, srv, mailer, "activity-wm5-tabs-one@example.com")
+	two := newVerifiedClient(t, srv, mailer, "activity-wm5-tabs-two@example.com")
+	loc := map[string]any{"latitude": 12.9716, "longitude": 77.5946}
+
+	livePost := submitReportGetID(t, one, srv.URL, floodReportBody(12.9716, 77.5946))
+	resolvedPost := submitReportGetID(t, one, srv.URL, floodReportBody(12.9716, 77.5946))
+	p15VoteTrust(t, postVote(t, one, srv.URL, resolvedPost, "resolve", loc))
+	confirmed := submitReportGetID(t, two, srv.URL, floodReportBody(12.9716, 77.5946))
+	disputed := submitReportGetID(t, two, srv.URL, floodReportBody(12.9716, 77.5946))
+	p15VoteTrust(t, postVote(t, one, srv.URL, confirmed, "confirm", loc))
+	p15VoteTrust(t, postVote(t, one, srv.URL, disputed, "dispute", loc))
+
+	type tabWant struct {
+		key   string
+		count int
+		ids   []int64
+	}
+	tabs := []tabWant{
+		{"all", 4, []int64{livePost, resolvedPost, confirmed, disputed}},
+		{"posts", 2, []int64{livePost, resolvedPost}},
+		{"votes", 2, []int64{confirmed, disputed}},
+		{"disputes", 1, []int64{disputed}},
+		{"resolved", 1, []int64{resolvedPost}},
+		{"not-resolved", 3, []int64{livePost, confirmed, disputed}},
+	}
+	hrefs := map[string]string{
+		"all": "/profile", "posts": "/profile?tab=posts", "votes": "/profile?tab=votes",
+		"disputes": "/profile?tab=disputes", "resolved": "/profile?tab=resolved",
+		"not-resolved": "/profile?tab=not-resolved",
+	}
+	allIDs := []int64{livePost, resolvedPost, confirmed, disputed}
+
+	check := func(t *testing.T, body, selected string, want tabWant) {
+		t.Helper()
+		links := regexp.MustCompile(`<a class="activity-tab" href="([^"]*)" data-tab="([^"]*)" data-count="(\d+)"([^>]*)>`).FindAllStringSubmatch(body, -1)
+		if len(links) != 6 {
+			t.Fatalf("got %d tab links, want 6: %s", len(links), body)
+		}
+		var order []string
+		for _, l := range links {
+			order = append(order, l[2])
+			if l[1] != hrefs[l[2]] {
+				t.Errorf("tab %q href = %q, want %q", l[2], l[1], hrefs[l[2]])
+			}
+			isCurrent := strings.Contains(l[4], `aria-current="page"`)
+			if isCurrent != (l[2] == selected) {
+				t.Errorf("tab %q aria-current = %v, selected tab is %q", l[2], isCurrent, selected)
+			}
+		}
+		if got := strings.Join(order, ","); got != "all,posts,votes,disputes,resolved,not-resolved" {
+			t.Errorf("tab order = %s", got)
+		}
+		for _, w := range tabs {
+			for _, l := range links {
+				if l[2] == w.key && l[3] != strconv.Itoa(w.count) {
+					t.Errorf("tab %q count = %s, want %d", w.key, l[3], w.count)
+				}
+			}
+		}
+		visible := 0
+		for _, id := range allIDs {
+			row := p15ProfileRow(t, body, id)
+			opening := row[:strings.Index(row, ">")+1]
+			isHidden := p15HasAttr(opening, "hidden")
+			shouldShow := false
+			for _, w := range want.ids {
+				if w == id {
+					shouldShow = true
+				}
+			}
+			if isHidden == shouldShow {
+				t.Errorf("tab %q: report %d hidden = %v, want %v", selected, id, isHidden, !shouldShow)
+			}
+			if !isHidden {
+				visible++
+			}
+		}
+		if visible != want.count {
+			t.Errorf("tab %q shows %d cards, want %d", selected, visible, want.count)
+		}
+	}
+
+	for _, w := range tabs {
+		t.Run(w.key, func(t *testing.T) {
+			check(t, getProfileTab(t, one, srv.URL, w.key), w.key, w)
+		})
+	}
+	t.Run("unknown key renders All", func(t *testing.T) {
+		check(t, getProfileTab(t, one, srv.URL, "nonsense"), "all", tabs[0])
+	})
+	t.Run("upper case key renders All", func(t *testing.T) {
+		check(t, getProfileTab(t, one, srv.URL, "POSTS"), "all", tabs[0])
+	})
+	t.Run("no key renders All", func(t *testing.T) {
+		check(t, getProfile(t, one, srv.URL), "all", tabs[0])
+	})
+
+	// Tags, action phrases and the chip words per kind of card, and each
+	// card's tab tokens.
+	body := getProfile(t, one, srv.URL)
+	cases := []struct {
+		id                   int64
+		tag, action, tabs, v string
+	}{
+		{livePost, "Your post", "You posted this report", "posts not-resolved", "vis-provisional"},
+		{resolvedPost, "Your post", "You posted this report", "posts resolved", "vis-retracted"},
+		{confirmed, "Your vote", "You confirmed this report", "votes not-resolved", "vis-provisional"},
+		{disputed, "Your dispute", "You disputed this report", "votes disputes not-resolved", "vis-provisional"},
+	}
+	for _, c := range cases {
+		row := p15ProfileRow(t, body, c.id)
+		if !strings.Contains(row, `<span class="activity-card__tag">`+c.tag+`</span>`) {
+			t.Errorf("report %d: tag %q missing: %s", c.id, c.tag, row)
+		}
+		if !strings.Contains(row, `<span class="activity-card__action">`+c.action) {
+			t.Errorf("report %d: action %q missing: %s", c.id, c.action, row)
+		}
+		if got := p15Attr(t, row, "data-tabs"); got != c.tabs {
+			t.Errorf("report %d: data-tabs = %q, want %q", c.id, got, c.tabs)
+		}
+		hasClass := false
+		for _, tok := range p15ClassTokens(t, row) {
+			if tok == c.v {
+				hasClass = true
+			}
+		}
+		if !hasClass {
+			t.Errorf("report %d: missing class %s", c.id, c.v)
+		}
+		for _, word := range []string{">Resolved</span>", ">Not resolved</span>"} {
+			if !strings.Contains(row, word) {
+				t.Errorf("report %d: chip word %q missing", c.id, word)
+			}
+		}
+	}
+	if p15HasAttr(p15ProfileRow(t, body, resolvedPost), "data-can-reopen") == false {
+		t.Errorf("the own resolved post lost its Reopen hook")
+	}
+	for _, id := range []int64{confirmed, disputed, livePost} {
+		if p15HasAttr(p15ProfileRow(t, body, id), "data-can-reopen") {
+			t.Errorf("report %d carries a Reopen hook, only the own resolved post may", id)
+		}
 	}
 }
 

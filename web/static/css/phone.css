@@ -20,8 +20,7 @@
 .feed-heading,
 .bottom-nav,
 .report-row__away,
-.profile-logout,
-.profile-record {
+.profile-logout {
   display: none;
 }
 
@@ -407,8 +406,9 @@
      page would put the muted email and the grey Log out under 4.5 to 1. The
      white cards get the border token hairline instead and still read as
      white rounded cards. Everything the laptop page has stays: the email,
-     the rows with their severity word, state word, both counters, trust
-     panel and Reopen. */
+     the six tab strip, the cards with their state word, both counters, trust
+     panel and Reopen. activity.css owns the colours of the chip and the
+     event icon, and the rules that show exactly one chip word. */
 
   main.profile-page {
     display: grid;
@@ -417,7 +417,9 @@
       "title logout"
       "email email"
       "record record"
-      "list list";
+      "tabs tabs"
+      "list list"
+      "empty empty";
     align-items: center;
     padding: var(--space-md) var(--space-md) calc(var(--touch-target-min) + var(--space-sm) + var(--space-md));
   }
@@ -437,6 +439,12 @@
     min-height: var(--touch-target-min);
     display: flex;
     align-items: center;
+  }
+
+  /* The help line is a laptop line. The page title and the tabs say the same
+     thing on a phone. */
+  main.profile-page .profile-activity > .activity-subtitle {
+    display: none;
   }
 
   main.profile-page > .profile-email {
@@ -510,65 +518,136 @@
     color: var(--color-text);
   }
 
-  main.profile-page > .profile-activity > .profile-report-list,
-  main.profile-page > .profile-activity > .profile-empty-state {
+  /* The six tab strip: a grey track with a white selected tab, clipped to the
+     page and scrolling sideways inside itself. min-width 0 lets the grid cell
+     shrink below the strip's content, so the page never scrolls sideways. The
+     tab text uses the normal text colour, because the muted colour reads 4.34
+     to 1 on the track. */
+  main.profile-page > .profile-activity > .activity-tabs {
+    grid-area: tabs;
+    min-width: 0;
+    display: flex;
+    gap: var(--space-xs);
+    padding: var(--space-xs);
+    margin: 0 0 var(--space-md);
+    background: var(--color-surface);
+    border-radius: 8px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  main.profile-page > .profile-activity > .activity-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  main.profile-page .activity-tabs .activity-tab {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-sm);
+    min-height: var(--touch-target-min);
+    padding: 0 var(--space-md);
+    border-radius: 8px;
+    color: var(--color-text);
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+    font-weight: var(--font-weight-regular);
+    white-space: nowrap;
+    text-decoration: none;
+  }
+
+  main.profile-page .activity-tabs .activity-tab[aria-current="page"] {
+    background: var(--color-bg);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  main.profile-page .activity-tabs .activity-tab .activity-tab__count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0 var(--space-xs);
+    border-radius: 8px;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+    font-weight: var(--font-weight-regular);
+  }
+
+  main.profile-page .activity-tabs .activity-tab[aria-current="page"] .activity-tab__count {
+    background: var(--color-surface);
+  }
+
+  main.profile-page > .profile-activity > .profile-report-list {
     grid-area: list;
   }
 
+  main.profile-page > .profile-activity > .activity-empty {
+    grid-area: empty;
+  }
+
   /* White cards with the hairline, 8px corners, no left bar, for every state
-     (picture B draws white cards). The category badge is not drawn. */
+     (picture 05 draws white cards). A card is a wrapping row so a long state
+     word or chip drops to the next line instead of overflowing at 320px: the
+     round icon, the tag, the state word and the chip share the first line, and
+     the title, the sub line, the trust line and Reopen follow from the body
+     column to the card's right edge. The body gives its children to the card,
+     and so does the state line. */
   main.profile-page .profile-report-list .report-row {
-    display: block;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: var(--space-sm);
+    row-gap: var(--space-xs);
     padding: var(--space-md);
     border: 1px solid var(--color-border);
     border-radius: 8px;
     background: var(--color-bg);
   }
 
-  main.profile-page .profile-report-list .report-row > .icon-badge {
-    display: none;
-  }
-
-  main.profile-page .profile-report-list .report-row .report-row__body {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    column-gap: var(--space-sm);
-    row-gap: var(--space-xs);
-  }
-
+  main.profile-page .profile-report-list .report-row .report-row__body,
   main.profile-page .profile-report-list .report-row .report-row__stateline:not([hidden]) {
     display: contents;
   }
 
-  /* Line one: the severity dot and bold word on the left, the state word on
-     the right. Live shows no word: the app gives Live no word by contract, so
-     the picture's green Active is not drawn. */
-  main.profile-page .profile-report-list .report-row .severity-label:not([hidden]) {
-    order: 1;
-    margin: 0;
-    padding: 0;
-    min-height: 0;
-    gap: var(--space-xs);
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    color: var(--color-text);
-  }
-
-  .profile-report-list .severity-label.severity-label--critical::before {
-    content: "";
-    flex: none;
-    width: 8px;
-    height: 8px;
+  /* The round event icon at the picture's phone size. Its negative bottom
+     margin keeps the first line as tall as the tag, so the title sits right
+     under the tag and beside the lower half of the icon. */
+  main.profile-page .profile-report-list .report-row > .icon-badge {
+    order: 0;
+    width: 48px;
+    height: 48px;
+    margin-bottom: -22px;
     border-radius: 50%;
-    background-color: var(--severity-current);
   }
 
+  main.profile-page .profile-report-list .report-row > .icon-badge .icon-glyph {
+    width: 24px;
+    height: 24px;
+  }
+
+  main.profile-page .profile-report-list .report-row .activity-card__tag {
+    order: 1;
+    max-width: 100%;
+    min-width: 0;
+    padding: 0 var(--space-sm);
+    border-radius: 8px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+    font-weight: var(--font-weight-regular);
+    overflow-wrap: anywhere;
+  }
+
+  /* Live shows no word: the app gives Live no word by contract. The state word
+     sits right after the tag, with the gap between them. */
   main.profile-page .profile-report-list .report-row .visibility-tag:not([hidden]) {
     order: 2;
     min-height: 0;
-    margin: 0 0 0 auto;
+    margin: 0;
     padding: 0;
     border: 0;
     border-radius: 0;
@@ -588,21 +667,48 @@
     color: var(--color-tone-bad);
   }
 
-  main.profile-page .profile-report-list .report-row .report-row__title {
+  /* The chip takes the right edge of the first line. Its words and colours come
+     from activity.css. */
+  main.profile-page .profile-report-list .report-row > .activity-chip {
     order: 3;
-    flex: 0 0 100%;
-    margin: var(--space-xs) 0 0;
+    margin-left: auto;
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: 8px;
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+    font-weight: var(--font-weight-semibold);
+    white-space: nowrap;
   }
 
-  /* One muted line: both counters and the currency word, then the meta line.
-     The reporter words are hidden because the record card above shows the
-     same server label once. The chevron and the clock are not drawn, and the
-     toggle still opens the panel in place. */
-  main.profile-page .profile-report-list .report-row .trust-block:not([hidden]) {
+  /* The sentence the tag already says is not repeated on a phone. */
+  main.profile-page .profile-report-list .report-row .activity-card__action {
+    display: none;
+  }
+
+  /* Title, sub line, trust line, reporter words and Reopen take their own
+     lines, indented to the body column (the 48px icon and the 8px gap). */
+  main.profile-page .profile-report-list .report-row .report-row__title {
     order: 4;
-    flex: 0 1 auto;
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+    flex: 0 0 calc(100% - var(--touch-target-min) - var(--space-sm) - var(--space-xs));
+    margin: 0 0 0 calc(var(--touch-target-min) + var(--space-sm) + var(--space-xs));
+  }
+
+  main.profile-page .profile-report-list .report-row .report-row__meta {
+    order: 5;
+    flex: 0 0 calc(100% - var(--touch-target-min) - var(--space-sm) - var(--space-xs));
+    margin: 0 0 0 calc(var(--touch-target-min) + var(--space-sm) + var(--space-xs));
+    color: var(--color-text-muted);
+  }
+
+  /* One muted line: both counters and the currency word. The chevron and the
+     clock are not drawn, and the toggle still opens the panel in place. */
+  main.profile-page .profile-report-list .report-row .trust-block:not([hidden]) {
+    order: 6;
+    flex: 0 0 calc(100% - var(--touch-target-min) - var(--space-sm) - var(--space-xs));
     min-width: 0;
-    margin: 0;
+    margin: 0 0 0 calc(var(--touch-target-min) + var(--space-sm) + var(--space-xs));
     border-top: 0;
   }
 
@@ -623,9 +729,17 @@
   }
 
   main.profile-page .profile-report-list .report-row .trust-block__chevron:not([hidden]),
-  main.profile-page .profile-report-list .report-row .trust-icon:not([hidden]),
-  main.profile-page .profile-report-list .report-row .trust-reporter:not([hidden]) {
+  main.profile-page .profile-report-list .report-row .trust-icon:not([hidden]) {
     display: none;
+  }
+
+  /* The reporter words show on a voted card, which is another person's
+     record. activity.css hides them on the account's own posts, where the
+     record card above says the same once. */
+  main.profile-page .profile-report-list .report-row .trust-reporter:not([hidden]) {
+    order: 7;
+    flex: 0 0 calc(100% - var(--touch-target-min) - var(--space-sm) - var(--space-xs));
+    margin: 0 0 0 calc(var(--touch-target-min) + var(--space-sm) + var(--space-xs));
   }
 
   main.profile-page .profile-report-list .report-row .trust-block__counts:not([hidden]) {
@@ -667,21 +781,17 @@
     color: inherit;
   }
 
-  main.profile-page .profile-report-list .report-row .report-row__meta {
-    order: 5;
-    margin: 0;
-    color: var(--color-text-muted);
-  }
-
   /* Reopen keeps its existing control and error under the line. */
   main.profile-page .profile-report-list .report-row .vote-controls:not([hidden]) {
-    order: 6;
-    flex: 0 0 100%;
+    order: 8;
+    flex: 0 0 calc(100% - var(--touch-target-min) - var(--space-sm) - var(--space-xs));
+    margin: 0 0 0 calc(var(--touch-target-min) + var(--space-sm) + var(--space-xs));
   }
 
   main.profile-page .profile-report-list .report-row .vote-error:not([hidden]) {
-    order: 7;
-    flex: 0 0 100%;
+    order: 9;
+    flex: 0 0 calc(100% - var(--touch-target-min) - var(--space-sm) - var(--space-xs));
+    margin: 0 0 0 calc(var(--touch-target-min) + var(--space-sm) + var(--space-xs));
   }
 
   /* ---- The report detail: a full screen sheet under a short map strip ----

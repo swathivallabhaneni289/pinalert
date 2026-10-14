@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/mail"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -67,6 +68,15 @@ type AuthQuerier interface {
 	// ReporterHistoryReports gives the Activity page the account's bounded
 	// history, so every row carries the account's reporter signal.
 	ReporterHistoryReports(ctx context.Context, arg sqlcgen.ReporterHistoryReportsParams) ([]sqlcgen.ReporterHistoryReportsRow, error)
+	// VotedReportsByAccount gives the Activity page the account's current
+	// content vote per report (quick task 261013-wm5). A second consumer
+	// defined interface naming one generated method, as the two above do.
+	VotedReportsByAccount(ctx context.Context, arg sqlcgen.VotedReportsByAccountParams) ([]sqlcgen.VotedReportsByAccountRow, error)
+	// ReporterAccountsForReports gives the Activity page the reporter of each
+	// voted report, so its trust carries that reporter's signal and not the
+	// viewer's. A second consumer defined interface naming one generated
+	// method, with the signature ReportQuerier names.
+	ReporterAccountsForReports(ctx context.Context, reportIds []int64) ([]sqlcgen.ReporterAccountsForReportsRow, error)
 }
 
 // ErrRateLimited is returned by RequestLink when a second verification-
@@ -327,77 +337,174 @@ type ActivityReport struct {
 	Trust Trust
 }
 
-// ActivityForAccount is 02-07's Activity-page read: ReportsForAccount (the
-// existing, unmodified query), then ONE CurrentVotesForReports call over
-// the whole page's report ids, then BuildVoteTally + Resolve per report —
-// the same batched shape 02-04's Nearby uses, so this page is not an N+1
-// and not a second resolver.
-//
-// Deliberately NO new store query is created for "the account's retracted
-// reports": ReportsByAccount already carries no expiry predicate and
-// returns every report the account has ever filed, retracted or not, so
-// there is nothing this page needs that ReportsForAccount does not already
-// return. Encoding retraction as a SQL predicate here would be
-// ARCHITECTURE.md's Anti-Pattern 2 (T-02-04) — the resolver, not a query,
-// is the single authority on visibility.
-//
-// Category and severity are validated ONCE, here, rather than in the
-// handler: the fallback this function computes is the SAME value the
-// resolver sees, so the rendered class name and the resolved trust state
-// can never disagree (T-01-17).
-//
-// Each row also carries its trust object, built by BuildTrust from the same
-// batched rows and the service clock, which WithClock can pin (D-21). Every
-// row carries the account's own reporter signal, composed from one history
-// read keyed by the verified account id (D-10).
+// VotedReport is one report the account currently confirms or disputes: the
+// ActivityReport built exactly like a feed row (its own reporter and that
+// reporter's signal), plus the account's latest content vote on it and when it
+// was cast (D-02, latest wins). The embedded Row is the report's own columns,
+// copied from the votes read into the ReportsByAccountRow shape so one handler
+// mapper serves both lists.
+type VotedReport struct {
+	ActivityReport
+	Vote    VoteValue
+	VotedAt time.Time
+}
+
+// ActivityPage is everything the Activity page lists for one account: its own
+// posts, newest first, and the reports it currently votes on, newest vote
+// first. A report is on exactly one list (a post is never also a vote).
+type ActivityPage struct {
+	Posts []ActivityReport
+	Votes []VotedReport
+}
+
+// validatedActivityMeta applies the one fallback both
+// Activity lists share, so a post and a voted report can never disagree about
+// an unknown value (T-01-17): other for a category, low for a severity.
+func validatedActivityMeta(rawCategory, rawSeverity string) (Category, Severity) {
+	category := Category(rawCategory)
+	if !category.Valid() {
+		category = CategoryOther
+	}
+	severity := Severity(rawSeverity)
+	if !severity.Valid() {
+		severity = SeverityLow
+	}
+	return category, severity
+}
+
+// ActivityForAccount returns the account's own posts, newest first. It is the
+// posts half of ActivityPageForAccount, kept for callers that need only that
+// list, so every caller exercises the page's real read path.
 func (s *AuthService) ActivityForAccount(ctx context.Context, accountID int64) ([]ActivityReport, error) {
-	rows, err := s.ReportsForAccount(ctx, accountID)
+	page, err := s.ActivityPageForAccount(ctx, accountID)
 	if err != nil {
 		return nil, err
 	}
-	if len(rows) == 0 {
-		return []ActivityReport{}, nil
+	return page.Posts, nil
+}
+
+// ActivityPageForAccount is the Activity page's one pass read (02-07, extended
+// by quick task 261013-wm5): the account's own posts (ReportsForAccount, the
+// existing unmodified query) and the reports it currently confirms or
+// disputes (VotedReportsByAccount), then ONE ReporterHistoryReports call and
+// ONE CurrentVotesForReports call over the whole page, then BuildVoteTally +
+// Resolve + BuildTrust per report. The same batched shape Nearby uses keeps
+// the page at a constant number of round trips (V-29), and the resolver stays
+// the single authority on visibility (T-02-04).
+//
+// Order of reads: posts, votes, then (when voted reports remain)
+// ReporterAccountsForReports once over the voted ids, then history once for
+// the viewer (when it has posts) and the voted reports' reporters, then votes
+// once over post ids, voted ids and history ids. An account with nothing to
+// list makes only the first two reads.
+//
+// Each post carries the account's own reporter signal. Each voted report
+// carries ITS reporter's signal, never the viewer's, so a voted card's trust
+// equals the feed's trust for the same report, clock and rows (D-21). A report
+// that is the account's own post is dropped from the votes (the self vote
+// block makes that impossible today), and so is any vote row whose value is
+// not a content value.
+//
+// Category and severity are validated ONCE, here, rather than in the handler:
+// the fallback this function computes is the SAME value the resolver sees, so
+// the rendered class name and the resolved trust state can never disagree
+// (T-01-17). The account id is only ever the verified account's own (T-wm5-01).
+func (s *AuthService) ActivityPageForAccount(ctx context.Context, accountID int64) (ActivityPage, error) {
+	rows, err := s.ReportsForAccount(ctx, accountID)
+	if err != nil {
+		return ActivityPage{}, err
+	}
+	votedRows, err := s.q.VotedReportsByAccount(ctx, sqlcgen.VotedReportsByAccountParams{
+		AccountID: accountID,
+		Kind:      string(VoteKindContent),
+	})
+	if err != nil {
+		return ActivityPage{}, fmt.Errorf("service: reading voted reports for account %d: %w", accountID, err)
 	}
 
-	ids := make([]int64, len(rows))
-	for i, row := range rows {
-		ids[i] = row.ID
+	postIDs := make(map[int64]struct{}, len(rows))
+	for _, row := range rows {
+		postIDs[row.ID] = struct{}{}
+	}
+	voted := make([]sqlcgen.VotedReportsByAccountRow, 0, len(votedRows))
+	for _, row := range votedRows {
+		if _, own := postIDs[row.ID]; own {
+			continue
+		}
+		if !VoteValue(row.VoteValue).ValidFor(VoteKindContent) {
+			continue
+		}
+		voted = append(voted, row)
+	}
+	if len(rows) == 0 && len(voted) == 0 {
+		return ActivityPage{Posts: []ActivityReport{}, Votes: []VotedReport{}}, nil
 	}
 
+	// now is captured once, before the batched reads, because the history read
+	// takes it as a parameter and ReporterSignals must see the same one.
 	now := s.now().UTC()
 
-	history, err := s.q.ReporterHistoryReports(ctx, reporterHistoryParams([]int64{accountID}, now))
-	if err != nil {
-		return nil, fmt.Errorf("service: reading reporter history for account %d: %w", accountID, err)
+	ids := make([]int64, 0, len(rows)+len(voted))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+	votedIDs := make([]int64, 0, len(voted))
+	for _, row := range voted {
+		votedIDs = append(votedIDs, row.ID)
+		ids = append(ids, row.ID)
 	}
 
-	// In production the history ids are a subset of the page ids, because both
-	// reads key on the same account, but the union keeps one rule across paths.
+	reporterByReport := make(map[int64]*int64, len(voted))
+	if len(voted) > 0 {
+		reporterRows, err := s.q.ReporterAccountsForReports(ctx, votedIDs)
+		if err != nil {
+			return ActivityPage{}, fmt.Errorf("service: reading reporters of voted reports for account %d: %w", accountID, err)
+		}
+		for _, rr := range reporterRows {
+			reporterByReport[rr.ReportID] = rr.ReporterAccountID
+		}
+	}
+
+	var accounts []int64
+	if len(rows) > 0 {
+		accounts = append(accounts, accountID)
+	}
+	for _, id := range pageReporterAccounts(votedIDs, reporterByReport) {
+		if id == accountID {
+			continue
+		}
+		accounts = append(accounts, id)
+	}
+
+	var history []sqlcgen.ReporterHistoryReportsRow
+	if len(accounts) > 0 {
+		history, err = s.q.ReporterHistoryReports(ctx, reporterHistoryParams(accounts, now))
+		if err != nil {
+			return ActivityPage{}, fmt.Errorf("service: reading reporter history for account %d: %w", accountID, err)
+		}
+	}
+
+	// In production the history ids of the viewer are a subset of the post ids,
+	// because both reads key on the same account, but the union keeps one rule
+	// across paths.
 	voteRows, err := s.q.CurrentVotesForReports(ctx, voteReadIDs(ids, history))
 	if err != nil {
-		return nil, fmt.Errorf("service: reading current votes for account %d's reports: %w", accountID, err)
+		return ActivityPage{}, fmt.Errorf("service: reading current votes for account %d's page: %w", accountID, err)
 	}
-	signals := ReporterSignals([]int64{accountID}, history, voteRows, now)
+	signals := ReporterSignals(accounts, history, voteRows, now)
+	votesByReport := voteRowsByReport(voteRows)
 
-	reports := make([]ActivityReport, 0, len(rows))
+	posts := make([]ActivityReport, 0, len(rows))
 	for _, row := range rows {
-		category := Category(row.Category)
-		if !category.Valid() {
-			category = CategoryOther
-		}
-		severity := Severity(row.Severity)
-		if !severity.Valid() {
-			severity = SeverityLow
-		}
+		category, severity := validatedActivityMeta(row.Category, row.Severity)
 
 		meta := ReportMeta{Severity: severity, Category: category}
-		// The viewing account is always this report's reporter — this page
-		// lists only the account's own submitted reports (D-16's whole
-		// reason the Reopen path needs no identity check at all).
+		// The viewing account is always a post's reporter (D-16's whole reason
+		// the Reopen path needs no identity check at all).
 		tally := BuildVoteTally(voteRows, row.ID, &accountID)
 		vis, reason := Resolve(meta, tally, now)
 
-		reports = append(reports, ActivityReport{
+		posts = append(posts, ActivityReport{
 			Row:        row,
 			Category:   category,
 			Severity:   severity,
@@ -416,7 +523,60 @@ func (s *AuthService) ActivityForAccount(ctx context.Context, accountID int64) (
 			}),
 		})
 	}
-	return reports, nil
+
+	votes := make([]VotedReport, 0, len(voted))
+	for _, v := range voted {
+		category, severity := validatedActivityMeta(v.Category, v.Severity)
+		reporterID := reporterByReport[v.ID]
+		reportVotes := votesByReport[v.ID]
+
+		meta := ReportMeta{Severity: severity, Category: category}
+		tally := BuildVoteTally(reportVotes, v.ID, reporterID)
+		vis, reason := Resolve(meta, tally, now)
+
+		votes = append(votes, VotedReport{
+			ActivityReport: ActivityReport{
+				Row: sqlcgen.ReportsByAccountRow{
+					ID:                    v.ID,
+					Category:              v.Category,
+					Severity:              v.Severity,
+					Description:           v.Description,
+					Latitude:              v.Latitude,
+					Longitude:             v.Longitude,
+					Geohash:               v.Geohash,
+					ShelterCapacityStatus: v.ShelterCapacityStatus,
+					ShelterHeadcount:      v.ShelterHeadcount,
+					CreatedAt:             v.CreatedAt,
+					ExpiresAt:             v.ExpiresAt,
+				},
+				Category:   category,
+				Severity:   severity,
+				Visibility: vis,
+				Reason:     reason,
+				Trust: BuildTrust(TrustInput{
+					Rows:              reportVotes,
+					ReportID:          v.ID,
+					ReporterAccountID: reporterID,
+					Meta:              meta,
+					Visibility:        vis,
+					CreatedAt:         v.CreatedAt,
+					ExpiresAt:         v.ExpiresAt,
+					Now:               now,
+					Reporter:          reporterSignalRef(signals, reporterID),
+				}),
+			},
+			Vote:    VoteValue(v.VoteValue),
+			VotedAt: v.VotedAt,
+		})
+	}
+	sort.SliceStable(votes, func(i, j int) bool {
+		if !votes[i].VotedAt.Equal(votes[j].VotedAt) {
+			return votes[i].VotedAt.After(votes[j].VotedAt)
+		}
+		return votes[i].Row.ID > votes[j].Row.ID
+	})
+
+	return ActivityPage{Posts: posts, Votes: votes}, nil
 }
 
 // normalizeEmail trims rawEmail, parses it with the stdlib address parser

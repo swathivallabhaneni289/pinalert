@@ -471,6 +471,161 @@ ON CONFLICT (report_id, account_id, kind) DO UPDATE SET value = EXCLUDED.value;
 	}
 }
 
+// TestVotedReportsByAccountKeepsTheLatestContentVote proves the Activity page's
+// My votes read (quick task 261013-wm5): one row per report holding the
+// account's latest content vote (D-02 latest wins), no resolution only report,
+// no other account's votes, and the report's own columns.
+func TestVotedReportsByAccountKeepsTheLatestContentVote(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+
+	r1 := seedReportForVotes(t, pool, "voted-by-account-r1")
+	r2 := seedReportForVotes(t, pool, "voted-by-account-r2")
+	r3 := seedReportForVotes(t, pool, "voted-by-account-r3")
+	acct := seedAccountForVotes(t, pool, "voted-a@example.com")
+	other := seedAccountForVotes(t, pool, "voted-b@example.com")
+
+	insert := func(report, account int64, kind, value, at string) {
+		testutil.MustExec(t, pool,
+			`INSERT INTO votes (report_id, account_id, kind, value, geohash_cell, created_at)
+			 VALUES ($1, $2, $3, $4, 'tdr1qg0', $5::timestamptz)`,
+			report, account, kind, value, at)
+	}
+	// r1: confirmed, then disputed later. The later vote must win.
+	insert(r1, acct, "content", "confirm", "2026-10-01T10:00:00Z")
+	insert(r1, acct, "content", "dispute", "2026-10-01T11:00:00Z")
+	// r2: a single confirm.
+	insert(r2, acct, "content", "confirm", "2026-10-01T09:00:00Z")
+	// r3: the account only resolved it, which is not a content vote.
+	insert(r3, acct, "resolution", "resolve", "2026-10-01T08:00:00Z")
+	// Another account's votes never appear.
+	insert(r1, other, "content", "confirm", "2026-10-01T12:00:00Z")
+	insert(r3, other, "content", "dispute", "2026-10-01T12:30:00Z")
+
+	q := sqlcgen.New(pool)
+	rows, err := q.VotedReportsByAccount(ctx, sqlcgen.VotedReportsByAccountParams{AccountID: acct, Kind: "content"})
+	if err != nil {
+		t.Fatalf("VotedReportsByAccount: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2 (r1 and r2): %+v", len(rows), rows)
+	}
+	byID := map[int64]sqlcgen.VotedReportsByAccountRow{}
+	for _, row := range rows {
+		byID[row.ID] = row
+	}
+	if got := byID[r1].VoteValue; got != "dispute" {
+		t.Errorf("r1 vote value = %q, want dispute (latest wins)", got)
+	}
+	if want := time.Date(2026, 10, 1, 11, 0, 0, 0, time.UTC); !byID[r1].VotedAt.Equal(want) {
+		t.Errorf("r1 voted_at = %v, want %v", byID[r1].VotedAt, want)
+	}
+	if got := byID[r2].VoteValue; got != "confirm" {
+		t.Errorf("r2 vote value = %q, want confirm", got)
+	}
+	if _, ok := byID[r3]; ok {
+		t.Error("r3 appeared although the account only cast a resolution vote")
+	}
+
+	// The eleven report columns match the report itself.
+	var wantDesc string
+	var wantLat, wantLon float64
+	var wantGeohash, wantCategory, wantSeverity string
+	if err := pool.QueryRow(ctx,
+		`SELECT description, latitude, longitude, geohash, category, severity FROM reports WHERE id = $1`, r1,
+	).Scan(&wantDesc, &wantLat, &wantLon, &wantGeohash, &wantCategory, &wantSeverity); err != nil {
+		t.Fatalf("reading report r1: %v", err)
+	}
+	got := byID[r1]
+	if got.Description != wantDesc || got.Latitude != wantLat || got.Longitude != wantLon ||
+		got.Geohash != wantGeohash || got.Category != wantCategory || got.Severity != wantSeverity {
+		t.Errorf("report columns of r1 = %+v do not match the report", got)
+	}
+	if got.ExpiresAt.IsZero() || got.CreatedAt.IsZero() {
+		t.Errorf("report times of r1 not populated: %+v", got)
+	}
+
+	// The other account's own read holds its own two votes only.
+	otherRows, err := q.VotedReportsByAccount(ctx, sqlcgen.VotedReportsByAccountParams{AccountID: other, Kind: "content"})
+	if err != nil {
+		t.Fatalf("VotedReportsByAccount other: %v", err)
+	}
+	if len(otherRows) != 2 {
+		t.Errorf("other account got %d rows, want 2", len(otherRows))
+	}
+}
+
+// TestVotedReportsByAccountUsesTheAccountIndex proves migration 00006 built
+// the index with its planned column list and that the planner names it for the
+// query when sequential scans are off.
+func TestVotedReportsByAccountUsesTheAccountIndex(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+
+	var indexDef string
+	if err := pool.QueryRow(ctx,
+		`SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_votes_account_kind_report_created'`,
+	).Scan(&indexDef); err != nil {
+		t.Fatalf("reading idx_votes_account_kind_report_created: %v", err)
+	}
+	const wantCols = "(account_id, kind, report_id, created_at DESC, id DESC)"
+	if !strings.Contains(indexDef, wantCols) {
+		t.Fatalf("index definition = %q, want it to contain %q", indexDef, wantCols)
+	}
+
+	data, err := os.ReadFile("queries/votes.sql")
+	if err != nil {
+		t.Fatalf("reading queries/votes.sql: %v", err)
+	}
+	src := string(data)
+	at := strings.Index(src, "-- name: VotedReportsByAccount :many")
+	if at < 0 {
+		t.Fatal("queries/votes.sql has no VotedReportsByAccount block")
+	}
+	var stmt []string
+	for _, line := range strings.Split(src[at:], "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		stmt = append(stmt, line)
+	}
+	stmtSQL := strings.Join(stmt, "\n")
+	stmtSQL = strings.Replace(stmtSQL, "sqlc.arg(account_id)", "$1", 1)
+	stmtSQL = strings.Replace(stmtSQL, "sqlc.arg(kind)", "$2", 1)
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, "SET LOCAL enable_seqscan = off"); err != nil {
+		t.Fatalf("SET LOCAL enable_seqscan: %v", err)
+	}
+	// EXPLAIN cannot take bind parameters for a generic plan, so the two
+	// arguments are written as literals of the right types.
+	explainSQL := strings.Replace(stmtSQL, "$1", "1", 1)
+	explainSQL = strings.Replace(explainSQL, "$2", "'content'", 1)
+	rows, err := tx.Query(ctx, "EXPLAIN "+explainSQL)
+	if err != nil {
+		t.Fatalf("EXPLAIN: %v", err)
+	}
+	defer rows.Close()
+	var plan []string
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			t.Fatalf("scan plan line: %v", err)
+		}
+		plan = append(plan, line)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("plan rows: %v", err)
+	}
+	if !strings.Contains(strings.Join(plan, "\n"), "idx_votes_account_kind_report_created") {
+		t.Fatalf("plan does not name idx_votes_account_kind_report_created:\n%s", strings.Join(plan, "\n"))
+	}
+}
+
 // TestReportVoteContextReturnsCoordinates proves the vote context read
 // returns the report's latitude, longitude and creation time alongside the
 // reporter, severity, category and expiry (D-01, V-09). CastVote reads the
