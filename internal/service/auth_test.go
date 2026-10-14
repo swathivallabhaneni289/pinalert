@@ -69,6 +69,44 @@ type fakeAuthQuerier struct {
 	historyRows []sqlcgen.ReporterHistoryReportsRow
 	historyErr  error
 	historyArgs []sqlcgen.ReporterHistoryReportsParams
+
+	// votedRows/votedErr/votedArgs drive VotedReportsByAccount (quick task
+	// 261013-wm5). reporterRows/reporterErr/reporterArgs drive
+	// ReporterAccountsForReports for the voted reports; the fake returns only
+	// the rows of the requested ids, like the query.
+	votedRows    []sqlcgen.VotedReportsByAccountRow
+	votedErr     error
+	votedArgs    []sqlcgen.VotedReportsByAccountParams
+	reporterRows []sqlcgen.ReporterAccountsForReportsRow
+	reporterErr  error
+	reporterArgs [][]int64
+}
+
+// VotedReportsByAccount records the call and returns the configured rows.
+func (f *fakeAuthQuerier) VotedReportsByAccount(ctx context.Context, arg sqlcgen.VotedReportsByAccountParams) ([]sqlcgen.VotedReportsByAccountRow, error) {
+	*f.calls = append(*f.calls, "VotedReportsByAccount")
+	f.votedArgs = append(f.votedArgs, arg)
+	if f.votedErr != nil {
+		return nil, f.votedErr
+	}
+	return f.votedRows, nil
+}
+
+// ReporterAccountsForReports records the call and returns the configured rows
+// of the requested ids.
+func (f *fakeAuthQuerier) ReporterAccountsForReports(ctx context.Context, reportIDs []int64) ([]sqlcgen.ReporterAccountsForReportsRow, error) {
+	*f.calls = append(*f.calls, "ReporterAccountsForReports")
+	f.reporterArgs = append(f.reporterArgs, reportIDs)
+	if f.reporterErr != nil {
+		return nil, f.reporterErr
+	}
+	var out []sqlcgen.ReporterAccountsForReportsRow
+	for _, row := range f.reporterRows {
+		if slices.Contains(reportIDs, row.ReportID) {
+			out = append(out, row)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeAuthQuerier) InsertMagicLinkToken(ctx context.Context, arg sqlcgen.InsertMagicLinkTokenParams) (sqlcgen.InsertMagicLinkTokenRow, error) {
@@ -841,7 +879,9 @@ func TestActivityForAccountReadsReporterHistoryOnce(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ActivityForAccount: %v", err)
 		}
-		wantCalls := []string{"ReportsByAccount", "ReporterHistoryReports", "CurrentVotesForReports"}
+		// 261013-wm5: the page now reads the account's votes in the same pass,
+		// so VotedReportsByAccount comes second. Every other assertion is kept.
+		wantCalls := []string{"ReportsByAccount", "VotedReportsByAccount", "ReporterHistoryReports", "CurrentVotesForReports"}
 		if !slices.Equal(*calls, wantCalls) {
 			t.Fatalf("calls = %v, want %v", *calls, wantCalls)
 		}

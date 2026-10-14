@@ -499,6 +499,128 @@ func TestProfileRendersSeverityLabel(t *testing.T) {
 	}
 }
 
+// --- Quick task 261013-wm5: the reports the account voted on ---
+
+// TestProfileListsReportsTheAccountVotedOn proves My votes and My disputes read
+// the account's own votes: account A confirmed one of B's reports and disputed
+// another, and each of A's cards carries exactly the trust the vote response
+// sent, no identifier, and no Reopen hook. A third account's vote on a third
+// report never reaches A's page.
+func TestProfileListsReportsTheAccountVotedOn(t *testing.T) {
+	srv, mailer, _ := newE2EServer(t)
+	aEmail := "activity-wm5-voter-a@example.com"
+	bEmail := "activity-wm5-poster-b@example.com"
+	a := newVerifiedClient(t, srv, mailer, aEmail)
+	b := newVerifiedClient(t, srv, mailer, bEmail)
+	c := newVerifiedClient(t, srv, mailer, "activity-wm5-third-c@example.com")
+
+	loc := map[string]any{"latitude": 12.9716, "longitude": 77.5946}
+	confirmedID := submitReportGetID(t, b, srv.URL, floodReportBody(12.9716, 77.5946))
+	disputedID := submitReportGetID(t, b, srv.URL, floodReportBody(12.9716, 77.5946))
+	thirdID := submitReportGetID(t, b, srv.URL, floodReportBody(12.9716, 77.5946))
+
+	confirmTrust := p15VoteTrust(t, postVote(t, a, srv.URL, confirmedID, "confirm", loc))
+	disputeTrust := p15VoteTrust(t, postVote(t, a, srv.URL, disputedID, "dispute", loc))
+	p15VoteTrust(t, postVote(t, c, srv.URL, thirdID, "confirm", loc))
+
+	resp, err := a.Get(srv.URL + "/profile")
+	if err != nil {
+		t.Fatalf("GET /profile: %v", err)
+	}
+	defer resp.Body.Close()
+	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+		t.Errorf("/profile Cache-Control = %q, want no-store", got)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	body := string(raw)
+
+	for _, tc := range []struct {
+		id    int64
+		trust map[string]any
+	}{{confirmedID, confirmTrust}, {disputedID, disputeTrust}} {
+		row := p15ProfileRow(t, body, tc.id)
+		rowTrust := p15ProfileTrust(t, row)
+		if !reflect.DeepEqual(rowTrust, tc.trust) {
+			t.Errorf("report %d: data-trust differs from the vote response trust:\nrow  = %v\nvote = %v", tc.id, rowTrust, tc.trust)
+		}
+		p15WalkKeys(rowTrust, func(key string) {
+			if p15IdentifierKey.MatchString(key) {
+				t.Errorf("report %d: data-trust carries an identifier-like key %q", tc.id, key)
+			}
+		})
+		attr := p15Attr(t, row, "data-trust")
+		for _, forbidden := range []string{"@", aEmail, bEmail} {
+			if strings.Contains(attr, forbidden) {
+				t.Errorf("report %d: data-trust contains %q", tc.id, forbidden)
+			}
+		}
+		if p15HasAttr(row, "data-can-reopen") {
+			t.Errorf("report %d: a voted row carries data-can-reopen", tc.id)
+		}
+	}
+	if strings.Contains(body, `data-report-id="`+strconv.FormatInt(thirdID, 10)+`"`) {
+		t.Errorf("A's page lists report %d, which only a third account voted on", thirdID)
+	}
+
+	// B's own row for the confirmed report carries the same trust A saw.
+	bRow := p15ProfileRow(t, getProfile(t, b, srv.URL), confirmedID)
+	if got := p15ProfileTrust(t, bRow); !reflect.DeepEqual(got, confirmTrust) {
+		t.Errorf("B's own row trust differs from the confirm response trust:\nrow  = %v\nvote = %v", got, confirmTrust)
+	}
+}
+
+// TestProfileVotedRowNeverOffersReopen proves the Reopen hook stays on the
+// reporter's own card: after B resolves a report A confirmed, A's card shows
+// the resolved state and no hook, and B's card carries the hook.
+func TestProfileVotedRowNeverOffersReopen(t *testing.T) {
+	srv, mailer, _ := newE2EServer(t)
+	a := newVerifiedClient(t, srv, mailer, "activity-wm5-reopen-a@example.com")
+	b := newVerifiedClient(t, srv, mailer, "activity-wm5-reopen-b@example.com")
+
+	loc := map[string]any{"latitude": 12.9716, "longitude": 77.5946}
+	reportID := submitReportGetID(t, b, srv.URL, floodReportBody(12.9716, 77.5946))
+	p15VoteTrust(t, postVote(t, a, srv.URL, reportID, "confirm", loc))
+	p15VoteTrust(t, postVote(t, b, srv.URL, reportID, "resolve", loc))
+
+	aRow := p15ProfileRow(t, getProfile(t, a, srv.URL), reportID)
+	hasRetracted := false
+	for _, tok := range p15ClassTokens(t, aRow) {
+		if tok == "vis-retracted" {
+			hasRetracted = true
+		}
+	}
+	if !hasRetracted {
+		t.Errorf("A's card is not retracted after the reporter resolved it: %s", aRow)
+	}
+	if p15HasAttr(aRow, "data-can-reopen") {
+		t.Errorf("A's voted card carries data-can-reopen: %s", aRow)
+	}
+
+	bRow := p15ProfileRow(t, getProfile(t, b, srv.URL), reportID)
+	if !p15HasAttr(bRow, "data-can-reopen") {
+		t.Errorf("B's own resolved card carries no data-can-reopen: %s", bRow)
+	}
+}
+
+// TestProfileVoterWithoutPostsHasNoRecord proves an account that only voted
+// gets its cards and no reporter record, because the record is the account's
+// own posting history.
+func TestProfileVoterWithoutPostsHasNoRecord(t *testing.T) {
+	srv, mailer, _ := newE2EServer(t)
+	a := newVerifiedClient(t, srv, mailer, "activity-wm5-norecord-a@example.com")
+	b := newVerifiedClient(t, srv, mailer, "activity-wm5-norecord-b@example.com")
+
+	loc := map[string]any{"latitude": 12.9716, "longitude": 77.5946}
+	reportID := submitReportGetID(t, b, srv.URL, floodReportBody(12.9716, 77.5946))
+	p15VoteTrust(t, postVote(t, a, srv.URL, reportID, "confirm", loc))
+
+	body := getProfile(t, a, srv.URL)
+	p15ProfileRow(t, body, reportID)
+	if strings.Contains(body, `class="profile-record"`) || strings.Contains(body, "Your reporter record") {
+		t.Errorf("a voter with no posts got a reporter record card: %s", body)
+	}
+}
+
 // --- Quick task 261013-lrw: the phone Activity page ---
 
 // TestProfileRendersTheReporterRecord proves the record card is built from the

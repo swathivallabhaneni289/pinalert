@@ -97,4 +97,53 @@ func TestMigrationsEmbedded(t *testing.T) {
 	if strings.Contains(strings.ToUpper(strings.Join(code, "\n")), "CONCURRENTLY") {
 		t.Error("migration 00005 must not build the index concurrently: goose runs it inside a transaction")
 	}
+
+	// Quick task 261013-wm5 votes by account index: migration 00006 must be
+	// embedded, carry its four markers in order, and build the index without a
+	// concurrent build keyword.
+	const votesIndexFile = "migrations/00006_add_votes_account_kind_index.sql"
+	votesIndexFound := false
+	for _, e := range entries {
+		if e.Name() == "00006_add_votes_account_kind_index.sql" {
+			votesIndexFound = true
+			break
+		}
+	}
+	if !votesIndexFound {
+		t.Fatalf("expected %s to be embedded, entries: %v", votesIndexFile, entries)
+	}
+	votesIndexContents, err := MigrationsFS.ReadFile(votesIndexFile)
+	if err != nil {
+		t.Fatalf("reading embedded migration file %s: %v", votesIndexFile, err)
+	}
+	votesIndexSQL := string(votesIndexContents)
+
+	votesMarkers := []string{
+		"+goose Up",
+		"CREATE INDEX idx_votes_account_kind_report_created ON votes (account_id, kind, report_id, created_at DESC, id DESC)",
+		"+goose Down",
+		"DROP INDEX idx_votes_account_kind_report_created",
+	}
+	votesPrev := -1
+	for _, m := range votesMarkers {
+		at := strings.Index(votesIndexSQL, m)
+		if at < 0 {
+			t.Fatalf("expected %s to contain %q", votesIndexFile, m)
+		}
+		if at <= votesPrev {
+			t.Fatalf("expected %q to come after the previous marker in %s", m, votesIndexFile)
+		}
+		votesPrev = at
+	}
+
+	var votesCode []string
+	for _, line := range strings.Split(votesIndexSQL, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		votesCode = append(votesCode, line)
+	}
+	if strings.Contains(strings.ToUpper(strings.Join(votesCode, "\n")), "CONCURRENTLY") {
+		t.Error("migration 00006 must not build the index concurrently: goose runs it inside a transaction")
+	}
 }

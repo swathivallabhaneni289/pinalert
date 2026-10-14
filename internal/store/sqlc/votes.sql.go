@@ -153,3 +153,94 @@ func (q *Queries) ReportVoteContext(ctx context.Context, reportID int64) (Report
 	)
 	return i, err
 }
+
+const votedReportsByAccount = `-- name: VotedReportsByAccount :many
+SELECT DISTINCT ON (v.report_id)
+    r.id, r.category, r.severity, r.description, r.latitude, r.longitude, r.geohash,
+    r.shelter_capacity_status, r.shelter_headcount, r.created_at, r.expires_at,
+    v.value AS vote_value, v.created_at AS voted_at
+FROM votes v
+JOIN reports r ON r.id = v.report_id
+WHERE v.account_id = $1 AND v.kind = $2
+ORDER BY v.report_id, v.created_at DESC, v.id DESC
+`
+
+type VotedReportsByAccountParams struct {
+	AccountID int64
+	Kind      string
+}
+
+type VotedReportsByAccountRow struct {
+	ID                    int64
+	Category              string
+	Severity              string
+	Description           string
+	Latitude              float64
+	Longitude             float64
+	Geohash               string
+	ShelterCapacityStatus *string
+	ShelterHeadcount      *int32
+	CreatedAt             time.Time
+	ExpiresAt             time.Time
+	VoteValue             string
+	VotedAt               time.Time
+}
+
+// The account's current content vote per report, with the report's own
+// columns, for the Activity page's My votes and My disputes tabs. Five points
+// a later reader would otherwise "correct":
+//
+// (a) What it feeds. My votes lists every report the account currently
+// confirms or disputes and My disputes the disputed ones. D-02 latest wins,
+// so DISTINCT ON (report_id) keeps only the newest content vote per report,
+// and an account that confirmed a report and then disputed it gets one row
+// with value dispute.
+//
+// (b) Why kind is a parameter. The closed vote vocabulary lives in Go
+// (VoteKindContent), not in the schema, so the caller names the kind and a
+// resolve or reopen vote can never appear here.
+//
+// (c) What it leaves out. It selects no session_id (T-01-02) and no
+// geohash_cell (00004: service internal, never serialised). The eleven report
+// columns are in exactly ReportsByAccount's order.
+//
+// (d) Why INNER JOIN. votes.report_id carries a foreign key to reports, so
+// every vote has its report and a LEFT JOIN could only add NULL rows.
+//
+// (e) The index. idx_votes_account_kind_report_created (migration 00006)
+// serves the equality on account_id and kind and the DISTINCT ON order. The
+// DISTINCT ON stays at the top level with no derived table so sqlc keeps
+// voted_at as time.Time.
+func (q *Queries) VotedReportsByAccount(ctx context.Context, arg VotedReportsByAccountParams) ([]VotedReportsByAccountRow, error) {
+	rows, err := q.db.Query(ctx, votedReportsByAccount, arg.AccountID, arg.Kind)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VotedReportsByAccountRow
+	for rows.Next() {
+		var i VotedReportsByAccountRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Category,
+			&i.Severity,
+			&i.Description,
+			&i.Latitude,
+			&i.Longitude,
+			&i.Geohash,
+			&i.ShelterCapacityStatus,
+			&i.ShelterHeadcount,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.VoteValue,
+			&i.VotedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
