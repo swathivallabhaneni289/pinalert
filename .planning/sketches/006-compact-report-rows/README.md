@@ -2,11 +2,19 @@
 sketch: 006
 name: compact-report-rows
 question: "How small can the report rows in the laptop list get before they stop being easy to read, with everything else on the page left alone, and what does each size take out of the row?"
-winner: null
+winner: A
 tags: [feed-row, list, laptop, density, tabs, light-dark]
 ---
 
 # Sketch 006: Compact report rows
+
+## Winner: A, the phone card (owner, 2026-10-14)
+
+The owner picked size A: "i like A- for the mockups" (by voice; the trailing dash is read as a pause). A row is about 125px,
+five rows fit on an 800px laptop screen, and the laptop list uses the card the phone already has. B (79px) was the
+recommendation and was not taken. Of the five departures at the end of this file, 1, 2, 4 and 5 apply to A. Departure 3
+(severity word first) belongs to B only and does not apply. The build contract is in
+`.planning/phases/03.1-report-history-views/03.1-CONTEXT.md` (D-20, D-21).
 
 ## Direction (owner, 2026-10-13, by voice)
 
