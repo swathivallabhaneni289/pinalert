@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/static/css/feed.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/trust.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/activity.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
   <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
 </head>
@@ -22,6 +23,7 @@
 
     <section class="profile-activity">
       <h2>Activity</h2>
+      <p class="activity-subtitle">A quick view of what's happening with your reports.</p>
 
       <form class="profile-logout" method="post" action="/auth/logout">
         <button type="submit" class="profile-logout__button">Log out</button>
@@ -35,31 +37,40 @@
       </section>
       {{end}}
 
+      <nav class="activity-tabs" aria-label="Activity views">
+        {{range .Tabs}}
+        <a class="activity-tab" href="{{.Href}}" data-tab="{{.Key}}" data-count="{{.Count}}"{{if .Selected}} aria-current="page"{{end}}><span class="activity-tab__label">{{.Label}}</span><span class="activity-tab__count">{{.Count}}</span></a>
+        {{end}}
+      </nav>
+
       {{if .Reports}}
       <ol class="profile-report-list">
         {{range .Reports}}
-        <li class="report-row {{.SeverityClass}} {{.VisibilityClass}}"
+        <li class="report-row activity-card activity-card--{{.Kind}} {{.SeverityClass}} {{.VisibilityClass}}"
             data-report-id="{{.ReportID}}"
             data-visibility="{{.Visibility}}"
             data-visibility-reason="{{.VisibilityReason}}"
             data-expired="{{.Expired}}"
             data-trust="{{.TrustJSON}}"
-            {{if .CanReopen}}data-can-reopen="true"{{end}}>
-          <span class="icon-badge icon-badge--sm">
-            <span class="icon-glyph {{.CategoryGlyph}}" aria-hidden="true"></span>
-          </span>
+            data-tabs="{{.Tabs}}"
+            {{if .CanReopen}}data-can-reopen="true"{{end}}
+            {{if .Hidden}}hidden{{end}}>
+          <span class="icon-badge activity-card__icon" aria-hidden="true"><span class="icon-glyph {{.IconGlyph}}"></span></span>
           <div class="report-row__body">
-            <span class="severity-label severity-label--{{.SeverityLevel}}">{{.SeverityWord}}</span>
+            <span class="activity-card__tag">{{.Tag}}</span>
             <p class="report-row__title">{{.Description}}</p>
-            <p class="report-row__meta">{{.MetaText}}</p>
+            <p class="report-row__meta activity-card__sub"><span class="activity-card__action">{{.Action}} &middot; </span>{{.When}} &middot; {{.Detail}}</p>
           </div>
+          <span class="activity-chip"><span class="activity-chip__word activity-chip__word--severity">{{.SeverityWord}}</span><span class="activity-chip__word activity-chip__word--resolved">Resolved</span><span class="activity-chip__word activity-chip__word--open">Not resolved</span></span>
         </li>
         {{end}}
       </ol>
-      {{else}}
-      <div class="empty-state profile-empty-state">
-        <h3>No reports yet</h3>
-        <p>Reports you submit will appear here.</p>
+      {{end}}
+
+      {{range .Tabs}}
+      <div class="empty-state profile-empty-state activity-empty" data-tab-empty="{{.Key}}"{{if not .ShowEmpty}} hidden{{end}}>
+        <h3>{{.EmptyTitle}}</h3>
+        <p>{{.EmptyText}}</p>
       </div>
       {{end}}
     </section>
@@ -77,6 +88,7 @@
   <script src="/static/js/visibility.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/trust.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/activity.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/activity-tabs.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
 </body>
 </html>

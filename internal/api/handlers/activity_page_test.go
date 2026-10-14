@@ -360,7 +360,4 @@ func TestActivityDetailKeepsTheShelterWords(t *testing.T) {
 	if want := "Shelter open · Limited · 40 people"; card.Detail != want {
 		t.Errorf("Detail = %q, want %q", card.Detail, want)
 	}
-	if want := "Shelter open · 2 hours ago · Limited · 40 people"; card.MetaText != want {
-		t.Errorf("MetaText = %q, want the unchanged meta line %q", card.MetaText, want)
-	}
 }

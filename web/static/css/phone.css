@@ -20,8 +20,7 @@
 .feed-heading,
 .bottom-nav,
 .report-row__away,
-.profile-logout,
-.profile-record {
+.profile-logout {
   display: none;
 }
 

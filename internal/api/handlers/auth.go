@@ -287,7 +287,6 @@ type profileReport struct {
 	SeverityWord     string
 	SeverityLevel    string
 	Description      string
-	MetaText         string
 	Visibility       string
 	VisibilityReason string
 	VisibilityClass  string
@@ -453,10 +452,6 @@ func newProfileReport(ar service.ActivityReport, now time.Time) (profileReport, 
 	severity := ar.Severity
 
 	detail := profileDetail(row.ShelterCapacityStatus, row.ShelterHeadcount, category)
-	meta := categoryLabels[category] + " · " + profileRelativeTime(row.CreatedAt, now)
-	if rest := strings.TrimPrefix(detail, categoryLabels[category]); rest != "" {
-		meta += rest
-	}
 
 	// Resolve cannot return an invalid Visibility, so this guard is
 	// defence in depth (T-01-17) rather than a real branch — but the
@@ -489,7 +484,6 @@ func newProfileReport(ar service.ActivityReport, now time.Time) (profileReport, 
 		SeverityWord:     severityWord(severity),
 		SeverityLevel:    string(severity),
 		Description:      row.Description,
-		MetaText:         meta,
 		Detail:           detail,
 		Visibility:       string(visibility),
 		VisibilityReason: string(ar.Reason),

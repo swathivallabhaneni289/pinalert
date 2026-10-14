@@ -17,10 +17,15 @@ import (
 
 const phoneBlockMedia = "@media (max-width: 899.98px)"
 
-// phoneBaseHideHeads are the five phone only classes that phone.css hides at
+// phoneBaseHideHeads are the four phone only classes that phone.css hides at
 // every width outside its media block. The rule declares nothing else.
+//
+// Departure (quick task 261013-wm5, W-10): .profile-record left this list. The
+// reporter record card shows at every width now, because the laptop page draws
+// it between the help line and the tabs. activity.css styles it at 900px and
+// up and phone.css under 900px.
 var phoneBaseHideHeads = []string{
-	".feed-heading", ".bottom-nav", ".report-row__away", ".profile-logout", ".profile-record",
+	".feed-heading", ".bottom-nav", ".report-row__away", ".profile-logout",
 }
 
 // phoneRules parses phone.css alone.
@@ -89,7 +94,9 @@ func TestPhoneRulesLiveInTheNarrowBlock(t *testing.T) {
 					}
 				}
 				if !found {
-					t.Errorf("base rule head %q is not one of the five phone only classes", part)
+					// Four classes since quick task 261013-wm5 (the record card
+					// shows at every width).
+					t.Errorf("base rule head %q is not one of the four phone only classes", part)
 				}
 			}
 		default:
@@ -149,7 +156,7 @@ func TestPhoneHeadsNeverEqualAnExactLookupHead(t *testing.T) {
 	}
 	for _, r := range phoneRules(t) {
 		for _, part := range p16HeadParts(r.Head) {
-			// The five phone only classes are new, so a base hide rule is fine.
+			// The four phone only classes are new, so a base hide rule is fine.
 			if r.Media == "" {
 				continue
 			}

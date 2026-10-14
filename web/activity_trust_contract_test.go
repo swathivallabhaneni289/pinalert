@@ -33,8 +33,13 @@ func p15ReadTemplate(t *testing.T, name string) string {
 }
 
 // TestProfileTemplateUsesServerSeverityAndTrust proves the profile template
-// writes the trust JSON and the expired flag into each row, prints the
-// severity word first in the body, and keeps the older hooks (A58, A44, V-33).
+// writes the trust JSON and the expired flag into each row, writes the server's
+// severity word into the chip, and keeps the older hooks (A58, A44, V-33).
+//
+// Departure (quick task 261013-wm5, A26 and A58): the picture's card moves the
+// severity word out of the body start and into the chip on the right. The body
+// now starts with the tag, then the title, and the chip's severity span holds
+// {{.SeverityWord}} once. Trust JSON, expired and hook checks are unchanged.
 func TestProfileTemplateUsesServerSeverityAndTrust(t *testing.T) {
 	tmpl := p15ReadTemplate(t, "profile.html.tmpl")
 
@@ -56,9 +61,16 @@ func TestProfileTemplateUsesServerSeverityAndTrust(t *testing.T) {
 		t.Errorf(".TrustJSON occurs %d times in the template, want exactly 1", n)
 	}
 
-	severityFirst := regexp.MustCompile(`<div class="report-row__body">\s*<span class="severity-label severity-label--\{\{\.SeverityLevel\}\}">\{\{\.SeverityWord\}\}</span>\s*<p class="report-row__title">`)
-	if !severityFirst.MatchString(tmpl) {
-		t.Errorf("the report row body does not start with the server rendered severity label before the title")
+	tagFirst := regexp.MustCompile(`<div class="report-row__body">\s*<span class="activity-card__tag">\{\{\.Tag\}\}</span>\s*<p class="report-row__title">`)
+	if !tagFirst.MatchString(tmpl) {
+		t.Errorf("the report row body does not start with the tag span and then the title paragraph")
+	}
+	chipSeverity := regexp.MustCompile(`<span class="activity-chip__word activity-chip__word--severity">\{\{\.SeverityWord\}\}</span>`)
+	if n := len(chipSeverity.FindAllString(tmpl, -1)); n != 1 {
+		t.Errorf("the chip's severity span holds {{.SeverityWord}} %d times, want exactly 1", n)
+	}
+	if n := strings.Count(tmpl, ".SeverityWord"); n != 1 {
+		t.Errorf(".SeverityWord occurs %d times in the template, want exactly 1", n)
 	}
 
 	for _, hook := range []string{"data-report-id=", "data-visibility=", "data-visibility-reason=", "data-can-reopen"} {
