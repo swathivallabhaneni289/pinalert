@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sketch 006: Compact report rows</title>
+  <script>
+    // Theme and variant come from the address before first paint, so a frame never flashes.
+    (function () {
+      var q = new URLSearchParams(location.search);
+      document.documentElement.setAttribute('data-theme', q.get('theme') === 'dark' ? 'dark' : 'light');
+    }());
+  </script>
+  <!-- Tokens only: the theme file imports web/static/css/main.css and redeclares nothing, so the sketch cannot drift from the app. -->
+  <link rel="stylesheet" href="../themes/default.css">
+  <style>
+    /* ---------- Board chrome (not part of the product) ---------- */
+    body { padding-bottom: var(--space-2xl); }
+    .sk-bar { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; align-items: center;
+      gap: var(--space-sm) var(--space-md); padding: var(--space-sm) var(--space-md);
+      background: var(--color-bg); border-bottom: 1px solid var(--color-border); }
+    .sk-bar__title { font-weight: var(--font-weight-semibold); margin-right: var(--space-md); }
+    .sk-group { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; }
+    .sk-btn { appearance: none; min-height: var(--touch-target-min); padding: 0 var(--space-md); border: 1px solid var(--color-border);
+      border-radius: 8px; background: var(--color-bg); color: var(--color-text); font: inherit; font-size: var(--font-size-label); cursor: pointer; }
+    .sk-btn[aria-pressed="true"] { background: var(--color-text); color: var(--color-bg); border-color: var(--color-text); font-weight: var(--font-weight-semibold); }
+    .sk-lead { max-width: 1000px; margin: var(--space-md) var(--space-md) 0; color: var(--color-text); }
+    .sk-facts { margin: var(--space-sm) var(--space-md) 0; color: var(--color-text-muted); font-size: var(--font-size-label); }
+    .sk-wrap { padding: var(--space-md); overflow-x: auto; }
+
+    /* ---------- The laptop page, as the app lays it out at 1280 by 800 (two equal columns, 32px gap) ---------- */
+    .sk-screen { display: grid; grid-template-columns: 624px 624px; gap: var(--space-xl); width: 1280px; height: 800px;
+      border: 1px solid var(--color-border); background: var(--color-bg); overflow: hidden; }
+    .sk-map { display: flex; align-items: center; justify-content: center; background: var(--color-surface); color: var(--color-text-muted); }
+    .sk-pane { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* The three tab strip that replaces the "Show disputed reports" checkbox. Plain text tabs with an underline, not pills. */
+    .sk-tabs { display: flex; flex: none; gap: var(--space-md); padding: 0 var(--space-md); border-bottom: 1px solid var(--color-border); }
+    .sk-tab { appearance: none; min-height: var(--touch-target-min); padding: 0 var(--space-xs); background: none; border: 0;
+      border-bottom: 2px solid transparent; font: inherit; font-size: var(--font-size-body); color: var(--color-text-muted); cursor: pointer; }
+    .sk-tab[aria-selected="true"] { color: var(--color-text); font-weight: var(--font-weight-semibold); border-bottom-color: var(--color-text); }
+
+    .sk-list { position: relative; flex: 1; list-style: none; margin: 0; padding: var(--space-sm) 0 0; overflow-y: auto; }
+    .sk-note { margin: var(--space-sm) var(--space-md); font-size: var(--font-size-label); color: var(--color-text-muted); }
+
+    /* ---------- One row, three sizes. Severity colour stays on the left bar, the tint and the dot only. ---------- */
+    .sk-row { --sev: var(--color-severity-low); --sev-bg: var(--color-severity-low-bg);
+      margin: 0 0 var(--space-sm); border-left: 4px solid var(--sev); background: var(--sev-bg); cursor: pointer; }
+    .sk-row.sev-medium { --sev: var(--color-severity-medium); --sev-bg: var(--color-severity-medium-bg); }
+    .sk-row.sev-critical { --sev: var(--color-severity-critical); --sev-bg: var(--color-severity-critical-bg); }
+    .sk-row.is-provisional { background: var(--color-bg); border-top: 1px solid var(--color-border); border-right: 1px solid var(--color-border);
+      border-bottom: 1px solid var(--color-border); }
+    .sk-row.is-selected { outline: 2px solid var(--color-focus-ring); outline-offset: -2px; }
+    .sk-row p { margin: 0; }
+    .sk-sev { font-weight: var(--font-weight-semibold); }
+    .sk-dot { display: inline-block; width: 8px; height: 8px; margin-right: var(--space-sm); border-radius: 50%; background: var(--sev); }
+    .sk-title { font-weight: var(--font-weight-semibold); overflow-wrap: anywhere; }
+    .sk-clamp2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+    .sk-badge { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%;
+      background: var(--sev); color: var(--color-bg); }
+    .sk-badge svg { width: 20px; height: 20px; }
+    .sk-facts-line { display: flex; flex-wrap: wrap; font-size: var(--font-size-label); line-height: var(--line-height-label); color: var(--color-text); }
+    /* Each fact stays whole when the line wraps, so "re-confirming" never breaks at its hyphen. */
+    .sk-facts-line span { white-space: nowrap; }
+    .sk-facts-line span:not(:last-child)::after { content: "\00B7"; margin: 0 var(--space-xs); }
+
+    /* A. The phone card, on the laptop. */
+    .var-a .sk-row { padding: var(--space-md); }
+    .var-a .sk-meta { font-size: var(--font-size-label); line-height: var(--line-height-label); }
+    .var-a .sk-title { margin: var(--space-xs) 0 var(--space-sm); font-size: var(--font-size-heading); line-height: var(--line-height-heading); }
+
+    /* B. A tight card: category badge on the left, title and one facts line on the right. */
+    .var-b .sk-row { display: flex; align-items: flex-start; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); }
+    .var-b .sk-title { font-size: var(--font-size-body); line-height: 1.3; margin-bottom: var(--space-xs); }
+    .var-b .sk-body { min-width: 0; flex: 1; }
+
+    /* C. One line. The row opens in place for the facts, and only the selected row is tall. */
+    .var-c .sk-row { padding: 0 var(--space-md); }
+    .var-c .sk-line { display: flex; align-items: center; gap: var(--space-sm); min-height: 48px; }
+    .var-c .sk-line .sk-title { flex: 1; min-width: 0; font-size: var(--font-size-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .var-c .sk-line .sk-sev { flex: none; font-size: var(--font-size-label); min-width: 72px; }
+    .var-c .sk-line .sk-count { flex: none; font-size: var(--font-size-label); }
+    .var-c .sk-more { display: none; padding: 0 0 var(--space-md); }
+    .var-c .sk-row.is-open .sk-more { display: block; }
+    .var-c .sk-row.is-open .sk-line .sk-title { white-space: normal; overflow: visible; }
+    .var-c .sk-row.is-open .sk-line { align-items: flex-start; padding-top: var(--space-sm); }
+
+    /* Past tab: the owner's Past picture (white cards, bold title, grey line), two groups on one screen. */
+    .sk-group-label { margin: var(--space-md) var(--space-md) var(--space-sm); font-size: var(--font-size-label); font-weight: var(--font-weight-semibold);
+      color: var(--color-text-muted); letter-spacing: 0.04em; }
+    .sk-card { margin: 0 var(--space-md) var(--space-sm); padding: var(--space-md); border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-bg); }
+    .sk-card p { margin: 0; }
+    .sk-card .sk-title { font-size: var(--font-size-body); line-height: var(--line-height-body); }
+    .sk-card .sk-grey { margin-top: var(--space-xs); font-size: var(--font-size-label); color: var(--color-text-muted); }
+
+    /* ---------- Numbers and notes under the frame ---------- */
+    .sk-notes { max-width: 1000px; margin: var(--space-lg) var(--space-md) 0; }
+    .sk-notes h2 { font-size: var(--font-size-heading); margin: var(--space-lg) 0 var(--space-sm); }
+    .sk-notes p, .sk-notes li { color: var(--color-text); }
+    .sk-notes ul { margin: 0; padding-left: var(--space-lg); }
+    .sk-today { height: 323px; max-width: 624px; display: flex; align-items: center; justify-content: center; text-align: center;
+      border: 2px dashed var(--color-border); border-radius: 8px; color: var(--color-text-muted); }
+    table.sk-table { border-collapse: collapse; margin-top: var(--space-sm); }
+    .sk-table th, .sk-table td { text-align: left; padding: var(--space-xs) var(--space-md) var(--space-xs) 0; font-size: var(--font-size-label); }
+    .sk-table th { font-weight: var(--font-weight-semibold); border-bottom: 1px solid var(--color-border); }
+  </style>
+</head>
+<body>
+  <header class="sk-bar">
+    <span class="sk-bar__title">Sketch 006: report rows on the laptop</span>
+    <div class="sk-group" role="group" aria-label="Row size">
+      <button type="button" class="sk-btn" data-variant="a" aria-pressed="true">A: Phone card</button>
+      <button type="button" class="sk-btn" data-variant="b" aria-pressed="false">B: Tight card</button>
+      <button type="button" class="sk-btn" data-variant="c" aria-pressed="false">C: One line</button>
+    </div>
+    <div class="sk-group" role="group" aria-label="Theme">
+      <button type="button" class="sk-btn" data-theme-set="light" aria-pressed="true">Light</button>
+      <button type="button" class="sk-btn" data-theme-set="dark" aria-pressed="false">Dark</button>
+    </div>
+  </header>
+
+  <p class="sk-lead">Only the report rows change. The map, the page and the words stay as they are. The tab strip
+    (Active, Disputed, Past) is the one you asked for in place of the checkbox. Click a row to select it. All names and numbers are sample data.</p>
+  <p class="sk-facts" id="sk-facts" aria-live="polite"></p>
+
+  <div class="sk-wrap">
+    <div class="sk-screen var-a" id="sk-screen">
+      <div class="sk-map">Map, unchanged</div>
+      <section class="sk-pane" aria-label="Reports">
+        <div class="sk-tabs" role="tablist" aria-label="Which reports">
+          <button type="button" class="sk-tab" role="tab" data-tab="active" aria-selected="true">Active</button>
+          <button type="button" class="sk-tab" role="tab" data-tab="disputed" aria-selected="false">Disputed</button>
+          <button type="button" class="sk-tab" role="tab" data-tab="past" aria-selected="false">Past</button>
+        </div>
+        <ol class="sk-list" id="sk-list"></ol>
+      </section>
+    </div>
+  </div>
+
+  <section class="sk-notes">
+    <h2>What each size takes out of the row</h2>
+    <ul>
+      <li><strong>Out of the row in all three:</strong> the Confirm, Dispute and Mark resolved buttons (the opened report already has them, as on the phone), the clock line, the divider and the chevron. Both counters, the severity word, the category, the time and the state word stay.</li>
+      <li><strong>A, phone card:</strong> exactly the card the phone already has, so it is the cheapest to build and the page looks the same on every screen.</li>
+      <li><strong>B, tight card:</strong> a category badge on the left, the title in the body size, and one facts line. About two thirds of A.</li>
+      <li><strong>C, one line:</strong> severity word, title and counters on one line. Click a row and it opens in place for the category, time and state word. The most rows on a screen, the title is cut with an ellipsis until the row is opened.</li>
+    </ul>
+    <h2>How big a row is today</h2>
+    <p>A report row on the laptop is 323px tall (300px for the quieter ones), so an 800px screen shows two rows and a bit. The dashed box is that height.</p>
+    <div class="sk-today">One row today: 323px</div>
+    <table class="sk-table" id="sk-table"></table>
+  </section>
+
+  <script>
+    (function () {
+      'use strict';
+      // Sample data only. Words are the app's own strings where one exists.
+      var CATEGORY = { fire: 'Fire', flood: 'Flood', rescue_needed: 'Rescue needed', road_blocked: 'Road blocked',
+        power_outage: 'Power outage', shelter_open: 'Shelter open', other: 'Other' };
+      var SEVERITY = { critical: 'Critical', medium: 'Medium', low: 'Low' };
+      // Glyph paths copied from web/static/icons (the app masks the same shapes).
+      var GLYPH = {
+        fire: '<path d="M12 3q1 4 4 6.5t3 5.5a1 1 0 0 1-14 0 5 5 0 0 1 1-3 1 1 0 0 0 5 0c0-2-1.5-3-1.5-5q0-2 2.5-4"/>',
+        flood: '<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/>',
+        road_blocked: '<rect x="2" y="6" width="20" height="8" rx="1"/><path d="M17 14v7"/><path d="M7 14v7"/><path d="M17 3v3"/><path d="M7 3v3"/><path d="M10 14 2.3 6.3"/><path d="m14 6 7.7 7.7"/><path d="m8 6 8 8"/>',
+        shelter_open: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+        rescue_needed: '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>',
+        power_outage: '<path d="M10.768 5.111 13.44 2.44a1.5 1.5 0 012.474 1.561l-1.633 4.625"/><path d="m18.889 13.232.672-.672A1.5 1.5 0 0018.5 10h-2.844"/><path d="m2 2 20 20"/><path d="m7.94 7.94-3.5 3.499A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l5.5-5.5"/>',
+        other: '<path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528"/>'
+      };
+      var ACTIVE = [
+        { cat: 'fire', sev: 'critical', title: 'Smoke and flames from a godown behind the market, fire engine not here yet.', age: '4 min ago', conf: 2, disp: 0, state: 'Report up to date' },
+        { cat: 'rescue_needed', sev: 'critical', title: 'Elderly couple stuck on the first floor, water is above the staircase. Need a boat urgently near the bus stop.', age: '6 min ago', conf: 0, disp: 0, state: 'Too early to tell' },
+        { cat: 'flood', sev: 'critical', title: 'Water level rising fast on the main road, about knee deep now and cars are stalling near the underpass.', age: '18 min ago', conf: 12, disp: 0, state: 'Report up to date' },
+        { cat: 'road_blocked', sev: 'medium', title: 'Fallen tree blocking both lanes near the school gate. Two wheelers can pass on the footpath.', age: '42 min ago', conf: 3, disp: 0, state: 'Report up to date' },
+        { cat: 'power_outage', sev: 'medium', title: 'No power since evening in our whole lane, the transformer sparked once.', age: '2 hours ago', conf: 5, disp: 4, state: 'Report needs re-confirming' },
+        { cat: 'shelter_open', sev: 'low', title: 'Government school hall is open as a shelter, food and drinking water available.', age: '35 min ago', conf: 1, disp: 0, provisional: true, state: '' },
+        { cat: 'flood', sev: 'low', title: 'Water entering the ground floor shops on the market lane.', age: '1 hour ago', conf: 6, disp: 0, state: 'Report needs re-confirming' },
+        { cat: 'other', sev: 'low', title: 'Bridge railing damaged, please keep children away.', age: '3 hours ago', conf: 2, disp: 0, state: 'Report needs re-confirming' }
+      ];
+      var DISPUTED = [
+        { cat: 'flood', sev: 'low', title: 'Water on the airport road, cars cannot pass.', age: '50 min ago', conf: 1, disp: 3, state: 'Disputed' },
+        { cat: 'road_blocked', sev: 'medium', title: 'The bridge on the ring road is closed for traffic.', age: '2 hours ago', conf: 0, disp: 2, state: 'Disputed' }
+      ];
+      var RESOLVED = [
+        { title: 'Elderly couple stuck on the first floor near the temple, need a boat.', grey: 'Rescue needed · resolved yesterday, 6:40 pm · 4 confirmed' },
+        { title: 'Tree fallen across the main road near the bus depot.', grey: 'Road blocked · resolved 2 days ago · 3 confirmed' }
+      ];
+      var EXPIRED = [
+        { title: 'Relief camp open at the community hall, tea and blankets.', grey: 'Shelter open · faded after 8 hrs without re-confirmation' },
+        { title: 'Drinking water tanker standing at the corner of 4th cross.', grey: 'Other · faded 3 days ago · 1 disputed' }
+      ];
+
+      var screen = document.getElementById('sk-screen');
+      var list = document.getElementById('sk-list');
+      var factsEl = document.getElementById('sk-facts');
+      var tableEl = document.getElementById('sk-table');
+      var state = { variant: 'a', tab: 'active' };
+      var HEIGHTS = {};
+
+      function el(tag, cls, text) {
+        var n = document.createElement(tag);
+        if (cls) { n.className = cls; }
+        if (text !== undefined) { n.textContent = text; }
+        return n;
+      }
+      function glyph() {
+        var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        s.setAttribute('viewBox', '0 0 24 24');
+        s.setAttribute('fill', 'none');
+        s.setAttribute('stroke', 'currentColor');
+        s.setAttribute('stroke-width', '2');
+        s.setAttribute('stroke-linecap', 'round');
+        s.setAttribute('stroke-linejoin', 'round');
+        s.setAttribute('aria-hidden', 'true');
+        return s;
+      }
+      function sevWord(r) { return SEVERITY[r.sev] + (r.provisional ? ' · Unconfirmed' : ''); }
+      function counters(r) { return r.conf + ' confirmed · ' + r.disp + ' disputed'; }
+
+      function buildRow(r, variant) {
+        var li = el('li', 'sk-row sev-' + r.sev + (r.provisional ? ' is-provisional' : ''));
+        li.tabIndex = 0;
+        if (variant === 'a') {
+          var meta = el('p', 'sk-meta');
+          meta.appendChild(el('span', 'sk-dot'));
+          meta.appendChild(el('span', 'sk-sev', sevWord(r)));
+          meta.appendChild(document.createTextNode(' · ' + CATEGORY[r.cat] + ' · ' + r.age));
+          li.appendChild(meta);
+          li.appendChild(el('p', 'sk-title sk-clamp2', r.title));
+          var trust = r.state ? counters(r) + ' · ' + r.state : counters(r);
+          li.appendChild(el('p', 'sk-facts-line', trust));
+        } else if (variant === 'b') {
+          var badge = el('span', 'sk-badge');
+          var g = glyph();
+          g.innerHTML = GLYPH[r.cat];
+          badge.appendChild(g);
+          li.appendChild(badge);
+          var body = el('div', 'sk-body');
+          body.appendChild(el('p', 'sk-title sk-clamp2', r.title));
+          var line = el('p', 'sk-facts-line');
+          [sevWord(r), CATEGORY[r.cat], r.age, r.conf + ' confirmed', r.disp + ' disputed', r.state].forEach(function (t, i) {
+            if (!t) { return; }
+            var s = el('span', i === 0 ? 'sk-sev' : '', t);
+            line.appendChild(s);
+          });
+          body.appendChild(line);
+          li.appendChild(body);
+        } else {
+          var one = el('div', 'sk-line');
+          one.appendChild(el('span', 'sk-sev', SEVERITY[r.sev]));
+          one.appendChild(el('span', 'sk-title', r.title));
+          one.appendChild(el('span', 'sk-count', counters(r)));
+          li.appendChild(one);
+          var more = el('div', 'sk-more');
+          var moreLine = el('p', 'sk-facts-line');
+          [r.provisional ? 'Unconfirmed' : '', CATEGORY[r.cat], r.age, r.state].forEach(function (t) {
+            if (t) { moreLine.appendChild(el('span', '', t)); }
+          });
+          more.appendChild(moreLine);
+          li.appendChild(more);
+        }
+        function select() {
+          var rows = list.querySelectorAll('.sk-row');
+          for (var i = 0; i < rows.length; i++) {
+            rows[i].classList.remove('is-selected');
+            if (variant === 'c' && rows[i] !== li) { rows[i].classList.remove('is-open'); }
+          }
+          li.classList.add('is-selected');
+          if (variant === 'c') { li.classList.toggle('is-open'); }
+          report();
+        }
+        li.addEventListener('click', select);
+        li.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(); }
+        });
+        return li;
+      }
+
+      function buildPast() {
+        var frag = document.createDocumentFragment();
+        frag.appendChild(el('p', 'sk-note', 'Resolved and expired reports from the last 7 days.'));
+        frag.appendChild(el('p', 'sk-group-label', 'RESOLVED'));
+        RESOLVED.forEach(function (c) {
+          var card = el('li', 'sk-card');
+          card.appendChild(el('p', 'sk-title', c.title));
+          card.appendChild(el('p', 'sk-grey', c.grey));
+          frag.appendChild(card);
+        });
+        frag.appendChild(el('p', 'sk-group-label', 'EXPIRED'));
+        EXPIRED.forEach(function (c) {
+          var card = el('li', 'sk-card');
+          card.appendChild(el('p', 'sk-title', c.title));
+          card.appendChild(el('p', 'sk-grey', c.grey));
+          frag.appendChild(card);
+        });
+        return frag;
+      }
+
+      function render() {
+        screen.className = 'sk-screen var-' + state.variant;
+        list.textContent = '';
+        if (state.tab === 'past') {
+          list.appendChild(buildPast());
+        } else {
+          if (state.tab === 'disputed') {
+            list.appendChild(el('p', 'sk-note', 'Reports only show up here if enough nearby people have disputed them. They can still be confirmed back.'));
+          }
+          (state.tab === 'active' ? ACTIVE : DISPUTED).forEach(function (r) { list.appendChild(buildRow(r, state.variant)); });
+        }
+        report();
+      }
+
+      // Measures the real rendered rows in the browser, so the numbers are not guesses.
+      function report() {
+        if (state.tab !== 'active') { factsEl.textContent = ''; return; }
+        var rows = list.querySelectorAll('.sk-row');
+        var closed = 0, sum = 0, fit = 0, h = list.clientHeight;
+        for (var i = 0; i < rows.length; i++) {
+          var r = rows[i];
+          var open = r.classList.contains('is-open');
+          if (!open) { closed++; sum += r.offsetHeight; }
+          if (r.offsetTop - list.scrollTop + r.offsetHeight <= h) { fit++; }
+        }
+        var avg = closed ? Math.round(sum / closed) : 0;
+        HEIGHTS[state.variant] = { avg: avg, fit: fit };
+        factsEl.textContent = 'Size ' + state.variant.toUpperCase() + ': an average row is ' + avg + 'px tall (today 323px). On this 800px screen ' +
+          fit + ' of ' + rows.length + ' rows fit completely (today 2).';
+        renderTable();
+      }
+      function renderTable() {
+        tableEl.textContent = '';
+        var head = el('tr');
+        ['Size', 'Average row height', 'Rows that fit on 800px'].forEach(function (t) { head.appendChild(el('th', '', t)); });
+        tableEl.appendChild(head);
+        var today = el('tr');
+        ['Today', '323px', '2'].forEach(function (t) { today.appendChild(el('td', '', t)); });
+        tableEl.appendChild(today);
+        ['a', 'b', 'c'].forEach(function (v) {
+          var m = HEIGHTS[v];
+          var tr = el('tr');
+          tr.appendChild(el('td', '', v.toUpperCase()));
+          tr.appendChild(el('td', '', m ? m.avg + 'px' : 'open this size to measure'));
+          tr.appendChild(el('td', '', m ? String(m.fit) : ''));
+          tableEl.appendChild(tr);
+        });
+      }
+
+      document.querySelectorAll('[data-variant]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          state.variant = b.getAttribute('data-variant');
+          document.querySelectorAll('[data-variant]').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+          render();
+        });
+      });
+      document.querySelectorAll('[data-theme-set]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          document.documentElement.setAttribute('data-theme', b.getAttribute('data-theme-set'));
+          document.querySelectorAll('[data-theme-set]').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+        });
+      });
+      document.querySelectorAll('[data-tab]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          state.tab = b.getAttribute('data-tab');
+          document.querySelectorAll('[data-tab]').forEach(function (x) { x.setAttribute('aria-selected', x === b ? 'true' : 'false'); });
+          render();
+        });
+      });
+
+      var q = new URLSearchParams(location.search);
+      if (['a', 'b', 'c'].indexOf(q.get('variant')) >= 0) {
+        state.variant = q.get('variant');
+        document.querySelectorAll('[data-variant]').forEach(function (x) { x.setAttribute('aria-pressed', x.getAttribute('data-variant') === state.variant ? 'true' : 'false'); });
+      }
+      if (['active', 'disputed', 'past'].indexOf(q.get('tab')) >= 0) {
+        state.tab = q.get('tab');
+        document.querySelectorAll('[data-tab]').forEach(function (x) { x.setAttribute('aria-selected', x.getAttribute('data-tab') === state.tab ? 'true' : 'false'); });
+      }
+      if (q.get('theme') === 'dark') {
+        document.querySelectorAll('[data-theme-set]').forEach(function (x) { x.setAttribute('aria-pressed', x.getAttribute('data-theme-set') === 'dark' ? 'true' : 'false'); });
+      }
+      render();
+      // Measure the other two sizes once so the table is complete without clicking.
+      ['a', 'b', 'c'].forEach(function (v) {
+        var keep = state.variant;
+        state.variant = v;
+        screen.className = 'sk-screen var-' + v;
+        list.textContent = '';
+        ACTIVE.forEach(function (r) { list.appendChild(buildRow(r, v)); });
+        var rows = list.querySelectorAll('.sk-row'), sum = 0, fit = 0, h = list.clientHeight;
+        for (var i = 0; i < rows.length; i++) {
+          sum += rows[i].offsetHeight;
+          if (rows[i].offsetTop + rows[i].offsetHeight <= h) { fit++; }
+        }
+        HEIGHTS[v] = { avg: Math.round(sum / rows.length), fit: fit };
+        state.variant = keep;
+      });
+      render();
+    }());
+  </script>
+</body>
+</html>
