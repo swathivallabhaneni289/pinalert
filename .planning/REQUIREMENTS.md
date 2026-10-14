@@ -148,30 +148,47 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Report History
 
-- [ ] **HIST-01**: User can switch the list and the map between Active, Resolved, Disputed and Past
-      reports with one View selector in place of the disputed checkbox; Active is the default. The four
-      views are a disjoint partition (Active: Live and Provisional; Disputed: Hidden; Resolved: closed
-      by people; Past: expired), and voting stays available in Active and Disputed, so a Hidden report
-      can still be confirmed back, but not in Resolved or Past (added 2026-10-03)
+- [ ] **HIST-01**: User can switch the list and the map between Active, Disputed and Past reports
+      with one tab strip at the top of the list, in place of the disputed checkbox, on the laptop and
+      on the phone; Active is the default. The three tabs are a disjoint partition (Active: Live and
+      Provisional; Disputed: Hidden; Past: closed by people or expired, shown as a Resolved group and
+      an Expired group), and voting stays available in Active and Disputed, so a Hidden report can
+      still be confirmed back, but not in Past, except that the person who marked a report resolved
+      can take that mark back and the poster can reopen (added 2026-10-03, reworded 2026-10-14)
 
-- [ ] **HIST-02**: The Resolved view lists reports that people closed within the same bounded window
-      as Past, each labelled with when it was resolved and who closed it (the reporter alone or
+- [ ] **HIST-02**: The Resolved group of the Past tab lists reports that people closed in the last
+      7 days, each labelled with when it was resolved and who closed it (the reporter alone or
       independent confirmers) and showing the Phase 3 counters, so self-resolving cannot hide a
-      dispute; rescue-needed rows are shown at a coarse location
+      dispute; a finished rescue-needed row shows an approximate location (about 1 km) and no
+      description text (reworded 2026-10-14)
 
-- [ ] **HIST-03**: The Past view lists reports that expired in the last 24 hours, 3 days or 7 days,
-      each labelled with its outcome (confirmed by N places, expired unconfirmed, or disputed),
-      using the same outcome rules as the reporter rating; critical and rescue-needed reports that
-      expire unconfirmed get a neutral "Expired" label, never a negative one, and rescue-needed rows are
-      shown at a coarse location
+- [ ] **HIST-03**: The Expired group of the Past tab lists reports that expired in the last 7 days,
+      each labelled with its outcome (confirmed by N people nearby, expired unconfirmed, or
+      disputed), using the same outcome rules as the reporter rating; critical and rescue-needed
+      reports that expire unconfirmed get a neutral "Expired" label, never a negative one, and a
+      finished rescue-needed row shows an approximate location (about 1 km) and no description text
+      (reworded 2026-10-14)
 
 - [ ] **HIST-04**: When no active reports exist, the list says what happened recently using real
-      counts only (for example "2 were resolved today") and links to the Resolved view
+      counts only (for example "2 were resolved in the last 24 hours") and links to the Past tab
+      (reworded 2026-10-14)
 
 - [ ] **HIST-05**: User can search for a place on the main map and see reports for that area, not
       only reports near their own location
 
-- [ ] **HIST-06**: User can filter the list and map by category and by severity
+- [ ] **HIST-06**: User can narrow the list and map by category with chips (All, Flood, Rescue,
+      Shelter, Power) that hide nothing unless tapped; a severity filter is built only if the owner
+      asks (reworded 2026-10-14)
+
+- [ ] **HIST-08**: The report rows in the list are compact on every screen size: the laptop list
+      uses the phone card, so at least five rows fit on an 800px tall screen, and Confirm, Dispute
+      and Mark resolved are in the opened report, not on the row (added 2026-10-14, owner picked
+      size A of sketch 006)
+
+- [ ] **HIST-09**: A person who marked a report resolved by mistake can take that mark back from
+      the opened report, at most twice on one report (the poster's Reopen counts against the same
+      limit), and a short Undo follows the Yes; a faded report cannot be changed, and a take back
+      never changes the poster's reporter rating (added 2026-10-14)
 
 ### Official Alerts
 
@@ -380,6 +397,8 @@ Populated during roadmap creation.
 | HIST-04 | Phase 3.1 | Pending |
 | HIST-05 | Phase 3.1 | Pending |
 | HIST-06 | Phase 3.1 | Pending |
+| HIST-08 | Phase 3.1 | Pending |
+| HIST-09 | Phase 3.1 | Pending |
 | NOTIF-01 | Phase 3.2 | Pending |
 | NOTIF-02 | Phase 3.2 | Pending |
 | NOTIF-03 | Phase 3.2 | Pending |
@@ -415,19 +434,21 @@ Populated during roadmap creation.
 
 **Coverage:**
 
-- v1 requirements: 61 total (33 original + 5 new IDENT-01..05 added 2026-09-10 for the inserted
+- v1 requirements: 63 total (33 original + 5 new IDENT-01..05 added 2026-09-10 for the inserted
   Phase 1.1: Identity & Login + 1 new UX-01 added 2026-09-18 from Phase 2 UAT + 20 new added
   2026-10-03 for roadmap Phases 3.1, 3.2, 5, 8 and 9: HIST 6, ALERT 4, NOTIF 5, PAGE 2, PROF 3
-  + 2 new ROBUST-09 and ROBUST-10 added 2026-10-06 for the Phase 4 scope the owner added in discussion.
+  + 2 new ROBUST-09 and ROBUST-10 added 2026-10-06 for the Phase 4 scope the owner added in discussion
+  + 2 new HIST-08 and HIST-09 added 2026-10-14 from the Phase 3.1 discussion, the compact rows and
+  the take back of a mistaken Mark resolved. HIST-07 is a v2 item and is not counted.
   By group: Foundation 6, Identity 5, Trust Engine 9, Coordination 8, Robustness 10, Ops 2,
-  Presentation 1, Report History 6, Official Alerts 4, Updates & Following 8, Report Page 2)
+  Presentation 1, Report History 8, Official Alerts 4, Updates & Following 8, Report Page 2)
 
-- Mapped to phases: 61 (100%)
+- Mapped to phases: 63 (100%)
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-09-05*
-*Last updated: 2026-10-13: TRUST-05 and TRUST-07 marked complete when Phase 3 closed (UAT 11 of 11, verification passed). Earlier update, 2026-10-06: added ROBUST-09 and ROBUST-10 for the Phase 4 scope the owner added in discussion (the moderator screen with the Flag control, and the public Disclaimer and Policy pages) and reworded ROBUST-01, ROBUST-03 and ROBUST-04 to match. Earlier update, 2026-10-03: added HIST-01..06, ALERT-01..04, NOTIF-01..05, PAGE-01..02 and PROF-01..03
+*Last updated: 2026-10-14: HIST-01 to HIST-06 reworded to the tab strip Active, Disputed and Past, the fixed 7 day window, category chips and the approximate location for finished rescue reports, and HIST-08 and HIST-09 added (compact rows, take back of a mistaken Mark resolved), all from the Phase 3.1 discussion (03.1-CONTEXT.md). Earlier update, 2026-10-13: TRUST-05 and TRUST-07 marked complete when Phase 3 closed (UAT 11 of 11, verification passed). Earlier update, 2026-10-06: added ROBUST-09 and ROBUST-10 for the Phase 4 scope the owner added in discussion (the moderator screen with the Flag control, and the public Disclaimer and Policy pages) and reworded ROBUST-01, ROBUST-03 and ROBUST-04 to match. Earlier update, 2026-10-03: added HIST-01..06, ALERT-01..04, NOTIF-01..05, PAGE-01..02 and PROF-01..03
 for roadmap Phases 3.1, 3.2, 5, 8 and 9 (raised by the owner after the Phase 3 popup sketch), plus
 v2 items PWA-06, PWA-07 and HIST-07. Earlier update, 2026-09-18: added UX-01 (in-app light/dark toggle) surfaced by Phase 2's UAT gap
 closure round, linked to plan 02-10; added IDENT-01..05 for Phase 1.1 (mandatory email+OTP login,

@@ -352,26 +352,31 @@ Plans:
 
 ### Phase 03.1: Report history views (INSERTED)
 
-**Goal:** A reader can switch the list and the map between Active, Resolved, Disputed and Past reports, so resolved and expired reports stay visible as clearly labelled history instead of vanishing, and can check another area or narrow the list by category and severity. Raised by the owner on 2026-10-03 while looking at the main screen, which today offers only the live list and a "Show disputed reports" checkbox. Inserted right after Phase 3 because it consumes Phase 3's outcome labels and trust object, not because it is urgent.
-**Requirements**: HIST-01, HIST-02, HIST-03, HIST-04, HIST-05, HIST-06
+**Goal:** A reader can switch the list and the map between Active, Disputed and Past reports with one tab strip, so resolved and expired reports stay visible as clearly labelled history instead of vanishing, and can check another area or narrow the list by category. The report rows in the list get smaller, and a mistaken Mark resolved can be taken back. Raised by the owner on 2026-10-03 while looking at the main screen, which today offers only the live list and a "Show disputed reports" checkbox, and reshaped by the owner's answers of 2026-10-13 and 2026-10-14 (see 03.1-CONTEXT.md). Inserted right after Phase 3 because it consumes Phase 3's outcome labels and trust object, not because it is urgent.
+**Requirements**: HIST-01, HIST-02, HIST-03, HIST-04, HIST-05, HIST-06, HIST-08, HIST-09
 **Depends on:** Phase 3, Phase 7
 **UI hint**: yes
 **Success Criteria** (what must be TRUE):
 
-  1. The list panel has one View selector (Active, Resolved, Disputed, Past) in place of the disputed checkbox, the map shows the same set as the list, and Active is the default.
-  2. The four views are a disjoint partition: Active (Live and Provisional), Disputed (Hidden), Resolved (closed by people, within the same bounded window as Past) and Past (expired, in the last 24 hours, 3 days or 7 days). A report closed and then expired stays in Resolved, and a hidden report that expires moves to Past. Resolved rows say who closed them (the reporter alone or independent confirmers) and show the Phase 3 counters, so self-resolving cannot hide a dispute. Past rows carry an outcome label, with a neutral "Expired" for critical and rescue-needed reports that expire unconfirmed. Voting stays in Active and Disputed, so a Hidden report can still be confirmed back, and is off in Resolved and Past.
-  3. When no active reports exist, the panel says what happened recently using real counts only, and links to the Resolved view.
-  4. A reader can search for a place on the main map and see reports for that area, and can filter the list by category and by severity.
+  1. The list has one tab strip (Active, Disputed, Past) at its top, on the laptop and on the phone, in place of the disputed checkbox. The map shows the same set as the list, and Active is the default.
+  2. The three tabs are a disjoint partition: Active (Live and Provisional), Disputed (Hidden) and Past (closed by people or expired, in the last 7 days, shown as a Resolved group and an Expired group). A report closed and then expired stays in Resolved, and a hidden report that expires moves to Past. Resolved rows say who closed them (the reporter alone or independent confirmers) and show the Phase 3 counters, so self-resolving cannot hide a dispute. Expired rows carry an outcome label, with a neutral "Expired" for critical and rescue-needed reports that expire unconfirmed. Voting stays in Active and Disputed, so a Hidden report can still be confirmed back, and is off in Past, except for the take back and the reopen in criterion 7.
+  3. When no active reports exist, the panel says what happened recently using real counts only, and links to the Past tab.
+  4. A reader can search for a place on the main map and see reports for that area, and can narrow the list by category with chips that hide nothing unless tapped. A severity filter is built only if the owner asks.
   5. Every view takes its states from the single visibility resolver, and no history view ever changes an Active count.
+  6. Report rows are compact on every screen size: the laptop list uses the phone card, so at least five rows fit on an 800px tall screen, and Confirm, Dispute and Mark resolved are in the opened report, not on the row.
+  7. A person who marked a report resolved by mistake can take that mark back from the opened report, at most twice per report, and the poster's Reopen counts against the same limit. A short Undo follows the Yes. A faded report cannot be changed, and a take back never changes anyone's reporter rating.
+  8. A finished Rescue report shows its spot at about 1 km accuracy, labelled "Approximate location", and no description text. A live Rescue report, and finished Flood, Shelter and Power reports, stay exact.
+  9. Every criterion above holds at phone width (320, 360 and 390 px) as well as on the laptop.
 
 **Scope notes** (starting points for discuss-phase, not decisions):
 
-  1. The View selector sits at the top of the list panel, where the checkbox is now. The `show_disputed` flag becomes a single `view` setting, and the map follows the list.
+  1. The tab strip sits at the top of the list, where the checkbox is now, on every screen size, and the phone bottom bar stays Feed and Activity. The `show_disputed` flag becomes a single `view` setting, and the map follows the list.
   2. New read queries sit beside the pinned `NearbyReports` query, which must not change. Outcome labels reuse Phase 3's outcome rules, so history cannot disagree with the reporter rating.
-  3. "Check another area" reuses Phase 7's address search on the main map. The category and severity filters are plain dropdowns, separate from Phase 6's volunteer triage view.
-  4. Care points: past rescue-needed reports show a coarse location, past reports are never mixed into Active or its counts, keep the window short (7 days), and show no invented numbers.
-  5. D-12 amendment to record in discuss-phase: Retracted reports now appear in the separate Resolved view (never in Active or its counts), where D-12 had them leave the live feed and map entirely. Rescue-needed rows, and ideally all history rows, are coarsened server side before they leave the API.
+  3. "Check another area" reuses Phase 7's address search on the main map. The category filter is chips that hide nothing unless tapped, separate from Phase 6's volunteer triage view.
+  4. Care points: finished rescue-needed reports show a coarse location (about 1 km, labelled Approximate location) and no description text, past reports are never mixed into Active or its counts, keep the window short (7 days), and show no invented numbers.
+  5. D-12 amendment to record in discuss-phase: Retracted reports now appear in the Resolved group of the Past tab (never in Active or its counts), where D-12 had them leave the live feed and map entirely. Finished rescue-needed rows are coarsened server side before they leave the API.
   6. One panel state model: this phase owns the list panel's state (view, tab and filters kept in the URL) so Phases 3.2, 5 and 9 plug their tabs and filters into it, and deep links such as /?view=resolved&report=ID work. The default tab is called Nearby once other tabs exist. Phase 3's outcome classifier must be exposed as a reusable pure function that can return the neutral outcome. HIST-05 reuses Phase 7's geocoder, which has a process-wide limit of 1 Nominatim request per second, so reader searches need their own budget (or a cache) so they cannot starve reporters' address search.
+  7. Only the report rows change size. The rest of the page is not redesigned here (backlog 999.10 holds the page wide design pass), and My votes and the six tab Activity page already exist (quick task 261013-wm5). The take back of a mistaken Mark resolved must not travel through the `reopen` vote value, see 03.1-CONTEXT.md "Conflicts and risks".
 
 **Plans:** 0 plans
 
