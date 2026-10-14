@@ -127,7 +127,7 @@
       // structural, checkable facts: (a) the server sets the Reopen hook
       // only on the account's own resolved, unexpired posts and never on a
       // voted card, so this button can only ever be rendered on a row the
-      // viewer reported — there is no non-reporter path through it at
+      // viewer reported, so there is no non-reporter path through it at
       // all; and (b) 02-03a's amended
       // CastVote makes a reporter's reopen instant and threshold-free
       // however the retraction arose (D-16 amended 2026-09-15; see

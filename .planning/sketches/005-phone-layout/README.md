@@ -63,7 +63,7 @@ Three drawn items are not built. Each needs data or a feature that does not exis
 |---|---|---|
 | The Past tab in the bottom bar | No history view exists. The feed query drops expired reports. | Phase 3.1 history views, which still has an open owner question about phone history tabs. |
 | The category chips over the map | Filtering is Phase 3.1 scope, and there is an open owner question on whether a filter may hide critical or rescue reports. | Phase 3.1 filters plus the owner's answer on hiding critical or rescue reports. |
-| The My reports and My votes segmented control (Task 3) | No read of votes by account exists anywhere. The built laptop Activity page lists only the account's own reports, and a test guards against promising a voting history. | A read of votes by account, which no phase has yet. |
+| The My reports and My votes segmented control (Task 3) | Built later by quick task 261013-wm5 as the six tab strip (All, My posts, My votes, My disputes, Resolved, Not resolved) on a grey track with a white selected tab, on the new account scoped votes read. See sketch 004's section "Built: quick task 261013-wm5". | Nothing. |
 
 The bottom bar therefore has two tabs, Feed and Activity.
 
@@ -237,7 +237,8 @@ baseline confirms.
    the account's own reporter signal (the first Activity row's `Trust.Reporter`, which `ActivityForAccount` gives every row
    from the account's own history). The label is copied as the server wrote it and the counts are the real judged and
    corroborated numbers. No new query, no new service call, nothing recomputed. An account with no reports, or a signal
-   with no label, gets no card.
+   with no label, gets no card. Since quick task 261013-wm5 the card is built from the account's own posts, never from
+   the merged card list, whose first card can be a voted report of someone else.
 2. **`Reliable reporter` instead of `Reliable`.** The picture's bold word is `Reliable`. The app keeps one wording for the
    tag, so the card shows the server's `Reliable reporter` (and `New reporter`, `Mixed record`, `Unreliable reporter`).
 3. **`0 of 0 confirmed` for a new reporter.** The picture shows `5 of 5 confirmed`. A new reporter has no judged reports
@@ -256,11 +257,14 @@ baseline confirms.
 9. **The trust line.** One muted line per card: both counters and the currency word, then the meta line (category and
    time). The reporter words are hidden on each row because the record card shows the same server label once. The
    chevron and the clock are not drawn; the toggle still opens the facts panel in place. Reopen keeps its control and its
-   error line under the line.
+   error line under the line. Changed by quick task 261013-wm5: the sub line now sits right under the title (the action
+   phrase hidden on phones because the tag says the same), the trust line follows it, and the reporter words are hidden
+   only on the account's own posts. A voted card keeps them, because that is another person's record.
 10. **Status lines not built.** The picture's `Needs one more confirmation`, `Resolved by you · yesterday` and `Not
     re-confirmed` are not app strings, so the row shows the counters, the currency word and the meta line instead.
-11. **The segmented control is not built** (see Not built). The page lists the account's own reports only, as the laptop
-    page does.
+11. **The segmented control is built by quick task 261013-wm5** as the six tab strip (see Not built). The page now lists
+    the account's own posts and the reports it confirmed or disputed. The record card shows at every width since that
+    task, so `.profile-record` left the grouped base hide rule of `phone.css`.
 
 ## Questions for the owner
 
@@ -281,6 +285,8 @@ Each has a recommendation, in plain words.
 | `TestRowTitleWrapsLongWords` | `web/labels_contract_test.go` | Lets exactly `#report-list .report-row .report-row__title` in `phone.css` clamp |
 | `TestReadOnlyLabelsRoundedControlsNot` | `web/labels_contract_test.go` | Lets exactly two `phone.css` heads use a 50 percent radius: the current tab dot and the detail back arrow |
 | `TestMapSelectionNeverScrollsThePage` | `web/popup_contract_test.go` | Doc comment only, names the phone amendment of A87 |
+| `phoneBaseHideHeads` and `TestPhoneRulesLiveInTheNarrowBlock` | `web/phone_layout_contract_test.go` | Four phone only classes instead of five (quick task 261013-wm5): `.profile-record` shows at every width |
+| `TestPhoneActivityStylesheet` | `web/phone_layout_contract_test.go` | Grid areas gain a tabs row and an empty row, and the state word has margin 0 because the chip holds the top right corner (quick task 261013-wm5). New assertions for the strip, the 44px tabs, the white selected tab, the 48px icon and the hidden action phrase. |
 
 `web/phone_layout_contract_test.go` also pins, for the detail: the sheet rules and the four important flags, the detail
 pane creation, the per popup pane and autoPan writes, the resize close, the pan helper standing down and the pin centred

@@ -335,8 +335,11 @@ func TestPhoneActivityStylesheet(t *testing.T) {
 		t.Errorf("main.profile-page display is %q, want grid", page.Decls["display"])
 	}
 	areas := strings.Join(strings.Fields(page.Decls["grid-template-areas"]), " ")
-	if !strings.HasPrefix(areas, `"title logout" "email email" "record record" "list list"`) {
-		t.Errorf("grid-template-areas is %q, want title and logout on the first row", areas)
+	// Departure (quick task 261013-wm5): the grid gains a tabs row between the
+	// record card and the list, and an empty row after the list for the one
+	// empty state each tab owns. The first three rows are unchanged.
+	if !strings.HasPrefix(areas, `"title logout" "email email" "record record" "tabs tabs" "list list" "empty empty"`) {
+		t.Errorf("grid-template-areas is %q, want title and logout on the first row, then tabs, list and empty", areas)
 	}
 	if got := find("main.profile-page > .profile-back-link").Decls["display"]; got != "none" {
 		t.Errorf("back link display is %q on phones, want none", got)
@@ -360,8 +363,47 @@ func TestPhoneActivityStylesheet(t *testing.T) {
 			t.Errorf("%s must be a white card with the hairline and 8px corners, got %v", head, r.Decls)
 		}
 	}
-	if got := find("main.profile-page .profile-report-list .report-row .visibility-tag:not([hidden])").Decls["margin"]; got != "0 0 0 auto" {
-		t.Errorf("state word margin is %q, want it pushed to the right", got)
+	// Departure (quick task 261013-wm5): the chip holds the top right corner of
+	// the card, so the state word sits right after the tag with no auto margin.
+	if got := find("main.profile-page .profile-report-list .report-row .visibility-tag:not([hidden])").Decls["margin"]; got != "0" {
+		t.Errorf("state word margin is %q, want 0 so it sits right after the tag", got)
+	}
+
+	// The six tab strip (quick task 261013-wm5): a grey track that clips and
+	// scrolls inside itself, with 44px tabs and a white selected tab.
+	strip := find("main.profile-page > .profile-activity > .activity-tabs")
+	for prop, want := range map[string]string{
+		"grid-area":             "tabs",
+		"min-width":             "0",
+		"overflow-x":            "auto",
+		"overscroll-behavior-x": "contain",
+		"background":            "var(--color-surface)",
+		"display":               "flex",
+		"border-radius":         "8px",
+	} {
+		if got := strip.Decls[prop]; got != want {
+			t.Errorf("tab strip %s is %q, want %q", prop, got, want)
+		}
+	}
+	tab := find("main.profile-page .activity-tabs .activity-tab")
+	if tab.Decls["min-height"] != "var(--touch-target-min)" || tab.Decls["flex"] != "none" || tab.Decls["white-space"] != "nowrap" {
+		t.Errorf("a tab must be 44px tall, never shrink and never wrap, got %v", tab.Decls)
+	}
+	if got := find("main.profile-page .activity-tabs .activity-tab[aria-current=\"page\"]").Decls["background"]; got != "var(--color-bg)" {
+		t.Errorf("selected tab background is %q, want the page colour on the surface track", got)
+	}
+	if got := find("main.profile-page > .profile-activity > .activity-empty").Decls["grid-area"]; got != "empty" {
+		t.Errorf("empty states grid-area is %q, want empty", got)
+	}
+	if got := find("main.profile-page .profile-activity > .activity-subtitle").Decls["display"]; got != "none" {
+		t.Errorf("the help line display is %q on phones, want none", got)
+	}
+	icon := find("main.profile-page .profile-report-list .report-row > .icon-badge")
+	if icon.Decls["width"] != "48px" || icon.Decls["height"] != "48px" || icon.Decls["border-radius"] != "50%" {
+		t.Errorf("the phone event icon must be a 48px circle, got %v", icon.Decls)
+	}
+	if got := find("main.profile-page .profile-report-list .report-row .activity-card__action").Decls["display"]; got != "none" {
+		t.Errorf("the action phrase display is %q on phones, want none (the tag says the same)", got)
 	}
 }
 
