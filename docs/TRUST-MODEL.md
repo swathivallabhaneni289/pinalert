@@ -68,11 +68,21 @@ The cell rule decides how many places count. The distance rule decides who may v
 
 There is one named constant, `MaxVoteDistanceKm = 1.0` in `internal/service/geo.go`. The distance is the haversine distance on a sphere of radius 6371 km, the same radius the feed's distance uses. The comparison is written so that a non finite coordinate (not a number, or infinity) is refused, never accepted.
 
-The rule covers all four vote values (confirm, dispute, resolve, reopen) across both vote kinds. The one exemption is the reporter's own resolve and reopen, because those votes are uncounted and instant (Phase 2 D-13 and amended D-16). The server decides the exemption by comparing the reporter account stored with the report to the signed in account, never from anything in the request.
+The vote vocabulary has five values in two kinds: confirm and dispute (the content kind), and resolve, reopen and `unresolve` (the resolution kind). The distance rule covers the four values that make a claim about the report, confirm, dispute, resolve and reopen. There are two exemptions. The first is the reporter's own resolve and reopen, because those votes are uncounted and instant (Phase 2 D-13 and amended D-16). The server decides it by comparing the reporter account stored with the report to the signed in account, never from anything in the request. The second is the take back, described next, which makes no claim about the place.
 
-Order of checks inside `CastVote`: input validation, report lookup, the block on content votes for your own report, expiry (an expired report is refused as expired even from far away), distance, then the write.
+The take back: Phase 3.1 added a fifth value, `unresolve`, for a person who tapped Mark resolved by mistake (D-22). It is valid for the resolution kind only, and the route is `POST /api/reports/{id}/unresolve`. It drops the caller's own standing resolve and says nothing else.
 
-A refused vote returns the service error `ErrVoterTooFar`, which the API answers with HTTP 403, field `location` and the sentence "Too far to vote. You need to be within 1 km of this report." The sentence is the same for all four vote values, and the response never contains the computed distance.
+- It is neutral. The latest row per account and kind wins, so an `unresolve` row replaces the caller's `resolve` row, and `filterVoteRows` puts it in no bucket. It never counts toward the reopen cells, which is why it is a value of its own and is never sent as `reopen`: a non poster's `reopen` is a claim that the report is still open and counts toward lifting a closed report. `TestTakeBackNeverEntersReopenCells` pins this. A poster's `unresolve` sets both reporter flags false, so it is not an instant reopen either.
+- It needs no location. It claims nothing about the place and only withdraws the caller's own mark, so the 1 km check and the missing coordinates check do not apply to it. It has its own predicate in `CastVote` and the reporter exemption is not widened to cover it. A take back sent with no coordinates stores a cell computed from the point 0,0, as the reporter's own location free resolve already does, and that cell is never counted because the row enters no bucket.
+- It is refused when the caller has no standing resolve on the report (`ErrNothingToTakeBack`, HTTP 409), and when the report has faded, because the expiry check comes first, so a faded report cannot change.
+- It is limited to two per report per account (`UndoLimit` in `internal/service/takeback.go`, D-22). The count comes from the append only votes log and needs no new table: the account's `unresolve` rows, plus its `reopen` rows when the account is the poster, because only the poster's reopen is a take back of their own resolve. A non poster's earlier `reopen` rows never spend the budget (D-28). Past the limit the take back and the poster's reopen are refused (`ErrUndoLimitReached`, HTTP 409). A resolve is never refused for the limit.
+- It can open a report again, and that is the intended effect. A report reads from the standing counts on every read (Phase 2 D-08), so when the caller's resolve was one of the two that held a report closed, taking it back means the agreement to close no longer stands. It never adds a reopen claim of its own.
+
+`TestCastVoteTakeBack` pins the refusals, the limit and the poster's budget.
+
+Order of checks inside `CastVote`: input validation, report lookup, the block on content votes for your own report, expiry (an expired report is refused as expired even from far away), distance, for a take back the standing resolve check and then the undo limit check (both before any write), then the write.
+
+A refused vote returns the service error `ErrVoterTooFar`, which the API answers with HTTP 403, field `location` and the sentence "Too far to vote. You need to be within 1 km of this report." The sentence is the same for all four vote values the rule covers, and the response never contains the computed distance.
 
 1 km was chosen over 2 km and over having no distance rule. The check runs when the vote is written, so no schema change was needed.
 
@@ -252,6 +262,12 @@ For each history report, the reporter is the account being scored, passed to `Bu
 
 A critical or rescue needed report that expires unconfirmed is neutral, because those reports skip the Provisional gate and an unconfirmed one says nothing about the reporter (D-12). A critical or rescue needed report that independent places out dispute counts as contradicted for the rating only. On the read path it is still never Hidden (R-06).
 
+Phase 3.1 reuses this classifier and adds no rule to it:
+
+- The take back changes no rating. `ClassifyOutcome` clears all four resolution fields (the resolve and reopen counts and the two reporter flags) before it asks `Resolve`, so a report is judged by its content votes alone, whatever resolution votes it holds. A resolve, a reopen and an `unresolve` therefore cannot move an outcome or a score. `TestTakeBackLeavesRatingsUnchanged` appends take backs to a history and shows the outcomes and the score are equal.
+- The Past tab's labels come from `ClassifyOutcome`, so a history label can never disagree with the rating. A corroborated report reads "Confirmed by {N} people nearby", an unconfirmed one "Expired unconfirmed", and the neutral outcome reads plain "Expired". A critical or rescue needed report that expires with no clear result is neutral, so it reads "Expired" and not as a failure. A critical or rescue needed report that people out disputed comes back contradicted, so the Past tab says "Disputed" for it (D-10, a recommended default the owner may veto at UAT, in line with R-06). `TestHistoryOutcomeLabels` pins the words.
+- The partition of reports into tabs is the pure function `ViewOf`, the only place it is written. Live and Provisional reports that have not expired are Active, a Hidden report that has not expired is Disputed, a Retracted report is Resolved at any expiry, and an expired report that was not Retracted is Past. A visibility it does not know is in no tab, so a state added later cannot leak into one. This amends Phase 2 D-12, which had a Retracted report leave every view: it now stays visible as history in the Past tab, in its Resolved group, and never appears in Active or in its counts (D-25). The time a report was closed and who closed it, the poster, people nearby or both, are read by `ClosureOf`, which replays the standing resolution rows through the same `isRetracted` rule `Resolve` uses, so the closure can never disagree with the state a report reads. `TestViewOf` and `TestClosureOf` pin both.
+
 ### What counts as judged
 
 A report is judged once its expiry time is at or before now, whether or not it was resolved (R-05). A report still in flight is neutral. Neutral outcomes are not judged.
@@ -339,7 +355,7 @@ Weights are fresh unless a row says otherwise. Uniform ageing gives the same sco
 
 ### Display only
 
-The tag appears on every report, including critical and rescue needed ones, as the same plain text. It never hides, dims, blocks, reorders or filters anything (D-14). A Hidden report in the Show disputed view shows the tag and no still current word. A later triage phase may use it as one soft input.
+The tag appears on every report, including critical and rescue needed ones, as the same plain text. It never hides, dims, blocks, reorders or filters anything (D-14). A Hidden report in the Disputed tab shows the tag and no still current word. A later triage phase may use it as one soft input.
 
 ### How the roadmap word score is met for the reporter
 
@@ -477,12 +493,12 @@ The visible form of "confirmed by N nearby" is the counter `N confirmed`, with t
 
 ## Hand offs to later phases
 
-- Phase 03.1 reuses `ClassifyOutcome` as a pure function, so history labels cannot disagree with the rating.
-- Phase 03.2 builds update wording from the same trust object. It should treat the Reliable reporter tag as farmable at the price stated in "Honest limits": extra verified accounts plus a claimed location.
-- Phase 4 owns vote rate limiting.
-- Phase 5 demo mode has to handle far away visitors, who cannot vote on seeded reports under the 1 km rule. It should place simulated reports near the visitor or exempt demo reports. It may seed clearly labelled demo accounts to show a rated reporter.
+- Phase 03.1 reuses `ClassifyOutcome` as a pure function, so history labels cannot disagree with the rating. What it built, and what later phases reuse: `ViewOf` is the one tab partition and `ClosureOf` the one closure replay, both pure functions of values with no I/O; `CoarsenFinishedRescue` is the one blur of a finished Rescue report; and `unresolve` with `UndoLimit` is the one take back. A new read path calls these and does not rewrite them.
+- Phase 03.2 builds update wording from the same trust object. It should treat the Reliable reporter tag as farmable at the price stated in "Honest limits": extra verified accounts plus a claimed location. It opens a report by id from a link, so it reuses the single report read of Phase 3.1, which already applies `CoarsenFinishedRescue`, and never builds a second path that could forget it.
+- Phase 4 owns vote rate limiting, and its moderator view of a report names the tab with `ViewOf` and adds its own withheld check around it. The take back is a fifth vote route, so a Phase 4 limit written for four vote routes has to name it too.
+- Phase 5 demo mode has to handle far away visitors, who cannot vote on seeded reports under the 1 km rule. It should place simulated reports near the visitor or exempt demo reports. It may seed clearly labelled demo accounts to show a rated reporter. Its new tabs go beside the three of Phase 3.1, and official pins ignore the partition `ViewOf` makes.
 - Phase 6 may sort on the integer scores server side. It must never use them to bury a critical or rescue needed report (D-14), and must never bake a count or a rating into a shareable card image.
-- Phase 8's report page reuses the trust block unchanged and places the reporter words with the same helper as the other surfaces, `createStateLine`.
+- Phase 8's report page reuses the trust block unchanged and places the reporter words with the same helper as the other surfaces, `createStateLine`. It and Phase 9's followable profiles show finished reports, so they call `CoarsenFinishedRescue` through the shared read and never copy a report's coordinates or description by another route.
 - Phase 4's Low data view should read `facts` for the rows of its trust block, not the older sentence fields. The server already writes every word of a row.
 
 ## Keeping this document true
@@ -507,6 +523,8 @@ The visible form of "confirmed by N nearby" is the counter `N confirmed`, with t
 | `ReliableMinScore` | `internal/service/reliability.go` | 75 |
 | `MixedMinScore` | `internal/service/reliability.go` | 35 |
 | `MaxReporterAccountsPerRead` | `internal/service/report.go` | 200 |
+| `UndoLimit` | `internal/service/takeback.go` | 2 |
+| `ApproxGeohashPrecision` | `internal/service/coarsen.go` | 6 |
 
 When you change one of these, change the table in the same commit. The test fails with the row name when they differ.
 
@@ -529,6 +547,8 @@ Upgrading: an existing database needs `make migrate` once after this phase merge
 - Counters, bands and fades update on the 30 second poll, so a screen can be one poll behind the server.
 - Report age and the fade use the server's clock, taken from the Date header of each poll response, so a wrong clock on the phone does not change them. The header has one second resolution.
 - The too far hint in the browser is advisory. Only the server decides whether a vote counts.
+- A finished Rescue report is blurred, and the blur has a limit. Once a Rescue needed report is closed or has faded, `CoarsenFinishedRescue` replaces its latitude, longitude and geohash with the centre of the precision 6 cell (`ApproxGeohashPrecision`, about 1 km across) and empties its description and its distance, all four together in the one function, because blurring only some of them gives the spot back. The blur is the same for every viewer, so one reader cannot see more than another (the distance is the only value that depends on the viewer, and it is measured to the blurred point, never to the exact one). Flood, Shelter and Power reports and live Rescue reports stay exact. The Activity page applies the same blur to a voted card of someone else's finished Rescue report, and the reader's own posts stay exact there (D-27, a recommended default the owner may veto at UAT). The limit: anyone who read the report while it was live already saw the exact point and the text, and the blur takes back nothing from them. It only stops a finished report from handing the spot to the next person who looks. `TestFinishedRescueNeverLeaksOnPastOrLink` checks the raw response from two centres, and `TestFinishedRescueCoarsenedOnEveryPath` checks the service paths.
+- Two take backs from one account that arrive at the same moment can overshoot the two undo limit by one. The undo count is read before the write and the votes log has no lock by design, so both requests can see one undo used. The cost is one extra row that changes no count (an `unresolve` row enters no bucket), and the next take back is refused. This was accepted over adding a lock to an append only log (T-31-09).
 
 ## Out of scope for this model
 

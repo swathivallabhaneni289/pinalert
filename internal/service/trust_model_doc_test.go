@@ -71,10 +71,13 @@ var p20ConstFiles = map[string]string{
 	"ReliableMinScore":              "internal/service/reliability.go",
 	"MixedMinScore":                 "internal/service/reliability.go",
 	"MaxReporterAccountsPerRead":    "internal/service/report.go",
+	"UndoLimit":                     "internal/service/takeback.go",
+	"ApproxGeohashPrecision":        "internal/service/coarsen.go",
 }
 
 // p20Identifiers lists names the document must show in backticks and that
-// must be declared in the named file.
+// must be declared in the named file. A name starting with Err is checked as a
+// var or const declaration, every other name as a func.
 var p20Identifiers = []struct{ name, file string }{
 	{"ErrVoterTooFar", "internal/service/geo.go"},
 	{"TooFarMessage", "internal/service/geo.go"},
@@ -87,6 +90,11 @@ var p20Identifiers = []struct{ name, file string }{
 	{"ScoreReliability", "internal/service/reliability.go"},
 	{"ReporterSignals", "internal/service/reporter.go"},
 	{"trustToResponse", "internal/api/handlers/trust.go"},
+	{"ViewOf", "internal/service/history.go"},
+	{"ClosureOf", "internal/service/history.go"},
+	{"CoarsenFinishedRescue", "internal/service/coarsen.go"},
+	{"ErrNothingToTakeBack", "internal/service/takeback.go"},
+	{"ErrUndoLimitReached", "internal/service/takeback.go"},
 }
 
 // p20MustCite is the set of tests the document has to name.
@@ -120,6 +128,10 @@ var p20MustCite = []string{
 	"TestPageShellCarriesVoteRadius",
 	"TestTrustModuleHasNoThresholdsOrSinks",
 	"TestTrustModelDocMatchesCode",
+	"TestCastVoteTakeBack",
+	"TestTakeBackNeverEntersReopenCells",
+	"TestTakeBackLeavesRatingsUnchanged",
+	"TestFinishedRescueNeverLeaksOnPastOrLink",
 }
 
 // p20NoSpoofClaims are phrases the document must never contain. A spoofed
@@ -220,6 +232,8 @@ func p20Constants(t *testing.T) map[string]string {
 		"ReliableMinScore":              fmt.Sprint(ReliableMinScore),
 		"MixedMinScore":                 fmt.Sprint(MixedMinScore),
 		"MaxReporterAccountsPerRead":    fmt.Sprint(MaxReporterAccountsPerRead),
+		"UndoLimit":                     fmt.Sprint(UndoLimit),
+		"ApproxGeohashPrecision":        fmt.Sprint(ApproxGeohashPrecision),
 	}
 }
 
@@ -334,7 +348,7 @@ func TestTrustModelDocMatchesCode(t *testing.T) {
 			}
 			src := p20ReadFile(t, id.file)
 			var declared bool
-			if id.name == "ErrVoterTooFar" {
+			if strings.HasPrefix(id.name, "Err") {
 				declared = p20DeclRegexp(id.name).MatchString(src)
 			} else {
 				declared = regexp.MustCompile(`(?m)^func ` + regexp.QuoteMeta(id.name) + `\(`).MatchString(src)
