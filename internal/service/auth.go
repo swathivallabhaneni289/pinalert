@@ -82,6 +82,10 @@ type AuthQuerier interface {
 	// stop offering a Reopen the server would refuse (plan 03.1-07, D-22). A
 	// consumer defined interface naming the generated method VotingQuerier names.
 	ResolutionUndoCounts(ctx context.Context, arg sqlcgen.ResolutionUndoCountsParams) ([]sqlcgen.ResolutionUndoCountsRow, error)
+	// ReportExtrasForReports gives ActivityPageForAccount (which
+	// ActivityForAccount wraps) the moderation state and the display only
+	// written time of the page's reports, in one batched read (R-01).
+	ReportExtrasForReports(ctx context.Context, arg sqlcgen.ReportExtrasForReportsParams) ([]sqlcgen.ReportExtrasForReportsRow, error)
 }
 
 // ErrRateLimited is returned by RequestLink when a second verification-
@@ -350,6 +354,14 @@ type ActivityReport struct {
 	// cell and the description is empty. Only another person's finished Rescue
 	// report on the voted list is ever approximate; own posts stay exact.
 	Approximate bool
+	// Moderation is the stored state, carried so 04-16 can label held and
+	// removed rows. A withheld row carries Visibility withheld with reason
+	// awaiting_text_check or removed_after_review, and the zero Trust.
+	Moderation ModerationState
+	// WrittenAt is WrittenAtForDisplay's answer: the client written time when
+	// the upload came more than WrittenLabelThreshold after it, else nil. It is
+	// display only (R-05).
+	WrittenAt *time.Time
 }
 
 // VotedReport is one report the account currently confirms or disputes: the

@@ -302,6 +302,10 @@ type Querier interface {
 	ReportForFocus(ctx context.Context, arg sqlcgen.ReportForFocusParams) (sqlcgen.ReportForFocusRow, error)
 	// ResolutionUndoCounts is the viewer's take back and reopen count per report.
 	ResolutionUndoCounts(ctx context.Context, arg sqlcgen.ResolutionUndoCountsParams) ([]sqlcgen.ResolutionUndoCountsRow, error)
+	// ReportExtrasForReports is the one batched read of the moderation state,
+	// the display only written time and the viewer's flag for a page of
+	// reports. It is held off NearbyReports so that query stays as shipped.
+	ReportExtrasForReports(ctx context.Context, arg sqlcgen.ReportExtrasForReportsParams) ([]sqlcgen.ReportExtrasForReportsRow, error)
 }
 
 // ReportService validates, computes derived fields, and persists reports.
