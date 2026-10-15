@@ -65,7 +65,8 @@ window.PinalertMap = (function () {
   // pull focus back to a pin that is gone.
   var removingPopup = false;
   // True only while a resize that crossed 900px closes the open popup, so that
-  // close does not end a report link: the reader did not close it.
+  // close does not end a report link: the reader did not close it, and the
+  // report is still in the set.
   var resizeClosing = false;
   // Reduced motion is read once. It turns off the map's fade and zoom
   // animations, the animated fly and Leaflet's own autopan (A60, A68).
@@ -884,20 +885,27 @@ window.PinalertMap = (function () {
       returnFocusToOpener(opener);
     }
 
-    // A close made by a redraw or by a resize is not the reader's, so it
-    // leaves a report link as it is.
-    if (id !== null && String(id) === openedFocusId && !removingPopup && !resizeClosing) {
+    // Every close of the linked popup ends the link but the one a resize
+    // makes, which the reader did not ask for and which leaves the report in
+    // the set. A redraw that keeps the report updates its marker in place
+    // and never closes its popup, so a redraw closes it only by removing the
+    // pin: the report has left the tab or the chip the reader is on (a
+    // resolve from Active, a take back off Past, a fade). Keeping the link
+    // then would send report=ID on every poll and could bring the pin back
+    // with no popup.
+    if (id !== null && String(id) === openedFocusId && !resizeClosing) {
       endLinkOnClose();
     }
   }
 
-  // endLinkOnClose ends a report link when the reader closes its popup
-  // (CR-01): the store stops asking for the report and forgets its focus
-  // object. The pin only the link put on the map goes at a redraw run after
-  // Leaflet has finished the close, because removing a marker inside its own
-  // popup close would remove that popup a second time. The focus return of
-  // onPopupClose above stays synchronous; the redraw only catches a focus the
-  // removed pin was holding.
+  // endLinkOnClose ends a report link when its popup closes (CR-01): the
+  // store stops asking for the report and forgets its focus object. The pin
+  // only the link put on the map goes at a redraw run after Leaflet has
+  // finished the close, because removing a marker inside its own popup close
+  // would remove that popup a second time. When a redraw made the close, the
+  // pin is already gone and the later redraw changes nothing. The focus
+  // return of onPopupClose above stays synchronous; the redraw only catches a
+  // focus the removed pin was holding.
   function endLinkOnClose() {
     Pinalert.dropFocus();
     window.setTimeout(redrawAfterLinkEnded, 0);

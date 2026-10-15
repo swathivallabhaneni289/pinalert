@@ -62,8 +62,9 @@ func TestReviewFixALinkedReportRefreshes(t *testing.T) {
 	p13Ordered(t, jsFunctionBody(t, tools, "onBackPress()"), "onBackPress",
 		"Pinalert.dropFocus();", "PinalertMap.recenterOnReader()")
 
-	// map.js ends the link only from the reader's own close of the linked
-	// popup, and redraws after the close has finished.
+	// map.js ends the link on every close of the linked popup but a resize's
+	// (the reader's own close, and a redraw that removed the pin, fixer A2),
+	// and redraws after the close has finished.
 	mapCode := p31fMapCode(t)
 	if n := strings.Count(mapCode, "Pinalert.dropFocus()"); n != 1 {
 		t.Errorf("map.js calls Pinalert.dropFocus() %d times, want 1 (the linked popup close)", n)
@@ -71,7 +72,7 @@ func TestReviewFixALinkedReportRefreshes(t *testing.T) {
 	closeBody := jsFunctionBody(t, mapCode, "onPopupClose(evt)")
 	p13Ordered(t, closeBody, "onPopupClose link end",
 		"returnFocusToOpener(",
-		"String(id) === openedFocusId && !removingPopup && !resizeClosing",
+		"if (id !== null && String(id) === openedFocusId && !resizeClosing) {",
 		"endLinkOnClose();")
 	p13Ordered(t, jsFunctionBody(t, mapCode, "endLinkOnClose()"), "endLinkOnClose",
 		"Pinalert.dropFocus();", "window.setTimeout(redrawAfterLinkEnded, 0);")
