@@ -159,7 +159,48 @@ func isWordRune(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsMark(r)
 }
 
-// IsGibberish is the only spam rule (D-05).
+// IsGibberish is the only spam rule (D-05). A text is gibberish when either
+//
+//   - one letter is repeated GibberishRunLength or more times in a row, or
+//   - it holds fewer than gibberishMinWords words of gibberishMinWordLetters
+//     or more letters.
+//
+// A letter is a rune for which unicode.IsLetter or unicode.IsMark is true,
+// and a word is a maximal stretch of such runes. Counting is in runes, never
+// bytes (R-06), and marks stay inside their word so Hindi, Tamil and Telugu
+// words are not split at a vowel sign or virama.
+//
+// Only letter runes form a run. Punctuation, emoji, digits and spaces never
+// do, which keeps urgent wording safe: ten exclamation marks, a row of
+// repeated emoji and a phone number are not gibberish, and text made only of
+// them is still caught by the word rule. Rune equality is exact, so letter
+// case is not folded. The rule never looks at capitals, links, digits, phone
+// numbers or repeated posts (D-05), and adds no vowel heuristic.
 func IsGibberish(text string) bool {
-	return false
+	var prev rune
+	run, wordLetters, words := 0, 0, 0
+	for _, r := range text {
+		if isWordRune(r) {
+			if run > 0 && r == prev {
+				run++
+			} else {
+				run = 1
+			}
+			if run >= GibberishRunLength {
+				return true
+			}
+			wordLetters++
+		} else {
+			if wordLetters >= gibberishMinWordLetters {
+				words++
+			}
+			wordLetters = 0
+			run = 0
+		}
+		prev = r
+	}
+	if wordLetters >= gibberishMinWordLetters {
+		words++
+	}
+	return words < gibberishMinWords
 }
