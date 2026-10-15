@@ -201,20 +201,20 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.Get("/", handlers.Page(deps.Template, deps.Page))
 		r.Post("/api/reports", handlers.SubmitReport(deps.Reports))
 		r.Get("/api/reports", handlers.NearbyReports(deps.Reports))
-		// The four vote routes (02-03b). All four come from ONE
+		// The five vote routes (02-03b, HIST-09). All five come from ONE
 		// handlers.CastVote factory so the JSON contract and error mapping
 		// exist exactly once. Content votes (confirm/dispute) and
-		// resolution votes (resolve/reopen) are distinguished by the kind
-		// argument rather than by four separate handlers, keeping "is this
-		// report still true" and "is this resolved" as two separately
-		// tracked signals (D-02, D-16). They are registered flat — as four
-		// separate r.Post calls on full literal paths, NOT via
-		// r.Route("/api/reports/{id}", ...) as 02-PATTERNS.md sketches —
-		// because this router already has a literal /api/reports leaf that
+		// resolution votes (resolve/reopen/unresolve) are distinguished by
+		// the kind argument rather than by five separate handlers, keeping
+		// "is this report still true" and "is this resolved" as two
+		// separately tracked signals (D-02, D-16). They are registered
+		// flat, as five separate r.Post calls on full literal paths, NOT
+		// via r.Route("/api/reports/{id}", ...) as 02-PATTERNS.md
+		// sketches, because this router already has a literal /api/reports leaf that
 		// a wildcard subrouter mounted at an overlapping prefix would sit
 		// awkwardly beside; every /api/* path in this router is registered
 		// flat, gated or not (see the /api/auth/request-link comment
-		// above). Flat registration also keeps these four routes in the
+		// above). Flat registration also keeps these five routes in the
 		// same visual list as every other route in the group, which is
 		// exactly the property this function's own doc comment relies on
 		// for T-01-70: you can see at a glance that they are inside the
@@ -225,6 +225,14 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.Post("/api/reports/{id}/dispute", handlers.CastVote(deps.Votes, service.VoteKindContent, service.VoteDispute))
 		r.Post("/api/reports/{id}/resolve", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteResolve))
 		r.Post("/api/reports/{id}/reopen", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteReopen))
+		// The fifth vote route (HIST-09, D-22): the take back of a mistaken
+		// Mark resolved. It has its own value, service.VoteUnresolve, and
+		// does not reuse reopen, because a reopen from a non poster counts
+		// as a reopen claim toward the shared threshold (D-28) while the
+		// take back only withdraws the caller's own resolve and claims
+		// nothing about the place. It needs no location, never counts as a
+		// reopen, and shares its limit of two with the poster's reopen.
+		r.Post("/api/reports/{id}/unresolve", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteUnresolve))
 		// GET /api/geocode (plan 07-03). Registered as a flat literal path,
 		// not under an r.Route mount — see this router's own doc comments
 		// above for why every /api/* path here is flat, gated or not.
