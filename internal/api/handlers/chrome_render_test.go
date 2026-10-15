@@ -3,11 +3,15 @@ package handlers
 import (
 	"bytes"
 	"html/template"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
+
+	"pinalert/web"
 )
 
 // chromeLookup builds a fake env lookup from a map. A key present in the
@@ -207,6 +211,191 @@ func TestChromeWithDefaults(t *testing.T) {
 		if got := DefaultEmergencyNumbers().OlderList(); got != "100, 101, 108" {
 			t.Errorf("OlderList = %q", got)
 		}
+	})
+}
+
+// chromeDefaultSentence is the exact D-22 bar text with the default numbers.
+const chromeDefaultSentence = "Unofficial, not a government service. Emergency? Call 112 (older numbers 100, 101, 108 may also work). Disclaimer"
+
+var (
+	chromeBarPattern   = regexp.MustCompile(`(?s)<aside class="disclaimer-bar".*?</aside>`)
+	chromeTagPattern   = regexp.MustCompile(`(?s)<[^>]*>`)
+	chromeSpacePattern = regexp.MustCompile(`\s+`)
+)
+
+// chromeBarRegion returns the one bar element of a rendered page, failing the
+// test when the page holds none or more than one.
+func chromeBarRegion(t *testing.T, body string) string {
+	t.Helper()
+	found := chromeBarPattern.FindAllString(body, -1)
+	if len(found) != 1 {
+		t.Fatalf("page holds %d bar elements, want exactly 1", len(found))
+	}
+	return found[0]
+}
+
+// chromeBarText returns the bar text with tags stripped and whitespace runs
+// collapsed to one space, never deleting whitespace.
+func chromeBarText(t *testing.T, body string) string {
+	t.Helper()
+	text := chromeTagPattern.ReplaceAllString(chromeBarRegion(t, body), "")
+	return strings.TrimSpace(chromeSpacePattern.ReplaceAllString(text, " "))
+}
+
+func chromeParse(t *testing.T) *template.Template {
+	t.Helper()
+	tmpl, err := ParsePageTemplate()
+	if err != nil {
+		t.Fatalf("ParsePageTemplate: %v", err)
+	}
+	return tmpl
+}
+
+// chromeServeLogin renders the login page through the handler.
+func chromeServeLogin(t *testing.T, tmpl *template.Template, cfg AuthConfig) string {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	LoginGate(tmpl, cfg).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/login", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login status = %d, want 200", rec.Code)
+	}
+	return rec.Body.String()
+}
+
+// chromeServeMap renders the map page through the handler.
+func chromeServeMap(t *testing.T, tmpl *template.Template, cfg PageConfig) string {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	Page(tmpl, cfg).ServeHTTP(rec, newPageTestRequest())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("map status = %d, want 200", rec.Code)
+	}
+	return rec.Body.String()
+}
+
+// chromeExecute runs one named template against a view model.
+func chromeExecute(t *testing.T, tmpl *template.Template, name string, vm any) string {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, name, vm); err != nil {
+		t.Fatalf("execute %s: %v", name, err)
+	}
+	return buf.String()
+}
+
+func TestDisclaimerBarSentenceIsExact(t *testing.T) {
+	tmpl := chromeParse(t)
+	if got := chromeBarText(t, chromeServeLogin(t, tmpl, AuthConfig{})); got != chromeDefaultSentence {
+		t.Errorf("login bar = %q, want %q", got, chromeDefaultSentence)
+	}
+	if got := chromeBarText(t, chromeServeMap(t, tmpl, PageConfig{})); got != chromeDefaultSentence {
+		t.Errorf("map bar = %q, want %q", got, chromeDefaultSentence)
+	}
+}
+
+func TestDisclaimerBarDropsEmptyNumbers(t *testing.T) {
+	tmpl := chromeParse(t)
+	cases := []struct {
+		name   string
+		chrome Chrome
+		want   string
+	}{
+		{
+			"no older numbers",
+			Chrome{Numbers: EmergencyNumbers{Primary: "999"}},
+			"Unofficial, not a government service. Emergency? Call 999. Disclaimer",
+		},
+		{
+			"one older number",
+			Chrome{Numbers: EmergencyNumbers{Primary: "112", Older: []string{"100"}}},
+			"Unofficial, not a government service. Emergency? Call 112 (older numbers 100 may also work). Disclaimer",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := chromeBarText(t, chromeServeLogin(t, tmpl, AuthConfig{Chrome: tc.chrome})); got != tc.want {
+				t.Errorf("login bar = %q, want %q", got, tc.want)
+			}
+			if got := chromeBarText(t, chromeServeMap(t, tmpl, PageConfig{Chrome: tc.chrome})); got != tc.want {
+				t.Errorf("map bar = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDisclaimerBarHasNoTelLink(t *testing.T) {
+	tmpl := chromeParse(t)
+
+	raw, err := fs.ReadFile(web.TemplatesFS, "templates/disclaimer_bar.html.tmpl")
+	if err != nil {
+		t.Fatalf("reading the partial: %v", err)
+	}
+	if strings.Contains(string(raw), "tel:") || strings.Contains(string(raw), "TelHref") {
+		t.Error("the bar partial must hold no telephone link")
+	}
+
+	pages := map[string]string{
+		"login": chromeServeLogin(t, tmpl, AuthConfig{}),
+		"map":   chromeServeMap(t, tmpl, PageConfig{}),
+	}
+	for name, body := range pages {
+		region := chromeBarRegion(t, body)
+		if strings.Contains(region, "tel:") {
+			t.Errorf("%s: bar holds a tel link", name)
+		}
+		if got := strings.Count(region, "<a "); got != 1 {
+			t.Errorf("%s: bar holds %d links, want 1", name, got)
+		}
+		if !strings.Contains(region, `<a href="/disclaimer">`) {
+			t.Errorf("%s: bar link is not a plain link to /disclaimer", name)
+		}
+		if strings.Contains(region, "aria-current") {
+			t.Errorf("%s: default render must not carry aria-current", name)
+		}
+		for _, line := range []string{"1070", "1077"} {
+			if strings.Contains(region, line) {
+				t.Errorf("%s: bar shows the state line %s", name, line)
+			}
+		}
+	}
+
+	current := chromeExecute(t, tmpl, loginGateTemplateName, loginGateViewModel{Chrome: Chrome{DisclaimerCurrent: true}.withDefaults()})
+	if !strings.Contains(chromeBarRegion(t, current), `aria-current="page"`) {
+		t.Error("DisclaimerCurrent must put aria-current=page on the link")
+	}
+	if got := chromeBarText(t, current); got != chromeDefaultSentence {
+		t.Errorf("current page bar = %q, want %q", got, chromeDefaultSentence)
+	}
+}
+
+func TestExistingPagesRenderWithChrome(t *testing.T) {
+	tmpl := chromeParse(t)
+	chrome := Chrome{}.withDefaults()
+
+	check := func(t *testing.T, body string) {
+		t.Helper()
+		if got := chromeBarText(t, body); got != chromeDefaultSentence {
+			t.Errorf("bar = %q, want %q", got, chromeDefaultSentence)
+		}
+		if got := strings.Count(body, `class="top-chrome"`); got != 1 {
+			t.Errorf("top-chrome appears %d times, want 1", got)
+		}
+	}
+
+	t.Run("map", func(t *testing.T) { check(t, chromeServeMap(t, tmpl, PageConfig{})) })
+	t.Run("login", func(t *testing.T) { check(t, chromeServeLogin(t, tmpl, AuthConfig{})) })
+	t.Run("verify", func(t *testing.T) {
+		for _, outcome := range []string{"verified", "expired", "used", "malformed", "conflict"} {
+			vm := verifyOutcomeViewModel{Outcome: outcome, Email: "a@example.com", CurrentEmail: "b@example.com", Chrome: chrome}
+			check(t, chromeExecute(t, tmpl, verifyOutcomeTemplateName, vm))
+		}
+	})
+	t.Run("profile", func(t *testing.T) {
+		check(t, chromeExecute(t, tmpl, profileTemplateName, profileViewModel{Email: "a@example.com", Chrome: chrome}))
+	})
+	t.Run("zero_chrome", func(t *testing.T) {
+		check(t, chromeServeMap(t, tmpl, PageConfig{}))
+		check(t, chromeServeLogin(t, tmpl, AuthConfig{}))
 	})
 }
 
