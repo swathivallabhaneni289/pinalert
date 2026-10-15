@@ -706,3 +706,10 @@ func normalizeEmail(rawEmail string) (string, error) {
 	}
 	return strings.ToLower(addr.Address), nil
 }
+
+// NormalizeEmail is the exported name of normalizeEmail. It exists so the
+// moderator list (D-08) is normalised by the same rule sign in uses, so one
+// person is one identity in both places.
+func NormalizeEmail(raw string) (string, error) {
+	return normalizeEmail(raw)
+}

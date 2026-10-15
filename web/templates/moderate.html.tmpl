@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Pinalert: Moderator screen</title>
+  <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/trust.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
+  <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
+</head>
+<body>
+  <div class="top-chrome">
+    {{template "disclaimer_bar.html.tmpl" .}}
+    {{template "account_header.html.tmpl" .}}
+  </div>
+  {{template "theme_toggle.html.tmpl" .}}
+
+  <main class="mod-page">
+    <h1>Moderator screen</h1>
+    <p class="mod-page__line">Only moderators can open this page.</p>
+    <button type="button" class="btn" id="mod-refresh">Refresh lists</button>
+    <p class="inline-error" id="mod-refresh-error" role="alert" hidden>Couldn't refresh the lists. Try again.</p>
+
+    <form class="mod-find" id="mod-find-form">
+      <label for="mod-find">Find a report</label>
+      <input id="mod-find" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="mod-find-help">
+      <p class="mod-find__help" id="mod-find-help">Type the report id, or paste a link that includes report=</p>
+      <button type="submit" class="btn btn--primary">Find report</button>
+    </form>
+    <div id="mod-find-result" aria-live="polite"></div>
+
+    <section class="mod-section" aria-labelledby="mod-h-auto">
+      <h2 id="mod-h-auto">Flagged by the automatic check</h2>
+      <p class="mod-section__line">Posted normally, but the text scored near the line. Newest first.</p>
+      <ol class="mod-list"></ol>
+    </section>
+
+    <section class="mod-section" aria-labelledby="mod-h-people">
+      <h2 id="mod-h-people">Flagged by people</h2>
+      <p class="mod-section__line">People used Flag this report. Most flags first.</p>
+      <ol class="mod-list"></ol>
+    </section>
+
+    <section class="mod-section" aria-labelledby="mod-h-pending">
+      <h2 id="mod-h-pending">Text check not finished</h2>
+      <p class="mod-section__line">The check couldn't finish. Serious reports in this list are already published. Waiting longest first.</p>
+      <ol class="mod-list"></ol>
+    </section>
+  </main>
+
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="/static/js/app.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
+</body>
+</html>
