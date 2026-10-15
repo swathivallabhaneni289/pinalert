@@ -63,6 +63,26 @@
   var filterEmptyEl = document.getElementById('filter-empty');
   var filterClearBtn = document.getElementById('filter-empty-clear');
   var seePastBtn = document.getElementById('see-past-reports');
+  var historyEmptyBodyEl = document.getElementById('feed-empty-history-body');
+  var pastResolvedEl = document.getElementById('past-resolved');
+  var pastResolvedListEl = document.getElementById('past-resolved-list');
+  var pastResolvedCutEl = document.getElementById('past-resolved-cut');
+  var pastExpiredEl = document.getElementById('past-expired');
+  var pastExpiredListEl = document.getElementById('past-expired-list');
+  var pastExpiredCutEl = document.getElementById('past-expired-cut');
+
+  // The words a finished Rescue card uses in place of the report's own text
+  // and category word (C17, C18). The server sends such a report with an empty
+  // description and a blurred point, and the card never reads the description
+  // of an approximate report on top of that (D-23).
+  var FINISHED_RESCUE_TITLE = 'Rescue needed';
+  var APPROXIMATE_LABEL = 'Approximate location';
+
+  // SEPARATOR is the app's own middle dot between the parts of a line.
+  var SEPARATOR = ' · ';
+
+  // The sentence end of the empty Active tab's body (C39), after the counts.
+  var REPORT_PROMPT = "Tap + to report what you're seeing.";
 
   // The heading and the one line note under it, per tab (C3 to C7). Active
   // has no note. The strings are fixed here, never read from the server.
@@ -72,6 +92,10 @@
     disputed: 'Nearby people disputed these. You can still confirm or dispute them.',
     past: 'Resolved and expired reports from the last 7 days.'
   };
+
+  // The tab each report view of a link answer belongs to: the resolved and
+  // the faded reports are both on the Past tab.
+  var FOCUS_TABS = { active: 'active', disputed: 'disputed', resolved: 'past', past: 'past' };
 
   // lastAnnouncedKey is the tab, place and chip the status line last
   // announced, and statusStarted is false until the first answer lands. The
@@ -90,6 +114,16 @@
   // rather than clearing and rebuilding the list every 30 seconds, so
   // scroll position and focus survive a background refresh.
   var rowsById = {};
+
+  // pastCardsById does the same for the Past tab's cards. A card is read only
+  // and lives in one of the two group lists of #past-groups.
+  var pastCardsById = {};
+
+  // handledFocus is the focus object (the server's answer to a report link)
+  // that handleFocus already acted on. The store keeps the last focus object
+  // and never clears it, so a later poll or tab switch must not repeat the
+  // toast or the tab choice.
+  var handledFocus = null;
 
   function severityRank(report) {
     return SEVERITY_RANK[report && report.severity] || 0;
@@ -351,7 +385,8 @@
     }
     for (var i = 0; i < candidates.length; i++) {
       var candidate = candidates[i];
-      if (candidate && candidate.classList && candidate.classList.contains('report-row') &&
+      if (candidate && candidate.classList &&
+          (candidate.classList.contains('report-row') || candidate.classList.contains('past-card')) &&
           elementIsShown(candidate)) {
         candidate.focus();
         return;
@@ -509,6 +544,30 @@
     Pinalert.setText(feedCountEl, text);
   }
 
+  // recentSentence is the counts sentence {A} of the empty Active tab (C39,
+  // HIST-04) from the server's recent object. Only the parts whose count is
+  // above zero are written, and the numbers are the server's, never typed
+  // here. It returns an empty string when nothing happened lately, which is
+  // how render knows to show the plain empty block instead.
+  function recentSentence(recent) {
+    if (!recent) {
+      return '';
+    }
+    var resolved = recent.resolved_24h;
+    var expired = recent.expired_24h;
+    var parts = [];
+    if (Number.isInteger(resolved) && resolved > 0) {
+      parts.push(resolved + (resolved === 1 ? ' was resolved' : ' were resolved'));
+    }
+    if (Number.isInteger(expired) && expired > 0) {
+      parts.push(expired + ' faded out');
+    }
+    if (parts.length === 0) {
+      return '';
+    }
+    return parts.join(' and ') + ' in the last 24 hours.';
+  }
+
   // updateFeedHeading writes the heading and the one line note of the tab
   // (C3 to C7) and marks the shell with the tab, so the laptop heading, which
   // is hidden on Active, shows for Disputed and Past (feed.css). Every string
@@ -561,22 +620,265 @@
     Pinalert.setText(feedStatusEl, text);
   }
 
+  // createPastCard builds the empty card of one Past report. It is one tab
+  // stop and holds no button and no link: the whole card opens the report on
+  // the map through the same activateRow path a row uses (D-11), and the
+  // visually hidden cue is its last text. updatePastCard fills it.
+  function createPastCard(id) {
+    var li = document.createElement('li');
+    li.className = 'past-card';
+    li.setAttribute('tabindex', '0');
+    li.setAttribute('role', 'listitem');
+    li.dataset.reportId = String(id);
+
+    var title = document.createElement('p');
+    title.className = 'past-card__title';
+
+    var meta = document.createElement('p');
+    meta.className = 'past-card__meta';
+
+    // The facts line is the trust line the list rows use, from the one
+    // builder, so its numerals and words are the server's and this file names
+    // none of the trust fields. The outcome label of an Expired card is its
+    // first child; updatePastCard shows or hides each part.
+    var trust = PinalertTrust.createTrustLine();
+    var facts = trust.el;
+    facts.classList.add('past-card__facts');
+    var outcome = document.createElement('span');
+    outcome.className = 'past-card__outcome';
+    outcome.hidden = true;
+    facts.insertBefore(document.createTextNode(' '), facts.firstChild);
+    facts.insertBefore(outcome, facts.firstChild);
+    // The two counters get this card's own class names, so the stylesheet
+    // never has to name the row's classes for the card.
+    var counts = facts.querySelectorAll('.report-row__trustline-count');
+    counts[0].classList.add('past-card__count');
+    counts[1].classList.add('past-card__count', 'past-card__count--second');
+
+    var cue = document.createElement('span');
+    cue.className = 'past-card__open-cue visually-hidden';
+    Pinalert.setText(cue, 'Open report');
+
+    li.appendChild(title);
+    li.appendChild(meta);
+    li.appendChild(facts);
+    li.appendChild(cue);
+
+    li.addEventListener('click', function () {
+      activateRow(id);
+    });
+    li.addEventListener('keydown', function (evt) {
+      if (evt.key === 'Enter' || evt.key === ' ' || evt.key === 'Spacebar') {
+        evt.preventDefault();
+        activateRow(id);
+      }
+    });
+
+    return {
+      el: li, title: title, meta: meta, facts: facts, trust: trust, outcome: outcome,
+      firstCount: counts[0], secondCount: counts[1]
+    };
+  }
+
+  // buildPastMeta is the grey line of a Past card: the category word (or
+  // Approximate location for a finished Rescue report) and then who closed it
+  // and when, or when it faded and after how long. The closed and lifetime
+  // phrases are the server's; the browser only joins them to the relative
+  // time of the server's own timestamp.
+  function buildPastMeta(report) {
+    var history = report.history;
+    var lead = report.approximate === true ? APPROXIMATE_LABEL : Pinalert.categoryLabel(report.category);
+    var clause = '';
+    if (history) {
+      var when = history.at ? Pinalert.relativeTime(history.at) : '';
+      if (history.state === 'resolved') {
+        clause = history.closed_text || '';
+        if (when !== '') {
+          clause = clause !== '' ? clause + ', ' + when : when;
+        }
+      } else {
+        clause = when !== '' ? 'Faded ' + when : 'Faded';
+        if (history.lifetime_text) {
+          clause += ', ' + history.lifetime_text;
+        }
+      }
+    }
+    return clause === '' ? lead : lead + SEPARATOR + clause;
+  }
+
+  // updatePastCard writes the three lines of a card, text only. The outcome
+  // label of an Expired card starts the facts line in a heavier span, then the
+  // two counters follow as the server sent them: a corroborated report leaves
+  // its confirm count to the label. A Resolved card has no label, only the
+  // counters. The description of an approximate (finished Rescue) report is
+  // never read here (D-23).
+  function updatePastCard(card, report) {
+    var history = report.history;
+    var approximate = report.approximate === true;
+    Pinalert.setText(card.title, approximate ? FINISHED_RESCUE_TITLE : report.description);
+    Pinalert.setText(card.meta, buildPastMeta(report));
+
+    // The counters: the row's trust line, which hides itself when the trust
+    // object is unusable (it never invents a zero). Its currency word belongs
+    // to a live report and is not shown on a finished one. The outcome label
+    // keeps the line visible without the counters.
+    PinalertTrust.updateTrustLine(card.trust, report.trust);
+    card.trust.word.hidden = true;
+    var countsShown = !card.facts.hidden;
+    var hasLabel = !!history && history.state === 'expired' && !!history.outcome_label;
+    Pinalert.setText(card.outcome, hasLabel ? history.outcome_label : '');
+    card.outcome.hidden = !hasLabel;
+    card.firstCount.hidden = !countsShown || (hasLabel && history.outcome === 'corroborated');
+    card.secondCount.hidden = !countsShown;
+    card.facts.hidden = !(countsShown || hasLabel);
+
+    var selectedId = Pinalert.state.selectedId;
+    var isSelected = selectedId !== null && selectedId !== undefined &&
+      String(selectedId) === String(report.id);
+    card.el.classList.toggle('past-card--selected', isSelected);
+  }
+
+  // cutLineText is the one cap line of both groups (C13): the number is the
+  // count of cards the group really shows, never a number from elsewhere.
+  function cutLineText(count) {
+    return 'Showing the newest ' + count + '.';
+  }
+
+  // placeInList puts a card at its slot, keeping focus where it was: moveBefore
+  // keeps it where the browser has the method, and otherwise the focused
+  // element inside the moved card is focused again afterwards.
+  function placeInList(listEl, el, expected) {
+    if (expected === el) {
+      return;
+    }
+    if (el.parentNode === listEl && typeof listEl.moveBefore === 'function') {
+      listEl.moveBefore(el, expected || null);
+      return;
+    }
+    var active = document.activeElement;
+    var focused = active && el.contains(active) ? active : null;
+    listEl.insertBefore(el, expected || null);
+    if (focused && focused.isConnected && document.activeElement !== focused) {
+      focused.focus();
+    }
+  }
+
+  // placePastGroup draws one group in the server's order. A group with no
+  // card is hidden whole, header included, and its cap line shows only when
+  // the server cut this group.
+  function placePastGroup(groupEl, listEl, cutEl, reports, wasCut) {
+    if (!groupEl || !listEl || !cutEl) {
+      return;
+    }
+    for (var i = 0; i < reports.length; i++) {
+      var key = String(reports[i].id);
+      var card = pastCardsById[key];
+      if (!card) {
+        card = createPastCard(reports[i].id);
+        pastCardsById[key] = card;
+      }
+      updatePastCard(card, reports[i]);
+      placeInList(listEl, card.el, listEl.children[i]);
+    }
+    setHidden(groupEl, reports.length === 0);
+    setHidden(cutEl, !(wasCut && reports.length > 0));
+    Pinalert.setText(cutEl, cutLineText(reports.length));
+  }
+
+  // removeDepartedPastCards removes the cards whose id is not in seen, before
+  // the rest are placed, and puts focus back on a control that is still shown
+  // when the removed card, or the popup it opened, held it.
+  function removeDepartedPastCards(seen) {
+    var active = document.activeElement;
+    var nexts = [];
+    var prevs = [];
+    var focusNext = null;
+    var focusPrev = null;
+    var cardHadFocus = false;
+    var ids = Object.keys(pastCardsById);
+    for (var i = 0; i < ids.length; i++) {
+      var id = ids[i];
+      if (seen[id]) {
+        continue;
+      }
+      var gone = pastCardsById[id].el;
+      nexts.push(gone.nextElementSibling);
+      prevs.push(gone.previousElementSibling);
+      if (active && gone.contains(active)) {
+        focusNext = gone.nextElementSibling;
+        focusPrev = gone.previousElementSibling;
+        cardHadFocus = true;
+      }
+      gone.remove();
+      delete pastCardsById[id];
+    }
+    if (ids.length === 0) {
+      return;
+    }
+    var popupHadFocus = takeMapPopupFocus();
+    if (cardHadFocus || popupHadFocus) {
+      focusAfterRemoval([focusNext, focusPrev].concat(nexts, prevs));
+    }
+  }
+
+  // clearPastCards drops every Past card, for a tab that is not Past or a
+  // Past answer with nothing to show, so a card never lingers in a hidden
+  // list where the highlight and the time refresh would still reach it.
+  function clearPastCards() {
+    removeDepartedPastCards({});
+  }
+
+  // renderPastGroups splits the answer by the server's history state and
+  // draws the Resolved group then the Expired group, each in the order the
+  // server sent (newest first). The browser never sorts, caps or counts: the
+  // server sent at most 25 per group and says which group it cut. It returns
+  // the number of cards shown.
+  function renderPastGroups(state) {
+    var resolved = [];
+    var expired = [];
+    var seen = {};
+    var reports = state.reports;
+    for (var i = 0; i < reports.length; i++) {
+      if (!reports[i] || !reports[i].history) {
+        continue;
+      }
+      var group = reports[i].history.state;
+      if (group === 'resolved') {
+        resolved.push(reports[i]);
+      } else if (group === 'expired') {
+        expired.push(reports[i]);
+      } else {
+        continue;
+      }
+      seen[String(reports[i].id)] = true;
+    }
+    var cut = state.cut || {};
+    removeDepartedPastCards(seen);
+    placePastGroup(pastResolvedEl, pastResolvedListEl, pastResolvedCutEl, resolved, cut.resolved === true);
+    placePastGroup(pastExpiredEl, pastExpiredListEl, pastExpiredCutEl, expired, cut.expired === true);
+    return resolved.length + expired.length;
+  }
+
   // renderPastTab draws the Past tab's list area. The Past tab is two groups
   // of cards, never the live list, so #report-list is hidden and its rows are
-  // removed; the group cards themselves are built by the Past cards plan,
-  // which fills #past-groups. The groups container shows only when there are
-  // reports; with none, the Past empty block (or the filter block when a chip
-  // is on) shows instead.
+  // removed; renderPastGroups fills #past-groups. The groups container shows
+  // only when there are reports; with none, the Past empty block (or the
+  // filter block when a chip is on) shows instead.
   function renderPastTab(state) {
     setHidden(reportListEl, true);
     clearRows();
     if (state.reports.length === 0) {
       setHidden(pastGroupsEl, true);
+      clearPastCards();
       setEmptyState(Pinalert.state.category !== '' ? 'filter' : 'past');
       return;
     }
     setEmptyState('none');
     setHidden(pastGroupsEl, false);
+    if (renderPastGroups(state) === 0) {
+      setHidden(pastGroupsEl, true);
+      setEmptyState(Pinalert.state.category !== '' ? 'filter' : 'past');
+    }
   }
 
   // render is the single state machine driving the list, the skeleton, the
@@ -618,6 +920,9 @@
       if (!hasRows) {
         clearRows();
       }
+      if (!hasRows) {
+        clearPastCards();
+      }
       if (onPast) {
         // The Past tab never shows the live list, whatever rows it holds.
         setHidden(reportListEl, true);
@@ -631,35 +936,72 @@
 
     if (Pinalert.state.view === 'past') {
       renderPastTab(state);
+      handleFocus(state);
       return;
     }
     setHidden(pastGroupsEl, true);
+    clearPastCards();
 
     if (state.reports.length === 0) {
       // An empty list shows exactly one empty block, instead of the list. A
       // chip that emptied it says so, with the button that clears it: the
       // reader's own filter is the reason, never "no reports" (D-18). With no
-      // chip on, Disputed has its own words and Active the general ones. The
-      // history kind (recent counts and See past reports) is chosen by the
-      // Past cards plan, which owns those numbers. Read from the store's tab
-      // rather than the pressed link: the store's value describes the data
-      // actually in state.reports, while the link describes an intent whose
-      // fetch may still be in flight.
+      // chip on, Disputed has its own words, an unfiltered Active tab with
+      // something resolved or faded in the last 24 hours says what happened
+      // lately with a button to the Past tab (HIST-04), and anything else
+      // gets the general words. Read from the store's tab rather than the
+      // pressed link: the store's value describes the data actually in
+      // state.reports, while the link describes an intent whose fetch may
+      // still be in flight.
       var kind = 'general';
       if (Pinalert.state.category !== '') {
         kind = 'filter';
       } else if (Pinalert.state.view === 'disputed') {
         kind = 'disputed';
+      } else if (Pinalert.state.view === 'active' && recentSentence(Pinalert.state.recent) !== '') {
+        kind = 'history';
+        Pinalert.setText(historyEmptyBodyEl, recentSentence(Pinalert.state.recent) + ' ' + REPORT_PROMPT);
       }
       setEmptyState(kind);
       setHidden(reportListEl, true);
       clearRows();
+      handleFocus(state);
       return;
     }
 
     setEmptyState('none');
     setHidden(reportListEl, false);
     renderRows(state.reports);
+    handleFocus(state);
+  }
+
+  // handleFocus acts on the server's answer to a ?report=ID link (D-04, D-11)
+  // once per answer: a report too old or not readable gets one plain message,
+  // and a readable report selects the tab of its own state, on screen only.
+  // The store keeps the last focus object, so a later poll or tab switch sees
+  // the same object and does nothing. The address is never touched here, and
+  // opening the pin is the map's own job.
+  function handleFocus(state) {
+    var focus = state.focus;
+    if (!focus || focus === handledFocus) {
+      return;
+    }
+    handledFocus = focus;
+    if (focus.status === 'too_old') {
+      Pinalert.showToast("That report is older than 7 days and is no longer shown.");
+      return;
+    }
+    if (focus.status === 'unavailable') {
+      Pinalert.showToast("That report isn't available.");
+      return;
+    }
+    if (focus.status === 'ok' && focus.report &&
+        Object.prototype.hasOwnProperty.call(FOCUS_TABS, focus.report.view)) {
+      var tab = FOCUS_TABS[focus.report.view];
+      if (tab !== Pinalert.state.view) {
+        selectTabOnScreen(tab);
+      }
+    }
   }
 
   // findReportById looks the report back up from the shared store rather
@@ -691,6 +1033,15 @@
       replacePrefixedClass(row.el, 'age-', 'age-' + PinalertTrust.fadeStage(report));
       Pinalert.setText(row.meta, buildMetaText(report));
     }
+
+    var cardIds = Object.keys(pastCardsById);
+    for (var k = 0; k < cardIds.length; k++) {
+      var cardReport = findReportById(cardIds[k]);
+      if (!cardReport) {
+        continue;
+      }
+      Pinalert.setText(pastCardsById[cardIds[k]].meta, buildPastMeta(cardReport));
+    }
   }
 
   // applySelectionHighlight is the shared implementation for both selection
@@ -711,6 +1062,11 @@
         el.classList.remove('report-row--selected');
       }
     }
+    var cardIds = Object.keys(pastCardsById);
+    for (var k = 0; k < cardIds.length; k++) {
+      pastCardsById[cardIds[k]].el.classList.toggle('past-card--selected',
+        idKey !== null && cardIds[k] === idKey);
+    }
   }
 
   // revealRowInListPane brings the row of a pin the reader just picked into the
@@ -723,7 +1079,7 @@
     if (!window.matchMedia || !window.matchMedia(PHONE_QUERY).matches) {
       return;
     }
-    var row = rowsById[String(id)];
+    var row = rowsById[String(id)] || pastCardsById[String(id)];
     var pane = reportListEl ? reportListEl.closest('.pane--list') : null;
     if (!row || !pane || pane.scrollHeight <= pane.clientHeight) {
       return;
@@ -805,6 +1161,9 @@
       target = document.getElementById('fab-report');
     } else {
       target = reportListEl && reportListEl.querySelector('.report-row');
+      if (!target && pastGroupsEl) {
+        target = pastGroupsEl.querySelector('.past-card');
+      }
     }
     if (target) {
       target.focus();
@@ -950,6 +1309,19 @@
     Pinalert.setView(view);
     showTab(view);
     syncViewURL(view);
+    Pinalert.fetchReports();
+  }
+
+  // selectTabOnScreen is switchTab without the address write: it sets the
+  // store, marks the strip and refetches, so a report link lands on the tab
+  // of the report's own state while the address stays exactly as it was sent
+  // (D-05). Nothing else about a tab change is skipped.
+  function selectTabOnScreen(view) {
+    if (Pinalert.VIEWS.indexOf(view) === -1 || view === Pinalert.state.view) {
+      return;
+    }
+    Pinalert.setView(view);
+    showTab(view);
     Pinalert.fetchReports();
   }
 

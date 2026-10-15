@@ -725,6 +725,130 @@
   margin-right: var(--space-sm);
 }
 
+/*
+ * The Past tab (03.1 D-07 to D-11, UI-SPEC Surface 3): two groups of white
+ * cards copied from the owner's Past picture, the same at every width. A card
+ * is read only, so no rule here styles a control. It carries no severity
+ * colour, no left bar and no tint: severity is read in the opened report.
+ * Muted text sits on --color-bg only. The one new literal of the phase is the
+ * 0.04em letter spacing of the group label (UI-SPEC Typography).
+ */
+#past-groups {
+  flex: none;
+}
+
+.past-group__label {
+  margin: var(--space-md) 0 var(--space-sm);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.past-group__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The line that ends a group the server cut, "Showing the newest N." */
+.past-group__cut {
+  margin: var(--space-sm) 0 0;
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+}
+
+.past-card {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: calc(var(--space-md) - 1px);
+  cursor: pointer;
+}
+
+/* The focus ring and the selected ring sit inside the card, so a card at the
+   edge of the pane is never clipped. */
+.past-card:focus-visible {
+  outline-offset: -2px;
+}
+
+.past-card--selected {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+}
+
+/* The title is the report text, up to two lines. */
+.past-card__title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  margin: 0;
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.past-card__meta {
+  margin: var(--space-xs) 0 0;
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* The facts line is the row trust line from the one builder, shown here as a
+   flex row that wraps only between whole facts. Its own hidden attribute
+   is honoured through :not([hidden]). */
+.past-card__facts:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-xs);
+  margin: var(--space-xs) 0 0;
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.past-card__outcome {
+  font-weight: var(--font-weight-semibold);
+}
+
+/* The numerals read in the regular weight, as the sample card draws them. */
+.past-card__facts .trust-num {
+  font-weight: var(--font-weight-regular);
+  color: inherit;
+}
+
+/* The dot before the second counter, and before the first one when the
+   outcome label stands in front of it. The alternative text is empty, so a
+   screen reader does not read it. */
+.past-card__count--second:not([hidden])::before,
+.past-card__outcome:not([hidden]) + .past-card__count:not([hidden])::before {
+  content: "\00b7";
+  content: "\00b7" / "";
+  margin-right: var(--space-xs);
+}
+
 @media (max-width: 899.98px) {
   /* #view-toggle is reparented to #app-shell by feed.js precisely so it
      survives main.css hiding .pane--list in narrow map view; this is just
