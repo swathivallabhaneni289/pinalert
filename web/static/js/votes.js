@@ -1529,6 +1529,13 @@
     return message;
   }
 
+  // answeredByServer is true for an error the server sent (a 409 refusal, the
+  // expired refusal, any other refused take back): postVote gives those a
+  // field. A transport failure has none, and there is no newer state to read.
+  function answeredByServer(err) {
+    return !!err && typeof err.field === 'string' && err.field !== '';
+  }
+
   // focusAfterTakeBack runs after a take back or a poster Reopen succeeded and
   // the refetch has redrawn. When focus sat on a control that is now hidden or
   // gone (the Undo button, the toast), it goes to the report's own row if the
@@ -1577,12 +1584,24 @@
         focusAfterTakeBack(origin);
       });
     }, function (err) {
-      setVoteButtonLabel(button, restingLabel);
-      setBlockBusy(block, false);
-      showVoteError(block, takeBackErrorMessage(err));
-      if (canTakeFocus(button)) {
-        button.focus();
-      }
+      // A refusal means this block is out of date: the toast Undo, another
+      // device or another tab already took the mark back, or both undos are
+      // spent. The list is read again before the block is released, as on
+      // success, so the render replaces the stale Undo; the Past tab is never
+      // polled, so nothing else would (WR-05). The refusal line is written
+      // after the render, and focus stays on the button while it is shown,
+      // else follows the take back's own route (row, then tab link).
+      var refresh = answeredByServer(err) ? Pinalert.fetchReports({ afterWrite: true }) : Promise.resolve();
+      return refresh.then(function () {
+        setVoteButtonLabel(button, restingLabel);
+        setBlockBusy(block, false);
+        showVoteError(block, takeBackErrorMessage(err));
+        if (canTakeFocus(button)) {
+          button.focus();
+        } else {
+          focusAfterTakeBack(origin);
+        }
+      });
     });
   }
 
@@ -1598,7 +1617,15 @@
         return takeBackSuccessMessage(wasClosed, result);
       });
     }, function (err) {
-      return takeBackErrorMessage(err);
+      // A refused toast Undo reads the list again too (WR-05), so the opened
+      // report's own Undo never outlives the mark the server no longer has.
+      var sentence = takeBackErrorMessage(err);
+      if (!answeredByServer(err)) {
+        return sentence;
+      }
+      return Pinalert.fetchReports({ afterWrite: true }).then(function () {
+        return sentence;
+      });
     });
   }
 

@@ -158,3 +158,39 @@ func TestReviewFixAToastPauseMouseOnly(t *testing.T) {
 	p13Ordered(t, show, "showToast", "toastPending = false;", "toastPointerInside = false;",
 		"toastEl.addEventListener('pointerenter', pauseToast);")
 }
+
+// TestReviewFixARefusedTakeBackRefetches pins WR-05: a take back the server
+// refused (a 409 or any other answered refusal) reads the list again before
+// the block is released and the refusal line is written, from the opened
+// report's Undo and from the toast Undo, while a transport failure only shows
+// the line. Focus stays on the button when it is still shown.
+func TestReviewFixARefusedTakeBackRefetches(t *testing.T) {
+	votes := p19Code(t, "static/js/votes.js")
+
+	answered := jsFunctionBody(t, votes, "answeredByServer(err)")
+	p13MustContain(t, "answeredByServer", answered, "typeof err.field === 'string'")
+
+	click := jsFunctionBody(t, votes, "onTakeBackClick(block, button)")
+	failAt := strings.Index(click, "}, function (err) {")
+	if failAt == -1 {
+		t.Fatalf("onTakeBackClick lost its failure branch")
+	}
+	p13Ordered(t, click[failAt:], "onTakeBackClick refusal",
+		"answeredByServer(err) ? Pinalert.fetchReports({ afterWrite: true }) : Promise.resolve()",
+		"return refresh.then(function () {",
+		"setVoteButtonLabel(button, restingLabel);", "setBlockBusy(block, false);",
+		"showVoteError(block, takeBackErrorMessage(err));",
+		"if (canTakeFocus(button)) {", "button.focus();", "focusAfterTakeBack(origin);")
+
+	toast := jsFunctionBody(t, votes, "takeBackFromToast(reportId, wasClosed)")
+	toastFail := strings.Index(toast, "}, function (err) {")
+	if toastFail == -1 {
+		t.Fatalf("takeBackFromToast lost its failure branch")
+	}
+	p13Ordered(t, toast[toastFail:], "takeBackFromToast refusal",
+		"var sentence = takeBackErrorMessage(err);", "if (!answeredByServer(err)) {", "return sentence;",
+		"return Pinalert.fetchReports({ afterWrite: true }).then(function () {")
+	if n := strings.Count(toast[toastFail:], "return sentence;"); n != 2 {
+		t.Errorf("takeBackFromToast returns the refusal sentence on %d paths, want 2 (with and without the refetch)", n)
+	}
+}
