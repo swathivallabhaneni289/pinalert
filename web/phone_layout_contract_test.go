@@ -302,7 +302,7 @@ func TestPhoneActivityPageMarkup(t *testing.T) {
 	}
 	p13Ordered(t, profile, "profile.html.tmpl",
 		`<section class="profile-activity">`, `<h2>Activity</h2>`, `<form class="profile-logout"`,
-		`{{with .Record}}`, `<section class="profile-record"`, `{{.Label}}`, `{{.Counts}}`, `{{end}}`,
+		`{{with .Record}}`, `<section class="profile-record"`, `{{.Label}}`, `{{.Counts}}`, "</section>\n      {{end}}",
 		`<ol class="profile-report-list">`)
 
 	nav := regexp.MustCompile(`(?s)<nav class="bottom-nav"[^>]*>(.*?)</nav>`).FindStringSubmatch(profile)
