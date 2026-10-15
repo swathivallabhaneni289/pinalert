@@ -198,6 +198,16 @@ func TestNoPillShapedControls(t *testing.T) {
 		t.Errorf("%s declares border-radius %q, want the interim %q", toastSelector, radius, interimRadius)
 	}
 
+	// The Undo button inside the toast (plan 03.1-14) is a rectangle with the
+	// same interim 8px corner, never a pill.
+	actionRule, ok := ruleBySelector(rules, ".toast__action")
+	if !ok {
+		t.Fatalf("no exact %q rule found in static/css/main.css", ".toast__action")
+	}
+	if radius := declsOf(actionRule.declBody)["border-radius"]; radius != interimRadius {
+		t.Errorf(".toast__action declares border-radius %q, want the interim %q", radius, interimRadius)
+	}
+
 	// Walk EVERY rule: whichever ones declare the fully-rounded radius
 	// must name the severity slider. This is the assertion that
 	// distinguishes an allowed selector from a forbidden one, rather than

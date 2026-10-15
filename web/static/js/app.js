@@ -159,6 +159,17 @@ window.Pinalert = (function () {
   // one timer, exactly as modal.js's private implementation — the one this
   // function replaces — already did.
   var toastTimer = null;
+  // The toast's other module level state: the lengths in milliseconds, which
+  // toast is current (a late answer for an older toast is dropped), whether
+  // the current one holds an action, whether a press is in flight and whether
+  // the pause listeners are attached yet (once, on first use).
+  var TOAST_MS = 3000;
+  var TOAST_ACTION_MS = 8000;
+  var TOAST_RESUME_MS = 4000;
+  var toastSeq = 0;
+  var toastHasAction = false;
+  var toastPending = false;
+  var toastPauseWired = false;
 
   // nowMs is the current time on the server's clock, as best this device can
   // tell. It is the only clock the age and fade code reads.
@@ -639,19 +650,122 @@ window.Pinalert = (function () {
   // this function, rather than cached at module-evaluation time: that
   // keeps this module inert on a page that has no #toast element at all,
   // with no error thrown — the call simply no-ops.
-  function showToast(message) {
+  //
+  // The optional second argument (03.1 plan 14, D-22) is { label, ariaLabel,
+  // onClick }. With it the toast holds a text span and one button, stays for
+  // 8 seconds instead of 3, and its timer is paused while the pointer or
+  // focus is on it and restarts at 4 seconds on leave. Focus is never moved
+  // into the toast, so a timer is never the only route to the action (the
+  // persistent control in the opened report is the keyboard route). A press
+  // calls onClick, which returns the sentence to show next (or a promise of
+  // it); the toast then holds that sentence with no action for 3 seconds. A
+  // call with one argument is exactly what it was: text only, 3 seconds.
+  function showToast(message, action) {
     var toastEl = document.getElementById('toast');
     if (!toastEl) {
       return;
     }
-    setText(toastEl, message);
+    var hasAction = !!(action && action.label && typeof action.onClick === 'function');
+    toastSeq += 1;
+    var mine = toastSeq;
+    toastHasAction = hasAction;
+    toastPending = false;
+    if (hasAction) {
+      setText(toastEl, '');
+      toastEl.classList.add('toast--action');
+      var textEl = document.createElement('span');
+      textEl.className = 'toast__text';
+      setText(textEl, message);
+      var actionEl = document.createElement('button');
+      actionEl.type = 'button';
+      actionEl.className = 'toast__action';
+      setText(actionEl, action.label);
+      if (action.ariaLabel) {
+        actionEl.setAttribute('aria-label', action.ariaLabel);
+      }
+      actionEl.addEventListener('click', function () {
+        if (toastPending || mine !== toastSeq) {
+          return;
+        }
+        toastPending = true;
+        actionEl.disabled = true;
+        if (toastTimer) {
+          window.clearTimeout(toastTimer);
+          toastTimer = null;
+        }
+        function showResult(next) {
+          if (mine !== toastSeq) {
+            return;
+          }
+          if (typeof next === 'string' && next !== '') {
+            showToast(next);
+          } else {
+            toastPending = false;
+            toastEl.hidden = true;
+          }
+        }
+        var outcome = null;
+        try {
+          outcome = action.onClick();
+        } catch (e) {
+          outcome = null;
+        }
+        Promise.resolve(outcome).then(showResult, function () {
+          showResult(null);
+        });
+      });
+      toastEl.appendChild(textEl);
+      toastEl.appendChild(actionEl);
+    } else {
+      toastEl.classList.remove('toast--action');
+      setText(toastEl, message);
+    }
     toastEl.hidden = false;
+    if (!toastPauseWired) {
+      toastPauseWired = true;
+      toastEl.addEventListener('pointerenter', pauseToast);
+      toastEl.addEventListener('focusin', pauseToast);
+      toastEl.addEventListener('pointerleave', resumeToast);
+      toastEl.addEventListener('focusout', resumeToast);
+    }
+    startToastTimer(toastEl, hasAction ? TOAST_ACTION_MS : TOAST_MS);
+  }
+
+  // startToastTimer (re)starts the one hide timer.
+  function startToastTimer(toastEl, ms) {
     if (toastTimer) {
       window.clearTimeout(toastTimer);
     }
     toastTimer = window.setTimeout(function () {
+      toastTimer = null;
       toastEl.hidden = true;
-    }, 3000);
+    }, ms);
+  }
+
+  // pauseToast stops the hide timer while the reader has the pointer or focus
+  // on a toast that holds an action. A plain toast keeps its fixed 3 seconds.
+  function pauseToast() {
+    if (!toastHasAction || toastPending) {
+      return;
+    }
+    if (toastTimer) {
+      window.clearTimeout(toastTimer);
+      toastTimer = null;
+    }
+  }
+
+  // resumeToast restarts the hide timer at 4 seconds when the pointer or the
+  // focus leaves a visible toast that holds an action. It does nothing while
+  // either is still on the toast, and nothing for a request in flight.
+  function resumeToast(evt) {
+    var toastEl = evt.currentTarget;
+    if (!toastHasAction || toastPending || toastEl.hidden) {
+      return;
+    }
+    if (toastEl.matches(':hover') || toastEl.contains(document.activeElement)) {
+      return;
+    }
+    startToastTimer(toastEl, TOAST_RESUME_MS);
   }
 
   return {

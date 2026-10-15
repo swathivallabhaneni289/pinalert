@@ -147,6 +147,8 @@
   var TAKE_BACK_FADED_MESSAGE = "This report has faded, so it can't be changed.";
   var TAKE_BACK_SUCCEEDED_CLOSED_TOAST = 'Taken back. The report is open again.';
   var TAKE_BACK_SUCCEEDED_WAITING_TOAST = 'Taken back.';
+  var TOAST_ACTION_LABEL = 'Undo';
+  var TOAST_ACTION_NAME = 'Undo marking this report resolved';
 
   // The server's own sentence for a vote on a report that has run out its
   // time (handlers/votes.go). A take back that meets it shows the faded line
@@ -1457,7 +1459,7 @@
       if (isResolveAffirm) {
         removal = captureRemovalFocus(origin);
         closeResolveConfirm(block);
-        Pinalert.showToast(resolutionOutcomeMessage('resolve', result));
+        Pinalert.showToast(resolutionOutcomeMessage('resolve', result), resolveToastAction(reportId, result));
       }
       // Keep the block busy across the refetch: releasing it before the
       // re-render would show buttons that still carry the pre-vote state
@@ -1582,6 +1584,39 @@
         button.focus();
       }
     });
+  }
+
+  // takeBackFromToast is the short Undo's own flow. The opened report may be
+  // closed by then (a resolved report leaves the list), so it works from the
+  // report id alone and resolves with the sentence the toast shows next. It
+  // never rejects: a refusal comes back as the sentence to show.
+  function takeBackFromToast(reportId, wasClosed) {
+    var origin = { reportId: String(reportId), controls: document.getElementById('toast') };
+    return castVote(reportId, 'unresolve').then(function (result) {
+      return Pinalert.fetchReports({ afterWrite: true }).then(function () {
+        focusAfterTakeBack(origin);
+        return takeBackSuccessMessage(wasClosed, result);
+      });
+    }, function (err) {
+      return takeBackErrorMessage(err);
+    });
+  }
+
+  // resolveToastAction is the optional second argument of the message that
+  // follows Yes, mark resolved (C58). It exists only when the server says an
+  // undo is left on this report; the browser computes no limit of its own.
+  function resolveToastAction(reportId, result) {
+    if (!result || typeof result.undos_left !== 'number' || result.undos_left <= 0) {
+      return undefined;
+    }
+    var wasClosed = result.visibility === RETRACTED_VISIBILITY_SLUG;
+    return {
+      label: TOAST_ACTION_LABEL,
+      ariaLabel: TOAST_ACTION_NAME,
+      onClick: function () {
+        return takeBackFromToast(reportId, wasClosed);
+      }
+    };
   }
 
   window.PinalertVotes = {

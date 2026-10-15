@@ -258,9 +258,182 @@ func TestTakeBackNoDashesInNewWords(t *testing.T) {
 	for _, name := range []string{"TAKE_BACK_", "CLOSED_NOTE_", "SERVER_EXPIRED_REFUSAL"} {
 		re := regexp.MustCompile(`(?m)^\s*var ` + name + `[^\n]*$`)
 		for _, line := range re.FindAllString(text, -1) {
-			if strings.ContainsAny(line, "–—") {
+			if strings.ContainsRune(line, rune(0x2013)) || strings.ContainsRune(line, rune(0x2014)) {
 				t.Errorf("a long dash in %q", line)
 			}
+		}
+	}
+}
+
+// TestToastAction pins showToast(message, action): the one argument form is
+// what it always was, the action form holds a text span and one button,
+// stays 8 seconds, pauses while the reader is on it and restarts at 4, never
+// moves focus into the toast, and a press replaces the content with the
+// success text and no action. activity.js keeps its one call with one
+// argument and app.js keeps its two network calls.
+func TestToastAction(t *testing.T) {
+	app := p09ReadJS(t, "static/js/app.js")
+
+	if n := strings.Count(app, "function showToast(message, action)"); n != 1 {
+		t.Fatalf("app.js must declare showToast(message, action) once, found %d", n)
+	}
+	body := p09FuncBody(t, app, "showToast(message, action)")
+	p09MustContain(t, "showToast", body,
+		"document.getElementById('toast')",
+		"setText(toastEl, message);",
+		"textEl.className = 'toast__text';",
+		"actionEl.className = 'toast__action';",
+		"setText(textEl, message);",
+		"setText(actionEl, action.label);",
+		"actionEl.setAttribute('aria-label', action.ariaLabel);",
+		"startToastTimer(toastEl, hasAction ? TOAST_ACTION_MS : TOAST_MS);",
+		"toastEl.addEventListener('pointerenter', pauseToast);",
+		"toastEl.addEventListener('focusin', pauseToast);",
+		"toastEl.addEventListener('pointerleave', resumeToast);",
+		"toastEl.addEventListener('focusout', resumeToast);",
+		"if (!toastPauseWired) {",
+		"toastPauseWired = true;")
+	p09MustNotContain(t, "showToast", body,
+		".focus(", "innerHTML", "insertAdjacentHTML", "outerHTML", "document.write", "fetch(")
+	// The press hands the next sentence to the same function, with no action.
+	p09Ordered(t, body, "showToast press flow",
+		"actionEl.addEventListener('click', function () {",
+		"actionEl.disabled = true;",
+		"showToast(next);",
+		"action.onClick()")
+
+	p09MustContain(t, "app.js", app,
+		"var TOAST_MS = 3000;", "var TOAST_ACTION_MS = 8000;", "var TOAST_RESUME_MS = 4000;")
+	if n := strings.Count(app, "startToastTimer(toastEl, TOAST_RESUME_MS);"); n != 1 {
+		t.Errorf("the resume restarts the timer at TOAST_RESUME_MS once, found %d", n)
+	}
+	if n := strings.Count(app, "getElementById('toast')"); n != 1 {
+		t.Errorf("app.js must look the toast up once, found %d", n)
+	}
+	if n := strings.Count(app, "fetch("); n != 2 {
+		t.Errorf("app.js must keep exactly two network calls, found %d", n)
+	}
+
+	// The template element keeps its live region contract.
+	for _, name := range []string{"index.html.tmpl", "profile.html.tmpl"} {
+		tmpl := p13ReadTemplate(t, name)
+		p09MustContain(t, name, tmpl, `<div id="toast" role="status" aria-live="polite" hidden></div>`)
+	}
+
+	// votes.js passes the action only on the resolve outcome, only when the
+	// server's count is above zero, and runs the same take back flow.
+	votes := tbVotes(t)
+	p09MustContain(t, "votes.js", votes,
+		"Pinalert.showToast(resolutionOutcomeMessage('resolve', result), resolveToastAction(reportId, result));",
+		"var TOAST_ACTION_LABEL = 'Undo';",
+		"var TOAST_ACTION_NAME = 'Undo marking this report resolved';")
+	action := p09FuncBody(t, votes, "resolveToastAction(reportId, result)")
+	p09Ordered(t, action, "resolveToastAction",
+		"typeof result.undos_left !== 'number' || result.undos_left <= 0",
+		"return undefined;",
+		"label: TOAST_ACTION_LABEL", "ariaLabel: TOAST_ACTION_NAME",
+		"takeBackFromToast(reportId, wasClosed)")
+	flow := p09FuncBody(t, votes, "takeBackFromToast(reportId, wasClosed)")
+	p09Ordered(t, flow, "takeBackFromToast",
+		"castVote(reportId, 'unresolve')", "Pinalert.fetchReports({ afterWrite: true })",
+		"focusAfterTakeBack(origin);", "takeBackSuccessMessage(wasClosed, result)", "takeBackErrorMessage(err)")
+
+	activity := p09ReadJS(t, "static/js/activity.js")
+	if n := strings.Count(activity, "showToast("); n != 1 {
+		t.Errorf("activity.js must keep exactly one showToast( call, found %d", n)
+	}
+	call := regexp.MustCompile(`Pinalert\.showToast\(([^;]*)\);`).FindStringSubmatch(activity)
+	if call == nil || strings.Contains(call[1], ",") {
+		t.Errorf("activity.js must call showToast with one argument, found %v", call)
+	}
+}
+
+// TestToastActionStyling pins the look of the toast with an action: the exact
+// #toast rule is unchanged, the action rules live under other heads, the
+// button is 44 by 44 at least, transparent, outlined in --color-bg with an 8px
+// corner and no pill, with its own ring and hover fill, and forced colours
+// draw its border in CanvasText.
+func TestToastActionStyling(t *testing.T) {
+	css := p16ParseCSS("static/css/main.css", p16ReadStatic(t, "static/css/main.css"))
+
+	toast := p16Rule(t, css, "", "#toast")
+	p16MustDecl(t, "#toast", toast, map[string]string{
+		"position":      "fixed",
+		"left":          "50%",
+		"bottom":        "var(--space-2xl)",
+		"z-index":       "1200",
+		"transform":     "translateX(-50%)",
+		"background":    "var(--color-text)",
+		"color":         "var(--color-bg)",
+		"font-size":     "var(--font-size-body)",
+		"padding":       "var(--space-sm) var(--space-lg)",
+		"border-radius": "8px",
+		"animation":     "toast-in 200ms ease",
+	})
+	if _, has := toast.Decls["display"]; has {
+		t.Errorf("the exact #toast rule must not set display (the hidden attribute relies on it)")
+	}
+
+	row := p16Rule(t, css, "", "#toast.toast--action:not([hidden])")
+	p16MustDecl(t, "toast with an action", row, map[string]string{
+		"display":     "flex",
+		"align-items": "center",
+		"gap":         "var(--space-md)",
+		"max-width":   "calc(100vw - var(--space-md) * 2)",
+		"padding":     "var(--space-sm) var(--space-sm) var(--space-sm) var(--space-lg)",
+		"width":       "max-content",
+	})
+
+	btn := p16Rule(t, css, "", ".toast__action")
+	p16MustDecl(t, ".toast__action", btn, map[string]string{
+		"min-height":    "var(--touch-target-min)",
+		"min-width":     "var(--touch-target-min)",
+		"padding":       "0 var(--space-md)",
+		"border":        "1px solid var(--color-bg)",
+		"border-radius": "8px",
+		"background":    "transparent",
+		"color":         "var(--color-bg)",
+		"font-size":     "var(--font-size-body)",
+		"font-weight":   "var(--font-weight-semibold)",
+	})
+	p16MustDecl(t, ".toast__action ring",
+		p16Rule(t, css, "", ".toast__action:focus-visible"),
+		map[string]string{"outline": "2px solid var(--color-bg)", "outline-offset": "2px"})
+	p16MustDecl(t, ".toast__action hover",
+		p16Rule(t, css, "", ".toast__action:hover, .toast__action:active"),
+		map[string]string{"background": "color-mix(in srgb, var(--color-bg) 15%, transparent)"})
+	p16MustDecl(t, ".toast__action forced colours",
+		p16Rule(t, css, "(forced-colors: active)", ".toast__action"),
+		map[string]string{"border-color": "CanvasText"})
+
+	// Tokens only: no colour literal in any toast rule.
+	for _, r := range css {
+		if !strings.Contains(r.Head, "toast") {
+			continue
+		}
+		for name, value := range r.Decls {
+			if strings.Contains(value, "#") {
+				t.Errorf("%s declares %s with a literal colour %q", r.Head, name, value)
+			}
+		}
+	}
+}
+
+// TestToastActionContrast: the toast text, the Undo label and its outline are
+// --color-bg on --color-text. That pair must reach 4.5 to 1 in both themes,
+// computed from the shipped tokens in all four theme sources.
+func TestToastActionContrast(t *testing.T) {
+	rules := parseCSSRules(p16ReadStatic(t, "static/css/main.css"))
+	needed := []string{"--color-bg", "--color-text"}
+	light1, light2, dark1, dark2 := extractThemeTokens(rules, needed)
+	sources := map[string]themeTokens{"light root": light1, "light override": light2, "dark media": dark1, "dark override": dark2}
+	for name, tokens := range sources {
+		bg, text := tokens["--color-bg"], tokens["--color-text"]
+		if bg == "" || text == "" {
+			t.Fatalf("%s: --color-bg or --color-text is not declared", name)
+		}
+		if ratio := wcagContrastRatio(t, bg, text, "toast "+name); ratio < 4.5 {
+			t.Errorf("%s: toast text %s on %s is %.2f to 1, want at least 4.5", name, bg, text, ratio)
 		}
 	}
 }
