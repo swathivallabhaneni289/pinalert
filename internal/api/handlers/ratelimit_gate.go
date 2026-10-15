@@ -70,6 +70,10 @@ const (
 	voteRateField       = "rate_vote"
 	voteChangeRateField = "rate_vote_change"
 
+	// The flag bucket (plan 04-20). The name goes to the block log only.
+	flagBucketName = "flag"
+	flagRateField  = "rate_flag"
+
 	// The report buckets (plan 04-15). The bucket names go to the block log only.
 	reportBucketSerious = "report_serious"
 	reportBucketOther   = "report_other"
@@ -82,9 +86,9 @@ const (
 	rateBlockLogFormat = "handlers: rate limit: bucket=%s account=%d wait_seconds=%d"
 )
 
-// RateGate holds the Phase 4 rate limit buckets. Plan 04-20 adds the flag
-// bucket inside NewRateGate.
+// RateGate holds the Phase 4 rate limit buckets.
 type RateGate struct {
+	flag          *ratelimit.PerKey
 	vote          *ratelimit.PerKey
 	voteChange    *ratelimit.PerKey
 	ipBackstop    *ratelimit.PerKey
@@ -108,6 +112,7 @@ func NewRateGate(limits RateLimits, clock func() time.Time, clientIPHeader strin
 		clock = time.Now
 	}
 	return &RateGate{
+		flag:          ratelimit.NewPerKey(bucketConfig(limits.Flag, clock)),
 		vote:          ratelimit.NewPerKey(bucketConfig(limits.Vote, clock)),
 		voteChange:    ratelimit.NewPerKey(bucketConfig(limits.VoteChange, clock)),
 		ipBackstop:    ratelimit.NewPerKey(bucketConfig(limits.IPBackstop, clock)),
@@ -262,6 +267,36 @@ func (g *RateGate) VoteMiddleware(kind service.VoteKind) func(http.Handler) http
 				}
 			}()
 			next.ServeHTTP(ww, r)
+		})
+	}
+}
+
+// FlagMiddleware throttles the flag route (D-10, D-11). The order is the
+// network backstop, then the per account flag bucket keyed acct:<id>. Every
+// admitted attempt costs one token and nothing is refunded, like the vote
+// bucket: each attempt costs a database read, so a 404 or a 409 probe pays too.
+func (g *RateGate) FlagMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			acc, ok := account.FromContext(r.Context())
+			if !ok {
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+
+			if d := g.reserveIPBackstop(r); !d.OK {
+				logBlock(ipBackstopBucket, acc.ID, d.RetryAfter)
+				writeRateLimited(w, flagRateField, service.FlagLimitMessage(d.RetryAfter), d.RetryAfter, false, "")
+				return
+			}
+
+			if d := g.flag.Reserve(accountKey(acc.ID)); !d.OK {
+				logBlock(flagBucketName, acc.ID, d.RetryAfter)
+				writeRateLimited(w, flagRateField, service.FlagLimitMessage(d.RetryAfter), d.RetryAfter, false, "")
+				return
+			}
+
+			next.ServeHTTP(w, r)
 		})
 	}
 }

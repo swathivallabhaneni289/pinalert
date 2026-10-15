@@ -279,6 +279,15 @@ definitions:
         - past
         example: active
         type: string
+      viewer_flagged:
+        description: |-
+          ViewerFlagged is true when the calling account has flagged this report.
+          It is viewer specific like your_vote, so it never says who flagged or how
+          many did, and the author's own feed always reads false unless the author
+          flagged it, which the server refuses. It is filled from the one batched
+          extras read, so the feed's round trips stay constant.
+        example: false
+        type: boolean
       visibility:
         description: |-
           Visibility is the resolver's own answer, serialised verbatim from
@@ -337,6 +346,24 @@ definitions:
         - dispute
         example: confirm
         type: string
+    type: object
+  handlers.FlagRequest:
+    properties:
+      reason:
+        enum:
+        - spam
+        - abusive
+        - "false"
+        - dangerous
+        - other
+        example: spam
+        type: string
+    type: object
+  handlers.FlagResponse:
+    properties:
+      flagged:
+        example: true
+        type: boolean
     type: object
   handlers.FocusResponse:
     properties:
@@ -1199,6 +1226,71 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Cast a confirm, dispute, resolve, reopen or unresolve vote on a report
+      tags:
+      - reports
+  /reports/{id}/flag:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Sends a report to the moderators with one of five reasons: spam, abusive, false,
+        dangerous or other. A flag never hides or changes the report. Each account can flag
+        a report once, and a repeat gets 409. Your own report gets 403. A report that does
+        not exist, or that is not shown in any feed, gets 404. Flagging is limited per
+        verified account, and a blocked flag gets 429 with a Retry-After header.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Report id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: One of the five reasons
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.FlagRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handlers.FlagResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Flag a report for the moderators
       tags:
       - reports
   /reports/{id}/reopen:
