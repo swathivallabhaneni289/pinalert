@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"errors"
 	"math"
 	"slices"
 	"testing"
@@ -366,7 +367,214 @@ func TestFinishedRescueCoarsenedOnEveryPath(t *testing.T) {
 		h6AssertCoarse(t, rescue)
 		h6AssertExact(t, flood)
 	})
+
+	t.Run("Focus", func(t *testing.T) {
+		for _, id := range []int64{1, 2} {
+			fake := h6RescueFake()
+			fake.focusRow = &sqlcgen.ReportForFocusRow{}
+			*fake.focusRow = sqlcgen.ReportForFocusRow(fake.expiredRows[id-1])
+			res, err := h6Focus(fake, service.FocusQuery{ReportID: id, Latitude: h6Centre.Lat, Longitude: h6Centre.Lon})
+			if err != nil {
+				t.Fatalf("Focus %d: %v", id, err)
+			}
+			if res.Status != service.FocusOK || res.View == nil {
+				t.Fatalf("Focus %d: status = %q, view nil = %v, want ok with a view", id, res.Status, res.View == nil)
+			}
+			if id == 1 {
+				h6AssertCoarse(t, *res.View)
+			} else {
+				h6AssertExact(t, *res.View)
+			}
+		}
+	})
 }
+
+func h6Focus(fake *fakeFeedQuerier, q service.FocusQuery) (service.FocusResult, error) {
+	svc := service.NewReportService(fake, service.WithReportClock(p12Clock))
+	return svc.Focus(context.Background(), q)
+}
+
+func h6FocusRow(id int64, category service.Category, severity service.Severity, expiresIn time.Duration, distanceKm float64) *sqlcgen.ReportForFocusRow {
+	row := sqlcgen.ReportForFocusRow(h6Open(id, category, severity, expiresIn))
+	row.DistanceKm = distanceKm
+	return &row
+}
+
+func TestRecentHistoryCounts(t *testing.T) {
+	fake := &fakeFeedQuerier{
+		expiredRows: []sqlcgen.ExpiredReportsInWindowRow{
+			h6Expired(1, service.CategoryFlood, service.SeverityLow, time.Hour),
+			h6Expired(2, service.CategoryFlood, service.SeverityLow, time.Hour),
+			h6Expired(3, service.CategoryFlood, service.SeverityLow, 2*time.Hour),
+			h6Expired(4, service.CategoryFlood, service.SeverityLow, 5*time.Hour),
+			h6Expired(5, service.CategoryFlood, service.SeverityLow, 23*time.Hour),
+			h6Expired(6, service.CategoryFlood, service.SeverityLow, 20*time.Hour),
+		},
+		reporterRows: []sqlcgen.ReporterAccountsForReportsRow{
+			reporterRow(1, nil), reporterRow(2, nil), reporterRow(3, ptrID(13)), reporterRow(4, nil), reporterRow(5, nil), reporterRow(6, nil),
+		},
+	}
+	for _, id := range []int64{1, 2, 6} {
+		at := p12Now.Add(-3 * time.Hour)
+		if id == 6 {
+			at = p12Now.Add(-30 * time.Hour)
+		}
+		fake.voteRows = append(fake.voteRows,
+			h6Closed(id, 60+id, at.Add(-time.Minute), "cellA"),
+			h6Closed(id, 70+id, at, "cellB"),
+		)
+	}
+	svc := service.NewReportService(fake, service.WithReportClock(p12Clock))
+	got, err := svc.RecentHistoryCounts(context.Background(), service.RecentQuery{Latitude: h6Centre.Lat, Longitude: h6Centre.Lon, RadiusKm: 10})
+	if err != nil {
+		t.Fatalf("RecentHistoryCounts: %v", err)
+	}
+	if got.Resolved != 2 || got.Expired != 3 {
+		t.Errorf("counts = %+v, want Resolved 2 and Expired 3 (report 6 closed 30 hours ago is not counted)", got)
+	}
+	if len(fake.expiredArgs) != 1 || !fake.expiredArgs[0].WindowStart.Equal(p12Now.Add(-service.RecentWindow)) {
+		t.Errorf("expired args = %+v, want one read with WindowStart now minus RecentWindow", fake.expiredArgs)
+	}
+	for _, name := range []string{"ReporterHistoryReports", "ResolutionUndoCounts"} {
+		if n := countCalls(fake.callLog, name); n != 0 {
+			t.Errorf("%s called %d times, want 0", name, n)
+		}
+	}
+	for _, name := range []string{"ReporterAccountsForReports", "CurrentVotesForReports"} {
+		if n := countCalls(fake.callLog, name); n != 1 {
+			t.Errorf("%s called %d times, want 1", name, n)
+		}
+	}
+
+	t.Run("an empty area makes no vote or reporter read", func(t *testing.T) {
+		empty := &fakeFeedQuerier{}
+		svc := service.NewReportService(empty, service.WithReportClock(p12Clock))
+		got, err := svc.RecentHistoryCounts(context.Background(), service.RecentQuery{Latitude: h6Centre.Lat, Longitude: h6Centre.Lon, RadiusKm: 10})
+		if err != nil {
+			t.Fatalf("RecentHistoryCounts: %v", err)
+		}
+		if got != (service.RecentCounts{}) {
+			t.Errorf("counts = %+v, want zeros", got)
+		}
+		want := []string{"ExpiredReportsInWindow", "OpenReportsInArea"}
+		if !slices.Equal(empty.callLog, want) {
+			t.Errorf("callLog = %v, want %v", empty.callLog, want)
+		}
+	})
+}
+
+func TestFocusStatuses(t *testing.T) {
+	q := service.FocusQuery{ReportID: 9, Latitude: h6Centre.Lat, Longitude: h6Centre.Lon, ViewerAccountID: 7}
+
+	t.Run("an unknown id is unavailable", func(t *testing.T) {
+		res, err := h6Focus(&fakeFeedQuerier{}, q)
+		if err != nil {
+			t.Fatalf("Focus: %v", err)
+		}
+		if res.Status != service.FocusUnavailable || res.View != nil {
+			t.Errorf("result = %+v, want unavailable with no view", res)
+		}
+	})
+
+	t.Run("a report that expired 8 days ago is too old and costs no vote read", func(t *testing.T) {
+		fake := &fakeFeedQuerier{focusRow: h6FocusRow(9, service.CategoryFlood, service.SeverityLow, -8*24*time.Hour, 1)}
+		res, err := h6Focus(fake, q)
+		if err != nil {
+			t.Fatalf("Focus: %v", err)
+		}
+		if res.Status != service.FocusTooOld || res.View != nil {
+			t.Errorf("result = %+v, want too_old with no view", res)
+		}
+		if !slices.Equal(fake.callLog, []string{"ReportForFocus"}) {
+			t.Errorf("callLog = %v, want only the report read", fake.callLog)
+		}
+	})
+
+	t.Run("a closed report whose closure is older than the window is too old", func(t *testing.T) {
+		fake := &fakeFeedQuerier{
+			focusRow:     h6FocusRow(9, service.CategoryFlood, service.SeverityLow, -6*24*time.Hour, 1),
+			reporterRows: []sqlcgen.ReporterAccountsForReportsRow{reporterRow(9, ptrID(11))},
+			voteRows:     []sqlcgen.CurrentVotesForReportsRow{h6Closed(9, 11, p12Now.Add(-8*24*time.Hour), "c1")},
+		}
+		res, err := h6Focus(fake, q)
+		if err != nil {
+			t.Fatalf("Focus: %v", err)
+		}
+		if res.Status != service.FocusTooOld || res.View != nil {
+			t.Errorf("result = %+v, want too_old with no view", res)
+		}
+	})
+
+	t.Run("a live report 300 km away is ok and active with its distance", func(t *testing.T) {
+		fake := &fakeFeedQuerier{
+			focusRow:     h6FocusRow(9, service.CategoryFlood, service.SeverityLow, 3*time.Hour, 300),
+			reporterRows: []sqlcgen.ReporterAccountsForReportsRow{reporterRow(9, nil)},
+		}
+		fake.voteRows = p12Places(9, service.VoteConfirm, service.IndependentAgreementThreshold, 31)
+		res, err := h6Focus(fake, q)
+		if err != nil {
+			t.Fatalf("Focus: %v", err)
+		}
+		if res.Status != service.FocusOK || res.View == nil {
+			t.Fatalf("result = %+v, want ok with a view", res)
+		}
+		if res.View.View != service.FeedViewActive || res.View.History != nil {
+			t.Errorf("View = %q, History = %+v, want active and no history", res.View.View, res.View.History)
+		}
+		if res.View.DistanceKm == nil || *res.View.DistanceKm != 300 {
+			t.Errorf("DistanceKm = %v, want 300", res.View.DistanceKm)
+		}
+		if res.View.UndosLeft != service.UndoLimit {
+			t.Errorf("UndosLeft = %d, want %d", res.View.UndosLeft, service.UndoLimit)
+		}
+	})
+
+	t.Run("a disputed report answers ok with the disputed view, not unavailable", func(t *testing.T) {
+		fake := &fakeFeedQuerier{
+			focusRow:     h6FocusRow(9, service.CategoryFlood, service.SeverityLow, 3*time.Hour, 1),
+			reporterRows: []sqlcgen.ReporterAccountsForReportsRow{reporterRow(9, nil)},
+		}
+		fake.voteRows = p12Places(9, service.VoteDispute, service.IndependentAgreementThreshold, 41)
+		res, err := h6Focus(fake, q)
+		if err != nil {
+			t.Fatalf("Focus: %v", err)
+		}
+		if res.Status != service.FocusOK || res.View == nil || res.View.View != service.FeedViewDisputed {
+			t.Errorf("result = %+v, want ok with the disputed view", res)
+		}
+	})
+
+	t.Run("a retracted report is ok with the resolved view and its history", func(t *testing.T) {
+		fake := &fakeFeedQuerier{
+			focusRow:     h6FocusRow(9, service.CategoryFlood, service.SeverityLow, 3*time.Hour, 1),
+			reporterRows: []sqlcgen.ReporterAccountsForReportsRow{reporterRow(9, ptrID(7))},
+			voteRows:     []sqlcgen.CurrentVotesForReportsRow{h6Closed(9, 7, p12Now.Add(-time.Hour), "c1")},
+		}
+		res, err := h6Focus(fake, q)
+		if err != nil {
+			t.Fatalf("Focus: %v", err)
+		}
+		if res.Status != service.FocusOK || res.View == nil || res.View.View != service.FeedViewResolved {
+			t.Fatalf("result = %+v, want ok with the resolved view", res)
+		}
+		if res.View.History == nil || res.View.History.ClosedBy != service.ClosedByYou {
+			t.Errorf("History = %+v, want closed by you", res.View.History)
+		}
+		if got := countCalls(fake.callLog, "ResolutionUndoCounts"); got != 1 {
+			t.Errorf("ResolutionUndoCounts called %d times, want 1 for the viewer's own unexpired resolve", got)
+		}
+	})
+
+	t.Run("a database error other than no rows is returned", func(t *testing.T) {
+		boom := errors.New("connection reset")
+		_, err := h6Focus(&fakeFeedQuerier{focusErr: boom}, q)
+		if !errors.Is(err, boom) {
+			t.Errorf("err = %v, want %v", err, boom)
+		}
+	})
+}
+
+// TestUndoReadOnlyWhenNeeded pins the conditional undo count read (D-22): the
 
 func TestHistoryEmptyCostsNoBatchedReads(t *testing.T) {
 	fake := &fakeFeedQuerier{}

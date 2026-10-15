@@ -8,8 +8,11 @@ package service
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	sqlcgen "pinalert/internal/store/sqlc"
 )
@@ -263,6 +266,170 @@ func buildFinishedView(in viewInput) ReportView {
 	centre := in.Centre
 	v.Report, v.Approximate = CoarsenFinishedRescue(v.Report, true, &centre)
 	return v
+}
+
+// RecentQuery is the area of a 24 hour count read.
+type RecentQuery struct {
+	Latitude  float64
+	Longitude float64
+	RadiusKm  float64
+}
+
+// RecentCounts is what the empty Active tab says happened lately (D-12): how
+// many reports were resolved and how many faded in the last RecentWindow.
+type RecentCounts struct {
+	Resolved int
+	Expired  int
+}
+
+// RecentHistoryCounts counts what was resolved and what faded in the last
+// RecentWindow near the centre, from real data (D-12). It is its own method so
+// the pinned empty page of Nearby still costs zero extra reads (Pitfall 4): the
+// handler calls it only when the view is active, no category is set and Nearby
+// returned nothing. It reuses the two candidate reads with a 24 hour window
+// start, then makes one reporter read and one vote read, because BuildVoteTally
+// needs the reporter id. It reads no reporter history and no undo counts, and
+// both empty candidate sets return zeros after the two candidate reads.
+func (s *ReportService) RecentHistoryCounts(ctx context.Context, q RecentQuery) (RecentCounts, error) {
+	now := s.now().UTC()
+	windowStart := now.Add(-RecentWindow)
+
+	cands, err := s.historyCandidates(ctx, q.Latitude, q.Longitude, q.RadiusKm, now, windowStart)
+	if err != nil {
+		return RecentCounts{}, err
+	}
+	if len(cands) == 0 {
+		return RecentCounts{}, nil
+	}
+	ids := make([]int64, 0, len(cands))
+	for _, c := range cands {
+		ids = append(ids, c.report.ID)
+	}
+	rc, err := s.loadReadContext(ctx, ids, now, false)
+	if err != nil {
+		return RecentCounts{}, err
+	}
+	var out RecentCounts
+	for _, c := range cands {
+		cl := classify(c, rc, now)
+		if !cl.inHistory(c.expired, windowStart) {
+			continue
+		}
+		switch cl.view {
+		case FeedViewResolved:
+			out.Resolved++
+		case FeedViewPast:
+			out.Expired++
+		}
+	}
+	return out, nil
+}
+
+// FocusStatus is the answer word of a report link read. The words are the wire
+// words.
+type FocusStatus string
+
+const (
+	// FocusOK means the report is shown. It holds outside the radius and outside
+	// the history window when the report is still listed in some view.
+	FocusOK FocusStatus = "ok"
+	// FocusTooOld means the report ended more than HistoryWindow ago. It reveals
+	// only that an id once existed.
+	FocusTooOld FocusStatus = "too_old"
+	// FocusUnavailable is the one answer for an id that does not exist and for
+	// any state no view lists, so a later moderation state is never revealed
+	// (T-31-26).
+	FocusUnavailable FocusStatus = "unavailable"
+)
+
+// FocusQuery is one report link read. ViewerAccountID comes from the gate. The
+// centre is the reader's own, used for the distance and for the blur of a
+// finished Rescue report.
+type FocusQuery struct {
+	ReportID        int64
+	Latitude        float64
+	Longitude       float64
+	ViewerAccountID int64
+}
+
+// FocusResult is a status and, only for FocusOK, the view.
+type FocusResult struct {
+	Status FocusStatus
+	View   *ReportView
+}
+
+// Focus reads one report by id for a /?report=ID link (D-11, D-28). The order
+// is part of the specification:
+//
+//  1. Capture now once. ReportForFocus reads the row with no expiry, area or
+//     radius predicate. pgx.ErrNoRows is FocusUnavailable; any other error is
+//     returned.
+//  2. A report whose expiry is at or before now minus HistoryWindow is
+//     FocusTooOld, and no further read runs.
+//  3. Reporter, history, votes and signals like a one report History, then
+//     classify with the same Resolve, ViewOf and ClosureOf.
+//  4. A view of none is FocusUnavailable. A resolved report whose closure is
+//     older than the window is FocusTooOld. A disputed report is shown, because
+//     a link opens any report that some tab lists.
+//  5. Finished views go through buildFinishedView, so a finished Rescue report
+//     is blurred on this path exactly like History. Live views carry the same
+//     fields Nearby fills.
+//  6. attachUndos for the one view.
+func (s *ReportService) Focus(ctx context.Context, q FocusQuery) (FocusResult, error) {
+	now := s.now().UTC()
+	windowStart := now.Add(-HistoryWindow)
+
+	row, err := s.q.ReportForFocus(ctx, sqlcgen.ReportForFocusParams{
+		Lat:      q.Latitude,
+		Lon:      q.Longitude,
+		ReportID: q.ReportID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return FocusResult{Status: FocusUnavailable}, nil
+	}
+	if err != nil {
+		return FocusResult{}, err
+	}
+	if !row.ExpiresAt.After(windowStart) {
+		return FocusResult{Status: FocusTooOld}, nil
+	}
+
+	r := reportFromFocusRow(row)
+	rc, err := s.loadReadContext(ctx, []int64{r.ID}, now, true)
+	if err != nil {
+		return FocusResult{}, err
+	}
+	cand := historyCandidate{report: r, expired: !r.ExpiresAt.After(now)}
+	cl := classify(cand, rc, now)
+	in := viewInput{
+		Report:          r,
+		Class:           cl,
+		Signals:         rc.signals,
+		ViewerAccountID: q.ViewerAccountID,
+		Centre:          GeoPoint{Lat: q.Latitude, Lon: q.Longitude},
+		Now:             now,
+	}
+
+	var view ReportView
+	switch cl.view {
+	case FeedViewResolved:
+		if !cl.closure.At.After(windowStart) {
+			return FocusResult{Status: FocusTooOld}, nil
+		}
+		view = buildFinishedView(in)
+	case FeedViewPast:
+		view = buildFinishedView(in)
+	case FeedViewActive, FeedViewDisputed:
+		view = baseView(in)
+	default:
+		return FocusResult{Status: FocusUnavailable}, nil
+	}
+
+	one := []ReportView{view}
+	if err := s.attachUndos(ctx, q.ViewerAccountID, one, now); err != nil {
+		return FocusResult{}, err
+	}
+	return FocusResult{Status: FocusOK, View: &one[0]}, nil
 }
 
 // History is the Past read: what was resolved and what faded in the last
