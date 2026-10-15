@@ -338,6 +338,9 @@ func NewRouter(deps Deps) *chi.Mux {
 	// The one gate for every Phase 4 limiter. Plan 04-15 passes it to
 	// SubmitReport and plan 04-20 to the flag route.
 	rateGate := handlers.NewRateGate(resolveRateLimits(deps.RateLimits), limiterClock, deps.ClientIPHeader, deps.Chrome)
+	// The flag service has no Deps field: it is built here from the sessions
+	// store, so every harness gets a non nil service (plan 04-20).
+	flags := service.NewFlagService(deps.Sessions)
 
 	// --- Exempt: reachable without a verified account. ---
 
@@ -431,6 +434,12 @@ func NewRouter(deps Deps) *chi.Mux {
 		// nothing about the place. It needs no location, never counts as a
 		// reopen, and shares its limit of two with the poster's reopen.
 		r.With(rateGate.VoteMiddleware(service.VoteKindResolution)).Post("/api/reports/{id}/unresolve", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteUnresolve))
+		// POST /api/reports/{id}/flag (plan 04-20, D-09). Gated because a flag
+		// must belong to a verified account. A flat literal path like the vote
+		// routes. The flag bucket and the network backstop run in
+		// FlagMiddleware, scoped to this one route with r.With. A cross site
+		// POST carries no session cookie (DEC-L), so no CSRF token is needed.
+		r.With(rateGate.FlagMiddleware()).Post("/api/reports/{id}/flag", handlers.FlagReport(flags))
 		// GET /api/geocode (plan 07-03). Registered as a flat literal path,
 		// not under an r.Route mount — see this router's own doc comments
 		// above for why every /api/* path here is flat, gated or not.
