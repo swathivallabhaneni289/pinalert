@@ -103,3 +103,76 @@ SELECT r.id AS report_id, s.account_id AS reporter_account_id
 FROM reports r
 LEFT JOIN sessions s ON r.session_id = s.session_id
 WHERE r.id = ANY(sqlc.arg(report_ids)::bigint[]);
+
+-- name: InsertReportIdempotent :one
+-- The retry safe sibling of InsertReport. One statement: a concurrent retry
+-- with the same account and request id waits for the first insert to commit
+-- and then gets no row back, which the caller turns into ReportByRequest. The
+-- conflict target repeats the column pair and the partial predicate of
+-- idx_reports_request_idempotency so Postgres infers that index. A report sent
+-- without a request id (request_id NULL) never conflicts and is never
+-- deduplicated. created_at and expires_at are server stamps passed in by the
+-- caller; client_written_at is display only and is never read by any
+-- predicate or ordering (R-05, D-19).
+INSERT INTO reports (
+    session_id, category, severity, description, latitude, longitude, geohash,
+    shelter_capacity_status, shelter_headcount, created_at, expires_at,
+    moderation_state, request_id, request_account_id, client_written_at
+) VALUES (
+    sqlc.arg(session_id), sqlc.arg(category), sqlc.arg(severity), sqlc.arg(description),
+    sqlc.arg(latitude), sqlc.arg(longitude), sqlc.arg(geohash),
+    sqlc.arg(shelter_capacity_status), sqlc.arg(shelter_headcount),
+    sqlc.arg(created_at), sqlc.arg(expires_at),
+    sqlc.arg(moderation_state), sqlc.narg(request_id), sqlc.narg(request_account_id),
+    sqlc.narg(client_written_at)
+)
+ON CONFLICT (request_account_id, request_id) WHERE request_id IS NOT NULL DO NOTHING
+RETURNING id, category, severity, description, latitude, longitude, geohash,
+          shelter_capacity_status, shelter_headcount, created_at, expires_at, moderation_state;
+
+-- name: ReportByRequest :one
+-- The replay lookup after InsertReportIdempotent returned no row. Always
+-- scoped to the caller's account together with the request id, never by the
+-- request id alone, so one account can never read back another account's
+-- report by guessing its request id (T-04-05). No row means no such request.
+SELECT id, category, severity, description, latitude, longitude, geohash,
+       shelter_capacity_status, shelter_headcount, created_at, expires_at, moderation_state
+FROM reports
+WHERE request_account_id = sqlc.arg(account_id)::bigint
+  AND request_id = sqlc.arg(request_id)::text;
+
+-- name: ReportExtrasForReports :many
+-- The moderation state, the display only written time and the viewer's flag
+-- for a whole feed page in one round trip. Batched like CurrentVotesForReports
+-- and ReporterAccountsForReports, and called once per non empty page, so
+-- NearbyReports stays exactly as Phase 1 pinned it and names none of these
+-- columns. One row per existing requested report: the LEFT JOIN is on the
+-- viewer's own flag, and report_flags_one_per_account allows at most one such
+-- row, so a report is never duplicated. A dismissed flag still counts as
+-- flagged because the same account can never flag that report again
+-- (R-01, D-09).
+SELECT r.id AS report_id, r.moderation_state, r.client_written_at,
+       (f.id IS NOT NULL)::bool AS viewer_flagged
+FROM reports r
+LEFT JOIN report_flags f ON f.report_id = r.id AND f.account_id = sqlc.arg(viewer_account_id)::bigint
+WHERE r.id = ANY(sqlc.arg(report_ids)::bigint[]);
+
+-- name: ReportForModeration :one
+-- One report in the moderator row shape (the same columns as ReviewQueue,
+-- FlagQueue and PendingQueue), for the Find, Keep and Remove answers (D-08).
+-- No session id, email or account id is selected. The check columns are NULL
+-- for a report that never had a check (seeded and older rows). The text of the
+-- report is the only free text here; the check row itself holds none.
+SELECT r.id, r.category, r.severity, r.description, r.created_at, r.expires_at,
+       r.client_written_at, r.moderation_state,
+       c.status AS check_status, c.verdict, c.scores, c.model,
+       COALESCE(c.needs_review, false)::bool AS needs_review,
+       (SELECT count(*) FROM report_flags f
+         WHERE f.report_id = r.id AND f.dismissed_at IS NULL)::bigint AS open_flag_total,
+       COALESCE((SELECT jsonb_object_agg(x.reason, x.n)
+                   FROM (SELECT f.reason, count(*) AS n FROM report_flags f
+                          WHERE f.report_id = r.id AND f.dismissed_at IS NULL
+                          GROUP BY f.reason) x), '{}'::jsonb)::jsonb AS flag_counts
+FROM reports r
+LEFT JOIN moderation_checks c ON c.report_id = r.id
+WHERE r.id = sqlc.arg(report_id);

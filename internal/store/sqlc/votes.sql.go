@@ -91,7 +91,7 @@ func (q *Queries) InsertVote(ctx context.Context, arg InsertVoteParams) error {
 }
 
 const reportVoteContext = `-- name: ReportVoteContext :one
-SELECT r.severity, r.category, r.expires_at, s.account_id AS reporter_account_id, r.latitude, r.longitude, r.created_at
+SELECT r.severity, r.category, r.expires_at, s.account_id AS reporter_account_id, r.latitude, r.longitude, r.created_at, r.moderation_state
 FROM reports r
 LEFT JOIN sessions s ON r.session_id = s.session_id
 WHERE r.id = $1
@@ -105,6 +105,7 @@ type ReportVoteContextRow struct {
 	Latitude          float64
 	Longitude         float64
 	CreatedAt         time.Time
+	ModerationState   string
 }
 
 // The single read VotingService.CastVote makes before deciding anything
@@ -139,6 +140,12 @@ type ReportVoteContextRow struct {
 // rule (a vote cast from more than 1 km from the report is refused).
 // created_at is read here so the currency window in plan 03-08 needs no
 // second query.
+//
+// (e) Why moderation_state is the last column. CastVote reads it here so a
+// report that is withheld from the public (pending or removed) answers 404 to
+// a vote exactly as it does to a read (Phase 4). It is appended after the
+// existing columns so the scan order of every older field stays put, and it is
+// the only change this query gained in Phase 4.
 func (q *Queries) ReportVoteContext(ctx context.Context, reportID int64) (ReportVoteContextRow, error) {
 	row := q.db.QueryRow(ctx, reportVoteContext, reportID)
 	var i ReportVoteContextRow
@@ -150,6 +157,7 @@ func (q *Queries) ReportVoteContext(ctx context.Context, reportID int64) (Report
 		&i.Latitude,
 		&i.Longitude,
 		&i.CreatedAt,
+		&i.ModerationState,
 	)
 	return i, err
 }

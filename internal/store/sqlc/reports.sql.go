@@ -8,6 +8,8 @@ package sqlcgen
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const insertReport = `-- name: InsertReport :one
@@ -79,6 +81,102 @@ func (q *Queries) InsertReport(ctx context.Context, arg InsertReportParams) (Ins
 		&i.ShelterHeadcount,
 		&i.CreatedAt,
 		&i.ExpiresAt,
+	)
+	return i, err
+}
+
+const insertReportIdempotent = `-- name: InsertReportIdempotent :one
+INSERT INTO reports (
+    session_id, category, severity, description, latitude, longitude, geohash,
+    shelter_capacity_status, shelter_headcount, created_at, expires_at,
+    moderation_state, request_id, request_account_id, client_written_at
+) VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7,
+    $8, $9,
+    $10, $11,
+    $12, $13, $14,
+    $15
+)
+ON CONFLICT (request_account_id, request_id) WHERE request_id IS NOT NULL DO NOTHING
+RETURNING id, category, severity, description, latitude, longitude, geohash,
+          shelter_capacity_status, shelter_headcount, created_at, expires_at, moderation_state
+`
+
+type InsertReportIdempotentParams struct {
+	SessionID             string
+	Category              string
+	Severity              string
+	Description           string
+	Latitude              float64
+	Longitude             float64
+	Geohash               string
+	ShelterCapacityStatus *string
+	ShelterHeadcount      *int32
+	CreatedAt             time.Time
+	ExpiresAt             time.Time
+	ModerationState       string
+	RequestID             *string
+	RequestAccountID      *int64
+	ClientWrittenAt       pgtype.Timestamptz
+}
+
+type InsertReportIdempotentRow struct {
+	ID                    int64
+	Category              string
+	Severity              string
+	Description           string
+	Latitude              float64
+	Longitude             float64
+	Geohash               string
+	ShelterCapacityStatus *string
+	ShelterHeadcount      *int32
+	CreatedAt             time.Time
+	ExpiresAt             time.Time
+	ModerationState       string
+}
+
+// The retry safe sibling of InsertReport. One statement: a concurrent retry
+// with the same account and request id waits for the first insert to commit
+// and then gets no row back, which the caller turns into ReportByRequest. The
+// conflict target repeats the column pair and the partial predicate of
+// idx_reports_request_idempotency so Postgres infers that index. A report sent
+// without a request id (request_id NULL) never conflicts and is never
+// deduplicated. created_at and expires_at are server stamps passed in by the
+// caller; client_written_at is display only and is never read by any
+// predicate or ordering (R-05, D-19).
+func (q *Queries) InsertReportIdempotent(ctx context.Context, arg InsertReportIdempotentParams) (InsertReportIdempotentRow, error) {
+	row := q.db.QueryRow(ctx, insertReportIdempotent,
+		arg.SessionID,
+		arg.Category,
+		arg.Severity,
+		arg.Description,
+		arg.Latitude,
+		arg.Longitude,
+		arg.Geohash,
+		arg.ShelterCapacityStatus,
+		arg.ShelterHeadcount,
+		arg.CreatedAt,
+		arg.ExpiresAt,
+		arg.ModerationState,
+		arg.RequestID,
+		arg.RequestAccountID,
+		arg.ClientWrittenAt,
+	)
+	var i InsertReportIdempotentRow
+	err := row.Scan(
+		&i.ID,
+		&i.Category,
+		&i.Severity,
+		&i.Description,
+		&i.Latitude,
+		&i.Longitude,
+		&i.Geohash,
+		&i.ShelterCapacityStatus,
+		&i.ShelterHeadcount,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.ModerationState,
 	)
 	return i, err
 }
@@ -170,6 +268,174 @@ func (q *Queries) NearbyReports(ctx context.Context, arg NearbyReportsParams) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const reportByRequest = `-- name: ReportByRequest :one
+SELECT id, category, severity, description, latitude, longitude, geohash,
+       shelter_capacity_status, shelter_headcount, created_at, expires_at, moderation_state
+FROM reports
+WHERE request_account_id = $1::bigint
+  AND request_id = $2::text
+`
+
+type ReportByRequestParams struct {
+	AccountID int64
+	RequestID string
+}
+
+type ReportByRequestRow struct {
+	ID                    int64
+	Category              string
+	Severity              string
+	Description           string
+	Latitude              float64
+	Longitude             float64
+	Geohash               string
+	ShelterCapacityStatus *string
+	ShelterHeadcount      *int32
+	CreatedAt             time.Time
+	ExpiresAt             time.Time
+	ModerationState       string
+}
+
+// The replay lookup after InsertReportIdempotent returned no row. Always
+// scoped to the caller's account together with the request id, never by the
+// request id alone, so one account can never read back another account's
+// report by guessing its request id (T-04-05). No row means no such request.
+func (q *Queries) ReportByRequest(ctx context.Context, arg ReportByRequestParams) (ReportByRequestRow, error) {
+	row := q.db.QueryRow(ctx, reportByRequest, arg.AccountID, arg.RequestID)
+	var i ReportByRequestRow
+	err := row.Scan(
+		&i.ID,
+		&i.Category,
+		&i.Severity,
+		&i.Description,
+		&i.Latitude,
+		&i.Longitude,
+		&i.Geohash,
+		&i.ShelterCapacityStatus,
+		&i.ShelterHeadcount,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.ModerationState,
+	)
+	return i, err
+}
+
+const reportExtrasForReports = `-- name: ReportExtrasForReports :many
+SELECT r.id AS report_id, r.moderation_state, r.client_written_at,
+       (f.id IS NOT NULL)::bool AS viewer_flagged
+FROM reports r
+LEFT JOIN report_flags f ON f.report_id = r.id AND f.account_id = $1::bigint
+WHERE r.id = ANY($2::bigint[])
+`
+
+type ReportExtrasForReportsParams struct {
+	ViewerAccountID int64
+	ReportIds       []int64
+}
+
+type ReportExtrasForReportsRow struct {
+	ReportID        int64
+	ModerationState string
+	ClientWrittenAt pgtype.Timestamptz
+	ViewerFlagged   bool
+}
+
+// The moderation state, the display only written time and the viewer's flag
+// for a whole feed page in one round trip. Batched like CurrentVotesForReports
+// and ReporterAccountsForReports, and called once per non empty page, so
+// NearbyReports stays exactly as Phase 1 pinned it and names none of these
+// columns. One row per existing requested report: the LEFT JOIN is on the
+// viewer's own flag, and report_flags_one_per_account allows at most one such
+// row, so a report is never duplicated. A dismissed flag still counts as
+// flagged because the same account can never flag that report again
+// (R-01, D-09).
+func (q *Queries) ReportExtrasForReports(ctx context.Context, arg ReportExtrasForReportsParams) ([]ReportExtrasForReportsRow, error) {
+	rows, err := q.db.Query(ctx, reportExtrasForReports, arg.ViewerAccountID, arg.ReportIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReportExtrasForReportsRow
+	for rows.Next() {
+		var i ReportExtrasForReportsRow
+		if err := rows.Scan(
+			&i.ReportID,
+			&i.ModerationState,
+			&i.ClientWrittenAt,
+			&i.ViewerFlagged,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const reportForModeration = `-- name: ReportForModeration :one
+SELECT r.id, r.category, r.severity, r.description, r.created_at, r.expires_at,
+       r.client_written_at, r.moderation_state,
+       c.status AS check_status, c.verdict, c.scores, c.model,
+       COALESCE(c.needs_review, false)::bool AS needs_review,
+       (SELECT count(*) FROM report_flags f
+         WHERE f.report_id = r.id AND f.dismissed_at IS NULL)::bigint AS open_flag_total,
+       COALESCE((SELECT jsonb_object_agg(x.reason, x.n)
+                   FROM (SELECT f.reason, count(*) AS n FROM report_flags f
+                          WHERE f.report_id = r.id AND f.dismissed_at IS NULL
+                          GROUP BY f.reason) x), '{}'::jsonb)::jsonb AS flag_counts
+FROM reports r
+LEFT JOIN moderation_checks c ON c.report_id = r.id
+WHERE r.id = $1
+`
+
+type ReportForModerationRow struct {
+	ID              int64
+	Category        string
+	Severity        string
+	Description     string
+	CreatedAt       time.Time
+	ExpiresAt       time.Time
+	ClientWrittenAt pgtype.Timestamptz
+	ModerationState string
+	CheckStatus     *string
+	Verdict         *string
+	Scores          []byte
+	Model           *string
+	NeedsReview     bool
+	OpenFlagTotal   int64
+	FlagCounts      []byte
+}
+
+// One report in the moderator row shape (the same columns as ReviewQueue,
+// FlagQueue and PendingQueue), for the Find, Keep and Remove answers (D-08).
+// No session id, email or account id is selected. The check columns are NULL
+// for a report that never had a check (seeded and older rows). The text of the
+// report is the only free text here; the check row itself holds none.
+func (q *Queries) ReportForModeration(ctx context.Context, reportID int64) (ReportForModerationRow, error) {
+	row := q.db.QueryRow(ctx, reportForModeration, reportID)
+	var i ReportForModerationRow
+	err := row.Scan(
+		&i.ID,
+		&i.Category,
+		&i.Severity,
+		&i.Description,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.ClientWrittenAt,
+		&i.ModerationState,
+		&i.CheckStatus,
+		&i.Verdict,
+		&i.Scores,
+		&i.Model,
+		&i.NeedsReview,
+		&i.OpenFlagTotal,
+		&i.FlagCounts,
+	)
+	return i, err
 }
 
 const reporterAccountsForReports = `-- name: ReporterAccountsForReports :many
