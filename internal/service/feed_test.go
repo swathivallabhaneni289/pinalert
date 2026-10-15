@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"pinalert/internal/service"
 	sqlcgen "pinalert/internal/store/sqlc"
 )
@@ -27,10 +29,70 @@ type fakeFeedQuerier struct {
 	historyRows  []sqlcgen.ReporterHistoryReportsRow
 	historyErr   error
 
+	// The plan 03.1-06 reads. focusRow nil means the database has no such
+	// report, so ReportForFocus answers pgx.ErrNoRows.
+	expiredRows []sqlcgen.ExpiredReportsInWindowRow
+	expiredErr  error
+	openRows    []sqlcgen.OpenReportsInAreaRow
+	openErr     error
+	focusRow    *sqlcgen.ReportForFocusRow
+	focusErr    error
+	undoRows    []sqlcgen.ResolutionUndoCountsRow
+	undoErr     error
+
 	lastVoteIDs     []int64
 	lastReporterIDs []int64
 	historyArgs     []sqlcgen.ReporterHistoryReportsParams
+	expiredArgs     []sqlcgen.ExpiredReportsInWindowParams
+	openArgs        []sqlcgen.OpenReportsInAreaParams
+	focusArgs       []sqlcgen.ReportForFocusParams
+	undoArgs        []sqlcgen.ResolutionUndoCountsParams
 	callLog         []string
+}
+
+// ExpiredReportsInWindow, OpenReportsInArea, ReportForFocus and
+// ResolutionUndoCounts are the plan 03.1-06 reads. Unconfigured they return an
+// empty result and no error; ReportForFocus returns pgx.ErrNoRows, which is
+// the database's own answer for an unknown id.
+func (f *fakeFeedQuerier) ExpiredReportsInWindow(ctx context.Context, arg sqlcgen.ExpiredReportsInWindowParams) ([]sqlcgen.ExpiredReportsInWindowRow, error) {
+	f.callLog = append(f.callLog, "ExpiredReportsInWindow")
+	f.expiredArgs = append(f.expiredArgs, arg)
+	return f.expiredRows, f.expiredErr
+}
+
+func (f *fakeFeedQuerier) OpenReportsInArea(ctx context.Context, arg sqlcgen.OpenReportsInAreaParams) ([]sqlcgen.OpenReportsInAreaRow, error) {
+	f.callLog = append(f.callLog, "OpenReportsInArea")
+	f.openArgs = append(f.openArgs, arg)
+	return f.openRows, f.openErr
+}
+
+func (f *fakeFeedQuerier) ReportForFocus(ctx context.Context, arg sqlcgen.ReportForFocusParams) (sqlcgen.ReportForFocusRow, error) {
+	f.callLog = append(f.callLog, "ReportForFocus")
+	f.focusArgs = append(f.focusArgs, arg)
+	if f.focusErr != nil {
+		return sqlcgen.ReportForFocusRow{}, f.focusErr
+	}
+	if f.focusRow == nil || f.focusRow.ID != arg.ReportID {
+		return sqlcgen.ReportForFocusRow{}, pgx.ErrNoRows
+	}
+	return *f.focusRow, nil
+}
+
+// ResolutionUndoCounts records the call and returns only the rows of undoRows
+// whose report is in the requested list, which is the query's own id filter.
+func (f *fakeFeedQuerier) ResolutionUndoCounts(ctx context.Context, arg sqlcgen.ResolutionUndoCountsParams) ([]sqlcgen.ResolutionUndoCountsRow, error) {
+	f.callLog = append(f.callLog, "ResolutionUndoCounts")
+	f.undoArgs = append(f.undoArgs, arg)
+	if f.undoErr != nil {
+		return nil, f.undoErr
+	}
+	var out []sqlcgen.ResolutionUndoCountsRow
+	for _, row := range f.undoRows {
+		if slices.Contains(arg.ReportIds, row.ReportID) {
+			out = append(out, row)
+		}
+	}
+	return out, nil
 }
 
 // InsertReport exists only to satisfy service.Querier; no feed test drives it.
@@ -1370,5 +1432,104 @@ func TestNearbyRatingNeverChangesVisibilityOrOrder(t *testing.T) {
 				t.Errorf("report 1 showed %d distinct tags across the runs, want %d", len(tags), len(variants))
 			}
 		})
+	}
+}
+
+// TestCategoryFilterNearby pins D-17 for the live list: a category chip is the
+// reader's own request, so it narrows the list in Go after Resolve and keeps the
+// nearest first order. Rescue and critical reports get no special rule.
+func TestCategoryFilterNearby(t *testing.T) {
+	newFake := func() *fakeFeedQuerier {
+		return &fakeFeedQuerier{
+			nearbyRows: []sqlcgen.NearbyReportsRow{
+				p12Row(1, service.SeverityLow, service.CategoryFlood, 1.0),
+				p12Row(2, service.SeverityCritical, service.CategoryRescueNeeded, 2.0),
+				p12Row(3, service.SeverityMedium, service.CategoryShelterOpen, 3.0),
+				p12Row(4, service.SeverityLow, service.CategoryFlood, 4.0),
+			},
+			reporterRows: []sqlcgen.ReporterAccountsForReportsRow{
+				reporterRow(1, nil), reporterRow(2, nil), reporterRow(3, nil), reporterRow(4, nil),
+			},
+		}
+	}
+	run := func(t *testing.T, category service.Category) []service.ReportView {
+		t.Helper()
+		svc := service.NewReportService(newFake(), service.WithReportClock(p12Clock))
+		views, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, Category: category})
+		if err != nil {
+			t.Fatalf("Nearby: %v", err)
+		}
+		return views
+	}
+
+	t.Run("flood keeps only flood reports in nearest first order", func(t *testing.T) {
+		if got := viewIDs(run(t, service.CategoryFlood)); !equalIDs(got, []int64{1, 4}) {
+			t.Fatalf("ids = %v, want [1 4]", got)
+		}
+	})
+	t.Run("an empty category returns everything", func(t *testing.T) {
+		got := run(t, "")
+		if ids := viewIDs(got); !equalIDs(ids, []int64{1, 2, 3, 4}) {
+			t.Fatalf("ids = %v, want [1 2 3 4]", ids)
+		}
+		assertAscendingDistance(t, got)
+	})
+	t.Run("rescue is filtered like any other category", func(t *testing.T) {
+		if got := viewIDs(run(t, service.CategoryRescueNeeded)); !equalIDs(got, []int64{2}) {
+			t.Fatalf("ids = %v, want [2]", got)
+		}
+	})
+}
+
+// TestNearbyFillsViewerResolution pins that every live row carries its view and
+// the viewer's own standing resolution, while membership and order stay as the
+// resolver left them.
+func TestNearbyFillsViewerResolution(t *testing.T) {
+	fake := &fakeFeedQuerier{
+		nearbyRows: []sqlcgen.NearbyReportsRow{
+			p12Row(1, service.SeverityLow, service.CategoryFlood, 1.0),
+			p12Row(2, service.SeverityLow, service.CategoryFlood, 2.0),
+			p12Row(3, service.SeverityLow, service.CategoryFlood, 3.0),
+		},
+		reporterRows: []sqlcgen.ReporterAccountsForReportsRow{reporterRow(1, nil), reporterRow(2, nil), reporterRow(3, nil)},
+	}
+	fake.voteRows = append(fake.voteRows, p12Places(1, service.VoteConfirm, service.IndependentAgreementThreshold, 31)...)
+	fake.voteRows = append(fake.voteRows, p12Places(2, service.VoteDispute, service.IndependentAgreementThreshold, 41)...)
+	fake.voteRows = append(fake.voteRows, p12Vote(3, 7, service.VoteKindResolution, service.VoteResolve, "cellV"))
+	svc := service.NewReportService(fake, service.WithReportClock(p12Clock))
+
+	active, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, ViewerAccountID: 7})
+	if err != nil {
+		t.Fatalf("Nearby: %v", err)
+	}
+	if ids := viewIDs(active); !equalIDs(ids, []int64{1, 3}) {
+		t.Fatalf("active ids = %v, want [1 3]", ids)
+	}
+	for _, v := range active {
+		if v.View != service.FeedViewActive {
+			t.Errorf("report %d: View = %q, want %q", v.ID, v.View, service.FeedViewActive)
+		}
+		if v.History != nil {
+			t.Errorf("report %d: History = %+v, want nil", v.ID, v.History)
+		}
+	}
+	v3, _ := findView(active, 3)
+	if v3.ViewerResolution != service.VoteResolve {
+		t.Errorf("report 3: ViewerResolution = %q, want %q", v3.ViewerResolution, service.VoteResolve)
+	}
+	v1, _ := findView(active, 1)
+	if v1.ViewerResolution != "" {
+		t.Errorf("report 1: ViewerResolution = %q, want empty", v1.ViewerResolution)
+	}
+
+	disputed, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, ViewerAccountID: 7, IncludeDisputed: true})
+	if err != nil {
+		t.Fatalf("Nearby: %v", err)
+	}
+	if ids := viewIDs(disputed); !equalIDs(ids, []int64{2}) {
+		t.Fatalf("disputed ids = %v, want [2]", ids)
+	}
+	if disputed[0].View != service.FeedViewDisputed {
+		t.Errorf("report 2: View = %q, want %q", disputed[0].View, service.FeedViewDisputed)
 	}
 }

@@ -175,13 +175,17 @@ type Report struct {
 // viewer", which yields an empty ViewerVote and a false IsOwnReport for
 // every report. IncludeDisputed is D-10/D-11's "Show disputed" toggle,
 // gating Hidden reports into the result for both the list and the map pins
-// at once; it never reveals Retracted reports (D-12).
+// at once; it never reveals Retracted reports (D-12). Category narrows the
+// list to one category and "" means all. The filter runs in Go after Resolve,
+// never in SQL, and it is the reader's own request: a chip never hides a report
+// the reader did not ask to hide (D-17).
 type NearbyQuery struct {
 	Latitude        float64
 	Longitude       float64
 	RadiusKm        float64
 	ViewerAccountID int64
 	IncludeDisputed bool
+	Category        Category
 }
 
 // ValidateSubmitInput enforces every server-side rule a report submission
@@ -290,6 +294,14 @@ type Querier interface {
 	CurrentVotesForReports(ctx context.Context, reportIds []int64) ([]sqlcgen.CurrentVotesForReportsRow, error)
 	ReporterAccountsForReports(ctx context.Context, reportIds []int64) ([]sqlcgen.ReporterAccountsForReportsRow, error)
 	ReporterHistoryReports(ctx context.Context, arg sqlcgen.ReporterHistoryReportsParams) ([]sqlcgen.ReporterHistoryReportsRow, error)
+	// ExpiredReportsInWindow is the expired candidate set of the Past read.
+	ExpiredReportsInWindow(ctx context.Context, arg sqlcgen.ExpiredReportsInWindowParams) ([]sqlcgen.ExpiredReportsInWindowRow, error)
+	// OpenReportsInArea is the unexpired candidate set that may have been closed.
+	OpenReportsInArea(ctx context.Context, arg sqlcgen.OpenReportsInAreaParams) ([]sqlcgen.OpenReportsInAreaRow, error)
+	// ReportForFocus reads one report by id for a report link.
+	ReportForFocus(ctx context.Context, arg sqlcgen.ReportForFocusParams) (sqlcgen.ReportForFocusRow, error)
+	// ResolutionUndoCounts is the viewer's take back and reopen count per report.
+	ResolutionUndoCounts(ctx context.Context, arg sqlcgen.ResolutionUndoCountsParams) ([]sqlcgen.ResolutionUndoCountsRow, error)
 }
 
 // ReportService validates, computes derived fields, and persists reports.
@@ -530,7 +542,13 @@ func voteRowsByReport(rows []sqlcgen.CurrentVotesForReportsRow) map[int64][]sqlc
 //     object from the same batched rows for each report that is kept (D-21),
 //     and append. The reporter signal is read after Resolve and never feeds
 //     visibility, filtering or order (D-14). A report with no reporter
-//     account, or one past the account cap, carries the none signal.
+//     account, or one past the account cap, carries the none signal. A
+//     non empty Category skips a report of another category here, and each
+//     kept report gets its View from ViewOf and the viewer's own standing
+//     resolution from the same rows (D-17, D-22).
+//  12. attachUndos over the kept views: one ResolutionUndoCounts read, and only
+//     when the viewer has a resolution row on a kept report or posted one of
+//     them. An ordinary page costs no extra read (D-22).
 func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView, error) {
 	latMin, latMax, lonMin, lonMax := BoundingBox(q.Latitude, q.Longitude, q.RadiusKm)
 
@@ -598,12 +616,17 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 		if !vis.ListableInFeed(q.IncludeDisputed) {
 			continue
 		}
+		if q.Category != "" && r.Category != q.Category {
+			continue
+		}
 
 		views = append(views, ReportView{
 			Report:           r,
 			Visibility:       vis,
 			VisibilityReason: reason,
+			View:             ViewOf(vis, r.ExpiresAt, now),
 			ViewerVote:       ViewerContentVote(reportVotes, r.ID, q.ViewerAccountID),
+			ViewerResolution: ViewerResolution(reportVotes, r.ID, q.ViewerAccountID),
 			IsOwnReport:      reporterID != nil && *reporterID == q.ViewerAccountID,
 			Trust: BuildTrust(TrustInput{
 				Rows:              reportVotes,
@@ -617,6 +640,9 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 				Reporter:          reporterSignalRef(signals, reporterID),
 			}),
 		})
+	}
+	if err := s.attachUndos(ctx, q.ViewerAccountID, views, now); err != nil {
+		return nil, err
 	}
 	return views, nil
 }
