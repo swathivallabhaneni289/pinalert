@@ -107,7 +107,29 @@ window.PinalertMap = (function () {
       top = spaceMd + touchMin + spaceMd;
       bottom = spaceLg + touchMin + spaceMd;
     }
+    // The tools layer sits over the top of the map, so the card must also
+    // clear it (03.1 P4-A4). The larger of the two values wins.
+    top = Math.max(top, toolsReserve());
     panPad = { topLeft: [spaceMd, top], bottomRight: [spaceMd, bottom] };
+  }
+
+  // toolsReserve is how far down from the top of the map container the card
+  // must stay to clear the tools layer: the measured bottom of .map-tools plus
+  // one small space. It is measured, never a literal, because the layer is one
+  // row on a phone and two on a laptop. It is 0 when there is no layer or when
+  // the layer is not drawn (the phone detail sheet hides it).
+  function toolsReserve() {
+    var container = document.getElementById('map');
+    var tools = document.querySelector('.map-tools');
+    if (!container || !tools) {
+      return 0;
+    }
+    var toolsBox = tools.getBoundingClientRect();
+    if (toolsBox.width === 0 && toolsBox.height === 0) {
+      return 0;
+    }
+    var gap = readSpaceToken('--space-sm');
+    return Math.max(0, toolsBox.bottom - container.getBoundingClientRect().top + gap);
   }
 
   // applyPanPadding writes the current paddings onto one popup, because a popup
@@ -266,19 +288,74 @@ window.PinalertMap = (function () {
       Pinalert.startPolling();
     }
 
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
+    locateReader(
+      function (pos) {
+        boot(pos.coords.latitude, pos.coords.longitude, 13, true);
+      },
+      function () {
+        boot(fallbackLat, fallbackLon, 11, false);
+      }
+    );
+  }
+
+  // locateReader asks the browser for the reader's position once. A missing
+  // geolocation API, a refusal and a timeout all answer through onFail, so the
+  // caller has one fallback branch. The first centring and the return to the
+  // reader share this step.
+  function locateReader(onFix, onFail) {
+    if (!navigator.geolocation) {
+      onFail();
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(onFix, onFail, { timeout: 8000 });
+  }
+
+  // moveTo puts the map on a place, with the target in the middle of the part
+  // of the map the tools layer leaves free: the target is shifted down by half
+  // the measured reserve, so a pin there is never lost under the tools. It
+  // never reads the list; the caller refetches once (D-14).
+  function moveTo(lat, lon, zoom) {
+    if (!map) {
+      return;
+    }
+    var shift = toolsReserve() / 2;
+    var target = map.project([lat, lon], zoom).subtract([0, shift]);
+    map.setView(map.unproject(target, zoom), zoom, { animate: !reducedMotion });
+  }
+
+  // recenterOnReader is Back to my location: it runs the geolocation step
+  // again, stores the centre with its own flag (a fix is the reader's own, the
+  // fallback never is), moves the map there, reads the list once and resolves
+  // with { own }. It does not start polling: the poll loop is already running.
+  function recenterOnReader() {
+    return new Promise(function (resolve) {
+      function done(lat, lon, zoom, own) {
+        Pinalert.setCenter(lat, lon, own);
+        moveTo(lat, lon, zoom);
+        Pinalert.fetchReports();
+        resolve({ own: own });
+      }
+      locateReader(
         function (pos) {
-          boot(pos.coords.latitude, pos.coords.longitude, 13, true);
+          done(pos.coords.latitude, pos.coords.longitude, 13, true);
         },
         function () {
-          boot(fallbackLat, fallbackLon, 11, false);
-        },
-        { timeout: 8000 }
+          done(Pinalert.config.fallbackLat, Pinalert.config.fallbackLon, 11, false);
+        }
       );
-    } else {
-      boot(fallbackLat, fallbackLon, 11, false);
+    });
+  }
+
+  // getCenter is the visible centre of the map as { lat, lon }, the bias of a
+  // place search, or null before the map exists. The longitude is wrapped
+  // because the map scrolls sideways without a bound and the server refuses a
+  // longitude outside 180.
+  function getCenter() {
+    if (!map) {
+      return null;
     }
+    var centre = map.getCenter().wrap();
+    return { lat: centre.lat, lon: centre.lng };
   }
 
   // buildBadgeElement assembles a white category glyph on a solid
@@ -419,11 +496,12 @@ window.PinalertMap = (function () {
     PinalertTrust.updateSeverityLabel(card.severity, report);
     PinalertVisibility.updateVisibilityTag(card.tag, report);
 
-    // Category, relative time and, only when the feed was loaded around the
-    // reader's own position, the distance. No severity word: the label above
-    // says it (A24, A94).
+    // Category, relative time and the distance sentence of the store: the
+    // reader's own distance, a distance from a searched place or an
+    // approximate one, and nothing around the default centre. No severity
+    // word: the label above says it (A24, A94, C20, C21).
     var categoryLabel = Pinalert.categoryLabel(report.category);
-    var away = Pinalert.feedIsAroundReader() ? Pinalert.formatDistance(report.distance_km) : '';
+    var away = Pinalert.distanceText(report);
     var meta = categoryLabel + ' \u00b7 ' + Pinalert.relativeTime(report.created_at);
     if (away) {
       meta += ' \u00b7 ' + away;
@@ -1028,6 +1106,9 @@ window.PinalertMap = (function () {
 
   return {
     flyTo: flyTo,
+    moveTo: moveTo,
+    recenterOnReader: recenterOnReader,
+    getCenter: getCenter,
     highlight: highlight,
     focusOpenPopup: focusOpenPopup,
     takeRemovedPopupFocus: takeRemovedPopupFocus

@@ -120,8 +120,10 @@ func TestPopupCardBuiltOnceUpdatedInPlace(t *testing.T) {
 	// Plan 03-31 (A94): the popup meta line shows the distance, so the
 	// A31 ban on distance_km is replaced by the gate and the shared formatter
 	// (TestPopupBuildsTheCardAndTheFadeLine pins both).
-	p17MustContain(t, "updatePopupCard", update,
-		"Pinalert.feedIsAroundReader()", "Pinalert.formatDistance(report.distance_km)")
+	// Plan 03.1-11 (C20, C21): the gate and the formatter now live inside the
+	// store's one distance sentence. The old literals were
+	// Pinalert.feedIsAroundReader() and Pinalert.formatDistance(report.distance_km).
+	p17MustContain(t, "updatePopupCard", update, "Pinalert.distanceText(report)")
 	p17MustNotContain(t, "updatePopupCard", update,
 		"createElement(", "appendChild(",
 		"createVisibilityTag(", "createTrustBlock(", "createTrustCard(", "createVoteBlock(", "createSeverityLabel(",
@@ -981,6 +983,16 @@ func TestPopupPaddingTokensAgree(t *testing.T) {
 	p13MustContain(t, "refreshPanPadding", refresh,
 		"spaceMd + touchMin + spaceMd", "spaceLg + touchMin + spaceMd",
 		"mediaMatches(NARROW_QUERY)", "mediaMatches(SHORT_QUERY)")
+
+	// Plan 03.1-11 (P4-A4 method): the top reserve is also the measured bottom
+	// of the tools layer plus one small space. The measurement is its own
+	// helper, so the token name list above (which must equal the narrow max
+	// height's) is not widened by it, and no literal height is written.
+	p13MustContain(t, "refreshPanPadding", refresh, "Math.max(top, toolsReserve())")
+	p13MustNotContain(t, "refreshPanPadding", refresh, "'--map-tools-height'", "'--space-sm'")
+	reserve := jsFunctionBody(t, code, "toolsReserve()")
+	p13MustContain(t, "toolsReserve", reserve,
+		"document.querySelector('.map-tools')", "getBoundingClientRect()", "readSpaceToken('--space-sm')")
 
 	bind, anchorFound, termFound := windowAfter(code, "bindPopup(", "marker.on(")
 	if !anchorFound || !termFound {

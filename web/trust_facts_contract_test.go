@@ -202,16 +202,18 @@ func TestPopupBuildsTheCardAndTheFadeLine(t *testing.T) {
 	update := jsFunctionBody(t, mapJS, "updatePopupCard(card, report)")
 	p13MustContain(t, "map.js updatePopupCard", update,
 		"PinalertTrust.updateTrustCard(card.trust, report.trust)",
-		"Pinalert.feedIsAroundReader()",
-		"Pinalert.formatDistance(report.distance_km)",
+		"Pinalert.distanceText(report)",
 		"Pinalert.formatFade(report)",
 		"card.fade.hidden")
 	p13MustNotContain(t, "map.js updatePopupCard", update,
 		"createElement(", "appendChild(", "innerHTML", "new Date", "Date.now", "getTime", "expires_at",
 		"updateTrustBlock(")
-	// The distance sits behind the centre source gate, in the meta line.
+	// Plan 03.1-11: the centre source gate and the formatter are inside the
+	// store's distance sentence (distanceText, pinned in view_strip_contract_test.go).
+	// The old literals were Pinalert.feedIsAroundReader() then
+	// Pinalert.formatDistance(report.distance_km), both before card.metaLine.
 	p13Ordered(t, update, "map.js updatePopupCard distance",
-		"Pinalert.feedIsAroundReader()", "Pinalert.formatDistance(report.distance_km)", "card.metaLine")
+		"Pinalert.distanceText(report)", "card.metaLine")
 
 	p13MustNotContain(t, "map.js", mapJS, "collapsePanelsIn", "confirmed again", "createTrustBlock(")
 }
@@ -240,14 +242,22 @@ func TestSharedDistanceAndFadeFormatters(t *testing.T) {
 		"formatDistance: formatDistance", "formatFade: formatFade", "feedIsAroundReader: feedIsAroundReader")
 
 	mapJS := p23CodeOf(t, "static/js/map.js")
+	// Plan 03.1-11 factored the geolocation step into locateReader, shared with
+	// the return to the reader. The old pin counted two fallback boots (denied
+	// and unsupported); locateReader answers both through its one failure
+	// callback, so centerOnVisitor boots the fallback centre once.
 	centre := jsFunctionBody(t, mapJS, "centerOnVisitor()")
 	p13MustContain(t, "centerOnVisitor", centre,
 		"function boot(lat, lon, zoom, own)", "Pinalert.setCenter(lat, lon, own)",
+		"locateReader(",
 		"boot(pos.coords.latitude, pos.coords.longitude, 13, true)",
 		"boot(fallbackLat, fallbackLon, 11, false)")
-	if n := strings.Count(centre, "boot(fallbackLat, fallbackLon, 11, false)"); n != 2 {
-		t.Errorf("centerOnVisitor boots the fallback centre %d times, want 2 (denied and unsupported)", n)
+	if n := strings.Count(centre, "boot(fallbackLat, fallbackLon, 11, false)"); n != 1 {
+		t.Errorf("centerOnVisitor boots the fallback centre %d times, want 1 (locateReader's failure callback)", n)
 	}
+	locate := jsFunctionBody(t, mapJS, "locateReader(onFix, onFail)")
+	p13MustContain(t, "locateReader", locate,
+		"if (!navigator.geolocation)", "onFail();", "{ timeout: 8000 }")
 }
 
 // p31Resolve turns a token value into a hex colour: a literal, or one var()
