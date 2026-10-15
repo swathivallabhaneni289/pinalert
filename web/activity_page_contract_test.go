@@ -97,8 +97,19 @@ func TestActivityPageTemplateMarkup(t *testing.T) {
 	if card == "" {
 		t.Fatal("could not isolate the card markup")
 	}
-	if strings.Contains(card, "<a ") || strings.Contains(card, "<a>") {
-		t.Errorf("the card holds a link, nothing opens from a card yet (W-08)")
+	// W-08 stands: nothing opens from a card. Plan 04-16 (D-24) allows exactly
+	// one exception, the Policy link inside the removed report's note, so a
+	// removed row can point to the Policy page when a contact address is set.
+	// That one anchor is cut out below; any other link in a card still fails.
+	allowed := regexp.MustCompile(`(?s)<p class="report-row__moderation-note">.*?</p>`)
+	for _, note := range allowed.FindAllString(card, -1) {
+		if n := strings.Count(note, "<a "); n > 1 || (n == 1 && strings.Count(note, `<a href="/policy">`) != 1) {
+			t.Errorf("the moderation note holds a link other than the one Policy link (W-08, D-24): %s", note)
+		}
+	}
+	rest := allowed.ReplaceAllString(card, "")
+	if strings.Contains(rest, "<a ") || strings.Contains(rest, "<a>") {
+		t.Errorf("the card holds a link outside the moderation note, nothing opens from a card yet (W-08)")
 	}
 	if strings.Contains(card, "<button") {
 		t.Errorf("the template card holds a button, the script mounts Reopen")
