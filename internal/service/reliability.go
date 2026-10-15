@@ -63,7 +63,15 @@ type JudgedOutcome struct {
 // shows it Live, because this function never changes visibility (R-06).
 // Phase 3.1 reuses this function, including its neutral result, for
 // history labels.
+//
+// A report that moderation withholds (removed, or pending and not serious,
+// per ReportMeta.Withheld) is neutral whatever its votes, so a moderation
+// outcome never moves a rating (Phase 4 R-02). A pending serious report was
+// public while its check ran and is judged as before.
 func ClassifyOutcome(meta ReportMeta, tally VoteTally, expiresAt, now time.Time) Outcome {
+	if meta.Withheld() {
+		return OutcomeNeutral
+	}
 	if expiresAt.After(now) {
 		return OutcomeNeutral
 	}

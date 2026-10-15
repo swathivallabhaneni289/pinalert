@@ -41,9 +41,11 @@ type ReporterSignal struct {
 // reporterHistoryMeta converts a history row into the report metadata the
 // classifier reads. An unknown category falls back to other and an unknown
 // severity to low, the same fallback the Activity read path uses, so the
-// classification sees the metadata every read path sees.
+// classification sees the metadata every read path sees. It also carries the
+// stored moderation state so ClassifyOutcome can make a withheld report
+// neutral (Phase 4 R-02).
 func reporterHistoryMeta(row sqlcgen.ReporterHistoryReportsRow) ReportMeta {
-	meta := ReportMeta{Severity: Severity(row.Severity), Category: Category(row.Category)}
+	meta := ReportMeta{Severity: Severity(row.Severity), Category: Category(row.Category), Moderation: ModerationState(row.ModerationState)}
 	if !meta.Category.Valid() {
 		meta.Category = CategoryOther
 	}
@@ -106,7 +108,9 @@ func reporterSignalFor(p *ReporterSignal) ReporterSignal {
 // resolve or reopen cannot erase a record, because ClassifyOutcome clears the
 // resolution fields. Every classified row, neutral included, goes on to
 // ScoreReliability, which applies the window, drops the neutral rows and caps
-// the latest 30 judged reports (WR-05). The SQL read caps at
+// the latest 30 judged reports (WR-05). Held and removed reports are neutral
+// rows too (Phase 4 R-02), so they ride in the read like any other neutral
+// row and ScoreReliability drops them before it caps. The SQL read caps at
 // ReliabilityHistoryReadCap expired reports, neutral included, so the answer
 // on raw rows is the same as on the capped read unless more than that many
 // rows are neutral.
