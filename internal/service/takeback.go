@@ -77,3 +77,16 @@ func UndosLeft(used int) int {
 	}
 	return left
 }
+
+// undoCountParams builds the ResolutionUndoCounts arguments. The closed vote
+// vocabulary lives here in Go, so the two values and the kind are passed as
+// parameters and never written into the SQL.
+func undoCountParams(accountID int64, reportIDs []int64) sqlcgen.ResolutionUndoCountsParams {
+	return sqlcgen.ResolutionUndoCountsParams{
+		UnresolveValue: string(VoteUnresolve),
+		ReopenValue:    string(VoteReopen),
+		AccountID:      accountID,
+		Kind:           string(VoteKindResolution),
+		ReportIds:      reportIDs,
+	}
+}

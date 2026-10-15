@@ -52,6 +52,11 @@ func p05PathVote(reportID, accountID int64, kind service.VoteKind, value service
 type p05VotingFake struct {
 	*fakeFeedQuerier
 	voteContext sqlcgen.ReportVoteContextRow
+	undoRows    []sqlcgen.ResolutionUndoCountsRow
+}
+
+func (f *p05VotingFake) ResolutionUndoCounts(ctx context.Context, arg sqlcgen.ResolutionUndoCountsParams) ([]sqlcgen.ResolutionUndoCountsRow, error) {
+	return f.undoRows, nil
 }
 
 func (f *p05VotingFake) InsertVote(ctx context.Context, arg sqlcgen.InsertVoteParams) error {

@@ -22,6 +22,11 @@ import (
 // empty, so a vote that passes every refusal answers 200.
 type bodyVoteFake struct {
 	inserted []sqlcgen.InsertVoteParams
+	undoRows []sqlcgen.ResolutionUndoCountsRow
+}
+
+func (f *bodyVoteFake) ResolutionUndoCounts(ctx context.Context, arg sqlcgen.ResolutionUndoCountsParams) ([]sqlcgen.ResolutionUndoCountsRow, error) {
+	return f.undoRows, nil
 }
 
 func (f *bodyVoteFake) ReportVoteContext(ctx context.Context, reportID int64) (sqlcgen.ReportVoteContextRow, error) {
