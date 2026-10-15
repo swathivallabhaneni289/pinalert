@@ -56,6 +56,9 @@ type readContext struct {
 	reporterByReport map[int64]*int64
 	signals          map[int64]ReporterSignal
 	votesByReport    map[int64][]sqlcgen.CurrentVotesForReportsRow
+	// extrasByReport holds the stored moderation state of each candidate, from
+	// the one ReportExtrasForReports read (R-01).
+	extrasByReport map[int64]sqlcgen.ReportExtrasForReportsRow
 }
 
 // The three candidate row types are the same twelve columns as NearbyReports,
@@ -185,9 +188,20 @@ func (s *ReportService) loadReadContext(ctx context.Context, ids []int64, now ti
 	if err != nil {
 		return readContext{}, err
 	}
+	// One extras read over the candidate ids, never the history ids. The viewer
+	// id is 0 because this path needs only the moderation state (R-01).
+	extraRows, err := s.q.ReportExtrasForReports(ctx, sqlcgen.ReportExtrasForReportsParams{ReportIds: ids, ViewerAccountID: 0})
+	if err != nil {
+		return readContext{}, err
+	}
+	extrasByReport := make(map[int64]sqlcgen.ReportExtrasForReportsRow, len(extraRows))
+	for _, ex := range extraRows {
+		extrasByReport[ex.ReportID] = ex
+	}
 	rc := readContext{
 		reporterByReport: reporterByReport,
 		votesByReport:    voteRowsByReport(voteRows),
+		extrasByReport:   extrasByReport,
 	}
 	if withSignals {
 		rc.signals = ReporterSignals(accounts, history, voteRows, now)
@@ -210,13 +224,21 @@ type classified struct {
 
 // classify asks the one resolver about one candidate. Nothing here re derives a
 // rung: Resolve decides the visibility, ViewOf the view and ClosureOf the
-// closure, all at the request's single now (D-03, D-25).
+// closure, all at the request's single now (D-03, D-25). The resolver sees the
+// stored moderation state, so a held or removed report answers withheld and has
+// the none view. A candidate with no extras row also gets the none view before
+// Resolve, so it fails closed.
 func classify(c historyCandidate, rc readContext, now time.Time) classified {
 	r := c.report
 	reporterID := rc.reporterByReport[r.ID]
 	votes := rc.votesByReport[r.ID]
+	ex, ok := rc.extrasByReport[r.ID]
+	if !ok {
+		return classified{view: FeedViewNone, reporterID: reporterID, votes: votes}
+	}
 	tally := BuildVoteTally(votes, r.ID, reporterID)
-	vis, reason := Resolve(ReportMeta{Severity: r.Severity, Category: r.Category}, tally, now)
+	meta := ReportMeta{Severity: r.Severity, Category: r.Category, Moderation: ModerationState(ex.ModerationState)}
+	vis, reason := Resolve(meta, tally, now)
 	view := ViewOf(vis, r.ExpiresAt, now)
 	out := classified{visibility: vis, reason: reason, view: view, tally: tally, reporterID: reporterID, votes: votes}
 	if view == FeedViewResolved {

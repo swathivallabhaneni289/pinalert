@@ -25,7 +25,11 @@ const WrittenLabelThreshold = 30 * time.Minute
 // order, created_at or expires_at (R-05). Clamping the stored value is
 // ClampWrittenAt's job (04-17).
 func WrittenAtForDisplay(createdAt time.Time, written *time.Time) *time.Time {
-	return nil
+	if written == nil || createdAt.Sub(*written) <= WrittenLabelThreshold {
+		return nil
+	}
+	w := *written
+	return &w
 }
 
 // ReportView is what a read path returns; Report alone is what the write
