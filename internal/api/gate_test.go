@@ -303,7 +303,7 @@ func TestAccessGateAllowsVerified(t *testing.T) {
 }
 
 // TestAccessGateExemptRoutes is a table-driven check over DEC-G's exempt
-// list: an unverified session must reach every one of these five routes and
+// list: an unverified session must reach every one of these seven routes and
 // get neither a redirect nor a 401.
 func TestAccessGateExemptRoutes(t *testing.T) {
 	srv, _, _ := newGateTestServer(t)
@@ -319,6 +319,8 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 		{"verify landing", http.MethodGet, "/auth/verify", ""},
 		{"static asset", http.MethodGet, "/static/css/main.css", ""},
 		{"swagger ui", http.MethodGet, "/swagger/index.html", ""},
+		{"disclaimer page", http.MethodGet, "/disclaimer", ""},
+		{"policy page", http.MethodGet, "/policy", ""},
 	}
 
 	for _, tc := range cases {
@@ -348,6 +350,9 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 			}
 			if resp.StatusCode == http.StatusUnauthorized {
 				t.Fatalf("%s %s returned 401 — this route must be reachable without verification", tc.method, tc.path)
+			}
+			if (tc.path == "/disclaimer" || tc.path == "/policy") && resp.StatusCode != http.StatusOK {
+				t.Fatalf("%s %s returned %d: the public legal page must answer 200 without verification", tc.method, tc.path, resp.StatusCode)
 			}
 		})
 	}

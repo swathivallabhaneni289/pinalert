@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinalert: Policy</title>
+  <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/legal.css?v={{.AssetVersion}}">
+  <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
+</head>
+<body>
+  <div class="top-chrome">
+    {{template "disclaimer_bar.html.tmpl" .}}
+  </div>
+  <main class="legal-page">
+    <a class="legal-back" href="/">Back to Pinalert</a>
+    <h1>Policy</h1>
+    <p class="legal-subtitle">Rules, privacy and terms</p>
+
+    <h2>What you can post</h2>
+    <p>Post reports about emergencies and conditions you can see near you. Hateful, harassing or sexual text isn't allowed, and neither are reports made on purpose to mislead.</p>
+    <p>What the automatic check rejects is narrower than what isn't allowed. Text that is clearly hateful, harassing or sexual is rejected before it is posted, and so is text made of random characters with no real words. Other text that breaks these rules can still be posted, and a moderator may remove it later.</p>
+    <p>Violent or frightening words are fine when they describe a real emergency. Urgent wording, capital letters, addresses and phone numbers are fine in a genuine report.</p>
+
+    <h2>How the automatic check works</h2>
+    <p>The text of a report is sent to OpenAI's moderation service. Only the description is sent, never your account, your sign in, your network address or your location. OpenAI documents no retention and no training use for moderation requests.</p>
+    <p>If the text is clearly hateful, harassing or sexual, it is rejected and nothing is stored. If it is borderline, it is posted and a moderator may look at it.</p>
+    <p>If the check can't finish in time, a normal report waits and doesn't show to anyone until it does. A serious report, critical or Rescue needed, is published at once and checked afterwards.</p>
+    <p>The check can be wrong, which is why moderators exist. No photos are accepted.</p>
+
+    <h2>What moderators can do</h2>
+    <p>Moderators can read reports, keep them or remove them. A removed report shows to no one, and its author sees "Removed after review". A flag on a report never hides it by itself. It only asks a moderator to look. The person who flagged is never shown to the author.</p>
+
+    <h2>Limits</h2>
+    <p>Each account can post, vote and flag reports only so fast, to stop spam. When you reach a limit, Pinalert says how long to wait and keeps what you typed.</p>
+
+    <h2>What Pinalert keeps</h2>
+    <ul>
+      <li>Your email address, to sign you in. It is never shown to other people.</li>
+      <li>Each report, with its location, its time and your account.</li>
+      <li>Your votes, kept as a rough square about 150 metres wide and not as an exact point.</li>
+      <li>The scores of the automatic check for borderline reports, without the report text.</li>
+      <li>Flags you send, and their reasons.</li>
+    </ul>
+    <p>Nothing listed here is deleted on a schedule today: reports, votes, flags and sign in records stay stored, and an expired report only stops showing in the lists.</p>
+    {{if .Chrome.ContactEmail}}
+    <p>You can ask for a report or your data to be removed by writing to the address under Complaints and removal requests.</p>
+    {{end}}
+    <p>The map is drawn with files from unpkg.com and map tiles from OpenFreeMap, or from OpenStreetMap on devices that can't draw the vector map. A typed place search goes through Pinalert to OpenStreetMap's Nominatim service. Those services see the request the way any website does.</p>
+
+    <h2>Cookies and storage on your device</h2>
+    <ul>
+      <li>A session cookie, set the first time you open any Pinalert page, including this one, before you sign in. It is kept up to a year, until you log out.</li>
+      <li>A cookie that remembers you chose the Low data view.</li>
+      <li>Your Light or Dark choice.</li>
+      <li>Reports waiting to send, saved on this device until they are sent or discarded.</li>
+      <li>Your last known position on the Low data view, on this device only.</li>
+      <li>A short lived position kept during a visit, so voting doesn't ask again.</li>
+    </ul>
+    <p>There are no advertising or tracking cookies.</p>
+    <p>Browsers can delete saved data, so a report waiting to send isn't guaranteed to survive. Send it as soon as you have a signal. A private window closing, low storage, or a site left unused for about a week in Safari can all clear it.</p>
+
+    <h2>Emergencies and the police</h2>
+    <p>For anything serious, such as a crime or a threat to someone's safety, contact the police directly. In an emergency call {{.Chrome.Numbers.Primary}}. Pinalert doesn't contact the police for you.</p>
+
+    {{if .Chrome.ContactEmail}}
+    <h2>Complaints and removal requests</h2>
+    <p class="legal-contact">To report abuse or ask for a report to be removed, write to <a href="{{.ContactHref}}">{{.Chrome.ContactEmail}}</a>.</p>
+    {{end}}
+
+    <h2>Terms</h2>
+    <p>Using Pinalert means you accept these rules. Pinalert may remove reports that break them, and the limits apply to every account. Pinalert is provided as it is, with no promise of accuracy or availability. It is unofficial.</p>
+
+    <h2>Changes to this page</h2>
+    <p class="legal-updated">Last updated {{.PolicyLastUpdated}}</p>
+
+    <p class="legal-links">
+      <a href="/disclaimer">Disclaimer</a>
+      <a href="/">Back to Pinalert</a>
+    </p>
+  </main>
+</body>
+</html>

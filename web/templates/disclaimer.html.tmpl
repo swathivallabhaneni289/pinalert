@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinalert: Disclaimer</title>
+  <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/legal.css?v={{.AssetVersion}}">
+  <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
+</head>
+<body>
+  <div class="top-chrome">
+    {{template "disclaimer_bar.html.tmpl" .}}
+  </div>
+  <main class="legal-page">
+    <a class="legal-back" href="/">Back to Pinalert</a>
+    <h1>Disclaimer</h1>
+    <p>Pinalert is unofficial. It isn't a government service, and it isn't connected to any government agency or emergency service.</p>
+
+    <h2>Pinalert is not a substitute for emergency services</h2>
+    <p>Pinalert can't send help. If someone is in danger, call the emergency number first. Post here afterwards if you want to.</p>
+
+    <h2 id="emergency-numbers">Emergency numbers</h2>
+    <p>Check these numbers on your own state government's website. They can change.</p>
+    <section class="legal-numbers" aria-labelledby="emergency-numbers">
+      <div class="legal-numbers__row">
+        <a class="legal-numbers__call" href="{{.CallHref}}" aria-label="Call {{.Chrome.Numbers.Primary}}">{{.Chrome.Numbers.Primary}}</a>
+        <p class="legal-numbers__label">India's national emergency number for police, fire and ambulance.</p>
+      </div>
+      {{if .Chrome.Numbers.HasOlder}}
+      <div class="legal-numbers__row">
+        <p class="legal-numbers__number">{{.Chrome.Numbers.OlderList}}</p>
+        <p class="legal-numbers__label">{{.OlderLabel}}</p>
+        <p class="legal-numbers__note">Many state governments still list these and they may still work in your state, but some states have retired them. Try {{.Chrome.Numbers.Primary}} first.</p>
+      </div>
+      {{end}}
+      {{if .Chrome.Numbers.HasStateLines}}
+      <div class="legal-numbers__row">
+        <p class="legal-numbers__number">{{.Chrome.Numbers.StateHelpline}} and {{.Chrome.Numbers.DistrictHelpline}}</p>
+        <p class="legal-numbers__label">For floods and cyclones, the state disaster helpline is often {{.Chrome.Numbers.StateHelpline}} and the district control room is often {{.Chrome.Numbers.DistrictHelpline}}.</p>
+        <p class="legal-numbers__note">These vary by state. Check your state disaster management authority's website.</p>
+        <p class="legal-numbers__index"><a href="https://sachet.ndma.gov.in/HelpDesk" rel="noopener noreferrer">State disaster management authorities</a> Pinalert hasn't checked the numbers on that site.</p>
+      </div>
+      {{end}}
+    </section>
+
+    <h2>How to read what Pinalert shows</h2>
+    <dl class="legal-glossary">
+      {{range .Glossary}}
+      {{range .Terms}}<dt>{{.}}</dt>
+      {{end}}<dd>{{.Text}}</dd>
+      {{end}}
+    </dl>
+
+    <h2>Reports can be wrong</h2>
+    <p>A report is what someone near the place says they saw. Confirmations from people nearby make it more likely to be right. They don't make it certain. Serious reports show at once, before anyone confirms them, so check how many places have confirmed a report before you rely on it. Don't make decisions about your safety from Pinalert alone.</p>
+
+    <h2>Reports expire</h2>
+    <p>After a fixed time a report is marked Expired and leaves the Active list, whether or not anyone confirms it. Expired reports may stay visible for a while under Past. Most reports last {{.ExpiryHours}} hours and critical reports last {{.CriticalExpiryHours}} hours. Confirmations don't extend that time.</p>
+
+    {{if .Chrome.ContactEmail}}
+    <h2>Contact</h2>
+    <p class="legal-contact">To report abuse or ask for something to be removed, write to <a href="{{.ContactHref}}">{{.Chrome.ContactEmail}}</a>.</p>
+    {{end}}
+
+    <p class="legal-links">
+      <a href="/policy">Policy</a>
+      <a href="/">Back to Pinalert</a>
+    </p>
+  </main>
+</body>
+</html>
