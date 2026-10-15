@@ -694,6 +694,65 @@ body {
   animation: toast-in 200ms ease;
 }
 
+/* ---- The toast with an action (03.1 plan 14, D-22) ----
+   The #toast rule above is unchanged. A toast that holds an action is the
+   same --color-text rectangle with 8px corners, a flex row of the text and
+   one button. The head carries :not([hidden]) because it sets display, so
+   the native hidden attribute still hides it. width max-content keeps the
+   box from being squeezed into the half of the viewport that left: 50%
+   leaves it; the max width keeps it on screen at 320 px and the text wraps.
+   The page focus ring is --color-text, which is the toast's own colour, so
+   the button draws its own ring in --color-bg. ---- */
+#toast.toast--action:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  width: max-content;
+  max-width: calc(100vw - var(--space-md) * 2);
+  padding: var(--space-sm) var(--space-sm) var(--space-sm) var(--space-lg);
+}
+
+#toast .toast__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.toast__action {
+  flex: none;
+  min-height: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  padding: 0 var(--space-md);
+  border: 1px solid var(--color-bg);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-bg);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.toast__action:focus-visible {
+  outline: 2px solid var(--color-bg);
+  outline-offset: 2px;
+}
+
+.toast__action:hover,
+.toast__action:active {
+  background: color-mix(in srgb, var(--color-bg) 15%, transparent);
+}
+
+.toast__action:disabled {
+  cursor: default;
+}
+
+@media (forced-colors: active) {
+  .toast__action {
+    border-color: CanvasText;
+  }
+}
+
 @keyframes toast-in {
   from {
     opacity: 0;
@@ -713,6 +772,45 @@ body {
   #toast {
     animation: none;
   }
+}
+
+/* ---- The take back in the opened report (03.1 plan 14, D-22) ----
+   The block, the closed note and the Undo button live inside the vote
+   controls grid that trust.css lays out (two columns, Mark resolved on the
+   full row, every display rule behind :not([hidden])). The native hidden
+   attribute alone hides Confirm, Dispute and Mark resolved on a finished
+   report, so nothing here overrides it. These heads carry the controls
+   ancestor, which makes them more specific than trust.css's two class
+   heads, so load order does not matter. The statement and the count line
+   carry the shared .vote-note class, which the phone sheet already centres,
+   so phone.css needs no change. ---- */
+.vote-controls .vote-takeback:not([hidden]) {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.vote-controls .vote-closed-note:not([hidden]) {
+  grid-column: 1 / -1;
+}
+
+.vote-controls .vote-btn--takeback:not([hidden]) {
+  width: 100%;
+}
+
+/* The grid gap and the flex gap already space the lines, so the shared note
+   margin is taken back for the lines inside the block. */
+.vote-controls .vote-takeback .vote-note:not([hidden]) {
+  margin: 0;
+}
+
+/* The phone sheet draws no icon at rest on its vote buttons (phone.css).
+   The take back keeps its rotate-ccw mark at every width (UI-SPEC Surface 6),
+   so it is drawn again for this one button, with a head that outranks that
+   rule whatever order the sheets load in. */
+.leaflet-container .leaflet-detail-pane .vote-controls .vote-btn--takeback .vote-btn__icon:not([hidden]) {
+  display: block;
 }
 
 .empty-state,

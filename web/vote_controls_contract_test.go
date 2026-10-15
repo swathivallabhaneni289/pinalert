@@ -202,10 +202,16 @@ func TestFocusStepsAfterMarkResolved(t *testing.T) {
 	p09MustContain(t, "focusAfterVote", afterVote, "focusIsLost(origin.controls)", "canTakeFocus(")
 
 	afterRetract := p09FuncBody(t, text, "focusAfterRetract(origin, removal)")
+	// Plan 03.1-14: the fallback now ends on the current tab link, found by
+	// its selector, before the view toggle and the empty blocks, and the three
+	// empty blocks plan 03.1-05 added are named too.
 	p09Ordered(t, afterRetract, "focusAfterRetract",
-		"removal.map", "removal.next", "removal.prev", "'view-toggle'", "'feed-empty'")
+		"removal.map", "removal.next", "removal.prev", "currentTabLink()", "'view-toggle'", "'feed-empty'",
+		"'feed-empty-history'", "'disputed-empty'", "'past-empty'", "'filter-empty'")
 	p09MustContain(t, "focusAfterRetract", afterRetract,
-		"'disputed-empty'", "setAttribute('tabindex', '-1')", "'popup'", "focusIsLost(")
+		"setAttribute('tabindex', '-1')", "'popup'", "focusIsLost(")
+	p09MustContain(t, "currentTabLink", p09FuncBody(t, text, "currentTabLink()"),
+		".view-tabs .view-tab[aria-current=\"page\"]")
 
 	p09MustContain(t, "isDisplayed", p09FuncBody(t, text, "isDisplayed(el)"), "isConnected", "getClientRects()")
 	p09MustContain(t, "canTakeFocus", p09FuncBody(t, text, "canTakeFocus(el)"), "isDisplayed(", ".disabled", ".hidden")

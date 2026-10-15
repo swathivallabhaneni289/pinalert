@@ -1485,9 +1485,20 @@ func TestResolveActionAllowlistIsUnchanged(t *testing.T) {
 	}
 	text := stripCSSComments(string(raw))
 
-	const want = "var VOTE_ACTIONS = ['confirm', 'dispute', 'resolve', 'reopen'];"
+	// Plan 03.1-14 adds the fifth path segment, 'unresolve' (the take back of
+	// a mistaken Mark resolved, plan 03.1-08's route). The first four are in
+	// 02-05's order and are untouched; the list stays closed, and the UI only
+	// keys confirm-resolve and cancel-resolve are still not members.
+	const want = "var VOTE_ACTIONS = ['confirm', 'dispute', 'resolve', 'reopen', 'unresolve'];"
 	if !strings.Contains(text, want) {
-		t.Errorf("VOTE_ACTIONS must remain byte-identical to 02-05's declaration — expected to find %q", want)
+		t.Errorf("VOTE_ACTIONS must be exactly the closed list of five path segments, expected to find %q", want)
+	}
+	for _, uiOnly := range []string{"'confirm-resolve'", "'cancel-resolve'"} {
+		decl := text[strings.Index(text, "var VOTE_ACTIONS"):]
+		decl = decl[:strings.Index(decl, ";")]
+		if strings.Contains(decl, uiOnly) {
+			t.Errorf("VOTE_ACTIONS must not hold the UI only key %s", uiOnly)
+		}
 	}
 }
 
