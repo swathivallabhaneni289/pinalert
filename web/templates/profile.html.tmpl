@@ -19,14 +19,16 @@
     {{template "account_header.html.tmpl" .}}
   </div>
   {{template "theme_toggle.html.tmpl" .}}
+  <div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>
 
-  <main class="profile-page">
+  <main class="profile-page" data-account-id="{{.AccountID}}">
     <a href="{{if .LowDataDefault}}/low{{else}}/{{end}}" class="profile-back-link" aria-label="{{if .LowDataDefault}}Back to Low data view{{else}}Back to map{{end}}" title="{{if .LowDataDefault}}Back to Low data view{{else}}Back to map{{end}}"><span class="auth-icon auth-icon--arrow-left" aria-hidden="true"></span></a>
 
     <p class="profile-email">{{.Email}}</p>
 
     <section class="profile-activity">
       <h2>Activity</h2>
+      <div class="queue-strip" id="queue-strip" hidden></div>
       <p class="activity-subtitle">A quick view of what's happening with your reports.</p>
 
       <form class="profile-logout" method="post" action="/auth/logout">
@@ -95,6 +97,7 @@
   <script src="/static/js/votes.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/visibility.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/trust.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/queue.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/activity.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/activity-tabs.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>

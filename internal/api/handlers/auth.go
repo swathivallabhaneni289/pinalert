@@ -462,6 +462,11 @@ type profileViewModel struct {
 	// data view; the back link then goes to /low, named Back to Low data view
 	// (P4-A21). Plan 04-25 reads the rendered href.
 	LowDataDefault bool
+	// AccountID is the verified account's numeric id. It is rendered only on
+	// the account's own no-store Activity page as data-account-id, so queue.js
+	// binds saved reports to the account that wrote them. It is never the
+	// email and is never shown.
+	AccountID int64
 }
 
 // profileRelativeTime mirrors web/static/js/app.js's relativeTime: the same
@@ -711,6 +716,7 @@ func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) 
 			PolicyPointerLink: policyLink,
 			PolicyPointerTail: policyTail,
 			LowDataDefault:    lowDataChosen(r),
+			AccountID:         acc.ID,
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

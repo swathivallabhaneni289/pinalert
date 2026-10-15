@@ -20,6 +20,19 @@
 (function () {
   'use strict';
 
+  // The saved reports strip mounts first, before the list guard below, so it
+  // shows for an author who has no report on the server yet. One call, and
+  // queue.js does all the work.
+  var queueStrip = document.getElementById('queue-strip');
+  var queuePage = document.querySelector('.profile-page');
+  if (window.PinalertQueue && queueStrip && queuePage) {
+    PinalertQueue.mount({
+      strip: queueStrip,
+      accountId: queuePage.dataset.accountId,
+      headingLevel: 3
+    });
+  }
+
   var list = document.querySelector('.profile-report-list');
   if (!list) {
     // Guard the whole module behind the list's presence so this file is
