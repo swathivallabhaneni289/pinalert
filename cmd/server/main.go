@@ -59,6 +59,15 @@ const (
 	geocodeRateLimitEvery = 2 * time.Second
 )
 
+// placeRateLimitBurst/Every are the per account budget of GET
+// /api/geocode/place, the reader's place search: a burst of 3, then one token
+// every 4 seconds. Keyed by verified account, not by IP, because carrier NAT
+// shares one address across many phones.
+const (
+	placeRateLimitBurst = 3
+	placeRateLimitEvery = 4 * time.Second
+)
+
 func main() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -130,6 +139,12 @@ func main() {
 		log.Println("WARNING: NOMINATIM_CONTACT_EMAIL unset; outbound geocoding User-Agent will fall back to the project repository URL")
 	}
 
+	// This is the only construction site of the real geocode client in the
+	// whole program, which is what makes the process-wide limiter inside
+	// internal/geocode genuinely process wide. Both the report form's search
+	// and the reader's place search are given this same value below.
+	geocodeClient := geocode.NewClient(nominatimContactEmail)
+
 	queries := sqlcgen.New(pool)
 	deps := api.Deps{
 		Session:     sessionMgr,
@@ -156,13 +171,24 @@ func main() {
 			Burst: requestLinkRateLimitBurst,
 			Every: requestLinkRateLimitEvery,
 		},
-		// This is the only construction site of the real geocode client in
-		// the whole program, which is what makes the process-wide limiter
-		// inside internal/geocode genuinely process wide.
-		Geocode: geocode.NewClient(nominatimContactEmail),
+		// The one geocode client built above serves both lanes: the
+		// report form's address search and the reader's place search.
+		// Sharing the single value is what keeps the limiter inside
+		// internal/geocode process wide, so the reader lane can never
+		// push the program past the upstream policy ceiling. The
+		// variable is a *geocode.Client that is never nil, so it is safe
+		// to hand to the PlaceSearcher interface directly.
+		Geocode:     geocodeClient,
+		PlaceSearch: geocodeClient,
 		GeocodeRateLimit: api.GeocodeRateLimit{
 			Burst: geocodeRateLimitBurst,
 			Every: geocodeRateLimitEvery,
+		},
+		// Burst 3, one token per 4 seconds, per verified account, applied
+		// only to GET /api/geocode/place (see api.NewRouter).
+		PlaceRateLimit: api.PlaceRateLimit{
+			Burst: placeRateLimitBurst,
+			Every: placeRateLimitEvery,
 		},
 	}
 	router := api.NewRouter(deps)

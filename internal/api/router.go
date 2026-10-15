@@ -56,6 +56,18 @@ type Deps struct {
 	// contract — cmd/server/main.go is the one place the numbers are
 	// visible rather than buried as literals in this router.
 	GeocodeRateLimit GeocodeRateLimit
+	// PlaceSearch backs GET /api/geocode/place, the reader's place search on
+	// the history views (HIST-05, D-14). It is typed as the
+	// handlers.PlaceSearcher interface for the same reasons Geocode is. It
+	// must be backed by the SAME *geocode.Client as Geocode, so the process
+	// wide limiter stays process wide. A caller with geocoding switched off
+	// must leave it as an untyped nil: a typed nil *geocode.Client stored in
+	// the interface would not match the handler's nil check.
+	PlaceSearch handlers.PlaceSearcher
+	// PlaceRateLimit configures the per account budget of GET
+	// /api/geocode/place. Left at its zero value, PlaceRateLimitDefault below
+	// is used.
+	PlaceRateLimit PlaceRateLimit
 	// Dev disables the static asset cache in staticFileServer. Left false
 	// (the zero value) selects the production 1-hour cache automatically —
 	// every existing Deps{} literal that doesn't set this field keeps
@@ -107,6 +119,19 @@ type GeocodeRateLimit struct {
 // limiter inside internal/geocode, because a per-IP limiter cannot bound
 // total outbound traffic across many clients.
 var GeocodeRateLimitDefault = GeocodeRateLimit{Burst: 3, Every: 2 * time.Second}
+
+// PlaceRateLimit is the burst/refill configuration of the per account budget
+// on GET /api/geocode/place.
+type PlaceRateLimit struct {
+	Burst int
+	Every time.Duration
+}
+
+// PlaceRateLimitDefault is the reader lane's budget: a burst of 3, then one
+// token every 4 seconds (RESEARCH A4). It is a per account budget and not a
+// per IP one because carrier NAT puts many phones behind one address, so a
+// per IP budget would lock out neighbours of a heavy searcher (D-16).
+var PlaceRateLimitDefault = PlaceRateLimit{Burst: 3, Every: 4 * time.Second}
 
 // @title        Pinalert API
 // @version      1.0
@@ -246,6 +271,18 @@ func NewRouter(deps Deps) *chi.Mux {
 		}
 		geocodeLimiter := ratelimit.NewPerIP(geocodeLimit.Every, geocodeLimit.Burst)
 		r.With(geocodeLimiter.Middleware()).Get("/api/geocode", handlers.Geocode(deps.Geocode))
+		// GET /api/geocode/place (HIST-05, D-14): the reader lane. A flat
+		// literal path next to /api/geocode, inside the gate for the same
+		// reason. It is NOT wrapped in the per IP middleware: the handler
+		// keys this budget by the verified account id, because carrier NAT
+		// shares one IP across many phones (D-16). The limiter type is
+		// ratelimit.PerIP, used here only as a keyed token bucket.
+		placeLimit := deps.PlaceRateLimit
+		if placeLimit == (PlaceRateLimit{}) {
+			placeLimit = PlaceRateLimitDefault
+		}
+		placeBudget := ratelimit.NewPerIP(placeLimit.Every, placeLimit.Burst)
+		r.Get("/api/geocode/place", handlers.GeocodePlace(deps.PlaceSearch, placeBudget))
 		// deps.Template — the same ParsePageTemplate result / handlers.Page
 		// gets, not a separately-parsed single file — is load-bearing:
 		// profile.html.tmpl includes 01.1-06's account_header.html.tmpl
