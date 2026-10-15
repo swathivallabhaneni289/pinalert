@@ -929,7 +929,9 @@ window.PinalertMap = (function () {
   // returnFocusToOpener sends focus back to the list row that opened the
   // popup when that row is connected and displayed, else to the pin (A74). The
   // row is found by comparing its data attribute, never by a selector built
-  // from report data.
+  // from report data. When neither takes focus, as while another set loads
+  // and its loading mark hides the rows and the pins, focus goes to the map,
+  // never to the page body.
   function returnFocusToOpener(opener) {
     if (!opener) {
       return;
@@ -939,7 +941,10 @@ window.PinalertMap = (function () {
       for (var i = 0; i < rows.length; i++) {
         if (rows[i].dataset.reportId === String(opener.id) && rows[i].isConnected && rows[i].offsetParent !== null) {
           rows[i].focus();
-          return;
+          if (document.activeElement === rows[i]) {
+            return;
+          }
+          break;
         }
       }
     }
@@ -947,6 +952,12 @@ window.PinalertMap = (function () {
     var pin = marker ? marker.getElement() : null;
     if (pin) {
       pin.focus({ preventScroll: true });
+      if (document.activeElement === pin) {
+        return;
+      }
+    }
+    if (map) {
+      map.getContainer().focus({ preventScroll: true });
     }
   }
 

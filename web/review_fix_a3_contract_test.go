@@ -49,3 +49,16 @@ func TestReviewFixA3ToastUndoRelinks(t *testing.T) {
 	p13Ordered(t, end, "endLinkOnClose", "openedFocusId = null;", "Pinalert.dropFocus();",
 		"window.setTimeout(redrawAfterLinkEnded, 0);")
 }
+
+// TestReviewFixA3FocusFallsBackToMap pins the second follow up: closing a
+// popup while the loading mark hides the rows and the marker pane leaves
+// focus on the map, never on the page body. A row or a pin counts only when
+// focus really landed on it.
+func TestReviewFixA3FocusFallsBackToMap(t *testing.T) {
+	mapJS := p19Code(t, "static/js/map.js")
+	ret := jsFunctionBody(t, mapJS, "returnFocusToOpener(opener)")
+	p13Ordered(t, ret, "returnFocusToOpener",
+		"rows[i].focus();", "if (document.activeElement === rows[i]) {",
+		"pin.focus({ preventScroll: true });", "if (document.activeElement === pin) {",
+		"map.getContainer().focus({ preventScroll: true });")
+}
