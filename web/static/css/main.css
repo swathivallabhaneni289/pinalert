@@ -715,6 +715,45 @@ body {
   }
 }
 
+/* ---- The take back in the opened report (03.1 plan 14, D-22) ----
+   The block, the closed note and the Undo button live inside the vote
+   controls grid that trust.css lays out (two columns, Mark resolved on the
+   full row, every display rule behind :not([hidden])). The native hidden
+   attribute alone hides Confirm, Dispute and Mark resolved on a finished
+   report, so nothing here overrides it. These heads carry the controls
+   ancestor, which makes them more specific than trust.css's two class
+   heads, so load order does not matter. The statement and the count line
+   carry the shared .vote-note class, which the phone sheet already centres,
+   so phone.css needs no change. ---- */
+.vote-controls .vote-takeback:not([hidden]) {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.vote-controls .vote-closed-note:not([hidden]) {
+  grid-column: 1 / -1;
+}
+
+.vote-controls .vote-btn--takeback:not([hidden]) {
+  width: 100%;
+}
+
+/* The grid gap and the flex gap already space the lines, so the shared note
+   margin is taken back for the lines inside the block. */
+.vote-controls .vote-takeback .vote-note:not([hidden]) {
+  margin: 0;
+}
+
+/* The phone sheet draws no icon at rest on its vote buttons (phone.css).
+   The take back keeps its rotate-ccw mark at every width (UI-SPEC Surface 6),
+   so it is drawn again for this one button, with a head that outranks that
+   rule whatever order the sheets load in. */
+.leaflet-container .leaflet-detail-pane .vote-controls .vote-btn--takeback .vote-btn__icon:not([hidden]) {
+  display: block;
+}
+
 .empty-state,
 .error-state {
   display: flex;

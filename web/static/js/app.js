@@ -686,6 +686,7 @@ window.Pinalert = (function () {
     formatDistance: formatDistance,
     distanceText: distanceText,
     formatFade: formatFade,
+    serverNow: nowMs,
     ageStage: ageStage,
     setText: setText,
     showToast: showToast

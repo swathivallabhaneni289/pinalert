@@ -40,7 +40,11 @@
   // as app.js's iconClass CATEGORIES allowlist (T-01-17): a caller-supplied
   // string is validated against a fixed list before it is interpolated
   // into a URL path.
-  var VOTE_ACTIONS = ['confirm', 'dispute', 'resolve', 'reopen'];
+  //
+  // 'unresolve' is the fifth path segment (03.1 plan 08): the take back of a
+  // mistaken Mark resolved. It joins the closed list like the others, so it
+  // is validated before it is interpolated, and nothing else is.
+  var VOTE_ACTIONS = ['confirm', 'dispute', 'resolve', 'reopen', 'unresolve'];
 
   var VOTER_LOCATION_CACHE_KEY = 'pinalert_voter_location';
 
@@ -126,6 +130,28 @@
   var REOPEN_BUTTON_LABEL_IN_FLIGHT = 'Reopening…';
   var REOPEN_SUCCEEDED_TOAST = 'Report reopened.';
   var REOPEN_PENDING_TOAST = 'Your reopen vote was recorded. It needs agreement from other nearby confirmers before it reopens.';
+
+  // The take back words (03.1 UI-SPEC C42 to C57), verbatim. The server owns
+  // the limit and sends undos_left; these are only the sentences around it.
+  var CLOSED_NOTE_RESOLVED = 'This report was marked resolved, so voting is off.';
+  var CLOSED_NOTE_EXPIRED = 'This report has faded, so voting is off.';
+  var TAKE_BACK_STATEMENT = 'You marked this resolved.';
+  var TAKE_BACK_STATEMENT_WAITING = 'You marked this resolved. It closes when other people nearby agree.';
+  var TAKE_BACK_STATEMENT_POSTER = 'People nearby marked this resolved.';
+  var TAKE_BACK_BUTTON_LABEL = 'Undo';
+  var TAKE_BACK_BUTTON_NAME = 'Undo my resolved mark';
+  var TAKE_BACK_BUTTON_LABEL_IN_FLIGHT = 'Undoing…';
+  var TAKE_BACK_USED_MESSAGE = 'You have used both undos on this report.';
+  var TAKE_BACK_LIMIT_CONFIRM_LINE = "You have used both undos on this report, so this can't be undone.";
+  var TAKE_BACK_ERROR_MESSAGE = "Couldn't undo that. Try again.";
+  var TAKE_BACK_FADED_MESSAGE = "This report has faded, so it can't be changed.";
+  var TAKE_BACK_SUCCEEDED_CLOSED_TOAST = 'Taken back. The report is open again.';
+  var TAKE_BACK_SUCCEEDED_WAITING_TOAST = 'Taken back.';
+
+  // The server's own sentence for a vote on a report that has run out its
+  // time (handlers/votes.go). A take back that meets it shows the faded line
+  // instead, because to the reader the report has simply faded.
+  var SERVER_EXPIRED_REFUSAL = 'This report has expired.';
 
   // The retracted visibility slug, held here as its own constant rather
   // than imported: this module loads before visibility.js (see the header
@@ -388,6 +414,15 @@
       return Promise.reject(actionErr);
     }
 
+    // A take back adds no claim, so it asks for no location at all and sends
+    // an empty object (03.1 D-22): the server checks the account and reads no
+    // position for it. This is neither of the two sanctioned location
+    // exceptions below; it is a request with no coordinates in it, so it
+    // cannot weaken the independence rule that the location is there to keep.
+    if (action === 'unresolve') {
+      return postVote(null);
+    }
+
     var skipLocation = !!(opts && opts.ownReport) && (action === 'resolve' || action === 'reopen');
     var given = opts && opts.location;
     var haveGiven = !!given && typeof given.latitude === 'number' && isFinite(given.latitude) &&
@@ -422,7 +457,8 @@
         // would be a loud 400 rather than a silently dropped field. The
         // voter's cell is computed server-side and must never be sent
         // from here (T-02-01). The cached capture time stays out of it.
-        body: JSON.stringify({ latitude: coords.latitude, longitude: coords.longitude })
+        // A take back (coords is null) sends the empty object.
+        body: coords === null ? '{}' : JSON.stringify({ latitude: coords.latitude, longitude: coords.longitude })
       }).then(function (res) {
         return res.json().catch(function () {
           return {};
@@ -498,6 +534,15 @@
     Pinalert.setText(confirmHeading, RESOLVE_CONFIRM_HEADING);
     confirmBlock.appendChild(confirmHeading);
 
+    // The line under the question that tells a reader who has no undo left
+    // that this mark cannot be taken back (C53). Hidden until updateVoteBlock
+    // finds the server's undos_left at zero. A plain paragraph in the group.
+    var confirmLimit = document.createElement('p');
+    confirmLimit.className = 'resolve-confirm__limit';
+    confirmLimit.hidden = true;
+    Pinalert.setText(confirmLimit, TAKE_BACK_LIMIT_CONFIRM_LINE);
+    confirmBlock.appendChild(confirmLimit);
+
     var cancelBtn = document.createElement('button');
     cancelBtn.type = 'button';
     cancelBtn.className = 'vote-btn vote-btn--cancel-resolve';
@@ -514,6 +559,18 @@
 
     controls.appendChild(confirmBlock);
 
+    // The closed note and the take back block (03.1 D-22). Both live inside
+    // the controls container, so a surface that already mounts the controls
+    // shows them with no change of its own. They ship hidden and empty;
+    // updateVoteBlock fills and reveals them from the report.
+    var closedNote = document.createElement('p');
+    closedNote.className = 'vote-note vote-closed-note';
+    closedNote.hidden = true;
+    controls.appendChild(closedNote);
+
+    var takeBack = createTakeBackBlock(reportId);
+    controls.appendChild(takeBack.el);
+
     var error = document.createElement('p');
     error.className = 'vote-error';
     error.setAttribute('role', 'alert');
@@ -527,6 +584,9 @@
     note.hidden = true;
 
     var block = { controls: controls, note: note, error: error };
+    block.confirmLimit = confirmLimit;
+    block.closedNote = closedNote;
+    block.takeBack = takeBack;
 
     // One listener on the container, not one per button. Delegation at
     // this level is what lets a future third button be appended with no
@@ -552,6 +612,179 @@
     });
 
     return block;
+  }
+
+  // createTakeBackBlock builds the take back part of the opened report (03.1
+  // D-22): a statement, the Undo button, the poster's Reopen button and the
+  // undos left line. It is built once, hidden, and updateVoteBlock decides
+  // which parts show. The poster's Reopen is the button of the one Reopen
+  // builder (createReopenControl), mounted here without that builder's own
+  // controls wrapper and error line, so there is no second .vote-controls
+  // nested in the first and the one delegated listener of the block reaches
+  // it. Every string goes through Pinalert.setText.
+  function createTakeBackBlock(reportId) {
+    var el = document.createElement('div');
+    el.className = 'vote-takeback';
+    el.hidden = true;
+
+    var statement = document.createElement('p');
+    statement.className = 'vote-note vote-takeback__statement';
+
+    var undoBtn = createVoteButton('vote-btn vote-btn--takeback', 'unresolve', 'vote-btn__icon--rotate-ccw', TAKE_BACK_BUTTON_LABEL);
+    undoBtn.setAttribute('aria-label', TAKE_BACK_BUTTON_NAME);
+    undoBtn.hidden = true;
+
+    var reopenBtn = createReopenControl(reportId).button;
+    reopenBtn.hidden = true;
+
+    var count = document.createElement('p');
+    count.className = 'vote-note vote-takeback__count';
+
+    el.appendChild(statement);
+    el.appendChild(undoBtn);
+    el.appendChild(reopenBtn);
+    el.appendChild(count);
+    return { el: el, statement: statement, undoBtn: undoBtn, reopenBtn: reopenBtn, count: count };
+  }
+
+  // isReportFaded says whether a report has run out its time, on the server's
+  // clock (the same comparison formatFade makes). A report in the past view is
+  // faded by definition; a report with no readable expires_at is never called
+  // faded here, so a missing field cannot hide a control by itself.
+  function isReportFaded(report) {
+    if (!report) {
+      return false;
+    }
+    if (report.view === 'past') {
+      return true;
+    }
+    var expires = new Date(report.expires_at).getTime();
+    if (!isFinite(expires)) {
+      return false;
+    }
+    return expires <= Pinalert.serverNow();
+  }
+
+  // takeBackState reads only the report's own fields and decides which take
+  // back control, if any, the viewer sees. It never computes a limit: the
+  // server sends undos_left and refuses a third undo regardless (D-22, D-28).
+  //   undo          : the viewer's mark closed the report, undos left
+  //   undo-waiting  : the viewer's mark is waiting for agreement, undos left
+  //   used          : the viewer's mark stands and no undo is left
+  //   reopen        : the poster, report closed by other people, undos left
+  //   reopen-used   : the same with none left
+  //   none          : nothing, and always nothing for a faded report
+  function takeBackState(report) {
+    if (!report || isReportFaded(report) || typeof report.undos_left !== 'number') {
+      return 'none';
+    }
+    var left = report.undos_left;
+    var finished = report.view === 'resolved' || report.view === 'past';
+    if (report.your_resolution === 'resolve') {
+      if (left > 0) {
+        return finished ? 'undo' : 'undo-waiting';
+      }
+      return 'used';
+    }
+    if (report.is_own_report === true && report.view === 'resolved') {
+      return left > 0 ? 'reopen' : 'reopen-used';
+    }
+    return 'none';
+  }
+
+  // undosLeftLine is C51 for a count, "1 undo left" in the singular.
+  function undosLeftLine(left) {
+    if (left === 1) {
+      return '1 undo left on this report.';
+    }
+    return String(left) + ' undos left on this report.';
+  }
+
+  // applyTakeBackBlock shows the finished report rule and the take back block
+  // for one report. It reads the report only, never the busy state, and it
+  // never assigns the native disabled property (setBlockBusy owns it). Nothing
+  // is disabled instead of hidden: a control that does not apply is hidden, as
+  // the own report rule removes its buttons.
+  function applyTakeBackBlock(block, report) {
+    var state = takeBackState(report);
+    var finished = report.view === 'resolved' || report.view === 'past';
+    var faded = isReportFaded(report);
+    var confirmBtn = block.controls.querySelector('.vote-btn--confirm');
+    var disputeBtn = block.controls.querySelector('.vote-btn--dispute');
+    var resolveBtn = block.controls.querySelector('.vote-btn--resolve');
+    var confirmBlock = block.controls.querySelector('.resolve-confirm');
+    var hideResolve = finished || state === 'undo-waiting' || state === 'used';
+    var confirmOpen = !!confirmBlock && !confirmBlock.hidden;
+    var focusWasInConfirm = false;
+
+    // A confirmation left open by a report that has just closed or whose
+    // mark has just been recorded closes by itself. Focus that was inside it
+    // moves to the take back button below when that can take it, so it never
+    // falls to the page body.
+    if (confirmOpen && hideResolve) {
+      focusWasInConfirm = confirmBlock.contains(document.activeElement);
+      confirmBlock.hidden = true;
+      confirmOpen = false;
+    }
+
+    // While the confirmation is open the three primary buttons are hidden by
+    // it, and a poll must not unhide them (a render never touches the open
+    // confirmation's own state).
+    if (!confirmOpen) {
+      if (confirmBtn) {
+        confirmBtn.hidden = finished;
+      }
+      if (disputeBtn) {
+        disputeBtn.hidden = finished;
+      }
+      if (resolveBtn) {
+        resolveBtn.hidden = hideResolve;
+      }
+    }
+
+    // The line under the confirmation question: shown when the viewer has no
+    // undo left on this report, from the server's own count.
+    if (block.confirmLimit) {
+      block.confirmLimit.hidden = !(typeof report.undos_left === 'number' && report.undos_left === 0);
+    }
+
+    // The closed note replaces the vote buttons of a finished report.
+    if (finished) {
+      Pinalert.setText(block.closedNote, faded ? CLOSED_NOTE_EXPIRED : CLOSED_NOTE_RESOLVED);
+      block.closedNote.hidden = false;
+    } else {
+      Pinalert.setText(block.closedNote, '');
+      block.closedNote.hidden = true;
+    }
+
+    var tb = block.takeBack;
+    if (state === 'none') {
+      tb.el.hidden = true;
+      tb.undoBtn.hidden = true;
+      tb.reopenBtn.hidden = true;
+      Pinalert.setText(tb.statement, '');
+      Pinalert.setText(tb.count, '');
+      return;
+    }
+
+    var statement = TAKE_BACK_STATEMENT;
+    if (state === 'undo-waiting' || (state === 'used' && !finished)) {
+      statement = TAKE_BACK_STATEMENT_WAITING;
+    } else if (state === 'reopen' || state === 'reopen-used') {
+      statement = TAKE_BACK_STATEMENT_POSTER;
+    }
+    Pinalert.setText(tb.statement, statement);
+    tb.undoBtn.hidden = !(state === 'undo' || state === 'undo-waiting');
+    tb.reopenBtn.hidden = state !== 'reopen';
+    if (state === 'used' || state === 'reopen-used') {
+      Pinalert.setText(tb.count, TAKE_BACK_USED_MESSAGE);
+    } else {
+      Pinalert.setText(tb.count, undosLeftLine(report.undos_left));
+    }
+    tb.el.hidden = false;
+    if (focusWasInConfirm && canTakeFocus(tb.undoBtn)) {
+      tb.undoBtn.focus();
+    }
   }
 
   // applyOwnReportRule removes the reporter's own Confirm/Dispute buttons
@@ -601,8 +834,15 @@
     if (disputeBtn) {
       disputeBtn.setAttribute('aria-pressed', report.your_vote === 'dispute' ? 'true' : 'false');
     }
+    applyTakeBackBlock(block, report);
     var hintWasShowing = !!block.note && !block.note.hidden;
-    applyDistanceHint(block, report);
+    // A finished report offers no vote, so it can be neither too far to vote
+    // on nor marked so: the too far sentence is cleared under "voting is off".
+    if (report.view === 'resolved' || report.view === 'past') {
+      clearDistanceHint(block);
+    } else {
+      applyDistanceHint(block, report);
+    }
     clearRefusalWithHint(block, hintWasShowing);
   }
 
@@ -1024,12 +1264,26 @@
         return;
       }
     }
+    // The strip link of the tab that is showing: the strip always exists on
+    // a report page, so focus lands on a real control and never on the body
+    // (03.1 UI-SPEC, ending on the tab strip). It is found by its selector.
+    var tabLink = currentTabLink();
+    if (canTakeFocus(tabLink)) {
+      tabLink.focus();
+      return;
+    }
     var toggle = document.getElementById('view-toggle');
     if (canTakeFocus(toggle)) {
       toggle.focus();
       return;
     }
-    var emptyStates = [document.getElementById('feed-empty'), document.getElementById('disputed-empty')];
+    var emptyStates = [
+      document.getElementById('feed-empty'),
+      document.getElementById('feed-empty-history'),
+      document.getElementById('disputed-empty'),
+      document.getElementById('past-empty'),
+      document.getElementById('filter-empty')
+    ];
     for (var j = 0; j < emptyStates.length; j++) {
       if (isDisplayed(emptyStates[j])) {
         emptyStates[j].setAttribute('tabindex', '-1');
@@ -1054,6 +1308,11 @@
     var live = findLiveControls(origin);
     if (live) {
       var target = live.querySelector(selector);
+      // A resolve that is still waiting for agreement replaces Mark resolved
+      // with the take back block, so the Undo button takes the focus instead.
+      if (!canTakeFocus(target) && action === 'confirm-resolve') {
+        target = live.querySelector('.vote-btn--takeback');
+      }
       if (canTakeFocus(target) && focusIsLost(origin.controls)) {
         target.focus();
       }
@@ -1165,6 +1424,13 @@
       focusResolveButton(block);
       return;
     }
+    // The take back and the poster's Reopen are the two buttons of the take
+    // back block (03.1 D-22). They need no location and have their own busy
+    // label, error line and focus steps, so they leave this flow here.
+    if (action === 'unresolve' || action === 'reopen') {
+      onTakeBackClick(block, button);
+      return;
+    }
 
     clearVoteError(block);
     setBlockBusy(block, true);
@@ -1232,6 +1498,92 @@
     });
   }
 
+  // currentTabLink is the strip link of the tab that is showing, found by its
+  // selector, or null. The strip is feed.js's; this module only reads it.
+  function currentTabLink() {
+    return document.querySelector('.view-tabs .view-tab[aria-current="page"]');
+  }
+
+  // takeBackSuccessMessage is C56 when the take back reopened a report that
+  // had closed, and C57 in every other case: a mark that was only waiting, or
+  // a report that stays closed because other people also marked it. It reads
+  // the server's answer and predicts nothing (D-04).
+  function takeBackSuccessMessage(wasClosed, result) {
+    var stillClosed = !!(result && result.visibility === RETRACTED_VISIBILITY_SLUG);
+    return wasClosed && !stillClosed ? TAKE_BACK_SUCCEEDED_CLOSED_TOAST : TAKE_BACK_SUCCEEDED_WAITING_TOAST;
+  }
+
+  // takeBackErrorMessage picks the line under the block: C54 when the server
+  // sent nothing usable, C55 for the expired refusal, and any other server
+  // sentence exactly as sent.
+  function takeBackErrorMessage(err) {
+    var message = err && err.fieldMessage;
+    if (!message || message === GENERIC_FAILURE_MESSAGE) {
+      return TAKE_BACK_ERROR_MESSAGE;
+    }
+    if (message === SERVER_EXPIRED_REFUSAL) {
+      return TAKE_BACK_FADED_MESSAGE;
+    }
+    return message;
+  }
+
+  // focusAfterTakeBack runs after a take back or a poster Reopen succeeded and
+  // the refetch has redrawn. When focus sat on a control that is now hidden or
+  // gone (the Undo button, the toast), it goes to the report's own row if the
+  // list still holds it, else to the current tab link, so it never falls to
+  // the page body (A52, A67). Focus the reader has already moved is left.
+  function focusAfterTakeBack(origin) {
+    if (!focusIsLost(origin.controls)) {
+      return;
+    }
+    var row = findFeedRow(origin.reportId);
+    if (row && canTakeFocus(row)) {
+      row.focus();
+      return;
+    }
+    var tabLink = currentTabLink();
+    if (canTakeFocus(tabLink)) {
+      tabLink.focus();
+    }
+  }
+
+  // onTakeBackClick handles the Undo button and the poster's Reopen in the
+  // opened report. Neither needs a location. The block is busy for the
+  // request and the label names the action ("Undoing…" or "Reopening…"). The
+  // block shows what the server answered after the refetch, never a guess.
+  function onTakeBackClick(block, button) {
+    var isReopen = button.dataset.action === 'reopen';
+    var action = isReopen ? 'reopen' : 'unresolve';
+    var restingLabel = isReopen ? REOPEN_BUTTON_LABEL : TAKE_BACK_BUTTON_LABEL;
+    var origin = captureVoteOrigin(block);
+    var wasClosed = takeBackState(block.lastReport) === 'undo';
+
+    clearVoteError(block);
+    setBlockBusy(block, true);
+    setVoteButtonLabel(button, isReopen ? REOPEN_BUTTON_LABEL_IN_FLIGHT : TAKE_BACK_BUTTON_LABEL_IN_FLIGHT);
+
+    castVote(origin.reportId, action, { ownReport: isReopen && block.isOwnReport === true }).then(function (result) {
+      var message = isReopen ? REOPEN_SUCCEEDED_TOAST : takeBackSuccessMessage(wasClosed, result);
+      return Pinalert.fetchReports({ afterWrite: true }).then(function () {
+        setVoteButtonLabel(button, restingLabel);
+        setBlockBusy(block, false);
+        if (Pinalert.state.status === 'error') {
+          showVoteError(block, VOTE_SAVED_REFRESH_FAILED_MESSAGE);
+          block.refreshNotice = true;
+        }
+        Pinalert.showToast(message);
+        focusAfterTakeBack(origin);
+      });
+    }, function (err) {
+      setVoteButtonLabel(button, restingLabel);
+      setBlockBusy(block, false);
+      showVoteError(block, takeBackErrorMessage(err));
+      if (canTakeFocus(button)) {
+        button.focus();
+      }
+    });
+  }
+
   window.PinalertVotes = {
     getVoterLocation: getVoterLocation,
     castVote: castVote,
@@ -1252,6 +1604,15 @@
     REOPEN_BUTTON_LABEL_IN_FLIGHT: REOPEN_BUTTON_LABEL_IN_FLIGHT,
     REOPEN_SUCCEEDED_TOAST: REOPEN_SUCCEEDED_TOAST,
     REOPEN_PENDING_TOAST: REOPEN_PENDING_TOAST,
-    RETRACTED_VISIBILITY_SLUG: RETRACTED_VISIBILITY_SLUG
+    RETRACTED_VISIBILITY_SLUG: RETRACTED_VISIBILITY_SLUG,
+    takeBackState: takeBackState,
+    TAKE_BACK_BUTTON_LABEL: TAKE_BACK_BUTTON_LABEL,
+    TAKE_BACK_BUTTON_NAME: TAKE_BACK_BUTTON_NAME,
+    TAKE_BACK_BUTTON_LABEL_IN_FLIGHT: TAKE_BACK_BUTTON_LABEL_IN_FLIGHT,
+    TAKE_BACK_USED_MESSAGE: TAKE_BACK_USED_MESSAGE,
+    TAKE_BACK_ERROR_MESSAGE: TAKE_BACK_ERROR_MESSAGE,
+    TAKE_BACK_FADED_MESSAGE: TAKE_BACK_FADED_MESSAGE,
+    TAKE_BACK_SUCCEEDED_CLOSED_TOAST: TAKE_BACK_SUCCEEDED_CLOSED_TOAST,
+    TAKE_BACK_SUCCEEDED_WAITING_TOAST: TAKE_BACK_SUCCEEDED_WAITING_TOAST
   };
 }());
