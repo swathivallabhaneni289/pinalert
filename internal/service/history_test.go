@@ -70,6 +70,13 @@ func TestViewOf(t *testing.T) {
 		for _, v := range Visibilities {
 			for _, exp := range []time.Time{future, p31Now, past} {
 				got := ViewOf(v, exp, p31Now)
+				// A withheld report lands in no view (R-01).
+				if v == VisibilityWithheld {
+					if got != FeedViewNone {
+						t.Errorf("ViewOf(%q, %v) = %q, want none", v, exp, got)
+					}
+					continue
+				}
 				if got == FeedViewNone {
 					t.Errorf("ViewOf(%q, %v) = none, want one of the four views", v, exp)
 				}

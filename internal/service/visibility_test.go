@@ -378,7 +378,7 @@ func TestResolve_IsTotalAndDeterministic(t *testing.T) {
 											t.Errorf("meta=%+v tally=%+v: visibility %q is not a valid Visibility", meta, tally, vis1)
 										}
 
-										// Closed reason set: always one of the five known slugs.
+										// Closed reason set: always one of the ResolveReasons slugs (a zero value meta reaches only the five tally slugs).
 										validReason := false
 										for _, r := range service.ResolveReasons {
 											if r == reason1 {
@@ -444,6 +444,261 @@ func TestResolve_IsTotalAndDeterministic(t *testing.T) {
 					}
 				}
 			})
+		}
+	}
+}
+
+// modRungNow is the fixed clock of the moderation rung tests.
+var modRungNow = time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+
+// modRungStates is every state the rung tests cross: the zero value, then the
+// three stored states.
+var modRungStates = []service.ModerationState{"", service.ModerationClear, service.ModerationPending, service.ModerationRemoved}
+
+// modRungTallies is the tally grid of TestResolve_IsTotalAndDeterministic:
+// each of the four cell counts from 0 to IndependentAgreementThreshold+1,
+// crossed with both reporter booleans.
+func modRungTallies() []service.VoteTally {
+	var out []service.VoteTally
+	top := service.IndependentAgreementThreshold + 1
+	for c := 0; c <= top; c++ {
+		for d := 0; d <= top; d++ {
+			for r := 0; r <= top; r++ {
+				for o := 0; o <= top; o++ {
+					for _, rr := range []bool{false, true} {
+						for _, ro := range []bool{false, true} {
+							out = append(out, service.VoteTally{
+								ConfirmCells: c, DisputeCells: d, ResolveCells: r, ReopenCells: o,
+								ReporterResolved: rr, ReporterReopened: ro,
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+// modRungSerious is the spelled out serious rule: critical severity or the
+// rescue_needed category.
+func modRungSerious(sev service.Severity, cat service.Category) bool {
+	return sev == service.SeverityCritical || cat == service.CategoryRescueNeeded
+}
+
+// TestResolveModeration pins the two moderation rungs of Resolve (D-02,
+// R-01, R-03, R-04): removed sits above everything, pending and not serious
+// is withheld next, and everything else is the Phase 2 ladder.
+func TestResolveModeration(t *testing.T) {
+	two := service.IndependentAgreementThreshold
+	cases := []struct {
+		name       string
+		meta       service.ReportMeta
+		tally      service.VoteTally
+		wantVis    service.Visibility
+		wantReason service.ResolveReason
+	}{
+		{"removed critical flood with no votes is withheld above the critical bypass",
+			service.ReportMeta{Severity: service.SeverityCritical, Category: service.CategoryFlood, Moderation: service.ModerationRemoved},
+			service.VoteTally{}, service.VisibilityWithheld, service.ReasonRemovedAfterReview},
+		{"removed low rescue_needed with no votes is withheld",
+			service.ReportMeta{Severity: service.SeverityLow, Category: service.CategoryRescueNeeded, Moderation: service.ModerationRemoved},
+			service.VoteTally{}, service.VisibilityWithheld, service.ReasonRemovedAfterReview},
+		{"removed low flood that the reporter resolved is withheld above Retracted",
+			service.ReportMeta{Severity: service.SeverityLow, Category: service.CategoryFlood, Moderation: service.ModerationRemoved},
+			service.VoteTally{ReporterResolved: true}, service.VisibilityWithheld, service.ReasonRemovedAfterReview},
+		{"removed low flood with two confirming places is not Live",
+			service.ReportMeta{Severity: service.SeverityLow, Category: service.CategoryFlood, Moderation: service.ModerationRemoved},
+			service.VoteTally{ConfirmCells: two}, service.VisibilityWithheld, service.ReasonRemovedAfterReview},
+		{"removed medium road_blocked with two disputing places is not Hidden",
+			service.ReportMeta{Severity: service.SeverityMedium, Category: service.CategoryRoadBlocked, Moderation: service.ModerationRemoved},
+			service.VoteTally{DisputeCells: two}, service.VisibilityWithheld, service.ReasonRemovedAfterReview},
+		{"pending low flood with no votes is held",
+			service.ReportMeta{Severity: service.SeverityLow, Category: service.CategoryFlood, Moderation: service.ModerationPending},
+			service.VoteTally{}, service.VisibilityWithheld, service.ReasonAwaitingTextCheck},
+		{"pending medium road_blocked with two confirming places is not Live",
+			service.ReportMeta{Severity: service.SeverityMedium, Category: service.CategoryRoadBlocked, Moderation: service.ModerationPending},
+			service.VoteTally{ConfirmCells: two}, service.VisibilityWithheld, service.ReasonAwaitingTextCheck},
+		{"pending low flood that the reporter resolved is held above Retracted",
+			service.ReportMeta{Severity: service.SeverityLow, Category: service.CategoryFlood, Moderation: service.ModerationPending},
+			service.VoteTally{ReporterResolved: true}, service.VisibilityWithheld, service.ReasonAwaitingTextCheck},
+		{"pending critical flood with no votes is published through the bypass",
+			service.ReportMeta{Severity: service.SeverityCritical, Category: service.CategoryFlood, Moderation: service.ModerationPending},
+			service.VoteTally{}, service.VisibilityLive, service.ReasonCriticalBypass},
+		{"pending low rescue_needed with two disputing places is published through the bypass",
+			service.ReportMeta{Severity: service.SeverityLow, Category: service.CategoryRescueNeeded, Moderation: service.ModerationPending},
+			service.VoteTally{DisputeCells: two}, service.VisibilityLive, service.ReasonCriticalBypass},
+		{"pending critical flood that the reporter resolved is retracted as a clear report would be",
+			service.ReportMeta{Severity: service.SeverityCritical, Category: service.CategoryFlood, Moderation: service.ModerationPending},
+			service.VoteTally{ReporterResolved: true}, service.VisibilityRetracted, service.ReasonResolved},
+		{"clear low flood with no votes is provisional",
+			service.ReportMeta{Severity: service.SeverityLow, Category: service.CategoryFlood, Moderation: service.ModerationClear},
+			service.VoteTally{}, service.VisibilityProvisional, service.ReasonAwaitingConfirmation},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			vis, reason := service.Resolve(tc.meta, tc.tally, modRungNow)
+			if vis != tc.wantVis || reason != tc.wantReason {
+				t.Errorf("Resolve(%+v, %+v) = (%q, %q), want (%q, %q)", tc.meta, tc.tally, vis, reason, tc.wantVis, tc.wantReason)
+			}
+		})
+	}
+
+	t.Run("every state, severity, category and tally", func(t *testing.T) {
+		tallies := modRungTallies()
+		for _, state := range modRungStates {
+			for _, sev := range service.Severities {
+				for _, cat := range service.Categories {
+					meta := service.ReportMeta{Severity: sev, Category: cat, Moderation: state}
+					bare := service.ReportMeta{Severity: sev, Category: cat}
+					for _, tally := range tallies {
+						vis, reason := service.Resolve(meta, tally, modRungNow)
+						switch {
+						case state == service.ModerationRemoved:
+							if vis != service.VisibilityWithheld || reason != service.ReasonRemovedAfterReview {
+								t.Fatalf("meta=%+v tally=%+v: got (%q, %q), want removed_after_review", meta, tally, vis, reason)
+							}
+						case state == service.ModerationPending && !modRungSerious(sev, cat):
+							if vis != service.VisibilityWithheld || reason != service.ReasonAwaitingTextCheck {
+								t.Fatalf("meta=%+v tally=%+v: got (%q, %q), want awaiting_text_check", meta, tally, vis, reason)
+							}
+						default:
+							wantVis, wantReason := service.Resolve(bare, tally, modRungNow)
+							if vis != wantVis || reason != wantReason {
+								t.Fatalf("meta=%+v tally=%+v: got (%q, %q), want the unmoderated answer (%q, %q)", meta, tally, vis, reason, wantVis, wantReason)
+							}
+						}
+						if !vis.Valid() {
+							t.Fatalf("meta=%+v tally=%+v: visibility %q is not valid", meta, tally, vis)
+						}
+						known := false
+						for _, r := range service.ResolveReasons {
+							if r == reason {
+								known = true
+							}
+						}
+						if !known {
+							t.Fatalf("meta=%+v tally=%+v: reason %q is not in ResolveReasons", meta, tally, reason)
+						}
+						if (vis == service.VisibilityWithheld) != meta.Withheld() {
+							t.Fatalf("meta=%+v tally=%+v: visibility %q disagrees with Withheld() %v", meta, tally, vis, meta.Withheld())
+						}
+					}
+				}
+			}
+		}
+	})
+
+	t.Run("closed sets", func(t *testing.T) {
+		wantVis := []service.Visibility{service.VisibilityHidden, service.VisibilityProvisional, service.VisibilityLive, service.VisibilityRetracted, service.VisibilityWithheld}
+		if len(service.Visibilities) != len(wantVis) {
+			t.Fatalf("Visibilities has %d entries, want %d", len(service.Visibilities), len(wantVis))
+		}
+		for i, w := range wantVis {
+			if service.Visibilities[i] != w || !w.Valid() {
+				t.Errorf("Visibilities[%d] = %q, want %q (valid)", i, service.Visibilities[i], w)
+			}
+		}
+		wantReasons := []service.ResolveReason{"resolved", "critical_bypasses_gates", "disputed", "awaiting_second_independent_confirmation", "confirmed", "removed_after_review", "awaiting_text_check"}
+		if len(service.ResolveReasons) != len(wantReasons) {
+			t.Fatalf("ResolveReasons has %d entries, want %d", len(service.ResolveReasons), len(wantReasons))
+		}
+		for i, w := range wantReasons {
+			if service.ResolveReasons[i] != w {
+				t.Errorf("ResolveReasons[%d] = %q, want %q", i, service.ResolveReasons[i], w)
+			}
+		}
+		wantStates := []service.ModerationState{"clear", "pending", "removed"}
+		if len(service.ModerationStates) != len(wantStates) {
+			t.Fatalf("ModerationStates has %d entries, want %d", len(service.ModerationStates), len(wantStates))
+		}
+		for i, w := range wantStates {
+			if service.ModerationStates[i] != w || !w.Valid() {
+				t.Errorf("ModerationStates[%d] = %q, want %q (valid)", i, service.ModerationStates[i], w)
+			}
+		}
+		for _, bad := range []service.ModerationState{"", "Clear"} {
+			if bad.Valid() {
+				t.Errorf("ModerationState(%q) should not be valid", bad)
+			}
+		}
+	})
+}
+
+// TestResolveModerationZeroValueNeutral pins R-02 for every existing caller:
+// a ReportMeta built without moderation resolves exactly as clear, and the
+// neutral classifier metadata of Phase 3 never resolves to withheld. Rating
+// neutrality for a withheld report is ClassifyOutcome's job, not the zero
+// value's.
+func TestResolveModerationZeroValueNeutral(t *testing.T) {
+	tallies := modRungTallies()
+	for _, sev := range service.Severities {
+		for _, cat := range service.Categories {
+			zero := service.ReportMeta{Severity: sev, Category: cat}
+			clearMeta := service.ReportMeta{Severity: sev, Category: cat, Moderation: service.ModerationClear}
+			for _, tally := range tallies {
+				zv, zr := service.Resolve(zero, tally, modRungNow)
+				cv, cr := service.Resolve(clearMeta, tally, modRungNow)
+				if zv != cv || zr != cr {
+					t.Fatalf("meta=%+v tally=%+v: zero value (%q, %q) differs from clear (%q, %q)", zero, tally, zv, zr, cv, cr)
+				}
+				if zv == service.VisibilityWithheld || zr == service.ReasonRemovedAfterReview || zr == service.ReasonAwaitingTextCheck {
+					t.Fatalf("meta=%+v tally=%+v: zero value resolved to (%q, %q)", zero, tally, zv, zr)
+				}
+			}
+		}
+	}
+
+	neutral := service.ReportMeta{Severity: service.SeverityLow, Category: service.CategoryOther}
+	for _, tally := range tallies {
+		if vis, _ := service.Resolve(neutral, tally, modRungNow); vis == service.VisibilityWithheld {
+			t.Fatalf("the neutral classifier metadata resolved to withheld for tally %+v", tally)
+		}
+	}
+	if (service.ReportMeta{}).Withheld() {
+		t.Error("ReportMeta{}.Withheld() should be false")
+	}
+	if !service.ModerationClear.Valid() {
+		t.Error("ModerationClear should be valid")
+	}
+	if service.ModerationState("").Valid() {
+		t.Error("the zero ModerationState is not a stored state and should not be valid")
+	}
+}
+
+// TestReportMetaWithheld pins the Withheld predicate: removed, or pending
+// and not serious.
+func TestReportMetaWithheld(t *testing.T) {
+	cases := []struct {
+		name string
+		meta service.ReportMeta
+		want bool
+	}{
+		{"removed low flood", service.ReportMeta{Severity: service.SeverityLow, Category: service.CategoryFlood, Moderation: service.ModerationRemoved}, true},
+		{"removed critical flood", service.ReportMeta{Severity: service.SeverityCritical, Category: service.CategoryFlood, Moderation: service.ModerationRemoved}, true},
+		{"removed low rescue_needed", service.ReportMeta{Severity: service.SeverityLow, Category: service.CategoryRescueNeeded, Moderation: service.ModerationRemoved}, true},
+		{"pending low flood", service.ReportMeta{Severity: service.SeverityLow, Category: service.CategoryFlood, Moderation: service.ModerationPending}, true},
+		{"pending medium road_blocked", service.ReportMeta{Severity: service.SeverityMedium, Category: service.CategoryRoadBlocked, Moderation: service.ModerationPending}, true},
+		{"pending critical flood", service.ReportMeta{Severity: service.SeverityCritical, Category: service.CategoryFlood, Moderation: service.ModerationPending}, false},
+		{"pending low rescue_needed", service.ReportMeta{Severity: service.SeverityLow, Category: service.CategoryRescueNeeded, Moderation: service.ModerationPending}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.meta.Withheld(); got != tc.want {
+				t.Errorf("%+v.Withheld() = %v, want %v", tc.meta, got, tc.want)
+			}
+		})
+	}
+
+	for _, state := range modRungStates {
+		for _, sev := range service.Severities {
+			for _, cat := range service.Categories {
+				meta := service.ReportMeta{Severity: sev, Category: cat, Moderation: state}
+				want := state == service.ModerationRemoved || (state == service.ModerationPending && !modRungSerious(sev, cat))
+				if got := meta.Withheld(); got != want {
+					t.Errorf("%+v.Withheld() = %v, want %v", meta, got, want)
+				}
+			}
 		}
 	}
 }
