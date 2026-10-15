@@ -113,6 +113,27 @@ var rejectGroups = []rejectGroup{
 // returns RejectGibberish (the caller runs IsGibberish first) and never
 // writes to scores.
 func Decide(scores map[string]float64, serious bool) ScreenDecision {
-	_ = rejectGroups
+	var best rejectGroup
+	bestScore := -1.0
+	for _, g := range rejectGroups {
+		score := 0.0
+		for _, k := range g.keys {
+			if scores[k] > score {
+				score = scores[k]
+			}
+		}
+		if score > bestScore {
+			best = g
+			bestScore = score
+		}
+	}
+	if bestScore >= RejectScoreThreshold {
+		return ScreenDecision{Verdict: VerdictReject, Reason: best.reason}
+	}
+	for _, score := range scores {
+		if score >= BorderlineScoreThreshold {
+			return ScreenDecision{Verdict: VerdictBorderline}
+		}
+	}
 	return ScreenDecision{Verdict: VerdictPass}
 }
