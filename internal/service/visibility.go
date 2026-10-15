@@ -18,6 +18,7 @@ const (
 	VisibilityProvisional Visibility = "provisional"
 	VisibilityLive        Visibility = "live"
 	VisibilityRetracted   Visibility = "retracted"
+	VisibilityWithheld    Visibility = "withheld"
 )
 
 // Visibilities is the ordered, canonical list of every valid visibility.
@@ -56,6 +57,8 @@ const (
 	ReasonDisputed             ResolveReason = "disputed"
 	ReasonAwaitingConfirmation ResolveReason = "awaiting_second_independent_confirmation"
 	ReasonConfirmed            ResolveReason = "confirmed"
+	ReasonRemovedAfterReview   ResolveReason = "removed_after_review"
+	ReasonAwaitingTextCheck    ResolveReason = "awaiting_text_check"
 )
 
 // ResolveReasons is the ordered, canonical list of every valid resolve
@@ -68,12 +71,27 @@ var ResolveReasons = []ResolveReason{
 	ReasonConfirmed,
 }
 
+type ModerationState string
+
+const (
+	ModerationClear   ModerationState = "clear"
+	ModerationPending ModerationState = "pending"
+	ModerationRemoved ModerationState = "removed"
+)
+
+var ModerationStates = []ModerationState{ModerationClear, ModerationPending, ModerationRemoved}
+
+func (s ModerationState) Valid() bool {
+	return false
+}
+
 // ReportMeta is deliberately the smallest subset of a report Resolve
 // needs — not the full Report struct — so this file carries no
 // store-shaped dependency.
 type ReportMeta struct {
-	Severity Severity
-	Category Category
+	Severity   Severity
+	Category   Category
+	Moderation ModerationState
 }
 
 // criticalBypass reports whether m exempts its report from both the
@@ -84,6 +102,14 @@ type ReportMeta struct {
 // (TRUST-06: the same field has two independent consumers).
 func (m ReportMeta) criticalBypass() bool {
 	return m.Severity == SeverityCritical || m.Category == CategoryRescueNeeded
+}
+
+func (m ReportMeta) Serious() bool {
+	return false
+}
+
+func (m ReportMeta) Withheld() bool {
+	return false
 }
 
 // VoteTally is an already-loaded snapshot of a report's confirm, dispute,
