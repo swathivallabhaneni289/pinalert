@@ -43,6 +43,10 @@ window.PinalertMap = (function () {
   // a later poll or a tab change never opens it a second time.
   var openedFocusId = null;
 
+  // Numbers every Back to my location and every cancel of one, so a position
+  // that arrives after a newer search or pick is ignored (IN-07).
+  var recenterSeq = 0;
+
   // The open Leaflet popup, or null.
   var activePopup = null;
   // True while focus sits inside the open popup. Kept by focusin and focusout
@@ -350,9 +354,18 @@ window.PinalertMap = (function () {
   // The searched place is dropped only here, in the same step as the centre,
   // so during the wait for a position the place line, the distance words and
   // the list all still describe the searched area (IN-07).
+  // A place search or a picked result made during the wait cancels it
+  // (cancelRecenter): the latest action wins, and a position that arrives
+  // after that changes nothing and resolves with { cancelled: true }.
   function recenterOnReader() {
+    recenterSeq += 1;
+    var mine = recenterSeq;
     return new Promise(function (resolve) {
       function done(lat, lon, zoom, own) {
+        if (mine !== recenterSeq) {
+          resolve({ cancelled: true });
+          return;
+        }
         Pinalert.clearPlace();
         Pinalert.setCenter(lat, lon, own);
         moveTo(lat, lon, zoom);
@@ -368,6 +381,11 @@ window.PinalertMap = (function () {
         }
       );
     });
+  }
+
+  // cancelRecenter makes a pending Back to my location ignore its position.
+  function cancelRecenter() {
+    recenterSeq += 1;
   }
 
   // getCenter is the visible centre of the map as { lat, lon }, the bias of a
@@ -905,8 +923,11 @@ window.PinalertMap = (function () {
   // would remove that popup a second time. When a redraw made the close, the
   // pin is already gone and the later redraw changes nothing. The focus
   // return of onPopupClose above stays synchronous; the redraw only catches a
-  // focus the removed pin was holding.
+  // focus the removed pin was holding. The once per link mark is cleared
+  // too: the one way the same id is linked again is the toast Undo of a mark
+  // that moved the linked report off the map, and its popup opens again then.
   function endLinkOnClose() {
+    openedFocusId = null;
     Pinalert.dropFocus();
     window.setTimeout(redrawAfterLinkEnded, 0);
   }
@@ -926,7 +947,9 @@ window.PinalertMap = (function () {
   // returnFocusToOpener sends focus back to the list row that opened the
   // popup when that row is connected and displayed, else to the pin (A74). The
   // row is found by comparing its data attribute, never by a selector built
-  // from report data.
+  // from report data. When neither takes focus, as while another set loads
+  // and its loading mark hides the rows and the pins, focus goes to the map,
+  // never to the page body.
   function returnFocusToOpener(opener) {
     if (!opener) {
       return;
@@ -936,7 +959,10 @@ window.PinalertMap = (function () {
       for (var i = 0; i < rows.length; i++) {
         if (rows[i].dataset.reportId === String(opener.id) && rows[i].isConnected && rows[i].offsetParent !== null) {
           rows[i].focus();
-          return;
+          if (document.activeElement === rows[i]) {
+            return;
+          }
+          break;
         }
       }
     }
@@ -944,6 +970,12 @@ window.PinalertMap = (function () {
     var pin = marker ? marker.getElement() : null;
     if (pin) {
       pin.focus({ preventScroll: true });
+      if (document.activeElement === pin) {
+        return;
+      }
+    }
+    if (map) {
+      map.getContainer().focus({ preventScroll: true });
     }
   }
 
@@ -1379,6 +1411,7 @@ window.PinalertMap = (function () {
     flyTo: flyTo,
     moveTo: moveTo,
     recenterOnReader: recenterOnReader,
+    cancelRecenter: cancelRecenter,
     getCenter: getCenter,
     highlight: highlight,
     focusOpenPopup: focusOpenPopup,

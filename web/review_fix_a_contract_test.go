@@ -161,10 +161,12 @@ func TestReviewFixAToastPauseMouseOnly(t *testing.T) {
 }
 
 // TestReviewFixARefusedTakeBackRefetches pins WR-05: a take back the server
-// refused (a 409 or any other answered refusal) reads the list again before
-// the block is released and the refusal line is written, from the opened
-// report's Undo and from the toast Undo, while a transport failure only shows
-// the line. Focus stays on the button when it is still shown.
+// refused (a 409 or any other answered refusal) reads the list again, from
+// the opened report's Undo and from the toast Undo, while a transport failure
+// only shows the line. Since fixer A3 the refusal line (or the toast
+// sentence) and the release come first and the list is read after, so the
+// reader never waits for a list round trip. Focus stays on the button when it
+// is still shown, and follows the take back's route once the render hides it.
 func TestReviewFixARefusedTakeBackRefetches(t *testing.T) {
 	votes := p19Code(t, "static/js/votes.js")
 
@@ -177,21 +179,23 @@ func TestReviewFixARefusedTakeBackRefetches(t *testing.T) {
 		t.Fatalf("onTakeBackClick lost its failure branch")
 	}
 	p13Ordered(t, click[failAt:], "onTakeBackClick refusal",
-		"answeredByServer(err) ? Pinalert.fetchReports({ afterWrite: true }) : Promise.resolve()",
-		"return refresh.then(function () {",
 		"setVoteButtonLabel(button, restingLabel);", "setBlockBusy(block, false);",
 		"showVoteError(block, takeBackErrorMessage(err));",
-		"if (canTakeFocus(button)) {", "button.focus();", "focusAfterTakeBack(origin);")
+		"if (canTakeFocus(button)) {", "button.focus();",
+		"answeredByServer(err) ? Pinalert.fetchReports({ afterWrite: true }) : Promise.resolve()",
+		"return refresh.then(function () {",
+		"if (!canTakeFocus(button)) {", "focusAfterTakeBack(origin);")
 
-	toast := jsFunctionBody(t, votes, "takeBackFromToast(reportId, wasClosed)")
+	toast := jsFunctionBody(t, votes, "takeBackFromToast(reportId, wasClosed, link)")
 	toastFail := strings.Index(toast, "}, function (err) {")
 	if toastFail == -1 {
 		t.Fatalf("takeBackFromToast lost its failure branch")
 	}
 	p13Ordered(t, toast[toastFail:], "takeBackFromToast refusal",
-		"var sentence = takeBackErrorMessage(err);", "if (!answeredByServer(err)) {", "return sentence;",
-		"return Pinalert.fetchReports({ afterWrite: true }).then(function () {")
-	if n := strings.Count(toast[toastFail:], "return sentence;"); n != 2 {
-		t.Errorf("takeBackFromToast returns the refusal sentence on %d paths, want 2 (with and without the refetch)", n)
+		"var sentence = takeBackErrorMessage(err);", "if (answeredByServer(err)) {",
+		"Pinalert.fetchReports({ afterWrite: true });", "return sentence;")
+	p13MustNotContain(t, "takeBackFromToast refusal", toast[toastFail:], ".then(")
+	if n := strings.Count(toast[toastFail:], "return sentence;"); n != 1 {
+		t.Errorf("takeBackFromToast returns the refusal sentence on %d paths, want 1 (the list read is not waited for)", n)
 	}
 }

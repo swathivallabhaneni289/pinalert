@@ -1588,17 +1588,20 @@
       // device or another tab already took the mark back, or both undos are
       // spent. The list is read again before the block is released, as on
       // success, so the render replaces the stale Undo; the Past tab is never
-      // polled, so nothing else would (WR-05). The refusal line is written
-      // after the render, and focus stays on the button while it is shown,
-      // else follows the take back's own route (row, then tab link).
+      // polled, so nothing else would (WR-05). The refusal line and the
+      // release come first, so the reader is not kept waiting for a list
+      // round trip; the render keeps the line. Focus stays on the button
+      // while it is shown; when the render hides it, focus follows the take
+      // back's own route (row, then tab link).
+      setVoteButtonLabel(button, restingLabel);
+      setBlockBusy(block, false);
+      showVoteError(block, takeBackErrorMessage(err));
+      if (canTakeFocus(button)) {
+        button.focus();
+      }
       var refresh = answeredByServer(err) ? Pinalert.fetchReports({ afterWrite: true }) : Promise.resolve();
       return refresh.then(function () {
-        setVoteButtonLabel(button, restingLabel);
-        setBlockBusy(block, false);
-        showVoteError(block, takeBackErrorMessage(err));
-        if (canTakeFocus(button)) {
-          button.focus();
-        } else {
+        if (!canTakeFocus(button)) {
           focusAfterTakeBack(origin);
         }
       });
@@ -1608,10 +1611,12 @@
   // takeBackFromToast is the short Undo's own flow. The opened report may be
   // closed by then (a resolved report leaves the list), so it works from the
   // report id alone and resolves with the sentence the toast shows next. It
-  // never rejects: a refusal comes back as the sentence to show.
-  function takeBackFromToast(reportId, wasClosed) {
+  // never rejects: a refusal comes back as the sentence to show. link is the
+  // set key resolveToastAction kept when this report was the link, else null.
+  function takeBackFromToast(reportId, wasClosed, link) {
     var origin = { reportId: String(reportId), controls: document.getElementById('toast') };
     return castVote(reportId, 'unresolve').then(function (result) {
+      relinkAfterToastUndo(reportId, wasClosed, link, result);
       return Pinalert.fetchReports({ afterWrite: true }).then(function () {
         focusAfterTakeBack(origin);
         return takeBackSuccessMessage(wasClosed, result);
@@ -1619,31 +1624,57 @@
     }, function (err) {
       // A refused toast Undo reads the list again too (WR-05), so the opened
       // report's own Undo never outlives the mark the server no longer has.
+      // The toast shows the sentence at once; the list read is not waited for.
       var sentence = takeBackErrorMessage(err);
-      if (!answeredByServer(err)) {
-        return sentence;
+      if (answeredByServer(err)) {
+        Pinalert.fetchReports({ afterWrite: true });
       }
-      return Pinalert.fetchReports({ afterWrite: true }).then(function () {
-        return sentence;
-      });
+      return sentence;
     });
   }
 
   // resolveToastAction is the optional second argument of the message that
   // follows Yes, mark resolved (C58). It exists only when the server says an
   // undo is left on this report; the browser computes no limit of its own.
+  // The toast is built before the refetch that follows the mark, so the link
+  // is still held here when this report is the one a /?report=ID link opened.
+  // That refetch usually ends the link (a closed report leaves Active and its
+  // pin goes), so the toast keeps the link and the set it was seen in.
   function resolveToastAction(reportId, result) {
     if (!result || typeof result.undos_left !== 'number' || result.undos_left <= 0) {
       return undefined;
     }
     var wasClosed = result.visibility === RETRACTED_VISIBILITY_SLUG;
+    var link = Pinalert.state.focusId === String(reportId) ? linkSetKey() : null;
     return {
       label: TOAST_ACTION_LABEL,
       ariaLabel: TOAST_ACTION_NAME,
       onClick: function () {
-        return takeBackFromToast(reportId, wasClosed);
+        return takeBackFromToast(reportId, wasClosed, link);
       }
     };
+  }
+
+  // linkSetKey names the tab, the chip and the centre the reader is on, so a
+  // toast Undo can tell whether the reader is still on the set the link was
+  // seen in.
+  function linkSetKey() {
+    var s = Pinalert.state;
+    return s.view + '|' + s.category + '|' + s.center.lat + '|' + s.center.lon;
+  }
+
+  // relinkAfterToastUndo puts a report link back for the toast Undo's own
+  // refetch, so a linked report that the mark moved off the map comes back
+  // with its pin and popup from the server's answer. It acts only when the
+  // take back reopened the report, the link has not been put back already,
+  // and the reader is still on the same set; a reader who moved on keeps the
+  // link ended, and a report that stays closed would have no pin to hold it.
+  function relinkAfterToastUndo(reportId, wasClosed, link, result) {
+    var stillClosed = !!(result && result.visibility === RETRACTED_VISIBILITY_SLUG);
+    if (link === null || !wasClosed || stillClosed || Pinalert.state.focusId !== null || link !== linkSetKey()) {
+      return;
+    }
+    Pinalert.setFocusId(reportId);
   }
 
   window.PinalertVotes = {
