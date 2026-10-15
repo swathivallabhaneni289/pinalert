@@ -7,7 +7,9 @@ import (
 	"context"
 	"html/template"
 	"io/fs"
+	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -86,6 +88,61 @@ type Deps struct {
 	// (burst 5, one token per 60s) are visible rather than buried as
 	// literals in this router.
 	RequestLinkRateLimit RequestLinkRateLimit
+	// RequestLog receives the one line written per request (see
+	// requestLogger). Left nil, a logger on standard output with the usual
+	// date and time prefix is used, which is where chi's own logger wrote.
+	RequestLog *log.Logger
+}
+
+// requestLogger returns the access log middleware. It replaces chi's
+// middleware.Logger, which prints r.RequestURI and so wrote every reader's
+// search text and map centre (the query string of /api/geocode,
+// /api/geocode/place and the /api/reports poll) into a log the host stores.
+// Pinalert stores no reader location, so the line holds only the request id,
+// the method, the path without its query string, the status, the size and the
+// duration. Nothing from the query, the body, the cookies or the headers is
+// read. The path is written in its escaped form so a crafted path cannot
+// break the line in two.
+func requestLogger(l *log.Logger) func(http.Handler) http.Handler {
+	if l == nil {
+		l = log.New(os.Stdout, "", log.LstdFlags)
+	}
+	return middleware.RequestLogger(&pathOnlyLogFormatter{logger: l})
+}
+
+// pathOnlyLogFormatter is the middleware.LogFormatter behind requestLogger.
+type pathOnlyLogFormatter struct {
+	logger *log.Logger
+}
+
+func (f *pathOnlyLogFormatter) NewLogEntry(r *http.Request) middleware.LogEntry {
+	return &pathOnlyLogEntry{
+		logger: f.logger,
+		reqID:  middleware.GetReqID(r.Context()),
+		method: r.Method,
+		path:   r.URL.EscapedPath(),
+	}
+}
+
+type pathOnlyLogEntry struct {
+	logger *log.Logger
+	reqID  string
+	method string
+	path   string
+}
+
+func (e *pathOnlyLogEntry) Write(status, bytes int, _ http.Header, elapsed time.Duration, _ interface{}) {
+	if status == 0 {
+		status = http.StatusOK
+	}
+	e.logger.Printf("[%s] %s %s %d %dB in %s", e.reqID, e.method, e.path, status, bytes, elapsed)
+}
+
+// Panic is only reached if a recoverer sits inside this middleware. The
+// Recoverer in NewRouter sits outside it and prints its own report, so this
+// stays a one line note with no request data beyond the method and path.
+func (e *pathOnlyLogEntry) Panic(v interface{}, _ []byte) {
+	e.logger.Printf("[%s] %s %s panic: %v", e.reqID, e.method, e.path, v)
 }
 
 // RequestLinkRateLimit is the burst/refill configuration for the per-IP
@@ -177,7 +234,7 @@ func NewRouter(deps Deps) *chi.Mux {
 	// configured with that proxy's real hop count is the correct upgrade.
 	r.Use(middleware.ClientIPFromRemoteAddr)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Logger)
+	r.Use(requestLogger(deps.RequestLog))
 	r.Use(deps.Session.Middleware(deps.persistSession))
 
 	// --- Exempt: reachable without a verified account. ---
