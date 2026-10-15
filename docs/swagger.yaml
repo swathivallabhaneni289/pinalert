@@ -374,10 +374,10 @@ definitions:
         example: poster
         type: string
       closed_text:
-        example: Closed by the person who posted it
+        example: Resolved by the poster
         type: string
       lifetime_text:
-        example: Stayed up for 6 hours
+        example: after 6 hrs
         type: string
       outcome:
         enum:

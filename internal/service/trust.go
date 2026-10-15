@@ -370,8 +370,13 @@ type CastVoteResult struct {
 //     before any write on purpose: a withdraw with nothing to withdraw must
 //     not burn budget or replace a standing row. They run after step 6 so a
 //     vote refused for distance still costs only the context read. The
-//     accepted race is that two simultaneous take backs can overshoot the
-//     limit by one, because the log has no lock by design (T-02-02, T-31-09).
+//     accepted race is that parallel requests from one account can exceed
+//     the limit by the number of extra parallel requests (N requests in
+//     flight can write N rows), and interleaved resolve and take back
+//     requests can take a resolve back more than twice, because the log has
+//     no lock by design (T-02-02, T-31-09). No rating and no other person's
+//     vote is touched. If it ever matters, the fix is an advisory lock or
+//     one conditional insert that counts and writes in the same statement.
 //  7. Compute the voter's geohash cell server-side from raw coordinates (the
 //     T-02-01 control: CastVoteInput has no geohash field for a client to
 //     populate), append the vote, read the current votes back AFTER the

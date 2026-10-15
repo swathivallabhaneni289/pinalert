@@ -1141,11 +1141,11 @@
                 },
                 "closed_text": {
                     "type": "string",
-                    "example": "Closed by the person who posted it"
+                    "example": "Resolved by the poster"
                 },
                 "lifetime_text": {
                     "type": "string",
-                    "example": "Stayed up for 6 hours"
+                    "example": "after 6 hrs"
                 },
                 "outcome": {
                     "type": "string",

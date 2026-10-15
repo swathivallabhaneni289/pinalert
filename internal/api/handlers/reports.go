@@ -168,10 +168,10 @@ type HistoryResponse struct {
 	State        string `json:"state" enums:"resolved,expired" example:"resolved"`
 	At           string `json:"at" example:"2026-09-05T14:03:00.000Z"`
 	ClosedBy     string `json:"closed_by,omitempty" enums:"you,poster,people,poster_and_people,you_and_people" example:"poster"`
-	ClosedText   string `json:"closed_text,omitempty" example:"Closed by the person who posted it"`
+	ClosedText   string `json:"closed_text,omitempty" example:"Resolved by the poster"`
 	Outcome      string `json:"outcome,omitempty" enums:"corroborated,contradicted,unconfirmed,neutral" example:"corroborated"`
 	OutcomeLabel string `json:"outcome_label,omitempty" example:"Confirmed by 3 people nearby"`
-	LifetimeText string `json:"lifetime_text,omitempty" example:"Stayed up for 6 hours"`
+	LifetimeText string `json:"lifetime_text,omitempty" example:"after 6 hrs"`
 }
 
 // RecentResponse is what happened lately when the active tab is empty: how

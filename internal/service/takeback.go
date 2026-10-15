@@ -14,6 +14,13 @@ import (
 // the owner's words, "once or twice that's it", and the number is two. The
 // poster's reopen spends the same budget (see UndosUsed), so a mistaken
 // resolve cannot be flipped back and forth without end.
+//
+// The limit holds for requests that arrive one after another. CastVote reads
+// the count and then writes with no lock (T-31-09), so parallel requests
+// from one account can exceed it by the number of extra parallel requests,
+// and interleaved resolve and take back requests can take a resolve back
+// more than twice. No rating and no other person's vote is touched. A lock
+// or a conditional insert is the fix if it ever matters.
 const UndoLimit = 2
 
 // ErrNothingToTakeBack is returned when a take back arrives from an account

@@ -9,6 +9,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -72,6 +73,24 @@ func parsePlaceCentre(w http.ResponseWriter, r *http.Request) (*geocode.Point, b
 	return &geocode.Point{Lat: lat, Lon: lon}, true
 }
 
+// placeErrorClass names a failed search in a few fixed words for the log: no
+// error text, so nothing the reader typed or any coordinate can reach it.
+func placeErrorClass(err error) string {
+	var status *geocode.UpstreamStatusError
+	switch {
+	case errors.Is(err, geocode.ErrReaderBusy):
+		return "reader lane busy"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(err, context.Canceled):
+		return "cancelled"
+	case errors.As(err, &status):
+		return "upstream status " + strconv.Itoa(status.Status)
+	default:
+		return "upstream error"
+	}
+}
+
 // GeocodePlace produces the HTTP handler for GET /api/geocode/place.
 //
 // @Summary Search for a place on the reader lane
@@ -126,7 +145,10 @@ func GeocodePlace(searcher PlaceSearcher, budget PlaceBudget) http.HandlerFunc {
 
 		found, err := searcher.SearchReader(r.Context(), q, near)
 		if err != nil {
-			log.Printf("handlers: GeocodePlace: %v", err)
+			// A fixed message and the error class only. The error text can
+			// carry the request URL, and that holds the reader's search
+			// text, their map centre and the contact email.
+			log.Printf("handlers: GeocodePlace: search failed (%s)", placeErrorClass(err))
 			writeFieldError(w, http.StatusServiceUnavailable, "q", placeUnavailableMessage)
 			return
 		}

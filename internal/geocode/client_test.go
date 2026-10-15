@@ -498,3 +498,73 @@ func TestSearchReaderCacheIsBounded(t *testing.T) {
 		t.Fatalf("oldest key was still cached (%d calls, was %d)", got, before)
 	}
 }
+
+// TestFailedUpstreamErrorHoldsNoReaderData pins IN-04 at the source: the
+// error a failed upstream call returns must not carry the request URL, which
+// holds the search text, the map centre and the contact email. Callers log
+// this error, so leaking it here would put a reader's place into the log.
+func TestFailedUpstreamErrorHoldsNoReaderData(t *testing.T) {
+	const (
+		secretQuery = "flooded-colony-near-my-house"
+		secretEmail = "owner-contact@example.org"
+	)
+	near := &Point{Lat: 13.082680, Lon: 80.270718}
+	secrets := []string{secretQuery, secretEmail, "13.0826", "80.2707", "viewbox", "email="}
+
+	// A server that is already closed refuses the connection, which makes
+	// net/http return a *url.Error carrying the full URL.
+	dead := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	baseURL := dead.URL
+	dead.Close()
+
+	statusServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer statusServer.Close()
+
+	check := func(t *testing.T, err error) {
+		t.Helper()
+		if err == nil {
+			t.Fatal("got nil error, want a failure")
+		}
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			t.Fatalf("error still wraps a *url.Error: %v", err)
+		}
+		for _, secret := range secrets {
+			if strings.Contains(err.Error(), secret) {
+				t.Fatalf("error %q contains %q", err.Error(), secret)
+			}
+		}
+	}
+
+	t.Run("reader lane, connection refused", func(t *testing.T) {
+		c := newClientWithBaseURL(baseURL, secretEmail, defaultLimiterEvery, defaultLimiterBurst)
+		_, err := c.SearchReader(context.Background(), secretQuery, near)
+		check(t, err)
+	})
+	t.Run("reporter lane, connection refused", func(t *testing.T) {
+		c := newClientWithBaseURL(baseURL, secretEmail, defaultLimiterEvery, defaultLimiterBurst)
+		_, err := c.Search(context.Background(), secretQuery)
+		check(t, err)
+	})
+	t.Run("reader lane, cancelled context keeps its class", func(t *testing.T) {
+		c := newClientWithBaseURL(statusServer.URL, secretEmail, defaultLimiterEvery, defaultLimiterBurst)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := c.SearchReader(ctx, secretQuery, near)
+		check(t, err)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("errors.Is(err, context.Canceled) = false for %v", err)
+		}
+	})
+	t.Run("upstream status is a typed error", func(t *testing.T) {
+		c := newClientWithBaseURL(statusServer.URL, secretEmail, defaultLimiterEvery, defaultLimiterBurst)
+		_, err := c.SearchReader(context.Background(), secretQuery, near)
+		check(t, err)
+		var statusErr *UpstreamStatusError
+		if !errors.As(err, &statusErr) || statusErr.Status != http.StatusBadGateway {
+			t.Fatalf("err = %v, want UpstreamStatusError 502", err)
+		}
+	})
+}
