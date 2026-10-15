@@ -43,6 +43,10 @@ window.PinalertMap = (function () {
   // a later poll or a tab change never opens it a second time.
   var openedFocusId = null;
 
+  // Numbers every Back to my location and every cancel of one, so a position
+  // that arrives after a newer search or pick is ignored (IN-07).
+  var recenterSeq = 0;
+
   // The open Leaflet popup, or null.
   var activePopup = null;
   // True while focus sits inside the open popup. Kept by focusin and focusout
@@ -350,9 +354,18 @@ window.PinalertMap = (function () {
   // The searched place is dropped only here, in the same step as the centre,
   // so during the wait for a position the place line, the distance words and
   // the list all still describe the searched area (IN-07).
+  // A place search or a picked result made during the wait cancels it
+  // (cancelRecenter): the latest action wins, and a position that arrives
+  // after that changes nothing and resolves with { cancelled: true }.
   function recenterOnReader() {
+    recenterSeq += 1;
+    var mine = recenterSeq;
     return new Promise(function (resolve) {
       function done(lat, lon, zoom, own) {
+        if (mine !== recenterSeq) {
+          resolve({ cancelled: true });
+          return;
+        }
         Pinalert.clearPlace();
         Pinalert.setCenter(lat, lon, own);
         moveTo(lat, lon, zoom);
@@ -368,6 +381,11 @@ window.PinalertMap = (function () {
         }
       );
     });
+  }
+
+  // cancelRecenter makes a pending Back to my location ignore its position.
+  function cancelRecenter() {
+    recenterSeq += 1;
   }
 
   // getCenter is the visible centre of the map as { lat, lon }, the bias of a
@@ -1393,6 +1411,7 @@ window.PinalertMap = (function () {
     flyTo: flyTo,
     moveTo: moveTo,
     recenterOnReader: recenterOnReader,
+    cancelRecenter: cancelRecenter,
     getCenter: getCenter,
     highlight: highlight,
     focusOpenPopup: focusOpenPopup,

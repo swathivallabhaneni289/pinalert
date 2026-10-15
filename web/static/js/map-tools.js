@@ -195,10 +195,11 @@ window.PinalertMapTools = (function () {
 
   // search runs one place search. It sends nothing for fewer than 3 letters,
   // nothing while an earlier search is still in flight, and drops an answer
-  // that is no longer the newest.
+  // that is no longer the newest. A search that goes out while Back to my
+  // location is still waiting cancels it: the latest action wins (IN-07).
   function search(query) {
     var q = String(query === undefined ? inputEl.value : query).trim();
-    if (inFlight || backPending) {
+    if (inFlight) {
       return;
     }
     if (Array.from(q).length < MIN_QUERY_RUNES) {
@@ -206,6 +207,7 @@ window.PinalertMapTools = (function () {
       showStatus(MESSAGE_TOO_SHORT, false);
       return;
     }
+    cancelBack();
     closeResults();
     searchSeq += 1;
     var mySeq = searchSeq;
@@ -258,6 +260,8 @@ window.PinalertMapTools = (function () {
       return;
     }
     var name = pick.name || pick.display_name;
+    // A pick wins over a Back to my location still waiting (IN-07).
+    cancelBack();
     // A place change ends a report link (CR-01).
     Pinalert.dropFocus();
     Pinalert.setCenter(pick.lat, pick.lon, false);
@@ -402,11 +406,25 @@ window.PinalertMapTools = (function () {
     Pinalert.dropFocus();
     locationLost = false;
     PinalertMap.recenterOnReader().then(function (result) {
+      // A search or a pick made during the wait has already taken over.
+      if (result && result.cancelled === true) {
+        return;
+      }
       backPending = false;
       locationLost = !(result && result.own === true);
       renderPlaceLine(Pinalert.state);
       focusSearch();
     });
+  }
+
+  // cancelBack drops a Back to my location that is still waiting, so its late
+  // position is ignored and the press can be made again.
+  function cancelBack() {
+    if (!backPending) {
+      return;
+    }
+    backPending = false;
+    PinalertMap.cancelRecenter();
   }
 
   function onKeydown(evt) {

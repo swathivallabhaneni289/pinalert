@@ -50,6 +50,37 @@ func TestReviewFixA3ToastUndoRelinks(t *testing.T) {
 		"window.setTimeout(redrawAfterLinkEnded, 0);")
 }
 
+// TestReviewFixA3LatestPlaceActionWins pins the second half of IN-07: a
+// place search that goes out, or a picked result, cancels a Back to my
+// location still waiting, and the position that arrives after that changes
+// nothing (no place clear, no centre, no move, no list request). No new
+// words are shown.
+func TestReviewFixA3LatestPlaceActionWins(t *testing.T) {
+	mapJS := p19Code(t, "static/js/map.js")
+	p13MustContain(t, "map.js", mapJS, "var recenterSeq = 0;", "cancelRecenter: cancelRecenter")
+	back := jsFunctionBody(t, mapJS, "recenterOnReader()")
+	p13Ordered(t, back, "recenterOnReader",
+		"recenterSeq += 1;", "var mine = recenterSeq;",
+		"if (mine !== recenterSeq) {", "resolve({ cancelled: true });", "return;",
+		"Pinalert.clearPlace();", "Pinalert.setCenter(lat, lon, own);")
+	cancel := jsFunctionBody(t, mapJS, "cancelRecenter()")
+	p13MustContain(t, "cancelRecenter", cancel, "recenterSeq += 1;")
+
+	tools := p19Code(t, "static/js/map-tools.js")
+	search := jsFunctionBody(t, tools, "search(query)")
+	p13MustNotContain(t, "search", search, "backPending")
+	p13Ordered(t, search, "search",
+		"if (inFlight) {", "Array.from(q).length < MIN_QUERY_RUNES", "cancelBack();", "inFlight = true;")
+	pick := jsFunctionBody(t, tools, "pickResult(i)")
+	p13Ordered(t, pick, "pickResult", "cancelBack();", "Pinalert.setCenter(pick.lat, pick.lon, false);")
+	cb := jsFunctionBody(t, tools, "cancelBack()")
+	p13Ordered(t, cb, "cancelBack", "if (!backPending) {", "backPending = false;", "PinalertMap.cancelRecenter();")
+	press := jsFunctionBody(t, tools, "onBackPress()")
+	p13Ordered(t, press, "onBackPress",
+		"PinalertMap.recenterOnReader()", "if (result && result.cancelled === true) {",
+		"locationLost = !(result && result.own === true);", "focusSearch();")
+}
+
 // TestReviewFixA3FocusFallsBackToMap pins the second follow up: closing a
 // popup while the loading mark hides the rows and the marker pane leaves
 // focus on the map, never on the page body. A row or a pin counts only when
