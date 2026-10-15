@@ -160,3 +160,75 @@ func TestPastCardReachesTheSharedHelpers(t *testing.T) {
 	after := jsFunctionBody(t, feed, "focusAfterRemoval(candidates)")
 	p13MustContain(t, "focusAfterRemoval", after, "classList.contains('past-card')")
 }
+
+// TestRecentSentence pins C39's counts sentence {A}: only the parts whose
+// count is above zero, the words of the four UI-SPEC examples, the numbers
+// read from the server's recent object and never invented, and the empty
+// Active tab choosing the history block only for an unfiltered Active tab.
+func TestRecentSentence(t *testing.T) {
+	feed := pt12Feed(t)
+
+	sentence := jsFunctionBody(t, feed, "recentSentence(recent)")
+	p13MustContain(t, "recentSentence", sentence,
+		"recent.resolved_24h", "recent.expired_24h", "Number.isInteger(", "> 0",
+		"' was resolved'", "' were resolved'", "' faded out'", "' and '", "' in the last 24 hours.'")
+	p13MustNotContain(t, "recentSentence", sentence, "Math.", "parseInt(", "innerHTML")
+
+	render := jsFunctionBody(t, feed, "render(state)")
+	p13Ordered(t, render, "render history kind",
+		"kind = 'filter';", "kind = 'disputed';", "Pinalert.state.view === 'active'",
+		"recentSentence(Pinalert.state.recent)", "kind = 'history';",
+		"Pinalert.setText(historyEmptyBodyEl,", "setEmptyState(kind);")
+	p13MustContain(t, "render", render, "' ' + REPORT_PROMPT")
+	p13MustContain(t, "feed.js", feed, `var REPORT_PROMPT = "Tap + to report what you're seeing.";`)
+	p13MustContain(t, "feed.js", feed,
+		"seePastBtn.addEventListener('click', function () {", "switchTab('past');")
+}
+
+// TestFocusSelectsTabWithoutAddressWrite pins D-04 and D-11: a report link is
+// acted on once per answer, the two plain toasts say what the server said, a
+// readable report selects the tab of its own state through the store, the
+// strip and a refetch, and nothing in that path touches the address.
+func TestFocusSelectsTabWithoutAddressWrite(t *testing.T) {
+	feed := pt12Feed(t)
+
+	handle := jsFunctionBody(t, feed, "handleFocus(state)")
+	p13Ordered(t, handle, "handleFocus",
+		"focus === handledFocus", "handledFocus = focus;", "focus.status === 'too_old'", "Pinalert.showToast(",
+		"focus.status === 'unavailable'", "focus.status === 'ok'", "selectTabOnScreen(")
+	p13MustNotContain(t, "handleFocus", handle,
+		"replaceState", "syncViewURL", "searchParams", "location.", "switchTab(", "fetch(")
+
+	for _, words := range []string{
+		`"That report is older than 7 days and is no longer shown."`,
+		`"That report isn't available."`,
+	} {
+		if n := strings.Count(feed, words); n != 1 {
+			t.Errorf("feed.js holds %s %d times, want exactly 1", words, n)
+		}
+	}
+
+	p13MustContain(t, "feed.js", feed,
+		"resolved: 'past'", "past: 'past'", "disputed: 'disputed'", "active: 'active'")
+
+	on := jsFunctionBody(t, feed, "selectTabOnScreen(view)")
+	p13Ordered(t, on, "selectTabOnScreen",
+		"Pinalert.setView(view);", "showTab(view);", "Pinalert.fetchReports();")
+	p13MustNotContain(t, "selectTabOnScreen", on, "replaceState", "syncViewURL", "searchParams")
+
+	// switchTab keeps its own order, the address write included.
+	sw := jsFunctionBody(t, feed, "switchTab(view)")
+	p13Ordered(t, sw, "switchTab",
+		"Pinalert.setView(view);", "showTab(view);", "syncViewURL(view);", "Pinalert.fetchReports();")
+
+	// The link is acted on after every list draw of the ok path: the live
+	// list, the empty list and the Past tab, and never on loading or error.
+	render := jsFunctionBody(t, feed, "render(state)")
+	if n := strings.Count(render, "handleFocus(state);"); n != 3 {
+		t.Errorf("render calls handleFocus %d times, want 3 (live list, empty list, Past tab)", n)
+	}
+	errorBranch := render[strings.Index(render, "if (state.status === 'error') {"):strings.Index(render, "setHidden(errorEl, true);\n    updateFeedStatus(state);")]
+	if strings.Contains(errorBranch, "handleFocus(") {
+		t.Errorf("the error branch must not act on a link")
+	}
+}

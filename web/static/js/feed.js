@@ -93,6 +93,10 @@
     past: 'Resolved and expired reports from the last 7 days.'
   };
 
+  // The tab each report view of a link answer belongs to: the resolved and
+  // the faded reports are both on the Past tab.
+  var FOCUS_TABS = { active: 'active', disputed: 'disputed', resolved: 'past', past: 'past' };
+
   // lastAnnouncedKey is the tab, place and chip the status line last
   // announced, and statusStarted is false until the first answer lands. The
   // first answer is not announced: a reader who just opened the page hears
@@ -540,6 +544,30 @@
     Pinalert.setText(feedCountEl, text);
   }
 
+  // recentSentence is the counts sentence {A} of the empty Active tab (C39,
+  // HIST-04) from the server's recent object. Only the parts whose count is
+  // above zero are written, and the numbers are the server's, never typed
+  // here. It returns an empty string when nothing happened lately, which is
+  // how render knows to show the plain empty block instead.
+  function recentSentence(recent) {
+    if (!recent) {
+      return '';
+    }
+    var resolved = recent.resolved_24h;
+    var expired = recent.expired_24h;
+    var parts = [];
+    if (Number.isInteger(resolved) && resolved > 0) {
+      parts.push(resolved + (resolved === 1 ? ' was resolved' : ' were resolved'));
+    }
+    if (Number.isInteger(expired) && expired > 0) {
+      parts.push(expired + ' faded out');
+    }
+    if (parts.length === 0) {
+      return '';
+    }
+    return parts.join(' and ') + ' in the last 24 hours.';
+  }
+
   // updateFeedHeading writes the heading and the one line note of the tab
   // (C3 to C7) and marks the shell with the tab, so the laptop heading, which
   // is hidden on Active, shows for Disputed and Past (feed.css). Every string
@@ -904,6 +932,7 @@
 
     if (Pinalert.state.view === 'past') {
       renderPastTab(state);
+      handleFocus(state);
       return;
     }
     setHidden(pastGroupsEl, true);
@@ -913,27 +942,62 @@
       // An empty list shows exactly one empty block, instead of the list. A
       // chip that emptied it says so, with the button that clears it: the
       // reader's own filter is the reason, never "no reports" (D-18). With no
-      // chip on, Disputed has its own words and Active the general ones. The
-      // history kind (recent counts and See past reports) is chosen by the
-      // Past cards plan, which owns those numbers. Read from the store's tab
-      // rather than the pressed link: the store's value describes the data
-      // actually in state.reports, while the link describes an intent whose
-      // fetch may still be in flight.
+      // chip on, Disputed has its own words, an unfiltered Active tab with
+      // something resolved or faded in the last 24 hours says what happened
+      // lately with a button to the Past tab (HIST-04), and anything else
+      // gets the general words. Read from the store's tab rather than the
+      // pressed link: the store's value describes the data actually in
+      // state.reports, while the link describes an intent whose fetch may
+      // still be in flight.
       var kind = 'general';
       if (Pinalert.state.category !== '') {
         kind = 'filter';
       } else if (Pinalert.state.view === 'disputed') {
         kind = 'disputed';
+      } else if (Pinalert.state.view === 'active' && recentSentence(Pinalert.state.recent) !== '') {
+        kind = 'history';
+        Pinalert.setText(historyEmptyBodyEl, recentSentence(Pinalert.state.recent) + ' ' + REPORT_PROMPT);
       }
       setEmptyState(kind);
       setHidden(reportListEl, true);
       clearRows();
+      handleFocus(state);
       return;
     }
 
     setEmptyState('none');
     setHidden(reportListEl, false);
     renderRows(state.reports);
+    handleFocus(state);
+  }
+
+  // handleFocus acts on the server's answer to a ?report=ID link (D-04, D-11)
+  // once per answer: a report too old or not readable gets one plain message,
+  // and a readable report selects the tab of its own state, on screen only.
+  // The store keeps the last focus object, so a later poll or tab switch sees
+  // the same object and does nothing. The address is never touched here, and
+  // opening the pin is the map's own job.
+  function handleFocus(state) {
+    var focus = state.focus;
+    if (!focus || focus === handledFocus) {
+      return;
+    }
+    handledFocus = focus;
+    if (focus.status === 'too_old') {
+      Pinalert.showToast("That report is older than 7 days and is no longer shown.");
+      return;
+    }
+    if (focus.status === 'unavailable') {
+      Pinalert.showToast("That report isn't available.");
+      return;
+    }
+    if (focus.status === 'ok' && focus.report &&
+        Object.prototype.hasOwnProperty.call(FOCUS_TABS, focus.report.view)) {
+      var tab = FOCUS_TABS[focus.report.view];
+      if (tab !== Pinalert.state.view) {
+        selectTabOnScreen(tab);
+      }
+    }
   }
 
   // findReportById looks the report back up from the shared store rather
@@ -1241,6 +1305,19 @@
     Pinalert.setView(view);
     showTab(view);
     syncViewURL(view);
+    Pinalert.fetchReports();
+  }
+
+  // selectTabOnScreen is switchTab without the address write: it sets the
+  // store, marks the strip and refetches, so a report link lands on the tab
+  // of the report's own state while the address stays exactly as it was sent
+  // (D-05). Nothing else about a tab change is skipped.
+  function selectTabOnScreen(view) {
+    if (Pinalert.VIEWS.indexOf(view) === -1 || view === Pinalert.state.view) {
+      return;
+    }
+    Pinalert.setView(view);
+    showTab(view);
     Pinalert.fetchReports();
   }
 
