@@ -390,7 +390,7 @@ func TestIconGlyphsAreClassDriven(t *testing.T) {
 	const iconClassCall = "Pinalert.iconClass("
 	const imageNodeCreation = "createElement('img')"
 
-	for _, module := range []string{"static/js/map.js", "static/js/report-form.js", "static/js/feed.js"} {
+	for _, module := range []string{"static/js/map.js", "static/js/report-form.js", "static/js/feed.js", "static/js/low.js"} {
 		raw, err := fs.ReadFile(StaticFS, module)
 		if err != nil {
 			t.Fatalf("%s: could not read embedded file — %v", module, err)

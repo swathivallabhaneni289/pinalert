@@ -1066,7 +1066,10 @@ func TestVisibilityModuleLoadsBeforeItsConsumers(t *testing.T) {
 // literal or a response-field name typed into a consumer is the cheapest
 // possible detector for a second implementation.
 func TestBothSurfacesMountTheSameVisibilityTag(t *testing.T) {
-	modules := []string{"static/js/feed.js", "static/js/map.js"}
+	// Four surfaces now share the tag: the list row, the popup, the Activity
+	// row and the Low data row (R-09), the last one built by low.js. The order
+	// anchors below stay on createRow and buildPopupCard only.
+	modules := []string{"static/js/feed.js", "static/js/map.js", "static/js/low.js"}
 	texts := map[string]string{}
 
 	for _, module := range modules {

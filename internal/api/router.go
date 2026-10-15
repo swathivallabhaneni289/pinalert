@@ -264,6 +264,18 @@ func resolveRateLimits(l RateLimits) RateLimits {
 // @contact.name Pinalert project
 // @contact.url  https://github.com/swathivallabhaneni289/pinalert
 
+// compressionLevel is the gzip level of the response compression middleware.
+const compressionLevel = 5
+
+// compressibleContentTypes lists the response types NewRouter compresses (D-14,
+// RESEARCH "Size budget"). The router used to send everything uncompressed. The
+// list is chi's default minus text/plain and the formats this app never serves
+// (markdown, csv, vtt, xml, atom, rss, x-javascript). SVG stays because the
+// shipped icons are SVG mask files. text/plain is left out on purpose, so error
+// bodies such as the one http.NotFound writes stay byte for byte unchanged. The
+// Low data byte budget is still measured in raw bytes (04-27).
+var compressibleContentTypes = []string{"text/html", "text/css", "text/javascript", "application/javascript", "application/json", "image/svg+xml"}
+
 // NewRouter builds the chi router: request-id/client-ip-resolution/
 // recoverer/logger middleware, then the session middleware (issuing or verifying the
 // pinalert_session cookie on every request), then the route table. D-05
@@ -307,6 +319,8 @@ func NewRouter(deps Deps) *chi.Mux {
 	}
 	r.Use(middleware.Recoverer)
 	r.Use(requestLogger(deps.RequestLog))
+	// Gzip for HTML, CSS, JavaScript, JSON and SVG when the client accepts it (D-14).
+	r.Use(middleware.Compress(compressionLevel, compressibleContentTypes...))
 	r.Use(deps.Session.Middleware(deps.persistSession))
 
 	// Local copies of the page and auth configs that carry the shared Chrome
@@ -372,6 +386,10 @@ func NewRouter(deps Deps) *chi.Mux {
 	r.Group(func(r chi.Router) {
 		r.Use(requireVerifiedAccount(deps.Sessions))
 		r.Get("/", handlers.Page(deps.Template, page))
+		// D-13, D-14: the Low data view, its own bookmarkable page behind the
+		// gate. It takes the same page copy so the bar numbers and the vote
+		// radius match the main page.
+		r.Get(handlers.LowDataPath, handlers.LowPage(deps.Template, page))
 		// The report gate runs inside the handler, after decode (R-04), never as route middleware.
 		r.Post("/api/reports", handlers.SubmitReport(deps.Reports, rateGate))
 		r.Get("/api/reports", handlers.NearbyReports(deps.Reports))

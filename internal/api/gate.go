@@ -47,6 +47,9 @@ var unverifiedErrorResponse = handlers.ErrorResponse{
 	Error: handlers.ErrorDetail{Field: "auth", Message: "Verify your email to continue."},
 }
 
+// loginLowDataTarget is where a logged out request for the Low data view goes.
+const loginLowDataTarget = "/login?low=1"
+
 // requireVerifiedAccount enforces D-05 ("login is required to view
 // anything, not merely to act") for every route it wraps. It resolves the
 // caller's account per request from sessions.account_id via the signed
@@ -70,7 +73,9 @@ var unverifiedErrorResponse = handlers.ErrorResponse{
 // so no app-shell bytes are ever produced (threat T-01-73). The redirect
 // carries Cache-Control: no-store so an intermediary cannot cache "this
 // visitor is unverified" for a browser that has since verified (threat
-// T-01-75).
+// T-01-75). A logged out request for the Low data address goes to the login
+// page with low=1 so the remembered choice can be set there (D-17); every other
+// path still goes to exactly /login.
 func requireVerifiedAccount(q *sqlcgen.Queries) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +105,11 @@ func requireVerifiedAccount(q *sqlcgen.Queries) func(http.Handler) http.Handler 
 			}
 
 			w.Header().Set("Cache-Control", "no-store")
-			http.Redirect(w, r, "/login", http.StatusFound)
+			target := "/login"
+			if r.URL.Path == handlers.LowDataPath {
+				target = loginLowDataTarget
+			}
+			http.Redirect(w, r, target, http.StatusFound)
 		})
 	}
 }
