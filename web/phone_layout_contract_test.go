@@ -237,9 +237,13 @@ func TestPhoneFeedScriptContract(t *testing.T) {
 
 	create := jsFunctionBody(t, code, "createRow(id)")
 	p13MustContain(t, "createRow", create, "'report-row__away'", "body.appendChild(away)", "away: away")
+	// Plan 03.1-09 (R6): the distance is the store's one sentence at every
+	// width. The old literals were Pinalert.feedIsAroundReader() and
+	// Pinalert.formatDistance(report.distance_km); the around the reader rule
+	// now lives inside Pinalert.distanceText (plan 05).
 	update := jsFunctionBody(t, code, "updateRow(row, report)")
 	p13Ordered(t, update, "updateRow",
-		"Pinalert.feedIsAroundReader()", "Pinalert.formatDistance(report.distance_km)",
+		"Pinalert.distanceText(report)",
 		"Pinalert.setText(row.away, away)", "row.away.hidden = !away")
 
 	p13MustContain(t, "feed.js", code, "var PHONE_QUERY = '(max-width: 899.98px)';")

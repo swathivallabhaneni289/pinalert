@@ -1,11 +1,13 @@
-// trust.js: window.PinalertTrust, the shared trust block. The feed row and the
-// Activity row get a compact toggle (two counters that are always shown, an
-// optional "still current" word) whose panel holds the facts list. The map
-// popup gets the trust card, which is always showing and holds the same facts
-// list under a header of counters and the state word (A91, A96). One list
-// builder serves both (D-20), so a report reads the same everywhere. The
-// reporter words of a row sit outside the button, and each row consumer places
-// them with the state label through createStateLine (A75).
+// trust.js: window.PinalertTrust, the shared trust block. The Activity row
+// gets a compact toggle (two counters that are always shown, an optional
+// "still current" word) whose panel holds the facts list. The map popup gets
+// the trust card, which is always showing and holds the same facts list under
+// a header of counters and the state word (A91, A96). One list builder serves
+// both (D-20), so a report reads the same everywhere. The reporter words of a
+// row sit outside the button, and each row consumer places them with the state
+// label through createStateLine (A75). A feed list row (03.1 D-21) carries no
+// control at all: it gets the plain text trust line from createTrustLine, the
+// same two counters and currency word with no toggle and no panel.
 //
 // This module computes nothing the server did not send (T-02-04). The two
 // counter numerals, the state word and every fact row (title, detail and
@@ -606,6 +608,81 @@
     return '';
   }
 
+  // createTrustLine is the trust text of a list row (03.1 D-20, D-21): one
+  // paragraph of plain text, the two counters and then the server's currency
+  // word when it sent one. It holds no button, no toggle and no panel, because
+  // a list row carries no control; the facts list lives in the opened report.
+  // The reporter words are built here too, so the row's state line can place
+  // them beside the state word, as createStateLine does for the block. The
+  // separators between the facts are drawn by the stylesheet. Everything
+  // starts hidden and empty, and updateTrustLine is always called after it.
+  function createTrustLine() {
+    var el = document.createElement('p');
+    el.className = 'report-row__trustline';
+    el.hidden = true;
+
+    var first = document.createElement('span');
+    first.className = 'report-row__trustline-count';
+    var confirmedNum = document.createElement('span');
+    confirmedNum.className = 'trust-num';
+    first.appendChild(confirmedNum);
+    first.appendChild(document.createTextNode(' confirmed'));
+
+    var second = document.createElement('span');
+    second.className = 'report-row__trustline-count report-row__trustline-count--second';
+    var disputedNum = document.createElement('span');
+    disputedNum.className = 'trust-num';
+    second.appendChild(disputedNum);
+    second.appendChild(document.createTextNode(' disputed'));
+
+    var word = document.createElement('span');
+    word.className = 'report-row__trustline-word';
+    word.hidden = true;
+
+    // The spaces are real text nodes, so a screen reader still hears the
+    // facts as separate words.
+    el.appendChild(first);
+    el.appendChild(document.createTextNode(' '));
+    el.appendChild(second);
+    el.appendChild(document.createTextNode(' '));
+    el.appendChild(word);
+
+    var reporter = createReporterWords();
+    return { el: el, counts: { confirmed: confirmedNum, disputed: disputedNum }, word: word, reporter: reporter };
+  }
+
+  // updateTrustLine is the one place server state reaches the row's trust
+  // line. The numerals, the currency word and the reporter words are the
+  // server's, written through setText; the tone is the currency fact's tone
+  // from the closed list, and only the stylesheet decides what it looks like.
+  // An invalid trust object hides the line and the words, never inventing a
+  // zero.
+  function updateTrustLine(line, trust) {
+    if (!line) {
+      return;
+    }
+    if (!validTrust(trust)) {
+      line.el.hidden = true;
+      line.el.removeAttribute('data-currency-tone');
+      line.reporter.el.hidden = true;
+      return;
+    }
+    var state = signalState(trust);
+    Pinalert.setText(line.counts.confirmed, trust.confirmed_text);
+    Pinalert.setText(line.counts.disputed, trust.disputed_text);
+    line.word.hidden = !state.currency;
+    Pinalert.setText(line.word, state.currency ? trust.currency.label : '');
+    renderTrustSignal(line.reporter, state.reporter,
+      state.reporter ? trust.reporter.label : '');
+    var tone = currencyTone(trust.facts);
+    if (tone) {
+      line.el.setAttribute('data-currency-tone', tone);
+    } else {
+      line.el.removeAttribute('data-currency-tone');
+    }
+    line.el.hidden = false;
+  }
+
   // createTrustCard is the popup builder (A91, A92): one white card that is always
   // showing, a header of the two counters and the state word, then the facts
   // list with its score lines. It has no toggle, no chevron, no panel and no
@@ -722,6 +799,8 @@
     createTrustBlock: createTrustBlock,
     createTrustCard: createTrustCard,
     createStateLine: createStateLine,
+    createTrustLine: createTrustLine,
+    updateTrustLine: updateTrustLine,
     updateTrustBlock: updateTrustBlock,
     updateTrustCard: updateTrustCard,
     fadeStage: fadeStage,

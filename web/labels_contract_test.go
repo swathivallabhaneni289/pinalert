@@ -78,16 +78,24 @@ func TestRowSeverityLabelMountsFirst(t *testing.T) {
 	feed := p16ReadStatic(t, "static/js/feed.js")
 	trust := p16ReadStatic(t, "static/js/trust.js")
 
+	// Plan 03.1-09 (departures R3, R4, R5 of the UI-SPEC): the body order is now
+	// severity label, state line, meta, title, trust line. The old literals
+	// were body.appendChild(title) before body.appendChild(meta), then
+	// PinalertTrust.createTrustBlock( and PinalertVotes.createVoteBlock(, which
+	// a compact row no longer builds. The severity word is still the first
+	// child appended.
 	create := jsFunctionBody(t, feed, "createRow(id)")
 	p16Ordered(t, create, "feed.js createRow",
 		"PinalertTrust.createSeverityLabel(",
 		"body.appendChild(severityLabel)",
-		"body.appendChild(title)",
-		"body.appendChild(meta)",
 		"PinalertVisibility.createVisibilityTag(",
-		"PinalertTrust.createTrustBlock(",
-		"PinalertVotes.createVoteBlock(",
+		"PinalertTrust.createTrustLine(",
+		"body.appendChild(meta)",
+		"body.appendChild(title)",
+		"body.appendChild(trust.el)",
 	)
+	p16MustNotContain(t, "feed.js createRow", create,
+		"PinalertTrust.createTrustBlock(", "PinalertVotes.createVoteBlock(")
 	if strings.Index(create, "body.appendChild(") != strings.Index(create, "body.appendChild(severityLabel)") {
 		t.Errorf("feed.js createRow: the severity label must be the first child appended to the row body (A45)")
 	}

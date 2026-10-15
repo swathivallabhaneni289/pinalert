@@ -315,7 +315,11 @@ func TestVoteBlockReturnsNoteAndConsumersAppendInOrder(t *testing.T) {
 	p09MustContain(t, "createVoteBlock", body,
 		"'vote-note'", "note.hidden = true", "var block = { controls: controls, note: note, error: error };")
 
-	for _, path := range []string{"static/js/feed.js", "static/js/map.js"} {
+	// Plan 03.1-09 (R5): the list row no longer mounts a vote block, so the
+	// opened report (map.js) is the one consumer left. The old loop also
+	// required feed.js to append controls, then note, then error. The row now
+	// must append none of the three.
+	for _, path := range []string{"static/js/map.js"} {
 		consumer := p09ReadJS(t, path)
 		first := regexp.MustCompile(`appendChild\((\w+)\.controls\)`).FindStringSubmatch(consumer)
 		if first == nil {
@@ -326,6 +330,11 @@ func TestVoteBlockReturnsNoteAndConsumersAppendInOrder(t *testing.T) {
 			first[0], "appendChild("+first[1]+".note)", "appendChild("+first[1]+".error)")
 		p09MustNotContain(t, path, consumer, "vote-note", "note.hidden")
 	}
+	feed := p09ReadJS(t, "static/js/feed.js")
+	if regexp.MustCompile(`appendChild\((\w+)\.(controls|note|error)\)`).MatchString(feed) {
+		t.Errorf("static/js/feed.js appends a vote block part: a list row holds no control (03.1 D-21)")
+	}
+	p09MustNotContain(t, "static/js/feed.js", feed, "vote-note", "note.hidden")
 }
 
 // TestVoteErrorGetsNoChildNodes pins amendment A73 on the JavaScript side.

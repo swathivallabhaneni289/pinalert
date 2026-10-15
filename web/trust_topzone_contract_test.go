@@ -88,14 +88,19 @@ func TestTrustStateLineMarkup(t *testing.T) {
 	p13MustNotContain(t, "updateTrustBlock", update, "state.currency || state.reporter")
 
 	feed := p23CodeOf(t, "static/js/feed.js")
+	// Plan 03.1-09 (R4, R5): the list row builds the trust line, not the
+	// block, and no vote block. The old literals were createTrustBlock() and
+	// PinalertVotes.createVoteBlock( after body.appendChild(trust.el). The
+	// state line still takes the visibility tag and the reporter words, and
+	// feed.js still has exactly one createStateLine call.
 	createRow := jsFunctionBody(t, feed, "createRow(id)")
 	p13Ordered(t, createRow, "feed.js createRow",
 		"PinalertVisibility.createVisibilityTag(",
-		"PinalertTrust.createTrustBlock()",
+		"PinalertTrust.createTrustLine()",
 		"body.appendChild(PinalertTrust.createStateLine('report-row__stateline', tag, trust))",
 		"body.appendChild(trust.el)",
-		"PinalertVotes.createVoteBlock(",
 	)
+	p13MustNotContain(t, "feed.js createRow", createRow, "PinalertVotes.createVoteBlock(")
 	p13MustNotContain(t, "feed.js createRow", createRow, "body.appendChild(tag)")
 	p13MustNotContain(t, "feed.js updateRow", jsFunctionBody(t, feed, "updateRow(row, report)"), "createStateLine(")
 

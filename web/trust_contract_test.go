@@ -137,23 +137,28 @@ func TestTrustBlockMountedOnBothSurfaces(t *testing.T) {
 	mapJS := stripCSSComments(p13ReadStatic(t, "static/js/map.js"))
 	trust := p13ReadStatic(t, "static/js/trust.js")
 
-	// Plan 03-31: the rows mount the toggle block, the popup mounts the
-	// always open trust card (A91, A96).
+	// Plan 03-31: the rows mounted the toggle block and the popup mounts the
+	// always open trust card (A91, A96). Plan 03.1-09 (R4, R5): a list row
+	// now mounts the plain text trust line and no vote block. The old pins
+	// were PinalertTrust.createTrustBlock( and updateTrustBlock( in feed.js,
+	// the order createVisibilityTag, createTrustBlock, createVoteBlock in
+	// createRow, and updateTrustBlock(row.trust, report.trust) in updateRow.
+	// The Activity row keeps createTrustBlock (activity_trust_contract_test).
 	p13MustContain(t, "feed.js", feed,
-		"PinalertTrust.createTrustBlock(", "PinalertTrust.updateTrustBlock(")
+		"PinalertTrust.createTrustLine(", "PinalertTrust.updateTrustLine(")
 	p13MustContain(t, "map.js", mapJS,
 		"PinalertTrust.createTrustCard(", "PinalertTrust.updateTrustCard(")
 
-	p13MustContain(t, "feed.js", feed, "PinalertTrust.createTrustBlock()")
-	p13MustNotContain(t, "feed.js", feed, "showScores")
+	p13MustContain(t, "feed.js", feed, "PinalertTrust.createTrustLine()")
+	p13MustNotContain(t, "feed.js", feed,
+		"showScores", "PinalertTrust.createTrustBlock(", "PinalertTrust.updateTrustBlock(", "PinalertVotes.createVoteBlock(")
 	p13MustNotContain(t, "map.js", mapJS, "showScores", "createTrustBlock(", "updateTrustBlock(")
 	p13MustMatch(t, "map.js", mapJS, `PinalertTrust\.createTrustCard\(\s*\)`)
 
 	createRow := jsFunctionBody(t, feed, "createRow(id)")
 	p13Ordered(t, createRow, "feed.js createRow",
 		"PinalertVisibility.createVisibilityTag(",
-		"PinalertTrust.createTrustBlock(",
-		"PinalertVotes.createVoteBlock(",
+		"PinalertTrust.createTrustLine(",
 	)
 	p13Ordered(t, p13CodeLines(mapJS), "map.js popup builder",
 		"PinalertVisibility.createVisibilityTag(",
@@ -163,7 +168,7 @@ func TestTrustBlockMountedOnBothSurfaces(t *testing.T) {
 
 	updateRow := jsFunctionBody(t, feed, "updateRow(row, report)")
 	p13MustContain(t, "feed.js updateRow", updateRow,
-		"PinalertTrust.updateTrustBlock(row.trust, report.trust)")
+		"PinalertTrust.updateTrustLine(row.trust, report.trust)")
 
 	for label, text := range map[string]string{"feed.js": feed, "map.js": mapJS} {
 		p13MustNotContain(t, label, text,

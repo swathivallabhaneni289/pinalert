@@ -13,13 +13,14 @@
 // server-rendered shell (index.html.tmpl); this file is the whole defence
 // for anything built here afterward.
 //
-// SCOPE (T-01-23, TRUST-02): this list now renders the confirm/dispute
-// controls, the viewer's own standing vote, and the resolver's own
-// visibility state — in words (the visibility tag) and in the row
-// treatment (the state class) — but it also mounts the shared trust block
-// through PinalertTrust. That block renders the server's place counts,
-// signal words and panel sentences exactly as sent, and this file computes
-// none of them: a count here is never typed, capped or bumped by the browser.
+// SCOPE (T-01-23, TRUST-02, 03.1 D-21): a list row is compact text with no
+// control in it. It shows the severity word, the resolver's own visibility
+// state (in words, the visibility tag, and in the row treatment, the state
+// class), the distance, the title and the plain text trust line from
+// PinalertTrust. Confirm, Dispute and Mark resolved live in the opened
+// report only. The trust line renders the server's counters and words
+// exactly as sent, and this file computes none of them: a count here is never
+// typed, capped or bumped by the browser.
 (function () {
   'use strict';
 
@@ -196,40 +197,48 @@
     var meta = document.createElement('p');
     meta.className = 'report-row__meta';
 
-    // The distance line, drawn on phones only (phone.css hides it at 900px
-    // and up). It is filled by updateRow and stays hidden when the feed is
-    // not around the reader's own position (A94).
+    // The distance segment, drawn at every width. It is filled by updateRow
+    // from the store's one distance sentence and stays hidden when the feed
+    // is centred on neither the reader nor a searched place (A94, D-14).
     var away = document.createElement('p');
     away.className = 'report-row__away';
     away.hidden = true;
 
+    // The second plain fact after the distance, shown only when the reader's
+    // cached fix puts the reader beyond the vote radius (D-14). It is text,
+    // not a control, and the opened report explains it.
+    var far = document.createElement('span');
+    far.className = 'report-row__far';
+    Pinalert.setText(far, 'Too far to vote');
+    far.hidden = true;
+
+    // The words a screen reader ends the row with. The row is one tab stop
+    // and opens the report on Enter or Space.
+    var cue = document.createElement('span');
+    cue.className = 'report-row__open-cue visually-hidden';
+    Pinalert.setText(cue, 'Open report');
+
     // A26, A45: the visible severity word is the first text in the row body,
-    // read before the title. The shipped row had no severity word, so nothing
-    // is removed.
+    // read before the title.
     var severityLabel = PinalertTrust.createSeverityLabel();
     body.appendChild(severityLabel);
-    body.appendChild(title);
-    body.appendChild(meta);
-    body.appendChild(away);
 
     // The state label is built here and placed, with the reporter words, on
-    // the state line under the meta line (A75, A81). The tag ships hidden from
-    // its own builder.
+    // the state line (A75, A81). The tag ships hidden from its own builder.
+    // The state line gives its children to the body's flex order (R3).
     var tag = PinalertVisibility.createVisibilityTag();
 
-    // The shared trust block (D-20), built with no options so the row shows
-    // no numbers beyond the two counters (D-09). It sits between the state
-    // line and the vote controls.
-    var trust = PinalertTrust.createTrustBlock();
+    // The plain text trust line (D-20, D-21): the two counters and the
+    // currency word, no toggle and no panel. Its reporter words ride in the
+    // state line.
+    var trust = PinalertTrust.createTrustLine();
     body.appendChild(PinalertTrust.createStateLine('report-row__stateline', tag, trust));
+    body.appendChild(meta);
+    body.appendChild(away);
+    body.appendChild(far);
+    body.appendChild(title);
     body.appendChild(trust.el);
-
-    var block = PinalertVotes.createVoteBlock(id);
-    body.appendChild(block.controls);
-    // The too far sentence slot sits between the buttons and the error and
-    // is owned by votes.js.
-    body.appendChild(block.note);
-    body.appendChild(block.error);
+    body.appendChild(cue);
 
     li.appendChild(badge);
     li.appendChild(body);
@@ -244,7 +253,7 @@
       }
     });
 
-    return { el: li, glyph: glyph, severity: severityLabel, title: title, meta: meta, away: away, votes: block, tag: tag, trust: trust };
+    return { el: li, glyph: glyph, severity: severityLabel, title: title, meta: meta, away: away, far: far, tag: tag, trust: trust };
   }
 
   // updateRow applies severity/age classes and text content only — it never
@@ -276,26 +285,21 @@
     Pinalert.setText(row.title, report.description);
     Pinalert.setText(row.meta, buildMetaText(report));
 
-    // The distance is the reader's own only when the feed is around the
-    // reader's position, the same rule the popup follows (A94).
-    var away = Pinalert.feedIsAroundReader() ? Pinalert.formatDistance(report.distance_km) : '';
+    // The distance is the store's one sentence: the reader's own centre, a
+    // searched place, or nothing for the fallback centre (A94, D-14). The
+    // far fact reads the cached fix only and never asks for a location.
+    var away = Pinalert.distanceText(report);
     Pinalert.setText(row.away, away);
     row.away.hidden = !away;
+    row.far.hidden = !PinalertVotes.farFromCachedFix(report);
 
     PinalertVisibility.updateVisibilityTag(row.tag, report);
-    PinalertTrust.updateTrustBlock(row.trust, report.trust);
+    PinalertTrust.updateTrustLine(row.trust, report.trust);
 
     var selectedId = Pinalert.state.selectedId;
     var isSelected = selectedId !== null && selectedId !== undefined &&
       String(selectedId) === String(report.id);
     row.el.classList.toggle('report-row--selected', isSelected);
-
-    // Same create-once / update-on-poll split this function already
-    // follows for everything else: the block's nodes were built once in
-    // createRow, and only their state is written here, so a background
-    // refresh cannot disturb focus on a button the reader is about to
-    // press.
-    PinalertVotes.updateVoteBlock(row.votes, report);
   }
 
   // elementIsShown is true for a connected element that takes part in layout,
