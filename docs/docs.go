@@ -290,7 +290,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Creates a location-tagged report under the caller's session. Requires a session\nverified by email through the magic-link flow (POST /auth/request-link, then\nGET /auth/verify) — an unverified caller receives 401. id, geohash, created_at\nand expires_at are computed server-side and can never be set by the client.",
+                "description": "Creates a location-tagged report under the caller's session. Requires a session\nverified by email through the magic-link flow (POST /auth/request-link, then\nGET /auth/verify) — an unverified caller receives 401. id, geohash, created_at\nand expires_at are computed server-side and can never be set by the client.\nThe description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.\nWhen the check cannot finish in time, a critical or rescue_needed report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.",
                 "consumes": [
                     "application/json"
                 ],
@@ -327,6 +327,12 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "The text check refused the description; nothing was stored",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
@@ -1284,6 +1290,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "tdr1qgzp"
                 },
+                "held": {
+                    "description": "Held is true only when the text check could not finish and the report is not\nserious, so it is stored but shown in no feed or map until a background check\nfinishes. A published report, borderline text included, carries false. Never omitted.",
+                    "type": "boolean",
+                    "example": false
+                },
                 "id": {
                     "type": "integer",
                     "example": 42
@@ -1409,7 +1420,7 @@ const docTemplate = `{
                     "example": "flood"
                 },
                 "description": {
-                    "description": "Description is a free-text account of the report, 10-1000 characters.",
+                    "description": "Description is a free text account of the report, 10 to 1000 characters after trimming, counted as characters rather than bytes.",
                     "type": "string",
                     "example": "Water rising fast near the market bridge."
                 },

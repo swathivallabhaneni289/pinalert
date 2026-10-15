@@ -362,6 +362,8 @@ type ErrorResponse struct {
 // @Description verified by email through the magic-link flow (POST /auth/request-link, then
 // @Description GET /auth/verify) — an unverified caller receives 401. id, geohash, created_at
 // @Description and expires_at are computed server-side and can never be set by the client.
+// @Description The description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.
+// @Description When the check cannot finish in time, a critical or rescue_needed report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.
 // @Tags reports
 // @Accept json
 // @Produce json
@@ -369,6 +371,7 @@ type ErrorResponse struct {
 // @Success 201 {object} SubmitReportResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
+// @Failure 422 {object} ErrorResponse "The text check refused the description; nothing was stored"
 // @Failure 500 {object} ErrorResponse
 // @Router /reports [post]
 func SubmitReport(svc *service.ReportService) http.HandlerFunc {

@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -438,6 +440,46 @@ func TestSubmitScreeningPendingSeriousPublished(t *testing.T) {
 		fr, ok := p11FeedRow(t, client, srv.URL, id, false)
 		if !ok || fr.Visibility != "live" || fr.VisibilityReason != "critical_bypasses_gates" {
 			t.Fatalf("%v: feed row %+v found %v, want live via the critical bypass", c, fr, ok)
+		}
+	}
+}
+
+// TestSubmitScreeningSwaggerFields reads the committed API reference and checks
+// what this plan documents: held on the created report, the 422 on the post
+// route, and no withheld value in any documented enum (R-01). It needs no
+// database.
+func TestSubmitScreeningSwaggerFields(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "swagger.json"))
+	if err != nil {
+		t.Fatalf("reading docs/swagger.json: %v", err)
+	}
+	var spec struct {
+		Definitions map[string]struct {
+			Properties map[string]struct {
+				Type string `json:"type"`
+			} `json:"properties"`
+		} `json:"definitions"`
+		Paths map[string]map[string]struct {
+			Responses map[string]struct {
+				Schema struct {
+					Ref string `json:"$ref"`
+				} `json:"schema"`
+			} `json:"responses"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		t.Fatalf("parsing docs/swagger.json: %v", err)
+	}
+	if got := spec.Definitions["handlers.ReportResponse"].Properties["held"].Type; got != "boolean" {
+		t.Fatalf("handlers.ReportResponse.held type %q, want boolean", got)
+	}
+	got := spec.Paths["/reports"]["post"].Responses["422"].Schema.Ref
+	if got != "#/definitions/handlers.ErrorResponse" {
+		t.Fatalf("POST /reports 422 schema %q, want handlers.ErrorResponse", got)
+	}
+	for _, banned := range []string{"withheld", "awaiting_text_check", "removed_after_review"} {
+		if strings.Contains(string(raw), banned) {
+			t.Fatalf("docs/swagger.json mentions %q", banned)
 		}
 	}
 }
