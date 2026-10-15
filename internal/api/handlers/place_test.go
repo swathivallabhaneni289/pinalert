@@ -1,12 +1,17 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -287,4 +292,52 @@ func TestGeocodePlaceAllowlistsFields(t *testing.T) {
 			t.Fatalf("body = %q, want an empty results array", got)
 		}
 	})
+}
+
+// TestGeocodePlaceFailureLogHoldsNoReaderData pins IN-04: when the upstream
+// fails, the log line must carry a fixed message and the error class only,
+// never the request URL, the search text, the contact email or a coordinate.
+func TestGeocodePlaceFailureLogHoldsNoReaderData(t *testing.T) {
+	const (
+		secretQuery = "flooded-colony-near-my-house"
+		secretEmail = "owner-contact@example.org"
+		secretLat   = "13.082680"
+		secretLon   = "80.270718"
+	)
+	rawURL := "https://nominatim.example/search?q=" + secretQuery + "&email=" + secretEmail +
+		"&viewbox=" + secretLon + "," + secretLat
+	cases := map[string]error{
+		"wrapped url error": fmt.Errorf("geocode: executing request: %w",
+			&url.Error{Op: "Get", URL: rawURL, Err: errors.New("connection refused")}),
+		"plain text error":  errors.New("failed calling " + rawURL),
+		"deadline in url":   &url.Error{Op: "Get", URL: rawURL, Err: context.DeadlineExceeded},
+		"upstream status":   &geocode.UpstreamStatusError{Status: 429},
+		"reader lane busy":  geocode.ErrReaderBusy,
+		"cancelled request": context.Canceled,
+	}
+	for name, failure := range cases {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			log.SetOutput(&buf)
+			t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+			searcher := &stubPlaceSearcher{err: failure}
+			rec := httptest.NewRecorder()
+			query := url.Values{"q": {secretQuery}, "lat": {secretLat}, "lon": {secretLon}}
+			GeocodePlace(searcher, &stubPlaceBudget{allow: true})(rec, placeRequest(7, query))
+
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Fatalf("status = %d, want 503", rec.Code)
+			}
+			logged := buf.String()
+			if logged == "" {
+				t.Fatal("nothing was logged for a failed search")
+			}
+			for _, secret := range []string{secretQuery, secretEmail, secretLat, secretLon, "nominatim.example", "viewbox"} {
+				if strings.Contains(logged, secret) {
+					t.Fatalf("log line %q contains %q", logged, secret)
+				}
+			}
+		})
+	}
 }

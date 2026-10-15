@@ -175,6 +175,30 @@ func (c *Client) Search(ctx context.Context, q string) ([]Result, error) {
 	return c.fetch(ctx, q, nil)
 }
 
+// UpstreamStatusError is returned when Nominatim answers with a non 2xx
+// status. It carries the status code and nothing else, so it is safe to log.
+type UpstreamStatusError struct {
+	Status int
+}
+
+func (e *UpstreamStatusError) Error() string {
+	return fmt.Sprintf("geocode: upstream status %d", e.Status)
+}
+
+// scrubURLError drops the request URL from an error. net/http wraps every
+// transport failure in a *url.Error whose text carries the full URL, and
+// that URL holds the reader's search text, the viewbox around their map
+// centre and the contact email. The inner error keeps the useful class (a
+// timeout, a refused connection, a cancelled context) and works with
+// errors.Is and errors.As, so callers lose nothing they need.
+func scrubURLError(err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) && urlErr.Err != nil {
+		return urlErr.Err
+	}
+	return err
+}
+
 // fetch is the one upstream call Search and SearchReader share, so the two
 // lanes cannot drift: build the request, check the status, decode, and parse
 // the string coordinates. It never touches the limiter; each caller decides
@@ -182,17 +206,17 @@ func (c *Client) Search(ctx context.Context, q string) ([]Result, error) {
 func (c *Client) fetch(ctx context.Context, q string, extra url.Values) ([]Result, error) {
 	req, err := c.buildRequest(ctx, q, extra)
 	if err != nil {
-		return nil, fmt.Errorf("geocode: building request: %w", err)
+		return nil, fmt.Errorf("geocode: building request: %w", scrubURLError(err))
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("geocode: executing request: %w", err)
+		return nil, fmt.Errorf("geocode: executing request: %w", scrubURLError(err))
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("geocode: upstream status %d", resp.StatusCode)
+		return nil, &UpstreamStatusError{Status: resp.StatusCode}
 	}
 
 	var records []nominatimRecord
