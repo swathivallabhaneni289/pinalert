@@ -1,0 +1,51 @@
+package web
+
+import (
+	"strings"
+	"testing"
+)
+
+// TestReviewFixA3ToastUndoRelinks pins the first follow up of fixer A3: a
+// distant linked report that a Mark resolved moved off the map comes back
+// when its toast Undo reopens it. The toast keeps the link and the set it was
+// built in, the Undo puts the report id back before its own refetch only when
+// the take back reopened the report and the reader is still on that set, and
+// map.js clears its once per link mark when the link ends, so the popup opens
+// again from the server's answer.
+func TestReviewFixA3ToastUndoRelinks(t *testing.T) {
+	votes := p19Code(t, "static/js/votes.js")
+
+	action := jsFunctionBody(t, votes, "resolveToastAction(reportId, result)")
+	p13Ordered(t, action, "resolveToastAction",
+		"Pinalert.state.focusId === String(reportId) ? linkSetKey() : null",
+		"takeBackFromToast(reportId, wasClosed, link)")
+
+	relink := jsFunctionBody(t, votes, "relinkAfterToastUndo(reportId, wasClosed, link, result)")
+	p13Ordered(t, relink, "relinkAfterToastUndo",
+		"result.visibility === RETRACTED_VISIBILITY_SLUG",
+		"link === null || !wasClosed || stillClosed || Pinalert.state.focusId !== null || link !== linkSetKey()",
+		"return;", "Pinalert.setFocusId(reportId);")
+
+	key := jsFunctionBody(t, votes, "linkSetKey()")
+	p13MustContain(t, "linkSetKey", key, "s.view", "s.category", "s.center.lat", "s.center.lon")
+
+	toast := jsFunctionBody(t, votes, "takeBackFromToast(reportId, wasClosed, link)")
+	failAt := strings.Index(toast, "}, function (err) {")
+	if failAt == -1 {
+		t.Fatalf("takeBackFromToast lost its failure branch")
+	}
+	p13Ordered(t, toast[:failAt], "takeBackFromToast success",
+		"castVote(reportId, 'unresolve')",
+		"relinkAfterToastUndo(reportId, wasClosed, link, result);",
+		"Pinalert.fetchReports({ afterWrite: true })")
+	p13MustNotContain(t, "takeBackFromToast refusal", toast[failAt:], "relinkAfterToastUndo", "setFocusId(")
+
+	if n := strings.Count(votes, "Pinalert.setFocusId("); n != 1 {
+		t.Errorf("votes.js calls Pinalert.setFocusId %d times, want 1", n)
+	}
+
+	mapJS := p19Code(t, "static/js/map.js")
+	end := jsFunctionBody(t, mapJS, "endLinkOnClose()")
+	p13Ordered(t, end, "endLinkOnClose", "openedFocusId = null;", "Pinalert.dropFocus();",
+		"window.setTimeout(redrawAfterLinkEnded, 0);")
+}

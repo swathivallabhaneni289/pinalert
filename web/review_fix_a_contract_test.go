@@ -183,7 +183,7 @@ func TestReviewFixARefusedTakeBackRefetches(t *testing.T) {
 		"showVoteError(block, takeBackErrorMessage(err));",
 		"if (canTakeFocus(button)) {", "button.focus();", "focusAfterTakeBack(origin);")
 
-	toast := jsFunctionBody(t, votes, "takeBackFromToast(reportId, wasClosed)")
+	toast := jsFunctionBody(t, votes, "takeBackFromToast(reportId, wasClosed, link)")
 	toastFail := strings.Index(toast, "}, function (err) {")
 	if toastFail == -1 {
 		t.Fatalf("takeBackFromToast lost its failure branch")

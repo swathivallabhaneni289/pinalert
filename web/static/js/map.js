@@ -905,8 +905,11 @@ window.PinalertMap = (function () {
   // would remove that popup a second time. When a redraw made the close, the
   // pin is already gone and the later redraw changes nothing. The focus
   // return of onPopupClose above stays synchronous; the redraw only catches a
-  // focus the removed pin was holding.
+  // focus the removed pin was holding. The once per link mark is cleared
+  // too: the one way the same id is linked again is the toast Undo of a mark
+  // that moved the linked report off the map, and its popup opens again then.
   function endLinkOnClose() {
+    openedFocusId = null;
     Pinalert.dropFocus();
     window.setTimeout(redrawAfterLinkEnded, 0);
   }

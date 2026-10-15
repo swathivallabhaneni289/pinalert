@@ -332,8 +332,8 @@ func TestToastAction(t *testing.T) {
 		"typeof result.undos_left !== 'number' || result.undos_left <= 0",
 		"return undefined;",
 		"label: TOAST_ACTION_LABEL", "ariaLabel: TOAST_ACTION_NAME",
-		"takeBackFromToast(reportId, wasClosed)")
-	flow := p09FuncBody(t, votes, "takeBackFromToast(reportId, wasClosed)")
+		"takeBackFromToast(reportId, wasClosed, link)")
+	flow := p09FuncBody(t, votes, "takeBackFromToast(reportId, wasClosed, link)")
 	p09Ordered(t, flow, "takeBackFromToast",
 		"castVote(reportId, 'unresolve')", "Pinalert.fetchReports({ afterWrite: true })",
 		"focusAfterTakeBack(origin);", "takeBackSuccessMessage(wasClosed, result)", "takeBackErrorMessage(err)")
