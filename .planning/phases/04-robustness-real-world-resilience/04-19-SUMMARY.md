@@ -42,7 +42,9 @@ BASE: `21dc60626a862802596889b3f856c1ea9a12a21d`
 - 87eaa77 feat(04-19): Confirm and Dispute on the Low data view, and a rate limited vote shows its wait (Task 1)
 - 7c1d1f6 feat(04-19): an open report form locks the page behind it (Task 2)
 - 11430ea feat(04-19): post a report from the Low data view with the phone position or a typed place (Task 3)
-- The SUMMARY commit follows.
+- aeb85dd docs(04-19): summary of the Low data view posting and voting plan (first version)
+- 7790085 fix(04-19): a tap on a too far button reads no position during a known vote wait (Rule 1 fix, see Deviations)
+- The final SUMMARY commit follows.
 
 ## What was built
 
@@ -68,7 +70,7 @@ The element that carries `report-form--low` is the dialog panel `div.modal-panel
 
 **2. [Rule 1 - small fix, comments only] Re-indented lines in `createVoteBlock`.** Wrapping the resolve section moved three existing comment lines containing em dashes into the diff. I reworded those three comment lines without dashes so no added line carries a dash.
 
-**3. [Spacing] `.low-page__head .btn` margin.** Changed from `margin: var(--space-sm) 0 0` to `var(--space-sm) var(--space-sm) 0 0` in `low.css` so the two head buttons (Open full version, Report an emergency) keep a gap and wrap cleanly at 320 to 390 px. Tokens only.
+**3. [Rule 1 - Bug, found in review] The too far tap path read a position during a known wait.** A tap on a button marked too far goes through `refreshHintThenRetry` before `castVote`, and that function takes a fresh position, so the prohibition "no location read while a known wait runs" did not hold there. Fix (commit 7790085): `refreshHintThenRetry` now checks `knownVoteWait` first (mapping `confirm-resolve` to `resolve`), shows the stored sentence with `showVoteError` and returns before any position is read. `TestVoteRateLimitClient` gained an assertion that `knownVoteWait(` precedes the position call in that function. The position call line count stays 4.
 
 **4. [Planner note] `getVoterLocation(` count is 4, not 3.** Recorded in the census; the line counts before and after are equal.
 
@@ -89,8 +91,7 @@ None. Every control on the Low data view is wired. Rows carry no queue strip or 
 ## Notes for the orchestrator
 
 - The human checks in each task (V-24) run in 04-27 on a scratch server: the phone checks of the position states, the geocoder outage sentence, the page lock with VoiceOver, and the 429 wait message on the popup, the Low data row and the Activity Reopen. I did not start a server or a browser.
-- The Low data row's vote block still contains the Phase 3.1 take back block (hidden for Active reports; it shows only for a resolved report of the viewer's own, which the Active list never holds). No Mark resolved or resolve confirmation exists on the row.
-- A tap on a button marked "too far" runs the hint refresh before `castVote`, so that one path can read a position during a known wait; the wait itself still blocks the vote request.
+- The Low data row's vote block still contains the Phase 3.1 take back block, left byte for byte as the plan requires. Its Reopen button can show only for a resolved report of the viewer's own, which the Active list never holds. Its Undo button CAN show on an Active Low data row: `takeBackState` returns `undo-waiting` when the viewer's own Mark resolved is recorded but the report is still Active (for example the viewer marked it resolved on the main page and it is still waiting for more marks), and `used` when no undo is left. The owner's UAT step (1) expects Confirm and Dispute only for a report the viewer has not marked resolved; for one the viewer has marked, the take back statement and Undo appear. No Mark resolved button or resolve confirmation exists on any row.
 - `takeback_contract_test.go`, `vote_hint_contract_test.go`, `vote_controls_contract_test.go`, `votes_contract_test.go` and `trust_contract_test.go` changed only by the anchor string and the `'data-modal-open'` needle and assertion.
 
 ## Threat Flags
