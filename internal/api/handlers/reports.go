@@ -13,6 +13,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"pinalert/internal/account"
@@ -85,9 +86,10 @@ type SubmitReportResponse struct {
 }
 
 // FeedReportResponse is the public JSON shape of a report returned by GET
-// /api/reports — the twelve fields ReportResponse also carries, plus four
-// read-only fields the resolver and the viewer's own standing contribute, plus
-// the trust object (D-21).
+// /api/reports: the twelve fields ReportResponse also carries, plus the
+// read-only fields the resolver and the viewer's own standing contribute (the
+// visibility, the view, the history of a finished report and the viewer's own
+// vote, resolution and take backs), plus the trust object (D-21).
 // Hand-declared field by field, never embedding ReportResponse and never
 // aliasing a store row, exactly as this file's package doc comment
 // requires: each public JSON shape is declared explicitly so a change to
@@ -109,10 +111,10 @@ type FeedReportResponse struct {
 	DistanceKm            *float64 `json:"distance_km,omitempty" example:"1.42"`
 	// Visibility is the resolver's own answer, serialised verbatim from
 	// service.ReportView.Visibility; the client renders it and never
-	// recomputes it (TRUST-02, T-02-04). "retracted" is in the declared
-	// enum — it is one of the four values of the shared type — but can
-	// never actually appear here: D-12 removes retracted reports from both
-	// the default and the show_disputed view.
+	// recomputes it (TRUST-02, T-02-04). "retracted" is one of the four
+	// values of the shared type. It never appears in the active or the
+	// disputed view (D-12) and appears only in the past view, where the
+	// report is listed as resolved (D-25).
 	Visibility string `json:"visibility" enums:"hidden,provisional,live,retracted" example:"live"`
 	// VisibilityReason is the resolver's own explanation for Visibility
 	// above, from the SAME closed slug set votes.go's CastVoteResponse.Reason
@@ -138,12 +140,81 @@ type FeedReportResponse struct {
 	// for this report (D-21). It is always present, the same for every
 	// viewer, and never contains an identifier.
 	Trust TrustResponse `json:"trust"`
+	// View is the one tab this report belongs to right now, from the
+	// resolver's own answer at the read's clock: active, disputed, resolved
+	// (closed by a resolve) or past (ran out its time). The client renders
+	// it and never recomputes it.
+	View string `json:"view" enums:"active,disputed,resolved,past" example:"active"`
+	// History says how a finished report ended. It is null for an active or
+	// a disputed report and the key is always present.
+	History *HistoryResponse `json:"history"`
+	// Approximate is true when the position and the geohash are a blurred
+	// point and the description is empty, which is how a finished Rescue
+	// report leaves the API (D-23).
+	Approximate bool `json:"approximate" example:"false"`
+	// YourResolution is the calling account's own standing resolution vote on
+	// this report, or null. The key is always present.
+	YourResolution *string `json:"your_resolution" enums:"resolve,reopen,unresolve" example:"resolve"`
+	// UndosLeft is how many take backs the calling account has left on this
+	// report, from 0 to 2.
+	UndosLeft int `json:"undos_left" minimum:"0" maximum:"2" example:"2"`
 }
 
-// ReportListResponse wraps the unexpired, nearest-first reports returned by
-// GET /api/reports.
+// HistoryResponse is how a finished report ended. State is resolved or
+// expired. The other keys are present only where they apply: closed_by and
+// closed_text for a resolved report, outcome, outcome_label and lifetime_text
+// for one that expired. The server builds every text; the client only shows it.
+type HistoryResponse struct {
+	State        string `json:"state" enums:"resolved,expired" example:"resolved"`
+	At           string `json:"at" example:"2026-09-05T14:03:00.000Z"`
+	ClosedBy     string `json:"closed_by,omitempty" enums:"you,poster,people,poster_and_people,you_and_people" example:"poster"`
+	ClosedText   string `json:"closed_text,omitempty" example:"Closed by the person who posted it"`
+	Outcome      string `json:"outcome,omitempty" enums:"corroborated,contradicted,unconfirmed,neutral" example:"corroborated"`
+	OutcomeLabel string `json:"outcome_label,omitempty" example:"Confirmed by 3 people nearby"`
+	LifetimeText string `json:"lifetime_text,omitempty" example:"Stayed up for 6 hours"`
+}
+
+// RecentResponse is what happened lately when the active tab is empty: how
+// many reports near the reader were resolved and how many faded in the last 24
+// hours.
+type RecentResponse struct {
+	Resolved24h int `json:"resolved_24h" example:"2"`
+	Expired24h  int `json:"expired_24h" example:"1"`
+}
+
+// CutResponse says whether a group of the past view was cut at its size cap,
+// so a show more control is honest.
+type CutResponse struct {
+	Resolved bool `json:"resolved" example:"false"`
+	Expired  bool `json:"expired" example:"false"`
+}
+
+// FocusResponse answers a report link. Status is ok (report is the report),
+// too_old (it ended more than seven days ago) or unavailable (no such report,
+// or one no tab lists). Report is null unless status is ok. Not found and every
+// unlisted state share the one unavailable word so the answer never reveals
+// why.
+type FocusResponse struct {
+	Status string              `json:"status" enums:"ok,too_old,unavailable" example:"ok"`
+	Report *FeedReportResponse `json:"report"`
+}
+
+// ReportListResponse wraps what GET /api/reports returns for one view:
+// the tab echoed back, the reports of that tab and the optional recent, cut
+// and focus objects.
 type ReportListResponse struct {
+	// View is the tab these reports belong to. resolved is only an alias of
+	// past on the way in and is answered as past.
+	View string `json:"view" enums:"active,disputed,past" example:"active"`
+	// Reports is never null. The past view lists the resolved group first and
+	// then the expired group, each newest first.
 	Reports []FeedReportResponse `json:"reports"`
+	// Recent is present only on an active, unfiltered view with no reports.
+	Recent *RecentResponse `json:"recent,omitempty"`
+	// Cut is present only on the past view.
+	Cut *CutResponse `json:"cut,omitempty"`
+	// Focus is present only when the report parameter was sent.
+	Focus *FocusResponse `json:"focus,omitempty"`
 }
 
 func reportToResponse(r service.Report) ReportResponse {
@@ -168,13 +239,19 @@ func reportToResponse(r service.Report) ReportResponse {
 	}
 }
 
-// reportViewToResponse maps a service.ReportView — a report plus the
-// resolver's answer and the viewer's own standing — onto the wire shape
+// reportViewToResponse maps a service.ReportView (a report plus the
+// resolver's answer and the viewer's own standing) onto the wire shape
 // GET /api/reports returns. YourVote is nil exactly when v.ViewerVote is
 // the empty service.VoteValue (no standing content vote); otherwise it
-// points at the vote's string value. Deliberately not deduplicated with
-// reportToResponse — the same reason FeedReportResponse and ReportResponse
+// points at the vote's string value. YourResolution follows the same rule
+// for v.ViewerResolution. Deliberately not deduplicated with
+// reportToResponse, the same reason FeedReportResponse and ReportResponse
 // are declared as two separate structs above.
+//
+// This is the one function that builds a FeedReportResponse, so the approximate
+// guard below covers every path that puts a report on the wire (D-23). The
+// service already blanks the description of a blurred report; this is the
+// second, independent line of defence.
 func reportViewToResponse(v service.ReportView) FeedReportResponse {
 	var capacityStatus *string
 	if v.ShelterCapacityStatus != nil {
@@ -186,11 +263,21 @@ func reportViewToResponse(v service.ReportView) FeedReportResponse {
 		s := string(v.ViewerVote)
 		yourVote = &s
 	}
+	var yourResolution *string
+	if v.ViewerResolution != "" {
+		s := string(v.ViewerResolution)
+		yourResolution = &s
+	}
+	description := v.Description
+	if v.Approximate && description != "" {
+		log.Printf("handlers: reportViewToResponse: report %d is approximate but still carried a description; blanked", v.ID)
+		description = ""
+	}
 	return FeedReportResponse{
 		ID:                    v.ID,
 		Category:              string(v.Category),
 		Severity:              string(v.Severity),
-		Description:           v.Description,
+		Description:           description,
 		Latitude:              v.Latitude,
 		Longitude:             v.Longitude,
 		Geohash:               v.Geohash,
@@ -204,6 +291,29 @@ func reportViewToResponse(v service.ReportView) FeedReportResponse {
 		YourVote:              yourVote,
 		IsOwnReport:           v.IsOwnReport,
 		Trust:                 trustToResponse(v.Trust),
+		View:                  string(v.View),
+		History:               historyToResponse(v.History),
+		Approximate:           v.Approximate,
+		YourResolution:        yourResolution,
+		UndosLeft:             v.UndosLeft,
+	}
+}
+
+// historyToResponse maps the service's history facts onto the wire object, or
+// nil for a report that has none. The time is written in UTC with
+// milliseconds, like every other time on the wire.
+func historyToResponse(h *service.HistoryFacts) *HistoryResponse {
+	if h == nil {
+		return nil
+	}
+	return &HistoryResponse{
+		State:        h.State,
+		At:           h.At.UTC().Format(rfc3339Milli),
+		ClosedBy:     string(h.ClosedBy),
+		ClosedText:   h.ClosedText,
+		Outcome:      string(h.Outcome),
+		OutcomeLabel: h.OutcomeLabel,
+		LifetimeText: h.LifetimeText,
 	}
 }
 
@@ -295,28 +405,48 @@ func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 	}
 }
 
-// NearbyReports handles GET /api/reports: parse lat/lon/radius_km/
-// show_disputed from the query string, run the indexed bbox+Haversine query
-// plus the resolver over it via svc, and return listable reports
-// nearest-first. This is the one endpoint that serves both the map and the
-// list (01-RESEARCH.md Pattern 3) — there is no separate map-only or
-// list-only route. Reaching this handler also requires a verified session
-// (see SubmitReport's doc comment); the gate refuses an unverified reader
-// with 401 before any report data is looked up.
+// NearbyReports handles GET /api/reports: parse lat/lon/radius_km/view/
+// category/report (and the older show_disputed) from the query string, run the
+// indexed bbox+Haversine reads plus the resolver over them via svc, and return
+// the reports of one view nearest-first (the past view newest-first). This is
+// the one endpoint that serves the map, the list, the Past tab, the counts for
+// an empty Active tab and a report link (01-RESEARCH.md Pattern 3, D-05): there
+// is no separate route per tab. Reaching this handler also requires a verified
+// session (see SubmitReport's doc comment); the gate refuses an unverified
+// reader with 401 before any report data is looked up.
 //
-// @Summary List unexpired, currently-visible reports near a point
+// @Summary List the reports near a point for one view: active, disputed or past
 // @Description Runs the indexed bounding-box prefilter followed by exact Haversine distance,
-// @Description then resolves each report's visibility fresh via the shared resolver and returns
-// @Description only listable ones, nearest first. This single endpoint serves both the map and the
-// @Description list views — there is no separate map-only route. A resolved (retracted) report is
-// @Description never returned by either view. show_disputed=true switches to the disputed-only
-// @Description view: only reports currently hidden by disputes, on the list and among the map pins
-// @Description together, replacing the default Live-and-Provisional view rather than adding to it.
-// @Description A critical or rescue-needed report stays Live however heavily it is disputed, so it
-// @Description appears only in the default view, never in the disputed one. Every report carries
-// @Description your_vote and is_own_report relative to the calling verified account. Requires a
-// @Description session verified by email through the magic-link flow; an unverified caller receives
-// @Description 401 and no report data.
+// @Description then resolves each report fresh via the shared resolver. This single endpoint serves
+// @Description the map, the list, the Past tab, the counts for an empty Active tab and a report link;
+// @Description there is no separate route per tab.
+// @Description The view parameter picks the tab. active (the default) is Live and Provisional reports,
+// @Description nearest first. disputed is only reports currently hidden by disputes, replacing the
+// @Description default view rather than adding to it; a critical or rescue-needed report stays Live
+// @Description however heavily it is disputed, so it appears only in the active view. past is what was
+// @Description resolved and what ran out its time in the last seven days, the resolved group first and
+// @Description then the expired group, each newest first and cut at 25 with the cut object saying so.
+// @Description resolved is accepted as a read only alias of past and answered as past. A resolved
+// @Description (retracted) report is never returned by the active or the disputed view; it is listed
+// @Description only in the past view, and no past entry changes an active count.
+// @Description show_disputed=true still selects the disputed view so old links keep working; sent with
+// @Description another view it is refused with 400 on the field view.
+// @Description The category parameter keeps one report category in the chosen view and is refused with
+// @Description 400 when it is not one of the nine.
+// @Description The report parameter is a report id from a link. When it is sent the focus object answers
+// @Description it: ok with that report even when it lies outside the radius and outside the seven day
+// @Description window, too_old when it ended more than seven days ago, or unavailable when there is no such
+// @Description report or no tab lists it. Not found and every unlisted state share the one unavailable
+// @Description answer. The reports array still holds the reader's own area.
+// @Description recent ({resolved_24h, expired_24h}) is present only when the view is active, no category
+// @Description was sent and there are no reports, so an empty tab can say what happened lately.
+// @Description A finished Rescue report never leaves the API exact on the past view or on a link: its
+// @Description description is empty, its latitude, longitude and geohash are a blurred point,
+// @Description approximate is true and distance_km is measured to that point. A live Rescue report and
+// @Description finished Flood, Shelter and Power reports stay exact.
+// @Description Every report carries your_vote, your_resolution, undos_left and is_own_report relative to
+// @Description the calling verified account. Requires a session verified by email through the
+// @Description magic-link flow; an unverified caller receives 401 and no report data.
 // @Description Every report also carries a trust object: how many people at different nearby spots confirmed and disputed it, counted once per spot and not once per vote.
 // @Description lat, lon and radius_km must be finite numbers; NaN is refused with 400 and the name of the parameter.
 // @Tags reports
@@ -324,7 +454,10 @@ func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 // @Param lat query number true "Latitude of the query center (required, -90 to 90)"
 // @Param lon query number true "Longitude of the query center (required, -180 to 180)"
 // @Param radius_km query number false "Search radius in kilometers (defaults to 10, bounded to 0.1-50)" minimum(0.1) maximum(50) default(10)
-// @Param show_disputed query boolean false "Select the disputed-only view instead of the default view (defaults to false)"
+// @Param view query string false "Which tab to list: active (the default), disputed or past. resolved is an alias of past." Enums(active,disputed,past,resolved)
+// @Param show_disputed query boolean false "Older way to select the disputed view. true selects disputed; with another view it is refused (defaults to false)"
+// @Param category query string false "Keep only this report category in the chosen view (default: all)" Enums(flood,earthquake,fire,storm_cyclone,road_blocked,power_outage,shelter_open,rescue_needed,other)
+// @Param report query integer false "A report id from a link; answered in the focus object" minimum(1)
 // @Success 200 {object} ReportListResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
@@ -333,7 +466,7 @@ func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Reaching this handler at all means the gate already resolved a
 		// verified account, so a missing one is a programming error (a
-		// route mounted outside the gated group), not a client condition —
+		// route mounted outside the gated group), not a client condition,
 		// the same shape SubmitReport uses for a missing session id.
 		acc, ok := account.FromContext(r.Context())
 		if !ok {
@@ -342,21 +475,21 @@ func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 		}
 
 		// UAT gap 3 (02-UAT.md, closed by 02-09): this feed response is a
-		// personalised, freshness-critical view — it carries your_vote,
+		// personalised, freshness-critical view. It carries your_vote,
 		// is_own_report, and a visibility recomputed fresh on every read
-		// (service.Resolve) — so an uncached-but-cacheable JSON response
+		// (service.Resolve), so an uncached-but-cacheable JSON response
 		// is eligible for a browser's own heuristic caching, and a fresh
 		// fetch() could still be answered from a pre-vote snapshot even on
 		// a page that DID re-run its JavaScript after a Back navigation.
 		// Set before any query-parameter parsing below, so every exit path
-		// from this handler — the 200, every 400 from the validators that
-		// follow, and the 500 above — carries it. Cross-reference page.go's
+		// from this handler (the 200, every 400 from the validators that
+		// follow, and the 500 above) carries it. Cross-reference page.go's
 		// DEC-Q header, which applies the same reasoning to the document
 		// itself.
 		//
 		// Deliberately NOT set inside writeJSON: that helper is also called
 		// by auth.go's link-request route, this file's own submit route
-		// and error helper, and votes.go's cast-vote route — six call
+		// and error helper, and votes.go's cast-vote route, six call
 		// sites across three files nobody examined for this change.
 		// Blanket-applying a cache directive there would silently change
 		// the response contract of five endpoints whose only stated
@@ -391,45 +524,196 @@ func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 			return
 		}
 
-		// The default is deliberately closed — D-10 removes Hidden reports
-		// from the default feed for every viewer, so omitting the
-		// parameter must never widen the result. An unparseable value is
-		// rejected rather than silently treated as false, matching
-		// radius_km's existing strictness: silently ignoring a filter the
-		// caller asked for is how a user ends up trusting a view that is
-		// not the view they requested.
-		showDisputed := false
-		if raw := q.Get("show_disputed"); raw != "" {
-			parsed, err := strconv.ParseBool(raw)
-			if err != nil {
-				writeFieldError(w, http.StatusBadRequest, "show_disputed", "show_disputed must be true or false.")
-				return
-			}
-			showDisputed = parsed
+		// The default view is deliberately closed: omitting a parameter must
+		// never widen the result, and an unparseable value is rejected rather
+		// than silently treated as the default, because silently ignoring a
+		// filter the caller asked for is how a user ends up trusting a view
+		// that is not the view they requested (D-04, D-17, D-28). All three
+		// parameters are checked before the service is reached.
+		view, problem := parseFeedView(q)
+		if problem != nil {
+			writeFieldError(w, http.StatusBadRequest, problem.Field, problem.Message)
+			return
+		}
+		category, problem := parseCategory(q)
+		if problem != nil {
+			writeFieldError(w, http.StatusBadRequest, problem.Field, problem.Message)
+			return
+		}
+		reportID, hasReport, problem := parseReportParam(q)
+		if problem != nil {
+			writeFieldError(w, http.StatusBadRequest, problem.Field, problem.Message)
+			return
 		}
 
 		// ViewerAccountID comes from the gate's context, never from the
-		// query string — a client cannot ask what some other account
-		// voted.
-		views, err := svc.Nearby(r.Context(), service.NearbyQuery{
-			Latitude:        lat,
-			Longitude:       lon,
-			RadiusKm:        radiusKm,
-			ViewerAccountID: acc.ID,
-			IncludeDisputed: showDisputed,
-		})
-		if err != nil {
-			log.Printf("handlers: NearbyReports: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
+		// query string: a client cannot ask what some other account
+		// voted, resolved or took back.
+		resp := ReportListResponse{View: string(view)}
+		var views []service.ReportView
+		switch view {
+		case service.FeedViewPast:
+			page, err := svc.History(r.Context(), service.HistoryQuery{
+				Latitude:        lat,
+				Longitude:       lon,
+				RadiusKm:        radiusKm,
+				ViewerAccountID: acc.ID,
+				Category:        category,
+			})
+			if err != nil {
+				log.Printf("handlers: NearbyReports: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			views = page.Reports
+			resp.Cut = &CutResponse{Resolved: page.ResolvedCut, Expired: page.ExpiredCut}
+		default:
+			nearby, err := svc.Nearby(r.Context(), service.NearbyQuery{
+				Latitude:        lat,
+				Longitude:       lon,
+				RadiusKm:        radiusKm,
+				ViewerAccountID: acc.ID,
+				IncludeDisputed: view == service.FeedViewDisputed,
+				Category:        category,
+			})
+			if err != nil {
+				log.Printf("handlers: NearbyReports: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			views = nearby
+		}
+
+		// The counts for an empty Active tab (D-12): only the unfiltered
+		// active view, and only when it came back empty, so a page with
+		// reports and every filtered page cost nothing extra.
+		if view == service.FeedViewActive && category == "" && len(views) == 0 {
+			counts, err := svc.RecentHistoryCounts(r.Context(), service.RecentQuery{
+				Latitude:  lat,
+				Longitude: lon,
+				RadiusKm:  radiusKm,
+			})
+			if err != nil {
+				log.Printf("handlers: NearbyReports: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			resp.Recent = &RecentResponse{Resolved24h: counts.Resolved, Expired24h: counts.Expired}
+		}
+
+		// The report link (D-11, D-28): one more read with the same centre
+		// and the same gate account.
+		if hasReport {
+			res, err := svc.Focus(r.Context(), service.FocusQuery{
+				ReportID:        reportID,
+				Latitude:        lat,
+				Longitude:       lon,
+				ViewerAccountID: acc.ID,
+			})
+			if err != nil {
+				log.Printf("handlers: NearbyReports: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			focus := &FocusResponse{Status: string(res.Status)}
+			if res.Status == service.FocusOK && res.View != nil {
+				mapped := reportViewToResponse(*res.View)
+				focus.Report = &mapped
+			}
+			resp.Focus = focus
 		}
 
 		responses := make([]FeedReportResponse, 0, len(views))
 		for _, v := range views {
 			responses = append(responses, reportViewToResponse(v))
 		}
-		writeJSON(w, http.StatusOK, ReportListResponse{Reports: responses})
+		resp.Reports = responses
+		writeJSON(w, http.StatusOK, resp)
 	}
+}
+
+// paramProblem names the one query parameter that failed validation and the
+// message the 400 carries.
+type paramProblem struct {
+	Field   string
+	Message string
+}
+
+// parseFeedView reads the view and the older show_disputed parameter and
+// returns the one view they select. Pure and strict: matching is case
+// sensitive, a blank value is the same as absent, resolved is a read only alias
+// of past, and show_disputed=true is the disputed view and disagrees with any
+// other explicit view. show_disputed is read first so a non boolean value keeps
+// naming its own field (D-04, D-05, D-28).
+func parseFeedView(q url.Values) (service.FeedView, *paramProblem) {
+	showDisputed := false
+	if raw := q.Get("show_disputed"); raw != "" {
+		parsed, err := strconv.ParseBool(raw)
+		if err != nil {
+			return "", &paramProblem{Field: "show_disputed", Message: "show_disputed must be true or false."}
+		}
+		showDisputed = parsed
+	}
+
+	view := service.FeedViewActive
+	explicit := false
+	switch raw := q.Get("view"); raw {
+	case "":
+		// Absent or blank: the default view.
+	case "active":
+		explicit = true
+	case "disputed":
+		view = service.FeedViewDisputed
+		explicit = true
+	case "past", "resolved":
+		view = service.FeedViewPast
+		explicit = true
+	default:
+		return "", &paramProblem{Field: "view", Message: "view must be active, disputed or past."}
+	}
+
+	if showDisputed {
+		if explicit && view != service.FeedViewDisputed {
+			return "", &paramProblem{Field: "view", Message: "view and show_disputed disagree."}
+		}
+		view = service.FeedViewDisputed
+	}
+	return view, nil
+}
+
+// parseCategory reads the optional category filter: absent or blank means all,
+// anything else must be exactly one of service.Categories.
+func parseCategory(q url.Values) (service.Category, *paramProblem) {
+	raw := q.Get("category")
+	if raw == "" {
+		return "", nil
+	}
+	c := service.Category(raw)
+	if !c.Valid() {
+		return "", &paramProblem{Field: "category", Message: "category must be one of the report categories."}
+	}
+	return c, nil
+}
+
+// parseReportParam reads the optional report id of a link. It returns the id
+// and whether one was sent. Only plain decimal digits that fit an int64 and
+// are not zero are a report id.
+func parseReportParam(q url.Values) (id int64, sent bool, problem *paramProblem) {
+	raw := q.Get("report")
+	if raw == "" {
+		return 0, false, nil
+	}
+	bad := &paramProblem{Field: "report", Message: "report must be a report id."}
+	for _, ch := range raw {
+		if ch < '0' || ch > '9' {
+			return 0, false, bad
+		}
+	}
+	parsed, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || parsed < 1 {
+		return 0, false, bad
+	}
+	return parsed, true, nil
 }
 
 // parseCoordinate reads and range-checks a required numeric query
