@@ -89,6 +89,63 @@ func TestRecentHistoryCountsKeepsItsShapeWhenCapped(t *testing.T) {
 	}
 }
 
+// TestListableInFeedAgreesWithViewOf pins W3: ListableInFeed (membership of the
+// Active and Disputed reads) and ViewOf (the one partition into tabs) are two
+// hand written predicates, and this loops every visibility and both expiry sides
+// so they cannot drift apart unnoticed.
+func TestListableInFeedAgreesWithViewOf(t *testing.T) {
+	now := p12Now
+	sides := map[string]time.Time{
+		"unexpired":           now.Add(time.Hour),
+		"expired":             now.Add(-time.Hour),
+		"expires exactly now": now,
+	}
+	visibilities := append(append([]service.Visibility{}, service.Visibilities...), service.Visibility("withheld"), service.Visibility(""))
+
+	for _, vis := range visibilities {
+		for side, expiresAt := range sides {
+			view := service.ViewOf(vis, expiresAt, now)
+			active := view == service.FeedViewActive
+			disputed := view == service.FeedViewDisputed
+			unexpired := expiresAt.After(now)
+
+			// The two reads are disjoint and together are exactly the active and
+			// disputed views of ViewOf.
+			if got := vis.ListableInFeed(false) && unexpired; got != active {
+				t.Errorf("%q %s: ListableInFeed(false) on an unexpired report = %v, ViewOf active = %v", vis, side, got, active)
+			}
+			if got := vis.ListableInFeed(true) && unexpired; got != disputed {
+				t.Errorf("%q %s: ListableInFeed(true) on an unexpired report = %v, ViewOf disputed = %v", vis, side, got, disputed)
+			}
+			if vis.ListableInFeed(false) && vis.ListableInFeed(true) {
+				t.Errorf("%q: listed in both the active and the disputed read", vis)
+			}
+			if !unexpired && (active || disputed) {
+				t.Errorf("%q %s: an expired report has view %q, want it in no live tab", vis, side, view)
+			}
+
+			switch vis {
+			case service.VisibilityRetracted:
+				if vis.ListableInFeed(false) || vis.ListableInFeed(true) {
+					t.Errorf("retracted %s is listable in a live read", side)
+				}
+				if view != service.FeedViewResolved {
+					t.Errorf("retracted %s: view = %q, want resolved at any expiry", side, view)
+				}
+			case service.VisibilityLive, service.VisibilityProvisional, service.VisibilityHidden:
+				// Covered by the agreement checks above.
+			default:
+				if vis.ListableInFeed(false) || vis.ListableInFeed(true) {
+					t.Errorf("unknown visibility %q %s is listable", vis, side)
+				}
+				if view != service.FeedViewNone {
+					t.Errorf("unknown visibility %q %s: view = %q, want none", vis, side, view)
+				}
+			}
+		}
+	}
+}
+
 // TestNearbySkipsAReportThatExpiredInTheClockGap pins IN-01 and W1. The query
 // selects with the database clock and the service judges with its own, so a
 // report can come back from the query already expired by the service clock. It
