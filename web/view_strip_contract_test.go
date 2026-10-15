@@ -457,3 +457,137 @@ func TestViewStripStatusAnnouncement(t *testing.T) {
 		t.Errorf("the announcement key must not hold the count")
 	}
 }
+
+// vsRule returns the one rule of rules whose head equals head and whose media
+// contains media (an empty media means top level only), failing the test when
+// there is none.
+func vsRule(t *testing.T, rules []p13CSSRule, media, head string) p13CSSRule {
+	t.Helper()
+	r, _ := p13Rule(t, rules, media, head)
+	return r
+}
+
+// TestViewStripNoPillAndTouchTarget pins the strip's look (UI-SPEC Surface 1):
+// a 44px target and an 8px corner on every tab, never a pill, the grey track,
+// the white current tab with a border and weight 600 (so it is never told apart
+// by colour alone), the inset focus ring, the forced colours border, the laptop
+// cap and margins, tokens only, and the checkbox rule gone.
+func TestViewStripNoPillAndTouchTarget(t *testing.T) {
+	rules := p13ParseCSS(p13ReadStatic(t, "static/css/feed.css"))
+
+	tab := vsRule(t, rules, "", ".view-tab")
+	for prop, want := range map[string]string{
+		"min-height":      "var(--touch-target-min)",
+		"border-radius":   "8px",
+		"color":           "var(--color-text)",
+		"text-decoration": "none",
+	} {
+		if got := tab.Decls[prop]; got != want {
+			t.Errorf(".view-tab %s is %q, want %q", prop, got, want)
+		}
+	}
+	if r := tab.Decls["border-radius"]; r == "999px" || strings.Contains(r, "%") {
+		t.Errorf(".view-tab corner %q is a pill", r)
+	}
+
+	track := vsRule(t, rules, "", ".view-tabs")
+	for prop, want := range map[string]string{
+		"background":    "var(--color-surface)",
+		"border-radius": "8px",
+		"flex-wrap":     "wrap",
+		"margin":        "0 0 var(--space-sm)",
+	} {
+		if got := track.Decls[prop]; got != want {
+			t.Errorf(".view-tabs %s is %q, want %q", prop, got, want)
+		}
+	}
+
+	current := vsRule(t, rules, "", `.view-tab[aria-current="page"], .view-tab[aria-current="page"]:hover, .view-tab[aria-current="page"]:active`)
+	for prop, want := range map[string]string{
+		"background":   "var(--color-bg)",
+		"border-color": "var(--color-border)",
+		"font-weight":  "var(--font-weight-semibold)",
+	} {
+		if got := current.Decls[prop]; got != want {
+			t.Errorf("the current tab %s is %q, want %q", prop, got, want)
+		}
+	}
+
+	focus := vsRule(t, rules, "", ".view-tab:focus-visible")
+	if got := focus.Decls["outline-offset"]; got != "-2px" {
+		t.Errorf(".view-tab:focus-visible outline-offset is %q, want -2px", got)
+	}
+
+	forced := vsRule(t, rules, "forced-colors", `.view-tab[aria-current="page"]`)
+	if got := forced.Decls["border"]; got != "1px solid CanvasText" {
+		t.Errorf("the forced colours current tab border is %q, want 1px solid CanvasText", got)
+	}
+
+	button := vsRule(t, rules, "", ".inline-text-button")
+	if got := button.Decls["min-height"]; got != "var(--touch-target-min)" {
+		t.Errorf(".inline-text-button min-height is %q, want the 44px token", got)
+	}
+	if got := button.Decls["border-radius"]; got != "8px" {
+		t.Errorf(".inline-text-button corner is %q, want 8px", got)
+	}
+
+	laptop := vsRule(t, rules, "min-width: 900px", ".view-tabs")
+	if laptop.Decls["max-width"] != "360px" || laptop.Decls["margin"] != "var(--space-md) 0 var(--space-sm)" {
+		t.Errorf("the laptop strip is %v, want max-width 360px and margin var(--space-md) 0 var(--space-sm)", laptop.Decls)
+	}
+	heading := vsRule(t, rules, "min-width: 900px",
+		`#app-shell[data-feed-view="disputed"] .feed-heading, #app-shell[data-feed-view="past"] .feed-heading`)
+	if heading.Decls["display"] != "flex" {
+		t.Errorf("the laptop heading for Disputed and Past must display flex, got %q", heading.Decls["display"])
+	}
+	// phone.css hides .feed-heading with its base rule; the laptop rule must
+	// outrank it by specificity, with phone.css left as it is.
+	if !strings.Contains(heading.Head, "#app-shell") {
+		t.Errorf("the laptop heading rule must be more specific than phone.css's base hide")
+	}
+
+	// Tokens only: no colour literal in any declaration of feed.css.
+	literal := regexp.MustCompile(`^#[0-9a-fA-F]{3,8}$|rgb\(|rgba\(|hsl\(`)
+	for _, r := range rules {
+		for prop, value := range r.Decls {
+			if literal.MatchString(strings.TrimSpace(value)) {
+				t.Errorf("feed.css rule %q sets %s to the colour literal %q", r.Head, prop, value)
+			}
+		}
+	}
+
+	// The checkbox label rule is gone from trust.css.
+	trust := p13ReadStatic(t, "static/css/trust.css")
+	if strings.Contains(trust, ".filter-toggle") {
+		t.Errorf("trust.css still holds the .filter-toggle rule of the removed checkbox")
+	}
+}
+
+// TestViewStripContrast computes the two text pairs the strip and its note
+// introduce, from the shipped tokens in all four theme sources: the tab text
+// on the grey track and the muted note on the page background (UI-SPEC Color).
+func TestViewStripContrast(t *testing.T) {
+	needed := []string{"--color-bg", "--color-surface", "--color-text", "--color-text-muted"}
+	light1, light2, dark1, dark2 := extractThemeTokens(parseCSSRules(p13ReadStatic(t, "static/css/main.css")), needed)
+	sources := []struct {
+		name   string
+		tokens themeTokens
+	}{
+		{":root", light1}, {`:root[data-theme="light"]`, light2},
+		{"prefers dark :root", dark1}, {`:root[data-theme="dark"]`, dark2},
+	}
+	pairs := []struct{ name, fg, bg string }{
+		{"tab text on the track", "--color-text", "--color-surface"},
+		{"current tab text on the page background", "--color-text", "--color-bg"},
+		{"the note line on the page background", "--color-text-muted", "--color-bg"},
+	}
+	for _, s := range sources {
+		for _, p := range pairs {
+			fg := p31Resolve(t, s.tokens, p.fg)
+			bg := p31Resolve(t, s.tokens, p.bg)
+			if ratio := wcagContrastRatio(t, fg, bg, s.name+" "+p.name); ratio < 4.5 {
+				t.Errorf("%s: %s is %.2f:1, want at least 4.5:1", s.name, p.name, ratio)
+			}
+		}
+	}
+}

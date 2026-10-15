@@ -26,6 +26,178 @@
   display: none;
 }
 
+/*
+ * The same fix for the blocks plan 03.1-05 added to the list pane. Three of
+ * them are .empty-state (display: flex); the others are guarded now so a later
+ * plan that gives them a display value cannot stop the hidden attribute from
+ * working. #disputed-empty keeps its own guard in trust.css.
+ */
+#feed-empty-history[hidden],
+#past-empty[hidden],
+#filter-empty[hidden],
+#past-groups[hidden],
+.past-group[hidden],
+.past-group__cut[hidden],
+#feed-note[hidden],
+#place-line[hidden],
+#filter-line[hidden] {
+  display: none;
+}
+
+/*
+ * The tab strip (03.1 D-01, D-02, UI-SPEC Surface 1): a grey track holding
+ * three link tabs, the same look at every width. The tab text uses the normal
+ * text colour because the muted colour reads 4.34 to 1 on the track. The
+ * current tab is a white tab with a 1px border and weight 600, so it is never
+ * told apart by colour alone.
+ */
+.view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  padding: var(--space-xs);
+  margin: 0 0 var(--space-sm);
+  background: var(--color-surface);
+  border-radius: 8px;
+}
+
+.view-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-sm);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+  text-align: center;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.view-tab:hover {
+  background: color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+
+.view-tab:active {
+  background: var(--color-border);
+}
+
+/* After hover and press on purpose: the current tab does not change its fill. */
+.view-tab[aria-current="page"],
+.view-tab[aria-current="page"]:hover,
+.view-tab[aria-current="page"]:active {
+  background: var(--color-bg);
+  border-color: var(--color-border);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* The global ring is inset so the track does not clip it. */
+.view-tab:focus-visible {
+  outline-offset: -2px;
+}
+
+@media (forced-colors: active) {
+  .view-tab[aria-current="page"] {
+    border: 1px solid CanvasText;
+  }
+
+  .view-tab:hover,
+  .view-tab:active {
+    border-color: Highlight;
+  }
+}
+
+/* The one line under the Disputed and Past headings. Muted text is placed
+   on --color-bg only. */
+.feed-note {
+  margin: 0 0 var(--space-sm);
+  color: var(--color-text-muted);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+}
+
+/* The inline text button shared by the place line, the filter line and any
+   empty block that offers a link sized action: 14px 600, underlined, no fill
+   and no border, with the 44px target. */
+.inline-text-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-sm);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.inline-text-button:hover {
+  background: color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+
+.inline-text-button:focus-visible {
+  outline-offset: -2px;
+}
+
+/* A button inside an empty block (See past reports, Clear filter) sits one
+   step under the text above it. */
+#feed-empty-history .btn,
+#filter-empty .btn {
+  margin-top: var(--space-sm);
+}
+
+/* The laptop. The strip is capped at 360px and left aligned: the fixed
+   account button sits over the right end of the list pane, and a strip of
+   360px clears it even at 900px wide. The list heading is hidden on a laptop
+   while Active is selected (it keeps today's page) and shows on Disputed
+   and Past, through a selector that outranks phone.css's base hide. */
+@media (min-width: 900px) {
+  .view-tabs {
+    max-width: 360px;
+    margin: var(--space-md) 0 var(--space-sm);
+  }
+
+  #app-shell[data-feed-view="disputed"] .feed-heading,
+  #app-shell[data-feed-view="past"] .feed-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    column-gap: var(--space-sm);
+    margin-bottom: var(--space-sm);
+  }
+
+  #app-shell[data-feed-view] .feed-heading__title {
+    margin: 0;
+    color: var(--color-text);
+    font-size: var(--font-size-heading);
+    line-height: var(--line-height-heading);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  #app-shell[data-feed-view] .feed-heading__count {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+    font-weight: var(--font-weight-regular);
+  }
+}
+
 /* List container — reset the <ol>'s default markers/margin, and lay rows
    out with a token-driven gap rather than per-row margins. */
 #report-list {
@@ -69,5 +241,14 @@
      fixed-position button sitting over the bottom-left corner. */
   #report-list {
     padding-bottom: calc(var(--touch-target-min) + var(--space-lg) * 2);
+  }
+
+  /* The pane is a scrolling flex column on a phone (phone.css), so the strip
+     and the note keep their own height instead of shrinking under a long
+     list. The strip's margin (0 0 8px) and the pane's 16px padding already
+     draw the phone geometry, so no phone only rule is needed. */
+  .pane--list > .view-tabs,
+  .pane--list > .feed-note {
+    flex: none;
   }
 }
