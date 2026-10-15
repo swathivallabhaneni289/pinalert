@@ -237,3 +237,78 @@ html {
   margin: 0;
   flex: 1 1 auto;
 }
+
+/* The notice card: bottom left, above the view toggle and left of the report
+   button. Its rows are the slow message, the stale line on a phone in map
+   view, and later the waiting to send row. It appears and goes with no fade.
+   The 360px cap is the one literal width. */
+.notice-card {
+  position: fixed;
+  z-index: 1000;
+  left: var(--space-md);
+  bottom: calc(var(--space-lg) + var(--touch-target-min) + var(--space-md));
+  right: calc(var(--space-lg) + var(--touch-target-min) + var(--space-md));
+  max-width: 360px;
+  max-height: calc(100vh - var(--disclaimer-bar-height) - var(--space-lg) - var(--touch-target-min) - var(--space-md) - var(--space-md));
+  max-height: calc(100dvh - var(--disclaimer-bar-height) - var(--space-lg) - var(--touch-target-min) - var(--space-md) - var(--space-md));
+  box-sizing: border-box;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-popup);
+  padding: var(--space-sm) var(--space-md);
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.notice-card:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.notice-card__row:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.notice-card__text {
+  margin: 0;
+}
+
+.notice-card__link:not([hidden]) {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: underline;
+  color: var(--color-text);
+}
+
+/* Hidden while a toast, a map popup or a locked dialog is open. */
+html[data-toast-open] .notice-card,
+html[data-popup-open] .notice-card,
+html[data-modal-open] .notice-card {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  .notice-card {
+    bottom: var(--space-lg);
+    right: auto;
+    max-height: calc(100vh - var(--disclaimer-bar-height) - var(--space-lg) - var(--space-md));
+    max-height: calc(100dvh - var(--disclaimer-bar-height) - var(--space-lg) - var(--space-md));
+  }
+}
+
+@media (forced-colors: active) {
+  .notice-card {
+    border: 1px solid CanvasText;
+  }
+}

@@ -74,6 +74,11 @@
   var staleTextEl = document.getElementById('feed-stale-text');
   var staleRetryBtn = document.getElementById('feed-stale-retry');
   var noticeLiveEl = document.getElementById('notice-live');
+  var noticeCardEl = document.getElementById('notice-card');
+  var noticeSlowEl = document.getElementById('notice-slow');
+  var noticeStaleEl = document.getElementById('notice-stale');
+  var noticeStaleTextEl = document.getElementById('notice-stale-text');
+  var narrowQuery = window.matchMedia ? window.matchMedia('(max-width: 899.98px)') : null;
 
   // The words of the stale line and its two announcements. The strings are
   // fixed here and only the time phrase is computed, never read from the
@@ -931,6 +936,36 @@
     Pinalert.setText(noticeLiveEl, text);
   }
 
+  // listPaneHidden is true on a phone while the map view is shown, when the
+  // list pane, and so the stale line, is not displayed.
+  function listPaneHidden() {
+    return !!appShellEl && appShellEl.getAttribute('data-view') === 'map' &&
+      narrowQuery !== null && narrowQuery.matches;
+  }
+
+  // syncNoticeCard sets the Stale row of the notice card (shown only while the
+  // stale line is active and the list pane is not displayed) and then hides
+  // the whole card exactly when none of its rows is visible. Every script that
+  // changes a row follows this rule.
+  function syncNoticeCard() {
+    if (!noticeCardEl) {
+      return;
+    }
+    if (staleShown) {
+      Pinalert.setText(noticeStaleTextEl, 'Last updated ' + Pinalert.updatedAgo(Pinalert.state.lastUpdatedAt) + '.');
+    }
+    setHidden(noticeStaleEl, !(staleShown && listPaneHidden()));
+    setHidden(noticeCardEl, noticeCardEl.querySelector('.notice-card__row:not([hidden])') === null);
+  }
+
+  // markFeedLoaded tells the head script that the list has loaded, and takes
+  // the Slow row away without any announcement.
+  function markFeedLoaded() {
+    document.documentElement.setAttribute('data-feed-state', 'ok');
+    setHidden(noticeSlowEl, true);
+    syncNoticeCard();
+  }
+
   // staleLineText is the visible sentence of the stale line.
   function staleLineText() {
     return 'Last updated ' + Pinalert.updatedAgo(Pinalert.state.lastUpdatedAt) + '. Trying again.';
@@ -953,6 +988,7 @@
     setHidden(reportListEl, true);
     setHidden(pastGroupsEl, true);
     setEmptyState('none');
+    syncNoticeCard();
   }
 
   // renderStale shows the stale line while the last poll failed after a list
@@ -986,6 +1022,7 @@
       setHidden(staleEl, true);
     }
     staleShown = stale;
+    syncNoticeCard();
   }
 
   // refreshStaleLine renews the minute figure of the stale line on a timer.
@@ -994,6 +1031,7 @@
     if (staleShown) {
       Pinalert.setText(staleTextEl, staleLineText());
     }
+    syncNoticeCard();
   }
 
   // render is the single state machine for the list, the first load skeleton,
@@ -1014,6 +1052,9 @@
 
     setHidden(skeletonEl, true);
     setHidden(errorEl, true);
+    if (state.status === 'ok') {
+      markFeedLoaded();
+    }
     renderStale(state);
 
     if (state.status === 'error') {
@@ -1300,6 +1341,7 @@
     }
     appShellEl.setAttribute('data-view', view);
     updateToggleLabel();
+    syncNoticeCard();
 
     if (view === 'map') {
       // map.js keeps its Leaflet map instance private (its returned API is
@@ -1545,6 +1587,16 @@
 
   window.setInterval(refreshAgeAndTime, 60000);
   window.setInterval(refreshStaleLine, 60000);
+
+  // The Stale row of the notice card follows the viewport width, because on a
+  // phone it shows only while the map fills the screen.
+  if (narrowQuery) {
+    if (typeof narrowQuery.addEventListener === 'function') {
+      narrowQuery.addEventListener('change', syncNoticeCard);
+    } else if (typeof narrowQuery.addListener === 'function') {
+      narrowQuery.addListener(syncNoticeCard);
+    }
+  }
 
   // pageshow / back-forward-cache refetch (02-UAT.md gap 3, "major").
   //
