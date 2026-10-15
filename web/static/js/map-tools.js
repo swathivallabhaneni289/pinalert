@@ -458,6 +458,7 @@ window.PinalertMapTools = (function () {
     // A press outside the search closes the results and the status line.
     document.addEventListener('pointerdown', function (evt) {
       if ((!resultsEl.hidden || !statusEl.hidden) && !formEl.contains(evt.target)) {
+        abortSearch();
         closeResults();
       }
     });

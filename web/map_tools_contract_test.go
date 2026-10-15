@@ -146,6 +146,17 @@ func p31mSearchScript(t *testing.T) {
 
 	// An aborted request is not an error line, and a late answer is dropped.
 	p13MustContain(t, "map-tools.js", code, "'AbortError'", "controller.abort()")
+	// Every dismissal cancels the request in flight (Escape, Close and a press
+	// outside the search), so a late answer never reopens the list (T-31-53).
+	for _, dismissal := range []string{
+		"if (!resultsEl.hidden || !statusEl.hidden) {\n      abortSearch();\n      closeResults();",
+		"closeBtn.addEventListener('click', function () {\n      abortSearch();\n      closeResults();",
+		"!formEl.contains(evt.target)) {\n        abortSearch();\n        closeResults();",
+	} {
+		if !strings.Contains(code, dismissal) {
+			t.Errorf("map-tools.js lacks a dismissal that cancels the request in flight: %q", dismissal)
+		}
+	}
 
 	// A refusal or a failure shows the server's sentence or the fixed one.
 	p13MustContain(t, "map-tools.js", code, "body.error.message", "MESSAGE_UNAVAILABLE")
