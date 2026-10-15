@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"pinalert/internal/account"
 	"pinalert/internal/service"
@@ -57,6 +58,8 @@ type SubmitReportRequest struct {
 	ShelterHeadcount *int `json:"shelter_headcount,omitempty" example:"42"`
 	// Optional retry key: 16 to 64 letters, digits or hyphens. Sending the same key again returns the report already stored instead of storing it twice.
 	RequestID *string `json:"request_id,omitempty" minLength:"16" maxLength:"64" example:"5f0c2a9e-8d1b-4c7e-9a33-2b6f1e4d7c10"`
+	// Optional, display only: when the device wrote the report, RFC 3339. A value that cannot be read is ignored, a future one is set to the server time and one older than 14 days is set to 14 days before it. It never changes created_at, expires_at, the order or the fade.
+	WrittenAt *string `json:"written_at,omitempty" format:"date-time" example:"2026-09-05T10:03:00.000Z"`
 }
 
 // ReportResponse is the public JSON shape of a report returned by POST
@@ -164,6 +167,8 @@ type FeedReportResponse struct {
 	// UndosLeft is how many take backs the calling account has left on this
 	// report, from 0 to 2.
 	UndosLeft int `json:"undos_left" minimum:"0" maximum:"2" example:"2"`
+	// Present only when the report was uploaded more than 30 minutes after it was written. Display only: created_at still drives the age and the expiry.
+	WrittenAt *string `json:"written_at,omitempty" format:"date-time" example:"2026-09-05T10:03:00.000Z"`
 }
 
 // HistoryResponse is how a finished report ended. State is resolved or
@@ -288,6 +293,13 @@ func reportViewToResponse(v service.ReportView) FeedReportResponse {
 		log.Printf("handlers: reportViewToResponse: report %d is approximate but still carried a description; blanked", v.ID)
 		description = ""
 	}
+	// The threshold was already applied by the service; the handler never
+	// compares times (D-19).
+	var writtenAt *string
+	if v.WrittenAt != nil {
+		s := v.WrittenAt.UTC().Format(rfc3339Milli)
+		writtenAt = &s
+	}
 	return FeedReportResponse{
 		ID:                    v.ID,
 		Category:              string(v.Category),
@@ -311,7 +323,24 @@ func reportViewToResponse(v service.ReportView) FeedReportResponse {
 		Approximate:           v.Approximate,
 		YourResolution:        yourResolution,
 		UndosLeft:             v.UndosLeft,
+		WrittenAt:             writtenAt,
 	}
+}
+
+// parseWrittenAt reads the optional written_at of a submission. Nil and an
+// empty string give nil, and so does any value that is not RFC 3339: an
+// unreadable value is ignored, never an error (R-05). The fractional seconds
+// of toISOString are accepted by time.RFC3339. The result is in UTC.
+func parseWrittenAt(s *string) *time.Time {
+	if s == nil || *s == "" {
+		return nil
+	}
+	t, err := time.Parse(time.RFC3339, *s)
+	if err != nil {
+		return nil
+	}
+	t = t.UTC()
+	return &t
 }
 
 // historyToResponse maps the service's history facts onto the wire object, or
@@ -377,6 +406,7 @@ type ErrorResponse struct {
 // @Description Posting is limited per verified account, with separate allowances for serious reports (critical, or rescue_needed at any severity) and for every other report.
 // @Description A blocked post gets 429 with a Retry-After header and stores nothing, and a rejected or failed post does not use the allowance.
 // @Description An optional request_id makes a retry safe: a repeated key answers 200 with the stored report and is checked before any limit or text check.
+// @Description An optional written_at is display only and never changes created_at or expires_at.
 // @Tags reports
 // @Accept json
 // @Produce json
@@ -429,6 +459,7 @@ func SubmitReport(svc *service.ReportService, gate *RateGate) http.HandlerFunc {
 			Longitude:             req.Longitude,
 			ShelterCapacityStatus: capacityStatus,
 			ShelterHeadcount:      req.ShelterHeadcount,
+			WrittenAt:             service.ClampWrittenAt(parseWrittenAt(req.WrittenAt), time.Now().UTC()),
 		}
 		if req.RequestID != nil {
 			in.RequestID = *req.RequestID

@@ -651,6 +651,18 @@ window.Pinalert = (function () {
     return hours === 1 ? '1 hour ago' : hours + ' hours ago';
   }
 
+  function writtenLine(report) {
+    // The one Written line for every surface (the feed row, the popup, later
+    // the Low data row and the moderator row). The server sends written_at only
+    // when the report was uploaded more than 30 minutes after it was written, so
+    // no threshold is applied here. It is display only: it is never an input to
+    // the age stage, the order or the expiry, which all count from upload.
+    if (!report || !report.written_at) {
+      return '';
+    }
+    return 'Written ' + relativeTime(report.written_at);
+  }
+
   // formatDistance turns a feed report's distance_km into the "away" words of
   // the popup meta line (A94): one decimal under 10 km, "under 100 m" below a
   // tenth of a km and a whole number from 10 km. It returns an empty string for
@@ -941,6 +953,7 @@ window.Pinalert = (function () {
     formatShelterLine: formatShelterLine,
     relativeTime: relativeTime,
     updatedAgo: updatedAgo,
+    writtenLine: writtenLine,
     formatDistance: formatDistance,
     distanceText: distanceText,
     formatFade: formatFade,

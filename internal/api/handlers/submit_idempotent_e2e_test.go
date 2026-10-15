@@ -12,6 +12,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -503,7 +505,7 @@ func TestSubmitIdempotent(t *testing.T) {
 	t.Run("answer_has_no_internal_fields", func(t *testing.T) {
 		url, a, _ := newServer(t, nil, "p17-fields@example.com")
 		const x = "5f0c2a9e-8d1b-4c7e-9a33-2b6f1e4d7c24"
-		body := p17Body("flood", "low", p17Desc, map[string]any{"request_id": x})
+		body := p17Body("flood", "low", p17Desc, map[string]any{"request_id": x, "written_at": p17MilliISO(time.Now().Add(-time.Hour))})
 		for _, want := range []int{http.StatusCreated, http.StatusOK} {
 			raw := p17Expect(t, "post", a, url, body, want)
 			_, m := p17DecodeCreated(t, raw)
@@ -621,4 +623,232 @@ func TestSubmitIdempotentPerAccount(t *testing.T) {
 // p17MilliISO formats t like the browser's toISOString.
 func p17MilliISO(t time.Time) string {
 	return t.UTC().Format("2006-01-02T15:04:05.000Z07:00")
+}
+
+// p17StoredTimes reads the stored created_at, expires_at and the display only
+// client_written_at (nil for NULL) of one report.
+func p17StoredTimes(t *testing.T, pool *pgxpool.Pool, id int64) (created, expires time.Time, written *time.Time) {
+	t.Helper()
+	err := pool.QueryRow(context.Background(),
+		`SELECT created_at, expires_at, client_written_at FROM reports WHERE id = $1`, id).Scan(&created, &expires, &written)
+	if err != nil {
+		t.Fatalf("reading stored times of report %d: %v", id, err)
+	}
+	return created.UTC(), expires.UTC(), written
+}
+
+// p17FeedEntry reads GET /api/reports as client and returns the entry of the
+// report id, failing when it is not listed.
+func p17FeedEntry(t *testing.T, client *http.Client, baseURL string, id int64) map[string]json.RawMessage {
+	t.Helper()
+	resp, err := client.Get(baseURL + "/api/reports?lat=12.9716&lon=77.5946")
+	if err != nil {
+		t.Fatalf("GET /api/reports: %v", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/reports: status %d err %v body %s", resp.StatusCode, err, raw)
+	}
+	var out struct {
+		Reports []map[string]json.RawMessage `json:"reports"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("decoding feed %s: %v", raw, err)
+	}
+	for _, entry := range out.Reports {
+		var got int64
+		if err := json.Unmarshal(entry["id"], &got); err == nil && got == id {
+			return entry
+		}
+	}
+	t.Fatalf("report %d is not in the feed: %s", id, raw)
+	return nil
+}
+
+func TestSubmitIdempotentSwaggerFields(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "swagger.json"))
+	if err != nil {
+		t.Fatalf("reading docs/swagger.json: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]struct {
+			Responses map[string]struct {
+				Schema struct {
+					Ref string `json:"$ref"`
+				} `json:"schema"`
+			} `json:"responses"`
+		} `json:"paths"`
+		Definitions map[string]struct {
+			Required   []string                  `json:"required"`
+			Properties map[string]map[string]any `json:"properties"`
+		} `json:"definitions"`
+	}
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		t.Fatalf("decoding docs/swagger.json: %v", err)
+	}
+
+	req, ok := spec.Definitions["handlers.SubmitReportRequest"]
+	if !ok {
+		t.Fatal("no handlers.SubmitReportRequest definition")
+	}
+	id := req.Properties["request_id"]
+	if id["type"] != "string" || id["minLength"] != float64(16) || id["maxLength"] != float64(64) {
+		t.Fatalf("request_id = %v, want a string of 16 to 64 characters", id)
+	}
+	written := req.Properties["written_at"]
+	if written["type"] != "string" || written["format"] != "date-time" {
+		t.Fatalf("written_at on the request = %v, want a date-time string", written)
+	}
+	for _, name := range req.Required {
+		if name == "request_id" || name == "written_at" {
+			t.Fatalf("%s must not be required", name)
+		}
+	}
+
+	if held := spec.Definitions["handlers.ReportResponse"].Properties["held"]; held["type"] != "boolean" {
+		t.Fatalf("ReportResponse.held = %v, want a boolean", held)
+	}
+	feed := spec.Definitions["handlers.FeedReportResponse"].Properties["written_at"]
+	if feed["type"] != "string" || feed["format"] != "date-time" {
+		t.Fatalf("FeedReportResponse.written_at = %v, want a date-time string", feed)
+	}
+
+	post := spec.Paths["/reports"]["post"]
+	for _, code := range []string{"200", "201"} {
+		if got := post.Responses[code].Schema.Ref; got != "#/definitions/handlers.SubmitReportResponse" {
+			t.Fatalf("POST /reports %s schema = %q", code, got)
+		}
+	}
+
+	for name, def := range spec.Definitions {
+		for _, internal := range []string{"client_written_at", "request_account_id"} {
+			if _, ok := def.Properties[internal]; ok {
+				t.Fatalf("definition %s exposes %s", name, internal)
+			}
+		}
+	}
+}
+
+func TestWrittenAt(t *testing.T) {
+	newServer := func(t *testing.T, email string) (string, *http.Client, *pgxpool.Pool) {
+		t.Helper()
+		clk := &p17Clock{now: p17T0}
+		srv, mailer, pool := newE2EServerWith(t, p17Tweak(clk, nil, nil))
+		return srv.URL, newVerifiedClient(t, srv, mailer, email), pool
+	}
+	post := func(t *testing.T, a *http.Client, url string, written any) p17Created {
+		t.Helper()
+		raw := p17Expect(t, "post", a, url, p17Body("flood", "low", p17Desc, map[string]any{"written_at": written}), http.StatusCreated)
+		c, _ := p17DecodeCreated(t, raw)
+		return c
+	}
+
+	t.Run("unreadable_is_null", func(t *testing.T) {
+		url, a, pool := newServer(t, "p17-unreadable@example.com")
+		for _, bad := range []string{"not-a-date", "", "2026-13-45T99:00:00Z"} {
+			c := post(t, a, url, bad)
+			if _, _, w := p17StoredTimes(t, pool, c.ID); w != nil {
+				t.Fatalf("written_at %q: stored %v, want NULL", bad, *w)
+			}
+		}
+		raw := p17Expect(t, "number", a, url, p17Body("flood", "low", p17Desc, map[string]any{"written_at": 5}), http.StatusBadRequest)
+		if field, _ := p17ErrorField(t, raw); field != "body" {
+			t.Fatalf("number: field = %q, want body", field)
+		}
+	})
+
+	t.Run("old_value_clamped_to_14_days", func(t *testing.T) {
+		url, a, pool := newServer(t, "p17-old@example.com")
+		c := post(t, a, url, p17MilliISO(time.Now().Add(-20*24*time.Hour)))
+		created, _, w := p17StoredTimes(t, pool, c.ID)
+		want := created.Add(-service.WrittenAtMaxAge)
+		if w == nil || !w.Equal(want) {
+			t.Fatalf("stored written_at = %v, want %v", w, want)
+		}
+		var got string
+		if err := json.Unmarshal(p17FeedEntry(t, a, url, c.ID)["written_at"], &got); err != nil {
+			t.Fatalf("feed entry has no written_at: %v", err)
+		}
+		if got != p17MilliISO(want) {
+			t.Fatalf("feed written_at = %s, want %s", got, p17MilliISO(want))
+		}
+	})
+
+	t.Run("future_value_clamped_to_now", func(t *testing.T) {
+		url, a, pool := newServer(t, "p17-future@example.com")
+		c := post(t, a, url, p17MilliISO(time.Now().Add(2*time.Hour)))
+		created, _, w := p17StoredTimes(t, pool, c.ID)
+		if w == nil || w.After(created) || created.Sub(*w) > time.Second {
+			t.Fatalf("stored written_at = %v, created_at = %v; want not after and within 1s", w, created)
+		}
+		if _, ok := p17FeedEntry(t, a, url, c.ID)["written_at"]; ok {
+			t.Fatal("feed entry carries written_at for a gap under 30 minutes")
+		}
+	})
+
+	t.Run("recent_gap_has_no_label", func(t *testing.T) {
+		url, a, pool := newServer(t, "p17-recent@example.com")
+		sent := p17MilliISO(time.Now().Add(-10 * time.Minute))
+		c := post(t, a, url, sent)
+		want, err := time.Parse(time.RFC3339, sent)
+		if err != nil {
+			t.Fatalf("parsing %s: %v", sent, err)
+		}
+		if _, _, w := p17StoredTimes(t, pool, c.ID); w == nil || !w.Equal(want) {
+			t.Fatalf("stored written_at = %v, want %v", w, want)
+		}
+		if _, ok := p17FeedEntry(t, a, url, c.ID)["written_at"]; ok {
+			t.Fatal("feed entry carries written_at for a gap under 30 minutes")
+		}
+	})
+
+	t.Run("old_gap_has_label", func(t *testing.T) {
+		url, a, pool := newServer(t, "p17-gap@example.com")
+		sent := p17MilliISO(time.Now().Add(-4 * time.Hour))
+		c := post(t, a, url, sent)
+		want, err := time.Parse(time.RFC3339, sent)
+		if err != nil {
+			t.Fatalf("parsing %s: %v", sent, err)
+		}
+		if _, _, w := p17StoredTimes(t, pool, c.ID); w == nil || !w.Equal(want) {
+			t.Fatalf("stored written_at = %v, want %v", w, want)
+		}
+		var got string
+		if err := json.Unmarshal(p17FeedEntry(t, a, url, c.ID)["written_at"], &got); err != nil {
+			t.Fatalf("feed entry has no written_at: %v", err)
+		}
+		if got != sent {
+			t.Fatalf("feed written_at = %s, want %s", got, sent)
+		}
+	})
+}
+
+func TestWrittenAtNeverFeedsExpiry(t *testing.T) {
+	clk := &p17Clock{now: p17T0}
+	srv, mailer, pool := newE2EServerWith(t, p17Tweak(clk, nil, nil))
+	a := newVerifiedClient(t, srv, mailer, "p17-expiry@example.com")
+
+	for _, sev := range []service.Severity{service.SeverityLow, service.SeverityMedium, service.SeverityCritical} {
+		before := time.Now().UTC().Add(-time.Second)
+		body := p17Body("flood", string(sev), p17Desc, map[string]any{"written_at": p17MilliISO(time.Now().Add(-9 * time.Hour))})
+		raw := p17Expect(t, string(sev), a, srv.URL, body, http.StatusCreated)
+		after := time.Now().UTC().Add(time.Second)
+		c, _ := p17DecodeCreated(t, raw)
+
+		created, expires, _ := p17StoredTimes(t, pool, c.ID)
+		if created.Before(before) || created.After(after) {
+			t.Fatalf("%s: created_at = %v, want between %v and %v", sev, created, before, after)
+		}
+		want := service.ExpiryDuration(sev)
+		if got := expires.Sub(created); got != want {
+			t.Fatalf("%s: expires_at - created_at = %v, want %v", sev, got, want)
+		}
+		// The answer is written in the server's zone, so compare the instants.
+		answered, err := time.Parse(time.RFC3339, c.ExpiresAt)
+		if err != nil || !answered.Equal(created.Add(want).Truncate(time.Millisecond)) {
+			t.Fatalf("%s: answer expires_at = %s (err %v), want %s", sev, c.ExpiresAt, err, p17MilliISO(created.Add(want)))
+		}
+		p17FeedEntry(t, a, srv.URL, c.ID)
+	}
 }

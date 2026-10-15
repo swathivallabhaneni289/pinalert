@@ -530,6 +530,11 @@ window.PinalertMap = (function () {
     metaLines.className = 'popup-card__meta-lines';
     var metaLine = document.createElement('p');
     metaLine.className = 'popup-card__meta-line';
+    // The Written line of a late report, directly under the category and time
+    // line. It stays hidden until the report carries written_at (D-19).
+    var writtenLine = document.createElement('p');
+    writtenLine.className = 'popup-card__meta-line';
+    writtenLine.hidden = true;
     var shelterLine = document.createElement('p');
     shelterLine.className = 'popup-card__meta-line';
     shelterLine.hidden = true;
@@ -539,6 +544,7 @@ window.PinalertMap = (function () {
     privacyLine.className = 'popup-card__privacy';
     privacyLine.hidden = true;
     metaLines.appendChild(metaLine);
+    metaLines.appendChild(writtenLine);
     metaLines.appendChild(shelterLine);
     metaLines.appendChild(privacyLine);
     meta.appendChild(metaGlyph);
@@ -580,6 +586,7 @@ window.PinalertMap = (function () {
       title: titleEl,
       metaGlyph: metaGlyph,
       metaLine: metaLine,
+      writtenLine: writtenLine,
       shelterLine: shelterLine,
       privacy: privacyLine,
       trust: trust,
@@ -626,6 +633,9 @@ window.PinalertMap = (function () {
       meta += ' \u00b7 ' + away;
     }
     Pinalert.setText(card.metaLine, meta);
+    var written = Pinalert.writtenLine(report);
+    Pinalert.setText(card.writtenLine, written);
+    card.writtenLine.hidden = !written;
 
     // The line under the card has two voices in one slot. A finished report
     // shows its closed line (C44, C45) and never the fade sentence, because a

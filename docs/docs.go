@@ -290,7 +290,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Creates a location-tagged report under the caller's session. Requires a session\nverified by email through the magic-link flow (POST /auth/request-link, then\nGET /auth/verify) — an unverified caller receives 401. id, geohash, created_at\nand expires_at are computed server-side and can never be set by the client.\nThe description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.\nWhen the check cannot finish in time, a critical or rescue_needed report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.\nPosting is limited per verified account, with separate allowances for serious reports (critical, or rescue_needed at any severity) and for every other report.\nA blocked post gets 429 with a Retry-After header and stores nothing, and a rejected or failed post does not use the allowance.",
+                "description": "Creates a location-tagged report under the caller's session. Requires a session\nverified by email through the magic-link flow (POST /auth/request-link, then\nGET /auth/verify) — an unverified caller receives 401. id, geohash, created_at\nand expires_at are computed server-side and can never be set by the client.\nThe description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.\nWhen the check cannot finish in time, a critical or rescue_needed report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.\nPosting is limited per verified account, with separate allowances for serious reports (critical, or rescue_needed at any severity) and for every other report.\nA blocked post gets 429 with a Retry-After header and stores nothing, and a rejected or failed post does not use the allowance.\nAn optional request_id makes a retry safe: a repeated key answers 200 with the stored report and is checked before any limit or text check.\nAn optional written_at is display only and never changes created_at or expires_at.",
                 "consumes": [
                     "application/json"
                 ],
@@ -313,6 +313,12 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
+                    "200": {
+                        "description": "This retry key was already used: the stored report, nothing stored again",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.SubmitReportResponse"
+                        }
+                    },
                     "201": {
                         "description": "Created",
                         "schema": {
@@ -1144,6 +1150,12 @@ const docTemplate = `{
                     ],
                     "example": "confirmed"
                 },
+                "written_at": {
+                    "description": "Present only when the report was uploaded more than 30 minutes after it was written. Display only: created_at still drives the age and the expiry.",
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-09-05T10:03:00.000Z"
+                },
                 "your_resolution": {
                     "description": "YourResolution is the calling account's own standing resolution vote on\nthis report, or null. The key is always present.",
                     "type": "string",
@@ -1525,6 +1537,13 @@ const docTemplate = `{
                     "type": "number",
                     "example": 80.2707
                 },
+                "request_id": {
+                    "description": "Optional retry key: 16 to 64 letters, digits or hyphens. Sending the same key again returns the report already stored instead of storing it twice.",
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 16,
+                    "example": "5f0c2a9e-8d1b-4c7e-9a33-2b6f1e4d7c10"
+                },
                 "severity": {
                     "description": "Severity affects triage ordering only; self-declaring critical never bypasses the provisional-visibility gate (internal/service.Severities).",
                     "type": "string",
@@ -1550,6 +1569,12 @@ const docTemplate = `{
                     "description": "ShelterHeadcount is optional and only valid alongside category shelter_open.",
                     "type": "integer",
                     "example": 42
+                },
+                "written_at": {
+                    "description": "Optional, display only: when the device wrote the report, RFC 3339. A value that cannot be read is ignored, a future one is set to the server time and one older than 14 days is set to 14 days before it. It never changes created_at, expires_at, the order or the fade.",
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-09-05T10:03:00.000Z"
                 }
             }
         },

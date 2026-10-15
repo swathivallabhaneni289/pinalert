@@ -8,6 +8,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"pinalert/internal/service"
 )
@@ -86,6 +87,66 @@ func TestValidateSubmitInputRequestID(t *testing.T) {
 		var ve service.ValidationError
 		if !errors.As(err, &ve) || ve.Field != "category" {
 			t.Fatalf("got %v, want a category error first", err)
+		}
+	})
+}
+
+func TestClampWrittenAt(t *testing.T) {
+	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
+	at := func(v time.Time) *time.Time { return &v }
+
+	if service.WrittenAtMaxAge != 14*24*time.Hour {
+		t.Fatalf("WrittenAtMaxAge = %v, want 14 days", service.WrittenAtMaxAge)
+	}
+
+	cases := []struct {
+		name string
+		in   *time.Time
+		want *time.Time
+	}{
+		{"nil stays nil", nil, nil},
+		{"a future value is set to now", at(now.Add(time.Hour)), at(now)},
+		{"a recent value is kept", at(now.Add(-time.Hour)), at(now.Add(-time.Hour))},
+		{"exactly 14 days is kept", at(now.Add(-service.WrittenAtMaxAge)), at(now.Add(-service.WrittenAtMaxAge))},
+		{"one second past 14 days is clamped", at(now.Add(-service.WrittenAtMaxAge - time.Second)), at(now.Add(-service.WrittenAtMaxAge))},
+		{"20 days is clamped to 14 days", at(now.Add(-20 * 24 * time.Hour)), at(now.Add(-service.WrittenAtMaxAge))},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := service.ClampWrittenAt(c.in, now)
+			if c.want == nil {
+				if got != nil {
+					t.Fatalf("got %v, want nil", *got)
+				}
+				return
+			}
+			if got == nil || !got.Equal(*c.want) {
+				t.Fatalf("got %v, want %v", got, *c.want)
+			}
+			if got.Location() != time.UTC {
+				t.Fatalf("location = %v, want UTC", got.Location())
+			}
+		})
+	}
+
+	t.Run("a zone offset gives the same instant in UTC", func(t *testing.T) {
+		ist := time.FixedZone("IST", 5*3600+1800)
+		in := now.Add(-time.Hour).In(ist)
+		got := service.ClampWrittenAt(&in, now)
+		if got == nil || !got.Equal(in) || got.Location() != time.UTC {
+			t.Fatalf("got %v, want the instant %v in UTC", got, in)
+		}
+	})
+
+	t.Run("the result is never the input pointer", func(t *testing.T) {
+		in := now.Add(-time.Hour)
+		got := service.ClampWrittenAt(&in, now)
+		if got == &in {
+			t.Fatal("returned the input pointer")
+		}
+		in = now.Add(-2 * time.Hour)
+		if !got.Equal(now.Add(-time.Hour)) {
+			t.Fatalf("changing the input changed the result: %v", got)
 		}
 	})
 }

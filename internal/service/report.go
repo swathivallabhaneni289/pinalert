@@ -146,6 +146,8 @@ func (e ValidationError) Error() string {
 // are computed server-side and can never be set from a request body.
 // RequestID is the optional retry key ("" is absent) that makes a resend after
 // a lost answer return the stored report instead of storing a second one (R-05).
+// WrittenAt is the display only time the device wrote the report, clamped and
+// never used for created_at, expires_at, the order or the age stage (R-05).
 type SubmitInput struct {
 	Category              Category
 	Severity              Severity
@@ -155,6 +157,42 @@ type SubmitInput struct {
 	ShelterCapacityStatus *CapacityStatus
 	ShelterHeadcount      *int
 	RequestID             string
+	WrittenAt             *time.Time
+}
+
+// WrittenAtMaxAge is how far before created_at a stored written time may lie.
+// An older value is clamped to exactly this age, never dropped, so a queued
+// report never looks fresher than it is (R-05).
+const WrittenAtMaxAge = 14 * 24 * time.Hour
+
+// ClampWrittenAt returns a UTC copy of w limited to the window from
+// WrittenAtMaxAge before now up to now: a later value becomes now and an older
+// one becomes now minus WrittenAtMaxAge. Nil stays nil. The result is display
+// only. The handler applies it to the parsed request value and SubmitChecked
+// applies it again against the same now that stamps created_at, which is the
+// authority (R-05, T-04-17).
+func ClampWrittenAt(w *time.Time, now time.Time) *time.Time {
+	if w == nil {
+		return nil
+	}
+	out := w.UTC()
+	switch {
+	case out.After(now):
+		out = now.UTC()
+	case now.Sub(out) > WrittenAtMaxAge:
+		out = now.Add(-WrittenAtMaxAge).UTC()
+	}
+	return &out
+}
+
+// writtenAtParam converts the clamped written time to the nullable column
+// value, the inverse of writtenAtPtr: nil gives the zero value, so the column
+// stays NULL.
+func writtenAtParam(t *time.Time) pgtype.Timestamptz {
+	if t == nil {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: *t, Valid: true}
 }
 
 // RequestIDInvalidMessage is the 400 message for a request id that is not 16 to
@@ -540,7 +578,11 @@ func textCheckRow(reportID int64, check TextCheck, now time.Time) (sqlcgen.Inser
 //     remove it (D-01, R-03). The state is decided before the insert and
 //     written by it, so a held report is never visible for a moment.
 //  5. now is captured once from the wall clock, never the injectable report
-//     clock, whose test times would drift from the database clock.
+//     clock, whose test times would drift from the database clock. created_at
+//     and expires_at are stamped from it, and the display only written time is
+//     clamped against the same now, so it is never later than created_at nor
+//     more than WrittenAtMaxAge before it. No stamp ever reads the written time
+//     (R-05).
 //  6. One InsertReportIdempotent. accountID is the gate's verified account and,
 //     with a request id, is stored beside it. When the insert returns no row for
 //     a request id, a racing send stored it first: the account scoped lookup
@@ -569,6 +611,7 @@ func (s *ReportService) SubmitChecked(ctx context.Context, sessionID string, acc
 
 	now := time.Now().UTC()
 	expiresAt := now.Add(ExpiryDuration(in.Severity))
+	writtenAt := ClampWrittenAt(in.WrittenAt, now)
 	gh := geohash.EncodeWithPrecision(in.Latitude, in.Longitude, geohashPrecision)
 
 	var capacityStatus *string
@@ -608,6 +651,9 @@ func (s *ReportService) SubmitChecked(ctx context.Context, sessionID string, acc
 		ModerationState:       string(state),
 		RequestID:             requestID,
 		RequestAccountID:      requestAccountID,
+
+		// Display only, never read by any stamp (R-05).
+		ClientWrittenAt: writtenAtParam(writtenAt),
 	})
 	if errors.Is(err, pgx.ErrNoRows) && requestID != nil {
 		// A racing send stored this id first. Return the stored report before
