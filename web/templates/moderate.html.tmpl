@@ -33,27 +33,32 @@
     <div id="mod-find-result" aria-live="polite"></div>
 
     <section class="mod-section" aria-labelledby="mod-h-auto">
-      <h2 id="mod-h-auto">Flagged by the automatic check</h2>
+      <h2 id="mod-h-auto">Flagged by the automatic check <span class="mod-count" id="mod-count-auto"></span></h2>
       <p class="mod-section__line">Posted normally, but the text scored near the line. Newest first.</p>
-      <ol class="mod-list"></ol>
+      <ol class="mod-list" id="mod-list-auto" role="list" aria-labelledby="mod-h-auto"></ol>
+      <p class="mod-empty" id="mod-empty-auto" hidden>No reports flagged by the check.</p>
     </section>
 
     <section class="mod-section" aria-labelledby="mod-h-people">
-      <h2 id="mod-h-people">Flagged by people</h2>
+      <h2 id="mod-h-people">Flagged by people <span class="mod-count" id="mod-count-people"></span></h2>
       <p class="mod-section__line">People used Flag this report. Most flags first.</p>
-      <ol class="mod-list"></ol>
+      <ol class="mod-list" id="mod-list-people" role="list" aria-labelledby="mod-h-people"></ol>
+      <p class="mod-empty" id="mod-empty-people" hidden>No reports flagged by people.</p>
     </section>
 
     <section class="mod-section" aria-labelledby="mod-h-pending">
-      <h2 id="mod-h-pending">Text check not finished</h2>
+      <h2 id="mod-h-pending">Text check not finished <span class="mod-count" id="mod-count-pending"></span></h2>
       <p class="mod-section__line">The check couldn't finish. Serious reports in this list are already published. Waiting longest first.</p>
-      <ol class="mod-list"></ol>
+      <ol class="mod-list" id="mod-list-pending" role="list" aria-labelledby="mod-h-pending"></ol>
+      <p class="mod-empty" id="mod-empty-pending" hidden>No unfinished checks.</p>
     </section>
   </main>
 
   <div id="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="/static/js/app.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/trust.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/moderate.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
 </body>
 </html>
