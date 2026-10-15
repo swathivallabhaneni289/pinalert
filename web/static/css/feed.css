@@ -76,6 +76,25 @@
 }
 
 /*
+ * The map follows the same mark (03.1 review fix A2). The map pane is a
+ * sibling of the list pane, so the shell is matched by the list pane it holds:
+ * while the list waits for another tab, chip or place, the report pins of the
+ * old set and the map label naming the new tab are hidden, so a pin of one set
+ * never reads as a member of another. Hidden, not dimmed, so the old pins also
+ * leave the tab order and the accessibility tree. The marker pane holds only
+ * report pins (the reader's position is not drawn as a marker); the map
+ * controls, the map tools and the open popup are left as they are. Both come
+ * back in the same step as the rows, when app.js removes the mark right before
+ * the answer or the failure is drawn. No transition, so reduced motion has
+ * nothing to turn off. A browser without :has() drops the rule and shows the
+ * map as before.
+ */
+.app-shell:has(> .pane--list[data-loading]) .pane--map .leaflet-marker-pane,
+.app-shell:has(> .pane--list[data-loading]) #map-label:not([hidden]) {
+  display: none;
+}
+
+/*
  * The tab strip (03.1 D-01, D-02, UI-SPEC Surface 1): a grey track holding
  * three link tabs, the same look at every width. The tab text uses the normal
  * text colour because the muted colour reads 4.34 to 1 on the track. The

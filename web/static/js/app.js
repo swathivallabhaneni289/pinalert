@@ -288,7 +288,8 @@ window.Pinalert = (function () {
   // heading and the note change at once on a tab press, so without the mark
   // the old rows would sit readable under the new heading until the answer
   // lands. feed.css hides the rows, the count, the empty blocks and the error
-  // panel under the mark and shows the skeleton. The store keeps the rows, so
+  // panel under the mark and shows the skeleton, and it hides the map's report
+  // pins and the map label under the same mark. The store keeps the rows, so
   // a failed request can still tell rows that are merely a little old from
   // rows of another set (WR-08). The pane is looked up when needed, so a page
   // without it is not affected.
