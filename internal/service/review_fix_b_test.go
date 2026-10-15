@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"pinalert/internal/service"
+	sqlcgen "pinalert/internal/store/sqlc"
 )
 
 // The tests in this file belong to the 03.1 review fixes (fixer B): the cut flag
@@ -85,5 +86,45 @@ func TestRecentHistoryCountsKeepsItsShapeWhenCapped(t *testing.T) {
 	}
 	if got != (service.RecentCounts{}) {
 		t.Errorf("counts = %+v, want zeros", got)
+	}
+}
+
+// TestNearbySkipsAReportThatExpiredInTheClockGap pins IN-01 and W1. The query
+// selects with the database clock and the service judges with its own, so a
+// report can come back from the query already expired by the service clock. It
+// must not be in the answer: stamped as finished it would carry no history and,
+// for Rescue, its exact point and text.
+func TestNearbySkipsAReportThatExpiredInTheClockGap(t *testing.T) {
+	live := p12Row(1, service.SeverityLow, service.CategoryFlood, 1.0)
+	gapFlood := p12Row(2, service.SeverityLow, service.CategoryFlood, 2.0)
+	gapFlood.ExpiresAt = p12Now.Add(-time.Millisecond)
+	gapRescue := p12Row(3, service.SeverityCritical, service.CategoryRescueNeeded, 3.0)
+	gapRescue.ExpiresAt = p12Now
+
+	fake := &fakeFeedQuerier{
+		nearbyRows: []sqlcgen.NearbyReportsRow{live, gapFlood, gapRescue},
+		reporterRows: []sqlcgen.ReporterAccountsForReportsRow{
+			reporterRow(1, nil), reporterRow(2, nil), reporterRow(3, nil),
+		},
+	}
+	svc := service.NewReportService(fake, service.WithReportClock(p12Clock))
+	for _, includeDisputed := range []bool{false, true} {
+		views, err := svc.Nearby(context.Background(), service.NearbyQuery{
+			Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: includeDisputed,
+		})
+		if err != nil {
+			t.Fatalf("Nearby(includeDisputed=%v): %v", includeDisputed, err)
+		}
+		for _, v := range views {
+			if v.View != service.FeedViewActive && v.View != service.FeedViewDisputed {
+				t.Errorf("includeDisputed=%v: report %d came back with view %q", includeDisputed, v.ID, v.View)
+			}
+			if v.ID != 1 {
+				t.Errorf("includeDisputed=%v: report %d is in the answer, want only the live report 1", includeDisputed, v.ID)
+			}
+		}
+		if !includeDisputed && len(views) != 1 {
+			t.Errorf("active read returned %d views, want 1", len(views))
+		}
 	}
 }

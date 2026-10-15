@@ -218,11 +218,10 @@ func TestTrustAttachedOnEveryReadPath(t *testing.T) {
 	t.Run("each path reads its injected clock", func(t *testing.T) {
 		res := p05RunPaths(t, liveRows, p05PathLate, 0)
 		expired := "Expired, so it can no longer be confirmed."
-		if res.nearbyCount != 1 {
-			t.Fatalf("Nearby returned %d views, want 1", res.nearbyCount)
-		}
-		if res.nearby.Trust.LeadSentence != expired {
-			t.Errorf("nearby LeadSentence = %q", res.nearby.Trust.LeadSentence)
+		// Nearby reads its injected clock too: a report the fake query still returns
+		// but the clock says is expired is not in the Active answer (IN-01).
+		if res.nearbyCount != 0 {
+			t.Fatalf("Nearby returned %d views, want 0 for an expired report", res.nearbyCount)
 		}
 		if res.activity.Trust.LeadSentence != expired {
 			t.Errorf("activity LeadSentence = %q", res.activity.Trust.LeadSentence)

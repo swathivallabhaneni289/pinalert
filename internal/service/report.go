@@ -619,12 +619,22 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 		if q.Category != "" && r.Category != q.Category {
 			continue
 		}
+		// The rows were selected with the database clock and are judged here with
+		// the service clock. A report that expired in the gap between the two would
+		// come back with a finished view, no history and its exact point, which is
+		// the one thing a finished Rescue report must never carry (IN-01, W1). Only
+		// an active or disputed report belongs in this answer; the next read lists
+		// the one that just finished in Past, blurred.
+		view := ViewOf(vis, r.ExpiresAt, now)
+		if view != FeedViewActive && view != FeedViewDisputed {
+			continue
+		}
 
 		views = append(views, ReportView{
 			Report:           r,
 			Visibility:       vis,
 			VisibilityReason: reason,
-			View:             ViewOf(vis, r.ExpiresAt, now),
+			View:             view,
 			ViewerVote:       ViewerContentVote(reportVotes, r.ID, q.ViewerAccountID),
 			ViewerResolution: ViewerResolution(reportVotes, r.ID, q.ViewerAccountID),
 			IsOwnReport:      reporterID != nil && *reporterID == q.ViewerAccountID,
