@@ -553,6 +553,124 @@ func TestQueuePagesWiring(t *testing.T) {
 		"headingLevel: 2", "onEdit: openSavedReport", "focusFallback: queueFocusFallback")
 	around := p422Window(t, feed, "if (window.PinalertQueue", "});")
 	p422Need(t, "the feed.js queue mount window", around, "data-account-id")
+
+	// The Low data half.
+	low := p422Template(t, "low.html.tmpl")
+	if n := p422Count(low, strip); n != 1 {
+		t.Fatalf("low.html.tmpl has %d queue strips, want exactly 1", n)
+	}
+	lowStripAt := strings.Index(low, strip)
+	basisAt := strings.Index(low, `id="low-basis"`)
+	lowStaleAt := strings.Index(low, `id="low-stale"`)
+	if !(basisAt != -1 && lowStaleAt != -1 && basisAt < lowStripAt && lowStripAt < lowStaleAt) {
+		t.Errorf("the Low data strip must sit after #low-basis and before #low-stale (%d, %d, %d)", basisAt, lowStripAt, lowStaleAt)
+	}
+	for name, text := range map[string]string{"index.html.tmpl": index, "low.html.tmpl": low} {
+		const note = `<p id="form-note" class="inline-note" hidden></p>`
+		if n := p422Count(text, note); n != 1 {
+			t.Errorf("%s has %d form note slots, want exactly 1", name, n)
+			continue
+		}
+		titleAt := strings.Index(text, `<h2 id="modal-title">`)
+		if titleAt == -1 {
+			t.Errorf("%s has no form title", name)
+			continue
+		}
+		titleEnd := titleAt + strings.Index(text[titleAt:], "</h2>") + len("</h2>")
+		noteAt := strings.Index(text, note)
+		if noteAt < titleEnd || strings.TrimSpace(text[titleEnd:noteAt]) != "" {
+			t.Errorf("%s: the note slot must follow the form title directly", name)
+		}
+	}
+	if strings.Contains(p422Template(t, "report_form.html.tmpl"), `id="form-note"`) {
+		t.Errorf("the shared partial must not hold the note slot")
+	}
+	if n := p422Count(low, `id="notice-live"`); n != 1 {
+		t.Errorf("#notice-live occurs %d times on the Low data view, want 1", n)
+	}
+}
+
+func TestQueueResendParamOpensFormForSameAccountOnly(t *testing.T) {
+	queue := p422Code(p422Static(t, "static/js/queue.js"))
+	resend := jsFunctionBody(t, queue, "openResendFromAddress()")
+	p422Need(t, "openResendFromAddress()", resend,
+		"searchParams.get('resend')", "REQUEST_ID_PATTERN", "belongsToAccount(", "onEdit(", "history.replaceState(")
+	p422Ordered(t, "openResendFromAddress()", resend, "belongsToAccount(", "onEdit(", "history.replaceState(")
+	mount := jsFunctionBody(t, queue, "mount(options)")
+	p422Ordered(t, "mount(options)", mount, "loadRows()", "typeof onEdit === 'function'", "openResendFromAddress()")
+
+	index := p422Template(t, "index.html.tmpl")
+	p422Ordered(t, "index.html.tmpl scripts", index,
+		"/static/js/trust.js", "/static/js/queue.js", "/static/js/report-form.js",
+		"/static/js/modal.js", "/static/js/feed.js")
+	if n := p422Count(index, `/static/js/queue.js?v={{.AssetVersion}}" defer`); n != 1 {
+		t.Errorf("the main page queue.js tag occurs %d times, want 1", n)
+	}
+	feed := p422Code(p422Static(t, "static/js/feed.js"))
+	if n := p422Count(feed, "PinalertQueue.mount("); n != 1 {
+		t.Errorf("feed.js mounts the queue %d times, want 1", n)
+	}
+	call := p422Window(t, feed, "PinalertQueue.mount(", "});")
+	p422Need(t, "the feed.js queue mount", call, "headingLevel: 2", "onEdit: openSavedReport", "focusFallback: queueFocusFallback")
+	p422Need(t, "openSavedReport(record, opener, note) in feed.js", jsFunctionBody(t, feed, "openSavedReport(record, opener, note)"),
+		"PinalertReportForm.open(", "prefill: record.payload", "note: note", "requestId: record.request_id")
+
+	low := p422Code(p422Static(t, "static/js/low.js"))
+	formAt := strings.Index(low, "PinalertReportForm.mount(")
+	queueAt := strings.Index(low, "PinalertQueue.mount(")
+	if formAt == -1 || queueAt == -1 || formAt > queueAt {
+		t.Errorf("low.js must mount the form before the queue (%d, %d)", formAt, queueAt)
+	}
+	if n := p422Count(low, "PinalertQueue.mount("); n != 1 {
+		t.Errorf("low.js mounts the queue %d times, want 1", n)
+	}
+	lowCall := p422Window(t, low, "PinalertQueue.mount(", "});")
+	p422Need(t, "the low.js queue mount", lowCall, "headingLevel: 2", "onEdit: openSavedReport")
+	p422Need(t, "openSavedReport(record, opener, note) in low.js", jsFunctionBody(t, low, "openSavedReport(record, opener, note)"),
+		"PinalertReportForm.open(", "prefill: record.payload", "requestId: record.request_id")
+	p422Ordered(t, "low.html.tmpl scripts", p422Template(t, "low.html.tmpl"),
+		"/static/js/trust.js", "/static/js/queue.js", "/static/js/report-form.js", "/static/js/low.js")
+}
+
+func TestQueueNoticeCardRow(t *testing.T) {
+	index := p422Template(t, "index.html.tmpl")
+	slow := strings.Index(index, `id="notice-slow"`)
+	row := strings.Index(index, `id="notice-queue"`)
+	stale := strings.Index(index, `id="notice-stale"`)
+	if !(slow != -1 && row != -1 && stale != -1 && slow < row && row < stale) {
+		t.Fatalf("#notice-queue must sit between #notice-slow and #notice-stale (%d, %d, %d)", slow, row, stale)
+	}
+	tag := p422Tag(t, index, `id="notice-queue"`)
+	p422Need(t, "the Queue row tag", tag, `class="notice-card__row"`, `id="notice-queue"`, "hidden")
+	rowEnd := row + len(`id="notice-queue"`)
+	body := index[rowEnd+strings.Index(index[rowEnd:], ">")+1:]
+	body = body[:strings.Index(body, "</div>")]
+	p422Need(t, "the Queue row", body, `id="notice-queue-text"`, `id="notice-queue-show"`, "Show waiting reports")
+
+	feedRaw := p422Static(t, "static/js/feed.js")
+	feed := p422Code(feedRaw)
+	p422Need(t, "feed.js", feed, "'pinalert-queue-count'", "QUEUE_CARD_SUFFIX = ' waiting to send.'")
+	sync := jsFunctionBody(t, feed, "syncNoticeCard()")
+	p422Need(t, "syncNoticeCard()", sync, "noticeQueueEl", "queueCount > 0", "listPaneHidden()")
+	lastUse := strings.LastIndex(sync, "noticeQueueEl")
+	resync := strings.Index(sync, ".notice-card__row:not([hidden])")
+	if resync == -1 || lastUse > resync {
+		t.Errorf("the card re-sync line must stay last (%d, %d)", lastUse, resync)
+	}
+	click := p422Window(t, feed, "noticeQueueBtn.addEventListener(", "});")
+	p422Ordered(t, "the Show waiting reports click", click, "switchView('list')", "queue-strip-heading")
+	queue := p422Code(p422Static(t, "static/js/queue.js"))
+	p422Need(t, "queue.js", queue, "'queue-strip-heading'", "tabindex")
+}
+
+func TestQueueLowSavedLocation(t *testing.T) {
+	low := p422Code(p422Static(t, "static/js/low.js"))
+	const sentence = `'Using the saved location. The report will be placed there, not at your position.'`
+	if n := p422Count(low, "var LOW_LOCATION_SAVED_MESSAGE = "+sentence+";"); n != 1 {
+		t.Errorf("LOW_LOCATION_SAVED_MESSAGE is declared %d times with the exact sentence, want 1", n)
+	}
+	p422PlainCopy(t, sentence[1:len(sentence)-1])
+	p422Need(t, "createLowLocation()", jsFunctionBody(t, low, "createLowLocation()"), "LOW_LOCATION_SAVED_MESSAGE", "displayName")
 }
 
 func TestQueueTimeoutFallback(t *testing.T) {

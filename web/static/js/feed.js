@@ -79,6 +79,13 @@
   var noticeSlowEl = document.getElementById('notice-slow');
   var noticeStaleEl = document.getElementById('notice-stale');
   var noticeStaleTextEl = document.getElementById('notice-stale-text');
+  var noticeQueueEl = document.getElementById('notice-queue');
+  var noticeQueueTextEl = document.getElementById('notice-queue-text');
+  var noticeQueueBtn = document.getElementById('notice-queue-show');
+  // The number of saved reports of this account, set by the queue's count
+  // event. The Queue row of the notice card shows it on a phone in map view.
+  var queueCount = 0;
+  var QUEUE_CARD_SUFFIX = ' waiting to send.';
   var narrowQuery = window.matchMedia ? window.matchMedia('(max-width: 899.98px)') : null;
 
   // The words of the stale line and its two announcements. The strings are
@@ -995,6 +1002,12 @@
       Pinalert.setText(noticeStaleTextEl, 'Last updated ' + Pinalert.updatedAgo(Pinalert.state.lastUpdatedAt) + '.');
     }
     setHidden(noticeStaleEl, !(staleShown && listPaneHidden()));
+    if (noticeQueueEl) {
+      if (queueCount > 0) {
+        Pinalert.setText(noticeQueueTextEl, queueCount + QUEUE_CARD_SUFFIX);
+      }
+      setHidden(noticeQueueEl, !(queueCount > 0 && listPaneHidden()));
+    }
     setHidden(noticeCardEl, noticeCardEl.querySelector('.notice-card__row:not([hidden])') === null);
   }
 
@@ -1690,6 +1703,21 @@
 
   // The device queue mounts last. The report form was mounted by modal.js, which
   // loads before this file, so a saved report can be opened for editing at once.
+  if (queueStripEl) {
+    queueStripEl.addEventListener('pinalert-queue-count', function (evt) {
+      queueCount = (evt && evt.detail && evt.detail.count) || 0;
+      syncNoticeCard();
+    });
+  }
+  if (noticeQueueBtn) {
+    noticeQueueBtn.addEventListener('click', function () {
+      switchView('list');
+      var heading = document.getElementById('queue-strip-heading');
+      if (heading) {
+        heading.focus();
+      }
+    });
+  }
   if (window.PinalertQueue && queueStripEl && appShellEl) {
     window.PinalertQueue.mount({
       strip: queueStripEl,

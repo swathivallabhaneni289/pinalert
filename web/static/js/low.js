@@ -62,7 +62,11 @@
   var LOW_LOCATION_MISSING_MESSAGE = 'Set a location by allowing location access or typing a place.';
   var LOW_LOCATION_WEAK_MESSAGE = 'Choose to use this position, or type a place.';
   var LOW_LOCATION_PENDING_MESSAGE = 'Still finding your position. Wait a moment, or type a place.';
-  var LOW_SEARCH_UNAVAILABLE_MESSAGE = 'Search unavailable. Try your position again, or open the full version.';
+  // The location sentence when a saved report is reopened for Edit and resend:
+  // a saved report holds a place but no place name, so the typed place
+  // sentence cannot name it (D-20).
+  var LOW_LOCATION_SAVED_MESSAGE = 'Using the saved location. The report will be placed there, not at your position.';
+  var LOW_SEARCH_UNAVAILABLE_MESSAGE ='Search unavailable. Try your position again, or open the full version.';
 
   var basisEl = document.getElementById('low-basis');
   var retryPositionBtn = document.getElementById('low-retry-position');
@@ -628,6 +632,9 @@
         return LOCATION_STATE_TIMED_OUT;
       }
       if (state === 'typed') {
+        if (typed && typed.displayName === '') {
+          return LOW_LOCATION_SAVED_MESSAGE;
+        }
         return fillPlace(LOCATION_STATE_TYPED);
       }
       return LOCATION_STATE_BOTH_FAILED;
@@ -870,6 +877,28 @@
     };
   }
 
+  // openSavedReport opens the shared report form for a saved report (Edit and
+  // resend), prefilled from the saved row, under the Not sent note (D-20).
+  function openSavedReport(record, opener, note) {
+    if (!window.PinalertReportForm) {
+      return;
+    }
+    window.PinalertReportForm.open({
+      opener: opener || document.getElementById('low-report'),
+      prefill: record.payload,
+      note: note,
+      requestId: record.request_id
+    });
+  }
+
+  // queueFocusFallback is where focus goes when the last saved report leaves:
+  // the first report's trust button (the rows are not focusable themselves),
+  // else the Report an emergency button.
+  function queueFocusFallback() {
+    var firstButton = listEl ? listEl.querySelector('button') : null;
+    return firstButton || document.getElementById('low-report');
+  }
+
   function boot() {
     Pinalert.subscribe(renderLow);
 
@@ -935,6 +964,20 @@
       });
       reportBtn.addEventListener('click', function () {
         PinalertReportForm.open({ opener: reportBtn });
+      });
+    }
+
+    // The device queue mounts after the form, so a saved report can be opened
+    // for editing as soon as the saved reports are read.
+    var queueStrip = document.getElementById('queue-strip');
+    var pageShell = document.getElementById('app-shell');
+    if (window.PinalertQueue && queueStrip && pageShell) {
+      window.PinalertQueue.mount({
+        strip: queueStrip,
+        accountId: pageShell.getAttribute('data-account-id'),
+        headingLevel: 2,
+        onEdit: openSavedReport,
+        focusFallback: queueFocusFallback
       });
     }
   }

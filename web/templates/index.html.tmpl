@@ -33,6 +33,7 @@
       <p class="notice-card__text">Taking long?</p>
       <a class="notice-card__link" href="/low">Open the low data view.</a>
     </div>
+    <div class="notice-card__row" id="notice-queue" hidden><p class="notice-card__text" id="notice-queue-text"></p><button type="button" class="btn" id="notice-queue-show">Show waiting reports</button></div>
     <div class="notice-card__row" id="notice-stale" hidden>
       <p class="notice-card__text" id="notice-stale-text"></p>
     </div>
@@ -154,6 +155,7 @@
     <div class="modal-backdrop" id="report-modal" hidden>
       <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <h2 id="modal-title">Report an emergency</h2>
+        <p id="form-note" class="inline-note" hidden></p>
 
         <label for="location-search">Search for a place or address</label>
         <div class="location-search-field">
