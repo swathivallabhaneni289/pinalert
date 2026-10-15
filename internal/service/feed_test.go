@@ -128,9 +128,14 @@ func (f *fakeFeedQuerier) ResolutionUndoCounts(ctx context.Context, arg sqlcgen.
 	return out, nil
 }
 
-// InsertReport exists only to satisfy service.Querier; no feed test drives it.
-func (f *fakeFeedQuerier) InsertReport(ctx context.Context, arg sqlcgen.InsertReportParams) (sqlcgen.InsertReportRow, error) {
-	return sqlcgen.InsertReportRow{}, nil
+// InsertReportIdempotent exists only to satisfy service.Querier; no feed test drives it.
+func (f *fakeFeedQuerier) InsertReportIdempotent(ctx context.Context, arg sqlcgen.InsertReportIdempotentParams) (sqlcgen.InsertReportIdempotentRow, error) {
+	return sqlcgen.InsertReportIdempotentRow{}, nil
+}
+
+// InsertModerationCheck exists only to satisfy service.Querier; no feed test drives it.
+func (f *fakeFeedQuerier) InsertModerationCheck(ctx context.Context, arg sqlcgen.InsertModerationCheckParams) error {
+	return nil
 }
 
 func (f *fakeFeedQuerier) NearbyReports(ctx context.Context, arg sqlcgen.NearbyReportsParams) ([]sqlcgen.NearbyReportsRow, error) {
