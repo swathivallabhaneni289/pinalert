@@ -1,0 +1,143 @@
+/*
+ * The Disclaimer and Policy pages (D-23, D-24, R-07): one reading column, the
+ * numbers block, the label glossary and the link rows. Tokens only, no custom
+ * property of its own. Every rule that sets display carries :not([hidden]).
+ */
+
+.legal-page {
+  box-sizing: border-box;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--space-lg) var(--space-md);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.legal-page h1 {
+  margin: var(--space-sm) 0 var(--space-md);
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold);
+}
+
+.legal-page h2 {
+  margin: var(--space-xl) 0 var(--space-sm);
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Text size comes down from .legal-page. Only margins are set here, on direct
+   children, so the numbers block rules below keep their own sizes. */
+.legal-page > p {
+  margin: 0 0 var(--space-sm);
+}
+
+.legal-page > ul {
+  margin: 0 0 var(--space-sm);
+  padding: 0 0 0 var(--space-lg);
+}
+
+.legal-page > ul > li {
+  margin: 0 0 var(--space-xs);
+}
+
+.legal-numbers p {
+  margin: 0 0 var(--space-xs);
+}
+
+.legal-page a {
+  color: var(--color-text);
+  text-decoration: underline;
+}
+
+.legal-back:not([hidden]),
+.legal-links a:not([hidden]),
+.legal-contact a:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+}
+
+.legal-back {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.legal-subtitle {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.legal-updated {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.legal-links:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  margin-top: var(--space-xl);
+}
+
+.legal-numbers {
+  padding: var(--space-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.legal-numbers__row {
+  margin: 0 0 var(--space-md);
+}
+
+.legal-numbers__row:last-child {
+  margin-bottom: 0;
+}
+
+.legal-numbers__number {
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold);
+}
+
+.legal-numbers__call:not([hidden]) {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold);
+}
+
+.legal-numbers__label {
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.legal-numbers__note,
+.legal-numbers__index {
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.legal-glossary dt {
+  margin: var(--space-md) 0 0;
+  font-weight: var(--font-weight-semibold);
+}
+
+.legal-glossary dd {
+  margin: var(--space-xs) 0 0;
+}
+
+@media (forced-colors: active) {
+  .legal-numbers {
+    border: 1px solid CanvasText;
+  }
+}

@@ -10,11 +10,12 @@ var (
 	legalActionPattern = regexp.MustCompile(`(?s)\{\{.*?\}\}`)
 	legalNumberPattern = regexp.MustCompile(`\b(112|100|101|108|1070|1077)\b`)
 	legalWordSplitter  = regexp.MustCompile(`[^A-Za-z]+`)
+	legalNamePattern   = regexp.MustCompile(`(?s)class="[^"]*"|\{\{/\*.*?\*/\}\}|<!--.*?-->`)
 )
 
 var legalTemplateNames = []string{"templates/disclaimer.html.tmpl", "templates/policy.html.tmpl"}
 
-// legalWords reports a banned word in text, splitting identifiers on hyphens,
+// legalBannedWord reports a banned word in text, splitting identifiers on hyphens,
 // underscores and every other non letter.
 func legalBannedWord(text string) string {
 	for _, w := range legalWordSplitter.Split(strings.ToLower(text), -1) {
@@ -45,8 +46,14 @@ func TestLegalPagesTemplateSource(t *testing.T) {
 		if strings.Contains(visible, "tel:") {
 			t.Errorf("%s types a tel link", name)
 		}
-		if w := legalBannedWord(src); w != "" {
-			t.Errorf("%s holds the word %q", name, w)
+		// The words are banned in class names and comments. The visible
+		// copy names the Light and Dark choice, so the page text is not checked.
+		var names []string
+		for _, m := range legalNamePattern.FindAllStringSubmatch(src, -1) {
+			names = append(names, m[0])
+		}
+		if w := legalBannedWord(strings.Join(names, " ")); w != "" {
+			t.Errorf("%s holds the word %q in a class or comment", name, w)
 		}
 		if strings.Count(src, `{{template "disclaimer_bar.html.tmpl" .}}`) != 1 {
 			t.Errorf("%s must call the bar partial once", name)

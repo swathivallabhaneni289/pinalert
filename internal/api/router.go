@@ -275,11 +275,15 @@ func resolveRateLimits(l RateLimits) RateLimits {
 // visibly, by construction, unprotected (threat T-01-70).
 //
 // The exempt set is exactly: /static/*, /swagger/*, GET /login, POST
-// /api/auth/request-link, and GET /auth/verify — the login surface itself,
+// /api/auth/request-link, GET /auth/verify, GET /disclaimer and GET /policy:
+// the login surface itself,
 // the two request/verify steps that make a session verified in the first
 // place, static assets the login page needs to render, and the published
 // API reference (DEC-G, 01.1-04-PLAN.md; the /swagger/* exemption's tension
 // with D-05 is recorded there as accepted risk AR-32).
+// The last two are the public Disclaimer and Policy pages (Phase 4 D-23,
+// P4-A18), readable without logging in like the API reference above; they
+// render no account data (R-07) and are cacheable only in the browser.
 func NewRouter(deps Deps) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -333,6 +337,7 @@ func NewRouter(deps Deps) *chi.Mux {
 	r.Get("/auth/verify", handlers.Verify(deps.AuthService, deps.Template, auth))
 	// The public legal pages (D-23, P4-A18): no account data (R-07), cacheable only in the browser.
 	r.Get("/disclaimer", handlers.Legal(deps.Template, auth, handlers.LegalDisclaimerPage))
+	r.Get("/policy", handlers.Legal(deps.Template, auth, handlers.LegalPolicyPage))
 	r.Handle("/static/*", http.StripPrefix("/static/", staticFileServer(deps.Dev)))
 	// Left publicly reachable: this is a public read-only API with no
 	// privileged operations to hide, and OPS-01 asks for a stable,

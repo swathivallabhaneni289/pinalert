@@ -26,7 +26,7 @@ var (
 // apostrophe as an entity) and collapses whitespace runs to one space.
 func legalText(t *testing.T, body string) string {
 	t.Helper()
-	text := legalTagPattern.ReplaceAllString(body, " ")
+	text := legalTagPattern.ReplaceAllString(body, "")
 	text = html.UnescapeString(text)
 	return strings.TrimSpace(legalSpacePattern.ReplaceAllString(text, " "))
 }
@@ -381,17 +381,20 @@ func TestLegalPagesGlossaryUsesAppSentences(t *testing.T) {
 
 func TestLegalPagesPublicPrivateCache(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		t.Fatalf("cookie jar: %v", err)
+	newClient := func() *http.Client {
+		jar, err := cookiejar.New(nil)
+		if err != nil {
+			t.Fatalf("cookie jar: %v", err)
+		}
+		return &http.Client{
+			Jar:           jar,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
+		}
 	}
-	client := &http.Client{
-		Jar:           jar,
-		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
-	}
+	client := newClient()
 
-	fetch := func(path string) (*http.Response, string) {
-		resp, err := client.Get(srv.URL + path)
+	fetch := func(c *http.Client, path string) (*http.Response, string) {
+		resp, err := c.Get(srv.URL + path)
 		if err != nil {
 			t.Fatalf("GET %s: %v", path, err)
 		}
@@ -401,7 +404,8 @@ func TestLegalPagesPublicPrivateCache(t *testing.T) {
 	}
 
 	for _, path := range []string{"/disclaimer", "/policy"} {
-		resp, _ := fetch(path)
+		// A fresh visitor per page, so the first visit sets the cookie each time.
+		resp, _ := fetch(newClient(), path)
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("logged out GET %s = %d, want 200", path, resp.StatusCode)
 		}
@@ -424,7 +428,7 @@ func TestLegalPagesPublicPrivateCache(t *testing.T) {
 
 	verifySession(t, client, srv, mailer, "legal-reader@example.com")
 	for _, path := range []string{"/disclaimer", "/policy"} {
-		resp, body := fetch(path)
+		resp, body := fetch(client, path)
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("logged in GET %s = %d, want 200", path, resp.StatusCode)
 		}
