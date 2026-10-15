@@ -106,6 +106,11 @@ Historical: see the status note at the top and 03-UI-SPEC.md amendment A32.
   back forward cache, so Back lands on a reloaded, recentred map with no popup.
 - `report.html.tmpl` is checked by the theme, design rule and profile navigation tests the day it lands:
   follow `profile.html.tmpl` exactly and do not restyle `.profile-page` or `.profile-back-link`.
+- Phase 4 (04-UI-SPEC P4-A6): the actions block ends with the Flag this report control from
+  `PinalertFlag.createFlagControl(report)` in `flag.js` (loaded before `map.js` and `feed.js`), which
+  `buildPopupCard` appends after the vote block; it is built once per card and updated in place with
+  `updateFlagControl`, stops propagation of the click and of Enter and Space keydown without `preventDefault`,
+  and is omitted on the reporter's own report.
 
 **Accessibility (existing defects this work touches, and behaviour Leaflet does not provide)**
 - Every map pin is a focusable button with no name (WCAG 4.1.2). Set an aria-label after `addTo`.
