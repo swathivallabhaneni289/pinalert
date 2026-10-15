@@ -1,0 +1,544 @@
+// low.js: the Low data view's whole client half (plan 04-18, D-13, D-14, D-16,
+// D-20, R-09). It lists Active reports as plain text rows with no map, from the
+// last known position stored on this device first, then from the fresh one.
+//
+// It sends no request of its own. The list comes only from the shared store
+// (Pinalert.fetchReports in app.js), so a refetch that votes.js triggers after a
+// vote uses the same position this page set. It exports nothing.
+//
+// SECURITY (T-01-03, T-04-01): every report authored or server authored string
+// reaches the DOM through Pinalert.setText or the shared builders, never a
+// markup string a browser then parses.
+(function () {
+  'use strict';
+
+  var listEl = document.getElementById('low-list');
+  if (!listEl) {
+    // Inert on any page that is not the Low data view.
+    return;
+  }
+
+  var STORED_POSITION_KEY = 'pinalert.lowLastPosition';
+  var LIST_POSITION_TIMEOUT_MS = 8000;
+  var TIME_REFRESH_MS = 60000;
+
+  var BASIS_FRESH = 'Near your position.';
+  var BASIS_STORED_PENDING = 'Near your last known position. Finding your position.';
+  var BASIS_STORED_OFF = 'Near your last known position. Location is off, so it may be out of date.';
+  var BASIS_PENDING = 'Finding your position.';
+  var BASIS_DEFAULT_AREA = 'Location is off, so this list shows reports near the default area. Turn on location access to see reports near you.';
+
+  var EMPTY_OWN_TITLE = 'No reports near you yet';
+  var EMPTY_OWN_TEXT = 'Nothing has been reported in your area recently. Use Report an emergency above to add one.';
+  var EMPTY_AREA_TITLE = 'No reports in this area yet';
+  var EMPTY_AREA_TEXT = 'Turn on location access to check near you, or use Report an emergency above to add one.';
+
+  var STALE_PREFIX = 'Last updated ';
+  var STALE_SUFFIX = '. Trying again.';
+  var STALE_ENTER_PREFIX = 'Connection lost. Showing reports from ';
+  var STALE_LEAVE_MESSAGE = 'Back online. The list is up to date.';
+
+  var SEVERITY_RANK = { critical: 3, medium: 2, low: 1 };
+
+  var basisEl = document.getElementById('low-basis');
+  var retryPositionBtn = document.getElementById('low-retry-position');
+  var staleEl = document.getElementById('low-stale');
+  var staleTextEl = document.getElementById('low-stale-text');
+  var staleRetryBtn = document.getElementById('low-stale-retry');
+  var skeletonEl = document.getElementById('low-skeleton');
+  var emptyEl = document.getElementById('low-empty');
+  var emptyTitleEl = document.getElementById('low-empty-title');
+  var emptyTextEl = document.getElementById('low-empty-text');
+  var errorEl = document.getElementById('low-error');
+  var retryBtn = document.getElementById('low-retry');
+  var fullLink = document.getElementById('low-full');
+  var noticeLiveEl = document.getElementById('notice-live');
+
+  // rowsById maps a report id to the row object createLowRow returned.
+  var rowsById = {};
+  var basisKind = '';
+  var haveStored = false;
+  var staleShown = false;
+  // listChain orders this page's own list requests: each one starts after the
+  // previous one settles, so a slow answer for the stored position can never
+  // land after the answer for the fresh position.
+  var listChain = Promise.resolve();
+
+  function readStoredPosition() {
+    var raw = null;
+    try {
+      raw = window.localStorage.getItem(STORED_POSITION_KEY);
+    } catch (err) {
+      // Private browsing can throw. An unreadable store counts as absent.
+      return null;
+    }
+    if (!raw) {
+      return null;
+    }
+    var parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      return null;
+    }
+    if (!parsed || typeof parsed.lat !== 'number' || typeof parsed.lon !== 'number' ||
+        !isFinite(parsed.lat) || !isFinite(parsed.lon) ||
+        Math.abs(parsed.lat) > 90 || Math.abs(parsed.lon) > 180) {
+      return null;
+    }
+    return { lat: parsed.lat, lon: parsed.lon };
+  }
+
+  function storePosition(lat, lon) {
+    try {
+      window.localStorage.setItem(STORED_POSITION_KEY, JSON.stringify({ lat: lat, lon: lon, savedAt: Date.now() }));
+    } catch (err) {
+      // Nothing to do: the list still works without a remembered position.
+    }
+  }
+
+  function setHidden(el, hidden) {
+    if (!el) {
+      return;
+    }
+    if (hidden) {
+      el.setAttribute('hidden', '');
+    } else {
+      el.removeAttribute('hidden');
+    }
+  }
+
+  function announce(text) {
+    if (!noticeLiveEl) {
+      return;
+    }
+    Pinalert.setText(noticeLiveEl, text);
+  }
+
+  function setBasis(kind) {
+    basisKind = kind;
+    var text = '';
+    if (kind === 'fresh') {
+      text = BASIS_FRESH;
+    } else if (kind === 'stored') {
+      text = BASIS_STORED_PENDING;
+    } else if (kind === 'stored-off') {
+      text = BASIS_STORED_OFF;
+    } else if (kind === 'pending') {
+      text = BASIS_PENDING;
+    } else if (kind === 'default') {
+      text = BASIS_DEFAULT_AREA;
+    }
+    // The polite region announces only when its text changes.
+    if (basisEl && basisEl.textContent !== text) {
+      Pinalert.setText(basisEl, text);
+    }
+    setHidden(retryPositionBtn, kind !== 'default');
+  }
+
+  function showListFor(lat, lon, own) {
+    Pinalert.setCenter(lat, lon, own);
+    listChain = listChain.then(function () {
+      return Pinalert.fetchReports();
+    });
+    Pinalert.startPolling();
+  }
+
+  function onPositionFound(pos) {
+    if (retryPositionBtn) {
+      retryPositionBtn.disabled = false;
+    }
+    var coords = pos && pos.coords;
+    if (!coords || !isFinite(coords.latitude) || !isFinite(coords.longitude)) {
+      onPositionFailed();
+      return;
+    }
+    storePosition(coords.latitude, coords.longitude);
+    setBasis('fresh');
+    showListFor(coords.latitude, coords.longitude, true);
+  }
+
+  function onPositionFailed() {
+    if (retryPositionBtn) {
+      retryPositionBtn.disabled = false;
+    }
+    if (haveStored) {
+      setBasis('stored-off');
+      return;
+    }
+    setBasis('default');
+    showListFor(Pinalert.config.fallbackLat, Pinalert.config.fallbackLon, false);
+  }
+
+  function requestPosition() {
+    if (!navigator.geolocation) {
+      onPositionFailed();
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(onPositionFound, onPositionFailed, {
+      timeout: LIST_POSITION_TIMEOUT_MS
+    });
+  }
+
+  function severityRank(report) {
+    return SEVERITY_RANK[report && report.severity] || 0;
+  }
+
+  // sortLowReports returns a new array: severity first, newest first within a
+  // band. It never changes the store's own array.
+  function sortLowReports(reports) {
+    var copy = reports.slice();
+    copy.sort(function (a, b) {
+      var rankDiff = severityRank(b) - severityRank(a);
+      if (rankDiff !== 0) {
+        return rankDiff;
+      }
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+    return copy;
+  }
+
+  function buildLowMetaText(report) {
+    var text = Pinalert.categoryLabel(report.category) + ' · ' + Pinalert.relativeTime(report.created_at);
+    var shelterLine = Pinalert.formatShelterLine(report);
+    if (shelterLine) {
+      text += ' · ' + shelterLine;
+    }
+    return text;
+  }
+
+  function replacePrefixedClass(el, prefix, newClass) {
+    var kept = [];
+    var current = el.className ? el.className.split(/\s+/) : [];
+    for (var i = 0; i < current.length; i++) {
+      if (current[i] && current[i].indexOf(prefix) !== 0) {
+        kept.push(current[i]);
+      }
+    }
+    kept.push(newClass);
+    el.className = kept.join(' ');
+  }
+
+  // createLowRow builds one row from the shared builders. The row is plain
+  // text: it takes no focus and answers no tap. Its one control is the trust
+  // block's own toggle.
+  function createLowRow(report) {
+    var li = document.createElement('li');
+    li.className = 'report-row report-row--low';
+    li.setAttribute('role', 'listitem');
+    li.dataset.reportId = String(report.id);
+
+    var badge = document.createElement('span');
+    badge.className = 'icon-badge icon-badge--sm';
+    var glyph = document.createElement('span');
+    glyph.className = 'icon-glyph';
+    glyph.setAttribute('aria-hidden', 'true');
+    badge.appendChild(glyph);
+
+    var body = document.createElement('div');
+    body.className = 'report-row__body';
+
+    var severityLabel = PinalertTrust.createSeverityLabel();
+    body.appendChild(severityLabel);
+
+    var title = document.createElement('p');
+    title.className = 'report-row__title';
+    body.appendChild(title);
+
+    var meta = document.createElement('p');
+    meta.className = 'report-row__meta';
+    body.appendChild(meta);
+
+    var tag = PinalertVisibility.createVisibilityTag();
+    var trust = PinalertTrust.createTrustBlock();
+    body.appendChild(PinalertTrust.createStateLine('report-row__stateline', tag, trust));
+    body.appendChild(trust.el);
+
+    li.appendChild(badge);
+    li.appendChild(body);
+
+    return { el: li, glyph: glyph, severity: severityLabel, title: title, meta: meta, tag: tag, trust: trust };
+  }
+
+  function updateLowRow(row, report) {
+    replacePrefixedClass(row.el, 'sev-', Pinalert.severityClass(report));
+    PinalertTrust.updateSeverityLabel(row.severity, report);
+    replacePrefixedClass(row.el, 'age-', 'age-' + PinalertTrust.fadeStage(report));
+    PinalertVisibility.applyVisibilityClass(row.el, report);
+
+    // Pinalert.iconClass returns the base class and the category class joined;
+    // only the category class (the last field) is swapped, so the base class
+    // set once in createLowRow is never added twice.
+    var glyphClass = Pinalert.iconClass(report.category).split(/\s+/).pop();
+    replacePrefixedClass(row.glyph, 'icon-glyph--', glyphClass);
+
+    Pinalert.setText(row.title, report.description);
+    Pinalert.setText(row.meta, buildLowMetaText(report));
+
+    PinalertVisibility.updateVisibilityTag(row.tag, report);
+    PinalertTrust.updateTrustBlock(row.trust, report.trust);
+  }
+
+  // focusAfterRemoval puts focus on a real control when the row that held it
+  // is gone: the trust toggle of the row now at that index, else of the row
+  // before it, else the Report button when the page has one, else the Open
+  // full version link.
+  function focusAfterRemoval(index) {
+    var rows = listEl.children;
+    if (index >= 0 && index < rows.length && PinalertTrust.focusToggle(rows[index])) {
+      return;
+    }
+    if (index - 1 >= 0 && index - 1 < rows.length && PinalertTrust.focusToggle(rows[index - 1])) {
+      return;
+    }
+    var reportBtn = document.getElementById('low-report');
+    if (reportBtn) {
+      reportBtn.focus();
+      return;
+    }
+    if (fullLink) {
+      fullLink.focus();
+    }
+  }
+
+  function renderLowRows(reports) {
+    var sorted = sortLowReports(reports);
+    var seen = {};
+    for (var s = 0; s < sorted.length; s++) {
+      seen[String(sorted[s].id)] = true;
+    }
+
+    var active = document.activeElement;
+    var removedFocusIndex = -1;
+    var existingIds = Object.keys(rowsById);
+    for (var j = 0; j < existingIds.length; j++) {
+      var rid = existingIds[j];
+      if (seen[rid]) {
+        continue;
+      }
+      var gone = rowsById[rid].el;
+      if (active && gone.contains(active)) {
+        removedFocusIndex = Array.prototype.indexOf.call(listEl.children, gone);
+      }
+      gone.remove();
+      delete rowsById[rid];
+    }
+
+    var activeBefore = document.activeElement;
+    var movedFocus = false;
+    for (var i = 0; i < sorted.length; i++) {
+      var report = sorted[i];
+      var idKey = String(report.id);
+      var row = rowsById[idKey];
+      if (!row) {
+        row = createLowRow(report);
+        rowsById[idKey] = row;
+      }
+      updateLowRow(row, report);
+
+      var expected = listEl.children[i];
+      if (expected !== row.el) {
+        if (row.el.parentNode === listEl && typeof listEl.moveBefore === 'function') {
+          listEl.moveBefore(row.el, expected || null);
+        } else {
+          if (row.el.parentNode === listEl && row.el.contains(activeBefore)) {
+            movedFocus = true;
+          }
+          listEl.insertBefore(row.el, expected || null);
+        }
+      }
+    }
+
+    if (movedFocus && activeBefore && activeBefore.isConnected &&
+        (!document.activeElement || document.activeElement === document.body)) {
+      activeBefore.focus();
+    }
+    if (removedFocusIndex !== -1) {
+      focusAfterRemoval(removedFocusIndex);
+    }
+  }
+
+  function clearLowRows() {
+    var hadFocus = listEl.contains(document.activeElement);
+    var ids = Object.keys(rowsById);
+    for (var i = 0; i < ids.length; i++) {
+      rowsById[ids[i]].el.remove();
+      delete rowsById[ids[i]];
+    }
+    if (hadFocus) {
+      focusAfterRemoval(0);
+    }
+  }
+
+  function setEmpty(show) {
+    setHidden(emptyEl, !show);
+    if (!show) {
+      return;
+    }
+    if (basisKind === 'fresh') {
+      Pinalert.setText(emptyTitleEl, EMPTY_OWN_TITLE);
+      Pinalert.setText(emptyTextEl, EMPTY_OWN_TEXT);
+    } else {
+      Pinalert.setText(emptyTitleEl, EMPTY_AREA_TITLE);
+      Pinalert.setText(emptyTextEl, EMPTY_AREA_TEXT);
+    }
+  }
+
+  function staleLineText(state) {
+    return STALE_PREFIX + Pinalert.updatedAgo(state.lastUpdatedAt) + STALE_SUFFIX;
+  }
+
+  // renderStale shows the stale line while the last poll failed after a list
+  // had loaded, and takes it away when a later poll succeeds. It announces once
+  // when the line appears and once when it goes. The line itself is passive
+  // text; the page level region speaks.
+  function renderStale(state) {
+    var stale = state.hasLoaded === true && state.status === 'error';
+    if (stale) {
+      Pinalert.setText(staleTextEl, staleLineText(state));
+      setHidden(staleEl, false);
+      if (staleRetryBtn) {
+        staleRetryBtn.disabled = false;
+      }
+      if (!staleShown) {
+        announce(STALE_ENTER_PREFIX + Pinalert.updatedAgo(state.lastUpdatedAt) + '.');
+      }
+    } else if (staleShown && state.status === 'ok') {
+      if (staleRetryBtn && document.activeElement === staleRetryBtn) {
+        var firstRow = listEl.querySelector('.report-row');
+        if (!firstRow || !PinalertTrust.focusToggle(firstRow)) {
+          if (fullLink) {
+            fullLink.focus();
+          }
+        }
+      }
+      setHidden(staleEl, true);
+      if (staleRetryBtn) {
+        staleRetryBtn.disabled = false;
+      }
+      announce(STALE_LEAVE_MESSAGE);
+    } else {
+      setHidden(staleEl, true);
+    }
+    staleShown = stale;
+  }
+
+  // renderLow is the one place that decides which of the list, the skeleton,
+  // the empty block, the error panel and the stale line shows. The skeleton and
+  // the error panel belong to the first load only: a failed poll after a list
+  // has loaded keeps the rows and adds the stale line (D-20).
+  function renderLow(state) {
+    if (state.hasLoaded !== true) {
+      setHidden(staleEl, true);
+      staleShown = false;
+      setHidden(emptyEl, true);
+      setHidden(listEl, true);
+      if (state.status === 'error') {
+        setHidden(skeletonEl, true);
+        setHidden(errorEl, false);
+        listEl.setAttribute('aria-busy', 'false');
+      } else {
+        setHidden(skeletonEl, false);
+        setHidden(errorEl, true);
+        listEl.setAttribute('aria-busy', 'true');
+      }
+      return;
+    }
+
+    setHidden(skeletonEl, true);
+    setHidden(errorEl, true);
+    listEl.setAttribute('aria-busy', 'false');
+    renderStale(state);
+
+    if (state.reports.length === 0) {
+      clearLowRows();
+      setHidden(listEl, true);
+      setEmpty(true);
+      return;
+    }
+    setEmpty(false);
+    setHidden(listEl, false);
+    renderLowRows(state.reports);
+  }
+
+  function findReportById(idKey) {
+    var reports = Pinalert.state.reports;
+    for (var i = 0; i < reports.length; i++) {
+      if (String(reports[i].id) === idKey) {
+        return reports[i];
+      }
+    }
+    return null;
+  }
+
+  // refreshLowTimes renews the minute figure of the stale line and each row's
+  // time and age class on a timer. It never announces.
+  function refreshLowTimes() {
+    if (staleShown) {
+      Pinalert.setText(staleTextEl, staleLineText(Pinalert.state));
+    }
+    var ids = Object.keys(rowsById);
+    for (var i = 0; i < ids.length; i++) {
+      var report = findReportById(ids[i]);
+      if (!report) {
+        continue;
+      }
+      var row = rowsById[ids[i]];
+      replacePrefixedClass(row.el, 'age-', 'age-' + PinalertTrust.fadeStage(report));
+      Pinalert.setText(row.meta, buildLowMetaText(report));
+    }
+  }
+
+  function boot() {
+    Pinalert.subscribe(renderLow);
+
+    var stored = readStoredPosition();
+    if (stored) {
+      Pinalert.setCenter(stored.lat, stored.lon, true);
+    } else {
+      Pinalert.setCenter(Pinalert.config.fallbackLat, Pinalert.config.fallbackLon, false);
+    }
+    // The Active view is the store's own start state and this page never reads
+    // the address, so nothing sets another view here.
+    renderLow(Pinalert.state);
+
+    if (stored) {
+      haveStored = true;
+      setBasis('stored');
+      showListFor(stored.lat, stored.lon, true);
+    } else {
+      setBasis('pending');
+    }
+    requestPosition();
+
+    if (retryPositionBtn) {
+      retryPositionBtn.addEventListener('click', function () {
+        retryPositionBtn.disabled = true;
+        requestPosition();
+      });
+    }
+    if (staleRetryBtn) {
+      staleRetryBtn.addEventListener('click', function () {
+        staleRetryBtn.disabled = true;
+        Pinalert.fetchReports();
+      });
+    }
+    if (retryBtn) {
+      retryBtn.addEventListener('click', function () {
+        Pinalert.fetchReports();
+      });
+    }
+
+    window.setInterval(refreshLowTimes, TIME_REFRESH_MS);
+
+    // A page restored from the back forward cache is a frozen snapshot, so it
+    // refetches at once instead of waiting for the next poll.
+    window.addEventListener('pageshow', function (evt) {
+      if (evt.persisted) {
+        Pinalert.fetchReports();
+      }
+    });
+  }
+
+  boot();
+}());

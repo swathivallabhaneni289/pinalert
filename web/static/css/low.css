@@ -1,0 +1,81 @@
+/* The Low data view (plan 04-18). One centred text column for the Active list,
+   the position line and the stale line. It uses the shared tokens only and adds
+   no token of its own. It loads after chrome.css so its margin on the stale
+   text wins over the inline note rule. The rows are not interactive, so they
+   override the pointer the feed stylesheet gives every row. */
+
+.low-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding-bottom: calc(var(--space-lg) + var(--touch-target-min) + var(--space-md));
+}
+
+.low-page__head {
+  padding: var(--space-md) var(--space-md) 0;
+}
+
+.low-page__head h1 {
+  margin: 0;
+  padding-right: calc(var(--touch-target-min) + var(--space-md));
+  font-size: var(--font-size-display);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-display);
+}
+
+.low-page__line {
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+.low-page__note {
+  margin: var(--space-md) 0 var(--space-sm);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text);
+}
+
+.low-page__head .btn {
+  margin: var(--space-sm) 0 0;
+}
+
+.low-basis {
+  margin: var(--space-md) 0 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text);
+}
+
+.low-stale:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: var(--space-md) 0 0;
+}
+
+.low-stale .low-stale__text {
+  margin: 0;
+}
+
+.low-page__head h2 {
+  margin: var(--space-lg) 0 var(--space-sm);
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-heading);
+}
+
+.low-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.report-row.report-row--low {
+  cursor: default;
+}
+
+#low-list[hidden], #low-skeleton[hidden], #low-empty[hidden], #low-error[hidden] {
+  display: none;
+}
