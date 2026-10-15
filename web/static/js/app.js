@@ -174,6 +174,10 @@ window.Pinalert = (function () {
   var TOAST_MS = 3000;
   var TOAST_ACTION_MS = 8000;
   var TOAST_RESUME_MS = 4000;
+  // The post limits (D-18): a post that gets no answer in 10 seconds counts
+  // as unanswered, and these answers from a proxy also mean "try later".
+  var SUBMIT_TIMEOUT_MS = 10000;
+  var QUEUEABLE_STATUSES = [502, 503, 504];
   var toastSeq = 0;
   var toastHasAction = false;
   var toastPending = false;
@@ -516,15 +520,45 @@ window.Pinalert = (function () {
     }, config.pollIntervalMs);
   }
 
+  // requestTimeout gives a post a 10 second limit (D-18). The signal covers
+  // the wait for the answer and for its body. clear stops the fallback timer
+  // once an answer has come.
+  function requestTimeout(ms) {
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+      return { signal: AbortSignal.timeout(ms), clear: function () {} };
+    }
+    if (typeof AbortController === 'function') {
+      var controller = new AbortController();
+      var timer = window.setTimeout(function () {
+        controller.abort();
+      }, ms);
+      return {
+        signal: controller.signal,
+        clear: function () {
+          window.clearTimeout(timer);
+        }
+      };
+    }
+    return { signal: undefined, clear: function () {} };
+  }
+
   // submitReport POSTs to /api/reports, resolves with the created report or
   // rejects with an Error carrying .field/.fieldMessage from the server's
-  // {field, message} shape, and refreshes the store on success.
+  // {field, message} shape, and refreshes the store on success. A rejection
+  // also carries .status (0 when nothing answered) and .queueable (true when
+  // no answer came, the request timed out or the answer was a 502, 503 or
+  // 504); a 429 adds .retryAfterSeconds, .serious and .emergencyNumber
+  // (P4-A13). The created report passes through unchanged, so its held flag
+  // reaches the caller.
   function submitReport(payload) {
+    var timeout = requestTimeout(SUBMIT_TIMEOUT_MS);
     return fetch('/api/reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: timeout.signal
     }).then(function (res) {
+      timeout.clear();
       return res.json().catch(function () {
         return {};
       }).then(function (body) {
@@ -536,12 +570,34 @@ window.Pinalert = (function () {
           var err = new Error(fieldError.message);
           err.field = fieldError.field;
           err.fieldMessage = fieldError.message;
+          err.status = res.status;
+          err.queueable = QUEUEABLE_STATUSES.indexOf(res.status) !== -1;
+          if (res.status === 429) {
+            var wait = body && body.retry_after_seconds;
+            if (typeof wait !== 'number' || !isFinite(wait) || wait < 0) {
+              wait = parseInt(res.headers.get('Retry-After'), 10);
+            }
+            err.retryAfterSeconds = (typeof wait === 'number' && isFinite(wait) && wait >= 0) ? wait : 60;
+            err.serious = !!body && body.serious === true;
+            var number = body && body.emergency_number;
+            err.emergencyNumber = (err.serious && typeof number === 'string' && number !== '') ? number : '';
+          }
           throw err;
         }
         return (body && body.report) || null;
       });
+    }, function () {
+      timeout.clear();
+      var err = new Error('Something went wrong. Try again.');
+      err.field = 'body';
+      err.fieldMessage = 'Something went wrong. Try again.';
+      err.status = 0;
+      err.queueable = true;
+      throw err;
     }).then(function (report) {
       return fetchReports({ afterWrite: true }).then(function () {
+        return report;
+      }, function () {
         return report;
       });
     });

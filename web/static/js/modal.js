@@ -161,6 +161,11 @@
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         function (pos) {
+          // A place chosen before the position answered (a saved report's
+          // location or a typed search result) is kept (D-20).
+          if (hasMarker()) {
+            return;
+          }
           var lat = pos.coords.latitude;
           var lon = pos.coords.longitude;
           modalMap.setView([lat, lon], 16);
@@ -170,6 +175,9 @@
           }, 0);
         },
         function () {
+          if (hasMarker()) {
+            return;
+          }
           showLocationDenied(fallbackLat, fallbackLon);
         },
         { timeout: 8000 }

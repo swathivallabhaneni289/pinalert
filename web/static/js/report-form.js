@@ -49,6 +49,19 @@
   var MIN_QUERY_RUNES = 3;
   var SEARCH_NO_MATCH_MESSAGE = 'No matches found.';
 
+  // Outcome copy (D-18, D-02, D-12, P4-A12, P4-A13). The save toasts and the
+  // held toast stay on screen for 6 seconds; Send after the wait uses the
+  // default length.
+  var LONG_TOAST_MS = 6000;
+  var HELD_TOAST_MESSAGE = "Report received. It isn't shown yet. A text check has to finish first.";
+  var SAVE_TOAST = "No signal. Your report is saved on this device and will send when you're back online.";
+  var SAVE_TOAST_MEMORY = 'No signal. Your report is kept on this page only. Keep the page open until it sends.';
+  var WAIT_SAVE_TOAST = 'Report saved on this device. It will send when the wait is over.';
+  var EMERGENCY_CALL_PREFIX = 'In an emergency, call ';
+  var EMERGENCY_CALL_SUFFIX = ' now.';
+  var CALL_LABEL_PREFIX = 'Call ';
+  var REQUEST_ID_PATTERN = /^[A-Za-z0-9-]{16,64}$/;
+
   var mounted = false;
   var backdropEl = null;
   var formRoot = null;
@@ -73,6 +86,19 @@
   var discardConfirm = null;
   var discardConfirmDiscard = null;
   var discardConfirmKeep = null;
+  var noteEl = null;
+  var sendAfterWaitBtn = null;
+  var liveEl = null;
+
+  // One request id per form submission, created on the first submit and reused
+  // by every retry of that report (R-05). firstSubmitAt is the time of that
+  // first submit. resendRequestId and resendWrittenAt are set only when the
+  // form was opened from a saved report. lastLimit holds the last 429 answer.
+  var currentRequestId = null;
+  var firstSubmitAt = null;
+  var resendRequestId = null;
+  var resendWrittenAt = null;
+  var lastLimit = null;
 
   var selectedCategory = null;
   var lastFocusedEl = null;
@@ -544,6 +570,18 @@
     updateSeverityReadout();
     descriptionField.value = '';
     Pinalert.setText(formError, '');
+    if (sendAfterWaitBtn) {
+      sendAfterWaitBtn.hidden = true;
+    }
+    if (noteEl) {
+      noteEl.hidden = true;
+      Pinalert.setText(noteEl, '');
+    }
+    currentRequestId = null;
+    firstSubmitAt = null;
+    resendRequestId = null;
+    resendWrittenAt = null;
+    lastLimit = null;
     if (picker && typeof picker.reset === 'function') {
       picker.reset();
     }
@@ -589,6 +627,9 @@
     discardConfirm = document.getElementById('discard-confirm');
     discardConfirmDiscard = document.getElementById('discard-confirm-discard');
     discardConfirmKeep = document.getElementById('discard-confirm-keep');
+    noteEl = document.getElementById('form-note');
+    sendAfterWaitBtn = document.getElementById('send-after-wait');
+    liveEl = document.getElementById('notice-live');
 
     mounted = true;
 
@@ -616,6 +657,9 @@
     shelterHeadcount.addEventListener('input', markTouched);
     discardConfirmDiscard.addEventListener('click', confirmDiscard);
     discardConfirmKeep.addEventListener('click', keepEditing);
+    if (sendAfterWaitBtn) {
+      sendAfterWaitBtn.addEventListener('click', saveAfterWait);
+    }
     backdropEl.addEventListener('click', function (e) {
       if (e.target === backdropEl) {
         requestClose();
@@ -636,6 +680,25 @@
     updateSeverityReadout();
     if (typeof picker.start === 'function') {
       picker.start({ markTouched: markTouched });
+    }
+
+    // A form opened from a saved report (Edit and resend) keeps that report's
+    // request id, so posting from it replaces the saved row (D-20). The
+    // prefill runs after start, because the map exists only from then on.
+    if (options && typeof options.requestId === 'string' && REQUEST_ID_PATTERN.test(options.requestId)) {
+      currentRequestId = options.requestId;
+      resendRequestId = options.requestId;
+    }
+    if (options && options.prefill && typeof options.prefill === 'object') {
+      applyPrefill(options.prefill);
+      if (typeof options.prefill.written_at === 'string') {
+        resendWrittenAt = options.prefill.written_at;
+      }
+    }
+    if (options && typeof options.note === 'string' && options.note !== '' && noteEl) {
+      Pinalert.setText(noteEl, options.note);
+      noteEl.hidden = false;
+      announce(options.note);
     }
 
     var firstTile = categoryGrid.querySelector('.category-tile');
@@ -765,27 +828,231 @@
       return;
     }
 
+    if (sendAfterWaitBtn) {
+      sendAfterWaitBtn.hidden = true;
+    }
+    lastLimit = null;
+    ensureSubmission();
     var payload = buildPayload();
+    payload.request_id = currentRequestId;
+    // The written time goes only with a report that was saved first. A live
+    // first attempt sends none, so a wrong phone clock never puts a Written
+    // line on a fresh post (R-05, D-19).
+    if (resendWrittenAt) {
+      payload.written_at = resendWrittenAt;
+    }
 
     submitButton.disabled = true;
     Pinalert.setText(submitButton, 'Posting…');
     Pinalert.setText(formError, '');
 
-    Pinalert.submitReport(payload).then(function () {
+    Pinalert.submitReport(payload).then(function (report) {
       submitButton.disabled = false;
       Pinalert.setText(submitButton, 'Post report');
+      if (resendRequestId && window.PinalertQueue) {
+        window.PinalertQueue.discard(resendRequestId);
+      }
       closeForm();
-      Pinalert.showToast('Report posted.');
+      if (report && report.held === true) {
+        Pinalert.showToast(HELD_TOAST_MESSAGE, null, LONG_TOAST_MS);
+      } else {
+        Pinalert.showToast('Report posted.');
+      }
     }).catch(function (err) {
       submitButton.disabled = false;
       Pinalert.setText(submitButton, 'Post report');
       // The visitor's input stays intact: the form does not close and no
       // field is cleared on a failed submission.
-      Pinalert.setText(formError, (err && err.fieldMessage) || 'Something went wrong. Try again.');
-      if (err && err.field) {
-        focusField(err.field);
+      if (err && err.queueable === true) {
+        saveToQueue(payload, err.status >= 502 ? 'no_answer' : 'waiting');
+      } else if (err && err.status === 429) {
+        showLimitMessage(err);
+      } else {
+        Pinalert.setText(formError, (err && err.fieldMessage) || 'Something went wrong. Try again.');
+        if (err && err.field) {
+          focusField(err.field);
+        }
       }
     });
+  }
+
+  // newRequestId makes the id of one submission: the browser's own random id
+  // where it has one (it needs a secure page), else 16 random bytes as hex,
+  // else 32 hex digits from the plain random number (a phone on a local
+  // network address, where the secure functions are missing). Every result
+  // matches REQUEST_ID_PATTERN.
+  function newRequestId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    var hex = '';
+    var i;
+    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+      var bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      for (i = 0; i < bytes.length; i++) {
+        hex += (bytes[i] < 16 ? '0' : '') + bytes[i].toString(16);
+      }
+      return hex;
+    }
+    for (i = 0; i < 32; i++) {
+      hex += Math.floor(Math.random() * 16).toString(16);
+    }
+    return hex;
+  }
+
+  // ensureSubmission creates the request id and the first submit time once per
+  // form submission. It is the only caller of newRequestId.
+  function ensureSubmission() {
+    if (currentRequestId === null) {
+      currentRequestId = newRequestId();
+    }
+    if (firstSubmitAt === null) {
+      firstSubmitAt = new Date().toISOString();
+    }
+  }
+
+  // applyPrefill restores a saved report into the open form: category,
+  // severity, description, the shelter fields and the location. The location
+  // is chosen with an empty display name, since a saved report holds none.
+  // The last statement marks the form untouched, so closing it without a
+  // change asks no question and leaves the saved report as it was.
+  function applyPrefill(prefill) {
+    if (Pinalert.CATEGORIES.indexOf(prefill.category) !== -1) {
+      selectCategory(prefill.category);
+    }
+    Object.keys(SEVERITY_BY_VALUE).forEach(function (key) {
+      if (SEVERITY_BY_VALUE[key] === prefill.severity) {
+        severityInput.value = key;
+      }
+    });
+    updateSeverityReadout();
+    if (typeof prefill.description === 'string') {
+      descriptionField.value = prefill.description;
+    }
+    if (prefill.category === 'shelter_open') {
+      showShelterFields();
+      if (Pinalert.CAPACITY_STATUSES.indexOf(prefill.shelter_capacity_status) !== -1) {
+        shelterCapacityStatus.value = prefill.shelter_capacity_status;
+      }
+      if (typeof prefill.shelter_headcount === 'number' && isFinite(prefill.shelter_headcount)) {
+        shelterHeadcount.value = String(prefill.shelter_headcount);
+      }
+    }
+    if (typeof prefill.latitude === 'number' && isFinite(prefill.latitude) &&
+        typeof prefill.longitude === 'number' && isFinite(prefill.longitude)) {
+      try {
+        picker.choose({ lat: prefill.latitude, lon: prefill.longitude, displayName: '' });
+      } catch (e) {
+        // A page whose map did not load still opens the form with the text.
+      }
+    }
+    formTouched = false;
+  }
+
+  // appendEmergencyCall adds "In an emergency, call {NUMBER} now." to el. The
+  // number comes only from the 429 body and is a tap to call link built with
+  // DOM calls.
+  function appendEmergencyCall(el, number) {
+    if (typeof number !== 'string' || number === '') {
+      return;
+    }
+    el.appendChild(document.createTextNode(' ' + EMERGENCY_CALL_PREFIX));
+    var link = document.createElement('a');
+    link.className = 'form-error__call';
+    link.setAttribute('href', 'tel:' + number);
+    link.setAttribute('aria-label', CALL_LABEL_PREFIX + number);
+    Pinalert.setText(link, number);
+    el.appendChild(link);
+    el.appendChild(document.createTextNode(EMERGENCY_CALL_SUFFIX));
+  }
+
+  // showLimitMessage keeps the form open after a 429: the server's wait
+  // message, the serious tap to call sentence when the server says so, every
+  // typed field, and Send after the wait (D-12). This is the only place that
+  // shows that button.
+  function showLimitMessage(err) {
+    Pinalert.setText(formError, err.fieldMessage || 'Something went wrong. Try again.');
+    if (err.serious === true) {
+      appendEmergencyCall(formError, err.emergencyNumber);
+    }
+    lastLimit = {
+      retryAfterSeconds: err.retryAfterSeconds,
+      serious: err.serious === true,
+      emergencyNumber: err.emergencyNumber || '',
+      at: Date.now()
+    };
+    if (sendAfterWaitBtn) {
+      sendAfterWaitBtn.hidden = false;
+    }
+  }
+
+  // saveToQueue keeps a report that got no answer on this device and closes the
+  // form (D-18). Without a queue the form stays open with the usual message, so
+  // typed text is never lost.
+  function saveToQueue(payload, status) {
+    var failure = function () {
+      Pinalert.setText(formError, 'Something went wrong. Try again.');
+    };
+    if (!window.PinalertQueue) {
+      failure();
+      return;
+    }
+    var writtenAt = resendWrittenAt || firstSubmitAt;
+    payload.written_at = writtenAt;
+    window.PinalertQueue.save({
+      request_id: currentRequestId,
+      payload: payload,
+      written_at: writtenAt,
+      status: status
+    }).then(function (persisted) {
+      closeForm();
+      Pinalert.showToast(persisted ? SAVE_TOAST : SAVE_TOAST_MEMORY, null, LONG_TOAST_MS);
+    }, failure);
+  }
+
+  // saveAfterWait saves a report blocked by a 429 as a Blocked row, so it sends
+  // by itself when the wait is over (D-12, D-18).
+  function saveAfterWait() {
+    if (!lastLimit || !window.PinalertQueue) {
+      return;
+    }
+    var validationResult = validate();
+    if (validationResult) {
+      Pinalert.setText(formError, validationResult.message);
+      focusField(validationResult.field);
+      return;
+    }
+    ensureSubmission();
+    var payload = buildPayload();
+    payload.request_id = currentRequestId;
+    var writtenAt = resendWrittenAt || firstSubmitAt;
+    payload.written_at = writtenAt;
+    window.PinalertQueue.save({
+      request_id: currentRequestId,
+      payload: payload,
+      written_at: writtenAt,
+      status: 'blocked',
+      next_try_at: lastLimit.at + 1000 * lastLimit.retryAfterSeconds,
+      serious: lastLimit.serious,
+      emergency_number: lastLimit.emergencyNumber
+    }).then(function () {
+      closeForm();
+      Pinalert.showToast(WAIT_SAVE_TOAST);
+    }, function () {
+      Pinalert.setText(formError, 'Something went wrong. Try again.');
+    });
+  }
+
+  // announce writes one sentence to the polite live region of the page.
+  function announce(text) {
+    if (!liveEl) {
+      return;
+    }
+    Pinalert.setText(liveEl, '');
+    window.setTimeout(function () {
+      Pinalert.setText(liveEl, text);
+    }, 50);
   }
 
   window.PinalertReportForm = { mount: mount, open: openForm, close: closeForm };

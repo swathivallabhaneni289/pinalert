@@ -52,6 +52,7 @@
   var retryBtn = document.getElementById('feed-retry');
   var viewToggleBtn = document.getElementById('view-toggle');
   var appShellEl = document.getElementById('app-shell');
+  var queueStripEl = document.getElementById('queue-strip');
   var tabStripEl = document.querySelector('.view-tabs');
   var feedCountEl = document.getElementById('feed-count');
   var feedStatusEl = document.getElementById('feed-status');
@@ -78,6 +79,13 @@
   var noticeSlowEl = document.getElementById('notice-slow');
   var noticeStaleEl = document.getElementById('notice-stale');
   var noticeStaleTextEl = document.getElementById('notice-stale-text');
+  var noticeQueueEl = document.getElementById('notice-queue');
+  var noticeQueueTextEl = document.getElementById('notice-queue-text');
+  var noticeQueueBtn = document.getElementById('notice-queue-show');
+  // The number of saved reports of this account, set by the queue's count
+  // event. The Queue row of the notice card shows it on a phone in map view.
+  var queueCount = 0;
+  var QUEUE_CARD_SUFFIX = ' waiting to send.';
   var narrowQuery = window.matchMedia ? window.matchMedia('(max-width: 899.98px)') : null;
 
   // The words of the stale line and its two announcements. The strings are
@@ -961,6 +969,27 @@
       narrowQuery !== null && narrowQuery.matches;
   }
 
+  // openSavedReport opens the report form for a saved report (Edit and
+  // resend), prefilled from the saved row, under the Not sent note (D-20).
+  function openSavedReport(record, opener, note) {
+    if (!window.PinalertReportForm) {
+      return;
+    }
+    window.PinalertReportForm.open({
+      opener: opener || document.getElementById('fab-report'),
+      prefill: record.payload,
+      note: note,
+      requestId: record.request_id
+    });
+  }
+
+  // queueFocusFallback is where focus goes when the last saved report leaves:
+  // the first report row, else the Report an emergency button.
+  function queueFocusFallback() {
+    var firstRow = reportListEl ? reportListEl.querySelector('.report-row') : null;
+    return firstRow || document.getElementById('fab-report');
+  }
+
   // syncNoticeCard sets the Stale row of the notice card (shown only while the
   // stale line is active and the list pane is not displayed) and then hides
   // the whole card exactly when none of its rows is visible. Every script that
@@ -973,6 +1002,12 @@
       Pinalert.setText(noticeStaleTextEl, 'Last updated ' + Pinalert.updatedAgo(Pinalert.state.lastUpdatedAt) + '.');
     }
     setHidden(noticeStaleEl, !(staleShown && listPaneHidden()));
+    if (noticeQueueEl) {
+      if (queueCount > 0) {
+        Pinalert.setText(noticeQueueTextEl, queueCount + QUEUE_CARD_SUFFIX);
+      }
+      setHidden(noticeQueueEl, !(queueCount > 0 && listPaneHidden()));
+    }
     setHidden(noticeCardEl, noticeCardEl.querySelector('.notice-card__row:not([hidden])') === null);
   }
 
@@ -1665,4 +1700,31 @@
     showTab(restored.view);
     Pinalert.fetchReports();
   });
+
+  // The device queue mounts last. The report form was mounted by modal.js, which
+  // loads before this file, so a saved report can be opened for editing at once.
+  if (queueStripEl) {
+    queueStripEl.addEventListener('pinalert-queue-count', function (evt) {
+      queueCount = (evt && evt.detail && evt.detail.count) || 0;
+      syncNoticeCard();
+    });
+  }
+  if (noticeQueueBtn) {
+    noticeQueueBtn.addEventListener('click', function () {
+      switchView('list');
+      var heading = document.getElementById('queue-strip-heading');
+      if (heading) {
+        heading.focus();
+      }
+    });
+  }
+  if (window.PinalertQueue && queueStripEl && appShellEl) {
+    window.PinalertQueue.mount({
+      strip: queueStripEl,
+      accountId: appShellEl.getAttribute('data-account-id'),
+      headingLevel: 2,
+      onEdit: openSavedReport,
+      focusFallback: queueFocusFallback
+    });
+  }
 }());

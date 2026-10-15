@@ -55,6 +55,12 @@ type pageViewModel struct {
 	// identity. Rendered by web/templates/account_header.html.tmpl's
 	// email row.
 	Email string
+	// AccountID is the verified caller's numeric account id, read per request
+	// from the gate's context like Email. It is rendered only as the
+	// data-account-id attribute of the page shell, so queue.js binds saved
+	// reports to this account (D-20, T-04-14). It is never shown and never the
+	// email.
+	AccountID int64
 	// Chrome is the shared bar data, already defaulted.
 	Chrome Chrome
 }
@@ -120,6 +126,7 @@ func Page(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 			VoteRadiusKm:    cfg.VoteRadiusKm,
 			AssetVersion:    cfg.AssetVersion,
 			Email:           acc.Email,
+			AccountID:       acc.ID,
 			Chrome:          cfg.Chrome.withDefaults(),
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

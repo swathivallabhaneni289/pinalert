@@ -35,6 +35,7 @@
       <button type="button" class="btn btn--primary low-page__report" id="low-report">Report an emergency</button>
       <p class="low-basis" id="low-basis" aria-live="polite"></p>
       <button type="button" class="btn" id="low-retry-position" hidden>Retry position</button>
+      <div class="queue-strip" id="queue-strip" hidden></div>
       <div class="low-stale" id="low-stale" hidden>
         <p class="inline-note low-stale__text" id="low-stale-text"></p>
         <button type="button" class="btn" id="low-stale-retry">Retry now</button>
@@ -62,6 +63,7 @@
   <div class="modal-backdrop" id="report-modal" hidden>
     <div class="modal-panel report-form--low" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <h2 id="modal-title">Report an emergency</h2>
+      <p id="form-note" class="inline-note" hidden></p>
 
       <fieldset class="low-location" aria-describedby="low-location-status">
         <legend>Location</legend>
@@ -94,6 +96,7 @@
   <script src="/static/js/votes.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/visibility.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/trust.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/queue.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/report-form.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/low.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
