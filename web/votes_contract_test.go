@@ -656,14 +656,27 @@ func TestBothSurfacesMountTheSameVoteBlock(t *testing.T) {
 		}
 		text := stripCSSComments(string(raw))
 
-		if !strings.Contains(text, "PinalertVotes.createVoteBlock(") {
-			t.Errorf("%s: expected a call to PinalertVotes.createVoteBlock( — a surface calling "+
-				"neither this nor updateVoteBlock has either dropped its controls or grown a "+
-				"second implementation, which is exactly what D-01 exists to prevent", module)
-		}
-		if !strings.Contains(text, "PinalertVotes.updateVoteBlock(") {
-			t.Errorf("%s: expected a call to PinalertVotes.updateVoteBlock( — see the message "+
-				"above", module)
+		// Plan 03.1-09 (R5, D-21): only the opened report mounts the vote
+		// block now. The old pin required both surfaces to call
+		// PinalertVotes.createVoteBlock( and updateVoteBlock(. The list row
+		// (feed.js) calls neither, and still carries none of the class names
+		// or response fields below.
+		if module == "static/js/map.js" {
+			if !strings.Contains(text, "PinalertVotes.createVoteBlock(") {
+				t.Errorf("%s: expected a call to PinalertVotes.createVoteBlock(, a surface calling "+
+					"neither this nor updateVoteBlock has either dropped its controls or grown a "+
+					"second implementation, which is exactly what D-01 exists to prevent", module)
+			}
+			if !strings.Contains(text, "PinalertVotes.updateVoteBlock(") {
+				t.Errorf("%s: expected a call to PinalertVotes.updateVoteBlock(, see the message "+
+					"above", module)
+			}
+		} else {
+			for _, call := range []string{"PinalertVotes.createVoteBlock(", "PinalertVotes.updateVoteBlock("} {
+				if strings.Contains(text, call) {
+					t.Errorf("%s: calls %s, but a list row holds no vote control (03.1 D-21)", module, call)
+				}
+			}
 		}
 
 		for _, literal := range []string{"vote-btn", "vote-controls", "vote-error"} {
@@ -692,6 +705,11 @@ func TestBothSurfacesMountTheSameVoteBlock(t *testing.T) {
 // stops, that the listener is attached to the right element, or that
 // Leaflet's popup does not intercept first. The end-of-phase human check
 // covers the runtime claim; the two are complementary, not redundant.
+//
+// Plan 03.1-09 (R5): a list row has no vote control any more, so a vote click
+// can only come from the opened report. The pins below are unchanged, and
+// TestRowHasNoControls pins that the row's own activation handlers are its
+// only click path.
 func TestVoteClickDoesNotActivateItsRow(t *testing.T) {
 	votesRaw, err := fs.ReadFile(StaticFS, "static/js/votes.js")
 	if err != nil {
@@ -1106,19 +1124,29 @@ func TestBothSurfacesMountTheSameVisibilityTag(t *testing.T) {
 		}
 	}
 
+	// Plan 03.1-09 (R3, R5): the state word joins the body's flex order and
+	// the list row builds no vote block. The old pin was meta append, then
+	// tag builder, then PinalertVotes.createVoteBlock( in createRow. The new
+	// pin is the tag builder, then the trust line builder (whose reporter
+	// words ride in the same state line), then the state line mount, then the
+	// meta append, and no vote block builder at all.
 	createRowBody := jsFunctionBody(t, texts["static/js/feed.js"], "createRow(id)")
-	metaIdx := strings.Index(createRowBody, "body.appendChild(meta)")
 	tagIdx := strings.Index(createRowBody, "PinalertVisibility.createVisibilityTag(")
-	voteBlockIdx := strings.Index(createRowBody, "PinalertVotes.createVoteBlock(")
-	if metaIdx == -1 || tagIdx == -1 || voteBlockIdx == -1 {
-		t.Fatalf("createRow's own body is missing one of the three anchors needed to check "+
-			"insertion order (meta append=%d, tag builder=%d, vote block builder=%d)",
-			metaIdx, tagIdx, voteBlockIdx)
+	trustIdx := strings.Index(createRowBody, "PinalertTrust.createTrustLine(")
+	stateIdx := strings.Index(createRowBody, "PinalertTrust.createStateLine('report-row__stateline', tag, trust)")
+	metaIdx := strings.Index(createRowBody, "body.appendChild(meta)")
+	if metaIdx == -1 || tagIdx == -1 || trustIdx == -1 || stateIdx == -1 {
+		t.Fatalf("createRow's own body is missing one of the anchors needed to check "+
+			"insertion order (tag builder=%d, trust line builder=%d, state line=%d, meta append=%d)",
+			tagIdx, trustIdx, stateIdx, metaIdx)
 	}
-	if !(metaIdx < tagIdx && tagIdx < voteBlockIdx) {
-		t.Errorf("createRow's own body must append the visibility tag after the meta paragraph and "+
-			"before the vote block is built (found meta=%d, tag=%d, vote block=%d) — this is the "+
-			"insertion point 02-05's artifact table reserved", metaIdx, tagIdx, voteBlockIdx)
+	if !(tagIdx < trustIdx && trustIdx < stateIdx && stateIdx < metaIdx) {
+		t.Errorf("createRow's own body must build the visibility tag, then the trust line, then "+
+			"mount the state line before the meta paragraph (found tag=%d, trust line=%d, "+
+			"state line=%d, meta=%d)", tagIdx, trustIdx, stateIdx, metaIdx)
+	}
+	if strings.Contains(createRowBody, "PinalertVotes.createVoteBlock(") {
+		t.Errorf("createRow builds a vote block: a list row holds no control (03.1 D-21)")
 	}
 
 	popupBody := jsFunctionBody(t, texts["static/js/map.js"], "buildPopupCard(report)")

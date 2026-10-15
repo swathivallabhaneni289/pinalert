@@ -730,6 +730,26 @@
     }
   }
 
+  // farFromCachedFix says whether a list row shows the Too far to vote fact
+  // (03.1 D-14). It keeps every guard of applyDistanceHint so the row and the
+  // opened report agree: the reporter's own report, an unknown radius, no
+  // cached fix, a fix older than the hint bound and an unreadable distance all
+  // answer false. It reads the cached fix only. It never asks the browser for
+  // a position, never queries the permission and never writes the cache, so a
+  // row cannot cause a location prompt. The server still refuses far votes.
+  function farFromCachedFix(report) {
+    if (!report || report.is_own_report) {
+      return false;
+    }
+    var radiusKm = readVoteRadiusKm();
+    var fix = peekVoterLocation();
+    if (radiusKm === null || fix === null || !isFreshVoterLocation(fix, VOTER_LOCATION_HINT_MS)) {
+      return false;
+    }
+    var distanceKm = greatCircleKm(fix.latitude, fix.longitude, report.latitude, report.longitude);
+    return isFinite(distanceKm) && distanceKm > radiusKm;
+  }
+
   // showVoteError writes message into the block's error paragraph and
   // reveals it. Goes through Pinalert.setText even though the message may
   // be server-authored (T-01-03: the discipline is about the sink, not
@@ -1220,6 +1240,7 @@
     createReopenControl: createReopenControl,
     setReopenLabel: setVoteButtonLabel,
     updateVoteBlock: updateVoteBlock,
+    farFromCachedFix: farFromCachedFix,
     setBlockBusy: setBlockBusy,
     showVoteError: showVoteError,
     resolutionOutcomeMessage: resolutionOutcomeMessage,

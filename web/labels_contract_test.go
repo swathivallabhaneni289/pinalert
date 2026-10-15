@@ -78,16 +78,24 @@ func TestRowSeverityLabelMountsFirst(t *testing.T) {
 	feed := p16ReadStatic(t, "static/js/feed.js")
 	trust := p16ReadStatic(t, "static/js/trust.js")
 
+	// Plan 03.1-09 (departures R3, R4, R5 of the UI-SPEC): the body order is now
+	// severity label, state line, meta, title, trust line. The old literals
+	// were body.appendChild(title) before body.appendChild(meta), then
+	// PinalertTrust.createTrustBlock( and PinalertVotes.createVoteBlock(, which
+	// a compact row no longer builds. The severity word is still the first
+	// child appended.
 	create := jsFunctionBody(t, feed, "createRow(id)")
 	p16Ordered(t, create, "feed.js createRow",
 		"PinalertTrust.createSeverityLabel(",
 		"body.appendChild(severityLabel)",
-		"body.appendChild(title)",
-		"body.appendChild(meta)",
 		"PinalertVisibility.createVisibilityTag(",
-		"PinalertTrust.createTrustBlock(",
-		"PinalertVotes.createVoteBlock(",
+		"PinalertTrust.createTrustLine(",
+		"body.appendChild(meta)",
+		"body.appendChild(title)",
+		"body.appendChild(trust.el)",
 	)
+	p16MustNotContain(t, "feed.js createRow", create,
+		"PinalertTrust.createTrustBlock(", "PinalertVotes.createVoteBlock(")
 	if strings.Index(create, "body.appendChild(") != strings.Index(create, "body.appendChild(severityLabel)") {
 		t.Errorf("feed.js createRow: the severity label must be the first child appended to the row body (A45)")
 	}
@@ -301,7 +309,8 @@ const (
 	// phoneBackArrowHead is the round back arrow that Leaflet's close anchor
 	// becomes on the report detail sheet.
 	phoneBackArrowHead = ".leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden])"
-	// phoneFeedTitleHead is the feed card title, drawn up to two lines.
+	// phoneFeedTitleHead is the feed row title, drawn up to two lines at every
+	// width. The head lives in feed.css since plan 03.1-09.
 	phoneFeedTitleHead = "#report-list .report-row .report-row__title"
 )
 
@@ -541,6 +550,25 @@ func TestSeverityLabelHasNoFixedHeight(t *testing.T) {
 		}
 	}
 
+	// Departure R2 of plan 03.1-09 (A1, A26, A45): the label of a feed list
+	// row, at every width, is a dot and a word with no pill, no fill and no
+	// border, and no height of its own. It is the lifted feed.css head; the
+	// popup's label (the base rule above) and the Activity row's label (the row
+	// head above) keep their bordered shape and are still pinned.
+	feedRules := p16ParseCSS("static/css/feed.css", p16ReadStatic(t, "static/css/feed.css"))
+	feedRowLabel := p16Rule(t, feedRules, "", "#report-list .report-row .severity-label:not([hidden])")
+	p16MustDecl(t, "feed list row label", feedRowLabel, map[string]string{
+		"border":        "0",
+		"border-radius": "0",
+		"background":    "transparent",
+		"padding":       "0",
+		"margin":        "0",
+		"min-height":    "0",
+	})
+	if _, ok := feedRowLabel.Decls["height"]; ok {
+		t.Errorf("the feed list row label declares height, labels use min-height only")
+	}
+
 	// A40 closed accent list, over top level rules that name a label.
 	for _, r := range trust {
 		if r.Media != "" || !p16NamesLabel(r.Head) {
@@ -636,9 +664,10 @@ func TestExpiredRowTreatmentMatchesRetracted(t *testing.T) {
 // inside the narrow row body, the title is never clamped, and the meta line
 // uses the full text colour.
 //
-// Phone departure (quick task 261013-lrw): the one phone.css head named by
-// phoneFeedTitleHead clamps the feed card title to two lines, as the owner's
-// picture draws it. Every other head still may not clamp.
+// Phone departure (quick task 261013-lrw), widened to every width by plan
+// 03.1-09 (R1): the one feed.css head named by phoneFeedTitleHead clamps the
+// feed row title to two lines, as the owner's picture draws it, and phone.css
+// no longer holds a title head. Every other head still may not clamp.
 //
 // The value must be anywhere and not break-word: only anywhere lowers the
 // min-content width that sizes the row body flex item, so a pasted URL wraps
@@ -659,11 +688,12 @@ func TestRowTitleWrapsLongWords(t *testing.T) {
 		if !strings.Contains(r.Head, "report-row__title") {
 			continue
 		}
-		if r.File == "static/css/phone.css" && r.Head == phoneFeedTitleHead {
-			// The owner's phone picture draws the feed card title up to two
-			// lines, so phone.css clamps this one head and no other. The
-			// detail shows the whole text. Departure recorded in
-			// .planning/sketches/005-phone-layout/README.md.
+		if r.File == "static/css/feed.css" && r.Head == phoneFeedTitleHead {
+			// Departure R1 of plan 03.1-09 (A55): the compact row of size A
+			// clamps the feed row title to two lines at every width, so the
+			// one shared head in feed.css clamps and no other head does. The
+			// old exempt head sat in phone.css (quick task 261013-lrw); the
+			// lift moved it. The opened report shows the whole text.
 			continue
 		}
 		for _, name := range []string{"-webkit-line-clamp", "line-clamp", "text-overflow"} {
@@ -743,6 +773,12 @@ func TestLabelAndMetaContrastAcrossThemes(t *testing.T) {
 	lowFill := decl(p16Rule(t, trust, "", p16LevelLow), "background")
 	rowFill := decl(p16Rule(t, trust, "", p16RowLabelHead), "background")
 	stateFill := decl(p16Rule(t, trust, "", p16StateBase), "background")
+	feedRules := p16ParseCSS("static/css/feed.css", p16ReadStatic(t, "static/css/feed.css"))
+	awayText := decl(p16Rule(t, feedRules, "", "#report-list .report-row .report-row__away:not([hidden])"), "color")
+	farText := decl(p16Rule(t, feedRules, "", "#report-list .report-row .report-row__far:not([hidden])"), "color")
+	trustText := decl(p16Rule(t, feedRules, "", "#report-list .report-row .report-row__trustline:not([hidden])"), "color")
+	hiddenTrustText := decl(p16Rule(t, feedRules, "min-width: 900px",
+		"#report-list .report-row.vis-hidden .report-row__trustline:not([hidden])"), "color")
 	tints := map[string]string{
 		"sev-low":         decl(p16Rule(t, main, "", ".sev-low"), "--severity-tint"),
 		"sev-medium":      decl(p16Rule(t, main, "", ".sev-medium"), "--severity-tint"),
@@ -776,6 +812,14 @@ func TestLabelAndMetaContrastAcrossThemes(t *testing.T) {
 		check("state label text on its fill", stateText, stateFill)
 		for name, tint := range tints {
 			check("meta text on the "+name+" row tint", metaText, tint)
+			// Plan 03.1-09: the laptop row takes the same inner layout, so
+			// the distance, the far fact and the trust line sit on the same
+			// tints (provisional is --color-surface) in --color-text.
+			check("distance text on the "+name+" row tint", awayText, tint)
+			check("far fact text on the "+name+" row tint", farText, tint)
+			check("trust line text on the "+name+" row tint", trustText, tint)
 		}
+		// Muted text only on a --color-bg card: the hidden row of a laptop.
+		check("muted trust line on a hidden row card", hiddenTrustText, "var(--color-bg)")
 	}
 }

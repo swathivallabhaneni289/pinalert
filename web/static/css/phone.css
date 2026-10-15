@@ -19,7 +19,6 @@
    900px, so the layout at 900px and up has nothing new in it. */
 .feed-heading,
 .bottom-nav,
-.report-row__away,
 .profile-logout {
   display: none;
 }
@@ -118,13 +117,21 @@
     padding-bottom: 0;
   }
 
+  /* The pane is a scrolling flex column, so the tab strip and the one line
+     note under it keep their own height instead of shrinking under a long
+     list. (Moved here from feed.css, where plan 03.1-05 first put it.) */
+  .pane--list > .view-tabs,
+  .pane--list > .feed-note {
+    flex: none;
+  }
+
   /* ---- Report rows as rounded cards ---- */
 
-  /* The tint comes from the existing severity token. A provisional or hidden
-     card is white with a hairline, as drawn. The left bar is gone. */
+  /* The shared row layout lives in feed.css (03.1 D-19, D-20). What stays
+     here is only what differs on a phone: the card has no left bar and an 8px
+     corner, and a provisional or hidden card is white with a hairline, as
+     drawn. The tint comes from the existing severity token. */
   #report-list .report-row {
-    display: block;
-    padding: var(--space-md);
     border: 0;
     border-radius: 8px;
   }
@@ -136,201 +143,30 @@
     background: var(--color-bg);
   }
 
-  #report-list .report-row > .icon-badge {
-    display: none;
-  }
-
-  #report-list .report-row .report-row__body {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    column-gap: var(--space-sm);
-    row-gap: var(--space-xs);
-  }
-
-  /* The state line gives its children to the body, so the state word and the
-     reporter words join the body's flex order. */
-  #report-list .report-row .report-row__stateline:not([hidden]) {
-    display: contents;
-  }
-
-  /* Line one: the severity label, the state word, the meta line, the
-     distance. Then the title on its own line. Then the trust line and the
-     reporter words. */
-  #report-list .report-row .severity-label:not([hidden]) {
-    order: 1;
-    margin: 0;
-    padding: 0;
-    min-height: 0;
-    gap: var(--space-xs);
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    color: var(--color-text);
-  }
-
-  /* Critical gets the same dot the other two levels already carry. */
-  #report-list .severity-label.severity-label--critical::before {
-    content: "";
-    flex: none;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background-color: var(--severity-current);
-  }
-
-  #report-list .report-row .visibility-tag:not([hidden]) {
-    order: 2;
-    min-height: 0;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-  }
-
-  #report-list .report-row .report-row__meta {
-    order: 3;
-  }
-
-  #report-list .report-row .report-row__away:not([hidden]) {
-    display: block;
-    order: 4;
-    margin: 0;
-    font-size: var(--font-size-label);
-    line-height: var(--line-height-label);
-    color: var(--color-text);
-  }
-
-  #report-list .report-row .report-row__title {
-    order: 5;
-    flex: 0 0 100%;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    overflow: hidden;
-    margin: var(--space-xs) 0 0;
-  }
-
-  #report-list .report-row .trust-block:not([hidden]) {
-    order: 6;
-    flex: 0 1 auto;
-    min-width: 0;
-    margin: 0;
-    border-top: 0;
-  }
-
-  #report-list .report-row .trust-reporter:not([hidden]) {
-    order: 7;
-  }
-
-  /* The dot between the parts of a line. The alternative text is empty, so
-     a screen reader does not read it. The first declaration is the fallback
-     for an engine that does not know the alternative form. */
-  #report-list .report-row .visibility-tag:not([hidden])::before,
-  #report-list .report-row .report-row__meta::before,
-  #report-list .report-row .report-row__away:not([hidden])::before {
-    content: "\00b7";
-    content: "\00b7" / "";
-    margin-right: var(--space-xs);
-  }
-
-  #report-list .report-row .report-row__meta,
-  #report-list .report-row .report-row__title {
-    min-width: 0;
-  }
-
-  /* Voting happens in the detail, as drawn. */
-  #report-list .report-row .vote-controls:not([hidden]),
-  #report-list .report-row .vote-note:not([hidden]),
-  #report-list .report-row .vote-error:not([hidden]) {
-    display: none;
-  }
-
-  /* The trust face reads as one line of text: the counts, the currency word,
-     then the reporter words. The chevron and the clock are not drawn. */
-  #report-list .report-row .trust-block__toggle:not([hidden]) {
-    width: auto;
-    margin-inline: 0;
-    padding: 0;
-    justify-content: flex-start;
-  }
-
-  #report-list .report-row .trust-block__face:not([hidden]) {
-    display: flex;
-    flex: 0 1 auto;
-    flex-wrap: wrap;
-    align-items: baseline;
-    column-gap: var(--space-sm);
-  }
-
-  #report-list .report-row .trust-block__chevron:not([hidden]),
-  #report-list .report-row .trust-icon:not([hidden]) {
-    display: none;
-  }
-
-  #report-list .report-row .trust-block__counts:not([hidden]) {
-    min-height: 0;
-    column-gap: var(--space-sm);
-    font-size: var(--font-size-label);
-    line-height: var(--line-height-label);
-  }
-
-  #report-list .report-row .trust-block__count--second::before {
-    content: "\00b7";
-    content: "\00b7" / "";
-    position: static;
-    width: auto;
-    margin-right: var(--space-sm);
-    background-color: transparent;
-  }
-
-  #report-list .report-row .trust-block__signals:not([hidden]) {
-    min-height: 0;
-    column-gap: var(--space-xs);
-    font-size: var(--font-size-label);
-    line-height: var(--line-height-label);
-  }
-
-  #report-list .report-row .trust-block__signals:not([hidden])::before {
-    content: "\00b7";
-    content: "\00b7" / "";
-    margin-right: var(--space-sm);
-  }
-
-  #report-list .report-row .trust-reporter:not([hidden]),
-  #report-list .report-row .trust-signal:not([hidden]) {
-    font-size: var(--font-size-label);
-    line-height: var(--line-height-label);
-  }
-
-  #report-list .report-row .trust-num {
-    color: inherit;
-  }
-
   /* White cards: the muted colour clears 4.5 to 1 on the page colour in both
      themes. A tinted card keeps the normal text colour for the meta line and
      the distance, because muted fails on every tint. */
   #report-list .report-row.vis-provisional .report-row__meta,
   #report-list .report-row.vis-provisional .report-row__away:not([hidden]),
+  #report-list .report-row.vis-provisional .report-row__far:not([hidden]),
   #report-list .report-row.vis-hidden .report-row__meta,
-  #report-list .report-row.vis-hidden .report-row__away:not([hidden]) {
+  #report-list .report-row.vis-hidden .report-row__away:not([hidden]),
+  #report-list .report-row.vis-hidden .report-row__far:not([hidden]) {
     color: var(--color-text-muted);
   }
 
-  #report-list .report-row.vis-provisional .trust-block__toggle:not([hidden]),
-  #report-list .report-row.vis-provisional .trust-block__signals:not([hidden]),
+  #report-list .report-row.vis-provisional .report-row__trustline:not([hidden]),
   #report-list .report-row.vis-provisional .trust-reporter:not([hidden]) {
     color: var(--color-text-muted);
   }
 
   /* A current report shows the trust line in the good tone, only where the
      tone clears 4.5 to 1 on the card colour in both themes: not on the
-     critical tint. */
-  #report-list .report-row:not(.sev-critical):not(.vis-provisional):has(.trust-fact--currency .trust-fact__glyph--good) .trust-block__toggle:not([hidden]),
-  #report-list .report-row:not(.sev-critical):not(.vis-provisional):has(.trust-fact--currency .trust-fact__glyph--good) .trust-block__signals:not([hidden]),
-  #report-list .report-row:not(.sev-critical):not(.vis-provisional):has(.trust-fact--currency .trust-fact__glyph--good) .trust-reporter:not([hidden]) {
+     critical tint. The tone is the currency fact's, written by script on the
+     trust line as data-currency-tone. It is phone only: on a laptop tint the
+     good tone fails. */
+  #report-list .report-row:not(.sev-critical):not(.vis-provisional):has(.report-row__trustline[data-currency-tone="good"]) .report-row__trustline:not([hidden]),
+  #report-list .report-row:not(.sev-critical):not(.vis-provisional):has(.report-row__trustline[data-currency-tone="good"]) .trust-reporter:not([hidden]) {
     color: var(--color-tone-good);
   }
 
