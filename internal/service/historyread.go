@@ -573,16 +573,22 @@ func (s *ReportService) History(ctx context.Context, q HistoryQuery) (HistoryPag
 }
 
 // attachUndos fills UndosLeft on every view and reads the undo counts only
-// when they can matter (D-22). A view is a candidate when it has not expired
-// and the viewer either has a standing resolution row on it or posted it, which
-// are the only two cases where a take back or a poster's reopen can exist. The
-// common page has no candidate, so it returns at once and costs zero reads.
-// Every other view reads UndoLimit, because nothing the viewer did can have
-// spent the budget. The viewer comes from the gate, never from a query value
+// when they can matter (D-22). A faded view, one whose expiry has passed or
+// whose view is Past, gets 0 and never reads: nothing can be undone on it. A
+// view is a candidate when it has not expired and the viewer either has a
+// standing resolution row on it or posted it, which are the only two cases
+// where a take back or a poster's reopen can exist. The common page has no
+// candidate, so it returns at once and costs zero reads. Every other live view
+// reads UndoLimit, because nothing the viewer did can have spent the budget. The viewer comes from the gate, never from a query value
 // (T-31-27); 0 means no identified viewer and never reads.
 func (s *ReportService) attachUndos(ctx context.Context, viewerAccountID int64, views []ReportView, now time.Time) error {
 	for i := range views {
 		views[i].UndosLeft = UndoLimit
+		if !views[i].ExpiresAt.After(now) || views[i].View == FeedViewPast {
+			// A faded report cannot be changed by a take back or a reopen, so
+			// there is nothing left to undo whatever was spent (IN-02).
+			views[i].UndosLeft = 0
+		}
 	}
 	if viewerAccountID == 0 {
 		return nil

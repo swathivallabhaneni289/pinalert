@@ -146,6 +146,56 @@ func TestListableInFeedAgreesWithViewOf(t *testing.T) {
 	}
 }
 
+// TestUndosLeftIsZeroOnAFadedReport pins IN-02: a report that has faded, a Past
+// one or a resolved one past its expiry, reports 0 undos left whatever the
+// budget was, and a live report still reports the full limit.
+func TestUndosLeftIsZeroOnAFadedReport(t *testing.T) {
+	fake := &fakeFeedQuerier{
+		expiredRows: []sqlcgen.ExpiredReportsInWindowRow{
+			h6Expired(1, service.CategoryFlood, service.SeverityLow, time.Hour),
+			h6Expired(2, service.CategoryFlood, service.SeverityLow, time.Hour),
+		},
+		reporterRows: []sqlcgen.ReporterAccountsForReportsRow{reporterRow(1, nil), reporterRow(2, ptrID(1002))},
+		voteRows:     []sqlcgen.CurrentVotesForReportsRow{h6Closed(2, 1002, p12Now.Add(-2*time.Hour), "c1")},
+	}
+	q := h6Query()
+	q.ViewerAccountID = 7
+	page, err := h6History(fake, q)
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	seen := map[service.FeedView]bool{}
+	for _, v := range page.Reports {
+		seen[v.View] = true
+		if v.UndosLeft != 0 {
+			t.Errorf("report %d (%s): UndosLeft = %d, want 0", v.ID, v.View, v.UndosLeft)
+		}
+	}
+	if !seen[service.FeedViewPast] || !seen[service.FeedViewResolved] {
+		t.Fatalf("views seen = %v, want a past one and a resolved one past its expiry", seen)
+	}
+	if got := countCalls(fake.callLog, "ResolutionUndoCounts"); got != 0 {
+		t.Errorf("ResolutionUndoCounts called %d times, want 0 for faded reports", got)
+	}
+
+	t.Run("a report link to a past report says 0 too", func(t *testing.T) {
+		focus := &fakeFeedQuerier{
+			focusRow:     h6FocusRow(9, service.CategoryFlood, service.SeverityLow, -time.Hour, 1),
+			reporterRows: []sqlcgen.ReporterAccountsForReportsRow{reporterRow(9, nil)},
+		}
+		res, err := h6Focus(focus, service.FocusQuery{ReportID: 9, Latitude: h6Centre.Lat, Longitude: h6Centre.Lon, ViewerAccountID: 7})
+		if err != nil {
+			t.Fatalf("Focus: %v", err)
+		}
+		if res.Status != service.FocusOK || res.View == nil || res.View.View != service.FeedViewPast {
+			t.Fatalf("result = %+v, want ok with a past view", res)
+		}
+		if res.View.UndosLeft != 0 {
+			t.Errorf("UndosLeft = %d, want 0", res.View.UndosLeft)
+		}
+	})
+}
+
 // TestNearbySkipsAReportThatExpiredInTheClockGap pins IN-01 and W1. The query
 // selects with the database clock and the service judges with its own, so a
 // report can come back from the query already expired by the service clock. It

@@ -27,7 +27,8 @@ import (
 // resolved and past views. ViewerResolution and UndosLeft are viewer specific
 // like ViewerVote: ViewerResolution is the viewer's own standing resolution
 // vote or empty, and UndosLeft is how many take backs the viewer has left on
-// this report, UndoLimit when nothing was spent or the count was not read.
+// this report, UndoLimit when nothing was spent or the count was not read, and
+// 0 once the report has faded, because nothing can be undone then.
 // Approximate is true only when CoarsenFinishedRescue changed the report, so a
 // reader can say the spot is a blurred one.
 type ReportView struct {
