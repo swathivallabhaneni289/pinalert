@@ -76,13 +76,38 @@ func NewPerKey(c Config) *PerKey {
 	if now == nil {
 		now = time.Now
 	}
-	return &PerKey{
+	p := &PerKey{
 		entries:    make(map[string]*keyEntry),
 		limit:      rate.Every(c.Every),
 		burst:      c.Burst,
 		every:      c.Every,
-		idleWindow: c.IdleWindow,
+		idleWindow: effectiveIdleWindow(c),
 		now:        now,
+	}
+	go p.sweepLoop()
+	return p
+}
+
+// effectiveIdleWindow returns the larger of c.IdleWindow and Burst * Every.
+// Evicting a bucket hands back a full burst, so an entry may only go once it
+// would have refilled to full anyway. A zero, negative or smaller configured
+// value is raised, never lowered.
+func effectiveIdleWindow(c Config) time.Duration {
+	floor := time.Duration(c.Burst) * c.Every
+	if c.IdleWindow > floor {
+		return c.IdleWindow
+	}
+	return floor
+}
+
+// sweepLoop periodically evicts idle entries for the lifetime of the process,
+// reading the injected clock. It never exits, like PerIP's: a PerKey lives for
+// the process.
+func (p *PerKey) sweepLoop() {
+	ticker := time.NewTicker(p.idleWindow)
+	defer ticker.Stop()
+	for range ticker.C {
+		p.sweep(p.now())
 	}
 }
 
