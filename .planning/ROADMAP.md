@@ -484,7 +484,7 @@ Plans:
   6. A moderator (the owner, or anyone on the server list) can open a screen that everyone else gets a plain 404 for, see automatically flagged posts, user flags and posts whose text check has not finished, and Keep or Remove any post; any signed-in reader can flag a post with a reason from a quiet control, and a flag alone never hides a post.
   7. A public Disclaimer page and a public Policy page, readable without logging in, state what Pinalert is not, the emergency numbers, what is screened and kept, and how to complain or ask for removal, and both are linked from the bar on every page.
 
-**Plans**: 29 plans in 9 waves (04-01 to 04-29), outline in 04-PLAN-OUTLINE.md
+**Plans**: 6/29 plans executed
 **UI hint**: yes
 
 ### Phase 5: Official Feed & Demo Mode
@@ -542,7 +542,7 @@ Phases execute in numeric order: 1 → 1.1 → 2 → 3 → 3.1 → 3.2 → 4 →
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 31/31 | Complete | 2026-10-13 |
 | 3.1 Report history views | 16/16 | In Progress|  |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
-| 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
+| 4. Robustness — Real-World Resilience | 6/29 | In Progress|  |
 | 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
 | 6. Coordination — Safety, Needs, and Response | 0/TBD | Not started | - |
 | 7. Address search box for report location | 4/4 | Complete | 2026-09-29 |
@@ -566,6 +566,36 @@ during Phase 2 UAT re-verification (2026-09-18): the current submission flow is 
 **Plans:** 0 plans
 
 Plans:
+
+- [x] 04-01-PLAN.md
+- [x] 04-02-PLAN.md
+- [x] 04-03-PLAN.md
+- [x] 04-04-PLAN.md
+- [x] 04-05-PLAN.md
+- [x] 04-06-PLAN.md
+- [ ] 04-07-PLAN.md
+- [ ] 04-08-PLAN.md
+- [ ] 04-09-PLAN.md
+- [ ] 04-10-PLAN.md
+- [ ] 04-11-PLAN.md
+- [ ] 04-12-PLAN.md
+- [ ] 04-13-PLAN.md
+- [ ] 04-14-PLAN.md
+- [ ] 04-15-PLAN.md
+- [ ] 04-16-PLAN.md
+- [ ] 04-17-PLAN.md
+- [ ] 04-18-PLAN.md
+- [ ] 04-19-PLAN.md
+- [ ] 04-20-PLAN.md
+- [ ] 04-21-PLAN.md
+- [ ] 04-22-PLAN.md
+- [ ] 04-23-PLAN.md
+- [ ] 04-24-PLAN.md
+- [ ] 04-25-PLAN.md
+- [ ] 04-26-PLAN.md
+- [ ] 04-27-PLAN.md
+- [ ] 04-28-PLAN.md
+- [ ] 04-29-PLAN.md
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)
 
