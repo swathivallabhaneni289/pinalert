@@ -163,6 +163,55 @@ func ClosureOf(rows []sqlcgen.CurrentVotesForReportsRow, reportID int64, reporte
 	}
 }
 
+const (
+	// HistoryStateResolved is the State of a report that was closed.
+	HistoryStateResolved = "resolved"
+	// HistoryStateExpired is the State of a report that ran out its time.
+	HistoryStateExpired = "expired"
+)
+
+// HistoryFacts is what a history row says about how a report ended (D-08,
+// D-09). For a resolved report ClosedBy and ClosedText are set and the three
+// expired fields are empty; for a past report Outcome, OutcomeLabel and
+// LifetimeText are set and the two resolved fields are empty.
+type HistoryFacts struct {
+	State        string
+	At           time.Time
+	ClosedBy     ClosedBy
+	ClosedText   string
+	Outcome      Outcome
+	OutcomeLabel string
+	LifetimeText string
+}
+
+// BuildHistoryFacts composes the history facts of one report from values the
+// caller already has: the view from ViewOf, the Closure from ClosureOf, the
+// outcome from ClassifyOutcome and the confirmed count from the tally. It
+// returns nil for a view that has no history line (active, disputed and none).
+// This file never calls a store.
+func BuildHistoryFacts(view FeedView, c Closure, viewerIsReporter bool, outcome Outcome, confirmed int, createdAt, expiresAt time.Time) *HistoryFacts {
+	switch view {
+	case FeedViewResolved:
+		by := ClosedByFor(c, viewerIsReporter)
+		return &HistoryFacts{
+			State:      HistoryStateResolved,
+			At:         c.At,
+			ClosedBy:   by,
+			ClosedText: closedText(by),
+		}
+	case FeedViewPast:
+		return &HistoryFacts{
+			State:        HistoryStateExpired,
+			At:           expiresAt,
+			Outcome:      outcome,
+			OutcomeLabel: outcomeLabelText(outcome, confirmed),
+			LifetimeText: lifetimeText(createdAt, expiresAt),
+		}
+	default:
+		return nil
+	}
+}
+
 // ClosedBy names who closed a report, from the point of view of the viewer.
 type ClosedBy string
 

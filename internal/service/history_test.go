@@ -7,6 +7,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -274,4 +275,204 @@ func TestClosedByFor(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHistoryOutcomeLabels(t *testing.T) {
+	t.Run("one case per outcome", func(t *testing.T) {
+		cases := []struct {
+			outcome   Outcome
+			confirmed int
+			want      string
+		}{
+			{OutcomeCorroborated, 2, "Confirmed by 2 people nearby"},
+			{OutcomeCorroborated, 1, "Confirmed by 1 person nearby"},
+			{OutcomeCorroborated, 12, "Confirmed by 12 people nearby"},
+			{OutcomeContradicted, 0, "Disputed"},
+			{OutcomeUnconfirmed, 0, "Expired unconfirmed"},
+			{OutcomeNeutral, 0, "Expired"},
+			{Outcome("bogus"), 3, "Expired"},
+			{Outcome(""), 0, "Expired"},
+		}
+		for _, tc := range cases {
+			if got := outcomeLabelText(tc.outcome, tc.confirmed); got != tc.want {
+				t.Errorf("outcomeLabelText(%q, %d) = %q, want %q", tc.outcome, tc.confirmed, got, tc.want)
+			}
+		}
+	})
+
+	// A critical report that two independent places disputed stays Live on the
+	// real read path, but its finished outcome is contradicted, so the history
+	// label reads Disputed (D-10).
+	t.Run("critical report that was out disputed", func(t *testing.T) {
+		rows := []sqlcgen.CurrentVotesForReportsRow{
+			p31Row(31, VoteKindContent, VoteDispute, "dx", p31Now.Add(-3*time.Hour)),
+			p31Row(32, VoteKindContent, VoteDispute, "dy", p31Now.Add(-2*time.Hour)),
+		}
+		meta := ReportMeta{Severity: SeverityCritical, Category: CategoryFlood}
+		tally := BuildVoteTally(rows, 1, p31Acct(10))
+		got := ClassifyOutcome(meta, tally, p31Now.Add(-time.Hour), p31Now)
+		if got != OutcomeContradicted {
+			t.Fatalf("ClassifyOutcome = %q, want %q", got, OutcomeContradicted)
+		}
+		if label := outcomeLabelText(got, tally.ConfirmCells); label != "Disputed" {
+			t.Errorf("label = %q, want Disputed", label)
+		}
+	})
+
+	t.Run("classified end to end", func(t *testing.T) {
+		meta := ReportMeta{Severity: SeverityLow, Category: CategoryFlood}
+		expired := p31Now.Add(-time.Hour)
+		confirms := []sqlcgen.CurrentVotesForReportsRow{
+			p31Row(31, VoteKindContent, VoteConfirm, "cx", p31Now.Add(-5*time.Hour)),
+			p31Row(32, VoteKindContent, VoteConfirm, "cy", p31Now.Add(-4*time.Hour)),
+		}
+		tally := BuildVoteTally(confirms, 1, p31Acct(10))
+		got := ClassifyOutcome(meta, tally, expired, p31Now)
+		if label := outcomeLabelText(got, tally.ConfirmCells); label != "Confirmed by 2 people nearby" {
+			t.Errorf("corroborated label = %q", label)
+		}
+		none := BuildVoteTally(nil, 1, p31Acct(10))
+		got = ClassifyOutcome(meta, none, expired, p31Now)
+		if label := outcomeLabelText(got, none.ConfirmCells); label != "Expired unconfirmed" {
+			t.Errorf("unconfirmed label = %q", label)
+		}
+		rescue := ReportMeta{Severity: SeverityLow, Category: CategoryRescueNeeded}
+		got = ClassifyOutcome(rescue, none, expired, p31Now)
+		if label := outcomeLabelText(got, none.ConfirmCells); label != "Expired" {
+			t.Errorf("neutral label = %q", label)
+		}
+	})
+}
+
+func TestHistoryCopyIsPlain(t *testing.T) {
+	var all []string
+	for _, c := range []ClosedBy{"", ClosedByYou, ClosedByPoster, ClosedByPeople, ClosedByPosterAndPeople, ClosedByYouAndPeople} {
+		all = append(all, closedText(c))
+	}
+	for _, o := range append([]Outcome{Outcome("bogus")}, Outcomes...) {
+		for n := -1; n <= 120; n++ {
+			all = append(all, outcomeLabelText(o, n))
+		}
+	}
+	spans := []time.Duration{-time.Hour, 0, time.Second, 30 * time.Second, time.Minute, 30 * time.Minute, 59 * time.Minute, time.Hour,
+		90 * time.Minute, 8 * time.Hour, 24 * time.Hour, 48 * time.Hour}
+	for _, d := range spans {
+		all = append(all, lifetimeText(p31Now, p31Now.Add(d)))
+	}
+	for _, s := range all {
+		assertPlainCopy(t, s)
+		lower := strings.ToLower(s)
+		for _, b := range p30Banned {
+			if strings.Contains(lower, b) {
+				t.Errorf("history copy %q holds the banned word %q", s, b)
+			}
+		}
+	}
+}
+
+func TestClosedText(t *testing.T) {
+	cases := []struct {
+		by   ClosedBy
+		want string
+	}{
+		{ClosedByYou, "Resolved by you"},
+		{ClosedByPoster, "Resolved by the poster"},
+		{ClosedByPeople, "Resolved by people nearby"},
+		{ClosedByPosterAndPeople, "Resolved by the poster and people nearby"},
+		{ClosedByYouAndPeople, "Resolved by you and people nearby"},
+		{ClosedBy(""), ""},
+		{ClosedBy("bogus"), ""},
+	}
+	for _, tc := range cases {
+		if got := closedText(tc.by); got != tc.want {
+			t.Errorf("closedText(%q) = %q, want %q", tc.by, got, tc.want)
+		}
+	}
+}
+
+func TestLifetimeText(t *testing.T) {
+	cases := []struct {
+		span time.Duration
+		want string
+	}{
+		{8 * time.Hour, "after 8 hrs"},
+		{24 * time.Hour, "after 24 hrs"},
+		{time.Hour, "after 1 hr"},
+		{90 * time.Minute, "after 1 hr"},
+		{119 * time.Minute, "after 1 hr"},
+		{30 * time.Minute, "after 30 min"},
+		{30 * time.Second, "after 1 min"},
+		{61 * time.Second, "after 2 min"},
+		{0, ""},
+		{-time.Hour, ""},
+	}
+	for _, tc := range cases {
+		if got := lifetimeText(p31Now, p31Now.Add(tc.span)); got != tc.want {
+			t.Errorf("lifetimeText(%v) = %q, want %q", tc.span, got, tc.want)
+		}
+	}
+}
+
+func TestBuildHistoryFacts(t *testing.T) {
+	created := p31Now.Add(-10 * time.Hour)
+	expires := p31Now.Add(-2 * time.Hour)
+	closedAt := p31Now.Add(-5 * time.Hour)
+
+	t.Run("not a history view returns nil", func(t *testing.T) {
+		for _, v := range []FeedView{FeedViewActive, FeedViewDisputed, FeedViewNone} {
+			if got := BuildHistoryFacts(v, Closure{}, false, OutcomeNeutral, 0, created, expires); got != nil {
+				t.Errorf("BuildHistoryFacts(%q) = %+v, want nil", v, got)
+			}
+		}
+	})
+
+	t.Run("resolved", func(t *testing.T) {
+		c := Closure{ByReporter: true, ByPeople: true, At: closedAt}
+		got := BuildHistoryFacts(FeedViewResolved, c, true, OutcomeCorroborated, 3, created, expires)
+		if got == nil {
+			t.Fatal("got nil")
+		}
+		if got.State != "resolved" {
+			t.Errorf("State = %q", got.State)
+		}
+		if !got.At.Equal(closedAt) {
+			t.Errorf("At = %v, want %v", got.At, closedAt)
+		}
+		if got.ClosedBy != ClosedByYouAndPeople || got.ClosedText != "Resolved by you and people nearby" {
+			t.Errorf("closed = %q %q", got.ClosedBy, got.ClosedText)
+		}
+		if got.Outcome != "" || got.OutcomeLabel != "" || got.LifetimeText != "" {
+			t.Errorf("expired fields must be empty: %+v", got)
+		}
+	})
+
+	t.Run("resolved seen by someone else", func(t *testing.T) {
+		c := Closure{ByReporter: true, At: closedAt}
+		got := BuildHistoryFacts(FeedViewResolved, c, false, OutcomeNeutral, 0, created, expires)
+		if got == nil || got.ClosedBy != ClosedByPoster || got.ClosedText != "Resolved by the poster" {
+			t.Errorf("got %+v", got)
+		}
+	})
+
+	t.Run("past", func(t *testing.T) {
+		got := BuildHistoryFacts(FeedViewPast, Closure{}, false, OutcomeCorroborated, 4, created, expires)
+		if got == nil {
+			t.Fatal("got nil")
+		}
+		if got.State != "expired" {
+			t.Errorf("State = %q", got.State)
+		}
+		if !got.At.Equal(expires) {
+			t.Errorf("At = %v, want %v", got.At, expires)
+		}
+		if got.Outcome != OutcomeCorroborated || got.OutcomeLabel != "Confirmed by 4 people nearby" {
+			t.Errorf("outcome = %q %q", got.Outcome, got.OutcomeLabel)
+		}
+		if got.LifetimeText != "after 8 hrs" {
+			t.Errorf("LifetimeText = %q", got.LifetimeText)
+		}
+		if got.ClosedBy != "" || got.ClosedText != "" {
+			t.Errorf("resolved fields must be empty: %+v", got)
+		}
+	})
 }
