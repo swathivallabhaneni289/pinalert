@@ -155,7 +155,7 @@ func TestReviewFixAToastPauseMouseOnly(t *testing.T) {
 		"toastPointerInside || toastEl.contains(document.activeElement)",
 		"startToastTimer(toastEl, TOAST_RESUME_MS);")
 
-	show := jsFunctionBody(t, app, "showToast(message, action)")
+	show := jsFunctionBody(t, app, "showToast(message, action, durationMs)")
 	p13Ordered(t, show, "showToast", "toastPending = false;", "toastPointerInside = false;",
 		"toastEl.addEventListener('pointerenter', pauseToast);")
 }

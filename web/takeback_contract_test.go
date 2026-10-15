@@ -265,7 +265,7 @@ func TestTakeBackNoDashesInNewWords(t *testing.T) {
 	}
 }
 
-// TestToastAction pins showToast(message, action): the one argument form is
+// TestToastAction pins showToast(message, action, durationMs): the one argument form is
 // what it always was, the action form holds a text span and one button,
 // stays 8 seconds, pauses while the reader is on it and restarts at 4, never
 // moves focus into the toast, and a press replaces the content with the
@@ -274,10 +274,10 @@ func TestTakeBackNoDashesInNewWords(t *testing.T) {
 func TestToastAction(t *testing.T) {
 	app := p09ReadJS(t, "static/js/app.js")
 
-	if n := strings.Count(app, "function showToast(message, action)"); n != 1 {
-		t.Fatalf("app.js must declare showToast(message, action) once, found %d", n)
+	if n := strings.Count(app, "function showToast(message, action, durationMs)"); n != 1 {
+		t.Fatalf("app.js must declare showToast(message, action, durationMs) once, found %d", n)
 	}
-	body := p09FuncBody(t, app, "showToast(message, action)")
+	body := p09FuncBody(t, app, "showToast(message, action, durationMs)")
 	p09MustContain(t, "showToast", body,
 		"document.getElementById('toast')",
 		"setText(toastEl, message);",
@@ -286,7 +286,7 @@ func TestToastAction(t *testing.T) {
 		"setText(textEl, message);",
 		"setText(actionEl, action.label);",
 		"actionEl.setAttribute('aria-label', action.ariaLabel);",
-		"startToastTimer(toastEl, hasAction ? TOAST_ACTION_MS : TOAST_MS);",
+		"startToastTimer(toastEl, hasAction ? TOAST_ACTION_MS : plainMs);",
 		"toastEl.addEventListener('pointerenter', pauseToast);",
 		"toastEl.addEventListener('focusin', pauseToast);",
 		"toastEl.addEventListener('pointerleave', resumeToast);",

@@ -95,6 +95,11 @@ window.Pinalert = (function () {
     reports: [],
     status: 'idle', // idle | loading | ok | error
     error: null,
+    // hasLoaded turns true on the first list answer that is applied and never
+    // goes back. lastUpdatedAt is the device clock time of that newest applied
+    // answer, null before it. Both are display and flow state only.
+    hasLoaded: false,
+    lastUpdatedAt: null,
     selectedId: null,
     // own is true only when the centre is the reader's own position, a fix the
     // browser gave. The fallback centre is never the reader (A94).
@@ -310,7 +315,11 @@ window.Pinalert = (function () {
   // list does not flash skeletons on every 30s poll. A refetch while rows are
   // on screen is a background refresh whatever the status is, so a poll or a
   // Retry after a failure never hides the list the reader is looking at
-  // (WR-08). Only a fetch with nothing to show moves to the loading state.
+  // (WR-08). A call made after the first success is a background refresh
+  // whatever the previous status was and whether or not rows are left on
+  // screen. Only a fetch made before any list has loaded moves to the loading
+  // state. A request that gets no answer within 10 seconds is abandoned and
+  // counts as a failed poll, like a network failure.
   //
   // The promise resolves once the store reflects data at least as new as this
   // call started, and it never rejects. A call whose response is dropped
@@ -320,6 +329,9 @@ window.Pinalert = (function () {
   // newest data has landed.
   function fetchReports(options) {
     var isBackgroundRefresh = state.status === 'ok' || state.reports.length > 0;
+    if (state.hasLoaded === true) {
+      isBackgroundRefresh = true;
+    }
     var mySeq = ++fetchSeq;
     if (options && options.afterWrite === true && mySeq > writeFloor) {
       writeFloor = mySeq;
@@ -389,6 +401,27 @@ window.Pinalert = (function () {
       url += '&report=' + encodeURIComponent(sentFocusId);
     }
 
+    // The first request of the page is flagged on the root element once, so
+    // the head script can start its slow notice timer from it.
+    if (!document.documentElement.hasAttribute('data-feed-requested')) {
+      document.documentElement.setAttribute('data-feed-requested', 'true');
+    }
+    // A request that stalls is abandoned after 10 seconds. The signal covers
+    // the wait for the headers and for the body. It travels in a Request so
+    // the call below keeps its one argument form.
+    var signal;
+    var abortTimer = null;
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+      signal = AbortSignal.timeout(10000);
+    } else if (typeof AbortController !== 'undefined') {
+      var controller = new AbortController();
+      signal = controller.signal;
+      abortTimer = window.setTimeout(function () {
+        controller.abort();
+      }, 10000);
+    }
+    url = new Request(url, { signal: signal });
+
     pending = fetch(url)
       .then(function (res) {
         if (!res.ok) {
@@ -398,6 +431,9 @@ window.Pinalert = (function () {
         return res.json();
       })
       .then(function (body) {
+        if (abortTimer !== null) {
+          window.clearTimeout(abortTimer);
+        }
         if (isStale()) {
           return whenFresh();
         }
@@ -426,10 +462,15 @@ window.Pinalert = (function () {
         lastAppliedSeq = mySeq;
         state.status = 'ok';
         state.error = null;
+        state.hasLoaded = true;
+        state.lastUpdatedAt = Date.now();
         markListLoading(false);
         notify();
       })
       .catch(function (err) {
+        if (abortTimer !== null) {
+          window.clearTimeout(abortTimer);
+        }
         if (isStale()) {
           return whenFresh();
         }
@@ -587,6 +628,29 @@ window.Pinalert = (function () {
     return diffDays + (diffDays === 1 ? ' day ago' : ' days ago');
   }
 
+  function updatedAgo(timestampMs) {
+    // The age of the last applied list answer for the stale line, in whole
+    // units rounded down, so time already passed is never overstated. It reads
+    // the device clock, the same clock lastUpdatedAt was taken on, because the
+    // line measures an interval on one clock and the server corrected clock
+    // shifts whenever a response teaches a new offset.
+    if (typeof timestampMs !== 'number' || !isFinite(timestampMs)) {
+      return 'just now';
+    }
+    var minutes = Math.floor(Math.max(0, Date.now() - timestampMs) / 60000);
+    if (minutes < 1) {
+      return 'just now';
+    }
+    if (minutes === 1) {
+      return '1 minute ago';
+    }
+    if (minutes < 60) {
+      return minutes + ' minutes ago';
+    }
+    var hours = Math.floor(minutes / 60);
+    return hours === 1 ? '1 hour ago' : hours + ' hours ago';
+  }
+
   // formatDistance turns a feed report's distance_km into the "away" words of
   // the popup meta line (A94): one decimal under 10 km, "under 100 m" below a
   // tenth of a km and a whole number from 10 km. It returns an empty string for
@@ -711,7 +775,13 @@ window.Pinalert = (function () {
   // calls onClick, which returns the sentence to show next (or a promise of
   // it); the toast then holds that sentence with no action for 3 seconds. A
   // call with one argument is exactly what it was: text only, 3 seconds.
-  function showToast(message, action) {
+  //
+  // The optional third argument is the length in milliseconds of a plain
+  // toast, used when it is a positive number and otherwise the default of 3
+  // seconds. An action toast always keeps its own 8 seconds. A caller with no
+  // action passes null in the second place. While a toast shows, the root
+  // element carries data-toast-open, which the notice card reads to hide.
+  function showToast(message, action, durationMs) {
     var toastEl = document.getElementById('toast');
     if (!toastEl) {
       return;
@@ -756,6 +826,7 @@ window.Pinalert = (function () {
           } else {
             toastPending = false;
             toastEl.hidden = true;
+            document.documentElement.removeAttribute('data-toast-open');
           }
         }
         var outcome = null;
@@ -775,6 +846,7 @@ window.Pinalert = (function () {
       setText(toastEl, message);
     }
     toastEl.hidden = false;
+    document.documentElement.setAttribute('data-toast-open', 'true');
     if (!toastPauseWired) {
       toastPauseWired = true;
       toastEl.addEventListener('pointerenter', pauseToast);
@@ -782,7 +854,8 @@ window.Pinalert = (function () {
       toastEl.addEventListener('pointerleave', resumeToast);
       toastEl.addEventListener('focusout', resumeToast);
     }
-    startToastTimer(toastEl, hasAction ? TOAST_ACTION_MS : TOAST_MS);
+    var plainMs = (typeof durationMs === 'number' && durationMs > 0) ? durationMs : TOAST_MS;
+    startToastTimer(toastEl, hasAction ? TOAST_ACTION_MS : plainMs);
   }
 
   // startToastTimer (re)starts the one hide timer.
@@ -793,6 +866,7 @@ window.Pinalert = (function () {
     toastTimer = window.setTimeout(function () {
       toastTimer = null;
       toastEl.hidden = true;
+      document.documentElement.removeAttribute('data-toast-open');
     }, ms);
   }
 
@@ -866,6 +940,7 @@ window.Pinalert = (function () {
     iconClass: iconClass,
     formatShelterLine: formatShelterLine,
     relativeTime: relativeTime,
+    updatedAgo: updatedAgo,
     formatDistance: formatDistance,
     distanceText: distanceText,
     formatFade: formatFade,
