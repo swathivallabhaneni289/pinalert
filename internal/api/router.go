@@ -372,7 +372,8 @@ func NewRouter(deps Deps) *chi.Mux {
 	r.Group(func(r chi.Router) {
 		r.Use(requireVerifiedAccount(deps.Sessions))
 		r.Get("/", handlers.Page(deps.Template, page))
-		r.Post("/api/reports", handlers.SubmitReport(deps.Reports))
+		// The report gate runs inside the handler, after decode (R-04), never as route middleware.
+		r.Post("/api/reports", handlers.SubmitReport(deps.Reports, rateGate))
 		r.Get("/api/reports", handlers.NearbyReports(deps.Reports))
 		// The five vote routes (02-03b, HIST-09). All five come from ONE
 		// handlers.CastVote factory so the JSON contract and error mapping
