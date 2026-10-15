@@ -70,6 +70,30 @@ const (
 	placeRateLimitEvery = 4 * time.Second
 )
 
+// The D-11 budgets, the one named place for every Phase 4 limit number. Each
+// bucket allows Burst at once and then one more every Every. The vote cooldown
+// is burst 1: a second vote of one kind on one report waits a full Every. The
+// submit attempt and network backstop shapes are research defaults that protect
+// the screening provider and the server. api.RateLimitsDefault mirrors these
+// values for Deps literals that leave a field zero. Each bucket's idle window
+// follows from burst times refill (04-03).
+const (
+	reportSeriousBurst = 5
+	reportSeriousEvery = 5 * time.Minute
+	reportOtherBurst   = 8
+	reportOtherEvery   = 15 * time.Minute
+	voteBurst          = 20
+	voteEvery          = 15 * time.Second
+	voteChangeBurst    = 1
+	voteChangeEvery    = 30 * time.Second
+	flagBurst          = 10
+	flagEvery          = 2 * time.Minute
+	submitAttemptBurst = 20
+	submitAttemptEvery = 6 * time.Second
+	ipBackstopBurst    = 60
+	ipBackstopEvery    = 20 * time.Second
+)
+
 func main() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -141,6 +165,26 @@ func main() {
 		log.Println("WARNING: NOMINATIM_CONTACT_EMAIL unset; outbound geocoding User-Agent will fall back to the project repository URL")
 	}
 
+	// CLIENT_IP_HEADER names the header the host overwrites with the visitor
+	// address (CF-Connecting-IP on Render, Fly-Client-IP on Fly.io, X-Real-IP
+	// on Railway). It turns on the network address backstop and makes every per
+	// IP limiter key on that header. It is only safe on a host that overwrites
+	// the header, so the canary check in the README checklist comes first.
+	// Unset leaves the backstop off and the limits per account. A value that is
+	// not a plain header name stops startup.
+	clientIPHeader := strings.TrimSpace(os.Getenv("CLIENT_IP_HEADER"))
+	if clientIPHeader == "" {
+		log.Println("WARNING: CLIENT_IP_HEADER unset; the network address backstop is off and limits stay per account")
+	} else {
+		for _, c := range clientIPHeader {
+			isLetter := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+			if !isLetter && !(c >= '0' && c <= '9') && c != '-' {
+				log.Fatalf("CLIENT_IP_HEADER must be a plain header name of letters, digits and hyphens")
+			}
+		}
+		log.Printf("client IP header for the network backstop: %s", clientIPHeader)
+	}
+
 	// The emergency numbers the unofficial bar prints come from one setting,
 	// read once here (D-22). The loaded values are logged so the owner can
 	// compare them with the government page before any public promotion.
@@ -210,6 +254,17 @@ func main() {
 		PlaceRateLimit: api.PlaceRateLimit{
 			Burst: placeRateLimitBurst,
 			Every: placeRateLimitEvery,
+		},
+		ClientIPHeader: clientIPHeader,
+		// The seven D-11 shapes from the constants block above.
+		RateLimits: api.RateLimits{
+			ReportSerious: api.BucketLimit{Every: reportSeriousEvery, Burst: reportSeriousBurst},
+			ReportOther:   api.BucketLimit{Every: reportOtherEvery, Burst: reportOtherBurst},
+			Vote:          api.BucketLimit{Every: voteEvery, Burst: voteBurst},
+			VoteChange:    api.BucketLimit{Every: voteChangeEvery, Burst: voteChangeBurst},
+			Flag:          api.BucketLimit{Every: flagEvery, Burst: flagBurst},
+			SubmitAttempt: api.BucketLimit{Every: submitAttemptEvery, Burst: submitAttemptBurst},
+			IPBackstop:    api.BucketLimit{Every: ipBackstopEvery, Burst: ipBackstopBurst},
 		},
 	}
 	router := api.NewRouter(deps)

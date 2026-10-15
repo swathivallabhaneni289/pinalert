@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -55,6 +56,29 @@ func (m *gateFakeMailer) lastLink() string {
 // and exempt routes both need, so the whole route table — not just
 // requireVerifiedAccount in isolation — is under test.
 func newGateTestServer(t *testing.T) (*httptest.Server, *pgxpool.Pool, *gateFakeMailer) {
+	return newGateTestServerWith(t, nil)
+}
+
+// gateGenerousBucket and gateGenerousRateLimits open every Phase 4 bucket so
+// the existing gate suites never hit a limit. The limit tests set their own
+// buckets through the tweak hook of newGateTestServerWith. The request link
+// limiter is left at its default on purpose: the spoof test relies on it.
+var gateGenerousBucket = BucketLimit{Every: time.Millisecond, Burst: 1000}
+
+var gateGenerousRateLimits = RateLimits{
+	ReportSerious: gateGenerousBucket,
+	ReportOther:   gateGenerousBucket,
+	Vote:          gateGenerousBucket,
+	VoteChange:    gateGenerousBucket,
+	Flag:          gateGenerousBucket,
+	SubmitAttempt: gateGenerousBucket,
+	IPBackstop:    gateGenerousBucket,
+}
+
+// newGateTestServerWith is newGateTestServer with a hook. Every bucket starts
+// open; tweak, when non nil, runs after the Deps literal and before the router
+// is built, so it can override any field.
+func newGateTestServerWith(t *testing.T, tweak func(d *Deps, q *sqlcgen.Queries)) (*httptest.Server, *pgxpool.Pool, *gateFakeMailer) {
 	t.Helper()
 	pool := testutil.NewTestDB(t)
 
@@ -76,6 +100,10 @@ func newGateTestServer(t *testing.T) (*httptest.Server, *pgxpool.Pool, *gateFake
 		AuthService: service.NewAuthService(queries, fm, "https://pinalert.example"),
 		Auth:        handlers.AuthConfig{AssetVersion: "test"},
 		Template:    tmpl,
+		RateLimits:  gateGenerousRateLimits,
+	}
+	if tweak != nil {
+		tweak(&deps, queries)
 	}
 	router := NewRouter(deps)
 
