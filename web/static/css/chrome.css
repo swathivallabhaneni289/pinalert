@@ -4,6 +4,11 @@
  * bar height rules and the document scroll padding belong to a later plan.
  */
 
+/* A focused control or a scrolled to row never lands under the sticky bar. */
+html {
+  scroll-padding-top: calc(var(--disclaimer-bar-height) + var(--space-sm));
+}
+
 .top-chrome {
   position: sticky;
   top: 0;
@@ -15,6 +20,8 @@
   display: flex;
   align-items: center;
   box-sizing: border-box;
+  /* A floor, never a height: larger text still grows the bar. */
+  min-height: var(--disclaimer-bar-height);
   padding: var(--space-xs) var(--space-sm);
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);

@@ -19,7 +19,8 @@ import (
 // the alignment with the account button are present, and they are mutually
 // consistent. Two geometry locks compare values read out of the shipped CSS
 // against each other: .app-header top must equal .profile-page padding-top
-// (one shared line), and .account-trigger height must equal
+// (one shared line, the header top being the bar bottom edge plus that
+// padding), and .account-trigger height must equal
 // .profile-back-link height (one shared center). What it cannot prove: that
 // a browser paints those declarations as intended, that the "/" route
 // resolves to the map shell, or that the focus ring is visible. Those need
@@ -150,10 +151,12 @@ func TestActivityPageLinksBackToTheMap(t *testing.T) {
 		t.Fatalf("need .app-header top and .profile-page padding-top declared, got top=%q padding-top=%q",
 			headerTop, pageTop)
 	}
-	if headerTop != pageTop {
-		t.Errorf("geometry lock: .app-header top (%q) must equal .profile-page padding-top (%q), "+
-			"otherwise the back control and the account button leave their shared line",
-			headerTop, pageTop)
+	// The header hangs inside the sticky bar wrapper, so its top is the bar's
+	// bottom edge plus the page padding (P4-A1).
+	if wantTop := "calc(100% + " + pageTop + ")"; headerTop != wantTop {
+		t.Errorf("geometry lock: .app-header top (%q) must equal %q (the bar bottom edge plus "+
+			".profile-page padding-top), otherwise the back control and the account button leave "+
+			"their shared line", headerTop, wantTop)
 	}
 
 	// Geometry lock 2: one shared vertical center.

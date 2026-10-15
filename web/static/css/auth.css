@@ -12,8 +12,8 @@
 
 .login-gate {
   position: relative;
-  min-height: 100vh;
-  min-height: 100dvh;
+  min-height: calc(100vh - var(--disclaimer-bar-height));
+  min-height: calc(100dvh - var(--disclaimer-bar-height));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -231,19 +231,18 @@
    in main.css: main.css is covered by four computed contract tests
    including a WCAG contrast matrix, and keeping this phase's rules in
    auth.css leaves those tests reasoning about exactly the source they were
-   written against. Fixed-position, top-right, matching the FAB/view-toggle
-   fixed-positioning convention (main.css) rather than sitting in normal
-   flow — .app-shell/#map already commit to a self-resolving 100vh/100dvh
-   height, and a header participating in normal document flow would push
-   that height past the viewport instead of overlaying it. DEC-S: the
+   written against. The header lives inside the sticky .top-chrome wrapper
+   and hangs off its bottom edge, so the trigger always sits 16px under the
+   bar's real bottom edge at any bar height or text size, and it overlays the
+   page instead of pushing it down. The stacking comes from .top-chrome
+   (z-index 1050). DEC-S: the
    header carries no left-slot content of any kind, so this rule set is
    deliberately just the trigger button plus its dropdown panel — no bar
    background, no logo slot. */
 .app-header {
-  position: fixed;
-  top: var(--space-md);
+  position: absolute;
+  top: calc(100% + var(--space-md));
   right: var(--space-md);
-  z-index: 1050; /* above the FAB/view-toggle's 1000, below the modal's 1100 */
 }
 
 .account-trigger {
@@ -438,9 +437,10 @@
    for the same reason the header rules above are: main.css is covered by
    four computed contract tests including a WCAG contrast matrix, and
    keeping this phase's rules in auth.css leaves those tests reasoning about
-   exactly the source they were written against. Top padding clears the
-   fixed-position header (.app-header, above) so the page's own content
-   never sits underneath it. */
+   exactly the source they were written against. The page begins under
+   .top-chrome, so its top padding equals the trigger's offset below the
+   bar and the page's own content never sits underneath the header
+   (.app-header, above). */
 .profile-page {
   max-width: 640px;
   margin: 0 auto;
