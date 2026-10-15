@@ -1224,6 +1224,52 @@ func TestCastVoteCheckOrder(t *testing.T) {
 		}
 	})
 
+	// The withheld refusal (plan 04-07, R-01, D-02) sits right after the
+	// context read, above the own report block, the expiry check and the
+	// distance check.
+	withState := func(q *fakeVotingQuerier, state ModerationState) *fakeVotingQuerier {
+		q.voteContextRow.ModerationState = string(state)
+		return q
+	}
+
+	t.Run("invalid kind on a removed report is a ValidationError with zero store calls", func(t *testing.T) {
+		q := withState(live(&reporterID), ModerationRemoved)
+		err := cast(q, 9, VoteKind("bogus"), VoteConfirm)
+		var ve ValidationError
+		if !errors.As(err, &ve) {
+			t.Fatalf("err = %v, want a ValidationError", err)
+		}
+		if len(q.calls) != 0 {
+			t.Errorf("calls = %v, want none", q.calls)
+		}
+	})
+
+	t.Run("missing report is still ErrReportNotFound", func(t *testing.T) {
+		q := &fakeVotingQuerier{voteContextErr: pgx.ErrNoRows}
+		q.voteContextRow.ModerationState = string(ModerationRemoved)
+		if err := cast(q, 9, VoteKindContent, VoteConfirm); !errors.Is(err, ErrReportNotFound) {
+			t.Fatalf("err = %v, want ErrReportNotFound", err)
+		}
+	})
+
+	t.Run("the reporter's own confirm on their own removed report is ErrReportNotFound", func(t *testing.T) {
+		q := withState(live(&reporterID), ModerationRemoved)
+		if err := cast(q, 7, VoteKindContent, VoteConfirm); !errors.Is(err, ErrReportNotFound) {
+			t.Fatalf("err = %v, want ErrReportNotFound, not ErrCannotVoteOwnReport", err)
+		}
+	})
+
+	t.Run("a far confirm on an expired pending low report is ErrReportNotFound", func(t *testing.T) {
+		q := withState(expired(&reporterID), ModerationPending)
+		if err := cast(q, 9, VoteKindContent, VoteConfirm); !errors.Is(err, ErrReportNotFound) {
+			t.Fatalf("err = %v, want ErrReportNotFound, not ErrReportExpired or ErrVoterTooFar", err)
+		}
+		wantCallsOnly := []string{"ReportVoteContext"}
+		if !slices.Equal(q.calls, wantCallsOnly) {
+			t.Errorf("calls = %v, want %v", q.calls, wantCallsOnly)
+		}
+	})
+
 	// The store call order of the take back and of the other resolution
 	// votes (plan 03.1-02). Confirm and dispute keep the sequence they had.
 	near := func(q *fakeVotingQuerier, acct int64, kind VoteKind, value VoteValue) error {
@@ -1287,6 +1333,114 @@ func TestCastVoteCheckOrder(t *testing.T) {
 		}
 		wantCalls(t, q, "ReportVoteContext")
 	})
+}
+
+// TestCastVoteRefusesWithheld pins R-01 and D-02 on the vote path: a vote of
+// any kind on a removed report, or on a pending report that is not serious,
+// answers ErrReportNotFound after exactly one store call and writes nothing,
+// even for the report's author. A pending serious report still takes votes
+// through the critical bypass.
+func TestCastVoteRefusesWithheld(t *testing.T) {
+	reporterID := int64(7)
+	newQ := func(state string, sev Severity, cat Category) *fakeVotingQuerier {
+		row := testVoteContext(time.Now().Add(time.Hour), &reporterID)
+		row.Severity = string(sev)
+		row.Category = string(cat)
+		row.ModerationState = state
+		return &fakeVotingQuerier{voteContextRow: row}
+	}
+	cast := func(q *fakeVotingQuerier, acct int64, kind VoteKind, value VoteValue) (CastVoteResult, error) {
+		return NewVotingService(q).CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: acct, Kind: kind, Value: value, Latitude: testReportLat, Longitude: testReportLon,
+		})
+	}
+	wantRefused := func(t *testing.T, q *fakeVotingQuerier, err error) {
+		t.Helper()
+		if !errors.Is(err, ErrReportNotFound) {
+			t.Fatalf("err = %v, want ErrReportNotFound", err)
+		}
+		if len(q.insertedVotes) != 0 {
+			t.Errorf("InsertVote called %d times, want 0", len(q.insertedVotes))
+		}
+		if want := []string{"ReportVoteContext"}; !slices.Equal(q.calls, want) {
+			t.Errorf("calls = %v, want exactly %v", q.calls, want)
+		}
+	}
+
+	t.Run("removed low flood confirm is refused", func(t *testing.T) {
+		q := newQ(string(ModerationRemoved), SeverityLow, CategoryFlood)
+		_, err := cast(q, 9, VoteKindContent, VoteConfirm)
+		wantRefused(t, q, err)
+	})
+	t.Run("removed critical flood confirm is refused, removed beats the bypass", func(t *testing.T) {
+		q := newQ(string(ModerationRemoved), SeverityCritical, CategoryFlood)
+		_, err := cast(q, 9, VoteKindContent, VoteConfirm)
+		wantRefused(t, q, err)
+	})
+	t.Run("removed low rescue needed confirm is refused", func(t *testing.T) {
+		q := newQ(string(ModerationRemoved), SeverityLow, CategoryRescueNeeded)
+		_, err := cast(q, 9, VoteKindContent, VoteConfirm)
+		wantRefused(t, q, err)
+	})
+	for _, v := range []struct {
+		kind  VoteKind
+		value VoteValue
+	}{
+		{VoteKindContent, VoteConfirm},
+		{VoteKindContent, VoteDispute},
+		{VoteKindResolution, VoteResolve},
+		{VoteKindResolution, VoteReopen},
+	} {
+		t.Run("removed "+string(v.value)+" is refused", func(t *testing.T) {
+			q := newQ(string(ModerationRemoved), SeverityLow, CategoryFlood)
+			_, err := cast(q, 9, v.kind, v.value)
+			wantRefused(t, q, err)
+		})
+	}
+	t.Run("pending low flood confirm is refused", func(t *testing.T) {
+		q := newQ(string(ModerationPending), SeverityLow, CategoryFlood)
+		_, err := cast(q, 9, VoteKindContent, VoteConfirm)
+		wantRefused(t, q, err)
+	})
+	t.Run("pending low flood own resolve is refused, the reporter exemption does not apply", func(t *testing.T) {
+		q := newQ(string(ModerationPending), SeverityLow, CategoryFlood)
+		_, err := cast(q, 7, VoteKindResolution, VoteResolve)
+		wantRefused(t, q, err)
+	})
+
+	for name, c := range map[string]struct {
+		sev Severity
+		cat Category
+	}{
+		"pending critical flood": {SeverityCritical, CategoryFlood},
+		"pending rescue needed":  {SeverityLow, CategoryRescueNeeded},
+	} {
+		t.Run(name+" confirm succeeds through the bypass", func(t *testing.T) {
+			q := newQ(string(ModerationPending), c.sev, c.cat)
+			res, err := cast(q, 9, VoteKindContent, VoteConfirm)
+			if err != nil {
+				t.Fatalf("err = %v, want nil", err)
+			}
+			if len(q.insertedVotes) != 1 {
+				t.Errorf("InsertVote called %d times, want 1", len(q.insertedVotes))
+			}
+			if res.Visibility != VisibilityLive || res.Reason != ReasonCriticalBypass {
+				t.Errorf("result = %s/%s, want live/critical_bypass", res.Visibility, res.Reason)
+			}
+		})
+	}
+
+	for name, state := range map[string]string{"clear": string(ModerationClear), "empty": ""} {
+		t.Run(name+" low flood confirm succeeds", func(t *testing.T) {
+			q := newQ(state, SeverityLow, CategoryFlood)
+			if _, err := cast(q, 9, VoteKindContent, VoteConfirm); err != nil {
+				t.Fatalf("err = %v, want nil", err)
+			}
+			if len(q.insertedVotes) != 1 {
+				t.Errorf("InsertVote called %d times, want 1", len(q.insertedVotes))
+			}
+		})
+	}
 }
 
 // TestCastVoteTakeBack covers the take back of a mistaken Mark resolved

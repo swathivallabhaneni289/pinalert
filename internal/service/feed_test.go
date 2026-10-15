@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"pinalert/internal/service"
 	sqlcgen "pinalert/internal/store/sqlc"
@@ -48,6 +49,38 @@ type fakeFeedQuerier struct {
 	focusArgs       []sqlcgen.ReportForFocusParams
 	undoArgs        []sqlcgen.ResolutionUndoCountsParams
 	callLog         []string
+
+	// extrasRows/extrasErr/extrasArgs drive ReportExtrasForReports (plan
+	// 04-07). Unconfigured (nil extrasRows) the fake answers a clear row per
+	// requested id, so every existing test keeps its result.
+	extrasRows []sqlcgen.ReportExtrasForReportsRow
+	extrasErr  error
+	extrasArgs []sqlcgen.ReportExtrasForReportsParams
+}
+
+// ReportExtrasForReports records the call. Configured, it returns only the
+// rows of the requested ids, like the query's own filter (a non nil empty
+// slice therefore returns none); unconfigured it returns one clear row per
+// requested id in request order.
+func (f *fakeFeedQuerier) ReportExtrasForReports(ctx context.Context, arg sqlcgen.ReportExtrasForReportsParams) ([]sqlcgen.ReportExtrasForReportsRow, error) {
+	f.callLog = append(f.callLog, "ReportExtrasForReports")
+	f.extrasArgs = append(f.extrasArgs, arg)
+	if f.extrasErr != nil {
+		return nil, f.extrasErr
+	}
+	var out []sqlcgen.ReportExtrasForReportsRow
+	if f.extrasRows == nil {
+		for _, id := range arg.ReportIds {
+			out = append(out, sqlcgen.ReportExtrasForReportsRow{ReportID: id, ModerationState: string(service.ModerationClear)})
+		}
+		return out, nil
+	}
+	for _, row := range f.extrasRows {
+		if slices.Contains(arg.ReportIds, row.ReportID) {
+			out = append(out, row)
+		}
+	}
+	return out, nil
 }
 
 // ExpiredReportsInWindow, OpenReportsInArea, ReportForFocus and
@@ -534,7 +567,7 @@ func TestNearbyBatchesVoteReadsOnce(t *testing.T) {
 		fake := &fakeFeedQuerier{nearbyRows: rows, reporterRows: reporterRows}
 		svc := service.NewReportService(fake)
 
-		if _, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5}); err != nil {
+		if _, err := svc.Nearby(context.Background(), service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, ViewerAccountID: 30}); err != nil {
 			t.Fatalf("Nearby: %v", err)
 		}
 
@@ -549,6 +582,23 @@ func TestNearbyBatchesVoteReadsOnce(t *testing.T) {
 		}
 		if len(fake.lastReporterIDs) != 25 {
 			t.Errorf("ReporterAccountsForReports received %d ids, want 25", len(fake.lastReporterIDs))
+		}
+		// U11, V-20: the moderation extras ride one more batched read over the
+		// page's own ids and the viewer's account id.
+		if got := countCalls(fake.callLog, "ReportExtrasForReports"); got != 1 {
+			t.Errorf("ReportExtrasForReports called %d times, want 1", got)
+		}
+		if len(fake.extrasArgs) == 1 {
+			wantIDs := make([]int64, 0, 25)
+			for i := int64(1); i <= 25; i++ {
+				wantIDs = append(wantIDs, i)
+			}
+			if !equalIDs(fake.extrasArgs[0].ReportIds, wantIDs) {
+				t.Errorf("extras ReportIds = %v, want the 25 page ids in order", fake.extrasArgs[0].ReportIds)
+			}
+			if fake.extrasArgs[0].ViewerAccountID != 30 {
+				t.Errorf("extras ViewerAccountID = %d, want 30", fake.extrasArgs[0].ViewerAccountID)
+			}
 		}
 	})
 
@@ -568,6 +618,9 @@ func TestNearbyBatchesVoteReadsOnce(t *testing.T) {
 		}
 		if got := countCalls(fake.callLog, "ReporterAccountsForReports"); got != 0 {
 			t.Errorf("ReporterAccountsForReports called %d times, want 0", got)
+		}
+		if got := countCalls(fake.callLog, "ReportExtrasForReports"); got != 0 {
+			t.Errorf("ReportExtrasForReports called %d times, want 0", got)
 		}
 	})
 }
@@ -907,7 +960,7 @@ func TestNearbyBatchesVoteReadsOnceWithReporters(t *testing.T) {
 			t.Fatalf("Nearby: %v", err)
 		}
 
-		wantLog := []string{"NearbyReports", "ReporterAccountsForReports", "ReporterHistoryReports", "CurrentVotesForReports"}
+		wantLog := []string{"NearbyReports", "ReporterAccountsForReports", "ReporterHistoryReports", "CurrentVotesForReports", "ReportExtrasForReports"}
 		if !slices.Equal(fake.callLog, wantLog) {
 			t.Fatalf("callLog = %v, want %v", fake.callLog, wantLog)
 		}
@@ -963,7 +1016,7 @@ func TestNearbyBatchesVoteReadsOnceWithReporters(t *testing.T) {
 		if _, err := svc.Nearby(context.Background(), query); err != nil {
 			t.Fatalf("Nearby: %v", err)
 		}
-		for _, name := range []string{"ReporterAccountsForReports", "ReporterHistoryReports", "CurrentVotesForReports"} {
+		for _, name := range []string{"ReporterAccountsForReports", "ReporterHistoryReports", "CurrentVotesForReports", "ReportExtrasForReports"} {
 			if got := countCalls(fake.callLog, name); got != 0 {
 				t.Errorf("%s called %d times, want 0", name, got)
 			}
@@ -1532,4 +1585,246 @@ func TestNearbyFillsViewerResolution(t *testing.T) {
 	if disputed[0].View != service.FeedViewDisputed {
 		t.Errorf("report 2: View = %q, want %q", disputed[0].View, service.FeedViewDisputed)
 	}
+}
+
+// TestWrittenAtForDisplay pins D-19's strict 30 minute rule: a written time is
+// shown only when the upload came MORE than WrittenLabelThreshold after it, and
+// what comes back is a copy.
+func TestWrittenAtForDisplay(t *testing.T) {
+	created := time.Date(2031, 3, 1, 12, 0, 0, 0, time.UTC)
+	before := func(d time.Duration) *time.Time {
+		w := created.Add(-d)
+		return &w
+	}
+
+	t.Run("nil written gives nil", func(t *testing.T) {
+		if got := service.WrittenAtForDisplay(created, nil); got != nil {
+			t.Errorf("got %v, want nil", got)
+		}
+	})
+	t.Run("29m59s before gives nil", func(t *testing.T) {
+		if got := service.WrittenAtForDisplay(created, before(29*time.Minute+59*time.Second)); got != nil {
+			t.Errorf("got %v, want nil", got)
+		}
+	})
+	t.Run("exactly the threshold gives nil", func(t *testing.T) {
+		if got := service.WrittenAtForDisplay(created, before(service.WrittenLabelThreshold)); got != nil {
+			t.Errorf("got %v, want nil", got)
+		}
+	})
+	t.Run("30m01s before gives the written time", func(t *testing.T) {
+		w := before(30*time.Minute + time.Second)
+		got := service.WrittenAtForDisplay(created, w)
+		if got == nil || !got.Equal(*w) {
+			t.Errorf("got %v, want %v", got, *w)
+		}
+	})
+	t.Run("4 hours before gives the written time", func(t *testing.T) {
+		w := before(4 * time.Hour)
+		got := service.WrittenAtForDisplay(created, w)
+		if got == nil || !got.Equal(*w) {
+			t.Errorf("got %v, want %v", got, *w)
+		}
+	})
+	t.Run("written after created gives nil", func(t *testing.T) {
+		w := created.Add(time.Hour)
+		if got := service.WrittenAtForDisplay(created, &w); got != nil {
+			t.Errorf("got %v, want nil", got)
+		}
+	})
+	t.Run("the returned pointer is a copy", func(t *testing.T) {
+		w := before(4 * time.Hour)
+		orig := *w
+		got := service.WrittenAtForDisplay(created, w)
+		if got == nil {
+			t.Fatal("got nil, want a copy")
+		}
+		if got == w {
+			t.Fatal("returned the input pointer, want a copy")
+		}
+		*got = got.Add(24 * time.Hour)
+		if !w.Equal(orig) {
+			t.Errorf("input changed to %v, want %v", *w, orig)
+		}
+	})
+}
+
+// extrasRow builds one ReportExtrasForReportsRow for the moderation tests.
+func extrasRow(id int64, state service.ModerationState, written *time.Time, flagged bool) sqlcgen.ReportExtrasForReportsRow {
+	row := sqlcgen.ReportExtrasForReportsRow{ReportID: id, ModerationState: string(state), ViewerFlagged: flagged}
+	if written != nil {
+		row.ClientWrittenAt = pgtype.Timestamptz{Time: *written, Valid: true}
+	}
+	return row
+}
+
+// TestNearbyCarriesModerationExtras is R-01 and D-02 on the feed read: the
+// stored moderation state reaches Resolve through the one extras read, a
+// withheld report never lists, a pending serious one stays published, a report
+// the extras read did not return is not listed, and the display only written
+// time and the viewer's flag ride along.
+func TestNearbyCarriesModerationExtras(t *testing.T) {
+	query := service.NearbyQuery{Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, ViewerAccountID: 30}
+	newFake := func() *fakeFeedQuerier {
+		f := &fakeFeedQuerier{}
+		f.nearbyRows = []sqlcgen.NearbyReportsRow{
+			nearbyRow(1, service.SeverityLow, service.CategoryFlood, 1),
+			nearbyRow(2, service.SeverityCritical, service.CategoryFlood, 2),
+			nearbyRow(3, service.SeverityLow, service.CategoryFlood, 3),
+			nearbyRow(4, service.SeverityCritical, service.CategoryFlood, 4),
+			nearbyRow(5, service.SeverityLow, service.CategoryRescueNeeded, 5),
+			nearbyRow(6, service.SeverityLow, service.CategoryFlood, 6),
+			nearbyRow(7, service.SeverityLow, service.CategoryFlood, 7),
+		}
+		written4h := f.nearbyRows[5].CreatedAt.Add(-4 * time.Hour)
+		notWritten := f.nearbyRows[3].CreatedAt.Add(-4 * time.Hour)
+		report4 := extrasRow(4, service.ModerationPending, nil, false)
+		// A NULL column whose Time is not zero: Valid false must win.
+		report4.ClientWrittenAt = pgtype.Timestamptz{Time: notWritten, Valid: false}
+		f.extrasRows = []sqlcgen.ReportExtrasForReportsRow{
+			extrasRow(1, service.ModerationRemoved, nil, false),
+			extrasRow(2, service.ModerationRemoved, nil, false),
+			extrasRow(3, service.ModerationPending, nil, false),
+			report4,
+			extrasRow(5, service.ModerationPending, nil, false),
+			extrasRow(6, service.ModerationClear, &written4h, true),
+		}
+		return f
+	}
+
+	t.Run("lists only the published reports and fills the extras", func(t *testing.T) {
+		fake := newFake()
+		views, err := service.NewReportService(fake).Nearby(context.Background(), query)
+		if err != nil {
+			t.Fatalf("Nearby: %v", err)
+		}
+		if got := viewIDs(views); !equalIDs(got, []int64{4, 5, 6}) {
+			t.Fatalf("ids = %v, want [4 5 6]", got)
+		}
+		for _, v := range views {
+			if v.Visibility == service.VisibilityWithheld {
+				t.Errorf("report %d carries visibility withheld", v.ID)
+			}
+		}
+		v4, _ := findView(views, 4)
+		if v4.Visibility != service.VisibilityLive || v4.VisibilityReason != service.ReasonCriticalBypass {
+			t.Errorf("report 4 = %s/%s, want live/critical_bypass", v4.Visibility, v4.VisibilityReason)
+		}
+		if v4.WrittenAt != nil {
+			t.Errorf("report 4 WrittenAt = %v, want nil for a NULL column", v4.WrittenAt)
+		}
+		if v4.ViewerFlagged {
+			t.Error("report 4 ViewerFlagged = true, want false")
+		}
+		v6, _ := findView(views, 6)
+		want6 := fake.nearbyRows[5].CreatedAt.Add(-4 * time.Hour)
+		if v6.WrittenAt == nil || !v6.WrittenAt.Equal(want6) {
+			t.Errorf("report 6 WrittenAt = %v, want %v", v6.WrittenAt, want6)
+		}
+		if !v6.ViewerFlagged {
+			t.Error("report 6 ViewerFlagged = false, want true")
+		}
+		if len(fake.extrasArgs) != 1 || fake.extrasArgs[0].ViewerAccountID != 30 {
+			t.Errorf("extrasArgs = %+v, want one call for viewer 30", fake.extrasArgs)
+		}
+	})
+
+	t.Run("an extras error is returned", func(t *testing.T) {
+		boom := errors.New("extras unavailable")
+		fake := newFake()
+		fake.extrasErr = boom
+		if _, err := service.NewReportService(fake).Nearby(context.Background(), query); !errors.Is(err, boom) {
+			t.Fatalf("err = %v, want %v", err, boom)
+		}
+	})
+
+	t.Run("an unconfigured fake lists every page report as before", func(t *testing.T) {
+		fake := newFake()
+		fake.extrasRows = nil
+		views, err := service.NewReportService(fake).Nearby(context.Background(), query)
+		if err != nil {
+			t.Fatalf("Nearby: %v", err)
+		}
+		if got := viewIDs(views); !equalIDs(got, []int64{1, 2, 3, 4, 5, 6, 7}) {
+			t.Errorf("ids = %v, want all seven", got)
+		}
+	})
+}
+
+// TestHistoryReadsCarryModeration is R-01 on the Phase 3.1 read paths: one
+// extras read in the shared context load, and a held or removed report is in
+// no view.
+func TestHistoryReadsCarryModeration(t *testing.T) {
+	newFake := func() *fakeFeedQuerier {
+		return &fakeFeedQuerier{
+			expiredRows: []sqlcgen.ExpiredReportsInWindowRow{
+				h6Expired(1, service.CategoryFlood, service.SeverityLow, time.Hour),
+				h6Expired(2, service.CategoryFlood, service.SeverityLow, time.Hour),
+				h6Expired(3, service.CategoryFlood, service.SeverityLow, time.Hour),
+			},
+			extrasRows: []sqlcgen.ReportExtrasForReportsRow{
+				extrasRow(1, service.ModerationRemoved, nil, false),
+				extrasRow(2, service.ModerationPending, nil, false),
+				extrasRow(3, service.ModerationClear, nil, false),
+			},
+		}
+	}
+
+	t.Run("History lists only the clear report with one extras read", func(t *testing.T) {
+		fake := newFake()
+		page, err := h6History(fake, h6Query())
+		if err != nil {
+			t.Fatalf("History: %v", err)
+		}
+		if got := viewIDs(page.Reports); !equalIDs(got, []int64{3}) {
+			t.Errorf("ids = %v, want [3]", got)
+		}
+		if n := countCalls(fake.callLog, "ReportExtrasForReports"); n != 1 {
+			t.Errorf("ReportExtrasForReports called %d times, want 1", n)
+		}
+		if len(fake.extrasArgs) == 1 && !equalIDs(fake.extrasArgs[0].ReportIds, []int64{1, 2, 3}) {
+			t.Errorf("extras ReportIds = %v, want the candidate ids [1 2 3]", fake.extrasArgs[0].ReportIds)
+		}
+	})
+
+	t.Run("RecentHistoryCounts counts only the clear report", func(t *testing.T) {
+		fake := newFake()
+		svc := service.NewReportService(fake, service.WithReportClock(p12Clock))
+		got, err := svc.RecentHistoryCounts(context.Background(), service.RecentQuery{Latitude: h6Centre.Lat, Longitude: h6Centre.Lon, RadiusKm: 10})
+		if err != nil {
+			t.Fatalf("RecentHistoryCounts: %v", err)
+		}
+		if got.Expired != 1 || got.Resolved != 0 {
+			t.Errorf("counts = %+v, want Expired 1", got)
+		}
+		if n := countCalls(fake.callLog, "ReportExtrasForReports"); n != 1 {
+			t.Errorf("ReportExtrasForReports called %d times, want 1", n)
+		}
+	})
+
+	t.Run("Focus on the removed report is unavailable", func(t *testing.T) {
+		fake := newFake()
+		fake.focusRow = &sqlcgen.ReportForFocusRow{}
+		*fake.focusRow = sqlcgen.ReportForFocusRow(fake.expiredRows[0])
+		res, err := h6Focus(fake, service.FocusQuery{ReportID: 1, Latitude: h6Centre.Lat, Longitude: h6Centre.Lon})
+		if err != nil {
+			t.Fatalf("Focus: %v", err)
+		}
+		if res.Status != service.FocusUnavailable || res.View != nil {
+			t.Errorf("result = %+v, want unavailable with no view", res)
+		}
+	})
+
+	t.Run("Focus on the clear report is ok", func(t *testing.T) {
+		fake := newFake()
+		fake.focusRow = &sqlcgen.ReportForFocusRow{}
+		*fake.focusRow = sqlcgen.ReportForFocusRow(fake.expiredRows[2])
+		res, err := h6Focus(fake, service.FocusQuery{ReportID: 3, Latitude: h6Centre.Lat, Longitude: h6Centre.Lon})
+		if err != nil {
+			t.Fatalf("Focus: %v", err)
+		}
+		if res.Status != service.FocusOK || res.View == nil {
+			t.Errorf("result = %+v, want ok with a view", res)
+		}
+	})
 }

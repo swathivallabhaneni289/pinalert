@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/mmcloughlin/geohash"
 
 	sqlcgen "pinalert/internal/store/sqlc"
@@ -302,6 +303,10 @@ type Querier interface {
 	ReportForFocus(ctx context.Context, arg sqlcgen.ReportForFocusParams) (sqlcgen.ReportForFocusRow, error)
 	// ResolutionUndoCounts is the viewer's take back and reopen count per report.
 	ResolutionUndoCounts(ctx context.Context, arg sqlcgen.ResolutionUndoCountsParams) ([]sqlcgen.ResolutionUndoCountsRow, error)
+	// ReportExtrasForReports is the one batched read of the moderation state,
+	// the display only written time and the viewer's flag for a page of
+	// reports. It is held off NearbyReports so that query stays as shipped.
+	ReportExtrasForReports(ctx context.Context, arg sqlcgen.ReportExtrasForReportsParams) ([]sqlcgen.ReportExtrasForReportsRow, error)
 }
 
 // ReportService validates, computes derived fields, and persists reports.
@@ -536,9 +541,13 @@ func voteRowsByReport(rows []sqlcgen.CurrentVotesForReportsRow) map[int64][]sqlc
 //     with the window and cap built by reporterHistoryParams (D-13).
 //  8. CurrentVotesForReports once, over the page ids and then the history
 //     report ids that are not on the page (V-29).
+//     8b. ReportExtrasForReports once for the page ids with the viewer's
+//     account id: moderation state, display only written time and the viewer's
+//     flag. A report it did not return is not listed (R-01, D-19).
 //  9. ReporterSignals once for all collected accounts, at the same now (R-05).
 //  10. Group the vote rows by report once.
-//  11. Per report: build the tally, resolve, filter, then build the trust
+//  11. Per report: build the tally, resolve with the report's moderation state
+//     in ReportMeta (a withheld report never lists), filter, then build the trust
 //     object from the same batched rows for each report that is kept (D-21),
 //     and append. The reporter signal is read after Resolve and never feeds
 //     visibility, filtering or order (D-14). A report with no reporter
@@ -604,14 +613,32 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 	signals := ReporterSignals(accounts, history, voteRows, now)
 	votesByReport := voteRowsByReport(voteRows)
 
+	// The moderation state, the display only written time and the viewer's flag
+	// of the page, in one batched read over the page's own ids (R-01, D-19).
+	extraRows, err := s.q.ReportExtrasForReports(ctx, sqlcgen.ReportExtrasForReportsParams{ReportIds: ids, ViewerAccountID: q.ViewerAccountID})
+	if err != nil {
+		return nil, err
+	}
+	extrasByReport := make(map[int64]sqlcgen.ReportExtrasForReportsRow, len(extraRows))
+	for _, ex := range extraRows {
+		extrasByReport[ex.ReportID] = ex
+	}
+
 	views := make([]ReportView, 0, len(rows))
 	for _, row := range rows {
 		r := reportFromNearbyRow(row)
 		reporterID := reporterByReport[r.ID]
 		reportVotes := votesByReport[r.ID]
 
+		// A report the extras read did not return is not shown: fail closed
+		// (R-01, T-04-16).
+		ex, ok := extrasByReport[r.ID]
+		if !ok {
+			continue
+		}
+
 		tally := BuildVoteTally(reportVotes, r.ID, reporterID)
-		meta := ReportMeta{Severity: r.Severity, Category: r.Category}
+		meta := ReportMeta{Severity: r.Severity, Category: r.Category, Moderation: ModerationState(ex.ModerationState)}
 		vis, reason := Resolve(meta, tally, now)
 		if !vis.ListableInFeed(q.IncludeDisputed) {
 			continue
@@ -649,12 +676,27 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 				Now:               now,
 				Reporter:          reporterSignalRef(signals, reporterID),
 			}),
+			// Display only, set after Resolve and never read by it (R-05).
+			WrittenAt:     WrittenAtForDisplay(r.CreatedAt, writtenAtPtr(ex.ClientWrittenAt)),
+			ViewerFlagged: ex.ViewerFlagged,
 		})
 	}
 	if err := s.attachUndos(ctx, q.ViewerAccountID, views, now); err != nil {
 		return nil, err
 	}
 	return views, nil
+}
+
+// writtenAtPtr converts the nullable client_written_at column to the pointer
+// WrittenAtForDisplay takes: nil for a NULL column, otherwise a pointer to a
+// copy. The address of t.Time is never taken directly, because a NULL column
+// would then become a non nil pointer to the zero time.
+func writtenAtPtr(t pgtype.Timestamptz) *time.Time {
+	if !t.Valid {
+		return nil
+	}
+	w := t.Time
+	return &w
 }
 
 func reportFromNearbyRow(row sqlcgen.NearbyReportsRow) Report {

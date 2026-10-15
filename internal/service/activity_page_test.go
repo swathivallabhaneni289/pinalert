@@ -66,7 +66,7 @@ func TestActivityPageReadsPostsAndVotesInOnePass(t *testing.T) {
 
 	wantCalls := []string{
 		"ReportsByAccount", "VotedReportsByAccount", "ReporterAccountsForReports",
-		"ReporterHistoryReports", "CurrentVotesForReports",
+		"ReporterHistoryReports", "CurrentVotesForReports", "ReportExtrasForReports",
 	}
 	if !slices.Equal(*calls, wantCalls) {
 		t.Fatalf("calls = %v, want %v", *calls, wantCalls)

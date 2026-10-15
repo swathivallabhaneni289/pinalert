@@ -86,6 +86,37 @@ type fakeAuthQuerier struct {
 	undoRows []sqlcgen.ResolutionUndoCountsRow
 	undoErr  error
 	undoArgs []sqlcgen.ResolutionUndoCountsParams
+
+	// extrasRows/extrasErr/extrasArgs drive ReportExtrasForReports (plan 04-07).
+	// Unconfigured (nil extrasRows) the fake answers a clear row per requested
+	// id, so every existing test keeps its result.
+	extrasRows []sqlcgen.ReportExtrasForReportsRow
+	extrasErr  error
+	extrasArgs []sqlcgen.ReportExtrasForReportsParams
+}
+
+// ReportExtrasForReports records the call. Configured, it returns only the
+// rows of the requested ids, like the query's own filter; unconfigured it
+// returns one clear row per requested id in request order.
+func (f *fakeAuthQuerier) ReportExtrasForReports(ctx context.Context, arg sqlcgen.ReportExtrasForReportsParams) ([]sqlcgen.ReportExtrasForReportsRow, error) {
+	*f.calls = append(*f.calls, "ReportExtrasForReports")
+	f.extrasArgs = append(f.extrasArgs, arg)
+	if f.extrasErr != nil {
+		return nil, f.extrasErr
+	}
+	var out []sqlcgen.ReportExtrasForReportsRow
+	if f.extrasRows == nil {
+		for _, id := range arg.ReportIds {
+			out = append(out, sqlcgen.ReportExtrasForReportsRow{ReportID: id, ModerationState: string(service.ModerationClear)})
+		}
+		return out, nil
+	}
+	for _, row := range f.extrasRows {
+		if slices.Contains(arg.ReportIds, row.ReportID) {
+			out = append(out, row)
+		}
+	}
+	return out, nil
 }
 
 // ResolutionUndoCounts records the call and returns the configured rows of the
@@ -883,6 +914,160 @@ func TestRequestLinkUsesInjectedClockForExpiry(t *testing.T) {
 	}
 }
 
+// TestActivityCarriesModeration is R-01 and D-02 on the Activity read: each row
+// carries its stored state, a withheld row has visibility withheld and a zero
+// trust object, a pending serious row is public and keeps its trust, the
+// display only written time rides along, and a row the extras read did not
+// return is dropped.
+func TestActivityCarriesModeration(t *testing.T) {
+	ctx := context.Background()
+	const account int64 = 42
+
+	rowOf := func(id int64, severity service.Severity, category service.Category) sqlcgen.ReportsByAccountRow {
+		r := p12ActivityRow(id)
+		r.Severity = string(severity)
+		r.Category = string(category)
+		return r
+	}
+	written := p12Now.Add(-time.Hour).Add(-4 * time.Hour)
+
+	newFake := func() (*fakeAuthQuerier, *fakeMailer, *[]string) {
+		q, m, calls := newFakes()
+		q.reportsRows = []sqlcgen.ReportsByAccountRow{
+			rowOf(1, service.SeverityLow, service.CategoryFlood),
+			rowOf(2, service.SeverityCritical, service.CategoryFlood),
+			rowOf(3, service.SeverityLow, service.CategoryFlood),
+			rowOf(4, service.SeverityCritical, service.CategoryFlood),
+			rowOf(5, service.SeverityLow, service.CategoryRescueNeeded),
+			rowOf(6, service.SeverityLow, service.CategoryFlood),
+			rowOf(7, service.SeverityLow, service.CategoryFlood),
+		}
+		q.extrasRows = []sqlcgen.ReportExtrasForReportsRow{
+			{ReportID: 1, ModerationState: string(service.ModerationRemoved)},
+			{ReportID: 2, ModerationState: string(service.ModerationRemoved)},
+			{ReportID: 3, ModerationState: string(service.ModerationPending)},
+			{ReportID: 4, ModerationState: string(service.ModerationPending)},
+			{ReportID: 5, ModerationState: string(service.ModerationPending)},
+			{ReportID: 6, ModerationState: string(service.ModerationClear), ClientWrittenAt: pgtype.Timestamptz{Time: written, Valid: true}},
+		}
+		return q, m, calls
+	}
+	svcOf := func(q *fakeAuthQuerier, m *fakeMailer) *service.AuthService {
+		return service.NewAuthService(q, m, "https://pinalert.example", service.WithClock(p12Clock))
+	}
+
+	t.Run("rows carry state, visibility and trust", func(t *testing.T) {
+		q, m, calls := newFake()
+		acts, err := svcOf(q, m).ActivityForAccount(ctx, account)
+		if err != nil {
+			t.Fatalf("ActivityForAccount: %v", err)
+		}
+		ids := make([]int64, 0, len(acts))
+		byID := map[int64]service.ActivityReport{}
+		for _, a := range acts {
+			ids = append(ids, a.Row.ID)
+			byID[a.Row.ID] = a
+		}
+		if !equalIDs(ids, []int64{1, 2, 3, 4, 5, 6}) {
+			t.Fatalf("ids = %v, want [1 2 3 4 5 6]", ids)
+		}
+
+		zero := service.Trust{}
+		for id, want := range map[int64]struct {
+			mod    service.ModerationState
+			reason service.ResolveReason
+		}{
+			1: {service.ModerationRemoved, service.ReasonRemovedAfterReview},
+			2: {service.ModerationRemoved, service.ReasonRemovedAfterReview},
+			3: {service.ModerationPending, service.ReasonAwaitingTextCheck},
+		} {
+			a := byID[id]
+			if a.Moderation != want.mod || a.Visibility != service.VisibilityWithheld || a.Reason != want.reason {
+				t.Errorf("row %d = %s/%s/%s, want %s/withheld/%s", id, a.Moderation, a.Visibility, a.Reason, want.mod, want.reason)
+			}
+			if !reflect.DeepEqual(a.Trust, zero) {
+				t.Errorf("row %d trust = %+v, want the zero Trust", id, a.Trust)
+			}
+		}
+		for _, id := range []int64{4, 5} {
+			a := byID[id]
+			if a.Moderation != service.ModerationPending || a.Visibility != service.VisibilityLive || a.Reason != service.ReasonCriticalBypass {
+				t.Errorf("row %d = %s/%s/%s, want pending/live/critical_bypass", id, a.Moderation, a.Visibility, a.Reason)
+			}
+			if reflect.DeepEqual(a.Trust, zero) {
+				t.Errorf("row %d trust is the zero Trust, want a full trust object", id)
+			}
+		}
+		a6 := byID[6]
+		if a6.Moderation != service.ModerationClear {
+			t.Errorf("row 6 Moderation = %s, want clear", a6.Moderation)
+		}
+		if a6.WrittenAt == nil || !a6.WrittenAt.Equal(written) {
+			t.Errorf("row 6 WrittenAt = %v, want %v", a6.WrittenAt, written)
+		}
+		if reflect.DeepEqual(a6.Trust, zero) {
+			t.Error("row 6 trust is the zero Trust, want a full trust object")
+		}
+		if byID[4].WrittenAt != nil {
+			t.Errorf("row 4 WrittenAt = %v, want nil", byID[4].WrittenAt)
+		}
+
+		if n := slices.Index(*calls, "ReportExtrasForReports"); n != len(*calls)-1 || n < 1 || (*calls)[n-1] != "CurrentVotesForReports" {
+			t.Errorf("calls = %v, want one ReportExtrasForReports right after CurrentVotesForReports", *calls)
+		}
+		if len(q.extrasArgs) != 1 || q.extrasArgs[0].ViewerAccountID != account || !equalIDs(q.extrasArgs[0].ReportIds, []int64{1, 2, 3, 4, 5, 6, 7}) {
+			t.Errorf("extrasArgs = %+v, want one call for account 42 over the own report ids", q.extrasArgs)
+		}
+	})
+
+	t.Run("an account with no reports and no votes makes no extras call", func(t *testing.T) {
+		q, m, _ := newFakes()
+		if _, err := svcOf(q, m).ActivityForAccount(ctx, account); err != nil {
+			t.Fatalf("ActivityForAccount: %v", err)
+		}
+		if len(q.extrasArgs) != 0 {
+			t.Errorf("extras called %d times, want 0", len(q.extrasArgs))
+		}
+	})
+
+	t.Run("an extras error is wrapped", func(t *testing.T) {
+		boom := errors.New("extras unavailable")
+		q, m, _ := newFake()
+		q.extrasErr = boom
+		if _, err := svcOf(q, m).ActivityForAccount(ctx, account); !errors.Is(err, boom) {
+			t.Fatalf("err = %v, want it to wrap %v", err, boom)
+		}
+	})
+
+	t.Run("a voted report that resolves to withheld is dropped and the ids follow the posts", func(t *testing.T) {
+		q, m, _ := newFakes()
+		q.reportsRows = []sqlcgen.ReportsByAccountRow{p12ActivityRow(1)}
+		q.votedRows = []sqlcgen.VotedReportsByAccountRow{
+			wm5VotedRow(10, service.VoteConfirm, p12Now.Add(-10*time.Minute)),
+			wm5VotedRow(11, service.VoteConfirm, p12Now.Add(-20*time.Minute)),
+		}
+		q.reporterRows = []sqlcgen.ReporterAccountsForReportsRow{reporterRow(10, ptrID(7)), reporterRow(11, ptrID(8))}
+		q.extrasRows = []sqlcgen.ReportExtrasForReportsRow{
+			{ReportID: 1, ModerationState: string(service.ModerationClear)},
+			{ReportID: 10, ModerationState: string(service.ModerationRemoved)},
+			{ReportID: 11, ModerationState: string(service.ModerationClear)},
+		}
+		page, err := svcOf(q, m).ActivityPageForAccount(ctx, account)
+		if err != nil {
+			t.Fatalf("ActivityPageForAccount: %v", err)
+		}
+		if len(page.Posts) != 1 {
+			t.Errorf("posts = %d, want 1", len(page.Posts))
+		}
+		if len(page.Votes) != 1 || page.Votes[0].Row.ID != 11 {
+			t.Errorf("votes = %+v, want only report 11", page.Votes)
+		}
+		if len(q.extrasArgs) != 1 || !equalIDs(q.extrasArgs[0].ReportIds, []int64{1, 10, 11}) {
+			t.Errorf("extrasArgs = %+v, want one call over [1 10 11]", q.extrasArgs)
+		}
+	})
+}
+
 // TestActivityForAccountReadsReporterHistoryOnce proves the Activity page reads
 // the account's history once, keyed by the gate's account id, folds the history
 // ids into its one vote read, and gives every row the account's signal.
@@ -904,7 +1089,7 @@ func TestActivityForAccountReadsReporterHistoryOnce(t *testing.T) {
 		}
 		// 261013-wm5: the page now reads the account's votes in the same pass,
 		// so VotedReportsByAccount comes second. Every other assertion is kept.
-		wantCalls := []string{"ReportsByAccount", "VotedReportsByAccount", "ReporterHistoryReports", "CurrentVotesForReports"}
+		wantCalls := []string{"ReportsByAccount", "VotedReportsByAccount", "ReporterHistoryReports", "CurrentVotesForReports", "ReportExtrasForReports"}
 		if !slices.Equal(*calls, wantCalls) {
 			t.Fatalf("calls = %v, want %v", *calls, wantCalls)
 		}

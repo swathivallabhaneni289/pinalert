@@ -8,8 +8,29 @@
 package service
 
 import (
+	"time"
+
 	sqlcgen "pinalert/internal/store/sqlc"
 )
+
+// WrittenLabelThreshold is the one 30 minute constant behind the "Written 4
+// hours ago" line: a report shows a written time only when it was uploaded
+// more than this long after the client wrote it. Every surface reads it
+// through WrittenAtForDisplay (D-19).
+const WrittenLabelThreshold = 30 * time.Minute
+
+// WrittenAtForDisplay returns a copy of the client written time when the
+// upload came more than WrittenLabelThreshold after it was written, otherwise
+// nil. It is display only: it never feeds Resolve, the listability filter, the
+// order, created_at or expires_at (R-05). Clamping the stored value is
+// ClampWrittenAt's job (04-17).
+func WrittenAtForDisplay(createdAt time.Time, written *time.Time) *time.Time {
+	if written == nil || createdAt.Sub(*written) <= WrittenLabelThreshold {
+		return nil
+	}
+	w := *written
+	return &w
+}
 
 // ReportView is what a read path returns; Report alone is what the write
 // path returns, so a freshly submitted report is never handed a visibility
@@ -31,6 +52,11 @@ import (
 // 0 once the report has faded, because nothing can be undone then.
 // Approximate is true only when CoarsenFinishedRescue changed the report, so a
 // reader can say the spot is a blurred one.
+//
+// WrittenAt and ViewerFlagged are viewer or display data filled from the
+// batched extras read: WrittenAt is WrittenAtForDisplay's answer, ViewerFlagged
+// is viewer specific like ViewerVote, and neither reaches the wire in this plan
+// (04-17 adds written_at, 04-20 viewer_flagged).
 type ReportView struct {
 	Report
 	Visibility       Visibility
@@ -43,6 +69,8 @@ type ReportView struct {
 	UndosLeft        int
 	Approximate      bool
 	Trust            Trust
+	WrittenAt        *time.Time
+	ViewerFlagged    bool
 }
 
 // ListableInFeed reports whether a report with visibility v should appear

@@ -82,6 +82,10 @@ type AuthQuerier interface {
 	// stop offering a Reopen the server would refuse (plan 03.1-07, D-22). A
 	// consumer defined interface naming the generated method VotingQuerier names.
 	ResolutionUndoCounts(ctx context.Context, arg sqlcgen.ResolutionUndoCountsParams) ([]sqlcgen.ResolutionUndoCountsRow, error)
+	// ReportExtrasForReports gives ActivityPageForAccount (which
+	// ActivityForAccount wraps) the moderation state and the display only
+	// written time of the page's reports, in one batched read (R-01).
+	ReportExtrasForReports(ctx context.Context, arg sqlcgen.ReportExtrasForReportsParams) ([]sqlcgen.ReportExtrasForReportsRow, error)
 }
 
 // ErrRateLimited is returned by RequestLink when a second verification-
@@ -350,6 +354,14 @@ type ActivityReport struct {
 	// cell and the description is empty. Only another person's finished Rescue
 	// report on the voted list is ever approximate; own posts stay exact.
 	Approximate bool
+	// Moderation is the stored state, carried so 04-16 can label held and
+	// removed rows. A withheld row carries Visibility withheld with reason
+	// awaiting_text_check or removed_after_review, and the zero Trust.
+	Moderation ModerationState
+	// WrittenAt is WrittenAtForDisplay's answer: the client written time when
+	// the upload came more than WrittenLabelThreshold after it, else nil. It is
+	// display only (R-05).
+	WrittenAt *time.Time
 }
 
 // VotedReport is one report the account currently confirms or disputes: the
@@ -410,8 +422,11 @@ func (s *AuthService) ActivityForAccount(ctx context.Context, accountID int64) (
 // Order of reads: posts, votes, then (when voted reports remain)
 // ReporterAccountsForReports once over the voted ids, then history once for
 // the viewer (when it has posts) and the voted reports' reporters, then votes
-// once over post ids, voted ids and history ids. An account with nothing to
-// list makes only the first two reads.
+// once over post ids, voted ids and history ids, then ReportExtrasForReports
+// once over the post ids and the voted ids for the moderation state and the
+// display only written time (R-01). A report that read did not return is
+// skipped, and a voted report that is withheld is dropped from the votes. An
+// account with nothing to list makes only the first two reads.
 //
 // Each post carries the account's own reporter signal. Each voted report
 // carries ITS reporter's signal, never the viewer's, so a voted card's trust
@@ -509,15 +524,31 @@ func (s *AuthService) ActivityPageForAccount(ctx context.Context, accountID int6
 	signals := ReporterSignals(accounts, history, voteRows, now)
 	votesByReport := voteRowsByReport(voteRows)
 
+	// One batched read of the moderation state and the display only written
+	// time over the own post ids and then the voted ids, never the history ids
+	// (R-01, D-19). A report it did not return is skipped below: fail closed.
+	extraRows, err := s.q.ReportExtrasForReports(ctx, sqlcgen.ReportExtrasForReportsParams{ReportIds: ids, ViewerAccountID: accountID})
+	if err != nil {
+		return ActivityPage{}, fmt.Errorf("service: reading moderation extras for account %d's reports: %w", accountID, err)
+	}
+	extrasByReport := make(map[int64]sqlcgen.ReportExtrasForReportsRow, len(extraRows))
+	for _, ex := range extraRows {
+		extrasByReport[ex.ReportID] = ex
+	}
+
 	posts := make([]ActivityReport, 0, len(rows))
 	// closedOwn holds the ids of own posts that are closed and not yet faded:
 	// the only posts whose Reopen the page can offer, so the only ones whose
 	// undo count is read (D-28).
 	var closedOwn []int64
 	for _, row := range rows {
+		ex, ok := extrasByReport[row.ID]
+		if !ok {
+			continue
+		}
 		category, severity := validatedActivityMeta(row.Category, row.Severity)
 
-		meta := ReportMeta{Severity: severity, Category: category}
+		meta := ReportMeta{Severity: severity, Category: category, Moderation: ModerationState(ex.ModerationState)}
 		// The viewing account is always a post's reporter (D-16's whole reason
 		// the Reopen path needs no identity check at all).
 		tally := BuildVoteTally(voteRows, row.ID, &accountID)
@@ -526,14 +557,12 @@ func (s *AuthService) ActivityPageForAccount(ctx context.Context, accountID int6
 			closedOwn = append(closedOwn, row.ID)
 		}
 
-		posts = append(posts, ActivityReport{
-			Row:        row,
-			Category:   category,
-			Severity:   severity,
-			Visibility: vis,
-			Reason:     reason,
-			UndosLeft:  UndoLimit,
-			Trust: BuildTrust(TrustInput{
+		// A withheld row keeps no trust object: it is not public, so there is
+		// nothing to say about who backs it. A pending serious report is public
+		// and keeps its trust like any published row (D-02).
+		var trust Trust
+		if !meta.Withheld() {
+			trust = BuildTrust(TrustInput{
 				Rows:              voteRows,
 				ReportID:          row.ID,
 				ReporterAccountID: &accountID,
@@ -543,7 +572,19 @@ func (s *AuthService) ActivityPageForAccount(ctx context.Context, accountID int6
 				ExpiresAt:         row.ExpiresAt,
 				Now:               now,
 				Reporter:          reporterSignalRef(signals, &accountID),
-			}),
+			})
+		}
+
+		posts = append(posts, ActivityReport{
+			Row:        row,
+			Category:   category,
+			Severity:   severity,
+			Visibility: vis,
+			Reason:     reason,
+			UndosLeft:  UndoLimit,
+			Trust:      trust,
+			Moderation: meta.Moderation,
+			WrittenAt:  WrittenAtForDisplay(row.CreatedAt, writtenAtPtr(ex.ClientWrittenAt)),
 		})
 	}
 
@@ -572,11 +613,20 @@ func (s *AuthService) ActivityPageForAccount(ctx context.Context, accountID int6
 
 	votes := make([]VotedReport, 0, len(voted))
 	for _, v := range voted {
+		ex, ok := extrasByReport[v.ID]
+		if !ok {
+			continue
+		}
 		category, severity := validatedActivityMeta(v.Category, v.Severity)
 		reporterID := reporterByReport[v.ID]
 		reportVotes := votesByReport[v.ID]
 
-		meta := ReportMeta{Severity: severity, Category: category}
+		meta := ReportMeta{Severity: severity, Category: category, Moderation: ModerationState(ex.ModerationState)}
+		// Another person's withheld report is never listed here: only its
+		// author's own page shows it (R-01).
+		if meta.Withheld() {
+			continue
+		}
 		tally := BuildVoteTally(reportVotes, v.ID, reporterID)
 		vis, reason := Resolve(meta, tally, now)
 
@@ -615,6 +665,8 @@ func (s *AuthService) ActivityPageForAccount(ctx context.Context, accountID int6
 				Severity:    severity,
 				Visibility:  vis,
 				Reason:      reason,
+				Moderation:  meta.Moderation,
+				WrittenAt:   WrittenAtForDisplay(v.CreatedAt, writtenAtPtr(ex.ClientWrittenAt)),
 				Trust: BuildTrust(TrustInput{
 					Rows:              reportVotes,
 					ReportID:          v.ID,
