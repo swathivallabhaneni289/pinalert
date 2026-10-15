@@ -16,12 +16,17 @@
 package geocode
 
 import (
+	"container/list"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -83,6 +88,7 @@ type Client struct {
 	limiter      *rate.Limiter
 	baseURL      string
 	contactEmail string
+	reader       *readerCache
 }
 
 // NewClient constructs a Client pointed at the real Nominatim service,
@@ -105,6 +111,7 @@ func newClientWithBaseURL(baseURL, contactEmail string, every time.Duration, bur
 		limiter:      rate.NewLimiter(rate.Every(every), burst),
 		baseURL:      baseURL,
 		contactEmail: contactEmail,
+		reader:       newReaderCache(),
 	}
 }
 
@@ -128,13 +135,21 @@ func (c *Client) userAgent() string {
 // query string is always built with url.Values.Encode(), never string
 // concatenation, so this proxy cannot become an open proxy or an SSRF pivot
 // (T-07-01).
-func (c *Client) buildRequest(ctx context.Context, q string) (*http.Request, error) {
+//
+// extra carries the fixed, server-computed parameters the reader lane adds
+// (viewbox and bounded); Search passes nil so its request is unchanged.
+func (c *Client) buildRequest(ctx context.Context, q string, extra url.Values) (*http.Request, error) {
 	params := url.Values{}
 	params.Set("q", q)
 	params.Set("format", "jsonv2")
 	params.Set("limit", resultLimit)
 	if c.contactEmail != "" {
 		params.Set("email", c.contactEmail)
+	}
+	for key, values := range extra {
+		for _, v := range values {
+			params.Set(key, v)
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"?"+params.Encode(), nil)
@@ -157,8 +172,15 @@ func (c *Client) Search(ctx context.Context, q string) ([]Result, error) {
 	if err := c.limiter.Wait(waitCtx); err != nil {
 		return nil, fmt.Errorf("geocode: rate limiter wait: %w", err)
 	}
+	return c.fetch(ctx, q, nil)
+}
 
-	req, err := c.buildRequest(ctx, q)
+// fetch is the one upstream call Search and SearchReader share, so the two
+// lanes cannot drift: build the request, check the status, decode, and parse
+// the string coordinates. It never touches the limiter; each caller decides
+// how to take a token before calling it.
+func (c *Client) fetch(ctx context.Context, q string, extra url.Values) ([]Result, error) {
+	req, err := c.buildRequest(ctx, q, extra)
 	if err != nil {
 		return nil, fmt.Errorf("geocode: building request: %w", err)
 	}
@@ -196,5 +218,155 @@ func (c *Client) Search(ctx context.Context, q string) ([]Result, error) {
 			Lon:         lon,
 		})
 	}
+	return results, nil
+}
+
+// ErrReaderBusy means the reader lane found no free limiter token and gave
+// up at once instead of waiting. The handler maps it to the plain "Search
+// unavailable" message (D-16, D-28).
+var ErrReaderBusy = errors.New("geocode: reader lane busy")
+
+// Point is a map centre used to bias reader place search toward the area the
+// reader is looking at.
+type Point struct {
+	Lat, Lon float64
+}
+
+// Reader lane tuning (03.1 RESEARCH A4). All four are easy to retune: they
+// are plain constants with no other code depending on their values.
+const (
+	// readerCacheEntries bounds the in memory cache of reader searches.
+	readerCacheEntries = 256
+	// readerCacheTTL is how long a cached answer is served before the next
+	// identical search goes upstream again. Place names barely change.
+	readerCacheTTL = 6 * time.Hour
+	// readerBiasDegrees is the half width of the viewbox sent around the map
+	// centre, about 55 km each way.
+	readerBiasDegrees = 0.5
+	// readerBucketDegrees is the grid the map centre is rounded to for the
+	// cache key, about 11 km, so one reader's ranking is never served for a
+	// different area but panning a little still hits the cache.
+	readerBucketDegrees = 0.1
+)
+
+// readerCache is a small bounded TTL cache for reader searches: a mutex, a
+// map, and an insertion ordered list for eviction. now is a field so tests
+// can move the clock.
+type readerCache struct {
+	mu      sync.Mutex
+	now     func() time.Time
+	entries map[string]*list.Element
+	order   *list.List // front is the oldest entry
+}
+
+type readerCacheEntry struct {
+	key     string
+	results []Result
+	stored  time.Time
+}
+
+func newReaderCache() *readerCache {
+	return &readerCache{
+		now:     time.Now,
+		entries: make(map[string]*list.Element),
+		order:   list.New(),
+	}
+}
+
+// get returns a fresh cached answer, dropping an expired one.
+func (rc *readerCache) get(key string) ([]Result, bool) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	el, ok := rc.entries[key]
+	if !ok {
+		return nil, false
+	}
+	entry := el.Value.(*readerCacheEntry)
+	if rc.now().Sub(entry.stored) >= readerCacheTTL {
+		rc.order.Remove(el)
+		delete(rc.entries, key)
+		return nil, false
+	}
+	return append([]Result(nil), entry.results...), true
+}
+
+// put stores an answer and evicts the oldest entry past the bound.
+func (rc *readerCache) put(key string, results []Result) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	stored := append([]Result(nil), results...)
+	if el, ok := rc.entries[key]; ok {
+		entry := el.Value.(*readerCacheEntry)
+		entry.results = stored
+		entry.stored = rc.now()
+		return
+	}
+	rc.entries[key] = rc.order.PushBack(&readerCacheEntry{key: key, results: stored, stored: rc.now()})
+	for rc.order.Len() > readerCacheEntries {
+		oldest := rc.order.Front()
+		rc.order.Remove(oldest)
+		delete(rc.entries, oldest.Value.(*readerCacheEntry).key)
+	}
+}
+
+// size reports how many entries the cache holds.
+func (rc *readerCache) size() int {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	return rc.order.Len()
+}
+
+// readerCacheKey builds the cache key from the normalised text (trimmed,
+// lower cased, runs of whitespace collapsed) and the map centre rounded to
+// readerBucketDegrees, or the word none when there is no centre.
+func readerCacheKey(q string, near *Point) string {
+	text := strings.ToLower(strings.Join(strings.Fields(q), " "))
+	if near == nil {
+		return text + "|none"
+	}
+	latBucket := int(math.Round(near.Lat / readerBucketDegrees))
+	lonBucket := int(math.Round(near.Lon / readerBucketDegrees))
+	return text + "|" + strconv.Itoa(latBucket) + "," + strconv.Itoa(lonBucket)
+}
+
+// SearchReader is the reader's place search lane (HIST-05). It shares the
+// process wide limiter with Search but never waits for it: a cached answer
+// costs no token, otherwise it takes a token only if one is free right now
+// and returns ErrReaderBusy if not. A reporter's Search that is waiting
+// leaves the bucket in debt, so a reader can never jump ahead of a reporter
+// filing an emergency (D-16, D-28).
+//
+// When near is set the request carries a non bounded viewbox around it, the
+// planner's call on backlog 999.7: a viewbox with bounded=0 ranks matches
+// near the map centre first without hiding matches elsewhere. Successful
+// answers, including an empty list, are cached; errors never are.
+func (c *Client) SearchReader(ctx context.Context, q string, near *Point) ([]Result, error) {
+	key := readerCacheKey(q, near)
+	if cached, ok := c.reader.get(key); ok {
+		return cached, nil
+	}
+
+	if !c.limiter.Allow() {
+		return nil, ErrReaderBusy
+	}
+
+	var extra url.Values
+	if near != nil {
+		extra = url.Values{}
+		// Nominatim wants left, top, right, bottom: longitude first.
+		extra.Set("viewbox", strings.Join([]string{
+			strconv.FormatFloat(near.Lon-readerBiasDegrees, 'f', 6, 64),
+			strconv.FormatFloat(near.Lat+readerBiasDegrees, 'f', 6, 64),
+			strconv.FormatFloat(near.Lon+readerBiasDegrees, 'f', 6, 64),
+			strconv.FormatFloat(near.Lat-readerBiasDegrees, 'f', 6, 64),
+		}, ","))
+		extra.Set("bounded", "0")
+	}
+
+	results, err := c.fetch(ctx, strings.TrimSpace(q), extra)
+	if err != nil {
+		return nil, err
+	}
+	c.reader.put(key, results)
 	return results, nil
 }
