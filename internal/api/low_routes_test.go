@@ -6,11 +6,15 @@ package api
 // with gate_test.go or a later Phase 4 test file in this package.
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -18,6 +22,8 @@ import (
 
 	"pinalert/internal/account"
 	"pinalert/internal/api/handlers"
+	"pinalert/internal/session"
+	"pinalert/web"
 )
 
 // lowBarSentence is the exact default sentence of the unofficial bar (D-22).
@@ -361,6 +367,149 @@ func TestLowDataRoutesCookieRedirect(t *testing.T) {
 			if resp.StatusCode != http.StatusFound || lowCheckLocation(t, resp) != "/login" {
 				t.Errorf("logged out GET %s = %d to %q, want 302 to /login", target, resp.StatusCode, resp.Header.Get("Location"))
 			}
+		}
+	})
+}
+
+// lowGunzip decompresses a gzip body.
+func lowGunzip(t *testing.T, b []byte) []byte {
+	t.Helper()
+	zr, err := gzip.NewReader(bytes.NewReader(b))
+	if err != nil {
+		t.Fatalf("opening the gzip body: %v", err)
+	}
+	defer zr.Close()
+	out, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatalf("reading the gzip body: %v", err)
+	}
+	return out
+}
+
+// lowCompressionRouter builds the real router with no database behind it. A
+// request that carries a validly signed session cookie never reaches the
+// persist callback, so none of the routes used here touches the database.
+func lowCompressionRouter(t *testing.T) (http.Handler, *http.Cookie) {
+	t.Helper()
+	mgr, err := session.NewManager([]byte("compression-test-secret-not-for-production"), false)
+	if err != nil {
+		t.Fatalf("constructing the session manager: %v", err)
+	}
+	tmpl, err := handlers.ParsePageTemplate()
+	if err != nil {
+		t.Fatalf("parsing the page template: %v", err)
+	}
+	cookie := &http.Cookie{Name: "pinalert_session", Value: mgr.Sign(mgr.NewID())}
+	return NewRouter(Deps{Session: mgr, Template: tmpl}), cookie
+}
+
+func lowServe(h http.Handler, cookie *http.Cookie, path string, acceptGzip bool) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.AddCookie(cookie)
+	if acceptGzip {
+		req.Header.Set("Accept-Encoding", "gzip")
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestCompressionMiddleware(t *testing.T) {
+	h, cookie := lowCompressionRouter(t)
+
+	t.Run("compressible types are gzipped", func(t *testing.T) {
+		for _, tc := range []struct{ path, file string }{
+			{"/static/css/main.css", "static/css/main.css"},
+			{"/static/js/app.js", "static/js/app.js"},
+			{"/static/icons/user.svg", "static/icons/user.svg"},
+			{"/login", ""},
+		} {
+			rec := lowServe(h, cookie, tc.path, true)
+			if rec.Code != http.StatusOK {
+				t.Errorf("%s: status = %d, want 200", tc.path, rec.Code)
+				continue
+			}
+			if got := rec.Header().Get("Content-Encoding"); got != "gzip" {
+				t.Errorf("%s: Content-Encoding = %q, want gzip", tc.path, got)
+				continue
+			}
+			if !strings.Contains(rec.Header().Get("Vary"), "Accept-Encoding") {
+				t.Errorf("%s: Vary = %q, want it to name Accept-Encoding", tc.path, rec.Header().Get("Vary"))
+			}
+			if got := rec.Header().Get("Content-Length"); got != "" {
+				t.Errorf("%s: Content-Length = %q on a compressed body", tc.path, got)
+			}
+			plain := lowGunzip(t, rec.Body.Bytes())
+			if tc.file == "" {
+				if !strings.Contains(string(plain), "<html") {
+					t.Errorf("%s: the unzipped body is not a page", tc.path)
+				}
+				continue
+			}
+			want, err := web.StaticFS.ReadFile(tc.file)
+			if err != nil {
+				t.Fatalf("reading %s: %v", tc.file, err)
+			}
+			if !bytes.Equal(plain, want) {
+				t.Errorf("%s: the unzipped body differs from the embedded file", tc.path)
+			}
+		}
+	})
+
+	t.Run("no gzip without Accept-Encoding", func(t *testing.T) {
+		rec := lowServe(h, cookie, "/static/css/main.css", false)
+		if got := rec.Header().Get("Content-Encoding"); got != "" {
+			t.Errorf("Content-Encoding = %q, want none", got)
+		}
+		want, err := web.StaticFS.ReadFile("static/css/main.css")
+		if err != nil {
+			t.Fatalf("reading main.css: %v", err)
+		}
+		if !bytes.Equal(rec.Body.Bytes(), want) {
+			t.Errorf("the plain body differs from the embedded file")
+		}
+	})
+
+	t.Run("plain text is never compressed", func(t *testing.T) {
+		rec := lowServe(h, cookie, "/no-such-path-p418", true)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", rec.Code)
+		}
+		if got := rec.Header().Get("Content-Encoding"); got != "" {
+			t.Errorf("Content-Encoding = %q on the 404 page, want none", got)
+		}
+		if got := rec.Body.String(); got != "404 page not found\n" {
+			t.Errorf("404 body = %q", got)
+		}
+	})
+
+	t.Run("settings and position in the router", func(t *testing.T) {
+		want := []string{"text/html", "text/css", "text/javascript", "application/javascript", "application/json", "image/svg+xml"}
+		if !reflect.DeepEqual(compressibleContentTypes, want) {
+			t.Errorf("compressibleContentTypes = %v, want %v", compressibleContentTypes, want)
+		}
+		if compressionLevel != 5 {
+			t.Errorf("compressionLevel = %d, want 5", compressionLevel)
+		}
+		raw, err := os.ReadFile("router.go")
+		if err != nil {
+			t.Fatalf("reading router.go: %v", err)
+		}
+		var code []string
+		for _, line := range strings.Split(string(raw), "\n") {
+			if !strings.HasPrefix(strings.TrimSpace(line), "//") {
+				code = append(code, line)
+			}
+		}
+		src := strings.Join(code, "\n")
+		if got := strings.Count(src, "middleware.Compress("); got != 1 {
+			t.Fatalf("middleware.Compress( appears %d times, want 1", got)
+		}
+		logAt := strings.Index(src, "r.Use(requestLogger(deps.RequestLog))")
+		compressAt := strings.Index(src, "middleware.Compress(")
+		sessionAt := strings.Index(src, "deps.Session.Middleware(")
+		if logAt < 0 || sessionAt < 0 || !(logAt < compressAt && compressAt < sessionAt) {
+			t.Errorf("Compress must sit after the request logger and before the session middleware (log=%d, compress=%d, session=%d)", logAt, compressAt, sessionAt)
 		}
 	})
 }
