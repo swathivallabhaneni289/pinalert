@@ -26,14 +26,18 @@
 @media (max-width: 899.98px) {
   /* ---- Page frame: the map on top, the list under it, both always shown ---- */
 
-  /* Two rows: the map takes 40 percent of the height and the list takes the
-     rest. The legacy unit comes first and the dynamic unit second, the same
-     pairing main.css uses, so the page itself never scrolls. */
+  /* Two rows: the map takes a 176px strip (two of the 64px token and one of
+     the 48px token) and the list takes the rest. The strip was 40 percent of
+     the height; with the unofficial bar above the page that left room for one
+     report card, and at 390 by 844 the strip of 176px leaves room for three
+     whole cards above the bottom bar (browser check T13.4c, finding F1). The
+     map stays wider than tall at every phone width and still shows the tools
+     row and the pins under it. The legacy unit comes first and the dynamic
+     unit second for the shell, the same pairing main.css uses. */
   body > .app-shell {
     height: 100vh;
     height: 100dvh;
-    grid-template-rows: 40vh minmax(0, 1fr);
-    grid-template-rows: 40dvh minmax(0, 1fr);
+    grid-template-rows: calc(var(--space-3xl) * 2 + var(--space-2xl)) minmax(0, 1fr);
     gap: 0;
   }
 
@@ -50,12 +54,12 @@
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: var(--space-md) var(--space-md) calc(var(--touch-target-min) * 2 + var(--space-sm) + var(--space-md) * 2);
+    /* 8px above the tab strip, 16px at the sides (finding F1). */
+    padding: var(--space-sm) var(--space-md) calc(var(--touch-target-min) * 2 + var(--space-sm) + var(--space-md) * 2);
   }
 
   .pane--map #map {
-    height: 40vh;
-    height: 40dvh;
+    height: calc(var(--space-3xl) * 2 + var(--space-2xl));
   }
 
   .app-shell > .view-toggle {
@@ -177,7 +181,7 @@
   }
 
   /* The results are fixed under the row, across the page and down to the
-     bottom bar, so they cover the list pane and not only the 40 percent
+     bottom bar, so they cover the list pane and not only the map
      strip. They scroll inside themselves. */
   .pane--map > .map-tools .map-search__status:not(.visually-hidden),
   .pane--map > .map-tools .map-search__results {

@@ -130,3 +130,43 @@ func TestBrowserFindingF2PhoneCardIsDenser(t *testing.T) {
 	p16MustDecl(t, "laptop row title", p31mRule(t, feed, "", "#report-list .report-row .report-row__title"),
 		map[string]string{"margin": "var(--space-xs) 0 0"})
 }
+
+// TestBrowserFindingF1PhoneMapStripLeavesThreeCards pins finding F1: at 390
+// by 844 only one or two cards were whole above the bottom bar (UI-SPEC wants
+// at least three), because the map took 40 percent of the height and the
+// unofficial bar now sits above the page. The map strip is 176px on a phone
+// (64 + 64 + 48, tokens only), the grid row and the map box agree, and the
+// list pane starts 8px above the tab strip. The tab strip, the heading and
+// the 16px sides of the list are unchanged.
+func TestBrowserFindingF1PhoneMapStripLeavesThreeCards(t *testing.T) {
+	const phone = "static/css/phone.css"
+	m := browserFindingsPhoneMedia
+	const strip = "calc(var(--space-3xl) * 2 + var(--space-2xl))"
+
+	shell := p31mRule(t, phone, m, "body > .app-shell")
+	if got := p19NoSpace(shell.Decls["grid-template-rows"]); got != p19NoSpace(strip+" minmax(0, 1fr)") {
+		t.Errorf("phone shell rows are %q, want the 176px strip then the list", shell.Decls["grid-template-rows"])
+	}
+	mapBox := p31mRule(t, phone, m, ".pane--map #map")
+	if got := p19NoSpace(mapBox.Decls["height"]); got != p19NoSpace(strip) {
+		t.Errorf("phone map height is %q, want the same strip as the grid row", mapBox.Decls["height"])
+	}
+
+	raw := p16ReadStatic(t, phone)
+	for _, old := range []string{"40vh", "40dvh"} {
+		if strings.Contains(raw, old) {
+			t.Errorf("phone.css still holds the old %s map height", old)
+		}
+	}
+
+	pane := p31mRule(t, phone, m, ".app-shell[data-view] .pane--list")
+	if !strings.HasPrefix(pane.Decls["padding"], "var(--space-sm) var(--space-md) ") {
+		t.Errorf("phone list pane padding is %q, want 8px on top and 16px at the sides", pane.Decls["padding"])
+	}
+
+	// The tab strip and the heading keep their phone spacing.
+	p16MustDecl(t, "phone heading", p31mRule(t, phone, m, ".pane--list > .feed-heading"),
+		map[string]string{"margin-bottom": "var(--space-sm)"})
+	p16MustDecl(t, "tab strip", p31mRule(t, "static/css/feed.css", "", ".view-tabs"),
+		map[string]string{"margin": "0 0 var(--space-sm)"})
+}
