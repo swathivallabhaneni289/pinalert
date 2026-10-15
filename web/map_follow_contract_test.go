@@ -170,3 +170,166 @@ func TestMapFollowsRingContrast(t *testing.T) {
 		}
 	}
 }
+
+// TestMapFollowsFinishedPopup pins Surface 6 (D-09, D-11): a finished report
+// opens in the same popup card, with the closed line in the slot of the fade
+// line and the fade sentence not shown. The nodes are built once and written
+// in place on every poll, and the vote block stays mounted exactly as the
+// vote tests pin it (plan 14 decides what its actions area shows).
+func TestMapFollowsFinishedPopup(t *testing.T) {
+	code := p31fMapCode(t)
+
+	closed := jsFunctionBody(t, code, "closedLineText(report)")
+	p13MustContain(t, "closedLineText", closed,
+		"report.history", "history.state === 'resolved'", "history.state === 'expired'",
+		"history.closed_text", "history.lifetime_text", "Pinalert.relativeTime(history.at)",
+		"'Faded '", "'Resolved'")
+	p13MustNotContain(t, "closedLineText", closed,
+		"new Date", "Date.now", "getTime", "expires_at", "created_at", "innerHTML")
+
+	// The card is built once: the fade node and the privacy node are made in
+	// buildPopupCard, and updatePopupCard builds nothing.
+	build := jsFunctionBody(t, code, "buildPopupCard(report)")
+	p13MustContain(t, "buildPopupCard", build,
+		"fade.className = 'popup-card__fade'", "fade: fade", "PinalertVotes.createVoteBlock(report.id)",
+		"actions.appendChild(block.controls)", "actions.appendChild(block.note)", "actions.appendChild(block.error)")
+
+	update := jsFunctionBody(t, code, "updatePopupCard(card, report)")
+	p13MustContain(t, "updatePopupCard", update,
+		"closedLineText(report)", "Pinalert.formatFade(report)", "Pinalert.setText(card.fade, ",
+		"card.fade.hidden", "card.fade.classList.toggle('popup-card__fade--closed'",
+		"PinalertVotes.updateVoteBlock(card.votes, report)", "PinalertTrust.updateTrustCard(card.trust, report.trust)")
+	// The closed line wins: the fade sentence is asked for only when there is
+	// no closed line.
+	p13Ordered(t, update, "updatePopupCard", "closedLineText(report)", "Pinalert.formatFade(report)", "card.fade.hidden")
+	p13MustNotContain(t, "updatePopupCard", update,
+		"createElement(", "appendChild(", "innerHTML", "new Date", "Date.now", "getTime", "expires_at", ".focus(")
+
+	// The closed line is the normal text colour on a laptop popup (the fade
+	// sentence stays muted, which TestPopupBuildsTheCardAndTheFadeLine pins).
+	closedRule := p31mRule(t, "static/css/trust.css", "",
+		".leaflet-container .popup-card .popup-card__fade--closed:not([hidden])")
+	p16MustDecl(t, "closed line", closedRule, map[string]string{"color": "var(--color-text)"})
+}
+
+// TestMapFollowsApproximate pins Surface 7 (D-23, T-31-58): a finished Rescue
+// report opens titled Rescue needed with the label and the privacy line, its
+// pin sits at the server's coarse point with no circle drawn, the map never
+// goes closer than zoom 14 for it, and the pin name says it is approximate.
+func TestMapFollowsApproximate(t *testing.T) {
+	raw := p13ReadStatic(t, "static/js/map.js")
+	code := p31fMapCode(t)
+
+	// One ceiling, one copy of each word, all fixed strings.
+	for _, want := range []string{
+		"var MAX_APPROX_ZOOM = 14;",
+		"Details of finished rescue requests are hidden to protect privacy.",
+	} {
+		if n := strings.Count(raw, want); n != 1 {
+			t.Errorf("map.js names %q %d times, want exactly 1", want, n)
+		}
+	}
+	p13MustContain(t, "map.js constants", code,
+		"var FINISHED_RESCUE_TITLE = 'Rescue needed';", "var APPROX_LABEL = 'Approximate location';")
+
+	build := jsFunctionBody(t, code, "buildPopupCard(report)")
+	p13MustContain(t, "buildPopupCard", build,
+		"privacyLine.className = 'popup-card__privacy'", "privacyLine.hidden = true",
+		"metaLines.appendChild(privacyLine)", "privacy: privacyLine")
+	p13Ordered(t, build, "buildPopupCard",
+		"metaLines.appendChild(shelterLine)", "metaLines.appendChild(privacyLine)")
+
+	update := jsFunctionBody(t, code, "updatePopupCard(card, report)")
+	p13MustContain(t, "updatePopupCard", update,
+		"report.approximate === true", "FINISHED_RESCUE_TITLE", "APPROX_LABEL", "PRIVACY_LINE",
+		"Pinalert.setText(card.privacy, ", "card.privacy.hidden", "card.approximate = ",
+		"Pinalert.formatShelterLine(report)", "Pinalert.distanceText(report)")
+
+	// The zoom ceiling applies to every code driven zoom for an approximate
+	// pin and leaves a live pin at 16.
+	zoom := jsFunctionBody(t, code, "zoomFor(id)")
+	p13MustContain(t, "zoomFor", zoom, "card.approximate === true", "MAX_APPROX_ZOOM", "16")
+	fly := jsFunctionBody(t, code, "flyTo(id, opts)")
+	p13MustContain(t, "flyTo", fly, "var zoom = zoomFor(id);", "map.setView(marker.getLatLng(), zoom, { animate: false });",
+		"map.flyTo(marker.getLatLng(), zoom);")
+	p13MustNotContain(t, "flyTo", fly, "), 16", ", 16)")
+	strip := jsFunctionBody(t, code, "centerPinInStrip(popup, popupEl)")
+	p13MustContain(t, "centerPinInStrip", strip,
+		"Math.min(map.getZoom(), MAX_APPROX_ZOOM)", "Math.max(map.getZoom(), 16)", "map.setView(popup.getLatLng(), zoom, { animate: false });")
+
+	// No circle and no radius layer is drawn anywhere: a drawn radius would
+	// promise a precision the coarsening does not give.
+	p13MustNotContain(t, "map.js", code, "L.circle", "L.Circle", "circleMarker", "L.polygon", "L.rectangle")
+
+	// The pin name ends with the approximate location words, after the state.
+	name := jsFunctionBody(t, code, "pinName(report)")
+	p13MustContain(t, "pinName", name, "report.approximate === true", "'approximate location'")
+	p13Ordered(t, name, "pinName", "PinalertVisibility.stateWord(report)", "'approximate location'", "parts.join(', ')")
+
+	// The privacy line is a popup owned paragraph with the ancestor field and
+	// the normal text colour.
+	privacy := p31mRule(t, "static/css/trust.css", "",
+		".leaflet-container .popup-card .popup-card__privacy:not([hidden])")
+	p16MustDecl(t, "privacy line", privacy, map[string]string{
+		"display": "block", "font-size": "var(--font-size-label)",
+		"line-height": "var(--line-height-label)", "color": "var(--color-text)",
+	})
+}
+
+// TestMapFollowsFocusOnce pins D-11 and D-13: a report link keeps its pin on
+// the map when the report is outside the reader's area or the 7 day window,
+// only under the tab and the chip that fit it, and opens it once. The list is
+// never changed from here and the store is only read.
+func TestMapFollowsFocusOnce(t *testing.T) {
+	code := p31fMapCode(t)
+
+	pin := jsFunctionBody(t, code, "focusPinReport(state)")
+	p13MustContain(t, "focusPinReport", pin,
+		"state.focus", "focus.status !== 'ok'", "focus.report", "state.reports[", "belongsToTab(report, state.view)",
+		"state.category !== ''", "report.category !== state.category", "return null;", "return report;")
+	p13MustNotContain(t, "focusPinReport", pin, "new Date", "Date.now", "getTime", "expires_at", "created_at")
+
+	tab := jsFunctionBody(t, code, "belongsToTab(report, view)")
+	p13MustContain(t, "belongsToTab", tab, "report.view", "view === 'past'", "'resolved'", "'past'")
+	p13MustNotContain(t, "belongsToTab", tab, "new Date", "Date.now", "getTime")
+
+	render := jsFunctionBody(t, code, "render(state)")
+	p13Ordered(t, render, "render", "focusPinReport(state)", "upsertMarker(", "removeLayer(", "openFocusOnce(state)")
+
+	once := jsFunctionBody(t, code, "openFocusOnce(state)")
+	p13MustContain(t, "openFocusOnce", once,
+		"focus.status !== 'ok'", "openedFocusId === id", "openedFocusId = id;", "markers[id]", "flyTo(id)",
+		"Pinalert.select(id, 'map')")
+	p13Ordered(t, once, "openFocusOnce", "openedFocusId === id", "markers[id]", "openedFocusId = id;", "flyTo(id)")
+	p13MustNotContain(t, "openFocusOnce", once, "fetchReports", "setView(", "state.reports =", "state.focus =")
+
+	// map.js reads the store and never writes the list or the link.
+	p13MustNotContain(t, "map.js", code, "state.focus =", "state.reports =", "state.focusId", "setFocusId(")
+	if n := strings.Count(code, "var openedFocusId = null;"); n != 1 {
+		t.Errorf("map.js declares openedFocusId %d times, want 1", n)
+	}
+	if n := strings.Count(p13ReadStatic(t, "static/js/map.js"), "fetch("); n != 0 {
+		t.Errorf("map.js holds %d fetch( occurrences, want 0", n)
+	}
+}
+
+// TestMapFollowsPastCardOpener pins D-11 for the keyboard: closing a popup
+// opened from a Past card returns focus to that card, the same way a row gets
+// it, and a pin is found from either kind of opener by its report id.
+func TestMapFollowsPastCardOpener(t *testing.T) {
+	code := p31fMapCode(t)
+
+	ret := jsFunctionBody(t, code, "returnFocusToOpener(opener)")
+	p13MustContain(t, "returnFocusToOpener", ret,
+		"document.querySelectorAll('.report-row, .past-card')", "dataset.reportId === String(opener.id)",
+		"isConnected", "offsetParent")
+
+	find := jsFunctionBody(t, code, "markerForElement(el)")
+	p13MustContain(t, "markerForElement", find,
+		".past-card[data-report-id]", ".report-row[data-report-id]", "dataset.reportId", "markers[")
+	// A report id is looked up as a key and never put into a selector.
+	p13MustNotContain(t, "map.js", code, "querySelector('[data-report-id=", `querySelector('.past-card[data-report-id="`)
+
+	// The Past card is the list's own element, so this script never builds one.
+	p13MustNotContain(t, "map.js", code, "createElement('li')", "className = 'past-card")
+}

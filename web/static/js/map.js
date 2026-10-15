@@ -27,6 +27,22 @@ window.PinalertMap = (function () {
   var cards = {}; // report id -> popup card (see buildPopupCard)
   var popupTitleSeq = 0;
 
+  // A finished Rescue report is approximate (03.1 D-23): the server sends a
+  // point about a kilometre off and an empty description, and the map must not
+  // suggest more precision than that. No code driven zoom for such a pin goes
+  // past this level, and no circle is drawn. Live reports keep zoom 16.
+  var MAX_APPROX_ZOOM = 14;
+  // The fixed words of a finished Rescue report (C17, C18, C19). The title
+  // takes the place of the blank description; the label takes the shelter
+  // line's slot; the privacy line sits under it.
+  var FINISHED_RESCUE_TITLE = 'Rescue needed';
+  var APPROX_LABEL = 'Approximate location';
+  var PRIVACY_LINE = 'Details of finished rescue requests are hidden to protect privacy.';
+
+  // The report id of a /?report=ID link whose popup this script has opened, so
+  // a later poll or a tab change never opens it a second time.
+  var openedFocusId = null;
+
   // The open Leaflet popup, or null.
   var activePopup = null;
   // True while focus sits inside the open popup. Kept by focusin and focusout
@@ -410,6 +426,30 @@ window.PinalertMap = (function () {
     return '';
   }
 
+  // closedLineText is the line a finished report shows in place of the fade
+  // sentence (C44, C45), or the empty string for a report that is not
+  // finished. A Resolved report reads the server's closed words and the time
+  // ("Resolved by the poster, 2 days ago."); an Expired one reads "Faded 3
+  // days ago, after 8 hrs.". The words are the server's own (closed_text and
+  // lifetime_text); the browser only joins them to the relative time of the
+  // server's history time, and compares no date.
+  function closedLineText(report) {
+    var history = report && report.history;
+    if (!history || typeof history.at !== 'string') {
+      return '';
+    }
+    var when = Pinalert.relativeTime(history.at);
+    if (history.state === 'resolved') {
+      var who = typeof history.closed_text === 'string' && history.closed_text !== '' ? history.closed_text : 'Resolved';
+      return who + ', ' + when + '.';
+    }
+    if (history.state === 'expired') {
+      var lifetime = typeof history.lifetime_text === 'string' && history.lifetime_text !== '' ? ', ' + history.lifetime_text : '';
+      return 'Faded ' + when + lifetime + '.';
+    }
+    return '';
+  }
+
   // buildPopupCard constructs the popup card once per marker, as DOM nodes
   // only (D-20, A21). The header is the badge row (badge, severity label)
   // then the state line (state label, reporter words) (A80), then come the
@@ -456,8 +496,14 @@ window.PinalertMap = (function () {
     var shelterLine = document.createElement('p');
     shelterLine.className = 'popup-card__meta-line';
     shelterLine.hidden = true;
+    // The privacy line of a finished Rescue report (C19). It is hidden for
+    // every other report and styled by trust.css as its own paragraph.
+    var privacyLine = document.createElement('p');
+    privacyLine.className = 'popup-card__privacy';
+    privacyLine.hidden = true;
     metaLines.appendChild(metaLine);
     metaLines.appendChild(shelterLine);
+    metaLines.appendChild(privacyLine);
     meta.appendChild(metaGlyph);
     meta.appendChild(metaLines);
 
@@ -498,9 +544,11 @@ window.PinalertMap = (function () {
       metaGlyph: metaGlyph,
       metaLine: metaLine,
       shelterLine: shelterLine,
+      privacy: privacyLine,
       trust: trust,
       fade: fade,
       votes: block,
+      approximate: false,
       observer: null,
       frame: 0
     };
@@ -519,6 +567,17 @@ window.PinalertMap = (function () {
     PinalertTrust.updateSeverityLabel(card.severity, report);
     PinalertVisibility.updateVisibilityTag(card.tag, report);
 
+    // A finished Rescue report arrives approximate with a blank description,
+    // so its title is the fixed Rescue needed words (C17). Any other report
+    // shows its own text. The node is written only when the words change, so
+    // a poll never replaces the text under a reader's selection.
+    var approximate = report.approximate === true;
+    card.approximate = approximate;
+    var titleText = approximate ? FINISHED_RESCUE_TITLE : report.description;
+    if (card.title.textContent !== titleText) {
+      Pinalert.setText(card.title, titleText);
+    }
+
     // Category, relative time and the distance sentence of the store: the
     // reader's own distance, a distance from a searched place or an
     // approximate one, and nothing around the default centre. No severity
@@ -531,18 +590,28 @@ window.PinalertMap = (function () {
     }
     Pinalert.setText(card.metaLine, meta);
 
-    // The fade line is computed from expires_at in the shared formatter and
-    // refreshed on every store update, like the relative time above. An empty
-    // line stays hidden (A95).
-    var fadeText = Pinalert.formatFade(report);
+    // The line under the card has two voices in one slot. A finished report
+    // shows its closed line (C44, C45) and never the fade sentence, because a
+    // Resolved report may still have time left on its clock. A live report
+    // shows the fade line, computed from its own end time in the shared
+    // formatter and refreshed on every store update, like the relative time
+    // above. An empty line stays hidden (A95).
+    var closedText = closedLineText(report);
+    var fadeText = closedText !== '' ? closedText : Pinalert.formatFade(report);
     Pinalert.setText(card.fade, fadeText);
     card.fade.hidden = !fadeText;
+    card.fade.classList.toggle('popup-card__fade--closed', closedText !== '');
 
-    // A shelter adds a second line. The shared formatter returns an empty
-    // string for any other category, and an empty line stays hidden (RR-6).
-    var shelter = Pinalert.formatShelterLine(report);
+    // A shelter adds a second line, and so does an approximate report, whose
+    // second line is the fixed Approximate location label (C18) in the same
+    // slot. The shared formatter returns an empty string for any other
+    // category, and an empty line stays hidden (RR-6). The privacy line sits
+    // under it and shows for an approximate report only (C19).
+    var shelter = approximate ? APPROX_LABEL : Pinalert.formatShelterLine(report);
     Pinalert.setText(card.shelterLine, shelter || '');
     card.shelterLine.hidden = !shelter;
+    Pinalert.setText(card.privacy, approximate ? PRIVACY_LINE : '');
+    card.privacy.hidden = !approximate;
 
     PinalertTrust.updateTrustCard(card.trust, report.trust);
     PinalertVotes.updateVoteBlock(card.votes, report);
@@ -642,7 +711,13 @@ window.PinalertMap = (function () {
     if (!(strip > 0)) {
       return;
     }
-    map.setView(popup.getLatLng(), Math.max(map.getZoom(), 16), { animate: false });
+    // A live pin is shown at street level. An approximate one is never
+    // zoomed in past the ceiling, so the strip does not imply a street level
+    // spot for a blurred point (T-31-58).
+    var id = reportIdForPopup(popup);
+    var approximate = id !== null && cards[id] && cards[id].approximate === true;
+    var zoom = approximate ? Math.min(map.getZoom(), MAX_APPROX_ZOOM) : Math.max(map.getZoom(), 16);
+    map.setView(popup.getLatLng(), zoom, { animate: false });
     map.panBy([0, Math.round(map.getSize().y / 2 - strip / 2)], { animate: false });
   }
 
@@ -658,8 +733,16 @@ window.PinalertMap = (function () {
     return null;
   }
 
-  // markerForElement returns the marker whose pin element is el, or null.
+  // markerForElement returns the marker of a list row or a Past card (found
+  // by its report id as a key, never through a selector built from report
+  // data), or the marker whose pin element is el, or null.
   function markerForElement(el) {
+    if (el && typeof el.closest === 'function') {
+      var opener = el.closest('.report-row[data-report-id], .past-card[data-report-id]');
+      if (opener && opener.dataset.reportId && markers[opener.dataset.reportId]) {
+        return markers[opener.dataset.reportId];
+      }
+    }
     var ids = Object.keys(markers);
     for (var i = 0; i < ids.length; i++) {
       if (markers[ids[i]].getElement() === el) {
@@ -688,6 +771,11 @@ window.PinalertMap = (function () {
     var state = PinalertVisibility.stateWord(report);
     if (typeof state === 'string' && state !== '') {
       parts.push(state);
+    }
+    // A finished Rescue pin sits at a blurred point, and the name says so
+    // (D-23).
+    if (report.approximate === true) {
+      parts.push('approximate location');
     }
     return parts.join(', ');
   }
@@ -796,7 +884,7 @@ window.PinalertMap = (function () {
       return;
     }
     if (opener.kind === 'list') {
-      var rows = document.querySelectorAll('.report-row');
+      var rows = document.querySelectorAll('.report-row, .past-card');
       for (var i = 0; i < rows.length; i++) {
         if (rows[i].dataset.reportId === String(opener.id) && rows[i].isConnected && rows[i].offsetParent !== null) {
           rows[i].focus();
@@ -1066,9 +1154,18 @@ window.PinalertMap = (function () {
     removedPopupFocus = false;
     updateMapLabel(state);
 
+    // The pins are the list's reports plus, when a report link asked for one
+    // outside the list, that one report under the tab and chip that fit it
+    // (D-11, D-13). A copy is made so the store's own array is never changed.
+    var shown = state.reports;
+    var linked = focusPinReport(state);
+    if (linked !== null) {
+      shown = shown.concat([linked]);
+    }
+
     var seenIds = {};
-    for (var i = 0; i < state.reports.length; i++) {
-      var report = state.reports[i];
+    for (var i = 0; i < shown.length; i++) {
+      var report = shown[i];
       seenIds[report.id] = true;
       upsertMarker(report);
     }
@@ -1095,9 +1192,85 @@ window.PinalertMap = (function () {
         }
       }
     }
+
+    openFocusOnce(state);
   }
 
-  // flyTo pans to a report at zoom 16 and opens its popup only when the popup
+  // belongsToTab says whether a report is a member of a tab, from the
+  // server's own view word on the report. The Past tab holds both finished
+  // words. Nothing here reads a date.
+  function belongsToTab(report, view) {
+    var own = report ? report.view : '';
+    if (view === 'past') {
+      return own === 'resolved' || own === 'past';
+    }
+    return own === view;
+  }
+
+  // focusPinReport answers the linked report that needs its own pin, or null.
+  // It needs the store's focus to be ok, a report that is not already in the
+  // list (the list's own pin is used then), a place on the map, a tab the
+  // reader is on and a chip, when one is on, that matches its category. The
+  // store never clears its focus, so the tab rule is what takes the pin off
+  // the map when the reader moves to another tab (D-13).
+  function focusPinReport(state) {
+    var focus = state.focus;
+    if (!focus || focus.status !== 'ok' || !focus.report) {
+      return null;
+    }
+    var report = focus.report;
+    if (typeof report.latitude !== 'number' || typeof report.longitude !== 'number') {
+      return null;
+    }
+    for (var i = 0; i < state.reports.length; i++) {
+      if (String(state.reports[i].id) === String(report.id)) {
+        return null;
+      }
+    }
+    if (!belongsToTab(report, state.view)) {
+      return null;
+    }
+    if (state.category !== '' && report.category !== state.category) {
+      return null;
+    }
+    return report;
+  }
+
+  // openFocusOnce opens the popup of a /?report=ID link, once per link. It
+  // waits until the pin exists under the tab the reader is on, so a link to a
+  // finished report opens after its own tab is selected, and a later poll,
+  // tab change or return never opens it again. It reads the store and moves
+  // the map only; the list is not touched. The selection is announced as the
+  // map's own, which lets the list highlight the row when it is in the list.
+  function openFocusOnce(state) {
+    var focus = state.focus;
+    if (!focus || focus.status !== 'ok' || !focus.report) {
+      return;
+    }
+    var id = String(focus.report.id);
+    if (openedFocusId === id) {
+      return;
+    }
+    if (!markers[id]) {
+      return;
+    }
+    openedFocusId = id;
+    Pinalert.select(id, 'map');
+    flyTo(id);
+  }
+
+  // zoomFor is the zoom a code driven move to a report ends at: street level
+  // (16) for a live report, and the approximate ceiling for a finished Rescue
+  // report, whose point is blurred and must not read as a street level spot.
+  function zoomFor(id) {
+    var card = cards[id];
+    if (card && card.approximate === true) {
+      return MAX_APPROX_ZOOM;
+    }
+    return 16;
+  }
+
+  // flyTo pans to a report and opens its popup only when the popup
   // is closed. That is the wide-screen "clicking a list row pans/flies the
   // map" half of D-06's sync contract. The selection callback has usually
   // opened the popup already, and Leaflet's open call on an open popup removes
@@ -1112,10 +1285,11 @@ window.PinalertMap = (function () {
     if (opts && opts.opener === 'list') {
       listOpenerId = String(id);
     }
+    var zoom = zoomFor(id);
     if (reducedMotion) {
-      map.setView(marker.getLatLng(), 16, { animate: false });
+      map.setView(marker.getLatLng(), zoom, { animate: false });
     } else {
-      map.flyTo(marker.getLatLng(), 16);
+      map.flyTo(marker.getLatLng(), zoom);
     }
     if (!marker.isPopupOpen()) {
       marker.openPopup();

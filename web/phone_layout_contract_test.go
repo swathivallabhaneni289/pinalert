@@ -562,8 +562,12 @@ func TestPhoneDetailMapScript(t *testing.T) {
 	}
 
 	strip := jsFunctionBody(t, code, "centerPinInStrip(popup, popupEl)")
+	// Plan 03.1-13 (D-23): an approximate pin is capped at the zoom ceiling
+	// and a live pin keeps street level. The old pin was the single literal
+	// map.setView(popup.getLatLng(), Math.max(map.getZoom(), 16), { animate: false });
 	p13Ordered(t, strip, "centerPinInStrip",
-		"getBoundingClientRect().top", "map.setView(popup.getLatLng(), Math.max(map.getZoom(), 16), { animate: false });",
+		"getBoundingClientRect().top", "Math.max(map.getZoom(), 16)",
+		"map.setView(popup.getLatLng(), zoom, { animate: false });",
 		"map.panBy([0, Math.round(map.getSize().y / 2 - strip / 2)], { animate: false });")
 
 	// The parts the sheet must leave alone.

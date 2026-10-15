@@ -1461,6 +1461,26 @@
   overflow-wrap: anywhere;
 }
 
+/* The closed line of a finished report (C44, C45) takes the slot of the fade
+   line and the normal text colour, not the muted one. One more class than the
+   fade head, so it outranks it. */
+.leaflet-container .popup-card .popup-card__fade--closed:not([hidden]) {
+  color: var(--color-text);
+}
+
+/* The privacy line of a finished Rescue report (C19): one 14px paragraph under
+   the Approximate location line, in the normal text colour, with the same
+   small gap the meta lines have. Three classes and the ancestor field, so it
+   outranks the popup paragraph reset. */
+.leaflet-container .popup-card .popup-card__privacy:not([hidden]) {
+  display: block;
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
 .popup-card__actions {
   padding-top: var(--space-sm);
   border-top: 1px solid var(--color-border);
