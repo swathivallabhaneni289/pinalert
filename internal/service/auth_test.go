@@ -80,6 +80,29 @@ type fakeAuthQuerier struct {
 	reporterRows []sqlcgen.ReporterAccountsForReportsRow
 	reporterErr  error
 	reporterArgs [][]int64
+
+	// undoRows/undoErr/undoArgs drive ResolutionUndoCounts (plan 03.1-07). The
+	// fake returns only the rows of the requested ids, like the query.
+	undoRows []sqlcgen.ResolutionUndoCountsRow
+	undoErr  error
+	undoArgs []sqlcgen.ResolutionUndoCountsParams
+}
+
+// ResolutionUndoCounts records the call and returns the configured rows of the
+// requested ids.
+func (f *fakeAuthQuerier) ResolutionUndoCounts(ctx context.Context, arg sqlcgen.ResolutionUndoCountsParams) ([]sqlcgen.ResolutionUndoCountsRow, error) {
+	*f.calls = append(*f.calls, "ResolutionUndoCounts")
+	f.undoArgs = append(f.undoArgs, arg)
+	if f.undoErr != nil {
+		return nil, f.undoErr
+	}
+	var out []sqlcgen.ResolutionUndoCountsRow
+	for _, row := range f.undoRows {
+		if slices.Contains(arg.ReportIds, row.ReportID) {
+			out = append(out, row)
+		}
+	}
+	return out, nil
 }
 
 // VotedReportsByAccount records the call and returns the configured rows.

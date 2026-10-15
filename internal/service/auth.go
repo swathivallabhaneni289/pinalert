@@ -77,6 +77,11 @@ type AuthQuerier interface {
 	// viewer's. A second consumer defined interface naming one generated
 	// method, with the signature ReportQuerier names.
 	ReporterAccountsForReports(ctx context.Context, reportIds []int64) ([]sqlcgen.ReporterAccountsForReportsRow, error)
+	// ResolutionUndoCounts gives the Activity page how many take backs and
+	// reopens the account has written on its own closed posts, so the page can
+	// stop offering a Reopen the server would refuse (plan 03.1-07, D-22). A
+	// consumer defined interface naming the generated method VotingQuerier names.
+	ResolutionUndoCounts(ctx context.Context, arg sqlcgen.ResolutionUndoCountsParams) ([]sqlcgen.ResolutionUndoCountsRow, error)
 }
 
 // ErrRateLimited is returned by RequestLink when a second verification-
@@ -335,6 +340,16 @@ type ActivityReport struct {
 	// Trust comes from the same BuildTrust as the feed and the vote response
 	// (D-21).
 	Trust Trust
+	// UndosLeft is how many undos the poster has left on their own post (D-22):
+	// UndoLimit unless the post is closed and not yet faded, and then the budget
+	// less the unresolve and reopen rows the poster wrote. Zero means the
+	// Reopen control must not be offered. It is only meaningful for an own post.
+	UndosLeft int
+	// Approximate is true when Row was blurred by the finished Rescue rule
+	// (D-27): the point is the coarse cell centre, the geohash is the coarse
+	// cell and the description is empty. Only another person's finished Rescue
+	// report on the voted list is ever approximate; own posts stay exact.
+	Approximate bool
 }
 
 // VotedReport is one report the account currently confirms or disputes: the
@@ -495,6 +510,10 @@ func (s *AuthService) ActivityPageForAccount(ctx context.Context, accountID int6
 	votesByReport := voteRowsByReport(voteRows)
 
 	posts := make([]ActivityReport, 0, len(rows))
+	// closedOwn holds the ids of own posts that are closed and not yet faded:
+	// the only posts whose Reopen the page can offer, so the only ones whose
+	// undo count is read (D-28).
+	var closedOwn []int64
 	for _, row := range rows {
 		category, severity := validatedActivityMeta(row.Category, row.Severity)
 
@@ -503,6 +522,9 @@ func (s *AuthService) ActivityPageForAccount(ctx context.Context, accountID int6
 		// the Reopen path needs no identity check at all).
 		tally := BuildVoteTally(voteRows, row.ID, &accountID)
 		vis, reason := Resolve(meta, tally, now)
+		if vis == VisibilityRetracted && row.ExpiresAt.After(now) {
+			closedOwn = append(closedOwn, row.ID)
+		}
 
 		posts = append(posts, ActivityReport{
 			Row:        row,
@@ -510,6 +532,7 @@ func (s *AuthService) ActivityPageForAccount(ctx context.Context, accountID int6
 			Severity:   severity,
 			Visibility: vis,
 			Reason:     reason,
+			UndosLeft:  UndoLimit,
 			Trust: BuildTrust(TrustInput{
 				Rows:              voteRows,
 				ReportID:          row.ID,
@@ -524,6 +547,29 @@ func (s *AuthService) ActivityPageForAccount(ctx context.Context, accountID int6
 		})
 	}
 
+	// One batched read of the poster's undo counts for the closed own posts
+	// (D-22, D-28). The account is always the poster of its own posts, so the
+	// unresolve and reopen rows both spend the budget (UndosUsed, isPoster).
+	if len(closedOwn) > 0 {
+		undoRows, err := s.q.ResolutionUndoCounts(ctx, undoCountParams(accountID, closedOwn))
+		if err != nil {
+			return ActivityPage{}, fmt.Errorf("service: reading undo counts for account %d: %w", accountID, err)
+		}
+		used := make(map[int64]int, len(undoRows))
+		for _, ur := range undoRows {
+			used[ur.ReportID] = UndosUsed(ur, true)
+		}
+		closed := make(map[int64]struct{}, len(closedOwn))
+		for _, id := range closedOwn {
+			closed[id] = struct{}{}
+		}
+		for i := range posts {
+			if _, ok := closed[posts[i].Row.ID]; ok {
+				posts[i].UndosLeft = UndosLeft(used[posts[i].Row.ID])
+			}
+		}
+	}
+
 	votes := make([]VotedReport, 0, len(voted))
 	for _, v := range voted {
 		category, severity := validatedActivityMeta(v.Category, v.Severity)
@@ -534,25 +580,41 @@ func (s *AuthService) ActivityPageForAccount(ctx context.Context, accountID int6
 		tally := BuildVoteTally(reportVotes, v.ID, reporterID)
 		vis, reason := Resolve(meta, tally, now)
 
+		row := sqlcgen.ReportsByAccountRow{
+			ID:                    v.ID,
+			Category:              v.Category,
+			Severity:              v.Severity,
+			Description:           v.Description,
+			Latitude:              v.Latitude,
+			Longitude:             v.Longitude,
+			Geohash:               v.Geohash,
+			ShelterCapacityStatus: v.ShelterCapacityStatus,
+			ShelterHeadcount:      v.ShelterHeadcount,
+			CreatedAt:             v.CreatedAt,
+			ExpiresAt:             v.ExpiresAt,
+		}
+		// D-27: a voted card of another person's finished Rescue report is
+		// blurred the way the Past tab blurs it (viewer independent). Finished
+		// is the resolved or past view, so a closed or a faded report is blurred
+		// and a live one is not. Every leaking field changes together here.
+		approximate := false
+		if category == CategoryRescueNeeded {
+			if view := ViewOf(vis, v.ExpiresAt, now); view == FeedViewResolved || view == FeedViewPast {
+				row.Latitude, row.Longitude, row.Geohash = CoarsePoint(v.Latitude, v.Longitude)
+				row.Description = ""
+				approximate = true
+			}
+		}
+
 		votes = append(votes, VotedReport{
 			ActivityReport: ActivityReport{
-				Row: sqlcgen.ReportsByAccountRow{
-					ID:                    v.ID,
-					Category:              v.Category,
-					Severity:              v.Severity,
-					Description:           v.Description,
-					Latitude:              v.Latitude,
-					Longitude:             v.Longitude,
-					Geohash:               v.Geohash,
-					ShelterCapacityStatus: v.ShelterCapacityStatus,
-					ShelterHeadcount:      v.ShelterHeadcount,
-					CreatedAt:             v.CreatedAt,
-					ExpiresAt:             v.ExpiresAt,
-				},
-				Category:   category,
-				Severity:   severity,
-				Visibility: vis,
-				Reason:     reason,
+				Row:         row,
+				Approximate: approximate,
+				UndosLeft:   UndoLimit,
+				Category:    category,
+				Severity:    severity,
+				Visibility:  vis,
+				Reason:      reason,
 				Trust: BuildTrust(TrustInput{
 					Rows:              reportVotes,
 					ReportID:          v.ID,

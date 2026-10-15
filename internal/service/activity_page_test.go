@@ -322,3 +322,165 @@ func TestActivityPageWrapsFailedReads(t *testing.T) {
 		}
 	})
 }
+
+// p31ActivityPost is an own post of the given category created an hour before
+// p12Now, expiring at expiresAt.
+func p31ActivityPost(id int64, category service.Category, expiresAt time.Time) sqlcgen.ReportsByAccountRow {
+	row := p12ActivityRow(id)
+	row.Category = string(category)
+	row.Description = "a p31 own post"
+	row.ExpiresAt = expiresAt
+	return row
+}
+
+// p31VotedRow is a voted card of the given category with the given expiry.
+func p31VotedRow(id int64, category service.Category, expiresAt time.Time) sqlcgen.VotedReportsByAccountRow {
+	row := wm5VotedRow(id, service.VoteConfirm, p12Now.Add(-time.Minute))
+	row.Category = string(category)
+	row.Description = "a p31 secret rescue description"
+	row.ExpiresAt = expiresAt
+	return row
+}
+
+// TestActivityUndoReadOnlyForOpenClosedPosts is D-28: the undo count is one
+// batched read, made only when an own post is closed and not yet faded.
+func TestActivityUndoReadOnlyForOpenClosedPosts(t *testing.T) {
+	ctx := context.Background()
+	const viewer int64 = 42
+	live := p12Now.Add(7 * time.Hour)
+	faded := p12Now.Add(-time.Minute)
+
+	t.Run("no closed unexpired post makes no read", func(t *testing.T) {
+		q, m, calls := newFakes()
+		q.reportsRows = []sqlcgen.ReportsByAccountRow{
+			p31ActivityPost(1, service.CategoryFlood, live),
+			p31ActivityPost(2, service.CategoryFlood, faded),
+		}
+		// Post 2 is closed by its poster but already faded.
+		q.votesRows = []sqlcgen.CurrentVotesForReportsRow{
+			p12Vote(2, viewer, service.VoteKindResolution, service.VoteResolve, "p31cell"),
+		}
+		page, err := wm5Service(q, m).ActivityPageForAccount(ctx, viewer)
+		if err != nil {
+			t.Fatalf("ActivityPageForAccount: %v", err)
+		}
+		if len(q.undoArgs) != 0 || slices.Contains(*calls, "ResolutionUndoCounts") {
+			t.Fatalf("undo reads = %d, calls %v, want none", len(q.undoArgs), *calls)
+		}
+		for _, p := range page.Posts {
+			if p.UndosLeft != service.UndoLimit {
+				t.Errorf("post %d UndosLeft = %d, want %d", p.Row.ID, p.UndosLeft, service.UndoLimit)
+			}
+		}
+	})
+
+	t.Run("two closed posts make exactly one read", func(t *testing.T) {
+		q, m, _ := newFakes()
+		q.reportsRows = []sqlcgen.ReportsByAccountRow{
+			p31ActivityPost(1, service.CategoryFlood, live),
+			p31ActivityPost(2, service.CategoryFlood, live),
+			p31ActivityPost(3, service.CategoryFlood, live),
+		}
+		q.votesRows = []sqlcgen.CurrentVotesForReportsRow{
+			p12Vote(1, viewer, service.VoteKindResolution, service.VoteResolve, "p31cell"),
+			p12Vote(2, viewer, service.VoteKindResolution, service.VoteResolve, "p31cell"),
+		}
+		q.undoRows = []sqlcgen.ResolutionUndoCountsRow{
+			{ReportID: 1, Unresolves: 1, Reopens: 1},
+			{ReportID: 2, Unresolves: 1, Reopens: 0},
+		}
+		page, err := wm5Service(q, m).ActivityPageForAccount(ctx, viewer)
+		if err != nil {
+			t.Fatalf("ActivityPageForAccount: %v", err)
+		}
+		if len(q.undoArgs) != 1 {
+			t.Fatalf("undo reads = %d, want exactly 1", len(q.undoArgs))
+		}
+		arg := q.undoArgs[0]
+		if arg.AccountID != viewer || !slices.Equal(arg.ReportIds, []int64{1, 2}) {
+			t.Errorf("undo arg = %+v, want account %d and ids [1 2]", arg, viewer)
+		}
+		got := map[int64]int{}
+		for _, p := range page.Posts {
+			got[p.Row.ID] = p.UndosLeft
+		}
+		want := map[int64]int{1: 0, 2: 1, 3: service.UndoLimit}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("UndosLeft = %v, want %v (unresolve plus reopen rows count for the poster)", got, want)
+		}
+	})
+
+	t.Run("a failed read is wrapped", func(t *testing.T) {
+		boom := errors.New("undo read failed")
+		q, m, _ := newFakes()
+		q.reportsRows = []sqlcgen.ReportsByAccountRow{p31ActivityPost(1, service.CategoryFlood, live)}
+		q.votesRows = []sqlcgen.CurrentVotesForReportsRow{
+			p12Vote(1, viewer, service.VoteKindResolution, service.VoteResolve, "p31cell"),
+		}
+		q.undoErr = boom
+		_, err := wm5Service(q, m).ActivityPageForAccount(ctx, viewer)
+		if !errors.Is(err, boom) {
+			t.Fatalf("err = %v, want the wrapped undo read error", err)
+		}
+	})
+}
+
+// TestActivityVotedRescueCoarsened is D-27: a voted card of another person's
+// finished Rescue report is blurred and loses its text, while a live Rescue
+// card, a finished flood card and the account's own posts stay exact.
+func TestActivityVotedRescueCoarsened(t *testing.T) {
+	ctx := context.Background()
+	const viewer, reporter int64 = 42, 7
+	live := p12Now.Add(7 * time.Hour)
+	faded := p12Now.Add(-time.Minute)
+
+	q, m, _ := newFakes()
+	q.reportsRows = []sqlcgen.ReportsByAccountRow{p31ActivityPost(1, service.CategoryRescueNeeded, live)}
+	q.votedRows = []sqlcgen.VotedReportsByAccountRow{
+		p31VotedRow(10, service.CategoryRescueNeeded, live),  // closed by its reporter
+		p31VotedRow(11, service.CategoryRescueNeeded, faded), // expired
+		p31VotedRow(12, service.CategoryRescueNeeded, live),  // still live
+		p31VotedRow(13, service.CategoryFlood, live),         // closed flood
+	}
+	q.reporterRows = []sqlcgen.ReporterAccountsForReportsRow{
+		reporterRow(10, ptrID(reporter)), reporterRow(11, ptrID(reporter)),
+		reporterRow(12, ptrID(reporter)), reporterRow(13, ptrID(reporter)),
+	}
+	q.votesRows = []sqlcgen.CurrentVotesForReportsRow{
+		p12Vote(1, viewer, service.VoteKindResolution, service.VoteResolve, "p31cell"),
+		p12Vote(10, reporter, service.VoteKindResolution, service.VoteResolve, "p31cell"),
+		p12Vote(13, reporter, service.VoteKindResolution, service.VoteResolve, "p31cell"),
+	}
+
+	page, err := wm5Service(q, m).ActivityPageForAccount(ctx, viewer)
+	if err != nil {
+		t.Fatalf("ActivityPageForAccount: %v", err)
+	}
+	byID := map[int64]service.VotedReport{}
+	for _, v := range page.Votes {
+		byID[v.Row.ID] = v
+	}
+	wantLat, wantLon, wantCell := service.CoarsePoint(12.9716, 77.5946)
+	for _, id := range []int64{10, 11} {
+		v := byID[id]
+		if !v.Approximate {
+			t.Errorf("card %d Approximate = false, want true", id)
+		}
+		if v.Row.Description != "" {
+			t.Errorf("card %d kept its description %q", id, v.Row.Description)
+		}
+		if v.Row.Latitude != wantLat || v.Row.Longitude != wantLon || v.Row.Geohash != wantCell {
+			t.Errorf("card %d point = %v,%v,%q want %v,%v,%q", id, v.Row.Latitude, v.Row.Longitude, v.Row.Geohash, wantLat, wantLon, wantCell)
+		}
+	}
+	for _, id := range []int64{12, 13} {
+		v := byID[id]
+		if v.Approximate || v.Row.Description == "" || v.Row.Latitude != 12.9716 || v.Row.Geohash != "tdr1qgzp" {
+			t.Errorf("card %d was coarsened but must stay exact: %+v", id, v)
+		}
+	}
+	own := page.Posts[0]
+	if own.Approximate || own.Row.Description != "a p31 own post" || own.Row.Latitude != 12.9716 {
+		t.Errorf("own post was coarsened: %+v", own)
+	}
+}
