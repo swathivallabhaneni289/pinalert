@@ -146,6 +146,10 @@ The owner bookmarks `/moderate`. No link to it exists anywhere in the interface.
 not a listed moderator gets a 404 that is byte for byte the same as an unknown address, on every
 method.
 
+The page loads its scripts in this order: `theme.js` in the head, then `app.js`, `trust.js`,
+`moderate.js` and `account-menu.js`, all deferred. Its stylesheets are `main.css`, `trust.css`,
+`auth.css`, `chrome.css` and `moderate.css`. It is not part of the Low data view.
+
 The screen has three lists, each oldest first and capped at 100 rows:
 
 - borderline reports listed for review;
@@ -193,9 +197,10 @@ The block holds 14 constants, a burst and a refill for each of the seven buckets
   carries the visitor address.
 - Every 429 carries a `Retry-After` header and a JSON body with `retry_after_seconds`,
   `serious` and, for a blocked serious report, `emergency_number`, the configured primary number.
-- A 400, a text or gibberish reject, any failed post and a replay cost nothing from the report
-  allowance, because it is given back. A held post keeps its cost. The submit attempt bucket,
-  which protects the provider, is never given back.
+- For a report post, a 400, a text or gibberish reject, any failed post and a replay cost nothing
+  from the report allowance, because it is given back. A held post keeps its cost. The submit
+  attempt bucket, which protects the provider, is never given back. A flag is different: nothing
+  is given back, so a flag that ends in a 400, 404 or 409 still uses a token.
 - Every block is logged with the bucket name, the numeric account id and the wait, and nothing
   else.
 
