@@ -43,7 +43,8 @@
        data-fallback-lon="{{.FallbackLon}}"
        data-default-radius-km="{{.DefaultRadiusKm}}"
        data-vote-radius-km="{{.VoteRadiusKm}}"
-       data-poll-interval-ms="30000">
+       data-poll-interval-ms="30000"
+       data-account-id="{{.AccountID}}">
 
     <section class="pane pane--map">
       <div class="map-tools" data-search-open="false">
@@ -97,6 +98,7 @@
       <p class="feed-note" id="feed-note" hidden></p>
       <p class="place-line" id="place-line" hidden></p>
       <p class="filter-line" id="filter-line" hidden></p>
+      <div class="queue-strip" id="queue-strip" hidden></div>
       <div class="feed-stale" id="feed-stale" hidden>
         <p class="inline-note feed-stale__text" id="feed-stale-text"></p>
         <button type="button" class="btn" id="feed-stale-retry">Retry now</button>
@@ -194,6 +196,7 @@
   <script src="/static/js/votes.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/visibility.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/trust.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/queue.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/report-form.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/map.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/modal.js?v={{.AssetVersion}}" defer></script>

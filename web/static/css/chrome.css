@@ -312,3 +312,121 @@ html[data-modal-open] .notice-card {
     border: 1px solid CanvasText;
   }
 }
+
+/* 04-22 Waiting to send strip */
+.queue-strip {
+  margin: 0 0 var(--space-md);
+  padding: var(--space-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text);
+}
+
+.app-shell .queue-strip {
+  margin: var(--space-md);
+}
+
+.queue-strip__head:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.queue-strip__heading {
+  margin: 0;
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+}
+
+.queue-strip__count,
+.queue-strip__help {
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.queue-strip__rows {
+  list-style: none;
+  margin: var(--space-sm) 0 0;
+  padding: 0;
+}
+
+.queue-strip__row:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.queue-strip__meta:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.queue-strip__category {
+  font-weight: var(--font-weight-regular);
+}
+
+.queue-strip__text:not([hidden]) {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.queue-strip__status {
+  margin: 0;
+}
+
+.queue-strip__actions:not([hidden]),
+.queue-strip__confirm:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.queue-strip__question {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.queue-strip__call,
+.form-error__call {
+  color: var(--color-text);
+  text-decoration: underline;
+}
+
+.queue-strip a.btn {
+  text-decoration: none;
+}
+
+/* On the Low data view the strip sits inside .low-page__head, whose own
+   heading and button margins load after this file. These heads outrank them. */
+.low-page__head .queue-strip__heading {
+  margin: 0;
+}
+
+.low-page__head .queue-strip .btn {
+  margin: 0;
+}
+
+@media (forced-colors: active) {
+  .queue-strip {
+    border: 1px solid CanvasText;
+  }
+}

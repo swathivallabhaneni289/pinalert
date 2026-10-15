@@ -52,6 +52,7 @@
   var retryBtn = document.getElementById('feed-retry');
   var viewToggleBtn = document.getElementById('view-toggle');
   var appShellEl = document.getElementById('app-shell');
+  var queueStripEl = document.getElementById('queue-strip');
   var tabStripEl = document.querySelector('.view-tabs');
   var feedCountEl = document.getElementById('feed-count');
   var feedStatusEl = document.getElementById('feed-status');
@@ -961,6 +962,27 @@
       narrowQuery !== null && narrowQuery.matches;
   }
 
+  // openSavedReport opens the report form for a saved report (Edit and
+  // resend), prefilled from the saved row, under the Not sent note (D-20).
+  function openSavedReport(record, opener, note) {
+    if (!window.PinalertReportForm) {
+      return;
+    }
+    window.PinalertReportForm.open({
+      opener: opener || document.getElementById('fab-report'),
+      prefill: record.payload,
+      note: note,
+      requestId: record.request_id
+    });
+  }
+
+  // queueFocusFallback is where focus goes when the last saved report leaves:
+  // the first report row, else the Report an emergency button.
+  function queueFocusFallback() {
+    var firstRow = reportListEl ? reportListEl.querySelector('.report-row') : null;
+    return firstRow || document.getElementById('fab-report');
+  }
+
   // syncNoticeCard sets the Stale row of the notice card (shown only while the
   // stale line is active and the list pane is not displayed) and then hides
   // the whole card exactly when none of its rows is visible. Every script that
@@ -1665,4 +1687,16 @@
     showTab(restored.view);
     Pinalert.fetchReports();
   });
+
+  // The device queue mounts last. The report form was mounted by modal.js, which
+  // loads before this file, so a saved report can be opened for editing at once.
+  if (window.PinalertQueue && queueStripEl && appShellEl) {
+    window.PinalertQueue.mount({
+      strip: queueStripEl,
+      accountId: appShellEl.getAttribute('data-account-id'),
+      headingLevel: 2,
+      onEdit: openSavedReport,
+      focusFallback: queueFocusFallback
+    });
+  }
 }());
