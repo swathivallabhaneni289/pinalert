@@ -56,8 +56,10 @@ type h10List struct {
 		Expired24h  int `json:"expired_24h"`
 	} `json:"recent"`
 	Cut *struct {
-		Resolved bool `json:"resolved"`
-		Expired  bool `json:"expired"`
+		Resolved        bool `json:"resolved"`
+		Expired         bool `json:"expired"`
+		ResolvedPartial bool `json:"resolved_partial"`
+		ExpiredPartial  bool `json:"expired_partial"`
 	} `json:"cut"`
 	Focus *struct {
 		Status string     `json:"status"`
@@ -252,8 +254,8 @@ func TestPastViewListsRetractedAndExpired(t *testing.T) {
 			t.Fatalf("%s: order = %d, %d, want the resolved report %d before the expired one %d",
 				name, list.Reports[0].ID, list.Reports[1].ID, resolvedID, expiredID)
 		}
-		if list.Cut == nil || list.Cut.Resolved || list.Cut.Expired {
-			t.Errorf("%s: cut = %+v, want both flags false", name, list.Cut)
+		if list.Cut == nil || list.Cut.Resolved || list.Cut.Expired || list.Cut.ResolvedPartial || list.Cut.ExpiredPartial {
+			t.Errorf("%s: cut = %+v, want all four flags false", name, list.Cut)
 		}
 		if list.Recent != nil {
 			t.Errorf("%s: recent present on the past view", name)

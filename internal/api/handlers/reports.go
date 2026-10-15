@@ -182,11 +182,17 @@ type RecentResponse struct {
 	Expired24h  int `json:"expired_24h" example:"1"`
 }
 
-// CutResponse says whether a group of the past view was cut at its size cap,
-// so a show more control is honest.
+// CutResponse says how complete each group of the past view is. Resolved and
+// Expired are true when that group had more than 25 entries kept and the list
+// shows the newest 25. ResolvedPartial and ExpiredPartial are separate: true when
+// the area had more reports than the server could read for that group, so some
+// are not shown even when fewer than 25 are. The open read feeds the resolved
+// group only; the expired read feeds both groups.
 type CutResponse struct {
-	Resolved bool `json:"resolved" example:"false"`
-	Expired  bool `json:"expired" example:"false"`
+	Resolved        bool `json:"resolved" example:"false"`
+	Expired         bool `json:"expired" example:"false"`
+	ResolvedPartial bool `json:"resolved_partial" example:"false"`
+	ExpiredPartial  bool `json:"expired_partial" example:"false"`
 }
 
 // FocusResponse answers a report link. Status is ok (report is the report),
@@ -566,7 +572,12 @@ func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 				return
 			}
 			views = page.Reports
-			resp.Cut = &CutResponse{Resolved: page.ResolvedCut, Expired: page.ExpiredCut}
+			resp.Cut = &CutResponse{
+				Resolved:        page.ResolvedCut,
+				Expired:         page.ExpiredCut,
+				ResolvedPartial: page.ResolvedPartial,
+				ExpiredPartial:  page.ExpiredPartial,
+			}
 		default:
 			nearby, err := svc.Nearby(r.Context(), service.NearbyQuery{
 				Latitude:        lat,

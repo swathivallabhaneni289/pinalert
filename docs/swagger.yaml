@@ -107,7 +107,13 @@ definitions:
       expired:
         example: false
         type: boolean
+      expired_partial:
+        example: false
+        type: boolean
       resolved:
+        example: false
+        type: boolean
+      resolved_partial:
         example: false
         type: boolean
     type: object

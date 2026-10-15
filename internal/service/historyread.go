@@ -30,12 +30,17 @@ type HistoryQuery struct {
 
 // HistoryPage is the Past read: the Resolved group first, then the Expired
 // group, each at most HistoryGroupCap long. ResolvedCut and ExpiredCut are true
-// when that group had more entries than the cap, so a show more control is
-// honest.
+// when that group had more than HistoryGroupCap entries kept, so the cap line is
+// honest. ResolvedPartial and ExpiredPartial are separate: true when a candidate
+// read that feeds the group was truncated, so reports that belong in the group
+// may be missing even when fewer than HistoryGroupCap were kept (WR-02). The
+// open read feeds Resolved only; the expired read feeds both groups.
 type HistoryPage struct {
-	Reports     []ReportView
-	ResolvedCut bool
-	ExpiredCut  bool
+	Reports         []ReportView
+	ResolvedCut     bool
+	ExpiredCut      bool
+	ResolvedPartial bool
+	ExpiredPartial  bool
 }
 
 // historyCandidate is one report the Past read may list. expired says it came
@@ -320,7 +325,7 @@ type RecentCounts struct {
 // (see candidateSet), reports that belong in the count may be outside the
 // set, and with no vote predicate in SQL the service cannot know how many. The
 // wire shape has no field for this, so the counts stay as read here. History
-// carries the same fact on its cut flags.
+// carries the same fact on its partial flags.
 func (s *ReportService) RecentHistoryCounts(ctx context.Context, q RecentQuery) (RecentCounts, error) {
 	now := s.now().UTC()
 	windowStart := now.Add(-RecentWindow)
@@ -483,7 +488,8 @@ func (s *ReportService) Focus(ctx context.Context, q FocusQuery) (FocusResult, e
 //     honest (D-17).
 //  5. Sort each group (Resolved by closure time, Expired by expiry time, newest
 //     first, ties by id descending), cap each at HistoryGroupCap and set its cut
-//     flag (also set when a candidate read that feeds the group was truncated), then build each kept view with buildFinishedView.
+//     flag, set its partial flag when a candidate read that feeds the group was
+//     truncated, then build each kept view with buildFinishedView.
 //  6. attachUndos over the kept views: one conditional ResolutionUndoCounts.
 //
 // The cost is a Nearby read plus one report read, and the browser does not poll
@@ -542,14 +548,15 @@ func (s *ReportService) History(ctx context.Context, q HistoryQuery) (HistoryPag
 	order(resolved)
 	order(expired)
 
-	// A group is cut when it had more than HistoryGroupCap entries, and also when
-	// a candidate read that can feed it was truncated, because
-	// then reports are missing from the set (WR-02). A past entry can only come
-	// from the expired set. A resolved entry can come from either set: an open
-	// report closed by people, or an expired report whose closure stands.
+	// A group is cut only when it had more than HistoryGroupCap entries kept. It is
+	// partial when a candidate read that can feed it was truncated, because then
+	// reports are missing from the set (WR-02). The two never mix: a partial group
+	// is not claimed to hold more than the cap. A past entry can only come from the
+	// expired set. A resolved entry can come from either set: an open report
+	// closed by people, or an expired report whose closure stands.
 	page := HistoryPage{
-		ResolvedCut: set.OpenTruncated || set.ExpiredTruncated,
-		ExpiredCut:  set.ExpiredTruncated,
+		ResolvedPartial: set.OpenTruncated || set.ExpiredTruncated,
+		ExpiredPartial:  set.ExpiredTruncated,
 	}
 	if len(resolved) > HistoryGroupCap {
 		resolved = resolved[:HistoryGroupCap]

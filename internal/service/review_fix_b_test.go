@@ -32,8 +32,8 @@ func TestHistoryCutWhenCandidateReadHitsItsCap(t *testing.T) {
 		if len(page.Reports) != 0 {
 			t.Errorf("kept %d entries, want 0 (every open report is live)", len(page.Reports))
 		}
-		if !page.ResolvedCut || page.ExpiredCut {
-			t.Errorf("ResolvedCut = %v, ExpiredCut = %v, want true and false", page.ResolvedCut, page.ExpiredCut)
+		if !page.ResolvedPartial || page.ExpiredPartial || page.ResolvedCut || page.ExpiredCut {
+			t.Errorf("partial = %v and %v, cut = %v and %v, want partial true and false, no cut", page.ResolvedPartial, page.ExpiredPartial, page.ResolvedCut, page.ExpiredCut)
 		}
 	})
 
@@ -47,8 +47,8 @@ func TestHistoryCutWhenCandidateReadHitsItsCap(t *testing.T) {
 		if err != nil {
 			t.Fatalf("History: %v", err)
 		}
-		if page.ResolvedCut || page.ExpiredCut {
-			t.Errorf("ResolvedCut = %v, ExpiredCut = %v, want false and false", page.ResolvedCut, page.ExpiredCut)
+		if page.ResolvedPartial || page.ExpiredPartial || page.ResolvedCut || page.ExpiredCut {
+			t.Errorf("partial = %v and %v, cut = %v and %v, want none", page.ResolvedPartial, page.ExpiredPartial, page.ResolvedCut, page.ExpiredCut)
 		}
 	})
 
@@ -62,8 +62,8 @@ func TestHistoryCutWhenCandidateReadHitsItsCap(t *testing.T) {
 		if err != nil {
 			t.Fatalf("History: %v", err)
 		}
-		if !page.ResolvedCut || !page.ExpiredCut {
-			t.Errorf("ResolvedCut = %v, ExpiredCut = %v, want true and true", page.ResolvedCut, page.ExpiredCut)
+		if !page.ResolvedPartial || !page.ExpiredPartial || page.ResolvedCut || !page.ExpiredCut {
+			t.Errorf("partial = %v and %v, cut = %v and %v, want partial true and true, cut false and true (500 past entries, no resolved one)", page.ResolvedPartial, page.ExpiredPartial, page.ResolvedCut, page.ExpiredCut)
 		}
 		if len(page.Reports) != service.HistoryGroupCap {
 			t.Errorf("kept %d entries, want %d", len(page.Reports), service.HistoryGroupCap)

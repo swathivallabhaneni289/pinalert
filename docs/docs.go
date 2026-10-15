@@ -847,7 +847,15 @@ const docTemplate = `{
                     "type": "boolean",
                     "example": false
                 },
+                "expired_partial": {
+                    "type": "boolean",
+                    "example": false
+                },
                 "resolved": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "resolved_partial": {
                     "type": "boolean",
                     "example": false
                 }
