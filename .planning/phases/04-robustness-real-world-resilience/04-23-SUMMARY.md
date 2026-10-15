@@ -2,65 +2,121 @@
 phase: 04-robustness-real-world-resilience
 plan: 23
 subsystem: api
-tags: [moderation, moderator-screen, blocked]
-status: blocked
-requirements-completed: []
+tags: [moderation, moderator-screen, gate, audit]
+requires:
+  - phase: 04-05
+    provides: ReviewQueue, FlagQueue, PendingQueue, ModerationQueueCounts, ModerationStatusForReport, ReportForModeration, KeepReport, RemoveReport, InsertModerationAction
+  - phase: 04-07
+    provides: WrittenAtForDisplay, writtenAtPtr, TestResolveCallersMentionModeration
+  - phase: 04-14
+    provides: the worker that leaves unfinished checks pending
+  - phase: 04-20
+    provides: FlagReasons, FlagReasonLabel
+provides:
+  - ParseModeratorEmails and NormalizeEmail, MODERATOR_EMAILS parsed once at startup
+  - requireModerator, a gate with its own lookup that answers a byte equal 404 on every method
+  - ModerationService (Queues, Find, Keep, Remove) and the four moderator JSON routes
+  - /moderate page shell (moderate.html.tmpl)
+affects: [04-26, 04-27]
+tech-stack:
+  added: []
+  patterns:
+    - "A moderator group outside the access gate, every path through r.Handle so the gate sees every method"
+    - "Audit row written before the state change"
+key-files:
+  created:
+    - internal/service/moderation.go
+    - internal/service/moderation_test.go
+    - internal/api/moderator.go
+    - internal/api/handlers/moderation.go
+    - internal/api/handlers/moderator_e2e_test.go
+    - web/templates/moderate.html.tmpl
+  modified:
+    - internal/service/auth.go
+    - internal/api/router.go
+    - cmd/server/main.go
+    - web/chrome_contract_test.go
+key-decisions:
+  - "Audit row before the state change; two moderators acting at the same instant may write two audit rows (both documented on ModerationService)"
+  - "409 field is id, matching the pinned 404 field"
+status: complete
 completed: 2026-10-16
 ---
 
-# Phase 4 Plan 23: Moderator API Summary (BLOCKED, nothing built)
+# Phase 4 Plan 23: Moderator API Summary
 
-**Status: blocked before any code edit.** No task was started and no source file changed. The plan needs a one line edit to a file it does not own (`web/chrome_contract_test.go`), and the executor rules forbid editing an unlisted file. This SUMMARY records the blocker and the step 0 findings so the orchestrator can fix the conflict and re-run the plan.
+**A listed moderator can read the three queues, find any report by id, and Keep or Remove it with exactly one audit row, while logged out, unverified and unlisted visitors get a 404 byte equal to an unknown route on every method.**
 
-## BASE
+## Commits
 
-`3b45dd1b1933a7e0651df891b2a0a5a644675bec`
+- `acbb64f` Task 1: moderator page and the byte equal 404 gate (parser, NormalizeEmail, gate, page, template, router group, MODERATOR_EMAILS)
+- `696dcd0` Task 2: the three queues and Find by id
+- `e52e07b` Task 3: Keep, Remove and the audit row
+- `5089483` an earlier commit of this plan: the first, blocked SUMMARY (replaced by this file)
 
-## The blocker
+BASE: `3b45dd1b1933a7e0651df891b2a0a5a644675bec`.
 
-`web/chrome_contract_test.go`, `TestDisclaimerBarOnEveryFullPage`, line 43:
+## Step 0 findings
 
-```
-hasAccount := strings.HasSuffix(path, "index.html.tmpl") || strings.HasSuffix(path, "profile.html.tmpl") || strings.HasSuffix(path, "low.html.tmpl")
-```
+- 04-05 generated names and types as expected. `ClientWrittenAt` is `pgtype.Timestamptz`; `Scores` and `FlagCounts` are `[]byte`; `CheckStatus` is `string` on `ReviewQueueRow` and `PendingQueueRow` and `*string` on `FlagQueueRow` and `ReportForModerationRow`; `Model` and `Verdict` are `*string`; counts and status rows are as listed in 04-05. `KeepReport`, `RemoveReport` and `ReportForModeration` take `reportID int64`.
+- Built `Nearby` tally: `ReporterAccountsForReports(ids)` and `CurrentVotesForReports(ids)` once, then per report `BuildVoteTally(votesByReport[id], id, reporterByReport[id])` and `Resolve(ReportMeta{Severity, Category, Moderation}, tally, now)`. `ModerationService.buildRows` does the same with only those two reads and the clock.
+- Phase 3.1: `ViewOf` and `FeedView` present and pure. `ModerationViewOf` calls `ViewOf` once and restates no window. `ViewOf` knows nothing about moderation, so the withheld wrap is `ModerationViewOf` and the builder.
+- Phase 3.2 bell: none in `profile.html.tmpl`; the account header reads `.Email` and `.Chrome.LowDataPage` only, so the moderator view model is `AssetVersion`, `Email`, `Chrome`.
+- 04-11 tweak shape: `newE2EServerWith` with `d.Reports = service.NewReportService(q, service.WithScreener(...))`; feed helper `getNearby` with `decodeFeedResponse` and `findFeedReport`.
+- No name collisions for any new identifier.
 
-Lines 56 to 58 then fail any other full page that calls `account_header.html.tmpl` with "this page has no account and must not call the account header". The plan's Task 1 requires `moderate.html.tmpl` to call the account header inside `.top-chrome` (must_haves truth 3, template action text) and its verify command requires `TestDisclaimerBarOnEveryFullPage` to pass. Both cannot hold while the test file is unchanged. The test file is not in this plan's `files_modified`, and 04-22 and 04-25 list it as read only.
+## RED state of each task
 
-Proposed fix (one line, for the orchestrator or a plan that owns the file): add `|| strings.HasSuffix(path, "moderate.html.tmpl")` to the `hasAccount` expression on line 43.
+- Task 1: `go vet ./internal/service/` failed with `undefined: service.ParseModeratorEmails` before the parser existed.
+- Task 2: `undefined: service.ModerationQuerier` before the service existed.
+- Task 3: `undefined: service.ModAlreadyHandledMessage` before Keep, Remove and the sentinel existed.
 
-Other web guards that hard code a page list: a grep of `HasSuffix(path` over `web/*_test.go` found only that line for template names. `slow_notice_contract_test.go:46` skips `index.html.tmpl` only (a skip, unrelated to the header). `findFullPageTemplates` (theme_contract_test.go) is generic: it treats any template containing `<html` as a full page, so the new page is covered by the theme, bar and `chrome.css` guards from the moment it exists.
+## Verification
 
-Alternatives that would also unblock: the orchestrator edits that test line itself before re-running 04-23, or amends 04-23's `files_modified` to include `web/chrome_contract_test.go`.
+- `go build ./...`, `go vet ./...` and `gofmt -l .` clean.
+- Database run on a fresh `p4_0423` (created by this run, dropped after): `DATABASE_URL=postgres://localhost:5432/p4_0423?sslmode=disable go test ./internal/api/handlers/ -run '^TestModerator' -count=1 -p 1 -v` gives exactly 7 top level `--- PASS` lines (TestModeratorPageRenders, TestModeratorRoutesIndistinguishableFrom404, TestModeratorQueues, TestModeratorKeep, TestModeratorRemove, TestModeratorRemoveById, TestModeratorAuditRow) and 0 `--- SKIP`.
+- The same variable over `./internal/api/... ./internal/service/ ./web/ -count=1 -p 1` all `ok`; and over `go test ./... -count=1 -p 1` all `ok`. `--- SKIP` count for the moderator, server copy and Resolve guard tests: 0.
+- Quick run with `DATABASE_URL` unset: `go test ./... -count=1` all `ok`.
+- Service tests: TestParseModeratorEmails, TestNormalizeEmailMatchesSignIn, TestServerCopyModeratorAPI, TestModerationViewOf, TestModerationQueuesBatchReads, TestModerationRowMapping, TestModerationFind, TestModerationKeepRemoveDecisions, plus TestResolveCallersMentionModeration, TestDisclaimerBarOnEveryFullPage, TestTopChromeGeometry, TestThemeScriptLoadsBeforeFirstPaintOnEveryFullPage, TestUserVisibleCopyUsesPlainPunctuation, TestSwaggerSpecCoversRoutes, TestSwaggerDocServed all pass.
+- No U+2014 or U+2013 in any new file or added line. `git status --porcelain -- docs internal/store` is empty. No swag directive, no migration, no query, no generated file.
 
-## Step 0 findings (all read only, all as the plan expects except the blocker)
+## Helpers added
 
-- 04-05 generated names present in `internal/store/sqlc`: `ReviewQueue`, `FlagQueue`, `PendingQueue`, `ReportForModeration`, `ModerationQueueCounts`, `ModerationStatusForReport`, `KeepReport`, `RemoveReport`, `InsertModerationAction`, plus `CurrentVotesForReports(ctx, reportIds []int64)` and `ReporterAccountsForReports(ctx, reportIds []int64)`.
-- Row field types: `ReviewQueueRow`, `FlagQueueRow`, `PendingQueueRow`, `ReportForModerationRow` share `ID int64, Category string, Severity string, Description string, CreatedAt time.Time, ExpiresAt time.Time, ClientWrittenAt pgtype.Timestamptz, ModerationState string, CheckStatus, Verdict *string, Scores []byte, Model *string, NeedsReview bool, OpenFlagTotal int64, FlagCounts []byte`. `CheckStatus` is `string` on `ReviewQueueRow` and `PendingQueueRow` and `*string` on `FlagQueueRow` and `ReportForModerationRow`. `ModerationQueueCountsRow{ReviewCount, FlaggedCount, PendingCount int64}`. `ModerationStatusForReportRow{ID int64, ModerationState, Severity, Category string, ExpiresAt time.Time, InReview, InFlagged, InPending bool}`. `InsertModerationActionParams{ReportID, ModeratorAccountID int64, Action string}`. `KeepReport` and `RemoveReport` take `reportID int64` and return `error`. `ReportForModeration` takes `reportID int64`.
-- `writtenAtPtr(pgtype.Timestamptz) *time.Time` and `WrittenAtForDisplay` exist in `internal/service` (report.go, feed.go).
-- Built `Nearby` tally recipe: one `ReporterAccountsForReports(ids)` and one `CurrentVotesForReports(ids)` read (plus a reporter history read and a `ReportExtrasForReports` read that the moderator service does not need), then per report `BuildVoteTally(votesByReport[id], id, reporterByReport[id])`, `meta := ReportMeta{Severity, Category, Moderation: ModerationState(...)}`, `Resolve(meta, tally, now)`. The moderator service needs only the two batched reads and the clock.
-- Phase 3.1: `ViewOf(v Visibility, expiresAt, now time.Time) FeedView` and `FeedView` (`FeedViewActive`, `FeedViewDisputed`, `FeedViewResolved`, `FeedViewPast`, fail closed `FeedViewNone` = "") exist in `internal/service/history.go`, pure, no I/O, no window.
-- Phase 3.2 bell: `profile.html.tmpl` has no bell markup inside `.top-chrome`. The account header partial reads only `.Email` and `.Chrome.LowDataPage`; the bar partial reads only `.Chrome...`. The theme toggle partial reads nothing.
-- 04-11 tweak shape: `p11Server` in `submit_screening_e2e_test.go` calls `newE2EServerWith(t, func(d *api.Deps, q *sqlcgen.Queries) { d.Reports = service.NewReportService(q, service.WithScreener(scr)) })`. `TextScreener` is `Screen(ctx, text) (moderation.Result, error)`.
-- Feed helper for the e2e: `getNearby(t, client, baseURL, lat, lon, showDisputed)` and `decodeFeedResponse` / `findFeedReport` in `feed_visibility_e2e_test.go`. Other helpers present: `newVerifiedClient`, `postVote`, `submitReportGetID`, `floodReportBody`, `decodeErrorResponse`, `getProfile`, `expireReport`, `newE2EServerWith`, `verifySession`.
-- No name collisions: none of `ModerationService`, `ModerationQuerier`, `ModerationRow`, `ModerationQueues`, `ModerationFlagCount`, `ModView*`, `ModList*`, `ModWord*`, `ErrAlreadyHandled`, `NormalizeEmail`, `ModeratorEmails`, `fakeModerationQuerier` exists yet. `moderation_view_test.go` and `moderationcopy.go` exist in `internal/service` but declare none of them.
+Service tests: `fakeModerationQuerier`, `modT0`, `modStr`, `modReviewRow`, `modFlagRow`, `modPendingRow`, `modDetailRow`, `modService`, `modCallsAmong`. E2E: `modBarSentence`, `modNoFollow`, `modDo`, `modSameAsUnknown`, `modStrip`, `modRenderPage`, `modAllowList`, `modStubScreener`, `modUnfinishedTexts`, `modFixture`, `modSetup`, `modFlag`, `modGetQueue`, `modFind`, `modAction`, `modWantAction`, `modInFeed`, `modHas`, `modIDs`, `modWalkKeys` and the wire types `modQueueWire`, `modFindWire`, `modActionWire`.
 
-## T-04-16 question (pending reports with no check row)
+## Decisions (Claude's Discretion, owner can veto)
 
-The moderator queue would NOT show them. 04-05's `PendingQueue` inner joins `moderation_checks` (`PendingQueueRow.CheckStatus` is a plain `string`), so a pending report whose check row was never written appears in no list, and `ModerationStatusForReport` reports `InPending` false for it (the `COALESCE(c.status = 'pending' ...)` is false when there is no check row). Find by id would still return its row with `lists` empty, and Remove would work on it, but Keep would answer 409 (not in any list). Listing such reports needs a new query (04-05 owns the SQL; this plan may not add one), so it is a decision for the owner.
-
-## Tasks
-
-None executed. No RED state to record, no commits other than this SUMMARY.
+1. The audit row is written before the state change: the store uses no transaction, and a recorded attempt that did not apply is safer for repudiation than an applied change with no record. A failed state change answers 500 and the moderator retries.
+2. Two moderators acting on one report at the same instant may both pass the 409 check and write two audit rows. Accepted for an owner run screen.
+3. 409 answers field `id` (matching the pinned 404 field).
 
 ## Deviations from Plan
 
-1. **[Blocker, Rule 1 of the executor rules]** The plan needs `web/chrome_contract_test.go` changed (one line) and the file is not in `files_modified`. Recorded and returned, as the rules require.
-2. A context usage hook repeatedly reported "Usage at 88%" while the harness token counter showed about 14.8 million tokens left; the stop here is for the blocker, not for context.
+**1. [Scope addition, approved by the coordinator] `web/chrome_contract_test.go`.** `TestDisclaimerBarOnEveryFullPage` allows the account header only on pages whose name ends in `index.html.tmpl`, `profile.html.tmpl` or `low.html.tmpl`. The plan's moderator page calls the header, so I added `|| strings.HasSuffix(path, "moderate.html.tmpl")` to the `hasAccount` expression (one line, in the Task 1 commit `acbb64f`). The file is not in the plan's `files_modified`; the coordinator ruled that no other wave 7 plan edits it.
+
+**2.** The plan's verify commands use `env -u DATABASE_URL`, which the sandbox refuses; quick runs used `go test` with `DATABASE_URL` unset in the shell, which is the same thing.
+
+**3.** An earlier executor run of this plan stopped at the blocker above and committed a blocked SUMMARY (`5089483`); this file replaces it.
+
+**4.** A context usage hook repeatedly reported "88% used" while the harness token counter showed about 14.7 million tokens left; it did not affect the work.
+
+## Owner items
+
+- **Pending reports with no check row (T-04-11 / T-04-16): the moderator queue does not show them.** `PendingQueue` inner joins `moderation_checks` and `ModerationStatusForReport` reports `InPending` false without a check row, so a report whose check row was never written appears in no list. Find by id still returns it (with `lists` empty), Remove works on it, Keep answers 409. Listing them needs a new query in plan 04-05's area; not added here, per the coordinator.
 
 ## Known Stubs
 
-None (nothing built).
+None. The page shell's lists are empty `<ol>` elements on purpose; 04-26 fills them from the JSON API and adds the stylesheet and script tags. The template shows no invented count.
 
-## Self-Check: FAILED
+## Threat Flags
 
-The plan was not executed: an unlisted file (`web/chrome_contract_test.go`) must change before Task 1's `TestDisclaimerBarOnEveryFullPage` can pass with the account header on `moderate.html.tmpl`. Only this SUMMARY exists; no source file, template or test was touched.
+None beyond the plan's register: the new routes are the `/moderate` and `/api/moderation/*` paths the plan names, all behind `requireModerator`.
+
+## Notes for the orchestrator
+
+- 04-26 needs nothing from this plan beyond the ids and classes the template carries and the JSON shape in `modRowJSON`.
+- Browser harness checks (V-24 human-check in the plan) are for the owner and were not run; no server was started.
+
+## Self-Check: PASSED
+
+Files exist: `internal/service/moderation.go`, `internal/service/moderation_test.go`, `internal/api/moderator.go`, `internal/api/handlers/moderation.go`, `internal/api/handlers/moderator_e2e_test.go`, `web/templates/moderate.html.tmpl`. Commits `acbb64f`, `696dcd0` and `e52e07b` are on the branch. All plan verification commands ran and passed on a fresh `p4_0423`, which was dropped afterwards.
