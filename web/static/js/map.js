@@ -1430,6 +1430,22 @@ window.PinalertMap = (function () {
     }, 1500);
   }
 
+  // focusMarker puts focus on the pin of report id when it is on the page, so a
+  // closed dialog can hand focus back to the pin of a popup that has gone. It
+  // does not scroll or pan the map. It returns whether a pin took the focus.
+  function focusMarker(id) {
+    var marker = markers[String(id)] || markers[id];
+    if (!marker) {
+      return false;
+    }
+    var el = marker.getElement ? marker.getElement() : null;
+    if (!el || !el.isConnected) {
+      return false;
+    }
+    el.focus({ preventScroll: true });
+    return true;
+  }
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
@@ -1444,6 +1460,7 @@ window.PinalertMap = (function () {
     getCenter: getCenter,
     highlight: highlight,
     focusOpenPopup: focusOpenPopup,
-    takeRemovedPopupFocus: takeRemovedPopupFocus
+    takeRemovedPopupFocus: takeRemovedPopupFocus,
+    focusMarker: focusMarker
   };
 }());

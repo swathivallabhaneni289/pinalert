@@ -175,6 +175,65 @@ func TestFlagControlBuiltOnceUpdatedInPlace(t *testing.T) {
 	if n := strings.Count(mapjs, "PinalertFlag.createFlagControl("); n != 1 {
 		t.Errorf("map.js builds the Flag control %d times, want 1", n)
 	}
+
+	// The marker seam used by the focus return chain.
+	p424Contains(t, "map.js", mapjs, "focusMarker: focusMarker")
+	p424Contains(t, "focusMarker", jsFunctionBody(t, mapjs, "focusMarker(id)"),
+		"markers[", "getElement()", "isConnected", ".focus(", "return true", "return false")
+
+	// The Low data row: built once after the vote block error, kept as the
+	// row's flag part, refreshed right after the vote block update. The row is
+	// a plain object literal returned by createLowRow, so the control joins it
+	// as the flag key (amended from the assignment form, which this base lacks).
+	low := p424ReadJS(t, "static/js/low.js")
+	create := jsFunctionBody(t, low, "createLowRow(report)")
+	p424Ordered(t, "createLowRow", create,
+		"PinalertVotes.createVoteBlock(report.id, { resolve: false })", "PinalertFlag.createFlagControl(report)",
+		".appendChild(flagControl.el)", "flag: flagControl")
+	p424Lacks(t, "createLowRow", create, "addEventListener(", "tabindex")
+	lowUpd := jsFunctionBody(t, low, "updateLowRow(row, report)")
+	lowFlagAt := strings.Index(lowUpd, "PinalertFlag.updateFlagControl(row.flag, report)")
+	lowVoteAt := strings.Index(lowUpd, "PinalertVotes.updateVoteBlock(row.voteBlock, report)")
+	if lowFlagAt == -1 || lowVoteAt == -1 || lowFlagAt < lowVoteAt {
+		t.Errorf("updateLowRow must refresh the Flag control after the vote block (flag at %d, vote at %d)", lowFlagAt, lowVoteAt)
+	}
+	p424Lacks(t, "updateLowRow", lowUpd, "createFlagControl(")
+	if n := strings.Count(low, "PinalertFlag.createFlagControl("); n != 1 {
+		t.Errorf("low.js builds the Flag control %d times, want 1", n)
+	}
+}
+
+// TestFlagScriptLoadOrder pins where flag.js and the dialog partial load:
+// after queue.js and before the form, map, feed and Low data scripts, and on
+// the main page and the Low data view only.
+func TestFlagScriptLoadOrder(t *testing.T) {
+	const tag = `<script src="/static/js/flag.js?v={{.AssetVersion}}" defer></script>`
+	index := p424ReadTemplate(t, "index.html.tmpl")
+	if n := strings.Count(index, tag); n != 1 {
+		t.Errorf("index.html.tmpl loads flag.js %d times, want 1", n)
+	}
+	p424Ordered(t, "index.html.tmpl", index,
+		"/static/js/queue.js", "/static/js/flag.js", "/static/js/report-form.js")
+	p424Ordered(t, "index.html.tmpl", index,
+		"/static/js/flag.js", "/static/js/map.js", "/static/js/feed.js")
+
+	low := p424ReadTemplate(t, "low.html.tmpl")
+	if n := strings.Count(low, tag); n != 1 {
+		t.Errorf("low.html.tmpl loads flag.js %d times, want 1", n)
+	}
+	p424Ordered(t, "low.html.tmpl", low,
+		"/static/js/queue.js", "/static/js/flag.js", "/static/js/report-form.js", "/static/js/low.js")
+
+	for name, text := range findFullPageTemplates(t) {
+		page := strings.TrimPrefix(name, "templates/")
+		wantsFlag := page == "index.html.tmpl" || page == "low.html.tmpl"
+		if got := strings.Contains(text, "/static/js/flag.js"); got != wantsFlag {
+			t.Errorf("%s: loads flag.js = %v, want %v", page, got, wantsFlag)
+		}
+		if got := strings.Contains(text, "flag_dialog.html.tmpl"); got != wantsFlag {
+			t.Errorf("%s: calls the Flag dialog partial = %v, want %v", page, got, wantsFlag)
+		}
+	}
 }
 
 // p424RadioPattern finds the radio inputs of the Flag dialog partial.
@@ -282,12 +341,14 @@ func TestFlagDialogLocksPage(t *testing.T) {
 		"'Escape'", "stopPropagation", "closeFlagDialog(", "'Tab'", "sending", "focusableInPanel(")
 	p424Contains(t, "dialogRefs", jsFunctionBody(t, flag, "dialogRefs()"), "evt.target === ")
 	p424Contains(t, "returnFocus", jsFunctionBody(t, flag, "returnFocus(state)"),
-		"isShown(", "surfaceOf(", "'.report-row, .past-card'", "rowNext", "rowPrev", "getElementById('map')")
+		"isShown(", "surfaceOf(", "'.report-row, .past-card'", "rowNext", "rowPrev", "getElementById('map')",
+		"PinalertMap.focusMarker(", "getElementById('low-report')")
 
 	trust := p424ReadJS(t, "static/js/trust.js")
 	p424Contains(t, "trust.js", trust, "data-modal-open")
 
 	p424CheckFlagPartialPlacement(t, "index.html.tmpl")
+	p424CheckFlagPartialPlacement(t, "low.html.tmpl")
 }
 
 // p424CheckFlagPartialPlacement runs the three placement checks on a page:

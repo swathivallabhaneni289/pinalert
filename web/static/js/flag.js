@@ -437,6 +437,10 @@ window.PinalertFlag = (function () {
         }
       }
     }
+    if (state.surface === 'popup' && window.PinalertMap && typeof PinalertMap.focusMarker === 'function' &&
+        PinalertMap.focusMarker(state.reportId)) {
+      return;
+    }
     var items = document.querySelectorAll('.report-row, .past-card');
     for (var j = 0; j < items.length; j++) {
       if (items[j].dataset.reportId === state.reportId && focusRowTarget(items[j])) {
@@ -452,6 +456,11 @@ window.PinalertFlag = (function () {
     var mapEl = document.getElementById('map');
     if (isShown(mapEl)) {
       mapEl.focus();
+      return;
+    }
+    var reportButton = document.getElementById('low-report');
+    if (isShown(reportButton)) {
+      reportButton.focus();
     }
   }
 
