@@ -70,6 +70,30 @@ const (
 	placeRateLimitEvery = 4 * time.Second
 )
 
+// The D-11 budgets, the one named place for every Phase 4 limit number. Each
+// bucket allows Burst at once and then one more every Every. The vote cooldown
+// is burst 1: a second vote of one kind on one report waits a full Every. The
+// submit attempt and network backstop shapes are research defaults that protect
+// the screening provider and the server. api.RateLimitsDefault mirrors these
+// values for Deps literals that leave a field zero. Each bucket's idle window
+// follows from burst times refill (04-03).
+const (
+	reportSeriousBurst = 5
+	reportSeriousEvery = 5 * time.Minute
+	reportOtherBurst   = 8
+	reportOtherEvery   = 15 * time.Minute
+	voteBurst          = 20
+	voteEvery          = 15 * time.Second
+	voteChangeBurst    = 1
+	voteChangeEvery    = 30 * time.Second
+	flagBurst          = 10
+	flagEvery          = 2 * time.Minute
+	submitAttemptBurst = 20
+	submitAttemptEvery = 6 * time.Second
+	ipBackstopBurst    = 60
+	ipBackstopEvery    = 20 * time.Second
+)
+
 func main() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -210,6 +234,16 @@ func main() {
 		PlaceRateLimit: api.PlaceRateLimit{
 			Burst: placeRateLimitBurst,
 			Every: placeRateLimitEvery,
+		},
+		// The seven D-11 shapes from the constants block above.
+		RateLimits: api.RateLimits{
+			ReportSerious: api.BucketLimit{Every: reportSeriousEvery, Burst: reportSeriousBurst},
+			ReportOther:   api.BucketLimit{Every: reportOtherEvery, Burst: reportOtherBurst},
+			Vote:          api.BucketLimit{Every: voteEvery, Burst: voteBurst},
+			VoteChange:    api.BucketLimit{Every: voteChangeEvery, Burst: voteChangeBurst},
+			Flag:          api.BucketLimit{Every: flagEvery, Burst: flagBurst},
+			SubmitAttempt: api.BucketLimit{Every: submitAttemptEvery, Burst: submitAttemptBurst},
+			IPBackstop:    api.BucketLimit{Every: ipBackstopEvery, Burst: ipBackstopBurst},
 		},
 	}
 	router := api.NewRouter(deps)

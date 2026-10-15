@@ -80,6 +80,10 @@ func newTrustE2EServer(t *testing.T, clock func() time.Time) (*httptest.Server, 
 		Auth:                 handlers.AuthConfig{AssetVersion: "test"},
 		Template:             tmpl,
 		RequestLinkRateLimit: api.RequestLinkRateLimit{Burst: 100, Every: time.Millisecond},
+		// 04-09 opened every bucket because this suite tests trust semantics,
+		// not limits: one account taps Confirm twice and then Dispute on one
+		// report, which the 30 second vote cooldown would refuse.
+		RateLimits: e2eGenerousRateLimits,
 	}
 	router := api.NewRouter(deps)
 

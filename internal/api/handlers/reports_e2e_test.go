@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -27,6 +28,21 @@ import (
 	"pinalert/internal/testutil"
 )
 
+// e2eGenerousBucket and e2eGenerousRateLimits open every Phase 4 bucket: the
+// existing suites must never hit a limit, and the limit tests set their own
+// buckets through the tweak hook of newE2EServerWith (RESEARCH Pitfall 10).
+var e2eGenerousBucket = api.BucketLimit{Every: time.Millisecond, Burst: 1000}
+
+var e2eGenerousRateLimits = api.RateLimits{
+	ReportSerious: e2eGenerousBucket,
+	ReportOther:   e2eGenerousBucket,
+	Vote:          e2eGenerousBucket,
+	VoteChange:    e2eGenerousBucket,
+	Flag:          e2eGenerousBucket,
+	SubmitAttempt: e2eGenerousBucket,
+	IPBackstop:    e2eGenerousBucket,
+}
+
 // newE2EServer builds a real router with every dependency the access gate
 // added in 01.1-04 needs, not just the reports slice — POST and GET
 // /api/reports are now both gated (D-05), so every caller of this helper
@@ -37,6 +53,14 @@ import (
 // seed rows directly (e.g. an already-expired report) or assert row counts
 // against the votes table without a second parallel harness.
 func newE2EServer(t *testing.T) (*httptest.Server, *recordingMailer, *pgxpool.Pool) {
+	return newE2EServerWith(t, nil)
+}
+
+// newE2EServerWith is newE2EServer with a hook. Every rate limit bucket starts
+// open (e2eGenerousRateLimits); tweak, when non nil, runs after the Deps
+// literal and before the router is built, so it can override any field. The
+// queries are passed so a tweak can build a service over the same database.
+func newE2EServerWith(t *testing.T, tweak func(d *api.Deps, q *sqlcgen.Queries)) (*httptest.Server, *recordingMailer, *pgxpool.Pool) {
 	t.Helper()
 	pool := testutil.NewTestDB(t)
 
@@ -58,6 +82,10 @@ func newE2EServer(t *testing.T) (*httptest.Server, *recordingMailer, *pgxpool.Po
 		AuthService: service.NewAuthService(queries, fm, "https://pinalert.example"),
 		Auth:        handlers.AuthConfig{AssetVersion: "test"},
 		Template:    tmpl,
+		RateLimits:  e2eGenerousRateLimits,
+	}
+	if tweak != nil {
+		tweak(&deps, queries)
 	}
 	router := api.NewRouter(deps)
 

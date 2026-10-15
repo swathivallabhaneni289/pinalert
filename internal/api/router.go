@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -97,6 +98,18 @@ type Deps struct {
 	// requestLogger). Left nil, a logger on standard output with the usual
 	// date and time prefix is used, which is where chi's own logger wrote.
 	RequestLog *log.Logger
+	// RateLimits holds the seven D-11 shapes. A zero field takes its
+	// RateLimitsDefault value; cmd/server/main.go sets every field from its
+	// constants block.
+	RateLimits RateLimits
+	// ClientIPHeader names the header the host overwrites with the visitor
+	// address (CF-Connecting-IP on Render, Fly-Client-IP on Fly.io, X-Real-IP on
+	// Railway, confirmed by a canary request first). Empty keeps the TCP peer
+	// address for every per IP limiter and turns the network backstop off.
+	ClientIPHeader string
+	// LimiterClock is the clock of the Phase 4 rate limit buckets. Nil means
+	// time.Now; tests inject a clock.
+	LimiterClock func() time.Time
 }
 
 // requestLogger returns the access log middleware. It replaces chi's
@@ -195,6 +208,45 @@ type PlaceRateLimit struct {
 // per IP budget would lock out neighbours of a heavy searcher (D-16).
 var PlaceRateLimitDefault = PlaceRateLimit{Burst: 3, Every: 4 * time.Second}
 
+// BucketLimit and RateLimits are aliases of the handlers types, the same types
+// under a second name. Package api imports handlers, so the gate in handlers
+// cannot take a type declared here; the struct bodies live beside the gate and
+// callers write api.BucketLimit and api.RateLimits.
+type BucketLimit = handlers.BucketLimit
+type RateLimits = handlers.RateLimits
+
+// RateLimitsDefault mirrors the D-11 constants block in cmd/server/main.go, the
+// one named place. It is used for any field a Deps literal leaves zero, the
+// RequestLinkRateLimitDefault precedent.
+var RateLimitsDefault = RateLimits{
+	ReportSerious: BucketLimit{Every: 5 * time.Minute, Burst: 5},
+	ReportOther:   BucketLimit{Every: 15 * time.Minute, Burst: 8},
+	Vote:          BucketLimit{Every: 15 * time.Second, Burst: 20},
+	VoteChange:    BucketLimit{Every: 30 * time.Second, Burst: 1},
+	Flag:          BucketLimit{Every: 2 * time.Minute, Burst: 10},
+	SubmitAttempt: BucketLimit{Every: 6 * time.Second, Burst: 20},
+	IPBackstop:    BucketLimit{Every: 20 * time.Second, Burst: 60},
+}
+
+// resolveRateLimits replaces every field equal to BucketLimit{} with the
+// RateLimitsDefault field of the same name, so the gate receives fully resolved
+// limits and needs no default logic of its own.
+func resolveRateLimits(l RateLimits) RateLimits {
+	fill := func(got *BucketLimit, def BucketLimit) {
+		if *got == (BucketLimit{}) {
+			*got = def
+		}
+	}
+	fill(&l.ReportSerious, RateLimitsDefault.ReportSerious)
+	fill(&l.ReportOther, RateLimitsDefault.ReportOther)
+	fill(&l.Vote, RateLimitsDefault.Vote)
+	fill(&l.VoteChange, RateLimitsDefault.VoteChange)
+	fill(&l.Flag, RateLimitsDefault.Flag)
+	fill(&l.SubmitAttempt, RateLimitsDefault.SubmitAttempt)
+	fill(&l.IPBackstop, RateLimitsDefault.IPBackstop)
+	return l
+}
+
 // @title        Pinalert API
 // @version      1.0
 // @description  Crowd-reported local emergency feed for floods, cyclones, and other disasters.
@@ -232,12 +284,23 @@ func NewRouter(deps Deps) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
-	// The client IP is resolved from the TCP peer address because nothing in
-	// front of this service is confirmed to overwrite inbound proxy headers
-	// (DEC-U). If this app is ever deployed behind a confirmed single
-	// trusted reverse proxy, middleware.ClientIPFromXFFTrustedProxies
-	// configured with that proxy's real hop count is the correct upgrade.
-	r.Use(middleware.ClientIPFromRemoteAddr)
+	// The client IP is the TCP peer address (DEC-U) unless Deps.ClientIPHeader
+	// names a header the host overwrites. When it does, that header becomes the
+	// client IP for every per IP limiter, so the request link and geocode
+	// limiters also key on it whenever it is present and parses, and fall back
+	// to the peer address only when it is missing or unparseable. On a host
+	// that does not overwrite that header, a caller could rotate it to dodge
+	// those limiters (the T-01-92 property), so the setting is only for a host
+	// confirmed by the canary check. Both middlewares fail closed, and the
+	// Phase 4 network backstop skips an unknown address instead of falling
+	// back. If this app is ever deployed behind a confirmed single trusted
+	// reverse proxy, middleware.ClientIPFromXFFTrustedProxies configured with
+	// that proxy's real hop count is the other upgrade.
+	if header := strings.TrimSpace(deps.ClientIPHeader); header != "" {
+		r.Use(middleware.ClientIPFromHeader(header))
+	} else {
+		r.Use(middleware.ClientIPFromRemoteAddr)
+	}
 	r.Use(middleware.Recoverer)
 	r.Use(requestLogger(deps.RequestLog))
 	r.Use(deps.Session.Middleware(deps.persistSession))
@@ -249,6 +312,14 @@ func NewRouter(deps Deps) *chi.Mux {
 	page.Chrome = deps.Chrome
 	auth := deps.Auth
 	auth.Chrome = deps.Chrome
+
+	limiterClock := deps.LimiterClock
+	if limiterClock == nil {
+		limiterClock = time.Now
+	}
+	// The one gate for every Phase 4 limiter. Plan 04-15 passes it to
+	// SubmitReport and plan 04-20 to the flag route.
+	rateGate := handlers.NewRateGate(resolveRateLimits(deps.RateLimits), limiterClock, deps.ClientIPHeader, deps.Chrome)
 
 	// --- Exempt: reachable without a verified account. ---
 
@@ -316,10 +387,16 @@ func NewRouter(deps Deps) *chi.Mux {
 		// gate. They are inside the gate at all because a vote must be
 		// attributable to a verified account, which is Phase 1.1's entire
 		// reason for existing.
-		r.Post("/api/reports/{id}/confirm", handlers.CastVote(deps.Votes, service.VoteKindContent, service.VoteConfirm))
-		r.Post("/api/reports/{id}/dispute", handlers.CastVote(deps.Votes, service.VoteKindContent, service.VoteDispute))
-		r.Post("/api/reports/{id}/resolve", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteResolve))
-		r.Post("/api/reports/{id}/reopen", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteReopen))
+		//
+		// D-10 and D-11: each vote route is wrapped with the one gate's vote
+		// middleware, the per account vote bucket and the 30 second cooldown
+		// on casting the same kind of vote again on one report, on all five
+		// vote routes including the take back below. This closes WR-01, the
+		// missing throttle on the vote routes.
+		r.With(rateGate.VoteMiddleware(service.VoteKindContent)).Post("/api/reports/{id}/confirm", handlers.CastVote(deps.Votes, service.VoteKindContent, service.VoteConfirm))
+		r.With(rateGate.VoteMiddleware(service.VoteKindContent)).Post("/api/reports/{id}/dispute", handlers.CastVote(deps.Votes, service.VoteKindContent, service.VoteDispute))
+		r.With(rateGate.VoteMiddleware(service.VoteKindResolution)).Post("/api/reports/{id}/resolve", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteResolve))
+		r.With(rateGate.VoteMiddleware(service.VoteKindResolution)).Post("/api/reports/{id}/reopen", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteReopen))
 		// The fifth vote route (HIST-09, D-22): the take back of a mistaken
 		// Mark resolved. It has its own value, service.VoteUnresolve, and
 		// does not reuse reopen, because a reopen from a non poster counts
@@ -327,7 +404,7 @@ func NewRouter(deps Deps) *chi.Mux {
 		// take back only withdraws the caller's own resolve and claims
 		// nothing about the place. It needs no location, never counts as a
 		// reopen, and shares its limit of two with the poster's reopen.
-		r.Post("/api/reports/{id}/unresolve", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteUnresolve))
+		r.With(rateGate.VoteMiddleware(service.VoteKindResolution)).Post("/api/reports/{id}/unresolve", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteUnresolve))
 		// GET /api/geocode (plan 07-03). Registered as a flat literal path,
 		// not under an r.Route mount — see this router's own doc comments
 		// above for why every /api/* path here is flat, gated or not.
