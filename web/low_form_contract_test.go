@@ -169,6 +169,10 @@ func TestVoteRateLimitClient(t *testing.T) {
 		"Retry-After", "rememberVoteWait(", "err.retryAfterSeconds")
 	p419Lacks(t, "castVote", cast, "while (", "for (")
 
+	// A tap on a button marked too far must not read a position during a wait.
+	hint := jsFunctionBody(t, votes, "refreshHintThenRetry(block, button)")
+	p419Before(t, "refreshHintThenRetry", hint, "knownVoteWait(", "getVoterLocation(")
+
 	remember := jsFunctionBody(t, votes, "rememberVoteWait(reportId, action, seconds, message, field)")
 	known := jsFunctionBody(t, votes, "knownVoteWait(reportId, action)")
 	p419Has(t, "knownVoteWait", known, "Date.now()", "Pinalert.formatWait(", ".indexOf(", "=== -1",

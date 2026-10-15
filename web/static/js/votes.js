@@ -1477,6 +1477,14 @@
     if (block.hintRefreshing) {
       return;
     }
+    // While the server's wait for this report and vote kind still runs, the
+    // tap is answered with that sentence and no position is read at all.
+    var tappedAction = button.dataset.action === 'confirm-resolve' ? 'resolve' : button.dataset.action;
+    var pendingWait = knownVoteWait(block.controls.dataset.reportId, tappedAction);
+    if (pendingWait) {
+      showVoteError(block, pendingWait.fieldMessage);
+      return;
+    }
     block.hintRefreshing = true;
     getVoterLocation({ fresh: true }).then(function (coords) {
       block.hintRefreshing = false;
