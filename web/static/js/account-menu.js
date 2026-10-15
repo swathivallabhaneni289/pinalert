@@ -28,6 +28,14 @@
   // could drift out of step with it.
   var FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
+  var MAX_HEIGHT_PROPERTY = '--account-menu-max-height';
+
+  // The open panel sits inside the sticky top chrome, so the page cannot
+  // scroll it into view: it has to fit the screen and scroll inside itself.
+  // Its height limit is measured from its real top edge, because the bar token
+  // underestimates the bar at larger text. The floor is two 44px items, so a
+  // very short screen still shows a usable pair and scrolls the rest.
+
   var outsideClickBound = false;
 
   function isOpen() {
@@ -44,11 +52,35 @@
     if (open) {
       if (!outsideClickBound) {
         document.addEventListener('click', onDocumentClick);
+        window.addEventListener('resize', measurePanel);
+        window.addEventListener('orientationchange', measurePanel);
         outsideClickBound = true;
       }
     } else if (outsideClickBound) {
       document.removeEventListener('click', onDocumentClick);
+      window.removeEventListener('resize', measurePanel);
+      window.removeEventListener('orientationchange', measurePanel);
       outsideClickBound = false;
+    }
+  }
+
+  // measurePanel limits the open panel to the space between its own top edge
+  // and the bottom of the screen, less one medium space. The browser resolves
+  // the tokens, and the max keeps the floor of two touch targets. The panel
+  // must be unhidden to have a box, so openMenu calls this after setOpen.
+  function measurePanel() {
+    var top = panel.getBoundingClientRect().top;
+    var room = Math.floor(window.innerHeight - top);
+    panel.style.setProperty(
+      MAX_HEIGHT_PROPERTY,
+      'max(calc(' + room + 'px - var(--space-md)), calc(var(--touch-target-min) * 2))'
+    );
+  }
+
+  // onPanelFocusIn keeps the focused item visible inside the scrolling panel.
+  function onPanelFocusIn(e) {
+    if (e.target !== panel && typeof e.target.scrollIntoView === 'function') {
+      e.target.scrollIntoView({ block: 'nearest' });
     }
   }
 
@@ -61,6 +93,7 @@
 
   function openMenu() {
     setOpen(true);
+    measurePanel();
     focusFirstMenuItem();
   }
 
@@ -126,4 +159,5 @@
 
   trigger.addEventListener('click', onTriggerClick);
   panel.addEventListener('keydown', onPanelKeydown);
+  panel.addEventListener('focusin', onPanelFocusIn);
 }());

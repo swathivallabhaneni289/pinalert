@@ -401,7 +401,24 @@
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: var(--space-sm);
+  /* The measured value from account-menu.js is used whenever the menu is
+     open. The token fallback covers only the instant before the first
+     measurement. The panel scrolls inside itself, so every item stays
+     reachable on a short screen or at large text. The guard in the head stays
+     for TestAccountMenuHiddenGuard. */
+  max-height: var(--account-menu-max-height, calc(100vh - var(--disclaimer-bar-height) - var(--space-md) - var(--touch-target-min) - var(--space-sm) - var(--space-md)));
+  max-height: var(--account-menu-max-height, calc(100dvh - var(--disclaimer-bar-height) - var(--space-md) - var(--touch-target-min) - var(--space-sm) - var(--space-md)));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   box-shadow: 0 4px 16px rgb(0 0 0 / 20%);
+}
+
+/* Every child keeps its content height. Each item declares a minimum height
+   of one touch target, so without this rule a height capped column would
+   squash the items together at large text instead of scrolling. This rule
+   declares no display, so the hidden guard above is untouched. */
+#account-menu:not([hidden]) > * {
+  flex-shrink: 0;
 }
 
 .account-menu__email {
@@ -437,6 +454,25 @@
   text-decoration: none;
   text-align: left;
   cursor: pointer;
+}
+
+/* The Low data view item is two lines in one link: the name, then a short
+   line under it. */
+.account-menu__item--stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--space-xs) var(--space-sm);
+}
+
+/* The second line is plain text colour, not muted: muted text on the panel
+   surface is under 4.5:1 in one of the two themes (UI-SPEC Color, Muted text
+   rule). */
+.account-menu__line {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
 }
 
 /* The theme control (quick task 260923-rra): a fixed-position floating

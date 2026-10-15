@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"pinalert/internal/account"
 	"pinalert/internal/api/handlers"
 )
 
@@ -300,4 +301,68 @@ func TestLoginLowParamSetsCookie(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET / after Turn off = %d, want 200", resp.StatusCode)
 	}
+}
+
+// p421GatedRequest builds a GET request that carries a verified account, the
+// way the gate would have left it.
+func p421GatedRequest(path string) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	ctx := account.WithAccount(req.Context(), account.Account{ID: 421, Email: "waysin-p421@example.com"})
+	return req.WithContext(ctx)
+}
+
+func TestAccountMenuRendersPerPage(t *testing.T) {
+	tmpl, err := handlers.ParsePageTemplate()
+	if err != nil {
+		t.Fatalf("parsing page template: %v", err)
+	}
+	cfg := handlers.PageConfig{AssetVersion: "test"}
+
+	t.Run("main", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		handlers.Page(tmpl, cfg)(rec, p421GatedRequest("/"))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		menu := p421Region(t, rec.Body.String(), `<div id="account-menu"`)
+		p421AssertInOrder(t, "menu markup", menu,
+			`href="/profile"`, `href="/low"`, `href="/disclaimer"`, `href="/policy"`, `action="/auth/logout"`)
+		if !strings.Contains(menu, `aria-label="Low data view, Text only, no map"`) {
+			t.Errorf("the Low data view item lacks its accessible name")
+		}
+		text := p421Text(menu)
+		p421AssertInOrder(t, "menu text", text,
+			"Activity", "Low data view Text only, no map", "Disclaimer", "Policy", "Log out")
+		if !strings.HasSuffix(text, "Log out") {
+			t.Errorf("the menu text does not end with Log out: %q", text)
+		}
+		if strings.Contains(menu, "/?full=1") {
+			t.Errorf("the main page menu offers Open full version")
+		}
+		for _, tag := range regexp.MustCompile(`<a [^>]*>`).FindAllString(menu, -1) {
+			if !strings.Contains(tag, `role="menuitem"`) {
+				t.Errorf("menu link without role=menuitem: %s", tag)
+			}
+		}
+	})
+
+	t.Run("low", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		handlers.LowPage(tmpl, cfg)(rec, p421GatedRequest("/low"))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		menu := p421Region(t, rec.Body.String(), `<div id="account-menu"`)
+		p421AssertInOrder(t, "menu markup", menu,
+			`href="/profile"`, `href="/?full=1"`, `href="/disclaimer"`, `href="/policy"`, `action="/auth/logout"`)
+		if strings.Contains(menu, `href="/low"`) || strings.Contains(menu, "Text only, no map") {
+			t.Errorf("the Low data view menu still offers the Low data view item")
+		}
+		text := p421Text(menu)
+		p421AssertInOrder(t, "menu text", text,
+			"Activity", "Open full version", "Disclaimer", "Policy", "Log out")
+		if !strings.HasSuffix(text, "Log out") {
+			t.Errorf("the menu text does not end with Log out: %q", text)
+		}
+	})
 }

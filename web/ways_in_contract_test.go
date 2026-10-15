@@ -6,6 +6,8 @@
 package web
 
 import (
+	"io/fs"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -161,5 +163,132 @@ func TestLoginLowDataPanelStyles(t *testing.T) {
 	}
 	if !foundMedia {
 		t.Errorf("auth.css has no @media (max-width: 359.98px) rule for .login-ways__links")
+	}
+}
+
+var p421AnchorTagRE = regexp.MustCompile(`<a [^>]*>`)
+
+func TestAccountMenuItems(t *testing.T) {
+	header := p421ReadTemplate(t, "account_header.html.tmpl")
+	if strings.Contains(header, "<html") {
+		t.Fatalf("account_header.html.tmpl is a partial and must not hold <html")
+	}
+	start := strings.Index(header, `<div id="account-menu"`)
+	if start == -1 {
+		t.Fatalf("account_header.html.tmpl has no account menu panel")
+	}
+	end := strings.Index(header[start:], "</div>")
+	if end == -1 {
+		t.Fatalf("account menu panel is not closed")
+	}
+	panel := header[start : start+end]
+
+	p421InOrder(t, "menu item order", panel,
+		`class="account-menu__email"`, `href="/profile"`,
+		"{{if .Chrome.LowDataPage}}", `href="/?full=1"`, "Open full version",
+		"{{else}}", `href="/low"`, `aria-label="Low data view, Text only, no map"`, "Low data view",
+		`<span class="account-menu__line">Text only, no map</span>`, "{{end}}",
+		`href="/disclaimer"`, ">Disclaimer<", `href="/policy"`, ">Policy<",
+		`action="/auth/logout"`)
+
+	for _, tag := range p421AnchorTagRE.FindAllString(panel, -1) {
+		if !strings.Contains(tag, `role="menuitem"`) || !strings.Contains(tag, "account-menu__item") {
+			t.Errorf("menu link %s lacks role=menuitem or the account-menu__item class", tag)
+		}
+		if strings.Contains(tag, `href="/low"`) && !strings.Contains(tag, `class="account-menu__item account-menu__item--stacked"`) {
+			t.Errorf("the Low data view item has the wrong class attribute: %s", tag)
+		}
+	}
+	if strings.Contains(panel, "/moderate") {
+		t.Errorf("the account menu links to the moderator screen")
+	}
+
+	rules := parseCSSRules(p421ReadStatic(t, "css/auth.css"))
+	p421WantDecls(t, rules, ".account-menu__line", map[string]string{
+		"color": "var(--color-text)", "font-size": "var(--font-size-label)",
+		"line-height": "var(--line-height-label)", "font-weight": "var(--font-weight-regular)",
+	})
+	p421WantDecls(t, rules, ".account-menu__item--stacked", map[string]string{
+		"flex-direction": "column", "align-items": "flex-start",
+		"padding": "var(--space-xs) var(--space-sm)",
+	})
+	if r, ok := p421RuleFor(rules, ".account-menu__item--stacked"); ok {
+		if _, has := declsOf(r.declBody)["display"]; has {
+			t.Errorf(".account-menu__item--stacked declares display")
+		}
+	}
+	for _, r := range rules {
+		if strings.Contains(r.selectorHead, "account-menu__line") && strings.Contains(r.declBody, "--color-text-muted") {
+			t.Errorf("rule %q uses the muted colour", r.selectorHead)
+		}
+	}
+}
+
+func TestAccountMenuMeasuresHeight(t *testing.T) {
+	js := stripJSComments(p421ReadStatic(t, "js/account-menu.js"))
+	for _, want := range []string{
+		"'--account-menu-max-height'", "getBoundingClientRect()", "window.innerHeight",
+		".style.setProperty(", "var(--space-md)", "var(--touch-target-min)", "scrollIntoView(",
+		"'focusin'", "addEventListener('resize'", "addEventListener('orientationchange'",
+		"removeEventListener('resize'", "removeEventListener('orientationchange'",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("account-menu.js lacks %q", want)
+		}
+	}
+	p421InOrder(t, "openMenu order", jsFunctionBody(t, js, "openMenu()"),
+		"setOpen(true)", "measurePanel()", "focusFirstMenuItem()")
+	setOpen := jsFunctionBody(t, js, "setOpen(open)")
+	for _, want := range []string{"addEventListener('resize'", "removeEventListener('resize'"} {
+		if !strings.Contains(setOpen, want) {
+			t.Errorf("setOpen lacks %q", want)
+		}
+	}
+
+	css := p421ReadStatic(t, "css/auth.css")
+	rules := parseCSSRules(css)
+	open, ok := ruleBySelector(rules, "#account-menu:not([hidden])")
+	if !ok {
+		t.Fatalf("auth.css has no #account-menu:not([hidden]) rule")
+	}
+	const tail = " - var(--disclaimer-bar-height) - var(--space-md) - var(--touch-target-min) - var(--space-sm) - var(--space-md)))"
+	legacy := "max-height: var(--account-menu-max-height, calc(100vh" + tail
+	modern := "max-height: var(--account-menu-max-height, calc(100dvh" + tail
+	if !strings.Contains(open.declBody, legacy) || !strings.Contains(open.declBody, modern) {
+		t.Errorf("the open panel lacks the legacy and dvh max-height pair: %q", open.declBody)
+	} else if strings.Index(open.declBody, legacy) > strings.Index(open.declBody, modern) {
+		t.Errorf("the 100vh max-height must come before the 100dvh one")
+	}
+	decls := declsOf(open.declBody)
+	if decls["overflow-y"] != "auto" || decls["overscroll-behavior"] != "contain" {
+		t.Errorf("the open panel must scroll inside itself: %v", decls)
+	}
+	kids, ok := ruleBySelector(rules, "#account-menu:not([hidden]) > *")
+	if !ok {
+		t.Fatalf("auth.css has no #account-menu:not([hidden]) > * rule")
+	}
+	kd := declsOf(kids.declBody)
+	if kd["flex-shrink"] != "0" {
+		t.Errorf("menu children must not shrink: %v", kd)
+	}
+	if _, has := kd["display"]; has {
+		t.Errorf("the children rule declares display")
+	}
+
+	err := fs.WalkDir(StaticFS, "static/css", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".css") {
+			return err
+		}
+		raw, rerr := StaticFS.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		if strings.Contains(stripCSSComments(string(raw)), "--account-menu-max-height:") {
+			t.Errorf("%s declares --account-menu-max-height, it is only set at runtime", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking static/css: %v", err)
 	}
 }

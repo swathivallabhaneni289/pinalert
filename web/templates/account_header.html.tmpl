@@ -8,6 +8,13 @@
   <div id="account-menu" role="menu" hidden>
     <p class="account-menu__email">{{.Email}}</p>
     <a role="menuitem" class="account-menu__item" href="/profile">Activity</a>
+    {{if .Chrome.LowDataPage}}
+    <a role="menuitem" class="account-menu__item" href="/?full=1">Open full version</a>
+    {{else}}
+    <a role="menuitem" class="account-menu__item account-menu__item--stacked" href="/low" aria-label="Low data view, Text only, no map"><span>Low data view</span><span class="account-menu__line">Text only, no map</span></a>
+    {{end}}
+    <a role="menuitem" class="account-menu__item" href="/disclaimer">Disclaimer</a>
+    <a role="menuitem" class="account-menu__item" href="/policy">Policy</a>
     <form method="post" action="/auth/logout">
       <button type="submit" role="menuitem" class="account-menu__item">
         <span class="auth-icon auth-icon--log-out" aria-hidden="true"></span>
