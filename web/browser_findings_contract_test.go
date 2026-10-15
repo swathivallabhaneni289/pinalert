@@ -75,3 +75,58 @@ func TestBrowserFindingF3SearchStatusSitsUnderTheChips(t *testing.T) {
 		t.Errorf("laptop --map-tools-height is %q", laptop.Decls["--map-tools-height"])
 	}
 }
+
+// browserFindingsPhoneMedia is the one narrow block of phone.css.
+const browserFindingsPhoneMedia = "@media (max-width: 899.98px)"
+
+// TestBrowserFindingF2PhoneCardIsDenser pins finding F2 (and the row half of
+// F1): at 320px wide rows were 177 to 220px tall, over the 180px ceiling,
+// because line one and the trust line wrapped. On a phone the card takes 8px
+// above and below instead of 16px (its 16px sides stay), the parts of line
+// one and of the trust line sit 4px apart instead of 8px, and the title
+// follows line one by the 4px row gap alone. Nothing the row shows is hidden.
+// The laptop row in feed.css is unchanged.
+func TestBrowserFindingF2PhoneCardIsDenser(t *testing.T) {
+	const phone = "static/css/phone.css"
+	const feed = "static/css/feed.css"
+	m := browserFindingsPhoneMedia
+
+	p16MustDecl(t, "phone card", p31mRule(t, phone, m, "#report-list .report-row"),
+		map[string]string{"padding": "var(--space-sm) var(--space-md)"})
+	p16MustDecl(t, "phone white card", p31mRule(t, phone, m, "#report-list .report-row.vis-provisional"),
+		map[string]string{"padding": "calc(var(--space-sm) - 1px) calc(var(--space-md) - 1px)"})
+	p16MustDecl(t, "phone row body", p31mRule(t, phone, m, "#report-list .report-row .report-row__body"),
+		map[string]string{"column-gap": "var(--space-xs)"})
+	p16MustDecl(t, "phone row title", p31mRule(t, phone, m, "#report-list .report-row .report-row__title"),
+		map[string]string{"margin": "0"})
+	p16MustDecl(t, "phone trust line", p31mRule(t, phone, m, "#report-list .report-row .report-row__trustline:not([hidden])"),
+		map[string]string{"column-gap": "var(--space-xs)"})
+	for _, head := range []string{
+		"#report-list .report-row .report-row__trustline-count--second::before",
+		"#report-list .report-row .report-row__trustline-word:not([hidden])::before",
+	} {
+		p16MustDecl(t, "phone trust line dot", p31mRule(t, phone, m, head),
+			map[string]string{"margin-right": "var(--space-xs)"})
+	}
+
+	// Nothing on a phone hides a part of the row.
+	for _, r := range p16ParseCSS(phone, p16ReadStatic(t, phone)) {
+		if !strings.Contains(r.Head, "#report-list") {
+			continue
+		}
+		if r.Decls["display"] == "none" || r.Decls["visibility"] == "hidden" {
+			t.Errorf("phone.css hides a row part: %q", r.Head)
+		}
+		if v := r.Decls["-webkit-line-clamp"]; v != "" && v != "2" {
+			t.Errorf("phone.css clamps %q to %s lines", r.Head, v)
+		}
+	}
+
+	// The laptop row keeps its spacing (T13.4a sits at 124.2px of 125px).
+	p16MustDecl(t, "laptop row", p31mRule(t, feed, "", "#report-list .report-row"),
+		map[string]string{"padding": "var(--space-md)"})
+	p16MustDecl(t, "laptop row body", p31mRule(t, feed, "", "#report-list .report-row .report-row__body"),
+		map[string]string{"column-gap": "var(--space-sm)", "row-gap": "var(--space-xs)"})
+	p16MustDecl(t, "laptop row title", p31mRule(t, feed, "", "#report-list .report-row .report-row__title"),
+		map[string]string{"margin": "var(--space-xs) 0 0"})
+}

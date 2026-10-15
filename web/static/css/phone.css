@@ -199,15 +199,38 @@
      corner, and a provisional or hidden card is white with a hairline, as
      drawn. The tint comes from the existing severity token. */
   #report-list .report-row {
+    padding: var(--space-sm) var(--space-md);
     border: 0;
     border-radius: 8px;
   }
 
   #report-list .report-row.vis-provisional,
   #report-list .report-row.vis-hidden {
-    padding: calc(var(--space-md) - 1px);
+    padding: calc(var(--space-sm) - 1px) calc(var(--space-md) - 1px);
     border: 1px solid var(--color-border);
     background: var(--color-bg);
+  }
+
+  /* A phone card is denser than the laptop row (browser checks T13.4c and
+     T13.4d, findings F1 and F2): the card keeps its 16px sides but takes 8px
+     above and below, the parts of line one and of the trust line sit 4px
+     apart, and the title follows line one by the row gap alone. Every part
+     the row shows stays. */
+  #report-list .report-row .report-row__body {
+    column-gap: var(--space-xs);
+  }
+
+  #report-list .report-row .report-row__title {
+    margin: 0;
+  }
+
+  #report-list .report-row .report-row__trustline:not([hidden]) {
+    column-gap: var(--space-xs);
+  }
+
+  #report-list .report-row .report-row__trustline-count--second::before,
+  #report-list .report-row .report-row__trustline-word:not([hidden])::before {
+    margin-right: var(--space-xs);
   }
 
   /* White cards: the muted colour clears 4.5 to 1 on the page colour in both
