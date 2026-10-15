@@ -116,20 +116,149 @@ func TestLegalPagesRender(t *testing.T) {
 		t.Errorf("page holds ZgotmplZ")
 	}
 
+	if n := strings.Count(body, "/static/css/legal.css?v=test"); n != 1 {
+		t.Errorf("disclaimer legal.css appears %d times, want 1", n)
+	}
+	if !strings.Contains(body, `<a href="/policy">Policy</a>`) {
+		t.Errorf("disclaimer footer lacks the Policy link")
+	}
+
 	bad := legalRender(t, cfg, "nope", nil)
 	if bad.Code != http.StatusInternalServerError || strings.TrimSpace(bad.Body.String()) != "internal server error" {
 		t.Errorf("unknown page = %d %q, want 500 internal server error", bad.Code, bad.Body.String())
+	}
+
+	// The Policy page.
+	prec := legalRender(t, cfg, handlers.LegalPolicyPage, nil)
+	if prec.Code != http.StatusOK {
+		t.Fatalf("policy status = %d, want 200", prec.Code)
+	}
+	if got := prec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Errorf("policy Content-Type = %q", got)
+	}
+	if got := prec.Header().Get("Cache-Control"); got != "private, max-age=300" {
+		t.Errorf("policy Cache-Control = %q", got)
+	}
+	pb := prec.Body.String()
+	if !strings.Contains(pb, "<h1>Policy</h1>") {
+		t.Errorf("missing h1 Policy")
+	}
+	if got := legalH2s(t, pb); !legalEqual(got, legalPolicyH2sWithoutContact) {
+		t.Errorf("policy h2 sequence = %q, want %q", got, legalPolicyH2sWithoutContact)
+	}
+	ptext := legalText(t, pb)
+	if !strings.Contains(ptext, "Rules, privacy and terms") {
+		t.Errorf("policy subtitle missing")
+	}
+	for _, href := range []string{"/static/css/main.css?v=test", "/static/css/chrome.css?v=test", "/static/css/legal.css?v=test", "/static/js/theme.js?v=test"} {
+		if n := strings.Count(pb, href); n != 1 {
+			t.Errorf("policy %s appears %d times, want 1", href, n)
+		}
+	}
+	if n := strings.Count(pb, "<script"); n != 1 {
+		t.Errorf("policy <script appears %d times, want 1", n)
+	}
+	if !strings.Contains(pb, `href="/disclaimer">Disclaimer</a>`) || strings.Contains(pb, "aria-current") {
+		t.Errorf("policy bar link must not carry aria-current")
+	}
+	if n := strings.Count(pb, `href="/">Back to Pinalert</a>`); n != 2 {
+		t.Errorf("policy Back to Pinalert links = %d, want 2", n)
+	}
+	if !strings.Contains(pb, `<p class="legal-links">`) || strings.Count(pb, `href="/disclaimer"`) != 2 {
+		t.Errorf("policy needs the Disclaimer link in the bar and in the footer")
+	}
+	updated := regexp.MustCompile(`(?s)<p class="legal-updated">(.*?)</p>`).FindStringSubmatch(pb)
+	if updated == nil {
+		t.Fatalf("policy lacks the Last updated line")
+	}
+	lastUpdated := regexp.MustCompile(`^Last updated [1-9][0-9]? (January|February|March|April|May|June|July|August|September|October|November|December) 20[0-9]{2}$`)
+	if got := legalText(t, updated[1]); !lastUpdated.MatchString(got) {
+		t.Errorf("Last updated line = %q", got)
+	}
+	cookies := regexp.MustCompile(`(?s)Cookies and storage on your device</h2>.*?</ul>`).FindString(pb)
+	if !strings.Contains(legalText(t, cookies), "before you sign in") {
+		t.Errorf("the cookie list must say the session cookie is set before you sign in")
+	}
+	if strings.Contains(pb, "tel:") || strings.Contains(pb, "ZgotmplZ") {
+		t.Errorf("policy holds a tel link or ZgotmplZ")
+	}
+	for _, want := range []string{
+		"For anything serious, such as a crime or a threat to someone's safety, contact the police directly. In an emergency call 112. Pinalert doesn't contact the police for you.",
+		"Browsers can delete saved data, so a report waiting to send isn't guaranteed to survive. Send it as soon as you have a signal.",
+		"Nothing listed here is deleted on a schedule today",
+	} {
+		if !strings.Contains(ptext, want) {
+			t.Errorf("policy text lacks %q", want)
+		}
+	}
+	for _, banned := range []string{"threatening", "illegal"} {
+		if strings.Contains(strings.ToLower(ptext), banned) {
+			t.Errorf("policy text names %q", banned)
+		}
+	}
+}
+
+var legalPolicyH2sWithoutContact = []string{
+	"What you can post",
+	"How the automatic check works",
+	"What moderators can do",
+	"Limits",
+	"What Pinalert keeps",
+	"Cookies and storage on your device",
+	"Emergencies and the police",
+	"Terms",
+	"Changes to this page",
+}
+
+func TestLegalPagesContactBlockOnlyWhenSet(t *testing.T) {
+	set := handlers.AuthConfig{AssetVersion: "test", Chrome: handlers.Chrome{ContactEmail: "moderation@example.org"}}
+	d := legalRender(t, set, handlers.LegalDisclaimerPage, nil).Body.String()
+	dh := legalH2s(t, d)
+	if len(dh) == 0 || dh[len(dh)-1] != "Contact" {
+		t.Errorf("disclaimer last h2 = %q, want Contact", dh)
+	}
+	if !strings.Contains(legalText(t, d), "To report abuse or ask for something to be removed, write to moderation@example.org.") {
+		t.Errorf("disclaimer contact sentence missing")
+	}
+	if !strings.Contains(d, `href="mailto:moderation@example.org"`) {
+		t.Errorf("disclaimer mailto link missing")
+	}
+	p := legalRender(t, set, handlers.LegalPolicyPage, nil).Body.String()
+	wantP := append(append([]string{}, legalPolicyH2sWithoutContact[:7]...), "Complaints and removal requests", "Terms", "Changes to this page")
+	if got := legalH2s(t, p); !legalEqual(got, wantP) {
+		t.Errorf("policy h2 with contact = %q, want %q", got, wantP)
+	}
+	if !strings.Contains(legalText(t, p), "To report abuse or ask for a report to be removed, write to moderation@example.org.") {
+		t.Errorf("policy contact sentence missing")
+	}
+	if !strings.Contains(p, `href="mailto:moderation@example.org"`) {
+		t.Errorf("policy mailto link missing")
+	}
+	if strings.Contains(strings.ToLower(legalText(t, p)), "within") {
+		t.Errorf("policy promises a time")
+	}
+
+	unset := handlers.AuthConfig{AssetVersion: "test"}
+	for _, page := range []string{handlers.LegalDisclaimerPage, handlers.LegalPolicyPage} {
+		b := legalRender(t, unset, page, nil).Body.String()
+		for _, banned := range []string{"Contact</h2>", "Complaints and removal requests", "To report abuse", "@", "mailto:"} {
+			if strings.Contains(b, banned) {
+				t.Errorf("%s page without an address holds %q", page, banned)
+			}
+		}
 	}
 }
 
 func TestLegalPagesRenderNoAccountData(t *testing.T) {
 	cfg := handlers.AuthConfig{AssetVersion: "test"}
-	req := httptest.NewRequest(http.MethodGet, "/disclaimer", nil)
-	req = req.WithContext(account.WithAccount(req.Context(), account.Account{ID: 7, Email: "legal-reader@example.com"}))
-	body := legalRender(t, cfg, handlers.LegalDisclaimerPage, req).Body.String()
-	for _, banned := range []string{"legal-reader@example.com", "app-header", "account-menu", "/logout", "data-account-id"} {
-		if strings.Contains(body, banned) {
-			t.Errorf("page holds %q", banned)
+	for _, page := range []string{handlers.LegalDisclaimerPage, handlers.LegalPolicyPage} {
+		req := httptest.NewRequest(http.MethodGet, "/"+page, nil)
+		req = req.WithContext(account.WithAccount(req.Context(), account.Account{ID: 7, Email: "legal-reader@example.com"}))
+		body := legalRender(t, cfg, page, req).Body.String()
+		for _, banned := range []string{"legal-reader@example.com", "app-header", "account-menu", "/logout", "data-account-id"} {
+			if strings.Contains(body, banned) {
+				t.Errorf("%s page holds %q", page, banned)
+			}
 		}
 	}
 }
@@ -271,7 +400,7 @@ func TestLegalPagesPublicPrivateCache(t *testing.T) {
 		return resp, string(b)
 	}
 
-	for _, path := range []string{"/disclaimer"} {
+	for _, path := range []string{"/disclaimer", "/policy"} {
 		resp, _ := fetch(path)
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("logged out GET %s = %d, want 200", path, resp.StatusCode)
@@ -294,7 +423,7 @@ func TestLegalPagesPublicPrivateCache(t *testing.T) {
 	}
 
 	verifySession(t, client, srv, mailer, "legal-reader@example.com")
-	for _, path := range []string{"/disclaimer"} {
+	for _, path := range []string{"/disclaimer", "/policy"} {
 		resp, body := fetch(path)
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("logged in GET %s = %d, want 200", path, resp.StatusCode)

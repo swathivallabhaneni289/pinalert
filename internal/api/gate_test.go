@@ -303,7 +303,7 @@ func TestAccessGateAllowsVerified(t *testing.T) {
 }
 
 // TestAccessGateExemptRoutes is a table-driven check over DEC-G's exempt
-// list: an unverified session must reach every one of these five routes and
+// list: an unverified session must reach every one of these seven routes and
 // get neither a redirect nor a 401.
 func TestAccessGateExemptRoutes(t *testing.T) {
 	srv, _, _ := newGateTestServer(t)
@@ -320,6 +320,7 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 		{"static asset", http.MethodGet, "/static/css/main.css", ""},
 		{"swagger ui", http.MethodGet, "/swagger/index.html", ""},
 		{"disclaimer page", http.MethodGet, "/disclaimer", ""},
+		{"policy page", http.MethodGet, "/policy", ""},
 	}
 
 	for _, tc := range cases {
