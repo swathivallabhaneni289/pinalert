@@ -302,11 +302,11 @@ func TestGibberishCountsRunes(t *testing.T) {
 		want bool
 	}{
 		{"nine Telugu letters are not a run though the bytes exceed the run length",
-			strings.Repeat("అ", n-1) + " వరద వచ్చింది", false},
+			strings.Repeat("\u0c05", n-1) + " వరద వచ్చింది", false},
 		{"ten Telugu letters are a run",
-			strings.Repeat("అ", n) + " వరద వచ్చింది", true},
+			strings.Repeat("\u0c05", n) + " వరద వచ్చింది", true},
 		{"single Telugu letters are not two letter words",
-			"క గ చ ట ప", true},
+			"\u0c15 \u0c17 \u0c1a \u0c1f \u0c2a", true},
 		{"Hindi vowel signs and nukta stay inside the word", "बाढ़ आई", false},
 		{"Tamil vowel sign and virama stay inside the word", "வெள்ளம் வந்தது", false},
 		{"Telugu vowel sign, anusvara and virama stay inside the word", "వరద వచ్చింది", false},

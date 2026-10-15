@@ -140,9 +140,29 @@ func Decide(scores map[string]float64, serious bool) ScreenDecision {
 	return ScreenDecision{Verdict: VerdictPass}
 }
 
-// RejectMessage returns the message for a refused text.
+// RejectMessage returns the plain message shown to the author of a refused
+// text. The four messages are generic (no report words, D-06), say what is
+// wrong or what to do (D-03), never quote the text and never show a score. The
+// hateful, harassing and sexual sentences are the ones in the Phase 4 UI
+// spec section "Rejected text messages"; the gibberish sentence is the
+// owner's wording of 2026-10-08 (04-CONTEXT D-05 owner note), which asks the
+// author to say what is happening instead of naming random characters. They
+// fill the 422 body (04-11) and the reason of a rejected queued row (04-22).
+// There is no catch all sentence, because no other reject reason exists: any
+// value outside RejectReasons gives the empty string.
 func RejectMessage(r RejectReason) string {
-	return ""
+	switch r {
+	case RejectHateful:
+		return "This text looks hateful, so it can't be posted. Reword it and try again."
+	case RejectHarassing:
+		return "This text looks like harassment, so it can't be posted. Reword it and try again."
+	case RejectSexual:
+		return "This text looks sexual, so it can't be posted. Reword it and try again."
+	case RejectGibberish:
+		return "Say what is happening so people nearby can help, for example: flood on Main Road, three people on a roof."
+	default:
+		return ""
+	}
 }
 
 // GibberishRunLength is the length at which one letter repeated in a row

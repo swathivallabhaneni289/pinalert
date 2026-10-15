@@ -49,17 +49,17 @@ func TestServerCopyCheckerRejectsOutsideCharacters(t *testing.T) {
 		in   string
 	}{
 		{"the empty string", ""},
-		{"a long dash", "a—b"},
-		{"a short dash", "a–b"},
-		{"a curly apostrophe", "it’s"},
-		{"curly double quotes", "“quoted”"},
-		{"an ellipsis", "wait…"},
+		{"a long dash", "a\u2014b"},
+		{"a short dash", "a\u2013b"},
+		{"a curly apostrophe", "it\u2019s"},
+		{"curly double quotes", "\u201cquoted\u201d"},
+		{"an ellipsis", "wait\u2026"},
 		{"an ASCII hyphen", "a-b"},
 		{"an exclamation mark", "Help!"},
 		{"a tab", "tab\there"},
 		{"a newline", "line\nbreak"},
-		{"a no break space", "non breaking"},
-		{"a non ASCII letter", "అ"},
+		{"a no break space", "non\u00a0breaking"},
+		{"a non ASCII letter", "\u0c05"},
 	}
 	for _, tc := range bad {
 		t.Run("refuses "+tc.name, func(t *testing.T) {
