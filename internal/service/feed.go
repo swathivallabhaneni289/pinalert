@@ -21,12 +21,26 @@ import (
 // vote. Trust is built by BuildTrust from the same batched rows as the
 // visibility. Unlike ViewerVote and IsOwnReport, it is viewer independent
 // (D-21).
+//
+// View is ViewOf's answer for the report at the read's own clock. History is
+// nil for active and disputed views and holds how the report ended for
+// resolved and past views. ViewerResolution and UndosLeft are viewer specific
+// like ViewerVote: ViewerResolution is the viewer's own standing resolution
+// vote or empty, and UndosLeft is how many take backs the viewer has left on
+// this report, UndoLimit when nothing was spent or the count was not read.
+// Approximate is true only when CoarsenFinishedRescue changed the report, so a
+// reader can say the spot is a blurred one.
 type ReportView struct {
 	Report
 	Visibility       Visibility
 	VisibilityReason ResolveReason
+	View             FeedView
+	History          *HistoryFacts
 	ViewerVote       VoteValue
+	ViewerResolution VoteValue
 	IsOwnReport      bool
+	UndosLeft        int
+	Approximate      bool
 	Trust            Trust
 }
 
