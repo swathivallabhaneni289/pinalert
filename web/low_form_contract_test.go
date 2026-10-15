@@ -285,3 +285,209 @@ func TestPageLockPairs(t *testing.T) {
 		t.Errorf("no .modal-panel rule declares overscroll-behavior: contain")
 	}
 }
+
+// TestLowDataLocationStates proves the map free location block: its constants,
+// its interface members, the accuracy wording and the dialog shell that hosts
+// it (D-15, D-16).
+func TestLowDataLocationStates(t *testing.T) {
+	low := p419JS(t, "low.js")
+	page := p419Template(t, "low.html.tmpl")
+
+	p419Has(t, "low.js", low, "var GOOD_ACCURACY_METRES = 100;", "var LOCATION_TIMEOUT_MS = 8000;",
+		"function createLowLocation()", "function accuracyPhrase(metres)")
+
+	location := jsFunctionBody(t, low, "createLowLocation()")
+	p419Has(t, "createLowLocation", location, "current:", "choose:", "isSet:", "missingMessage:",
+		"searchFailureMessage: lowSearchFailureMessage", "noteSearchOutcome:", "start:", "reset:",
+		"getCurrentPosition(", "enableHighAccuracy: true", "timeout: LOCATION_TIMEOUT_MS", "positionSeq",
+		"PERMISSION_DENIED", "markTouched", "setAttribute('aria-disabled', 'true')",
+		"removeAttribute('aria-disabled')", "'low-location-status'", "low-location-use",
+		"low-location-own", "low-location-retry", "low-location-full")
+
+	phrase := jsFunctionBody(t, low, "accuracyPhrase(metres)")
+	p419Has(t, "accuracyPhrase", phrase, "Math.round(", "Math.max(10", "1000",
+		"Math.round(rounded / 100) / 10", "' km'", "' metres'")
+
+	p419Count(t, "low.js", low, "PinalertReportForm.mount(", 1)
+	mount := low[strings.Index(low, "PinalertReportForm.mount("):]
+	if end := strings.Index(mount, ");"); end != -1 {
+		mount = mount[:end]
+	}
+	p419Has(t, "the mount call", mount, "variant: 'low'", "location: lowLocation")
+	boot := jsFunctionBody(t, low, "boot()")
+	p419Has(t, "boot", boot, "PinalertReportForm.open(", "opener:")
+
+	modal := strings.Index(page, `id="report-modal"`)
+	if strings.Count(page, `id="report-modal"`) != 1 || modal == -1 {
+		t.Fatalf(`low.html.tmpl must hold id="report-modal" exactly once`)
+	}
+	backdropTag := page[strings.LastIndex(page[:modal], "<"):]
+	backdropTag = backdropTag[:strings.Index(backdropTag, ">")]
+	p419Has(t, "the backdrop tag", backdropTag, "<div", `class="modal-backdrop"`, "hidden")
+	p419Before(t, "low.html.tmpl", page, "</main>", `id="report-modal"`)
+
+	panelAt := strings.Index(page[modal:], `class="modal-panel`)
+	if panelAt == -1 {
+		t.Fatalf("low.html.tmpl has no modal panel")
+	}
+	panelTag := page[modal+panelAt:]
+	panelTag = panelTag[:strings.Index(panelTag, ">")]
+	p419Has(t, "the panel tag", panelTag, "report-form--low", `role="dialog"`, `aria-modal="true"`,
+		`aria-labelledby="modal-title"`)
+	p419Has(t, "low.html.tmpl", page, `<h2 id="modal-title">Report an emergency</h2>`)
+
+	fieldsetAt := strings.Index(page, `<fieldset class="low-location" aria-describedby="low-location-status">`)
+	fieldsetEnd := strings.Index(page, "</fieldset>")
+	if fieldsetAt == -1 || fieldsetEnd == -1 || fieldsetEnd < fieldsetAt {
+		t.Fatalf("low.html.tmpl has no location fieldset")
+	}
+	fieldset := page[fieldsetAt:fieldsetEnd]
+	p419Ordered := []string{
+		"<legend>Location</legend>", `id="low-location-status"`, `id="low-location-use"`,
+		`id="low-location-own"`, `id="low-location-retry"`, `id="low-location-full"`,
+		`Or type a place or address`, `id="location-search"`, `id="location-search-results"`,
+		`id="location-search-status"`,
+	}
+	pos := 0
+	for _, needle := range p419Ordered {
+		idx := strings.Index(fieldset[pos:], needle)
+		if idx == -1 {
+			t.Errorf("the location fieldset is missing %q or holds it out of order", needle)
+			break
+		}
+		pos += idx + len(needle)
+	}
+	statusTag := fieldset[strings.Index(fieldset, `id="low-location-status"`):]
+	statusTag = statusTag[:strings.Index(statusTag, ">")]
+	p419Has(t, "the status tag", statusTag, `role="status"`)
+	for _, id := range []string{"low-location-use", "low-location-own", "low-location-retry"} {
+		tag := fieldset[strings.Index(fieldset, `id="`+id+`"`):]
+		tag = tag[:strings.Index(tag, ">")]
+		p419Has(t, id, tag, "hidden")
+		open := fieldset[:strings.Index(fieldset, `id="`+id+`"`)]
+		if !strings.HasSuffix(strings.TrimSpace(open), "<button type=\"button\" class=\"btn\"") {
+			t.Errorf("%s must be a button", id)
+		}
+	}
+	linkTag := fieldset[strings.Index(fieldset, `id="low-location-full"`):]
+	linkTag = linkTag[:strings.Index(linkTag, ">")]
+	p419Has(t, "the full version link tag", linkTag, `href="/?full=1"`, "hidden")
+	label := regexp.MustCompile(`<label for="location-search">Or type a place or address</label>`)
+	if !label.MatchString(fieldset) {
+		t.Errorf("the search label for location-search is missing")
+	}
+	for _, id := range []string{"location-search", "location-search-results", "location-search-status"} {
+		p419Count(t, "low.html.tmpl", page, `id="`+id+`"`, 1)
+	}
+
+	const partial = `{{template "report_form.html.tmpl" .}}`
+	p419Count(t, "low.html.tmpl", page, partial, 1)
+	if strings.Index(page, partial) < fieldsetEnd {
+		t.Errorf("the shared form partial must follow the location fieldset")
+	}
+	p419Lacks(t, "low.html.tmpl", page, "modal-map", "coord-readout", "location-notice")
+}
+
+// TestLowDataSearchIgnoresServerText proves a failed typed place search on the
+// Low data view shows only the Low sentence (U8, D-16).
+func TestLowDataSearchIgnoresServerText(t *testing.T) {
+	form := p419JS(t, "report-form.js")
+	low := p419JS(t, "low.js")
+	page := p419Template(t, "low.html.tmpl")
+
+	p419Has(t, "report-form.js", form, "var SEARCH_TIMEOUT_MS = 8000;",
+		"typeof picker.noteSearchOutcome === 'function'")
+	p419Count(t, "report-form.js", form, "fetch(", 1)
+
+	p419Has(t, "searchTimeoutSignal", jsFunctionBody(t, form, "searchTimeoutSignal()"),
+		"AbortSignal.timeout(SEARCH_TIMEOUT_MS)", "AbortController")
+	p419Has(t, "runSearch", jsFunctionBody(t, form, "runSearch(query)"), "signal: searchTimeoutSignal()",
+		"formVariant === 'low'", "picker.searchFailureMessage(", "'unavailable'")
+
+	dropdown := jsFunctionBody(t, form, "renderDropdown(results)")
+	p419Has(t, "renderDropdown", dropdown, "'no_match'", "'match'")
+	p419Before(t, "renderDropdown", dropdown, "'no_match'", "return")
+
+	p419Has(t, "lowSearchFailureMessage", jsFunctionBody(t, low, "lowSearchFailureMessage()"),
+		"return LOW_SEARCH_UNAVAILABLE_MESSAGE")
+
+	for name, text := range map[string]string{"low.js": low, "low.html.tmpl": page} {
+		p419Lacks(t, name, text, "Search unavailable, try tapping the map instead.",
+			"Search for a place or address", "tap the map", "tapping the map", "Drag the map")
+	}
+}
+
+// TestLowDataFormCopy proves the exact sentences, the page furniture the form
+// needs and the tile label colour (D-13, D-15, D-16, U10, P4-A23, P4-A27).
+func TestLowDataFormCopy(t *testing.T) {
+	low := p419JS(t, "low.js")
+	page := p419Template(t, "low.html.tmpl")
+	css := p419CSS(t, "low.css")
+
+	p419Has(t, "low.js", low,
+		"Finding your position. Your browser may ask to share it. Allow it so this report is placed correctly.",
+		"Position found. Accurate to about {ACCURACY}.",
+		"Position found, but only accurate to about {ACCURACY}. You can use it, or type a place for a better match.",
+		"Using this position, accurate to about {ACCURACY}.",
+		"Location is off for this site. Type a place or address below, or turn on location access in your browser settings and then use Retry position.",
+		"Couldn't get your position in time. Retry position, or type a place or address below.",
+		"Using {PLACE}. The report will be placed there, not at your position.",
+		"Posting from here needs a location. Open the full version to place your report on the map.",
+		"Set a location by allowing location access or typing a place.",
+		"Search unavailable. Try your position again, or open the full version.",
+		"Choose to use this position, or type a place.",
+		"Still finding your position. Wait a moment, or type a place.")
+	p419Has(t, "low.js", low, ".split('{ACCURACY}').join(", ".split('{PLACE}').join(")
+	p419Lacks(t, "low.js", low, ".replace(")
+
+	p419Has(t, "low.html.tmpl", page, "Use this position", "Use my position instead", "Retry position",
+		"Open full version")
+	p419Count(t, "low.html.tmpl", page, `id="low-report"`, 1)
+	button := regexp.MustCompile(`<button[^>]*id="low-report"[^>]*>Report an emergency</button>`)
+	if !button.MatchString(page) {
+		t.Errorf("#low-report must be a button reading Report an emergency")
+	}
+	p419Before(t, "low.html.tmpl", page, `id="low-report"`, `id="low-list"`)
+	p419Count(t, "low.html.tmpl", page, `id="toast"`, 1)
+	p419Before(t, "low.html.tmpl", page, "</main>", `id="toast"`)
+	p419Count(t, "low.html.tmpl", page, "report-form.js", 1)
+	scriptTag := regexp.MustCompile(`<script[^>]*src="/static/js/report-form\.js[^"]*"[^>]*defer[^>]*></script>`)
+	if !scriptTag.MatchString(page) {
+		t.Errorf("report-form.js must be one deferred script tag")
+	}
+	p419Before(t, "low.html.tmpl", page, "report-form.js", "/static/js/low.js")
+	p419Count(t, "low.html.tmpl", page, "modal.css", 1)
+	p419Before(t, "low.html.tmpl", page, "/static/css/low.css", "/static/css/modal.css")
+	p419Lacks(t, "low.html.tmpl", page, ">Cancel<", "modal-map.css", "modal.js", "map.js")
+
+	rules := parseCSSRules(css)
+	tile, ok := ruleBySelector(rules, ".report-form--low .category-tile:not(.category-tile--selected)")
+	if !ok {
+		t.Errorf("low.css has no rule for the unselected tiles of the Low form")
+	} else if got := declsOf(tile.declBody)["color"]; got != "var(--color-text)" {
+		t.Errorf("the Low form tile colour is %q, want var(--color-text)", got)
+	}
+	actions, ok := ruleBySelector(rules, ".low-location__actions:not([hidden])")
+	if !ok {
+		t.Errorf("low.css has no rule for the visible location actions")
+	} else if _, has := declsOf(actions.declBody)["display"]; !has {
+		t.Errorf("the visible location actions rule declares no display")
+	}
+	for _, r := range rules {
+		if strings.Contains(r.selectorHead, ".low-location") && strings.Contains(r.declBody, "display") &&
+			!strings.Contains(r.selectorHead, ":not([hidden])") {
+			t.Errorf("rule %q declares display without the hidden guard", r.selectorHead)
+		}
+	}
+
+	files := map[string]string{
+		"low.js": low, "report-form.js": p419JS(t, "report-form.js"), "low.css": css, "low.html.tmpl": page,
+	}
+	for name, text := range files {
+		for _, r := range []rune{0x2014, 0x2013} {
+			if strings.ContainsRune(text, r) {
+				t.Errorf("%s holds the character U+%04X", name, r)
+			}
+		}
+	}
+}

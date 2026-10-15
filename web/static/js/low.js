@@ -40,6 +40,30 @@
 
   var SEVERITY_RANK = { critical: 3, medium: 2, low: 1 };
 
+  // The report form's location block (D-15, D-16). A fix at or under this many
+  // metres counts as accurate; a worse one needs the person to accept it. The
+  // position request gives up after this many milliseconds.
+  var GOOD_ACCURACY_METRES = 100;
+  var LOCATION_TIMEOUT_MS = 8000;
+
+  // The eight states of the location block, in the words of the contract.
+  // {ACCURACY} and {PLACE} are filled with split and join, so the filled text
+  // is never read as a pattern.
+  var LOCATION_STATE_ASKING = 'Finding your position. Your browser may ask to share it. Allow it so this report is placed correctly.';
+  var LOCATION_STATE_FOUND = 'Position found. Accurate to about {ACCURACY}.';
+  var LOCATION_STATE_WEAK = 'Position found, but only accurate to about {ACCURACY}. You can use it, or type a place for a better match.';
+  var LOCATION_STATE_ACCEPTED = 'Using this position, accurate to about {ACCURACY}.';
+  var LOCATION_STATE_DENIED = 'Location is off for this site. Type a place or address below, or turn on location access in your browser settings and then use Retry position.';
+  var LOCATION_STATE_TIMED_OUT = "Couldn't get your position in time. Retry position, or type a place or address below.";
+  var LOCATION_STATE_TYPED = 'Using {PLACE}. The report will be placed there, not at your position.';
+  var LOCATION_STATE_BOTH_FAILED = 'Posting from here needs a location. Open the full version to place your report on the map.';
+
+  // What Post report says when the form has no usable location yet.
+  var LOW_LOCATION_MISSING_MESSAGE = 'Set a location by allowing location access or typing a place.';
+  var LOW_LOCATION_WEAK_MESSAGE = 'Choose to use this position, or type a place.';
+  var LOW_LOCATION_PENDING_MESSAGE = 'Still finding your position. Wait a moment, or type a place.';
+  var LOW_SEARCH_UNAVAILABLE_MESSAGE = 'Search unavailable. Try your position again, or open the full version.';
+
   var basisEl = document.getElementById('low-basis');
   var retryPositionBtn = document.getElementById('low-retry-position');
   var staleEl = document.getElementById('low-stale');
@@ -56,6 +80,9 @@
 
   // rowsById maps a report id to the row object createLowRow returned.
   var rowsById = {};
+  // lowLocation is the report form's location object, built in boot when the
+  // page has the form.
+  var lowLocation = null;
   var basisKind = '';
   var haveStored = false;
   var staleShown = false;
@@ -526,6 +553,323 @@
     }
   }
 
+  // accuracyPhrase words a position accuracy for the status line: metres
+  // rounded to the nearest 10 and at least 10, then kilometres with one
+  // decimal from 1000 metres up. The tenths come from whole number arithmetic
+  // because a fixed decimal conversion of 1.45 can round down.
+  function accuracyPhrase(metres) {
+    var rounded = Math.max(10, Math.round(metres / 10) * 10);
+    if (rounded < 1000) {
+      return rounded + ' metres';
+    }
+    var km = Math.round(rounded / 100) / 10;
+    return String(km) + ' km';
+  }
+
+  // lowSearchFailureMessage is the location object's answer to a failed place
+  // search. It takes no argument on purpose: the server's own text is never
+  // shown on this page, only the Low data sentence (U8).
+  function lowSearchFailureMessage() {
+    return LOW_SEARCH_UNAVAILABLE_MESSAGE;
+  }
+
+  // createLowLocation builds the map free location object the shared report
+  // form asks for. It holds one of eight states (asking, found, weak,
+  // accepted, denied, timedout, typed, bothfailed) and writes the sentence of
+  // the state into the status line of the location block. The exact fix is
+  // kept in memory for the open form only and is never stored.
+  function createLowLocation() {
+    var statusEl = document.getElementById('low-location-status');
+    var actionsEl = document.querySelector('.low-location__actions');
+    var useBtn = document.getElementById('low-location-use');
+    var ownBtn = document.getElementById('low-location-own');
+    var locationRetryBtn = document.getElementById('low-location-retry');
+    var locationFullLink = document.getElementById('low-location-full');
+    var submitBtn = document.getElementById('submit-report');
+
+    var state = 'asking';
+    var fix = null;
+    var typed = null;
+    var searchFailed = false;
+    var positionSeq = 0;
+    var markTouched = null;
+
+    function touch() {
+      if (markTouched) {
+        markTouched();
+      }
+    }
+
+    function fillAccuracy(sentence) {
+      return fix ? sentence.split('{ACCURACY}').join(accuracyPhrase(fix.accuracy)) : sentence;
+    }
+
+    function fillPlace(sentence) {
+      return typed ? sentence.split('{PLACE}').join(typed.displayName) : sentence;
+    }
+
+    function sentenceFor() {
+      if (state === 'asking') {
+        return LOCATION_STATE_ASKING;
+      }
+      if (state === 'found') {
+        return fillAccuracy(LOCATION_STATE_FOUND);
+      }
+      if (state === 'weak') {
+        return fillAccuracy(LOCATION_STATE_WEAK);
+      }
+      if (state === 'accepted') {
+        return fillAccuracy(LOCATION_STATE_ACCEPTED);
+      }
+      if (state === 'denied') {
+        return LOCATION_STATE_DENIED;
+      }
+      if (state === 'timedout') {
+        return LOCATION_STATE_TIMED_OUT;
+      }
+      if (state === 'typed') {
+        return fillPlace(LOCATION_STATE_TYPED);
+      }
+      return LOCATION_STATE_BOTH_FAILED;
+    }
+
+    // clearSubmitMark takes the unavailable look off Post report.
+    function clearSubmitMark() {
+      if (submitBtn) {
+        submitBtn.removeAttribute('aria-disabled');
+        submitBtn.removeAttribute('aria-describedby');
+      }
+    }
+
+    function render() {
+      var text = sentenceFor();
+      // The status line is a live region: writing the same text again could
+      // be read out a second time, so only a changed sentence is written.
+      if (statusEl && statusEl.textContent !== text) {
+        Pinalert.setText(statusEl, text);
+      }
+      var showUse = state === 'weak';
+      var showOwn = state === 'typed' && fix !== null;
+      var showRetry = state === 'denied' || state === 'timedout' || state === 'bothfailed';
+      var showFull = state === 'bothfailed';
+      setHidden(useBtn, !showUse);
+      setHidden(ownBtn, !showOwn);
+      setHidden(locationRetryBtn, !showRetry);
+      setHidden(locationFullLink, !showFull);
+      setHidden(actionsEl, !(showUse || showOwn || showRetry || showFull));
+      if (submitBtn && state === 'bothfailed') {
+        submitBtn.setAttribute('aria-disabled', 'true');
+        submitBtn.setAttribute('aria-describedby', 'low-location-status');
+      } else {
+        clearSubmitMark();
+      }
+    }
+
+    // A control that was just pressed may have gone away with the state it
+    // belonged to. Focus then goes to the category choice, the next thing the
+    // form needs, so it never falls to the page behind.
+    function keepFocus(pressed) {
+      if (!pressed || !pressed.hidden) {
+        return;
+      }
+      var next = document.querySelector('#category-grid .category-tile--selected') ||
+        document.querySelector('#category-grid .category-tile');
+      if (next) {
+        next.focus();
+      }
+    }
+
+    function onFail(seq, err) {
+      if (seq !== positionSeq) {
+        return;
+      }
+      if (state === 'typed') {
+        render();
+        return;
+      }
+      fix = null;
+      if (searchFailed) {
+        state = 'bothfailed';
+      } else if (err && err.code === err.PERMISSION_DENIED) {
+        state = 'denied';
+      } else {
+        // The UI-SPEC gives no separate sentence for an unavailable position;
+        // Timed out offers the same two ways forward.
+        state = 'timedout';
+      }
+      render();
+    }
+
+    function onFix(seq, pos) {
+      if (seq !== positionSeq) {
+        return;
+      }
+      var coords = pos && pos.coords;
+      if (!coords || !isFinite(coords.latitude) || !isFinite(coords.longitude)) {
+        onFail(seq, { code: 2, PERMISSION_DENIED: 1 });
+        return;
+      }
+      var accuracy = isFinite(coords.accuracy) ? coords.accuracy : GOOD_ACCURACY_METRES + 1;
+      fix = { latitude: coords.latitude, longitude: coords.longitude, accuracy: accuracy };
+      if (state !== 'typed') {
+        state = accuracy <= GOOD_ACCURACY_METRES ? 'found' : 'weak';
+      }
+      render();
+    }
+
+    // requestFix asks for the exact position. Each request gets a number and a
+    // late answer to an older request is ignored.
+    function requestFix() {
+      positionSeq += 1;
+      var seq = positionSeq;
+      if (!navigator.geolocation) {
+        onFail(seq, { code: 1, PERMISSION_DENIED: 1 });
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(function (pos) {
+        onFix(seq, pos);
+      }, function (err) {
+        onFail(seq, err);
+      }, {
+        enableHighAccuracy: true,
+        timeout: LOCATION_TIMEOUT_MS,
+        maximumAge: 0
+      });
+    }
+
+    function start(hooks) {
+      markTouched = hooks && typeof hooks.markTouched === 'function' ? hooks.markTouched : null;
+      state = 'asking';
+      fix = null;
+      typed = null;
+      searchFailed = false;
+      render();
+      requestFix();
+    }
+
+    function reset() {
+      positionSeq += 1;
+      state = 'asking';
+      fix = null;
+      typed = null;
+      searchFailed = false;
+      markTouched = null;
+      if (statusEl) {
+        Pinalert.setText(statusEl, '');
+      }
+      setHidden(useBtn, true);
+      setHidden(ownBtn, true);
+      setHidden(locationRetryBtn, true);
+      setHidden(locationFullLink, true);
+      setHidden(actionsEl, true);
+      clearSubmitMark();
+    }
+
+    function current() {
+      if (state === 'typed' && typed) {
+        return { latitude: typed.latitude, longitude: typed.longitude };
+      }
+      if ((state === 'found' || state === 'accepted') && fix) {
+        return { latitude: fix.latitude, longitude: fix.longitude };
+      }
+      return null;
+    }
+
+    function choose(result) {
+      var latitude = Number(result && result.lat);
+      var longitude = Number(result && result.lon);
+      if (!isFinite(latitude) || !isFinite(longitude)) {
+        return;
+      }
+      typed = { latitude: latitude, longitude: longitude, displayName: String(result.displayName) };
+      state = 'typed';
+      render();
+    }
+
+    function isSet() {
+      return current() !== null;
+    }
+
+    function missingMessage() {
+      if (state === 'asking') {
+        return LOW_LOCATION_PENDING_MESSAGE;
+      }
+      if (state === 'weak') {
+        return LOW_LOCATION_WEAK_MESSAGE;
+      }
+      return LOW_LOCATION_MISSING_MESSAGE;
+    }
+
+    // noteSearchOutcome hears how the last place search ended. A failed or
+    // empty search while the position is also unavailable means both ways of
+    // placing the report have failed.
+    function noteSearchOutcome(outcome) {
+      if (outcome === 'no_match' || outcome === 'unavailable') {
+        searchFailed = true;
+        if (state === 'denied' || state === 'timedout') {
+          state = 'bothfailed';
+          render();
+        }
+      } else if (outcome === 'match') {
+        searchFailed = false;
+      }
+    }
+
+    function onUse() {
+      touch();
+      if (state === 'weak') {
+        state = 'accepted';
+        render();
+      }
+      keepFocus(useBtn);
+    }
+
+    function onOwn() {
+      touch();
+      typed = null;
+      if (fix) {
+        state = fix.accuracy <= GOOD_ACCURACY_METRES ? 'found' : 'accepted';
+      } else {
+        state = 'asking';
+      }
+      render();
+      keepFocus(ownBtn);
+    }
+
+    // Retry asks again without clearing a typed place or a failed search.
+    function onRetry() {
+      touch();
+      if (state !== 'typed') {
+        state = 'asking';
+        fix = null;
+        render();
+      }
+      requestFix();
+      keepFocus(locationRetryBtn);
+    }
+
+    if (useBtn) {
+      useBtn.addEventListener('click', onUse);
+    }
+    if (ownBtn) {
+      ownBtn.addEventListener('click', onOwn);
+    }
+    if (locationRetryBtn) {
+      locationRetryBtn.addEventListener('click', onRetry);
+    }
+
+    return {
+      current: current,
+      choose: choose,
+      isSet: isSet,
+      missingMessage: missingMessage,
+      searchFailureMessage: lowSearchFailureMessage,
+      noteSearchOutcome: noteSearchOutcome,
+      start: start,
+      reset: reset
+    };
+  }
+
   function boot() {
     Pinalert.subscribe(renderLow);
 
@@ -575,6 +919,24 @@
         Pinalert.fetchReports();
       }
     });
+
+    // The report form is the shared one, mounted once with the map free
+    // location object. A page without the form or without the shared script
+    // keeps a working list and an inert Report button.
+    var reportModal = document.getElementById('report-modal');
+    var reportBtn = document.getElementById('low-report');
+    if (reportModal && reportBtn && window.PinalertReportForm) {
+      lowLocation = createLowLocation();
+      PinalertReportForm.mount({
+        backdrop: reportModal,
+        form: reportModal.querySelector('.modal-panel'),
+        location: lowLocation,
+        variant: 'low'
+      });
+      reportBtn.addEventListener('click', function () {
+        PinalertReportForm.open({ opener: reportBtn });
+      });
+    }
   }
 
   boot();
