@@ -368,6 +368,8 @@ type ErrorResponse struct {
 // @Description and expires_at are computed server-side and can never be set by the client.
 // @Description The description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.
 // @Description When the check cannot finish in time, a critical or rescue_needed report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.
+// @Description Posting is limited per verified account, with separate allowances for serious reports (critical, or rescue_needed at any severity) and for every other report.
+// @Description A blocked post gets 429 with a Retry-After header and stores nothing, and a rejected or failed post does not use the allowance.
 // @Tags reports
 // @Accept json
 // @Produce json
@@ -376,6 +378,8 @@ type ErrorResponse struct {
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
 // @Failure 422 {object} ErrorResponse "The text check refused the description; nothing was stored"
+// @Failure 429 {object} RateLimitResponse "Blocked by a limit, see Retry-After"
+// @Header 429 {integer} Retry-After "Whole seconds to wait before trying again"
 // @Failure 500 {object} ErrorResponse
 // @Router /reports [post]
 func SubmitReport(svc *service.ReportService, gate *RateGate) http.HandlerFunc {

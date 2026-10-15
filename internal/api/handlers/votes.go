@@ -113,6 +113,7 @@ func parseReportID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 // @Description and the take back.
 // @Description A body with no latitude and no longitude is 400 with error field latitude, and a body
 // @Description with only one of the two is 400 naming the missing one.
+// @Description A vote that comes too fast gets 429 with a Retry-After header.
 // @Tags reports
 // @Accept json
 // @Produce json
@@ -124,6 +125,8 @@ func parseReportID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 // @Failure 403 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
+// @Failure 429 {object} RateLimitResponse "Blocked by a limit, see Retry-After"
+// @Header 429 {integer} Retry-After "Whole seconds to wait before trying again"
 // @Failure 500 {object} ErrorResponse
 // @Router /reports/{id}/confirm [post]
 // @Router /reports/{id}/dispute [post]

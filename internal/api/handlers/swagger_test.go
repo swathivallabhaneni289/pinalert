@@ -120,7 +120,38 @@ func TestSwaggerDocServed(t *testing.T) {
 // HistoryResponse, RecentResponse, CutResponse and FocusResponse, so the new
 // wire objects of the history views are held to the same name and nullable
 // rules.
-var p07GuardedSwaggerRoots = []string{"handlers.TrustResponse", "handlers.FeedReportResponse", "handlers.CastVoteResponse", "handlers.CurrencyResponse", "handlers.ReporterResponse", "handlers.ReportListResponse"}
+//
+// Plan 04-15 appended handlers.RateLimitResponse, the one 429 body.
+var p07GuardedSwaggerRoots = []string{"handlers.TrustResponse", "handlers.FeedReportResponse", "handlers.CastVoteResponse", "handlers.CurrencyResponse", "handlers.ReporterResponse", "handlers.ReportListResponse", "handlers.RateLimitResponse"}
+
+// p15Assert429 fails unless the operation documents a 429 response that
+// references handlers.RateLimitResponse and declares a Retry-After header.
+func p15Assert429(t *testing.T, label string, op json.RawMessage) {
+	t.Helper()
+	var parsed struct {
+		Responses map[string]struct {
+			Schema struct {
+				Ref string `json:"$ref"`
+			} `json:"schema"`
+			Headers map[string]json.RawMessage `json:"headers"`
+		} `json:"responses"`
+	}
+	if err := json.Unmarshal(op, &parsed); err != nil {
+		t.Errorf("%s: parsing the operation: %v", label, err)
+		return
+	}
+	resp, ok := parsed.Responses["429"]
+	if !ok {
+		t.Errorf("%s: no 429 response", label)
+		return
+	}
+	if resp.Schema.Ref != "#/definitions/handlers.RateLimitResponse" {
+		t.Errorf("%s: 429 schema ref = %q, want #/definitions/handlers.RateLimitResponse", label, resp.Schema.Ref)
+	}
+	if _, ok := resp.Headers["Retry-After"]; !ok {
+		t.Errorf("%s: 429 response has no Retry-After header", label)
+	}
+}
 
 // p07IdentifierPropertyName is the name pattern no guarded property may match.
 var p07IdentifierPropertyName = regexp.MustCompile(`(?i)cell|account|session|email`)
@@ -346,6 +377,21 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		}
 	}
 
+	// 04-15's contribution: every 429 Phase 4 wires so far is documented, on
+	// POST /reports and on each of the five vote routes.
+	if op, ok := reportsOps["post"]; ok {
+		p15Assert429(t, "POST /reports", op)
+	}
+	for _, path := range []string{
+		"/reports/{id}/confirm", "/reports/{id}/dispute",
+		"/reports/{id}/resolve", "/reports/{id}/reopen",
+		"/reports/{id}/unresolve",
+	} {
+		if op, ok := spec.Paths[path]["post"]; ok {
+			p15Assert429(t, "POST "+path, op)
+		}
+	}
+
 	// 02-04's contribution to this same OPS-01 drift guard: one response
 	// shape changed (GET /reports now returns FeedReportResponse, not
 	// ReportResponse), one spec regenerated. The GET /reports operation
@@ -524,6 +570,17 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 	// 03-14 (V-30 extension): the two signal definitions, their exact key
 	// sets, their enums tied element by element to the service lists, and
 	// x-nullable as the boolean true on exactly the three nullable properties.
+	// 04-15: the one 429 body, and the held field of a created report (04-11).
+	p14AssertPropKeys(t, defProps, "handlers.RateLimitResponse", []string{"emergency_number", "error", "retry_after_seconds", "serious"})
+	var reportDef struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal(defSpec.Definitions["handlers.ReportResponse"], &reportDef); err != nil {
+		t.Fatalf("parsing handlers.ReportResponse: %v", err)
+	}
+	if _, ok := reportDef.Properties["held"]; !ok {
+		t.Errorf("handlers.ReportResponse is missing the held property")
+	}
 	p14AssertPropKeys(t, defProps, "handlers.CurrencyResponse", p14CurrencyWireKeys)
 	p14AssertPropKeys(t, defProps, "handlers.ReporterResponse", p14ReporterWireKeys)
 
