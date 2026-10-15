@@ -33,18 +33,23 @@
 -- Go. The caller therefore passes a read cap larger than the judged report
 -- cap (100 against 30, WR-05): Go drops the neutral rows and keeps the
 -- latest 30 judged ones. More than 100 neutral rows in a row can still push
--- an old record out of this read.
+-- an old record out of this read. The query deliberately never filters on
+-- moderation, so a held or removed report takes its place under the read cap
+-- like any other expired report, and Go drops it as a neutral row before it
+-- keeps the latest judged reports.
 --
 -- (f) No session id, voter cell or text in the output, continuing T-01-02.
 -- Independence is never aggregated in SQL. The votes for these report ids
 -- are read separately by one CurrentVotesForReports call (plan 03-12).
-SELECT t.account_id::bigint AS account_id, t.report_id, t.severity, t.category, t.expires_at
+-- moderation_state rides along so the rating can treat a held or removed
+-- report as neutral (Phase 4 R-02).
+SELECT t.account_id::bigint AS account_id, t.report_id, t.severity, t.category, t.expires_at, t.moderation_state
 FROM (
-    SELECT x.account_id, rr.id AS report_id, rr.severity, rr.category, rr.expires_at,
+    SELECT x.account_id, rr.id AS report_id, rr.severity, rr.category, rr.expires_at, rr.moderation_state,
            row_number() OVER (PARTITION BY x.account_id ORDER BY rr.expires_at DESC, rr.id DESC) AS rn
     FROM sessions x
     CROSS JOIN LATERAL (
-        SELECT r.id, r.severity, r.category, r.expires_at
+        SELECT r.id, r.severity, r.category, r.expires_at, r.moderation_state
         FROM reports r
         WHERE r.session_id = x.session_id
           AND r.expires_at <= sqlc.arg(now)::timestamptz

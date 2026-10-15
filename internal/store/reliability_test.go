@@ -579,3 +579,46 @@ func TestReporterHistoryUsesSessionIndex(t *testing.T) {
 	}
 	histAssertRows(t, rows)
 }
+
+// TestReporterHistoryCarriesModerationState proves the history read returns each
+// report's current moderation state and never filters on it (Phase 4 R-02), so
+// held and removed reports still take their place under the per account read
+// cap. The scorer, not the query, drops them as neutral rows.
+func TestReporterHistoryCarriesModerationState(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+
+	m := testutil.SeedReporterAccount(t, pool, "hist-m@example.com", "hist-m-phone")
+	m1 := testutil.SeedHistoryReport(t, pool, "hist-m-phone", "low", "flood", histNow.Add(-1*time.Hour))
+	m2 := testutil.SeedHistoryReport(t, pool, "hist-m-phone", "low", "flood", histNow.Add(-2*time.Hour))
+	m3 := testutil.SeedHistoryReport(t, pool, "hist-m-phone", "low", "flood", histNow.Add(-3*time.Hour))
+	testutil.MustExec(t, pool, "UPDATE reports SET moderation_state = $1 WHERE id = $2", "removed", m1)
+	testutil.MustExec(t, pool, "UPDATE reports SET moderation_state = $1 WHERE id = $2", "pending", m2)
+
+	rows, err := q.ReporterHistoryReports(ctx, histArg([]int64{m}, 3))
+	if err != nil {
+		t.Fatalf("ReporterHistoryReports cap 3: %v", err)
+	}
+	if got, want := histIDs(rows), []int64{m1, m2, m3}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("cap 3 rows = %v, want %v (removed, pending, clear; R-02 says the query never filters on moderation)", got, want)
+	}
+	for i, wantState := range []string{"removed", "pending", "clear"} {
+		if rows[i].ModerationState != wantState {
+			t.Errorf("row %d (report %d) moderation state = %q, want %q (R-02)", i, rows[i].ReportID, rows[i].ModerationState, wantState)
+		}
+		if rows[i].AccountID != m {
+			t.Errorf("row %d (report %d) account = %d, want %d", i, rows[i].ReportID, rows[i].AccountID, m)
+		}
+	}
+
+	// With a read cap of 2 the two withheld rows take their place and the older
+	// clear report is cut, which shows the query does not filter on moderation.
+	capped, err := q.ReporterHistoryReports(ctx, histArg([]int64{m}, 2))
+	if err != nil {
+		t.Fatalf("ReporterHistoryReports cap 2: %v", err)
+	}
+	if got, want := histIDs(capped), []int64{m1, m2}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("cap 2 rows = %v, want %v: withheld rows must count under the read cap and the clear report is cut (R-02)", got, want)
+	}
+}
