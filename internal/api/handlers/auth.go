@@ -269,6 +269,14 @@ func severityWord(s service.Severity) string {
 	}
 }
 
+// The words of an approximate voted card (plan 03.1-07, C17 and C18): the title
+// a finished Rescue report of someone else gets in place of its description,
+// and the detail words that say the point is blurred.
+const (
+	profileApproxTitle    = "Rescue needed"
+	profileApproxLocation = "Approximate location"
+)
+
 // profileReport is exactly what profile.html.tmpl's Activity section reads
 // for one row — Phase 1's existing .report-row markup and classes, reused
 // verbatim rather than reinvented for this account-scoped listing
@@ -293,6 +301,11 @@ type profileReport struct {
 	TrustJSON        string
 	Expired          bool
 	CanReopen        bool
+	// UndosUsed is true on a closed, unexpired own post whose two undos are
+	// both used (plan 03.1-07, D-22). The template writes it as
+	// data-undos-used and activity.js shows the C52 sentence in place of the
+	// Reopen control. It is never true together with CanReopen.
+	UndosUsed bool
 
 	// Quick task 261013-wm5's card fields, filled by buildActivityPage. Kind is
 	// post, vote or dispute; Tag, Action and When are the words of the card's
@@ -465,7 +478,21 @@ func newProfileReport(ar service.ActivityReport, now time.Time) (profileReport, 
 	}
 
 	expired := !row.ExpiresAt.After(now)
-	canReopen := visibility == service.VisibilityRetracted && !expired
+	// The poster's Reopen spends the same two undos as the take back (D-22),
+	// and the server refuses a third, so the card stops offering a button that
+	// could only fail. UndosLeft is the service's own count from the votes log;
+	// a closed unexpired post with none left says so in words instead.
+	closedOpen := visibility == service.VisibilityRetracted && !expired
+	canReopen := closedOpen && ar.UndosLeft > 0
+	undosUsed := closedOpen && ar.UndosLeft <= 0
+
+	// An approximate card is a finished Rescue report of someone else (D-27,
+	// D-23): it shows the coarse words and never the description text.
+	description := row.Description
+	if ar.Approximate {
+		description = profileApproxTitle
+		detail += " · " + profileApproxLocation
+	}
 
 	visibilityClass := profileVisibilityStateClassPrefix + string(visibility)
 	if expired && visibility != service.VisibilityRetracted {
@@ -483,7 +510,7 @@ func newProfileReport(ar service.ActivityReport, now time.Time) (profileReport, 
 		SeverityClass:    "sev-" + string(severity),
 		SeverityWord:     severityWord(severity),
 		SeverityLevel:    string(severity),
-		Description:      row.Description,
+		Description:      description,
 		Detail:           detail,
 		Visibility:       string(visibility),
 		VisibilityReason: string(ar.Reason),
@@ -491,6 +518,7 @@ func newProfileReport(ar service.ActivityReport, now time.Time) (profileReport, 
 		TrustJSON:        string(trustJSON),
 		Expired:          expired,
 		CanReopen:        canReopen,
+		UndosUsed:        undosUsed,
 	}, nil
 }
 

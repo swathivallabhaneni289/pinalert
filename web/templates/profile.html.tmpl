@@ -54,6 +54,7 @@
             data-trust="{{.TrustJSON}}"
             data-tabs="{{.Tabs}}"
             {{if .CanReopen}}data-can-reopen="true"{{end}}
+            {{if .UndosUsed}}data-undos-used="true"{{end}}
             {{if .Hidden}}hidden{{end}}>
           <span class="icon-badge activity-card__icon" aria-hidden="true"><span class="icon-glyph {{.IconGlyph}}"></span></span>
           <div class="report-row__body">

@@ -38,6 +38,9 @@ func wm5Post(id int64, vis service.Visibility, expired bool) service.ActivityRep
 		Severity:   service.SeverityMedium,
 		Visibility: vis,
 		Reason:     service.ResolveReason("test"),
+		// The service sets the full budget on every post that has no undo
+		// rows (plan 03.1-07), so the fixture does too.
+		UndosLeft: service.UndoLimit,
 	}
 }
 
@@ -359,5 +362,83 @@ func TestActivityDetailKeepsTheShelterWords(t *testing.T) {
 	card := wm5Card(t, wm5Cards(t, service.ActivityPage{Posts: []service.ActivityReport{post}}, ""), 1)
 	if want := "Shelter open · Limited · 40 people"; card.Detail != want {
 		t.Errorf("Detail = %q, want %q", card.Detail, want)
+	}
+}
+
+// TestProfileReopenFollowsUndoLimit is D-22 on the card: the poster's Reopen
+// shares the budget of two undos with the take back, so a closed unexpired own
+// post with no undos left offers no Reopen and says so, a post with one left
+// still offers it, and an expired post offers neither.
+func TestProfileReopenFollowsUndoLimit(t *testing.T) {
+	cases := []struct {
+		name                 string
+		left                 int
+		expired              bool
+		wantReopen, wantUsed bool
+	}{
+		{"no undos left", 0, false, false, true},
+		{"one undo left", 1, false, true, false},
+		{"full budget", service.UndoLimit, false, true, false},
+		{"expired with none left", 0, true, false, false},
+		{"expired with one left", 1, true, false, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			post := wm5Post(1, service.VisibilityRetracted, c.expired)
+			post.UndosLeft = c.left
+			card := wm5Card(t, wm5Cards(t, service.ActivityPage{Posts: []service.ActivityReport{post}}, ""), 1)
+			if card.CanReopen != c.wantReopen {
+				t.Errorf("CanReopen = %v, want %v", card.CanReopen, c.wantReopen)
+			}
+			if card.UndosUsed != c.wantUsed {
+				t.Errorf("UndosUsed = %v, want %v", card.UndosUsed, c.wantUsed)
+			}
+		})
+	}
+
+	t.Run("a live post with no undos left shows neither", func(t *testing.T) {
+		post := wm5Post(1, service.VisibilityLive, false)
+		post.UndosLeft = 0
+		card := wm5Card(t, wm5Cards(t, service.ActivityPage{Posts: []service.ActivityReport{post}}, ""), 1)
+		if card.CanReopen || card.UndosUsed {
+			t.Errorf("CanReopen %v UndosUsed %v, want both false for a report that is not closed", card.CanReopen, card.UndosUsed)
+		}
+	})
+
+	t.Run("a voted card never offers either", func(t *testing.T) {
+		// The service leaves the full budget on a voted card (it reads undo
+		// counts for own posts only), which is what the fixture carries.
+		vote := wm5Vote(2, service.VoteConfirm, service.VisibilityRetracted, false)
+		card := wm5Card(t, wm5Cards(t, service.ActivityPage{Votes: []service.VotedReport{vote}}, ""), 2)
+		if card.CanReopen || card.UndosUsed {
+			t.Errorf("voted card CanReopen %v UndosUsed %v, want both false", card.CanReopen, card.UndosUsed)
+		}
+	})
+}
+
+// TestProfileVotedRescueCardIsApproximate is D-27 and D-23 on the card: an
+// approximate voted card carries the words of the coarse report, never the
+// description, and a card that is not approximate is left as it was.
+func TestProfileVotedRescueCardIsApproximate(t *testing.T) {
+	vote := wm5Vote(5, service.VoteConfirm, service.VisibilityRetracted, false)
+	vote.Category = service.CategoryRescueNeeded
+	vote.Row.Category = string(service.CategoryRescueNeeded)
+	vote.Row.Description = ""
+	vote.Approximate = true
+
+	card := wm5Card(t, wm5Cards(t, service.ActivityPage{Votes: []service.VotedReport{vote}}, ""), 5)
+	if card.Description != "Rescue needed" {
+		t.Errorf("Description = %q, want %q", card.Description, "Rescue needed")
+	}
+	if !strings.HasSuffix(card.Detail, " · Approximate location") {
+		t.Errorf("Detail = %q, want it to end with the approximate location words", card.Detail)
+	}
+
+	exact := wm5Vote(6, service.VoteConfirm, service.VisibilityLive, false)
+	exact.Category = service.CategoryRescueNeeded
+	exact.Row.Category = string(service.CategoryRescueNeeded)
+	exactCard := wm5Card(t, wm5Cards(t, service.ActivityPage{Votes: []service.VotedReport{exact}}, ""), 6)
+	if exactCard.Description != "voted description" || strings.Contains(exactCard.Detail, "Approximate") {
+		t.Errorf("a live rescue card changed: description %q detail %q", exactCard.Description, exactCard.Detail)
 	}
 }

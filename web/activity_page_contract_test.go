@@ -342,3 +342,62 @@ func TestActivityContrast(t *testing.T) {
 		}
 	}
 }
+
+// TestActivityUndosUsedSentence pins plan 03.1-07 (D-22, C52). The template
+// writes data-undos-used only from UndosUsed, and activity.js turns that hook
+// into one fixed sentence written through Pinalert.setText, never mounting the
+// Reopen control on such a card. The module keeps its one addEventListener and
+// its one showToast call, and makes no network call of its own.
+func TestActivityUndosUsedSentence(t *testing.T) {
+	tmpl := p13ReadTemplate(t, "profile.html.tmpl")
+	if n := strings.Count(tmpl, "data-undos-used"); n != 1 {
+		t.Fatalf("profile.html.tmpl writes data-undos-used %d times, want 1", n)
+	}
+	if !strings.Contains(tmpl, `{{if .UndosUsed}}data-undos-used="true"{{end}}`) {
+		t.Errorf("data-undos-used is not written only from UndosUsed")
+	}
+	if !strings.Contains(wm5CardOpeningTag(t, tmpl), "data-undos-used") {
+		t.Errorf("data-undos-used is not inside the card opening tag")
+	}
+
+	raw := p15ReadStatic(t, "static/js/activity.js")
+	code := p15CodeLines(raw)
+	const sentence = "You have used both undos on this report."
+	if n := strings.Count(raw, sentence); n != 1 {
+		t.Errorf("activity.js holds the sentence %d times, want 1", n)
+	}
+	if !regexp.MustCompile(`var UNDOS_USED_SENTENCE = '` + regexp.QuoteMeta(sentence) + `';`).MatchString(code) {
+		t.Errorf("the sentence is not held in one fixed constant")
+	}
+
+	hookAt := strings.Index(code, "row.dataset.undosUsed === 'true'")
+	reopenAt := strings.Index(code, "row.dataset.canReopen === 'true'")
+	mountAt := strings.Index(code, "PinalertVotes.createReopenControl(row.dataset.reportId)")
+	if hookAt == -1 || reopenAt == -1 || mountAt == -1 || !(reopenAt < mountAt && mountAt < hookAt) {
+		t.Fatalf("activity.js does not read the undos hook after the Reopen branch (reopen %d, mount %d, hook %d)", reopenAt, mountAt, hookAt)
+	}
+	if !strings.Contains(code[mountAt:], "} else if (row.dataset.undosUsed === 'true'") {
+		t.Errorf("the sentence branch is not an else of the Reopen branch, so Reopen could mount beside it")
+	}
+	branch := code[hookAt:]
+	if !regexp.MustCompile(`Pinalert\.setText\(\s*usedNote\s*,\s*UNDOS_USED_SENTENCE\s*\)`).MatchString(branch) {
+		t.Errorf("the sentence is not written through Pinalert.setText")
+	}
+	for _, banned := range []string{"innerHTML", "insertAdjacentHTML", "textContent ="} {
+		if strings.Contains(code, banned) {
+			t.Errorf("activity.js contains %q", banned)
+		}
+	}
+
+	if n := strings.Count(raw, "Pinalert.showToast("); n != 1 {
+		t.Errorf("activity.js has %d Pinalert.showToast calls, want 1", n)
+	}
+	if n := strings.Count(raw, "addEventListener"); n != 1 {
+		t.Errorf("activity.js has %d addEventListener occurrences, want 1", n)
+	}
+	for _, banned := range []string{"fetch(", "XMLHttpRequest", "sendBeacon"} {
+		if strings.Contains(code, banned) {
+			t.Errorf("activity.js makes a network call of its own: %q", banned)
+		}
+	}
+}

@@ -27,6 +27,9 @@
     return;
   }
 
+  // The words that stand in place of Reopen once both undos are used (C52).
+  var UNDOS_USED_SENTENCE = 'You have used both undos on this report.';
+
   // reopenBlocks maps a report id to the { controls, button, error } object
   // the shared builder in votes.js returns, built as rows are rendered below. One delegated click listener on `list`
   // (Task 3) looks entries up here rather than each row carrying its own
@@ -88,6 +91,15 @@
       body.appendChild(reopenBlock.controls);
       body.appendChild(reopenBlock.error);
       reopenBlocks[row.dataset.reportId] = reopenBlock;
+    } else if (row.dataset.undosUsed === 'true' && body) {
+      // Both undos of this report are used (D-22), so the server withheld the
+      // Reopen control and wrote this hook instead. The sentence is a fixed
+      // string written as text, and the control is never mounted here, so the
+      // page does not offer a button the server would refuse.
+      var usedNote = document.createElement('p');
+      usedNote.className = 'vote-note';
+      Pinalert.setText(usedNote, UNDOS_USED_SENTENCE);
+      body.appendChild(usedNote);
     }
   }
 
