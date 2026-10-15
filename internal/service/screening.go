@@ -140,6 +140,11 @@ func Decide(scores map[string]float64, serious bool) ScreenDecision {
 	return ScreenDecision{Verdict: VerdictPass}
 }
 
+// RejectMessage returns the message for a refused text.
+func RejectMessage(r RejectReason) string {
+	return ""
+}
+
 // GibberishRunLength is the length at which one letter repeated in a row
 // counts as keyboard mashing (04-RESEARCH assumption A9). It is counted in
 // runes, not bytes (R-06).

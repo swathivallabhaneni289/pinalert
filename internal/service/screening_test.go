@@ -1,8 +1,12 @@
 package service_test
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"maps"
 	"math"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -313,5 +317,66 @@ func TestGibberishCountsRunes(t *testing.T) {
 				t.Errorf("IsGibberish(%q) = %v, want %v", tc.text, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestScreeningHasNoReportVocabulary proves the policy file is generic
+// (D-06): comments are not parsed, so doc comments may cite decisions freely,
+// but no identifier, import or string literal may carry report vocabulary.
+func TestScreeningHasNoReportVocabulary(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "screening.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse screening.go: %v", err)
+	}
+
+	allowedImports := map[string]bool{"strings": true, "unicode": true, "unicode/utf8": true}
+	bannedParts := []string{"Report", "Severity", "Category", "Moderation", "Visibility", "Submit"}
+	bannedNames := map[string]bool{"criticalBypass": true, "Serious": true, "Withheld": true, "Resolve": true}
+	bannedWords := []string{"report", "severity", "category", "critical", "rescue"}
+
+	funcs := map[string]bool{}
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.FuncDecl:
+			funcs[x.Name.Name] = true
+		case *ast.ImportSpec:
+			path, err := strconv.Unquote(x.Path.Value)
+			if err != nil {
+				t.Errorf("import path %s: %v", x.Path.Value, err)
+			} else if !allowedImports[path] {
+				t.Errorf("import %q is outside the allowed standard library text packages", path)
+			}
+		case *ast.Ident:
+			for _, part := range bannedParts {
+				if strings.Contains(x.Name, part) {
+					t.Errorf("identifier %q contains %q", x.Name, part)
+				}
+			}
+			if bannedNames[x.Name] {
+				t.Errorf("identifier %q is report vocabulary", x.Name)
+			}
+		case *ast.BasicLit:
+			if x.Kind != token.STRING {
+				break
+			}
+			s, err := strconv.Unquote(x.Value)
+			if err != nil {
+				t.Errorf("string literal %s: %v", x.Value, err)
+				break
+			}
+			lower := strings.ToLower(s)
+			for _, word := range bannedWords {
+				if strings.Contains(lower, word) {
+					t.Errorf("string literal %q contains %q", s, word)
+				}
+			}
+		}
+		return true
+	})
+
+	for _, name := range []string{"Decide", "IsGibberish", "RejectMessage"} {
+		if !funcs[name] {
+			t.Errorf("screening.go declares no function %s", name)
+		}
 	}
 }
