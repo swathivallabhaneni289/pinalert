@@ -126,3 +126,24 @@ func (p *PerKey) Reserve(key string) Decision {
 		once.Do(func() { r.CancelAt(now) })
 	}}
 }
+
+// sweep removes every entry whose lastSeen is older than idleWindow relative
+// to now. It holds the same mutex as Reserve, so a sweep never races a
+// reservation.
+func (p *PerKey) sweep(now time.Time) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for key, e := range p.entries {
+		if now.Sub(e.lastSeen) > p.idleWindow {
+			delete(p.entries, key)
+		}
+	}
+}
+
+// entryCount reports how many keys are tracked. It holds the same mutex as
+// Reserve and exists for this package's tests.
+func (p *PerKey) entryCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.entries)
+}

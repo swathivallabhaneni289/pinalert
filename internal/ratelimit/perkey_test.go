@@ -3,6 +3,7 @@ package ratelimit
 import (
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -226,4 +227,158 @@ func TestPerKeyNilNowUsesWallClock(t *testing.T) {
 	p := NewPerKey(Config{Every: time.Hour, Burst: 1})
 	perKeyAdmit(t, p, "k", 1)
 	perKeyRefuse(t, p, "k", time.Hour)
+}
+
+func TestPerKeyIdleWindowNeverEarly(t *testing.T) {
+	t.Run("effective window", func(t *testing.T) {
+		cases := []struct {
+			name string
+			c    Config
+			want time.Duration
+		}{
+			{"serious", Config{Every: 5 * time.Minute, Burst: 5}, 25 * time.Minute},
+			{"other", Config{Every: 15 * time.Minute, Burst: 8}, 120 * time.Minute},
+			{"vote", Config{Every: 15 * time.Second, Burst: 20}, 5 * time.Minute},
+			{"re-cast cooldown", Config{Every: 30 * time.Second, Burst: 1}, 30 * time.Second},
+			{"flag", Config{Every: 2 * time.Minute, Burst: 10}, 20 * time.Minute},
+			{"submit attempt", Config{Every: 6 * time.Second, Burst: 20}, 2 * time.Minute},
+			{"IP backstop", Config{Every: 20 * time.Second, Burst: 60}, 20 * time.Minute},
+			{"raised from a smaller value", Config{Every: 10 * time.Second, Burst: 3, IdleWindow: 5 * time.Second}, 30 * time.Second},
+			{"raised from a negative value", Config{Every: 10 * time.Second, Burst: 3, IdleWindow: -time.Second}, 30 * time.Second},
+			{"larger value kept", Config{Every: 10 * time.Second, Burst: 3, IdleWindow: time.Hour}, time.Hour},
+		}
+		for _, tc := range cases {
+			if got := NewPerKey(tc.c).idleWindow; got != tc.want {
+				t.Errorf("%s: idleWindow = %v, want %v", tc.name, got, tc.want)
+			}
+		}
+	})
+
+	t.Run("eviction", func(t *testing.T) {
+		clk := newPerKeyClock()
+		c := Config{Every: 10 * time.Second, Burst: 3, IdleWindow: 30 * time.Second, Now: clk.Now}
+		p := NewPerKey(c)
+		q := NewPerKey(c)
+
+		for _, k := range []string{"a", "b"} {
+			perKeyAdmit(t, p, k, 3)
+			perKeyRefuse(t, p, k, 10*time.Second)
+		}
+		perKeyAdmit(t, q, "a", 3)
+
+		clk.Set(perKeyT0.Add(29 * time.Second))
+		p.sweep(clk.Now())
+		if got := p.entryCount(); got != 2 {
+			t.Fatalf("entryCount after a sweep 1 s before the window = %d, want 2", got)
+		}
+		// b has refilled 2 tokens by 29 s, so it admits 2 and refuses the
+		// third. An early eviction would have admitted 3.
+		perKeyAdmit(t, p, "b", 2)
+		perKeyRefuse(t, p, "b", 1*time.Second)
+
+		p.sweep(perKeyT0.Add(30 * time.Second))
+		if got := p.entryCount(); got != 2 {
+			t.Fatalf("entryCount at exactly the window = %d, want 2 (strictly greater evicts)", got)
+		}
+		p.sweep(perKeyT0.Add(30*time.Second + time.Nanosecond))
+		if got := p.entryCount(); got != 1 {
+			t.Fatalf("entryCount just past the window = %d, want 1 (a evicted, b kept)", got)
+		}
+
+		// Eviction after the window hands back nothing the bucket did not
+		// already have: the recreated a and the never swept q both admit
+		// exactly 3 and refuse the 4th.
+		clk.Set(perKeyT0.Add(30*time.Second + time.Nanosecond))
+		perKeyAdmit(t, p, "a", 3)
+		perKeyRefuse(t, p, "a", 10*time.Second)
+		perKeyAdmit(t, q, "a", 3)
+		perKeyRefuse(t, q, "a", 10*time.Second)
+	})
+}
+
+// TestPerKeyConcurrentBound: refunds are best effort under interleaving, so
+// the phase with refunds asserts only the upper bound.
+func TestPerKeyConcurrentBound(t *testing.T) {
+	cfg := func(clk *perKeyClock) Config {
+		return Config{Every: 10 * time.Second, Burst: 5, Now: clk.Now}
+	}
+	clk := newPerKeyClock()
+	p := NewPerKey(cfg(clk))
+
+	var kept int64
+	var wg sync.WaitGroup
+	for g := 0; g < 16; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < 25; i++ {
+				d := p.Reserve("acct:1")
+				if !d.OK {
+					continue
+				}
+				if g%2 == 0 {
+					d.Cancel()
+				} else {
+					atomic.AddInt64(&kept, 1)
+				}
+			}
+		}(g)
+	}
+	for _, key := range []string{"acct:2", "acct:3", "acct:4", "acct:5"} {
+		wg.Add(1)
+		go func(key string) {
+			defer wg.Done()
+			for i := 0; i < 25; i++ {
+				p.Reserve(key)
+			}
+		}(key)
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 200; i++ {
+			p.sweep(clk.Now())
+		}
+	}()
+	wg.Wait()
+	phase1 := atomic.LoadInt64(&kept)
+	if phase1 > 5 {
+		t.Fatalf("phase 1 kept %d admissions at one instant, want at most 5", phase1)
+	}
+
+	clk.Advance(20*time.Second + time.Millisecond)
+	var phase2 int64
+	for g := 0; g < 16; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 25; i++ {
+				if p.Reserve("acct:1").OK {
+					atomic.AddInt64(&phase2, 1)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if total := phase1 + atomic.LoadInt64(&phase2); total > 7 {
+		t.Fatalf("kept %d over both phases, want at most 7 (burst 5 plus 2 refilled)", total)
+	}
+
+	fresh := NewPerKey(cfg(newPerKeyClock()))
+	var exact int64
+	for g := 0; g < 16; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 25; i++ {
+				if fresh.Reserve("acct:1").OK {
+					atomic.AddInt64(&exact, 1)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if got := atomic.LoadInt64(&exact); got != 5 {
+		t.Fatalf("fresh instance admitted %d with no refunds, want exactly 5", got)
+	}
 }
