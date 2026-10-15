@@ -27,12 +27,21 @@
 
   var SVG_NS = 'http://www.w3.org/2000/svg';
 
-  // DISPUTED_PARAM is the page URL's own name for the "Show disputed"
-  // filter flag — deliberately the exact same literal app.js's own
-  // fetchReports appends to the GET /api/reports URL (see app.js's
-  // fetchReports comment), so the page and the server share one
-  // vocabulary for this idea rather than two spellings of it.
-  var DISPUTED_PARAM = 'show_disputed';
+  // VIEW_PARAM is the page URL's own name for the tab, deliberately the
+  // exact same word app.js's fetchReports sends to GET /api/reports, so the
+  // page and the server share one vocabulary for this idea. The address
+  // never carries the default tab: Active is the absence of the parameter.
+  var VIEW_PARAM = 'view';
+
+  // OLD_BOOKMARK_PARAM is the address parameter of the old Show disputed
+  // checkbox. It is read only, so a saved bookmark still opens Disputed, and
+  // it is rewritten once to the new parameter (03.1 D-04). Nothing sends it
+  // to the server any more.
+  var OLD_BOOKMARK_PARAM = 'show_disputed';
+
+  // REPORT_PARAM is the address parameter of a link to one report. It is read
+  // once on load and never removed from the address.
+  var REPORT_PARAM = 'report';
 
   var reportListEl = document.getElementById('report-list');
   var skeletonEl = document.getElementById('feed-skeleton');
@@ -42,7 +51,7 @@
   var retryBtn = document.getElementById('feed-retry');
   var viewToggleBtn = document.getElementById('view-toggle');
   var appShellEl = document.getElementById('app-shell');
-  var showDisputedToggleEl = document.getElementById('show-disputed-toggle');
+  var tabStripEl = document.querySelector('.view-tabs');
   var feedCountEl = document.getElementById('feed-count');
 
   // PHONE_QUERY is the same 899.98px complement of the 900px query that
@@ -444,7 +453,7 @@
       : state.status !== 'idle' && state.status !== 'loading';
     var radius = formatRadius(Pinalert.config.defaultRadiusKm);
     if (counted && radius !== '') {
-      var word = Pinalert.state.showDisputed ? 'disputed' : 'active';
+      var word = Pinalert.state.view === 'disputed' ? 'disputed' : 'active';
       text = state.reports.length + ' ' + word + ' \u00b7 ' + radius + ' km';
     }
     Pinalert.setText(feedCountEl, text);
@@ -498,7 +507,7 @@
       // checkbox: the store's value describes the data actually in
       // state.reports, while the checkbox describes an intent whose fetch
       // may still be in flight.
-      setEmptyState(Pinalert.state.showDisputed ? 'disputed' : 'general');
+      setEmptyState(Pinalert.state.view === 'disputed' ? 'disputed' : 'general');
       setHidden(reportListEl, true);
       clearRows();
       return;
@@ -713,77 +722,131 @@
     });
   }
 
-  // readDisputedFromURL reports whether the current address bar asks for
-  // the disputed view (UAT gap 5, a user-requested scope reversal dated
-  // 2026-09-17 — see 02-UI-SPEC.md's dated amendment on the "Show disputed
-  // filter (D-10, D-11)" section; the original spec's ephemeral,
-  // non-persisting checkbox was deliberate and shipped as specified, this
-  // is not a bug fix). Parsed with URLSearchParams and compared against
-  // the one literal app.js's own fetchReports appends ('true'), never
-  // interpolated anywhere (T-01-17) — so the page and the server can never
-  // disagree about what a given URL means. An absent, misspelled or
-  // hostile value collapses to false, which is D-10's closed default: the
-  // fail-safe direction, since the failure mode of guessing wrong here is
-  // showing a reader disputed content they did not ask for.
-  function readDisputedFromURL() {
+  // readViewFromURL reads the tab out of the page address (03.1 D-04, D-05).
+  // Parsed with URLSearchParams and compared against a closed list of words,
+  // never interpolated anywhere (T-01-17), so the page and the server cannot
+  // disagree about what an address means. An absent, misspelled or hostile
+  // value opens Active, which is D-10's closed default: the fail-safe
+  // direction, since guessing wrong here would show a reader reports they
+  // did not ask for. view=resolved is a read only alias of Past, and an old
+  // bookmark that carries the old checkbox parameter set to true and no view
+  // opens Disputed. The answer says
+  // whether the address holds a spelling this script no longer writes, so the
+  // caller tidies it once.
+  function readViewFromURL() {
     var params = new URLSearchParams(window.location.search);
-    return params.get(DISPUTED_PARAM) === 'true';
+    var word = params.get(VIEW_PARAM);
+    var hasOld = params.has(OLD_BOOKMARK_PARAM);
+    if (word === 'disputed' || word === 'past') {
+      return { view: word, rewrite: hasOld };
+    }
+    if (word === 'resolved') {
+      return { view: 'past', rewrite: hasOld };
+    }
+    if (word === null && params.get(OLD_BOOKMARK_PARAM) === 'true') {
+      return { view: 'disputed', rewrite: true };
+    }
+    return { view: 'active', rewrite: word !== null || hasOld };
   }
 
-  // syncDisputedURL keeps the address bar's DISPUTED_PARAM in step with
-  // checked: added when true, deleted when false. Applies the update via
-  // history.replaceState, the History API's in-place-update variant —
-  // never its variant that adds a new Back-button-history entry — because
-  // a filter toggle must not create a Back-button step, or Back would walk
-  // the reader through their own filter history instead of leaving the
-  // page, which is a behaviour change nobody asked for.
-  function syncDisputedURL(checked) {
+  // syncViewURL keeps the address bar in step with the tab: the parameter is
+  // set for Disputed and Past and deleted for Active, so the default tab is
+  // never written (a main page address with a query string would be taken for
+  // a different page by the low data view, which would break a remembered
+  // choice). It applies the update with history.replaceState, the History
+  // API's in-place variant, so a tab press adds no Back button step: Back
+  // would otherwise walk the reader through their own tab history instead of
+  // leaving the page. Every other parameter (report, full, resend) is kept as
+  // it is, and the old bookmark parameter is dropped.
+  function syncViewURL(view) {
     var url = new URL(window.location.href);
-    if (checked) {
-      url.searchParams.set(DISPUTED_PARAM, 'true');
+    if (view === 'disputed' || view === 'past') {
+      url.searchParams.set(VIEW_PARAM, view);
     } else {
-      url.searchParams.delete(DISPUTED_PARAM);
+      url.searchParams.delete(VIEW_PARAM);
     }
+    url.searchParams.delete(OLD_BOOKMARK_PARAM);
     window.history.replaceState(null, '', url);
   }
 
-  if (showDisputedToggleEl) {
-    showDisputedToggleEl.addEventListener('change', function () {
-      // Refetching rather than filtering state.reports in place is
-      // deliberate: the server decides which reports exist under the
-      // shared query parameter (02-04), and a client-side filter would be
-      // a second visibility decision — the resolver bypass T-02-04 names.
-      Pinalert.setShowDisputed(showDisputedToggleEl.checked);
-      Pinalert.fetchReports();
-      syncDisputedURL(showDisputedToggleEl.checked);
-    });
+  // updateTabStrip marks the current tab: aria-current on the link of the
+  // view, none on the others. The current tab also differs in weight and
+  // border (feed.css), so colour is never the only cue.
+  function updateTabStrip(view) {
+    if (!tabStripEl) {
+      return;
+    }
+    var links = tabStripEl.querySelectorAll('.view-tab');
+    for (var i = 0; i < links.length; i++) {
+      if (links[i].getAttribute('data-feed-view') === view) {
+        links[i].setAttribute('aria-current', 'page');
+      } else {
+        links[i].removeAttribute('aria-current');
+      }
+    }
+  }
 
-    // Restore step, not a synchronisation step — direction of trust
-    // reversed as of the 2026-09-17 scope reversal above: the URL is now
-    // the source of truth, and the checkbox is driven FROM it. Read the
-    // URL, write the result onto the checkbox's checked property, then
-    // hand the same value to the shared store's setter — never the other
-    // way around, and never a fetch here. The template's own autocomplete
-    // attribute is now genuinely belt-and-braces (a browser that restores
-    // a checked box across a reload is immediately overwritten by this
-    // read), rather than the load-bearing defence the superseded comment
-    // this block replaces used to claim it was.
-    //
-    // No fetch is issued here because it does not need to be: the first
-    // report fetch fires from map.js's centerOnVisitor, inside an async
-    // geolocation success/failure callback, and every deferred module
-    // body — including this one — runs to completion before any async
-    // callback can execute. This restore is therefore guaranteed to
-    // precede the first fetch, so the first render is never briefly
-    // unfiltered. If a future change ever moves the initial fetch into a
-    // deferred module body ABOVE this one in the template's script order,
-    // that guarantee breaks and this restore would need its own fetch —
-    // flagging that here since it is the one thing that would invalidate
-    // this reasoning. Adding a fetch unconditionally would issue a
-    // duplicate request on every single page load.
-    var initialDisputed = readDisputedFromURL();
-    showDisputedToggleEl.checked = initialDisputed;
-    Pinalert.setShowDisputed(initialDisputed);
+  // showTab brings everything that names the tab in step with the store.
+  function showTab(view) {
+    updateTabStrip(view);
+  }
+
+  // switchTab is the one place a tab press lands. It sets the store, marks the
+  // link, writes the address and refetches through the one list request in
+  // app.js. Refetching rather than filtering state.reports in place is
+  // deliberate: the server decides which reports exist for a tab (02-04), and
+  // a client side filter would be a second visibility decision, the resolver
+  // bypass T-02-04 names. Rows fetched for the other tab stay only until the
+  // answer lands; a failed fetch drops them (app.js).
+  function switchTab(view) {
+    if (Pinalert.VIEWS.indexOf(view) === -1 || view === Pinalert.state.view) {
+      return;
+    }
+    Pinalert.setView(view);
+    showTab(view);
+    syncViewURL(view);
+    Pinalert.fetchReports();
+  }
+
+  if (tabStripEl) {
+    // The tabs are real links (/, /?view=disputed, /?view=past), so a middle
+    // click, a modified click and "open in new tab" follow the link as they
+    // are. A script only makes the plain left click instant.
+    tabStripEl.addEventListener('click', function (evt) {
+      var link = evt.target && evt.target.closest ? evt.target.closest('.view-tab') : null;
+      if (!link || evt.defaultPrevented || evt.button !== 0 ||
+          evt.metaKey || evt.ctrlKey || evt.shiftKey || evt.altKey) {
+        return;
+      }
+      evt.preventDefault();
+      switchTab(link.getAttribute('data-feed-view'));
+    });
+  }
+
+  // Restore step, not a synchronisation step: the address is the source of
+  // truth and the store is driven FROM it. Read it, hand the tab to the store,
+  // mark the link, and keep the report id of a ?report=ID link for the first
+  // list request (app.js sends it once). The address is rewritten only when it
+  // held a spelling this script no longer writes, and the report parameter is
+  // never touched, so a link sent by a moderator stays as it was sent (D-05).
+  //
+  // No fetch is issued here because it does not need to be: the first
+  // report fetch fires from map.js's centerOnVisitor, inside an async
+  // geolocation success/failure callback, and every deferred module
+  // body, including this one, runs to completion before any async
+  // callback can execute. This restore is therefore guaranteed to
+  // precede the first fetch, so the first render is never briefly
+  // on the wrong tab. If a future change ever moves the initial fetch into a
+  // deferred module body ABOVE this one in the template's script order,
+  // that guarantee breaks and this restore would need its own fetch.
+  // Adding a fetch unconditionally would issue a duplicate request on every
+  // single page load.
+  var initialAddress = readViewFromURL();
+  Pinalert.setView(initialAddress.view);
+  showTab(initialAddress.view);
+  Pinalert.setFocusId(new URLSearchParams(window.location.search).get(REPORT_PARAM));
+  if (initialAddress.rewrite) {
+    syncViewURL(initialAddress.view);
   }
 
   Pinalert.onSelect(function (id, source) {
@@ -841,18 +904,14 @@
     if (!evt.persisted) {
       return;
     }
-    // Re-read the URL and re-apply it to the checkbox and the store
-    // BEFORE refetching (UAT gap 5's extension into gap 3): this is what
-    // finally makes true the claim the pre-reversal comment on the
-    // disputed-toggle block made and could not keep — a restored frozen
-    // DOM can no longer show a checked box over unfiltered data, because
-    // the checked box is now always re-derived from the URL rather than
-    // trusted as whatever the browser happened to restore.
-    var disputed = readDisputedFromURL();
-    if (showDisputedToggleEl) {
-      showDisputedToggleEl.checked = disputed;
-    }
-    Pinalert.setShowDisputed(disputed);
+    // Re-read the address and re-apply it to the strip and the store
+    // BEFORE refetching (UAT gap 5's extension into gap 3): a restored frozen
+    // DOM can never show one tab over another tab's rows, because the
+    // strip is always re-derived from the address rather than trusted as
+    // whatever the browser happened to restore.
+    var restored = readViewFromURL();
+    Pinalert.setView(restored.view);
+    showTab(restored.view);
     Pinalert.fetchReports();
   });
 }());

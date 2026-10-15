@@ -1145,10 +1145,16 @@ func TestBothSurfacesMountTheSameVisibilityTag(t *testing.T) {
 }
 
 // TestShowDisputedUsesOneSharedQueryParam proves D-10, D-11 and TRUST-02's
-// client-side mechanism: the "Show disputed reports" filter contributes one
-// boolean to the one report fetch the shared store owns, so the list and
-// the map cannot disagree about which reports exist. There is no
+// client-side mechanism: the tab strip (Active, Disputed, Past) contributes
+// one view word to the one report fetch the shared store owns, so the list
+// and the map cannot disagree about which reports exist. There is no
 // map-specific query, and neither renderer builds one of its own.
+//
+// Test change on purpose (plan 03.1-05, D-01 and D-05): this test pinned the
+// old boolean, the show_disputed parameter and setShowDisputed. The checkbox is
+// gone, the store holds one view, and the one list request sends the word
+// view for Disputed and Past only. The old parameter is now only read from a
+// saved bookmark in feed.js (OLD_BOOKMARK_PARAM) and never sent.
 func TestShowDisputedUsesOneSharedQueryParam(t *testing.T) {
 	appRaw, err := fs.ReadFile(StaticFS, "static/js/app.js")
 	if err != nil {
@@ -1156,29 +1162,31 @@ func TestShowDisputedUsesOneSharedQueryParam(t *testing.T) {
 	}
 	appText := stripCSSComments(string(appRaw))
 
-	if n := strings.Count(appText, "show_disputed"); n != 1 {
-		t.Fatalf("expected exactly one occurrence of the shared query parameter's name in app.js, "+
-			"found %d", n)
+	if n := strings.Count(appText, "show_disputed"); n != 0 {
+		t.Fatalf("app.js must no longer send the old show_disputed parameter, found %d mentions", n)
+	}
+	if n := strings.Count(appText, "'&view='"); n != 1 {
+		t.Fatalf("expected exactly one occurrence of the view parameter in app.js, found %d", n)
 	}
 
 	fetchReportsBody := jsFunctionBody(t, appText, "fetchReports(options)")
-	if !strings.Contains(fetchReportsBody, "show_disputed") {
-		t.Errorf("fetchReports's own body does not reference the shared query parameter — it must " +
-			"sit inside this function's own body so the parameter is conditional on state rather " +
-			"than hardcoded")
+	if !strings.Contains(fetchReportsBody, "'&view=' + sentView") {
+		t.Errorf("fetchReports's own body does not build the view parameter from the word it " +
+			"captured at call time, so the parameter would not be conditional on state")
 	}
-	if !strings.Contains(fetchReportsBody, "state.showDisputed") {
-		t.Errorf("fetchReports's own body does not reference state.showDisputed — the parameter must " +
-			"be conditional on the store's own flag")
+	if !strings.Contains(fetchReportsBody, "var sentView = state.view;") {
+		t.Errorf("fetchReports's own body does not capture state.view, the store's own tab")
 	}
 
-	if n := strings.Count(appText, "function setShowDisputed("); n != 1 {
-		t.Errorf("expected exactly one setShowDisputed( function declaration, found %d", n)
+	if n := strings.Count(appText, "function setView("); n != 1 {
+		t.Errorf("expected exactly one setView( function declaration, found %d", n)
 	}
-	setterExportRE := regexp.MustCompile(`(?m)^\s*setShowDisputed: setShowDisputed,?$`)
+	setterExportRE := regexp.MustCompile(`(?m)^\s*setView: setView,?$`)
 	if !setterExportRE.MatchString(appText) {
-		t.Errorf("setShowDisputed must be exported as its own \"name: name\" line in the returned " +
-			"object literal")
+		t.Errorf("setView must be exported as its own \"name: name\" line in the returned object literal")
+	}
+	if strings.Contains(appText, "setShowDisputed") || strings.Contains(appText, "showDisputed") {
+		t.Errorf("app.js still names the old boolean, which the view setting replaced")
 	}
 
 	// fetch( staying at exactly two (the report fetch, the submit) is the
@@ -1188,66 +1196,49 @@ func TestShowDisputedUsesOneSharedQueryParam(t *testing.T) {
 	// reports than the other.
 	if n := strings.Count(appText, "fetch("); n != 2 {
 		t.Errorf("expected exactly two fetch( calls in app.js (the report fetch and the submit "+
-			"call), found %d — a third would mean a second report query", n)
+			"call), found %d, a third would mean a second report query", n)
 	}
 
-	// map.js is untouched by every plan that has ever needed this parameter
-	// (including 02-09 below) and stays under the original blanket guard:
-	// zero references, full stop. There is no map-specific query, and this
-	// is the assertion that proves it.
+	// map.js builds no query at all: zero references to either parameter.
 	mapRaw, err := fs.ReadFile(StaticFS, "static/js/map.js")
 	if err != nil {
-		t.Fatalf("static/js/map.js: could not read embedded file — %v", err)
+		t.Fatalf("static/js/map.js: could not read embedded file: %v", err)
 	}
-	if strings.Contains(stripCSSComments(string(mapRaw)), "show_disputed") {
-		t.Errorf("static/js/map.js: contains the shared query parameter's name — a surface " +
-			"building its own query is exactly the feed/map divergence TRUST-02 forbids, and it " +
-			"would be invisible until someone compared a list against a map by hand")
+	mapText := stripCSSComments(string(mapRaw))
+	for _, banned := range []string{"show_disputed", "&view=", "VIEW_PARAM"} {
+		if strings.Contains(mapText, banned) {
+			t.Errorf("static/js/map.js: contains %q, a surface building its own query is exactly "+
+				"the feed/map divergence TRUST-02 forbids", banned)
+		}
 	}
 
-	// feed.js is the one exception, added by 02-09 (a later gap-closure
-	// plan) for a reason this test's original blanket guard did not
-	// anticipate: the "Show disputed" filter's checked state now
-	// round-trips through the page's own URL (02-UI-SPEC.md's dated
-	// amendment on "Show disputed filter (D-10, D-11)"), and the URL's
-	// parameter name is deliberately the same literal as the one this test
-	// already pins in app.js — one vocabulary, not two spellings of the
-	// same idea. That is NOT the divergence this guard exists to catch:
-	// feed.js still issues no fetch( call of its own (checked below), so
-	// there is still exactly one query, built in exactly one place, sent
-	// exactly once per report list. TestDisputedFilterIsCarriedInThePageURL
-	// (web/feed_freshness_contract_test.go) is the gate that gives feed.js's
-	// one legitimate reference its own dedicated coverage; the two
-	// assertions below narrow this test's guard to the invariant it was
-	// always actually protecting, rather than dropping feed.js from it.
+	// feed.js reads the old bookmark parameter exactly once, in its constant
+	// declaration, and issues no fetch( call of its own: there is still one
+	// query, built in one place, sent once per report list.
 	feedRaw, err := fs.ReadFile(StaticFS, "static/js/feed.js")
 	if err != nil {
-		t.Fatalf("static/js/feed.js: could not read embedded file — %v", err)
+		t.Fatalf("static/js/feed.js: could not read embedded file: %v", err)
 	}
 	feedText := stripCSSComments(string(feedRaw))
 	if n := strings.Count(feedText, "show_disputed"); n != 1 {
-		t.Errorf("static/js/feed.js: expected exactly one occurrence of the shared query "+
-			"parameter's name (02-09's DISPUTED_PARAM constant, restoring the URL-persisted "+
-			"filter), found %d — more than one is exactly the kind of drift this guard exists "+
-			"to catch", n)
+		t.Errorf("static/js/feed.js: expected exactly one occurrence of the old bookmark "+
+			"parameter's name (its constant declaration), found %d", n)
 	}
-	if !regexp.MustCompile(`DISPUTED_PARAM\s*=\s*'show_disputed'`).MatchString(feedText) {
+	if !regexp.MustCompile(`OLD_BOOKMARK_PARAM\s*=\s*'show_disputed'`).MatchString(feedText) {
 		t.Errorf("static/js/feed.js: its sole show_disputed reference is not the " +
-			"DISPUTED_PARAM constant declaration — any other use would need its own review")
+			"OLD_BOOKMARK_PARAM constant declaration, any other use would need its own review")
 	}
 	if n := strings.Count(feedText, "fetch("); n != 0 {
-		t.Errorf("static/js/feed.js: expected zero fetch( calls, found %d — this is the real "+
-			"invariant the string-match above only proxies: a fetch( call here would mean feed.js "+
-			"building its own report query rather than delegating to the one shared "+
-			"Pinalert.fetchReports()", n)
+		t.Errorf("static/js/feed.js: expected zero fetch( calls, found %d: a fetch( call here "+
+			"would mean feed.js building its own report query rather than delegating to the one "+
+			"shared Pinalert.fetchReports()", n)
 	}
 
 	// Honest limits of this test's claim: static inspection proves there is
 	// one parameter on one fetch, that map.js builds no query at all, and
-	// that feed.js's own single reference to the parameter's name is its
-	// URL-restore constant rather than a second fetch( call. It cannot
-	// prove the server honours the parameter (02-04's own
-	// TestShowDisputedRevealsHiddenReports covers that against real
+	// that feed.js's own single reference to the old parameter's name is its
+	// bookmark constant rather than a second fetch( call. It cannot prove the
+	// server honours the parameter (the handler tests cover that against real
 	// Postgres) nor that the pins actually appear, which the human check
 	// covers.
 }
@@ -1310,11 +1301,16 @@ func TestDisputedEmptyStateHiddenGuard(t *testing.T) {
 	}
 }
 
-// TestFeedExplainsAnEmptyDisputedResult proves D-10: turning the filter on
-// with nothing disputed nearby renders the Copywriting Contract's own copy
-// instead of a blank list, and that setEmptyState stays the sole owner of
-// both empty-state elements after a fifth element joined render's state
-// machine.
+// TestFeedExplainsAnEmptyDisputedResult proves D-10: the Disputed tab with
+// nothing disputed nearby renders the Copywriting Contract's own copy instead
+// of a blank list, and that setEmptyState stays the sole owner of the
+// empty-state elements.
+//
+// Test change on purpose (plan 03.1-05, D-01 and D-06): the checkbox this test
+// pinned (show-disputed-toggle, the filter-toggle label, its change listener
+// and Pinalert.state.showDisputed) is gone. The tab strip replaces it, the
+// empty choice reads Pinalert.state.view, and the strip's click handler
+// refetches. The empty block's words and the single owner rule are unchanged.
 func TestFeedExplainsAnEmptyDisputedResult(t *testing.T) {
 	htmlRaw, err := TemplatesFS.ReadFile("templates/index.html.tmpl")
 	if err != nil {
@@ -1322,32 +1318,20 @@ func TestFeedExplainsAnEmptyDisputedResult(t *testing.T) {
 	}
 	html := string(htmlRaw)
 
-	if n := strings.Count(html, `id="show-disputed-toggle"`); n != 1 {
-		t.Fatalf("expected exactly one show-disputed-toggle element, found %d", n)
-	}
-	toggleWindow := findTagWindow(t, html, `id="show-disputed-toggle"`)
-	if !strings.Contains(toggleWindow, `type="checkbox"`) {
-		t.Errorf("show-disputed-toggle must be a checkbox input — window: %q", toggleWindow)
+	for _, gone := range []string{`id="show-disputed-toggle"`, "filter-toggle", "Show disputed reports", `type="checkbox"`} {
+		if strings.Contains(html, gone) {
+			t.Errorf("the list pane still holds %q, which the tab strip replaced", gone)
+		}
 	}
 
-	toggleLabelWindow := findTagWindow(t, html, "filter-toggle")
-	if !strings.Contains(toggleLabelWindow, "<label") {
-		t.Errorf("expected the filter-toggle class on a label element — window: %q", toggleLabelWindow)
-	}
-
-	if !strings.Contains(html, "Show disputed reports") {
-		t.Errorf("template does not contain the Copywriting Contract's toggle label verbatim")
-	}
-
-	togglePos := strings.Index(html, `id="show-disputed-toggle"`)
+	stripPos := strings.Index(html, `class="view-tabs"`)
 	listPos := strings.Index(html, `id="report-list"`)
-	if togglePos == -1 || listPos == -1 {
-		t.Fatalf("could not locate both the toggle and the report list in the template")
+	if stripPos == -1 || listPos == -1 {
+		t.Fatalf("could not locate both the tab strip and the report list in the template")
 	}
-	if togglePos >= listPos {
-		t.Errorf("the show-disputed-toggle must appear before #report-list in the template, matching "+
-			"02-UI-SPEC.md's placement immediately above the list — found toggle at %d, list at %d",
-			togglePos, listPos)
+	if stripPos >= listPos {
+		t.Errorf("the tab strip must appear before #report-list in the template, found strip at %d, "+
+			"list at %d", stripPos, listPos)
 	}
 
 	if n := strings.Count(html, `id="disputed-empty"`); n != 1 {
@@ -1355,10 +1339,10 @@ func TestFeedExplainsAnEmptyDisputedResult(t *testing.T) {
 	}
 	emptyWindow := findTagWindow(t, html, `id="disputed-empty"`)
 	if !strings.Contains(emptyWindow, "empty-state") {
-		t.Errorf("disputed-empty must carry the empty-state class — window: %q", emptyWindow)
+		t.Errorf("disputed-empty must carry the empty-state class, window: %q", emptyWindow)
 	}
 	if !strings.Contains(emptyWindow, "hidden") {
-		t.Errorf("disputed-empty must ship the hidden attribute — window: %q", emptyWindow)
+		t.Errorf("disputed-empty must ship the hidden attribute, window: %q", emptyWindow)
 	}
 
 	for _, copy := range []string{
@@ -1382,8 +1366,8 @@ func TestFeedExplainsAnEmptyDisputedResult(t *testing.T) {
 	setEmptyStateBody := jsFunctionBody(t, feedText, "setEmptyState(kind)")
 
 	if n := strings.Count(feedText, "setHidden(emptyEl"); n != 1 {
-		t.Fatalf("expected exactly one setHidden(emptyEl call in the whole file, found %d — every "+
-			"call touching either empty-state element must live inside setEmptyState and nowhere "+
+		t.Fatalf("expected exactly one setHidden(emptyEl call in the whole file, found %d: every "+
+			"call touching an empty-state element must live inside setEmptyState and nowhere "+
 			"else, or render's own \"exactly one place decides which is showing\" comment stops "+
 			"being true", n)
 	}
@@ -1392,26 +1376,25 @@ func TestFeedExplainsAnEmptyDisputedResult(t *testing.T) {
 	}
 
 	if n := strings.Count(feedText, "setHidden(disputedEmptyEl"); n != 1 {
-		t.Fatalf("expected exactly one setHidden(disputedEmptyEl call in the whole file, found %d",
-			n)
+		t.Fatalf("expected exactly one setHidden(disputedEmptyEl call in the whole file, found %d", n)
 	}
 	if !strings.Contains(setEmptyStateBody, "setHidden(disputedEmptyEl") {
 		t.Errorf("the one setHidden(disputedEmptyEl call in the file is not inside setEmptyState's " +
 			"own body")
 	}
 
-	if !strings.Contains(feedText, "Pinalert.state.showDisputed") {
-		t.Errorf("feed.js does not reference Pinalert.state.showDisputed — the empty-state choice " +
-			"must describe the data actually in hand (the store's flag), not an intent that may not " +
-			"have been fetched yet (the checkbox)")
+	if !strings.Contains(feedText, "Pinalert.state.view") {
+		t.Errorf("feed.js does not reference Pinalert.state.view: the empty-state choice must " +
+			"describe the data actually in hand (the store's tab), not an intent that may not " +
+			"have been fetched yet (the pressed link)")
 	}
 
-	if !strings.Contains(feedText, "addEventListener('change'") {
-		t.Errorf("feed.js does not attach a change listener — the toggle must call the store's " +
-			"setter and refetch on change")
+	if !strings.Contains(feedText, "addEventListener('click'") {
+		t.Errorf("feed.js does not attach a click listener: the strip must call the store's " +
+			"setter and refetch on a press")
 	}
 	if !strings.Contains(feedText, "Pinalert.fetchReports()") {
-		t.Errorf("feed.js does not call Pinalert.fetchReports() — checking the toggle must refetch, " +
+		t.Errorf("feed.js does not call Pinalert.fetchReports(): pressing a tab must refetch, " +
 			"never filter state.reports in place")
 	}
 }
@@ -2436,11 +2419,16 @@ func TestFeedErrorStateKeepsStaleRows(t *testing.T) {
 	if !strings.Contains(fetchBody, "var isBackgroundRefresh = state.status === 'ok' || state.reports.length > 0;") {
 		t.Errorf("a refetch with rows on screen must be a background refresh whatever the status is")
 	}
-	// Rows fetched under the other Show disputed setting are dropped on a
-	// failure, so a ticked or unticked box never sits over the wrong set.
+	// Rows fetched for another tab, chip or centre are dropped on a failure,
+	// so a tab never sits over another tab's set.
+	//
+	// Test change on purpose (plan 03.1-05, D-05): the pin was the boolean
+	// pair rowsShowDisputed = sentDisputed and its mismatch drop. The store
+	// now holds a tab, a category and a centre, so the rows' own descriptor
+	// is rowsFor and the drop condition is rowsMatchStore().
 	for _, want := range []string{
-		"rowsShowDisputed = sentDisputed;",
-		"if (rowsShowDisputed !== state.showDisputed) {\n          state.reports = [];\n        }",
+		"rowsFor = { view: sentView, category: sentCategory, lat: sentLat, lon: sentLon };",
+		"if (!rowsMatchStore()) {\n          state.reports = [];",
 	} {
 		if !strings.Contains(fetchBody, want) {
 			t.Errorf("fetchReports must contain %q", want)
@@ -2543,8 +2531,13 @@ func TestFetchReportsDropsOnlyResponsesOlderThanTheLastApplied(t *testing.T) {
 	text := stripCSSComments(string(raw))
 	body := jsFunctionBody(t, text, "fetchReports(options)")
 
-	if !strings.Contains(body, "return mySeq < lastAppliedSeq || mySeq < writeFloor || sentDisputed !== state.showDisputed;") {
-		t.Errorf("isStale must drop a response below lastAppliedSeq, below writeFloor, or one sent with another Show disputed flag")
+	// Test change on purpose (plan 03.1-05, D-05): the last clause was
+	// sentDisputed !== state.showDisputed. A response is now also dropped when
+	// the tab, the chip or the centre it was sent with no longer matches the
+	// store, so rows never show under the wrong tab.
+	if !strings.Contains(body, "return mySeq < lastAppliedSeq || mySeq < writeFloor || sentView !== state.view ||\n"+
+		"        sentCategory !== state.category || sentLat !== state.center.lat || sentLon !== state.center.lon;") {
+		t.Errorf("isStale must drop a response below lastAppliedSeq, below writeFloor, or one sent for another tab, chip or centre")
 	}
 	// The write floor is raised when a refetch that follows a write STARTS,
 	// before any await, and only by such a refetch, never by a plain poll

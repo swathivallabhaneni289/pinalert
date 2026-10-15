@@ -38,14 +38,15 @@
 
     <section class="pane pane--list">
       <button type="button" class="view-toggle" id="view-toggle">List</button>
+      <nav class="view-tabs" aria-label="Report views">
+        <a class="view-tab" href="/" data-feed-view="active" aria-current="page">Active</a>
+        <a class="view-tab" href="/?view=disputed" data-feed-view="disputed">Disputed</a>
+        <a class="view-tab" href="/?view=past" data-feed-view="past">Past</a>
+      </nav>
       <div class="feed-heading">
         <h2 class="feed-heading__title">Nearby now</h2>
         <p class="feed-heading__count" id="feed-count"></p>
       </div>
-      <label class="filter-toggle">
-        <input type="checkbox" id="show-disputed-toggle" autocomplete="off">
-        Show disputed reports
-      </label>
       <ol id="report-list"></ol>
       <div id="feed-skeleton">
         <div class="skeleton-row"></div>
