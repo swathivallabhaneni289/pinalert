@@ -134,6 +134,9 @@ separately reviewed by the owner.
   ROBUST-04 is stale wording after Phase 1.1, the same correction Phase 3 recorded for TRUST-03. The network address is
   only a very loose secondary backstop, applied when the real visitor address is known (ROBUST-04 "IP secondary"; see
   Claude's Discretion). Settled from earlier phases; not asked.
+  (Note 2026-10-16, Phase 3.1 built: a fifth vote route, the take back `POST /api/reports/{id}/unresolve`, sits
+  beside the four in the verified account group. The Phase 4 plans read D-10's "the vote routes" as all five and
+  throttle the take back like reopen, sharing the `resolution` cooldown key; RECOMMENDED DEFAULT, owner veto at UAT, listed under "Phase 3.1 alignment defaults" below.)
 - **D-11:** Allowances (owner decision, stated in the owner's own words below), as a burst then a refill:
   - **Serious** reports (severity critical in any category, plus category `rescue_needed` always, even if marked low):
     about 5 quickly, then 1 more every 5 minutes.
@@ -276,8 +279,22 @@ separately reviewed by the owner.
 - **R-09:** The Low data view is a fourth place for the Phase 3 trust block (feed row, map popup, Activity page, Low data
   view), so it shows the same block built from the same server trust object (`03-CONTEXT.md` D-20, D-21). It shows the
   Active view only; the Phase 3.1 history views and filters stay on the main page.
+  (Note 2026-10-16, Phase 3.1 built: the main page list row is now a compact row with a plain text trust line and no
+  block, and the popup shows the always open trust card; the Low data row keeps the Phase 3 trust block reading `facts`,
+  and shows no tab strip, chips or place search.)
 - **R-10:** Demo and seeded data (Phase 5) must not call the moderation provider and must be exempt from the limits by
   construction, as they are exempt from the 1 km rule (`03-CONTEXT.md` Cross phase hand offs).
+
+### Phase 3.1 alignment defaults (2026-10-16, for the Phase 4 UAT list)
+
+Taken when the plans were brought in line with the merged Phase 3.1 code. Each stands unless the owner says otherwise at UAT.
+
+- RECOMMENDED DEFAULT, owner veto at UAT (2026-10-16): Flag this report stays as the last control of every Low data row, because a Low data row is the whole report there and has no popup to open (04-24).
+- RECOMMENDED DEFAULT, owner veto at UAT (2026-10-16): D-10's vote limits cover all five vote routes, the Phase 3.1 take back included, which shares the resolve and reopen cooldown (04-09, 04-15).
+- RECOMMENDED DEFAULT, owner veto at UAT (2026-10-16): a held or removed report that someone else voted on drops off that voter's My votes list; only its author and the moderators still see it (04-07).
+- RECOMMENDED DEFAULT, owner veto at UAT (2026-10-16): on the Past tab and on a report link the Flag control does not know you already flagged a report, so it reads Flag this report until you press it, and then the server's "already flagged" answer turns it to Flagged (04-07, 04-20).
+- RECOMMENDED DEFAULT, owner veto at UAT (2026-10-16): on the moderator screen a report that faded or was resolved more than 7 days ago still reads Expired or Resolved, not "No longer in any view", and its main page link shows the too old message (04-23).
+- RECOMMENDED DEFAULT, owner veto at UAT (2026-10-16): on the compact list row "Written 4 hours ago" sits on the same line after the category and time, not on its own line; the opened report keeps it as a second line (04-17).
 
 ### Claude's Discretion
 - Reject and borderline thresholds per category, tuned on the D-07 fixture. The alias `omni-moderation-latest` can change
@@ -364,7 +381,7 @@ separately reviewed by the owner.
 - `internal/service/report.go` - `Submit`, `ValidateSubmitInput`, `ExpiryDuration`, `Nearby` (batched reads, ordering is part of
   the specification)
 - `internal/api/handlers/reports.go` - `SubmitReportRequest` (`DisallowUnknownFields`), `SubmitReport`, `NearbyReports`
-- `internal/api/handlers/votes.go` and `internal/service/trust.go` - the four vote routes and `CastVote` the limits wrap
+- `internal/api/handlers/votes.go` and `internal/service/trust.go` - the vote routes (four when this was written, five since Phase 3.1 added the take back `unresolve`) and `CastVote` the limits wrap
 - `internal/api/router.go` - the exempt route list in the doc comment, the gated group, flat route registration, `r.With(limiter)`
   usage, `ClientIPFromRemoteAddr`
 - `internal/api/gate.go` - `requireVerifiedAccount` (401 for `/api/`, 302 to `/login` otherwise)
@@ -425,7 +442,7 @@ separately reviewed by the owner.
 
 ### Integration Points and Landmines
 - `POST /api/reports` (`internal/api/router.go` gated group, `handlers.SubmitReport`) gains the screening call, the limiter and the new
-  request fields. The four vote routes gain the vote limiter.
+  request fields. The vote routes (five since Phase 3.1) gain the vote limiter.
 - The report modal cannot run without Leaflet: `initLocation` returns early when `L` is undefined, `validate()` requires `modalMarker`,
   and `buildPayload` reads `modalMarker.getLatLng()` (`web/static/js/modal.js`). The Low data view needs a map free location path;
   extract the form logic so only the location picker differs.
