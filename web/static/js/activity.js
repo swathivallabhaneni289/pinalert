@@ -56,7 +56,10 @@
     var report = {
       visibility: row.dataset.visibility,
       visibility_reason: row.dataset.visibilityReason,
-      expired: row.dataset.expired === 'true'
+      expired: row.dataset.expired === 'true',
+      // The server decided this from the resolver's answer and wrote it as the
+      // row's moderation attribute, so this is an attribute read.
+      moderation: row.dataset.moderation
     };
 
     var tag = PinalertVisibility.createVisibilityTag();
@@ -67,12 +70,22 @@
     // The state label and the reporter words share the state line above the
     // trust block (A75). The block takes no options, so this page shows the
     // two counters and the panel but no score numbers (D-09, A50).
-    if (body) {
+    //
+    // A row the server marked as held or removed mounts no trust block and so
+    // no reporter words: it has no trust attribute to read. Its state label
+    // goes in front of the server sentence when the row has one, so the label
+    // is read first.
+    if (body && !report.moderation) {
       var trustBlock = PinalertTrust.createTrustBlock();
       body.appendChild(PinalertTrust.createStateLine('report-row__stateline', tag, trustBlock));
       body.appendChild(trustBlock.el);
       PinalertTrust.updateTrustBlock(trustBlock, readRowTrust(row));
       trustBlocks[row.dataset.reportId] = trustBlock;
+    } else if (body) {
+      // With no sentence to go before, the reference is null and the insert
+      // puts the label at the end of the body.
+      var moderationNote = body.querySelector('.report-row__moderation-note');
+      body.insertBefore(tag, moderationNote);
     }
 
     // Reopen (Task 3, D-16 amended). The button's render condition is the

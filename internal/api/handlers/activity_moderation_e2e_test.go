@@ -9,6 +9,7 @@ package handlers_test
 import (
 	"context"
 	"html"
+	"io/fs"
 	"net/http"
 	"regexp"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"pinalert/internal/api/handlers"
 	"pinalert/internal/service"
 	sqlcgen "pinalert/internal/store/sqlc"
+	"pinalert/web"
 )
 
 // p416ReportBody is a report body at the one base point every report of this
@@ -352,5 +354,24 @@ func TestActivityWrittenLine(t *testing.T) {
 	noteAt := strings.Index(heldRow, "report-row__moderation-note")
 	if writtenAt == -1 || noteAt == -1 || writtenAt > noteAt {
 		t.Errorf("held row: Written line at %d, note at %d, want the line first: %s", writtenAt, noteAt, heldRow)
+	}
+}
+
+// TestActivityModerationCopyMatchesServer proves the two label words in
+// visibility.js are the Go constants, so the browser table and the server copy
+// cannot drift apart (P4-A9). It needs no database.
+func TestActivityModerationCopyMatchesServer(t *testing.T) {
+	raw, err := fs.ReadFile(web.StaticFS, "static/js/visibility.js")
+	if err != nil {
+		t.Fatalf("reading visibility.js: %v", err)
+	}
+	text := string(raw)
+	for _, want := range []string{
+		"held: '" + service.HeldLabel + "'",
+		"removed: '" + service.RemovedLabel + "'",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("visibility.js does not contain %s", want)
+		}
 	}
 }

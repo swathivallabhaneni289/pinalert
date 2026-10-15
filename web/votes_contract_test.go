@@ -1093,7 +1093,7 @@ func TestBothSurfacesMountTheSameVisibilityTag(t *testing.T) {
 				"message above", module)
 		}
 
-		for _, literal := range []string{"visibility-tag", "vis-provisional", "vis-hidden", "visibility_reason"} {
+		for _, literal := range []string{"visibility-tag", "vis-provisional", "vis-hidden", "visibility_reason", "vis-held", "vis-removed"} {
 			if strings.Contains(text, literal) {
 				t.Errorf("%s: contains the literal %q — this class name or response-field name "+
 					"belongs to visibility.js and trust.css only. A class name or a response key typed "+
