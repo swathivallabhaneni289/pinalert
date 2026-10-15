@@ -404,7 +404,7 @@ func TestViewStripPaneScript(t *testing.T) {
 		}
 	}
 	if n := strings.Count(feed, "setEmptyState('history')"); n != 0 {
-		t.Errorf("this plan never selects the history empty block, the Past cards plan owns it")
+		t.Errorf("the history empty block is chosen through render's kind variable (plan 03.1-12), never by a literal call")
 	}
 
 	render := jsFunctionBody(t, feed, "render(state)")

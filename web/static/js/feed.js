@@ -649,7 +649,11 @@
     outcome.hidden = true;
     facts.insertBefore(document.createTextNode(' '), facts.firstChild);
     facts.insertBefore(outcome, facts.firstChild);
+    // The two counters get this card's own class names, so the stylesheet
+    // never has to name the row's classes for the card.
     var counts = facts.querySelectorAll('.report-row__trustline-count');
+    counts[0].classList.add('past-card__count');
+    counts[1].classList.add('past-card__count', 'past-card__count--second');
 
     var cue = document.createElement('span');
     cue.className = 'past-card__open-cue visually-hidden';

@@ -96,7 +96,8 @@ func TestPastCardWords(t *testing.T) {
 	create := jsFunctionBody(t, feed, "createPastCard(id)")
 	p13MustContain(t, "createPastCard", create,
 		"PinalertTrust.createTrustLine();", "facts.classList.add('past-card__facts');",
-		"'past-card__outcome'", "querySelectorAll('.report-row__trustline-count')")
+		"'past-card__outcome'", "querySelectorAll('.report-row__trustline-count')",
+		"classList.add('past-card__count')", "classList.add('past-card__count', 'past-card__count--second')")
 
 	update := jsFunctionBody(t, feed, "updatePastCard(card, report)")
 	p13MustContain(t, "updatePastCard", update,
@@ -230,5 +231,152 @@ func TestFocusSelectsTabWithoutAddressWrite(t *testing.T) {
 	errorBranch := render[strings.Index(render, "if (state.status === 'error') {"):strings.Index(render, "setHidden(errorEl, true);\n    updateFeedStatus(state);")]
 	if strings.Contains(errorBranch, "handleFocus(") {
 		t.Errorf("the error branch must not act on a link")
+	}
+}
+
+// pt12FeedRules parses feed.css alone.
+func pt12FeedRules(t *testing.T) []p16CSSRule {
+	t.Helper()
+	return p16ParseCSS("static/css/feed.css", p16ReadStatic(t, "static/css/feed.css"))
+}
+
+// TestPastCardCSS pins UI-SPEC Surface 3 and the Typography rows for the group
+// labels: a white card with a 1px border and an 8px corner, no left bar, no
+// tint and no severity colour, a two line clamped bold title, a muted meta
+// line and a text colour facts line, uppercase group labels with 0.04em of
+// letter spacing, a muted cap line, rings that sit inside the card, and
+// tokens only. The card is the same at every width, so no media rule styles it.
+func TestPastCardCSS(t *testing.T) {
+	rules := pt12FeedRules(t)
+
+	card := p16Rule(t, rules, "", ".past-card")
+	p16MustDecl(t, ".past-card", card, map[string]string{
+		"background":    "var(--color-bg)",
+		"border":        "1px solid var(--color-border)",
+		"border-radius": "8px",
+		"padding":       "calc(var(--space-md) - 1px)",
+		"cursor":        "pointer",
+	})
+	for name := range card.Decls {
+		if strings.HasPrefix(name, "border-left") || name == "box-shadow" || name == "--severity-tint" {
+			t.Errorf(".past-card declares %s: the card has no left bar, no shadow and no tint", name)
+		}
+	}
+
+	p16MustDecl(t, ".past-card:focus-visible", p16Rule(t, rules, "", ".past-card:focus-visible"),
+		map[string]string{"outline-offset": "-2px"})
+	p16MustDecl(t, ".past-card--selected", p16Rule(t, rules, "", ".past-card--selected"),
+		map[string]string{"outline": "2px solid var(--color-focus-ring)", "outline-offset": "-2px"})
+
+	p16MustDecl(t, ".past-card__title", p16Rule(t, rules, "", ".past-card__title"), map[string]string{
+		"margin":             "0",
+		"font-size":          "var(--font-size-body)",
+		"font-weight":        "var(--font-weight-semibold)",
+		"color":              "var(--color-text)",
+		"-webkit-line-clamp": "2",
+		"line-clamp":         "2",
+		"overflow-wrap":      "anywhere",
+		"overflow":           "hidden",
+		"display":            "-webkit-box",
+		"-webkit-box-orient": "vertical",
+	})
+	p16MustDecl(t, ".past-card__meta", p16Rule(t, rules, "", ".past-card__meta"), map[string]string{
+		"margin":      "var(--space-xs) 0 0",
+		"font-size":   "var(--font-size-label)",
+		"font-weight": "var(--font-weight-regular)",
+		"color":       "var(--color-text-muted)",
+	})
+	p16MustDecl(t, ".past-card__facts", p16Rule(t, rules, "", ".past-card__facts:not([hidden])"), map[string]string{
+		"margin":      "var(--space-xs) 0 0",
+		"font-size":   "var(--font-size-label)",
+		"font-weight": "var(--font-weight-regular)",
+		"color":       "var(--color-text)",
+	})
+	p16MustDecl(t, ".past-card__outcome", p16Rule(t, rules, "", ".past-card__outcome"),
+		map[string]string{"font-weight": "var(--font-weight-semibold)"})
+
+	p16MustDecl(t, ".past-group__list", p16Rule(t, rules, "", ".past-group__list"),
+		map[string]string{"gap": "var(--space-sm)", "list-style": "none", "margin": "0", "padding": "0"})
+	p16MustDecl(t, ".past-group__label", p16Rule(t, rules, "", ".past-group__label"), map[string]string{
+		"margin":         "var(--space-md) 0 var(--space-sm)",
+		"font-size":      "var(--font-size-label)",
+		"font-weight":    "var(--font-weight-semibold)",
+		"text-transform": "uppercase",
+		"letter-spacing": "0.04em",
+		"color":          "var(--color-text-muted)",
+	})
+	p16MustDecl(t, ".past-group__cut", p16Rule(t, rules, "", ".past-group__cut"), map[string]string{
+		"font-size": "var(--font-size-label)",
+		"color":     "var(--color-text-muted)",
+	})
+
+	// No colour literal and no media rule in anything this plan styles.
+	for _, r := range rules {
+		if !strings.Contains(r.Head, "past-card") && !strings.Contains(r.Head, "past-group") {
+			continue
+		}
+		if r.Media != "" {
+			t.Errorf("%q sits in the media query %q: the Past card is the same at every width", r.Head, r.Media)
+		}
+		for name, value := range r.Decls {
+			if strings.Contains(value, "#") || strings.Contains(value, "rgb(") || strings.Contains(value, "hsl(") {
+				t.Errorf("%q declares %s: %q, a colour literal where a token belongs", r.Head, name, value)
+			}
+		}
+	}
+
+	css := p16ReadStatic(t, "static/css/feed.css")
+	if n := strings.Count(css, "letter-spacing: 0.04em"); n != 1 {
+		t.Errorf("feed.css holds letter-spacing: 0.04em %d times, want exactly 1 (the group label)", n)
+	}
+}
+
+// TestPastCardContrastAcrossThemes resolves the colours the Past card, its
+// group labels and its cap line really declare and checks each against the
+// white card or page background, in all four theme sources. Muted text is
+// only used on --color-bg.
+func TestPastCardContrastAcrossThemes(t *testing.T) {
+	needed := []string{"--color-bg", "--color-text", "--color-text-muted"}
+	light1, light2, dark1, dark2 := extractThemeTokens(parseCSSRules(p13ReadStatic(t, "static/css/main.css")), needed)
+	sources := []struct {
+		name   string
+		tokens themeTokens
+	}{
+		{":root", light1}, {`:root[data-theme="light"]`, light2},
+		{"prefers dark :root", dark1}, {`:root[data-theme="dark"]`, dark2},
+	}
+
+	rules := pt12FeedRules(t)
+	colour := func(head string) string {
+		r := p16Rule(t, rules, "", head)
+		v, ok := r.Decls["color"]
+		if !ok {
+			t.Fatalf("%q declares no color", head)
+		}
+		return v
+	}
+	background := p16Rule(t, rules, "", ".past-card").Decls["background"]
+	pairs := []struct{ name, fg, bg string }{
+		{"card meta line on the card", colour(".past-card__meta"), background},
+		{"card facts line on the card", colour(".past-card__facts:not([hidden])"), background},
+		{"card title on the card", colour(".past-card__title"), background},
+		{"group label on the page", colour(".past-group__label"), "var(--color-bg)"},
+		{"cap line on the page", colour(".past-group__cut"), "var(--color-bg)"},
+	}
+	for _, s := range sources {
+		for _, p := range pairs {
+			fgName, ok := bareVarName(p.fg)
+			if !ok {
+				t.Fatalf("%s: %q is not a bare var() reference", p.name, p.fg)
+			}
+			bgName, ok := bareVarName(p.bg)
+			if !ok {
+				t.Fatalf("%s: %q is not a bare var() reference", p.name, p.bg)
+			}
+			ratio := wcagContrastRatio(t, p31Resolve(t, s.tokens, fgName), p31Resolve(t, s.tokens, bgName), s.name+" "+p.name)
+			if ratio < 4.5 {
+				t.Errorf("%s: %s is %.2f:1, want at least 4.5:1", s.name, p.name, ratio)
+			}
+		}
 	}
 }
