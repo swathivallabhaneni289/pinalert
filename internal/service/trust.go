@@ -343,32 +343,36 @@ type CastVoteResult struct {
 //     zero database round trips.
 //  2. Load the report's vote context (severity, category, expiry, reporter,
 //     coordinates and creation time) in one round trip.
-//  3. Apply D-03's self-vote block, scoped to VoteKindContent alone: resolve
+//  3. Refuse a withheld report (removed, or pending and not serious) as not
+//     found (R-01, D-02), before the own report block and the expiry check, so
+//     even its author and an expired one get the same answer as a missing
+//     report. The same ReportMeta, with its moderation state, goes to Resolve.
+//  4. Apply D-03's self-vote block, scoped to VoteKindContent alone: resolve
 //     and reopen are both VoteKindResolution values the reporter is always
 //     allowed to cast on their own report (D-13, D-16 amended). This sits
 //     above the expiry check because it is the authorisation decision and
 //     should not depend on a state check that might later move.
-//  4. Decide the reporter resolution exemption. It is true only for a
+//  5. Decide the reporter resolution exemption. It is true only for a
 //     resolution vote whose account is the report's reporter, read from the
-//     database against the authenticated account (T-03-01). It skips step 6
+//     database against the authenticated account (T-03-01). It skips step 7
 //     and nothing else.
-//  5. Reject an expired report. This is RESEARCH Open Question 2's locked
+//  6. Reject an expired report. This is RESEARCH Open Question 2's locked
 //     answer: reject, do not accept-and-ignore. The exemption never skips it.
 //     Between 5 and 6, a vote that carried no coordinates is refused as a
-//     validation error on latitude unless step 4 exempted it or the vote is a
+//     validation error on latitude unless step 5 exempted it or the vote is a
 //     take back (the separate isTakeBack predicate of D-22; the reporter
 //     exemption is not widened).
-//  6. Reject a voter farther than MaxVoteDistanceKm from the report (D-01),
-//     unless step 4 exempted the vote or it is a take back. This runs before the cell is computed
+//  7. Reject a voter farther than MaxVoteDistanceKm from the report (D-01),
+//     unless step 5 exempted the vote or it is a take back. This runs before the cell is computed
 //     and before anything is written, and a NaN or Inf coordinate fails
 //     closed (T-03-02).
-//     6b. A take back only: read the caller's standing resolution vote on this
+//     7b. A take back only: read the caller's standing resolution vote on this
 //     one report and refuse with ErrNothingToTakeBack unless it is resolve.
-//     6c. Resolution kind only: read the caller's undo counts for this report
+//     7c. Resolution kind only: read the caller's undo counts for this report
 //     (ResolutionUndoCounts) and refuse a take back, or the reporter's reopen,
-//     with ErrUndoLimitReached once UndoLimit is used. Both 6b and 6c sit
+//     with ErrUndoLimitReached once UndoLimit is used. Both 7b and 7c sit
 //     before any write on purpose: a withdraw with nothing to withdraw must
-//     not burn budget or replace a standing row. They run after step 6 so a
+//     not burn budget or replace a standing row. They run after step 7 so a
 //     vote refused for distance still costs only the context read. The
 //     accepted race is that parallel requests from one account can exceed
 //     the limit by the number of extra parallel requests (N requests in
@@ -377,7 +381,7 @@ type CastVoteResult struct {
 //     no lock by design (T-02-02, T-31-09). No rating and no other person's
 //     vote is touched. If it ever matters, the fix is an advisory lock or
 //     one conditional insert that counts and writes in the same statement.
-//  7. Compute the voter's geohash cell server-side from raw coordinates (the
+//  8. Compute the voter's geohash cell server-side from raw coordinates (the
 //     T-02-01 control: CastVoteInput has no geohash field for a client to
 //     populate), append the vote, read the current votes back AFTER the
 //     insert so the response carries the POST-vote state (D-04), then build
@@ -422,7 +426,23 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 		return CastVoteResult{}, err
 	}
 
-	// 3. D-03's self-vote block. The VoteKindContent guard is
+	// 3. Refuse a withheld report (removed, or pending and not serious) as not
+	// found (R-01, D-02). It sits right after the context read, above the own
+	// report block, the expiry check and the distance check, so even the
+	// report's author and an expired report get the same answer as a missing
+	// one. meta is the function's one ReportMeta: Resolve and the trust object
+	// below read it too, and the predicate is the one Resolve uses, never an
+	// inlined state comparison.
+	meta := ReportMeta{
+		Severity:   Severity(rc.Severity),
+		Category:   Category(rc.Category),
+		Moderation: ModerationState(rc.ModerationState),
+	}
+	if meta.Withheld() {
+		return CastVoteResult{}, ErrReportNotFound
+	}
+
+	// 4. D-03's self-vote block. The VoteKindContent guard is
 	// load-bearing in both directions: dropping it would break the
 	// reporter's instant resolution path, and widening it past content
 	// votes would silently disable the two actions that path exists to
@@ -434,20 +454,20 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 		return CastVoteResult{}, ErrCannotVoteOwnReport
 	}
 
-	// 4. The reporter resolution exemption (T-03-01). It compares the
+	// 5. The reporter resolution exemption (T-03-01). It compares the
 	// reporter identity the database returned with the authenticated
 	// account, for the resolution kind only, and reads nothing from the
 	// request body. A nil reporter exempts nobody. It skips the distance
-	// check in step 6 and nothing else.
+	// check in step 7 and nothing else.
 	isReporterResolutionVote := in.Kind == VoteKindResolution && rc.ReporterAccountID != nil && *rc.ReporterAccountID == in.AccountID
 
-	// 4b. The take back (D-22) has its own named predicate. It needs no
+	// 5b. The take back (D-22) has its own named predicate. It needs no
 	// location, because it claims nothing about the place and only drops the
 	// caller's own resolve. isReporterResolutionVote above is deliberately not
 	// widened to cover it (T-03-01).
 	isTakeBack := in.Kind == VoteKindResolution && in.Value == VoteUnresolve
 
-	// 5. Reject an expired report. now is captured once, here, as the
+	// 6. Reject an expired report. now is captured once, here, as the
 	// authoritative clock, never a client-supplied timestamp, matching
 	// Submit's own convention.
 	now := s.now().UTC()
@@ -455,15 +475,15 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 		return CastVoteResult{}, ErrReportExpired
 	}
 
-	// 5b. A vote with no coordinates cannot be placed, so it is refused as a
+	// 6b. A vote with no coordinates cannot be placed, so it is refused as a
 	// validation error rather than read as the point 0,0 and answered with a
 	// misleading "too far". Only the reporter's own resolve or reopen and the
-	// take back are excused, using the step 4 answers.
+	// take back are excused, using the step 5 answers.
 	if in.LocationMissing && !isReporterResolutionVote && !isTakeBack {
 		return CastVoteResult{}, ValidationError{Field: "latitude", Message: "latitude and longitude are required."}
 	}
 
-	// 6. D-01's distance refusal, before the cell is computed and before
+	// 7. D-01's distance refusal, before the cell is computed and before
 	// anything is written. The check is written as a negated within test so
 	// a NaN or Inf coordinate on either side is refused (T-03-02). The take
 	// back is excused by its own predicate, never by widening step 4.
@@ -471,7 +491,7 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 		return CastVoteResult{}, ErrVoterTooFar
 	}
 
-	// 6b. A take back needs a standing resolve of the caller's own to take
+	// 7b. A take back needs a standing resolve of the caller's own to take
 	// back. Anything else is refused before any write, so it neither burns
 	// budget nor replaces a standing row.
 	if isTakeBack {
@@ -484,7 +504,7 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 		}
 	}
 
-	// 6c. The two undo limit (D-22, D-28), counted from the append only log.
+	// 7c. The two undo limit (D-22, D-28), counted from the append only log.
 	// Unresolve rows count for every account; reopen rows count only for the
 	// poster, whose reopen is a take back of their own resolve. The refusal is
 	// before any write. undosLeft stays nil for a content vote.
@@ -511,7 +531,7 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 		undosLeft = &left
 	}
 
-	// 7. Compute the voter's cell server-side. Any geohash string a
+	// 8. Compute the voter's cell server-side. Any geohash string a
 	// client might invent has nowhere to enter, because CastVoteInput has no
 	// such field.
 	cell := geohash.EncodeWithPrecision(in.Latitude, in.Longitude, voterGeohashPrecision)
@@ -550,7 +570,6 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 
 	// Build the tally and resolve.
 	tally := BuildVoteTally(rows, in.ReportID, rc.ReporterAccountID)
-	meta := ReportMeta{Severity: Severity(rc.Severity), Category: Category(rc.Category)}
 	vis, reason := Resolve(meta, tally, now)
 	signals := ReporterSignals(accounts, history, rows, now)
 	trust := BuildTrust(TrustInput{
