@@ -230,3 +230,58 @@ func TestLowDataRowWrittenLine(t *testing.T) {
 		"Pinalert.writtenLine(report)", "Pinalert.setText(row.written", "row.written.hidden =")
 	p419Lacks(t, "low.js", low, "written_at")
 }
+
+// TestPageLockPairs proves the shared report form locks the page behind it on
+// open and releases it on close, before focus returns (P4-A26).
+func TestPageLockPairs(t *testing.T) {
+	app := p419JS(t, "app.js")
+	form := p419JS(t, "report-form.js")
+	css := p419CSS(t, "modal.css")
+
+	p419Has(t, "app.js", app, "var LOCK_EXEMPT_IDS = ['toast', 'notice-live'];", "var lockedNodes = [];",
+		"function lockOutsideNode(node)", "function lockPage(backdrop)", "function unlockPage()",
+		"lockPage: lockPage", "unlockPage: unlockPage")
+
+	lock := jsFunctionBody(t, app, "lockPage(backdrop)")
+	p419Has(t, "lockPage", lock, "parentElement", "document.body", "lockOutsideNode(",
+		"setAttribute('data-modal-open', 'true')")
+	p419Lacks(t, "lockPage", lock, "document.body.children", "getElementById('toast')")
+
+	outside := jsFunctionBody(t, app, "lockOutsideNode(node)")
+	p419Has(t, "lockOutsideNode", outside, "LOCK_EXEMPT_IDS", ".contains(", "inert", "aria-hidden",
+		"lockedNodes.push(")
+
+	unlock := jsFunctionBody(t, app, "unlockPage()")
+	p419Has(t, "unlockPage", unlock, "lockedNodes", "inert", "removeAttribute('aria-hidden')",
+		"removeAttribute('data-modal-open')")
+
+	openName := regexp.MustCompile(`open:\s*(\w+)`).FindStringSubmatch(form)
+	closeName := regexp.MustCompile(`close:\s*(\w+)`).FindStringSubmatch(form)
+	if openName == nil || closeName == nil {
+		t.Fatalf("report-form.js export does not name its open and close functions")
+	}
+	open := jsFunctionBody(t, form, openName[1]+"(")
+	closeBody := jsFunctionBody(t, form, closeName[1]+"(")
+	p419Count(t, "the open function", open, "Pinalert.lockPage(", 1)
+	p419Count(t, "the close function", closeBody, "Pinalert.unlockPage()", 1)
+	p419Before(t, "the close function", closeBody, "Pinalert.unlockPage()", ".focus(")
+	p419Count(t, "report-form.js", form, "Pinalert.lockPage(", 1)
+	p419Count(t, "report-form.js", form, "Pinalert.unlockPage()", 1)
+
+	lockRule := regexp.MustCompile(`html\[data-modal-open\]\s*\{([^}]*)\}`).FindStringSubmatch(css)
+	if lockRule == nil {
+		t.Fatalf("modal.css has no rule whose head is html[data-modal-open]")
+	}
+	p419Has(t, "the page lock rule", lockRule[1], "overflow: hidden")
+	p419Lacks(t, "the page lock rule", lockRule[1], "!important")
+	found := false
+	for _, m := range regexp.MustCompile(`(?m)^\.modal-panel\s*\{([^}]*)\}`).FindAllStringSubmatch(css, -1) {
+		if strings.Contains(m[1], "overscroll-behavior: contain") {
+			found = true
+			p419Lacks(t, "the .modal-panel rule", m[1], "!important")
+		}
+	}
+	if !found {
+		t.Errorf("no .modal-panel rule declares overscroll-behavior: contain")
+	}
+}

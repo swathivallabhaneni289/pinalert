@@ -593,6 +593,7 @@
     }
     lastFocusedEl = (options && options.opener) || document.activeElement;
     backdropEl.hidden = false;
+    Pinalert.lockPage(backdropEl);
     buildCategoryGrid();
     updateSeverityReadout();
     if (typeof picker.start === 'function') {
@@ -609,6 +610,7 @@
 
   function closeForm() {
     backdropEl.hidden = true;
+    Pinalert.unlockPage();
     resetForm();
     document.removeEventListener('keydown', onKeydown);
     if (lastFocusedEl) {

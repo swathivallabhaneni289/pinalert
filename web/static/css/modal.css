@@ -12,6 +12,7 @@
    child (the h2 title) already carries its own margin from main.css. */
 .modal-panel {
   position: relative;
+  overscroll-behavior: contain;
 }
 
 .modal-panel > * + * {
@@ -344,4 +345,11 @@
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
   color: var(--color-text);
+}
+
+/* While the report form is open the script marks the root element, and the
+   page behind the form stops scrolling. The panel keeps its own scrolling and
+   does not hand it on to the page when it reaches an end. */
+html[data-modal-open] {
+  overflow: hidden;
 }

@@ -183,6 +183,14 @@ window.Pinalert = (function () {
   // a tap and would keep the timer stopped for good (WR-04).
   var toastPointerInside = false;
 
+  // The page lock (P4-A26). The ids of the two elements that must stay live
+  // while a dialog holds the page: the toast and the announcer. The nodes the
+  // lock silenced, so the release can restore exactly those, and the scroll
+  // position the page had when it was locked.
+  var LOCK_EXEMPT_IDS = ['toast', 'notice-live'];
+  var lockedNodes = [];
+  var lockScrollY = 0;
+
   // nowMs is the current time on the server's clock, as best this device can
   // tell. It is the only clock the age and fade code reads.
   function nowMs() {
@@ -941,6 +949,93 @@ window.Pinalert = (function () {
     startToastTimer(toastEl, TOAST_RESUME_MS);
   }
 
+  // lockOutsideNode silences one element that is outside the dialog: it takes
+  // the element out of the tab order and away from assistive technology. The
+  // toast and the announcer are never silenced; a container that holds one of
+  // them is not silenced either, its children are handled one by one so a
+  // live region inside it keeps speaking. An element that already carries the
+  // state is left alone and not recorded, so the release never clears a state
+  // some other code set.
+  function lockOutsideNode(node) {
+    if (!node || node.nodeType !== 1 || LOCK_EXEMPT_IDS.indexOf(node.id) !== -1) {
+      return;
+    }
+    var tag = node.tagName;
+    if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'LINK' || tag === 'TEMPLATE') {
+      return;
+    }
+    for (var i = 0; i < LOCK_EXEMPT_IDS.length; i++) {
+      var exempt = document.getElementById(LOCK_EXEMPT_IDS[i]);
+      if (exempt && node.contains(exempt)) {
+        var kids = node.children;
+        for (var k = 0; k < kids.length; k++) {
+          lockOutsideNode(kids[k]);
+        }
+        return;
+      }
+    }
+    if (node.inert === true || node.getAttribute('aria-hidden') === 'true') {
+      return;
+    }
+    if ('inert' in HTMLElement.prototype) {
+      node.inert = true;
+      lockedNodes.push({ node: node, attr: 'inert' });
+    } else {
+      node.setAttribute('aria-hidden', 'true');
+      lockedNodes.push({ node: node, attr: 'aria-hidden' });
+    }
+  }
+
+  // lockPage locks the page behind a dialog (P4-A26). It walks from the
+  // backdrop up to the body and silences every sibling on the way, never the
+  // body's children wholesale, because on the main page the backdrop and the
+  // toast sit inside the same container. It also marks the root element so the
+  // stylesheet stops the page scrolling and the Escape listener of the trust
+  // module stands aside.
+  function lockPage(backdrop) {
+    if (lockedNodes.length > 0) {
+      unlockPage();
+    }
+    if (!backdrop) {
+      return;
+    }
+    lockScrollY = window.scrollY || 0;
+    var onPath = backdrop;
+    while (onPath && onPath !== document.body) {
+      var parent = onPath.parentElement;
+      if (!parent) {
+        break;
+      }
+      var siblings = parent.children;
+      for (var i = 0; i < siblings.length; i++) {
+        if (siblings[i] !== onPath) {
+          lockOutsideNode(siblings[i]);
+        }
+      }
+      onPath = parent;
+    }
+    document.documentElement.setAttribute('data-modal-open', 'true');
+  }
+
+  // unlockPage undoes lockPage exactly: it restores only the elements the lock
+  // silenced, clears the root marker and puts the scroll position back.
+  function unlockPage() {
+    for (var i = 0; i < lockedNodes.length; i++) {
+      var entry = lockedNodes[i];
+      if (entry.attr === 'inert') {
+        entry.node.inert = false;
+        entry.node.removeAttribute('inert');
+      } else {
+        entry.node.removeAttribute('aria-hidden');
+      }
+    }
+    lockedNodes = [];
+    document.documentElement.removeAttribute('data-modal-open');
+    if (window.scrollY !== lockScrollY) {
+      window.scrollTo(0, lockScrollY);
+    }
+  }
+
   return {
     CATEGORIES: CATEGORIES,
     SEVERITIES: SEVERITIES,
@@ -980,6 +1075,8 @@ window.Pinalert = (function () {
     serverNow: nowMs,
     ageStage: ageStage,
     setText: setText,
-    showToast: showToast
+    showToast: showToast,
+    lockPage: lockPage,
+    unlockPage: unlockPage
   };
 }());
