@@ -716,6 +716,9 @@ body {
      category tile and the account menu panel, not a new scale; the
      deferred UI phase may re-tokenise it. */
   border-radius: 8px;
+  width: max-content;
+  max-width: calc(100vw - 2 * var(--space-md));
+  text-align: center;
   animation: toast-in 200ms ease;
 }
 
