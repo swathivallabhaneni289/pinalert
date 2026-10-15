@@ -484,7 +484,7 @@ Plans:
   6. A moderator (the owner, or anyone on the server list) can open a screen that everyone else gets a plain 404 for, see automatically flagged posts, user flags and posts whose text check has not finished, and Keep or Remove any post; any signed-in reader can flag a post with a reason from a quiet control, and a flag alone never hides a post.
   7. A public Disclaimer page and a public Policy page, readable without logging in, state what Pinalert is not, the emergency numbers, what is screened and kept, and how to complain or ask for removal, and both are linked from the bar on every page.
 
-**Plans**: 12/29 plans executed
+**Plans**: 15/29 plans executed
 **UI hint**: yes
 
 ### Phase 5: Official Feed & Demo Mode
@@ -542,7 +542,7 @@ Phases execute in numeric order: 1 → 1.1 → 2 → 3 → 3.1 → 3.2 → 4 →
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 31/31 | Complete | 2026-10-13 |
 | 3.1 Report history views | 16/16 | In Progress|  |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
-| 4. Robustness — Real-World Resilience | 12/29 | In Progress|  |
+| 4. Robustness — Real-World Resilience | 15/29 | In Progress|  |
 | 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
 | 6. Coordination — Safety, Needs, and Response | 0/TBD | Not started | - |
 | 7. Address search box for report location | 4/4 | Complete | 2026-09-29 |
@@ -577,9 +577,9 @@ Plans:
 - [x] 04-08-PLAN.md
 - [x] 04-09-PLAN.md
 - [x] 04-10-PLAN.md
-- [ ] 04-11-PLAN.md
-- [ ] 04-12-PLAN.md
-- [ ] 04-13-PLAN.md
+- [x] 04-11-PLAN.md
+- [x] 04-12-PLAN.md
+- [x] 04-13-PLAN.md
 - [ ] 04-14-PLAN.md
 - [ ] 04-15-PLAN.md
 - [ ] 04-16-PLAN.md
