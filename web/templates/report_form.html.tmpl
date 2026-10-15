@@ -1,0 +1,35 @@
+{{/* The shared report form fields, used by the main page and the Low data view. Each page supplies the dialog shell and its own location block before including this partial. */}}
+        <div id="category-grid" role="radiogroup" aria-label="Category"></div>
+
+        <label for="severity" class="visually-hidden">Severity</label>
+        <input type="range" id="severity" min="1" max="3" step="1" value="1"
+               aria-label="Severity" aria-valuetext="1 · Low" class="severity-slider">
+        <output id="severity-readout" for="severity">1 · Low</output>
+
+        <label for="description">Description</label>
+        <p id="description-hint">Describe what is happening, for example: water is knee deep on Main Road and three people need help.</p>
+        <textarea id="description" name="description" rows="3" aria-describedby="description-hint"></textarea>
+
+        <fieldset id="shelter-fields" hidden>
+          <legend>Shelter capacity</legend>
+          <label for="shelter-capacity-status">Capacity status</label>
+          <select id="shelter-capacity-status" name="shelter_capacity_status">
+            <option value="available">Available</option>
+            <option value="limited">Limited</option>
+            <option value="full">Full</option>
+            <option value="closed">Closed</option>
+          </select>
+          <label for="shelter-headcount">Headcount (optional)</label>
+          <input type="number" id="shelter-headcount" name="shelter_headcount" min="0">
+        </fieldset>
+
+        <p id="form-error" role="alert"></p>
+
+        <button type="button" id="submit-report" class="btn btn--primary">Post report</button>
+        <button type="button" id="cancel-report" class="btn">Cancel report</button>
+
+        <div id="discard-confirm" hidden>
+          <p>Discard this report? Your description and location won't be saved.</p>
+          <button type="button" id="discard-confirm-discard" class="btn btn--destructive">Discard</button>
+          <button type="button" id="discard-confirm-keep" class="btn">Keep editing</button>
+        </div>

@@ -6,6 +6,7 @@
   <title>Pinalert</title>
   <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/modal.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/modal-map.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/feed.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/trust.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
@@ -153,39 +154,7 @@
           Location access is off. Drag the map to your area, or tap the map to drop a pin.
         </p>
 
-        <div id="category-grid" role="radiogroup" aria-label="Category"></div>
-
-        <label for="severity" class="visually-hidden">Severity</label>
-        <input type="range" id="severity" min="1" max="3" step="1" value="1"
-               aria-label="Severity" aria-valuetext="1 · Low" class="severity-slider">
-        <output id="severity-readout" for="severity">1 · Low</output>
-
-        <label for="description">Description</label>
-        <textarea id="description" name="description" rows="3"></textarea>
-
-        <fieldset id="shelter-fields" hidden>
-          <legend>Shelter capacity</legend>
-          <label for="shelter-capacity-status">Capacity status</label>
-          <select id="shelter-capacity-status" name="shelter_capacity_status">
-            <option value="available">Available</option>
-            <option value="limited">Limited</option>
-            <option value="full">Full</option>
-            <option value="closed">Closed</option>
-          </select>
-          <label for="shelter-headcount">Headcount (optional)</label>
-          <input type="number" id="shelter-headcount" name="shelter_headcount" min="0">
-        </fieldset>
-
-        <p id="form-error" role="alert"></p>
-
-        <button type="button" id="submit-report" class="btn btn--primary">Post report</button>
-        <button type="button" id="cancel-report" class="btn">Cancel</button>
-
-        <div id="discard-confirm" hidden>
-          <p>Discard this report? Your description and location won't be saved.</p>
-          <button type="button" id="discard-confirm-discard" class="btn btn--destructive">Discard</button>
-          <button type="button" id="discard-confirm-keep" class="btn">Keep editing</button>
-        </div>
+        {{template "report_form.html.tmpl" .}}
       </div>
     </div>
 
@@ -210,6 +179,7 @@
   <script src="/static/js/votes.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/visibility.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/trust.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/report-form.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/map.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/modal.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/feed.js?v={{.AssetVersion}}" defer></script>
