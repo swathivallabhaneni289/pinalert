@@ -38,7 +38,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1.1: Identity & Login — Mandatory Email Verification** *(INSERTED 2026-09-10 — urgent insertion, decided during Phase 2 discussion)* - A visitor must verify an email address via a magic link before they can submit a report or cast a confirm/dispute vote; supersedes Phase 1's anonymous-access model. (completed 2026-09-12)
 - [x] **Phase 2: Trust Mechanic Core — Confirm/Dispute & Visibility** - Users can confirm/dispute reports through one shared, concurrency-safe visibility resolver with a provisional gate and resolved marking. (original 8 plans completed 2026-09-15; **reopened 2026-09-17** for gap-closure round 1 — a human UAT walkthrough found 6 gaps, 3 major and 3 minor, all diagnosed in `02-UAT.md`: the inline resolve confirmation never replaced the button row, its prompt was illegible in the map popup, a Safari Back navigation showed a stale feed after Reopen, the Activity page had no way back to the map, plus two user-requested scope changes — a persisting "Show disputed" filter and an in-app light/dark toggle. Plans 02-08, 02-09 and 02-10, all wave 8, mutually parallel, executed and merged 2026-09-18; gap-closure round 2, plans 02-11 to 02-14, wave 9, merged 2026-09-23) **All 15 plans complete. The live UAT passed 12 of 12 on 2026-10-06 and the verification report was re-run and returned `passed` (21 of 21, with eight accepted limitations written down in `02-VERIFICATION.md`).** The security review (`/gsd-secure-phase 2`) closed on 2026-10-07 with `threats_open: 0` against the plan-time register (`02-SECURITY.md`). The code review's CR-01 (no vote throttle, voter location cannot be proven) sits outside that register, is not accepted, and stays open, tracked in Phase 4 (ROBUST-04) and Phase 3 (TRUST-05, TRUST-07). (completed 2026-10-07)
 - [x] **Phase 3: Trust-Model Hardening — Diversity-Weighted Trust** - "Confirmed by N nearby" and the reliability/currency signals reflect distinct nearby corroboration, resistant to trivial gaming. (31 plans, completed 2026-10-13)
-- [ ] **Phase 3.1: Report history views** *(INSERTED 2026-10-03)* - A reader can switch the list and map between Active, Resolved, Disputed and Past reports, search another area, and filter by category and severity.
+- [ ] **Phase 3.1: Report history views** *(INSERTED 2026-10-03)* - A reader can switch the list and map between Active, Resolved, Disputed and Past reports, search another area, and filter by category and severity. (completed 2026-10-15)
 - [ ] **Phase 3.2: In-app updates and trusted-reporter alerts** *(INSERTED 2026-10-03)* - A signed-in person is told inside the app when a report they care about changes, and can ask to hear when a Reliable reporter posts nearby.
 - [ ] **Phase 3.3: Installable app and phone alerts** *(INSERTED 2026-10-15)* - The site can be installed to the home screen, and an installed phone gets a notification for critical and rescue needed reports in the person's rough area, even with the site closed.
 - [ ] **Phase 4: Robustness — Real-World Resilience** - The app stays usable on degraded networks, under abuse/moderation pressure, and with clear legal footing.
@@ -379,7 +379,7 @@ Plans:
   6. One panel state model: this phase owns the list panel's state (view, tab and filters kept in the URL) so Phases 3.2, 5 and 9 plug their tabs and filters into it, and deep links such as /?view=resolved&report=ID work. The default tab is called Nearby once other tabs exist. Phase 3's outcome classifier must be exposed as a reusable pure function that can return the neutral outcome. HIST-05 reuses Phase 7's geocoder, which has a process-wide limit of 1 Nominatim request per second, so reader searches need their own budget (or a cache) so they cannot starve reporters' address search.
   7. Only the report rows change size. The rest of the page is not redesigned here (backlog 999.10 holds the page wide design pass), and My votes and the six tab Activity page already exist (quick task 261013-wm5). The take back of a mistaken Mark resolved must not travel through the `reopen` vote value, see 03.1-CONTEXT.md "Conflicts and risks".
 
-**Plans**: 15/16 plans executed
+**Plans**: 16/16 plans complete
 
 Plans:
 **Wave 1**
@@ -411,7 +411,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 03.1-16-PLAN.md: The final gate: full suite, generated code, dashes, images, contrast
+- [x] 03.1-16-PLAN.md: The final gate: full suite, generated code, dashes, images, contrast
 
 ### Phase 03.2: In-app updates and trusted-reporter alerts (INSERTED)
 
@@ -540,7 +540,7 @@ Phases execute in numeric order: 1 → 1.1 → 2 → 3 → 3.1 → 3.2 → 4 →
 | 1.1 Identity & Login — Mandatory Email Verification | 8/8 | Complete   | 2026-09-12 |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 15/15 | Complete | 2026-10-07 |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 31/31 | Complete | 2026-10-13 |
-| 3.1 Report history views | 15/16 | In Progress|  |
+| 3.1 Report history views | 16/16 | In Progress|  |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
 | 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
