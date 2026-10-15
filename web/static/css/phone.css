@@ -28,10 +28,13 @@
 
   /* Two rows: the map takes 40 percent of the height and the list takes the
      rest. The legacy unit comes first and the dynamic unit second, the same
-     pairing main.css uses, so the page itself never scrolls. */
+     pairing main.css uses, so the page itself never scrolls. The shell is
+     shorter than the viewport by the unofficial bar above it, exactly as
+     main.css states it; the second row takes whatever the map row leaves, so
+     the map and the list fill the space under the bar. */
   body > .app-shell {
-    height: 100vh;
-    height: 100dvh;
+    height: calc(100vh - var(--disclaimer-bar-height));
+    height: calc(100dvh - var(--disclaimer-bar-height));
     grid-template-rows: 40vh minmax(0, 1fr);
     grid-template-rows: 40dvh minmax(0, 1fr);
     gap: 0;
