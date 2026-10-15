@@ -19,9 +19,9 @@ import (
 // be missing reports that belong in a group. The service says so through the cut
 // flags even though far fewer than HistoryGroupCap entries were kept.
 func TestHistoryCutWhenCandidateReadHitsItsCap(t *testing.T) {
-	t.Run("an open read at its cap cuts the resolved group only", func(t *testing.T) {
+	t.Run("an open read past its cap cuts the resolved group only", func(t *testing.T) {
 		fake := &fakeFeedQuerier{}
-		for i := int64(1); i <= int64(service.HistoryOpenCandidateCap); i++ {
+		for i := int64(1); i <= int64(service.HistoryOpenCandidateCap)+1; i++ {
 			fake.openRows = append(fake.openRows, h6Open(i, service.CategoryFlood, service.SeverityLow, time.Hour))
 			fake.reporterRows = append(fake.reporterRows, reporterRow(i, nil))
 		}
@@ -37,9 +37,9 @@ func TestHistoryCutWhenCandidateReadHitsItsCap(t *testing.T) {
 		}
 	})
 
-	t.Run("an open read one short of its cap sets no cut", func(t *testing.T) {
+	t.Run("an open read of exactly its cap sets no cut", func(t *testing.T) {
 		fake := &fakeFeedQuerier{}
-		for i := int64(1); i < int64(service.HistoryOpenCandidateCap); i++ {
+		for i := int64(1); i <= int64(service.HistoryOpenCandidateCap); i++ {
 			fake.openRows = append(fake.openRows, h6Open(i, service.CategoryFlood, service.SeverityLow, time.Hour))
 			fake.reporterRows = append(fake.reporterRows, reporterRow(i, nil))
 		}
@@ -52,9 +52,9 @@ func TestHistoryCutWhenCandidateReadHitsItsCap(t *testing.T) {
 		}
 	})
 
-	t.Run("an expired read at its cap cuts both groups", func(t *testing.T) {
+	t.Run("an expired read past its cap cuts both groups", func(t *testing.T) {
 		fake := &fakeFeedQuerier{}
-		for i := int64(1); i <= int64(service.HistoryExpiredCandidateCap); i++ {
+		for i := int64(1); i <= int64(service.HistoryExpiredCandidateCap)+1; i++ {
 			fake.expiredRows = append(fake.expiredRows, h6Expired(i, service.CategoryFlood, service.SeverityLow, time.Hour))
 			fake.reporterRows = append(fake.reporterRows, reporterRow(i, nil))
 		}
@@ -75,7 +75,7 @@ func TestHistoryCutWhenCandidateReadHitsItsCap(t *testing.T) {
 // on the counts, which have no wire field for it. The call still returns them.
 func TestRecentHistoryCountsKeepsItsShapeWhenCapped(t *testing.T) {
 	fake := &fakeFeedQuerier{}
-	for i := int64(1); i <= int64(service.HistoryOpenCandidateCap); i++ {
+	for i := int64(1); i <= int64(service.HistoryOpenCandidateCap)+1; i++ {
 		fake.openRows = append(fake.openRows, h6Open(i, service.CategoryFlood, service.SeverityLow, time.Hour))
 		fake.reporterRows = append(fake.reporterRows, reporterRow(i, nil))
 	}

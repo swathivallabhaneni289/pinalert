@@ -68,23 +68,24 @@ func reportFromFocusRow(row sqlcgen.ReportForFocusRow) Report {
 	return reportFromNearbyRow(sqlcgen.NearbyReportsRow(row))
 }
 
-// candidateSet is what the two candidate reads gave. ExpiredCapped and
-// OpenCapped say a read returned exactly its row cap, so the set may be short of
-// rows that belong in a view. The queries carry no vote predicate (history.sql
-// point (d)), so a capped open read can hold live reports that crowd resolved
-// ones out, and the service cannot tell which. It says so through the cut flags
-// instead of staying silent (WR-02).
+// candidateSet is what the two candidate reads gave. ExpiredTruncated and
+// OpenTruncated say a read had more rows than its cap, so rows that belong in a
+// view were dropped. The reads are asked for cap+1 rows: getting the cap+1th
+// row back proves something was dropped, and getting exactly the cap proves
+// nothing was. The queries carry no vote predicate (history.sql point (d)), so
+// a truncated open read can hold live reports that crowd resolved ones out, and
+// the service cannot tell which. It says so instead of staying silent (WR-02).
 type candidateSet struct {
-	Candidates    []historyCandidate
-	ExpiredCapped bool
-	OpenCapped    bool
+	Candidates       []historyCandidate
+	ExpiredTruncated bool
+	OpenTruncated    bool
 }
 
 // historyCandidates runs the two bounded candidate reads and returns the
 // expired ones first, then the open ones, each id once (Pitfall 9). The two
 // sets are separate reads with separate caps so live reports can never crowd
 // expired ones out (Pitfall 2). Both take the one instant the caller judges
-// against. A read that returned exactly its cap is flagged on the result.
+// against. A read that returned more than its cap is trimmed to the cap and flagged on the result.
 func (s *ReportService) historyCandidates(ctx context.Context, lat, lon, radiusKm float64, now, windowStart time.Time) (candidateSet, error) {
 	latMin, latMax, lonMin, lonMax := BoundingBox(lat, lon, radiusKm)
 	expired, err := s.q.ExpiredReportsInWindow(ctx, sqlcgen.ExpiredReportsInWindowParams{
@@ -97,7 +98,7 @@ func (s *ReportService) historyCandidates(ctx context.Context, lat, lon, radiusK
 		LonMin:      lonMin,
 		LonMax:      lonMax,
 		RadiusKm:    radiusKm,
-		RowCap:      int32(HistoryExpiredCandidateCap),
+		RowCap:      int32(HistoryExpiredCandidateCap + 1),
 	})
 	if err != nil {
 		return candidateSet{}, err
@@ -111,10 +112,18 @@ func (s *ReportService) historyCandidates(ctx context.Context, lat, lon, radiusK
 		LonMin:   lonMin,
 		LonMax:   lonMax,
 		RadiusKm: radiusKm,
-		RowCap:   int32(HistoryOpenCandidateCap),
+		RowCap:   int32(HistoryOpenCandidateCap + 1),
 	})
 	if err != nil {
 		return candidateSet{}, err
+	}
+	truncatedExpired := len(expired) > HistoryExpiredCandidateCap
+	if truncatedExpired {
+		expired = expired[:HistoryExpiredCandidateCap]
+	}
+	truncatedOpen := len(open) > HistoryOpenCandidateCap
+	if truncatedOpen {
+		open = open[:HistoryOpenCandidateCap]
 	}
 	out := make([]historyCandidate, 0, len(expired)+len(open))
 	seen := make(map[int64]struct{}, len(expired)+len(open))
@@ -133,9 +142,9 @@ func (s *ReportService) historyCandidates(ctx context.Context, lat, lon, radiusK
 		out = append(out, historyCandidate{report: reportFromOpenRow(row)})
 	}
 	return candidateSet{
-		Candidates:    out,
-		ExpiredCapped: len(expired) >= HistoryExpiredCandidateCap,
-		OpenCapped:    len(open) >= HistoryOpenCandidateCap,
+		Candidates:       out,
+		ExpiredTruncated: truncatedExpired,
+		OpenTruncated:    truncatedOpen,
 	}, nil
 }
 
@@ -307,8 +316,8 @@ type RecentCounts struct {
 // needs the reporter id. It reads no reporter history and no undo counts, and
 // both empty candidate sets return zeros after the two candidate reads.
 //
-// The counts can under report. When a candidate read returned exactly its row
-// cap (see candidateSet), reports that belong in the count may be outside the
+// The counts can under report. When a candidate read was truncated
+// (see candidateSet), reports that belong in the count may be outside the
 // set, and with no vote predicate in SQL the service cannot know how many. The
 // wire shape has no field for this, so the counts stay as read here. History
 // carries the same fact on its cut flags.
@@ -474,8 +483,7 @@ func (s *ReportService) Focus(ctx context.Context, q FocusQuery) (FocusResult, e
 //     honest (D-17).
 //  5. Sort each group (Resolved by closure time, Expired by expiry time, newest
 //     first, ties by id descending), cap each at HistoryGroupCap and set its cut
-//     flag (also set when a candidate read that feeds the group hit its row
-//     cap), then build each kept view with buildFinishedView.
+//     flag (also set when a candidate read that feeds the group was truncated), then build each kept view with buildFinishedView.
 //  6. attachUndos over the kept views: one conditional ResolutionUndoCounts.
 //
 // The cost is a Nearby read plus one report read, and the browser does not poll
@@ -535,13 +543,13 @@ func (s *ReportService) History(ctx context.Context, q HistoryQuery) (HistoryPag
 	order(expired)
 
 	// A group is cut when it had more than HistoryGroupCap entries, and also when
-	// a candidate read that can feed it returned exactly its row cap, because
-	// then reports may be missing from the set (WR-02). A past entry can only come
+	// a candidate read that can feed it was truncated, because
+	// then reports are missing from the set (WR-02). A past entry can only come
 	// from the expired set. A resolved entry can come from either set: an open
 	// report closed by people, or an expired report whose closure stands.
 	page := HistoryPage{
-		ResolvedCut: set.OpenCapped || set.ExpiredCapped,
-		ExpiredCut:  set.ExpiredCapped,
+		ResolvedCut: set.OpenTruncated || set.ExpiredTruncated,
+		ExpiredCut:  set.ExpiredTruncated,
 	}
 	if len(resolved) > HistoryGroupCap {
 		resolved = resolved[:HistoryGroupCap]

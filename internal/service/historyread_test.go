@@ -146,8 +146,10 @@ func TestHistoryGroupsAndOrder(t *testing.T) {
 	if !ea.WindowStart.Equal(p12Now.Add(-service.HistoryWindow)) {
 		t.Errorf("WindowStart = %v, want now minus HistoryWindow", ea.WindowStart)
 	}
-	if int(ea.RowCap) != service.HistoryExpiredCandidateCap || int(oa.RowCap) != service.HistoryOpenCandidateCap {
-		t.Errorf("row caps = %d and %d, want %d and %d", ea.RowCap, oa.RowCap, service.HistoryExpiredCandidateCap, service.HistoryOpenCandidateCap)
+	// The reads ask for one row more than the cap, so a row beyond the cap proves
+	// truncation (WR-02); the service trims back to the cap.
+	if int(ea.RowCap) != service.HistoryExpiredCandidateCap+1 || int(oa.RowCap) != service.HistoryOpenCandidateCap+1 {
+		t.Errorf("row caps = %d and %d, want %d and %d (cap plus one)", ea.RowCap, oa.RowCap, service.HistoryExpiredCandidateCap+1, service.HistoryOpenCandidateCap+1)
 	}
 }
 
