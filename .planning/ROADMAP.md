@@ -378,11 +378,39 @@ Plans:
   6. One panel state model: this phase owns the list panel's state (view, tab and filters kept in the URL) so Phases 3.2, 5 and 9 plug their tabs and filters into it, and deep links such as /?view=resolved&report=ID work. The default tab is called Nearby once other tabs exist. Phase 3's outcome classifier must be exposed as a reusable pure function that can return the neutral outcome. HIST-05 reuses Phase 7's geocoder, which has a process-wide limit of 1 Nominatim request per second, so reader searches need their own budget (or a cache) so they cannot starve reporters' address search.
   7. Only the report rows change size. The rest of the page is not redesigned here (backlog 999.10 holds the page wide design pass), and My votes and the six tab Activity page already exist (quick task 261013-wm5). The take back of a mistaken Mark resolved must not travel through the `reopen` vote value, see 03.1-CONTEXT.md "Conflicts and risks".
 
-**Plans:** 0 plans
+**Plans**: 16 plans in 5 waves (03.1-01 to 03.1-16)
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 03.1 to break down)
+- [ ] 03.1-01-PLAN.md: Pure history functions: ViewOf, ClosureOf, the history words and the finished Rescue coarsening
+- [ ] 03.1-02-PLAN.md: The take back in the voting service: the neutral value, the limit of two, the undo count query
+- [ ] 03.1-03-PLAN.md: The reader place search lane on the geocoder: no waiting, a cache, a per account budget
+- [ ] 03.1-04-PLAN.md: History store queries: expired in the window, open in the area, one report by id
+- [ ] 03.1-05-PLAN.md: The tab strip, the view state in the store and the address, the list pane markup
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 03.1-06-PLAN.md: The history service: the Past page, recent counts, report links, viewer fields on every read
+- [ ] 03.1-07-PLAN.md: The Activity page: Reopen follows the limit, voted finished Rescue cards are coarsened
+- [ ] 03.1-08-PLAN.md: The take back route, the place search route and the one geocoder client
+- [ ] 03.1-09-PLAN.md: Compact report rows (size A) on every width, no control in a row
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 03.1-10-PLAN.md: GET /api/reports view, category and report parameters, the leak tests, the swagger freeze
+- [ ] 03.1-11-PLAN.md: Map tools: the place search box, category chips, the place and filter lines
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 03.1-12-PLAN.md: Past tab cards, the recent counts empty state, report links on screen
+- [ ] 03.1-13-PLAN.md: The map follows the tab: finished pins, the label, the finished popup, the approximate zoom
+- [ ] 03.1-14-PLAN.md: The take back in the opened report and the short Undo after Yes, mark resolved
+- [ ] 03.1-15-PLAN.md: TRUST-MODEL.md and the handoff file for Phases 3.2, 4, 5, 8 and 9
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 03.1-16-PLAN.md: The final gate: full suite, generated code, dashes, images, contrast
 
 ### Phase 03.2: In-app updates and trusted-reporter alerts (INSERTED)
 
