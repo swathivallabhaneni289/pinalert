@@ -239,7 +239,7 @@ func TestPhoneFeedScriptContract(t *testing.T) {
 	p13MustNotContain(t, "updateFeedCount", count, "innerHTML", "insertAdjacentHTML")
 
 	render := jsFunctionBody(t, code, "render(state)")
-	p13Ordered(t, render, "render", "updateFeedCount(state);", "state.status === 'idle'")
+	p13Ordered(t, render, "render", "updateFeedCount(state);", "renderFirstLoad(state);")
 
 	create := jsFunctionBody(t, code, "createRow(id)")
 	p13MustContain(t, "createRow", create, "'report-row__away'", "body.appendChild(away)", "away: away")

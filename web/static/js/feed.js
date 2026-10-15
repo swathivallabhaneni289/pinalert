@@ -1044,7 +1044,7 @@
     updateFeedCount(state);
     updateFeedHeading(Pinalert.state.view);
 
-    var listShown = state.hasLoaded === true || state.reports.length > 0; // first load: state.status === 'idle' or 'loading'
+    var listShown = state.hasLoaded === true || state.reports.length > 0;
     if (!listShown) {
       renderFirstLoad(state);
       return;
