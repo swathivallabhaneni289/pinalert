@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -526,4 +527,237 @@ func TestReportRateLimitBody(t *testing.T) {
 			p15Expect(t, "post "+strconv.Itoa(i), a, srv.URL, p15Body("flood", "low", p15Valid), "203.0.113.7", http.StatusCreated)
 		}
 	})
+}
+
+// p15BackstopBucketName is the bucket name 04-09 logs for the network backstop.
+const p15BackstopBucketName = "ip_backstop"
+
+// p15FailInsertsWithMarker makes any insert whose description holds
+// p15InsertFailsMarker fail with a real database error, whichever query or
+// transaction SubmitChecked uses. The constraint is dropped before the harness
+// closes the pool (cleanups run last registered first).
+func p15FailInsertsWithMarker(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `ALTER TABLE reports ADD CONSTRAINT p15_insert_fails CHECK (description NOT LIKE '%p15 insert fails%')`); err != nil {
+		t.Fatalf("adding the insert failing constraint: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), `ALTER TABLE reports DROP CONSTRAINT IF EXISTS p15_insert_fails`); err != nil {
+			t.Errorf("dropping the insert failing constraint: %v", err)
+		}
+	})
+}
+
+// p15LogBuffer is a mutex guarded writer for the standard logger.
+type p15LogBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *p15LogBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *p15LogBuffer) Reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buf.Reset()
+}
+
+// Lines returns the captured non empty lines.
+func (b *p15LogBuffer) Lines() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var out []string
+	for _, line := range strings.Split(b.buf.String(), "\n") {
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// p15CaptureLog redirects the standard logger into a buffer with no flags until
+// the test ends, then restores the writer and the flags.
+func p15CaptureLog(t *testing.T) *p15LogBuffer {
+	t.Helper()
+	buf := &p15LogBuffer{}
+	prevWriter, prevFlags := log.Writer(), log.Flags()
+	log.SetOutput(buf)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(prevWriter)
+		log.SetFlags(prevFlags)
+	})
+	return buf
+}
+
+func TestReportRateLimitRefunds(t *testing.T) {
+	clk := newP15Clock(time.Second)
+	scr := &p15Screener{}
+	srv, mailer, pool := newE2EServerWith(t, p15Tweak(clk, scr, func(d *api.Deps) {
+		d.RateLimits.ReportOther = api.BucketLimit{Every: time.Hour, Burst: 1}
+		d.RateLimits.ReportSerious = api.BucketLimit{Every: time.Hour, Burst: 1}
+	}))
+	p15FailInsertsWithMarker(t, pool)
+	a := newVerifiedClient(t, srv, mailer, "p15-ref-a@example.com")
+	b := newVerifiedClient(t, srv, mailer, "p15-ref-b@example.com")
+	post := func(label string, c *http.Client, category, severity, text string, want int) []byte {
+		return p15Expect(t, label, c, srv.URL, p15Body(category, severity, text), "", want)
+	}
+	fieldAndMessage := func(label string, raw []byte) (string, string) {
+		var out struct {
+			Error struct {
+				Field   string `json:"field"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatalf("%s: decoding %s: %v", label, raw, err)
+		}
+		return out.Error.Field, out.Error.Message
+	}
+
+	// (a) validation error: nothing reserved.
+	raw := post("a short", a, "flood", "low", "too short", http.StatusBadRequest)
+	if field, _ := fieldAndMessage("a short", raw); field != "description" {
+		t.Fatalf("a: field = %q", field)
+	}
+	// (b) hateful text.
+	raw = post("b hateful", a, "flood", "low", "flood on the road "+p15HatefulMarker, http.StatusUnprocessableEntity)
+	if field, msg := fieldAndMessage("b", raw); field != "description" || msg != service.RejectMessage(service.RejectHateful) {
+		t.Fatalf("b: field %q message %q", field, msg)
+	}
+	// (c) gibberish prefilter.
+	raw = post("c gibberish", a, "flood", "low", "zzzzzzzzzzzzzzzz", http.StatusUnprocessableEntity)
+	if field, msg := fieldAndMessage("c", raw); field != "description" || msg != service.RejectMessage(service.RejectGibberish) {
+		t.Fatalf("c: field %q message %q", field, msg)
+	}
+	// (d) insert error.
+	post("d insert fails", a, "flood", "low", "flood on the road "+p15InsertFailsMarker, http.StatusInternalServerError)
+	// (e) admitted only because (a) never reserved and (b), (c), (d) refunded.
+	post("e valid", a, "flood", "low", p15Valid, http.StatusCreated)
+	// (f) the allowance is spent, and the wait is nearly the full hour.
+	got := p15Blocked(t, "f", a, srv.URL, p15Body("flood", "low", p15Valid), "")
+	if got.RetryAfterSeconds < 3500 || got.RetryAfterSeconds > 3600 {
+		t.Fatalf("f: retry_after_seconds = %d, want 3500 to 3600", got.RetryAfterSeconds)
+	}
+
+	// Serious allowance.
+	post("g hateful critical", a, "flood", "critical", "flood on the road "+p15HatefulMarker, http.StatusUnprocessableEntity)
+	post("h insert fails critical", a, "flood", "critical", "flood on the road "+p15InsertFailsMarker, http.StatusInternalServerError)
+	post("i valid critical", a, "flood", "critical", p15Valid, http.StatusCreated)
+	got = p15Blocked(t, "j", a, srv.URL, p15Body("flood", "critical", p15Valid), "")
+	if !got.Serious {
+		t.Fatalf("j: serious = false")
+	}
+
+	// A held report keeps its cost.
+	raw = post("k held", b, "flood", "low", "flood on the road "+p15ProviderDownMarker, http.StatusCreated)
+	var created struct {
+		Report struct {
+			Held bool `json:"held"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal(raw, &created); err != nil || !created.Report.Held {
+		t.Fatalf("k: held = %v (err %v) in %s", created.Report.Held, err, raw)
+	}
+	p15Blocked(t, "l", b, srv.URL, p15Body("flood", "low", p15Valid), "")
+
+	p15WantCount(t, pool, 3)
+}
+
+func TestReportRateLimitSubmitAttemptBucket(t *testing.T) {
+	clk := newP15Clock(0)
+	scr := &p15Screener{}
+	srv, mailer, _ := newE2EServerWith(t, p15Tweak(clk, scr, func(d *api.Deps) {
+		d.RateLimits.SubmitAttempt = api.BucketLimit{Every: time.Hour, Burst: 2}
+	}))
+	a := newVerifiedClient(t, srv, mailer, "p15-att-a@example.com")
+	b := newVerifiedClient(t, srv, mailer, "p15-att-b@example.com")
+
+	p15Expect(t, "a short", a, srv.URL, p15Body("flood", "low", "too short"), "", http.StatusBadRequest)
+	p15Expect(t, "b hateful", a, srv.URL, p15Body("flood", "low", "flood on the road "+p15HatefulMarker), "", http.StatusUnprocessableEntity)
+	p15Expect(t, "c valid", a, srv.URL, p15Body("flood", "low", p15Valid), "", http.StatusCreated)
+	got := p15Blocked(t, "d", a, srv.URL, p15Body("flood", "low", p15Valid), "")
+	if got.Serious || got.HasNumber || got.RetryAfterHeader != "3600" || got.Message != service.ReportLimitMessage(false, time.Hour) {
+		t.Fatalf("d: %+v", got)
+	}
+	if !strings.Contains(got.Message, "1 hour") {
+		t.Fatalf("d: message = %q", got.Message)
+	}
+	got = p15Blocked(t, "e", a, srv.URL, p15Body("flood", "critical", p15Valid), "")
+	if !got.Serious || got.EmergencyNumber != "112" || got.Message != service.ReportLimitMessage(true, time.Hour) {
+		t.Fatalf("e: %+v", got)
+	}
+	p15Expect(t, "b valid", b, srv.URL, p15Body("flood", "low", p15Valid), "", http.StatusCreated)
+}
+
+func TestReportRateLimitLogsBlocks(t *testing.T) {
+	clk := newP15Clock(0)
+	srv, mailer, pool := newE2EServerWith(t, p15Tweak(clk, nil, func(d *api.Deps) {
+		d.ClientIPHeader = p15IPHeader
+		d.RateLimits.ReportOther = api.BucketLimit{Every: time.Hour, Burst: 1}
+		d.RateLimits.ReportSerious = api.BucketLimit{Every: time.Hour, Burst: 1}
+		d.RateLimits.IPBackstop = api.BucketLimit{Every: time.Hour, Burst: 2}
+	}))
+	const email = "p15-log-a@example.com"
+	const ip = "203.0.113.7"
+	a := newVerifiedClient(t, srv, mailer, email)
+	id := strconv.FormatInt(p15AccountID(t, pool, a, srv.URL), 10)
+	logs := p15CaptureLog(t)
+
+	steps := []struct {
+		label    string
+		severity string
+		ip       string
+		want     int
+		bucket   string
+	}{
+		{"low ok", "low", ip, http.StatusCreated, ""},
+		{"low blocked by allowance", "low", ip, http.StatusTooManyRequests, "report_other"},
+		{"critical blocked by backstop", "critical", ip, http.StatusTooManyRequests, p15BackstopBucketName},
+		{"critical ok", "critical", "", http.StatusCreated, ""},
+		{"critical blocked by allowance", "critical", "", http.StatusTooManyRequests, "report_serious"},
+	}
+	for _, s := range steps {
+		logs.Reset()
+		p15Expect(t, s.label, a, srv.URL, p15Body("flood", s.severity, p15Valid), s.ip, s.want)
+		lines := logs.Lines()
+		var blockLines []string
+		for _, line := range lines {
+			if strings.Contains(line, "bucket=") {
+				blockLines = append(blockLines, line)
+			}
+			for _, secret := range []string{email, p15Valid, ip} {
+				if strings.Contains(line, secret) {
+					t.Fatalf("%s: log line %q carries %q", s.label, line, secret)
+				}
+			}
+		}
+		if s.bucket == "" {
+			if len(blockLines) != 0 {
+				t.Fatalf("%s: unexpected block lines %q", s.label, blockLines)
+			}
+			continue
+		}
+		if len(blockLines) == 0 {
+			t.Fatalf("%s: no block line for bucket %s in %q", s.label, s.bucket, lines)
+		}
+		found := false
+		for _, line := range blockLines {
+			if strings.Contains(line, "bucket="+s.bucket+" ") {
+				found = true
+			}
+			if !strings.Contains(line, " account="+id+" ") || !strings.Contains(line, " wait_seconds=") {
+				t.Fatalf("%s: block line %q lacks the account id or the wait", s.label, line)
+			}
+		}
+		if !found {
+			t.Fatalf("%s: no block line names bucket %s in %q", s.label, s.bucket, blockLines)
+		}
+	}
 }
