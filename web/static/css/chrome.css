@@ -219,3 +219,21 @@ html {
     border: 1px solid ButtonText;
   }
 }
+
+/* 04-13: stale line and notice card. */
+
+/* The stale line above the list. The text is the shared inline note, kept
+   passive (the live region announces); Retry now wraps under it when the
+   pane is narrow. */
+.feed-stale:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: 0 0 var(--space-md);
+}
+
+.feed-stale .feed-stale__text {
+  margin: 0;
+  flex: 1 1 auto;
+}

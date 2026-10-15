@@ -27,6 +27,7 @@
     {{template "account_header.html.tmpl" .}}
   </div>
   {{template "theme_toggle.html.tmpl" .}}
+  <div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>
   <div class="app-shell" id="app-shell" data-view="map"
        data-fallback-lat="{{.FallbackLat}}"
        data-fallback-lon="{{.FallbackLon}}"
@@ -86,6 +87,10 @@
       <p class="feed-note" id="feed-note" hidden></p>
       <p class="place-line" id="place-line" hidden></p>
       <p class="filter-line" id="filter-line" hidden></p>
+      <div class="feed-stale" id="feed-stale" hidden>
+        <p class="inline-note feed-stale__text" id="feed-stale-text"></p>
+        <button type="button" class="btn" id="feed-stale-retry">Retry now</button>
+      </div>
       <ol id="report-list"></ol>
       <div id="past-groups" hidden>
         <section class="past-group" id="past-resolved" hidden>

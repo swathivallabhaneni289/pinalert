@@ -70,6 +70,18 @@
   var pastExpiredEl = document.getElementById('past-expired');
   var pastExpiredListEl = document.getElementById('past-expired-list');
   var pastExpiredCutEl = document.getElementById('past-expired-cut');
+  var staleEl = document.getElementById('feed-stale');
+  var staleTextEl = document.getElementById('feed-stale-text');
+  var staleRetryBtn = document.getElementById('feed-stale-retry');
+  var noticeLiveEl = document.getElementById('notice-live');
+
+  // The words of the stale line and its two announcements. The strings are
+  // fixed here and only the time phrase is computed, never read from the
+  // server. staleShown is true while the stale line is showing, so each
+  // announcement is made once, on the change, not on every poll.
+  var STALE_ENTER_PREFIX = 'Connection lost. Showing reports from ';
+  var STALE_LEAVE_MESSAGE = 'Back online. The list is up to date.';
+  var staleShown = false;
 
   // The words a finished Rescue card uses in place of the report's own text
   // and category word (C17, C18). The server sends such a report with an empty
@@ -910,40 +922,116 @@
     }
   }
 
-  // render is the single state machine driving the list, the skeleton, the
-  // empty state, and the error state — driven entirely by state.status, so
-  // there is exactly one place that decides which of the four is showing.
+  // announce speaks one sentence through the page level live region. It does
+  // nothing on a page without it.
+  function announce(text) {
+    if (!noticeLiveEl) {
+      return;
+    }
+    Pinalert.setText(noticeLiveEl, text);
+  }
+
+  // staleLineText is the visible sentence of the stale line.
+  function staleLineText() {
+    return 'Last updated ' + Pinalert.updatedAgo(Pinalert.state.lastUpdatedAt) + '. Trying again.';
+  }
+
+  // renderFirstLoad draws the page before any list has loaded: the skeleton
+  // while the first request is out, the Couldn't load reports panel when it
+  // failed. Nothing else shows the skeleton or the panel, so a poll that fails
+  // later can never put the reader back on them.
+  function renderFirstLoad(state) {
+    setHidden(staleEl, true);
+    staleShown = false;
+    if (state.status === 'error') {
+      setHidden(skeletonEl, true);
+      setHidden(errorEl, false);
+    } else {
+      setHidden(skeletonEl, false);
+      setHidden(errorEl, true);
+    }
+    setHidden(reportListEl, true);
+    setHidden(pastGroupsEl, true);
+    setEmptyState('none');
+  }
+
+  // renderStale shows the stale line while the last poll failed after a list
+  // had loaded, and takes it away when a later poll succeeds. It announces
+  // once when the line appears and once when it goes. Focus on Retry now moves
+  // to the first row before the line hides, so it is not dropped on the page.
+  function renderStale(state) {
+    var stale = state.status === 'error';
+    if (stale) {
+      Pinalert.setText(staleTextEl, staleLineText());
+      setHidden(staleEl, false);
+      if (staleRetryBtn) {
+        staleRetryBtn.disabled = false;
+      }
+      if (!staleShown) {
+        announce(STALE_ENTER_PREFIX + Pinalert.updatedAgo(Pinalert.state.lastUpdatedAt) + '.');
+      }
+    } else if (staleShown && state.status === 'ok') {
+      if (staleRetryBtn && document.activeElement === staleRetryBtn && reportListEl) {
+        var firstRow = reportListEl.querySelector('.report-row');
+        if (firstRow) {
+          firstRow.focus();
+        }
+      }
+      setHidden(staleEl, true);
+      if (staleRetryBtn) {
+        staleRetryBtn.disabled = false;
+      }
+      announce(STALE_LEAVE_MESSAGE);
+    } else {
+      setHidden(staleEl, true);
+    }
+    staleShown = stale;
+  }
+
+  // refreshStaleLine renews the minute figure of the stale line on a timer.
+  // It never announces.
+  function refreshStaleLine() {
+    if (staleShown) {
+      Pinalert.setText(staleTextEl, staleLineText());
+    }
+  }
+
+  // render is the single state machine for the list, the first load skeleton,
+  // the first load error panel, the stale line and the empty states. Before
+  // any list has loaded, renderFirstLoad decides. After one has, the list
+  // path runs for every status: a failed or slow poll keeps the rows and the
+  // map pins and shows the stale line, so the skeleton and the error panel
+  // belong to the first load only (D-20).
   function render(state) {
     updateFeedCount(state);
     updateFeedHeading(Pinalert.state.view);
 
-    if (state.status === 'idle' || state.status === 'loading') {
-      setHidden(skeletonEl, false);
-      setHidden(reportListEl, true);
-      setHidden(pastGroupsEl, true);
-      setEmptyState('none');
-      setHidden(errorEl, true);
+    var listShown = state.hasLoaded === true || state.reports.length > 0; // first load: state.status === 'idle' or 'loading'
+    if (!listShown) {
+      renderFirstLoad(state);
       return;
     }
 
     setHidden(skeletonEl, true);
+    setHidden(errorEl, true);
+    renderStale(state);
 
     if (state.status === 'error') {
       // A fetch failure never clears the rows or the map's existing pins:
       // stale data is more useful than a blank panel to someone who just lost
       // signal (WR-08). While there are rows to show, the list stays visible
-      // and the error panel appears alongside it with its Retry button. Only
-      // a failure with nothing to show hides the list, and then the rows still
-      // in the page are removed through clearRows, which puts focus back on a
-      // control that is still shown instead of dropping it to the page body.
-      // A later poll or Retry with rows on screen never reaches the loading
-      // branch below (app.js treats it as a background refresh), so the list a
-      // reader is scrolling or has focus in is not hidden again. Rows fetched
-      // for another tab were already dropped by the store, so a failure never
+      // under the stale line. Only a failure with nothing to show hides the
+      // list, and then the rows still in the page are removed through
+      // clearRows, which puts focus back on a control that is still shown
+      // instead of dropping it to the page body. A failure draws no empty
+      // state, because the page cannot say the list is empty after a failed
+      // answer. A later poll or Retry never reaches the first load branch (the
+      // store treats it as a background refresh), so the list a reader is
+      // scrolling or has focus in is not hidden again. Rows fetched for
+      // another tab were already dropped by the store, so a failure never
       // leaves one tab's rows under another tab.
       var hasRows = state.reports.length > 0;
       var onPast = Pinalert.state.view === 'past';
-      setHidden(errorEl, false);
       setHidden(reportListEl, !hasRows);
       setHidden(pastGroupsEl, !hasRows || !onPast);
       if (!hasRows) {
@@ -1255,6 +1343,16 @@
     });
   }
 
+  // Retry now on the stale line asks the store for a background refresh. The
+  // button is disabled while the request is out and enabled again by the
+  // render that follows it.
+  if (staleRetryBtn) {
+    staleRetryBtn.addEventListener('click', function () {
+      staleRetryBtn.disabled = true;
+      Pinalert.fetchReports();
+    });
+  }
+
   // readViewFromURL reads the tab out of the page address (03.1 D-04, D-05).
   // Parsed with URLSearchParams and compared against a closed list of words,
   // never interpolated anywhere (T-01-17), so the page and the server cannot
@@ -1446,6 +1544,7 @@
   updateToggleLabel();
 
   window.setInterval(refreshAgeAndTime, 60000);
+  window.setInterval(refreshStaleLine, 60000);
 
   // pageshow / back-forward-cache refetch (02-UAT.md gap 3, "major").
   //
