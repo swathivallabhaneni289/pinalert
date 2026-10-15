@@ -1,0 +1,261 @@
+/* moderate.css: the moderator screen (04-26, D-08, P4-A22). One centred
+   column of 640px, phone first. Every length is a token except the named
+   values 640px, 8px and 1px, and the one radius restated from the built
+   visibility chip. Colour comes from the neutral tokens only: a moderation
+   row never takes a severity tint.
+
+   Classes owned here: mod-page, mod-page__line, mod-find, mod-find__help,
+   mod-find__status, mod-section, mod-section__line, mod-count, mod-list,
+   mod-empty, mod-hint, mod-row and its parts, mod-scores, mod-confirm and its
+   parts. The hidden attribute rule of this repo applies: every rule that sets
+   a display on a mod class carries :not([hidden]), so a hidden element stays
+   hidden. A summary keeps its native display so the browser marker stays. */
+
+.mod-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--space-md);
+  padding-bottom: calc(var(--space-lg) + var(--touch-target-min) + var(--space-md));
+}
+
+/* The account trigger sits at the right edge just under the bar, so the page
+   head keeps clear of it. */
+.mod-page h1 {
+  margin: 0;
+  padding-right: calc(var(--touch-target-min) + var(--space-md));
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold);
+}
+
+.mod-page__line {
+  margin: var(--space-xs) 0 0;
+  padding-right: calc(var(--touch-target-min) + var(--space-md));
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+#mod-refresh {
+  margin-top: var(--space-md);
+}
+
+#mod-refresh-error {
+  margin-top: var(--space-sm);
+}
+
+.mod-find:not([hidden]) {
+  display: grid;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.mod-find input {
+  width: 100%;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+}
+
+.mod-find__help {
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text);
+}
+
+.mod-find button {
+  justify-self: start;
+}
+
+#mod-find-result {
+  margin-top: var(--space-sm);
+}
+
+.mod-find__status {
+  margin: 0 0 var(--space-sm);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.mod-section {
+  margin-top: var(--space-xl);
+}
+
+.mod-section h2 {
+  margin: 0;
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+}
+
+.mod-count {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.mod-section__line {
+  margin: var(--space-xs) 0 var(--space-md);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text);
+}
+
+.mod-list:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mod-empty {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.mod-hint {
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.mod-row {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--space-md);
+  color: var(--color-text);
+}
+
+.mod-row:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.mod-row p {
+  margin: 0;
+}
+
+.mod-row__idline:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.mod-row__id {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* The visibility and moderation words read like the shared read only labels
+   beside them, so this restates the built .visibility-tag chip: same border,
+   padding, radius and type. Its min-height of 24px is left out because the
+   stylesheet keeps lengths to tokens. */
+.mod-row__state:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.mod-row__meta,
+.mod-row__written,
+.mod-row__why,
+.mod-row__why-line,
+.mod-scores,
+.mod-row__does,
+.mod-row__done {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text);
+}
+
+.mod-scores {
+  margin: 0;
+  padding-left: var(--space-md);
+}
+
+.mod-row__text {
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  overflow-wrap: anywhere;
+}
+
+.mod-row__all-scores summary {
+  min-height: var(--touch-target-min);
+  padding: var(--space-sm) 0;
+  cursor: pointer;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.mod-row__actions:not([hidden]),
+.mod-confirm__buttons:not([hidden]) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-sm);
+}
+
+.mod-row__actions .btn,
+.mod-confirm__buttons .btn {
+  width: 100%;
+}
+
+.mod-confirm:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.mod-confirm__question {
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.mod-row__link:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  color: var(--color-text);
+  text-decoration: underline;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+@media (min-width: 360px) {
+  .mod-row__actions:not([hidden]),
+  .mod-confirm__buttons:not([hidden]) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (forced-colors: active) {
+  .mod-row,
+  .mod-row__state:not([hidden]),
+  .mod-find input {
+    border: 1px solid CanvasText;
+  }
+}
