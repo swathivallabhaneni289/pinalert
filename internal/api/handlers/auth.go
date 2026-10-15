@@ -47,6 +47,18 @@ type loginGateViewModel struct {
 	ResendCooldownSeconds int
 	LinkTTLSeconds        int
 	Chrome                Chrome
+	// LowDataDefault is true when this device's remembered choice is the Low
+	// data view; the login panel then shows the "is on" note instead of the
+	// link that turns it on (D-17, P4-A18).
+	LowDataDefault bool
+}
+
+// lowDataChosen reports whether the request carries the remembered choice of
+// the Low data view: the cookie LowDataCookie with the value 1 and nothing else
+// (D-17). It reads no account data.
+func lowDataChosen(r *http.Request) bool {
+	c, err := r.Cookie(LowDataCookie)
+	return err == nil && c.Value == "1"
 }
 
 // LoginGate renders the globe login gate at GET /login. A `sent` query
@@ -55,6 +67,13 @@ type loginGateViewModel struct {
 // so a manual "Check again" reload (or a bookmarked/shared URL) re-renders
 // the waiting state server-side without depending on JavaScript having run
 // first (UI-SPEC item 11).
+//
+// The `low` query parameter sets and clears the remembered choice of the Low
+// data view (D-17, P4-A18): exactly 1 remembers it and exactly 0 forgets it,
+// and every other value changes nothing and is never written into the page
+// (T-04-13). The panel states a fact about the device, so it shows the "is on"
+// note whenever the cookie is present or low=1 has just set it. The page varies
+// per device and sets a cookie, so every response is no-store (T-04-12).
 func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vm := loginGateViewModel{
@@ -71,7 +90,18 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 			}
 		}
 
+		vm.LowDataDefault = lowDataChosen(r)
+		switch r.URL.Query().Get("low") {
+		case "1":
+			setLowDataCookie(w, r)
+			vm.LowDataDefault = true
+		case "0":
+			clearLowDataCookie(w, r)
+			vm.LowDataDefault = false
+		}
+
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
 		if err := tmpl.ExecuteTemplate(w, loginGateTemplateName, vm); err != nil {
 			log.Printf("handlers: LoginGate: %v", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -428,6 +458,10 @@ type profileViewModel struct {
 	PolicyPointerLead string
 	PolicyPointerLink string
 	PolicyPointerTail string
+	// LowDataDefault is true when this device's remembered choice is the Low
+	// data view; the back link then goes to /low, named Back to Low data view
+	// (P4-A21). Plan 04-25 reads the rendered href.
+	LowDataDefault bool
 }
 
 // profileRelativeTime mirrors web/static/js/app.js's relativeTime: the same
@@ -676,6 +710,7 @@ func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) 
 			PolicyPointerLead: policyLead,
 			PolicyPointerLink: policyLink,
 			PolicyPointerTail: policyTail,
+			LowDataDefault:    lowDataChosen(r),
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

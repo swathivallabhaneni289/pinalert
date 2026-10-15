@@ -1,6 +1,8 @@
 package web
 
 import (
+	"bytes"
+	"html/template"
 	"io/fs"
 	"regexp"
 	"strconv"
@@ -13,6 +15,13 @@ import (
 // and stylesheets straight out of the embedded filesystems (TemplatesFS,
 // StaticFS), never a copy of their text, so it cannot drift from what the
 // binary serves.
+//
+// The link follows the device default (P4-A21): it goes to the map named Back
+// to map, or to the Low data view named Back to Low data view when that is this
+// device's remembered choice. This test renders the shipped anchor in both
+// states from the template text and proves the markup half of the claim;
+// TestActivityBackLinkFollowsDeviceDefault in internal/api/handlers proves the
+// cookie drives it.
 //
 // What this proves: the markup is an icon control (an aria-label, a title,
 // the arrow-left glyph span, no visible text), the declarations that produce
@@ -28,7 +37,6 @@ import (
 func TestActivityPageLinksBackToTheMap(t *testing.T) {
 	const backLinkClass = "profile-back-link"
 	const emailClass = "profile-email"
-	const accessibleName = "Back to map"
 
 	tmplRaw, err := TemplatesFS.ReadFile("templates/profile.html.tmpl")
 	if err != nil {
@@ -61,23 +69,54 @@ func TestActivityPageLinksBackToTheMap(t *testing.T) {
 		t.Fatalf("could not find the closing </a> for the back control")
 	}
 	anchor := tmplText[openStart : openStart+closeRel+len("</a>")]
-	openTagEnd := strings.Index(anchor, ">")
-	openTag := anchor[:openTagEnd+1]
 
-	if !strings.Contains(openTag, `href="/"`) {
-		t.Errorf(`expected the back control's opening tag to carry href="/", got %s`, openTag)
-	}
-	for _, attr := range []string{"aria-label", "title"} {
-		if !strings.Contains(openTag, attr+`="`+accessibleName+`"`) {
-			t.Errorf("expected %s=%q on the back control, got %s", attr, accessibleName, openTag)
+	// P4-A21: the address and the name follow the device default. The only
+	// template actions allowed in the anchor are the three below, so the two
+	// renders are the whole truth.
+	actionRe := regexp.MustCompile(`\{\{[^}]*\}\}`)
+	for _, action := range actionRe.FindAllString(anchor, -1) {
+		switch action {
+		case "{{if .LowDataDefault}}", "{{else}}", "{{end}}":
+		default:
+			t.Errorf("unexpected template action %s in the back control", action)
 		}
 	}
-	if !strings.Contains(anchor, "auth-icon--arrow-left") {
-		t.Errorf("expected an auth-icon--arrow-left span inside the back control")
+	backTmpl, err := template.New("back-link").Parse(anchor)
+	if err != nil {
+		t.Fatalf("parsing the back control as a template: %v", err)
 	}
 	tagRe := regexp.MustCompile(`<[^>]*>`)
-	if text := strings.TrimSpace(tagRe.ReplaceAllString(anchor, "")); text != "" {
-		t.Errorf("expected no visible text inside the back control (icon only), found %q", text)
+	for _, c := range []struct {
+		name          string
+		lowDefault    bool
+		href, accName string
+	}{
+		{"no remembered choice", false, "/", "Back to map"},
+		{"Low data view is the default", true, "/low", "Back to Low data view"},
+	} {
+		var out bytes.Buffer
+		if err := backTmpl.Execute(&out, struct{ LowDataDefault bool }{c.lowDefault}); err != nil {
+			t.Fatalf("%s: rendering the back control: %v", c.name, err)
+		}
+		rendered := out.String()
+		openTag := rendered[:strings.Index(rendered, ">")+1]
+		if !strings.Contains(openTag, `href="`+c.href+`"`) {
+			t.Errorf("%s: expected href=%q on the back control, got %s", c.name, c.href, openTag)
+		}
+		for _, attr := range []string{"aria-label", "title"} {
+			if !strings.Contains(openTag, attr+`="`+c.accName+`"`) {
+				t.Errorf("%s: expected %s=%q on the back control, got %s", c.name, attr, c.accName, openTag)
+			}
+		}
+		if got := strings.Count(rendered, backLinkClass); got != 1 {
+			t.Errorf("%s: expected %q once in the rendered control, found %d", c.name, backLinkClass, got)
+		}
+		if !strings.Contains(rendered, "auth-icon--arrow-left") {
+			t.Errorf("%s: expected an auth-icon--arrow-left span inside the back control", c.name)
+		}
+		if text := strings.TrimSpace(tagRe.ReplaceAllString(rendered, "")); text != "" {
+			t.Errorf("%s: expected no visible text inside the back control (icon only), found %q", c.name, text)
+		}
 	}
 
 	cssRaw, err := StaticFS.ReadFile("static/css/auth.css")
