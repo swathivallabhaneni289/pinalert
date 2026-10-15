@@ -249,15 +249,49 @@
     meta.className = 'report-row__meta';
     body.appendChild(meta);
 
+    // The Written line shows only when the server sent a written time; it
+    // ships hidden and updateLowWrittenLine fills it.
+    var written = document.createElement('p');
+    written.className = 'report-row__meta';
+    written.hidden = true;
+    body.appendChild(written);
+
     var tag = PinalertVisibility.createVisibilityTag();
     var trust = PinalertTrust.createTrustBlock();
     body.appendChild(PinalertTrust.createStateLine('report-row__stateline', tag, trust));
     body.appendChild(trust.el);
 
+    // Confirm and Dispute come from the shared vote block, built without the
+    // resolve button and its question. The block owns its own listeners and sits under the trust
+    // block in the order the opened report uses: controls, the too far note,
+    // then the vote error.
+    var voteBlock = PinalertVotes.createVoteBlock(report.id, { resolve: false });
+    body.appendChild(voteBlock.controls);
+    body.appendChild(voteBlock.note);
+    body.appendChild(voteBlock.error);
+
     li.appendChild(badge);
     li.appendChild(body);
 
-    return { el: li, glyph: glyph, severity: severityLabel, title: title, meta: meta, tag: tag, trust: trust };
+    return {
+      el: li,
+      glyph: glyph,
+      severity: severityLabel,
+      title: title,
+      meta: meta,
+      written: written,
+      tag: tag,
+      trust: trust,
+      voteBlock: voteBlock
+    };
+  }
+
+  // updateLowWrittenLine fills the Written line from the shared formatter, which
+  // is the only reader of the server's written time, and hides it when empty.
+  function updateLowWrittenLine(row, report) {
+    var line = Pinalert.writtenLine(report);
+    Pinalert.setText(row.written, line);
+    row.written.hidden = !line;
   }
 
   function updateLowRow(row, report) {
@@ -274,9 +308,11 @@
 
     Pinalert.setText(row.title, report.description);
     Pinalert.setText(row.meta, buildLowMetaText(report));
+    updateLowWrittenLine(row, report);
 
     PinalertVisibility.updateVisibilityTag(row.tag, report);
     PinalertTrust.updateTrustBlock(row.trust, report.trust);
+    PinalertVotes.updateVoteBlock(row.voteBlock, report);
   }
 
   // focusAfterRemoval puts focus on a real control when the row that held it
@@ -486,6 +522,7 @@
       var row = rowsById[ids[i]];
       replacePrefixedClass(row.el, 'age-', 'age-' + PinalertTrust.fadeStage(report));
       Pinalert.setText(row.meta, buildLowMetaText(report));
+      updateLowWrittenLine(row, report);
     }
   }
 

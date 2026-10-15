@@ -150,7 +150,7 @@ func TestTakeBackFinishedReportIsReadOnly(t *testing.T) {
 
 	// The mount order inside the controls: the three buttons, the
 	// confirmation, the closed note, the take back block.
-	create := p09FuncBody(t, text, "createVoteBlock(reportId)")
+	create := p09FuncBody(t, text, "createVoteBlock(reportId, options)")
 	p09Ordered(t, create, "createVoteBlock mount order",
 		"controls.appendChild(resolveBtn)", "controls.appendChild(confirmBlock)",
 		"controls.appendChild(closedNote)", "controls.appendChild(takeBack.el)",
@@ -203,7 +203,7 @@ func TestTakeBackLimitSentences(t *testing.T) {
 	if n := strings.Count(text, "You have used both undos on this report, so this can't be undone."); n != 1 {
 		t.Errorf("the confirmation line (C53) must be written once, found %d", n)
 	}
-	create := p09FuncBody(t, text, "createVoteBlock(reportId)")
+	create := p09FuncBody(t, text, "createVoteBlock(reportId, options)")
 	p09Ordered(t, create, "confirmation group order",
 		"confirmBlock.appendChild(confirmHeading)",
 		"confirmBlock.appendChild(confirmLimit)",

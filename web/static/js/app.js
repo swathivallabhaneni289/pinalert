@@ -628,6 +628,25 @@ window.Pinalert = (function () {
     return diffDays + (diffDays === 1 ? ' day ago' : ' days ago');
   }
 
+  // formatWait words a wait the server announced, rounded up: N seconds under
+  // a minute, N minutes under an hour, else N hours, with the singular at 1.
+  // These are the same words the server uses in its rate limit sentences.
+  function formatWait(seconds) {
+    var s = Math.ceil(Number(seconds));
+    if (!isFinite(s) || s < 1) {
+      s = 1;
+    }
+    if (s < 60) {
+      return s + (s === 1 ? ' second' : ' seconds');
+    }
+    if (s < 3600) {
+      var minutes = Math.ceil(s / 60);
+      return minutes + (minutes === 1 ? ' minute' : ' minutes');
+    }
+    var hours = Math.ceil(s / 3600);
+    return hours + (hours === 1 ? ' hour' : ' hours');
+  }
+
   function updatedAgo(timestampMs) {
     // The age of the last applied list answer for the stale line, in whole
     // units rounded down, so time already passed is never overstated. It reads
@@ -953,6 +972,7 @@ window.Pinalert = (function () {
     formatShelterLine: formatShelterLine,
     relativeTime: relativeTime,
     updatedAgo: updatedAgo,
+    formatWait: formatWait,
     writtenLine: writtenLine,
     formatDistance: formatDistance,
     distanceText: distanceText,
