@@ -26,15 +26,17 @@ import (
 // positional parameter, and to the const sqlc generated from it (sqlc emits
 // the query as an unexported const, unreachable from this external test
 // package). TestReporterHistoryQuerySourceHasExpectedShape is the drift guard
-// that keeps the three from diverging silently.
+// that keeps the three from diverging silently. The sixth output column,
+// moderation_state, carries moderation for the rating (Phase 4 R-02) and is
+// never filtered on.
 const reporterHistorySQLForExplain = `
-SELECT t.account_id::bigint AS account_id, t.report_id, t.severity, t.category, t.expires_at
+SELECT t.account_id::bigint AS account_id, t.report_id, t.severity, t.category, t.expires_at, t.moderation_state
 FROM (
-    SELECT x.account_id, rr.id AS report_id, rr.severity, rr.category, rr.expires_at,
+    SELECT x.account_id, rr.id AS report_id, rr.severity, rr.category, rr.expires_at, rr.moderation_state,
            row_number() OVER (PARTITION BY x.account_id ORDER BY rr.expires_at DESC, rr.id DESC) AS rn
     FROM sessions x
     CROSS JOIN LATERAL (
-        SELECT r.id, r.severity, r.category, r.expires_at
+        SELECT r.id, r.severity, r.category, r.expires_at, r.moderation_state
         FROM reports r
         WHERE r.session_id = x.session_id
           AND r.expires_at <= $1::timestamptz
@@ -161,7 +163,9 @@ func TestReporterHistoryQuerySourceHasExpectedShape(t *testing.T) {
 	}
 
 	rules := []struct{ rule, want string }{
-		{"column list", "SELECT t.account_id::bigint AS account_id, t.report_id, t.severity, t.category, t.expires_at FROM ("},
+		{"column list", "SELECT t.account_id::bigint AS account_id, t.report_id, t.severity, t.category, t.expires_at, t.moderation_state FROM ("},
+		{"R-02 lateral select carries moderation", "SELECT r.id, r.severity, r.category, r.expires_at, r.moderation_state FROM reports r"},
+		{"R-02 windowed subquery carries moderation", "rr.expires_at, rr.moderation_state, row_number() OVER ("},
 		{"D-10 account keying", "FROM sessions x CROSS JOIN LATERAL ("},
 		{"D-13 per session scan", "WHERE r.session_id = x.session_id"},
 		{"R-05 upper window edge is inclusive", "r.expires_at <= $1::timestamptz"},
@@ -420,7 +424,10 @@ func TestReporterHistoryUsesAccountNotSession(t *testing.T) {
 			t.Fatalf("%s fields = %v, want exactly %v", typ.Name(), got, want)
 		}
 	}
-	assertFields(sqlcgen.ReporterHistoryReportsRow{}, []string{"AccountID", "ReportID", "Severity", "Category", "ExpiresAt"})
+	assertFields(sqlcgen.ReporterHistoryReportsRow{}, []string{"AccountID", "ReportID", "Severity", "Category", "ExpiresAt", "ModerationState"})
+	if f, ok := reflect.TypeOf(sqlcgen.ReporterHistoryReportsRow{}).FieldByName("ModerationState"); !ok || f.Type.Kind() != reflect.String {
+		t.Fatalf("ReporterHistoryReportsRow.ModerationState must be a string field (R-02), got %v", f.Type)
+	}
 	assertFields(sqlcgen.ReporterHistoryReportsParams{}, []string{"Now", "WindowStart", "RowCap", "AccountIds"})
 
 	pool := testutil.NewTestDB(t)
