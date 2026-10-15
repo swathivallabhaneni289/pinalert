@@ -1,0 +1,1802 @@
+[
+  {
+    "id": "g-en-001",
+    "text": "Water has entered our ground floor at 14 Shanti Nagar, Kochi. Two children and my grandfather are upstairs, please send a boat urgently",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-002",
+    "text": "Karamana river is at the second step of the bridge, still rising slowly. Avoid the lower road tonight",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-003",
+    "text": "TRAPPED ON THE ROOF WITH 5 PEOPLE, WATER RISING FAST, HELP US, CALL 9876543210",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-004",
+    "text": "Relief camp open at the government school, Ward 12, hot food and blankets available 🙏",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-005",
+    "text": "Power cut since 3 am in Indiranagar sector 4, no word from the electricity board",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-006",
+    "text": "Man bleeding badly after a tree fell on his scooter near the bus stand, ambulance not coming, please help",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-007",
+    "text": "Help!!!! flood here",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-008",
+    "text": "NH 66 BLOCKED NEAR KOLLAM, LANDSLIDE HAS COVERED ONE LANE",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-009",
+    "text": "Fire in the godown behind the market, people are still inside, fire engine not here yet!!",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-010",
+    "text": "Earthquake felt in Guwahati just now, cracks on our wall but everyone is safe",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-011",
+    "text": "Building collapsed on Church Road, I can hear people shouting under the debris. Need rescue team now",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-012",
+    "text": "CYCLONE WARNING, ALL FISHING BOATS MUST COME BACK TO THE KAKINADA SHORE TONIGHT",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-013",
+    "text": "pleeeease share, the shelter at Corporation School Velachery is open and has space for 200 people",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-014",
+    "text": "My mother is diabetic and trapped alone on the first floor, water up to the stairs. Please help, 8899001122",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-015",
+    "text": "Tree fell across the road near the temple, traffic diverted through the lane behind the ration shop",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-016",
+    "text": "URGENT: NO ELECTRICITY IN WARD 9 FOR TWO DAYS, TRANSFORMER BURNT, ELECTRICITY BOARD NOT RESPONDING",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-017",
+    "text": "Boy of about ten years drowned in the canal behind the school, body still in the water, please call the police and rescue",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-018",
+    "text": "Water level at Hosur Road underpass is waist deep, two wheelers are stuck",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-019",
+    "text": "Flooded street in Unit 4 Bhubaneswar, the municipality pumps have not worked since morning",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-020",
+    "text": "Old man collapsed with chest pain in the relief camp, we called 108 but no ambulance, doctor needed immediately",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-021",
+    "text": "LANDSLIDE ON GHAT ROAD AFTER MUNNAR, BUSES CANNOT PASS",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-022",
+    "text": "SHELTER OPEN AT GOVT HIGHER SECONDARY SCHOOL GROUND BEHIND THE BUS STAND, FOOD AND DRINKING WATER AVAILABLE",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-023",
+    "text": "Flash flood swept our neighbour's tractor, driver is missing since 6 pm, villagers searching the river bank. Need divers",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-024",
+    "text": "Is the Paltan Bazar road in Guwahati open? Heard it is closed because of water",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-025",
+    "text": "Nobody from the municipality has come to clear the drain on 4th Cross, the whole lane is under water. Shameful!!",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-026",
+    "text": "Electric pole fallen in water at Station Chowk, one person got electrocuted and is not moving. Do not go near, call 112",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-027",
+    "text": "Lights back in Sector 21 after 18 hours",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-028",
+    "text": "Fire out, thanks to all",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-029",
+    "text": "Road open now",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-030",
+    "text": "Pregnant woman in labour, road to hospital is under water, need a boat or tractor at Green Park Colony right now. 7012345678",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-031",
+    "text": "damn this rainnnnn, 3rd day without power and the phone is at 4 percent",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-032",
+    "text": "Whole village cut off after the bridge washed away near Sivasagar, supplies by boat only",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-033",
+    "text": "SOS SOS ROOF COMING OFF IN THE CYCLONE, TWO KIDS WITH US IN THE BATHROOM",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-034",
+    "text": "Community kitchen in the ward hall on lane 5 is serving khichdi till 9 pm",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-035",
+    "text": "Helppppp, water is entering the shop, need a pump ASAP at Market Road",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-036",
+    "text": "Official cyclone alerts for the coast are at https://mausam.imd.gov.in/ and the district control room is on 1077",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-037",
+    "text": "Timings for each relief camp are listed at https://example.org/relief-camps",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-038",
+    "text": "Three fishermen are missing since last night after the boat overturned in rough sea off Puri, coast guard informed. One body found on the beach",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-039",
+    "text": "Earth tremor again at 2 am, people sleeping outside on the ground at Plot 18, Sector 9",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-040",
+    "text": "We live in the lower part of the colony near the canal. Around 6 pm the water started coming into the lane and by 9 pm it was above the knee. The elders and children have moved to the first floor of the neighbour's house. We have food for one day and no power. The municipality van came once and left. If anyone has a boat or knows the rescue number please post it here, we will be waiting near the water tank on 3rd Cross.",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-001",
+    "text": "Bhai paani ghar mein ghus gaya hai, bachche aur dadaji upar chhat par hain, jaldi boat bhejo. 9123456789",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-002",
+    "text": "YAMUNA KA PAANI SADAK PAR AA GAYA HAI, MAYUR VIHAR KE PAAS ROAD BAND HAI",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-003",
+    "text": "Bijli nahi hai pichle do din se, Sector 15 Gurugram mein transformer jal gaya",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-004",
+    "text": "Ek aadmi ko bahut khoon beh raha hai, sadak par accident hua hai, ambulance abhi tak nahi aayi!! 108 pe call kiya",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-005",
+    "text": "RELIEF CAMP KHULA HAI SARKARI SCHOOL MEIN, WARD 7, KHANA AUR KAMBAL MIL RAHE HAIN",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-006",
+    "text": "Help!! pani aa raha",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-007",
+    "text": "SAB LOG CHHAT PAR HAIN, PAANI BAHUT TEZI SE BADH RAHA HAI, JALDI RESCUE TEAM BHEJO",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-008",
+    "text": "Patna mein Boring Road par ghutne tak paani hai, bike band ho gayi",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-009",
+    "text": "Aaj raat cyclone aane wala hai, sab log shelter mein chale jao",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-010",
+    "text": "Aag lag gayi hai chowk ke paas dukaan mein, andar do log phase hain, fire brigade abhi nahi pahunchi",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-011",
+    "text": "Dilli NCR mein halka bhukamp aaya, kuch logon ne ghar chhod diya",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-012",
+    "text": "Deewar gir gayi hai gali number 5 mein, malbe mein dabe do log zakhmi hain, please help",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-013",
+    "text": "Plz share karo, bijli ka khamba sadak par gira hai, koi us taraf mat jao 🙏",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-014",
+    "text": "SADAK PAR PED GIR GAYA HAI LINKING ROAD KE PAAS, TRAFFIC BAHUT SLOW HAI",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-015",
+    "text": "Meri maa ko dil ki bimari hai, ghar mein paani bhar gaya hai, unko bahar nikalna hai jaldi. 6300012345",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-016",
+    "text": "Pleeeease koi bata do, Guwahati mein kaun si sadak khuli hai",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-017",
+    "text": "Nagar nigam waale ek baar bhi nahi aaye, naali band hai aur poori colony mein paani hai. Sharam karo!!",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-018",
+    "text": "Mandir ke paas ka hall khula hai, wahan 100 log reh sakte hain, khana bhi hai",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-019",
+    "text": "Nadi mein ek ladka beh gaya hai, log dhundh rahe hain, koi rassi ya boat ho to turant bhejo, 9988776655 pe call karo",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-020",
+    "text": "Bhukamp ke jhatke abhi bhi aa rahe hain, log park mein baithe hain, ghar ke andar koi nahi ja raha",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-021",
+    "text": "BIJLI NAHI HAI SECTOR 21 MEIN, ELECTRICITY WALE PHONE NAHI UTHA RAHE",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-022",
+    "text": "LANDSLIDE HO GAYA HAI MUSSOORIE ROAD PAR, GAADI NAHI NIKAL SAKTI",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-023",
+    "text": "Ghar ki chhat gir gayi hai aur dada ji ki maut ho gayi, baaki sab bahar hain, madad chahiye",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-024",
+    "text": "Rahat shivir mein khana khatam ho gaya hai, kisi ke paas extra packets ho to Plot 12 par bhej do",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-025",
+    "text": "Helppppp hum phase hain",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-026",
+    "text": "https://mausam.imd.gov.in par cyclone ka latest alert dekho, ghar mein rehna hai",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-027",
+    "text": "Kal subah school band rahenge, sarkar ne chhutti ghoshit ki hai, bacchon ko ghar par rakhein",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-028",
+    "text": "Bhai pani mein current aa gaya hai, ek ladka bijli ke taar se chipak gaya, munh se khoon aa raha hai, halat bahut kharab hai",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-029",
+    "text": "BUS STAND KE SAMNE WALI SADAK KHUL GAYI HAI, AB GAADIYAN CHAL RAHI HAIN",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-030",
+    "text": "Mumbai local Dadar tak chal rahi hai, uske aage paani hai",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-031",
+    "text": "Fire brigade aa gayi hai, aag kaabu mein hai",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-032",
+    "text": "Hum 6 log nav mein hain, engine band ho gaya hai aur lehrein bahut tez hain, coast guard ko batao jaldi",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-033",
+    "text": "Ward 3 mein bijli wapas aa gayi hai, thanks sabko",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-034",
+    "text": "Kya Kurla ki taraf se Sion jaana safe hai? Kisi ko pata hai?",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-035",
+    "text": "ASAP bhai, ghar mein paani ghutno tak aa gaya, generator ka petrol chahiye, Door no 21 Patel Nagar",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-036",
+    "text": "Yaar yeh baarishhhh kab rukegi, damn, teen din se ghar mein band hain",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-037",
+    "text": "Rescue team Bandra East pahunch gayi hai, sab thik hai",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-038",
+    "text": "Ek bujurg paani mein doob gaye the, humne bahar nikala, body thandi hai aur saans kam hai, abhi CPR kar rahe hain, 112 pe phone kiya",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-039",
+    "text": "Koi bata sakta hai ki Howrah Junction se trains chal rahi hain ya nahi",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-040",
+    "text": "Hum Kurla West mein rehte hain, kal shaam se paani badh raha hai. Raat 10 baje tak ground floor poora doob gaya aur ab pehli manzil par paani aa raha hai. Ghar mein do bujurg, ek garbhwati mahila aur teen bachche hain. Bijli kal se nahi hai, phone ki battery bhi bahut kam bachi hai. Nagar nigam ko teen baar phone kiya par koi nahi aaya. Agar kisi ke paas boat ya tractor hai to please jaldi bhejo, hum 4th Cross ke paas wali building ki chhat par intezaar kar rahe hain.",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-001",
+    "text": "हमारे घर में पानी भर गया है, छत पर दो बच्चे और बूढ़ी दादी हैं, जल्दी नाव भेजिए!! 9876543210 पर फोन करें",
+    "language": "hi",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-002",
+    "text": "पटना में बोरिंग रोड पर घुटनों तक पानी है, गाड़ियां नहीं चल रहीं",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-003",
+    "text": "बाढ़ के पानी में एक आदमी डूब गया, लाश अभी तक नदी किनारे पड़ी है, पुलिस को बुलाइए",
+    "language": "hi",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-004",
+    "text": "दरभंगा में राहत शिविर खुल गया है, सरकारी स्कूल में खाना और कंबल मिल रहे हैं 🙏",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-005",
+    "text": "कल रात से बिजली नहीं है, बिजली विभाग फोन ही नहीं उठा रहा",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-006",
+    "text": "रोड पर पानी भर गया",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-007",
+    "text": "आग लग गई है बाजार के पीछे गोदाम में, अंदर दो लोग फंसे हैं, SOS",
+    "language": "hi",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-008",
+    "text": "लखनऊ में आंधी से पेड़ गिर गया है, सड़क बंद है, दूसरा रास्ता लीजिए",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-009",
+    "text": "दीवार गिर गई, मलबे में दबे एक बच्चे को खून बह रहा है, तुरंत मदद भेजिए, 112 पर कॉल किया",
+    "language": "hi",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-010",
+    "text": "भूकंप के झटके अभी महसूस हुए, लोग घरों से बाहर निकल आए हैं",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-011",
+    "text": "यमुना का जलस्तर अभी भी बढ़ रहा है, निचली बस्तियों वाले ऊपर चले जाएं",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-012",
+    "text": "मेरे पिताजी को सांस नहीं आ रही, घर में पानी है और एंबुलेंस नहीं पहुंच पा रही, कृपया मदद करें 7012345678",
+    "language": "hi",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-013",
+    "text": "उत्तरकाशी के पास भूस्खलन से हाईवे बंद है, पत्थर हटाने का काम चल रहा है",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-014",
+    "text": "बिजली आ गई, धन्यवाद सबको",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-015",
+    "text": "नदी किनारे एक औरत फंसी है, पानी कमर तक आ गया है, रस्सी लेकर कोई आ सकता है क्या!!",
+    "language": "hi",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-016",
+    "text": "कृपया शेयर करें, नगर निगम का शिविर वार्ड 5 में खुला है",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-017",
+    "text": "मदद!!! पानी बढ़ रहा है",
+    "language": "hi",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-018",
+    "text": "बिजली का तार पानी में गिरा है, एक आदमी को करंट लगा और वह घायल पड़ा है, कोई तुरंत बिजली विभाग को बताओ",
+    "language": "hi",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-019",
+    "text": "स्कूल कल बंद रहेंगे, जिला प्रशासन ने सूचना जारी की है",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-020",
+    "text": "इतनी बारिश हो रही है कि कुछ दिख नहीं रहा, सब लोग घर के अंदर रहें",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-021",
+    "text": "NH 58 पर ट्रक पलट गया है, जाम लगा है, सुबह तक खुलने की उम्मीद नहीं",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-022",
+    "text": "तीन मंजिला इमारत गिर गई है, अंदर कई परिवार थे, घायल लोग बाहर निकाले जा रहे हैं, रेस्क्यू टीम चाहिए",
+    "language": "hi",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-023",
+    "text": "वाराणसी में घाट की सीढ़ियां पानी में डूब गई हैं, नाव बंद है",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-024",
+    "text": "बिजली विभाग ने कहा चार घंटे में आएगी, पर चौबीस घंटे हो गए, यह क्या मज़ाक है!!",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-025",
+    "text": "बच्चा नाले में बह गया, लोग ढूंढ रहे हैं, कृपया गोताखोर भेजें, यह बहुत जरूरी है!!",
+    "language": "hi",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-026",
+    "text": "दिल्ली में मयूर विहार के पास पानी सड़क पर आ गया है, मेट्रो चालू है",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-027",
+    "text": "शिविर में सुबह तक खाना खत्म हो जाएगा, राशन पहुंचा दीजिए, 9123456789 पर बताएं",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-028",
+    "text": "जिन लोगों को हल्की चोट लगी है वे स्कूल के हॉल में आ जाएं, डॉक्टर वहां हैं",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-029",
+    "text": "मेरे भाई की मौत हो गई, लाश घर में पड़ी है, चारों तरफ पानी है, कोई कंधा देने वाला नहीं",
+    "language": "hi",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-030",
+    "text": "पेड़ गिरा है रास्ते पर",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-031",
+    "text": "तेज़ हवा से टीन की छत उड़ गई, सब लोग पास के शिविर में हैं",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-032",
+    "text": "आग दूसरी मंजिल तक पहुंच गई है, लोग बालकनी में खड़े हैं, दमकल को जल्दी बुलाओ!!",
+    "language": "hi",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-033",
+    "text": "हल्का झटका फिर आया, सब ठीक है",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-034",
+    "text": "सड़क अब खुल गई है, धन्यवाद",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-035",
+    "text": "प्लॉट 14 सेक्टर 9 में पानी घुस आया है, नगर निगम का पंप अब तक नहीं आया",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-036",
+    "text": "रात भर बिजली नहीं रही, मोबाइल बंद होने वाला है, कृपया किसी के पास पावर बैंक हो तो बताएं",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-037",
+    "text": "ज़िला कंट्रोल रूम का नंबर 1077 है, मदद के लिए वहां फोन करें",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-038",
+    "text": "बस्ती में पानी छाती तक है, बुजुर्ग और बच्चे फंसे हैं, कोई नाव नहीं आई, हम 40 लोग हैं, जल्दी करें!!",
+    "language": "hi",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-039",
+    "text": "यहां पीने का पानी खत्म हो गया है, टैंकर कब आएगा कोई बताओ",
+    "language": "hi",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hi-040",
+    "text": "हम लोग दरभंगा के पास एक गांव में रहते हैं। कल सुबह से कमला नदी का पानी गांव में घुसना शुरू हुआ और आज दोपहर तक पूरा मोहल्ला डूब गया। हमारे घर में बारह लोग हैं, जिनमें तीन छोटे बच्चे और दो बुजुर्ग हैं। सब लोग पक्की छत पर बैठे हैं, खाना कल रात से नहीं बना है। पीने का पानी भी खत्म हो रहा है। प्रशासन से कई बार बात की पर अभी तक कोई नाव नहीं आई। अगर किसी के पास नाव या ट्रैक्टर है या राहत दल का नंबर पता है तो कृपया यहां लिखिए।",
+    "language": "hi",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-001",
+    "text": "మా ఇంట్లోకి నీళ్లు వచ్చాయి, మేడ మీద ఇద్దరు పిల్లలు, ముసలి తాత ఉన్నారు, వెంటనే పడవ పంపండి!! 9988776655 కి ఫోన్ చేయండి",
+    "language": "te",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-002",
+    "text": "విజయవాడ బెంజ్ సర్కిల్ దగ్గర రోడ్డు మీద మోకాళ్ల లోతు నీళ్లు ఉన్నాయి, బైకులు వెళ్ళడం లేదు",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-003",
+    "text": "గోదావరి ఒడ్డున ఒక వ్యక్తి మునిగిపోయాడు, మృతదేహం ఇంకా నీటిలోనే ఉంది, పోలీసులకు చెప్పండి",
+    "language": "te",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-004",
+    "text": "ఖమ్మంలో పునరావాస కేంద్రం తెరిచారు, ప్రభుత్వ పాఠశాలలో భోజనం, దుప్పట్లు ఇస్తున్నారు 🙏",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-005",
+    "text": "నిన్న రాత్రి నుంచి కరెంటు లేదు, విద్యుత్ శాఖ వాళ్ళు ఫోన్ ఎత్తడం లేదు",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-006",
+    "text": "రోడ్డు మీద నీళ్లు",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-007",
+    "text": "గోదాములో మంటలు అంటుకున్నాయి, లోపల ఇద్దరు ఉన్నారు, ఫైర్ ఇంజన్ ఇంకా రాలేదు, SOS",
+    "language": "te",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-008",
+    "text": "విశాఖపట్నంలో తుఫాను హెచ్చరిక, మత్స్యకారులు పడవలను ఒడ్డుకు తెచ్చేస్తున్నారు",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-009",
+    "text": "గోడ కూలింది, శిథిలాల కింద ఒక బాబుకి రక్తం కారుతోంది, వెంటనే సహాయం కావాలి, 112 కి కాల్ చేశాము",
+    "language": "te",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-010",
+    "text": "భూకంపం వచ్చినట్టు అనిపించింది, అందరూ ఇళ్ల నుంచి బయటకు వచ్చారు",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-011",
+    "text": "కృష్ణా నదిలో నీటి మట్టం ఇంకా పెరుగుతోంది, లోతట్టు ప్రాంతాల వాళ్ళు జాగ్రత్తగా ఉండండి",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-012",
+    "text": "మా అమ్మ గర్భవతి, ఇంటి చుట్టూ నీళ్లు, ఆసుపత్రికి వెళ్లలేకపోతున్నాం, దయచేసి సహాయం చేయండి 6300012345",
+    "language": "te",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-013",
+    "text": "అరకు ఘాట్ రోడ్డులో కొండచరియలు విరిగిపడ్డాయి, వాహనాలు ఆగిపోయాయి",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-014",
+    "text": "కరెంటు వచ్చేసింది",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-015",
+    "text": "కాలువలో ఒక అమ్మాయి కొట్టుకుపోయింది, ఎవరైనా తాడు తీసుకుని రండి, త్వరగా!!",
+    "language": "te",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-016",
+    "text": "దయచేసి షేర్ చేయండి, మున్సిపల్ శిబిరం వార్డు 8లో తెరిచారు",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-017",
+    "text": "సహాయం!!! నీళ్లు పెరుగుతున్నాయి",
+    "language": "te",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-018",
+    "text": "కరెంటు తీగ నీళ్లలో పడింది, ఒకరికి షాక్ కొట్టి గాయపడ్డాడు, ఎవరూ అటు వెళ్లకండి, వెంటనే విద్యుత్ శాఖకు చెప్పండి",
+    "language": "te",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-019",
+    "text": "రేపు పాఠశాలలకు సెలవు ప్రకటించారు, కలెక్టర్ కార్యాలయం నుంచి సమాచారం వచ్చింది",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-020",
+    "text": "గాలి వానకు చెట్టు కూలింది, రోడ్డు మూసుకుపోయింది, ఇంకో దారిలో వెళ్లండి",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-021",
+    "text": "NH 16 మీద లారీ బోల్తా పడింది, ట్రాఫిక్ జామ్ అయింది, ఉదయం వరకు తెరిచే అవకాశం లేదు",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-022",
+    "text": "మూడు అంతస్తుల భవనం కూలిపోయింది, లోపల చాలా కుటుంబాలు ఉన్నాయి, గాయపడ్డవారిని బయటకు తీస్తున్నారు, రెస్క్యూ టీమ్ కావాలి",
+    "language": "te",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-023",
+    "text": "హైదరాబాద్ మూసీ వంతెన దగ్గర నీళ్లు ఇంకా తగ్గలేదు, అటు వెళ్లకండి",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-024",
+    "text": "విద్యుత్ శాఖ నాలుగు గంటల్లో వస్తుందన్నారు, ఇరవై నాలుగు గంటలైంది, ఇదేం పద్ధతి!!",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-025",
+    "text": "బావిలో ఒక పిల్లాడు పడిపోయాడు, ఊరి వాళ్ళు తాడుతో ప్రయత్నిస్తున్నారు, వెంటనే రావాలి!!",
+    "language": "te",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-026",
+    "text": "ప్లాట్ 12, సెక్టార్ 5 లో ఇంట్లోకి నీళ్లు వచ్చాయి, మున్సిపాలిటీ పంపు ఇంకా రాలేదు",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-027",
+    "text": "శిబిరంలో భోజనం అయిపోతోంది, రేషన్ పంపండి, 9876543210 కి చెప్పండి",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-028",
+    "text": "తీవ్రంగా గాయపడ్డవారు ప్రభుత్వ ఆసుపత్రికి వెళ్లండి, అక్కడ డాక్టర్లు ఉన్నారు",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-029",
+    "text": "మా తాత చనిపోయారు, మృతదేహం ఇంట్లోనే ఉంది, చుట్టూ నీళ్లు ఉన్నాయి, ఎవరూ సహాయానికి రావడం లేదు",
+    "language": "te",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-030",
+    "text": "చెట్టు రోడ్డుపై పడింది",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-031",
+    "text": "గాలికి రేకుల షెడ్డు ఎగిరిపోయింది, అందరూ దగ్గర్లోని శిబిరంలో ఉన్నాం",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-032",
+    "text": "రెండో అంతస్తుకు మంటలు వ్యాపించాయి, బాల్కనీలో జనం ఉన్నారు, అగ్నిమాపక దళాన్ని త్వరగా పిలవండి!!",
+    "language": "te",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-033",
+    "text": "చిన్న ప్రకంపన మళ్ళీ వచ్చింది",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-034",
+    "text": "రోడ్డు తెరిచారు, ధన్యవాదాలు",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-035",
+    "text": "వర్షం ఆగడం లేదు, ఏమీ కనిపించడం లేదు, అందరూ ఇంట్లోనే ఉండండి",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-036",
+    "text": "రాత్రంతా కరెంటు లేదు, ఫోన్ ఆఫ్ అయ్యేలా ఉంది, ఎవరి దగ్గరైనా పవర్ బ్యాంక్ ఉందా",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-037",
+    "text": "జిల్లా కంట్రోల్ రూమ్ నంబర్ 1077, సహాయం కోసం అక్కడ ఫోన్ చేయండి",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-038",
+    "text": "కాలనీలో నీళ్లు ఛాతీ వరకు ఉన్నాయి, వృద్ధులు, పిల్లలు ఇరుక్కున్నారు, పడవ రాలేదు, మేము 40 మంది ఉన్నాము, త్వరగా రండి!!",
+    "language": "te",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-039",
+    "text": "తాగునీరు అయిపోయింది, ట్యాంకర్ ఎప్పుడు వస్తుందో ఎవరైనా చెప్పండి",
+    "language": "te",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-te-040",
+    "text": "మేము కాకినాడ దగ్గర ఒక గ్రామంలో ఉంటాం. నిన్న ఉదయం నుంచి గోదావరి నీళ్లు ఊళ్లోకి రావడం మొదలైంది, ఈ రోజు మధ్యాహ్నానికి వీధులన్నీ మునిగిపోయాయి. మా ఇంట్లో పన్నెండు మంది ఉన్నాం, అందులో ముగ్గురు చిన్న పిల్లలు, ఇద్దరు వృద్ధులు. అందరం స్లాబ్ మీద కూర్చున్నాం, నిన్న రాత్రి నుంచి వంట చేయలేదు. తాగునీరు కూడా అయిపోతోంది. అధికారులకు చాలాసార్లు ఫోన్ చేశాం కానీ ఇప్పటివరకు పడవ రాలేదు. ఎవరి దగ్గరైనా పడవ లేదా ట్రాక్టర్ ఉంటే, లేదా సహాయక బృందం నంబర్ తెలిస్తే దయచేసి ఇక్కడ రాయండి.",
+    "language": "te",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-001",
+    "text": "எங்கள் வீட்டுக்குள் தண்ணீர் புகுந்துவிட்டது, மாடியில் இரண்டு குழந்தைகளும் தாத்தாவும் இருக்கிறார்கள், உடனே படகு அனுப்புங்கள்!! 8899001122 எண்ணுக்கு அழையுங்கள்",
+    "language": "ta",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-002",
+    "text": "வேளச்சேரி சாலையில் முழங்கால் அளவு தண்ணீர் இருக்கிறது, இருசக்கர வாகனங்கள் செல்ல முடியவில்லை",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-003",
+    "text": "ஆற்றங்கரையில் ஒருவர் மூழ்கி இறந்துவிட்டார், உடல் இன்னும் தண்ணீரிலேயே இருக்கிறது, காவல்துறைக்குச் சொல்லுங்கள்",
+    "language": "ta",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-004",
+    "text": "கடலூரில் நிவாரண முகாம் திறக்கப்பட்டது, அரசுப் பள்ளியில் உணவும் போர்வையும் கிடைக்கிறது 🙏",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-005",
+    "text": "நேற்று இரவு முதல் மின்சாரம் இல்லை, மின்வாரியத்தினர் தொலைபேசியை எடுக்கவில்லை",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-006",
+    "text": "சாலையில் தண்ணீர்",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-007",
+    "text": "கிடங்கில் தீப்பிடித்துவிட்டது, உள்ளே இரண்டு பேர் இருக்கிறார்கள், தீயணைப்பு வண்டி இன்னும் வரவில்லை, SOS",
+    "language": "ta",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-008",
+    "text": "தூத்துக்குடியில் புயல் எச்சரிக்கை, மீனவர்கள் படகுகளைக் கரைக்கு இழுத்து வருகிறார்கள்",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-009",
+    "text": "சுவர் இடிந்து விழுந்தது, இடிபாடுகளுக்குள் ஒரு சிறுவனுக்கு ரத்தம் வருகிறது, உடனே உதவி தேவை, 112 எண்ணுக்கு அழைத்தோம்",
+    "language": "ta",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-010",
+    "text": "நிலநடுக்கம் போல உணர்ந்தோம், எல்லோரும் வீடுகளை விட்டு வெளியே வந்துவிட்டனர்",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-011",
+    "text": "அடையாறு ஆற்றில் நீர்மட்டம் இன்னும் உயர்ந்து வருகிறது, தாழ்வான பகுதிகளில் உள்ளவர்கள் கவனமாக இருங்கள்",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-012",
+    "text": "என் அம்மா கர்ப்பிணி, வீட்டைச் சுற்றி தண்ணீர், மருத்துவமனைக்குப் போக முடியவில்லை, தயவுசெய்து உதவுங்கள் 7012345678",
+    "language": "ta",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-013",
+    "text": "கொடைக்கானல் மலைப்பாதையில் மண்சரிவு, வாகனங்கள் நிற்கின்றன",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-014",
+    "text": "மின்சாரம் வந்துவிட்டது",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-015",
+    "text": "கால்வாயில் ஒரு சிறுமி அடித்துச் செல்லப்பட்டாள், கயிறு எடுத்துக்கொண்டு யாராவது வாருங்கள், விரைவாக!!",
+    "language": "ta",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-016",
+    "text": "தயவுசெய்து பகிருங்கள், மாநகராட்சி முகாம் வார்டு 8இல் திறந்திருக்கிறது",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-017",
+    "text": "உதவி!!! தண்ணீர் உயர்கிறது",
+    "language": "ta",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-018",
+    "text": "மின்கம்பி தண்ணீரில் விழுந்துள்ளது, ஒருவருக்கு மின்சாரம் தாக்கி காயமடைந்தார், யாரும் அங்கே போகாதீர்கள், உடனே மின்வாரியத்துக்குச் சொல்லுங்கள்",
+    "language": "ta",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-019",
+    "text": "நாளை பள்ளிகளுக்கு விடுமுறை அறிவிக்கப்பட்டுள்ளது, ஆட்சியர் அலுவலகத்தில் இருந்து தகவல் வந்தது",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-020",
+    "text": "காற்றுடன் மழைக்கு மரம் சாலையில் விழுந்துவிட்டது, வேறு வழியில் செல்லுங்கள்",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-021",
+    "text": "NH 32 இல் லாரி கவிழ்ந்துவிட்டது, போக்குவரத்து நெரிசல், காலை வரை திறக்க வாய்ப்பில்லை",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-022",
+    "text": "மூன்று மாடிக் கட்டிடம் இடிந்துவிட்டது, உள்ளே பல குடும்பங்கள் இருந்தன, காயமடைந்தவர்களை வெளியே எடுக்கிறார்கள், மீட்புக் குழு தேவை",
+    "language": "ta",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-023",
+    "text": "தாம்பரம் பாலத்தின் அருகே தண்ணீர் இன்னும் குறையவில்லை, அந்தப் பக்கம் போக வேண்டாம்",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-024",
+    "text": "மின்வாரியம் நான்கு மணி நேரத்தில் வரும் என்றார்கள், இருபத்து நான்கு மணி நேரம் ஆகிவிட்டது, இது என்ன முறை!!",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-025",
+    "text": "கிணற்றில் ஒரு சிறுவன் விழுந்துவிட்டான், ஊர் மக்கள் கயிற்றால் முயல்கிறார்கள், உடனே வாருங்கள்!!",
+    "language": "ta",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-026",
+    "text": "ப்ளாட் 12, செக்டர் 5 இல் வீட்டுக்குள் தண்ணீர் வந்துவிட்டது, மாநகராட்சி பம்பு இன்னும் வரவில்லை",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-027",
+    "text": "முகாமில் உணவு தீர்ந்து வருகிறது, ரேஷன் அனுப்புங்கள், 9876543210 எண்ணில் சொல்லுங்கள்",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-028",
+    "text": "காயமடைந்தவர்கள் அரசு மருத்துவமனைக்குச் செல்லுங்கள், அங்கே மருத்துவர்கள் இருக்கிறார்கள்",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-029",
+    "text": "என் தாத்தா இறந்துவிட்டார், உடல் வீட்டிலேயே இருக்கிறது, சுற்றிலும் தண்ணீர், யாரும் உதவிக்கு வரவில்லை",
+    "language": "ta",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-030",
+    "text": "மரம் சாலையில் விழுந்தது",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-031",
+    "text": "காற்றில் தகரக் கூரை பறந்துவிட்டது, எல்லோரும் அருகிலுள்ள முகாமில் இருக்கிறோம்",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-032",
+    "text": "இரண்டாவது மாடிக்குத் தீ பரவிவிட்டது, பால்கனியில் மக்கள் நிற்கிறார்கள், தீயணைப்புப் படையை விரைவாக அழையுங்கள்!!",
+    "language": "ta",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-033",
+    "text": "சிறிய அதிர்வு மீண்டும் வந்தது",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-034",
+    "text": "சாலை திறந்துவிட்டது, நன்றி",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-035",
+    "text": "மழை நிற்கவே இல்லை, எதுவும் தெரியவில்லை, எல்லோரும் வீட்டுக்குள்ளேயே இருங்கள்",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-036",
+    "text": "இரவு முழுவதும் மின்சாரம் இல்லை, தொலைபேசி அணைந்துவிடும் போல இருக்கிறது, யாரிடமாவது பவர் பேங்க் இருக்கிறதா",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-037",
+    "text": "மாவட்டக் கட்டுப்பாட்டு அறை எண் 1077, உதவிக்கு அங்கே அழையுங்கள்",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-038",
+    "text": "குடியிருப்பில் தண்ணீர் மார்பளவு உள்ளது, முதியவர்களும் குழந்தைகளும் சிக்கியுள்ளனர், படகு வரவில்லை, நாங்கள் 40 பேர் இருக்கிறோம், விரைவாக வாருங்கள்!!",
+    "language": "ta",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-039",
+    "text": "குடிநீர் தீர்ந்துவிட்டது, லாரி எப்போது வரும் என்று யாராவது சொல்லுங்கள்",
+    "language": "ta",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-ta-040",
+    "text": "நாங்கள் கடலூர் அருகே ஒரு கிராமத்தில் வசிக்கிறோம். நேற்று காலை முதல் பெண்ணையாற்று நீர் ஊருக்குள் புக ஆரம்பித்தது, இன்று மதியத்துக்குள் தெருக்கள் எல்லாம் மூழ்கிவிட்டன. எங்கள் வீட்டில் பன்னிரண்டு பேர் இருக்கிறோம், அவர்களில் மூன்று சிறு குழந்தைகளும் இரண்டு முதியவர்களும் உள்ளனர். எல்லோரும் மொட்டை மாடியில் அமர்ந்திருக்கிறோம், நேற்று இரவு முதல் சமைக்கவில்லை. குடிநீரும் தீர்ந்துகொண்டிருக்கிறது. அதிகாரிகளுக்குப் பலமுறை தொலைபேசியில் சொன்னோம், ஆனால் இதுவரை படகு வரவில்லை. யாரிடமாவது படகு அல்லது டிராக்டர் இருந்தால், அல்லது மீட்புக் குழுவின் எண் தெரிந்தால் தயவுசெய்து இங்கே எழுதுங்கள்.",
+    "language": "ta",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  }
+]
