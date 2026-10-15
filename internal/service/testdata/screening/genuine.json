@@ -1,0 +1,722 @@
+[
+  {
+    "id": "g-en-001",
+    "text": "Water has entered our ground floor at 14 Shanti Nagar, Kochi. Two children and my grandfather are upstairs, please send a boat urgently",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-002",
+    "text": "Karamana river is at the second step of the bridge, still rising slowly. Avoid the lower road tonight",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-003",
+    "text": "TRAPPED ON THE ROOF WITH 5 PEOPLE, WATER RISING FAST, HELP US, CALL 9876543210",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-004",
+    "text": "Relief camp open at the government school, Ward 12, hot food and blankets available 🙏",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-005",
+    "text": "Power cut since 3 am in Indiranagar sector 4, no word from the electricity board",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-006",
+    "text": "Man bleeding badly after a tree fell on his scooter near the bus stand, ambulance not coming, please help",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-007",
+    "text": "Help!!!! flood here",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-008",
+    "text": "NH 66 BLOCKED NEAR KOLLAM, LANDSLIDE HAS COVERED ONE LANE",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-009",
+    "text": "Fire in the godown behind the market, people are still inside, fire engine not here yet!!",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-010",
+    "text": "Earthquake felt in Guwahati just now, cracks on our wall but everyone is safe",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-011",
+    "text": "Building collapsed on Church Road, I can hear people shouting under the debris. Need rescue team now",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-012",
+    "text": "CYCLONE WARNING, ALL FISHING BOATS MUST COME BACK TO THE KAKINADA SHORE TONIGHT",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-013",
+    "text": "pleeeease share, the shelter at Corporation School Velachery is open and has space for 200 people",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-014",
+    "text": "My mother is diabetic and trapped alone on the first floor, water up to the stairs. Please help, 8899001122",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-015",
+    "text": "Tree fell across the road near the temple, traffic diverted through the lane behind the ration shop",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-016",
+    "text": "URGENT: NO ELECTRICITY IN WARD 9 FOR TWO DAYS, TRANSFORMER BURNT, ELECTRICITY BOARD NOT RESPONDING",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-017",
+    "text": "Boy of about ten years drowned in the canal behind the school, body still in the water, please call the police and rescue",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-018",
+    "text": "Water level at Hosur Road underpass is waist deep, two wheelers are stuck",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-019",
+    "text": "Flooded street in Unit 4 Bhubaneswar, the municipality pumps have not worked since morning",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-020",
+    "text": "Old man collapsed with chest pain in the relief camp, we called 108 but no ambulance, doctor needed immediately",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-021",
+    "text": "LANDSLIDE ON GHAT ROAD AFTER MUNNAR, BUSES CANNOT PASS",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-022",
+    "text": "SHELTER OPEN AT GOVT HIGHER SECONDARY SCHOOL GROUND BEHIND THE BUS STAND, FOOD AND DRINKING WATER AVAILABLE",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-023",
+    "text": "Flash flood swept our neighbour's tractor, driver is missing since 6 pm, villagers searching the river bank. Need divers",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-024",
+    "text": "Is the Paltan Bazar road in Guwahati open? Heard it is closed because of water",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-025",
+    "text": "Nobody from the municipality has come to clear the drain on 4th Cross, the whole lane is under water. Shameful!!",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-026",
+    "text": "Electric pole fallen in water at Station Chowk, one person got electrocuted and is not moving. Do not go near, call 112",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-027",
+    "text": "Lights back in Sector 21 after 18 hours",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-028",
+    "text": "Fire out, thanks to all",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-029",
+    "text": "Road open now",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-030",
+    "text": "Pregnant woman in labour, road to hospital is under water, need a boat or tractor at Green Park Colony right now. 7012345678",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-031",
+    "text": "damn this rainnnnn, 3rd day without power and the phone is at 4 percent",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-032",
+    "text": "Whole village cut off after the bridge washed away near Sivasagar, supplies by boat only",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-033",
+    "text": "SOS SOS ROOF COMING OFF IN THE CYCLONE, TWO KIDS WITH US IN THE BATHROOM",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-034",
+    "text": "Community kitchen in the ward hall on lane 5 is serving khichdi till 9 pm",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-035",
+    "text": "Helppppp, water is entering the shop, need a pump ASAP at Market Road",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-036",
+    "text": "Official cyclone alerts for the coast are at https://mausam.imd.gov.in/ and the district control room is on 1077",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-037",
+    "text": "Timings for each relief camp are listed at https://example.org/relief-camps",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-038",
+    "text": "Three fishermen are missing since last night after the boat overturned in rough sea off Puri, coast guard informed. One body found on the beach",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-039",
+    "text": "Earth tremor again at 2 am, people sleeping outside on the ground at Plot 18, Sector 9",
+    "language": "en",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-en-040",
+    "text": "We live in the lower part of the colony near the canal. Around 6 pm the water started coming into the lane and by 9 pm it was above the knee. The elders and children have moved to the first floor of the neighbour's house. We have food for one day and no power. The municipality van came once and left. If anyone has a boat or knows the rescue number please post it here, we will be waiting near the water tank on 3rd Cross.",
+    "language": "en",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-001",
+    "text": "Bhai paani ghar mein ghus gaya hai, bachche aur dadaji upar chhat par hain, jaldi boat bhejo. 9123456789",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-002",
+    "text": "YAMUNA KA PAANI SADAK PAR AA GAYA HAI, MAYUR VIHAR KE PAAS ROAD BAND HAI",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-003",
+    "text": "Bijli nahi hai pichle do din se, Sector 15 Gurugram mein transformer jal gaya",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-004",
+    "text": "Ek aadmi ko bahut khoon beh raha hai, sadak par accident hua hai, ambulance abhi tak nahi aayi!! 108 pe call kiya",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-005",
+    "text": "RELIEF CAMP KHULA HAI SARKARI SCHOOL MEIN, WARD 7, KHANA AUR KAMBAL MIL RAHE HAIN",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-006",
+    "text": "Help!! pani aa raha",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-007",
+    "text": "SAB LOG CHHAT PAR HAIN, PAANI BAHUT TEZI SE BADH RAHA HAI, JALDI RESCUE TEAM BHEJO",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-008",
+    "text": "Patna mein Boring Road par ghutne tak paani hai, bike band ho gayi",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-009",
+    "text": "Aaj raat cyclone aane wala hai, sab log shelter mein chale jao",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-010",
+    "text": "Aag lag gayi hai chowk ke paas dukaan mein, andar do log phase hain, fire brigade abhi nahi pahunchi",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-011",
+    "text": "Dilli NCR mein halka bhukamp aaya, kuch logon ne ghar chhod diya",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-012",
+    "text": "Deewar gir gayi hai gali number 5 mein, malbe mein dabe do log zakhmi hain, please help",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-013",
+    "text": "Plz share karo, bijli ka khamba sadak par gira hai, koi us taraf mat jao 🙏",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-014",
+    "text": "SADAK PAR PED GIR GAYA HAI LINKING ROAD KE PAAS, TRAFFIC BAHUT SLOW HAI",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-015",
+    "text": "Meri maa ko dil ki bimari hai, ghar mein paani bhar gaya hai, unko bahar nikalna hai jaldi. 6300012345",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-016",
+    "text": "Pleeeease koi bata do, Guwahati mein kaun si sadak khuli hai",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-017",
+    "text": "Nagar nigam waale ek baar bhi nahi aaye, naali band hai aur poori colony mein paani hai. Sharam karo!!",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-018",
+    "text": "Mandir ke paas ka hall khula hai, wahan 100 log reh sakte hain, khana bhi hai",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-019",
+    "text": "Nadi mein ek ladka beh gaya hai, log dhundh rahe hain, koi rassi ya boat ho to turant bhejo, 9988776655 pe call karo",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-020",
+    "text": "Bhukamp ke jhatke abhi bhi aa rahe hain, log park mein baithe hain, ghar ke andar koi nahi ja raha",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-021",
+    "text": "BIJLI NAHI HAI SECTOR 21 MEIN, ELECTRICITY WALE PHONE NAHI UTHA RAHE",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-022",
+    "text": "LANDSLIDE HO GAYA HAI MUSSOORIE ROAD PAR, GAADI NAHI NIKAL SAKTI",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-023",
+    "text": "Ghar ki chhat gir gayi hai aur dada ji ki maut ho gayi, baaki sab bahar hain, madad chahiye",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-024",
+    "text": "Rahat shivir mein khana khatam ho gaya hai, kisi ke paas extra packets ho to Plot 12 par bhej do",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-025",
+    "text": "Helppppp hum phase hain",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-026",
+    "text": "https://mausam.imd.gov.in par cyclone ka latest alert dekho, ghar mein rehna hai",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-027",
+    "text": "Kal subah school band rahenge, sarkar ne chhutti ghoshit ki hai, bacchon ko ghar par rakhein",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-028",
+    "text": "Bhai pani mein current aa gaya hai, ek ladka bijli ke taar se chipak gaya, munh se khoon aa raha hai, halat bahut kharab hai",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-029",
+    "text": "BUS STAND KE SAMNE WALI SADAK KHUL GAYI HAI, AB GAADIYAN CHAL RAHI HAIN",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-030",
+    "text": "Mumbai local Dadar tak chal rahi hai, uske aage paani hai",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-031",
+    "text": "Fire brigade aa gayi hai, aag kaabu mein hai",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-032",
+    "text": "Hum 6 log nav mein hain, engine band ho gaya hai aur lehrein bahut tez hain, coast guard ko batao jaldi",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-033",
+    "text": "Ward 3 mein bijli wapas aa gayi hai, thanks sabko",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-034",
+    "text": "Kya Kurla ki taraf se Sion jaana safe hai? Kisi ko pata hai?",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-035",
+    "text": "ASAP bhai, ghar mein paani ghutno tak aa gaya, generator ka petrol chahiye, Door no 21 Patel Nagar",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-036",
+    "text": "Yaar yeh baarishhhh kab rukegi, damn, teen din se ghar mein band hain",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-037",
+    "text": "Rescue team Bandra East pahunch gayi hai, sab thik hai",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-038",
+    "text": "Ek bujurg paani mein doob gaye the, humne bahar nikala, body thandi hai aur saans kam hai, abhi CPR kar rahe hain, 112 pe phone kiya",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-039",
+    "text": "Koi bata sakta hai ki Howrah Junction se trains chal rahi hain ya nahi",
+    "language": "hinglish",
+    "serious": false,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  },
+  {
+    "id": "g-hinglish-040",
+    "text": "Hum Kurla West mein rehte hain, kal shaam se paani badh raha hai. Raat 10 baje tak ground floor poora doob gaya aur ab pehli manzil par paani aa raha hai. Ghar mein do bujurg, ek garbhwati mahila aur teen bachche hain. Bijli kal se nahi hai, phone ki battery bhi bahut kam bachi hai. Nagar nigam ko teen baar phone kiya par koi nahi aaya. Agar kisi ke paas boat ya tractor hai to please jaldi bhejo, hum 4th Cross ke paas wali building ki chhat par intezaar kar rahe hain.",
+    "language": "hinglish",
+    "serious": true,
+    "expect": "publish",
+    "model": "",
+    "scores": {}
+  }
+]
