@@ -1,6 +1,7 @@
 package web
 
 import (
+	"io/fs"
 	"os"
 	"regexp"
 	"strings"
@@ -377,7 +378,7 @@ func TestModerateTransportAndNoPolling(t *testing.T) {
 }
 
 // TestModerateScreenCopy (D-08): every moderator string of the UI-SPEC appears
-// exactly once across the template text and the quoted literals of the script.
+// exactly once across the template text and the quoted strings of the script.
 //
 // Honest limit of this test's claim: it counts text in the source; it cannot
 // prove the strings are shown in the right place, which the human check does.
@@ -537,4 +538,267 @@ func TestModeratePageAssets(t *testing.T) {
 	if n := strings.Count(tmpl, `class="mod-section__line"`); n != 3 {
 		t.Errorf(`class="mod-section__line" occurs %d times, want 3`, n)
 	}
+}
+
+// p426MediaBlock returns the text inside the braces of the at-rule that starts
+// with anchor (for example "@media (min-width: 360px)"), counting braces. It
+// returns an empty string when the anchor is absent.
+func p426MediaBlock(css, anchor string) string {
+	start := strings.Index(css, anchor)
+	if start < 0 {
+		return ""
+	}
+	open := strings.Index(css[start:], "{")
+	if open < 0 {
+		return ""
+	}
+	begin := start + open + 1
+	depth := 1
+	for i := begin; i < len(css); i++ {
+		switch css[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return css[begin:i]
+			}
+		}
+	}
+	return ""
+}
+
+// p426WithoutBlock removes the at-rule that starts with anchor, braces and all.
+func p426WithoutBlock(css, anchor string) string {
+	inner := p426MediaBlock(css, anchor)
+	if inner == "" {
+		return css
+	}
+	start := strings.Index(css, anchor)
+	end := start + strings.Index(css[start:], "{") + 1 + len(inner) + 1
+	return css[:start] + css[end:]
+}
+
+// p426RuleWithSelector returns the first rule whose head, after dropping any
+// at-rule preamble up to the last open brace and splitting on commas, has a
+// trimmed part exactly equal to sel.
+func p426RuleWithSelector(rules []cssRule, sel string) (cssRule, bool) {
+	for _, r := range rules {
+		head := r.selectorHead
+		if i := strings.LastIndex(head, "{"); i >= 0 {
+			head = head[i+1:]
+		}
+		for _, part := range strings.Split(head, ",") {
+			if strings.TrimSpace(part) == sel {
+				return r, true
+			}
+		}
+	}
+	return cssRule{}, false
+}
+
+// TestModerateStylesheet (P4-A22, D-08): the page links moderate.css after
+// chrome.css, and the stylesheet keeps to tokens, the 640px phone frame, neutral
+// rows, the hidden guard and the two action tracks.
+//
+// Honest limit of this test's claim: it reads declarations out of the source;
+// it cannot prove how the page looks at 320 and 360 px, which the human check
+// in this task does.
+func TestModerateStylesheet(t *testing.T) {
+	tmpl := p426ReadTemplate(t)
+	const link = `<link rel="stylesheet" href="/static/css/moderate.css?v={{.AssetVersion}}">`
+	if n := strings.Count(tmpl, link); n != 1 {
+		t.Fatalf("the moderate.css link occurs %d times, want 1", n)
+	}
+	chrome := strings.Index(tmpl, `/static/css/chrome.css`)
+	if at := strings.Index(tmpl, link); at < chrome || at > strings.Index(tmpl, "</head>") {
+		t.Errorf("the moderate.css link must follow chrome.css inside the head")
+	}
+
+	raw, err := StaticFS.ReadFile("static/css/moderate.css")
+	if err != nil {
+		t.Fatalf("reading moderate.css: %v", err)
+	}
+	for _, r := range []rune{0x2014, 0x2013, 0x2026} {
+		if strings.ContainsRune(string(raw), r) {
+			t.Errorf("moderate.css contains %U", r)
+		}
+	}
+
+	css := p426ReadCSS(t)
+	p426WantNone(t, "moderate.css", css, "!important", "rgb(", "rgba(", "hsl(", "999px", "transition", "animation",
+		"--severity", "--color-severity")
+
+	const mediaMin, mediaForced = "@media (min-width: 360px)", "@media (forced-colors: active)"
+	minBlock := p426MediaBlock(css, mediaMin)
+	forcedBlock := p426MediaBlock(css, mediaForced)
+	if minBlock == "" || forcedBlock == "" {
+		t.Fatal("moderate.css needs the 360px block and the forced colors block")
+	}
+	outside := p426WithoutBlock(p426WithoutBlock(css, mediaMin), mediaForced)
+	rules := parseCSSRules(outside)
+
+	hex := regexp.MustCompile(`#[0-9a-fA-F]{3,8}\b`)
+	fontSize := regexp.MustCompile(`^var\(--font-size-(label|body|heading|display)\)$`)
+	fontWeight := regexp.MustCompile(`^var\(--font-weight-(regular|semibold)\)$`)
+	system := regexp.MustCompile(`\b(CanvasText|Canvas|LinkText|GrayText|ButtonFace|ButtonText)\b`)
+	for _, r := range parseCSSRules(css) {
+		decls := declsOf(r.declBody)
+		for name, value := range decls {
+			if strings.HasPrefix(name, "--") {
+				t.Errorf("%s declares the custom property %s", r.selectorHead, name)
+			}
+			if hex.MatchString(value) {
+				t.Errorf("%s: %s holds a hex colour", r.selectorHead, name)
+			}
+			if name == "font-size" && !fontSize.MatchString(value) {
+				t.Errorf("%s: font-size %q is not a token", r.selectorHead, value)
+			}
+			if name == "font-weight" && !fontWeight.MatchString(value) {
+				t.Errorf("%s: font-weight %q is not a token", r.selectorHead, value)
+			}
+		}
+		if display, ok := decls["display"]; ok {
+			if strings.Contains(r.selectorHead, "summary") {
+				t.Errorf("%s declares display on a summary", r.selectorHead)
+			}
+			if display != "none" && strings.Contains(r.selectorHead, ".mod-") && !strings.Contains(r.selectorHead, ":not([hidden])") {
+				t.Errorf("%s declares display without :not([hidden])", r.selectorHead)
+			}
+		}
+	}
+	if system.MatchString(outside) || system.MatchString(minBlock) {
+		t.Error("system colour keywords belong only inside the forced colors block")
+	}
+
+	need := func(sel string) map[string]string {
+		t.Helper()
+		r, ok := p426RuleWithSelector(rules, sel)
+		if !ok {
+			t.Errorf("no rule for %q", sel)
+			return map[string]string{}
+		}
+		return declsOf(r.declBody)
+	}
+	want := func(sel string, pairs ...string) map[string]string {
+		t.Helper()
+		d := need(sel)
+		for i := 0; i+1 < len(pairs); i += 2 {
+			if d[pairs[i]] != pairs[i+1] {
+				t.Errorf("%s: %s = %q, want %q", sel, pairs[i], d[pairs[i]], pairs[i+1])
+			}
+		}
+		return d
+	}
+
+	page := want(".mod-page", "max-width", "640px", "margin", "0 auto", "padding", "var(--space-md)")
+	for _, token := range []string{"--space-lg", "--touch-target-min", "--space-md"} {
+		if !strings.Contains(page["padding-bottom"], token) {
+			t.Errorf(".mod-page padding-bottom %q lacks %s", page["padding-bottom"], token)
+		}
+	}
+	want(".mod-section", "margin-top", "var(--space-xl)")
+	need(".mod-section__line")
+	want(".mod-row", "background", "var(--color-bg)", "border", "1px solid var(--color-border)",
+		"border-radius", "8px", "padding", "var(--space-md)")
+	want(".mod-row:not([hidden])", "display", "flex", "flex-direction", "column", "gap", "var(--space-sm)")
+	text := want(".mod-row__text", "overflow-wrap", "anywhere", "font-size", "var(--font-size-body)")
+	for _, banned := range []string{"max-height", "overflow", "-webkit-line-clamp", "line-clamp"} {
+		if _, has := text[banned]; has {
+			t.Errorf(".mod-row__text declares %s, but the text is never clamped", banned)
+		}
+	}
+	want(".mod-find input", "border-radius", "8px")
+	want(".mod-row__actions:not([hidden])", "display", "grid", "grid-template-columns", "minmax(0, 1fr)")
+	want(".mod-confirm__buttons:not([hidden])", "display", "grid", "grid-template-columns", "minmax(0, 1fr)")
+	for _, sel := range []string{".mod-row__actions:not([hidden])", ".mod-confirm__buttons:not([hidden])"} {
+		r, ok := p426RuleWithSelector(parseCSSRules(minBlock), sel)
+		if !ok {
+			t.Errorf("the 360px block has no rule for %q", sel)
+			continue
+		}
+		if got := declsOf(r.declBody)["grid-template-columns"]; got != "repeat(2, minmax(0, 1fr))" {
+			t.Errorf("%s at 360px: grid-template-columns = %q", sel, got)
+		}
+	}
+	want(".mod-row__all-scores summary", "min-height", "var(--touch-target-min)")
+	want(".mod-row__link:not([hidden])", "min-height", "var(--touch-target-min)")
+
+	trustRaw, err := StaticFS.ReadFile("static/css/trust.css")
+	if err != nil {
+		t.Fatalf("reading trust.css: %v", err)
+	}
+	tag, ok := ruleBySelector(parseCSSRules(string(trustRaw)), ".visibility-tag:not([hidden])")
+	if !ok || declsOf(tag.declBody)["border-radius"] == "" {
+		t.Fatal("trust.css has no .visibility-tag:not([hidden]) rule with a radius")
+	}
+	want(".mod-row__state:not([hidden])", "border-radius", declsOf(tag.declBody)["border-radius"])
+
+	forced := parseCSSRules(forcedBlock)
+	for _, sel := range []string{".mod-row", ".mod-row__state:not([hidden])"} {
+		r, ok := p426RuleWithSelector(forced, sel)
+		if !ok {
+			t.Errorf("the forced colors block has no rule for %q", sel)
+			continue
+		}
+		if got := declsOf(r.declBody)["border"]; got != "1px solid CanvasText" {
+			t.Errorf("%s in forced colors: border = %q", sel, got)
+		}
+	}
+}
+
+// TestModerateNotLinkedAnywhere (open item 20, T-04-06): no template and no
+// script links to the moderator screen, and the account menu does not name it.
+//
+// Honest limit of this test's claim: it finds the written address forms; a link
+// assembled from pieces at run time would not be seen, and none is written.
+func TestModerateNotLinkedAnywhere(t *testing.T) {
+	templates, scripts := 0, 0
+	forbidden := []string{`href="/moderate`, `"/moderate"`, `'/moderate'`}
+	err := fs.WalkDir(StaticFS, "static/js", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		raw, err := StaticFS.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		scripts++
+		code := stripJSComments(string(raw))
+		for _, f := range forbidden {
+			if strings.Contains(code, f) {
+				t.Errorf("%s links to the moderator screen (%s)", path, f)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking static/js: %v", err)
+	}
+	err = fs.WalkDir(TemplatesFS, "templates", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		raw, err := TemplatesFS.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		templates++
+		for _, f := range forbidden {
+			if strings.Contains(string(raw), f) {
+				t.Errorf("%s links to the moderator screen (%s)", path, f)
+			}
+		}
+		if strings.HasSuffix(path, "account_header.html.tmpl") && strings.Contains(string(raw), "moderat") {
+			t.Errorf("%s names the moderator screen", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking templates: %v", err)
+	}
+	if templates < 8 || scripts < 10 {
+		t.Errorf("scanned %d templates and %d scripts, want at least 8 and 10", templates, scripts)
+	}
+	t.Logf("scanned %d templates and %d scripts", templates, scripts)
 }
