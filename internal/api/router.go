@@ -331,6 +331,8 @@ func NewRouter(deps Deps) *chi.Mux {
 	// (threat T-01-62). Left outside the gate — it is how a session becomes
 	// verified in the first place.
 	r.Get("/auth/verify", handlers.Verify(deps.AuthService, deps.Template, auth))
+	// The public legal pages (D-23, P4-A18): no account data (R-07), cacheable only in the browser.
+	r.Get("/disclaimer", handlers.Legal(deps.Template, auth, handlers.LegalDisclaimerPage))
 	r.Handle("/static/*", http.StripPrefix("/static/", staticFileServer(deps.Dev)))
 	// Left publicly reachable: this is a public read-only API with no
 	// privileged operations to hide, and OPS-01 asks for a stable,
