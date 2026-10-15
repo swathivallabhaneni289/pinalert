@@ -236,7 +236,49 @@ window.PinalertFlag = (function () {
       showNote();
       return;
     }
+    // A wait the server already announced is respected without a request: the
+    // stored message is shown again with the time that is left.
+    if (flagWait !== null && Date.now() < flagWait.untilMs) {
+      showError(waitMessageNow());
+      return;
+    }
     sendFlag(reason);
+  }
+
+  // waitMessageNow is the stored wait message with its wait phrase replaced by
+  // the time left, rounded up.
+  function waitMessageNow() {
+    var left = Math.ceil((flagWait.untilMs - Date.now()) / 1000);
+    if (flagWait.phrase && flagWait.message.indexOf(flagWait.phrase) !== -1) {
+      return flagWait.message.replace(flagWait.phrase, Pinalert.formatWait(left));
+    }
+    return flagWait.message;
+  }
+
+  // rememberFlagWait stores the wait of a 429 and returns the message to show
+  // now. The wait is per account, so one memory covers every report. A 429 with
+  // no readable server message shows the generic sentence.
+  function rememberFlagWait(body, headers) {
+    var seconds = 0;
+    if (body && typeof body.retry_after_seconds === 'number' && body.retry_after_seconds > 0) {
+      seconds = body.retry_after_seconds;
+    } else if (headers && typeof headers.get === 'function') {
+      seconds = parseInt(headers.get('Retry-After'), 10);
+    }
+    var message = FLAG_ERROR_MESSAGE;
+    if (body && body.error && typeof body.error.message === 'string' && body.error.message !== '') {
+      message = body.error.message;
+    }
+    if (seconds > 0) {
+      flagWait = {
+        untilMs: Date.now() + seconds * 1000,
+        message: message,
+        phrase: Pinalert.formatWait(seconds)
+      };
+    } else {
+      flagWait = null;
+    }
+    return message;
   }
 
   function sendFlag(reason) {
@@ -272,7 +314,7 @@ window.PinalertFlag = (function () {
         window.clearTimeout(timer);
       }
       setSending(false);
-      showError(FLAG_ERROR_MESSAGE);
+      showError(FLAG_OFFLINE_MESSAGE);
     });
   }
 
@@ -284,6 +326,16 @@ window.PinalertFlag = (function () {
     }
     if (status === 409) {
       finishFlagged(FLAG_ALREADY_TOAST);
+      return;
+    }
+    if (status === 429) {
+      showError(rememberFlagWait(body, headers));
+      return;
+    }
+    if (status === 404 || status === 410) {
+      refs.send.hidden = true;
+      showError(FLAG_GONE_MESSAGE);
+      refs.back.focus();
       return;
     }
     showError(FLAG_ERROR_MESSAGE);
@@ -299,9 +351,13 @@ window.PinalertFlag = (function () {
     sending = on;
     refs.send.disabled = on;
     refs.back.disabled = on;
+    Pinalert.setText(refs.send, on ? SENDING_LABEL : SEND_LABEL);
     if (on) {
+      refs.panel.setAttribute('aria-busy', 'true');
       hideNote();
       hideError();
+    } else {
+      refs.panel.removeAttribute('aria-busy');
     }
   }
 

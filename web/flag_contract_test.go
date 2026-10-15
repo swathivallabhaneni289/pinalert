@@ -401,8 +401,7 @@ func TestFlagSendOutcomes(t *testing.T) {
 	h := jsFunctionBody(t, flag, "handleAnswer(status, body, headers)")
 	p424Contains(t, "handleAnswer", h,
 		"setSending(false)", "201", "409", "FLAG_SENT_TOAST", "FLAG_ALREADY_TOAST", "FLAG_ERROR_MESSAGE")
-	p424Ordered(t, "onSendClick", jsFunctionBody(t, flag, "onSendClick()"),
-		"if (sending)", "checkedReason(", "showNote(", "sendFlag(")
+	p424CheckAnswersAndWaits(t)
 	p424Ordered(t, "finishFlagged", jsFunctionBody(t, flag, "finishFlagged(toast)"),
 		"markFlaggedEverywhere(", "closeFlagDialog(", "Pinalert.showToast(toast)")
 	p424Contains(t, "setSending", jsFunctionBody(t, flag, "setSending(on)"), "sending = on", ".disabled = on")
@@ -411,4 +410,160 @@ func TestFlagSendOutcomes(t *testing.T) {
 	p424Contains(t, "showNote", jsFunctionBody(t, flag, "showNote()"), "'aria-describedby'", "announce(", ".focus(")
 	p424Contains(t, "announce", jsFunctionBody(t, flag, "announce(text)"), "getElementById('notice-live')", "Pinalert.setText(")
 	p424Lacks(t, "flag.js", flag, "indexedDB", "localStorage", "sessionStorage", "PinalertQueue")
+}
+
+// p424CheckAnswersAndWaits runs inside TestFlagSendOutcomes and pins the answers beyond a sent flag (D-09, D-12): a
+// 429 keeps the server's message and remembers the wait, a known wait sends
+// nothing, a gone report keeps Go back only, and a rejection says the flag was
+// not saved for later.
+func p424CheckAnswersAndWaits(t *testing.T) {
+	t.Helper()
+	flag := p424ReadJS(t, "static/js/flag.js")
+	p424Contains(t, "sendFlag", jsFunctionBody(t, flag, "sendFlag(reason)"), "FLAG_OFFLINE_MESSAGE")
+	p424Contains(t, "handleAnswer", jsFunctionBody(t, flag, "handleAnswer(status, body, headers)"),
+		"429", "404", "410", "rememberFlagWait(", "FLAG_GONE_MESSAGE", ".hidden = true",
+		"showError(rememberFlagWait(body, headers))")
+	p424Ordered(t, "onSendClick", jsFunctionBody(t, flag, "onSendClick()"),
+		"if (sending)", "checkedReason(", "showNote(", "flagWait", "waitMessageNow(", "return", "sendFlag(")
+	p424Contains(t, "waitMessageNow", jsFunctionBody(t, flag, "waitMessageNow()"),
+		"Math.ceil(", "Pinalert.formatWait(", "flagWait.phrase")
+	p424Contains(t, "rememberFlagWait", jsFunctionBody(t, flag, "rememberFlagWait(body, headers)"),
+		"retry_after_seconds", "'Retry-After'", "body.error", "Pinalert.formatWait(", "FLAG_ERROR_MESSAGE", "return message")
+	p424Contains(t, "setSending", jsFunctionBody(t, flag, "setSending(on)"),
+		"SENDING_LABEL", "SEND_LABEL", "'aria-busy'", "removeAttribute('aria-busy')")
+}
+
+// p424MediaRules returns the rules inside the first media block of chrome.css
+// that holds the selector, keyed by the query text.
+func p424MediaRules(t *testing.T, css, query string) []cssRule {
+	t.Helper()
+	var all []cssRule
+	for _, span := range p408MediaSpans(css, query) {
+		all = append(all, parseCSSRules(css[span[1]:span[2]-1])...)
+	}
+	return all
+}
+
+// p424WantDecls fails for each declaration the rule lacks, comparing with
+// whitespace squashed.
+func p424WantDecls(t *testing.T, label string, rules []cssRule, selector string, want map[string]string) {
+	t.Helper()
+	rule, ok := ruleBySelector(rules, selector)
+	if !ok {
+		t.Errorf("%s: no rule %q", label, selector)
+		return
+	}
+	decls := declsOf(rule.declBody)
+	for prop, value := range want {
+		if p408Squash(decls[prop]) != p408Squash(value) {
+			t.Errorf("%s %q: %s = %q, want %q", label, selector, prop, decls[prop], value)
+		}
+	}
+}
+
+// TestFlagControlGeometry pins the look of the control (Element table,
+// Motion): a quiet underlined text button with a 44px target, a hover fill, an
+// inset press cue, a Flagged look with no underline, and the two media rules.
+func TestFlagControlGeometry(t *testing.T) {
+	css := p424ReadCSS(t, "static/css/chrome.css")
+	rules := parseCSSRules(css)
+	p424WantDecls(t, "chrome.css", rules, ".flag-control:not([hidden])", map[string]string{
+		"display": "inline-flex", "align-items": "center", "min-height": "var(--touch-target-min)",
+		"padding": "0 var(--space-xs)", "margin-top": "var(--space-xs)", "border": "0",
+		"border-radius": "8px", "background": "none", "font-family": "var(--font-family)",
+		"font-size": "var(--font-size-label)", "line-height": "var(--line-height-label)",
+		"font-weight": "var(--font-weight-regular)", "color": "var(--color-text)",
+		"text-decoration": "underline", "cursor": "pointer",
+	})
+	rule, _ := ruleBySelector(rules, ".flag-control:not([hidden])")
+	transition := declsOf(rule.declBody)["transition"]
+	p424Contains(t, "flag-control transition", transition, "background-color", "border-color", "color", "150ms ease")
+	p424WantDecls(t, "chrome.css", rules, `.flag-control:not([aria-disabled="true"]):hover`,
+		map[string]string{"background": "var(--color-border)"})
+	p424WantDecls(t, "chrome.css", rules, `.flag-control:not([aria-disabled="true"]):active`,
+		map[string]string{"background": "var(--color-border)", "box-shadow": "inset 0 0 0 1px var(--color-text-muted)"})
+	p424WantDecls(t, "chrome.css", rules, `.flag-control[aria-disabled="true"]`,
+		map[string]string{"text-decoration": "none", "cursor": "default", "color": "var(--color-text)"})
+
+	for _, r := range rules {
+		for _, sel := range p408Selectors(r.selectorHead) {
+			if !strings.Contains(sel, ".flag-control") {
+				continue
+			}
+			decls := declsOf(r.declBody)
+			if _, has := decls["outline"]; has {
+				t.Errorf("%q declares outline", sel)
+			}
+			if _, has := decls["display"]; has && !strings.Contains(sel, ":not([hidden])") {
+				t.Errorf("%q declares display without :not([hidden])", sel)
+			}
+		}
+	}
+
+	p424WantDecls(t, "reduced motion", p424MediaRules(t, css, "(prefers-reduced-motion: reduce)"),
+		".flag-control:not([hidden])", map[string]string{"transition": "none"})
+	forced := p424MediaRules(t, css, "(forced-colors: active)")
+	p424WantDecls(t, "forced colors", forced, ".flag-control:not([hidden])", map[string]string{"text-decoration": "underline"})
+	p424WantDecls(t, "forced colors", forced, `.flag-control[aria-disabled="true"]`, map[string]string{"text-decoration": "none"})
+}
+
+// TestFlagDialogGeometry pins the dialog look (Element table Flag dialog,
+// Typography, Spacing Scale): the title at heading size, 44px reason rows with
+// 20px radios, small muted hint and reassurance lines, wrapping buttons.
+func TestFlagDialogGeometry(t *testing.T) {
+	css := p424ReadCSS(t, "static/css/chrome.css")
+	rules := parseCSSRules(css)
+	p424WantDecls(t, "chrome.css", rules, ".modal-panel .flag-dialog__title", map[string]string{
+		"font-size": "var(--font-size-heading)", "line-height": "var(--line-height-heading)",
+		"font-weight": "var(--font-weight-semibold)", "margin": "0 0 var(--space-md) 0",
+	})
+	p424WantDecls(t, "chrome.css", rules, ".flag-dialog__reasons", map[string]string{
+		"border": "0", "padding": "0", "margin": "0", "min-width": "0",
+	})
+	p424WantDecls(t, "chrome.css", rules, ".flag-dialog__reason:not([hidden])", map[string]string{
+		"display": "flex", "align-items": "center", "gap": "var(--space-sm)", "min-height": "var(--touch-target-min)",
+	})
+	p424WantDecls(t, "chrome.css", rules, ".flag-dialog__reason input", map[string]string{
+		"width": "calc(var(--space-md) + var(--space-xs))", "height": "calc(var(--space-md) + var(--space-xs))",
+		"margin": "0", "accent-color": "var(--color-text)",
+	})
+	// The hint and the reassurance share one rule head.
+	for _, sel := range []string{".flag-dialog__hint", ".flag-dialog__reassurance"} {
+		found := false
+		for _, r := range rules {
+			for _, s := range p408Selectors(r.selectorHead) {
+				if s != sel {
+					continue
+				}
+				found = true
+				decls := declsOf(r.declBody)
+				for prop, value := range map[string]string{
+					"font-size": "var(--font-size-label)", "line-height": "var(--line-height-label)",
+					"color": "var(--color-text-muted)", "margin-bottom": "0",
+				} {
+					if p408Squash(decls[prop]) != p408Squash(value) {
+						t.Errorf("%q: %s = %q, want %q", sel, prop, decls[prop], value)
+					}
+				}
+			}
+		}
+		if !found {
+			t.Errorf("chrome.css has no rule for %q", sel)
+		}
+	}
+	p424WantDecls(t, "chrome.css", rules, ".flag-dialog__actions:not([hidden])", map[string]string{
+		"display": "flex", "flex-wrap": "wrap", "gap": "var(--space-sm)",
+	})
+	p424WantDecls(t, "forced colors", p424MediaRules(t, css, "(forced-colors: active)"),
+		".flag-dialog__panel", map[string]string{"border": "1px solid CanvasText"})
+	for _, r := range rules {
+		for _, sel := range p408Selectors(r.selectorHead) {
+			if !strings.Contains(sel, ".flag-dialog") {
+				continue
+			}
+			if _, has := declsOf(r.declBody)["display"]; has && !strings.Contains(sel, ":not([hidden])") {
+				t.Errorf("%q declares display without :not([hidden])", sel)
+			}
+		}
+	}
 }

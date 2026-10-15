@@ -430,3 +430,106 @@ html[data-modal-open] .notice-card {
     border: 1px solid CanvasText;
   }
 }
+
+/* Flag control (04-24, P4-A6, P4-A7). One quiet underlined text button, the
+   last element of the opened report's actions block and of a Low data row. It
+   is hidden on the reader's own report, and the Flagged state keeps its height
+   but loses the underline and the pointer. */
+.flag-control:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-xs);
+  margin-top: var(--space-xs);
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+  text-decoration: underline;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.flag-control:not([aria-disabled="true"]):hover {
+  background: var(--color-border);
+}
+
+.flag-control:not([aria-disabled="true"]):active {
+  background: var(--color-border);
+  box-shadow: inset 0 0 0 1px var(--color-text-muted);
+}
+
+.flag-control[aria-disabled="true"] {
+  text-decoration: none;
+  cursor: default;
+  color: var(--color-text);
+}
+
+/* Flag dialog (04-24, D-09, P4-A5). The panel itself comes from the shared
+   modal shell; these rules only lay out its contents. The title rule has two
+   classes so it outranks the shared panel heading rule. */
+.modal-panel .flag-dialog__title {
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+  margin: 0 0 var(--space-md) 0;
+}
+
+.flag-dialog__reasons {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.flag-dialog__reason:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: var(--touch-target-min);
+}
+
+.flag-dialog__reason input {
+  width: calc(var(--space-md) + var(--space-xs));
+  height: calc(var(--space-md) + var(--space-xs));
+  margin: 0;
+  accent-color: var(--color-text);
+}
+
+.flag-dialog__hint,
+.flag-dialog__reassurance {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+  margin-bottom: 0;
+}
+
+.flag-dialog__actions:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flag-control:not([hidden]) {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .flag-control:not([hidden]) {
+    text-decoration: underline;
+  }
+
+  .flag-control[aria-disabled="true"] {
+    text-decoration: none;
+  }
+
+  .flag-dialog__panel {
+    border: 1px solid CanvasText;
+  }
+}
