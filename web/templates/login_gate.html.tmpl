@@ -18,6 +18,7 @@
       <div class="globe-bg__mask"></div>
     </div>
 
+    <div class="login-column">
     <div class="login-card" id="login-form-panel"{{if .Sent}} hidden{{end}}>
       <h1>Verify your email to continue</h1>
       <p>Pinalert requires a verified email before you can view or report anything nearby. We'll send a one-time link. No password needed.</p>
@@ -35,6 +36,18 @@
     </div>
 
     {{template "check_inbox.html.tmpl" .}}
+
+    <div class="login-ways">
+      {{if .LowDataDefault}}
+      <p class="login-ways__note">Low data view is on for this device. It opens after you sign in.</p>
+      <a class="login-ways__off" href="/login?low=0">Turn off</a>
+      {{else}}
+      <a class="login-ways__low" href="/login?low=1">Low data view</a>
+      <p class="login-ways__line">Text only, no map</p>
+      {{end}}
+      <p class="login-ways__links"><a href="/disclaimer">Disclaimer</a> <a href="/policy">Policy</a></p>
+    </div>
+    </div>
   </div>
 
   <script src="/static/js/auth.js?v={{.AssetVersion}}" defer></script>
