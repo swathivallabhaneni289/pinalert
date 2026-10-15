@@ -10,8 +10,10 @@ import (
 	"context"
 	"log"
 	"net/http"
+	netmail "net/mail"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"pinalert/internal/api"
@@ -139,6 +141,24 @@ func main() {
 		log.Println("WARNING: NOMINATIM_CONTACT_EMAIL unset; outbound geocoding User-Agent will fall back to the project repository URL")
 	}
 
+	// The emergency numbers the unofficial bar prints come from one setting,
+	// read once here (D-22). The loaded values are logged so the owner can
+	// compare them with the government page before any public promotion.
+	emergencyNumbers := handlers.LoadEmergencyNumbers(os.LookupEnv)
+	log.Printf("emergency numbers: primary %s, older %q, state line %q, district line %q",
+		emergencyNumbers.Primary, emergencyNumbers.Older, emergencyNumbers.StateHelpline, emergencyNumbers.DistrictHelpline)
+
+	// CONTACT_EMAIL is the public contact address the Disclaimer and Policy
+	// pages show (D-24). Unset means no contact line anywhere. A value that is
+	// not a bare email address stops startup, so a broken mailto link never
+	// reaches a public page.
+	contactEmail := strings.TrimSpace(os.Getenv("CONTACT_EMAIL"))
+	if contactEmail == "" {
+		log.Println("WARNING: CONTACT_EMAIL unset; the Disclaimer and Policy pages show no contact line")
+	} else if addr, err := netmail.ParseAddress(contactEmail); err != nil || addr.Name != "" || addr.Address != contactEmail {
+		log.Fatalf("CONTACT_EMAIL is not a bare email address")
+	}
+
 	// This is the only construction site of the real geocode client in the
 	// whole program, which is what makes the process-wide limiter inside
 	// internal/geocode genuinely process wide. Both the report form's search
@@ -155,6 +175,7 @@ func main() {
 		Auth: handlers.AuthConfig{
 			AssetVersion: assetVersion,
 		},
+		Chrome:   handlers.Chrome{Numbers: emergencyNumbers, ContactEmail: contactEmail},
 		Template: tmpl,
 		Page: handlers.PageConfig{
 			FallbackLat:     fallbackLat,

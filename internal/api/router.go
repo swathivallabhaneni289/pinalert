@@ -88,6 +88,11 @@ type Deps struct {
 	// (burst 5, one token per 60s) are visible rather than buried as
 	// literals in this router.
 	RequestLinkRateLimit RequestLinkRateLimit
+	// Chrome is the shared data for the unofficial bar (D-21, D-22, D-24),
+	// built once by cmd/server/main.go from the environment. Additive, as the
+	// fields above were: a zero value keeps every Deps{} literal compiling and
+	// renders the default numbers.
+	Chrome handlers.Chrome
 	// RequestLog receives the one line written per request (see
 	// requestLogger). Left nil, a logger on standard output with the usual
 	// date and time prefix is used, which is where chi's own logger wrote.
@@ -237,16 +242,24 @@ func NewRouter(deps Deps) *chi.Mux {
 	r.Use(requestLogger(deps.RequestLog))
 	r.Use(deps.Session.Middleware(deps.persistSession))
 
+	// Local copies of the page and auth configs that carry the shared Chrome
+	// data, so the four page routes below render the unofficial bar without
+	// mutating Deps.
+	page := deps.Page
+	page.Chrome = deps.Chrome
+	auth := deps.Auth
+	auth.Chrome = deps.Chrome
+
 	// --- Exempt: reachable without a verified account. ---
 
-	r.Get("/login", handlers.LoginGate(deps.Template, deps.Auth))
+	r.Get("/login", handlers.LoginGate(deps.Template, auth))
 	// GET only, deliberately: chi does not auto-map HEAD onto a GET-only
 	// handler the way net/http.ServeMux does, and registering only GET here
 	// cheaply sidesteps one class of mail-security-scanner prefetch
 	// consuming a visitor's single-use link before they click it
 	// (threat T-01-62). Left outside the gate — it is how a session becomes
 	// verified in the first place.
-	r.Get("/auth/verify", handlers.Verify(deps.AuthService, deps.Template, deps.Auth))
+	r.Get("/auth/verify", handlers.Verify(deps.AuthService, deps.Template, auth))
 	r.Handle("/static/*", http.StripPrefix("/static/", staticFileServer(deps.Dev)))
 	// Left publicly reachable: this is a public read-only API with no
 	// privileged operations to hide, and OPS-01 asks for a stable,
@@ -280,7 +293,7 @@ func NewRouter(deps Deps) *chi.Mux {
 
 	r.Group(func(r chi.Router) {
 		r.Use(requireVerifiedAccount(deps.Sessions))
-		r.Get("/", handlers.Page(deps.Template, deps.Page))
+		r.Get("/", handlers.Page(deps.Template, page))
 		r.Post("/api/reports", handlers.SubmitReport(deps.Reports))
 		r.Get("/api/reports", handlers.NearbyReports(deps.Reports))
 		// The five vote routes (02-03b, HIST-09). All five come from ONE
@@ -345,7 +358,7 @@ func NewRouter(deps Deps) *chi.Mux {
 		// profile.html.tmpl includes 01.1-06's account_header.html.tmpl
 		// partial via {{template}}, which html/template only resolves
 		// within the template set it was parsed into (01.1-07-PLAN.md).
-		r.Get("/profile", handlers.Profile(deps.AuthService, deps.Template, deps.Auth))
+		r.Get("/profile", handlers.Profile(deps.AuthService, deps.Template, auth))
 		// D-09's explicit log-out action; only POST is ever registered for
 		// this path (DEC-L: SameSite=Lax withholds the session cookie from
 		// a cross-site POST, so a forged logout carries no authenticated

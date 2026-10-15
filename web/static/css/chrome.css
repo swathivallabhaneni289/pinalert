@@ -1,0 +1,55 @@
+/*
+ * Shared page chrome: the sticky wrapper at the top of every full page and
+ * the thin unofficial notice inside it (D-21, D-22, P4-A1). Tokens only; the
+ * bar height rules and the document scroll padding belong to a later plan.
+ */
+
+.top-chrome {
+  position: sticky;
+  top: 0;
+  z-index: 1050;
+  margin: 0;
+}
+
+.disclaimer-bar {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+}
+
+@media (min-width: 480px) {
+  .disclaimer-bar {
+    padding: var(--space-xs) var(--space-md);
+  }
+}
+
+.disclaimer-bar p {
+  margin: 0;
+}
+
+.disclaimer-bar a {
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+@media (forced-colors: active) {
+  .disclaimer-bar {
+    border-bottom: 1px solid CanvasText;
+    color: CanvasText;
+  }
+
+  .disclaimer-bar a {
+    color: LinkText;
+  }
+}

@@ -8,12 +8,16 @@
   <link rel="stylesheet" href="/static/css/feed.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/trust.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/activity.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
   <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
 </head>
 <body>
-  {{template "account_header.html.tmpl" .}}
+  <div class="top-chrome">
+    {{template "disclaimer_bar.html.tmpl" .}}
+    {{template "account_header.html.tmpl" .}}
+  </div>
   {{template "theme_toggle.html.tmpl" .}}
 
   <main class="profile-page">
