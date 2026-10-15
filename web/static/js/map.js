@@ -569,6 +569,10 @@ window.PinalertMap = (function () {
     // owned by votes.js.
     actions.appendChild(block.note);
     actions.appendChild(block.error);
+    // The Flag control is the last element of the actions block, outside the
+    // vote controls. Phase 3.1 moved it off the list row into the opened report.
+    var flagControl = PinalertFlag.createFlagControl(report);
+    actions.appendChild(flagControl.el);
 
     body.appendChild(header);
     body.appendChild(titleEl);
@@ -592,6 +596,7 @@ window.PinalertMap = (function () {
       trust: trust,
       fade: fade,
       votes: block,
+      flag: flagControl,
       approximate: false,
       observer: null,
       frame: 0
@@ -662,6 +667,7 @@ window.PinalertMap = (function () {
 
     PinalertTrust.updateTrustCard(card.trust, report.trust);
     PinalertVotes.updateVoteBlock(card.votes, report);
+    PinalertFlag.updateFlagControl(card.flag, report);
   }
 
   // observePopupCard repositions an open popup when its card changes height,

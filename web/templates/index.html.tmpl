@@ -177,6 +177,7 @@
       </div>
     </div>
 
+    {{template "flag_dialog.html.tmpl" .}}
     <div id="toast" role="status" aria-live="polite" hidden></div>
   </div>
 
@@ -199,6 +200,7 @@
   <script src="/static/js/visibility.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/trust.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/queue.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/flag.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/report-form.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/map.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/modal.js?v={{.AssetVersion}}" defer></script>

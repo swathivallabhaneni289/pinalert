@@ -1,0 +1,21 @@
+{{/* The one Flag dialog, shared by the main page and the Low data view. Static markup: the script in flag.js opens it, locks the page behind it and reads the chosen reason from the radio group. */}}
+  <div class="modal-backdrop flag-dialog" id="flag-dialog" hidden>
+    <div class="modal-panel flag-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="flag-dialog-title">
+      <h2 id="flag-dialog-title" class="flag-dialog__title" tabindex="-1">What is wrong with this report?</h2>
+      <fieldset id="flag-dialog-reasons" class="flag-dialog__reasons" role="radiogroup" aria-labelledby="flag-dialog-title">
+        <label class="flag-dialog__reason"><input type="radio" name="flag-reason" value="spam"><span class="flag-dialog__label">Spam or gibberish</span></label>
+        <label class="flag-dialog__reason"><input type="radio" name="flag-reason" value="abusive"><span class="flag-dialog__label">Abusive or hateful</span></label>
+        <label class="flag-dialog__reason"><input type="radio" name="flag-reason" value="false" aria-describedby="flag-dialog-hint"><span class="flag-dialog__label">False or a hoax</span></label>
+        <p id="flag-dialog-hint" class="flag-dialog__hint">If you only disagree with the facts, use Dispute instead.</p>
+        <label class="flag-dialog__reason"><input type="radio" name="flag-reason" value="dangerous"><span class="flag-dialog__label">Dangerous or illegal</span></label>
+        <label class="flag-dialog__reason"><input type="radio" name="flag-reason" value="other"><span class="flag-dialog__label">Something else</span></label>
+      </fieldset>
+      <p id="flag-dialog-note" class="inline-note flag-dialog__note" hidden>Choose a reason to continue.</p>
+      <p class="flag-dialog__reassurance">A flag never hides a post by itself. A moderator reads it. The author isn't told who flagged it.</p>
+      <p id="flag-dialog-error" class="inline-error flag-dialog__error" hidden></p>
+      <div class="flag-dialog__actions">
+        <button type="button" id="flag-dialog-send" class="btn btn--primary">Send to moderators</button>
+        <button type="button" id="flag-dialog-back" class="btn">Go back</button>
+      </div>
+    </div>
+  </div>
