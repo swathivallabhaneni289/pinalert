@@ -130,6 +130,17 @@ window.PinalertMap = (function () {
     if (mediaMatches(NARROW_QUERY) && !mediaMatches(SHORT_QUERY)) {
       top = spaceMd + touchMin + spaceMd;
       bottom = spaceLg + touchMin + spaceMd;
+      // The account trigger hangs under the unofficial bar, so measure how far
+      // down the map container its bottom edge reaches and clear that (P4-A4).
+      // The sum above stays as the fallback when either box has no size.
+      var header = document.querySelector('.app-header');
+      if (map && header) {
+        var headerRect = header.getBoundingClientRect();
+        var mapRect = map.getContainer().getBoundingClientRect();
+        if (headerRect.height > 0 && mapRect.height > 0) {
+          top = Math.max(spaceMd, headerRect.bottom - mapRect.top + spaceMd);
+        }
+      }
     }
     // The tools layer sits over the top of the map, so the card must also
     // clear it (03.1 P4-A4). The larger of the two values wins.
@@ -702,6 +713,7 @@ window.PinalertMap = (function () {
     container.setAttribute('role', 'dialog');
     container.setAttribute('aria-modal', 'false');
     container.setAttribute('data-popup-open', 'true');
+    document.documentElement.setAttribute('data-popup-open', 'true');
     var title = container.querySelector('.popup-card__title');
     if (title && title.id) {
       container.setAttribute('aria-labelledby', title.id);
@@ -881,6 +893,7 @@ window.PinalertMap = (function () {
     var opener = popupOpener;
     closePressHadFocus = false;
 
+    document.documentElement.removeAttribute('data-popup-open');
     if (el) {
       el.removeAttribute('data-popup-open');
     }

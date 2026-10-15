@@ -59,6 +59,13 @@
   --font-weight-regular: 400;
   --font-weight-semibold: 600;
 
+  /* Height of the unofficial notice bar at the top of every full page. It is
+     the bar's min-height, never its height, so larger text still grows the
+     bar. Three tiers: 67.8px here (three lines on a phone), 48.2px from 480px
+     wide (two lines) and 28.6px from 900px wide (one line); the two wider
+     tiers are declared after the theme blocks. Declared in this file only. */
+  --disclaimer-bar-height: calc(var(--space-xs) * 2 + var(--font-size-label) * var(--line-height-label) * 3 + 1px);
+
   /* Base surfaces & text — light values (UI-SPEC "Color → Base surfaces & text") */
   --color-bg: #FFFFFF;
   --color-surface: #F1F3F4;
@@ -180,6 +187,21 @@
   --color-tone-bad: var(--color-severity-critical);
 
   --color-age-stale: #C9CDD1;
+}
+
+/* The two wider tiers of the bar height token. isDarkMediaRootHead in
+   web/css_contract_test.go classes any @media :root head as a dark colour
+   source, so these blocks declare this one length and no colour. */
+@media (min-width: 480px) {
+  :root {
+    --disclaimer-bar-height: calc(var(--space-xs) * 2 + var(--font-size-label) * var(--line-height-label) * 2 + 1px);
+  }
+}
+
+@media (min-width: 900px) {
+  :root {
+    --disclaimer-bar-height: calc(var(--space-xs) * 2 + var(--font-size-label) * var(--line-height-label) + 1px);
+  }
 }
 
 /*
@@ -492,7 +514,7 @@ body {
 }
 
 .btn--destructive {
-  /* Used only by the discard-draft confirmation — the phase's single data-loss path. */
+  /* Serves every destructive confirmation: the discard draft confirmation, Yes, discard report and Yes, remove report (P4-A17). */
   background: var(--color-severity-critical);
   color: var(--color-bg);
   border-color: var(--color-severity-critical);
@@ -548,9 +570,11 @@ body {
      the legacy fallback; 100dvh (declared second, so it wins in any engine
      that understands it) is the effective value because the static unit
      reports the large mobile viewport, taller than the area actually
-     visible while the browser's address bar is showing. */
-  min-height: 100vh;
-  min-height: 100dvh;
+     visible while the browser's address bar is showing. Both units give up
+     the height of the unofficial bar above the shell, so the shell is
+     shorter than the viewport by the bar and the page does not scroll. */
+  min-height: calc(100vh - var(--disclaimer-bar-height));
+  min-height: calc(100dvh - var(--disclaimer-bar-height));
   grid-template-columns: 1fr;
 }
 
@@ -578,10 +602,11 @@ body {
    own fixed 220px height already embodies for its own, unrelated, box.
    TestPrimaryMapHasResolvedHeight in web/css_contract_test.go fails the
    build if this rule is ever removed or downgraded to a value that cannot
-   resolve on its own. */
+   resolve on its own. The map is shorter than the viewport by the height of
+   the unofficial bar above it. */
 #map {
-  height: 100vh;
-  height: 100dvh;
+  height: calc(100vh - var(--disclaimer-bar-height));
+  height: calc(100dvh - var(--disclaimer-bar-height));
 }
 
 .view-toggle {

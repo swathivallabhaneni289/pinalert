@@ -349,7 +349,7 @@ func TestPopupCardSurfaceAndGeometry(t *testing.T) {
 		"overflow-y":  "auto",
 		"max-width":   "calc(100vw - var(--space-md) - var(--space-md))",
 	})
-	const baseMax = "max-height: max(120px, calc(100dvh - var(--space-md) - var(--space-md) - 20px))"
+	const baseMax = "max-height: max(120px, calc(100dvh - var(--space-md) - var(--space-md) - 20px - var(--disclaimer-bar-height)))"
 	body := p17Squash(content.declBody)
 	fallback := strings.Index(body, "max-height: 70vh")
 	ladder := strings.Index(body, baseMax)
@@ -358,12 +358,12 @@ func TestPopupCardSurfaceAndGeometry(t *testing.T) {
 	}
 
 	narrowQuery := "(max-width: 899.98px)"
-	const narrowMax = "max(120px, calc(100dvh - (var(--space-md) + var(--touch-target-min) + var(--space-md)) - (var(--space-lg) + var(--touch-target-min) + var(--space-md)) - 20px))"
+	const narrowMax = "max(120px, calc(100dvh - (var(--space-md) + var(--touch-target-min) + var(--space-md)) - (var(--space-lg) + var(--touch-target-min) + var(--space-md)) - 20px - var(--disclaimer-bar-height)))"
 	p17MustRule(t, "narrow block", p17MediaRules(css, narrowQuery), contentHead,
 		map[string]string{"max-height": narrowMax})
 	shortQuery := "(max-height: 359px)"
 	p17MustRule(t, "short block", p17MediaRules(css, shortQuery), contentHead,
-		map[string]string{"max-height": "max(120px, calc(100dvh - var(--space-md) - var(--space-md) - 20px))"})
+		map[string]string{"max-height": "max(120px, calc(100dvh - var(--space-md) - var(--space-md) - 20px - var(--disclaimer-bar-height)))"})
 	narrowAt, shortAt := p17MediaIndex(css, narrowQuery), p17MediaIndex(css, shortQuery)
 	if narrowAt == -1 || shortAt == -1 || shortAt < narrowAt {
 		t.Errorf("the max-height 359px block must be declared after the narrow block (found %d and %d)", narrowAt, shortAt)
@@ -981,7 +981,18 @@ func TestPopupPaddingTokensAgree(t *testing.T) {
 	for _, m := range regexp.MustCompile(`var\((--[a-z-]+)\)`).FindAllStringSubmatch(narrow.Decls["max-height"], -1) {
 		cssNames[m[1]] = true
 	}
+	// Plan 04-08 (P4-A4): the bar token is read by the CSS calc only. The
+	// script measures the real trigger rectangle instead, so the token is not
+	// part of the name set the script must read.
+	delete(cssNames, "--disclaimer-bar-height")
+	for label, rule := range map[string]p13CSSRule{"narrow": narrow, "short": short, "laptop": laptop} {
+		if got := strings.Count(rule.Decls["max-height"], "var(--disclaimer-bar-height)"); got != 1 {
+			t.Errorf("%s max height %q reads the bar token %d times, want once", label, rule.Decls["max-height"], got)
+		}
+	}
 	refresh := jsFunctionBody(t, code, "refreshPanPadding()")
+	p13MustContain(t, "refreshPanPadding", refresh, ".app-header", "getBoundingClientRect()", "getContainer()")
+	p13Ordered(t, refresh, "refreshPanPadding", "spaceMd + touchMin + spaceMd", "getBoundingClientRect()", "Math.max(top, toolsReserve())")
 	jsNames := map[string]bool{}
 	for _, m := range regexp.MustCompile(`'(--[a-z-]+)'`).FindAllStringSubmatch(refresh, -1) {
 		jsNames[m[1]] = true
