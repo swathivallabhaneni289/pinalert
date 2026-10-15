@@ -54,7 +54,8 @@ type ReportView struct {
 // alone, served to the list and the map pins together because one
 // endpoint feeds both (D-10, D-11). Retracted appears in neither view,
 // because D-12 removes a resolved report from the live feed and map
-// immediately and leaves the Activity page as its only remaining surface.
+// immediately. It stays visible on two other surfaces: the Activity page and
+// the Resolved group of the Past tab (D-25).
 // "Show disputed" reveals disputed reports, not resolved ones — folding
 // the two together is the likely future mistake this comment exists to
 // prevent.
