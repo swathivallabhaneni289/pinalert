@@ -187,15 +187,20 @@ func TestRecentSentence(t *testing.T) {
 }
 
 // TestFocusSelectsTabWithoutAddressWrite pins D-04 and D-11: a report link is
-// acted on once per answer, the two plain toasts say what the server said, a
+// acted on once per link, the two plain toasts say what the server said, a
 // readable report selects the tab of its own state through the store, the
 // strip and a refetch, and nothing in that path touches the address.
+//
+// Test change on purpose (03.1 review fix CR-01): the guard was pinned as
+// "focus === handledFocus" (once per answer). Every answer now carries a new
+// focus object while the link is held, so the guard is "handledFocus !== null"
+// (once per link), which keeps the toast and the tab choice from repeating.
 func TestFocusSelectsTabWithoutAddressWrite(t *testing.T) {
 	feed := pt12Feed(t)
 
 	handle := jsFunctionBody(t, feed, "handleFocus(state)")
 	p13Ordered(t, handle, "handleFocus",
-		"focus === handledFocus", "handledFocus = focus;", "focus.status === 'too_old'", "Pinalert.showToast(",
+		"handledFocus !== null", "handledFocus = focus;", "focus.status === 'too_old'", "Pinalert.showToast(",
 		"focus.status === 'unavailable'", "focus.status === 'ok'", "selectTabOnScreen(")
 	p13MustNotContain(t, "handleFocus", handle,
 		"replaceState", "syncViewURL", "searchParams", "location.", "switchTab(", "fetch(")

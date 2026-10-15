@@ -64,6 +64,9 @@ window.PinalertMap = (function () {
   // True only while render removes a marker, so the popup close does not also
   // pull focus back to a pin that is gone.
   var removingPopup = false;
+  // True only while a resize that crossed 900px closes the open popup, so that
+  // close does not end a report link: the reader did not close it.
+  var resizeClosing = false;
   // Reduced motion is read once. It turns off the map's fade and zoom
   // animations, the animated fly and Leaflet's own autopan (A60, A68).
   var reducedMotion = mediaMatches('(prefers-reduced-motion: reduce)');
@@ -343,9 +346,13 @@ window.PinalertMap = (function () {
   // again, stores the centre with its own flag (a fix is the reader's own, the
   // fallback never is), moves the map there, reads the list once and resolves
   // with { own }. It does not start polling: the poll loop is already running.
+  // The searched place is dropped only here, in the same step as the centre,
+  // so during the wait for a position the place line, the distance words and
+  // the list all still describe the searched area (IN-07).
   function recenterOnReader() {
     return new Promise(function (resolve) {
       function done(lat, lon, zoom, own) {
+        Pinalert.clearPlace();
         Pinalert.setCenter(lat, lon, own);
         moveTo(lat, lon, zoom);
         Pinalert.fetchReports();
@@ -876,6 +883,36 @@ window.PinalertMap = (function () {
     if (hadFocus && lost && !removingPopup) {
       returnFocusToOpener(opener);
     }
+
+    // A close made by a redraw or by a resize is not the reader's, so it
+    // leaves a report link as it is.
+    if (id !== null && String(id) === openedFocusId && !removingPopup && !resizeClosing) {
+      endLinkOnClose();
+    }
+  }
+
+  // endLinkOnClose ends a report link when the reader closes its popup
+  // (CR-01): the store stops asking for the report and forgets its focus
+  // object. The pin only the link put on the map goes at a redraw run after
+  // Leaflet has finished the close, because removing a marker inside its own
+  // popup close would remove that popup a second time. The focus return of
+  // onPopupClose above stays synchronous; the redraw only catches a focus the
+  // removed pin was holding.
+  function endLinkOnClose() {
+    Pinalert.dropFocus();
+    window.setTimeout(redrawAfterLinkEnded, 0);
+  }
+
+  // redrawAfterLinkEnded draws the pins again once a report link has ended,
+  // which takes off the pin the link alone kept. When the pin it takes off
+  // held focus (the close above hands focus back to the pin), focus goes to
+  // the map, never to the page body.
+  function redrawAfterLinkEnded() {
+    var before = document.activeElement;
+    render(Pinalert.state);
+    if (map && before && before !== document.body && !before.isConnected) {
+      map.getContainer().focus({ preventScroll: true });
+    }
   }
 
   // returnFocusToOpener sends focus back to the list row that opened the
@@ -936,7 +973,9 @@ window.PinalertMap = (function () {
     var crossed = narrow !== lastNarrow;
     lastNarrow = narrow;
     if (crossed && activePopup) {
+      resizeClosing = true;
       map.closePopup();
+      resizeClosing = false;
     }
     var ids = Object.keys(markers);
     for (var i = 0; i < ids.length; i++) {
@@ -1214,8 +1253,10 @@ window.PinalertMap = (function () {
   // It needs the store's focus to be ok, a report that is not already in the
   // list (the list's own pin is used then), a place on the map, a tab the
   // reader is on and a chip, when one is on, that matches its category. The
-  // store never clears its focus, so the tab rule is what takes the pin off
-  // the map when the reader moves to another tab (D-13).
+  // focus object is the newest answer's (CR-01), so the pin and its popup
+  // always show the server's current state, and the store drops it when the
+  // link ends. The tab rule still keeps the pin off a tab the report does not
+  // belong to (D-13).
   function focusPinReport(state) {
     var focus = state.focus;
     if (!focus || focus.status !== 'ok' || !focus.report) {

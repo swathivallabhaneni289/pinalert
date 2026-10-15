@@ -48,6 +48,34 @@
 }
 
 /*
+ * The list pane while a request for another tab, chip or centre is in flight
+ * (03.1 review WR-03). app.js sets data-loading on the pane when the rows it
+ * holds belong to another set than the one just asked for, and removes it
+ * when the answer (or a failure) is applied. The old rows are hidden, not
+ * dimmed, so rows of one tab are never readable under another tab's heading,
+ * and the count, the empty blocks and the error panel of the old set go with
+ * them. The skeleton stands in; its selector outranks #feed-skeleton[hidden].
+ * Each head names only the shown state (:not([hidden])), which is the only
+ * state the rule changes, and keeps the [hidden] guard tests' rule that no
+ * display rule names one of these ids bare.
+ */
+.pane--list[data-loading] #report-list:not([hidden]),
+.pane--list[data-loading] #past-groups:not([hidden]),
+.pane--list[data-loading] #feed-count:not([hidden]),
+.pane--list[data-loading] #feed-empty:not([hidden]),
+.pane--list[data-loading] #feed-empty-history:not([hidden]),
+.pane--list[data-loading] #disputed-empty:not([hidden]),
+.pane--list[data-loading] #past-empty:not([hidden]),
+.pane--list[data-loading] #filter-empty:not([hidden]),
+.pane--list[data-loading] #feed-error:not([hidden]) {
+  display: none;
+}
+
+.pane--list[data-loading] #feed-skeleton[hidden] {
+  display: block;
+}
+
+/*
  * The tab strip (03.1 D-01, D-02, UI-SPEC Surface 1): a grey track holding
  * three link tabs, the same look at every width. The tab text uses the normal
  * text colour because the muted colour reads 4.34 to 1 on the track. The

@@ -108,11 +108,14 @@ window.Pinalert = (function () {
     category: '',
     // null, or { name, lat, lon } of the place the reader searched for.
     place: null,
-    // null, or the report id string from ?report=ID. It is sent with the first
-    // list request only, then cleared.
+    // null, or the report id string from ?report=ID. It is sent with every
+    // list request while the linked report is the reader's open selection, so
+    // every answer carries a fresh focus object (CR-01). It goes when the
+    // server answers that the report cannot be shown, and dropFocus clears it
+    // when the linked popup closes or the tab, the place or the chip changes.
     focusId: null,
-    // The last focus object a response carried. A response without one
-    // leaves it as it is.
+    // The focus object of the newest answer, or null when that answer had
+    // none. Every answer replaces it, so it is never older than the list.
     focus: null,
     // The last response's recent counts and cut flags, null when it had none.
     recent: null,
@@ -170,6 +173,10 @@ window.Pinalert = (function () {
   var toastHasAction = false;
   var toastPending = false;
   var toastPauseWired = false;
+  // True while a mouse pointer is over the toast, kept from the pointer
+  // events. :hover is not read, because on a touch screen it can stay on after
+  // a tap and would keep the timer stopped for good (WR-04).
+  var toastPointerInside = false;
 
   // nowMs is the current time on the server's clock, as best this device can
   // tell. It is the only clock the age and fade code reads.
@@ -218,7 +225,7 @@ window.Pinalert = (function () {
     return state.center.own === true;
   }
 
-  // setView, setCategory, setPlace, clearPlace and setFocusId mirror
+  // setView, setCategory, setPlace, clearPlace, setFocusId and dropFocus mirror
   // setCenter's shape exactly: a plain assignment onto state, no notify, no
   // fetch. The caller decides when to refetch. A value outside the closed
   // list is ignored, so the store can never hold a word the server would
@@ -255,8 +262,16 @@ window.Pinalert = (function () {
     state.place = null;
   }
 
-  // setFocusId keeps the report id of a ?report=ID link, as digits only. The
-  // next list request carries it once.
+  // dropFocus ends a report link: the id is no longer sent and the focus
+  // object goes, so the pin the link put on the map leaves at the next render.
+  // Like the setters above it only assigns: no notify, no fetch.
+  function dropFocus() {
+    state.focusId = null;
+    state.focus = null;
+  }
+
+  // setFocusId keeps the report id of a ?report=ID link, as digits only. Every
+  // list request carries it until the link ends (see state.focusId).
   function setFocusId(id) {
     if (id === null) {
       state.focusId = null;
@@ -265,6 +280,27 @@ window.Pinalert = (function () {
     var text = String(id);
     if (/^[1-9][0-9]{0,17}$/.test(text)) {
       state.focusId = text;
+    }
+  }
+
+  // markListLoading marks the list pane while the rows in the store belong to
+  // another tab, chip or centre than the one just asked for (WR-03). The
+  // heading and the note change at once on a tab press, so without the mark
+  // the old rows would sit readable under the new heading until the answer
+  // lands. feed.css hides the rows, the count, the empty blocks and the error
+  // panel under the mark and shows the skeleton. The store keeps the rows, so
+  // a failed request can still tell rows that are merely a little old from
+  // rows of another set (WR-08). The pane is looked up when needed, so a page
+  // without it is not affected.
+  function markListLoading(on) {
+    var pane = document.querySelector('.pane--list');
+    if (!pane) {
+      return;
+    }
+    if (on) {
+      pane.setAttribute('data-loading', 'true');
+    } else {
+      pane.removeAttribute('data-loading');
     }
   }
 
@@ -320,6 +356,10 @@ window.Pinalert = (function () {
       state.status = 'loading';
       notify();
     }
+    // Rows of another set stay in the store but leave the screen until this
+    // request or a newer one is applied. A request that goes back to the set
+    // the rows belong to (a tab pressed and pressed back) shows them again.
+    markListLoading(isBackgroundRefresh && !rowsMatchStore());
 
     var url = '/api/reports' +
       '?lat=' + encodeURIComponent(state.center.lat) +
@@ -362,21 +402,30 @@ window.Pinalert = (function () {
         }
         state.reports = (body && body.reports) || [];
         // The three optional objects are kept as the server sent them. This
-        // file renders none of them. A response without a focus object leaves
-        // the last one as it is.
+        // file renders none of them. Every answer replaces the focus object,
+        // so the linked report is never drawn from an older answer than the
+        // list (CR-01). A focus is taken only while the link it answers is
+        // still the store's: an answer sent before the link ended must not
+        // bring its pin back.
         state.recent = (body && body.recent) || null;
         state.cut = (body && body.cut) || null;
+        state.focus = null;
         if (body && body.focus) {
-          state.focus = body.focus;
+          if (sentFocusId !== null && sentFocusId === state.focusId) {
+            state.focus = body.focus;
+          }
         }
-        // The report id travels with the first answered request only.
-        if (sentFocusId !== null && state.focusId === sentFocusId) {
+        // A report the server cannot show (too old, unavailable) is a final
+        // answer, so its id is not sent again.
+        if (sentFocusId !== null && state.focusId === sentFocusId &&
+            (state.focus === null || state.focus.status !== 'ok')) {
           state.focusId = null;
         }
         rowsFor = { view: sentView, category: sentCategory, lat: sentLat, lon: sentLon };
         lastAppliedSeq = mySeq;
         state.status = 'ok';
         state.error = null;
+        markListLoading(false);
         notify();
       })
       .catch(function (err) {
@@ -393,6 +442,7 @@ window.Pinalert = (function () {
         }
         state.status = 'error';
         state.error = err;
+        markListLoading(false);
         notify();
       });
     newestFetch = pending;
@@ -670,6 +720,9 @@ window.Pinalert = (function () {
     var mine = toastSeq;
     toastHasAction = hasAction;
     toastPending = false;
+    // A toast that was hidden under the mouse got no pointerleave, so the
+    // flag starts clear for every new toast; a real hover sets it again.
+    toastPointerInside = false;
     if (hasAction) {
       setText(toastEl, '');
       toastEl.classList.add('toast--action');
@@ -742,9 +795,18 @@ window.Pinalert = (function () {
     }, ms);
   }
 
-  // pauseToast stops the hide timer while the reader has the pointer or focus
-  // on a toast that holds an action. A plain toast keeps its fixed 3 seconds.
-  function pauseToast() {
+  // pauseToast stops the hide timer while the reader has a mouse pointer or
+  // focus on a toast that holds an action. A plain toast keeps its fixed 3
+  // seconds. Only a mouse pauses from the pointer: a touch or a pen fires
+  // pointerenter as it lands, and a tap on the text must not stop the timer
+  // (WR-04). Focus pauses for every kind of input.
+  function pauseToast(evt) {
+    if (evt && evt.type === 'pointerenter') {
+      if (evt.pointerType !== 'mouse') {
+        return;
+      }
+      toastPointerInside = true;
+    }
     if (!toastHasAction || toastPending) {
       return;
     }
@@ -754,15 +816,20 @@ window.Pinalert = (function () {
     }
   }
 
-  // resumeToast restarts the hide timer at 4 seconds when the pointer or the
-  // focus leaves a visible toast that holds an action. It does nothing while
-  // either is still on the toast, and nothing for a request in flight.
+  // resumeToast restarts the hide timer at 4 seconds when the mouse or the
+  // focus leaves a visible toast that holds an action and the timer was
+  // paused. It does nothing while either is still on the toast, nothing for a
+  // request in flight, and nothing while the timer still runs (a touch that
+  // lifts never paused it, so it keeps its own time).
   function resumeToast(evt) {
     var toastEl = evt.currentTarget;
-    if (!toastHasAction || toastPending || toastEl.hidden) {
+    if (evt.type === 'pointerleave') {
+      toastPointerInside = false;
+    }
+    if (!toastHasAction || toastPending || toastEl.hidden || toastTimer !== null) {
       return;
     }
-    if (toastEl.matches(':hover') || toastEl.contains(document.activeElement)) {
+    if (toastPointerInside || toastEl.contains(document.activeElement)) {
       return;
     }
     startToastTimer(toastEl, TOAST_RESUME_MS);
@@ -788,6 +855,7 @@ window.Pinalert = (function () {
     setPlace: setPlace,
     clearPlace: clearPlace,
     setFocusId: setFocusId,
+    dropFocus: dropFocus,
     fetchReports: fetchReports,
     startPolling: startPolling,
     submitReport: submitReport,
