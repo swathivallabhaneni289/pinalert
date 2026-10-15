@@ -1330,7 +1330,7 @@
   overflow-y: auto;
   max-width: calc(100vw - var(--space-md) - var(--space-md));
   max-height: 70vh;
-  max-height: max(120px, calc(100dvh - var(--space-md) - var(--space-md) - 20px));
+  max-height: max(120px, calc(100dvh - var(--space-md) - var(--space-md) - 20px - var(--disclaimer-bar-height)));
 }
 
 /* The paragraph reset is the floor. The spacing rules below carry at least
@@ -1570,7 +1570,7 @@
    rule below on purpose, so a very short laptop window still takes that one. */
 @media (min-width: 900px) {
   .leaflet-container .leaflet-popup-content {
-    max-height: max(120px, calc(100dvh - var(--space-md) - var(--space-md) - var(--map-tools-height) - 20px));
+    max-height: max(120px, calc(100dvh - var(--space-md) - var(--space-md) - var(--map-tools-height) - 20px - var(--disclaimer-bar-height)));
   }
 }
 
@@ -1580,7 +1580,7 @@
    shipped 900px query. */
 @media (max-width: 899.98px) {
   .leaflet-container .leaflet-popup-content {
-    max-height: max(120px, calc(100dvh - (var(--space-md) + var(--touch-target-min) + var(--space-md)) - (var(--space-lg) + var(--touch-target-min) + var(--space-md)) - 20px));
+    max-height: max(120px, calc(100dvh - (var(--space-md) + var(--touch-target-min) + var(--space-md)) - (var(--space-lg) + var(--touch-target-min) + var(--space-md)) - 20px - var(--disclaimer-bar-height)));
   }
 }
 
@@ -1588,7 +1588,7 @@
    16 and 16 form and the card scrolls inside itself. Declared last. */
 @media (max-height: 359px) {
   .leaflet-container .leaflet-popup-content {
-    max-height: max(120px, calc(100dvh - var(--space-md) - var(--space-md) - 20px));
+    max-height: max(120px, calc(100dvh - var(--space-md) - var(--space-md) - 20px - var(--disclaimer-bar-height)));
   }
 }
 

@@ -281,6 +281,42 @@ func TestBarTokenReadByPageWrappers(t *testing.T) {
 	}
 }
 
+// The trust.css half of the bar token contract (P4-A4): every popup max
+// height that is stated against 100dvh subtracts the bar exactly once, so the
+// card fits the map that now sits under the bar. There are exactly four such
+// values: the base rule, the narrow block and the short block of plan 03-17,
+// and the laptop block that Phase 3.1 plan 11 added after the plan text was
+// written (it still says three).
+func TestPopupMaxHeightsReadTheBarToken(t *testing.T) {
+	trust := p408ReadStatic(t, "static/css/trust.css")
+	found := 0
+	for _, r := range parseCSSRules(trust) {
+		v, has := declsOf(r.declBody)["max-height"]
+		if !has || !strings.Contains(v, "100dvh") {
+			continue
+		}
+		found++
+		if got := strings.Count(v, "var(--disclaimer-bar-height)"); got != 1 {
+			t.Errorf("%q: max-height %q reads the bar token %d times, want once", r.selectorHead, v, got)
+		}
+	}
+	if found != 4 {
+		t.Errorf("trust.css has %d max-height values stated against 100dvh, want 4 (base, narrow, short, laptop)", found)
+	}
+}
+
+func TestPopupOpenFlagOnRoot(t *testing.T) {
+	code := stripJSComments(p408ReadStatic(t, "static/js/map.js"))
+	open := jsFunctionBody(t, code, "onPopupOpen(evt)")
+	if !strings.Contains(open, "document.documentElement.setAttribute('data-popup-open', 'true')") {
+		t.Error("onPopupOpen must set data-popup-open on the root element")
+	}
+	closeBody := jsFunctionBody(t, code, "onPopupClose(evt)")
+	if !strings.Contains(closeBody, "document.documentElement.removeAttribute('data-popup-open')") {
+		t.Error("onPopupClose must remove data-popup-open from the root element")
+	}
+}
+
 func TestTopChromeGeometry(t *testing.T) {
 	chrome := p408ReadStatic(t, "static/css/chrome.css")
 	auth := p408ReadStatic(t, "static/css/auth.css")
