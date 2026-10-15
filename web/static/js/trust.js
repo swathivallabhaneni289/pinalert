@@ -408,6 +408,11 @@
     if (menu && !menu.hidden) {
       return false;
     }
+    // Any form or dialog that locks the page behind it (the shared report form
+    // on both pages, and the Flag dialog) owns its own Escape.
+    if (document.documentElement.hasAttribute('data-modal-open')) {
+      return false;
+    }
 
     var active = document.activeElement;
     var popupEl = openPopupEl();

@@ -79,3 +79,46 @@
 #low-list[hidden], #low-skeleton[hidden], #low-empty[hidden], #low-error[hidden] {
   display: none;
 }
+
+/* The location block of the report form (plan 04-19). It replaces the map of
+   the main form: a fieldset with a legend, one status sentence that states
+   where the report will be placed, and the buttons the state needs. */
+.low-location {
+  margin-left: 0;
+  margin-right: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.low-location legend {
+  padding: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+#low-location-status {
+  margin: var(--space-sm) 0 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text);
+}
+
+.low-location__actions:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin: var(--space-sm) 0 0;
+}
+
+.low-location label:not([hidden]) {
+  display: block;
+  margin: var(--space-md) 0 var(--space-xs);
+}
+
+/* The tile labels of this form read in the main text colour (P4-A27). */
+.report-form--low .category-tile:not(.category-tile--selected) {
+  color: var(--color-text);
+}

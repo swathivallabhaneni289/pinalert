@@ -167,6 +167,13 @@
   // report data.
   var voteBlockSeq = 0;
 
+  // The waits the server has told this page about, one entry per report and
+  // vote kind (D-12). It lives in memory only: it is never written to any
+  // browser storage or queue, because a vote is never saved for later (D-18),
+  // and a reload starts with none. A tap during a wait is answered here and
+  // sends nothing.
+  var voteWaits = {};
+
   // Which button takes focus back once a vote is released, keyed by the
   // action that was sent. Confirm and Dispute return to the pressed button
   // (UI-SPEC Busy state). Yes returns to Mark resolved (A52).
@@ -391,6 +398,62 @@
     return Promise.resolve({ latitude: 0, longitude: 0 });
   }
 
+  // voteWaitKind names the cooldown a vote action belongs to, in the server's
+  // own key words: Mark resolved, Reopen and the take back share the
+  // resolution cooldown, every other action is content (D-12).
+  function voteWaitKind(action) {
+    if (action === 'resolve' || action === 'reopen' || action === 'unresolve') {
+      return 'resolution';
+    }
+    return 'content';
+  }
+
+  // rememberVoteWait keeps the server's wait answer for one report and vote
+  // kind, and returns the whole seconds it kept (at least 1). The message is
+  // the server's own sentence, shown as it came.
+  function rememberVoteWait(reportId, action, seconds, message, field) {
+    var wait = Math.ceil(Number(seconds));
+    if (!isFinite(wait) || wait < 1) {
+      wait = 1;
+    }
+    voteWaits[String(reportId) + ':' + voteWaitKind(action)] = {
+      until: Date.now() + wait * 1000,
+      seconds: wait,
+      message: String(message || GENERIC_FAILURE_MESSAGE),
+      field: field || ''
+    };
+    return wait;
+  }
+
+  // knownVoteWait returns null when no wait runs for this report and vote
+  // kind. While one runs it returns an Error shaped like the one a 429 answer
+  // gives, with the stored sentence reworded for the time left. When the
+  // original wait phrase is not found in the sentence, the sentence is kept
+  // exactly as the server sent it.
+  function knownVoteWait(reportId, action) {
+    var key = String(reportId) + ':' + voteWaitKind(action);
+    var entry = voteWaits[key];
+    if (!entry) {
+      return null;
+    }
+    if (Date.now() >= entry.until) {
+      delete voteWaits[key];
+      return null;
+    }
+    var left = Math.max(1, Math.ceil((entry.until - Date.now()) / 1000));
+    var original = Pinalert.formatWait(entry.seconds);
+    var at = entry.message.indexOf(original);
+    var message = at === -1
+      ? entry.message
+      : entry.message.slice(0, at) + Pinalert.formatWait(left) + entry.message.slice(at + original.length);
+    var err = new Error(message);
+    err.field = entry.field;
+    err.fieldMessage = message;
+    err.status = 429;
+    err.retryAfterSeconds = left;
+    return err;
+  }
+
   // castVote POSTs a vote and resolves with the parsed 200 body
   // ({visibility, reason}). It retries once, and only when the server
   // refused the vote with error field location (too far from the report),
@@ -414,6 +477,14 @@
       var actionErr = new Error(GENERIC_FAILURE_MESSAGE);
       actionErr.fieldMessage = GENERIC_FAILURE_MESSAGE;
       return Promise.reject(actionErr);
+    }
+
+    // While the server's wait for this report and vote kind still runs, the
+    // tap is answered here with the same sentence and nothing is read or
+    // sent. This also covers the take back below.
+    var pendingWait = knownVoteWait(reportId, action);
+    if (pendingWait) {
+      return Promise.reject(pendingWait);
     }
 
     // A take back adds no claim, so it asks for no location at all and sends
@@ -473,6 +544,17 @@
             var err = new Error(fieldError.message);
             err.field = fieldError.field;
             err.fieldMessage = fieldError.message;
+            err.status = res.status;
+            if (res.status === 429) {
+              // The server's own sentence and wait are remembered, so a tap
+              // during the wait is answered without a request. A 429 is
+              // never retried.
+              var waitSeconds = Number(body && body.retry_after_seconds);
+              if (!isFinite(waitSeconds) || !(waitSeconds > 0)) {
+                waitSeconds = Number(res.headers.get('Retry-After'));
+              }
+              err.retryAfterSeconds = rememberVoteWait(reportId, action, waitSeconds, fieldError.message, fieldError.field);
+            }
             throw err;
           }
           return body;
@@ -487,9 +569,12 @@
   // paragraph. It applies no state of its own — updateVoteBlock is always
   // called immediately after it. Built entirely with document.createElement,
   // never a markup string (T-01-03). It returns the controls, the note and
-  // the error, and the consumers append them in that order.
-  function createVoteBlock(reportId) {
+  // the error, and the consumers append them in that order. The resolve
+  // option set to false builds the block without Mark resolved and its
+  // confirmation (the Low data view); any other value builds them.
+  function createVoteBlock(reportId, options) {
     var seq = ++voteBlockSeq;
+    var withResolve = !(options && options.resolve === false);
     var controls = document.createElement('div');
     controls.className = 'vote-controls';
     controls.dataset.reportId = String(reportId);
@@ -503,63 +588,65 @@
     controls.appendChild(confirmBtn);
     controls.appendChild(disputeBtn);
 
-    // Mark resolved (Task 1, 02-07, D-13/D-15): the third button, appended
-    // after Dispute per the Copywriting Contract's reading order. It
-    // renders for the reporter and the non-reporter alike — the server's
-    // response (via resolutionOutcomeMessage) is what distinguishes D-13's
-    // instant path from D-14's threshold-gated one, never the markup.
-    var resolveBtn = createVoteButton('vote-btn vote-btn--resolve', 'resolve', 'vote-btn__icon--shield-check', RESOLVE_BUTTON_LABEL);
-    controls.appendChild(resolveBtn);
+    if (withResolve) {
+      // Mark resolved (Task 1, 02-07, D-13/D-15): the third button, appended
+      // after Dispute per the Copywriting Contract's reading order. It
+      // renders for the reporter and the non-reporter alike; the server's
+      // response (via resolutionOutcomeMessage) is what distinguishes D-13's
+      // instant path from D-14's threshold-gated one, never the markup.
+      var resolveBtn = createVoteButton('vote-btn vote-btn--resolve', 'resolve', 'vote-btn__icon--shield-check', RESOLVE_BUTTON_LABEL);
+      controls.appendChild(resolveBtn);
 
-    // The inline destructive confirmation (D-15). Mounted INSIDE
-    // .vote-controls — one level deeper than 02-UI-SPEC.md's sketch, which
-    // drew it as a sibling with no data-action attributes — so its two
-    // buttons are reached by the one delegated listener below rather than
-    // needing a second one. Same markup, classes and copy either way; only
-    // the nesting differs. Recorded in the SUMMARY as a deliberate
-    // divergence.
-    //
-    // The confirmation is a group named by its question, so a screen reader
-    // reads the question before either answer (A16, A63). Cancel comes
-    // first in the DOM and takes focus when the group opens, so the safe
-    // choice is the first one reached. The question id comes from the block
-    // counter, never from the report id.
-    var confirmBlock = document.createElement('div');
-    confirmBlock.className = 'resolve-confirm';
-    confirmBlock.hidden = true;
-    var questionId = 'pinalert-resolve-q-' + seq;
-    confirmBlock.setAttribute('role', 'group');
-    confirmBlock.setAttribute('aria-labelledby', questionId);
+      // The inline destructive confirmation (D-15). Mounted INSIDE
+      // .vote-controls, one level deeper than 02-UI-SPEC.md's sketch, which
+      // drew it as a sibling with no data-action attributes, so its two
+      // buttons are reached by the one delegated listener below rather than
+      // needing a second one. Same markup, classes and copy either way; only
+      // the nesting differs. Recorded in the SUMMARY as a deliberate
+      // divergence.
+      //
+      // The confirmation is a group named by its question, so a screen reader
+      // reads the question before either answer (A16, A63). Cancel comes
+      // first in the DOM and takes focus when the group opens, so the safe
+      // choice is the first one reached. The question id comes from the block
+      // counter, never from the report id.
+      var confirmBlock = document.createElement('div');
+      confirmBlock.className = 'resolve-confirm';
+      confirmBlock.hidden = true;
+      var questionId = 'pinalert-resolve-q-' + seq;
+      confirmBlock.setAttribute('role', 'group');
+      confirmBlock.setAttribute('aria-labelledby', questionId);
 
-    var confirmHeading = document.createElement('p');
-    confirmHeading.id = questionId;
-    Pinalert.setText(confirmHeading, RESOLVE_CONFIRM_HEADING);
-    confirmBlock.appendChild(confirmHeading);
+      var confirmHeading = document.createElement('p');
+      confirmHeading.id = questionId;
+      Pinalert.setText(confirmHeading, RESOLVE_CONFIRM_HEADING);
+      confirmBlock.appendChild(confirmHeading);
 
-    // The line under the question that tells a reader who has no undo left
-    // that this mark cannot be taken back (C53). Hidden until updateVoteBlock
-    // finds the server's undos_left at zero. A plain paragraph in the group.
-    var confirmLimit = document.createElement('p');
-    confirmLimit.className = 'resolve-confirm__limit';
-    confirmLimit.hidden = true;
-    Pinalert.setText(confirmLimit, TAKE_BACK_LIMIT_CONFIRM_LINE);
-    confirmBlock.appendChild(confirmLimit);
+      // The line under the question that tells a reader who has no undo left
+      // that this mark cannot be taken back (C53). Hidden until updateVoteBlock
+      // finds the server's undos_left at zero. A plain paragraph in the group.
+      var confirmLimit = document.createElement('p');
+      confirmLimit.className = 'resolve-confirm__limit';
+      confirmLimit.hidden = true;
+      Pinalert.setText(confirmLimit, TAKE_BACK_LIMIT_CONFIRM_LINE);
+      confirmBlock.appendChild(confirmLimit);
 
-    var cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className = 'vote-btn vote-btn--cancel-resolve';
-    cancelBtn.dataset.action = 'cancel-resolve';
-    Pinalert.setText(cancelBtn, RESOLVE_CONFIRM_CANCEL_LABEL);
-    confirmBlock.appendChild(cancelBtn);
+      var cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'vote-btn vote-btn--cancel-resolve';
+      cancelBtn.dataset.action = 'cancel-resolve';
+      Pinalert.setText(cancelBtn, RESOLVE_CONFIRM_CANCEL_LABEL);
+      confirmBlock.appendChild(cancelBtn);
 
-    var affirmBtn = document.createElement('button');
-    affirmBtn.type = 'button';
-    affirmBtn.className = 'vote-btn vote-btn--confirm-resolve';
-    affirmBtn.dataset.action = 'confirm-resolve';
-    Pinalert.setText(affirmBtn, RESOLVE_CONFIRM_AFFIRM_LABEL);
-    confirmBlock.appendChild(affirmBtn);
+      var affirmBtn = document.createElement('button');
+      affirmBtn.type = 'button';
+      affirmBtn.className = 'vote-btn vote-btn--confirm-resolve';
+      affirmBtn.dataset.action = 'confirm-resolve';
+      Pinalert.setText(affirmBtn, RESOLVE_CONFIRM_AFFIRM_LABEL);
+      confirmBlock.appendChild(affirmBtn);
 
-    controls.appendChild(confirmBlock);
+      controls.appendChild(confirmBlock);
+    }
 
     // The closed note and the take back block (03.1 D-22). Both live inside
     // the controls container, so a surface that already mounts the controls
@@ -1048,13 +1135,16 @@
   // own doc comment), which is what keeps a background poll landing
   // mid-flight from re-enabling a button whose vote is in the air.
   function openResolveConfirm(block) {
+    var confirmBlock = block.controls.querySelector('.resolve-confirm');
+    if (!confirmBlock) {
+      return;
+    }
     var primaryBtns = block.controls.querySelectorAll(
       '.vote-btn--confirm, .vote-btn--dispute, .vote-btn--resolve'
     );
     for (var i = 0; i < primaryBtns.length; i++) {
       primaryBtns[i].hidden = true;
     }
-    var confirmBlock = block.controls.querySelector('.resolve-confirm');
     confirmBlock.hidden = false;
     var cancelBtn = block.controls.querySelector('.vote-btn--cancel-resolve');
     if (cancelBtn) {
@@ -1073,6 +1163,9 @@
       primaryBtns[i].hidden = false;
     }
     var confirmBlock = block.controls.querySelector('.resolve-confirm');
+    if (!confirmBlock) {
+      return;
+    }
     confirmBlock.hidden = true;
   }
 
@@ -1382,6 +1475,14 @@
   // judge of every vote.
   function refreshHintThenRetry(block, button) {
     if (block.hintRefreshing) {
+      return;
+    }
+    // While the server's wait for this report and vote kind still runs, the
+    // tap is answered with that sentence and no position is read at all.
+    var tappedAction = button.dataset.action === 'confirm-resolve' ? 'resolve' : button.dataset.action;
+    var pendingWait = knownVoteWait(block.controls.dataset.reportId, tappedAction);
+    if (pendingWait) {
+      showVoteError(block, pendingWait.fieldMessage);
       return;
     }
     block.hintRefreshing = true;

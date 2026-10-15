@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/low.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/modal.css?v={{.AssetVersion}}">
   <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
 </head>
 <body>
@@ -31,6 +32,7 @@
       <p class="low-page__line">Text only, no map</p>
       <p class="low-page__note">This device opens the Low data view by default.</p>
       <a class="btn" id="low-full" href="/?full=1">Open full version</a>
+      <button type="button" class="btn btn--primary low-page__report" id="low-report">Report an emergency</button>
       <p class="low-basis" id="low-basis" aria-live="polite"></p>
       <button type="button" class="btn" id="low-retry-position" hidden>Retry position</button>
       <div class="low-stale" id="low-stale" hidden>
@@ -57,10 +59,42 @@
     </div>
   </main>
 
+  <div class="modal-backdrop" id="report-modal" hidden>
+    <div class="modal-panel report-form--low" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h2 id="modal-title">Report an emergency</h2>
+
+      <fieldset class="low-location" aria-describedby="low-location-status">
+        <legend>Location</legend>
+        <p id="low-location-status" role="status"></p>
+        <div class="low-location__actions" hidden>
+          <button type="button" class="btn" id="low-location-use" hidden>Use this position</button>
+          <button type="button" class="btn" id="low-location-own" hidden>Use my position instead</button>
+          <button type="button" class="btn" id="low-location-retry" hidden>Retry position</button>
+          <a class="btn" id="low-location-full" href="/?full=1" hidden>Open full version</a>
+        </div>
+
+        <label for="location-search">Or type a place or address</label>
+        <div class="location-search-field">
+          <input type="search" id="location-search" name="location_search" autocomplete="off"
+                 autocapitalize="off" spellcheck="false" role="combobox" aria-expanded="false"
+                 aria-autocomplete="list" aria-controls="location-search-results"
+                 placeholder="Type a place name or address">
+          <div id="location-search-results" role="listbox" aria-label="Place suggestions" hidden></div>
+        </div>
+        <p id="location-search-status" role="status" aria-live="polite" hidden></p>
+      </fieldset>
+
+      {{template "report_form.html.tmpl" .}}
+    </div>
+  </div>
+
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+
   <script src="/static/js/app.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/votes.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/visibility.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/trust.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/report-form.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/low.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
 </body>

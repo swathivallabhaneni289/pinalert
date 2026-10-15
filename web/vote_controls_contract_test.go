@@ -90,7 +90,7 @@ func TestResolveConfirmIsANamedGroupWithCancelFirst(t *testing.T) {
 		t.Errorf("votes.js must declare var voteBlockSeq = 0; exactly once, found %d", n)
 	}
 
-	body := p09FuncBody(t, text, "createVoteBlock(reportId)")
+	body := p09FuncBody(t, text, "createVoteBlock(reportId, options)")
 	if n := strings.Count(body, "++voteBlockSeq"); n != 1 {
 		t.Errorf("createVoteBlock must take the counter with ++voteBlockSeq exactly once, found %d", n)
 	}
@@ -257,7 +257,7 @@ func TestEscapeCancelHookIsExported(t *testing.T) {
 	p09MustNotContain(t, "cancelResolveConfirm", body,
 		"castVote(", "getVoterLocation(", "setBlockBusy(", "showVoteError(", "addEventListener")
 
-	p09MustNotContain(t, "createVoteBlock", p09FuncBody(t, text, "createVoteBlock(reportId)"), "'Escape'")
+	p09MustNotContain(t, "createVoteBlock", p09FuncBody(t, text, "createVoteBlock(reportId, options)"), "'Escape'")
 }
 
 // TestVoteButtonsCarryIconAndLabelSpans pins amendments A12 and A36. Confirm,
@@ -280,7 +280,7 @@ func TestVoteButtonsCarryIconAndLabelSpans(t *testing.T) {
 	labelBody := p09FuncBody(t, text, "setVoteButtonLabel(button, text)")
 	p09MustContain(t, "setVoteButtonLabel", labelBody, "'.vote-btn__label'", "Pinalert.setText(")
 
-	blockBody := p09FuncBody(t, text, "createVoteBlock(reportId)")
+	blockBody := p09FuncBody(t, text, "createVoteBlock(reportId, options)")
 	if n := strings.Count(blockBody, "createVoteButton("); n != 3 {
 		t.Errorf("createVoteBlock must build exactly three buttons through createVoteButton, found %d", n)
 	}
@@ -308,7 +308,7 @@ func TestVoteButtonsCarryIconAndLabelSpans(t *testing.T) {
 // sentence, which plan 03-18 writes, nor the spacing, which plan 03-11 styles.
 func TestVoteBlockReturnsNoteAndConsumersAppendInOrder(t *testing.T) {
 	text := p09ReadJS(t, "static/js/votes.js")
-	body := p09FuncBody(t, text, "createVoteBlock(reportId)")
+	body := p09FuncBody(t, text, "createVoteBlock(reportId, options)")
 
 	seqMatch := regexp.MustCompile(`(\w+)\s*=\s*\+\+voteBlockSeq`).FindStringSubmatch(body)
 	if seqMatch == nil {

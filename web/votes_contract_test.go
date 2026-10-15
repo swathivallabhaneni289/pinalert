@@ -717,7 +717,7 @@ func TestVoteClickDoesNotActivateItsRow(t *testing.T) {
 	}
 	votesText := stripCSSComments(string(votesRaw))
 
-	createVoteBlockBody := jsFunctionBody(t, votesText, "createVoteBlock(reportId)")
+	createVoteBlockBody := jsFunctionBody(t, votesText, "createVoteBlock(reportId, options)")
 	if n := strings.Count(createVoteBlockBody, "stopPropagation"); n < 2 {
 		t.Errorf("createVoteBlock's own body must call stopPropagation at least twice (once in "+
 			"the click listener, once in the keydown listener), found %d", n)
@@ -1444,7 +1444,7 @@ func TestResolveButtonMountsInsideTheVoteControlsContainer(t *testing.T) {
 	}
 	text := stripCSSComments(string(raw))
 
-	createVoteBlockBody := jsFunctionBody(t, text, "createVoteBlock(reportId)")
+	createVoteBlockBody := jsFunctionBody(t, text, "createVoteBlock(reportId, options)")
 
 	if !strings.Contains(createVoteBlockBody, "vote-btn--resolve") {
 		t.Errorf("createVoteBlock's own body does not build a .vote-btn--resolve element")

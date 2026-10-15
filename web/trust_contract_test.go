@@ -357,9 +357,11 @@ func TestTrustDisclosure(t *testing.T) {
 	}
 
 	one := jsFunctionBody(t, trust, "closeOneLevel()")
-	p13Ordered(t, one, "closeOneLevel", "'report-modal'", "'account-menu'",
+	p13Ordered(t, one, "closeOneLevel", "'report-modal'", "'account-menu'", "'data-modal-open'",
 		"PinalertVotes.cancelResolveConfirm(", "closeRowPanel(")
 	p13MustContain(t, "closeOneLevel", one, "surfaceIsDisplayed(")
+	// P4-A5: any form that locks the page owns its own Escape.
+	p13MustContain(t, "closeOneLevel", one, "document.documentElement.hasAttribute('data-modal-open')")
 
 	closeRow := jsFunctionBody(t, trust, "closeRowPanel(row)")
 	p13MustContain(t, "closeRowPanel", closeRow, "aria-expanded", "setPanelOpen(", ".focus()")
@@ -377,7 +379,7 @@ func TestTrustDisclosure(t *testing.T) {
 	// confirmation is cancelled only for focus inside the owner, and the popup
 	// panel closes before the popup does.
 	level := jsFunctionBody(t, code, "closeOneLevel()")
-	p13Ordered(t, level, "closeOneLevel popup branch", "'report-modal'", "'account-menu'", "openPopupEl()",
+	p13Ordered(t, level, "closeOneLevel popup branch", "'report-modal'", "'account-menu'", "'data-modal-open'", "openPopupEl()",
 		"isPopupMarker(", "PinalertVotes.cancelResolveConfirm(", "closePopupLevel(", "closeRowPanel(")
 	p13MustContain(t, "closeOneLevel popup branch", level, "var focusInside", "document.body", "surfaceIsDisplayed(")
 

@@ -39,6 +39,10 @@
   // process wide limiter inside internal/geocode, so this number can be
   // tuned for feel without reasoning about compliance.
   var SEARCH_DEBOUNCE_MS = 600;
+  // How long one place search may take before it counts as failed, in
+  // milliseconds (U8, D-16). A search that runs this long gets the same
+  // failure sentence as one the server refused.
+  var SEARCH_TIMEOUT_MS = 8000;
   // Must stay equal to the server's own minimum (minGeocodeQueryRunes in
   // internal/api/handlers/geocode.go): a smaller value here would only
   // produce requests the server refuses with a 400.
@@ -392,6 +396,7 @@
     if (!results || results.length === 0) {
       hideDropdown();
       showSearchStatus(SEARCH_NO_MATCH_MESSAGE);
+      noteSearchOutcome('no_match');
       return;
     }
     clearSearchStatus();
@@ -401,6 +406,34 @@
     });
     locationSearchResults.hidden = false;
     locationSearchInput.setAttribute('aria-expanded', 'true');
+    noteSearchOutcome('match');
+  }
+
+  // noteSearchOutcome tells the location object how the last search ended
+  // ('match', 'no_match' or 'unavailable') when it asks to know. The page
+  // without a map uses it to tell that both ways of placing a report failed.
+  function noteSearchOutcome(outcome) {
+    if (picker && typeof picker.noteSearchOutcome === 'function') {
+      picker.noteSearchOutcome(outcome);
+    }
+  }
+
+  // searchTimeoutSignal returns a signal that aborts the search request after
+  // SEARCH_TIMEOUT_MS, by the browser's own timeout signal when it has one,
+  // else by a timer. It returns undefined when neither can be built, and the
+  // request then simply has no time limit.
+  function searchTimeoutSignal() {
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+      return AbortSignal.timeout(SEARCH_TIMEOUT_MS);
+    }
+    if (typeof AbortController === 'function') {
+      var controller = new AbortController();
+      window.setTimeout(function () {
+        controller.abort();
+      }, SEARCH_TIMEOUT_MS);
+      return controller.signal;
+    }
+    return undefined;
   }
 
   // onSearchInput is a pause based debounce: the timer is cleared and
@@ -445,7 +478,7 @@
       return;
     }
 
-    fetch('/api/geocode?q=' + encodeURIComponent(query))
+    fetch('/api/geocode?q=' + encodeURIComponent(query), { signal: searchTimeoutSignal() })
       .then(function (res) {
         return res.json().catch(function () {
           return {};
@@ -470,7 +503,12 @@
           return;
         }
         hideDropdown();
-        showSearchStatus(picker.searchFailureMessage(err && err.fieldMessage));
+        // The page without a map ignores the server's text and shows its own
+        // sentence; the main form keeps the server's message (U8). A timeout
+        // or a network error carries no server text on either page.
+        var serverText = formVariant === 'low' ? '' : (err && err.fieldMessage);
+        showSearchStatus(picker.searchFailureMessage(serverText));
+        noteSearchOutcome('unavailable');
       });
   }
 
@@ -593,6 +631,7 @@
     }
     lastFocusedEl = (options && options.opener) || document.activeElement;
     backdropEl.hidden = false;
+    Pinalert.lockPage(backdropEl);
     buildCategoryGrid();
     updateSeverityReadout();
     if (typeof picker.start === 'function') {
@@ -609,6 +648,7 @@
 
   function closeForm() {
     backdropEl.hidden = true;
+    Pinalert.unlockPage();
     resetForm();
     document.removeEventListener('keydown', onKeydown);
     if (lastFocusedEl) {
@@ -631,9 +671,17 @@
   }
 
   function trapTab(e) {
-    var focusable = formRoot.querySelectorAll(
+    var candidates = formRoot.querySelectorAll(
       'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
     );
+    // A control inside a hidden part of the panel cannot take focus, so it is
+    // never the end the cycle wraps at.
+    var focusable = [];
+    for (var i = 0; i < candidates.length; i++) {
+      if (!candidates[i].closest('[hidden]')) {
+        focusable.push(candidates[i]);
+      }
+    }
     if (focusable.length === 0) {
       return;
     }

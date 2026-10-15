@@ -235,7 +235,7 @@ func TestVoteHint(t *testing.T) {
 	p18Excludes(t, "activity.js", activity, "location:")
 
 	// createVoteBlock holds none of the hint attributes.
-	create := p18TightBody(t, text, "createVoteBlock(reportId)")
+	create := p18TightBody(t, text, "createVoteBlock(reportId, options)")
 	p18Excludes(t, "createVoteBlock", create, "aria-describedby", "data-too-far")
 
 	// No new export.
