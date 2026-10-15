@@ -3,6 +3,8 @@ package handlers
 import (
 	"bytes"
 	"html/template"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -206,4 +208,46 @@ func TestChromeWithDefaults(t *testing.T) {
 			t.Errorf("OlderList = %q", got)
 		}
 	})
+}
+
+// chromeStubTemplates builds a template set that prints only the primary
+// number, so the test needs no real template.
+func chromeStubTemplates(t *testing.T) *template.Template {
+	t.Helper()
+	root := template.New("stub")
+	for _, name := range []string{loginGateTemplateName, templateName} {
+		template.Must(root.New(name).Parse(`{{.Chrome.Numbers.Primary}}`))
+	}
+	return root
+}
+
+func TestChromeReachesViewModels(t *testing.T) {
+	stub := chromeStubTemplates(t)
+	set := Chrome{Numbers: EmergencyNumbers{Primary: "999"}}
+
+	loginReq := func() *http.Request { return httptest.NewRequest(http.MethodGet, "/login", nil) }
+
+	cases := []struct {
+		name string
+		h    http.HandlerFunc
+		req  *http.Request
+		want string
+	}{
+		{"login with chrome", LoginGate(stub, AuthConfig{Chrome: set}), loginReq(), "999"},
+		{"map with chrome", Page(stub, PageConfig{Chrome: set}), newPageTestRequest(), "999"},
+		{"login zero config", LoginGate(stub, AuthConfig{}), loginReq(), "112"},
+		{"map zero config", Page(stub, PageConfig{}), newPageTestRequest(), "112"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			tc.h.ServeHTTP(rec, tc.req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200", rec.Code)
+			}
+			if rec.Body.String() != tc.want {
+				t.Errorf("body = %q, want %q", rec.Body.String(), tc.want)
+			}
+		})
+	}
 }

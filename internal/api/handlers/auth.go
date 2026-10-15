@@ -28,6 +28,9 @@ const loginGateTemplateName = "login_gate.html.tmpl"
 // AuthConfig carries the values the login gate's view-model needs.
 type AuthConfig struct {
 	AssetVersion string
+	// Chrome is filled by api.NewRouter from Deps.Chrome. A zero value renders
+	// the default numbers through withDefaults.
+	Chrome Chrome
 }
 
 // loginGateViewModel is exactly what login_gate.html.tmpl (and the
@@ -43,6 +46,7 @@ type loginGateViewModel struct {
 	Sent                  bool
 	ResendCooldownSeconds int
 	LinkTTLSeconds        int
+	Chrome                Chrome
 }
 
 // LoginGate renders the globe login gate at GET /login. A `sent` query
@@ -57,6 +61,7 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 			AssetVersion:          cfg.AssetVersion,
 			ResendCooldownSeconds: int(service.ResendCooldown.Seconds()),
 			LinkTTLSeconds:        int(auth.TokenTTL.Seconds()),
+			Chrome:                cfg.Chrome.withDefaults(),
 		}
 
 		if raw := r.URL.Query().Get("sent"); raw != "" {
@@ -163,6 +168,7 @@ type verifyOutcomeViewModel struct {
 	Outcome      string
 	Email        string
 	CurrentEmail string
+	Chrome       Chrome
 }
 
 // Verify handles GET /auth/verify: reads the current session id from
@@ -201,6 +207,7 @@ func Verify(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) h
 		vm := verifyOutcomeViewModel{
 			AssetVersion: cfg.AssetVersion,
 			Outcome:      string(outcome),
+			Chrome:       cfg.Chrome.withDefaults(),
 		}
 		if outcome == service.OutcomeVerified {
 			vm.Email = email
@@ -358,6 +365,7 @@ type profileViewModel struct {
 	// Record is the reporter record card. It is nil for an account with no
 	// posts, and the template then renders no card.
 	Record *profileRecord
+	Chrome Chrome
 }
 
 // profileRelativeTime mirrors web/static/js/app.js's relativeTime: the same
@@ -574,6 +582,7 @@ func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) 
 			Reports:      view.Reports,
 			Tabs:         view.Tabs,
 			Record:       view.Record,
+			Chrome:       cfg.Chrome.withDefaults(),
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

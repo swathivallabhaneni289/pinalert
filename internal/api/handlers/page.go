@@ -37,6 +37,9 @@ type PageConfig struct {
 	// file after a restart, even a hard reload. cmd/server/main.go sets
 	// this once at process start so every restart naturally busts it.
 	AssetVersion string
+	// Chrome is filled by api.NewRouter from Deps.Chrome. A zero value renders
+	// the default numbers through withDefaults.
+	Chrome Chrome
 }
 
 // pageViewModel is exactly what index.html.tmpl reads and nothing more.
@@ -52,6 +55,8 @@ type pageViewModel struct {
 	// identity. Rendered by web/templates/account_header.html.tmpl's
 	// email row.
 	Email string
+	// Chrome is the shared bar data, already defaulted.
+	Chrome Chrome
 }
 
 // ParsePageTemplate parses the embedded app shell template from
@@ -89,6 +94,7 @@ func Page(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 			VoteRadiusKm:    cfg.VoteRadiusKm,
 			AssetVersion:    cfg.AssetVersion,
 			Email:           acc.Email,
+			Chrome:          cfg.Chrome.withDefaults(),
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		// DEC-Q: the shell now renders a person's email address into every
