@@ -11,9 +11,42 @@ package web
 // Every helper here carries the compactRow prefix.
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
+
+// compactRowPhoneWidths are the three phone widths the owner judges first.
+// The card is the width less two 16px list gutters: 288, 328 and 358px.
+var compactRowPhoneWidths = []string{"320", "360", "390"}
+
+// compactRowLaptopOnlyHeads are the heads feed.css already carried before the
+// lift that name a row without the #report-list prefix.
+var compactRowOldFeedHeads = map[string]bool{
+	".report-row":                         true,
+	".report-row__body":                   true,
+	".report-row .icon-badge .icon-glyph": true,
+}
+
+func compactRowFeedRules(t *testing.T) []p16CSSRule {
+	t.Helper()
+	return p16ParseCSS("static/css/feed.css", p16ReadStatic(t, "static/css/feed.css"))
+}
+
+// compactRowHeadParts returns every comma part of every head in rules that
+// contains needle.
+func compactRowRulesNaming(rules []p16CSSRule, needle string) []p16CSSRule {
+	var out []p16CSSRule
+	for _, r := range rules {
+		for _, part := range p16HeadParts(r.Head) {
+			if strings.Contains(part, needle) {
+				out = append(out, r)
+				break
+			}
+		}
+	}
+	return out
+}
 
 // TestRowHasNoControls pins D-21: a list row holds no button and no link, no
 // vote block and no trust toggle. Its one tab stop is the li itself, which
@@ -123,4 +156,255 @@ func TestCompactRowFarFact(t *testing.T) {
 	update := jsFunctionBody(t, p13CodeLines(feed), "updateRow(row, report)")
 	p13MustContain(t, "feed.js updateRow", update,
 		"PinalertVotes.farFromCachedFix(report)", "row.far.hidden")
+}
+
+// TestCompactRowLiftScopedToList pins the lift of the shared row rules to
+// feed.css: every lifted head starts with #report-list, so the Activity page's
+// .profile-report-list rows never change, and the laptop keeps the 4px bar and
+// the tint of main.css because no lifted rule sets a border or a radius on the
+// row itself (those two stay phone only).
+func TestCompactRowLiftScopedToList(t *testing.T) {
+	feed := compactRowFeedRules(t)
+
+	for _, needle := range []string{".report-row", ".severity-label", ".visibility-tag", ".trust-reporter"} {
+		for _, r := range compactRowRulesNaming(feed, needle) {
+			for _, part := range p16HeadParts(r.Head) {
+				if !strings.Contains(part, needle) || compactRowOldFeedHeads[part] {
+					continue
+				}
+				if !strings.HasPrefix(part, "#report-list ") {
+					t.Errorf("feed.css head %q (media %q) names %s without the #report-list prefix", part, r.Media, needle)
+				}
+			}
+		}
+	}
+
+	title := p16Rule(t, feed, "", "#report-list .report-row .report-row__title")
+	p16MustDecl(t, "feed.css row title", title, map[string]string{
+		"-webkit-line-clamp": "2",
+		"line-clamp":         "2",
+		"overflow-wrap":      "anywhere",
+		"overflow":           "hidden",
+	})
+
+	badge := p16Rule(t, feed, "", "#report-list .report-row > .icon-badge")
+	p16MustDecl(t, "feed.css row badge", badge, map[string]string{"display": "none"})
+
+	for _, head := range []string{
+		"#report-list .report-row .report-row__trustline:not([hidden])",
+		"#report-list .report-row .report-row__far:not([hidden])",
+		"#report-list .report-row .report-row__away:not([hidden])",
+		"#report-list .report-row .report-row__open-cue",
+		"#report-list .report-row .report-row__stateline:not([hidden])",
+	} {
+		p16Rule(t, feed, "", head)
+	}
+
+	// No lifted rule decorates the row element itself, at any width.
+	for _, r := range feed {
+		for _, part := range p16HeadParts(r.Head) {
+			if !strings.HasPrefix(part, "#report-list .report-row") {
+				continue
+			}
+			rest := strings.TrimPrefix(part, "#report-list .report-row")
+			if rest != "" && !strings.HasPrefix(rest, ".vis-") && !strings.HasPrefix(rest, ".sev-") {
+				continue
+			}
+			for _, prop := range []string{"border", "border-left", "border-radius", "border-width", "border-color", "background"} {
+				if _, ok := r.Decls[prop]; ok {
+					t.Errorf("feed.css head %q sets %s on the row: the 4px bar and the tint of main.css must stay", part, prop)
+				}
+			}
+		}
+	}
+
+	// The phone card keeps its own corner and has no bar.
+	phone := phoneRules(t)
+	card := p16Rule(t, phone, phoneBlockMedia, "#report-list .report-row")
+	p16MustDecl(t, "phone.css row card", card, map[string]string{"border": "0", "border-radius": "8px"})
+
+	main := p16ParseCSS("static/css/main.css", p16ReadStatic(t, "static/css/main.css"))
+	row := p16Rule(t, main, "", ".report-row")
+	p16MustDecl(t, "main.css .report-row", row, map[string]string{
+		"border-left": "4px solid var(--severity-current, var(--severity-base))",
+	})
+	if !strings.Contains(row.Decls["background"], "--severity-tint") {
+		t.Errorf("main.css .report-row background is %q, want the severity tint", row.Decls["background"])
+	}
+
+	// The lifted rules left phone.css: moved, not copied.
+	for _, r := range phone {
+		for _, part := range p16HeadParts(r.Head) {
+			for _, moved := range []string{
+				".report-row__title", ".report-row__stateline", ".report-row > .icon-badge",
+				".trust-block__", ".vote-controls", ".vote-note", ".vote-error", ".report-row__body",
+			} {
+				if strings.HasPrefix(part, "#report-list") && strings.Contains(part, moved) {
+					t.Errorf("phone.css still holds the lifted head %q", part)
+				}
+			}
+		}
+	}
+}
+
+// TestCompactRowGoodToneStaysPhoneOnly pins Pitfall 6: the good tone clears
+// 4.5 to 1 only on the phone card, so it lives in phone.css, keyed to the trust
+// line, and never reaches a laptop tint. The laptop's muted pair is allowed
+// only on a hidden row, whose card is --color-bg.
+func TestCompactRowGoodToneStaysPhoneOnly(t *testing.T) {
+	feedRaw := p16ReadStatic(t, "static/css/feed.css")
+	if strings.Contains(feedRaw, "color-tone-good") {
+		t.Errorf("feed.css names --color-tone-good, which is phone only")
+	}
+
+	phone := phoneRules(t)
+	found := 0
+	for _, r := range phone {
+		if r.Decls["color"] != "var(--color-tone-good)" || !strings.Contains(r.Head, "#report-list") {
+			continue
+		}
+		found++
+		if !strings.HasPrefix(r.Media, phoneBlockMedia) {
+			t.Errorf("the good tone rule %q sits in %q, want the phone block", r.Head, r.Media)
+		}
+		if !strings.Contains(r.Head, `[data-currency-tone="good"]`) {
+			t.Errorf("the good tone rule %q is not keyed to the trust line's data-currency-tone", r.Head)
+		}
+		if strings.Contains(r.Head, ".trust-block") || strings.Contains(r.Head, ".trust-fact") {
+			t.Errorf("the good tone rule %q still names the old trust block", r.Head)
+		}
+		if !strings.Contains(r.Head, ":not(.sev-critical)") || !strings.Contains(r.Head, ":not(.vis-provisional)") {
+			t.Errorf("the good tone rule %q must exclude a critical and a provisional row", r.Head)
+		}
+	}
+	if found != 1 {
+		t.Errorf("phone.css holds %d good tone rules, want 1", found)
+	}
+
+	// Laptop colours: text on a tint, muted only for a hidden row, in the
+	// 900px and up block.
+	feed := compactRowFeedRules(t)
+	base := p16Rule(t, feed, "", "#report-list .report-row .report-row__trustline:not([hidden])")
+	p16MustDecl(t, "feed.css trust line", base, map[string]string{"color": "var(--color-text)"})
+	for _, r := range feed {
+		if r.Decls["color"] != "var(--color-text-muted)" {
+			continue
+		}
+		for _, part := range p16HeadParts(r.Head) {
+			if !strings.Contains(part, "#report-list") {
+				continue
+			}
+			if !strings.Contains(part, ".vis-hidden") || strings.Contains(part, "vis-provisional") {
+				t.Errorf("feed.css gives a row part muted text through %q: only a hidden row's --color-bg card may", part)
+			}
+			if !strings.Contains(r.Media, "min-width: 900px") {
+				t.Errorf("feed.css muted row rule %q sits in %q, want the 900px and up block", part, r.Media)
+			}
+		}
+	}
+}
+
+// TestCompactRowFitsPhoneWidths is the 320, 360 and 390 px guard. It runs no
+// browser: it asserts the static rules that make a 288px card (320px less two
+// 16px gutters), a 328px card (360px) and a 358px card (390px) unable to force
+// a horizontal scroll. The real width pass is plan 16's.
+func TestCompactRowFitsPhoneWidths(t *testing.T) {
+	widths := strings.Join(compactRowPhoneWidths, ", ")
+	feed := compactRowFeedRules(t)
+	phone := phoneRules(t)
+	var all []p16CSSRule
+	all = append(all, feed...)
+	all = append(all, phone...)
+
+	dotHead := func(part string) bool { return strings.HasSuffix(part, "::before") }
+
+	// 1. No fixed width and no min-width other than 0, 100% or the tap floor
+	//    on a row or anything inside it. The 8px severity dot is a ::before.
+	for _, r := range all {
+		for _, part := range p16HeadParts(r.Head) {
+			if !strings.HasPrefix(part, "#report-list .report-row") || dotHead(part) {
+				continue
+			}
+			if v, ok := r.Decls["width"]; ok && v != "auto" && v != "100%" {
+				t.Errorf("at %s px: %q sets width %q, a fixed width can overflow a phone card", widths, part, v)
+			}
+			if v, ok := r.Decls["min-width"]; ok && v != "0" && v != "100%" && v != "var(--touch-target-min)" {
+				t.Errorf("at %s px: %q sets min-width %q, only 0, 100%% or the tap floor are safe", widths, part, v)
+			}
+			if v, ok := r.Decls["font-size"]; ok {
+				switch v {
+				case "var(--font-size-label)", "var(--font-size-body)", "var(--font-size-heading)", "var(--font-size-display)":
+				default:
+					t.Errorf("at %s px: %q font-size %q is not one of the 14, 16, 18, 24 tokens", widths, part, v)
+				}
+			}
+			if strings.Contains(r.Decls["white-space"], "nowrap") && !strings.Contains(part, "open-cue") {
+				t.Errorf("at %s px: %q sets white-space nowrap, text could not wrap in a 288px card", widths, part)
+			}
+		}
+	}
+
+	// 2. Every text bearing flex child can shrink and wrap.
+	for _, class := range []string{
+		".report-row__meta", ".report-row__away", ".report-row__far", ".report-row__title", ".report-row__trustline",
+	} {
+		shrinks := false
+		for _, r := range all {
+			for _, part := range p16HeadParts(r.Head) {
+				if strings.HasPrefix(part, "#report-list ") && strings.Contains(part, class) && r.Decls["min-width"] == "0" {
+					shrinks = true
+				}
+			}
+		}
+		if !shrinks {
+			t.Errorf("at %s px: no #report-list rule gives %s min-width 0, so it cannot shrink in a 288px card", widths, class)
+		}
+	}
+
+	// 3. The body wraps, the title wraps long words and clamps at two lines.
+	body := p16Rule(t, feed, "", "#report-list .report-row .report-row__body")
+	p16MustDecl(t, "feed.css row body (at "+widths+" px)", body, map[string]string{"display": "flex", "flex-wrap": "wrap"})
+	title := p16Rule(t, feed, "", "#report-list .report-row .report-row__title")
+	p16MustDecl(t, "feed.css row title (at "+widths+" px)", title, map[string]string{
+		"overflow-wrap": "anywhere", "-webkit-line-clamp": "2",
+	})
+
+	// 4. The trust line is plain text that may wrap between whole facts.
+	line := p16Rule(t, feed, "", "#report-list .report-row .report-row__trustline:not([hidden])")
+	if strings.Contains(line.Decls["white-space"], "nowrap") {
+		t.Errorf("at %s px: the trust line sets white-space nowrap", widths)
+	}
+	p16MustDecl(t, "feed.css trust line (at "+widths+" px)", line, map[string]string{"flex-wrap": "wrap", "overflow-wrap": "anywhere"})
+
+	// 5. The row keeps a 44px minimum height from its padding or min-height.
+	rowRule := p16Rule(t, feed, "", "#report-list .report-row")
+	if rowRule.Decls["padding"] != "var(--space-md)" && rowRule.Decls["min-height"] != "var(--touch-target-min)" {
+		t.Errorf("at %s px: the row has neither the 16px padding nor a 44px min-height: %v", widths, rowRule.Decls)
+	}
+	if rowRule.Decls["display"] != "block" {
+		t.Errorf("at %s px: the row display is %q, want block", widths, rowRule.Decls["display"])
+	}
+}
+
+// TestCompactRowContrastPairs asserts that the lifted colour rules keep the
+// text colour on every tint and the muted colour only where the row is a
+// --color-bg card (Pitfall 6, A42), by name: the numbers are resolved by
+// TestLabelAndMetaContrastAcrossThemes.
+func TestCompactRowContrastPairs(t *testing.T) {
+	feed := compactRowFeedRules(t)
+	for _, head := range []string{
+		"#report-list .report-row .report-row__away:not([hidden])",
+		"#report-list .report-row .report-row__far:not([hidden])",
+	} {
+		r := p16Rule(t, feed, "", head)
+		p16MustDecl(t, head, r, map[string]string{"color": "var(--color-text)"})
+	}
+	// Both phone and laptop meta rules keep the main.css text colour: no lifted
+	// rule sets the meta colour to muted except on a white card (phone.css).
+	pat := regexp.MustCompile(`report-row__meta`)
+	for _, r := range feed {
+		if pat.MatchString(r.Head) && r.Decls["color"] == "var(--color-text-muted)" {
+			t.Errorf("feed.css sets muted meta text through %q: muted fails 4.5 to 1 on every tint", r.Head)
+		}
+	}
 }

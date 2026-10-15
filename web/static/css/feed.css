@@ -196,6 +196,14 @@
     line-height: var(--line-height-label);
     font-weight: var(--font-weight-regular);
   }
+
+  /* A hidden row is a transparent row over --color-bg, so the trust line may
+     take the muted colour there, and only there: on a severity tint or on the
+     provisional --color-surface tint muted fails 4.5 to 1. The good tone is
+     phone only (phone.css). */
+  #report-list .report-row.vis-hidden .report-row__trustline:not([hidden]) {
+    color: var(--color-text-muted);
+  }
 }
 
 /* List container — reset the <ol>'s default markers/margin, and lay rows
@@ -234,6 +242,172 @@
   flex-shrink: 0;
 }
 
+/*
+ * Compact report rows, size A of sketch 006 (03.1 D-19 to D-21), at every
+ * width. These rules were the phone card of phone.css and are lifted here so
+ * the laptop list draws the same inner layout. Every head keeps the
+ * #report-list prefix, so the Activity page's rows never change. The laptop
+ * keeps main.css's 4px severity bar and tint and trust.css's provisional and
+ * hidden treatment: the card's border, its 8px corner and the white
+ * provisional and hidden cards stay phone only (phone.css). A row holds no
+ * button and no link, so no rule here styles a control.
+ *
+ * Reading order is the DOM order. The flex order below draws line one as the
+ * severity word, the state word, the meta line, the distance and the too far
+ * fact, then the title on its own line, then the trust line and the reporter
+ * words. Text takes the --color-text token on every tint, because muted fails
+ * 4.5 to 1 on every severity tint and on --color-surface in the light theme.
+ */
+#report-list .report-row {
+  position: relative;
+  display: block;
+  padding: var(--space-md);
+}
+
+#report-list .report-row > .icon-badge {
+  display: none;
+}
+
+#report-list .report-row .report-row__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-sm);
+  row-gap: var(--space-xs);
+}
+
+/* The state line gives its children to the body, so the state word and the
+   reporter words join the body's flex order. */
+#report-list .report-row .report-row__stateline:not([hidden]) {
+  display: contents;
+}
+
+#report-list .report-row .severity-label:not([hidden]) {
+  order: 1;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  gap: var(--space-xs);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text);
+}
+
+/* Critical gets the same dot the other two levels already carry. */
+#report-list .severity-label.severity-label--critical::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--severity-current);
+}
+
+#report-list .report-row .visibility-tag:not([hidden]) {
+  order: 2;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+#report-list .report-row .report-row__meta {
+  order: 3;
+  min-width: 0;
+}
+
+#report-list .report-row .report-row__away:not([hidden]) {
+  display: block;
+  order: 4;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+/* The too far fact: a second plain fact after the distance, on the same line,
+   not a control. */
+#report-list .report-row .report-row__far:not([hidden]) {
+  display: block;
+  order: 4;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+/* The title takes its own line and clamps at two lines at every width. The
+   opened report shows the whole text. */
+#report-list .report-row .report-row__title {
+  order: 5;
+  flex: 0 0 100%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  margin: var(--space-xs) 0 0;
+}
+
+/* The trust line is plain text. It wraps only between whole facts. */
+#report-list .report-row .report-row__trustline:not([hidden]) {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-sm);
+  order: 6;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+#report-list .report-row .trust-num {
+  color: inherit;
+}
+
+#report-list .report-row .trust-reporter:not([hidden]) {
+  order: 7;
+}
+
+/* Visually hidden text, the last thing a screen reader hears in the row. */
+#report-list .report-row .report-row__open-cue {
+  order: 9;
+}
+
+/* The dot between the parts of a line. The alternative text is empty, so a
+   screen reader does not read it. The first declaration is the fallback for an
+   engine that does not know the alternative form. */
+#report-list .report-row .visibility-tag:not([hidden])::before,
+#report-list .report-row .report-row__meta::before,
+#report-list .report-row .report-row__away:not([hidden])::before,
+#report-list .report-row .report-row__far:not([hidden])::before {
+  content: "\00b7";
+  content: "\00b7" / "";
+  margin-right: var(--space-xs);
+}
+
+#report-list .report-row .report-row__trustline-count--second::before,
+#report-list .report-row .report-row__trustline-word:not([hidden])::before {
+  content: "\00b7";
+  content: "\00b7" / "";
+  margin-right: var(--space-sm);
+}
+
 @media (max-width: 899.98px) {
   /* #view-toggle is reparented to #app-shell by feed.js precisely so it
      survives main.css hiding .pane--list in narrow map view; this is just
@@ -241,14 +415,5 @@
      fixed-position button sitting over the bottom-left corner. */
   #report-list {
     padding-bottom: calc(var(--touch-target-min) + var(--space-lg) * 2);
-  }
-
-  /* The pane is a scrolling flex column on a phone (phone.css), so the strip
-     and the note keep their own height instead of shrinking under a long
-     list. The strip's margin (0 0 8px) and the pane's 16px padding already
-     draw the phone geometry, so no phone only rule is needed. */
-  .pane--list > .view-tabs,
-  .pane--list > .feed-note {
-    flex: none;
   }
 }
