@@ -110,6 +110,13 @@ type Deps struct {
 	// LimiterClock is the clock of the Phase 4 rate limit buckets. Nil means
 	// time.Now; tests inject a clock.
 	LimiterClock func() time.Time
+	// ModeratorEmails is the set of normalised addresses that may open the
+	// moderator screen (D-08). It is filled by cmd/server/main.go from
+	// MODERATOR_EMAILS through service.ParseModeratorEmails. Nil, which is
+	// what every Deps{} literal and test harness that does not set it
+	// gives, means nobody is a moderator and every moderator route answers
+	// 404.
+	ModeratorEmails map[string]struct{}
 }
 
 // requestLogger returns the access log middleware. It replaces chi's
@@ -296,6 +303,14 @@ var compressibleContentTypes = []string{"text/html", "text/css", "text/javascrip
 // The last two are the public Disclaimer and Policy pages (Phase 4 D-23,
 // P4-A18), readable without logging in like the API reference above; they
 // render no account data (R-07) and are cacheable only in the browser.
+//
+// The route table has a third part, the moderator group (D-08), which is the
+// one exception to "every other route" above. It sits outside the access gate
+// and answers a plain 404 that is byte equal to an unknown route to everyone
+// whose verified email is not on MODERATOR_EMAILS, on every method. Its paths
+// are registered with r.Handle for that reason: a method specific call would
+// let chi answer a wrong method with a 405 and an Allow header, which would
+// tell a stranger the path exists (correction 2).
 func NewRouter(deps Deps) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -476,6 +491,25 @@ func NewRouter(deps Deps) *chi.Mux {
 		// a cross-site POST, so a forged logout carries no authenticated
 		// session — the same property would not hold for GET).
 		r.Post("/auth/logout", handlers.Logout(deps.Session))
+	})
+
+	// --- Moderator group (D-08): outside the access gate, so an unverified
+	// visitor gets the same 404 as an unknown route and never a 302 or a 401.
+	// Every path is registered with r.Handle so a wrong method reaches the gate
+	// and not chi's 405 (correction 2). The local page copy carries Chrome. ---
+
+	// The moderator service has no Deps field: it is built here from the
+	// sessions store, so every harness gets a non nil service. With a nil
+	// deps.Sessions the gate answers 404 before any handler runs.
+	moderation := service.NewModerationService(deps.Sessions)
+
+	r.Group(func(r chi.Router) {
+		r.Use(requireModerator(deps.Sessions, deps.ModeratorEmails))
+		r.Handle("/moderate", handlers.ModeratePage(deps.Template, page))
+		r.Handle("/api/moderation/queue", handlers.ModerationQueue(moderation))
+		r.Handle("/api/moderation/reports/{id}", handlers.ModerationReport(moderation))
+		r.Handle("/api/moderation/reports/{id}/keep", handlers.ModerationKeep(moderation))
+		r.Handle("/api/moderation/reports/{id}/remove", handlers.ModerationRemove(moderation))
 	})
 
 	return r

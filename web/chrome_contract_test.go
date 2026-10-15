@@ -40,7 +40,7 @@ func TestDisclaimerBarOnEveryFullPage(t *testing.T) {
 			barAt := strings.Index(text, chromeBarCall)
 			headerAt := strings.Index(text, chromeHeaderCall)
 			toggleAt := strings.Index(text, chromeToggleCall)
-			hasAccount := strings.HasSuffix(path, "index.html.tmpl") || strings.HasSuffix(path, "profile.html.tmpl") || strings.HasSuffix(path, "low.html.tmpl")
+			hasAccount := strings.HasSuffix(path, "index.html.tmpl") || strings.HasSuffix(path, "profile.html.tmpl") || strings.HasSuffix(path, "low.html.tmpl") || strings.HasSuffix(path, "moderate.html.tmpl")
 
 			if hasAccount {
 				if headerAt < 0 {

@@ -215,6 +215,18 @@ func main() {
 		log.Fatalf("CONTACT_EMAIL is not a bare email address")
 	}
 
+	// MODERATOR_EMAILS is the server list of moderators (D-08). It is parsed
+	// once here with the sign in normaliser. A bad entry stops startup with a
+	// message that names the variable and the entry's position, never the
+	// address (T-04-07). Unset or empty leaves nobody able to open the screen.
+	moderatorEmails, err := service.ParseModeratorEmails(os.Getenv("MODERATOR_EMAILS"))
+	if err != nil {
+		log.Fatalf("MODERATOR_EMAILS: %v", err)
+	}
+	if len(moderatorEmails) == 0 {
+		log.Printf("WARNING: MODERATOR_EMAILS is not set; nobody can open the moderator screen")
+	}
+
 	// This is the only construction site of the real geocode client in the
 	// whole program, which is what makes the process-wide limiter inside
 	// internal/geocode genuinely process wide. Both the report form's search
@@ -233,6 +245,8 @@ func main() {
 		},
 		Chrome:   handlers.Chrome{Numbers: emergencyNumbers, ContactEmail: contactEmail},
 		Template: tmpl,
+		// Parsed once from MODERATOR_EMAILS above; empty admits nobody.
+		ModeratorEmails: moderatorEmails,
 		Page: handlers.PageConfig{
 			FallbackLat:     fallbackLat,
 			FallbackLon:     fallbackLon,
