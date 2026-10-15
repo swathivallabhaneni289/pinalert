@@ -31,7 +31,10 @@ Every new report description goes through the same steps, in this order.
 What is stored and what is not:
 
 - The stored check result holds the verdict, the category scores and the model name. It holds no
-  copy of the text.
+  copy of the text. A row is written inline only for a borderline result and for an unfinished
+  check. When the background retry later finishes a check, it fills that row with the verdict and
+  scores whatever the verdict is, so a late pass or a late reject also keeps its scores. A clear
+  or rejected result at submit stores no row.
 - A rejected post stores nothing and tells the person what the problem was.
 - No account, session, network address or coordinates go to the provider, only the description.
   OpenAI documents no retention and no training use for that endpoint, and the Policy page says
@@ -176,7 +179,8 @@ labels come from `FlagReasonLabel`). Rules:
 ## Limits
 
 Every limit is a token bucket kept in the server's memory and keyed on the verified account,
-never on the session or the network address. The numbers live in one constants block in
+never on the session. The one exception is the network backstop, which is keyed on the client
+address and runs only when `CLIENT_IP_HEADER` is set. The numbers live in one constants block in
 `cmd/server/main.go`.
 
 | Bucket | Key | Burst | Refill | Constants |
@@ -217,10 +221,12 @@ Tests: `TestPerKeyConcurrentBound`, `TestPerKeyRefundAtReservationInstant`,
 
 Nothing is deleted automatically today, because there is no retention job. Kept: accounts,
 reports with their location, votes as a rough precision 7 square, flags, text check results
-without the report text, and moderator actions without the report text. An expired report only
-stops showing in the lists. The Policy page says the same and offers removal through the contact
-line when `CONTACT_EMAIL` is set. If the Policy page is edited, this section must be edited with
-it.
+without the report text (borderline results at submit, and every result the background retry
+finishes, see Text check), and moderator actions without the report text. An expired report only
+stops showing in the lists. The Policy page says the same in general and offers removal through
+the contact line when `CONTACT_EMAIL` is set. One small gap: the Policy page lists the scores
+"for borderline reports", which understates the retry case above. If the Policy page is edited,
+this section must be edited with it.
 
 ## Seeded and demo data
 
@@ -248,13 +254,15 @@ Raw bytes are tested although the first design described a compressed budget (or
 decision 2). The router now compresses text, but the transfer size depends on the client, so raw
 bytes are the conservative bound.
 
-The first planning guess was 256 KB (262144 bytes). The measured total is above it, mostly
-because Phase 3 grew `votes.js`, `trust.css` and `app.js`. Nothing was dropped or split to meet
-a number. The five largest files are `votes.js` (81123 bytes), `trust.css` (63693),
-`app.js` (45625), `report-form.js` (41375) and `main.css` (37271).
+The first planning guess was 256 KB (262144 bytes). The measured total is above it by 246950
+bytes. Nothing was dropped or split to meet a number. The five largest files are `votes.js`
+(81123 bytes), `trust.css` (63693), `app.js` (45625), `report-form.js` (41375) and `main.css`
+(37271). Phase 4 added four scripts to the page (`report-form.js` 41375, `queue.js` 34837,
+`low.js` 33772 and `flag.js` 16433, 126417 bytes together) and two stylesheets (`chrome.css`
+13814 and `low.css` 3041, 16855 bytes together).
 
 No icon file was dropped to meet the budget. The icons are counted inside it, and dropping one
-would need a `low.css` rule that Phase 4 did not own.
+would need a `low.css` rule that plan 04-27 does not own.
 
 To change the budget after an intended change, re-measure with
 `go test ./web/ -run TestLowDataByteBudget -v`, set `lowDataMeasuredBytes` and
