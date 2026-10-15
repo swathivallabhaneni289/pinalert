@@ -279,6 +279,27 @@ window.Pinalert = (function () {
     }
   }
 
+  // markListLoading marks the list pane while the rows in the store belong to
+  // another tab, chip or centre than the one just asked for (WR-03). The
+  // heading and the note change at once on a tab press, so without the mark
+  // the old rows would sit readable under the new heading until the answer
+  // lands. feed.css hides the rows, the count, the empty blocks and the error
+  // panel under the mark and shows the skeleton. The store keeps the rows, so
+  // a failed request can still tell rows that are merely a little old from
+  // rows of another set (WR-08). The pane is looked up when needed, so a page
+  // without it is not affected.
+  function markListLoading(on) {
+    var pane = document.querySelector('.pane--list');
+    if (!pane) {
+      return;
+    }
+    if (on) {
+      pane.setAttribute('data-loading', 'true');
+    } else {
+      pane.removeAttribute('data-loading');
+    }
+  }
+
   // fetchReports performs the one and only GET /api/reports call. A
   // background refresh (status already "ok") leaves status untouched so the
   // list does not flash skeletons on every 30s poll. A refetch while rows are
@@ -331,6 +352,10 @@ window.Pinalert = (function () {
       state.status = 'loading';
       notify();
     }
+    // Rows of another set stay in the store but leave the screen until this
+    // request or a newer one is applied. A request that goes back to the set
+    // the rows belong to (a tab pressed and pressed back) shows them again.
+    markListLoading(isBackgroundRefresh && !rowsMatchStore());
 
     var url = '/api/reports' +
       '?lat=' + encodeURIComponent(state.center.lat) +
@@ -396,6 +421,7 @@ window.Pinalert = (function () {
         lastAppliedSeq = mySeq;
         state.status = 'ok';
         state.error = null;
+        markListLoading(false);
         notify();
       })
       .catch(function (err) {
@@ -412,6 +438,7 @@ window.Pinalert = (function () {
         }
         state.status = 'error';
         state.error = err;
+        markListLoading(false);
         notify();
       });
     newestFetch = pending;

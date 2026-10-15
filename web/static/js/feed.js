@@ -1302,9 +1302,10 @@
   // app.js. Refetching rather than filtering state.reports in place is
   // deliberate: the server decides which reports exist for a tab (02-04), and
   // a client side filter would be a second visibility decision, the resolver
-  // bypass T-02-04 names. Rows fetched for the other tab stay only until the
-  // answer lands; a failed fetch drops them (app.js). A tab the reader picks
-  // ends a report link (CR-01).
+  // bypass T-02-04 names. Rows fetched for the other tab stay in the store
+  // only until the answer lands, hidden behind the skeleton while they wait
+  // (app.js marks the list pane, WR-03); a failed fetch drops them. A tab the
+  // reader picks ends a report link (CR-01).
   function switchTab(view) {
     if (Pinalert.VIEWS.indexOf(view) === -1 || view === Pinalert.state.view) {
       return;

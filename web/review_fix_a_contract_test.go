@@ -81,3 +81,54 @@ func TestReviewFixALinkedReportRefreshes(t *testing.T) {
 	resize := jsFunctionBody(t, mapCode, "onMapResize()")
 	p13Ordered(t, resize, "onMapResize", "resizeClosing = true;", "map.closePopup();", "resizeClosing = false;")
 }
+
+// TestReviewFixAListPaneLoadingMark pins WR-03: a request for another tab,
+// chip or centre than the rows on screen marks the list pane, the mark comes
+// off when that answer or a failure is applied, the store keeps the rows (so
+// the WR-08 literals keep their meaning) and the stylesheet hides every part
+// of the old set and shows the skeleton under the mark.
+func TestReviewFixAListPaneLoadingMark(t *testing.T) {
+	app := p19Code(t, "static/js/app.js")
+
+	mark := jsFunctionBody(t, app, "markListLoading(on)")
+	p13MustContain(t, "markListLoading", mark,
+		"document.querySelector('.pane--list')", "pane.setAttribute('data-loading', 'true');",
+		"pane.removeAttribute('data-loading');")
+	p13MustNotContain(t, "markListLoading", mark, "state.reports", "notify(", "fetch(")
+
+	fetchBody := jsFunctionBody(t, app, "fetchReports(options)")
+	p13Ordered(t, fetchBody, "fetchReports loading mark",
+		"var isBackgroundRefresh = state.status === 'ok' || state.reports.length > 0;",
+		"function rowsMatchStore() {",
+		"markListLoading(isBackgroundRefresh && !rowsMatchStore());",
+		"pending = fetch(url)",
+		"lastAppliedSeq = mySeq;", "markListLoading(false);",
+		".catch(function (err) {", "if (!rowsMatchStore()) {", "state.status = 'error';")
+	if n := strings.Count(fetchBody, "markListLoading(false);\n        notify();"); n != 2 {
+		t.Errorf("fetchReports clears the loading mark right before notify in %d places, want 2 (success and failure)", n)
+	}
+	// A dropped (stale) answer changes nothing, the mark included.
+	if n := strings.Count(fetchBody, "if (isStale()) {\n          return whenFresh();"); n != 2 {
+		t.Errorf("fetchReports keeps %d stale drops, want 2", n)
+	}
+
+	css := stripCSSComments(p13ReadStatic(t, "static/css/feed.css"))
+	hideAt := strings.Index(css, ".pane--list[data-loading] #report-list:not([hidden]),")
+	if hideAt == -1 {
+		t.Fatalf("feed.css lacks the loading rule for the list pane")
+	}
+	hide := css[hideAt : hideAt+strings.Index(css[hideAt:], "}")]
+	for _, id := range []string{"#report-list", "#past-groups", "#feed-count", "#feed-empty",
+		"#feed-empty-history", "#disputed-empty", "#past-empty", "#filter-empty", "#feed-error"} {
+		if !strings.Contains(hide, ".pane--list[data-loading] "+id+":not([hidden])") {
+			t.Errorf("the loading rule does not hide %s", id)
+		}
+	}
+	if !strings.Contains(hide, "display: none;") {
+		t.Errorf("the loading rule must hide the old set (display: none), not dim it")
+	}
+	p13MustContain(t, "feed.css", css, ".pane--list[data-loading] #feed-skeleton[hidden] {\n  display: block;\n}")
+	if strings.Contains(hide, "opacity") {
+		t.Errorf("the old rows must not stay readable under the new heading")
+	}
+}
