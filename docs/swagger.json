@@ -119,16 +119,81 @@
                 }
             }
         },
+        "/geocode/place": {
+            "get": {
+                "description": "Place search for the history views. It runs on its own lane of the geocoder: it\nnever waits for a token, repeated searches are answered from a cache, and each\nverified account has its own small budget. The optional lat and lon (both or\nneither) bias results toward the map centre without hiding matches elsewhere.\nA 429 or 503 never affects report submission, which has its own search.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "geocode"
+                ],
+                "summary": "Search for a place on the reader lane",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Place text, 3 to 200 characters",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Map centre latitude, -90 to 90, sent together with lon",
+                        "name": "lat",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Map centre longitude, -180 to 180, sent together with lat",
+                        "name": "lon",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.GeocodeResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/reports": {
             "get": {
-                "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance,\nthen resolves each report's visibility fresh via the shared resolver and returns\nonly listable ones, nearest first. This single endpoint serves both the map and the\nlist views — there is no separate map-only route. A resolved (retracted) report is\nnever returned by either view. show_disputed=true switches to the disputed-only\nview: only reports currently hidden by disputes, on the list and among the map pins\ntogether, replacing the default Live-and-Provisional view rather than adding to it.\nA critical or rescue-needed report stays Live however heavily it is disputed, so it\nappears only in the default view, never in the disputed one. Every report carries\nyour_vote and is_own_report relative to the calling verified account. Requires a\nsession verified by email through the magic-link flow; an unverified caller receives\n401 and no report data.\nEvery report also carries a trust object: how many people at different nearby spots confirmed and disputed it, counted once per spot and not once per vote.\nlat, lon and radius_km must be finite numbers; NaN is refused with 400 and the name of the parameter.",
+                "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance,\nthen resolves each report fresh via the shared resolver. This single endpoint serves\nthe map, the list, the Past tab, the counts for an empty Active tab and a report link;\nthere is no separate route per tab.\nThe view parameter picks the tab. active (the default) is Live and Provisional reports,\nnearest first. disputed is only reports currently hidden by disputes, replacing the\ndefault view rather than adding to it; a critical or rescue-needed report stays Live\nhowever heavily it is disputed, so it appears only in the active view. past is what was\nresolved and what ran out its time in the last seven days, the resolved group first and\nthen the expired group, each newest first and cut at 25 with the cut object saying so.\nresolved is accepted as a read only alias of past and answered as past. A resolved\n(retracted) report is never returned by the active or the disputed view; it is listed\nonly in the past view, and no past entry changes an active count.\nshow_disputed=true still selects the disputed view so old links keep working; sent with\nanother view it is refused with 400 on the field view.\nThe category parameter keeps one report category in the chosen view and is refused with\n400 when it is not one of the nine.\nThe report parameter is a report id from a link. When it is sent the focus object answers\nit: ok with that report even when it lies outside the radius and outside the seven day\nwindow, too_old when it ended more than seven days ago, or unavailable when there is no such\nreport or no tab lists it. Not found and every unlisted state share the one unavailable\nanswer. The reports array still holds the reader's own area.\nrecent ({resolved_24h, expired_24h}) is present only when the view is active, no category\nwas sent and there are no reports, so an empty tab can say what happened lately.\nA finished Rescue report never leaves the API exact on the past view or on a link: its\ndescription is empty, its latitude, longitude and geohash are a blurred point,\napproximate is true and distance_km is measured to that point. A live Rescue report and\nfinished Flood, Shelter and Power reports stay exact.\nEvery report carries your_vote, your_resolution, undos_left and is_own_report relative to\nthe calling verified account. Requires a session verified by email through the\nmagic-link flow; an unverified caller receives 401 and no report data.\nEvery report also carries a trust object: how many people at different nearby spots confirmed and disputed it, counted once per spot and not once per vote.\nlat, lon and radius_km must be finite numbers; NaN is refused with 400 and the name of the parameter.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "reports"
                 ],
-                "summary": "List unexpired, currently-visible reports near a point",
+                "summary": "List the reports near a point for one view: active, disputed or past",
                 "parameters": [
                     {
                         "type": "number",
@@ -154,9 +219,45 @@
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "active",
+                            "disputed",
+                            "past",
+                            "resolved"
+                        ],
+                        "type": "string",
+                        "description": "Which tab to list: active (the default), disputed or past. resolved is an alias of past.",
+                        "name": "view",
+                        "in": "query"
+                    },
+                    {
                         "type": "boolean",
-                        "description": "Select the disputed-only view instead of the default view (defaults to false)",
+                        "description": "Older way to select the disputed view. true selects disputed; with another view it is refused (defaults to false)",
                         "name": "show_disputed",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "flood",
+                            "earthquake",
+                            "fire",
+                            "storm_cyclone",
+                            "road_blocked",
+                            "power_outage",
+                            "shelter_open",
+                            "rescue_needed",
+                            "other"
+                        ],
+                        "type": "string",
+                        "description": "Keep only this report category in the chosen view (default: all)",
+                        "name": "category",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "A report id from a link; answered in the focus object",
+                        "name": "report",
                         "in": "query"
                     }
                 ],
@@ -234,7 +335,7 @@
         },
         "/reports/{id}/confirm": {
             "post": {
-                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.\nThe response also carries the same trust object GET /reports returns for this report.\nA location is required on every vote except the reporter's own resolve and reopen.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.",
+                "description": "Casts one of five votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen/unresolve are resolution votes (is this\nresolved). Unresolve is the take back of the caller's own earlier resolve: it needs\nno location, it never counts as a reopen, and it is refused with 409 when the caller\nhas no standing resolve on the report. The poster's reopen and every take back share\none limit of two per report; past it the answer is 409. A non poster's reopen is an\nordinary claim and is never limited.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on confirm, dispute, resolve and reopen, with one fixed\nsentence that never carries the distance. The reporter's own resolve and reopen\nare exempt, and so is the take back.\nThe response also carries the same trust object GET /reports returns for this report.\nResolve, reopen and unresolve responses also carry undos_left, the number of take\nbacks the caller has left on this report; confirm and dispute responses do not.\nA location is required on every vote except the reporter's own resolve and reopen\nand the take back.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.",
                 "consumes": [
                     "application/json"
                 ],
@@ -244,7 +345,7 @@
                 "tags": [
                     "reports"
                 ],
-                "summary": "Cast a confirm, dispute, resolve, or reopen vote on a report",
+                "summary": "Cast a confirm, dispute, resolve, reopen or unresolve vote on a report",
                 "parameters": [
                     {
                         "type": "integer",
@@ -311,7 +412,7 @@
         },
         "/reports/{id}/dispute": {
             "post": {
-                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.\nThe response also carries the same trust object GET /reports returns for this report.\nA location is required on every vote except the reporter's own resolve and reopen.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.",
+                "description": "Casts one of five votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen/unresolve are resolution votes (is this\nresolved). Unresolve is the take back of the caller's own earlier resolve: it needs\nno location, it never counts as a reopen, and it is refused with 409 when the caller\nhas no standing resolve on the report. The poster's reopen and every take back share\none limit of two per report; past it the answer is 409. A non poster's reopen is an\nordinary claim and is never limited.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on confirm, dispute, resolve and reopen, with one fixed\nsentence that never carries the distance. The reporter's own resolve and reopen\nare exempt, and so is the take back.\nThe response also carries the same trust object GET /reports returns for this report.\nResolve, reopen and unresolve responses also carry undos_left, the number of take\nbacks the caller has left on this report; confirm and dispute responses do not.\nA location is required on every vote except the reporter's own resolve and reopen\nand the take back.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.",
                 "consumes": [
                     "application/json"
                 ],
@@ -321,7 +422,7 @@
                 "tags": [
                     "reports"
                 ],
-                "summary": "Cast a confirm, dispute, resolve, or reopen vote on a report",
+                "summary": "Cast a confirm, dispute, resolve, reopen or unresolve vote on a report",
                 "parameters": [
                     {
                         "type": "integer",
@@ -388,7 +489,7 @@
         },
         "/reports/{id}/reopen": {
             "post": {
-                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.\nThe response also carries the same trust object GET /reports returns for this report.\nA location is required on every vote except the reporter's own resolve and reopen.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.",
+                "description": "Casts one of five votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen/unresolve are resolution votes (is this\nresolved). Unresolve is the take back of the caller's own earlier resolve: it needs\nno location, it never counts as a reopen, and it is refused with 409 when the caller\nhas no standing resolve on the report. The poster's reopen and every take back share\none limit of two per report; past it the answer is 409. A non poster's reopen is an\nordinary claim and is never limited.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on confirm, dispute, resolve and reopen, with one fixed\nsentence that never carries the distance. The reporter's own resolve and reopen\nare exempt, and so is the take back.\nThe response also carries the same trust object GET /reports returns for this report.\nResolve, reopen and unresolve responses also carry undos_left, the number of take\nbacks the caller has left on this report; confirm and dispute responses do not.\nA location is required on every vote except the reporter's own resolve and reopen\nand the take back.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.",
                 "consumes": [
                     "application/json"
                 ],
@@ -398,7 +499,7 @@
                 "tags": [
                     "reports"
                 ],
-                "summary": "Cast a confirm, dispute, resolve, or reopen vote on a report",
+                "summary": "Cast a confirm, dispute, resolve, reopen or unresolve vote on a report",
                 "parameters": [
                     {
                         "type": "integer",
@@ -465,7 +566,7 @@
         },
         "/reports/{id}/resolve": {
             "post": {
-                "description": "Casts one of four votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen are resolution votes (is this resolved).\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on all four votes, with one fixed sentence that never\ncarries the distance. The reporter's own resolve and reopen are exempt.\nThe response also carries the same trust object GET /reports returns for this report.\nA location is required on every vote except the reporter's own resolve and reopen.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.",
+                "description": "Casts one of five votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen/unresolve are resolution votes (is this\nresolved). Unresolve is the take back of the caller's own earlier resolve: it needs\nno location, it never counts as a reopen, and it is refused with 409 when the caller\nhas no standing resolve on the report. The poster's reopen and every take back share\none limit of two per report; past it the answer is 409. A non poster's reopen is an\nordinary claim and is never limited.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on confirm, dispute, resolve and reopen, with one fixed\nsentence that never carries the distance. The reporter's own resolve and reopen\nare exempt, and so is the take back.\nThe response also carries the same trust object GET /reports returns for this report.\nResolve, reopen and unresolve responses also carry undos_left, the number of take\nbacks the caller has left on this report; confirm and dispute responses do not.\nA location is required on every vote except the reporter's own resolve and reopen\nand the take back.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.",
                 "consumes": [
                     "application/json"
                 ],
@@ -475,7 +576,84 @@
                 "tags": [
                     "reports"
                 ],
-                "summary": "Cast a confirm, dispute, resolve, or reopen vote on a report",
+                "summary": "Cast a confirm, dispute, resolve, reopen or unresolve vote on a report",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Report id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Voter's current coordinates",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.CastVoteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.CastVoteResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/reports/{id}/unresolve": {
+            "post": {
+                "description": "Casts one of five votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen/unresolve are resolution votes (is this\nresolved). Unresolve is the take back of the caller's own earlier resolve: it needs\nno location, it never counts as a reopen, and it is refused with 409 when the caller\nhas no standing resolve on the report. The poster's reopen and every take back share\none limit of two per report; past it the answer is 409. A non poster's reopen is an\nordinary claim and is never limited.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on confirm, dispute, resolve and reopen, with one fixed\nsentence that never carries the distance. The reporter's own resolve and reopen\nare exempt, and so is the take back.\nThe response also carries the same trust object GET /reports returns for this report.\nResolve, reopen and unresolve responses also carry undos_left, the number of take\nbacks the caller has left on this report; confirm and dispute responses do not.\nA location is required on every vote except the reporter's own resolve and reopen\nand the take back.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Cast a confirm, dispute, resolve, reopen or unresolve vote on a report",
                 "parameters": [
                     {
                         "type": "integer",
@@ -546,12 +724,12 @@
             "type": "object",
             "properties": {
                 "latitude": {
-                    "description": "Latitude must be between -90 and 90. Required, except on the reporter's own resolve and reopen.",
+                    "description": "Latitude must be between -90 and 90. Required, except on the reporter's own resolve and reopen and on the take back.",
                     "type": "number",
                     "example": 13.0827
                 },
                 "longitude": {
-                    "description": "Longitude must be between -180 and 180. Required, except on the reporter's own resolve and reopen.",
+                    "description": "Longitude must be between -180 and 180. Required, except on the reporter's own resolve and reopen and on the take back.",
                     "type": "number",
                     "example": 80.2707
                 }
@@ -578,6 +756,11 @@
                             "$ref": "#/definitions/handlers.TrustResponse"
                         }
                     ]
+                },
+                "undos_left": {
+                    "description": "UndosLeft is how many take backs the caller has left on this report after\nthis vote (D-22). It is present on resolve, reopen and unresolve\nresponses only, and absent on confirm and dispute, which have no undo\nbudget. The browser decides the short Undo after Yes, mark resolved from\nthis number before the list refetch lands.",
+                    "type": "integer",
+                    "example": 2
                 },
                 "visibility": {
                     "type": "string",
@@ -650,6 +833,19 @@
                 }
             }
         },
+        "handlers.CutResponse": {
+            "type": "object",
+            "properties": {
+                "expired": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "resolved": {
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
         "handlers.ErrorDetail": {
             "type": "object",
             "properties": {
@@ -717,6 +913,11 @@
         "handlers.FeedReportResponse": {
             "type": "object",
             "properties": {
+                "approximate": {
+                    "description": "Approximate is true when the position and the geohash are a blurred\npoint and the description is empty, which is how a finished Rescue\nreport leaves the API (D-23).",
+                    "type": "boolean",
+                    "example": false
+                },
                 "category": {
                     "type": "string",
                     "enum": [
@@ -751,6 +952,14 @@
                 "geohash": {
                     "type": "string",
                     "example": "tdr1qgzp"
+                },
+                "history": {
+                    "description": "History says how a finished report ended. It is null for an active or\na disputed report and the key is always present.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/handlers.HistoryResponse"
+                        }
+                    ]
                 },
                 "id": {
                     "type": "integer",
@@ -801,8 +1010,26 @@
                         }
                     ]
                 },
+                "undos_left": {
+                    "description": "UndosLeft is how many take backs the calling account has left on this\nreport, from 0 to 2.",
+                    "type": "integer",
+                    "maximum": 2,
+                    "minimum": 0,
+                    "example": 2
+                },
+                "view": {
+                    "description": "View is the one tab this report belongs to right now, from the\nresolver's own answer at the read's clock: active, disputed, resolved\n(closed by a resolve) or past (ran out its time). The client renders\nit and never recomputes it.",
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "disputed",
+                        "resolved",
+                        "past"
+                    ],
+                    "example": "active"
+                },
                 "visibility": {
-                    "description": "Visibility is the resolver's own answer, serialised verbatim from\nservice.ReportView.Visibility; the client renders it and never\nrecomputes it (TRUST-02, T-02-04). \"retracted\" is in the declared\nenum — it is one of the four values of the shared type — but can\nnever actually appear here: D-12 removes retracted reports from both\nthe default and the show_disputed view.",
+                    "description": "Visibility is the resolver's own answer, serialised verbatim from\nservice.ReportView.Visibility; the client renders it and never\nrecomputes it (TRUST-02, T-02-04). \"retracted\" is one of the four\nvalues of the shared type. It never appears in the active or the\ndisputed view (D-12) and appears only in the past view, where the\nreport is listed as resolved (D-25).",
                     "type": "string",
                     "enum": [
                         "hidden",
@@ -824,6 +1051,16 @@
                     ],
                     "example": "confirmed"
                 },
+                "your_resolution": {
+                    "description": "YourResolution is the calling account's own standing resolution vote on\nthis report, or null. The key is always present.",
+                    "type": "string",
+                    "enum": [
+                        "resolve",
+                        "reopen",
+                        "unresolve"
+                    ],
+                    "example": "resolve"
+                },
                 "your_vote": {
                     "description": "YourVote is the calling account's own current content vote on this\nreport — confirm, dispute, or null. Deliberately without omitempty,\nso the key is always present and explicitly null when the caller has\nno standing content vote. It is viewer-specific, which makes this\nresponse uncacheable across callers.",
                     "type": "string",
@@ -832,6 +1069,23 @@
                         "dispute"
                     ],
                     "example": "confirm"
+                }
+            }
+        },
+        "handlers.FocusResponse": {
+            "type": "object",
+            "properties": {
+                "report": {
+                    "$ref": "#/definitions/handlers.FeedReportResponse"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "ok",
+                        "too_old",
+                        "unavailable"
+                    ],
+                    "example": "ok"
                 }
             }
         },
@@ -867,14 +1121,112 @@
                 }
             }
         },
+        "handlers.HistoryResponse": {
+            "type": "object",
+            "properties": {
+                "at": {
+                    "type": "string",
+                    "example": "2026-09-05T14:03:00.000Z"
+                },
+                "closed_by": {
+                    "type": "string",
+                    "enum": [
+                        "you",
+                        "poster",
+                        "people",
+                        "poster_and_people",
+                        "you_and_people"
+                    ],
+                    "example": "poster"
+                },
+                "closed_text": {
+                    "type": "string",
+                    "example": "Closed by the person who posted it"
+                },
+                "lifetime_text": {
+                    "type": "string",
+                    "example": "Stayed up for 6 hours"
+                },
+                "outcome": {
+                    "type": "string",
+                    "enum": [
+                        "corroborated",
+                        "contradicted",
+                        "unconfirmed",
+                        "neutral"
+                    ],
+                    "example": "corroborated"
+                },
+                "outcome_label": {
+                    "type": "string",
+                    "example": "Confirmed by 3 people nearby"
+                },
+                "state": {
+                    "type": "string",
+                    "enum": [
+                        "resolved",
+                        "expired"
+                    ],
+                    "example": "resolved"
+                }
+            }
+        },
+        "handlers.RecentResponse": {
+            "type": "object",
+            "properties": {
+                "expired_24h": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "resolved_24h": {
+                    "type": "integer",
+                    "example": 2
+                }
+            }
+        },
         "handlers.ReportListResponse": {
             "type": "object",
             "properties": {
+                "cut": {
+                    "description": "Cut is present only on the past view.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/handlers.CutResponse"
+                        }
+                    ]
+                },
+                "focus": {
+                    "description": "Focus is present only when the report parameter was sent.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/handlers.FocusResponse"
+                        }
+                    ]
+                },
+                "recent": {
+                    "description": "Recent is present only on an active, unfiltered view with no reports.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/handlers.RecentResponse"
+                        }
+                    ]
+                },
                 "reports": {
+                    "description": "Reports is never null. The past view lists the resolved group first and\nthen the expired group, each newest first.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/handlers.FeedReportResponse"
                     }
+                },
+                "view": {
+                    "description": "View is the tab these reports belong to. resolved is only an alias of\npast on the way in and is answered as past.",
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "disputed",
+                        "past"
+                    ],
+                    "example": "active"
                 }
             }
         },

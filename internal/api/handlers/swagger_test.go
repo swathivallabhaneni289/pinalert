@@ -115,7 +115,12 @@ func TestSwaggerDocServed(t *testing.T) {
 // guard checks, together with every definition they reference. Plan 03-14
 // appended handlers.CurrencyResponse and handlers.ReporterResponse here. The
 // auth definitions, which carry email by design, are never roots.
-var p07GuardedSwaggerRoots = []string{"handlers.TrustResponse", "handlers.FeedReportResponse", "handlers.CastVoteResponse", "handlers.CurrencyResponse", "handlers.ReporterResponse"}
+//
+// Plan 03.1-10 appended handlers.ReportListResponse, which reaches
+// HistoryResponse, RecentResponse, CutResponse and FocusResponse, so the new
+// wire objects of the history views are held to the same name and nullable
+// rules.
+var p07GuardedSwaggerRoots = []string{"handlers.TrustResponse", "handlers.FeedReportResponse", "handlers.CastVoteResponse", "handlers.CurrencyResponse", "handlers.ReporterResponse", "handlers.ReportListResponse"}
 
 // p07IdentifierPropertyName is the name pattern no guarded property may match.
 var p07IdentifierPropertyName = regexp.MustCompile(`(?i)cell|account|session|email`)
@@ -326,13 +331,46 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		}
 	}
 
+	// 03.1-10: the fifth vote route, the take back of a mistaken resolve,
+	// with the same 401 and 403 and the 409 a refused take back answers.
+	unresolveOps, ok := spec.Paths["/reports/{id}/unresolve"]
+	if !ok {
+		t.Errorf("docs/swagger.json is missing the /reports/{id}/unresolve path")
+	} else if op, ok := unresolveOps["post"]; !ok {
+		t.Errorf("docs/swagger.json is missing the /reports/{id}/unresolve post operation")
+	} else {
+		for _, code := range []string{`"401"`, `"403"`, `"409"`} {
+			if !strings.Contains(string(op), code) {
+				t.Errorf("docs/swagger.json /reports/{id}/unresolve post operation is missing a %s response", code)
+			}
+		}
+	}
+
 	// 02-04's contribution to this same OPS-01 drift guard: one response
 	// shape changed (GET /reports now returns FeedReportResponse, not
 	// ReportResponse), one spec regenerated. The GET /reports operation
-	// must declare the show_disputed parameter.
+	// must declare the show_disputed parameter. 03.1-10 adds the view,
+	// category and report parameters, all as query parameters.
 	if getOp, ok := reportsOps["get"]; ok {
-		if !strings.Contains(string(getOp), "show_disputed") {
-			t.Errorf("docs/swagger.json GET /reports operation is missing the show_disputed parameter")
+		var op struct {
+			Parameters []struct {
+				Name string `json:"name"`
+				In   string `json:"in"`
+			} `json:"parameters"`
+		}
+		if err := json.Unmarshal(getOp, &op); err != nil {
+			t.Fatalf("parsing the GET /reports operation: %v", err)
+		}
+		declared := map[string]string{}
+		for _, p := range op.Parameters {
+			declared[p.Name] = p.In
+		}
+		for _, name := range []string{"lat", "lon", "radius_km", "view", "show_disputed", "category", "report"} {
+			if in, ok := declared[name]; !ok {
+				t.Errorf("docs/swagger.json GET /reports operation is missing the %s parameter", name)
+			} else if in != "query" {
+				t.Errorf("docs/swagger.json GET /reports parameter %s is in %q, want query", name, in)
+			}
 		}
 	}
 
@@ -400,6 +438,26 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 			t.Errorf("docs/swagger.json is missing GeocodeResult field %q", field)
 		}
 	}
+	// 03.1-10: GET /geocode/place (plan 03.1-03) must be published with its q
+	// parameter and the 200, 400, 401, 429 and 503 answers it gives.
+	placeOps, ok := spec.Paths["/geocode/place"]
+	if !ok {
+		t.Fatalf("docs/swagger.json is missing the /geocode/place path")
+	}
+	placeOp, ok := placeOps["get"]
+	if !ok {
+		t.Fatalf("docs/swagger.json is missing the /geocode/place get operation")
+	}
+	placeOpRaw := string(placeOp)
+	for _, code := range []string{`"200"`, `"400"`, `"401"`, `"429"`, `"503"`} {
+		if !strings.Contains(placeOpRaw, code) {
+			t.Errorf("docs/swagger.json /geocode/place get operation is missing a %s response", code)
+		}
+	}
+	if !strings.Contains(placeOpRaw, `"q"`) {
+		t.Errorf("docs/swagger.json /geocode/place get operation is missing the q query parameter")
+	}
+
 	// Published-schema counterpart to T-07-04: a documented field is an
 	// invitation for a future change to start populating it, which is
 	// exactly why this allowlist is asserted in the published schema and
@@ -468,6 +526,57 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 	// x-nullable as the boolean true on exactly the three nullable properties.
 	p14AssertPropKeys(t, defProps, "handlers.CurrencyResponse", p14CurrencyWireKeys)
 	p14AssertPropKeys(t, defProps, "handlers.ReporterResponse", p14ReporterWireKeys)
+
+	// 03.1-10: the wire shape of the history views. Exact key sets and the
+	// types of the new objects, so a renamed or added property fails here.
+	p14AssertPropKeys(t, defProps, "handlers.HistoryResponse",
+		[]string{"state", "at", "closed_by", "closed_text", "outcome", "outcome_label", "lifetime_text"})
+	p14AssertPropKeys(t, defProps, "handlers.RecentResponse", []string{"resolved_24h", "expired_24h"})
+	p14AssertPropKeys(t, defProps, "handlers.CutResponse", []string{"resolved", "expired"})
+	p14AssertPropKeys(t, defProps, "handlers.FocusResponse", []string{"status", "report"})
+	p14AssertPropKeys(t, defProps, "handlers.ReportListResponse", []string{"view", "reports", "recent", "cut", "focus"})
+	for def, types := range map[string]map[string]string{
+		"handlers.HistoryResponse": {
+			"state": "string", "at": "string", "closed_by": "string", "closed_text": "string",
+			"outcome": "string", "outcome_label": "string", "lifetime_text": "string",
+		},
+		"handlers.RecentResponse": {"resolved_24h": "integer", "expired_24h": "integer"},
+		"handlers.CutResponse":    {"resolved": "boolean", "expired": "boolean"},
+		"handlers.FocusResponse":  {"status": "string"},
+		"handlers.FeedReportResponse": {
+			"view": "string", "approximate": "boolean", "your_resolution": "string", "undos_left": "integer",
+		},
+		"handlers.CastVoteResponse":   {"undos_left": "integer"},
+		"handlers.ReportListResponse": {"view": "string", "reports": "array"},
+	} {
+		for key, wantType := range types {
+			prop := p14SwaggerProp(t, defProps, def, key)
+			if got, _ := prop["type"].(string); got != wantType {
+				t.Errorf("%s property %q has type %q, want %q", def, key, got, wantType)
+			}
+		}
+	}
+	p14AssertEnum(t, p14SwaggerProp(t, defProps, "handlers.HistoryResponse", "state"), []string{"resolved", "expired"})
+	p14AssertEnum(t, p14SwaggerProp(t, defProps, "handlers.FocusResponse", "status"), []string{"ok", "too_old", "unavailable"})
+	p14AssertEnum(t, p14SwaggerProp(t, defProps, "handlers.FeedReportResponse", "view"), []string{"active", "disputed", "resolved", "past"})
+	p14AssertEnum(t, p14SwaggerProp(t, defProps, "handlers.ReportListResponse", "view"), []string{"active", "disputed", "past"})
+	p14AssertEnum(t, p14SwaggerProp(t, defProps, "handlers.FeedReportResponse", "your_resolution"), []string{"resolve", "reopen", "unresolve"})
+	for owner, keys := range map[string]map[string]string{
+		"handlers.FeedReportResponse": {"history": "handlers.HistoryResponse"},
+		"handlers.ReportListResponse": {
+			"recent": "handlers.RecentResponse", "cut": "handlers.CutResponse", "focus": "handlers.FocusResponse",
+		},
+		"handlers.FocusResponse": {"report": "handlers.FeedReportResponse"},
+	} {
+		for key, wantRef := range keys {
+			refs := map[string]bool{}
+			p07SwaggerRefs(p14SwaggerProp(t, defProps, owner, key), refs)
+			if !refs[wantRef] {
+				t.Errorf("%s property %q does not reference %s", owner, key, wantRef)
+			}
+		}
+	}
+
 	var bands, stages, tags []string
 	for _, b := range service.CurrencyBands {
 		bands = append(bands, string(b))
