@@ -44,8 +44,19 @@
       {{end}}
     </section>
 
+    <h2>How to read what Pinalert shows</h2>
+    <dl class="legal-glossary">
+      {{range .Glossary}}
+      {{range .Terms}}<dt>{{.}}</dt>
+      {{end}}<dd>{{.Text}}</dd>
+      {{end}}
+    </dl>
+
     <h2>Reports can be wrong</h2>
     <p>A report is what someone near the place says they saw. Confirmations from people nearby make it more likely to be right. They don't make it certain. Serious reports show at once, before anyone confirms them, so check how many places have confirmed a report before you rely on it. Don't make decisions about your safety from Pinalert alone.</p>
+
+    <h2>Reports expire</h2>
+    <p>After a fixed time a report is marked Expired and leaves the Active list, whether or not anyone confirms it. Expired reports may stay visible for a while under Past. Most reports last {{.ExpiryHours}} hours and critical reports last {{.CriticalExpiryHours}} hours. Confirmations don't extend that time.</p>
 
     <p class="legal-links">
       <a href="/">Back to Pinalert</a>

@@ -44,6 +44,11 @@ type legalViewModel struct {
 	ContactHref       template.URL
 	OlderLabel        string
 	PolicyLastUpdated string
+	// ExpiryHours and CriticalExpiryHours are read from service.ExpiryDuration
+	// so the Reports expire section follows the constants that expire reports.
+	ExpiryHours         int
+	CriticalExpiryHours int
+	Glossary            []service.GlossaryEntry
 }
 
 // Legal serves one legal page. Any page name other than the two constants
@@ -67,9 +72,12 @@ func Legal(tmpl *template.Template, cfg AuthConfig, page string) http.HandlerFun
 			// value is safe because it always starts with the literal tel
 			// scheme and the primary is digits only, validated by
 			// LoadEmergencyNumbers (D-22).
-			CallHref:          chrome.Numbers.TelHref(),
-			OlderLabel:        service.OlderNumbersLabel(chrome.Numbers.Older),
-			PolicyLastUpdated: policyLastUpdated,
+			CallHref:            chrome.Numbers.TelHref(),
+			OlderLabel:          service.OlderNumbersLabel(chrome.Numbers.Older),
+			PolicyLastUpdated:   policyLastUpdated,
+			ExpiryHours:         int(service.ExpiryDuration(service.SeverityLow).Hours()),
+			CriticalExpiryHours: int(service.ExpiryDuration(service.SeverityCritical).Hours()),
+			Glossary:            service.DisclaimerGlossary(),
 		}
 		if chrome.ContactEmail != "" {
 			// main.go validates the address as a bare email address (D-24).
