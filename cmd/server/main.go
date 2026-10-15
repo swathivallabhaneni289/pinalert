@@ -281,6 +281,12 @@ func main() {
 	}
 	router := api.NewRouter(deps)
 
+	// The worker retries text checks that could not finish at submit: one sweep
+	// at boot because the free host cold starts, then one every 30 seconds. The
+	// claim's row lock and lease keep a second instance from double screening.
+	moderationWorker := service.NewModerationWorker(queries, screener)
+	go moderationWorker.Run(context.Background())
+
 	srv := &http.Server{
 		Addr:         ":" + port,
 		Handler:      router,
