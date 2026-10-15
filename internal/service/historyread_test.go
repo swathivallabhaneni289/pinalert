@@ -676,10 +676,10 @@ func TestUndoReadOnlyWhenNeeded(t *testing.T) {
 		if got := countCalls(fake.callLog, "ResolutionUndoCounts"); got != 0 {
 			t.Fatalf("ResolutionUndoCounts called %d times, want 0", got)
 		}
-		for _, v := range views {
-			if v.UndosLeft != service.UndoLimit {
-				t.Errorf("report %d: UndosLeft = %d, want %d", v.ID, v.UndosLeft, service.UndoLimit)
-			}
+		// Nearby skips a report whose expiry has passed (IN-01), so the expired
+		// one is not in the answer at all and has no UndosLeft to check.
+		if len(views) != 0 {
+			t.Errorf("Nearby returned %d views, want 0 (the only report is expired)", len(views))
 		}
 	})
 }

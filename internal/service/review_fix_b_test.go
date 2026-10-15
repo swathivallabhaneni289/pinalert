@@ -14,11 +14,88 @@ import (
 // W1), the ListableInFeed and ViewOf drift test (W3) and undos_left on a faded
 // report (IN-02).
 
-// TestHistoryCutWhenCandidateReadHitsItsCap pins WR-02 and W8. The candidate
-// reads carry no vote predicate, so a read that returns exactly its row cap may
-// be missing reports that belong in a group. The service says so through the cut
-// flags even though far fewer than HistoryGroupCap entries were kept.
+// TestHistoryCutWhenCandidateReadHitsItsCap pins WR-02 and W8 with the fixer B2
+// semantics. The candidate reads carry no vote predicate and are asked for cap+1
+// rows, so a read that returns more than its cap proves rows were dropped and
+// sets the partial flags of the groups it feeds, even though far fewer than
+// HistoryGroupCap entries were kept. A read that returns exactly its cap dropped
+// nothing and sets no flag. The cut flags keep meaning "more than 25 kept".
 func TestHistoryCutWhenCandidateReadHitsItsCap(t *testing.T) {
+	// The expired read is truncated by 501 rows. The 5 Flood rows come first (the
+	// query orders nearest first, and the trim drops the tail), 496 Power rows
+	// follow, and the chip is Flood: only 5 entries are kept, so no cut, but the
+	// groups the expired read feeds are both partial.
+	powerAndFlood := func(power int) *fakeFeedQuerier {
+		fake := &fakeFeedQuerier{}
+		for i := int64(1); i <= int64(5+power); i++ {
+			category := service.CategoryFlood
+			if i > 5 {
+				category = service.CategoryPowerOutage
+			}
+			fake.expiredRows = append(fake.expiredRows, h6Expired(i, category, service.SeverityLow, time.Hour))
+			fake.reporterRows = append(fake.reporterRows, reporterRow(i, nil))
+		}
+		return fake
+	}
+	floodChip := func() service.HistoryQuery {
+		q := h6Query()
+		q.Category = service.CategoryFlood
+		return q
+	}
+
+	t.Run("a truncated expired read with few kept sets both partial flags and no cut", func(t *testing.T) {
+		fake := powerAndFlood(service.HistoryExpiredCandidateCap - 4) // 5 + 496 = 501 rows
+		if len(fake.expiredRows) != service.HistoryExpiredCandidateCap+1 {
+			t.Fatalf("fixture holds %d rows, want %d", len(fake.expiredRows), service.HistoryExpiredCandidateCap+1)
+		}
+		page, err := h6History(fake, floodChip())
+		if err != nil {
+			t.Fatalf("History: %v", err)
+		}
+		if len(page.Reports) != 5 {
+			t.Errorf("kept %d entries, want the 5 Flood ones", len(page.Reports))
+		}
+		if !page.ResolvedPartial || !page.ExpiredPartial {
+			t.Errorf("partial = %v and %v, want true and true (the expired read feeds both groups)", page.ResolvedPartial, page.ExpiredPartial)
+		}
+		if page.ResolvedCut || page.ExpiredCut {
+			t.Errorf("cut = %v and %v, want false and false (only 5 kept, far under %d)", page.ResolvedCut, page.ExpiredCut, service.HistoryGroupCap)
+		}
+	})
+
+	t.Run("an expired read of exactly its cap sets no flag", func(t *testing.T) {
+		fake := powerAndFlood(service.HistoryExpiredCandidateCap - 5) // 495 Power + 5 Flood = 500 rows
+		if len(fake.expiredRows) != service.HistoryExpiredCandidateCap {
+			t.Fatalf("fixture holds %d rows, want %d", len(fake.expiredRows), service.HistoryExpiredCandidateCap)
+		}
+		page, err := h6History(fake, floodChip())
+		if err != nil {
+			t.Fatalf("History: %v", err)
+		}
+		if len(page.Reports) != 5 {
+			t.Errorf("kept %d entries, want the 5 Flood ones", len(page.Reports))
+		}
+		if page.ResolvedPartial || page.ExpiredPartial || page.ResolvedCut || page.ExpiredCut {
+			t.Errorf("partial = %v and %v, cut = %v and %v, want none (nothing was dropped)", page.ResolvedPartial, page.ExpiredPartial, page.ResolvedCut, page.ExpiredCut)
+		}
+	})
+
+	t.Run("a group can be cut and partial at once, each flag for its own fact", func(t *testing.T) {
+		fake := &fakeFeedQuerier{}
+		for i := int64(1); i <= int64(service.HistoryExpiredCandidateCap)+1; i++ {
+			fake.expiredRows = append(fake.expiredRows, h6Expired(i, service.CategoryFlood, service.SeverityLow, time.Hour))
+			fake.reporterRows = append(fake.reporterRows, reporterRow(i, nil))
+		}
+		page, err := h6History(fake, h6Query())
+		if err != nil {
+			t.Fatalf("History: %v", err)
+		}
+		if !page.ExpiredCut || !page.ExpiredPartial || page.ResolvedCut || !page.ResolvedPartial {
+			t.Errorf("expired cut/partial = %v/%v, resolved cut/partial = %v/%v, want true/true and false/true",
+				page.ExpiredCut, page.ExpiredPartial, page.ResolvedCut, page.ResolvedPartial)
+		}
+	})
+
 	t.Run("an open read past its cap cuts the resolved group only", func(t *testing.T) {
 		fake := &fakeFeedQuerier{}
 		for i := int64(1); i <= int64(service.HistoryOpenCandidateCap)+1; i++ {
@@ -52,7 +129,7 @@ func TestHistoryCutWhenCandidateReadHitsItsCap(t *testing.T) {
 		}
 	})
 
-	t.Run("an expired read past its cap cuts both groups", func(t *testing.T) {
+	t.Run("an expired read past its cap keeps the group cap and trims the extra row", func(t *testing.T) {
 		fake := &fakeFeedQuerier{}
 		for i := int64(1); i <= int64(service.HistoryExpiredCandidateCap)+1; i++ {
 			fake.expiredRows = append(fake.expiredRows, h6Expired(i, service.CategoryFlood, service.SeverityLow, time.Hour))
@@ -62,11 +139,12 @@ func TestHistoryCutWhenCandidateReadHitsItsCap(t *testing.T) {
 		if err != nil {
 			t.Fatalf("History: %v", err)
 		}
-		if !page.ResolvedPartial || !page.ExpiredPartial || page.ResolvedCut || !page.ExpiredCut {
-			t.Errorf("partial = %v and %v, cut = %v and %v, want partial true and true, cut false and true (500 past entries, no resolved one)", page.ResolvedPartial, page.ExpiredPartial, page.ResolvedCut, page.ExpiredCut)
-		}
 		if len(page.Reports) != service.HistoryGroupCap {
 			t.Errorf("kept %d entries, want %d", len(page.Reports), service.HistoryGroupCap)
+		}
+		// The 501st row is past the cap, so it was trimmed before it could count.
+		if containsReportID(page.Reports, int64(service.HistoryExpiredCandidateCap)+1) {
+			t.Errorf("the row past the cap was kept")
 		}
 	})
 }
@@ -148,7 +226,9 @@ func TestListableInFeedAgreesWithViewOf(t *testing.T) {
 
 // TestUndosLeftIsZeroOnAFadedReport pins IN-02: a report that has faded, a Past
 // one or a resolved one past its expiry, reports 0 undos left whatever the
-// budget was, and a live report still reports the full limit.
+// budget was. The viewer is account 1002, the poster who closed report 2, and
+// the fake holds an undo row for report 2, so without the faded guard the read
+// would run and the count would come from that row. Neither may happen.
 func TestUndosLeftIsZeroOnAFadedReport(t *testing.T) {
 	fake := &fakeFeedQuerier{
 		expiredRows: []sqlcgen.ExpiredReportsInWindowRow{
@@ -157,9 +237,10 @@ func TestUndosLeftIsZeroOnAFadedReport(t *testing.T) {
 		},
 		reporterRows: []sqlcgen.ReporterAccountsForReportsRow{reporterRow(1, nil), reporterRow(2, ptrID(1002))},
 		voteRows:     []sqlcgen.CurrentVotesForReportsRow{h6Closed(2, 1002, p12Now.Add(-2*time.Hour), "c1")},
+		undoRows:     []sqlcgen.ResolutionUndoCountsRow{{ReportID: 2}},
 	}
 	q := h6Query()
-	q.ViewerAccountID = 7
+	q.ViewerAccountID = 1002
 	page, err := h6History(fake, q)
 	if err != nil {
 		t.Fatalf("History: %v", err)
@@ -208,30 +289,46 @@ func TestNearbySkipsAReportThatExpiredInTheClockGap(t *testing.T) {
 	gapRescue := p12Row(3, service.SeverityCritical, service.CategoryRescueNeeded, 3.0)
 	gapRescue.ExpiresAt = p12Now
 
+	// Two Hidden reports, disputed past the threshold: 4 is live, 5 expired in the
+	// gap. Without a Hidden report in the gap the Disputed read would be empty
+	// whatever the guard does and the loop below would prove nothing.
+	liveHidden := p12Row(4, service.SeverityLow, service.CategoryFlood, 4.0)
+	gapHidden := p12Row(5, service.SeverityLow, service.CategoryFlood, 5.0)
+	gapHidden.ExpiresAt = p12Now.Add(-time.Millisecond)
+
 	fake := &fakeFeedQuerier{
-		nearbyRows: []sqlcgen.NearbyReportsRow{live, gapFlood, gapRescue},
+		nearbyRows: []sqlcgen.NearbyReportsRow{live, gapFlood, gapRescue, liveHidden, gapHidden},
 		reporterRows: []sqlcgen.ReporterAccountsForReportsRow{
-			reporterRow(1, nil), reporterRow(2, nil), reporterRow(3, nil),
+			reporterRow(1, nil), reporterRow(2, nil), reporterRow(3, nil), reporterRow(4, nil), reporterRow(5, nil),
 		},
 	}
+	for _, reportID := range []int64{4, 5} {
+		for i := 0; i < service.IndependentAgreementThreshold; i++ {
+			fake.voteRows = append(fake.voteRows,
+				p12Vote(reportID, 100*reportID+int64(i), service.VoteKindContent, service.VoteDispute, voteCellNames[i]))
+		}
+	}
 	svc := service.NewReportService(fake, service.WithReportClock(p12Clock))
-	for _, includeDisputed := range []bool{false, true} {
+	for _, tc := range []struct {
+		includeDisputed bool
+		want            []int64
+	}{
+		{false, []int64{1}},
+		{true, []int64{4}},
+	} {
 		views, err := svc.Nearby(context.Background(), service.NearbyQuery{
-			Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: includeDisputed,
+			Latitude: 12.9716, Longitude: 77.5946, RadiusKm: 5, IncludeDisputed: tc.includeDisputed,
 		})
 		if err != nil {
-			t.Fatalf("Nearby(includeDisputed=%v): %v", includeDisputed, err)
+			t.Fatalf("Nearby(includeDisputed=%v): %v", tc.includeDisputed, err)
 		}
 		for _, v := range views {
 			if v.View != service.FeedViewActive && v.View != service.FeedViewDisputed {
-				t.Errorf("includeDisputed=%v: report %d came back with view %q", includeDisputed, v.ID, v.View)
-			}
-			if v.ID != 1 {
-				t.Errorf("includeDisputed=%v: report %d is in the answer, want only the live report 1", includeDisputed, v.ID)
+				t.Errorf("includeDisputed=%v: report %d came back with view %q", tc.includeDisputed, v.ID, v.View)
 			}
 		}
-		if !includeDisputed && len(views) != 1 {
-			t.Errorf("active read returned %d views, want 1", len(views))
+		if got := viewIDs(views); !equalIDs(got, tc.want) {
+			t.Errorf("includeDisputed=%v: ids = %v, want exactly %v (the live report; none that expired in the gap)", tc.includeDisputed, got, tc.want)
 		}
 	}
 }
