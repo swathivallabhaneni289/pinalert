@@ -79,6 +79,13 @@ func ParsePageTemplate() (*template.Template, error) {
 // gate failed to do its job, which is a routing bug, not a condition a
 // redirect should paper over; it is logged and answered with a 500 rather
 // than silently rendering an empty email row (DEC-P).
+//
+// Before it renders, Page follows the remembered Low data choice (D-17): a
+// bare address with the pinalert_low_data cookie answers a redirect to the Low
+// data view, and the address with full=1 clears the cookie and goes to the main
+// page. A main page address with any other query string is never redirected,
+// so a shared deep link opens where it says, and every target is a constant
+// (T-04-13).
 func Page(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acc, ok := account.FromContext(r.Context())
@@ -86,6 +93,25 @@ func Page(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 			log.Printf("handlers: Page: no verified account in request context — the gate should have made this impossible")
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
+		}
+		// D-17: the remembered choice of the Low data view. ?full=1 is checked
+		// first, clears the choice and goes to the main page. Otherwise a bare
+		// address (no query string at all) with the cookie goes to the Low data
+		// view, before any heavy asset is requested. Any other query string is
+		// never redirected, so a shared deep link opens where it says. Every
+		// target is a constant (T-04-13), so no loop and no open redirect exist.
+		if r.URL.Query().Get("full") == "1" {
+			clearLowDataCookie(w, r)
+			w.Header().Set("Cache-Control", "no-store")
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+		if r.URL.RawQuery == "" {
+			if c, err := r.Cookie(LowDataCookie); err == nil && c.Value == "1" {
+				w.Header().Set("Cache-Control", "no-store")
+				http.Redirect(w, r, LowDataPath, http.StatusFound)
+				return
+			}
 		}
 		vm := pageViewModel{
 			FallbackLat:     cfg.FallbackLat,

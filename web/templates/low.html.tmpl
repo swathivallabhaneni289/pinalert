@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinalert: Low data view</title>
+  <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/feed.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/trust.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/low.css?v={{.AssetVersion}}">
+  <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
+</head>
+<body>
+  <div class="top-chrome">
+    {{template "disclaimer_bar.html.tmpl" .}}
+    {{template "account_header.html.tmpl" .}}
+  </div>
+  {{template "theme_toggle.html.tmpl" .}}
+  <div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>
+  <main class="low-page" id="app-shell"
+        data-fallback-lat="{{.FallbackLat}}"
+        data-fallback-lon="{{.FallbackLon}}"
+        data-default-radius-km="{{.DefaultRadiusKm}}"
+        data-poll-interval-ms="60000"
+        data-vote-radius-km="{{.VoteRadiusKm}}"
+        data-account-id="{{.AccountID}}">
+    <div class="low-page__head">
+      <h1>Low data view</h1>
+      <p class="low-page__line">Text only, no map</p>
+      <p class="low-page__note">This device opens the Low data view by default.</p>
+      <a class="btn" id="low-full" href="/?full=1">Open full version</a>
+      <p class="low-basis" id="low-basis" aria-live="polite"></p>
+      <button type="button" class="btn" id="low-retry-position" hidden>Retry position</button>
+      <div class="low-stale" id="low-stale" hidden>
+        <p class="inline-note low-stale__text" id="low-stale-text"></p>
+        <button type="button" class="btn" id="low-stale-retry">Retry now</button>
+      </div>
+      <h2 id="low-list-heading">Active reports</h2>
+    </div>
+    <ol class="low-list" id="low-list" aria-labelledby="low-list-heading" aria-busy="true"></ol>
+    <div class="low-skeleton" id="low-skeleton" hidden>
+      <div class="skeleton-row"></div>
+      <div class="skeleton-row"></div>
+      <div class="skeleton-row"></div>
+      <div class="skeleton-row"></div>
+    </div>
+    <div class="empty-state" id="low-empty" hidden>
+      <h2 id="low-empty-title"></h2>
+      <p id="low-empty-text"></p>
+    </div>
+    <div class="error-state" id="low-error" hidden>
+      <h2>Couldn't load reports</h2>
+      <p>Check your connection and try again.</p>
+      <button type="button" class="btn" id="low-retry">Retry</button>
+    </div>
+  </main>
+
+  <script src="/static/js/app.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/votes.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/visibility.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/trust.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/low.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
+</body>
+</html>

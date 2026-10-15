@@ -372,6 +372,10 @@ func NewRouter(deps Deps) *chi.Mux {
 	r.Group(func(r chi.Router) {
 		r.Use(requireVerifiedAccount(deps.Sessions))
 		r.Get("/", handlers.Page(deps.Template, page))
+		// D-13, D-14: the Low data view, its own bookmarkable page behind the
+		// gate. It takes the same page copy so the bar numbers and the vote
+		// radius match the main page.
+		r.Get(handlers.LowDataPath, handlers.LowPage(deps.Template, page))
 		// The report gate runs inside the handler, after decode (R-04), never as route middleware.
 		r.Post("/api/reports", handlers.SubmitReport(deps.Reports, rateGate))
 		r.Get("/api/reports", handlers.NearbyReports(deps.Reports))
