@@ -721,6 +721,11 @@ var nonCategoryIcons = map[string]bool{
 	// 261013-wm5): the chat bubble drawn by the .activity-glyph--dispute mask
 	// rule in activity.css, same exemption reasoning as the glyphs above.
 	"static/icons/message-square.svg": true,
+	// Place search on the map (plan 03.1-11, UI-SPEC Design System): the
+	// magnifier drawn by the .map-search__icon mask rule in feed.css, same
+	// exemption reasoning as the glyphs above. TestSearchIconIsMasked proves
+	// the rule and the file line up, so the exemption cannot hide an orphan.
+	"static/icons/search.svg": true,
 }
 
 // phase3TrustGlyphIcons lists the Phase 3 glyph files exempted from the
