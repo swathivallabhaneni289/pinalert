@@ -711,12 +711,15 @@ window.PinalertMap = (function () {
     if (!(strip > 0)) {
       return;
     }
-    // A live pin is shown at street level. An approximate one is never
-    // zoomed in past the ceiling, so the strip does not imply a street level
-    // spot for a blurred point (T-31-58).
+    // A live pin is shown at street level at least. An approximate one is
+    // shown at the ceiling exactly, the same level the fly from a list row
+    // ends at, so the strip does not imply a street level spot for a blurred
+    // point and a phone matches a laptop (T-31-58). This call stops a running
+    // fly, whose zoom has not yet left its start, so it must set the level
+    // itself and not read the map's current one.
     var id = reportIdForPopup(popup);
     var approximate = id !== null && cards[id] && cards[id].approximate === true;
-    var zoom = approximate ? Math.min(map.getZoom(), MAX_APPROX_ZOOM) : Math.max(map.getZoom(), 16);
+    var zoom = approximate ? MAX_APPROX_ZOOM : Math.max(map.getZoom(), 16);
     map.setView(popup.getLatLng(), zoom, { animate: false });
     map.panBy([0, Math.round(map.getSize().y / 2 - strip / 2)], { animate: false });
   }

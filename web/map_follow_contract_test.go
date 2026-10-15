@@ -255,7 +255,8 @@ func TestMapFollowsApproximate(t *testing.T) {
 	p13MustNotContain(t, "flyTo", fly, "), 16", ", 16)")
 	strip := jsFunctionBody(t, code, "centerPinInStrip(popup, popupEl)")
 	p13MustContain(t, "centerPinInStrip", strip,
-		"Math.min(map.getZoom(), MAX_APPROX_ZOOM)", "Math.max(map.getZoom(), 16)", "map.setView(popup.getLatLng(), zoom, { animate: false });")
+		"approximate ? MAX_APPROX_ZOOM : Math.max(map.getZoom(), 16)", "map.setView(popup.getLatLng(), zoom, { animate: false });")
+	p13MustNotContain(t, "centerPinInStrip", strip, "Math.min(")
 
 	// No circle and no radius layer is drawn anywhere: a drawn radius would
 	// promise a precision the coarsening does not give.
