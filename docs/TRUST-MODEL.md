@@ -80,7 +80,7 @@ The take back: Phase 3.1 added a fifth value, `unresolve`, for a person who tapp
 
 `TestCastVoteTakeBack` pins the refusals, the limit and the poster's budget.
 
-Order of checks inside `CastVote`: input validation, report lookup, the block on content votes for your own report, expiry (an expired report is refused as expired even from far away), distance, for a take back the standing resolve check and then the undo limit check (both before any write), then the write.
+Order of checks inside `CastVote`: input validation, report lookup, the block on content votes for your own report, expiry (an expired report is refused as expired even from far away), the refusal of a vote that carries no coordinates (excused for the reporter's own resolve and reopen and for the take back), distance, for a take back the standing resolve check, then for a take back or the poster's own reopen the undo limit check (all before any write), then the write.
 
 A refused vote returns the service error `ErrVoterTooFar`, which the API answers with HTTP 403, field `location` and the sentence "Too far to vote. You need to be within 1 km of this report." The sentence is the same for all four vote values the rule covers, and the response never contains the computed distance.
 
