@@ -301,6 +301,10 @@
     body.appendChild(voteBlock.note);
     body.appendChild(voteBlock.error);
 
+    // The Flag control ends the row, outside the vote controls (P4-A6).
+    var flagControl = PinalertFlag.createFlagControl(report);
+    body.appendChild(flagControl.el);
+
     li.appendChild(badge);
     li.appendChild(body);
 
@@ -313,7 +317,8 @@
       written: written,
       tag: tag,
       trust: trust,
-      voteBlock: voteBlock
+      voteBlock: voteBlock,
+      flag: flagControl
     };
   }
 
@@ -344,6 +349,7 @@
     PinalertVisibility.updateVisibilityTag(row.tag, report);
     PinalertTrust.updateTrustBlock(row.trust, report.trust);
     PinalertVotes.updateVoteBlock(row.voteBlock, report);
+    PinalertFlag.updateFlagControl(row.flag, report);
   }
 
   // focusAfterRemoval puts focus on a real control when the row that held it

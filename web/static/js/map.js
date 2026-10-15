@@ -569,6 +569,10 @@ window.PinalertMap = (function () {
     // owned by votes.js.
     actions.appendChild(block.note);
     actions.appendChild(block.error);
+    // The Flag control is the last element of the actions block, outside the
+    // vote controls. Phase 3.1 moved it off the list row into the opened report.
+    var flagControl = PinalertFlag.createFlagControl(report);
+    actions.appendChild(flagControl.el);
 
     body.appendChild(header);
     body.appendChild(titleEl);
@@ -592,6 +596,7 @@ window.PinalertMap = (function () {
       trust: trust,
       fade: fade,
       votes: block,
+      flag: flagControl,
       approximate: false,
       observer: null,
       frame: 0
@@ -662,6 +667,7 @@ window.PinalertMap = (function () {
 
     PinalertTrust.updateTrustCard(card.trust, report.trust);
     PinalertVotes.updateVoteBlock(card.votes, report);
+    PinalertFlag.updateFlagControl(card.flag, report);
   }
 
   // observePopupCard repositions an open popup when its card changes height,
@@ -1424,6 +1430,22 @@ window.PinalertMap = (function () {
     }, 1500);
   }
 
+  // focusMarker puts focus on the pin of report id when it is on the page, so a
+  // closed dialog can hand focus back to the pin of a popup that has gone. It
+  // does not scroll or pan the map. It returns whether a pin took the focus.
+  function focusMarker(id) {
+    var marker = markers[String(id)] || markers[id];
+    if (!marker) {
+      return false;
+    }
+    var el = marker.getElement ? marker.getElement() : null;
+    if (!el || !el.isConnected) {
+      return false;
+    }
+    el.focus({ preventScroll: true });
+    return true;
+  }
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
@@ -1438,6 +1460,7 @@ window.PinalertMap = (function () {
     getCenter: getCenter,
     highlight: highlight,
     focusOpenPopup: focusOpenPopup,
-    takeRemovedPopupFocus: takeRemovedPopupFocus
+    takeRemovedPopupFocus: takeRemovedPopupFocus,
+    focusMarker: focusMarker
   };
 }());
