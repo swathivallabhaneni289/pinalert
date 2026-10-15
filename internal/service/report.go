@@ -12,6 +12,7 @@ import (
 	"math"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/mmcloughlin/geohash"
@@ -201,11 +202,15 @@ func ValidateSubmitInput(in SubmitInput) error {
 		return ValidationError{"severity", "Pick a severity level."}
 	}
 
+	// The description is counted in characters (Unicode code points), not
+	// bytes, because Telugu, Hindi and Tamil letters take 3 bytes each and the
+	// messages promise characters (R-06).
 	desc := strings.TrimSpace(in.Description)
-	if len(desc) < 10 {
+	n := utf8.RuneCountInString(desc)
+	if n < 10 {
 		return ValidationError{"description", "Add a short description (at least 10 characters)."}
 	}
-	if len(desc) > 1000 {
+	if n > 1000 {
 		return ValidationError{"description", "Description must be 1000 characters or fewer."}
 	}
 
@@ -311,8 +316,9 @@ type Querier interface {
 
 // ReportService validates, computes derived fields, and persists reports.
 type ReportService struct {
-	q   Querier
-	now func() time.Time
+	q        Querier
+	now      func() time.Time
+	screener TextScreener
 }
 
 // ReportOption configures a ReportService at construction time.
@@ -326,6 +332,15 @@ type ReportOption func(*ReportService)
 func WithReportClock(fn func() time.Time) ReportOption {
 	return func(s *ReportService) {
 		s.now = fn
+	}
+}
+
+// WithScreener sets the screener for the inline text check. Without it every
+// text that passes the gibberish prefilter is clear and nothing is sent
+// anywhere, which is what every existing test harness gets.
+func WithScreener(s TextScreener) ReportOption {
+	return func(rs *ReportService) {
+		rs.screener = s
 	}
 }
 
