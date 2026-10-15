@@ -115,8 +115,14 @@ func (p *PerKey) Reserve(key string) Decision {
 		r.CancelAt(now)
 		return Decision{RetryAfter: roundUpToSecond(d), Cancel: noRefund}
 	}
+	// The refund cancels at the SAME instant the token was reserved. x/time's
+	// CancelAt returns early when the reservation instant is before the cancel
+	// instant, so the no argument shorthand or any later instant is a silent
+	// no-op for a zero delay grant. CancelAt is also not idempotent, so the
+	// sync.Once keeps a second call from restoring a second token. The closure
+	// takes no lock of PerKey, only the limiter's own.
 	var once sync.Once
 	return Decision{OK: true, Cancel: func() {
-		once.Do(func() { r.CancelAt(p.now()) })
+		once.Do(func() { r.CancelAt(now) })
 	}}
 }
