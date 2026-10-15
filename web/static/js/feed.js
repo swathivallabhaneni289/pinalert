@@ -53,6 +53,31 @@
   var appShellEl = document.getElementById('app-shell');
   var tabStripEl = document.querySelector('.view-tabs');
   var feedCountEl = document.getElementById('feed-count');
+  var feedStatusEl = document.getElementById('feed-status');
+  var feedHeadingTitleEl = document.getElementById('feed-heading-title');
+  var feedNoteEl = document.getElementById('feed-note');
+  var pastGroupsEl = document.getElementById('past-groups');
+  var historyEmptyEl = document.getElementById('feed-empty-history');
+  var pastEmptyEl = document.getElementById('past-empty');
+  var filterEmptyEl = document.getElementById('filter-empty');
+  var filterClearBtn = document.getElementById('filter-empty-clear');
+  var seePastBtn = document.getElementById('see-past-reports');
+
+  // The heading and the one line note under it, per tab (C3 to C7). Active
+  // has no note. The strings are fixed here, never read from the server.
+  var VIEW_HEADINGS = { active: 'Nearby now', disputed: 'Disputed reports', past: 'Past reports' };
+  var VIEW_NOTES = {
+    active: '',
+    disputed: 'Nearby people disputed these. You can still confirm or dispute them.',
+    past: 'Resolved and expired reports from the last 7 days.'
+  };
+
+  // lastAnnouncedKey is the tab, place and chip the status line last
+  // announced, and statusStarted is false until the first answer lands. The
+  // first answer is not announced: a reader who just opened the page hears
+  // the list itself, not a status line over it.
+  var lastAnnouncedKey = '';
+  var statusStarted = false;
 
   // PHONE_QUERY is the same 899.98px complement of the 900px query that
   // main.css, trust.css and phone.css use. Below it the list is its own scroll
@@ -95,17 +120,22 @@
     }
   }
 
-  // setEmptyState is the sole owner of both empty-state elements. render is
-  // documented as the one place that decides which of the list, skeleton,
-  // empty state and error state is showing, and a fifth element would
-  // otherwise turn four explicit branches into eight — every setHidden call
-  // targeting either empty-state element lives in this function and
-  // nowhere else. kind is one of 'none' (neither shown), 'general' (the
-  // Phase 1 empty state) or 'disputed' (the shared query parameter's own
-  // empty state).
+  // setEmptyState is the sole owner of the five empty-state elements. render
+  // is documented as the one place that decides which of the list, skeleton,
+  // empty state and error state is showing, and more elements would
+  // otherwise turn four explicit branches into many. Every setHidden call
+  // targeting an empty-state element lives in this function and nowhere
+  // else, and at most one of them shows. kind is one of 'none' (none shown),
+  // 'general' (the Phase 1 empty state), 'history' (nothing active but
+  // recent history, with the See past reports button), 'disputed' (the
+  // Disputed tab's own empty state), 'past' (the Past tab's) or 'filter' (a
+  // chip emptied the list, with the Clear filter button).
   function setEmptyState(kind) {
     setHidden(emptyEl, kind !== 'general');
+    setHidden(historyEmptyEl, kind !== 'history');
     setHidden(disputedEmptyEl, kind !== 'disputed');
+    setHidden(pastEmptyEl, kind !== 'past');
+    setHidden(filterEmptyEl, kind !== 'filter');
   }
 
   function replacePrefixedClass(el, prefix, newClass) {
@@ -274,6 +304,11 @@
     return !!el && el.isConnected && el.getClientRects().length > 0;
   }
 
+  // currentTabLink is the link of the selected tab, or null without a strip.
+  function currentTabLink() {
+    return tabStripEl ? tabStripEl.querySelector('.view-tab[aria-current="page"]') : null;
+  }
+
   // focusIsLost is true when focus is on the page body or on a node inside a
   // popup that is no longer open. map.js sets data-popup-open when a popup
   // opens and clears it synchronously when it closes, which the poll's render
@@ -301,10 +336,10 @@
 
   // focusAfterRemoval is the one place focus is chosen after a poll removed
   // the report that owned it (A67, in the A52 order): the first displayed
-  // row among the candidates, else the map, else the view toggle, else the
-  // empty state. It acts when focus fell to the page body or sits in a popup
-  // that map.js already marked closed, and the browser decides only where
-  // focus goes, never which reports exist.
+  // row among the candidates, else the map, else the current tab link, else
+  // the view toggle, else the empty state. It acts when focus fell to the page
+  // body or sits in a popup that map.js already marked closed, and the browser
+  // decides only where focus goes, never which reports exist.
   function focusAfterRemoval(candidates) {
     var active = document.activeElement;
     if (!focusIsLost(active)) {
@@ -323,11 +358,16 @@
       mapEl.focus();
       return;
     }
+    var tabLink = currentTabLink();
+    if (elementIsShown(tabLink)) {
+      tabLink.focus();
+      return;
+    }
     if (elementIsShown(viewToggleBtn)) {
       viewToggleBtn.focus();
       return;
     }
-    var empties = [emptyEl, disputedEmptyEl];
+    var empties = [emptyEl, historyEmptyEl, disputedEmptyEl, pastEmptyEl, filterEmptyEl];
     for (var k = 0; k < empties.length; k++) {
       if (elementIsShown(empties[k])) {
         empties[k].setAttribute('tabindex', '-1');
@@ -440,10 +480,11 @@
   }
 
   // updateFeedCount writes the count line under the list heading, for
-  // example "5 active \u00b7 10 km". The number is the count of rendered
-  // reports and the radius is the one the feed was asked for. It is empty
-  // while the feed is loading and on an error with no rows to count. It goes
-  // through Pinalert.setText, a text node assignment (T-01-03).
+  // example "5 active · 10 km", "2 disputed · 10 km" or
+  // "3 reports · 10 km" ("1 report"). The number is the count of
+  // rendered reports and the radius is the one the feed was asked for. It is
+  // empty while the feed is loading and on an error with no rows to count. It
+  // goes through Pinalert.setText, a text node assignment (T-01-03).
   function updateFeedCount(state) {
     if (!feedCountEl) {
       return;
@@ -453,10 +494,85 @@
       : state.status !== 'idle' && state.status !== 'loading';
     var radius = formatRadius(Pinalert.config.defaultRadiusKm);
     if (counted && radius !== '') {
-      var word = Pinalert.state.view === 'disputed' ? 'disputed' : 'active';
-      text = state.reports.length + ' ' + word + ' \u00b7 ' + radius + ' km';
+      var count = state.reports.length;
+      var view = Pinalert.state.view;
+      var word = view === 'disputed' ? 'disputed' : 'active';
+      if (view === 'past') {
+        word = count === 1 ? 'report' : 'reports';
+      }
+      text = count + ' ' + word + ' \u00b7 ' + radius + ' km';
     }
     Pinalert.setText(feedCountEl, text);
+  }
+
+  // updateFeedHeading writes the heading and the one line note of the tab
+  // (C3 to C7) and marks the shell with the tab, so the laptop heading, which
+  // is hidden on Active, shows for Disputed and Past (feed.css). Every string
+  // is fixed in this file and goes through Pinalert.setText.
+  function updateFeedHeading(view) {
+    var heading = VIEW_HEADINGS[view] || VIEW_HEADINGS.active;
+    var note = VIEW_NOTES[view] || '';
+    if (feedHeadingTitleEl) {
+      Pinalert.setText(feedHeadingTitleEl, heading);
+    }
+    if (feedNoteEl) {
+      Pinalert.setText(feedNoteEl, note);
+      setHidden(feedNoteEl, note === '');
+    }
+    if (appShellEl) {
+      appShellEl.setAttribute('data-feed-view', view);
+    }
+  }
+
+  // updateFeedStatus writes the one status sentence of C11 into the visually
+  // hidden live region, for example "3 active reports. Near Kochi. Filtered
+  // by Flood." It speaks once per tab, place or chip change, when the answer
+  // for that change has landed (so the count is the real one). A poll that
+  // only changes the count never speaks again, and the first answer of a page
+  // load is recorded without speaking. The numbers and words are the
+  // store's, nothing is invented.
+  function updateFeedStatus(state) {
+    if (!feedStatusEl || state.status !== 'ok') {
+      return;
+    }
+    var store = Pinalert.state;
+    var placeName = store.place ? store.place.name : '';
+    var key = store.view + '|' + placeName + '|' + store.category;
+    if (key === lastAnnouncedKey) {
+      return;
+    }
+    lastAnnouncedKey = key;
+    if (!statusStarted) {
+      statusStarted = true;
+      return;
+    }
+    var count = state.reports.length;
+    var text = count + ' ' + store.view + (count === 1 ? ' report.' : ' reports.');
+    if (placeName !== '') {
+      text += ' Near ' + placeName + '.';
+    }
+    if (store.category !== '') {
+      text += ' Filtered by ' + (Pinalert.CHIP_LABELS[store.category] || Pinalert.categoryLabel(store.category)) + '.';
+    }
+    Pinalert.setText(feedStatusEl, text);
+  }
+
+  // renderPastTab draws the Past tab's list area. The Past tab is two groups
+  // of cards, never the live list, so #report-list is hidden and its rows are
+  // removed; the group cards themselves are built by the Past cards plan,
+  // which fills #past-groups. The groups container shows only when there are
+  // reports; with none, the Past empty block (or the filter block when a chip
+  // is on) shows instead.
+  function renderPastTab(state) {
+    setHidden(reportListEl, true);
+    clearRows();
+    if (state.reports.length === 0) {
+      setHidden(pastGroupsEl, true);
+      setEmptyState(Pinalert.state.category !== '' ? 'filter' : 'past');
+      return;
+    }
+    setEmptyState('none');
+    setHidden(pastGroupsEl, false);
   }
 
   // render is the single state machine driving the list, the skeleton, the
@@ -464,10 +580,12 @@
   // there is exactly one place that decides which of the four is showing.
   function render(state) {
     updateFeedCount(state);
+    updateFeedHeading(Pinalert.state.view);
 
     if (state.status === 'idle' || state.status === 'loading') {
       setHidden(skeletonEl, false);
       setHidden(reportListEl, true);
+      setHidden(pastGroupsEl, true);
       setEmptyState('none');
       setHidden(errorEl, true);
       return;
@@ -485,29 +603,51 @@
       // control that is still shown instead of dropping it to the page body.
       // A later poll or Retry with rows on screen never reaches the loading
       // branch below (app.js treats it as a background refresh), so the list a
-      // reader is scrolling or has focus in is not hidden again.
+      // reader is scrolling or has focus in is not hidden again. Rows fetched
+      // for another tab were already dropped by the store, so a failure never
+      // leaves one tab's rows under another tab.
       var hasRows = state.reports.length > 0;
+      var onPast = Pinalert.state.view === 'past';
       setHidden(errorEl, false);
       setHidden(reportListEl, !hasRows);
+      setHidden(pastGroupsEl, !hasRows || !onPast);
       if (!hasRows) {
         clearRows();
+      }
+      if (onPast) {
+        // The Past tab never shows the live list, whatever rows it holds.
+        setHidden(reportListEl, true);
       }
       setEmptyState('none');
       return;
     }
 
     setHidden(errorEl, true);
+    updateFeedStatus(state);
+
+    if (Pinalert.state.view === 'past') {
+      renderPastTab(state);
+      return;
+    }
+    setHidden(pastGroupsEl, true);
 
     if (state.reports.length === 0) {
-      // The disputed empty state replaces the general one rather than
-      // stacking above a populated list, because in this codebase this
-      // component means "shown instead of the list" — and the checked box
-      // sitting directly above it is the context that makes the narrower
-      // message the right one. Read from the store's flag rather than the
-      // checkbox: the store's value describes the data actually in
-      // state.reports, while the checkbox describes an intent whose fetch
-      // may still be in flight.
-      setEmptyState(Pinalert.state.view === 'disputed' ? 'disputed' : 'general');
+      // An empty list shows exactly one empty block, instead of the list. A
+      // chip that emptied it says so, with the button that clears it: the
+      // reader's own filter is the reason, never "no reports" (D-18). With no
+      // chip on, Disputed has its own words and Active the general ones. The
+      // history kind (recent counts and See past reports) is chosen by the
+      // Past cards plan, which owns those numbers. Read from the store's tab
+      // rather than the pressed link: the store's value describes the data
+      // actually in state.reports, while the link describes an intent whose
+      // fetch may still be in flight.
+      var kind = 'general';
+      if (Pinalert.state.category !== '') {
+        kind = 'filter';
+      } else if (Pinalert.state.view === 'disputed') {
+        kind = 'disputed';
+      }
+      setEmptyState(kind);
       setHidden(reportListEl, true);
       clearRows();
       return;
@@ -789,6 +929,7 @@
   // showTab brings everything that names the tab in step with the store.
   function showTab(view) {
     updateTabStrip(view);
+    updateFeedHeading(view);
   }
 
   // switchTab is the one place a tab press lands. It sets the store, marks the
@@ -820,6 +961,34 @@
       }
       evt.preventDefault();
       switchTab(link.getAttribute('data-feed-view'));
+    });
+  }
+
+  // focusCurrentTab puts focus on the link of the selected tab. The two empty
+  // block buttons hide themselves when their press succeeds, which would drop
+  // focus to the page body, so they hand it to the strip first.
+  function focusCurrentTab() {
+    var link = currentTabLink();
+    if (link) {
+      link.focus();
+    }
+  }
+
+  if (filterClearBtn) {
+    // Clear filter: the chip goes back to All and the list is read again. The
+    // browser removes nothing itself; the server answers for the whole set.
+    filterClearBtn.addEventListener('click', function () {
+      Pinalert.setCategory('');
+      Pinalert.fetchReports();
+      focusCurrentTab();
+    });
+  }
+
+  if (seePastBtn) {
+    // See past reports: the one button that moves the reader between tabs.
+    seePastBtn.addEventListener('click', function () {
+      switchTab('past');
+      focusCurrentTab();
     });
   }
 

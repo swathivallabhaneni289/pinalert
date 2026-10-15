@@ -22,9 +22,11 @@ func vsListPane(t *testing.T) string {
 	if start == -1 {
 		t.Fatal("index.html.tmpl has no list pane section")
 	}
-	end := strings.Index(index[start:], "</section>")
+	// The pane holds nested sections (the Past groups), so it ends where the
+	// report modal begins.
+	end := strings.Index(index[start:], `<div class="modal-backdrop"`)
 	if end == -1 {
-		t.Fatal("the list pane section is not closed")
+		t.Fatal("could not find the end of the list pane")
 	}
 	return index[start : start+end]
 }
@@ -258,5 +260,200 @@ func TestViewStripStoreContract(t *testing.T) {
 	p13MustContain(t, "app.js exports", app, exports...)
 	if strings.Contains(app, "setShowDisputed") {
 		t.Errorf("app.js still exports the old boolean setter")
+	}
+}
+
+// vsBlock returns the markup of one element of the list pane, from the tag
+// that carries the given attribute text to the closing tag of the same
+// element (it counts nested tags of the same name).
+func vsBlock(t *testing.T, pane, openAttr string) string {
+	t.Helper()
+	at := strings.Index(pane, openAttr)
+	if at == -1 {
+		t.Fatalf("the list pane has no element with %q", openAttr)
+	}
+	start := strings.LastIndex(pane[:at], "<")
+	nameEnd := strings.IndexAny(pane[start+1:], " >")
+	name := pane[start+1 : start+1+nameEnd]
+	depth := 0
+	for i := start; i < len(pane); i++ {
+		switch {
+		case strings.HasPrefix(pane[i:], "</"+name):
+			depth--
+			if depth == 0 {
+				return pane[start : i+len(name)+3]
+			}
+		case strings.HasPrefix(pane[i:], "<"+name+" ") || strings.HasPrefix(pane[i:], "<"+name+">"):
+			depth++
+		}
+	}
+	t.Fatalf("the element with %q is not closed", openAttr)
+	return ""
+}
+
+// TestViewStripEmptyBlocks pins the list pane markup of the whole phase: the
+// status line, the note, the place line, the filter line, the Past groups and
+// the five empty blocks, each hidden at first, in the order of the UI spec's
+// page structure, with the spec's words.
+func TestViewStripEmptyBlocks(t *testing.T) {
+	pane := vsListPane(t)
+
+	p13Ordered(t, pane, "list pane",
+		`class="view-tabs"`, `id="feed-status"`, `class="feed-heading"`, `id="feed-note"`,
+		`id="place-line"`, `id="filter-line"`, `id="report-list"`, `id="past-groups"`,
+		`id="feed-skeleton"`, `id="feed-empty"`, `id="feed-empty-history"`, `id="disputed-empty"`,
+		`id="past-empty"`, `id="filter-empty"`, `id="feed-error"`)
+
+	for _, id := range []string{
+		"feed-status", "feed-note", "place-line", "filter-line", "past-groups", "feed-empty",
+		"feed-empty-history", "disputed-empty", "past-empty", "filter-empty", "feed-error",
+		"past-resolved", "past-expired", "past-resolved-list", "past-expired-list",
+		"past-resolved-cut", "past-expired-cut", "feed-heading-title", "see-past-reports",
+		"filter-empty-clear",
+	} {
+		if n := strings.Count(pane, `id="`+id+`"`); n != 1 {
+			t.Errorf("the list pane holds id %q %d times, want exactly once", id, n)
+		}
+	}
+
+	status := vsBlock(t, pane, `id="feed-status"`)
+	p13MustContain(t, "#feed-status", status, `class="visually-hidden"`, `role="status"`)
+
+	// Each of these ships hidden: a block nobody asked for is never drawn.
+	for _, id := range []string{
+		"feed-note", "place-line", "filter-line", "past-groups", "past-resolved", "past-expired",
+		"past-resolved-cut", "past-expired-cut", "feed-empty", "feed-empty-history",
+		"disputed-empty", "past-empty", "filter-empty", "feed-error",
+	} {
+		block := vsBlock(t, pane, `id="`+id+`"`)
+		open := block[:strings.Index(block, ">")]
+		if !strings.Contains(open, " hidden") {
+			t.Errorf("#%s must ship the hidden attribute, opening tag: %q", id, open)
+		}
+	}
+
+	words := []struct{ id, heading, body, button string }{
+		{"feed-empty-history", "No active reports nearby", "Tap + to report what you're seeing.", "See past reports"},
+		{"past-empty", "No past reports nearby", "Nothing in this area was resolved or faded out in the last 7 days.", ""},
+		{"filter-empty", "Nothing matches your filters", "Try another category or clear the filter.", "Clear filter"},
+		{"disputed-empty", "No disputed reports nearby", "Reports only show up here if enough nearby people have disputed them.", ""},
+		{"feed-empty", "No reports near you yet", "Nothing has been reported in your area recently. Tap + to report what you're seeing.", ""},
+	}
+	for _, w := range words {
+		block := vsBlock(t, pane, `id="`+w.id+`"`)
+		if !strings.Contains(block, `class="empty-state"`) {
+			t.Errorf("#%s must carry the empty-state class", w.id)
+		}
+		p13MustContain(t, "#"+w.id, block, "<h2>"+w.heading+"</h2>", w.body)
+		if w.button != "" {
+			p13MustContain(t, "#"+w.id, block, `<button type="button" class="btn"`, ">"+w.button+"</button>")
+		} else if strings.Contains(block, "<button") {
+			t.Errorf("#%s holds a button, it has none in the spec", w.id)
+		}
+	}
+
+	groups := vsBlock(t, pane, `id="past-groups"`)
+	p13Ordered(t, groups, "#past-groups",
+		`id="past-resolved"`, `<h3 class="past-group__label">Resolved</h3>`, `id="past-resolved-list"`,
+		`id="past-resolved-cut"`, `id="past-expired"`, `<h3 class="past-group__label">Expired</h3>`,
+		`id="past-expired-list"`, `id="past-expired-cut"`)
+	if n := strings.Count(groups, `class="past-group"`); n != 2 {
+		t.Errorf("#past-groups holds %d groups, want Resolved and Expired", n)
+	}
+
+	title := vsBlock(t, pane, `id="feed-heading-title"`)
+	if !strings.Contains(title, ">Nearby now</h2>") {
+		t.Errorf("the heading must start as Nearby now, got %q", title)
+	}
+}
+
+// TestViewStripPaneScript pins the per tab render of feed.js: the heading and
+// note words of C3 to C7, the count line words of C8 to C10, exactly one of
+// the empty blocks showing, a chip emptied list saying so and never the
+// history line, the two buttons, and focus falling back to the current tab.
+func TestViewStripPaneScript(t *testing.T) {
+	feed := p19Code(t, "static/js/feed.js")
+
+	p13MustContain(t, "feed.js", feed,
+		"active: 'Nearby now', disputed: 'Disputed reports', past: 'Past reports'",
+		"disputed: 'Nearby people disputed these. You can still confirm or dispute them.',",
+		"past: 'Resolved and expired reports from the last 7 days.'")
+
+	heading := jsFunctionBody(t, feed, "updateFeedHeading(view)")
+	p13MustContain(t, "updateFeedHeading", heading,
+		"Pinalert.setText(feedHeadingTitleEl, heading);", "Pinalert.setText(feedNoteEl, note);",
+		"setHidden(feedNoteEl, note === '');", "appShellEl.setAttribute('data-feed-view', view);")
+	p13MustNotContain(t, "updateFeedHeading", heading, "innerHTML", "insertAdjacentHTML")
+
+	count := jsFunctionBody(t, feed, "updateFeedCount(state)")
+	p13MustContain(t, "updateFeedCount", count,
+		"view === 'disputed' ? 'disputed' : 'active'", "count === 1 ? 'report' : 'reports'",
+		"' \\u00b7 '")
+
+	empty := jsFunctionBody(t, feed, "setEmptyState(kind)")
+	for _, pair := range []string{
+		"setHidden(emptyEl, kind !== 'general');", "setHidden(historyEmptyEl, kind !== 'history');",
+		"setHidden(disputedEmptyEl, kind !== 'disputed');", "setHidden(pastEmptyEl, kind !== 'past');",
+		"setHidden(filterEmptyEl, kind !== 'filter');",
+	} {
+		if n := strings.Count(feed, pair); n != 1 {
+			t.Errorf("feed.js holds %q %d times, want once inside setEmptyState", pair, n)
+		}
+		if !strings.Contains(empty, pair) {
+			t.Errorf("setEmptyState lacks %q", pair)
+		}
+	}
+	if n := strings.Count(feed, "setEmptyState('history')"); n != 0 {
+		t.Errorf("this plan never selects the history empty block, the Past cards plan owns it")
+	}
+
+	render := jsFunctionBody(t, feed, "render(state)")
+	p13Ordered(t, render, "render",
+		"if (Pinalert.state.view === 'past') {", "renderPastTab(state);",
+		"if (state.reports.length === 0) {", "if (Pinalert.state.category !== '') {", "kind = 'filter';",
+		"kind = 'disputed';", "setEmptyState(kind);")
+	p13MustContain(t, "render", render, "updateFeedStatus(state);", "updateFeedHeading(Pinalert.state.view);")
+
+	past := jsFunctionBody(t, feed, "renderPastTab(state)")
+	p13Ordered(t, past, "renderPastTab",
+		"setHidden(reportListEl, true);", "clearRows();", "state.reports.length === 0",
+		"setEmptyState(Pinalert.state.category !== '' ? 'filter' : 'past');",
+		"setHidden(pastGroupsEl, false);")
+
+	p13MustContain(t, "feed.js", feed,
+		"filterClearBtn.addEventListener('click', function () {", "Pinalert.setCategory('');",
+		"seePastBtn.addEventListener('click', function () {", "switchTab('past');")
+
+	// Focus falls back to the map first and then to the current tab link.
+	after := jsFunctionBody(t, feed, "focusAfterRemoval(candidates)")
+	p13Ordered(t, after, "focusAfterRemoval",
+		"getElementById('map')", "currentTabLink()", "viewToggleBtn.focus()", "var empties = [")
+}
+
+// TestViewStripStatusAnnouncement pins C11: one sentence in the visually
+// hidden live region per tab, place or chip change, built from the store's own
+// numbers and words, written through setText, never repeated for a poll.
+func TestViewStripStatusAnnouncement(t *testing.T) {
+	feed := p19Code(t, "static/js/feed.js")
+	body := jsFunctionBody(t, feed, "updateFeedStatus(state)")
+
+	p13Ordered(t, body, "updateFeedStatus",
+		"state.status !== 'ok'",
+		"var key = store.view + '|' + placeName + '|' + store.category;",
+		"if (key === lastAnnouncedKey) {", "lastAnnouncedKey = key;",
+		"if (!statusStarted) {",
+		"var text = count + ' ' + store.view + (count === 1 ? ' report.' : ' reports.');",
+		"text += ' Near ' + placeName + '.';",
+		"text += ' Filtered by '",
+		"Pinalert.setText(feedStatusEl, text);")
+	p13MustContain(t, "updateFeedStatus", body, "Pinalert.CHIP_LABELS[store.category]", "state.reports.length")
+	p13MustNotContain(t, "updateFeedStatus", body, "innerHTML", "insertAdjacentHTML")
+	if n := strings.Count(feed, "Pinalert.setText(feedStatusEl,"); n != 1 {
+		t.Errorf("the status line is written in %d places, want exactly 1", n)
+	}
+	// The count of reports is not part of the key, so a poll that only changes
+	// the count never speaks again.
+	if strings.Contains(body, "state.reports.length + '|'") {
+		t.Errorf("the announcement key must not hold the count")
 	}
 }

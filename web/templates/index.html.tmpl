@@ -43,11 +43,27 @@
         <a class="view-tab" href="/?view=disputed" data-feed-view="disputed">Disputed</a>
         <a class="view-tab" href="/?view=past" data-feed-view="past">Past</a>
       </nav>
+      <p class="visually-hidden" id="feed-status" role="status"></p>
       <div class="feed-heading">
-        <h2 class="feed-heading__title">Nearby now</h2>
+        <h2 class="feed-heading__title" id="feed-heading-title">Nearby now</h2>
         <p class="feed-heading__count" id="feed-count"></p>
       </div>
+      <p class="feed-note" id="feed-note" hidden></p>
+      <p class="place-line" id="place-line" hidden></p>
+      <p class="filter-line" id="filter-line" hidden></p>
       <ol id="report-list"></ol>
+      <div id="past-groups" hidden>
+        <section class="past-group" id="past-resolved" hidden>
+          <h3 class="past-group__label">Resolved</h3>
+          <ol class="past-group__list" id="past-resolved-list"></ol>
+          <p class="past-group__cut" id="past-resolved-cut" hidden></p>
+        </section>
+        <section class="past-group" id="past-expired" hidden>
+          <h3 class="past-group__label">Expired</h3>
+          <ol class="past-group__list" id="past-expired-list"></ol>
+          <p class="past-group__cut" id="past-expired-cut" hidden></p>
+        </section>
+      </div>
       <div id="feed-skeleton">
         <div class="skeleton-row"></div>
         <div class="skeleton-row"></div>
@@ -58,9 +74,23 @@
         <h2>No reports near you yet</h2>
         <p>Nothing has been reported in your area recently. Tap + to report what you're seeing.</p>
       </div>
+      <div class="empty-state" id="feed-empty-history" hidden>
+        <h2>No active reports nearby</h2>
+        <p id="feed-empty-history-body">Tap + to report what you're seeing.</p>
+        <button type="button" class="btn" id="see-past-reports">See past reports</button>
+      </div>
       <div class="empty-state" id="disputed-empty" hidden>
         <h2>No disputed reports nearby</h2>
         <p>Reports only show up here if enough nearby people have disputed them.</p>
+      </div>
+      <div class="empty-state" id="past-empty" hidden>
+        <h2>No past reports nearby</h2>
+        <p>Nothing in this area was resolved or faded out in the last 7 days.</p>
+      </div>
+      <div class="empty-state" id="filter-empty" hidden>
+        <h2>Nothing matches your filters</h2>
+        <p>Try another category or clear the filter.</p>
+        <button type="button" class="btn" id="filter-empty-clear">Clear filter</button>
       </div>
       <div class="error-state" id="feed-error" hidden>
         <h2>Couldn't load reports</h2>
