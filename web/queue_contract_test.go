@@ -554,3 +554,169 @@ func TestQueuePagesWiring(t *testing.T) {
 	around := p422Window(t, feed, "if (window.PinalertQueue", "});")
 	p422Need(t, "the feed.js queue mount window", around, "data-account-id")
 }
+
+func TestQueueTimeoutFallback(t *testing.T) {
+	app := p422Code(p422Static(t, "static/js/app.js"))
+	timeout := jsFunctionBody(t, app, "requestTimeout(ms)")
+	p422Need(t, "requestTimeout(ms)", timeout,
+		"typeof AbortSignal", "AbortSignal.timeout(ms)", "new AbortController()", "setTimeout(", "clearTimeout(")
+	submit := jsFunctionBody(t, app, "submitReport(payload)")
+	p422Need(t, "submitReport(payload)", submit, "err.queueable = true")
+	p422Lack(t, "submitReport(payload)", submit, ".name ===", ".name==")
+
+	form := p422Code(p422Static(t, "static/js/report-form.js"))
+	id := jsFunctionBody(t, form, "newRequestId()")
+	p422Need(t, "newRequestId()", id, "crypto.randomUUID", "typeof", "getRandomValues", "Math.random")
+	if n := p422Count(form, "newRequestId("); n != 2 {
+		t.Errorf("newRequestId( occurs %d times, want 2 (the definition and one call)", n)
+	}
+	if !strings.Contains(jsFunctionBody(t, form, "ensureSubmission()"), "newRequestId()") {
+		t.Errorf("the one call of newRequestId must sit inside ensureSubmission")
+	}
+}
+
+func TestQueueSendAfterWaitOnlyAfter429(t *testing.T) {
+	partial := p422Template(t, "report_form.html.tmpl")
+	const button = `<button type="button" class="btn" id="send-after-wait" hidden>Send after the wait</button>`
+	if n := p422Count(partial, button); n != 1 {
+		t.Fatalf("the partial holds %d Send after the wait buttons, want exactly 1", n)
+	}
+	p422Ordered(t, "report_form.html.tmpl", partial, `id="form-error"`, button, `id="submit-report"`)
+
+	form := p422Code(p422Static(t, "static/js/report-form.js"))
+	if n := p422Count(form, "sendAfterWaitBtn.hidden = false"); n != 1 {
+		t.Errorf("Send after the wait is shown in %d places, want exactly 1", n)
+	}
+	limit := jsFunctionBody(t, form, "showLimitMessage(err)")
+	if !strings.Contains(limit, "sendAfterWaitBtn.hidden = false") {
+		t.Errorf("the one place that shows Send after the wait must be showLimitMessage")
+	}
+	if n := p422Count(form, "showLimitMessage("); n != 2 {
+		t.Errorf("showLimitMessage( occurs %d times, want 2 (the definition and one call)", n)
+	}
+	submit := jsFunctionBody(t, form, "handleSubmit()")
+	branch := p422Window(t, submit, "err.status === 429", "} else")
+	if !strings.Contains(branch, "showLimitMessage(err)") {
+		t.Errorf("the 429 branch must call showLimitMessage")
+	}
+	for _, name := range []string{"resetForm()", "handleSubmit()"} {
+		if !strings.Contains(jsFunctionBody(t, form, name), "sendAfterWaitBtn.hidden = true") {
+			t.Errorf("%s must hide Send after the wait", name)
+		}
+	}
+	p422Need(t, "saveAfterWait()", jsFunctionBody(t, form, "saveAfterWait()"),
+		"status: 'blocked'",
+		"next_try_at:",
+		"lastLimit.retryAfterSeconds",
+		"serious: lastLimit.serious",
+		"emergency_number: lastLimit.emergencyNumber",
+		"PinalertQueue.save(",
+		"Pinalert.showToast(WAIT_SAVE_TOAST)",
+	)
+	p422Need(t, "showLimitMessage(err)", limit, "Pinalert.setText(formError")
+	seriousAt := strings.Index(limit, "err.serious === true")
+	callAt := strings.Index(limit, "appendEmergencyCall(formError, err.emergencyNumber)")
+	if seriousAt == -1 || callAt == -1 || callAt < seriousAt {
+		t.Errorf("the tap to call sentence must sit under an err.serious === true check (%d, %d)", seriousAt, callAt)
+	}
+	p422Need(t, "appendEmergencyCall(el, number)", jsFunctionBody(t, form, "appendEmergencyCall(el, number)"),
+		"document.createElement('a')",
+		"'form-error__call'",
+		"setAttribute('href', 'tel:' + number)",
+		"setAttribute('aria-label', CALL_LABEL_PREFIX + number)",
+	)
+}
+
+func TestQueueHeldSubmitToast(t *testing.T) {
+	form := p422Code(p422Static(t, "static/js/report-form.js"))
+	queue := p422Code(p422Static(t, "static/js/queue.js"))
+	const held = `"Report received. It isn't shown yet. A text check has to finish first."`
+	p422Need(t, "report-form.js", form, "LONG_TOAST_MS = 6000", "var HELD_TOAST_MESSAGE = "+held+";")
+	success := p422Window(t, jsFunctionBody(t, form, "handleSubmit()"), "Pinalert.submitReport(payload).then(", ".catch(")
+	p422Need(t, "the success path of handleSubmit", success,
+		"report && report.held === true",
+		"Pinalert.showToast(HELD_TOAST_MESSAGE, null, LONG_TOAST_MS)",
+		"Pinalert.showToast('Report posted.')",
+	)
+	p422Need(t, "saveToQueue(payload, status)", jsFunctionBody(t, form, "saveToQueue(payload, status)"),
+		"Pinalert.showToast(persisted ? SAVE_TOAST : SAVE_TOAST_MEMORY, null, LONG_TOAST_MS)")
+	p422Need(t, "sendRow(record)", jsFunctionBody(t, queue, "sendRow(record)"),
+		"held === true",
+		"Pinalert.showToast(HELD_TOAST_MESSAGE, null, LONG_TOAST_MS)",
+		"Pinalert.showToast(SENT_TOAST)",
+	)
+	p422Need(t, "queue.js", queue, "LONG_TOAST_MS = 6000")
+	p422Lack(t, "report-form.js", form, "getElementById('toast')")
+	p422Lack(t, "queue.js", queue, "getElementById('toast')")
+}
+
+func TestQueueFormCopyAndPrefill(t *testing.T) {
+	raw := p422Static(t, "static/js/report-form.js")
+	form := p422Code(raw)
+	for _, c := range []struct{ name, literal string }{
+		{"SAVE_TOAST", `"No signal. Your report is saved on this device and will send when you're back online."`},
+		{"SAVE_TOAST_MEMORY", `'No signal. Your report is kept on this page only. Keep the page open until it sends.'`},
+		{"WAIT_SAVE_TOAST", `'Report saved on this device. It will send when the wait is over.'`},
+		{"EMERGENCY_CALL_PREFIX", `'In an emergency, call '`},
+		{"EMERGENCY_CALL_SUFFIX", `' now.'`},
+		{"CALL_LABEL_PREFIX", `'Call '`},
+	} {
+		if n := p422Count(form, "var "+c.name+" = "+c.literal+";"); n != 1 {
+			t.Errorf("%s is declared %d times with the exact copy, want 1", c.name, n)
+		}
+		p422PlainCopy(t, c.literal[1:len(c.literal)-1])
+	}
+	for _, dash := range []string{string(rune(0x2014)), string(rune(0x2013))} {
+		if strings.Contains(raw, dash) {
+			t.Errorf("report-form.js contains the dash character %q", dash)
+		}
+	}
+
+	open := jsFunctionBody(t, form, "openForm(options)")
+	start := strings.Index(open, "picker.start(")
+	prefill := strings.Index(open, "applyPrefill(")
+	if start == -1 || prefill == -1 || prefill < start {
+		t.Errorf("applyPrefill must run after picker.start (%d, %d)", start, prefill)
+	}
+	p422Need(t, "openForm(options)", open, "options.note", "options.requestId", "announce(")
+	apply := jsFunctionBody(t, form, "applyPrefill(prefill)")
+	p422Need(t, "applyPrefill(prefill)", apply,
+		"selectCategory(", "SEVERITY_BY_VALUE", "updateSeverityReadout()", "showShelterFields()",
+		"picker.choose(", "displayName: ''")
+	if !strings.HasSuffix(strings.TrimSpace(apply), "formTouched = false;\n  }") {
+		t.Errorf("formTouched = false must be the last statement of applyPrefill")
+	}
+	p422Need(t, "resetForm()", jsFunctionBody(t, form, "resetForm()"),
+		"noteEl.hidden = true", "currentRequestId = null", "resendRequestId = null", "lastLimit = null")
+	submit := jsFunctionBody(t, form, "handleSubmit()")
+	success := p422Window(t, submit, "Pinalert.submitReport(payload).then(", ".catch(")
+	p422Need(t, "the success path of handleSubmit", success, "PinalertQueue.discard(resendRequestId)")
+
+	at := strings.Index(submit, ".written_at =")
+	if at == -1 || !strings.Contains(submit[at:at+60], "resendWrittenAt") {
+		t.Errorf("handleSubmit may set written_at only from resendWrittenAt")
+	}
+	if n := p422Count(submit, ".written_at ="); n != 1 {
+		t.Errorf("handleSubmit sets written_at %d times, want 1", n)
+	}
+	queued := jsFunctionBody(t, form, "saveToQueue(payload, status)")
+	p422Need(t, "saveToQueue(payload, status)", queued, ".written_at =", "firstSubmitAt")
+	if strings.Contains(form, "navigator."+"onLine") {
+		t.Errorf("report-form.js must never read the browser's online flag")
+	}
+}
+
+func TestQueueLateFixKeepsChosenPlace(t *testing.T) {
+	modal := p422Code(p422Static(t, "static/js/modal.js"))
+	success := p422Window(t, modal, "getCurrentPosition(", "placeMarker(lat, lon);")
+	if !strings.Contains(success, "hasMarker()") {
+		t.Errorf("the position success callback must return early when a place is chosen")
+	}
+	failure := p422Window(t, modal, "placeMarker(lat, lon);", "showLocationDenied(fallbackLat, fallbackLon);")
+	if !strings.Contains(failure, "hasMarker()") {
+		t.Errorf("the position error callback must return early when a place is chosen")
+	}
+	if n := p422Count(modal, "L.marker("); n != 1 {
+		t.Errorf("modal.js constructs %d markers, want exactly 1", n)
+	}
+}
