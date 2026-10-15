@@ -215,6 +215,16 @@
     return text;
   }
 
+  function updateWrittenLine(el, report) {
+    // The second meta fact of a late report, "Written 4 hours ago". The server
+    // sends written_at only past 30 minutes, so most rows leave this hidden.
+    // It is display only: the first meta line, the fade and the order still
+    // count from upload (D-19).
+    var line = Pinalert.writtenLine(report);
+    Pinalert.setText(el, line);
+    el.hidden = !line;
+  }
+
   function activateRow(id) {
     Pinalert.select(id, 'list');
     applySelectionHighlight(id);
@@ -248,6 +258,12 @@
 
     var meta = document.createElement('p');
     meta.className = 'report-row__meta';
+
+    // The Written line of a late report sits right after the meta line, with
+    // the same look, and stays hidden until the report carries written_at.
+    var written = document.createElement('p');
+    written.className = 'report-row__meta';
+    written.hidden = true;
 
     // The distance segment, drawn at every width. It is filled by updateRow
     // from the store's one distance sentence and stays hidden when the feed
@@ -286,6 +302,7 @@
     var trust = PinalertTrust.createTrustLine();
     body.appendChild(PinalertTrust.createStateLine('report-row__stateline', tag, trust));
     body.appendChild(meta);
+    body.appendChild(written);
     body.appendChild(away);
     body.appendChild(far);
     body.appendChild(title);
@@ -305,7 +322,7 @@
       }
     });
 
-    return { el: li, glyph: glyph, severity: severityLabel, title: title, meta: meta, away: away, far: far, tag: tag, trust: trust };
+    return { el: li, glyph: glyph, severity: severityLabel, title: title, meta: meta, written: written, away: away, far: far, tag: tag, trust: trust };
   }
 
   // updateRow applies severity/age classes and text content only — it never
@@ -336,6 +353,7 @@
 
     Pinalert.setText(row.title, report.description);
     Pinalert.setText(row.meta, buildMetaText(report));
+    updateWrittenLine(row.written, report);
 
     // The distance is the store's one sentence: the reader's own centre, a
     // searched place, or nothing for the fallback centre (A94, D-14). The
@@ -1191,6 +1209,7 @@
       var row = rowsById[idKey];
       replacePrefixedClass(row.el, 'age-', 'age-' + PinalertTrust.fadeStage(report));
       Pinalert.setText(row.meta, buildMetaText(report));
+      updateWrittenLine(row.written, report);
     }
 
     var cardIds = Object.keys(pastCardsById);

@@ -133,6 +133,11 @@ func (f *fakeFeedQuerier) InsertReportIdempotent(ctx context.Context, arg sqlcge
 	return sqlcgen.InsertReportIdempotentRow{}, nil
 }
 
+// ReportByRequest exists only to satisfy service.Querier; no feed test drives it.
+func (f *fakeFeedQuerier) ReportByRequest(ctx context.Context, arg sqlcgen.ReportByRequestParams) (sqlcgen.ReportByRequestRow, error) {
+	return sqlcgen.ReportByRequestRow{}, nil
+}
+
 // InsertModerationCheck exists only to satisfy service.Querier; no feed test drives it.
 func (f *fakeFeedQuerier) InsertModerationCheck(ctx context.Context, arg sqlcgen.InsertModerationCheckParams) error {
 	return nil

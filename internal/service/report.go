@@ -13,10 +13,12 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/mmcloughlin/geohash"
 
@@ -142,6 +144,10 @@ func (e ValidationError) Error() string {
 // SubmitInput is every client-settable field of a report submission.
 // expires_at, created_at, geohash, and id are deliberately absent — they
 // are computed server-side and can never be set from a request body.
+// RequestID is the optional retry key ("" is absent) that makes a resend after
+// a lost answer return the stored report instead of storing a second one (R-05).
+// WrittenAt is the display only time the device wrote the report, clamped and
+// never used for created_at, expires_at, the order or the age stage (R-05).
 type SubmitInput struct {
 	Category              Category
 	Severity              Severity
@@ -150,7 +156,51 @@ type SubmitInput struct {
 	Longitude             float64
 	ShelterCapacityStatus *CapacityStatus
 	ShelterHeadcount      *int
+	RequestID             string
+	WrittenAt             *time.Time
 }
+
+// WrittenAtMaxAge is how far before created_at a stored written time may lie.
+// An older value is clamped to exactly this age, never dropped, so a queued
+// report never looks fresher than it is (R-05).
+const WrittenAtMaxAge = 14 * 24 * time.Hour
+
+// ClampWrittenAt returns a UTC copy of w limited to the window from
+// WrittenAtMaxAge before now up to now: a later value becomes now and an older
+// one becomes now minus WrittenAtMaxAge. Nil stays nil. The result is display
+// only. The handler applies it to the parsed request value and SubmitChecked
+// applies it again against the same now that stamps created_at, which is the
+// authority (R-05, T-04-17).
+func ClampWrittenAt(w *time.Time, now time.Time) *time.Time {
+	if w == nil {
+		return nil
+	}
+	out := w.UTC()
+	switch {
+	case out.After(now):
+		out = now.UTC()
+	case now.Sub(out) > WrittenAtMaxAge:
+		out = now.Add(-WrittenAtMaxAge).UTC()
+	}
+	return &out
+}
+
+// writtenAtParam converts the clamped written time to the nullable column
+// value, the inverse of writtenAtPtr: nil gives the zero value, so the column
+// stays NULL.
+func writtenAtParam(t *time.Time) pgtype.Timestamptz {
+	if t == nil {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: *t, Valid: true}
+}
+
+// RequestIDInvalidMessage is the 400 message for a request id that is not 16 to
+// 64 letters, digits or hyphens. It is the one server authored copy of R-05.
+const RequestIDInvalidMessage = "This report couldn't be sent as it was. Reload the page and post it again."
+
+// requestIDPattern is the closed shape of a request id.
+var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]{16,64}$`)
 
 // Report is a fully materialized, server-computed report, returned by
 // Nearby. It carries no session identifier (see the threat
@@ -243,6 +293,11 @@ func ValidateSubmitInput(in SubmitInput) error {
 		}
 	}
 
+	// The retry key is checked last and never trimmed or rewritten (R-05).
+	if in.RequestID != "" && !requestIDPattern.MatchString(in.RequestID) {
+		return ValidationError{"request_id", RequestIDInvalidMessage}
+	}
+
 	return nil
 }
 
@@ -301,6 +356,9 @@ func clamp(v, min, max float64) float64 {
 // records a check row through InsertModerationCheck.
 type Querier interface {
 	InsertReportIdempotent(ctx context.Context, arg sqlcgen.InsertReportIdempotentParams) (sqlcgen.InsertReportIdempotentRow, error)
+	// ReportByRequest is the replay lookup, always scoped to the caller's
+	// account (T-04-05).
+	ReportByRequest(ctx context.Context, arg sqlcgen.ReportByRequestParams) (sqlcgen.ReportByRequestRow, error)
 	InsertModerationCheck(ctx context.Context, arg sqlcgen.InsertModerationCheckParams) error
 	NearbyReports(ctx context.Context, arg sqlcgen.NearbyReportsParams) ([]sqlcgen.NearbyReportsRow, error)
 	CurrentVotesForReports(ctx context.Context, reportIds []int64) ([]sqlcgen.CurrentVotesForReportsRow, error)
@@ -441,6 +499,36 @@ func createdReportFromInsertRow(row sqlcgen.InsertReportIdempotentRow) CreatedRe
 	}
 }
 
+// replayResult builds the answer for a request id this account already used.
+// The row has the same twelve columns as the insert row, so the one mapper
+// serves both, and Held is the same predicate a first send uses, so a first
+// answer and a repeat can never disagree.
+func replayResult(row sqlcgen.ReportByRequestRow) SubmitResult {
+	created := createdReportFromInsertRow(sqlcgen.InsertReportIdempotentRow(row))
+	held := ReportMeta{Severity: created.Severity, Category: created.Category, Moderation: created.Moderation}.Withheld()
+	return SubmitResult{Report: created, Held: held, Replayed: true}
+}
+
+// FindReplay is step 3 of the pinned POST /api/reports order, called by the
+// handler before any allowance is reserved or the text check runs. It reports
+// whether accountID already stored a report under requestID, and returns that
+// report. The account comes from the verified account in the request context,
+// never the body, the session or chi's request id (T-04-05, Pitfall 9). An
+// empty request id is never a replay and costs no query.
+func (s *ReportService) FindReplay(ctx context.Context, accountID int64, requestID string) (SubmitResult, bool, error) {
+	if requestID == "" {
+		return SubmitResult{}, false, nil
+	}
+	row, err := s.q.ReportByRequest(ctx, sqlcgen.ReportByRequestParams{AccountID: accountID, RequestID: requestID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return SubmitResult{}, false, nil
+	}
+	if err != nil {
+		return SubmitResult{}, false, err
+	}
+	return replayResult(row), true, nil
+}
+
 // textCheckRow builds the moderation_checks row for a check outcome. An
 // unfinished check gives a pending row whose next attempt honours the
 // provider's wait; a borderline text gives a done row flagged for review that
@@ -490,9 +578,16 @@ func textCheckRow(reportID int64, check TextCheck, now time.Time) (sqlcgen.Inser
 //     remove it (D-01, R-03). The state is decided before the insert and
 //     written by it, so a held report is never visible for a moment.
 //  5. now is captured once from the wall clock, never the injectable report
-//     clock, whose test times would drift from the database clock.
-//  6. One InsertReportIdempotent. accountID is the gate's verified account; the
-//     request id, request account and written time stay empty until 04-17.
+//     clock, whose test times would drift from the database clock. created_at
+//     and expires_at are stamped from it, and the display only written time is
+//     clamped against the same now, so it is never later than created_at nor
+//     more than WrittenAtMaxAge before it. No stamp ever reads the written time
+//     (R-05).
+//  6. One InsertReportIdempotent. accountID is the gate's verified account and,
+//     with a request id, is stored beside it. When the insert returns no row for
+//     a request id, a racing send stored it first: the account scoped lookup
+//     returns that report with Replayed true, before any check row or other
+//     write (R-05).
 //  7. A pending or borderline check row, tried at most twice. If both writes
 //     fail the report stays stored and the error is logged with the numeric id
 //     only: a 500 would invite a second post of the same report, and a held
@@ -516,6 +611,7 @@ func (s *ReportService) SubmitChecked(ctx context.Context, sessionID string, acc
 
 	now := time.Now().UTC()
 	expiresAt := now.Add(ExpiryDuration(in.Severity))
+	writtenAt := ClampWrittenAt(in.WrittenAt, now)
 	gh := geohash.EncodeWithPrecision(in.Latitude, in.Longitude, geohashPrecision)
 
 	var capacityStatus *string
@@ -527,6 +623,17 @@ func (s *ReportService) SubmitChecked(ctx context.Context, sessionID string, acc
 	if in.ShelterHeadcount != nil {
 		v := int32(*in.ShelterHeadcount)
 		headcount = &v
+	}
+
+	// The request id and its account are set together or not at all (the
+	// reports_request_id_needs_account check).
+	var requestID *string
+	var requestAccountID *int64
+	if in.RequestID != "" {
+		id := in.RequestID
+		acct := accountID
+		requestID = &id
+		requestAccountID = &acct
 	}
 
 	row, err := s.q.InsertReportIdempotent(ctx, sqlcgen.InsertReportIdempotentParams{
@@ -542,7 +649,21 @@ func (s *ReportService) SubmitChecked(ctx context.Context, sessionID string, acc
 		CreatedAt:             now,
 		ExpiresAt:             expiresAt,
 		ModerationState:       string(state),
+		RequestID:             requestID,
+		RequestAccountID:      requestAccountID,
+
+		// Display only, never read by any stamp (R-05).
+		ClientWrittenAt: writtenAtParam(writtenAt),
 	})
+	if errors.Is(err, pgx.ErrNoRows) && requestID != nil {
+		// A racing send stored this id first. Return the stored report before
+		// any check row or other write (R-05).
+		stored, lookupErr := s.q.ReportByRequest(ctx, sqlcgen.ReportByRequestParams{AccountID: accountID, RequestID: *requestID})
+		if lookupErr != nil {
+			return SubmitResult{}, lookupErr
+		}
+		return replayResult(stored), nil
+	}
 	if err != nil {
 		return SubmitResult{}, err
 	}
