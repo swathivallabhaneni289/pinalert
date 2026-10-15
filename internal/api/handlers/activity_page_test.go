@@ -414,6 +414,20 @@ func TestProfileReopenFollowsUndoLimit(t *testing.T) {
 			t.Errorf("voted card CanReopen %v UndosUsed %v, want both false", card.CanReopen, card.UndosUsed)
 		}
 	})
+
+	t.Run("a voted card is kept from both even when its undos left is 0", func(t *testing.T) {
+		// IN-03: the protection must not rest on the default budget. With none
+		// left on a closed, unexpired voted card, newProfileReport alone would set
+		// UndosUsed, and the page must still clear it.
+		for _, left := range []int{0, 1, service.UndoLimit} {
+			vote := wm5Vote(2, service.VoteConfirm, service.VisibilityRetracted, false)
+			vote.UndosLeft = left
+			card := wm5Card(t, wm5Cards(t, service.ActivityPage{Votes: []service.VotedReport{vote}}, ""), 2)
+			if card.CanReopen || card.UndosUsed {
+				t.Errorf("undos left %d: voted card CanReopen %v UndosUsed %v, want both false", left, card.CanReopen, card.UndosUsed)
+			}
+		}
+	})
 }
 
 // TestProfileVotedRescueCardIsApproximate is D-27 and D-23 on the card: an

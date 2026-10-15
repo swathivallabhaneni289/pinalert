@@ -154,6 +154,9 @@ func buildActivityPage(page service.ActivityPage, rawTab string, now time.Time) 
 			return activityPageView{}, err
 		}
 		pr.CanReopen = false
+		// The "used both undos" line is about the poster's own post. Clear it here
+		// so a voted card never prints it, whatever UndosLeft holds (IN-03).
+		pr.UndosUsed = false
 		if vr.Vote == service.VoteDispute {
 			pr.Kind = activityKindDispute
 			pr.Tag = "Your dispute"
