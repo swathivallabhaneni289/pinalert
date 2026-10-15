@@ -10,6 +10,8 @@
 
 package service
 
+import "unicode"
+
 // Verdict is the outcome of screening one piece of text from provider scores.
 type Verdict string
 
@@ -136,4 +138,28 @@ func Decide(scores map[string]float64, serious bool) ScreenDecision {
 		}
 	}
 	return ScreenDecision{Verdict: VerdictPass}
+}
+
+// GibberishRunLength is the length at which one letter repeated in a row
+// counts as keyboard mashing (04-RESEARCH assumption A9). It is counted in
+// runes, not bytes (R-06).
+const GibberishRunLength = 10
+
+const (
+	// gibberishMinWords is the fewest words a text needs to not be gibberish.
+	gibberishMinWords = 2
+	// gibberishMinWordLetters is the fewest letters that make a word.
+	gibberishMinWordLetters = 2
+)
+
+// isWordRune reports whether r can be part of a word: a letter or a mark.
+// Vowel signs, viramas and nuktas of Indic scripts are marks, so they stay
+// inside their word.
+func isWordRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsMark(r)
+}
+
+// IsGibberish is the only spam rule (D-05).
+func IsGibberish(text string) bool {
+	return false
 }

@@ -3,6 +3,7 @@ package service_test
 import (
 	"maps"
 	"math"
+	"strings"
 	"testing"
 
 	"pinalert/internal/service"
@@ -247,5 +248,70 @@ func TestScreeningEnumsAreClosed(t *testing.T) {
 		if bad.Valid() {
 			t.Errorf("reject reason %q must not be valid", bad)
 		}
+	}
+}
+
+func TestGibberish(t *testing.T) {
+	n := service.GibberishRunLength
+	cases := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{"one letter repeated the run length is gibberish", strings.Repeat("a", n), true},
+		{"a letter run inside real words is gibberish", "Road " + strings.Repeat("a", n) + " flooded near bridge", true},
+		{"a longer run of capitals is gibberish", strings.Repeat("Z", n+5), true},
+		{"a run of capital letters at the run length is gibberish", strings.Repeat("A", n), true},
+		{"one word only is gibberish", "qwertyuiop!!", true},
+		{"single letters with no two letter word are gibberish", "a b c d e f g h", true},
+		{"digits only have no words", "1234567890 0987654321", true},
+		{"exclamation marks only have no words", strings.Repeat("!", 12), true},
+		{"the empty text has no words", "", true},
+		{"spaces only have no words", "   ", true},
+
+		{"a plain sentence is fine", "Road flooded near the bus stand", false},
+		{"exactly two words of two letters is fine", "Help me", false},
+		{"one short of a run is fine", strings.Repeat("a", n-1) + " flood road", false},
+		{"punctuation never forms a run", "HELP" + strings.Repeat("!", n+2) + " water entering house", false},
+		{"dots never form a run", "Need boats" + strings.Repeat(".", n+2) + " 3 families on roof", false},
+		{"long runs of spaces never form a run", "Road flooded" + strings.Repeat(" ", n+2) + "near bridge", false},
+		{"repeated emoji never form a run", "Please help " + strings.Repeat("\U0001F64F", n), false},
+		{"a phone number is fine", "Water rising, call 9999999999 now", false},
+		{"capitals are fine", "ROAD BLOCKED AT NH44 NEAR TOLL PLAZA", false},
+		{"links are fine", "Shelter open, see https://example.org/shelter for the list", false},
+		{"Hinglish is fine", "Paani bhar gaya hai, help chahiye", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := service.IsGibberish(tc.text); got != tc.want {
+				t.Errorf("IsGibberish(%q) = %v, want %v", tc.text, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGibberishCountsRunes(t *testing.T) {
+	n := service.GibberishRunLength
+	cases := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{"nine Telugu letters are not a run though the bytes exceed the run length",
+			strings.Repeat("అ", n-1) + " వరద వచ్చింది", false},
+		{"ten Telugu letters are a run",
+			strings.Repeat("అ", n) + " వరద వచ్చింది", true},
+		{"single Telugu letters are not two letter words",
+			"క గ చ ట ప", true},
+		{"Hindi vowel signs and nukta stay inside the word", "बाढ़ आई", false},
+		{"Tamil vowel sign and virama stay inside the word", "வெள்ளம் வந்தது", false},
+		{"Telugu vowel sign, anusvara and virama stay inside the word", "వరద వచ్చింది", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := service.IsGibberish(tc.text); got != tc.want {
+				t.Errorf("IsGibberish(%q) = %v, want %v", tc.text, got, tc.want)
+			}
+		})
 	}
 }
