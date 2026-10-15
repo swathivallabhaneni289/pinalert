@@ -10,6 +10,9 @@
 // same visibility.js builders — never a second implementation, never a
 // second label map, never a fetch of its own.
 //
+// The page also mounts the saved reports strip through queue.js with one call
+// and computes nothing about it.
+//
 // The page also renders the shared trust block on each row, from the trust
 // object the server wrote into the row, through the same trust.js builder the
 // feed and the map popup use. This module still computes and fetches nothing.
@@ -19,6 +22,21 @@
 // Pinalert.setText), never a markup-parsing sink.
 (function () {
   'use strict';
+
+  // The saved reports strip mounts first, before the list guard below, so it
+  // shows for an author who has no report on the server yet. One call, and
+  // queue.js does all the work.
+  var queueStrip = document.getElementById('queue-strip');
+  var queuePage = document.querySelector('.profile-page');
+  if (window.PinalertQueue && queueStrip && queuePage) {
+    PinalertQueue.mount({
+      strip: queueStrip,
+      accountId: queuePage.dataset.accountId,
+      headingLevel: 3,
+      resendHref: resendHref,
+      focusFallback: queueFocusFallback
+    });
+  }
 
   var list = document.querySelector('.profile-report-list');
   if (!list) {
@@ -202,6 +220,31 @@
       }
       PinalertVotes.showVoteError(block, (err && err.fieldMessage) || PinalertVotes.GENERIC_FAILURE_MESSAGE);
     });
+  }
+
+  // resendHref gives the saved reports strip the address of the page that has a
+  // report form, with the saved report's request id. The page is the Low data
+  // view when the server rendered the back link to it, else the main page. The
+  // back link is only compared and never copied, and the target is one of two
+  // constants.
+  function resendHref(record) {
+    var back = document.querySelector('.profile-back-link');
+    var page = back && back.getAttribute('href') === '/low' ? '/low' : '/';
+    return page + '?resend=' + encodeURIComponent(record.request_id);
+  }
+
+  // queueFocusFallback is where focus goes when the last saved report leaves
+  // the strip with focus inside it: the first control in the report list that
+  // is not hidden, else the back link, else nothing. This page has no Report
+  // button, so it names its own place.
+  function queueFocusFallback() {
+    var controls = document.querySelectorAll('.profile-report-list button, .profile-report-list a[href]');
+    for (var c = 0; c < controls.length; c++) {
+      if (!controls[c].closest('[hidden]')) {
+        return controls[c];
+      }
+    }
+    return document.querySelector('.profile-back-link');
   }
 
   // readRowTrust parses the row's trust attribute, which is the server's

@@ -1,0 +1,317 @@
+// queue_logic_test.mjs - runs the real web/static/js/queue.js in a Node sandbox
+// and checks four things the Go source tests cannot: saved reports send oldest
+// first, a saved report is never discarded for age or failure, another
+// account's report is never sent, drawn or counted, and Edit and resend is
+// drawn as a link only for a single slash path.
+//
+// Run it with: node --test web/queue_logic_test.mjs
+// It is not part of CI (CI runs Go only) and is not embedded in the server.
+// The fakes below cover only what queue.js calls: a small in memory IndexedDB,
+// a minimal element model, timers that never fire on their own, and a fake
+// Pinalert whose submitReport answers from a script per case.
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import url from 'node:url';
+import vm from 'node:vm';
+
+const here = path.dirname(url.fileURLToPath(import.meta.url));
+const source = fs.readFileSync(path.join(here, 'static', 'js', 'queue.js'), 'utf8');
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// ----- fake element model -----
+
+class FakeEl {
+  constructor(tag) {
+    this.tag = tag;
+    this.attrs = {};
+    this.children = [];
+    this.parentNode = null;
+    this.own = '';
+    this.hidden = false;
+    this.className = '';
+    this.id = '';
+    this.type = '';
+    this.handlers = {};
+    this.focused = false;
+  }
+  get textContent() {
+    return this.own + this.children.map((c) => c.textContent).join('');
+  }
+  set textContent(value) {
+    this.children.forEach((c) => { c.parentNode = null; });
+    this.children = [];
+    this.own = String(value);
+  }
+  setAttribute(name, value) { this.attrs[name] = String(value); }
+  getAttribute(name) { return Object.hasOwn(this.attrs, name) ? this.attrs[name] : null; }
+  removeAttribute(name) { delete this.attrs[name]; }
+  appendChild(node) { return this.insertBefore(node, null); }
+  insertBefore(node, ref) {
+    if (node.parentNode) { node.parentNode.removeChild(node); }
+    const at = ref ? this.children.indexOf(ref) : -1;
+    if (at === -1) { this.children.push(node); } else { this.children.splice(at, 0, node); }
+    node.parentNode = this;
+    return node;
+  }
+  removeChild(node) {
+    const at = this.children.indexOf(node);
+    if (at !== -1) { this.children.splice(at, 1); }
+    node.parentNode = null;
+    return node;
+  }
+  contains(node) {
+    for (let n = node; n; n = n.parentNode) { if (n === this) { return true; } }
+    return false;
+  }
+  descendants() {
+    const out = [];
+    this.children.forEach((c) => { out.push(c, ...c.descendants()); });
+    return out;
+  }
+  matches(selector) {
+    if (selector.startsWith('.')) { return this.className.split(/\s+/).includes(selector.slice(1)); }
+    return this.tag === selector;
+  }
+  querySelector(selector) {
+    const parts = selector.split(',').map((s) => s.trim());
+    return this.descendants().find((el) => parts.some((p) => el.matches(p))) || null;
+  }
+  addEventListener(type, fn) { (this.handlers[type] = this.handlers[type] || []).push(fn); }
+  dispatchEvent() { return true; }
+  focus() { this.focused = true; this.ownerDocument.activeElement = this; }
+}
+
+function makeDocument() {
+  const doc = {
+    activeElement: null,
+    byId: {},
+    createElement(tag) { const el = new FakeEl(tag); el.ownerDocument = doc; return el; },
+    createTextNode(text) { const el = new FakeEl('#text'); el.ownerDocument = doc; el.own = String(text); return el; },
+    getElementById(id) { return doc.byId[id] || null; }
+  };
+  return doc;
+}
+
+// ----- fake IndexedDB -----
+
+function makeIndexedDB(initial) {
+  const data = new Map();
+  initial.forEach((record) => data.set(record.request_id, structuredClone(record)));
+  let created = initial.length > 0;
+  const later = (fn) => queueMicrotask(fn);
+  const store = {
+    createIndex() {},
+    index() {
+      return {
+        getAll(range) {
+          const request = { result: undefined, onsuccess: null, onerror: null };
+          later(() => {
+            // The fake ignores the key range on purpose and returns every row,
+            // so the account check inside queue.js is what gets tested.
+            request.result = [...data.values()].map((r) => structuredClone(r));
+            if (request.onsuccess) { request.onsuccess(); }
+          });
+          return request;
+        }
+      };
+    }
+  };
+  const tx = (mode) => {
+    const t = { oncomplete: null, onerror: null, onabort: null };
+    t.objectStore = () => ({
+      put(record) { data.set(record.request_id, structuredClone(record)); later(() => t.oncomplete && t.oncomplete()); },
+      delete(id) { data.delete(id); later(() => t.oncomplete && t.oncomplete()); },
+      index: store.index
+    });
+    return t;
+  };
+  return {
+    data,
+    indexedDB: {
+      open() {
+        const request = { result: null, onupgradeneeded: null, onsuccess: null, onerror: null, onblocked: null };
+        const database = {
+          objectStoreNames: { contains: () => created },
+          createObjectStore() { created = true; return store; },
+          transaction: tx,
+          close() {}
+        };
+        request.result = database;
+        later(() => {
+          if (!created && request.onupgradeneeded) { request.onupgradeneeded(); }
+          if (request.onsuccess) { request.onsuccess(); }
+        });
+        return request;
+      }
+    }
+  };
+}
+
+// ----- one sandbox per case -----
+
+function loadQueue({ records = [], answers = [] }) {
+  const doc = makeDocument();
+  const idb = makeIndexedDB(records);
+  const submitted = [];
+  const toasts = [];
+  const pinalert = {
+    CATEGORY_LABELS: { flood: 'Flood', other: 'Other' },
+    setText(el, text) { el.textContent = text; },
+    showToast(message) { toasts.push(message); },
+    formatWait() { return '1 minute'; },
+    submitReport(payload) {
+      submitted.push(payload);
+      const answer = answers.shift();
+      return answer ? answer(payload) : Promise.resolve({ id: submitted.length });
+    }
+  };
+  const win = {
+    addEventListener() {},
+    setInterval() { return 1; },
+    setTimeout() { return 1; },
+    clearTimeout() {},
+    location: { href: 'http://127.0.0.1/profile' },
+    history: { state: null, replaceState() {} }
+  };
+  const sandbox = {
+    window: win,
+    document: doc,
+    Pinalert: pinalert,
+    indexedDB: idb.indexedDB,
+    IDBKeyRange: { only: (value) => ({ only: value }) },
+    navigator: {},
+    CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init && init.detail; } },
+    URL,
+    URLSearchParams
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(source, sandbox);
+  const strip = doc.createElement('div');
+  const live = doc.createElement('div');
+  doc.byId['notice-live'] = live;
+  return { queue: win.PinalertQueue, strip, store: idb.data, submitted, toasts };
+}
+
+async function settle() {
+  for (let i = 0; i < 30; i++) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
+function record(id, account, description, writtenAt, extra = {}) {
+  return {
+    request_id: id,
+    account_id: account,
+    payload: { category: 'flood', severity: 'low', description, latitude: 12.97, longitude: 77.59 },
+    written_at: writtenAt,
+    status: 'waiting',
+    attempts: 0,
+    next_try_at: 0,
+    last_error: '',
+    serious: false,
+    emergency_number: '',
+    sending_until: 0,
+    ...extra
+  };
+}
+
+// ----- the cases -----
+
+await test('sends saved reports oldest first', async () => {
+  // flush orders rows by written_at, oldest first (loadRows in queue.js).
+  const env = loadQueue({
+    records: [
+      record('req-bbbbbbbbbbbbbbbb-2', '7', 'second report', '2026-10-02T00:00:00.000Z'),
+      record('req-cccccccccccccccc-3', '7', 'third report', '2026-10-03T00:00:00.000Z'),
+      record('req-aaaaaaaaaaaaaaaa-1', '7', 'first report', '2026-10-01T00:00:00.000Z')
+    ]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  assert.deepEqual(env.submitted.map((p) => p.description), ['first report', 'second report', 'third report']);
+  assert.equal(env.store.size, 0);
+});
+
+await test('never discards a saved report for age or failure', async () => {
+  const id = 'req-dddddddddddddddd-4';
+  const old = new Date(Date.now() - 400 * DAY_MS).toISOString();
+  const env = loadQueue({
+    records: [record(id, '7', 'water over the road', old)],
+    answers: [
+      () => Promise.reject({ queueable: true, status: 0 }),
+      () => Promise.reject({ status: 422, field: 'description', fieldMessage: 'Say what is happening.' })
+    ]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  assert.equal(env.store.get(id).status, 'waiting');
+  assert.equal(env.store.get(id).attempts, 1);
+
+  await env.queue.flush();
+  await settle();
+  assert.equal(env.store.get(id).status, 'rejected');
+  assert.equal(env.store.get(id).attempts, 2);
+
+  const sentBefore = env.submitted.length;
+  await env.queue.flush();
+  await settle();
+  assert.equal(env.submitted.length, sentBefore, 'a rejected report is not sent again by itself');
+  assert.ok(env.store.has(id), 'the rejected report is still saved');
+
+  await env.queue.discard(id);
+  assert.equal(env.store.has(id), false, 'only discard removes it');
+});
+
+await test("never sends, draws or counts another account's report", async () => {
+  const mine = 'req-eeeeeeeeeeeeeeee-5';
+  const theirs = 'req-ffffffffffffffff-6';
+  const env = loadQueue({
+    records: [
+      record(mine, '7', 'my own saved report', '2026-10-01T00:00:00.000Z'),
+      record(theirs, '8', 'someone elses saved report', '2026-10-01T00:00:01.000Z')
+    ],
+    answers: [() => Promise.reject({ queueable: true, status: 0 })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  assert.deepEqual(env.submitted.map((p) => p.description), ['my own saved report']);
+  assert.equal(env.strip.hidden, false);
+  assert.equal(env.strip.querySelector('.queue-strip__count').textContent, '1 report saved on this device.');
+  assert.ok(!env.strip.textContent.includes('someone elses saved report'));
+  assert.equal(env.store.get(theirs).status, 'waiting');
+  assert.equal(env.store.get(theirs).attempts, 0);
+});
+
+await test('draws Edit and resend as a link only for a single slash path', async () => {
+  const id = 'req-gggggggggggggggg-7';
+  const rejected = () => record(id, '7', 'rejected report', '2026-10-01T00:00:00.000Z', {
+    status: 'rejected', last_error: 'Say what is happening.'
+  });
+  const hasEditControl = (strip) => strip.descendants().some((el) => el.textContent === 'Edit and resend');
+
+  const good = loadQueue({ records: [rejected()] });
+  good.queue.mount({
+    strip: good.strip,
+    accountId: '7',
+    headingLevel: 3,
+    resendHref: (r) => '/low?resend=' + encodeURIComponent(r.request_id)
+  });
+  await settle();
+  const link = good.strip.querySelector('a');
+  assert.ok(link, 'a link is drawn');
+  assert.equal(link.textContent, 'Edit and resend');
+  assert.equal(link.getAttribute('href'), '/low?resend=' + id);
+
+  const unsafe = ['javascript:alert(1)', '//evil.example/x', '/\\evil.example/x'];
+  for (const value of unsafe) {
+    const env = loadQueue({ records: [rejected()] });
+    env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3, resendHref: () => value });
+    await settle();
+    assert.equal(hasEditControl(env.strip), false, 'no control for ' + value);
+    assert.ok(env.strip.querySelector('.queue-strip__discard'), 'Discard report is still drawn for ' + value);
+  }
+});

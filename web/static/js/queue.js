@@ -15,6 +15,10 @@
 // through Pinalert.setText. The tap to call link is built with DOM calls from
 // the number in the 429 body.
 //
+// On a page without a report form (the Activity page) the page passes a link
+// builder and a focus fallback. The Rejected row's edit control then becomes a
+// link to the page that has the form, and only a single slash path is drawn.
+//
 // Nothing runs at load time except declaring constants and functions.
 // Everything starts in mount.
 (function () {
@@ -79,6 +83,7 @@
   var stripEl = null;
   var headingLevel = 2;
   var onEdit = null;
+  var resendHref = null;
   var focusFallback = null;
   var db = null;
   var storeReady = Promise.resolve();
@@ -266,6 +271,7 @@
     stripEl = options.strip;
     headingLevel = options.headingLevel === 3 ? 3 : 2;
     onEdit = typeof options.onEdit === 'function' ? options.onEdit : null;
+    resendHref = typeof options.resendHref === 'function' ? options.resendHref : null;
     focusFallback = typeof options.focusFallback === 'function' ? options.focusFallback : null;
 
     storeReady = openStore().then(function (database) {
@@ -821,9 +827,35 @@
     actionsEl.appendChild(discardBtn);
   }
 
+  // safeResendHref returns value only when it is a path on this site: one
+  // leading slash, not followed by a second slash or a backslash (browsers read
+  // a backslash there as a second slash, which names another host).
+  function safeResendHref(value) {
+    if (typeof value === 'string' && value.charAt(0) === '/' &&
+        value.charAt(1) !== '/' && value.charAt(1) !== '\\') {
+      return value;
+    }
+    return '';
+  }
+
+  // createResendLink makes the Edit and resend link with DOM calls. It takes the
+  // look of the Sign in again link, so it needs no rule of its own.
+  function createResendLink(href) {
+    var link = document.createElement('a');
+    link.className = 'btn';
+    link.setAttribute('href', href);
+    Pinalert.setText(link, EDIT_LABEL);
+    return link;
+  }
+
   // buildEditControl is the one place an Edit and resend control is made. It
-  // returns null when this page has no form to open.
+  // returns null when this page has no form to open and no link to one. A page
+  // that passes a link builder gets a link, and the edit callback is not used.
   function buildEditControl(record) {
+    if (typeof resendHref === 'function') {
+      var target = safeResendHref(resendHref(record));
+      return target === '' ? null : createResendLink(target);
+    }
     if (typeof onEdit !== 'function') {
       return null;
     }
