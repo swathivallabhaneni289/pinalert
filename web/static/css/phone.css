@@ -256,6 +256,21 @@
     display: none;
   }
 
+  /* A finished report is a ring, not a filled dot (03.1 D-13): the page colour
+     inside and a 3px muted ring, solid for Resolved and dashed for Expired, so
+     the cue is the ring and never colour alone. The dot keeps its 20px size
+     and the 44 by 44 marker box. trust.css holds the laptop badge and the
+     forced colours ring. */
+  #map .icon-badge--pin.icon-badge--resolved,
+  #map .icon-badge--pin.icon-badge--expired {
+    background: var(--color-bg);
+    border: 3px solid var(--color-text-muted);
+  }
+
+  #map .icon-badge--pin.icon-badge--expired {
+    border-style: dashed;
+  }
+
   #map .leaflet-marker-icon[data-popup-open="true"] .icon-badge--pin,
   #map .leaflet-marker-icon.map-pin--highlight .icon-badge--pin {
     outline: 3px solid var(--color-text);

@@ -379,12 +379,35 @@ window.PinalertMap = (function () {
     // descendant selector form.
     PinalertVisibility.applyVisibilityClass(badge, report);
 
+    // A finished report also takes its ring modifier (03.1 D-13), so the
+    // stylesheet can draw it as a ring and never as a filled severity dot.
+    var ring = finishedPinClass(report);
+    if (ring !== '') {
+      badge.classList.add(ring);
+    }
+
     var glyph = document.createElement('span');
     glyph.className = Pinalert.iconClass(report.category);
     glyph.setAttribute('aria-hidden', 'true');
     badge.appendChild(glyph);
 
     return badge;
+  }
+
+  // finishedPinClass names the ring modifier of a finished pin from the same
+  // display state the header word and the pin class read: a Resolved report
+  // gets the solid ring and an Expired one the dashed ring. Any other state
+  // answers the empty string and the pin stays a filled dot. Both names are
+  // fixed strings, so no report-authored value reaches a class name.
+  function finishedPinClass(report) {
+    var state = PinalertVisibility.displayState(report);
+    if (state === 'retracted') {
+      return 'icon-badge--resolved';
+    }
+    if (state === 'expired') {
+      return 'icon-badge--expired';
+    }
+    return '';
   }
 
   // buildPopupCard constructs the popup card once per marker, as DOM nodes
@@ -924,7 +947,8 @@ window.PinalertMap = (function () {
   // report's popup container must carry: severity, age and visibility, in
   // that order. All three are already validated against fixed allowlists by
   // their own modules (Pinalert.severityClass, PinalertTrust.fadeStage,
-  // PinalertVisibility.visibilityState), so no report-authored value ever
+  // PinalertVisibility.displayState, which also answers Expired for a
+  // finished report, the same word the pin and the header show), so no report-authored value ever
   // reaches this class name, the same discipline buildBadgeElement is
   // already under. The age class is included for parity with the feed
   // row's own class list even though no age rule touches --severity-tint,
@@ -933,7 +957,7 @@ window.PinalertMap = (function () {
   // --badge-glyph-fg today either.
   function popupStateClasses(report) {
     return Pinalert.severityClass(report) + ' age-' + PinalertTrust.fadeStage(report) +
-      ' vis-' + PinalertVisibility.visibilityState(report);
+      ' vis-' + PinalertVisibility.displayState(report);
   }
 
   // syncPopupState keeps a marker's popup container carrying the current
@@ -1012,6 +1036,26 @@ window.PinalertMap = (function () {
     markers[report.id] = marker;
   }
 
+  // updateMapLabel writes the one line label at the bottom left of the map
+  // (C41, D-13). It names the tab only while Disputed or Past is selected, so
+  // a reader who sees a pin that is not live knows which set the map shows.
+  // The words are fixed strings written through the text sink, and the label
+  // is hidden and emptied on the Active tab. It reads only the store's tab.
+  function updateMapLabel(state) {
+    var labelEl = document.getElementById('map-label');
+    if (!labelEl) {
+      return;
+    }
+    var words = '';
+    if (state.view === 'disputed') {
+      words = 'Showing disputed reports';
+    } else if (state.view === 'past') {
+      words = 'Showing past reports, last 7 days';
+    }
+    Pinalert.setText(labelEl, words);
+    labelEl.hidden = words === '';
+  }
+
   // render reconciles markers by report id rather than clearing and
   // rebuilding the layer on every poll, which would drop an open popup
   // every 30 seconds.
@@ -1020,6 +1064,7 @@ window.PinalertMap = (function () {
       return;
     }
     removedPopupFocus = false;
+    updateMapLabel(state);
 
     var seenIds = {};
     for (var i = 0; i < state.reports.length; i++) {
