@@ -27,12 +27,21 @@
 
   var SVG_NS = 'http://www.w3.org/2000/svg';
 
-  // DISPUTED_PARAM is the page URL's own name for the "Show disputed"
-  // filter flag — deliberately the exact same literal app.js's own
-  // fetchReports appends to the GET /api/reports URL (see app.js's
-  // fetchReports comment), so the page and the server share one
-  // vocabulary for this idea rather than two spellings of it.
-  var DISPUTED_PARAM = 'show_disputed';
+  // VIEW_PARAM is the page URL's own name for the tab, deliberately the
+  // exact same word app.js's fetchReports sends to GET /api/reports, so the
+  // page and the server share one vocabulary for this idea. The address
+  // never carries the default tab: Active is the absence of the parameter.
+  var VIEW_PARAM = 'view';
+
+  // OLD_BOOKMARK_PARAM is the address parameter of the old Show disputed
+  // checkbox. It is read only, so a saved bookmark still opens Disputed, and
+  // it is rewritten once to the new parameter (03.1 D-04). Nothing sends it
+  // to the server any more.
+  var OLD_BOOKMARK_PARAM = 'show_disputed';
+
+  // REPORT_PARAM is the address parameter of a link to one report. It is read
+  // once on load and never removed from the address.
+  var REPORT_PARAM = 'report';
 
   var reportListEl = document.getElementById('report-list');
   var skeletonEl = document.getElementById('feed-skeleton');
@@ -42,8 +51,33 @@
   var retryBtn = document.getElementById('feed-retry');
   var viewToggleBtn = document.getElementById('view-toggle');
   var appShellEl = document.getElementById('app-shell');
-  var showDisputedToggleEl = document.getElementById('show-disputed-toggle');
+  var tabStripEl = document.querySelector('.view-tabs');
   var feedCountEl = document.getElementById('feed-count');
+  var feedStatusEl = document.getElementById('feed-status');
+  var feedHeadingTitleEl = document.getElementById('feed-heading-title');
+  var feedNoteEl = document.getElementById('feed-note');
+  var pastGroupsEl = document.getElementById('past-groups');
+  var historyEmptyEl = document.getElementById('feed-empty-history');
+  var pastEmptyEl = document.getElementById('past-empty');
+  var filterEmptyEl = document.getElementById('filter-empty');
+  var filterClearBtn = document.getElementById('filter-empty-clear');
+  var seePastBtn = document.getElementById('see-past-reports');
+
+  // The heading and the one line note under it, per tab (C3 to C7). Active
+  // has no note. The strings are fixed here, never read from the server.
+  var VIEW_HEADINGS = { active: 'Nearby now', disputed: 'Disputed reports', past: 'Past reports' };
+  var VIEW_NOTES = {
+    active: '',
+    disputed: 'Nearby people disputed these. You can still confirm or dispute them.',
+    past: 'Resolved and expired reports from the last 7 days.'
+  };
+
+  // lastAnnouncedKey is the tab, place and chip the status line last
+  // announced, and statusStarted is false until the first answer lands. The
+  // first answer is not announced: a reader who just opened the page hears
+  // the list itself, not a status line over it.
+  var lastAnnouncedKey = '';
+  var statusStarted = false;
 
   // PHONE_QUERY is the same 899.98px complement of the 900px query that
   // main.css, trust.css and phone.css use. Below it the list is its own scroll
@@ -86,17 +120,22 @@
     }
   }
 
-  // setEmptyState is the sole owner of both empty-state elements. render is
-  // documented as the one place that decides which of the list, skeleton,
-  // empty state and error state is showing, and a fifth element would
-  // otherwise turn four explicit branches into eight — every setHidden call
-  // targeting either empty-state element lives in this function and
-  // nowhere else. kind is one of 'none' (neither shown), 'general' (the
-  // Phase 1 empty state) or 'disputed' (the shared query parameter's own
-  // empty state).
+  // setEmptyState is the sole owner of the five empty-state elements. render
+  // is documented as the one place that decides which of the list, skeleton,
+  // empty state and error state is showing, and more elements would
+  // otherwise turn four explicit branches into many. Every setHidden call
+  // targeting an empty-state element lives in this function and nowhere
+  // else, and at most one of them shows. kind is one of 'none' (none shown),
+  // 'general' (the Phase 1 empty state), 'history' (nothing active but
+  // recent history, with the See past reports button), 'disputed' (the
+  // Disputed tab's own empty state), 'past' (the Past tab's) or 'filter' (a
+  // chip emptied the list, with the Clear filter button).
   function setEmptyState(kind) {
     setHidden(emptyEl, kind !== 'general');
+    setHidden(historyEmptyEl, kind !== 'history');
     setHidden(disputedEmptyEl, kind !== 'disputed');
+    setHidden(pastEmptyEl, kind !== 'past');
+    setHidden(filterEmptyEl, kind !== 'filter');
   }
 
   function replacePrefixedClass(el, prefix, newClass) {
@@ -265,6 +304,11 @@
     return !!el && el.isConnected && el.getClientRects().length > 0;
   }
 
+  // currentTabLink is the link of the selected tab, or null without a strip.
+  function currentTabLink() {
+    return tabStripEl ? tabStripEl.querySelector('.view-tab[aria-current="page"]') : null;
+  }
+
   // focusIsLost is true when focus is on the page body or on a node inside a
   // popup that is no longer open. map.js sets data-popup-open when a popup
   // opens and clears it synchronously when it closes, which the poll's render
@@ -292,10 +336,10 @@
 
   // focusAfterRemoval is the one place focus is chosen after a poll removed
   // the report that owned it (A67, in the A52 order): the first displayed
-  // row among the candidates, else the map, else the view toggle, else the
-  // empty state. It acts when focus fell to the page body or sits in a popup
-  // that map.js already marked closed, and the browser decides only where
-  // focus goes, never which reports exist.
+  // row among the candidates, else the map, else the current tab link, else
+  // the view toggle, else the empty state. It acts when focus fell to the page
+  // body or sits in a popup that map.js already marked closed, and the browser
+  // decides only where focus goes, never which reports exist.
   function focusAfterRemoval(candidates) {
     var active = document.activeElement;
     if (!focusIsLost(active)) {
@@ -314,11 +358,16 @@
       mapEl.focus();
       return;
     }
+    var tabLink = currentTabLink();
+    if (elementIsShown(tabLink)) {
+      tabLink.focus();
+      return;
+    }
     if (elementIsShown(viewToggleBtn)) {
       viewToggleBtn.focus();
       return;
     }
-    var empties = [emptyEl, disputedEmptyEl];
+    var empties = [emptyEl, historyEmptyEl, disputedEmptyEl, pastEmptyEl, filterEmptyEl];
     for (var k = 0; k < empties.length; k++) {
       if (elementIsShown(empties[k])) {
         empties[k].setAttribute('tabindex', '-1');
@@ -431,10 +480,11 @@
   }
 
   // updateFeedCount writes the count line under the list heading, for
-  // example "5 active \u00b7 10 km". The number is the count of rendered
-  // reports and the radius is the one the feed was asked for. It is empty
-  // while the feed is loading and on an error with no rows to count. It goes
-  // through Pinalert.setText, a text node assignment (T-01-03).
+  // example "5 active · 10 km", "2 disputed · 10 km" or
+  // "3 reports · 10 km" ("1 report"). The number is the count of
+  // rendered reports and the radius is the one the feed was asked for. It is
+  // empty while the feed is loading and on an error with no rows to count. It
+  // goes through Pinalert.setText, a text node assignment (T-01-03).
   function updateFeedCount(state) {
     if (!feedCountEl) {
       return;
@@ -444,10 +494,85 @@
       : state.status !== 'idle' && state.status !== 'loading';
     var radius = formatRadius(Pinalert.config.defaultRadiusKm);
     if (counted && radius !== '') {
-      var word = Pinalert.state.showDisputed ? 'disputed' : 'active';
-      text = state.reports.length + ' ' + word + ' \u00b7 ' + radius + ' km';
+      var count = state.reports.length;
+      var view = Pinalert.state.view;
+      var word = view === 'disputed' ? 'disputed' : 'active';
+      if (view === 'past') {
+        word = count === 1 ? 'report' : 'reports';
+      }
+      text = count + ' ' + word + ' \u00b7 ' + radius + ' km';
     }
     Pinalert.setText(feedCountEl, text);
+  }
+
+  // updateFeedHeading writes the heading and the one line note of the tab
+  // (C3 to C7) and marks the shell with the tab, so the laptop heading, which
+  // is hidden on Active, shows for Disputed and Past (feed.css). Every string
+  // is fixed in this file and goes through Pinalert.setText.
+  function updateFeedHeading(view) {
+    var heading = VIEW_HEADINGS[view] || VIEW_HEADINGS.active;
+    var note = VIEW_NOTES[view] || '';
+    if (feedHeadingTitleEl) {
+      Pinalert.setText(feedHeadingTitleEl, heading);
+    }
+    if (feedNoteEl) {
+      Pinalert.setText(feedNoteEl, note);
+      setHidden(feedNoteEl, note === '');
+    }
+    if (appShellEl) {
+      appShellEl.setAttribute('data-feed-view', view);
+    }
+  }
+
+  // updateFeedStatus writes the one status sentence of C11 into the visually
+  // hidden live region, for example "3 active reports. Near Kochi. Filtered
+  // by Flood." It speaks once per tab, place or chip change, when the answer
+  // for that change has landed (so the count is the real one). A poll that
+  // only changes the count never speaks again, and the first answer of a page
+  // load is recorded without speaking. The numbers and words are the
+  // store's, nothing is invented.
+  function updateFeedStatus(state) {
+    if (!feedStatusEl || state.status !== 'ok') {
+      return;
+    }
+    var store = Pinalert.state;
+    var placeName = store.place ? store.place.name : '';
+    var key = store.view + '|' + placeName + '|' + store.category;
+    if (key === lastAnnouncedKey) {
+      return;
+    }
+    lastAnnouncedKey = key;
+    if (!statusStarted) {
+      statusStarted = true;
+      return;
+    }
+    var count = state.reports.length;
+    var text = count + ' ' + store.view + (count === 1 ? ' report.' : ' reports.');
+    if (placeName !== '') {
+      text += ' Near ' + placeName + '.';
+    }
+    if (store.category !== '') {
+      text += ' Filtered by ' + (Pinalert.CHIP_LABELS[store.category] || Pinalert.categoryLabel(store.category)) + '.';
+    }
+    Pinalert.setText(feedStatusEl, text);
+  }
+
+  // renderPastTab draws the Past tab's list area. The Past tab is two groups
+  // of cards, never the live list, so #report-list is hidden and its rows are
+  // removed; the group cards themselves are built by the Past cards plan,
+  // which fills #past-groups. The groups container shows only when there are
+  // reports; with none, the Past empty block (or the filter block when a chip
+  // is on) shows instead.
+  function renderPastTab(state) {
+    setHidden(reportListEl, true);
+    clearRows();
+    if (state.reports.length === 0) {
+      setHidden(pastGroupsEl, true);
+      setEmptyState(Pinalert.state.category !== '' ? 'filter' : 'past');
+      return;
+    }
+    setEmptyState('none');
+    setHidden(pastGroupsEl, false);
   }
 
   // render is the single state machine driving the list, the skeleton, the
@@ -455,10 +580,12 @@
   // there is exactly one place that decides which of the four is showing.
   function render(state) {
     updateFeedCount(state);
+    updateFeedHeading(Pinalert.state.view);
 
     if (state.status === 'idle' || state.status === 'loading') {
       setHidden(skeletonEl, false);
       setHidden(reportListEl, true);
+      setHidden(pastGroupsEl, true);
       setEmptyState('none');
       setHidden(errorEl, true);
       return;
@@ -476,29 +603,51 @@
       // control that is still shown instead of dropping it to the page body.
       // A later poll or Retry with rows on screen never reaches the loading
       // branch below (app.js treats it as a background refresh), so the list a
-      // reader is scrolling or has focus in is not hidden again.
+      // reader is scrolling or has focus in is not hidden again. Rows fetched
+      // for another tab were already dropped by the store, so a failure never
+      // leaves one tab's rows under another tab.
       var hasRows = state.reports.length > 0;
+      var onPast = Pinalert.state.view === 'past';
       setHidden(errorEl, false);
       setHidden(reportListEl, !hasRows);
+      setHidden(pastGroupsEl, !hasRows || !onPast);
       if (!hasRows) {
         clearRows();
+      }
+      if (onPast) {
+        // The Past tab never shows the live list, whatever rows it holds.
+        setHidden(reportListEl, true);
       }
       setEmptyState('none');
       return;
     }
 
     setHidden(errorEl, true);
+    updateFeedStatus(state);
+
+    if (Pinalert.state.view === 'past') {
+      renderPastTab(state);
+      return;
+    }
+    setHidden(pastGroupsEl, true);
 
     if (state.reports.length === 0) {
-      // The disputed empty state replaces the general one rather than
-      // stacking above a populated list, because in this codebase this
-      // component means "shown instead of the list" — and the checked box
-      // sitting directly above it is the context that makes the narrower
-      // message the right one. Read from the store's flag rather than the
-      // checkbox: the store's value describes the data actually in
-      // state.reports, while the checkbox describes an intent whose fetch
-      // may still be in flight.
-      setEmptyState(Pinalert.state.showDisputed ? 'disputed' : 'general');
+      // An empty list shows exactly one empty block, instead of the list. A
+      // chip that emptied it says so, with the button that clears it: the
+      // reader's own filter is the reason, never "no reports" (D-18). With no
+      // chip on, Disputed has its own words and Active the general ones. The
+      // history kind (recent counts and See past reports) is chosen by the
+      // Past cards plan, which owns those numbers. Read from the store's tab
+      // rather than the pressed link: the store's value describes the data
+      // actually in state.reports, while the link describes an intent whose
+      // fetch may still be in flight.
+      var kind = 'general';
+      if (Pinalert.state.category !== '') {
+        kind = 'filter';
+      } else if (Pinalert.state.view === 'disputed') {
+        kind = 'disputed';
+      }
+      setEmptyState(kind);
       setHidden(reportListEl, true);
       clearRows();
       return;
@@ -713,77 +862,160 @@
     });
   }
 
-  // readDisputedFromURL reports whether the current address bar asks for
-  // the disputed view (UAT gap 5, a user-requested scope reversal dated
-  // 2026-09-17 — see 02-UI-SPEC.md's dated amendment on the "Show disputed
-  // filter (D-10, D-11)" section; the original spec's ephemeral,
-  // non-persisting checkbox was deliberate and shipped as specified, this
-  // is not a bug fix). Parsed with URLSearchParams and compared against
-  // the one literal app.js's own fetchReports appends ('true'), never
-  // interpolated anywhere (T-01-17) — so the page and the server can never
-  // disagree about what a given URL means. An absent, misspelled or
-  // hostile value collapses to false, which is D-10's closed default: the
-  // fail-safe direction, since the failure mode of guessing wrong here is
-  // showing a reader disputed content they did not ask for.
-  function readDisputedFromURL() {
+  // readViewFromURL reads the tab out of the page address (03.1 D-04, D-05).
+  // Parsed with URLSearchParams and compared against a closed list of words,
+  // never interpolated anywhere (T-01-17), so the page and the server cannot
+  // disagree about what an address means. An absent, misspelled or hostile
+  // value opens Active, which is D-10's closed default: the fail-safe
+  // direction, since guessing wrong here would show a reader reports they
+  // did not ask for. view=resolved is a read only alias of Past, and an old
+  // bookmark that carries the old checkbox parameter set to true and no view
+  // opens Disputed. The answer says
+  // whether the address holds a spelling this script no longer writes, so the
+  // caller tidies it once.
+  function readViewFromURL() {
     var params = new URLSearchParams(window.location.search);
-    return params.get(DISPUTED_PARAM) === 'true';
+    var word = params.get(VIEW_PARAM);
+    var hasOld = params.has(OLD_BOOKMARK_PARAM);
+    if (word === 'disputed' || word === 'past') {
+      return { view: word, rewrite: hasOld };
+    }
+    if (word === 'resolved') {
+      return { view: 'past', rewrite: hasOld };
+    }
+    if (word === null && params.get(OLD_BOOKMARK_PARAM) === 'true') {
+      return { view: 'disputed', rewrite: true };
+    }
+    return { view: 'active', rewrite: word !== null || hasOld };
   }
 
-  // syncDisputedURL keeps the address bar's DISPUTED_PARAM in step with
-  // checked: added when true, deleted when false. Applies the update via
-  // history.replaceState, the History API's in-place-update variant —
-  // never its variant that adds a new Back-button-history entry — because
-  // a filter toggle must not create a Back-button step, or Back would walk
-  // the reader through their own filter history instead of leaving the
-  // page, which is a behaviour change nobody asked for.
-  function syncDisputedURL(checked) {
+  // syncViewURL keeps the address bar in step with the tab: the parameter is
+  // set for Disputed and Past and deleted for Active, so the default tab is
+  // never written (a main page address with a query string would be taken for
+  // a different page by the low data view, which would break a remembered
+  // choice). It applies the update with history.replaceState, the History
+  // API's in-place variant, so a tab press adds no Back button step: Back
+  // would otherwise walk the reader through their own tab history instead of
+  // leaving the page. Every other parameter (report, full, resend) is kept as
+  // it is, and the old bookmark parameter is dropped.
+  function syncViewURL(view) {
     var url = new URL(window.location.href);
-    if (checked) {
-      url.searchParams.set(DISPUTED_PARAM, 'true');
+    if (view === 'disputed' || view === 'past') {
+      url.searchParams.set(VIEW_PARAM, view);
     } else {
-      url.searchParams.delete(DISPUTED_PARAM);
+      url.searchParams.delete(VIEW_PARAM);
     }
+    url.searchParams.delete(OLD_BOOKMARK_PARAM);
     window.history.replaceState(null, '', url);
   }
 
-  if (showDisputedToggleEl) {
-    showDisputedToggleEl.addEventListener('change', function () {
-      // Refetching rather than filtering state.reports in place is
-      // deliberate: the server decides which reports exist under the
-      // shared query parameter (02-04), and a client-side filter would be
-      // a second visibility decision — the resolver bypass T-02-04 names.
-      Pinalert.setShowDisputed(showDisputedToggleEl.checked);
-      Pinalert.fetchReports();
-      syncDisputedURL(showDisputedToggleEl.checked);
-    });
+  // updateTabStrip marks the current tab: aria-current on the link of the
+  // view, none on the others. The current tab also differs in weight and
+  // border (feed.css), so colour is never the only cue.
+  function updateTabStrip(view) {
+    if (!tabStripEl) {
+      return;
+    }
+    var links = tabStripEl.querySelectorAll('.view-tab');
+    for (var i = 0; i < links.length; i++) {
+      if (links[i].getAttribute('data-feed-view') === view) {
+        links[i].setAttribute('aria-current', 'page');
+      } else {
+        links[i].removeAttribute('aria-current');
+      }
+    }
+  }
 
-    // Restore step, not a synchronisation step — direction of trust
-    // reversed as of the 2026-09-17 scope reversal above: the URL is now
-    // the source of truth, and the checkbox is driven FROM it. Read the
-    // URL, write the result onto the checkbox's checked property, then
-    // hand the same value to the shared store's setter — never the other
-    // way around, and never a fetch here. The template's own autocomplete
-    // attribute is now genuinely belt-and-braces (a browser that restores
-    // a checked box across a reload is immediately overwritten by this
-    // read), rather than the load-bearing defence the superseded comment
-    // this block replaces used to claim it was.
-    //
-    // No fetch is issued here because it does not need to be: the first
-    // report fetch fires from map.js's centerOnVisitor, inside an async
-    // geolocation success/failure callback, and every deferred module
-    // body — including this one — runs to completion before any async
-    // callback can execute. This restore is therefore guaranteed to
-    // precede the first fetch, so the first render is never briefly
-    // unfiltered. If a future change ever moves the initial fetch into a
-    // deferred module body ABOVE this one in the template's script order,
-    // that guarantee breaks and this restore would need its own fetch —
-    // flagging that here since it is the one thing that would invalidate
-    // this reasoning. Adding a fetch unconditionally would issue a
-    // duplicate request on every single page load.
-    var initialDisputed = readDisputedFromURL();
-    showDisputedToggleEl.checked = initialDisputed;
-    Pinalert.setShowDisputed(initialDisputed);
+  // showTab brings everything that names the tab in step with the store.
+  function showTab(view) {
+    updateTabStrip(view);
+    updateFeedHeading(view);
+  }
+
+  // switchTab is the one place a tab press lands. It sets the store, marks the
+  // link, writes the address and refetches through the one list request in
+  // app.js. Refetching rather than filtering state.reports in place is
+  // deliberate: the server decides which reports exist for a tab (02-04), and
+  // a client side filter would be a second visibility decision, the resolver
+  // bypass T-02-04 names. Rows fetched for the other tab stay only until the
+  // answer lands; a failed fetch drops them (app.js).
+  function switchTab(view) {
+    if (Pinalert.VIEWS.indexOf(view) === -1 || view === Pinalert.state.view) {
+      return;
+    }
+    Pinalert.setView(view);
+    showTab(view);
+    syncViewURL(view);
+    Pinalert.fetchReports();
+  }
+
+  if (tabStripEl) {
+    // The tabs are real links (/, /?view=disputed, /?view=past), so a middle
+    // click, a modified click and "open in new tab" follow the link as they
+    // are. A script only makes the plain left click instant.
+    tabStripEl.addEventListener('click', function (evt) {
+      var link = evt.target && evt.target.closest ? evt.target.closest('.view-tab') : null;
+      if (!link || evt.defaultPrevented || evt.button !== 0 ||
+          evt.metaKey || evt.ctrlKey || evt.shiftKey || evt.altKey) {
+        return;
+      }
+      evt.preventDefault();
+      switchTab(link.getAttribute('data-feed-view'));
+    });
+  }
+
+  // focusCurrentTab puts focus on the link of the selected tab. The two empty
+  // block buttons hide themselves when their press succeeds, which would drop
+  // focus to the page body, so they hand it to the strip first.
+  function focusCurrentTab() {
+    var link = currentTabLink();
+    if (link) {
+      link.focus();
+    }
+  }
+
+  if (filterClearBtn) {
+    // Clear filter: the chip goes back to All and the list is read again. The
+    // browser removes nothing itself; the server answers for the whole set.
+    filterClearBtn.addEventListener('click', function () {
+      Pinalert.setCategory('');
+      Pinalert.fetchReports();
+      focusCurrentTab();
+    });
+  }
+
+  if (seePastBtn) {
+    // See past reports: the one button that moves the reader between tabs.
+    seePastBtn.addEventListener('click', function () {
+      switchTab('past');
+      focusCurrentTab();
+    });
+  }
+
+  // Restore step, not a synchronisation step: the address is the source of
+  // truth and the store is driven FROM it. Read it, hand the tab to the store,
+  // mark the link, and keep the report id of a ?report=ID link for the first
+  // list request (app.js sends it once). The address is rewritten only when it
+  // held a spelling this script no longer writes, and the report parameter is
+  // never touched, so a link sent by a moderator stays as it was sent (D-05).
+  //
+  // No fetch is issued here because it does not need to be: the first
+  // report fetch fires from map.js's centerOnVisitor, inside an async
+  // geolocation success/failure callback, and every deferred module
+  // body, including this one, runs to completion before any async
+  // callback can execute. This restore is therefore guaranteed to
+  // precede the first fetch, so the first render is never briefly
+  // on the wrong tab. If a future change ever moves the initial fetch into a
+  // deferred module body ABOVE this one in the template's script order,
+  // that guarantee breaks and this restore would need its own fetch.
+  // Adding a fetch unconditionally would issue a duplicate request on every
+  // single page load.
+  var initialAddress = readViewFromURL();
+  Pinalert.setView(initialAddress.view);
+  showTab(initialAddress.view);
+  Pinalert.setFocusId(new URLSearchParams(window.location.search).get(REPORT_PARAM));
+  if (initialAddress.rewrite) {
+    syncViewURL(initialAddress.view);
   }
 
   Pinalert.onSelect(function (id, source) {
@@ -841,18 +1073,14 @@
     if (!evt.persisted) {
       return;
     }
-    // Re-read the URL and re-apply it to the checkbox and the store
-    // BEFORE refetching (UAT gap 5's extension into gap 3): this is what
-    // finally makes true the claim the pre-reversal comment on the
-    // disputed-toggle block made and could not keep — a restored frozen
-    // DOM can no longer show a checked box over unfiltered data, because
-    // the checked box is now always re-derived from the URL rather than
-    // trusted as whatever the browser happened to restore.
-    var disputed = readDisputedFromURL();
-    if (showDisputedToggleEl) {
-      showDisputedToggleEl.checked = disputed;
-    }
-    Pinalert.setShowDisputed(disputed);
+    // Re-read the address and re-apply it to the strip and the store
+    // BEFORE refetching (UAT gap 5's extension into gap 3): a restored frozen
+    // DOM can never show one tab over another tab's rows, because the
+    // strip is always re-derived from the address rather than trusted as
+    // whatever the browser happened to restore.
+    var restored = readViewFromURL();
+    Pinalert.setView(restored.view);
+    showTab(restored.view);
     Pinalert.fetchReports();
   });
 }());

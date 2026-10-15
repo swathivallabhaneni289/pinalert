@@ -50,6 +50,23 @@ window.Pinalert = (function () {
     other: 'Other'
   };
 
+  // The three tabs of the list pane (03.1 D-01). The first is the default and
+  // is never written to the page address.
+  var VIEWS = ['active', 'disputed', 'past'];
+
+  // The plain word of each category chip (03.1 D-17). Only these four have a
+  // chip; the other five categories show under All.
+  var CHIP_LABELS = {
+    flood: 'Flood',
+    rescue_needed: 'Rescue',
+    shelter_open: 'Shelter',
+    power_outage: 'Power'
+  };
+
+  // The longest place name the feed shows. A longer name is cut and ends with
+  // an ellipsis character, so the whole text is at most this many characters.
+  var PLACE_NAME_MAX = 32;
+
   var shellEl = document.getElementById('app-shell');
 
   function readNumberAttr(name, fallback) {
@@ -82,9 +99,24 @@ window.Pinalert = (function () {
     // own is true only when the centre is the reader's own position, a fix the
     // browser gave. The fallback centre is never the reader (A94).
     center: { lat: config.fallbackLat, lon: config.fallbackLon, own: false },
-    // The client half of D-10's closed default: a visitor who has not
-    // asked for disputed reports never sees them.
-    showDisputed: false
+    // The tab of the list pane. It replaces the old Show disputed boolean
+    // (03.1 D-01) and keeps D-10's closed default: a visitor who has not
+    // asked for disputed or past reports never sees them.
+    view: 'active',
+    // '' (All) or one category slug. Nothing is hidden until a chip is
+    // tapped (03.1 D-17), and a fresh open starts with no filter (D-18).
+    category: '',
+    // null, or { name, lat, lon } of the place the reader searched for.
+    place: null,
+    // null, or the report id string from ?report=ID. It is sent with the first
+    // list request only, then cleared.
+    focusId: null,
+    // The last focus object a response carried. A response without one
+    // leaves it as it is.
+    focus: null,
+    // The last response's recent counts and cut flags, null when it had none.
+    recent: null,
+    cut: null
   };
 
   var listeners = [];
@@ -108,13 +140,13 @@ window.Pinalert = (function () {
   // (WR-01). Plain polls never raise it, so a slow link cannot freeze the list.
   var writeFloor = 0;
   // newestFetch is the promise of the most recently started call. A call whose
-  // response is dropped because the Show disputed flag changed hands this
-  // promise back, so its caller waits for the data that will replace it.
+  // response is dropped because the tab, the chip or the centre changed hands
+  // this promise back, so its caller waits for the data that will replace it.
   var newestFetch = null;
-  // rowsShowDisputed is the Show disputed flag the rows in state.reports were
-  // fetched with, so a failed refetch can tell rows that no longer match the
-  // checkbox from rows that are merely a little old (WR-08).
-  var rowsShowDisputed = false;
+  // rowsFor is the tab, the category and the centre the rows in state.reports
+  // were fetched for, so a failed refetch can tell rows that no longer match
+  // the store from rows that are merely a little old (WR-08).
+  var rowsFor = { view: 'active', category: '', lat: config.fallbackLat, lon: config.fallbackLon };
   // clockOffsetMs is the server's clock minus this device's clock, learned
   // from the Date header of every successful report response. Report ages and
   // the fade stage compare the server's created_at and expires_at with "now",
@@ -175,11 +207,54 @@ window.Pinalert = (function () {
     return state.center.own === true;
   }
 
-  // setShowDisputed mirrors setCenter's shape exactly: a single coerced
-  // assignment onto state, no notify, no fetch — the caller decides when
-  // to refetch.
-  function setShowDisputed(value) {
-    state.showDisputed = !!value;
+  // setView, setCategory, setPlace, clearPlace and setFocusId mirror
+  // setCenter's shape exactly: a plain assignment onto state, no notify, no
+  // fetch. The caller decides when to refetch. A value outside the closed
+  // list is ignored, so the store can never hold a word the server would
+  // answer with a 400.
+  function setView(view) {
+    if (VIEWS.indexOf(view) !== -1) {
+      state.view = view;
+    }
+  }
+
+  function setCategory(slug) {
+    if (slug === '' || CATEGORIES.indexOf(slug) !== -1) {
+      state.category = slug;
+    }
+  }
+
+  // setPlace keeps the place the reader searched for. The name is cut to
+  // PLACE_NAME_MAX characters with a trailing ellipsis character. A value
+  // without a text name and two finite coordinates is ignored.
+  function setPlace(place) {
+    if (!place || typeof place.name !== 'string' || place.name === '' ||
+        typeof place.lat !== 'number' || !isFinite(place.lat) ||
+        typeof place.lon !== 'number' || !isFinite(place.lon)) {
+      return;
+    }
+    var name = place.name;
+    if (name.length > PLACE_NAME_MAX) {
+      name = name.slice(0, PLACE_NAME_MAX - 1) + '\u2026';
+    }
+    state.place = { name: name, lat: place.lat, lon: place.lon };
+  }
+
+  function clearPlace() {
+    state.place = null;
+  }
+
+  // setFocusId keeps the report id of a ?report=ID link, as digits only. The
+  // next list request carries it once.
+  function setFocusId(id) {
+    if (id === null) {
+      state.focusId = null;
+      return;
+    }
+    var text = String(id);
+    if (/^[1-9][0-9]{0,17}$/.test(text)) {
+      state.focusId = text;
+    }
   }
 
   // fetchReports performs the one and only GET /api/reports call. A
@@ -201,14 +276,26 @@ window.Pinalert = (function () {
     if (options && options.afterWrite === true && mySeq > writeFloor) {
       writeFloor = mySeq;
     }
-    var sentDisputed = state.showDisputed;
+    var sentView = state.view;
+    var sentCategory = state.category;
+    var sentLat = state.center.lat;
+    var sentLon = state.center.lon;
+    var sentFocusId = state.focusId;
     var pending;
     // A response is stale when newer data was applied after this call
     // started or before the newest post write refetch started, or when the
-    // reader has flipped Show disputed since this request was built. A stale
-    // response must change nothing, neither rows nor the error state.
+    // reader has changed the tab, the chip or the centre since this request
+    // was built. A stale response must change nothing, neither rows nor the
+    // error state, so rows never show under the wrong tab.
     function isStale() {
-      return mySeq < lastAppliedSeq || mySeq < writeFloor || sentDisputed !== state.showDisputed;
+      return mySeq < lastAppliedSeq || mySeq < writeFloor || sentView !== state.view ||
+        sentCategory !== state.category || sentLat !== state.center.lat || sentLon !== state.center.lon;
+    }
+    // rowsMatchStore is true when the rows on screen were fetched for the tab,
+    // the chip and the centre the store holds now.
+    function rowsMatchStore() {
+      return rowsFor.view === state.view && rowsFor.category === state.category &&
+        rowsFor.lat === state.center.lat && rowsFor.lon === state.center.lon;
     }
     // What a dropped call resolves with: nothing when newer data is already
     // in the store, else the newest call's promise.
@@ -230,17 +317,24 @@ window.Pinalert = (function () {
 
     // This is the only report fetch in the client (see this file's own
     // header comment), and both the list and the map render from the one
-    // state.reports array it fills — so one flag on one URL reveals both
-    // surfaces' hidden rows and pins together. There is no map-specific
-    // query to add and none must ever be added: a second fetch would be
-    // the first place the two surfaces could disagree about what exists,
-    // which is exactly what TRUST-02 forbids. The value below is a fixed
-    // string, so no encodeURIComponent call is needed or wanted here,
-    // unlike the three coordinate/radius parameters above, which encode
-    // runtime numbers. Omitting the parameter entirely when the flag is
-    // false keeps this URL byte-identical to Phase 1's.
-    if (sentDisputed) {
-      url += '&show_disputed=true';
+    // state.reports array it fills, so one set of parameters on one URL
+    // decides both surfaces' rows and pins together. There is no
+    // map-specific query to add and none must ever be added: a second fetch
+    // would be the first place the two surfaces could disagree about what
+    // exists, which is exactly what TRUST-02 forbids. The tab word is one of
+    // two fixed strings (the store only ever holds a word from VIEWS), so it
+    // needs no encoding; the category and the report id are encoded like the
+    // coordinates above, and the server checks all three. Omitting a
+    // parameter when it holds its default keeps the Active, unfiltered URL
+    // byte-identical to Phase 1's.
+    if (sentView === 'disputed' || sentView === 'past') {
+      url += '&view=' + sentView;
+    }
+    if (sentCategory !== '') {
+      url += '&category=' + encodeURIComponent(sentCategory);
+    }
+    if (sentFocusId !== null) {
+      url += '&report=' + encodeURIComponent(sentFocusId);
     }
 
     pending = fetch(url)
@@ -256,7 +350,19 @@ window.Pinalert = (function () {
           return whenFresh();
         }
         state.reports = (body && body.reports) || [];
-        rowsShowDisputed = sentDisputed;
+        // The three optional objects are kept as the server sent them. This
+        // file renders none of them. A response without a focus object leaves
+        // the last one as it is.
+        state.recent = (body && body.recent) || null;
+        state.cut = (body && body.cut) || null;
+        if (body && body.focus) {
+          state.focus = body.focus;
+        }
+        // The report id travels with the first answered request only.
+        if (sentFocusId !== null && state.focusId === sentFocusId) {
+          state.focusId = null;
+        }
+        rowsFor = { view: sentView, category: sentCategory, lat: sentLat, lon: sentLon };
         lastAppliedSeq = mySeq;
         state.status = 'ok';
         state.error = null;
@@ -266,11 +372,13 @@ window.Pinalert = (function () {
         if (isStale()) {
           return whenFresh();
         }
-        // Rows fetched under the other Show disputed setting must not stay on
-        // screen under a checkbox that no longer matches them, so they are
+        // Rows fetched for another tab, chip or centre must not stay on
+        // screen under a strip that no longer matches them, so they are
         // dropped. Rows that are only a little old stay (WR-08).
-        if (rowsShowDisputed !== state.showDisputed) {
+        if (!rowsMatchStore()) {
           state.reports = [];
+          state.recent = null;
+          state.cut = null;
         }
         state.status = 'error';
         state.error = err;
@@ -287,6 +395,12 @@ window.Pinalert = (function () {
       return;
     }
     pollTimer = window.setInterval(function () {
+      // The Past list is read when the tab opens, on a place or chip change,
+      // on a restored page and on Retry, never on the poll: it changes only
+      // when a report closes or fades, and it is the heavier read.
+      if (state.view === 'past') {
+        return;
+      }
       fetchReports();
     }, config.pollIntervalMs);
   }
@@ -428,6 +542,42 @@ window.Pinalert = (function () {
     return Math.round(km) + ' km away';
   }
 
+  // distanceText is the one distance sentence of a row, a card and a popup
+  // (C20, C21). The browser only formats: the server owns the number, and for
+  // an approximate report the coarse point that number was measured to (D-23).
+  // The words depend on what the feed is centred on:
+  //   an approximate report   "about {n} km away" (the reader's own centre) or
+  //                           "about {n} km from {Place}"; n is a whole number
+  //                           of km, at least 1, never "under 100 m"
+  //   a searched place        "{d} km from {Place}" or "under 100 m from {Place}"
+  //   the reader's own centre formatDistance's "away" words
+  //   any other centre        '' (the fallback centre is nobody's position)
+  function distanceText(report) {
+    var km = report ? report.distance_km : null;
+    if (typeof km !== 'number' || !isFinite(km) || km < 0) {
+      return '';
+    }
+    var place = state.place;
+    if (report.approximate === true) {
+      var whole = Math.max(1, Math.round(km));
+      if (place) {
+        return 'about ' + whole + ' km from ' + place.name;
+      }
+      return state.center.own === true ? 'about ' + whole + ' km away' : '';
+    }
+    if (place) {
+      if (km < 0.1) {
+        return 'under 100 m from ' + place.name;
+      }
+      var amount = km < 9.95 ? km.toFixed(1) : String(Math.round(km));
+      return amount + ' km from ' + place.name;
+    }
+    if (state.center.own === true) {
+      return formatDistance(km);
+    }
+    return '';
+  }
+
   // formatFade is the fade line of the popup (A95), from the report's own
   // expires_at on the server's clock, like relativeTime. One hour or more
   // reads in whole hours rounded down, under an hour in minutes rounded up,
@@ -511,13 +661,19 @@ window.Pinalert = (function () {
     SEVERITY_LABELS: SEVERITY_LABELS,
     SEVERITY_WORDS: SEVERITY_WORDS,
     CATEGORY_LABELS: CATEGORY_LABELS,
+    CHIP_LABELS: CHIP_LABELS,
+    VIEWS: VIEWS,
     categoryLabel: categoryLabel,
     config: config,
     state: state,
     subscribe: subscribe,
     setCenter: setCenter,
     feedIsAroundReader: feedIsAroundReader,
-    setShowDisputed: setShowDisputed,
+    setView: setView,
+    setCategory: setCategory,
+    setPlace: setPlace,
+    clearPlace: clearPlace,
+    setFocusId: setFocusId,
     fetchReports: fetchReports,
     startPolling: startPolling,
     submitReport: submitReport,
@@ -528,6 +684,7 @@ window.Pinalert = (function () {
     formatShelterLine: formatShelterLine,
     relativeTime: relativeTime,
     formatDistance: formatDistance,
+    distanceText: distanceText,
     formatFade: formatFade,
     ageStage: ageStage,
     setText: setText,

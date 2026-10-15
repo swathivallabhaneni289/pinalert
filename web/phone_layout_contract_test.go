@@ -198,13 +198,19 @@ func TestPhoneBottomNavMarkup(t *testing.T) {
 }
 
 // TestPhoneFeedHeadingMarkup pins the heading and the live count slot inside
-// the list pane, in front of the list itself.
+// the list pane, behind the tab strip and in front of the list itself.
+//
+// Test change on purpose (plan 03.1-05): the title gained id="feed-heading-title"
+// so feed.js can write Nearby now, Disputed reports or Past reports into it,
+// and the strip sits first in the pane. The old literal was
+// <h2 class="feed-heading__title">Nearby now</h2>.
 func TestPhoneFeedHeadingMarkup(t *testing.T) {
 	index := p13ReadTemplate(t, "index.html.tmpl")
 	p13Ordered(t, index, "index.html.tmpl",
 		`class="pane pane--list"`,
+		`<nav class="view-tabs"`,
 		`<div class="feed-heading">`,
-		`<h2 class="feed-heading__title">Nearby now</h2>`,
+		`<h2 class="feed-heading__title" id="feed-heading-title">Nearby now</h2>`,
 		`<p class="feed-heading__count" id="feed-count"></p>`,
 		`<ol id="report-list">`,
 	)
