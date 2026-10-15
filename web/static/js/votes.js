@@ -1588,17 +1588,20 @@
       // device or another tab already took the mark back, or both undos are
       // spent. The list is read again before the block is released, as on
       // success, so the render replaces the stale Undo; the Past tab is never
-      // polled, so nothing else would (WR-05). The refusal line is written
-      // after the render, and focus stays on the button while it is shown,
-      // else follows the take back's own route (row, then tab link).
+      // polled, so nothing else would (WR-05). The refusal line and the
+      // release come first, so the reader is not kept waiting for a list
+      // round trip; the render keeps the line. Focus stays on the button
+      // while it is shown; when the render hides it, focus follows the take
+      // back's own route (row, then tab link).
+      setVoteButtonLabel(button, restingLabel);
+      setBlockBusy(block, false);
+      showVoteError(block, takeBackErrorMessage(err));
+      if (canTakeFocus(button)) {
+        button.focus();
+      }
       var refresh = answeredByServer(err) ? Pinalert.fetchReports({ afterWrite: true }) : Promise.resolve();
       return refresh.then(function () {
-        setVoteButtonLabel(button, restingLabel);
-        setBlockBusy(block, false);
-        showVoteError(block, takeBackErrorMessage(err));
-        if (canTakeFocus(button)) {
-          button.focus();
-        } else {
+        if (!canTakeFocus(button)) {
           focusAfterTakeBack(origin);
         }
       });
@@ -1621,13 +1624,12 @@
     }, function (err) {
       // A refused toast Undo reads the list again too (WR-05), so the opened
       // report's own Undo never outlives the mark the server no longer has.
+      // The toast shows the sentence at once; the list read is not waited for.
       var sentence = takeBackErrorMessage(err);
-      if (!answeredByServer(err)) {
-        return sentence;
+      if (answeredByServer(err)) {
+        Pinalert.fetchReports({ afterWrite: true });
       }
-      return Pinalert.fetchReports({ afterWrite: true }).then(function () {
-        return sentence;
-      });
+      return sentence;
     });
   }
 
