@@ -34,6 +34,14 @@ How confirmations are counted, why a place is a precision 7 geohash cell, the 1 
    export RESEND_API_KEY="re_..."                   # optional when ENV=development, required otherwise — see Email delivery below
    export RESEND_FROM="Pinalert <onboarding@resend.dev>"  # optional; defaults to the Resend sandbox sender when unset
    export NOMINATIM_CONTACT_EMAIL="you@example.com"  # optional, safe to leave unset; see below
+   # export OPENAI_API_KEY="sk-..."                  # optional when ENV=development (each text check passes with a WARNING), required otherwise: the server will not start without it
+   # export MODERATION_MODEL="omni-moderation-2024-09-26"  # optional, that pinned snapshot is the default
+   # export CONTACT_EMAIL="contact@yourdomain.com"   # optional, empty means no contact block on any page
+   # export EMERGENCY_PRIMARY="112"                  # optional, default 112
+   # export EMERGENCY_OLDER="100,101,108"            # optional, this is the default; set but empty drops the older numbers text
+   # export EMERGENCY_STATE_LINES="1070,1077"        # optional, this is the default; set but empty drops the state helpline row
+   # export CLIENT_IP_HEADER="Header-Your-Host-Sets" # optional, unset skips the network address backstop; use the header your host sets, only after the host canary in the checklist below
+   # export MODERATOR_EMAILS="you@example.com"       # optional, comma separated verified emails; unset means no moderator; a malformed entry stops startup
    ```
    The server refuses to start without `SESSION_SECRET` unless `ENV=development` is also set —
    never let a missing secret silently fall back to an auto-generated one, which would invalidate
@@ -50,7 +58,11 @@ How confirmations are counted, why a place is a precision 7 geohash cell, the 1 
    header and in Nominatim's optional `email` parameter. There is no signup and no API key for
    this service. Leaving it unset is safe and the server still starts, falling back to the project
    repository URL as the identifier, so unlike `SESSION_SECRET` and `RESEND_API_KEY` this variable
-   never blocks boot.
+   never blocks boot. The text check, the limits, the moderator screen and the numbers settings are
+   described in [docs/MODERATION.md](./docs/MODERATION.md). A missing `OPENAI_API_KEY` outside
+   `ENV=development`, a malformed `CONTACT_EMAIL`, a `CLIENT_IP_HEADER` that is not a plain header
+   name and a malformed `MODERATOR_EMAILS` entry each stop startup with a message that names the
+   setting.
 3. **Apply the schema** (a dedicated binary, never run automatically by the server):
    ```bash
    make migrate
@@ -96,6 +108,22 @@ Before sharing a deployed instance with real visitors:
    at your DNS registrar and wait for verification to complete.
 2. Set `RESEND_FROM` to an address at that verified domain (e.g. `Pinalert <alerts@yourdomain.com>`)
    and redeploy — `onboarding@resend.dev` must not be the sender in anything but local development.
+3. Set the contact email (`CONTACT_EMAIL`; empty means no contact block anywhere). The address is
+   your choice, and nothing contact related is public until it is set.
+4. Check the emergency numbers on the live government pages (112.gov.in, which neither earlier
+   check could open, and your state disaster management authority's site). Change only
+   `EMERGENCY_PRIMARY` (default 112), `EMERGENCY_OLDER` (default 100,101,108) and
+   `EMERGENCY_STATE_LINES` (default 1070,1077; set but empty drops the text) if they differ. Never
+   present 1070 or 1077 as national numbers.
+5. Send one canary request through the host to learn which header carries the visitor address
+   before setting `CLIENT_IP_HEADER` (unset means no network limit on the new limiters).
+   Until `CLIENT_IP_HEADER` is set on a host behind a proxy, the per address limits on place search
+   and login link requests see one shared address for every visitor, so set it only after the
+   canary shows which header carries the visitor address.
+6. Set `MODERATOR_EMAILS` to the verified emails of your moderators and bookmark `/moderate`.
+7. Set `OPENAI_API_KEY` and check that a fresh zero balance key is accepted by running the
+   recorder once (see [docs/MODERATION.md](./docs/MODERATION.md)).
+8. Have a lawyer or mentor read the Disclaimer and Policy pages before any wide promotion.
 
 Resend's free tier is also quota-limited (roughly 100 sends/day at the time this was written —
 re-check the current figure in your own Resend dashboard rather than trusting this document). The

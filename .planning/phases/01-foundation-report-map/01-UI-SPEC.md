@@ -170,7 +170,7 @@ Phase 1 substitutes for the reference's Phase-2 strings, plus states the referen
 | Primary CTA (FAB) | Icon-only "+", `aria-label="Report an emergency"` |
 | Modal title | "Report an emergency" |
 | Modal submit button | "Post report" (idle) → "Posting…" (submitting, disabled) |
-| Modal cancel | "Cancel" |
+| Modal cancel | "Cancel report" (renamed in Phase 4, 04-UI-SPEC P4-A23; the id cancel-report is unchanged) |
 | Discard-draft confirmation (destructive — see below) | "Discard this report? Your description and location won't be saved." — buttons "Discard" / "Keep editing" |
 | Report list row meta line (Phase 1, no confirm count yet) | `{Category} · {relative time}` e.g. "Flood · 4 min ago" — do NOT show a confirm count or "Unconfirmed" string; that's Phase 2 data that doesn't exist yet |
 | Empty state heading | "No reports near you yet" |
