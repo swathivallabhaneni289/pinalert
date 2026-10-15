@@ -196,12 +196,22 @@ func TestDisplayStateDecidesExpired(t *testing.T) {
 	}
 
 	display := jsFunctionBody(t, code, "displayState(report)")
-	for _, want := range []string{"visibilityState(report)", "'retracted'", "report.expired === true", "'expired'"} {
+	// Plan 03.1-13 (D-13): a finished report of the Past tab carries its own
+	// history state, and the server's word decides. The old literals were the
+	// first four only; report.history.state joins them, after Resolved.
+	for _, want := range []string{"visibilityState(report)", "'retracted'", "report.expired === true", "'expired'",
+		"report.history.state"} {
 		if !strings.Contains(display, want) {
 			t.Errorf("displayState does not contain %q", want)
 		}
 	}
 	p15InOrder(t, "displayState", display, "'retracted'", "report.expired === true")
+	p15InOrder(t, "displayState", display, "'retracted'", "report.history.state")
+	for _, banned := range []string{"new Date", "Date.now", "getTime", "created_at", "expires_at"} {
+		if strings.Contains(display, banned) {
+			t.Errorf("displayState contains %q: the browser decides no state from a date (T-31-61)", banned)
+		}
+	}
 
 	for _, name := range []string{"applyVisibilityClass(el, report)", "updateVisibilityTag(tag, report)"} {
 		body := jsFunctionBody(t, code, name)

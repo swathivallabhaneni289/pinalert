@@ -458,6 +458,15 @@
   --severity-tint: var(--color-bg);
 }
 
+/* An expired report opens in this popup from the Past tab (03.1 D-13). The
+   shared .vis-expired rule sets the tint to transparent, which on the phone
+   sheet would reveal the map tiles behind the text, so the popup takes the
+   page colour as the two states above do. Its own rule, because the pinned
+   tests read the hidden and retracted rule above by its exact head. */
+.leaflet-container .leaflet-popup.vis-expired {
+  --severity-tint: var(--color-bg);
+}
+
 /* -------------------------------------------------------------------------
  * Phase 3 vote button style (plan 03-11, 03-UI-SPEC Vote Controls and Too
  * Far). One outlined button serves the feed row, the map popup and the
@@ -1224,6 +1233,40 @@
   outline: 1px solid var(--color-border);
 }
 
+/* Finished pins on the map (03.1 D-13, UI-SPEC Surface 3). A Resolved or
+   Expired report on the Past tab is a ring and never a filled severity dot, so
+   it is not read as live and the cue is not colour alone: the page colour
+   inside, a 2px muted ring, solid for Resolved and dashed for Expired, and a
+   muted glyph. The 44 by 44 marker box does not change because the global
+   border box sizing keeps the ring inside it. Every head starts with #map, so
+   the badges of the Activity page and of the list never change. The ring is
+   a graphic pair against the page colour (3 to 1, checked in
+   TestMapFollowsRingContrast). map.js adds the two modifier classes beside
+   the vis- state class. The heads here do not name the vis- classes, because
+   the pinned row treatment tests read every trust.css rule that does. The
+   open outline of a phone dot is a heavier head in phone.css and keeps
+   winning. */
+#map .icon-badge--pin.icon-badge--resolved,
+#map .icon-badge--pin.icon-badge--expired {
+  background: var(--color-bg);
+  border: 2px solid var(--color-text-muted);
+  outline: none;
+  color: var(--color-text-muted);
+}
+
+#map .icon-badge--pin.icon-badge--expired {
+  border-style: dashed;
+}
+
+/* The ring stays visible when the system picks the colours. The head is one
+   class heavier than the phone dot's own rule, so it still wins there. */
+@media (forced-colors: active) {
+  #map .leaflet-marker-icon .icon-badge--pin.icon-badge--resolved,
+  #map .leaflet-marker-icon .icon-badge--pin.icon-badge--expired {
+    border-color: CanvasText;
+  }
+}
+
 /* The 188px Activity body on a 320px phone is narrower than a label plus the
    words, so the line reaches one spacing step into the row padding and the
    words stay beside the label. The line has no fill or border (A81). */
@@ -1415,6 +1458,26 @@
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
   color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* The closed line of a finished report (C44, C45) takes the slot of the fade
+   line and the normal text colour, not the muted one. One more class than the
+   fade head, so it outranks it. */
+.leaflet-container .popup-card .popup-card__fade--closed:not([hidden]) {
+  color: var(--color-text);
+}
+
+/* The privacy line of a finished Rescue report (C19): one 14px paragraph under
+   the Approximate location line, in the normal text colour, with the same
+   small gap the meta lines have. Three classes and the ancestor field, so it
+   outranks the popup paragraph reset. */
+.leaflet-container .popup-card .popup-card__privacy:not([hidden]) {
+  display: block;
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text);
   overflow-wrap: anywhere;
 }
 

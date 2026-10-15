@@ -10,9 +10,10 @@
 // the resolver bypass T-02-04 names — the whole reason 02-01 wrote exactly
 // one Resolve function.
 //
-// The module also reads one more server authored boolean, expired, which only
-// the Activity page sets, from its row attribute. The feed and the map never
-// set it.
+// The module also reads two more server authored facts: a boolean, expired,
+// which only the Activity page sets from its row attribute, and the history
+// state (resolved or expired) a finished report of the Past tab carries. The
+// feed and the map never set the boolean.
 //
 // SECURITY (T-01-03): every string reaching the DOM goes through
 // Pinalert.setText, a text-node assignment, never a markup-parsing sink.
@@ -106,15 +107,26 @@
   // displayState is the one rule for the shown state word and the row class
   // (A57). A Resolved report stays Resolved, so Resolved wins over Expired
   // (State Matrix 10a). Otherwise a report the server marked expired reads
-  // expired, and anything else keeps the resolver's own state. Only the
-  // Activity page sets expired; the feed and the map never do. The state
-  // allowlist and visibilityState stay at the four resolver values.
+  // expired, and anything else keeps the resolver's own state. Two server
+  // authored facts mark expiry: the expired flag the Activity page sets from
+  // its row attribute, and the history state the report list carries for a
+  // finished report. A history that says resolved reads Resolved as well, so
+  // a finished report is never drawn as a live one (03.1 D-13). Nothing here
+  // compares a date. The state allowlist and visibilityState stay at the four
+  // resolver values.
   function displayState(report) {
     var state = visibilityState(report);
     if (state === 'retracted') {
       return state;
     }
+    var finished = report && report.history ? report.history.state : '';
+    if (finished === 'resolved') {
+      return 'retracted';
+    }
     if (report && report.expired === true) {
+      return 'expired';
+    }
+    if (finished === 'expired') {
       return 'expired';
     }
     return state;
