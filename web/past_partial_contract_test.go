@@ -23,7 +23,7 @@ func TestPastPartialLineWords(t *testing.T) {
 		t.Errorf("feed.js holds the partial line %d times, want 1 (one constant for both groups)", n)
 	}
 	p13MustContain(t, "feed.js", feed, "var PARTIAL_LINE_TEXT = '"+ppLine+"';")
-	for _, dash := range []string{"—", "–"} {
+	for _, dash := range []string{"\u2014", "\u2013"} {
 		if strings.Contains(ppLine, dash) {
 			t.Errorf("the partial line holds a dash character %q", dash)
 		}
