@@ -132,3 +132,29 @@ func TestReviewFixAListPaneLoadingMark(t *testing.T) {
 		t.Errorf("the old rows must not stay readable under the new heading")
 	}
 }
+
+// TestReviewFixAToastPauseMouseOnly pins WR-04: the Undo toast pauses from the
+// pointer only for a mouse, tracks the mouse from its own events instead of
+// reading :hover, and restarts at 4 seconds only when it was paused, so a tap
+// on a phone neither stops the timer for good nor cuts it short.
+func TestReviewFixAToastPauseMouseOnly(t *testing.T) {
+	app := p19Code(t, "static/js/app.js")
+
+	p13MustContain(t, "app.js", app, "var toastPointerInside = false;")
+	p13MustNotContain(t, "app.js", app, ":hover")
+
+	pause := jsFunctionBody(t, app, "pauseToast(evt)")
+	p13Ordered(t, pause, "pauseToast",
+		"evt.type === 'pointerenter'", "evt.pointerType !== 'mouse'", "return;", "toastPointerInside = true;",
+		"window.clearTimeout(toastTimer);")
+
+	resume := jsFunctionBody(t, app, "resumeToast(evt)")
+	p13Ordered(t, resume, "resumeToast",
+		"evt.type === 'pointerleave'", "toastPointerInside = false;", "toastTimer !== null",
+		"toastPointerInside || toastEl.contains(document.activeElement)",
+		"startToastTimer(toastEl, TOAST_RESUME_MS);")
+
+	show := jsFunctionBody(t, app, "showToast(message, action)")
+	p13Ordered(t, show, "showToast", "toastPending = false;", "toastPointerInside = false;",
+		"toastEl.addEventListener('pointerenter', pauseToast);")
+}

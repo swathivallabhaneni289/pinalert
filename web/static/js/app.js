@@ -173,6 +173,10 @@ window.Pinalert = (function () {
   var toastHasAction = false;
   var toastPending = false;
   var toastPauseWired = false;
+  // True while a mouse pointer is over the toast, kept from the pointer
+  // events. :hover is not read, because on a touch screen it can stay on after
+  // a tap and would keep the timer stopped for good (WR-04).
+  var toastPointerInside = false;
 
   // nowMs is the current time on the server's clock, as best this device can
   // tell. It is the only clock the age and fade code reads.
@@ -716,6 +720,9 @@ window.Pinalert = (function () {
     var mine = toastSeq;
     toastHasAction = hasAction;
     toastPending = false;
+    // A toast that was hidden under the mouse got no pointerleave, so the
+    // flag starts clear for every new toast; a real hover sets it again.
+    toastPointerInside = false;
     if (hasAction) {
       setText(toastEl, '');
       toastEl.classList.add('toast--action');
@@ -788,9 +795,18 @@ window.Pinalert = (function () {
     }, ms);
   }
 
-  // pauseToast stops the hide timer while the reader has the pointer or focus
-  // on a toast that holds an action. A plain toast keeps its fixed 3 seconds.
-  function pauseToast() {
+  // pauseToast stops the hide timer while the reader has a mouse pointer or
+  // focus on a toast that holds an action. A plain toast keeps its fixed 3
+  // seconds. Only a mouse pauses from the pointer: a touch or a pen fires
+  // pointerenter as it lands, and a tap on the text must not stop the timer
+  // (WR-04). Focus pauses for every kind of input.
+  function pauseToast(evt) {
+    if (evt && evt.type === 'pointerenter') {
+      if (evt.pointerType !== 'mouse') {
+        return;
+      }
+      toastPointerInside = true;
+    }
     if (!toastHasAction || toastPending) {
       return;
     }
@@ -800,15 +816,20 @@ window.Pinalert = (function () {
     }
   }
 
-  // resumeToast restarts the hide timer at 4 seconds when the pointer or the
-  // focus leaves a visible toast that holds an action. It does nothing while
-  // either is still on the toast, and nothing for a request in flight.
+  // resumeToast restarts the hide timer at 4 seconds when the mouse or the
+  // focus leaves a visible toast that holds an action and the timer was
+  // paused. It does nothing while either is still on the toast, nothing for a
+  // request in flight, and nothing while the timer still runs (a touch that
+  // lifts never paused it, so it keeps its own time).
   function resumeToast(evt) {
     var toastEl = evt.currentTarget;
-    if (!toastHasAction || toastPending || toastEl.hidden) {
+    if (evt.type === 'pointerleave') {
+      toastPointerInside = false;
+    }
+    if (!toastHasAction || toastPending || toastEl.hidden || toastTimer !== null) {
       return;
     }
-    if (toastEl.matches(':hover') || toastEl.contains(document.activeElement)) {
+    if (toastPointerInside || toastEl.contains(document.activeElement)) {
       return;
     }
     startToastTimer(toastEl, TOAST_RESUME_MS);
