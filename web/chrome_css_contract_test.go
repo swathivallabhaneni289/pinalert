@@ -54,18 +54,30 @@ func p408AllCSS(t *testing.T) map[string]string {
 // is returned as separate rules whose heads carry no at-rule preamble.
 func p408MediaBlocks(css, query string) []cssRule {
 	text := stripCSSComments(css)
-	marker := "@media " + query
 	var out []cssRule
+	for _, span := range p408MediaSpans(text, query) {
+		out = append(out, parseCSSRules(text[span[1]:span[2]-1]+"}")...)
+	}
+	return out
+}
+
+// p408MediaSpans finds every `@media <query>` block in comment stripped CSS
+// by balanced braces. Each span is {start of the at-rule, start of its body,
+// one past its closing brace}.
+func p408MediaSpans(text, query string) [][3]int {
+	marker := "@media " + query
+	var spans [][3]int
 	from := 0
 	for {
 		idx := strings.Index(text[from:], marker)
 		if idx == -1 {
-			return out
+			return spans
 		}
-		start := from + idx + len(marker)
+		atStart := from + idx
+		start := atStart + len(marker)
 		open := strings.Index(text[start:], "{")
 		if open == -1 {
-			return out
+			return spans
 		}
 		if strings.TrimSpace(text[start:start+open]) != "" {
 			// A longer query that merely starts with this one.
@@ -85,9 +97,9 @@ func p408MediaBlocks(css, query string) []cssRule {
 			i++
 		}
 		if depth != 0 {
-			return out
+			return spans
 		}
-		out = append(out, parseCSSRules(text[bodyStart:i-1]+"}")...)
+		spans = append(spans, [3]int{atStart, bodyStart, i})
 		from = i
 	}
 }
@@ -380,5 +392,374 @@ func TestTopChromeGeometry(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// p408TopLevelRules parses the CSS with every @media block removed, so the
+// rules returned are the ones that apply at any width.
+func p408TopLevelRules(css string) []cssRule {
+	text := stripCSSComments(css)
+	for {
+		at := strings.Index(text, "@media")
+		if at == -1 {
+			break
+		}
+		open := strings.Index(text[at:], "{")
+		if open == -1 {
+			break
+		}
+		depth, i := 1, at+open+1
+		for i < len(text) && depth > 0 {
+			switch text[i] {
+			case '{':
+				depth++
+			case '}':
+				depth--
+			}
+			i++
+		}
+		text = text[:at] + text[i:]
+	}
+	return parseCSSRules(text)
+}
+
+// p408Selectors splits a rule head into its trimmed selectors, dropping any
+// at-rule preamble that parseCSSRules leaves on the first rule of a block.
+func p408Selectors(head string) []string {
+	if i := strings.LastIndex(head, "{"); i != -1 {
+		head = head[i+1:]
+	}
+	var out []string
+	for _, sel := range strings.Split(head, ",") {
+		if sel = strings.TrimSpace(sel); sel != "" {
+			out = append(out, sel)
+		}
+	}
+	return out
+}
+
+// p408Merged merges the declarations of every rule whose selector list holds
+// the selector, per selector, in source order.
+func p408Merged(rules []cssRule) map[string]map[string]string {
+	out := map[string]map[string]string{}
+	for _, r := range rules {
+		decls := declsOf(r.declBody)
+		for _, sel := range p408Selectors(r.selectorHead) {
+			if out[sel] == nil {
+				out[sel] = map[string]string{}
+			}
+			for k, v := range decls {
+				out[sel][k] = v
+			}
+		}
+	}
+	return out
+}
+
+// p408Expect fails for every property whose squashed value differs.
+func p408Expect(t *testing.T, label string, got map[string]string, want map[string]string) {
+	t.Helper()
+	if got == nil {
+		t.Errorf("%s: no rule found", label)
+		return
+	}
+	for prop, value := range want {
+		if p408Squash(got[prop]) != p408Squash(value) {
+			t.Errorf("%s: %s = %q, want %q", label, prop, got[prop], value)
+		}
+	}
+}
+
+func TestInlineMessageLooks(t *testing.T) {
+	chrome := p408ReadStatic(t, "static/css/chrome.css")
+	rules := p408Merged(p408TopLevelRules(chrome))
+
+	p408Expect(t, ".inline-error", rules[".inline-error:not([hidden])"], map[string]string{
+		"display":      "flex",
+		"gap":          "var(--space-sm)",
+		"margin":       "var(--space-xs) 0 0",
+		"padding-left": "var(--space-sm)",
+		"border-left":  "4px solid var(--color-severity-critical)",
+		"color":        "var(--color-text)",
+		"font-size":    "var(--font-size-body)",
+		"line-height":  "var(--line-height-body)",
+		"font-weight":  "var(--font-weight-regular)",
+	})
+	icon := rules[".inline-error::before"]
+	p408Expect(t, ".inline-error::before", icon, map[string]string{
+		"content":          `""`,
+		"flex-shrink":      "0",
+		"width":            "var(--space-md)",
+		"height":           "var(--space-md)",
+		"margin-top":       "var(--space-xs)",
+		"background-color": "currentColor",
+		"mask-size":        "contain",
+		"mask-repeat":      "no-repeat",
+		"mask-position":    "center",
+	})
+	if _, has := icon["display"]; has {
+		t.Error(".inline-error::before must not set display")
+	}
+	maskPath := extractMaskURLPath(icon["mask-image"])
+	if maskPath != "/static/icons/circle-alert.svg" {
+		t.Errorf(".inline-error::before mask-image path = %q, want /static/icons/circle-alert.svg", maskPath)
+	} else if _, err := fs.Stat(StaticFS, strings.TrimPrefix(maskPath, "/")); err != nil {
+		t.Errorf("mask image %s is not embedded: %v", maskPath, err)
+	}
+	if icon["-webkit-mask-image"] != icon["mask-image"] {
+		t.Error(".inline-error::before needs the -webkit- mask-image beside the plain one")
+	}
+
+	p408Expect(t, ".inline-note", rules[".inline-note:not([hidden])"], map[string]string{
+		"display":      "block",
+		"margin":       "var(--space-xs) 0 0",
+		"padding-left": "var(--space-sm)",
+		"border-left":  "4px solid var(--color-text)",
+		"color":        "var(--color-text)",
+		"font-size":    "var(--font-size-label)",
+		"line-height":  "var(--line-height-label)",
+		"font-weight":  "var(--font-weight-regular)",
+	})
+	for sel := range rules {
+		if strings.HasPrefix(sel, ".inline-note") && strings.Contains(sel, "::") {
+			t.Errorf("%s: the note has no icon", sel)
+		}
+		if strings.Contains(sel, ".vote-btn") || strings.Contains(sel, ".vote-controls") || strings.Contains(sel, ".vote-error") {
+			t.Errorf("chrome.css must not restyle %s", sel)
+		}
+	}
+
+	// chrome.css holds two forced colors blocks (the bar's and this plan's),
+	// so read the union of them.
+	forced := p408Merged(p408MediaBlocks(chrome, "(forced-colors: active)"))
+	p408Expect(t, "forced .inline-error", forced[".inline-error:not([hidden])"], map[string]string{"border-left": "4px solid CanvasText"})
+	p408Expect(t, "forced .inline-note", forced[".inline-note:not([hidden])"], map[string]string{"border-left": "4px solid CanvasText"})
+	p408Expect(t, "forced .inline-error::before", forced[".inline-error::before"],
+		map[string]string{"forced-color-adjust": "none", "background-color": "CanvasText"})
+}
+
+func TestPlainButtonStates(t *testing.T) {
+	const mix = "color-mix(in srgb, var(--color-severity-critical) 85%, var(--color-text) 15%)"
+	chrome := p408ReadStatic(t, "static/css/chrome.css")
+	topRules := p408TopLevelRules(chrome)
+	rules := p408Merged(topRules)
+	const plain = ".btn:not(.btn--primary):not(.btn--destructive)"
+	disabledPlain := map[string]string{
+		"background": "var(--color-bg)", "color": "var(--color-text-muted)",
+		"border-color": "var(--color-border)", "box-shadow": "none", "cursor": "not-allowed",
+	}
+
+	p408Expect(t, "plain hover", rules[plain+":hover"], map[string]string{
+		"background": "var(--color-border)", "color": "var(--color-text)", "border-color": "var(--color-border)"})
+	p408Expect(t, "plain press", rules[plain+":active"], map[string]string{
+		"background": "var(--color-border)", "color": "var(--color-text)", "border-color": "var(--color-border)",
+		"box-shadow": "inset 0 0 0 1px var(--color-text-muted)"})
+	p408Expect(t, "plain disabled", rules[plain+":disabled"], disabledPlain)
+	p408Expect(t, "plain aria-disabled", rules[plain+`[aria-disabled="true"]`], disabledPlain)
+
+	p408Expect(t, "primary hover", rules[".btn--primary:hover"], map[string]string{
+		"background": "var(--color-text-muted)", "color": "var(--color-bg)", "border-color": "var(--color-text-muted)"})
+	p408Expect(t, "primary press", rules[".btn--primary:active"], map[string]string{
+		"background": "var(--color-text-muted)", "color": "var(--color-bg)", "border-color": "var(--color-text-muted)",
+		"box-shadow": "inset 0 0 0 1px var(--color-bg)"})
+	p408Expect(t, "primary disabled", rules[".btn--primary:disabled"], disabledPlain)
+	p408Expect(t, "primary aria-disabled", rules[`.btn--primary[aria-disabled="true"]`], disabledPlain)
+
+	p408Expect(t, "destructive hover", rules[".btn--destructive:hover"], map[string]string{
+		"background": mix, "color": "var(--color-bg)", "border-color": mix})
+	p408Expect(t, "destructive press", rules[".btn--destructive:active"], map[string]string{
+		"background": mix, "color": "var(--color-bg)", "border-color": mix,
+		"box-shadow": "inset 0 0 0 1px var(--color-bg)"})
+	inFlight := map[string]string{
+		"background": "var(--color-severity-critical)", "color": "var(--color-bg)",
+		"border-color": "var(--color-severity-critical)", "box-shadow": "none", "cursor": "progress"}
+	p408Expect(t, "destructive disabled", rules[".btn--destructive:disabled"], inFlight)
+	p408Expect(t, "destructive aria-disabled", rules[`.btn--destructive[aria-disabled="true"]`], inFlight)
+
+	p408Expect(t, ".btn[hidden]", rules[".btn[hidden]"], map[string]string{"display": "none"})
+	p408Expect(t, ".btn transition", rules[".btn"],
+		map[string]string{"transition": "background-color 150ms ease, border-color 150ms ease, color 150ms ease"})
+
+	// Each disabled rule comes after its hover and press rules.
+	index := func(sel string) int {
+		for i, r := range topRules {
+			for _, s := range p408Selectors(r.selectorHead) {
+				if s == sel {
+					return i
+				}
+			}
+		}
+		return -1
+	}
+	for _, base := range []string{plain, ".btn--primary", ".btn--destructive"} {
+		hover, press, disabled := index(base+":hover"), index(base+":active"), index(base+":disabled")
+		if hover == -1 || press == -1 || disabled == -1 || !(hover < press && press < disabled) {
+			t.Errorf("%s: want hover, press, disabled in that order, got %d, %d, %d", base, hover, press, disabled)
+		}
+	}
+
+	// The reduced motion block turns the transition off.
+	motion := p408Merged(p408MediaBlocks(chrome, "(prefers-reduced-motion: reduce)"))
+	p408Expect(t, "reduced motion .btn", motion[".btn"], map[string]string{"transition": "none"})
+
+	// Forced colors: the union of both blocks holds the button treatments,
+	// and the block that holds them comes after the last .btn state rule.
+	forced := p408Merged(p408MediaBlocks(chrome, "(forced-colors: active)"))
+	for _, sel := range []string{
+		plain + ":disabled", plain + `[aria-disabled="true"]`, ".btn--primary:disabled", `.btn--primary[aria-disabled="true"]`,
+	} {
+		p408Expect(t, "forced "+sel, forced[sel], map[string]string{"border": "1px solid GrayText"})
+	}
+	for _, sel := range []string{
+		".btn--destructive", ".btn--destructive:hover", ".btn--destructive:active",
+		".btn--destructive:disabled", `.btn--destructive[aria-disabled="true"]`,
+	} {
+		p408Expect(t, "forced "+sel, forced[sel],
+			map[string]string{"background": "ButtonFace", "color": "ButtonText", "border": "1px solid ButtonText"})
+	}
+	text := stripCSSComments(chrome)
+	lastState := strings.LastIndex(text, "cursor: progress;")
+	forcedAt := strings.Index(text, "ButtonFace")
+	if lastState == -1 || forcedAt == -1 || forcedAt < lastState {
+		t.Errorf("the forced colors block with the button treatments must come after the last .btn state rule (found %d and %d)", lastState, forcedAt)
+	}
+	for _, r := range topRules {
+		head := r.selectorHead
+		if strings.Contains(head, ".btn") && (strings.Contains(head, ".vote-btn") || strings.Contains(head, ".vote-controls")) {
+			t.Errorf("rule %q mixes .btn with a vote control", head)
+		}
+	}
+}
+
+func TestPhase4HiddenGuard(t *testing.T) {
+	prefixes := []string{
+		".inline-error", ".inline-note", ".notice-card", ".queue-strip", ".flag-control", ".flag-dialog",
+		".low-", ".report-row--low", ".report-form--low", ".mod-", ".legal-",
+	}
+	inspected := 0
+	for path, css := range p408AllCSS(t) {
+		for _, r := range parseCSSRules(css) {
+			display, has := declsOf(r.declBody)["display"]
+			if !has || display == "none" {
+				continue
+			}
+			for _, sel := range p408Selectors(r.selectorHead) {
+				if strings.HasSuffix(sel, "::before") || strings.HasSuffix(sel, "::after") {
+					continue
+				}
+				matches := false
+				for _, prefix := range prefixes {
+					if strings.Contains(sel, prefix) {
+						matches = true
+					}
+				}
+				if !matches {
+					continue
+				}
+				inspected++
+				if !strings.Contains(sel, ":not([hidden])") {
+					t.Errorf("%s: %q sets display: %s without :not([hidden]), so it would override the hidden attribute", path, sel, display)
+				}
+			}
+		}
+	}
+	if inspected < 2 {
+		t.Errorf("inspected %d selectors, want at least 2 (the two inline message rules of plan 04-08)", inspected)
+	}
+
+	chrome := p408Merged(parseCSSRules(p408ReadStatic(t, "static/css/chrome.css")))
+	p408Expect(t, ".btn[hidden]", chrome[".btn[hidden]"], map[string]string{"display": "none"})
+}
+
+func TestPhase4ContrastPairs(t *testing.T) {
+	needed := []string{
+		"--color-bg", "--color-surface", "--color-border", "--color-text", "--color-text-muted",
+		"--color-severity-critical", "--color-severity-low-bg", "--color-severity-medium-bg", "--color-severity-critical-bg",
+	}
+	light1, light2, dark1, dark2 := extractThemeTokens(parseCSSRules(p408ReadStatic(t, "static/css/main.css")), needed)
+	sources := []struct {
+		name   string
+		tokens themeTokens
+	}{
+		{"root light", light1}, {`data-theme="light"`, light2}, {"prefers dark", dark1}, {`data-theme="dark"`, dark2},
+	}
+	// Row backgrounds: main.css maps each severity to its tint token, and
+	// trust.css only paints --color-surface or transparent (the page
+	// background), so these are the backgrounds a row text can sit on.
+	pairs := [][2]string{
+		{"--color-text", "--color-surface"},
+		{"--color-text", "--color-bg"},
+		{"--color-text", "--color-severity-low-bg"},
+		{"--color-text", "--color-severity-medium-bg"},
+		{"--color-text", "--color-severity-critical-bg"},
+		{"--color-text", "--color-border"},
+		{"--color-text-muted", "--color-bg"},
+		{"--color-bg", "--color-text-muted"},
+		{"--color-bg", "--color-severity-critical"},
+	}
+	for _, src := range sources {
+		for _, p := range pairs {
+			fg, okFg := src.tokens[p[0]]
+			bg, okBg := src.tokens[p[1]]
+			if !okFg || !okBg {
+				t.Errorf("%s: %s or %s does not resolve", src.name, p[0], p[1])
+				continue
+			}
+			ctx := src.name + " " + p[0] + " on " + p[1]
+			if ratio := wcagContrastRatio(t, fg, bg, ctx); ratio < 4.5 {
+				t.Errorf("%s: contrast %.2f is below 4.5", ctx, ratio)
+			}
+		}
+		fill := mixHexSRGB(t, src.tokens["--color-severity-critical"], 85, src.tokens["--color-text"], 15, src.name)
+		ctx := src.name + " --color-bg on the destructive hover fill"
+		if ratio := wcagContrastRatio(t, src.tokens["--color-bg"], fill, ctx); ratio < 4.5 {
+			t.Errorf("%s: contrast %.2f is below 4.5", ctx, ratio)
+		}
+	}
+}
+
+func TestChromeCSSTokensOnly(t *testing.T) {
+	raw := p408ReadStatic(t, "static/css/chrome.css")
+	for _, dash := range []string{"\u2014", "\u2013"} {
+		if strings.Contains(raw, dash) {
+			t.Errorf("chrome.css contains a dash character %q", dash)
+		}
+	}
+	text := stripCSSComments(raw)
+	for _, banned := range []string{"!important", "rgb(", "rgba(", "hsl(", "999px"} {
+		if strings.Contains(text, banned) {
+			t.Errorf("chrome.css contains %q", banned)
+		}
+	}
+	if m := regexp.MustCompile(`#[0-9a-fA-F]{3,8}\b`).FindString(text); m != "" {
+		t.Errorf("chrome.css contains the hex colour %q", m)
+	}
+
+	sizes := map[string]bool{
+		"var(--font-size-label)": true, "var(--font-size-body)": true,
+		"var(--font-size-heading)": true, "var(--font-size-display)": true,
+	}
+	weights := map[string]bool{"var(--font-weight-regular)": true, "var(--font-weight-semibold)": true}
+	for _, r := range parseCSSRules(raw) {
+		decls := declsOf(r.declBody)
+		if v, has := decls["font-size"]; has && !sizes[v] {
+			t.Errorf("%q: font-size %q is not a size token", r.selectorHead, v)
+		}
+		if v, has := decls["font-weight"]; has && !weights[v] {
+			t.Errorf("%q: font-weight %q is not a weight token", r.selectorHead, v)
+		}
+	}
+
+	// System colour keywords belong inside forced colors blocks only.
+	outside := text
+	spans := p408MediaSpans(text, "(forced-colors: active)")
+	for i := len(spans) - 1; i >= 0; i-- {
+		outside = outside[:spans[i][0]] + outside[spans[i][2]:]
+	}
+	if len(spans) < 2 {
+		t.Errorf("chrome.css holds %d forced colors blocks, want the bar's and this plan's", len(spans))
+	}
+	if m := regexp.MustCompile(`\b(CanvasText|LinkText|GrayText|ButtonFace|ButtonText|Canvas)\b`).FindString(outside); m != "" {
+		t.Errorf("system colour %s appears outside a forced colors block", m)
 	}
 }

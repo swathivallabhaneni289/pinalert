@@ -514,7 +514,7 @@ body {
 }
 
 .btn--destructive {
-  /* Used only by the discard-draft confirmation — the phase's single data-loss path. */
+  /* Serves every destructive confirmation: the discard draft confirmation, Yes, discard report and Yes, remove report (P4-A17). */
   background: var(--color-severity-critical);
   color: var(--color-bg);
   border-color: var(--color-severity-critical);

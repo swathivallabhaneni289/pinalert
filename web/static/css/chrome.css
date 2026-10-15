@@ -60,3 +60,162 @@ html {
     color: LinkText;
   }
 }
+
+/* Shared inline message looks (P4-A16). The red failure look is for real
+   failures only and the note look is for everything else; neither carries a
+   role, because the code that shows a real failure sets the role. The icon
+   takes the text colour; only the left border is the severity red. */
+.inline-error:not([hidden]) {
+  display: flex;
+  gap: var(--space-sm);
+  margin: var(--space-xs) 0 0;
+  padding-left: var(--space-sm);
+  border-left: 4px solid var(--color-severity-critical);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+}
+
+.inline-error::before {
+  content: "";
+  flex-shrink: 0;
+  width: var(--space-md);
+  height: var(--space-md);
+  margin-top: var(--space-xs);
+  background-color: currentColor;
+  -webkit-mask-image: url("/static/icons/circle-alert.svg");
+  mask-image: url("/static/icons/circle-alert.svg");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.inline-note:not([hidden]) {
+  display: block;
+  margin: var(--space-xs) 0 0;
+  padding-left: var(--space-sm);
+  border-left: 4px solid var(--color-text);
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+}
+
+/* A hidden button stays hidden even though .btn sets a display. */
+.btn[hidden] {
+  display: none;
+}
+
+/* Button states (P4-A28, P4-A17). Plain, primary and destructive buttons each
+   get a hover, a press and a disabled look. The disabled rule of each kind
+   comes after its hover and press rules so it wins at equal specificity. */
+.btn {
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.btn:not(.btn--primary):not(.btn--destructive):hover {
+  background: var(--color-border);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+.btn:not(.btn--primary):not(.btn--destructive):active {
+  background: var(--color-border);
+  color: var(--color-text);
+  border-color: var(--color-border);
+  box-shadow: inset 0 0 0 1px var(--color-text-muted);
+}
+
+.btn:not(.btn--primary):not(.btn--destructive):disabled,
+.btn:not(.btn--primary):not(.btn--destructive)[aria-disabled="true"] {
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.btn--primary:hover {
+  background: var(--color-text-muted);
+  color: var(--color-bg);
+  border-color: var(--color-text-muted);
+}
+
+.btn--primary:active {
+  background: var(--color-text-muted);
+  color: var(--color-bg);
+  border-color: var(--color-text-muted);
+  box-shadow: inset 0 0 0 1px var(--color-bg);
+}
+
+.btn--primary:disabled,
+.btn--primary[aria-disabled="true"] {
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.btn--destructive:hover {
+  background: color-mix(in srgb, var(--color-severity-critical) 85%, var(--color-text) 15%);
+  color: var(--color-bg);
+  border-color: color-mix(in srgb, var(--color-severity-critical) 85%, var(--color-text) 15%);
+}
+
+.btn--destructive:active {
+  background: color-mix(in srgb, var(--color-severity-critical) 85%, var(--color-text) 15%);
+  color: var(--color-bg);
+  border-color: color-mix(in srgb, var(--color-severity-critical) 85%, var(--color-text) 15%);
+  box-shadow: inset 0 0 0 1px var(--color-bg);
+}
+
+/* A confirmation in flight keeps its red fill; it only shows the progress
+   cursor. */
+.btn--destructive:disabled,
+.btn--destructive[aria-disabled="true"] {
+  background: var(--color-severity-critical);
+  color: var(--color-bg);
+  border-color: var(--color-severity-critical);
+  box-shadow: none;
+  cursor: progress;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .inline-error:not([hidden]),
+  .inline-note:not([hidden]) {
+    border-left: 4px solid CanvasText;
+  }
+
+  .inline-error::before {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+
+  .btn:not(.btn--primary):not(.btn--destructive):disabled,
+  .btn:not(.btn--primary):not(.btn--destructive)[aria-disabled="true"],
+  .btn--primary:disabled,
+  .btn--primary[aria-disabled="true"] {
+    border: 1px solid GrayText;
+  }
+
+  .btn--destructive,
+  .btn--destructive:hover,
+  .btn--destructive:active,
+  .btn--destructive:disabled,
+  .btn--destructive[aria-disabled="true"] {
+    background: ButtonFace;
+    color: ButtonText;
+    border: 1px solid ButtonText;
+  }
+}
