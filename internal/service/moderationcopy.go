@@ -41,3 +41,31 @@ func OlderNumbersLabel(older []string) string {
 	last := len(parts) - 1
 	return "Older numbers for " + strings.Join(parts[:last], ", ") + " and " + parts[last] + "."
 }
+
+// Declarations for the Phase 4 strings, empty until the GREEN step.
+const (
+	HeldLabel               = ""
+	HeldSentence            = ""
+	RemovedLabel            = ""
+	RemovedSentence         = ""
+	RemovedPolicyPointer    = ""
+	DisclaimerResolvedEntry = ""
+	GlossaryUnconfirmedLead = ""
+	GlossaryCountsTerm      = ""
+	GlossaryCountsLead      = ""
+	GlossaryCurrencyLead    = ""
+	GlossaryDisputedText    = ""
+)
+
+// GlossaryEntry is one entry of the Disclaimer glossary: the terms that share
+// one explanation, and that explanation.
+type GlossaryEntry struct {
+	Terms []string
+	Text  string
+}
+
+// DisclaimerGlossary is a declaration only until the GREEN step.
+func DisclaimerGlossary() []GlossaryEntry { return nil }
+
+// GlossaryReporterText is a declaration only until the GREEN step.
+func GlossaryReporterText() string { return "" }

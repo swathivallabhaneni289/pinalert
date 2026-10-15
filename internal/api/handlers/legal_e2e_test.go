@@ -7,11 +7,13 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
 	"pinalert/internal/account"
 	"pinalert/internal/api/handlers"
+	"pinalert/internal/service"
 )
 
 var (
@@ -69,7 +71,9 @@ func legalEqual(a, b []string) bool {
 var legalDisclaimerH2s = []string{
 	"Pinalert is not a substitute for emergency services",
 	"Emergency numbers",
+	"How to read what Pinalert shows",
 	"Reports can be wrong",
+	"Reports expire",
 }
 
 func TestLegalPagesRender(t *testing.T) {
@@ -184,6 +188,65 @@ func TestLegalPagesNumbersBlock(t *testing.T) {
 	}
 	if strings.Contains(bt, "state disaster helpline") || strings.Contains(bb, "sachet.ndma.gov.in") {
 		t.Errorf("empty state lines must drop the third row and the SACHET link")
+	}
+}
+
+func TestLegalPagesGlossaryUsesAppSentences(t *testing.T) {
+	body := legalRender(t, handlers.AuthConfig{AssetVersion: "test"}, handlers.LegalDisclaimerPage, nil).Body.String()
+	start := strings.Index(body, `<dl class="legal-glossary">`)
+	if start < 0 {
+		t.Fatalf("no legal-glossary list")
+	}
+	end := strings.Index(body[start:], "</dl>")
+	if end < 0 {
+		t.Fatalf("legal-glossary list never closes")
+	}
+	dl := body[start : start+end]
+
+	var wantTerms, wantTexts []string
+	for _, e := range service.DisclaimerGlossary() {
+		wantTerms = append(wantTerms, e.Terms...)
+		wantTexts = append(wantTexts, e.Text)
+	}
+	var gotTerms, gotTexts []string
+	for _, m := range regexp.MustCompile(`(?s)<dt[^>]*>(.*?)</dt>`).FindAllStringSubmatch(dl, -1) {
+		gotTerms = append(gotTerms, legalText(t, m[1]))
+	}
+	for _, m := range regexp.MustCompile(`(?s)<dd[^>]*>(.*?)</dd>`).FindAllStringSubmatch(dl, -1) {
+		gotTexts = append(gotTexts, legalText(t, m[1]))
+	}
+	if !legalEqual(gotTerms, wantTerms) {
+		t.Errorf("dt texts = %q, want %q", gotTerms, wantTerms)
+	}
+	if !legalEqual(gotTexts, wantTexts) {
+		t.Errorf("dd texts = %q, want %q", gotTexts, wantTexts)
+	}
+	if len(gotTexts) < 2 {
+		t.Fatalf("glossary has %d dd elements", len(gotTexts))
+	}
+	threshold := "Needs " + strconv.Itoa(service.IndependentAgreementThreshold) + " people at different spots to confirm it."
+	if !strings.Contains(gotTexts[0], threshold) {
+		t.Errorf("first dd %q lacks %q", gotTexts[0], threshold)
+	}
+	if gotTexts[1] != service.GlossaryCountsLead || strings.Contains(gotTexts[1], "Counts places") {
+		t.Errorf("second dd = %q, want the counts lead alone", gotTexts[1])
+	}
+
+	text := legalText(t, body)
+	if regexp.MustCompile(`(?i)confirmed by (\d|n\b)`).MatchString(text) {
+		t.Errorf("page uses the older wording confirmed by N")
+	}
+	if service.ExpiryDuration(service.SeverityMedium) != service.ExpiryDuration(service.SeverityLow) {
+		t.Fatalf("medium and low expiry differ, so Most reports is no longer true")
+	}
+	low := int(service.ExpiryDuration(service.SeverityLow).Hours())
+	crit := int(service.ExpiryDuration(service.SeverityCritical).Hours())
+	want := "Most reports last " + strconv.Itoa(low) + " hours and critical reports last " + strconv.Itoa(crit) + " hours."
+	if !strings.Contains(text, want) {
+		t.Errorf("page text lacks %q", want)
+	}
+	if strings.Contains(text, "unless re-confirmed") || strings.Contains(strings.ToLower(text), "fade") {
+		t.Errorf("page uses the stale unless re-confirmed or fade wording")
 	}
 }
 
