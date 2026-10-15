@@ -434,7 +434,12 @@
   pointer-events: auto;
 }
 
+/* The status line sits under the whole tools layer, so on a laptop it is
+   below the chips row and never takes a press meant for a chip (browser
+   check T13.8i, finding F3). The results stay under the box. phone.css
+   places both on a phone. */
 .map-search__status:not(.visually-hidden) {
+  top: calc(var(--map-tools-height) + var(--space-xs));
   margin: 0;
   padding: var(--space-sm);
   font-family: var(--font-family);

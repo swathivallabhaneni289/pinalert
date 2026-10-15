@@ -288,8 +288,15 @@
       facts: facts
     };
 
+    // WebKit does not focus a button on a click or a tap, so the toggle takes
+    // focus here. Without it Escape finds no row holding focus and the open
+    // panel stays open (browser check T2.3, finding F4). Chromium already
+    // focuses it, so this changes nothing there.
     toggle.addEventListener('click', function () {
       setPanelOpen(instance, toggle.getAttribute('aria-expanded') !== 'true');
+      if (document.activeElement !== toggle) {
+        toggle.focus();
+      }
     });
     block.addEventListener('click', function (evt) {
       evt.stopPropagation();

@@ -26,17 +26,18 @@
 @media (max-width: 899.98px) {
   /* ---- Page frame: the map on top, the list under it, both always shown ---- */
 
-  /* Two rows: the map takes 40 percent of the height and the list takes the
-     rest. The legacy unit comes first and the dynamic unit second, the same
-     pairing main.css uses, so the page itself never scrolls. The shell is
-     shorter than the viewport by the unofficial bar above it, exactly as
-     main.css states it; the second row takes whatever the map row leaves, so
-     the map and the list fill the space under the bar. */
+  /* Two rows: the map takes a 176px strip (two of the 64px token and one of
+     the 48px token) and the list takes the rest. The strip was 40 percent of
+     the height; with the unofficial bar above the page that left room for one
+     report card, and at 390 by 844 the strip of 176px leaves room for three
+     whole cards above the bottom bar (browser check T13.4c, finding F1). The
+     shell is shorter than the viewport by the unofficial bar above it, exactly
+     as main.css states it, so the page itself never scrolls. The legacy unit
+     comes first and the dynamic unit second, the same pairing main.css uses. */
   body > .app-shell {
     height: calc(100vh - var(--disclaimer-bar-height));
     height: calc(100dvh - var(--disclaimer-bar-height));
-    grid-template-rows: 40vh minmax(0, 1fr);
-    grid-template-rows: 40dvh minmax(0, 1fr);
+    grid-template-rows: calc(var(--space-3xl) * 2 + var(--space-2xl)) minmax(0, 1fr);
     gap: 0;
   }
 
@@ -53,12 +54,12 @@
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: var(--space-md) var(--space-md) calc(var(--touch-target-min) * 2 + var(--space-sm) + var(--space-md) * 2);
+    /* 8px above the tab strip, 16px at the sides (finding F1). */
+    padding: var(--space-sm) var(--space-md) calc(var(--touch-target-min) * 2 + var(--space-sm) + var(--space-md) * 2);
   }
 
   .pane--map #map {
-    height: 40vh;
-    height: 40dvh;
+    height: calc(var(--space-3xl) * 2 + var(--space-2xl));
   }
 
   .app-shell > .view-toggle {
@@ -180,7 +181,7 @@
   }
 
   /* The results are fixed under the row, across the page and down to the
-     bottom bar, so they cover the list pane and not only the 40 percent
+     bottom bar, so they cover the list pane and not only the map
      strip. They scroll inside themselves. */
   .pane--map > .map-tools .map-search__status:not(.visually-hidden),
   .pane--map > .map-tools .map-search__results {
@@ -202,15 +203,38 @@
      corner, and a provisional or hidden card is white with a hairline, as
      drawn. The tint comes from the existing severity token. */
   #report-list .report-row {
+    padding: var(--space-sm) var(--space-md);
     border: 0;
     border-radius: 8px;
   }
 
   #report-list .report-row.vis-provisional,
   #report-list .report-row.vis-hidden {
-    padding: calc(var(--space-md) - 1px);
+    padding: calc(var(--space-sm) - 1px) calc(var(--space-md) - 1px);
     border: 1px solid var(--color-border);
     background: var(--color-bg);
+  }
+
+  /* A phone card is denser than the laptop row (browser checks T13.4c and
+     T13.4d, findings F1 and F2): the card keeps its 16px sides but takes 8px
+     above and below, the parts of line one and of the trust line sit 4px
+     apart, and the title follows line one by the row gap alone. Every part
+     the row shows stays. */
+  #report-list .report-row .report-row__body {
+    column-gap: var(--space-xs);
+  }
+
+  #report-list .report-row .report-row__title {
+    margin: 0;
+  }
+
+  #report-list .report-row .report-row__trustline:not([hidden]) {
+    column-gap: var(--space-xs);
+  }
+
+  #report-list .report-row .report-row__trustline-count--second::before,
+  #report-list .report-row .report-row__trustline-word:not([hidden])::before {
+    margin-right: var(--space-xs);
   }
 
   /* White cards: the muted colour clears 4.5 to 1 on the page colour in both

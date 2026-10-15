@@ -232,9 +232,23 @@ func TestCompactRowLiftScopedToList(t *testing.T) {
 		t.Errorf("main.css .report-row background is %q, want the severity tint", row.Decls["background"])
 	}
 
-	// The lifted rules left phone.css: moved, not copied.
+	// The lifted rules left phone.css: moved, not copied. The one exception is
+	// the denser phone card of the browser findings F1 and F2: phone.css may
+	// name the body and the title again, but only to set the spacing between
+	// the parts (column-gap on the body, margin on the title), never a lifted
+	// layout declaration.
+	phoneSpacingOnly := map[string]string{
+		"#report-list .report-row .report-row__body":  "column-gap",
+		"#report-list .report-row .report-row__title": "margin",
+	}
 	for _, r := range phone {
 		for _, part := range p16HeadParts(r.Head) {
+			if prop, ok := phoneSpacingOnly[part]; ok {
+				if len(r.Decls) != 1 || r.Decls[prop] == "" {
+					t.Errorf("phone.css head %q may set only %s, got %v", part, prop, r.Decls)
+				}
+				continue
+			}
 			for _, moved := range []string{
 				".report-row__title", ".report-row__stateline", ".report-row > .icon-badge",
 				".trust-block__", ".vote-controls", ".vote-note", ".vote-error", ".report-row__body",
