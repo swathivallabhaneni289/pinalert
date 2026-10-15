@@ -169,6 +169,12 @@ type FeedReportResponse struct {
 	UndosLeft int `json:"undos_left" minimum:"0" maximum:"2" example:"2"`
 	// Present only when the report was uploaded more than 30 minutes after it was written. Display only: created_at still drives the age and the expiry.
 	WrittenAt *string `json:"written_at,omitempty" format:"date-time" example:"2026-09-05T10:03:00.000Z"`
+	// ViewerFlagged is true when the calling account has flagged this report.
+	// It is viewer specific like your_vote, so it never says who flagged or how
+	// many did, and the author's own feed always reads false unless the author
+	// flagged it, which the server refuses. It is filled from the one batched
+	// extras read, so the feed's round trips stay constant.
+	ViewerFlagged bool `json:"viewer_flagged" example:"false"`
 }
 
 // HistoryResponse is how a finished report ended. State is resolved or
@@ -324,6 +330,7 @@ func reportViewToResponse(v service.ReportView) FeedReportResponse {
 		YourResolution:        yourResolution,
 		UndosLeft:             v.UndosLeft,
 		WrittenAt:             writtenAt,
+		ViewerFlagged:         v.ViewerFlagged,
 	}
 }
 

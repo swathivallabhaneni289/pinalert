@@ -13,6 +13,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -683,6 +685,175 @@ func TestFlagNeverChangesVisibility(t *testing.T) {
 		}
 		if state != "clear" {
 			t.Errorf("report %d moderation_state = %q, want clear", id, state)
+		}
+	}
+}
+
+// p20ViewerFlagged reads the feed as client and returns the raw object of every
+// report. It also checks, on every element, that viewer_flagged is present as a
+// JSON boolean and that no other key names a flag (no count, no identity).
+func p20ViewerFlagged(t *testing.T, label string, client *http.Client, baseURL string) (map[int64]bool, map[int64]json.RawMessage) {
+	t.Helper()
+	objects := p20FeedObjects(t, client, baseURL)
+	out := map[int64]bool{}
+	for id, obj := range objects {
+		var keys map[string]json.RawMessage
+		if err := json.Unmarshal(obj, &keys); err != nil {
+			t.Fatalf("%s: decoding report %d: %v", label, id, err)
+		}
+		raw, ok := keys["viewer_flagged"]
+		if !ok {
+			t.Fatalf("%s: report %d has no viewer_flagged key", label, id)
+		}
+		var flagged bool
+		if err := json.Unmarshal(raw, &flagged); err != nil {
+			t.Fatalf("%s: report %d viewer_flagged = %s, want a JSON boolean", label, id, raw)
+		}
+		out[id] = flagged
+		for k := range keys {
+			if k != "viewer_flagged" && strings.Contains(strings.ToLower(k), "flag") {
+				t.Errorf("%s: report %d carries the extra key %q", label, id, k)
+			}
+		}
+	}
+	return out, objects
+}
+
+func TestFlagViewerMarker(t *testing.T) {
+	srv, mailer, pool := newE2EServerWith(t, p20Tweak(newP20Clock(), nil))
+	a := newVerifiedClient(t, srv, mailer, "p20-mark-a@example.com")
+	b := newVerifiedClient(t, srv, mailer, "p20-mark-b@example.com")
+	c := newVerifiedClient(t, srv, mailer, "p20-mark-c@example.com")
+	idB := p20AccountID(t, pool, "p20-mark-b@example.com")
+	r1 := submitReportGetID(t, a, srv.URL, p20Body("flood", "low"))
+	r2 := submitReportGetID(t, a, srv.URL, p20Body("flood", "low"))
+
+	_, authorBefore := p20ViewerFlagged(t, "A before", a, srv.URL)
+	p20Status(t, "B flags r1", p20Flag(t, b, srv.URL, r1, "spam", ""), http.StatusCreated)
+
+	got, _ := p20ViewerFlagged(t, "B", b, srv.URL)
+	if !got[r1] || got[r2] {
+		t.Errorf("B's viewer_flagged = r1 %v, r2 %v, want true and false", got[r1], got[r2])
+	}
+	got, _ = p20ViewerFlagged(t, "C", c, srv.URL)
+	if got[r1] || got[r2] {
+		t.Errorf("C's viewer_flagged = r1 %v, r2 %v, want false and false", got[r1], got[r2])
+	}
+	got, authorAfter := p20ViewerFlagged(t, "A after", a, srv.URL)
+	if got[r1] || got[r2] {
+		t.Errorf("A's viewer_flagged = r1 %v, r2 %v, want false and false", got[r1], got[r2])
+	}
+	if !bytes.Equal(authorAfter[r1], authorBefore[r1]) {
+		t.Errorf("the author's object for r1 changed after B flagged it\nbefore %s\nafter  %s", authorBefore[r1], authorAfter[r1])
+	}
+
+	if _, err := pool.Exec(context.Background(), `UPDATE report_flags SET dismissed_at = now() WHERE report_id = $1 AND account_id = $2`, r1, idB); err != nil {
+		t.Fatalf("dismissing B's flag: %v", err)
+	}
+	got, _ = p20ViewerFlagged(t, "B after dismissal", b, srv.URL)
+	if !got[r1] {
+		t.Errorf("a dismissed flag must still read true for B")
+	}
+
+	p20Status(t, "B flags r2", p20Flag(t, b, srv.URL, r2, "other", ""), http.StatusCreated)
+	got, _ = p20ViewerFlagged(t, "B with both", b, srv.URL)
+	if !got[r1] || !got[r2] {
+		t.Errorf("B's viewer_flagged = r1 %v, r2 %v, want true and true", got[r1], got[r2])
+	}
+}
+
+func TestFlagSwaggerCoversRoute(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "swagger.json"))
+	if err != nil {
+		t.Fatalf("reading docs/swagger.json: %v", err)
+	}
+	var spec struct {
+		Paths       map[string]map[string]json.RawMessage `json:"paths"`
+		Definitions map[string]struct {
+			Properties map[string]map[string]any `json:"properties"`
+		} `json:"definitions"`
+	}
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		t.Fatalf("decoding docs/swagger.json: %v", err)
+	}
+
+	op, ok := spec.Paths["/reports/{id}/flag"]["post"]
+	if !ok {
+		t.Fatal("docs/swagger.json has no post operation for /reports/{id}/flag")
+	}
+	p15Assert429(t, "/reports/{id}/flag post", op)
+
+	var parsed struct {
+		Parameters []struct {
+			In     string `json:"in"`
+			Schema struct {
+				Ref string `json:"$ref"`
+			} `json:"schema"`
+		} `json:"parameters"`
+		Responses map[string]struct {
+			Schema struct {
+				Ref string `json:"$ref"`
+			} `json:"schema"`
+		} `json:"responses"`
+	}
+	if err := json.Unmarshal(op, &parsed); err != nil {
+		t.Fatalf("decoding the flag operation: %v", err)
+	}
+	for _, code := range []string{"201", "400", "401", "403", "404", "409", "429", "500"} {
+		if _, ok := parsed.Responses[code]; !ok {
+			t.Errorf("the flag operation documents no %s response", code)
+		}
+	}
+	if got := parsed.Responses["201"].Schema.Ref; got != "#/definitions/handlers.FlagResponse" {
+		t.Errorf("201 schema = %q, want #/definitions/handlers.FlagResponse", got)
+	}
+	bodyRef := ""
+	for _, p := range parsed.Parameters {
+		if p.In == "body" {
+			bodyRef = p.Schema.Ref
+		}
+	}
+	if bodyRef != "#/definitions/handlers.FlagRequest" {
+		t.Errorf("body parameter schema = %q, want #/definitions/handlers.FlagRequest", bodyRef)
+	}
+
+	reqProps := spec.Definitions["handlers.FlagRequest"].Properties
+	if len(reqProps) != 1 {
+		t.Errorf("FlagRequest has %d properties, want only reason", len(reqProps))
+	}
+	reason, ok := reqProps["reason"]
+	if !ok || reason["type"] != "string" {
+		t.Fatalf("FlagRequest.reason = %v, want a string property", reason)
+	}
+	enum, ok := reason["enum"].([]any)
+	if !ok {
+		t.Fatalf("FlagRequest.reason enum = %v, want a list", reason["enum"])
+	}
+	if len(enum) != len(service.FlagReasons) {
+		t.Fatalf("FlagRequest.reason enum = %v, want %v", enum, service.FlagReasons)
+	}
+	for i, el := range enum {
+		s, isString := el.(string)
+		if !isString {
+			t.Fatalf("FlagRequest.reason enum element %d = %#v (%T), want a JSON string", i, el, el)
+		}
+		if s != string(service.FlagReasons[i]) {
+			t.Errorf("FlagRequest.reason enum element %d = %q, want %q", i, s, service.FlagReasons[i])
+		}
+	}
+
+	respProps := spec.Definitions["handlers.FlagResponse"].Properties
+	if len(respProps) != 1 || respProps["flagged"]["type"] != "boolean" {
+		t.Errorf("FlagResponse properties = %v, want only flagged as a boolean", respProps)
+	}
+	if got := spec.Definitions["handlers.FeedReportResponse"].Properties["viewer_flagged"]["type"]; got != "boolean" {
+		t.Errorf("FeedReportResponse.viewer_flagged type = %v, want boolean", got)
+	}
+	for _, def := range []string{"handlers.FlagRequest", "handlers.FlagResponse"} {
+		for name := range spec.Definitions[def].Properties {
+			if p07IdentifierPropertyName.MatchString(name) {
+				t.Errorf("%s has the identifier looking property %q", def, name)
+			}
 		}
 	}
 }
