@@ -378,16 +378,16 @@ Plans:
   6. One panel state model: this phase owns the list panel's state (view, tab and filters kept in the URL) so Phases 3.2, 5 and 9 plug their tabs and filters into it, and deep links such as /?view=resolved&report=ID work. The default tab is called Nearby once other tabs exist. Phase 3's outcome classifier must be exposed as a reusable pure function that can return the neutral outcome. HIST-05 reuses Phase 7's geocoder, which has a process-wide limit of 1 Nominatim request per second, so reader searches need their own budget (or a cache) so they cannot starve reporters' address search.
   7. Only the report rows change size. The rest of the page is not redesigned here (backlog 999.10 holds the page wide design pass), and My votes and the six tab Activity page already exist (quick task 261013-wm5). The take back of a mistaken Mark resolved must not travel through the `reopen` vote value, see 03.1-CONTEXT.md "Conflicts and risks".
 
-**Plans**: 16 plans in 5 waves (03.1-01 to 03.1-16)
+**Plans**: 5/16 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 03.1-01-PLAN.md: Pure history functions: ViewOf, ClosureOf, the history words and the finished Rescue coarsening
-- [ ] 03.1-02-PLAN.md: The take back in the voting service: the neutral value, the limit of two, the undo count query
-- [ ] 03.1-03-PLAN.md: The reader place search lane on the geocoder: no waiting, a cache, a per account budget
-- [ ] 03.1-04-PLAN.md: History store queries: expired in the window, open in the area, one report by id
-- [ ] 03.1-05-PLAN.md: The tab strip, the view state in the store and the address, the list pane markup
+- [x] 03.1-01-PLAN.md: Pure history functions: ViewOf, ClosureOf, the history words and the finished Rescue coarsening
+- [x] 03.1-02-PLAN.md: The take back in the voting service: the neutral value, the limit of two, the undo count query
+- [x] 03.1-03-PLAN.md: The reader place search lane on the geocoder: no waiting, a cache, a per account budget
+- [x] 03.1-04-PLAN.md: History store queries: expired in the window, open in the area, one report by id
+- [x] 03.1-05-PLAN.md: The tab strip, the view state in the store and the address, the list pane markup
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -511,7 +511,7 @@ Phases execute in numeric order: 1 → 1.1 → 2 → 3 → 3.1 → 3.2 → 4 →
 | 1.1 Identity & Login — Mandatory Email Verification | 8/8 | Complete   | 2026-09-12 |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 15/15 | Complete | 2026-10-07 |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 31/31 | Complete | 2026-10-13 |
-| 3.1 Report history views | 0/TBD | Not started | - |
+| 3.1 Report history views | 5/16 | In Progress|  |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
 | 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
@@ -639,7 +639,6 @@ Plans:
 Plans:
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)
-
 
 ### Phase 999.11: Report submission accepts missing coordinates as 0,0 (BACKLOG, Phase 4 candidate)
 
