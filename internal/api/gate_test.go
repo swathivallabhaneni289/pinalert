@@ -319,6 +319,7 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 		{"verify landing", http.MethodGet, "/auth/verify", ""},
 		{"static asset", http.MethodGet, "/static/css/main.css", ""},
 		{"swagger ui", http.MethodGet, "/swagger/index.html", ""},
+		{"disclaimer page", http.MethodGet, "/disclaimer", ""},
 	}
 
 	for _, tc := range cases {
@@ -348,6 +349,9 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 			}
 			if resp.StatusCode == http.StatusUnauthorized {
 				t.Fatalf("%s %s returned 401 — this route must be reachable without verification", tc.method, tc.path)
+			}
+			if (tc.path == "/disclaimer" || tc.path == "/policy") && resp.StatusCode != http.StatusOK {
+				t.Fatalf("%s %s returned %d: the public legal page must answer 200 without verification", tc.method, tc.path, resp.StatusCode)
 			}
 		})
 	}
