@@ -46,3 +46,39 @@ func TestReviewFixA2MapFollowsLoadingMark(t *testing.T) {
 		`<div class="app-shell" id="app-shell"`, `<section class="pane pane--map">`,
 		`<p class="map-label" id="map-label" hidden></p>`, `<section class="pane pane--list">`)
 }
+
+// TestReviewFixA2LinkEndsOnRedrawClose pins the follow up of CR-01: a redraw
+// that removes the linked report's pin (a resolve from Active, a take back off
+// Past) ends the link like the reader's own close, so no later poll sends
+// report=ID for it. Only a resize close keeps the link, the focus return stays
+// gated on the redraw flag and synchronous, and the link end still has one
+// dropFocus call and one deferred redraw.
+func TestReviewFixA2LinkEndsOnRedrawClose(t *testing.T) {
+	mapCode := p31fMapCode(t)
+	closeBody := jsFunctionBody(t, mapCode, "onPopupClose(evt)")
+
+	endAt := strings.Index(closeBody, "String(id) === openedFocusId")
+	if endAt == -1 {
+		t.Fatalf("onPopupClose lost the linked popup check")
+	}
+	lineEnd := strings.Index(closeBody[endAt:], "\n")
+	if lineEnd == -1 {
+		t.Fatalf("onPopupClose: the linked popup check has no line end")
+	}
+	cond := closeBody[endAt : endAt+lineEnd]
+	p13MustContain(t, "link end condition", cond, "!resizeClosing")
+	p13MustNotContain(t, "link end condition", cond, "removingPopup")
+
+	// The focus return is unchanged: never after a redraw removed the pin,
+	// and never deferred.
+	p13Ordered(t, closeBody, "onPopupClose focus return",
+		"if (hadFocus && lost && !removingPopup) {", "returnFocusToOpener(opener);",
+		"String(id) === openedFocusId")
+	p13MustNotContain(t, "onPopupClose", closeBody, "setTimeout", "requestAnimationFrame")
+
+	// render still raises the redraw flag around the removal, so the close it
+	// makes is told apart for the focus return.
+	p13Ordered(t, jsFunctionBody(t, mapCode, "render(state)"), "render removal",
+		"removingPopup = true;", "map.removeLayer(markers[id]);", "removingPopup = false;", "delete markers[id];",
+		"openFocusOnce(state);")
+}
