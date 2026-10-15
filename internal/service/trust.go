@@ -70,13 +70,21 @@ const (
 	VoteDispute VoteValue = "dispute"
 	VoteResolve VoteValue = "resolve"
 	VoteReopen  VoteValue = "reopen"
+
+	// VoteUnresolve is the neutral take back of a mistaken Mark resolved
+	// (HIST-09, D-22). It drops the caller's standing resolve and claims
+	// nothing else. It is deliberately not named retract, because Retracted is
+	// already a Visibility, and deliberately not sent as reopen, because a non
+	// poster's reopen counts in ReopenCells and could lift a report that other
+	// people closed (D-28).
+	VoteUnresolve VoteValue = "unresolve"
 )
 
 // VoteValues is the ordered, canonical list of every valid vote value.
-var VoteValues = []VoteValue{VoteConfirm, VoteDispute, VoteResolve, VoteReopen}
+var VoteValues = []VoteValue{VoteConfirm, VoteDispute, VoteResolve, VoteReopen, VoteUnresolve}
 
 // ValidFor reports whether v is a legal value for kind k: confirm/dispute
-// under VoteKindContent, resolve/reopen under VoteKindResolution, and
+// under VoteKindContent, resolve/reopen/unresolve under VoteKindResolution, and
 // false for every other combination including an unknown kind. Written as
 // a switch on k so that adding a third kind later fails to compile
 // silently rather than defaulting to permissive. This is the V5 Input
@@ -89,7 +97,7 @@ func (v VoteValue) ValidFor(k VoteKind) bool {
 	case VoteKindContent:
 		return v == VoteConfirm || v == VoteDispute
 	case VoteKindResolution:
-		return v == VoteResolve || v == VoteReopen
+		return v == VoteResolve || v == VoteReopen || v == VoteUnresolve
 	default:
 		return false
 	}
@@ -145,8 +153,12 @@ type voteBuckets struct {
 // cannot drift (D-04, RESEARCH Pattern 1). Rows of other reports are skipped,
 // the reporter's own content rows are skipped, and the reporter's resolution
 // row sets the two reporter flags instead of entering a bucket. Unrecognised
-// kinds and values are ignored. Callers must pass rows already deduplicated
-// per account by CurrentVotesForReports.
+// kinds and values are ignored. That includes the neutral take back value
+// VoteUnresolve: because the latest row per account wins, an unresolve
+// replaces the caller's resolve and enters no bucket, and a reporter's
+// unresolve sets both reporter flags false, so a take back never counts as a
+// reopen (D-28). Callers must pass rows already deduplicated per account by
+// CurrentVotesForReports.
 func filterVoteRows(rows []sqlcgen.CurrentVotesForReportsRow, reportID int64, reporterAccountID *int64) voteBuckets {
 	var b voteBuckets
 
@@ -255,6 +267,8 @@ type VotingQuerier interface {
 	CurrentVotesForReports(ctx context.Context, reportIDs []int64) ([]sqlcgen.CurrentVotesForReportsRow, error)
 	ReportVoteContext(ctx context.Context, reportID int64) (sqlcgen.ReportVoteContextRow, error)
 	ReporterHistoryReports(ctx context.Context, arg sqlcgen.ReporterHistoryReportsParams) ([]sqlcgen.ReporterHistoryReportsRow, error)
+	// ResolutionUndoCounts is the caller's own take back and reopen count per report, for the two undo limit (D-22).
+	ResolutionUndoCounts(ctx context.Context, arg sqlcgen.ResolutionUndoCountsParams) ([]sqlcgen.ResolutionUndoCountsRow, error)
 }
 
 // VotingService authorizes, records, and resolves confirm/dispute/
@@ -314,6 +328,11 @@ type CastVoteResult struct {
 	Visibility Visibility
 	Reason     ResolveReason
 	Trust      Trust
+
+	// UndosLeft is how many take backs the caller has left on this report
+	// after this vote (D-22). It is nil for a content vote, which has no
+	// undo budget.
+	UndosLeft *int
 }
 
 // CastVote authorizes, records, and resolves a single confirm/dispute/
@@ -336,11 +355,23 @@ type CastVoteResult struct {
 //  5. Reject an expired report. This is RESEARCH Open Question 2's locked
 //     answer: reject, do not accept-and-ignore. The exemption never skips it.
 //     Between 5 and 6, a vote that carried no coordinates is refused as a
-//     validation error on latitude unless step 4 exempted it.
+//     validation error on latitude unless step 4 exempted it or the vote is a
+//     take back (the separate isTakeBack predicate of D-22; the reporter
+//     exemption is not widened).
 //  6. Reject a voter farther than MaxVoteDistanceKm from the report (D-01),
-//     unless step 4 exempted the vote. This runs before the cell is computed
+//     unless step 4 exempted the vote or it is a take back. This runs before the cell is computed
 //     and before anything is written, and a NaN or Inf coordinate fails
 //     closed (T-03-02).
+//     6b. A take back only: read the caller's standing resolution vote on this
+//     one report and refuse with ErrNothingToTakeBack unless it is resolve.
+//     6c. Resolution kind only: read the caller's undo counts for this report
+//     (ResolutionUndoCounts) and refuse a take back, or the reporter's reopen,
+//     with ErrUndoLimitReached once UndoLimit is used. Both 6b and 6c sit
+//     before any write on purpose: a withdraw with nothing to withdraw must
+//     not burn budget or replace a standing row. They run after step 6 so a
+//     vote refused for distance still costs only the context read. The
+//     accepted race is that two simultaneous take backs can overshoot the
+//     limit by one, because the log has no lock by design (T-02-02, T-31-09).
 //  7. Compute the voter's geohash cell server-side from raw coordinates (the
 //     T-02-01 control: CastVoteInput has no geohash field for a client to
 //     populate), append the vote, read the current votes back AFTER the
@@ -405,6 +436,12 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 	// check in step 6 and nothing else.
 	isReporterResolutionVote := in.Kind == VoteKindResolution && rc.ReporterAccountID != nil && *rc.ReporterAccountID == in.AccountID
 
+	// 4b. The take back (D-22) has its own named predicate. It needs no
+	// location, because it claims nothing about the place and only drops the
+	// caller's own resolve. isReporterResolutionVote above is deliberately not
+	// widened to cover it (T-03-01).
+	isTakeBack := in.Kind == VoteKindResolution && in.Value == VoteUnresolve
+
 	// 5. Reject an expired report. now is captured once, here, as the
 	// authoritative clock, never a client-supplied timestamp, matching
 	// Submit's own convention.
@@ -415,17 +452,58 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 
 	// 5b. A vote with no coordinates cannot be placed, so it is refused as a
 	// validation error rather than read as the point 0,0 and answered with a
-	// misleading "too far". Only the reporter's own resolve or reopen is
-	// excused, using the step 4 answer taken from the database.
-	if in.LocationMissing && !isReporterResolutionVote {
+	// misleading "too far". Only the reporter's own resolve or reopen and the
+	// take back are excused, using the step 4 answers.
+	if in.LocationMissing && !isReporterResolutionVote && !isTakeBack {
 		return CastVoteResult{}, ValidationError{Field: "latitude", Message: "latitude and longitude are required."}
 	}
 
 	// 6. D-01's distance refusal, before the cell is computed and before
 	// anything is written. The check is written as a negated within test so
-	// a NaN or Inf coordinate on either side is refused (T-03-02).
-	if !isReporterResolutionVote && !withinVoteRadius(rc.Latitude, rc.Longitude, in.Latitude, in.Longitude) {
+	// a NaN or Inf coordinate on either side is refused (T-03-02). The take
+	// back is excused by its own predicate, never by widening step 4.
+	if !isReporterResolutionVote && !isTakeBack && !withinVoteRadius(rc.Latitude, rc.Longitude, in.Latitude, in.Longitude) {
 		return CastVoteResult{}, ErrVoterTooFar
+	}
+
+	// 6b. A take back needs a standing resolve of the caller's own to take
+	// back. Anything else is refused before any write, so it neither burns
+	// budget nor replaces a standing row.
+	if isTakeBack {
+		current, err := s.q.CurrentVotesForReports(ctx, []int64{in.ReportID})
+		if err != nil {
+			return CastVoteResult{}, err
+		}
+		if ViewerResolution(current, in.ReportID, in.AccountID) != VoteResolve {
+			return CastVoteResult{}, ErrNothingToTakeBack
+		}
+	}
+
+	// 6c. The two undo limit (D-22, D-28), counted from the append only log.
+	// Unresolve rows count for every account; reopen rows count only for the
+	// poster, whose reopen is a take back of their own resolve. The refusal is
+	// before any write. undosLeft stays nil for a content vote.
+	var undosLeft *int
+	if in.Kind == VoteKindResolution {
+		counts, err := s.q.ResolutionUndoCounts(ctx, undoCountParams(in.AccountID, []int64{in.ReportID}))
+		if err != nil {
+			return CastVoteResult{}, err
+		}
+		used := 0
+		for _, row := range counts {
+			if row.ReportID == in.ReportID {
+				used = UndosUsed(row, isReporterResolutionVote)
+			}
+		}
+		spendsBudget := isTakeBack || (isReporterResolutionVote && in.Value == VoteReopen)
+		if spendsBudget && used >= UndoLimit {
+			return CastVoteResult{}, ErrUndoLimitReached
+		}
+		left := UndosLeft(used)
+		if spendsBudget {
+			left = UndosLeft(used + 1)
+		}
+		undosLeft = &left
 	}
 
 	// 7. Compute the voter's cell server-side. Any geohash string a
@@ -481,5 +559,5 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 		Now:               now,
 		Reporter:          reporterSignalRef(signals, rc.ReporterAccountID),
 	})
-	return CastVoteResult{Visibility: vis, Reason: reason, Trust: trust}, nil
+	return CastVoteResult{Visibility: vis, Reason: reason, Trust: trust, UndosLeft: undosLeft}, nil
 }

@@ -104,6 +104,17 @@ func TestVoteKindAndValueValidation(t *testing.T) {
 		t.Error("VoteDispute should not be valid for VoteKindResolution")
 	}
 
+	if !VoteUnresolve.ValidFor(VoteKindResolution) {
+		t.Error("VoteUnresolve should be valid for VoteKindResolution")
+	}
+	if VoteUnresolve.ValidFor(VoteKindContent) {
+		t.Error("VoteUnresolve should not be valid for VoteKindContent")
+	}
+	wantValues := []VoteValue{VoteConfirm, VoteDispute, VoteResolve, VoteReopen, VoteUnresolve}
+	if !slices.Equal(VoteValues, wantValues) {
+		t.Errorf("VoteValues = %v, want %v", VoteValues, wantValues)
+	}
+
 	if VoteValue("confirm ").ValidFor(VoteKindContent) || VoteValue("confirm ").ValidFor(VoteKindResolution) {
 		t.Error(`VoteValue("confirm ") should be valid for no kind`)
 	}
@@ -406,6 +417,21 @@ type fakeVotingQuerier struct {
 	historyRows []sqlcgen.ReporterHistoryReportsRow
 	historyErr  error
 	historyArgs []sqlcgen.ReporterHistoryReportsParams
+
+	// undoRows/undoErr/undoArgs drive ResolutionUndoCounts (plan 03.1-02).
+	undoRows []sqlcgen.ResolutionUndoCountsRow
+	undoErr  error
+	undoArgs []sqlcgen.ResolutionUndoCountsParams
+}
+
+// ResolutionUndoCounts records the call and returns the configured rows.
+func (f *fakeVotingQuerier) ResolutionUndoCounts(ctx context.Context, arg sqlcgen.ResolutionUndoCountsParams) ([]sqlcgen.ResolutionUndoCountsRow, error) {
+	f.calls = append(f.calls, "ResolutionUndoCounts")
+	f.undoArgs = append(f.undoArgs, arg)
+	if f.undoErr != nil {
+		return nil, f.undoErr
+	}
+	return f.undoRows, nil
 }
 
 func (f *fakeVotingQuerier) ReportVoteContext(ctx context.Context, reportID int64) (sqlcgen.ReportVoteContextRow, error) {
@@ -1195,6 +1221,316 @@ func TestCastVoteCheckOrder(t *testing.T) {
 		}
 		if len(q.calls) != 1 || q.calls[0] != "ReportVoteContext" {
 			t.Errorf("calls = %v, want exactly [ReportVoteContext]", q.calls)
+		}
+	})
+
+	// The store call order of the take back and of the other resolution
+	// votes (plan 03.1-02). Confirm and dispute keep the sequence they had.
+	near := func(q *fakeVotingQuerier, acct int64, kind VoteKind, value VoteValue) error {
+		_, err := NewVotingService(q).CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: acct, Kind: kind, Value: value, Latitude: testReportLat, Longitude: testReportLon,
+		})
+		return err
+	}
+	wantCalls := func(t *testing.T, q *fakeVotingQuerier, want ...string) {
+		t.Helper()
+		if !slices.Equal(q.calls, want) {
+			t.Errorf("calls = %v, want %v", q.calls, want)
+		}
+	}
+
+	t.Run("take back by the reporter reads context, current votes, undo counts, history, then writes", func(t *testing.T) {
+		q := live(&reporterID)
+		q.currentVotesRows = []sqlcgen.CurrentVotesForReportsRow{voteRow(1, 7, VoteKindResolution, VoteResolve, "tdr1qg0")}
+		if err := near(q, 7, VoteKindResolution, VoteUnresolve); err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		wantCalls(t, q, "ReportVoteContext", "CurrentVotesForReports", "ResolutionUndoCounts",
+			"ReporterHistoryReports", "InsertVote", "CurrentVotesForReports")
+	})
+
+	t.Run("take back on a report with no reporter account skips the history read", func(t *testing.T) {
+		q := live(nil)
+		q.currentVotesRows = []sqlcgen.CurrentVotesForReportsRow{voteRow(1, 9, VoteKindResolution, VoteResolve, "tdr1qg0")}
+		if err := near(q, 9, VoteKindResolution, VoteUnresolve); err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		wantCalls(t, q, "ReportVoteContext", "CurrentVotesForReports", "ResolutionUndoCounts",
+			"InsertVote", "CurrentVotesForReports")
+	})
+
+	for _, v := range []VoteValue{VoteResolve, VoteReopen} {
+		t.Run("resolution "+string(v)+" counts undos after the context and before the write", func(t *testing.T) {
+			q := live(&reporterID)
+			if err := near(q, 9, VoteKindResolution, v); err != nil {
+				t.Fatalf("err = %v, want nil", err)
+			}
+			wantCalls(t, q, "ReportVoteContext", "ResolutionUndoCounts", "ReporterHistoryReports",
+				"InsertVote", "CurrentVotesForReports")
+		})
+	}
+
+	for _, v := range []VoteValue{VoteConfirm, VoteDispute} {
+		t.Run("content "+string(v)+" keeps the sequence it always had", func(t *testing.T) {
+			q := live(&reporterID)
+			if err := near(q, 9, VoteKindContent, v); err != nil {
+				t.Fatalf("err = %v, want nil", err)
+			}
+			wantCalls(t, q, "ReportVoteContext", "ReporterHistoryReports", "InsertVote", "CurrentVotesForReports")
+		})
+	}
+
+	t.Run("a take back on an expired report stops after the context read", func(t *testing.T) {
+		q := expired(&reporterID)
+		if err := near(q, 7, VoteKindResolution, VoteUnresolve); !errors.Is(err, ErrReportExpired) {
+			t.Fatalf("err = %v, want ErrReportExpired", err)
+		}
+		wantCalls(t, q, "ReportVoteContext")
+	})
+}
+
+// TestCastVoteTakeBack covers the take back of a mistaken Mark resolved
+// (HIST-09, D-22, D-28) on the fake querier: no location needed, three
+// refusals before any write, the two undo limit counted for the poster's
+// reopen too, and the undos left that the response carries.
+func TestCastVoteTakeBack(t *testing.T) {
+	reporterID := int64(7)
+	newQ := func(expiresIn time.Duration) *fakeVotingQuerier {
+		return &fakeVotingQuerier{voteContextRow: testVoteContext(time.Now().Add(expiresIn), &reporterID)}
+	}
+	standingResolve := func(account int64) []sqlcgen.CurrentVotesForReportsRow {
+		return []sqlcgen.CurrentVotesForReportsRow{voteRow(1, account, VoteKindResolution, VoteResolve, "tdr1qg0")}
+	}
+	cast := func(q *fakeVotingQuerier, acct int64, kind VoteKind, value VoteValue, missing bool) (CastVoteResult, error) {
+		in := CastVoteInput{ReportID: 1, AccountID: acct, Kind: kind, Value: value, LocationMissing: missing}
+		if !missing {
+			in.Latitude, in.Longitude = testReportLat, testReportLon
+		}
+		return NewVotingService(q).CastVote(context.Background(), in)
+	}
+	wantUndosLeft := func(t *testing.T, res CastVoteResult, want int) {
+		t.Helper()
+		if res.UndosLeft == nil {
+			t.Fatalf("UndosLeft = nil, want %d", want)
+		}
+		if *res.UndosLeft != want {
+			t.Errorf("UndosLeft = %d, want %d", *res.UndosLeft, want)
+		}
+	}
+
+	t.Run("a take back with no coordinates succeeds and skips the 1 km check", func(t *testing.T) {
+		q := newQ(time.Hour)
+		q.currentVotesRows = standingResolve(9)
+		res, err := cast(q, 9, VoteKindResolution, VoteUnresolve, true)
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if len(q.insertedVotes) != 1 {
+			t.Fatalf("InsertVote called %d times, want 1", len(q.insertedVotes))
+		}
+		if got := q.insertedVotes[0]; got.Kind != string(VoteKindResolution) || got.Value != string(VoteUnresolve) {
+			t.Errorf("inserted = %+v, want resolution/unresolve", got)
+		}
+		wantUndosLeft(t, res, UndoLimit-1)
+	})
+
+	t.Run("a take back from far away is not refused for distance", func(t *testing.T) {
+		q := newQ(time.Hour)
+		q.currentVotesRows = standingResolve(9)
+		_, err := NewVotingService(q).CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: 9, Kind: VoteKindResolution, Value: VoteUnresolve,
+			Latitude: farLat, Longitude: testReportLon,
+		})
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+	})
+
+	t.Run("a resolve with no coordinates from a non reporter is still refused, the exemption is not widened", func(t *testing.T) {
+		q := newQ(time.Hour)
+		_, err := cast(q, 9, VoteKindResolution, VoteResolve, true)
+		var ve ValidationError
+		if !errors.As(err, &ve) || ve.Field != "latitude" {
+			t.Fatalf("err = %v, want a ValidationError on latitude", err)
+		}
+		if len(q.insertedVotes) != 0 {
+			t.Errorf("InsertVote called %d times, want 0", len(q.insertedVotes))
+		}
+	})
+
+	t.Run("a take back on an expired report returns ErrReportExpired and writes nothing", func(t *testing.T) {
+		q := newQ(-time.Hour)
+		q.currentVotesRows = standingResolve(9)
+		_, err := cast(q, 9, VoteKindResolution, VoteUnresolve, true)
+		if !errors.Is(err, ErrReportExpired) {
+			t.Fatalf("err = %v, want ErrReportExpired", err)
+		}
+		if len(q.insertedVotes) != 0 {
+			t.Errorf("InsertVote called %d times, want 0", len(q.insertedVotes))
+		}
+	})
+
+	t.Run("a take back with no standing resolve returns ErrNothingToTakeBack and writes nothing", func(t *testing.T) {
+		cases := map[string][]sqlcgen.CurrentVotesForReportsRow{
+			"no rows":                nil,
+			"a standing reopen":      {voteRow(1, 9, VoteKindResolution, VoteReopen, "tdr1qg0")},
+			"a standing unresolve":   {voteRow(1, 9, VoteKindResolution, VoteUnresolve, "tdr1qg0")},
+			"someone else's resolve": standingResolve(8),
+			"a content confirm":      {voteRow(1, 9, VoteKindContent, VoteConfirm, "tdr1qg0")},
+		}
+		for name, rows := range cases {
+			t.Run(name, func(t *testing.T) {
+				q := newQ(time.Hour)
+				q.currentVotesRows = rows
+				_, err := cast(q, 9, VoteKindResolution, VoteUnresolve, true)
+				if !errors.Is(err, ErrNothingToTakeBack) {
+					t.Fatalf("err = %v, want ErrNothingToTakeBack", err)
+				}
+				if len(q.insertedVotes) != 0 {
+					t.Errorf("InsertVote called %d times, want 0", len(q.insertedVotes))
+				}
+				if slices.Contains(q.calls, "ResolutionUndoCounts") {
+					t.Errorf("calls = %v, the undo count must not run after the nothing to take back refusal", q.calls)
+				}
+			})
+		}
+	})
+
+	t.Run("a third take back returns ErrUndoLimitReached and writes nothing", func(t *testing.T) {
+		q := newQ(time.Hour)
+		q.currentVotesRows = standingResolve(9)
+		q.undoRows = []sqlcgen.ResolutionUndoCountsRow{{ReportID: 1, Unresolves: 2}}
+		_, err := cast(q, 9, VoteKindResolution, VoteUnresolve, true)
+		if !errors.Is(err, ErrUndoLimitReached) {
+			t.Fatalf("err = %v, want ErrUndoLimitReached", err)
+		}
+		if len(q.insertedVotes) != 0 {
+			t.Errorf("InsertVote called %d times, want 0", len(q.insertedVotes))
+		}
+	})
+
+	t.Run("the undo count is asked for this account, this report and the resolution kind", func(t *testing.T) {
+		q := newQ(time.Hour)
+		q.currentVotesRows = standingResolve(9)
+		if _, err := cast(q, 9, VoteKindResolution, VoteUnresolve, true); err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if len(q.undoArgs) != 1 {
+			t.Fatalf("ResolutionUndoCounts called %d times, want 1", len(q.undoArgs))
+		}
+		want := undoCountParams(9, []int64{1})
+		if !reflect.DeepEqual(q.undoArgs[0], want) {
+			t.Errorf("args = %+v, want %+v", q.undoArgs[0], want)
+		}
+		if want.UnresolveValue != "unresolve" || want.ReopenValue != "reopen" || want.Kind != "resolution" {
+			t.Errorf("params = %+v, want the closed vocabulary values", want)
+		}
+	})
+
+	t.Run("the poster's reopen after one unresolve and one reopen is refused", func(t *testing.T) {
+		q := newQ(time.Hour)
+		q.undoRows = []sqlcgen.ResolutionUndoCountsRow{{ReportID: 1, Unresolves: 1, Reopens: 1}}
+		_, err := cast(q, 7, VoteKindResolution, VoteReopen, true)
+		if !errors.Is(err, ErrUndoLimitReached) {
+			t.Fatalf("err = %v, want ErrUndoLimitReached", err)
+		}
+		if len(q.insertedVotes) != 0 {
+			t.Errorf("InsertVote called %d times, want 0", len(q.insertedVotes))
+		}
+	})
+
+	t.Run("a non poster's reopen is never limited, whatever their earlier rows", func(t *testing.T) {
+		q := newQ(time.Hour)
+		q.undoRows = []sqlcgen.ResolutionUndoCountsRow{{ReportID: 1, Unresolves: 1, Reopens: 5}}
+		res, err := cast(q, 9, VoteKindResolution, VoteReopen, false)
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		wantUndosLeft(t, res, UndoLimit-1)
+	})
+
+	t.Run("a non poster's take back counts unresolves only, not their old reopens", func(t *testing.T) {
+		q := newQ(time.Hour)
+		q.currentVotesRows = standingResolve(9)
+		q.undoRows = []sqlcgen.ResolutionUndoCountsRow{{ReportID: 1, Unresolves: 0, Reopens: 5}}
+		res, err := cast(q, 9, VoteKindResolution, VoteUnresolve, true)
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		wantUndosLeft(t, res, UndoLimit-1)
+	})
+
+	t.Run("the poster's take back counts their reopens too", func(t *testing.T) {
+		q := newQ(time.Hour)
+		q.currentVotesRows = standingResolve(7)
+		q.undoRows = []sqlcgen.ResolutionUndoCountsRow{{ReportID: 1, Unresolves: 0, Reopens: 2}}
+		_, err := cast(q, 7, VoteKindResolution, VoteUnresolve, true)
+		if !errors.Is(err, ErrUndoLimitReached) {
+			t.Fatalf("err = %v, want ErrUndoLimitReached", err)
+		}
+	})
+
+	t.Run("the poster's own take back succeeds with a standing resolve", func(t *testing.T) {
+		q := newQ(time.Hour)
+		q.currentVotesRows = standingResolve(7)
+		res, err := cast(q, 7, VoteKindResolution, VoteUnresolve, true)
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		wantUndosLeft(t, res, UndoLimit-1)
+	})
+
+	t.Run("a resolve returns the undos left and is never refused for the limit", func(t *testing.T) {
+		q := newQ(time.Hour)
+		q.undoRows = []sqlcgen.ResolutionUndoCountsRow{{ReportID: 1, Unresolves: 2}}
+		res, err := cast(q, 9, VoteKindResolution, VoteResolve, false)
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		wantUndosLeft(t, res, 0)
+
+		q = newQ(time.Hour)
+		q.undoRows = []sqlcgen.ResolutionUndoCountsRow{{ReportID: 1, Unresolves: 1}}
+		res, err = cast(q, 9, VoteKindResolution, VoteResolve, false)
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		wantUndosLeft(t, res, UndoLimit-1)
+	})
+
+	t.Run("the poster's resolve is never refused for the limit either", func(t *testing.T) {
+		q := newQ(time.Hour)
+		q.undoRows = []sqlcgen.ResolutionUndoCountsRow{{ReportID: 1, Unresolves: 2, Reopens: 2}}
+		res, err := cast(q, 7, VoteKindResolution, VoteResolve, true)
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		wantUndosLeft(t, res, 0)
+	})
+
+	t.Run("a content vote returns UndosLeft nil and makes no undo count call", func(t *testing.T) {
+		q := newQ(time.Hour)
+		res, err := cast(q, 9, VoteKindContent, VoteConfirm, false)
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if res.UndosLeft != nil {
+			t.Errorf("UndosLeft = %d, want nil", *res.UndosLeft)
+		}
+		if slices.Contains(q.calls, "ResolutionUndoCounts") {
+			t.Errorf("calls = %v, a content vote must not read undo counts", q.calls)
+		}
+	})
+
+	t.Run("an undo count read failure is returned and nothing is written", func(t *testing.T) {
+		q := newQ(time.Hour)
+		q.undoErr = errors.New("boom")
+		_, err := cast(q, 9, VoteKindResolution, VoteResolve, false)
+		if err == nil || err.Error() != "boom" {
+			t.Fatalf("err = %v, want boom", err)
+		}
+		if len(q.insertedVotes) != 0 {
+			t.Errorf("InsertVote called %d times, want 0", len(q.insertedVotes))
 		}
 	})
 }
