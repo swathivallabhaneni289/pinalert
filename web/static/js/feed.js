@@ -119,10 +119,11 @@
   // and lives in one of the two group lists of #past-groups.
   var pastCardsById = {};
 
-  // handledFocus is the focus object (the server's answer to a report link)
-  // that handleFocus already acted on. The store keeps the last focus object
-  // and never clears it, so a later poll or tab switch must not repeat the
-  // toast or the tab choice.
+  // handledFocus is the first focus object (the server's answer to a report
+  // link) that handleFocus acted on, or null before one has landed. Every
+  // answer carries a new focus object while the link is held (CR-01), so the
+  // toast and the tab choice are made once per link, never again on a poll,
+  // a vote or a tab switch.
   var handledFocus = null;
 
   function severityRank(report) {
@@ -976,14 +977,15 @@
   }
 
   // handleFocus acts on the server's answer to a ?report=ID link (D-04, D-11)
-  // once per answer: a report too old or not readable gets one plain message,
+  // once per link: a report too old or not readable gets one plain message,
   // and a readable report selects the tab of its own state, on screen only.
-  // The store keeps the last focus object, so a later poll or tab switch sees
-  // the same object and does nothing. The address is never touched here, and
-  // opening the pin is the map's own job.
+  // Later answers for the same link only refresh the report, so a report that
+  // a vote or a take back moves to another state never pulls the reader off
+  // the tab they are on. The address is never touched here, and opening the
+  // pin is the map's own job.
   function handleFocus(state) {
     var focus = state.focus;
-    if (!focus || focus === handledFocus) {
+    if (!focus || handledFocus !== null) {
       return;
     }
     handledFocus = focus;
@@ -1301,11 +1303,13 @@
   // deliberate: the server decides which reports exist for a tab (02-04), and
   // a client side filter would be a second visibility decision, the resolver
   // bypass T-02-04 names. Rows fetched for the other tab stay only until the
-  // answer lands; a failed fetch drops them (app.js).
+  // answer lands; a failed fetch drops them (app.js). A tab the reader picks
+  // ends a report link (CR-01).
   function switchTab(view) {
     if (Pinalert.VIEWS.indexOf(view) === -1 || view === Pinalert.state.view) {
       return;
     }
+    Pinalert.dropFocus();
     Pinalert.setView(view);
     showTab(view);
     syncViewURL(view);
@@ -1315,7 +1319,8 @@
   // selectTabOnScreen is switchTab without the address write: it sets the
   // store, marks the strip and refetches, so a report link lands on the tab
   // of the report's own state while the address stays exactly as it was sent
-  // (D-05). Nothing else about a tab change is skipped.
+  // (D-05). Nothing else about a tab change is skipped. It is the link's own
+  // tab choice, so unlike switchTab it keeps the link.
   function selectTabOnScreen(view) {
     if (Pinalert.VIEWS.indexOf(view) === -1 || view === Pinalert.state.view) {
       return;
@@ -1353,7 +1358,9 @@
   if (filterClearBtn) {
     // Clear filter: the chip goes back to All and the list is read again. The
     // browser removes nothing itself; the server answers for the whole set.
+    // A chip change ends a report link (CR-01).
     filterClearBtn.addEventListener('click', function () {
+      Pinalert.dropFocus();
       Pinalert.setCategory('');
       Pinalert.fetchReports();
       focusCurrentTab();
@@ -1370,8 +1377,8 @@
 
   // Restore step, not a synchronisation step: the address is the source of
   // truth and the store is driven FROM it. Read it, hand the tab to the store,
-  // mark the link, and keep the report id of a ?report=ID link for the first
-  // list request (app.js sends it once). The address is rewritten only when it
+  // mark the link, and keep the report id of a ?report=ID link for the list
+  // requests (app.js sends it until the link ends). The address is rewritten only when it
   // held a spelling this script no longer writes, and the report parameter is
   // never touched, so a link sent by a moderator stays as it was sent (D-05).
   //

@@ -108,11 +108,14 @@ window.Pinalert = (function () {
     category: '',
     // null, or { name, lat, lon } of the place the reader searched for.
     place: null,
-    // null, or the report id string from ?report=ID. It is sent with the first
-    // list request only, then cleared.
+    // null, or the report id string from ?report=ID. It is sent with every
+    // list request while the linked report is the reader's open selection, so
+    // every answer carries a fresh focus object (CR-01). It goes when the
+    // server answers that the report cannot be shown, and dropFocus clears it
+    // when the linked popup closes or the tab, the place or the chip changes.
     focusId: null,
-    // The last focus object a response carried. A response without one
-    // leaves it as it is.
+    // The focus object of the newest answer, or null when that answer had
+    // none. Every answer replaces it, so it is never older than the list.
     focus: null,
     // The last response's recent counts and cut flags, null when it had none.
     recent: null,
@@ -218,7 +221,7 @@ window.Pinalert = (function () {
     return state.center.own === true;
   }
 
-  // setView, setCategory, setPlace, clearPlace and setFocusId mirror
+  // setView, setCategory, setPlace, clearPlace, setFocusId and dropFocus mirror
   // setCenter's shape exactly: a plain assignment onto state, no notify, no
   // fetch. The caller decides when to refetch. A value outside the closed
   // list is ignored, so the store can never hold a word the server would
@@ -255,8 +258,16 @@ window.Pinalert = (function () {
     state.place = null;
   }
 
-  // setFocusId keeps the report id of a ?report=ID link, as digits only. The
-  // next list request carries it once.
+  // dropFocus ends a report link: the id is no longer sent and the focus
+  // object goes, so the pin the link put on the map leaves at the next render.
+  // Like the setters above it only assigns: no notify, no fetch.
+  function dropFocus() {
+    state.focusId = null;
+    state.focus = null;
+  }
+
+  // setFocusId keeps the report id of a ?report=ID link, as digits only. Every
+  // list request carries it until the link ends (see state.focusId).
   function setFocusId(id) {
     if (id === null) {
       state.focusId = null;
@@ -362,15 +373,23 @@ window.Pinalert = (function () {
         }
         state.reports = (body && body.reports) || [];
         // The three optional objects are kept as the server sent them. This
-        // file renders none of them. A response without a focus object leaves
-        // the last one as it is.
+        // file renders none of them. Every answer replaces the focus object,
+        // so the linked report is never drawn from an older answer than the
+        // list (CR-01). A focus is taken only while the link it answers is
+        // still the store's: an answer sent before the link ended must not
+        // bring its pin back.
         state.recent = (body && body.recent) || null;
         state.cut = (body && body.cut) || null;
+        state.focus = null;
         if (body && body.focus) {
-          state.focus = body.focus;
+          if (sentFocusId !== null && sentFocusId === state.focusId) {
+            state.focus = body.focus;
+          }
         }
-        // The report id travels with the first answered request only.
-        if (sentFocusId !== null && state.focusId === sentFocusId) {
+        // A report the server cannot show (too old, unavailable) is a final
+        // answer, so its id is not sent again.
+        if (sentFocusId !== null && state.focusId === sentFocusId &&
+            (state.focus === null || state.focus.status !== 'ok')) {
           state.focusId = null;
         }
         rowsFor = { view: sentView, category: sentCategory, lat: sentLat, lon: sentLon };
@@ -788,6 +807,7 @@ window.Pinalert = (function () {
     setPlace: setPlace,
     clearPlace: clearPlace,
     setFocusId: setFocusId,
+    dropFocus: dropFocus,
     fetchReports: fetchReports,
     startPolling: startPolling,
     submitReport: submitReport,

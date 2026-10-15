@@ -258,6 +258,8 @@ window.PinalertMapTools = (function () {
       return;
     }
     var name = pick.name || pick.display_name;
+    // A place change ends a report link (CR-01).
+    Pinalert.dropFocus();
     Pinalert.setCenter(pick.lat, pick.lon, false);
     Pinalert.setPlace({ name: name, lat: pick.lat, lon: pick.lon });
     locationLost = false;
@@ -298,6 +300,8 @@ window.PinalertMapTools = (function () {
     if (next === Pinalert.state.category) {
       return;
     }
+    // A chip change ends a report link (CR-01).
+    Pinalert.dropFocus();
     Pinalert.setCategory(next);
     renderChips(Pinalert.state);
     renderFilterLine(Pinalert.state);
@@ -374,6 +378,7 @@ window.PinalertMapTools = (function () {
   // onClearFilter turns the chip back to All and reads the list again. Focus
   // goes to the All chip, because the button that was pressed goes away.
   function onClearFilter() {
+    Pinalert.dropFocus();
     Pinalert.setCategory('');
     renderChips(Pinalert.state);
     renderFilterLine(Pinalert.state);
@@ -392,6 +397,8 @@ window.PinalertMapTools = (function () {
       return;
     }
     backPending = true;
+    // Leaving the searched place ends a report link (CR-01).
+    Pinalert.dropFocus();
     Pinalert.clearPlace();
     locationLost = false;
     renderPlaceLine(Pinalert.state);
