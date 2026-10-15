@@ -6,6 +6,8 @@ package handlers_test
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
 	"html"
 	"io"
@@ -14,12 +16,16 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"pinalert/internal/account"
 	"pinalert/internal/api"
 	"pinalert/internal/api/handlers"
+	"pinalert/internal/moderation"
 	"pinalert/internal/service"
 	sqlcgen "pinalert/internal/store/sqlc"
 )
@@ -297,4 +303,319 @@ func TestModeratorRoutesIndistinguishableFrom404(t *testing.T) {
 			}
 		}
 	})
+}
+
+// --- Task 2: the fixture, the queues and Find ---
+
+// The six report texts of the fixture. Each is an ordinary sentence so the
+// gibberish prefilter lets it through to the screener, and each is distinct so
+// the stub can key on the exact trimmed text.
+const (
+	modTextReview      = "Water is rising fast near the old market"
+	modTextFlagged     = "Road closed because of the fallen tree"
+	modTextHeld        = "Power cut across the whole colony tonight"
+	modTextSerious     = "Family trapped on the roof and needs a boat"
+	modTextExpiredHeld = "Shelter at the school hall is now open"
+	modTextPlain       = "Bridge on the highway is still passable"
+)
+
+// modUnfinishedTexts are the texts the stub answers with a transient provider
+// error, so their checks stay pending.
+var modUnfinishedTexts = map[string]bool{
+	modTextHeld:        true,
+	modTextSerious:     true,
+	modTextExpiredHeld: true,
+}
+
+// modBorderlineScores are the stub scores of the borderline text.
+var modBorderlineScores = map[string]float64{"harassment": 0.5, "hate": 0.1, "violence": 0.3}
+
+// modStubScreener implements service.TextScreener keyed on the exact trimmed
+// text.
+type modStubScreener struct{}
+
+func (modStubScreener) Screen(_ context.Context, text string) (moderation.Result, error) {
+	text = strings.TrimSpace(text)
+	switch {
+	case text == modTextReview:
+		return moderation.Result{Model: moderation.DefaultModel, Scores: modBorderlineScores}, nil
+	case modUnfinishedTexts[text]:
+		return moderation.Result{}, &moderation.CallError{Status: 503, Transient: true}
+	}
+	return moderation.Result{Model: moderation.DefaultModel, Scores: map[string]float64{"harassment": 0.01, "hate": 0.01}}, nil
+}
+
+// modFixture is one server with the six reports posted and the clients.
+type modFixture struct {
+	srv         *httptest.Server
+	pool        *pgxpool.Pool
+	author      *http.Client
+	readerB     *http.Client
+	readerC     *http.Client
+	moderator   *http.Client
+	moderatorID int64
+	ids         map[string]int64
+}
+
+const (
+	modLat = 17.385
+	modLon = 78.4867
+)
+
+// modSetup builds the server (screener stub, moderator list from a mixed case
+// string), the four clients and the six reports, then has readers B and C flag
+// the flagged report with spam and abusive.
+func modSetup(t *testing.T) modFixture {
+	t.Helper()
+	srv, mailer, pool := newE2EServerWith(t, func(d *api.Deps, q *sqlcgen.Queries) {
+		d.ModeratorEmails = modAllowList(t, "Mod@Example.com")
+		d.Reports = service.NewReportService(q, service.WithScreener(modStubScreener{}))
+	})
+	fx := modFixture{
+		srv:       srv,
+		pool:      pool,
+		author:    newVerifiedClient(t, srv, mailer, "author@example.com"),
+		readerB:   newVerifiedClient(t, srv, mailer, "reader-b@example.com"),
+		readerC:   newVerifiedClient(t, srv, mailer, "reader-c@example.com"),
+		moderator: newVerifiedClient(t, srv, mailer, "mod@example.com"),
+		ids:       map[string]int64{},
+	}
+	if err := pool.QueryRow(context.Background(), `SELECT id FROM accounts WHERE email = $1`, "mod@example.com").Scan(&fx.moderatorID); err != nil {
+		t.Fatalf("reading the moderator account id: %v", err)
+	}
+
+	post := func(name, text string, critical bool) {
+		body := floodReportBody(modLat, modLon)
+		body["description"] = text
+		if critical {
+			body["severity"] = "critical"
+		}
+		fx.ids[name] = submitReportGetID(t, fx.author, srv.URL, body)
+	}
+	post("review", modTextReview, false)
+	post("flagged", modTextFlagged, false)
+	post("held", modTextHeld, false)
+	post("serious", modTextSerious, true)
+	post("expiredHeld", modTextExpiredHeld, false)
+	expireAfter := fx.ids["expiredHeld"]
+	post("plain", modTextPlain, false)
+	expireReport(t, pool, expireAfter)
+
+	for client, reason := range map[*http.Client]string{fx.readerB: "spam", fx.readerC: "abusive"} {
+		if status := modFlag(t, client, srv.URL, fx.ids["flagged"], reason); status != http.StatusCreated {
+			t.Fatalf("flagging as %s: status %d, want 201", reason, status)
+		}
+	}
+	return fx
+}
+
+// modFlag posts a flag and returns the status.
+func modFlag(t *testing.T, client *http.Client, baseURL string, id int64, reason string) int {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"reason": reason})
+	resp, err := client.Post(baseURL+"/api/reports/"+strconv.FormatInt(id, 10)+"/flag", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("flagging report %d: %v", id, err)
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode
+}
+
+// modQueueWire mirrors GET /api/moderation/queue. Rows are generic maps so a
+// test can assert that a key is absent.
+type modQueueWire struct {
+	Review  []map[string]any `json:"review"`
+	Flagged []map[string]any `json:"flagged"`
+	Pending []map[string]any `json:"pending"`
+	Counts  struct {
+		Review  int64 `json:"review"`
+		Flagged int64 `json:"flagged"`
+		Pending int64 `json:"pending"`
+	} `json:"counts"`
+}
+
+// modGetQueue fetches the queue and returns the status, the headers, the decoded
+// answer and the raw body.
+func modGetQueue(t *testing.T, client *http.Client, baseURL string) (int, http.Header, modQueueWire, []byte) {
+	t.Helper()
+	resp, err := client.Get(baseURL + "/api/moderation/queue")
+	if err != nil {
+		t.Fatalf("GET queue: %v", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	var q modQueueWire
+	if resp.StatusCode == http.StatusOK {
+		if err := json.Unmarshal(raw, &q); err != nil {
+			t.Fatalf("decoding the queue: %v: %s", err, raw)
+		}
+	}
+	return resp.StatusCode, resp.Header, q, raw
+}
+
+// modFindWire mirrors GET /api/moderation/reports/{id}.
+type modFindWire struct {
+	Report map[string]any `json:"report"`
+	Lists  []string       `json:"lists"`
+	Error  struct {
+		Field   string `json:"field"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+func modFind(t *testing.T, client *http.Client, baseURL string, id int64) (int, modFindWire) {
+	t.Helper()
+	resp, err := client.Get(baseURL + "/api/moderation/reports/" + strconv.FormatInt(id, 10))
+	if err != nil {
+		t.Fatalf("GET report %d: %v", id, err)
+	}
+	defer resp.Body.Close()
+	var out modFindWire
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decoding report %d: %v", id, err)
+	}
+	return resp.StatusCode, out
+}
+
+// modHas reports whether the row has the key.
+func modHas(row map[string]any, key string) bool {
+	_, ok := row[key]
+	return ok
+}
+
+// modIDs lists the ids of rows.
+func modIDs(rows []map[string]any) []int64 {
+	out := make([]int64, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, int64(r["id"].(float64)))
+	}
+	return out
+}
+
+// modWalkKeys appends every object key found anywhere in v.
+func modWalkKeys(v any, keys *[]string) {
+	switch x := v.(type) {
+	case map[string]any:
+		for k, child := range x {
+			*keys = append(*keys, k)
+			modWalkKeys(child, keys)
+		}
+	case []any:
+		for _, child := range x {
+			modWalkKeys(child, keys)
+		}
+	}
+}
+
+func TestModeratorQueues(t *testing.T) {
+	fx := modSetup(t)
+	base := fx.srv.URL
+
+	status, header, q, raw := modGetQueue(t, fx.moderator, base)
+	if status != http.StatusOK {
+		t.Fatalf("queue status = %d: %s", status, raw)
+	}
+	if cc := header.Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", cc)
+	}
+	if q.Counts.Review != 1 || q.Counts.Flagged != 1 || q.Counts.Pending != 2 {
+		t.Errorf("counts = %+v, want review 1, flagged 1, pending 2", q.Counts)
+	}
+	if got := modIDs(q.Review); !reflect.DeepEqual(got, []int64{fx.ids["review"]}) {
+		t.Errorf("review ids = %v, want [%d]", got, fx.ids["review"])
+	}
+	if got := modIDs(q.Flagged); !reflect.DeepEqual(got, []int64{fx.ids["flagged"]}) {
+		t.Errorf("flagged ids = %v, want [%d]", got, fx.ids["flagged"])
+	}
+	if got := modIDs(q.Pending); !reflect.DeepEqual(got, []int64{fx.ids["held"], fx.ids["serious"]}) {
+		t.Errorf("pending ids = %v, want [%d %d] (expiredHeld absent)", got, fx.ids["held"], fx.ids["serious"])
+	}
+
+	if len(q.Review) == 1 {
+		row := q.Review[0]
+		scores, _ := row["scores"].(map[string]any)
+		if len(scores) != len(modBorderlineScores) {
+			t.Errorf("review scores = %v, want the stub map", row["scores"])
+		}
+		for k, want := range modBorderlineScores {
+			if got, _ := scores[k].(float64); got != want {
+				t.Errorf("score %s = %v, want %v", k, scores[k], want)
+			}
+		}
+		if row["model"] != moderation.DefaultModel || row["moderation"] != "clear" || row["view"] != "active" || row["visibility_word"] != "Showing to everyone" {
+			t.Errorf("review row = %v", row)
+		}
+	}
+	if len(q.Flagged) == 1 {
+		row := q.Flagged[0]
+		flags, _ := row["flags"].(map[string]any)
+		if flags["total"] != float64(2) {
+			t.Errorf("flags total = %v, want 2", flags["total"])
+		}
+		wantReasons := []any{
+			map[string]any{"reason": "spam", "label": "Spam or gibberish", "count": float64(1)},
+			map[string]any{"reason": "abusive", "label": "Abusive or hateful", "count": float64(1)},
+		}
+		if !reflect.DeepEqual(flags["reasons"], wantReasons) {
+			t.Errorf("flag reasons = %v, want %v", flags["reasons"], wantReasons)
+		}
+		if modHas(row, "scores") {
+			t.Error("a flagged row with no review check must carry no scores key")
+		}
+	}
+	if len(q.Pending) == 2 {
+		held, serious := q.Pending[0], q.Pending[1]
+		if held["moderation"] != "pending" || held["serious"] != false || held["view"] != "none" || modHas(held, "visibility_word") {
+			t.Errorf("held row = %v, want pending, not serious, view none, no visibility_word", held)
+		}
+		if serious["serious"] != true || serious["view"] != "active" || serious["visibility_word"] != "Showing to everyone" {
+			t.Errorf("serious row = %v, want serious, view active, Showing to everyone", serious)
+		}
+	}
+
+	// No identity anywhere in the answer (T-04-04).
+	var decoded any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("decoding raw queue: %v", err)
+	}
+	var keys []string
+	modWalkKeys(decoded, &keys)
+	for _, k := range keys {
+		lower := strings.ToLower(k)
+		for _, banned := range []string{"email", "session", "account", "flagger"} {
+			if strings.Contains(lower, banned) {
+				t.Errorf("the queue carries a key %q that names an identity", k)
+			}
+		}
+	}
+	for _, addr := range []string{"author@example.com", "reader-b@example.com", "reader-c@example.com", "mod@example.com"} {
+		if strings.Contains(string(raw), addr) {
+			t.Errorf("the queue body contains %s", addr)
+		}
+	}
+
+	// Find.
+	for name, want := range map[string][]string{"review": {"review"}, "held": {"pending"}, "expiredHeld": {}, "plain": {}} {
+		status, out := modFind(t, fx.moderator, base, fx.ids[name])
+		if status != http.StatusOK {
+			t.Errorf("Find %s status = %d", name, status)
+			continue
+		}
+		if out.Lists == nil || !reflect.DeepEqual(out.Lists, want) {
+			if !(len(want) == 0 && out.Lists != nil && len(out.Lists) == 0) {
+				t.Errorf("Find %s lists = %v, want %v", name, out.Lists, want)
+			}
+		}
+		if name == "review" && !modHas(out.Report, "scores") {
+			t.Error("Find review must carry scores")
+		}
+		if (name == "expiredHeld" || name == "plain") && modHas(out.Report, "scores") {
+			t.Errorf("Find %s must carry no scores", name)
+		}
+	}
+	status, out := modFind(t, fx.moderator, base, 999999)
+	if status != http.StatusNotFound || out.Error.Field != "id" || out.Error.Message != service.ModNotFoundMessage {
+		t.Errorf("Find 999999 = %d %+v, want 404 field id with the not found message", status, out.Error)
+	}
 }

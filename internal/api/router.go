@@ -498,9 +498,16 @@ func NewRouter(deps Deps) *chi.Mux {
 	// Every path is registered with r.Handle so a wrong method reaches the gate
 	// and not chi's 405 (correction 2). The local page copy carries Chrome. ---
 
+	// The moderator service has no Deps field: it is built here from the
+	// sessions store, so every harness gets a non nil service. With a nil
+	// deps.Sessions the gate answers 404 before any handler runs.
+	moderation := service.NewModerationService(deps.Sessions)
+
 	r.Group(func(r chi.Router) {
 		r.Use(requireModerator(deps.Sessions, deps.ModeratorEmails))
 		r.Handle("/moderate", handlers.ModeratePage(deps.Template, page))
+		r.Handle("/api/moderation/queue", handlers.ModerationQueue(moderation))
+		r.Handle("/api/moderation/reports/{id}", handlers.ModerationReport(moderation))
 	})
 
 	return r
