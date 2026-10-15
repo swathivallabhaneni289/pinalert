@@ -379,7 +379,7 @@ Plans:
   6. One panel state model: this phase owns the list panel's state (view, tab and filters kept in the URL) so Phases 3.2, 5 and 9 plug their tabs and filters into it, and deep links such as /?view=resolved&report=ID work. The default tab is called Nearby once other tabs exist. Phase 3's outcome classifier must be exposed as a reusable pure function that can return the neutral outcome. HIST-05 reuses Phase 7's geocoder, which has a process-wide limit of 1 Nominatim request per second, so reader searches need their own budget (or a cache) so they cannot starve reporters' address search.
   7. Only the report rows change size. The rest of the page is not redesigned here (backlog 999.10 holds the page wide design pass), and My votes and the six tab Activity page already exist (quick task 261013-wm5). The take back of a mistaken Mark resolved must not travel through the `reopen` vote value, see 03.1-CONTEXT.md "Conflicts and risks".
 
-**Plans**: 5/16 plans executed
+**Plans**: 9/16 plans executed
 
 Plans:
 **Wave 1**
@@ -392,10 +392,10 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 03.1-06-PLAN.md: The history service: the Past page, recent counts, report links, viewer fields on every read
-- [ ] 03.1-07-PLAN.md: The Activity page: Reopen follows the limit, voted finished Rescue cards are coarsened
-- [ ] 03.1-08-PLAN.md: The take back route, the place search route and the one geocoder client
-- [ ] 03.1-09-PLAN.md: Compact report rows (size A) on every width, no control in a row
+- [x] 03.1-06-PLAN.md: The history service: the Past page, recent counts, report links, viewer fields on every read
+- [x] 03.1-07-PLAN.md: The Activity page: Reopen follows the limit, voted finished Rescue cards are coarsened
+- [x] 03.1-08-PLAN.md: The take back route, the place search route and the one geocoder client
+- [x] 03.1-09-PLAN.md: Compact report rows (size A) on every width, no control in a row
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -540,7 +540,7 @@ Phases execute in numeric order: 1 → 1.1 → 2 → 3 → 3.1 → 3.2 → 4 →
 | 1.1 Identity & Login — Mandatory Email Verification | 8/8 | Complete   | 2026-09-12 |
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 15/15 | Complete | 2026-10-07 |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 31/31 | Complete | 2026-10-13 |
-| 3.1 Report history views | 5/16 | In Progress|  |
+| 3.1 Report history views | 9/16 | In Progress|  |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 0/TBD | Not started | - |
 | 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
