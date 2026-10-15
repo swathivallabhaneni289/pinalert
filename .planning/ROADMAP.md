@@ -40,6 +40,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Trust-Model Hardening — Diversity-Weighted Trust** - "Confirmed by N nearby" and the reliability/currency signals reflect distinct nearby corroboration, resistant to trivial gaming. (31 plans, completed 2026-10-13)
 - [ ] **Phase 3.1: Report history views** *(INSERTED 2026-10-03)* - A reader can switch the list and map between Active, Resolved, Disputed and Past reports, search another area, and filter by category and severity.
 - [ ] **Phase 3.2: In-app updates and trusted-reporter alerts** *(INSERTED 2026-10-03)* - A signed-in person is told inside the app when a report they care about changes, and can ask to hear when a Reliable reporter posts nearby.
+- [ ] **Phase 3.3: Installable app and phone alerts** *(INSERTED 2026-10-15)* - The site can be installed to the home screen, and an installed phone gets a notification for critical and rescue needed reports in the person's rough area, even with the site closed.
 - [ ] **Phase 4: Robustness — Real-World Resilience** - The app stays usable on degraded networks, under abuse/moderation pressure, and with clear legal footing.
 - [ ] **Phase 5: Official Feed & Demo Mode** - First-time visitors see official alerts (NDMA SACHET, including IMD and CWC) in an Alerts view and banner, GDACS pins on the map, and a working demo immediately, instead of an empty product.
 - [ ] **Phase 6: Coordination — Safety, Needs, and Response** - People can check in safe, exchange needs/offers, and responders can triage, claim, and verify reports without duplicating effort.
@@ -439,6 +440,34 @@ Plans:
 
 - [ ] TBD (run /gsd-plan-phase 03.2 to break down)
 
+### Phase 03.3: Installable app and phone alerts (INSERTED)
+
+**Goal:** A person near an emergency is told on their phone, even with the site closed, so they do not have to be looking at the website to know. The site becomes an installable web app (home screen icon, opens like an app), and an installed device can receive a phone notification for critical and rescue needed reports near it. Raised by the owner on 2026-10-15 ("people will not be opening these websites, they should know the situation is going on"). Chosen over a native app (a second codebase, store fees, review delays) and over paid SMS or WhatsApp (outside the free only budget). Promotes backlog 999.3 and builds PWA-03, with PWA-06's part for Phase 3.2 updates.
+**Requirements**: PWA-03, PWA-06 (the Phase 3.2 updates part; official alerts stay with Phase 5)
+**Depends on:** Phase 3.2 (the updates and the Reliable alert rule it delivers), Phase 3 (the provisional gate and the single visibility resolver)
+**UI hint**: yes
+**Success Criteria** (what must be TRUE):
+
+  1. The site can be installed to the home screen on Android, laptop and iPhone, opens like an app, and shows a short "Install to get alerts" prompt on iPhone where a notification only works after install.
+  2. A signed in person can opt in to phone notifications and choose a rough area (about a 5 km cell, never an exact position). Only that rough area is stored, and it can be removed at any time.
+  3. A phone notification goes out only for critical and rescue needed reports in the person's area, and only after the same visibility resolver that decides the feed says the report may be shown. It never bypasses the provisional gate, is capped per person per hour, and carries no voter, account or exact location.
+  4. Tapping a notification opens that report in the view it now belongs to (a /?report=ID style link from Phase 3.1).
+  5. The in-app bell from Phase 3.2 keeps working for anyone who has not installed or has refused notifications, and a refused or unsupported device sees a plain message instead of a broken switch.
+
+**Scope notes** (starting points for discuss-phase, not decisions):
+
+  1. This is a privacy change: the site stored no location so far. Store only the rough area, only for people who opt in, and say so in plain words. Settle the storage and deletion rule in discuss-phase.
+  2. Web Push needs HTTPS in production, a service worker and VAPID keys (library chosen in the stack notes: webpush-go). The keys are secrets and stay out of the repo.
+  3. iOS 16.4 or later delivers push only to a site added to the home screen. Safari has no Background Sync, so the offline report queue stays on the IndexedDB baseline.
+  4. Care points: alert volume (cap per person per hour and per report), the farmable Reliable tag (notify on critical and rescue needed only in this phase), and a notification must be sent from the same decision the feed uses.
+  5. Email digests (999.4) and official alerts by push (Phase 5 content) stay out of this phase.
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 03.3 to break down)
+
 ### Phase 4: Robustness — Real-World Resilience
 
 **Goal**: As a person reading or reporting during an emergency, often on a weak phone connection, I want to keep reading, posting and confirming reports when the signal is bad, knowing abusive posts are screened out and that the site says plainly it is unofficial, so that the reporting loop keeps working and I am not misled about what Pinalert is.
@@ -560,7 +589,9 @@ Plans:
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)
 
-### Phase 999.3: PWA shell and Web Push for updates and official alerts (BACKLOG)
+### Phase 999.3: PWA shell and Web Push for updates and official alerts (BACKLOG, partly promoted to Phase 3.3 on 2026-10-15)
+
+**Note 2026-10-15:** the install step and push for critical and rescue needed reports moved into Phase 3.3. What stays here: pushing Severe or Extreme official alerts, which waits for Phase 5's feed. Keep from this entry for 3.3: ask for permission right after a person posts a report, not on first visit, and drop a stored subscription when its endpoint answers 410 Gone.
 
 **Goal:** [Captured for future planning] Make the app installable (service worker, manifest, install to Home Screen) and deliver Phase 3.2's updates and Severe official alerts for the reader's district as Web Push (VAPID keys, `webpush-go`, stored subscriptions that are removed when an endpoint answers 410 Gone). Ask for permission right after a user posts a report, not on first visit. iPhones only receive web push in an installed app (iOS 16.4 and later), so the install step comes first. Raised by the owner on 2026-10-03; relates to the deferred PWA-03, PWA-04 and PWA-06. Severe or Extreme alerts only. Push text is built from the trust object at send time and links to the live report, so it never carries a count that can go stale.
 **Requirements:** PWA-06 (v2)
