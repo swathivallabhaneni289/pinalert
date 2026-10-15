@@ -68,12 +68,24 @@ func reportFromFocusRow(row sqlcgen.ReportForFocusRow) Report {
 	return reportFromNearbyRow(sqlcgen.NearbyReportsRow(row))
 }
 
+// candidateSet is what the two candidate reads gave. ExpiredCapped and
+// OpenCapped say a read returned exactly its row cap, so the set may be short of
+// rows that belong in a view. The queries carry no vote predicate (history.sql
+// point (d)), so a capped open read can hold live reports that crowd resolved
+// ones out, and the service cannot tell which. It says so through the cut flags
+// instead of staying silent (WR-02).
+type candidateSet struct {
+	Candidates    []historyCandidate
+	ExpiredCapped bool
+	OpenCapped    bool
+}
+
 // historyCandidates runs the two bounded candidate reads and returns the
 // expired ones first, then the open ones, each id once (Pitfall 9). The two
 // sets are separate reads with separate caps so live reports can never crowd
 // expired ones out (Pitfall 2). Both take the one instant the caller judges
-// against.
-func (s *ReportService) historyCandidates(ctx context.Context, lat, lon, radiusKm float64, now, windowStart time.Time) ([]historyCandidate, error) {
+// against. A read that returned exactly its cap is flagged on the result.
+func (s *ReportService) historyCandidates(ctx context.Context, lat, lon, radiusKm float64, now, windowStart time.Time) (candidateSet, error) {
 	latMin, latMax, lonMin, lonMax := BoundingBox(lat, lon, radiusKm)
 	expired, err := s.q.ExpiredReportsInWindow(ctx, sqlcgen.ExpiredReportsInWindowParams{
 		Lat:         lat,
@@ -88,7 +100,7 @@ func (s *ReportService) historyCandidates(ctx context.Context, lat, lon, radiusK
 		RowCap:      int32(HistoryExpiredCandidateCap),
 	})
 	if err != nil {
-		return nil, err
+		return candidateSet{}, err
 	}
 	open, err := s.q.OpenReportsInArea(ctx, sqlcgen.OpenReportsInAreaParams{
 		Lat:      lat,
@@ -102,7 +114,7 @@ func (s *ReportService) historyCandidates(ctx context.Context, lat, lon, radiusK
 		RowCap:   int32(HistoryOpenCandidateCap),
 	})
 	if err != nil {
-		return nil, err
+		return candidateSet{}, err
 	}
 	out := make([]historyCandidate, 0, len(expired)+len(open))
 	seen := make(map[int64]struct{}, len(expired)+len(open))
@@ -120,7 +132,11 @@ func (s *ReportService) historyCandidates(ctx context.Context, lat, lon, radiusK
 		seen[row.ID] = struct{}{}
 		out = append(out, historyCandidate{report: reportFromOpenRow(row)})
 	}
-	return out, nil
+	return candidateSet{
+		Candidates:    out,
+		ExpiredCapped: len(expired) >= HistoryExpiredCandidateCap,
+		OpenCapped:    len(open) >= HistoryOpenCandidateCap,
+	}, nil
 }
 
 // loadReadContext runs the batched reads of a request over the given report
@@ -290,14 +306,21 @@ type RecentCounts struct {
 // start, then makes one reporter read and one vote read, because BuildVoteTally
 // needs the reporter id. It reads no reporter history and no undo counts, and
 // both empty candidate sets return zeros after the two candidate reads.
+//
+// The counts can under report. When a candidate read returned exactly its row
+// cap (see candidateSet), reports that belong in the count may be outside the
+// set, and with no vote predicate in SQL the service cannot know how many. The
+// wire shape has no field for this, so the counts stay as read here. History
+// carries the same fact on its cut flags.
 func (s *ReportService) RecentHistoryCounts(ctx context.Context, q RecentQuery) (RecentCounts, error) {
 	now := s.now().UTC()
 	windowStart := now.Add(-RecentWindow)
 
-	cands, err := s.historyCandidates(ctx, q.Latitude, q.Longitude, q.RadiusKm, now, windowStart)
+	set, err := s.historyCandidates(ctx, q.Latitude, q.Longitude, q.RadiusKm, now, windowStart)
 	if err != nil {
 		return RecentCounts{}, err
 	}
+	cands := set.Candidates
 	if len(cands) == 0 {
 		return RecentCounts{}, nil
 	}
@@ -451,7 +474,8 @@ func (s *ReportService) Focus(ctx context.Context, q FocusQuery) (FocusResult, e
 //     honest (D-17).
 //  5. Sort each group (Resolved by closure time, Expired by expiry time, newest
 //     first, ties by id descending), cap each at HistoryGroupCap and set its cut
-//     flag, then build each kept view with buildFinishedView.
+//     flag (also set when a candidate read that feeds the group hit its row
+//     cap), then build each kept view with buildFinishedView.
 //  6. attachUndos over the kept views: one conditional ResolutionUndoCounts.
 //
 // The cost is a Nearby read plus one report read, and the browser does not poll
@@ -461,10 +485,11 @@ func (s *ReportService) History(ctx context.Context, q HistoryQuery) (HistoryPag
 	now := s.now().UTC()
 	windowStart := now.Add(-HistoryWindow)
 
-	cands, err := s.historyCandidates(ctx, q.Latitude, q.Longitude, q.RadiusKm, now, windowStart)
+	set, err := s.historyCandidates(ctx, q.Latitude, q.Longitude, q.RadiusKm, now, windowStart)
 	if err != nil {
 		return HistoryPage{}, err
 	}
+	cands := set.Candidates
 	if len(cands) == 0 {
 		return HistoryPage{Reports: []ReportView{}}, nil
 	}
@@ -509,7 +534,15 @@ func (s *ReportService) History(ctx context.Context, q HistoryQuery) (HistoryPag
 	order(resolved)
 	order(expired)
 
-	page := HistoryPage{}
+	// A group is cut when it had more than HistoryGroupCap entries, and also when
+	// a candidate read that can feed it returned exactly its row cap, because
+	// then reports may be missing from the set (WR-02). A past entry can only come
+	// from the expired set. A resolved entry can come from either set: an open
+	// report closed by people, or an expired report whose closure stands.
+	page := HistoryPage{
+		ResolvedCut: set.OpenCapped || set.ExpiredCapped,
+		ExpiredCut:  set.ExpiredCapped,
+	}
 	if len(resolved) > HistoryGroupCap {
 		resolved = resolved[:HistoryGroupCap]
 		page.ResolvedCut = true
@@ -540,16 +573,22 @@ func (s *ReportService) History(ctx context.Context, q HistoryQuery) (HistoryPag
 }
 
 // attachUndos fills UndosLeft on every view and reads the undo counts only
-// when they can matter (D-22). A view is a candidate when it has not expired
-// and the viewer either has a standing resolution row on it or posted it, which
-// are the only two cases where a take back or a poster's reopen can exist. The
-// common page has no candidate, so it returns at once and costs zero reads.
-// Every other view reads UndoLimit, because nothing the viewer did can have
-// spent the budget. The viewer comes from the gate, never from a query value
+// when they can matter (D-22). A faded view, one whose expiry has passed or
+// whose view is Past, gets 0 and never reads: nothing can be undone on it. A
+// view is a candidate when it has not expired and the viewer either has a
+// standing resolution row on it or posted it, which are the only two cases
+// where a take back or a poster's reopen can exist. The common page has no
+// candidate, so it returns at once and costs zero reads. Every other live view
+// reads UndoLimit, because nothing the viewer did can have spent the budget. The viewer comes from the gate, never from a query value
 // (T-31-27); 0 means no identified viewer and never reads.
 func (s *ReportService) attachUndos(ctx context.Context, viewerAccountID int64, views []ReportView, now time.Time) error {
 	for i := range views {
 		views[i].UndosLeft = UndoLimit
+		if !views[i].ExpiresAt.After(now) || views[i].View == FeedViewPast {
+			// A faded report cannot be changed by a take back or a reopen, so
+			// there is nothing left to undo whatever was spent (IN-02).
+			views[i].UndosLeft = 0
+		}
 	}
 	if viewerAccountID == 0 {
 		return nil
