@@ -83,6 +83,10 @@ func p30Grid() []p30Case {
 	metas := map[string]ReportMeta{"low": p08Low, "medium": p08Medium, "critical": p08Critical, "rescue low": p08RescueLow}
 	reporters := p30Reporters()
 	for _, vis := range Visibilities {
+		// A withheld report never reaches BuildTrust (R-01).
+		if vis == VisibilityWithheld {
+			continue
+		}
 		for mname, meta := range metas {
 			life := ExpiryDuration(meta.Severity)
 			window := life / CurrencyWindowDivisor

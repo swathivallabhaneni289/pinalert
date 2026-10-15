@@ -1,5 +1,5 @@
 // visibility.go is the sole authority for a report's visibility state: the
-// question of whether a report is Hidden, Provisional, Live, or Retracted.
+// question of whether a report is Hidden, Provisional, Live, Retracted or Withheld.
 // Every surface that displays a report — feed, map, triage view, shareable
 // card — crosses into Resolve to learn the answer, so that the answer is
 // identical everywhere (TRUST-02). See 02-CONTEXT.md decisions D-05 through
@@ -9,8 +9,9 @@ package service
 
 import "time"
 
-// Visibility is one of the four states a report's confirm/dispute/resolve
-// tally can resolve to.
+// Visibility is one of the five states a report can resolve to. Four come
+// from the confirm, dispute and resolve tally; the fifth, Withheld, comes
+// from moderation (R-01).
 type Visibility string
 
 const (
@@ -18,13 +19,17 @@ const (
 	VisibilityProvisional Visibility = "provisional"
 	VisibilityLive        Visibility = "live"
 	VisibilityRetracted   Visibility = "retracted"
-	VisibilityWithheld    Visibility = "withheld"
+	// VisibilityWithheld is a moderation outcome, not a tally outcome. It is
+	// listable in no view (ListableInFeed's fail closed default and every
+	// Phase 3.1 view). Only the author's Activity page (04-16) and the
+	// moderator screen (04-23) show such a report (R-01).
+	VisibilityWithheld Visibility = "withheld"
 )
 
 // Visibilities is the ordered, canonical list of every valid visibility.
-var Visibilities = []Visibility{VisibilityHidden, VisibilityProvisional, VisibilityLive, VisibilityRetracted}
+var Visibilities = []Visibility{VisibilityHidden, VisibilityProvisional, VisibilityLive, VisibilityRetracted, VisibilityWithheld}
 
-// Valid reports whether v is one of the four canonical visibilities.
+// Valid reports whether v is one of the five canonical visibilities.
 // Comparison is exact — no case-insensitive coercion.
 func (v Visibility) Valid() bool {
 	for _, x := range Visibilities {
@@ -49,6 +54,11 @@ const IndependentAgreementThreshold = 2
 // from. It is a closed, serialized contract: 02-04 puts the slug on the
 // wire and 02-06 maps it to display copy, so these string values are
 // frozen here.
+//
+// removed_after_review and awaiting_text_check never reach a documented JSON
+// response (the feed never lists a withheld report, a vote on one answers 404
+// from 04-07, the Activity page renders server side), so the swagger enums
+// tags keep the five Phase 2 slugs (outline decision on R-01).
 type ResolveReason string
 
 const (
@@ -69,8 +79,18 @@ var ResolveReasons = []ResolveReason{
 	ReasonDisputed,
 	ReasonAwaitingConfirmation,
 	ReasonConfirmed,
+	ReasonRemovedAfterReview,
+	ReasonAwaitingTextCheck,
 }
 
+// ModerationState is the outcome of a report's text check and of moderator
+// review (R-01). clear is published normally, pending means the text check
+// could not finish (D-02), removed is a moderator Remove or a late reject
+// (R-03). The zero value is not a stored state (the column defaults to
+// clear); Resolve treats it exactly as clear, so callers that build a
+// ReportMeta without moderation keep their result. Rating neutrality for a
+// withheld report is ClassifyOutcome's job (04-29, R-02), not the zero
+// value's.
 type ModerationState string
 
 const (
@@ -79,9 +99,17 @@ const (
 	ModerationRemoved ModerationState = "removed"
 )
 
+// ModerationStates is the ordered, canonical list of every stored state.
 var ModerationStates = []ModerationState{ModerationClear, ModerationPending, ModerationRemoved}
 
+// Valid reports whether s is one of the three stored states. Comparison is
+// exact, so the empty string and any case variant are invalid.
 func (s ModerationState) Valid() bool {
+	for _, x := range ModerationStates {
+		if x == s {
+			return true
+		}
+	}
 	return false
 }
 
@@ -89,8 +117,10 @@ func (s ModerationState) Valid() bool {
 // needs — not the full Report struct — so this file carries no
 // store-shaped dependency.
 type ReportMeta struct {
-	Severity   Severity
-	Category   Category
+	Severity Severity
+	Category Category
+	// Moderation is the state from reports.moderation_state, passed by every
+	// read path (04-07). The zero value resolves exactly as clear.
 	Moderation ModerationState
 }
 
@@ -104,12 +134,20 @@ func (m ReportMeta) criticalBypass() bool {
 	return m.Severity == SeverityCritical || m.Category == CategoryRescueNeeded
 }
 
+// Serious is the exported name of criticalBypass: the one rule that R-04 makes
+// serve both the critical bypass and the serious report allowance. It ignores
+// moderation. criticalBypass keeps its name because Phase 2 and Phase 3 docs
+// cite it.
 func (m ReportMeta) Serious() bool {
-	return false
+	return m.criticalBypass()
 }
 
+// Withheld reports whether m is hidden by moderation: removed at any severity
+// (R-01, R-03), or pending and not serious (D-02). A pending serious report is
+// published while its check retries. Resolve's two top rungs and later
+// consumers read this one predicate so they cannot drift apart.
 func (m ReportMeta) Withheld() bool {
-	return false
+	return m.Moderation == ModerationRemoved || (m.Moderation == ModerationPending && !m.Serious())
 }
 
 // VoteTally is an already-loaded snapshot of a report's confirm, dispute,
@@ -197,32 +235,48 @@ func (t VoteTally) isRetracted() bool {
 // parameter is retained for Phase 3's decay scoring (TRUST-07) per the
 // VisibilityResolver contract in .planning/research/ARCHITECTURE.md.
 //
+// Withheld (R-01) is the fifth state; it comes from moderation, not from
+// expiry, which stays a read time predicate.
+//
 // The rungs below are checked in this exact order — the order is the
 // specification:
 //
-//  1. Retracted (D-07): a distinct trigger, fired only by explicit resolve
+//  1. Removed (R-01, R-03): withheld with reason removed_after_review, above
+//     Retracted and above the critical bypass, because a moderation Remove is
+//     a separate authority from the votes and must hide even a critical
+//     report.
+//  2. Held (D-02, R-01): pending and not serious is withheld with reason
+//     awaiting_text_check; pending and serious falls through to the rungs
+//     below.
+//  3. Retracted (D-07): a distinct trigger, fired only by explicit resolve
 //     marking, outranks everything below it, including the critical
 //     bypass, because marking a report resolved must work regardless of
 //     severity. The only ways past this rung are the two reopen paths
 //     (D-16 amended), both of which isRetracted already accounts for;
 //     there is no reopen branch out here in Resolve itself.
-//  2. Critical bypass (D-06, TRUST-04): sits ABOVE the dispute rung (a
+//  4. Critical bypass (D-06, TRUST-04): sits ABOVE the dispute rung (a
 //     critical or rescue-needed report can never be Hidden by disputes)
 //     and ABOVE the confirm gate (critical/rescue-needed publishes at
 //     full visibility immediately, with no gate). One rung, both
 //     exemptions.
-//  3. Hidden (D-05): a floor (DisputeCells >= IndependentAgreementThreshold,
+//  5. Hidden (D-05): a floor (DisputeCells >= IndependentAgreementThreshold,
 //     so a single dispute can never hide a report) AND a strict majority
 //     (DisputeCells > ConfirmCells, so a bare tie does not hide either).
 //     There is deliberately no matching unhide branch anywhere in this
 //     file — D-08's reversibility falls out of recomputing this
 //     expression against the current tally on every read.
-//  4. Provisional gate (TRUST-04): Provisional is emitted as a state
+//  6. Provisional gate (TRUST-04): Provisional is emitted as a state
 //     distinct from Live rather than folded into it, because D-09's
 //     dimmed-and-labelled treatment (built in 02-06) needs a discrete
 //     state to key off.
-//  5. Live: the default once nothing above fired.
+//  7. Live: the default once nothing above fired.
 func Resolve(meta ReportMeta, tally VoteTally, now time.Time) (Visibility, ResolveReason) {
+	if meta.Withheld() {
+		if meta.Moderation == ModerationRemoved {
+			return VisibilityWithheld, ReasonRemovedAfterReview
+		}
+		return VisibilityWithheld, ReasonAwaitingTextCheck
+	}
 	if tally.isRetracted() {
 		return VisibilityRetracted, ReasonResolved
 	}
