@@ -477,6 +477,13 @@ definitions:
       geohash:
         example: tdr1qgzp
         type: string
+      held:
+        description: |-
+          Held is true only when the text check could not finish and the report is not
+          serious, so it is stored but shown in no feed or map until a background check
+          finishes. A published report, borderline text included, carries false. Never omitted.
+        example: false
+        type: boolean
       id:
         example: 42
         type: integer
@@ -582,7 +589,8 @@ definitions:
         example: flood
         type: string
       description:
-        description: Description is a free-text account of the report, 10-1000 characters.
+        description: Description is a free text account of the report, 10 to 1000
+          characters after trimming, counted as characters rather than bytes.
         example: Water rising fast near the market bridge.
         type: string
       latitude:
@@ -941,6 +949,8 @@ paths:
         verified by email through the magic-link flow (POST /auth/request-link, then
         GET /auth/verify) — an unverified caller receives 401. id, geohash, created_at
         and expires_at are computed server-side and can never be set by the client.
+        The description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.
+        When the check cannot finish in time, a critical or rescue_needed report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.
       parameters:
       - description: Report to submit
         in: body
@@ -961,6 +971,10 @@ paths:
             $ref: '#/definitions/handlers.ErrorResponse'
         "401":
           description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "422":
+          description: The text check refused the description; nothing was stored
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
         "500":

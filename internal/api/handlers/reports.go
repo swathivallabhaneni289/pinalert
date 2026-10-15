@@ -45,7 +45,7 @@ type SubmitReportRequest struct {
 	Category string `json:"category" enums:"flood,earthquake,fire,storm_cyclone,road_blocked,power_outage,shelter_open,rescue_needed,other" example:"flood"`
 	// Severity affects triage ordering only; self-declaring critical never bypasses the provisional-visibility gate (internal/service.Severities).
 	Severity string `json:"severity" enums:"low,medium,critical" example:"medium"`
-	// Description is a free-text account of the report, 10-1000 characters.
+	// Description is a free text account of the report, 10 to 1000 characters after trimming, counted as characters rather than bytes.
 	Description string `json:"description" example:"Water rising fast near the market bridge."`
 	// Latitude must be between -90 and 90.
 	Latitude float64 `json:"latitude" example:"13.0827"`
@@ -77,6 +77,10 @@ type ReportResponse struct {
 	ExpiresAt             string  `json:"expires_at" example:"2026-09-06T14:03:00.000Z"`
 	// DistanceKm is present only in GET /api/reports responses (nil on the report just submitted).
 	DistanceKm *float64 `json:"distance_km,omitempty" example:"1.42"`
+	// Held is true only when the text check could not finish and the report is not
+	// serious, so it is stored but shown in no feed or map until a background check
+	// finishes. A published report, borderline text included, carries false. Never omitted.
+	Held bool `json:"held" example:"false"`
 }
 
 // SubmitReportResponse wraps the single report created by a successful
@@ -223,7 +227,10 @@ type ReportListResponse struct {
 	Focus *FocusResponse `json:"focus,omitempty"`
 }
 
-func reportToResponse(r service.Report) ReportResponse {
+// reportToResponse maps the report SubmitChecked stored, and whether it is
+// held, onto the wire shape of POST /api/reports. DistanceKm stays nil.
+func reportToResponse(res service.SubmitResult) ReportResponse {
+	r := res.Report
 	var capacityStatus *string
 	if r.ShelterCapacityStatus != nil {
 		v := string(*r.ShelterCapacityStatus)
@@ -241,7 +248,7 @@ func reportToResponse(r service.Report) ReportResponse {
 		ShelterHeadcount:      r.ShelterHeadcount,
 		CreatedAt:             r.CreatedAt.Format(rfc3339Milli),
 		ExpiresAt:             r.ExpiresAt.Format(rfc3339Milli),
-		DistanceKm:            r.DistanceKm,
+		Held:                  res.Held,
 	}
 }
 
@@ -338,20 +345,25 @@ type ErrorResponse struct {
 	Error ErrorDetail `json:"error"`
 }
 
-// SubmitReport handles POST /api/reports: decode, validate (via svc), and
-// persist under the caller's session id. Reaching this handler at all
-// requires a session verified by email through the magic-link flow — the
-// access gate in internal/api/gate.go (01.1-04) refuses an unverified
+// SubmitReport handles POST /api/reports: decode, validate, screen the
+// description and persist under the caller's session id. Reaching this handler
+// at all requires a session verified by email through the magic link flow, and
+// the access gate in internal/api/gate.go (01.1-04) refuses an unverified
 // caller with 401 before this function ever runs. A ValidationError maps to
-// 400 with the offending field named; any other error maps to a generic
-// 500 with the detail logged server-side only, so database errors never
-// reach a client.
+// 400 with the offending field named. A description the text check refuses maps
+// to 422 on the field description with the one exported message for the reason,
+// and nothing is stored. Any other error maps to a generic 500 with the detail
+// logged server side only, so database errors never reach a client. A 201 body
+// carries held, true when the text check could not finish and the report is
+// not serious (D-02).
 //
 // @Summary Submit a new emergency report
 // @Description Creates a location-tagged report under the caller's session. Requires a session
 // @Description verified by email through the magic-link flow (POST /auth/request-link, then
 // @Description GET /auth/verify) — an unverified caller receives 401. id, geohash, created_at
 // @Description and expires_at are computed server-side and can never be set by the client.
+// @Description The description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.
+// @Description When the check cannot finish in time, a critical or rescue_needed report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.
 // @Tags reports
 // @Accept json
 // @Produce json
@@ -359,11 +371,19 @@ type ErrorResponse struct {
 // @Success 201 {object} SubmitReportResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
+// @Failure 422 {object} ErrorResponse "The text check refused the description; nothing was stored"
 // @Failure 500 {object} ErrorResponse
 // @Router /reports [post]
 func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID, ok := session.FromContext(r.Context())
+		if !ok {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		// The gate already resolved a verified account, so a missing one is a
+		// programming error, the same shape NearbyReports uses.
+		acc, ok := account.FromContext(r.Context())
 		if !ok {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
@@ -395,8 +415,7 @@ func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 			ShelterHeadcount:      req.ShelterHeadcount,
 		}
 
-		report, err := svc.Submit(r.Context(), sessionID, in)
-		if err != nil {
+		if err := service.ValidateSubmitInput(in); err != nil {
 			var ve service.ValidationError
 			if errors.As(err, &ve) {
 				writeFieldError(w, http.StatusBadRequest, ve.Field, ve.Message)
@@ -407,7 +426,24 @@ func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusCreated, SubmitReportResponse{Report: reportToResponse(report)})
+		res, err := svc.SubmitChecked(r.Context(), sessionID, acc.ID, in)
+		if err != nil {
+			var tr service.TextRejectedError
+			if errors.As(err, &tr) {
+				writeFieldError(w, http.StatusUnprocessableEntity, "description", service.RejectMessage(tr.Reason))
+				return
+			}
+			var ve service.ValidationError
+			if errors.As(err, &ve) {
+				writeFieldError(w, http.StatusBadRequest, ve.Field, ve.Message)
+				return
+			}
+			log.Printf("handlers: SubmitReport: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, SubmitReportResponse{Report: reportToResponse(res)})
 	}
 }
 

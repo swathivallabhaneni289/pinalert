@@ -8,10 +8,14 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"math"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/mmcloughlin/geohash"
@@ -149,8 +153,8 @@ type SubmitInput struct {
 }
 
 // Report is a fully materialized, server-computed report, returned by
-// Submit and Nearby. It carries no session identifier — see the threat
-// register's T-01-02 (Information Disclosure).
+// Nearby. It carries no session identifier (see the threat
+// register T-01-02, Information Disclosure).
 type Report struct {
 	ID                    int64
 	Category              Category
@@ -163,8 +167,8 @@ type Report struct {
 	ShelterHeadcount      *int
 	CreatedAt             time.Time
 	ExpiresAt             time.Time
-	// DistanceKm is populated by Nearby only; Submit's result leaves it nil,
-	// since a freshly submitted report has no query point to be distant from.
+	// DistanceKm is populated by Nearby only; the report just stored (CreatedReport) has none,
+	// since it has no query point to be distant from.
 	DistanceKm *float64
 }
 
@@ -201,11 +205,15 @@ func ValidateSubmitInput(in SubmitInput) error {
 		return ValidationError{"severity", "Pick a severity level."}
 	}
 
+	// The description is counted in characters (Unicode code points), not
+	// bytes, because Telugu, Hindi and Tamil letters take 3 bytes each and the
+	// messages promise characters (R-06).
 	desc := strings.TrimSpace(in.Description)
-	if len(desc) < 10 {
+	n := utf8.RuneCountInString(desc)
+	if n < 10 {
 		return ValidationError{"description", "Add a short description (at least 10 characters)."}
 	}
-	if len(desc) > 1000 {
+	if n > 1000 {
 		return ValidationError{"description", "Description must be 1000 characters or fewer."}
 	}
 
@@ -288,9 +296,12 @@ func clamp(v, min, max float64) float64 {
 // consumer-defined interfaces naming one generated method is idiomatic Go
 // and deliberately not deduplicated into a shared interface, because each
 // stays small enough to fake without a real Postgres. ReporterHistoryReports
-// is the bounded history read the feed needs to compose reporter signals.
+// is the bounded history read the feed needs to compose reporter signals. The
+// submit path writes the decided moderation state in the same insert and
+// records a check row through InsertModerationCheck.
 type Querier interface {
-	InsertReport(ctx context.Context, arg sqlcgen.InsertReportParams) (sqlcgen.InsertReportRow, error)
+	InsertReportIdempotent(ctx context.Context, arg sqlcgen.InsertReportIdempotentParams) (sqlcgen.InsertReportIdempotentRow, error)
+	InsertModerationCheck(ctx context.Context, arg sqlcgen.InsertModerationCheckParams) error
 	NearbyReports(ctx context.Context, arg sqlcgen.NearbyReportsParams) ([]sqlcgen.NearbyReportsRow, error)
 	CurrentVotesForReports(ctx context.Context, reportIds []int64) ([]sqlcgen.CurrentVotesForReportsRow, error)
 	ReporterAccountsForReports(ctx context.Context, reportIds []int64) ([]sqlcgen.ReporterAccountsForReportsRow, error)
@@ -311,8 +322,9 @@ type Querier interface {
 
 // ReportService validates, computes derived fields, and persists reports.
 type ReportService struct {
-	q   Querier
-	now func() time.Time
+	q        Querier
+	now      func() time.Time
+	screener TextScreener
 }
 
 // ReportOption configures a ReportService at construction time.
@@ -320,12 +332,21 @@ type ReportOption func(*ReportService)
 
 // WithReportClock overrides the clock the read path uses. It is named apart
 // from WithClock, which already returns AuthOption (Pitfall 6). It governs
-// the read path only: Submit keeps the wall clock, because vote times and the
+// the read path only: SubmitChecked keeps the wall clock, because vote times and the
 // NearbyReports expiry filter come from the database clock, and report times
 // written on a test clock would drift from both.
 func WithReportClock(fn func() time.Time) ReportOption {
 	return func(s *ReportService) {
 		s.now = fn
+	}
+}
+
+// WithScreener sets the screener for the inline text check. Without it every
+// text that passes the gibberish prefilter is clear and nothing is sent
+// anywhere, which is what every existing test harness gets.
+func WithScreener(s TextScreener) ReportOption {
+	return func(rs *ReportService) {
+		rs.screener = s
 	}
 }
 
@@ -339,19 +360,163 @@ func NewReportService(q Querier, opts ...ReportOption) *ReportService {
 	return s
 }
 
-// Submit validates in, computes expires_at (from severity, per D-14) and
-// geohash server-side, and persists the report under sessionID. now is
-// captured once, server-side, as the authoritative clock — never a
-// client-supplied timestamp.
-func (s *ReportService) Submit(ctx context.Context, sessionID string, in SubmitInput) (Report, error) {
+// CreatedReport is a freshly stored report as SubmitChecked returns it. It
+// carries no session identifier (T-01-02) and no distance, since a new report
+// has no query point to be distant from. Moderation is the state the insert
+// wrote.
+type CreatedReport struct {
+	ID                    int64
+	Category              Category
+	Severity              Severity
+	Description           string
+	Latitude              float64
+	Longitude             float64
+	Geohash               string
+	ShelterCapacityStatus *CapacityStatus
+	ShelterHeadcount      *int
+	CreatedAt             time.Time
+	ExpiresAt             time.Time
+	Moderation            ModerationState
+}
+
+// SubmitResult is the answer of SubmitChecked. Held is true exactly when the
+// stored row is withheld (ReportMeta.Withheld). Replayed is set only by the
+// request id replay (04-17). Check is the inline text check as it ran.
+type SubmitResult struct {
+	Report   CreatedReport
+	Held     bool
+	Replayed bool
+	Check    TextCheck
+}
+
+// ErrTextRejected is the sentinel a refused text wraps. Nothing was stored.
+var ErrTextRejected = errors.New("text rejected by the text check")
+
+// TextRejectedError is returned by SubmitChecked when the text check refused
+// the description. Reason names why, and RejectMessage(Reason) is the message
+// the author sees.
+type TextRejectedError struct {
+	Reason RejectReason
+}
+
+func (e TextRejectedError) Error() string {
+	return "text rejected: " + string(e.Reason)
+}
+
+// Unwrap lets errors.Is(err, ErrTextRejected) match.
+func (e TextRejectedError) Unwrap() error {
+	return ErrTextRejected
+}
+
+// The moderation_checks.status values (D-04), reused by the background worker.
+const (
+	moderationCheckPending = "pending"
+	moderationCheckDone    = "done"
+)
+
+func createdReportFromInsertRow(row sqlcgen.InsertReportIdempotentRow) CreatedReport {
+	var capacityStatus *CapacityStatus
+	if row.ShelterCapacityStatus != nil {
+		cs := CapacityStatus(*row.ShelterCapacityStatus)
+		capacityStatus = &cs
+	}
+	var headcount *int
+	if row.ShelterHeadcount != nil {
+		h := int(*row.ShelterHeadcount)
+		headcount = &h
+	}
+	return CreatedReport{
+		ID:                    row.ID,
+		Category:              Category(row.Category),
+		Severity:              Severity(row.Severity),
+		Description:           row.Description,
+		Latitude:              row.Latitude,
+		Longitude:             row.Longitude,
+		Geohash:               row.Geohash,
+		ShelterCapacityStatus: capacityStatus,
+		ShelterHeadcount:      headcount,
+		CreatedAt:             row.CreatedAt,
+		ExpiresAt:             row.ExpiresAt,
+		Moderation:            ModerationState(row.ModerationState),
+	}
+}
+
+// textCheckRow builds the moderation_checks row for a check outcome. An
+// unfinished check gives a pending row whose next attempt honours the
+// provider's wait; a borderline text gives a done row flagged for review that
+// holds the verdict, scores and model but never the text. Any other outcome
+// keeps no row and returns false.
+func textCheckRow(reportID int64, check TextCheck, now time.Time) (sqlcgen.InsertModerationCheckParams, bool) {
+	switch check.Outcome {
+	case TextUnfinished:
+		return sqlcgen.InsertModerationCheckParams{
+			ReportID:      reportID,
+			Status:        moderationCheckPending,
+			NextAttemptAt: now.Add(check.RetryAfter),
+		}, true
+	case TextBorderline:
+		verdict := string(VerdictBorderline)
+		model := check.Model
+		scores, err := json.Marshal(check.Scores)
+		if err != nil {
+			scores = nil
+		}
+		return sqlcgen.InsertModerationCheckParams{
+			ReportID:      reportID,
+			Status:        moderationCheckDone,
+			NextAttemptAt: now,
+			Verdict:       &verdict,
+			Scores:        scores,
+			Model:         &model,
+			CheckedAt:     pgtype.Timestamptz{Time: now, Valid: true},
+			NeedsReview:   true,
+		}, true
+	}
+	return sqlcgen.InsertModerationCheckParams{}, false
+}
+
+// SubmitChecked validates in, screens the description, computes expires_at
+// (from severity, per D-14) and the geohash server side, and stores the report
+// under sessionID. The order is the specification:
+//
+//  1. ValidateSubmitInput, returning its ValidationError unchanged. The handler
+//     already validated; a public method never trusts its caller.
+//  2. CheckText on the trimmed description. Only the text reaches the screener.
+//  3. A rejected text returns TextRejectedError before any write: nothing is
+//     stored (D-03).
+//  4. The moderation state is pending for an unfinished check and clear
+//     otherwise, at every severity. A serious pending report is published by
+//     Resolve's critical bypass and stays pending so a late verdict can still
+//     remove it (D-01, R-03). The state is decided before the insert and
+//     written by it, so a held report is never visible for a moment.
+//  5. now is captured once from the wall clock, never the injectable report
+//     clock, whose test times would drift from the database clock.
+//  6. One InsertReportIdempotent. accountID is the gate's verified account; the
+//     request id, request account and written time stay empty until 04-17.
+//  7. A pending or borderline check row, tried at most twice. If both writes
+//     fail the report stays stored and the error is logged with the numeric id
+//     only: a 500 would invite a second post of the same report, and a held
+//     report staying held is the fail closed side.
+//  8. Held is ReportMeta.Withheld of the stored row.
+func (s *ReportService) SubmitChecked(ctx context.Context, sessionID string, accountID int64, in SubmitInput) (SubmitResult, error) {
 	if err := ValidateSubmitInput(in); err != nil {
-		return Report{}, err
+		return SubmitResult{}, err
+	}
+
+	desc := strings.TrimSpace(in.Description)
+	check := CheckText(ctx, s.screener, desc)
+	if check.Outcome == TextRejected {
+		return SubmitResult{Check: check}, TextRejectedError{Reason: check.Reason}
+	}
+
+	state := ModerationClear
+	if check.Outcome == TextUnfinished {
+		state = ModerationPending
 	}
 
 	now := time.Now().UTC()
 	expiresAt := now.Add(ExpiryDuration(in.Severity))
 	gh := geohash.EncodeWithPrecision(in.Latitude, in.Longitude, geohashPrecision)
-	desc := strings.TrimSpace(in.Description)
 
 	var capacityStatus *string
 	if in.ShelterCapacityStatus != nil {
@@ -364,7 +529,7 @@ func (s *ReportService) Submit(ctx context.Context, sessionID string, in SubmitI
 		headcount = &v
 	}
 
-	row, err := s.q.InsertReport(ctx, sqlcgen.InsertReportParams{
+	row, err := s.q.InsertReportIdempotent(ctx, sqlcgen.InsertReportIdempotentParams{
 		SessionID:             sessionID,
 		Category:              string(in.Category),
 		Severity:              string(in.Severity),
@@ -376,38 +541,27 @@ func (s *ReportService) Submit(ctx context.Context, sessionID string, in SubmitI
 		ShelterHeadcount:      headcount,
 		CreatedAt:             now,
 		ExpiresAt:             expiresAt,
+		ModerationState:       string(state),
 	})
 	if err != nil {
-		return Report{}, err
+		return SubmitResult{}, err
+	}
+	created := createdReportFromInsertRow(row)
+
+	if checkRow, ok := textCheckRow(created.ID, check, now); ok {
+		var checkErr error
+		for attempt := 0; attempt < 2; attempt++ {
+			if checkErr = s.q.InsertModerationCheck(ctx, checkRow); checkErr == nil {
+				break
+			}
+		}
+		if checkErr != nil {
+			log.Printf("service: SubmitChecked: recording the text check for report %d: %v", created.ID, checkErr)
+		}
 	}
 
-	return reportFromInsertRow(row), nil
-}
-
-func reportFromInsertRow(row sqlcgen.InsertReportRow) Report {
-	var capacityStatus *CapacityStatus
-	if row.ShelterCapacityStatus != nil {
-		cs := CapacityStatus(*row.ShelterCapacityStatus)
-		capacityStatus = &cs
-	}
-	var headcount *int
-	if row.ShelterHeadcount != nil {
-		h := int(*row.ShelterHeadcount)
-		headcount = &h
-	}
-	return Report{
-		ID:                    row.ID,
-		Category:              Category(row.Category),
-		Severity:              Severity(row.Severity),
-		Description:           row.Description,
-		Latitude:              row.Latitude,
-		Longitude:             row.Longitude,
-		Geohash:               row.Geohash,
-		ShelterCapacityStatus: capacityStatus,
-		ShelterHeadcount:      headcount,
-		CreatedAt:             row.CreatedAt,
-		ExpiresAt:             row.ExpiresAt,
-	}
+	held := ReportMeta{Severity: created.Severity, Category: created.Category, Moderation: created.Moderation}.Withheld()
+	return SubmitResult{Report: created, Held: held, Check: check}, nil
 }
 
 // reporterHistoryParams builds the one history read of a request. It is the

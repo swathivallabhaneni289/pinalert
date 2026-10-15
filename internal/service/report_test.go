@@ -251,3 +251,50 @@ func assertFieldError(t *testing.T, err error, field string) {
 		t.Fatalf("expected error to name field %q, got %q (%v)", field, ve.Field, ve)
 	}
 }
+
+// TestValidateSubmitInputCountsRunes is V-07 (R-06): the description limits are
+// counted in characters after trimming, not in bytes. A Telugu letter takes 3
+// bytes in UTF-8, so a byte count would accept four letters and refuse 400.
+func TestValidateSubmitInputCountsRunes(t *testing.T) {
+	const (
+		shortMsg = "Add a short description (at least 10 characters)."
+		longMsg  = "Description must be 1000 characters or fewer."
+	)
+	scripts := []struct {
+		name   string
+		letter string
+	}{
+		{"english", "a"},
+		{"telugu", "న"},
+	}
+	check := func(t *testing.T, desc, wantMsg string) {
+		t.Helper()
+		in := validInput()
+		in.Description = desc
+		err := service.ValidateSubmitInput(in)
+		if wantMsg == "" {
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			return
+		}
+		assertFieldError(t, err, "description")
+		if ve := err.(service.ValidationError); ve.Message != wantMsg {
+			t.Fatalf("message %q, want %q", ve.Message, wantMsg)
+		}
+	}
+	for _, sc := range scripts {
+		t.Run(sc.name, func(t *testing.T) {
+			check(t, strings.Repeat(sc.letter, 9), shortMsg)
+			check(t, strings.Repeat(sc.letter, 10), "")
+			check(t, strings.Repeat(sc.letter, 1000), "")
+			check(t, strings.Repeat(sc.letter, 1001), longMsg)
+		})
+	}
+	t.Run("four telugu letters are 12 bytes and still too short", func(t *testing.T) {
+		check(t, strings.Repeat("న", 4), shortMsg)
+	})
+	t.Run("ten telugu letters padded with spaces and a newline pass", func(t *testing.T) {
+		check(t, "  \n"+strings.Repeat("న", 10)+" \n ", "")
+	})
+}

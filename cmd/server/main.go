@@ -20,6 +20,7 @@ import (
 	"pinalert/internal/api/handlers"
 	"pinalert/internal/geocode"
 	"pinalert/internal/mailer"
+	"pinalert/internal/moderation"
 	"pinalert/internal/service"
 	"pinalert/internal/session"
 	"pinalert/internal/store"
@@ -147,6 +148,17 @@ func main() {
 		log.Fatalf("loading mailer: %v", err)
 	}
 
+	// LoadScreener selects the OpenAI moderation client when OPENAI_API_KEY is
+	// set, a pass everything screener with a WARNING in development, and fails
+	// fast otherwise, which is the startup contract the mailer follows. One
+	// screener value is built per process, so its request and token budget is
+	// process wide, and the background text check worker reuses this same
+	// value. The key is never logged.
+	screener, err := moderation.LoadScreener(env)
+	if err != nil {
+		log.Fatalf("loading text screener: %v", err)
+	}
+
 	assetVersion := strconv.FormatInt(time.Now().Unix(), 10)
 
 	// NOMINATIM_CONTACT_EMAIL is operator-supplied configuration for the
@@ -213,7 +225,7 @@ func main() {
 	deps := api.Deps{
 		Session:     sessionMgr,
 		Sessions:    queries,
-		Reports:     service.NewReportService(queries),
+		Reports:     service.NewReportService(queries, service.WithScreener(screener)),
 		Votes:       service.NewVotingService(queries),
 		AuthService: service.NewAuthService(queries, mail, baseURL),
 		Auth: handlers.AuthConfig{
