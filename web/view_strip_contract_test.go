@@ -202,8 +202,10 @@ func TestViewStripStoreContract(t *testing.T) {
 	// unfiltered URL is the Phase 1 URL byte for byte.
 	p13MustNotContain(t, "fetchReports", fetchBody, "'&view=active'", "'&category=' + sentCategory")
 
-	// The response keeps the three optional objects without rendering them,
-	// and clears the link id after the first answered request.
+	// The response keeps the three optional objects without rendering them.
+	// The link id is kept and sent again while the link is held; it is
+	// cleared only when an answer says the report cannot be shown (too old,
+	// unavailable, or no ok focus for the id that request carried).
 	p13Ordered(t, fetchBody, "fetchReports response",
 		"state.reports = (body && body.reports) || [];",
 		"state.recent = (body && body.recent) || null;",

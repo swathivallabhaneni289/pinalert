@@ -305,9 +305,11 @@ func TestMapFollowsFocusOnce(t *testing.T) {
 	p13MustNotContain(t, "openFocusOnce", once, "fetchReports", "setView(", "state.reports =", "state.focus =")
 
 	// map.js reads the store and never writes the list or the link directly.
-	// The one way it ends a link is Pinalert.dropFocus() when the reader
-	// closes the linked popup (03.1 review fix CR-01, pinned in
-	// TestReviewFixALinkedReportRefreshes).
+	// The one way it ends a link is Pinalert.dropFocus() when the linked
+	// popup closes, whether the reader closed it or a redraw removed its pin;
+	// only a close made by a resize across 900px keeps the link (03.1 review
+	// fixes CR-01 and A2, pinned in TestReviewFixALinkedReportRefreshes and
+	// TestReviewFixA2LinkEndsOnRedrawClose).
 	p13MustNotContain(t, "map.js", code, "state.focus =", "state.reports =", "state.focusId", "setFocusId(")
 	if n := strings.Count(code, "var openedFocusId = null;"); n != 1 {
 		t.Errorf("map.js declares openedFocusId %d times, want 1", n)
