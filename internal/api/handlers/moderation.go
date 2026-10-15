@@ -7,6 +7,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"html/template"
 	"log"
@@ -185,6 +186,51 @@ func ModerationQueue(svc *service.ModerationService) http.HandlerFunc {
 			Counts:  modCountsJSON{Review: q.Counts.Review, Flagged: q.Counts.Flagged, Pending: q.Counts.Pending},
 		})
 	}
+}
+
+// modActionJSON is the answer of Keep and Remove: the report as it is now.
+type modActionJSON struct {
+	Report modRowJSON `json:"report"`
+}
+
+// modAct is the shared body of the two POST handlers. act is svc.Keep or
+// svc.Remove and logErr writes the one log line of the calling handler for an
+// error that is neither a 404 nor a 409.
+func modAct(logErr func(error), act func(ctx context.Context, id, moderatorID int64) (service.ModerationRow, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		acc, ok := modGuard(w, r, http.MethodPost)
+		if !ok {
+			return
+		}
+		id, ok := parseReportID(w, r)
+		if !ok {
+			return
+		}
+		row, err := act(r.Context(), id, acc.ID)
+		if err != nil {
+			switch {
+			case errors.Is(err, service.ErrReportNotFound):
+				writeFieldError(w, http.StatusNotFound, "id", service.ModNotFoundMessage)
+			case errors.Is(err, service.ErrAlreadyHandled):
+				writeFieldError(w, http.StatusConflict, "id", service.ModAlreadyHandledMessage)
+			default:
+				logErr(err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+			return
+		}
+		writeJSON(w, http.StatusOK, modActionJSON{Report: modRowToJSON(row)})
+	}
+}
+
+// ModerationKeep produces the handler of POST /api/moderation/reports/{id}/keep.
+func ModerationKeep(svc *service.ModerationService) http.HandlerFunc {
+	return modAct(func(err error) { log.Printf("handlers: ModerationKeep: %v", err) }, svc.Keep)
+}
+
+// ModerationRemove produces the handler of POST /api/moderation/reports/{id}/remove.
+func ModerationRemove(svc *service.ModerationService) http.HandlerFunc {
+	return modAct(func(err error) { log.Printf("handlers: ModerationRemove: %v", err) }, svc.Remove)
 }
 
 // ModerationReport produces the handler of GET /api/moderation/reports/{id}:

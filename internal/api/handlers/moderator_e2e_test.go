@@ -619,3 +619,215 @@ func TestModeratorQueues(t *testing.T) {
 		t.Errorf("Find 999999 = %d %+v, want 404 field id with the not found message", status, out.Error)
 	}
 }
+
+// --- Task 3: Keep, Remove and the audit row ---
+
+// modActionWire mirrors the answer of Keep and Remove.
+type modActionWire struct {
+	Report map[string]any `json:"report"`
+	Error  struct {
+		Field   string `json:"field"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// modAction posts keep or remove for a report id and returns the status and the
+// decoded answer.
+func modAction(t *testing.T, client *http.Client, baseURL string, id int64, action string) (int, modActionWire) {
+	t.Helper()
+	url := baseURL + "/api/moderation/reports/" + strconv.FormatInt(id, 10) + "/" + action
+	resp, err := client.Post(url, "application/json", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatalf("POST %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+	var out modActionWire
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decoding the answer of POST %s: %v", url, err)
+	}
+	return resp.StatusCode, out
+}
+
+// modInFeed reports whether the client's feed read (default view) lists the id.
+func modInFeed(t *testing.T, client *http.Client, baseURL string, id int64) bool {
+	t.Helper()
+	_, found := findFeedReport(decodeFeedResponse(t, getNearby(t, client, baseURL, modLat, modLon, false)), id)
+	return found
+}
+
+// modWantAction asserts the status of one action and returns the answer.
+func modWantAction(t *testing.T, fx modFixture, name, action string, wantStatus int) modActionWire {
+	t.Helper()
+	status, out := modAction(t, fx.moderator, fx.srv.URL, fx.ids[name], action)
+	if status != wantStatus {
+		t.Fatalf("%s %s status = %d, want %d: %+v", action, name, status, wantStatus, out)
+	}
+	return out
+}
+
+func TestModeratorKeep(t *testing.T) {
+	fx := modSetup(t)
+	base := fx.srv.URL
+
+	resp, err := fx.moderator.Get(base + "/api/moderation/reports/" + strconv.FormatInt(fx.ids["review"], 10) + "/keep")
+	if err != nil {
+		t.Fatalf("GET keep: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("GET on the keep path = %d, want 405 for a moderator", resp.StatusCode)
+	}
+
+	out := modWantAction(t, fx, "review", "keep", http.StatusOK)
+	if out.Report["moderation"] != "clear" || modHas(out.Report, "scores") {
+		t.Errorf("Keep review answered %v, want clear and no scores key", out.Report)
+	}
+	if _, _, q, _ := modGetQueue(t, fx.moderator, base); q.Counts.Review != 0 {
+		t.Errorf("review count after Keep = %d, want 0", q.Counts.Review)
+	}
+	again := modWantAction(t, fx, "review", "keep", http.StatusConflict)
+	if again.Error.Message != service.ModAlreadyHandledMessage || again.Error.Field != "id" {
+		t.Errorf("second Keep error = %+v", again.Error)
+	}
+
+	modWantAction(t, fx, "flagged", "keep", http.StatusOK)
+	if _, _, q, _ := modGetQueue(t, fx.moderator, base); q.Counts.Flagged != 0 {
+		t.Errorf("flagged count after Keep = %d, want 0", q.Counts.Flagged)
+	}
+	if !modInFeed(t, fx.readerB, base, fx.ids["flagged"]) {
+		t.Error("a kept flagged report must stay in reader B's feed")
+	}
+
+	if modInFeed(t, fx.readerB, base, fx.ids["held"]) {
+		t.Fatal("a held report must not be in reader B's feed before Keep")
+	}
+	held := modWantAction(t, fx, "held", "keep", http.StatusOK)
+	if held.Report["moderation"] != "clear" {
+		t.Errorf("Keep held answered moderation %v, want clear", held.Report["moderation"])
+	}
+	if !modInFeed(t, fx.readerB, base, fx.ids["held"]) {
+		t.Error("a kept held report must enter reader B's feed")
+	}
+
+	modWantAction(t, fx, "expiredHeld", "keep", http.StatusConflict)
+	status, nf := modAction(t, fx.moderator, base, 999999, "keep")
+	if status != http.StatusNotFound || nf.Error.Message != service.ModNotFoundMessage {
+		t.Errorf("Keep 999999 = %d %+v, want 404", status, nf.Error)
+	}
+}
+
+func TestModeratorRemove(t *testing.T) {
+	fx := modSetup(t)
+	base := fx.srv.URL
+
+	if !modInFeed(t, fx.readerB, base, fx.ids["serious"]) {
+		t.Fatal("a pending serious report must be published before Remove")
+	}
+	out := modWantAction(t, fx, "serious", "remove", http.StatusOK)
+	if out.Report["moderation"] != "removed" || out.Report["view"] != "none" || modHas(out.Report, "visibility_word") {
+		t.Errorf("Remove serious answered %v, want removed, view none, no visibility_word", out.Report)
+	}
+	if modInFeed(t, fx.readerB, base, fx.ids["serious"]) {
+		t.Error("a removed report must be gone from reader B's feed")
+	}
+	vote := postVote(t, fx.readerB, base, fx.ids["serious"], "confirm", map[string]any{"latitude": modLat, "longitude": modLon})
+	vote.Body.Close()
+	if vote.StatusCode != http.StatusNotFound {
+		t.Errorf("a confirm on a removed report = %d, want 404", vote.StatusCode)
+	}
+	profile := getProfile(t, fx.author, base)
+	if got := strings.Count(profile, `data-moderation="removed"`); got != 1 {
+		t.Errorf("the author's Activity page shows data-moderation=removed %d times, want 1", got)
+	}
+	if _, _, q, _ := modGetQueue(t, fx.moderator, base); q.Counts.Pending != 1 {
+		t.Errorf("pending count after Remove = %d, want 1", q.Counts.Pending)
+	}
+	again := modWantAction(t, fx, "serious", "remove", http.StatusConflict)
+	if again.Error.Message != service.ModAlreadyHandledMessage {
+		t.Errorf("second Remove message = %q", again.Error.Message)
+	}
+
+	modWantAction(t, fx, "flagged", "remove", http.StatusOK)
+	if _, _, q, _ := modGetQueue(t, fx.moderator, base); q.Counts.Flagged != 0 {
+		t.Errorf("flagged count after Remove = %d, want 0", q.Counts.Flagged)
+	}
+}
+
+func TestModeratorRemoveById(t *testing.T) {
+	fx := modSetup(t)
+	base := fx.srv.URL
+
+	status, found := modFind(t, fx.moderator, base, fx.ids["plain"])
+	if status != http.StatusOK || found.Lists == nil || len(found.Lists) != 0 {
+		t.Fatalf("Find plain = %d lists %v, want 200 and an empty list", status, found.Lists)
+	}
+	if !modInFeed(t, fx.readerB, base, fx.ids["plain"]) {
+		t.Fatal("the plain report must be in reader B's feed before Remove")
+	}
+	modWantAction(t, fx, "plain", "remove", http.StatusOK)
+	if modInFeed(t, fx.readerB, base, fx.ids["plain"]) {
+		t.Error("a removed unlisted report must be gone from reader B's feed")
+	}
+	modWantAction(t, fx, "expiredHeld", "remove", http.StatusOK)
+	if status, nf := modAction(t, fx.moderator, base, 999999, "remove"); status != http.StatusNotFound || nf.Error.Message != service.ModNotFoundMessage {
+		t.Errorf("Remove 999999 = %d %+v, want 404", status, nf.Error)
+	}
+}
+
+func TestModeratorAuditRow(t *testing.T) {
+	fx := modSetup(t)
+	base := fx.srv.URL
+
+	modWantAction(t, fx, "review", "keep", http.StatusOK)
+	modWantAction(t, fx, "review", "keep", http.StatusConflict)
+	modWantAction(t, fx, "serious", "remove", http.StatusOK)
+	modWantAction(t, fx, "serious", "remove", http.StatusConflict)
+	if status, _ := modAction(t, fx.moderator, base, 999999, "keep"); status != http.StatusNotFound {
+		t.Fatalf("Keep 999999 = %d, want 404", status)
+	}
+	modWantAction(t, fx, "plain", "remove", http.StatusOK)
+
+	type auditRow struct {
+		Report    int64
+		Moderator int64
+		Action    string
+	}
+	rows, err := fx.pool.Query(context.Background(), `SELECT report_id, moderator_account_id, action FROM moderation_actions ORDER BY id`)
+	if err != nil {
+		t.Fatalf("reading moderation_actions: %v", err)
+	}
+	defer rows.Close()
+	var got []auditRow
+	for rows.Next() {
+		var r auditRow
+		if err := rows.Scan(&r.Report, &r.Moderator, &r.Action); err != nil {
+			t.Fatalf("scanning an audit row: %v", err)
+		}
+		got = append(got, r)
+	}
+	want := []auditRow{
+		{fx.ids["review"], fx.moderatorID, "keep"},
+		{fx.ids["serious"], fx.moderatorID, "remove"},
+		{fx.ids["plain"], fx.moderatorID, "remove"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("audit rows = %v, want %v", got, want)
+	}
+
+	cols, err := fx.pool.Query(context.Background(), `SELECT column_name FROM information_schema.columns WHERE table_name = 'moderation_actions' ORDER BY column_name`)
+	if err != nil {
+		t.Fatalf("reading the columns: %v", err)
+	}
+	defer cols.Close()
+	var names []string
+	for cols.Next() {
+		var n string
+		if err := cols.Scan(&n); err != nil {
+			t.Fatalf("scanning a column name: %v", err)
+		}
+		names = append(names, n)
+	}
+	if want := []string{"action", "created_at", "id", "moderator_account_id", "report_id"}; !reflect.DeepEqual(names, want) {
+		t.Errorf("moderation_actions columns = %v, want %v (no text column)", names, want)
+	}
+}

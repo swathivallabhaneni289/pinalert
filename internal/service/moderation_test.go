@@ -517,3 +517,142 @@ func TestModerationFind(t *testing.T) {
 		t.Errorf("Find(2) lists = %v, %v, want a non nil empty list", lists, err)
 	}
 }
+
+// --- Task 3: copy, Keep and Remove ---
+
+// TestServerCopyModeratorAPI pins the moderator API messages and the visibility
+// words against the closed character set and the UI-SPEC "State labels" text.
+func TestServerCopyModeratorAPI(t *testing.T) {
+	exact := map[string]string{
+		service.ModAlreadyHandledMessage: "This report was already handled. Refresh the lists.",
+		service.ModNotFoundMessage:       "No report found with that id. Check the id and try again.",
+		service.ModWordShowing:           "Showing to everyone",
+		service.ModWordDisputed:          "Disputed",
+		service.ModWordResolved:          "Resolved",
+		service.ModWordExpired:           "Expired",
+		service.ModWordNoView:            "No longer in any view",
+	}
+	for got, want := range exact {
+		assertServerCopy(t, got)
+		if got != want {
+			t.Errorf("message = %q, want %q", got, want)
+		}
+	}
+}
+
+// modCallsAmong returns the recorded calls limited to the named methods.
+func modCallsAmong(f *fakeModerationQuerier, names ...string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	keep := map[string]bool{}
+	for _, n := range names {
+		keep[n] = true
+	}
+	var out []string
+	for _, c := range f.calls {
+		if keep[c] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func TestModerationKeepRemoveDecisions(t *testing.T) {
+	ctx := context.Background()
+	writes := []string{"InsertModerationAction", "KeepReport", "RemoveReport"}
+
+	newFake := func(status sqlcgen.ModerationStatusForReportRow) *fakeModerationQuerier {
+		status.ID = 5
+		return &fakeModerationQuerier{
+			reports:  map[int64]sqlcgen.ReportForModerationRow{5: modDetailRow(5)},
+			statuses: map[int64]sqlcgen.ModerationStatusForReportRow{5: status},
+		}
+	}
+
+	t.Run("keep on an unknown id", func(t *testing.T) {
+		f := newFake(sqlcgen.ModerationStatusForReportRow{})
+		if _, err := modService(f).Keep(ctx, 99, 7); !errors.Is(err, service.ErrReportNotFound) {
+			t.Errorf("error = %v, want ErrReportNotFound", err)
+		}
+		if got := modCallsAmong(f, writes...); len(got) != 0 {
+			t.Errorf("a 404 wrote %v", got)
+		}
+	})
+
+	t.Run("keep on a report in no list", func(t *testing.T) {
+		f := newFake(sqlcgen.ModerationStatusForReportRow{ModerationState: "clear"})
+		if _, err := modService(f).Keep(ctx, 5, 7); !errors.Is(err, service.ErrAlreadyHandled) {
+			t.Errorf("error = %v, want ErrAlreadyHandled", err)
+		}
+		if got := modCallsAmong(f, writes...); len(got) != 0 {
+			t.Errorf("a 409 wrote %v", got)
+		}
+	})
+
+	t.Run("keep writes the audit row first", func(t *testing.T) {
+		f := newFake(sqlcgen.ModerationStatusForReportRow{ModerationState: "clear", InFlagged: true})
+		row, err := modService(f).Keep(ctx, 5, 7)
+		if err != nil {
+			t.Fatalf("Keep error = %v", err)
+		}
+		if row.ID != 5 {
+			t.Errorf("row id = %d, want 5", row.ID)
+		}
+		want := []string{"InsertModerationAction", "KeepReport", "ReportForModeration"}
+		if got := modCallsAmong(f, "InsertModerationAction", "KeepReport", "ReportForModeration", "RemoveReport"); !reflect.DeepEqual(got, want) {
+			t.Errorf("calls = %v, want %v", got, want)
+		}
+		wantInsert := sqlcgen.InsertModerationActionParams{ReportID: 5, ModeratorAccountID: 7, Action: "keep"}
+		if len(f.inserts) != 1 || f.inserts[0] != wantInsert {
+			t.Errorf("audit row = %v, want %v", f.inserts, wantInsert)
+		}
+	})
+
+	t.Run("remove on a removed report", func(t *testing.T) {
+		f := newFake(sqlcgen.ModerationStatusForReportRow{ModerationState: "removed"})
+		if _, err := modService(f).Remove(ctx, 5, 7); !errors.Is(err, service.ErrAlreadyHandled) {
+			t.Errorf("error = %v, want ErrAlreadyHandled", err)
+		}
+		if got := modCallsAmong(f, writes...); len(got) != 0 {
+			t.Errorf("a 409 wrote %v", got)
+		}
+	})
+
+	t.Run("remove on an unknown id", func(t *testing.T) {
+		f := newFake(sqlcgen.ModerationStatusForReportRow{})
+		if _, err := modService(f).Remove(ctx, 99, 7); !errors.Is(err, service.ErrReportNotFound) {
+			t.Errorf("error = %v, want ErrReportNotFound", err)
+		}
+		if got := modCallsAmong(f, writes...); len(got) != 0 {
+			t.Errorf("a 404 wrote %v", got)
+		}
+	})
+
+	t.Run("remove works on an unlisted report", func(t *testing.T) {
+		f := newFake(sqlcgen.ModerationStatusForReportRow{ModerationState: "clear"})
+		if _, err := modService(f).Remove(ctx, 5, 7); err != nil {
+			t.Fatalf("Remove error = %v", err)
+		}
+		want := []string{"InsertModerationAction", "RemoveReport", "ReportForModeration"}
+		if got := modCallsAmong(f, "InsertModerationAction", "KeepReport", "ReportForModeration", "RemoveReport"); !reflect.DeepEqual(got, want) {
+			t.Errorf("calls = %v, want %v", got, want)
+		}
+		wantInsert := sqlcgen.InsertModerationActionParams{ReportID: 5, ModeratorAccountID: 7, Action: "remove"}
+		if len(f.inserts) != 1 || f.inserts[0] != wantInsert {
+			t.Errorf("audit row = %v, want %v", f.inserts, wantInsert)
+		}
+	})
+
+	t.Run("an audit failure stops the change", func(t *testing.T) {
+		f := newFake(sqlcgen.ModerationStatusForReportRow{ModerationState: "clear"})
+		boom := errors.New("audit insert failed")
+		f.insertErr = boom
+		_, err := modService(f).Remove(ctx, 5, 7)
+		if !errors.Is(err, boom) || errors.Is(err, service.ErrAlreadyHandled) || errors.Is(err, service.ErrReportNotFound) {
+			t.Errorf("error = %v, want the insert error and no sentinel", err)
+		}
+		if got := modCallsAmong(f, "RemoveReport"); len(got) != 0 {
+			t.Errorf("RemoveReport ran after the audit failure: %v", got)
+		}
+	})
+}

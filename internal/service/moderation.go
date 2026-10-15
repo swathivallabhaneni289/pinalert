@@ -22,9 +22,22 @@ import (
 // The two server messages of the moderator API. They are the UI-SPEC copy and
 // stay inside the closed character set the server copy test checks.
 const (
+	// ModAlreadyHandledMessage answers a Keep or Remove on a report that is no
+	// longer where the moderator saw it.
+	ModAlreadyHandledMessage = "This report was already handled. Refresh the lists."
 	// ModNotFoundMessage answers an id that is not a report.
 	ModNotFoundMessage = "No report found with that id. Check the id and try again."
 )
+
+// The two actions written to moderation_actions.
+const (
+	ModerationActionKeep   = "keep"
+	ModerationActionRemove = "remove"
+)
+
+// ErrAlreadyHandled is returned by Keep and Remove for a report that is in no
+// list (Keep) or already removed (Remove). The handler maps it to 409.
+var ErrAlreadyHandled = errors.New("service: report already handled")
 
 // The view slugs a ModerationRow carries. The first four are the Phase 3.1
 // FeedView values; ModViewNone is a report that is in no view at all (held,
@@ -127,6 +140,32 @@ type ModerationQueues struct {
 //     report takes its view and word from ModerationViewOf.
 //  4. Find reads one report by id (ErrReportNotFound for an unknown id), then
 //     the lists it is in.
+//
+// Steps of the writes:
+//  5. Keep reads ModerationStatusForReport (ErrReportNotFound for an unknown
+//     id). When the report is in none of the three lists, which includes a
+//     removed report, it returns ErrAlreadyHandled. Otherwise it writes the
+//     audit row (InsertModerationAction, action keep), then KeepReport, then
+//     re-reads the report and builds its row. KeepReport clears the automatic
+//     flag, dismisses the open people flags and releases a pending report into
+//     the normal rules, so a held report enters the feed with no separate
+//     Release action. The re-read row carries no scores because the statement
+//     clears needs_review.
+//  6. Remove does the same lookup. A report whose state is removed returns
+//     ErrAlreadyHandled. Otherwise it writes the audit row (action remove),
+//     then RemoveReport, which withholds any report, listed or not, serious or
+//     not, from every feed, map, vote and history view, then re-reads. A
+//     moderation Remove is the authority R-03 names, so it withdraws even a
+//     serious report that was published while its check was pending. A
+//     moderator may Keep or Remove their own report: no special rule.
+//
+// Two Claude's Discretion readings the owner can veto. First, the audit row is
+// written before the state change, because the store uses no transaction and a
+// recorded attempt that did not apply is safer for repudiation than an applied
+// change with no record; a failed state change answers 500 and the moderator
+// retries. Second, two moderators acting on one report at the same instant may
+// both pass the 409 check and write two audit rows; that is accepted for an
+// owner run screen.
 type ModerationService struct {
 	q   ModerationQuerier
 	now func() time.Time
@@ -384,6 +423,67 @@ func (s *ModerationService) Queues(ctx context.Context) (ModerationQueues, error
 	out.Counts.Flagged = counts.FlaggedCount
 	out.Counts.Pending = counts.PendingCount
 	return out, nil
+}
+
+// act is the shared body of Keep and Remove: the status lookup, the decision,
+// the audit row, the state change and the re-read, in that order.
+func (s *ModerationService) act(ctx context.Context, id, moderatorID int64, action string) (ModerationRow, error) {
+	status, err := s.q.ModerationStatusForReport(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ModerationRow{}, ErrReportNotFound
+		}
+		return ModerationRow{}, err
+	}
+	switch action {
+	case ModerationActionKeep:
+		if !status.InReview && !status.InFlagged && !status.InPending {
+			return ModerationRow{}, ErrAlreadyHandled
+		}
+	case ModerationActionRemove:
+		if ModerationState(status.ModerationState) == ModerationRemoved {
+			return ModerationRow{}, ErrAlreadyHandled
+		}
+	}
+
+	if err := s.q.InsertModerationAction(ctx, sqlcgen.InsertModerationActionParams{
+		ReportID: id, ModeratorAccountID: moderatorID, Action: action,
+	}); err != nil {
+		return ModerationRow{}, err
+	}
+	if action == ModerationActionKeep {
+		err = s.q.KeepReport(ctx, id)
+	} else {
+		err = s.q.RemoveReport(ctx, id)
+	}
+	if err != nil {
+		return ModerationRow{}, err
+	}
+
+	row, err := s.q.ReportForModeration(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ModerationRow{}, ErrReportNotFound
+		}
+		return ModerationRow{}, err
+	}
+	built, err := s.buildRows(ctx, []moderationRecord{recordFromDetail(row)})
+	if err != nil {
+		return ModerationRow{}, err
+	}
+	return built[0], nil
+}
+
+// Keep clears the automatic flag, dismisses the open people flags and releases
+// a pending report into the normal rules. See the steps on ModerationService.
+func (s *ModerationService) Keep(ctx context.Context, id, moderatorID int64) (ModerationRow, error) {
+	return s.act(ctx, id, moderatorID, ModerationActionKeep)
+}
+
+// Remove withholds any report from every feed, map, vote and history view. See
+// the steps on ModerationService.
+func (s *ModerationService) Remove(ctx context.Context, id, moderatorID int64) (ModerationRow, error) {
+	return s.act(ctx, id, moderatorID, ModerationActionRemove)
 }
 
 // Find reads one report by id and the lists it is in, in the order review,

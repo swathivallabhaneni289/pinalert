@@ -508,6 +508,8 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.Handle("/moderate", handlers.ModeratePage(deps.Template, page))
 		r.Handle("/api/moderation/queue", handlers.ModerationQueue(moderation))
 		r.Handle("/api/moderation/reports/{id}", handlers.ModerationReport(moderation))
+		r.Handle("/api/moderation/reports/{id}/keep", handlers.ModerationKeep(moderation))
+		r.Handle("/api/moderation/reports/{id}/remove", handlers.ModerationRemove(moderation))
 	})
 
 	return r
