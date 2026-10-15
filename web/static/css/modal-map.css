@@ -1,0 +1,35 @@
+/*
+ * modal-map.css: the report form's map rules, moved out of modal.css by
+ * plan 04-10 so a page without a map (the Low data view) can link modal.css
+ * and carry no map rule. Only the main page links this sheet, directly after
+ * modal.css.
+ *
+ * The three rules are #modal-map, #coord-readout and #location-notice. Their
+ * declarations are carried over unchanged from modal.css, and no other
+ * stylesheet rule targets these ids, so the later cascade position changes no
+ * computed value. The literal 220px, 8px and 6px are moved shipped geometry,
+ * not new geometry.
+ */
+
+#modal-map {
+  height: 220px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+#coord-readout {
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+#location-notice {
+  margin: 0;
+  padding: var(--space-sm);
+  border-radius: 6px;
+  background: var(--color-surface);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}

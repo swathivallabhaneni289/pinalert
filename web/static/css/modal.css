@@ -100,29 +100,7 @@
   color: var(--color-text-muted);
 }
 
-/* ---- Location (D-02) ---- */
-#modal-map {
-  height: 220px;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-#coord-readout {
-  margin: 0;
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
-  color: var(--color-text-muted);
-}
-
-#location-notice {
-  margin: 0;
-  padding: var(--space-sm);
-  border-radius: 6px;
-  background: var(--color-surface);
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
-  color: var(--color-text-muted);
-}
+/* The report form's map rules live in modal-map.css (plan 04-10). */
 
 /* ---- Category grid (D-01, D-04) ---- */
 #category-grid {
@@ -273,6 +251,16 @@
   padding: var(--space-sm);
 }
 
+/* The owner's hint line of 2026-10-08, directly under the Description label
+ * and above the box. The id rule outranks the panel rhythm rule, so the hint
+ * sits close under its label while the textarea keeps the rhythm gap. */
+#description-hint {
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
 /* ---- Shelter capacity fieldset (FOUND-06) ----
  * The :not([hidden]) guard keeps the fieldset's native [hidden] behaviour
  * intact — an #shelter-fields { display: flex } rule alone would win over
@@ -319,7 +307,6 @@
 
 /* ---- Submit button posting state ---- */
 #submit-report:disabled {
-  opacity: 0.6;
   cursor: not-allowed;
 }
 
