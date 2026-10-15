@@ -756,14 +756,14 @@ Plans:
 **Success Criteria** (what must be TRUE):
 
   1. A user can switch on "Let others follow me" (off by default), and only a user with the Reliable reporter tag can be followed. They choose a nickname, never the email; nicknames are unique, screened and exclude reserved words such as agency names.
-  2. An opted-in reporter's profile shows the nickname, the reliability tag with its counts ("7 of 9 earlier reports were confirmed by people nearby"), member since, and recent finished reports at a coarse location, with no email and no follower count anywhere.
+  2. An opted-in reporter's profile shows the nickname, the reliability tag with its counts ("7 of 9 earlier reports were confirmed by people nearby"), member since, and recent finished reports at a coarse location, with no email and no follower count anywhere. It also shows a one to five star rating (owner decision 2026-10-16): readers tap stars, one rating per account per reporter and changeable, never your own, only from accounts that voted on at least one of that reporter's reports; a reader is offered a skippable star box right after "Yes, mark resolved". Below 5 raters the stars come from report outcomes only; from 5 raters on they are half outcomes (Phase 3 score) and half tapped average, and the profile shows both parts beside the total. The Reliable reporter tag follows the combined stars at about 3.5 or higher (cutoff settled in discuss-phase).
   3. A user can follow and unfollow privately, mute or block, and see reports from people they follow in a Following view next to Nearby and Alerts, with their distance.
   4. A follower is told when a followed reporter posts: critical and rescue-needed reports immediately, other reports only once they are Live, with no coordinates or address in the text, through Phase 3.2's pipeline.
   5. Switching off "Let others follow me", or the Reliable tag falling away, ends all follows and pending alerts at once, and a reporter can remove all followers without seeing who they are.
 
 **Scope notes** (starting points for discuss-phase, not decisions):
 
-  1. Care points: a nickname makes one person's reports linkable, and Phase 3 D-10's "not a privacy risk" holds only while no nickname is shown, so opt-in is required and history shows coarse locations only. A notification must respect the provisional gate so it cannot amplify an unconfirmed report. No follower counts and no likes, so reporting does not become a popularity game.
+  1. Care points: a nickname makes one person's reports linkable, and Phase 3 D-10's "not a privacy risk" holds only while no nickname is shown, so opt-in is required and history shows coarse locations only. A notification must respect the provisional gate so it cannot amplify an unconfirmed report. No follower counts and no likes. Amended 2026-10-16: the owner chose tapped star ratings over the advice against them, so the guard rails above are the defence against a popularity game and against brigading (TRUSTX-03 burst detection becomes more important), and the plan must say how a tapped rating can be removed or ignored when abuse is found.
   2. The "See this reporter" link sits inside the trust block's explanation panel and appears only for opted-in reporters.
   3. Data: a nickname and a public-profile flag on accounts, a `follows` table and a block list. Following is private.
 
