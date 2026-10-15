@@ -389,8 +389,9 @@ window.PinalertMapTools = (function () {
     }
   }
 
-  // onBackPress is Back to my location: the place is dropped, the map goes
-  // back to the reader's position and the list is read once. When no position
+  // onBackPress is Back to my location: the map goes back to the reader's
+  // position, the place is dropped when that position (or the default area)
+  // arrives, not before, and the list is read once (IN-07). When no position
   // can be had the line says so and shows the default area.
   function onBackPress() {
     if (backPending) {
@@ -399,9 +400,7 @@ window.PinalertMapTools = (function () {
     backPending = true;
     // Leaving the searched place ends a report link (CR-01).
     Pinalert.dropFocus();
-    Pinalert.clearPlace();
     locationLost = false;
-    renderPlaceLine(Pinalert.state);
     PinalertMap.recenterOnReader().then(function (result) {
       backPending = false;
       locationLost = !(result && result.own === true);

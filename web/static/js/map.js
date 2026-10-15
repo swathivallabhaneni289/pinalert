@@ -346,9 +346,13 @@ window.PinalertMap = (function () {
   // again, stores the centre with its own flag (a fix is the reader's own, the
   // fallback never is), moves the map there, reads the list once and resolves
   // with { own }. It does not start polling: the poll loop is already running.
+  // The searched place is dropped only here, in the same step as the centre,
+  // so during the wait for a position the place line, the distance words and
+  // the list all still describe the searched area (IN-07).
   function recenterOnReader() {
     return new Promise(function (resolve) {
       function done(lat, lon, zoom, own) {
+        Pinalert.clearPlace();
         Pinalert.setCenter(lat, lon, own);
         moveTo(lat, lon, zoom);
         Pinalert.fetchReports();

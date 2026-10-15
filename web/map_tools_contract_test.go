@@ -277,8 +277,17 @@ func TestMapChips(t *testing.T) {
 		"'Showing reports near '", "'Back to my location'", "state.place", "locationLost", "MESSAGE_LOCATION_LOST")
 	p13MustContain(t, "map-tools.js", code,
 		"var MESSAGE_LOCATION_LOST = \"Your location isn't available. Showing the default area.\";")
+	// Test change on purpose (03.1 review fix IN-07): the order was pinned as
+	// "Pinalert.clearPlace()", "PinalertMap.recenterOnReader()", "locationLost = !".
+	// The place now stays until the position (or the default area) arrives,
+	// so recenterOnReader drops it in the same step as the centre, and the
+	// press itself no longer clears it.
 	back := jsFunctionBody(t, code, "onBackPress()")
-	p13Ordered(t, back, "onBackPress", "Pinalert.clearPlace()", "PinalertMap.recenterOnReader()", "locationLost = !")
+	p13Ordered(t, back, "onBackPress", "PinalertMap.recenterOnReader()", "locationLost = !")
+	p13MustNotContain(t, "onBackPress", back, "Pinalert.clearPlace()")
+	recenter := jsFunctionBody(t, p19Code(t, "static/js/map.js"), "recenterOnReader()")
+	p13Ordered(t, recenter, "recenterOnReader",
+		"Pinalert.clearPlace();", "Pinalert.setCenter(lat, lon, own);", "Pinalert.fetchReports();", "resolve({ own: own });")
 	filter := jsFunctionBody(t, code, "renderFilterLine(state)")
 	p13MustContain(t, "renderFilterLine", filter,
 		"'Filtered by '", "Pinalert.CHIP_LABELS", "'Clear'", "'Clear filter'", "state.category")
