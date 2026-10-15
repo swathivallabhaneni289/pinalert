@@ -303,6 +303,56 @@ func TestLoginLowParamSetsCookie(t *testing.T) {
 	}
 }
 
+// p421BackLink returns the single profile-back-link anchor of an Activity page
+// and fails unless the class appears once and before the email row.
+func p421BackLink(t *testing.T, body string) string {
+	t.Helper()
+	if n := strings.Count(body, "profile-back-link"); n != 1 {
+		t.Fatalf("profile-back-link appears %d times, want 1", n)
+	}
+	at := strings.Index(body, "profile-back-link")
+	if email := strings.Index(body, "profile-email"); email == -1 || at > email {
+		t.Fatalf("the back link is not before the email row")
+	}
+	start := strings.LastIndex(body[:at], "<a ")
+	end := strings.Index(body[at:], "</a>")
+	if start == -1 || end == -1 {
+		t.Fatalf("could not slice the back link anchor")
+	}
+	return body[start : at+end+len("</a>")]
+}
+
+func TestActivityBackLinkFollowsDeviceDefault(t *testing.T) {
+	srv, mailer, _ := newE2EServer(t)
+	client := newVerifiedClient(t, srv, mailer, "waysin-p421-activity@example.com")
+
+	check := func(label, href, name string) {
+		t.Helper()
+		body := getProfile(t, client, srv.URL)
+		anchor := p421BackLink(t, body)
+		for _, want := range []string{`href="` + href + `"`, `aria-label="` + name + `"`, `title="` + name + `"`} {
+			if !strings.Contains(anchor, want) {
+				t.Errorf("%s: back link lacks %s: %s", label, want, anchor)
+			}
+		}
+		if !strings.Contains(p421Region(t, body, `<div id="account-menu"`), `href="/low"`) {
+			t.Errorf("%s: the Activity menu does not offer the Low data view", label)
+		}
+	}
+
+	check("no remembered choice", "/", "Back to map")
+
+	// /login?low=1 answers 200 and the jar keeps the cookie it sets.
+	resp, _ := p421Get(t, client, srv.URL+"/login?low=1")
+	if _, ok := p421LowCookie(resp.Cookies()); !ok {
+		t.Fatalf("GET /login?low=1 set no cookie")
+	}
+	check("low=1", "/low", "Back to Low data view")
+
+	p421Get(t, client, srv.URL+"/login?low=0")
+	check("low=0", "/", "Back to map")
+}
+
 // p421GatedRequest builds a GET request that carries a verified account, the
 // way the gate would have left it.
 func p421GatedRequest(path string) *http.Request {

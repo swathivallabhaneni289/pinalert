@@ -458,6 +458,10 @@ type profileViewModel struct {
 	PolicyPointerLead string
 	PolicyPointerLink string
 	PolicyPointerTail string
+	// LowDataDefault is true when this device's remembered choice is the Low
+	// data view; the back link then goes to /low, named Back to Low data view
+	// (P4-A21). Plan 04-25 reads the rendered href.
+	LowDataDefault bool
 }
 
 // profileRelativeTime mirrors web/static/js/app.js's relativeTime: the same
@@ -706,6 +710,7 @@ func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) 
 			PolicyPointerLead: policyLead,
 			PolicyPointerLink: policyLink,
 			PolicyPointerTail: policyTail,
+			LowDataDefault:    lowDataChosen(r),
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
