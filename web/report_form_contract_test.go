@@ -315,6 +315,7 @@ func TestReportFormNewFilesPlainText(t *testing.T) {
 	files := map[string]string{
 		"templates/report_form.html.tmpl": p410ReadTemplate(t, "report_form.html.tmpl"),
 		"static/css/modal-map.css":        p410ReadStatic(t, "static/css/modal-map.css"),
+		"static/js/report-form.js":        p410ReadStatic(t, "static/js/report-form.js"),
 	}
 	for name, text := range files {
 		if strings.Contains(text, emDash) || strings.Contains(text, enDash) {
@@ -380,5 +381,168 @@ func TestReportFormDescriptionHint(t *testing.T) {
 		if got[name] != value {
 			t.Errorf("#description-hint %s is %q, want %q", name, got[name], value)
 		}
+	}
+}
+
+// p410NeedAll reports one error per needle missing from text.
+func p410NeedAll(t *testing.T, label, text string, needles ...string) {
+	t.Helper()
+	for _, n := range needles {
+		if !strings.Contains(text, n) {
+			t.Errorf("%s: expected %q, found none", label, n)
+		}
+	}
+}
+
+// p410NeedNone reports one error per needle present in text.
+func p410NeedNone(t *testing.T, label, text string, needles ...string) {
+	t.Helper()
+	for _, n := range needles {
+		if strings.Contains(text, n) {
+			t.Errorf("%s: found %q, expected none", label, n)
+		}
+	}
+}
+
+// TestReportFormLocationInterface (V-21, D-15): report-form.js reads location
+// only through the five interface methods plus the optional start and reset
+// hooks, and modal.js is the Leaflet implementation that mounts the form.
+func TestReportFormLocationInterface(t *testing.T) {
+	form := p410CodeText(p410ReadStatic(t, "static/js/report-form.js"))
+	pin := p410CodeText(p410ReadStatic(t, "static/js/modal.js"))
+
+	if n := strings.Count(form, "window.PinalertReportForm = {"); n != 1 {
+		t.Fatalf("report-form.js must export window.PinalertReportForm exactly once, found %d", n)
+	}
+	export, _ := p410Window(form, "window.PinalertReportForm = {", "};")
+	p410NeedAll(t, "report-form.js export", export, "mount: mount", "open: openForm", "close: closeForm")
+
+	win := func(text, anchor, terminator string) string {
+		w, ok := p410Window(text, anchor, terminator)
+		if !ok {
+			t.Errorf("missing anchor %q", anchor)
+		}
+		return w
+	}
+	const nextFn = "\n  function "
+	p410NeedAll(t, "function mount", win(form, "function mount(", nextFn),
+		"options.backdrop", "options.form", "options.location", "options.variant")
+	p410NeedAll(t, "report-form.js interface calls", form,
+		"picker.current()", "picker.choose(", "picker.isSet()", "picker.missingMessage()",
+		"picker.searchFailureMessage(",
+		"typeof picker.start === 'function'", "typeof picker.reset === 'function'")
+	p410NeedAll(t, "function validate", win(form, "function validate(", nextFn),
+		"picker.isSet()", "picker.missingMessage()")
+	p410NeedAll(t, "function buildPayload", win(form, "function buildPayload(", nextFn), "picker.current()")
+	p410NeedAll(t, "function renderResultRow", win(form, "function renderResultRow(", nextFn),
+		"picker.choose(", "displayName")
+	p410NeedAll(t, "function openForm", win(form, "function openForm(", nextFn),
+		"options.opener", "picker.start(")
+	p410NeedAll(t, "function resetForm", win(form, "function resetForm(", nextFn), "picker.reset()")
+
+	p410NeedAll(t, "leafletLocation object", win(pin, "var leafletLocation = {", "};"),
+		"current: currentPosition", "choose: chooseSearchResult", "isSet: hasMarker",
+		"missingMessage: missingLocationMessage", "searchFailureMessage: searchUnavailableMessage",
+		"start: startLocation", "reset: clearMarker")
+	if n := strings.Count(pin, "PinalertReportForm.mount("); n != 1 {
+		t.Errorf("modal.js must call PinalertReportForm.mount( exactly once, found %d", n)
+	}
+	p410NeedAll(t, "mount call", win(pin, "PinalertReportForm.mount(", ");"),
+		"variant: 'main'", "location: leafletLocation")
+	p410NeedAll(t, "fab click", win(pin, "fabButton.addEventListener('click'", "});"),
+		"PinalertReportForm.open(", "opener: fabButton")
+}
+
+// TestReportFormOwnsTheFormLogic (D-15, U6): the form functions live in
+// report-form.js, the Leaflet functions stay in modal.js, and neither side
+// uses a name that now lives in the other file's separate script scope.
+func TestReportFormOwnsTheFormLogic(t *testing.T) {
+	form := p410CodeText(p410ReadStatic(t, "static/js/report-form.js"))
+	pin := p410CodeText(p410ReadStatic(t, "static/js/modal.js"))
+
+	moved := []string{
+		"buildCategoryGrid", "validate", "buildPayload", "handleSubmit", "requestClose",
+		"resetForm", "resetSearch", "runSearch", "renderResultRow", "trapTab",
+		"mount", "openForm", "closeForm",
+	}
+	for _, name := range moved {
+		def := "function " + name + "("
+		if !strings.Contains(form, def) {
+			t.Errorf("report-form.js must define %s", def)
+		}
+		if strings.Contains(pin, def) {
+			t.Errorf("modal.js still defines %s", def)
+		}
+	}
+	for _, def := range []string{"function openModal(", "function closeModal("} {
+		p410NeedNone(t, "report-form.js", form, def)
+		p410NeedNone(t, "modal.js", pin, def)
+	}
+	for _, name := range []string{
+		"placeMarker", "initLocation", "showLocationDenied", "hasVectorBasemap",
+		"updateCoordReadout", "chooseSearchResult", "clearMarker",
+	} {
+		p410NeedAll(t, "modal.js", pin, "function "+name+"(")
+	}
+
+	leafletGlobal := regexp.MustCompile(`(^|[^A-Za-z0-9_$.])L\.`)
+	if leafletGlobal.MatchString(form) {
+		t.Errorf("report-form.js references the Leaflet global; it must stay map free")
+	}
+	p410NeedNone(t, "report-form.js", form, "modalMap", "modalMarker", "placeMarker", "typeof L")
+	if n := strings.Count(form, "fetch("); n != 1 {
+		t.Errorf("report-form.js must contain fetch( exactly once (the geocode search), found %d", n)
+	}
+	p410NeedAll(t, "report-form.js", form, "'/api/geocode?q='", "Pinalert.submitReport(")
+	p410NeedNone(t, "modal.js", pin, "fetch(", "Pinalert.submitReport(", "Pinalert.iconClass(")
+
+	ellipsis := string(rune(0x2026))
+	p410NeedAll(t, "report-form.js shipped copy", form,
+		"'Choose a category to continue.'", "'Pick a severity level.'",
+		"'Add a short description (at least 10 characters).'",
+		"'Choose a shelter capacity status.'", "'Report posted.'", "'Post report'",
+		"'No matches found.'", "'Posting"+ellipsis+"'")
+
+	// Split guard: the two files are separate scripts, so a name left on the
+	// wrong side of the split is an undefined name at run time.
+	p410NeedNone(t, "report-form.js split guard", form,
+		"SEARCH_UNAVAILABLE_MESSAGE", "SEARCH_RESULT_ZOOM", "coordReadout", "locationNotice",
+		"modalMapEl", "fabButton", "initLocation", "updateCoordReadout", "openModal", "closeModal")
+	bareModal := regexp.MustCompile(`(^|[^A-Za-z0-9_$.\-])modal($|[^A-Za-z0-9_\-])`)
+	if bareModal.MatchString(form) {
+		t.Errorf("report-form.js still uses a bare modal identifier")
+	}
+	p410NeedNone(t, "modal.js split guard", pin,
+		"formTouched", "selectedCategory", "categoryGrid", "submitButton", "locationSearchInput",
+		"searchSeq", "openModal(", "closeModal(")
+	bareTouched := regexp.MustCompile(`(^|[^A-Za-z.])markTouched\(`)
+	if bareTouched.MatchString(pin) {
+		t.Errorf("modal.js still calls a bare markTouched(")
+	}
+	if n := strings.Count(pin, "var SEARCH_UNAVAILABLE_MESSAGE ="); n != 1 {
+		t.Errorf("modal.js must define SEARCH_UNAVAILABLE_MESSAGE exactly once, found %d", n)
+	}
+}
+
+// TestReportFormScriptOrder (D-15): the main page loads report-form.js once,
+// deferred and versioned, after app.js and trust.js and before map.js and
+// modal.js.
+func TestReportFormScriptOrder(t *testing.T) {
+	index := p410ReadTemplate(t, "index.html.tmpl")
+	const tag = `src="/static/js/report-form.js?v={{.AssetVersion}}" defer`
+	if n := strings.Count(index, tag); n != 1 {
+		t.Fatalf("index.html.tmpl must load report-form.js exactly once, found %d", n)
+	}
+	at := strings.Index(index, tag)
+	app := strings.Index(index, "/static/js/app.js")
+	trust := strings.Index(index, "/static/js/trust.js")
+	mapJS := strings.Index(index, "/static/js/map.js")
+	modalJS := strings.Index(index, "/static/js/modal.js")
+	if app == -1 || trust == -1 || mapJS == -1 || modalJS == -1 {
+		t.Fatalf("a neighbouring script tag is missing: app %d trust %d map %d modal %d", app, trust, mapJS, modalJS)
+	}
+	if !(app < at && trust < at && at < mapJS && at < modalJS) {
+		t.Errorf("report-form.js must load after app.js and trust.js and before map.js and modal.js "+
+			"(indexes app %d trust %d form %d map %d modal %d)", app, trust, at, mapJS, modalJS)
 	}
 }

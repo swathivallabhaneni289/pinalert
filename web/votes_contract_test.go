@@ -1607,7 +1607,8 @@ func TestResolutionOutcomeSlugMatchesVisibilityStates(t *testing.T) {
 
 // TestToastHasExactlyOneImplementation proves app.js is the only module
 // under web/static/js/ that performs the toast element's id lookup, and
-// that modal.js's submit toast now delegates to Pinalert.showToast.
+// that the submit toast delegates to Pinalert.showToast. Since plan 04-10 the
+// submit toast is shown by report-form.js, not modal.js.
 func TestToastHasExactlyOneImplementation(t *testing.T) {
 	appRaw, err := fs.ReadFile(StaticFS, "static/js/app.js")
 	if err != nil {
@@ -1629,8 +1630,17 @@ func TestToastHasExactlyOneImplementation(t *testing.T) {
 	if strings.Contains(modalText, "getElementById('toast')") {
 		t.Errorf("modal.js still performs the toast element's id lookup — app.js must be the sole owner")
 	}
-	if !strings.Contains(modalText, "Pinalert.showToast(") {
-		t.Errorf("modal.js's submit toast must delegate to Pinalert.showToast")
+
+	formRaw, err := fs.ReadFile(StaticFS, "static/js/report-form.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/report-form.js: %v", err)
+	}
+	formText := stripCSSComments(string(formRaw))
+	if !strings.Contains(formText, "Pinalert.showToast(") {
+		t.Errorf("report-form.js's submit toast must delegate to Pinalert.showToast")
+	}
+	if strings.Contains(formText, "getElementById('toast')") {
+		t.Errorf("report-form.js performs the toast element's id lookup; app.js must be the sole owner")
 	}
 }
 

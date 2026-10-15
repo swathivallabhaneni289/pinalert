@@ -373,7 +373,9 @@ func TestCapabilityProbeGatesBasemapChoice(t *testing.T) {
 }
 
 // TestIconGlyphsAreClassDriven guards the 01-13 fix's chosen strategy: each
-// of the three icon-rendering renderers resolves its category glyph
+// of the three icon-rendering renderers (map.js, report-form.js and feed.js;
+// plan 04-10 moved the category grid builder from modal.js to report-form.js)
+// resolves its category glyph
 // through Pinalert.iconClass and builds a mask-styled element carrying that
 // class pair, never a replaced-element <img> pointed directly at an icon
 // file — the exact pattern that caused UAT Tests 2/6 (every glyph
@@ -388,7 +390,7 @@ func TestIconGlyphsAreClassDriven(t *testing.T) {
 	const iconClassCall = "Pinalert.iconClass("
 	const imageNodeCreation = "createElement('img')"
 
-	for _, module := range []string{"static/js/map.js", "static/js/modal.js", "static/js/feed.js"} {
+	for _, module := range []string{"static/js/map.js", "static/js/report-form.js", "static/js/feed.js"} {
 		raw, err := fs.ReadFile(StaticFS, module)
 		if err != nil {
 			t.Fatalf("%s: could not read embedded file — %v", module, err)
@@ -423,7 +425,7 @@ func TestIconGlyphsAreClassDriven(t *testing.T) {
 	}
 	if !strings.Contains(appText, exportAnchor) {
 		t.Errorf("static/js/app.js: iconClass is defined but not exported on the returned Pinalert "+
-			"API object (expected %q) — every renderer in map.js, modal.js and feed.js calls it as "+
+			"API object (expected %q), and every renderer in map.js, report-form.js and feed.js calls it as "+
 			"Pinalert.iconClass", exportAnchor)
 	}
 
@@ -539,84 +541,118 @@ func TestMapPopupCarriesReportStateClasses(t *testing.T) {
 // a markup-parsing one (T-07-03), a suggestion tap reuses the file's single
 // existing pin-placement path rather than adding a second one (D-03), and
 // the input listener plus the teardown function carry the contract Task 1
-// and Task 2 of this plan wrote them to. It proves properties of the
+// and Task 2 of this plan wrote them to. Plan 04-10 split the checks across
+// two files: the form text in report-form.js (ids, sinks, listener, teardown)
+// and the Leaflet picker text in modal.js (the marker, the pin placement pair
+// and the missing location sentence). It proves properties of the
 // shipped bytes; it cannot prove the dropdown looks or feels right in a
 // real browser, which is the human check's job.
 func TestLocationSearchUsesTextSinksAndExistingPinPlacement(t *testing.T) {
-	raw, err := fs.ReadFile(StaticFS, "static/js/modal.js")
+	formRaw, err := fs.ReadFile(StaticFS, "static/js/report-form.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/report-form.js: %v", err)
+	}
+	formText := stripCSSComments(string(formRaw))
+	pickerRaw, err := fs.ReadFile(StaticFS, "static/js/modal.js")
 	if err != nil {
 		t.Fatalf("failed to read embedded static/js/modal.js: %v", err)
 	}
-	text := stripCSSComments(string(raw))
+	pickerText := stripCSSComments(string(pickerRaw))
 
-	// 1. The script references all three element ids the template ships.
-	// Quoted forms disambiguate 'location-search' from the two ids that
-	// contain it as a prefix.
+	// 1. The form script references all three element ids the template
+	// ships. Quoted forms disambiguate 'location-search' from the two ids
+	// that contain it as a prefix.
 	for _, id := range []string{"'location-search'", "'location-search-results'", "'location-search-status'"} {
-		if !strings.Contains(text, id) {
-			t.Errorf("expected modal.js to reference the element id %s, found none", id)
+		if !strings.Contains(formText, id) {
+			t.Errorf("expected report-form.js to reference the element id %s, found none", id)
 		}
 	}
 
-	// 2. D-03's structural proof: there is one pin-placement code path in
-	// the file and the search reuses it rather than adding a second.
+	// 2. D-03's structural proof: there is one pin-placement code path, in
+	// the picker, and the form script never builds a marker.
 	const markerConstruction = "L.marker("
-	if n := strings.Count(text, markerConstruction); n != 1 {
+	if n := strings.Count(pickerText, markerConstruction); n != 1 {
 		t.Errorf("expected exactly 1 occurrence of %q in modal.js (one pin-placement code path), found %d",
 			markerConstruction, n)
 	}
+	if n := strings.Count(formText, markerConstruction); n != 0 {
+		t.Errorf("expected 0 occurrences of %q in report-form.js, found %d", markerConstruction, n)
+	}
 
 	// 3. Bound renderResultRow's own body and assert its sink discipline
-	// and its calls into the existing pin-placement path.
+	// and that it reaches the pin only through the location interface; then
+	// bound chooseSearchResult in the picker and assert the existing pair.
 	const rowBuilderAnchor = "function renderResultRow("
 	const nextFunctionTerminator = "\n  function "
-	rowBody, rowAnchorFound, _ := windowAfter(text, rowBuilderAnchor, nextFunctionTerminator)
+	rowBody, rowAnchorFound, _ := windowAfter(formText, rowBuilderAnchor, nextFunctionTerminator)
 	if !rowAnchorFound {
-		t.Fatalf("expected a %q definition in modal.js", rowBuilderAnchor)
+		t.Fatalf("expected a %q definition in report-form.js", rowBuilderAnchor)
 	}
 	const setTextSink = "Pinalert.setText("
 	if n := strings.Count(rowBody, setTextSink); n < 2 {
 		t.Errorf("renderResultRow's own body must call %q at least twice (the primary line and the "+
 			"secondary line), found %d", setTextSink, n)
 	}
-	if !strings.Contains(rowBody, "placeMarker(") {
-		t.Errorf("renderResultRow's own body must call placeMarker(, the existing pin-placement " +
-			"function, rather than constructing a marker itself")
+	if !strings.Contains(rowBody, "picker.choose(") {
+		t.Errorf("renderResultRow's own body must call picker.choose(, the location interface, " +
+			"rather than placing a pin itself")
 	}
-	if !strings.Contains(rowBody, "modalMap.setView(") {
-		t.Errorf("renderResultRow's own body must call modalMap.setView(, matching the same pair " +
+	for _, banned := range []string{"placeMarker(", "modalMap.setView("} {
+		if strings.Contains(rowBody, banned) {
+			t.Errorf("renderResultRow's own body must not call %s; the pin pair lives behind the interface", banned)
+		}
+	}
+	chooseBody, chooseFound, _ := windowAfter(pickerText, "function chooseSearchResult(", nextFunctionTerminator)
+	if !chooseFound {
+		t.Fatalf("expected a function chooseSearchResult( definition in modal.js")
+	}
+	if !strings.Contains(chooseBody, "placeMarker(") {
+		t.Errorf("chooseSearchResult must call placeMarker(, the existing pin-placement function, " +
+			"rather than constructing a marker itself")
+	}
+	if !strings.Contains(chooseBody, "modalMap.setView(") {
+		t.Errorf("chooseSearchResult must call modalMap.setView(, matching the same pair " +
 			"initLocation's GPS success callback calls (D-03)")
 	}
 
-	// 4. A whole-file zero count on every markup-parsing sink property.
-	// Correct here, unlike a dash scan: this file's header states its
+	// 4. A zero count on every markup-parsing sink property in both files.
+	// Correct here, unlike a dash scan: both headers state their
 	// text-insertion rule by concept without naming any of these
 	// properties, so there is no legitimate comment for the scan to trip
 	// on.
-	for _, sink := range []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"} {
-		if n := strings.Count(text, sink); n != 0 {
-			t.Errorf("found %d occurrence(s) of markup-parsing sink %q in modal.js (T-07-03): every "+
-				"string the geocoding proxy returns must reach the DOM through Pinalert.setText, never "+
-				"a sink that lets the browser parse it as markup", n, sink)
+	for name, text := range map[string]string{"report-form.js": formText, "modal.js": pickerText} {
+		for _, sink := range []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"} {
+			if n := strings.Count(text, sink); n != 0 {
+				t.Errorf("found %d occurrence(s) of markup-parsing sink %q in %s (T-07-03): every "+
+					"string the geocoding proxy returns must reach the DOM through Pinalert.setText, never "+
+					"a sink that lets the browser parse it as markup", n, sink, name)
+			}
 		}
 	}
 
-	// 5. The listener is registered in the top-level wiring block, not
-	// inside initLocation, which runs on every openModal call.
+	// 5. The listener is registered once, in mount, not inside the open
+	// path, which runs on every open.
 	const inputListenerAnchor = "locationSearchInput.addEventListener('input'"
 	const resetFormAnchor = "function resetForm"
-	listenerIdx := strings.Index(text, inputListenerAnchor)
-	resetFormIdx := strings.Index(text, resetFormAnchor)
+	listenerIdx := strings.Index(formText, inputListenerAnchor)
+	resetFormIdx := strings.Index(formText, resetFormAnchor)
 	if listenerIdx == -1 {
-		t.Fatalf("expected %q in modal.js", inputListenerAnchor)
+		t.Fatalf("expected %q in report-form.js", inputListenerAnchor)
 	}
 	if resetFormIdx == -1 {
-		t.Fatalf("expected %q in modal.js", resetFormAnchor)
+		t.Fatalf("expected %q in report-form.js", resetFormAnchor)
 	}
 	if listenerIdx <= resetFormIdx {
 		t.Errorf("expected the byte index of %q (%d) to be greater than the byte index of %q (%d), "+
-			"proving the listener is registered in the top-level wiring block rather than inside "+
-			"initLocation", inputListenerAnchor, listenerIdx, resetFormAnchor, resetFormIdx)
+			"proving the listener is registered in the mount block rather than on every open",
+			inputListenerAnchor, listenerIdx, resetFormAnchor, resetFormIdx)
+	}
+	if n := strings.Count(formText, inputListenerAnchor); n != 1 {
+		t.Errorf("expected the input listener exactly once in report-form.js, found %d", n)
+	}
+	mountBody, mountFound, _ := windowAfter(formText, "function mount(", nextFunctionTerminator)
+	if !mountFound || !strings.Contains(mountBody, inputListenerAnchor) {
+		t.Errorf("expected the input listener inside the function mount( window of report-form.js")
 	}
 
 	// 6. resetSearch's own body carries the full teardown contract
@@ -624,26 +660,32 @@ func TestLocationSearchUsesTextSinksAndExistingPinPlacement(t *testing.T) {
 	// closing brace, so a nested block inside resetSearch cannot truncate
 	// the region and let this assertion pass on a fragment.
 	const resetSearchAnchor = "function resetSearch("
-	resetSearchBody, resetSearchAnchorFound, _ := windowAfter(text, resetSearchAnchor, nextFunctionTerminator)
+	resetSearchBody, resetSearchAnchorFound, _ := windowAfter(formText, resetSearchAnchor, nextFunctionTerminator)
 	if !resetSearchAnchorFound {
-		t.Fatalf("expected a %q definition in modal.js", resetSearchAnchor)
+		t.Fatalf("expected a %q definition in report-form.js", resetSearchAnchor)
 	}
 	for _, want := range []string{"clearTimeout", "searchSeq", "hideDropdown(", "clearSearchStatus(", "searchCache.clear("} {
 		if !strings.Contains(resetSearchBody, want) {
 			t.Errorf("resetSearch's own body is missing %q, part of the six-piece teardown contract "+
-				"that keeps a reopened modal from showing the previous session's search state", want)
+				"that keeps a reopened form from showing the previous session's search state", want)
 		}
 	}
 
 	// 7. The submit-time location message names all three ways to set a
-	// location, and the stale two-way sentence is gone.
+	// location and lives only in the picker; the stale two-way sentence is
+	// gone from both files.
 	const newLocationMessage = "Set a location by searching, dragging the pin, or allowing location access."
 	const oldLocationMessage = "Set a location by dragging the pin or allowing location access."
-	if n := strings.Count(text, newLocationMessage); n != 1 {
+	if n := strings.Count(pickerText, newLocationMessage); n != 1 {
 		t.Errorf("expected modal.js to contain %q exactly once, found %d", newLocationMessage, n)
 	}
-	if n := strings.Count(text, oldLocationMessage); n != 0 {
-		t.Errorf("expected modal.js to contain the stale two-way location message %q zero times, found %d",
-			oldLocationMessage, n)
+	if n := strings.Count(formText, newLocationMessage); n != 0 {
+		t.Errorf("expected report-form.js to contain %q zero times, found %d", newLocationMessage, n)
+	}
+	for name, text := range map[string]string{"report-form.js": formText, "modal.js": pickerText} {
+		if n := strings.Count(text, oldLocationMessage); n != 0 {
+			t.Errorf("expected %s to contain the stale two-way location message %q zero times, found %d",
+				name, oldLocationMessage, n)
+		}
 	}
 }
