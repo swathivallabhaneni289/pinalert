@@ -261,6 +261,52 @@ const profileVisibilityStateClassPrefix = "vis-"
 // keeps the resolver's state.
 const profileExpiredDisplayState = "expired"
 
+// profileModerationHeld and profileModerationRemoved are the two data-moderation
+// values of an Activity row (plan 04-16, P4-A9). They are also the display
+// states visibility.js displayState returns for such a row, so the class the
+// server writes on first paint and the class written after load agree.
+const (
+	profileModerationHeld    = "held"
+	profileModerationRemoved = "removed"
+)
+
+// policyPageLinkText is the words of the Policy link inside the removed row's
+// pointer sentence, and writtenLinePrefix opens the Written line of a late
+// report (D-24, P4-A8).
+const (
+	policyPageLinkText = "Policy page"
+	writtenLinePrefix  = "Written "
+)
+
+// profileModeration says whether an Activity row is held or removed, and it
+// reads the one resolver answer, never the raw moderation column: a pending
+// serious report is published (D-01, D-02) and must not be labelled held. An
+// empty string means the row is not moderated. A withheld row with any reason
+// other than removal reads held, which fails closed: it still shows no trust
+// and no vote controls (R-01).
+func profileModeration(ar service.ActivityReport) string {
+	if ar.Visibility != service.VisibilityWithheld {
+		return ""
+	}
+	if ar.Reason == service.ReasonRemovedAfterReview {
+		return profileModerationRemoved
+	}
+	return profileModerationHeld
+}
+
+// removedPolicyPointerParts splits the removed row's pointer sentence around
+// the words of the link, so the template can write the link as a real anchor
+// while the sentence itself stays the one Go constant (D-24). When the link
+// words are not found the whole sentence comes back as the lead and the end to
+// end test catches the missing link.
+func removedPolicyPointerParts() (lead, link, tail string) {
+	lead, tail, found := strings.Cut(service.RemovedPolicyPointer, policyPageLinkText)
+	if !found {
+		return service.RemovedPolicyPointer, "", ""
+	}
+	return lead, policyPageLinkText, tail
+}
+
 // severityWord is the Activity page's visible severity word. The Go side owns
 // it because the app.js word table is not reachable from the template (A58).
 // The low fallback matches the one ActivityForAccount applies when it
@@ -314,6 +360,17 @@ type profileReport struct {
 	// Reopen control. It is never true together with CanReopen.
 	UndosUsed bool
 
+	// Moderation is held or removed for a report the author cannot see in any
+	// feed (D-02, D-08), empty otherwise. ModerationNote is the Go constant
+	// sentence for it, empty for a held row past its expiry. PolicyPointer is
+	// true for a removed row, whose sentence may continue with the Policy link
+	// when a contact address is set (D-24). WrittenText is the Written line of
+	// a report that reached the server late (P4-A8, D-19).
+	Moderation     string
+	ModerationNote string
+	PolicyPointer  bool
+	WrittenText    string
+
 	// Quick task 261013-wm5's card fields, filled by buildActivityPage. Kind is
 	// post, vote or dispute; Tag, Action and When are the words of the card's
 	// tag and sub line; Detail is the category label with the shelter words;
@@ -366,6 +423,11 @@ type profileViewModel struct {
 	// posts, and the template then renders no card.
 	Record *profileRecord
 	Chrome Chrome
+	// The three parts of the removed row's Policy pointer sentence, cut around
+	// the link words (D-24).
+	PolicyPointerLead string
+	PolicyPointerLink string
+	PolicyPointerTail string
 }
 
 // profileRelativeTime mirrors web/static/js/app.js's relativeTime: the same
@@ -502,14 +564,37 @@ func newProfileReport(ar service.ActivityReport, now time.Time) (profileReport, 
 		detail += " · " + profileApproxLocation
 	}
 
+	// The row class precedence of P4-A9, the same one visibility.js displayState
+	// applies after load: removed, then held only while the report has not
+	// expired, then retracted, then expired, then the vote state.
+	moderation := profileModeration(ar)
+	moderationNote := ""
 	visibilityClass := profileVisibilityStateClassPrefix + string(visibility)
-	if expired && visibility != service.VisibilityRetracted {
+	switch {
+	case moderation == profileModerationRemoved:
+		visibilityClass = profileVisibilityStateClassPrefix + profileModerationRemoved
+		moderationNote = service.RemovedSentence
+	case moderation == profileModerationHeld && !expired:
+		visibilityClass = profileVisibilityStateClassPrefix + profileModerationHeld
+		moderationNote = service.HeldSentence
+	case expired && visibility != service.VisibilityRetracted:
 		visibilityClass = profileVisibilityStateClassPrefix + profileExpiredDisplayState
 	}
 
-	trustJSON, err := json.Marshal(trustToResponse(ar.Trust))
-	if err != nil {
-		return profileReport{}, fmt.Errorf("handlers: encoding trust for report %d: %w", row.ID, err)
+	// A moderated row carries no trust object: the author sees the reason it is
+	// in no feed, not a score for it (P4-A10, R-01).
+	trustJSON := []byte{}
+	if moderation == "" {
+		var err error
+		trustJSON, err = json.Marshal(trustToResponse(ar.Trust))
+		if err != nil {
+			return profileReport{}, fmt.Errorf("handlers: encoding trust for report %d: %w", row.ID, err)
+		}
+	}
+
+	writtenText := ""
+	if ar.WrittenAt != nil {
+		writtenText = writtenLinePrefix + profileRelativeTime(*ar.WrittenAt, now)
 	}
 
 	return profileReport{
@@ -527,6 +612,10 @@ func newProfileReport(ar service.ActivityReport, now time.Time) (profileReport, 
 		Expired:          expired,
 		CanReopen:        canReopen,
 		UndosUsed:        undosUsed,
+		Moderation:       moderation,
+		ModerationNote:   moderationNote,
+		PolicyPointer:    moderation == profileModerationRemoved,
+		WrittenText:      writtenText,
 	}, nil
 }
 
@@ -576,13 +665,17 @@ func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) 
 		// The record card reads the account's own reporter signal from its
 		// own posts, never from the merged card list (W-10). An account with
 		// no posts gets no card, and a signal with no label gives none either.
+		policyLead, policyLink, policyTail := removedPolicyPointerParts()
 		vm := profileViewModel{
-			AssetVersion: cfg.AssetVersion,
-			Email:        acc.Email,
-			Reports:      view.Reports,
-			Tabs:         view.Tabs,
-			Record:       view.Record,
-			Chrome:       cfg.Chrome.withDefaults(),
+			AssetVersion:      cfg.AssetVersion,
+			Email:             acc.Email,
+			Reports:           view.Reports,
+			Tabs:              view.Tabs,
+			Record:            view.Record,
+			Chrome:            cfg.Chrome.withDefaults(),
+			PolicyPointerLead: policyLead,
+			PolicyPointerLink: policyLink,
+			PolicyPointerTail: policyTail,
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

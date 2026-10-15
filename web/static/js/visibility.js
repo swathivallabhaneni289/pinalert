@@ -10,7 +10,9 @@
 // the resolver bypass T-02-04 names — the whole reason 02-01 wrote exactly
 // one Resolve function.
 //
-// The module also reads two more server authored facts: a boolean, expired,
+// The module also reads a server authored word, moderation, which only the
+// Activity page sets from its row attribute, for a report held or removed by
+// moderation. It also reads two more server authored facts: a boolean, expired,
 // which only the Activity page sets from its row attribute, and the history
 // state (resolved or expired) a finished report of the Past tab carries. The
 // feed and the map never set the boolean.
@@ -68,7 +70,12 @@
     provisional: 'Unconfirmed',
     hidden: 'Disputed',
     retracted: 'Resolved',
-    expired: 'Expired'
+    expired: 'Expired',
+    // Both serve the Activity page only. The words are the Go constants
+    // service.HeldLabel and service.RemovedLabel, and a test in
+    // internal/api/handlers compares them so the two copies cannot drift.
+    held: 'Waiting for a text check',
+    removed: 'Removed after review'
   };
 
   // replacePrefixedClass is a deliberate second copy of feed.js's private
@@ -114,7 +121,20 @@
   // a finished report is never drawn as a live one (03.1 D-13). Nothing here
   // compares a date. The state allowlist and visibilityState stay at the four
   // resolver values.
+  //
+  // One more server authored fact comes first (plan 04-16, P4-A9): the
+  // moderation word the Activity page copies from its row. The precedence is
+  // removed, then held only while the report has not expired, then retracted,
+  // then expired, then the vote state. Only the Activity page sets it, and the
+  // feed and the map never do. Any other value changes nothing.
   function displayState(report) {
+    var moderation = report && report.moderation;
+    if (moderation === 'removed') {
+      return 'removed';
+    }
+    if (moderation === 'held' && report.expired !== true) {
+      return 'held';
+    }
     var state = visibilityState(report);
     if (state === 'retracted') {
       return state;
