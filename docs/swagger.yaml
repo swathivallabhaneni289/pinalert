@@ -403,6 +403,19 @@ definitions:
         example: resolved
         type: string
     type: object
+  handlers.RateLimitResponse:
+    properties:
+      emergency_number:
+        type: string
+      error:
+        $ref: '#/definitions/handlers.ErrorDetail'
+      retry_after_seconds:
+        example: 300
+        type: integer
+      serious:
+        example: true
+        type: boolean
+    type: object
   handlers.RecentResponse:
     properties:
       expired_24h:
@@ -951,6 +964,8 @@ paths:
         and expires_at are computed server-side and can never be set by the client.
         The description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.
         When the check cannot finish in time, a critical or rescue_needed report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.
+        Posting is limited per verified account, with separate allowances for serious reports (critical, or rescue_needed at any severity) and for every other report.
+        A blocked post gets 429 with a Retry-After header and stores nothing, and a rejected or failed post does not use the allowance.
       parameters:
       - description: Report to submit
         in: body
@@ -977,6 +992,14 @@ paths:
           description: The text check refused the description; nothing was stored
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1011,6 +1034,7 @@ paths:
         and the take back.
         A body with no latitude and no longitude is 400 with error field latitude, and a body
         with only one of the two is 400 naming the missing one.
+        A vote that comes too fast gets 429 with a Retry-After header.
       parameters:
       - description: Report id
         in: path
@@ -1050,6 +1074,14 @@ paths:
           description: Conflict
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1084,6 +1116,7 @@ paths:
         and the take back.
         A body with no latitude and no longitude is 400 with error field latitude, and a body
         with only one of the two is 400 naming the missing one.
+        A vote that comes too fast gets 429 with a Retry-After header.
       parameters:
       - description: Report id
         in: path
@@ -1123,6 +1156,14 @@ paths:
           description: Conflict
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1157,6 +1198,7 @@ paths:
         and the take back.
         A body with no latitude and no longitude is 400 with error field latitude, and a body
         with only one of the two is 400 naming the missing one.
+        A vote that comes too fast gets 429 with a Retry-After header.
       parameters:
       - description: Report id
         in: path
@@ -1196,6 +1238,14 @@ paths:
           description: Conflict
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1230,6 +1280,7 @@ paths:
         and the take back.
         A body with no latitude and no longitude is 400 with error field latitude, and a body
         with only one of the two is 400 naming the missing one.
+        A vote that comes too fast gets 429 with a Retry-After header.
       parameters:
       - description: Report id
         in: path
@@ -1269,6 +1320,14 @@ paths:
           description: Conflict
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1303,6 +1362,7 @@ paths:
         and the take back.
         A body with no latitude and no longitude is 400 with error field latitude, and a body
         with only one of the two is 400 naming the missing one.
+        A vote that comes too fast gets 429 with a Retry-After header.
       parameters:
       - description: Report id
         in: path
@@ -1342,6 +1402,14 @@ paths:
           description: Conflict
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
         "500":
           description: Internal Server Error
           schema:

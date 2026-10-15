@@ -283,7 +283,7 @@
                 }
             },
             "post": {
-                "description": "Creates a location-tagged report under the caller's session. Requires a session\nverified by email through the magic-link flow (POST /auth/request-link, then\nGET /auth/verify) — an unverified caller receives 401. id, geohash, created_at\nand expires_at are computed server-side and can never be set by the client.\nThe description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.\nWhen the check cannot finish in time, a critical or rescue_needed report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.",
+                "description": "Creates a location-tagged report under the caller's session. Requires a session\nverified by email through the magic-link flow (POST /auth/request-link, then\nGET /auth/verify) — an unverified caller receives 401. id, geohash, created_at\nand expires_at are computed server-side and can never be set by the client.\nThe description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.\nWhen the check cannot finish in time, a critical or rescue_needed report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.\nPosting is limited per verified account, with separate allowances for serious reports (critical, or rescue_needed at any severity) and for every other report.\nA blocked post gets 429 with a Retry-After header and stores nothing, and a rejected or failed post does not use the allowance.",
                 "consumes": [
                     "application/json"
                 ],
@@ -330,6 +330,18 @@
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
                     },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -341,7 +353,7 @@
         },
         "/reports/{id}/confirm": {
             "post": {
-                "description": "Casts one of five votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen/unresolve are resolution votes (is this\nresolved). Unresolve is the take back of the caller's own earlier resolve: it needs\nno location, it never counts as a reopen, and it is refused with 409 when the caller\nhas no standing resolve on the report. The poster's reopen and every take back share\none limit of two per report; past it the answer is 409. A non poster's reopen is an\nordinary claim and is never limited.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on confirm, dispute, resolve and reopen, with one fixed\nsentence that never carries the distance. The reporter's own resolve and reopen\nare exempt, and so is the take back.\nThe response also carries the same trust object GET /reports returns for this report.\nResolve, reopen and unresolve responses also carry undos_left, the number of take\nbacks the caller has left on this report; confirm and dispute responses do not.\nA location is required on every vote except the reporter's own resolve and reopen\nand the take back.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.",
+                "description": "Casts one of five votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen/unresolve are resolution votes (is this\nresolved). Unresolve is the take back of the caller's own earlier resolve: it needs\nno location, it never counts as a reopen, and it is refused with 409 when the caller\nhas no standing resolve on the report. The poster's reopen and every take back share\none limit of two per report; past it the answer is 409. A non poster's reopen is an\nordinary claim and is never limited.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on confirm, dispute, resolve and reopen, with one fixed\nsentence that never carries the distance. The reporter's own resolve and reopen\nare exempt, and so is the take back.\nThe response also carries the same trust object GET /reports returns for this report.\nResolve, reopen and unresolve responses also carry undos_left, the number of take\nbacks the caller has left on this report; confirm and dispute responses do not.\nA location is required on every vote except the reporter's own resolve and reopen\nand the take back.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.\nA vote that comes too fast gets 429 with a Retry-After header.",
                 "consumes": [
                     "application/json"
                 ],
@@ -405,6 +417,18 @@
                         "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
                         }
                     },
                     "500": {
@@ -418,7 +442,7 @@
         },
         "/reports/{id}/dispute": {
             "post": {
-                "description": "Casts one of five votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen/unresolve are resolution votes (is this\nresolved). Unresolve is the take back of the caller's own earlier resolve: it needs\nno location, it never counts as a reopen, and it is refused with 409 when the caller\nhas no standing resolve on the report. The poster's reopen and every take back share\none limit of two per report; past it the answer is 409. A non poster's reopen is an\nordinary claim and is never limited.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on confirm, dispute, resolve and reopen, with one fixed\nsentence that never carries the distance. The reporter's own resolve and reopen\nare exempt, and so is the take back.\nThe response also carries the same trust object GET /reports returns for this report.\nResolve, reopen and unresolve responses also carry undos_left, the number of take\nbacks the caller has left on this report; confirm and dispute responses do not.\nA location is required on every vote except the reporter's own resolve and reopen\nand the take back.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.",
+                "description": "Casts one of five votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen/unresolve are resolution votes (is this\nresolved). Unresolve is the take back of the caller's own earlier resolve: it needs\nno location, it never counts as a reopen, and it is refused with 409 when the caller\nhas no standing resolve on the report. The poster's reopen and every take back share\none limit of two per report; past it the answer is 409. A non poster's reopen is an\nordinary claim and is never limited.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on confirm, dispute, resolve and reopen, with one fixed\nsentence that never carries the distance. The reporter's own resolve and reopen\nare exempt, and so is the take back.\nThe response also carries the same trust object GET /reports returns for this report.\nResolve, reopen and unresolve responses also carry undos_left, the number of take\nbacks the caller has left on this report; confirm and dispute responses do not.\nA location is required on every vote except the reporter's own resolve and reopen\nand the take back.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.\nA vote that comes too fast gets 429 with a Retry-After header.",
                 "consumes": [
                     "application/json"
                 ],
@@ -482,6 +506,18 @@
                         "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
                         }
                     },
                     "500": {
@@ -495,7 +531,7 @@
         },
         "/reports/{id}/reopen": {
             "post": {
-                "description": "Casts one of five votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen/unresolve are resolution votes (is this\nresolved). Unresolve is the take back of the caller's own earlier resolve: it needs\nno location, it never counts as a reopen, and it is refused with 409 when the caller\nhas no standing resolve on the report. The poster's reopen and every take back share\none limit of two per report; past it the answer is 409. A non poster's reopen is an\nordinary claim and is never limited.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on confirm, dispute, resolve and reopen, with one fixed\nsentence that never carries the distance. The reporter's own resolve and reopen\nare exempt, and so is the take back.\nThe response also carries the same trust object GET /reports returns for this report.\nResolve, reopen and unresolve responses also carry undos_left, the number of take\nbacks the caller has left on this report; confirm and dispute responses do not.\nA location is required on every vote except the reporter's own resolve and reopen\nand the take back.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.",
+                "description": "Casts one of five votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen/unresolve are resolution votes (is this\nresolved). Unresolve is the take back of the caller's own earlier resolve: it needs\nno location, it never counts as a reopen, and it is refused with 409 when the caller\nhas no standing resolve on the report. The poster's reopen and every take back share\none limit of two per report; past it the answer is 409. A non poster's reopen is an\nordinary claim and is never limited.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on confirm, dispute, resolve and reopen, with one fixed\nsentence that never carries the distance. The reporter's own resolve and reopen\nare exempt, and so is the take back.\nThe response also carries the same trust object GET /reports returns for this report.\nResolve, reopen and unresolve responses also carry undos_left, the number of take\nbacks the caller has left on this report; confirm and dispute responses do not.\nA location is required on every vote except the reporter's own resolve and reopen\nand the take back.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.\nA vote that comes too fast gets 429 with a Retry-After header.",
                 "consumes": [
                     "application/json"
                 ],
@@ -559,6 +595,18 @@
                         "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
                         }
                     },
                     "500": {
@@ -572,7 +620,7 @@
         },
         "/reports/{id}/resolve": {
             "post": {
-                "description": "Casts one of five votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen/unresolve are resolution votes (is this\nresolved). Unresolve is the take back of the caller's own earlier resolve: it needs\nno location, it never counts as a reopen, and it is refused with 409 when the caller\nhas no standing resolve on the report. The poster's reopen and every take back share\none limit of two per report; past it the answer is 409. A non poster's reopen is an\nordinary claim and is never limited.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on confirm, dispute, resolve and reopen, with one fixed\nsentence that never carries the distance. The reporter's own resolve and reopen\nare exempt, and so is the take back.\nThe response also carries the same trust object GET /reports returns for this report.\nResolve, reopen and unresolve responses also carry undos_left, the number of take\nbacks the caller has left on this report; confirm and dispute responses do not.\nA location is required on every vote except the reporter's own resolve and reopen\nand the take back.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.",
+                "description": "Casts one of five votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen/unresolve are resolution votes (is this\nresolved). Unresolve is the take back of the caller's own earlier resolve: it needs\nno location, it never counts as a reopen, and it is refused with 409 when the caller\nhas no standing resolve on the report. The poster's reopen and every take back share\none limit of two per report; past it the answer is 409. A non poster's reopen is an\nordinary claim and is never limited.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on confirm, dispute, resolve and reopen, with one fixed\nsentence that never carries the distance. The reporter's own resolve and reopen\nare exempt, and so is the take back.\nThe response also carries the same trust object GET /reports returns for this report.\nResolve, reopen and unresolve responses also carry undos_left, the number of take\nbacks the caller has left on this report; confirm and dispute responses do not.\nA location is required on every vote except the reporter's own resolve and reopen\nand the take back.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.\nA vote that comes too fast gets 429 with a Retry-After header.",
                 "consumes": [
                     "application/json"
                 ],
@@ -636,6 +684,18 @@
                         "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
                         }
                     },
                     "500": {
@@ -649,7 +709,7 @@
         },
         "/reports/{id}/unresolve": {
             "post": {
-                "description": "Casts one of five votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen/unresolve are resolution votes (is this\nresolved). Unresolve is the take back of the caller's own earlier resolve: it needs\nno location, it never counts as a reopen, and it is refused with 409 when the caller\nhas no standing resolve on the report. The poster's reopen and every take back share\none limit of two per report; past it the answer is 409. A non poster's reopen is an\nordinary claim and is never limited.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on confirm, dispute, resolve and reopen, with one fixed\nsentence that never carries the distance. The reporter's own resolve and reopen\nare exempt, and so is the take back.\nThe response also carries the same trust object GET /reports returns for this report.\nResolve, reopen and unresolve responses also carry undos_left, the number of take\nbacks the caller has left on this report; confirm and dispute responses do not.\nA location is required on every vote except the reporter's own resolve and reopen\nand the take back.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.",
+                "description": "Casts one of five votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen/unresolve are resolution votes (is this\nresolved). Unresolve is the take back of the caller's own earlier resolve: it needs\nno location, it never counts as a reopen, and it is refused with 409 when the caller\nhas no standing resolve on the report. The poster's reopen and every take back share\none limit of two per report; past it the answer is 409. A non poster's reopen is an\nordinary claim and is never limited.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on confirm, dispute, resolve and reopen, with one fixed\nsentence that never carries the distance. The reporter's own resolve and reopen\nare exempt, and so is the take back.\nThe response also carries the same trust object GET /reports returns for this report.\nResolve, reopen and unresolve responses also carry undos_left, the number of take\nbacks the caller has left on this report; confirm and dispute responses do not.\nA location is required on every vote except the reporter's own resolve and reopen\nand the take back.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.\nA vote that comes too fast gets 429 with a Retry-After header.",
                 "consumes": [
                     "application/json"
                 ],
@@ -713,6 +773,18 @@
                         "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
                         }
                     },
                     "500": {
@@ -1182,6 +1254,25 @@
                         "expired"
                     ],
                     "example": "resolved"
+                }
+            }
+        },
+        "handlers.RateLimitResponse": {
+            "type": "object",
+            "properties": {
+                "emergency_number": {
+                    "type": "string"
+                },
+                "error": {
+                    "$ref": "#/definitions/handlers.ErrorDetail"
+                },
+                "retry_after_seconds": {
+                    "type": "integer",
+                    "example": 300
+                },
+                "serious": {
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },

@@ -345,11 +345,15 @@ type ErrorResponse struct {
 	Error ErrorDetail `json:"error"`
 }
 
-// SubmitReport handles POST /api/reports: decode, validate, screen the
-// description and persist under the caller's session id. Reaching this handler
-// at all requires a session verified by email through the magic link flow, and
-// the access gate in internal/api/gate.go (01.1-04) refuses an unverified
-// caller with 401 before this function ever runs. A ValidationError maps to
+// SubmitReport handles POST /api/reports: decode, validate, check the posting
+// limits, screen the description and persist under the caller's session id.
+// Reaching this handler at all requires a session verified by email through the
+// magic link flow, and the access gate in internal/api/gate.go (01.1-04)
+// refuses an unverified caller with 401 before this function ever runs. The
+// order is the specification: validation first (a 400 costs nothing), then the
+// IP backstop, the submit attempt bucket and the serious or other allowance (a
+// 429 stores nothing), then the text check and insert, giving the allowance
+// back on every outcome except a stored report. A ValidationError maps to
 // 400 with the offending field named. A description the text check refuses maps
 // to 422 on the field description with the one exported message for the reason,
 // and nothing is stored. Any other error maps to a generic 500 with the detail
@@ -364,6 +368,8 @@ type ErrorResponse struct {
 // @Description and expires_at are computed server-side and can never be set by the client.
 // @Description The description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.
 // @Description When the check cannot finish in time, a critical or rescue_needed report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.
+// @Description Posting is limited per verified account, with separate allowances for serious reports (critical, or rescue_needed at any severity) and for every other report.
+// @Description A blocked post gets 429 with a Retry-After header and stores nothing, and a rejected or failed post does not use the allowance.
 // @Tags reports
 // @Accept json
 // @Produce json
@@ -372,9 +378,11 @@ type ErrorResponse struct {
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
 // @Failure 422 {object} ErrorResponse "The text check refused the description; nothing was stored"
+// @Failure 429 {object} RateLimitResponse "Blocked by a limit, see Retry-After"
+// @Header 429 {integer} Retry-After "Whole seconds to wait before trying again"
 // @Failure 500 {object} ErrorResponse
 // @Router /reports [post]
-func SubmitReport(svc *service.ReportService) http.HandlerFunc {
+func SubmitReport(svc *service.ReportService, gate *RateGate) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID, ok := session.FromContext(r.Context())
 		if !ok {
@@ -426,6 +434,26 @@ func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 			return
 		}
 
+		// Steps 4 and 5: the IP backstop, the submit attempt bucket and the
+		// serious or other allowance. The bucket depends on the decoded body, so
+		// the gate runs here and never as route middleware (R-04). Plan 04-17
+		// inserts the replay lookup between validation and this call and leaves
+		// stored false for a replay found at insert.
+		serious := service.ReportMeta{Severity: in.Severity, Category: in.Category}.Serious()
+		refund, ok := gate.AdmitReport(w, r, acc.ID, serious)
+		if !ok {
+			return
+		}
+		// Every outcome after the reservation except a stored new report gives
+		// the allowance back, so a 422, a 400 or a 500 costs nothing. A held 201
+		// is stored and keeps its cost.
+		stored := false
+		defer func() {
+			if !stored {
+				refund()
+			}
+		}()
+
 		res, err := svc.SubmitChecked(r.Context(), sessionID, acc.ID, in)
 		if err != nil {
 			var tr service.TextRejectedError
@@ -443,6 +471,7 @@ func SubmitReport(svc *service.ReportService) http.HandlerFunc {
 			return
 		}
 
+		stored = true
 		writeJSON(w, http.StatusCreated, SubmitReportResponse{Report: reportToResponse(res)})
 	}
 }

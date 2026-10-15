@@ -70,20 +70,29 @@ const (
 	voteRateField       = "rate_vote"
 	voteChangeRateField = "rate_vote_change"
 
+	// The report buckets (plan 04-15). The bucket names go to the block log only.
+	reportBucketSerious = "report_serious"
+	reportBucketOther   = "report_other"
+	reportBucketAttempt = "submit_attempt"
+	reportRateField     = "rate_report"
+
 	// rateBlockLogFormat is the one line written for every block. It carries a
 	// bucket name, the numeric account id and the wait, and nothing else: no
 	// email, no report text and no network address (D-12).
 	rateBlockLogFormat = "handlers: rate limit: bucket=%s account=%d wait_seconds=%d"
 )
 
-// RateGate holds the Phase 4 rate limit buckets. Plan 04-15 adds the report
-// buckets and plan 04-20 the flag bucket inside NewRateGate.
+// RateGate holds the Phase 4 rate limit buckets. Plan 04-20 adds the flag
+// bucket inside NewRateGate.
 type RateGate struct {
-	vote       *ratelimit.PerKey
-	voteChange *ratelimit.PerKey
-	ipBackstop *ratelimit.PerKey
-	backstopOn bool
-	chrome     Chrome
+	vote          *ratelimit.PerKey
+	voteChange    *ratelimit.PerKey
+	ipBackstop    *ratelimit.PerKey
+	reportSerious *ratelimit.PerKey
+	reportOther   *ratelimit.PerKey
+	submitAttempt *ratelimit.PerKey
+	backstopOn    bool
+	chrome        Chrome
 }
 
 // bucketConfig turns one limit into a PerKey config. It sets no idle window, so
@@ -99,11 +108,14 @@ func NewRateGate(limits RateLimits, clock func() time.Time, clientIPHeader strin
 		clock = time.Now
 	}
 	return &RateGate{
-		vote:       ratelimit.NewPerKey(bucketConfig(limits.Vote, clock)),
-		voteChange: ratelimit.NewPerKey(bucketConfig(limits.VoteChange, clock)),
-		ipBackstop: ratelimit.NewPerKey(bucketConfig(limits.IPBackstop, clock)),
-		backstopOn: strings.TrimSpace(clientIPHeader) != "",
-		chrome:     chrome,
+		vote:          ratelimit.NewPerKey(bucketConfig(limits.Vote, clock)),
+		voteChange:    ratelimit.NewPerKey(bucketConfig(limits.VoteChange, clock)),
+		ipBackstop:    ratelimit.NewPerKey(bucketConfig(limits.IPBackstop, clock)),
+		reportSerious: ratelimit.NewPerKey(bucketConfig(limits.ReportSerious, clock)),
+		reportOther:   ratelimit.NewPerKey(bucketConfig(limits.ReportOther, clock)),
+		submitAttempt: ratelimit.NewPerKey(bucketConfig(limits.SubmitAttempt, clock)),
+		backstopOn:    strings.TrimSpace(clientIPHeader) != "",
+		chrome:        chrome,
 	}
 }
 
@@ -162,6 +174,44 @@ func writeRateLimited(w http.ResponseWriter, field, message string, wait time.Du
 // and the wait, so it cannot carry personal data (D-12).
 func logBlock(bucket string, accountID int64, wait time.Duration) {
 	log.Printf(rateBlockLogFormat, bucket, accountID, retryAfterSeconds(wait))
+}
+
+// AdmitReport runs steps 4 and 5 of the pinned POST /api/reports order, after
+// decode and validation and before the text check and insert: the network
+// backstop, then the submit attempt bucket, then the serious or the other
+// allowance, all keyed on the verified account except the backstop. The bucket
+// is chosen by the caller from the one exported predicate, ReportMeta.Serious.
+// The first refusal is logged, answered with the rate_report 429 and returns
+// ok false. On success the returned refund gives the allowance token back and
+// is safe to call once or many times. The backstop and the attempt bucket are
+// never refunded: a rejected post still spends an attempt (D-11, D-12).
+func (g *RateGate) AdmitReport(w http.ResponseWriter, r *http.Request, accountID int64, serious bool) (refund func(), ok bool) {
+	number := ""
+	if serious {
+		number = g.chrome.withDefaults().Numbers.Primary
+	}
+	refuse := func(bucket string, wait time.Duration) (func(), bool) {
+		logBlock(bucket, accountID, wait)
+		writeRateLimited(w, reportRateField, service.ReportLimitMessage(serious, wait), wait, serious, number)
+		return func() {}, false
+	}
+
+	if d := g.reserveIPBackstop(r); !d.OK {
+		return refuse(ipBackstopBucket, d.RetryAfter)
+	}
+	key := accountKey(accountID)
+	if d := g.submitAttempt.Reserve(key); !d.OK {
+		return refuse(reportBucketAttempt, d.RetryAfter)
+	}
+	bucket, name := g.reportOther, reportBucketOther
+	if serious {
+		bucket, name = g.reportSerious, reportBucketSerious
+	}
+	d := bucket.Reserve(key)
+	if !d.OK {
+		return refuse(name, d.RetryAfter)
+	}
+	return d.Cancel, true
 }
 
 // VoteMiddleware throttles one vote route. The order is the network backstop,
