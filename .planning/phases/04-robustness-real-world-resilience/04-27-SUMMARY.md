@@ -48,7 +48,8 @@ Status note: the plan's Task 3 owner steps are open by design, and one Task 2 it
 | 1 | 96ab4c0 | `web/phase4_gates_contract_test.go`, `web/low_budget_contract_test.go` |
 | 2 | 3f6701d | `docs/MODERATION.md`, README, 01-UI-SPEC, 03-UI-SPEC, popup-structure.md, REVIEWS.md |
 | 2 follow up | 8e6c1f8 | `docs/MODERATION.md`: moderator page script order (asked for by 04-26) and the flag token note |
-| SUMMARY | the commit that adds this file | this file |
+| 2 follow up | d815c8c | `docs/MODERATION.md` corrections found in review (budget cause, `low.css` ownership wording, Limits opener, what the check rows store) |
+| SUMMARY | e2e4363, then a second SUMMARY commit with the review additions | this file |
 
 Task 3 made no repository change: the regeneration checks and the suite runs write nothing, and the recording is the owner's.
 
@@ -79,7 +80,7 @@ Measured 2026-10-16 with `go test ./web/ -run TestLowDataByteBudget -v` after 04
 | gzip level 5, same files | 153048 (informational) |
 | budget (total plus 15 percent, rounded up to 1024) | 585728 |
 
-Finding for the owner: the total is above RESEARCH's 256 KB starting guess (262144 bytes), by about 247 KB. Nothing was dropped or split, as the plan requires. The five largest files: `static/js/votes.js` 81123, `static/css/trust.css` 63693, `static/js/app.js` 45625, `static/js/report-form.js` 41375, `static/css/main.css` 37271. The scripts alone are 308607 raw bytes, so whether a smaller Low data view is wanted is a product decision for a later phase. Compressed with gzip level 5, the same files are about 153 KB.
+Finding for the owner: the total is above RESEARCH's 256 KB starting guess (262144 bytes), by about 247 KB. Nothing was dropped or split, as the plan requires. The five largest files: `static/js/votes.js` 81123, `static/css/trust.css` 63693, `static/js/app.js` 45625, `static/js/report-form.js` 41375, `static/css/main.css` 37271. Phase 4's own four scripts on the page (`report-form.js` 41375, `queue.js` 34837, `low.js` 33772, `flag.js` 16433) are 126417 bytes of that, about half the overage, and its `chrome.css` and `low.css` add 16855 more. The scripts alone are 308607 raw bytes, so whether a smaller Low data view is wanted is a product decision for a later phase. Compressed with gzip level 5, the same files are about 153 KB.
 
 The `/low` page links 25 of the 26 icon files in `web/static/icons`; `message-square.svg` is not referenced by it. No icon file was dropped to meet the budget.
 
@@ -103,6 +104,14 @@ Because the plan says to stop and report instead of improvising, `docs/TRUST-MOD
 - Edit two of the plan has no sentence to extend. If wanted, extend the "limit that remains" bullet to say that held and removed reports are neutral too and so count toward those 100 neutral rows (04-29 records this as its T-04-16 residual).
 - Note `TestTrustModelDocMatchesCode` (in `internal/service/trust_model_doc_test.go`) reads that file; run it after any edit.
 
+### More than one commit for Task 2
+
+The plan wants one commit per task. Task 2 has three commits (3f6701d, 8e6c1f8 and a later `docs/MODERATION.md` only correction), because two reviews of my own text turned up things to add or fix after the first commit. No amend or rewrite was used.
+
+### Policy page understates what is stored (found while writing Retention; for the legal read)
+
+`web/templates/policy.html.tmpl` says the scores of the automatic check are kept "for borderline reports, without the report text". In the code, `SubmitChecked` writes a check row inline only for a borderline result and for an unfinished check, but when the background retry finishes a check it calls `FinishModerationCheck`, which stores verdict, scores and model whatever the verdict is (pass, borderline or reject). So a late pass or a late reject keeps its scores too. I did not edit the Policy page (not in this plan's files). `docs/MODERATION.md` states what the code does and names the gap. Decide whether the Policy line should read "for borderline reports and for checks that finished late", and tell whoever does the legal read.
+
 ### Process notes, no behaviour change
 
 - The plan's verify commands use `env -u DATABASE_URL` and `$(...)` one liners, which the sandbox refuses. `DATABASE_URL` is unset in the shell, so plain `go test` is the same run. The four Task 2 shell checks were run as separate plain greps (results below).
@@ -114,9 +123,10 @@ Auto-fix rules 1 to 3: none triggered.
 ## Verification results
 
 - Task 1: `go vet ./web/` clean, `gofmt -l` clean on both new files, and these pass: `TestPhase4NoBareLabels`, `TestPhase4NoBannedViewWords`, `TestLowDataByteBudget`, `TestP427HelpersSelfCheck`, `TestLowDataAssetPolicy`, `TestLowDataNoBannedWords`, `TestNoMarkupSinksAnywhere`, `TestUserVisibleCopyUsesPlainPunctuation`. The gates passed at once on the 18 files, so no other plan's file needed a fix and no allowlist entry was added beyond the Policy page phrase.
+- Contracts (`contracts-ok`, run as separate greps): exactly one `| Modal cancel |` row and it holds `"Cancel report"`; the A60, A65 and A68 rows each hold `P4-A4`; exactly one line matches `^5\. [Tt]he destructive` and it holds `Yes, mark resolved`, `Yes, remove report` and `Yes, discard report`; exactly one line matches the item 6 anchor and it holds `.inline-error`; the Actions row holds `Flag this report`; `REVIEWS.md` holds `createFlagControl`; the lines this plan added to those four files hold no U+2014 or U+2013.
 - Task 2 checks, as plain greps: docs headings 11 of 11; zero U+2014 or U+2013 in `docs/MODERATION.md` and in the lines added to README; zero whole words light or lite in the doc; `Thresholds in use: RejectScoreThreshold 0.85, BorderlineScoreThreshold 0.40` matches `screening.go`; the numbers `509094 bytes` and `585728 bytes` appear in the doc; all 13 plan constant names appear; README counts (`CONTACT_EMAIL` outside `NOMINATIM_`: 3, each `EMERGENCY_*`: 2, `CLIENT_IP_HEADER`: 4, `MODERATOR_EMAILS`: 3, `OPENAI_API_KEY`: 3, `MODERATION_MODEL`: 1, `docs/MODERATION.md`: 2) and one README line holds both `CLIENT_IP_HEADER` and `place search`. The contract edits were made with unique matches. `trust-model-ok` not run (item 7 skipped).
 - Regeneration (Task 3 A): `sqlc diff` printed nothing and exited 0; `swag init -g internal/api/router.go -o <scratch>/docs` produced `docs.go`, `swagger.json` and `swagger.yaml` identical to the committed files; `git status` showed no change under `internal/store/sqlc` or the docs files.
-- Full suite (Task 3 B) on the disposable `p4_0427` (created fresh, dropped afterwards; `psql -lqt | grep -c -w p4_0427` printed 0): `go build ./...` and `go vet ./...` clean; `DATABASE_URL=postgres://localhost:5432/p4_0427?sslmode=disable go test ./... -count=1 -p 1 -v`: every package `ok`, no FAIL. The only `--- SKIP` is `TestScreeningFixture` (by design until the owner records; not database backed), so the database backed SKIP count is 0.
+- Full suite (Task 3 B) on the disposable `p4_0427` (created fresh, dropped afterwards; `psql -lqt | grep -c -w p4_0427` printed 0): `go build ./...` and `go vet ./...` clean; `DATABASE_URL=postgres://localhost:5432/p4_0427?sslmode=disable go test ./... -count=1 -p 1 -v`: every package `ok`, no FAIL. Counted over all test and subtest lines (`grep -E -- '--- (PASS|FAIL|SKIP)'`, indentation stripped): 2817 `--- PASS`, 0 `--- FAIL`, 1 `--- SKIP`. The one skip is `TestScreeningFixture` (by design until the owner records; not database backed), so the database backed SKIP count is 0. This run was repeated on a fresh `p4_0427` to get the counts.
 - Race subset on `p4_0427`: `TestPerKeyConcurrentBound`, `TestPerKeyRefundAtReservationInstant`, `TestSubmitIdempotentConcurrent`, `TestInsertReportIdempotentConcurrent`, `TestSubmitIdempotentReplayCostsNoAllowance`, `TestReportRateLimitRefunds`, `TestVoteRateLimit` and `TestFlagRateLimit` all `--- PASS` with `-race` in `internal/ratelimit`, `internal/api/handlers` and `internal/store`.
 - Fixture state before recording: `TestScreeningFixtureShape`, `TestDecide`, `TestDecideIgnoresSeverity`, `TestDecideThresholdsOrdered` PASS; `TestScreeningFixture` SKIP.
 - The known flaky `TestCastVoteConcurrentSameAccountKeepsEveryRow` did not fail in any run.
@@ -189,7 +199,11 @@ The last 04-19 block (line 376) asks for a real phone on the Low data view. Foll
 
 ### 5. Product decisions that earlier plans recorded for you to veto or decide
 
-- 04-02: the gibberish rule counts only letter runs, so ten exclamation marks, a row of emoji or a phone number are never a run (first owner veto item).
+- 04-02: the gibberish rule counts only letter runs, so ten exclamation marks, a row of emoji or a phone number are never a run (first owner veto item; it amends the outline row, so 04-11 and 04-28 should read "a run of one letter"). The other five readings in its list (reject reason by highest group score, borderline reads every key, both comparisons at or above, `assertServerCopy` refuses the empty string, closed enum extras) are listed there for review.
+- 04-12: the Policy page's cookies and storage list names the Low data cookie, the queue and the Low data position, which did not exist on 04-12's base. Compare that list with the finished code (04-12 human check 4) before any promotion.
+- 04-12 and this plan: the Policy page says scores are kept "for borderline reports"; the code also keeps them for checks the background retry finishes (see Deviations).
+- 04-19: a Low data row can show the Phase 3.1 Undo take back block for a report the viewer marked resolved but that is still Active; its UAT expects Confirm and Dispute only for a report the viewer has not marked.
+- 04-28: the Hindi, Telugu and Tamil fixture texts were written by the model, not a fluent reader. After a recording, any reword must clear that entry's `model` and `scores`. The abusive set has 5 serious hateful and 5 serious harassing entries (target was 4).
 - 04-07: a voted report that resolves to withheld is dropped from the Activity votes list; only its author sees it.
 - 04-11 and 04-29 (T-04-16): a report whose check row could not be written has no automatic recovery (it stays held, or stays published if serious), and 100 neutral rows in a row can push an old rating record out of the read. Ask 04-14 or 04-23 to also pick such reports up if wanted.
 - 04-14: no attempt count cap for transient errors (the report's expiry is the bound); quota and permanent errors are never retried and the report stays in the moderator Pending list.
@@ -210,4 +224,4 @@ None. This plan adds no route, handler, table, query, template, CSS rule or serv
 
 ## Self-Check: PASSED (with one open item)
 
-Created files exist (`web/phase4_gates_contract_test.go`, `web/low_budget_contract_test.go`, `docs/MODERATION.md`) and commits `96ab4c0`, `3f6701d` and `8e6c1f8` exist on `worktree-agent-ae16f8b4a2e8afd30`. The open item is Task 2 item 7 (`docs/TRUST-MODEL.md`), skipped on a failed Step 0 precondition and described above, plus the owner steps, which are not part of what this run could do.
+Created files exist (`web/phase4_gates_contract_test.go`, `web/low_budget_contract_test.go`, `docs/MODERATION.md`) and commits `96ab4c0`, `3f6701d`, `8e6c1f8` and `e2e4363` exist on `worktree-agent-ae16f8b4a2e8afd30`. `.planning/STATE.md`, `ROADMAP.md` and `REQUIREMENTS.md` were not touched. The open item is Task 2 item 7 (`docs/TRUST-MODEL.md`), skipped on a failed Step 0 precondition and described above, plus the owner steps, which are not part of what this run could do.
