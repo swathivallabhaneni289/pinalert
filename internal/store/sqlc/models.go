@@ -30,6 +30,29 @@ type MagicLinkToken struct {
 	UsedAt    pgtype.Timestamptz
 }
 
+type ModerationAction struct {
+	ID                 int64
+	ReportID           int64
+	ModeratorAccountID int64
+	Action             string
+	CreatedAt          time.Time
+}
+
+type ModerationCheck struct {
+	ReportID      int64
+	Status        string
+	Attempts      int32
+	NextAttemptAt time.Time
+	LeaseUntil    pgtype.Timestamptz
+	LastError     *string
+	Verdict       *string
+	Scores        []byte
+	Model         *string
+	NeedsReview   bool
+	CheckedAt     pgtype.Timestamptz
+	CreatedAt     time.Time
+}
+
 type Report struct {
 	ID                    int64
 	SessionID             string
@@ -43,6 +66,19 @@ type Report struct {
 	ShelterHeadcount      *int32
 	CreatedAt             time.Time
 	ExpiresAt             time.Time
+	ModerationState       string
+	RequestID             *string
+	RequestAccountID      *int64
+	ClientWrittenAt       pgtype.Timestamptz
+}
+
+type ReportFlag struct {
+	ID          int64
+	ReportID    int64
+	AccountID   int64
+	Reason      string
+	CreatedAt   time.Time
+	DismissedAt pgtype.Timestamptz
 }
 
 type Session struct {
