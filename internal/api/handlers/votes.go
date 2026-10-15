@@ -1,6 +1,6 @@
-// votes.go is the HTTP surface of the confirm/dispute/resolve/reopen
-// mechanic. All four endpoints (POST /reports/{id}/confirm, /dispute,
-// /resolve, /reopen) are produced by ONE factory, CastVote, so the JSON
+// votes.go is the HTTP surface of the confirm/dispute/resolve/reopen/unresolve
+// mechanic. All five endpoints (POST /reports/{id}/confirm, /dispute,
+// /resolve, /reopen, /unresolve) are produced by ONE factory, CastVote, so the JSON
 // contract and the error mapping exist exactly once. Every trust decision —
 // self-vote authorization, expiry rejection, the independence predicate, and
 // visibility resolution — is made in internal/service, never in this file.
@@ -41,9 +41,9 @@ const maxVoteBodyBytes = 4 * 1024
 // Both coordinates are pointers so an absent key or a JSON null can be told
 // apart from a real 0.
 type CastVoteRequest struct {
-	// Latitude must be between -90 and 90. Required, except on the reporter's own resolve and reopen.
+	// Latitude must be between -90 and 90. Required, except on the reporter's own resolve and reopen and on the take back.
 	Latitude *float64 `json:"latitude" example:"13.0827"`
-	// Longitude must be between -180 and 180. Required, except on the reporter's own resolve and reopen.
+	// Longitude must be between -180 and 180. Required, except on the reporter's own resolve and reopen and on the take back.
 	Longitude *float64 `json:"longitude" example:"80.2707"`
 }
 
@@ -61,6 +61,12 @@ type CastVoteResponse struct {
 	// Trust is the server built trust object for this report, the same value
 	// the feed returns (D-21). It is present on every successful vote.
 	Trust TrustResponse `json:"trust"`
+	// UndosLeft is how many take backs the caller has left on this report after
+	// this vote (D-22). It is present on resolve, reopen and unresolve
+	// responses only, and absent on confirm and dispute, which have no undo
+	// budget. The browser decides the short Undo after Yes, mark resolved from
+	// this number before the list refetch lands.
+	UndosLeft *int `json:"undos_left,omitempty" example:"2"`
 }
 
 // parseReportID reads the {id} path parameter, parses it, and on an empty,
@@ -79,23 +85,32 @@ func parseReportID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	return id, true
 }
 
-// CastVote produces the HTTP handler for one of the four vote endpoints,
+// CastVote produces the HTTP handler for one of the five vote endpoints,
 // closing over the kind/value pair the route registration supplies. All
-// four routes share this single factory so the JSON contract and error
+// five routes share this single factory so the JSON contract and error
 // mapping exist exactly once.
 //
-// @Summary Cast a confirm, dispute, resolve, or reopen vote on a report
-// @Description Casts one of four votes against a report: confirm/dispute are content votes (is
-// @Description this report still true), resolve/reopen are resolution votes (is this resolved).
+// @Summary Cast a confirm, dispute, resolve, reopen or unresolve vote on a report
+// @Description Casts one of five votes against a report: confirm/dispute are content votes (is
+// @Description this report still true), resolve/reopen/unresolve are resolution votes (is this
+// @Description resolved). Unresolve is the take back of the caller's own earlier resolve: it needs
+// @Description no location, it never counts as a reopen, and it is refused with 409 when the caller
+// @Description has no standing resolve on the report. The poster's reopen and every take back share
+// @Description one limit of two per report; past it the answer is 409. A non poster's reopen is an
+// @Description ordinary claim and is never limited.
 // @Description Requires a session verified by email through the magic-link flow; an unverified
 // @Description caller receives 401. The reporter receives 403 on confirm/dispute but may resolve
 // @Description or reopen their own report instantly. The response carries the freshly recomputed
 // @Description visibility and reason so the client can render the outcome without guessing.
 // @Description A voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose
-// @Description error field is location, on all four votes, with one fixed sentence that never
-// @Description carries the distance. The reporter's own resolve and reopen are exempt.
+// @Description error field is location, on confirm, dispute, resolve and reopen, with one fixed
+// @Description sentence that never carries the distance. The reporter's own resolve and reopen
+// @Description are exempt, and so is the take back.
 // @Description The response also carries the same trust object GET /reports returns for this report.
-// @Description A location is required on every vote except the reporter's own resolve and reopen.
+// @Description Resolve, reopen and unresolve responses also carry undos_left, the number of take
+// @Description backs the caller has left on this report; confirm and dispute responses do not.
+// @Description A location is required on every vote except the reporter's own resolve and reopen
+// @Description and the take back.
 // @Description A body with no latitude and no longitude is 400 with error field latitude, and a body
 // @Description with only one of the two is 400 naming the missing one.
 // @Tags reports
@@ -114,6 +129,7 @@ func parseReportID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 // @Router /reports/{id}/dispute [post]
 // @Router /reports/{id}/resolve [post]
 // @Router /reports/{id}/reopen [post]
+// @Router /reports/{id}/unresolve [post]
 func CastVote(svc *service.VotingService, kind service.VoteKind, value service.VoteValue) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acc, ok := account.FromContext(r.Context())
@@ -192,6 +208,18 @@ func CastVote(svc *service.VotingService, kind service.VoteKind, value service.V
 				// nothing about the request itself is malformed.
 				writeFieldError(w, http.StatusConflict, "report", "This report has expired.")
 				return
+			case errors.Is(err, service.ErrNothingToTakeBack):
+				// 409 for the same reason as the expiry refusal: the request
+				// is well formed and conflicts with the caller's standing
+				// vote on this report (D-22). Fixed sentence, nothing echoed.
+				writeFieldError(w, http.StatusConflict, "report", "You have no resolved mark on this report to take back.")
+				return
+			case errors.Is(err, service.ErrUndoLimitReached):
+				// The take back and the poster's reopen share one limit of
+				// two per report (D-22, D-28); the limit is enforced in the
+				// service, never trusted from the client.
+				writeFieldError(w, http.StatusConflict, "report", "You have used both undos on this report.")
+				return
 			case errors.Is(err, service.ErrVoterTooFar):
 				// 403 rather than 400: the request is well formed and the
 				// caller is authenticated, and the server refuses it because
@@ -220,6 +248,7 @@ func CastVote(svc *service.VotingService, kind service.VoteKind, value service.V
 			Visibility: string(res.Visibility),
 			Reason:     string(res.Reason),
 			Trust:      trustToResponse(res.Trust),
+			UndosLeft:  res.UndosLeft,
 		})
 	}
 }

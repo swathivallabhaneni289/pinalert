@@ -56,6 +56,18 @@ type Deps struct {
 	// contract — cmd/server/main.go is the one place the numbers are
 	// visible rather than buried as literals in this router.
 	GeocodeRateLimit GeocodeRateLimit
+	// PlaceSearch backs GET /api/geocode/place, the reader's place search on
+	// the history views (HIST-05, D-14). It is typed as the
+	// handlers.PlaceSearcher interface for the same reasons Geocode is. It
+	// must be backed by the SAME *geocode.Client as Geocode, so the process
+	// wide limiter stays process wide. A caller with geocoding switched off
+	// must leave it as an untyped nil: a typed nil *geocode.Client stored in
+	// the interface would not match the handler's nil check.
+	PlaceSearch handlers.PlaceSearcher
+	// PlaceRateLimit configures the per account budget of GET
+	// /api/geocode/place. Left at its zero value, PlaceRateLimitDefault below
+	// is used.
+	PlaceRateLimit PlaceRateLimit
 	// Dev disables the static asset cache in staticFileServer. Left false
 	// (the zero value) selects the production 1-hour cache automatically —
 	// every existing Deps{} literal that doesn't set this field keeps
@@ -107,6 +119,19 @@ type GeocodeRateLimit struct {
 // limiter inside internal/geocode, because a per-IP limiter cannot bound
 // total outbound traffic across many clients.
 var GeocodeRateLimitDefault = GeocodeRateLimit{Burst: 3, Every: 2 * time.Second}
+
+// PlaceRateLimit is the burst/refill configuration of the per account budget
+// on GET /api/geocode/place.
+type PlaceRateLimit struct {
+	Burst int
+	Every time.Duration
+}
+
+// PlaceRateLimitDefault is the reader lane's budget: a burst of 3, then one
+// token every 4 seconds (RESEARCH A4). It is a per account budget and not a
+// per IP one because carrier NAT puts many phones behind one address, so a
+// per IP budget would lock out neighbours of a heavy searcher (D-16).
+var PlaceRateLimitDefault = PlaceRateLimit{Burst: 3, Every: 4 * time.Second}
 
 // @title        Pinalert API
 // @version      1.0
@@ -201,20 +226,20 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.Get("/", handlers.Page(deps.Template, deps.Page))
 		r.Post("/api/reports", handlers.SubmitReport(deps.Reports))
 		r.Get("/api/reports", handlers.NearbyReports(deps.Reports))
-		// The four vote routes (02-03b). All four come from ONE
+		// The five vote routes (02-03b, HIST-09). All five come from ONE
 		// handlers.CastVote factory so the JSON contract and error mapping
 		// exist exactly once. Content votes (confirm/dispute) and
-		// resolution votes (resolve/reopen) are distinguished by the kind
-		// argument rather than by four separate handlers, keeping "is this
-		// report still true" and "is this resolved" as two separately
-		// tracked signals (D-02, D-16). They are registered flat — as four
-		// separate r.Post calls on full literal paths, NOT via
-		// r.Route("/api/reports/{id}", ...) as 02-PATTERNS.md sketches —
-		// because this router already has a literal /api/reports leaf that
+		// resolution votes (resolve/reopen/unresolve) are distinguished by
+		// the kind argument rather than by five separate handlers, keeping
+		// "is this report still true" and "is this resolved" as two
+		// separately tracked signals (D-02, D-16). They are registered
+		// flat, as five separate r.Post calls on full literal paths, NOT
+		// via r.Route("/api/reports/{id}", ...) as 02-PATTERNS.md
+		// sketches, because this router already has a literal /api/reports leaf that
 		// a wildcard subrouter mounted at an overlapping prefix would sit
 		// awkwardly beside; every /api/* path in this router is registered
 		// flat, gated or not (see the /api/auth/request-link comment
-		// above). Flat registration also keeps these four routes in the
+		// above). Flat registration also keeps these five routes in the
 		// same visual list as every other route in the group, which is
 		// exactly the property this function's own doc comment relies on
 		// for T-01-70: you can see at a glance that they are inside the
@@ -225,6 +250,14 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.Post("/api/reports/{id}/dispute", handlers.CastVote(deps.Votes, service.VoteKindContent, service.VoteDispute))
 		r.Post("/api/reports/{id}/resolve", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteResolve))
 		r.Post("/api/reports/{id}/reopen", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteReopen))
+		// The fifth vote route (HIST-09, D-22): the take back of a mistaken
+		// Mark resolved. It has its own value, service.VoteUnresolve, and
+		// does not reuse reopen, because a reopen from a non poster counts
+		// as a reopen claim toward the shared threshold (D-28) while the
+		// take back only withdraws the caller's own resolve and claims
+		// nothing about the place. It needs no location, never counts as a
+		// reopen, and shares its limit of two with the poster's reopen.
+		r.Post("/api/reports/{id}/unresolve", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteUnresolve))
 		// GET /api/geocode (plan 07-03). Registered as a flat literal path,
 		// not under an r.Route mount — see this router's own doc comments
 		// above for why every /api/* path here is flat, gated or not.
@@ -238,6 +271,18 @@ func NewRouter(deps Deps) *chi.Mux {
 		}
 		geocodeLimiter := ratelimit.NewPerIP(geocodeLimit.Every, geocodeLimit.Burst)
 		r.With(geocodeLimiter.Middleware()).Get("/api/geocode", handlers.Geocode(deps.Geocode))
+		// GET /api/geocode/place (HIST-05, D-14): the reader lane. A flat
+		// literal path next to /api/geocode, inside the gate for the same
+		// reason. It is NOT wrapped in the per IP middleware: the handler
+		// keys this budget by the verified account id, because carrier NAT
+		// shares one IP across many phones (D-16). The limiter type is
+		// ratelimit.PerIP, used here only as a keyed token bucket.
+		placeLimit := deps.PlaceRateLimit
+		if placeLimit == (PlaceRateLimit{}) {
+			placeLimit = PlaceRateLimitDefault
+		}
+		placeBudget := ratelimit.NewPerIP(placeLimit.Every, placeLimit.Burst)
+		r.Get("/api/geocode/place", handlers.GeocodePlace(deps.PlaceSearch, placeBudget))
 		// deps.Template — the same ParsePageTemplate result / handlers.Page
 		// gets, not a separately-parsed single file — is load-bearing:
 		// profile.html.tmpl includes 01.1-06's account_header.html.tmpl
