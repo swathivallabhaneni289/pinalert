@@ -745,6 +745,26 @@
     return 'Showing the newest ' + count + '.';
   }
 
+  // The one line of a partial group: the server could not read every report of
+  // the area for this group, so some are not shown (WR-02). It is its own flag
+  // and its own words, and it never borrows the cap line: "Showing the newest
+  // 25." says more than 25 were kept, which a partial flag does not say.
+  var PARTIAL_LINE_TEXT = 'This area has more reports than this list can hold, so some are not shown.';
+
+  // groupLineText is the text under a group. A cut group keeps the true cap
+  // line, a partial group says it is partial, and a group that is both says
+  // both, each sentence for its own fact.
+  function groupLineText(count, wasCut, wasPartial) {
+    var parts = [];
+    if (wasCut && count > 0) {
+      parts.push(cutLineText(count));
+    }
+    if (wasPartial) {
+      parts.push(PARTIAL_LINE_TEXT);
+    }
+    return parts.join(' ');
+  }
+
   // placeInList puts a card at its slot, keeping focus where it was: moveBefore
   // keeps it where the browser has the method, and otherwise the focused
   // element inside the moved card is focused again afterwards.
@@ -765,9 +785,11 @@
   }
 
   // placePastGroup draws one group in the server's order. A group with no
-  // card is hidden whole, header included, and its cap line shows only when
-  // the server cut this group.
-  function placePastGroup(groupEl, listEl, cutEl, reports, wasCut) {
+  // card is hidden whole, header included, unless the server said it is
+  // partial: then the label stays with the partial line under it, because an
+  // empty group would otherwise read as nothing happening. The cap line shows
+  // only when the server cut this group.
+  function placePastGroup(groupEl, listEl, cutEl, reports, wasCut, wasPartial) {
     if (!groupEl || !listEl || !cutEl) {
       return;
     }
@@ -781,9 +803,10 @@
       updatePastCard(card, reports[i]);
       placeInList(listEl, card.el, listEl.children[i]);
     }
-    setHidden(groupEl, reports.length === 0);
-    setHidden(cutEl, !(wasCut && reports.length > 0));
-    Pinalert.setText(cutEl, cutLineText(reports.length));
+    var lineText = groupLineText(reports.length, wasCut, wasPartial);
+    setHidden(groupEl, reports.length === 0 && !wasPartial);
+    setHidden(cutEl, lineText === '');
+    Pinalert.setText(cutEl, lineText);
   }
 
   // removeDepartedPastCards removes the cards whose id is not in seen, before
@@ -855,20 +878,25 @@
     }
     var cut = state.cut || {};
     removeDepartedPastCards(seen);
-    placePastGroup(pastResolvedEl, pastResolvedListEl, pastResolvedCutEl, resolved, cut.resolved === true);
-    placePastGroup(pastExpiredEl, pastExpiredListEl, pastExpiredCutEl, expired, cut.expired === true);
+    placePastGroup(pastResolvedEl, pastResolvedListEl, pastResolvedCutEl, resolved,
+      cut.resolved === true, cut.resolved_partial === true);
+    placePastGroup(pastExpiredEl, pastExpiredListEl, pastExpiredCutEl, expired,
+      cut.expired === true, cut.expired_partial === true);
     return resolved.length + expired.length;
   }
 
   // renderPastTab draws the Past tab's list area. The Past tab is two groups
   // of cards, never the live list, so #report-list is hidden and its rows are
   // removed; renderPastGroups fills #past-groups. The groups container shows
-  // only when there are reports; with none, the Past empty block (or the
-  // filter block when a chip is on) shows instead.
+  // only when there are reports or a partial flag; with neither, the Past
+  // empty block (or the filter block when a chip is on) shows instead. A partial
+  // answer never shows an empty block: it cannot say nothing is there.
   function renderPastTab(state) {
     setHidden(reportListEl, true);
     clearRows();
-    if (state.reports.length === 0) {
+    var partialCut = state.cut || {};
+    var partial = partialCut.resolved_partial === true || partialCut.expired_partial === true;
+    if (state.reports.length === 0 && !partial) {
       setHidden(pastGroupsEl, true);
       clearPastCards();
       setEmptyState(Pinalert.state.category !== '' ? 'filter' : 'past');
@@ -876,7 +904,7 @@
     }
     setEmptyState('none');
     setHidden(pastGroupsEl, false);
-    if (renderPastGroups(state) === 0) {
+    if (renderPastGroups(state) === 0 && !partial) {
       setHidden(pastGroupsEl, true);
       setEmptyState(Pinalert.state.category !== '' ? 'filter' : 'past');
     }

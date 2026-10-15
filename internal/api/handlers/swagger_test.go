@@ -532,7 +532,7 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 	p14AssertPropKeys(t, defProps, "handlers.HistoryResponse",
 		[]string{"state", "at", "closed_by", "closed_text", "outcome", "outcome_label", "lifetime_text"})
 	p14AssertPropKeys(t, defProps, "handlers.RecentResponse", []string{"resolved_24h", "expired_24h"})
-	p14AssertPropKeys(t, defProps, "handlers.CutResponse", []string{"resolved", "expired"})
+	p14AssertPropKeys(t, defProps, "handlers.CutResponse", []string{"resolved", "expired", "resolved_partial", "expired_partial"})
 	p14AssertPropKeys(t, defProps, "handlers.FocusResponse", []string{"status", "report"})
 	p14AssertPropKeys(t, defProps, "handlers.ReportListResponse", []string{"view", "reports", "recent", "cut", "focus"})
 	for def, types := range map[string]map[string]string{
@@ -541,8 +541,10 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 			"outcome": "string", "outcome_label": "string", "lifetime_text": "string",
 		},
 		"handlers.RecentResponse": {"resolved_24h": "integer", "expired_24h": "integer"},
-		"handlers.CutResponse":    {"resolved": "boolean", "expired": "boolean"},
-		"handlers.FocusResponse":  {"status": "string"},
+		"handlers.CutResponse": {
+			"resolved": "boolean", "expired": "boolean", "resolved_partial": "boolean", "expired_partial": "boolean",
+		},
+		"handlers.FocusResponse": {"status": "string"},
 		"handlers.FeedReportResponse": {
 			"view": "string", "approximate": "boolean", "your_resolution": "string", "undos_left": "integer",
 		},

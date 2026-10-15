@@ -33,10 +33,16 @@ func TestPastGroupsOrderAndCap(t *testing.T) {
 		"pastResolvedListEl", "pastExpiredListEl")
 	p13MustNotContain(t, "renderPastGroups", groups, "sortReports(", ".sort(", "innerHTML", "slice(")
 
-	place := jsFunctionBody(t, feed, "placePastGroup(groupEl, listEl, cutEl, reports, wasCut)")
+	// 03.1 fixer B2: the group function takes a partial flag too, and the line
+	// under the group is built by groupLineText. The old pins on the hidden
+	// group and the cap line keep their intent: an empty group is hidden unless
+	// it is partial, and the cap line needs the cut flag and a card.
+	place := jsFunctionBody(t, feed, "placePastGroup(groupEl, listEl, cutEl, reports, wasCut, wasPartial)")
 	p13MustContain(t, "placePastGroup", place,
-		"setHidden(groupEl, reports.length === 0);", "setHidden(cutEl, !(wasCut && reports.length > 0));",
-		"Pinalert.setText(cutEl, cutLineText(reports.length));")
+		"setHidden(groupEl, reports.length === 0 && !wasPartial);", "setHidden(cutEl, lineText === '');",
+		"groupLineText(reports.length, wasCut, wasPartial);", "Pinalert.setText(cutEl, lineText);")
+	line := jsFunctionBody(t, feed, "groupLineText(count, wasCut, wasPartial)")
+	p13MustContain(t, "groupLineText", line, "if (wasCut && count > 0) {", "cutLineText(count)", "if (wasPartial) {")
 
 	cut := jsFunctionBody(t, feed, "cutLineText(count)")
 	p13MustContain(t, "cutLineText", cut, "'Showing the newest ' + count + '.'")
