@@ -963,6 +963,20 @@ func TestPopupPaddingTokensAgree(t *testing.T) {
 		t.Errorf("short max height %q lacks the 16 and 16 form", short.Decls["max-height"])
 	}
 
+	// Plan 03.1-11: from 900px the tools layer sits over the top of the map,
+	// so the card's max height subtracts --map-tools-height once more, and the
+	// token is declared on the map pane at both widths. The short screen rule
+	// stays last, so it still wins on a very short laptop window.
+	laptop, _ := p13Rule(t, rules, "min-width: 900px", contentHead)
+	if !strings.Contains(p19NoSpace(laptop.Decls["max-height"]), "-var(--map-tools-height)") {
+		t.Errorf("laptop max height %q does not subtract var(--map-tools-height)", laptop.Decls["max-height"])
+	}
+	for _, file := range []string{"static/css/main.css", "static/css/phone.css"} {
+		if !strings.Contains(p13ReadStatic(t, file), "--map-tools-height:") {
+			t.Errorf("%s does not declare --map-tools-height", file)
+		}
+	}
+
 	cssNames := map[string]bool{}
 	for _, m := range regexp.MustCompile(`var\((--[a-z-]+)\)`).FindAllStringSubmatch(narrow.Decls["max-height"], -1) {
 		cssNames[m[1]] = true

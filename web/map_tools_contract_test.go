@@ -327,3 +327,374 @@ func TestMapToolsMarkup(t *testing.T) {
 	p13Ordered(t, tmpl, "script order",
 		`/static/js/map.js?v=`, `/static/js/feed.js?v=`, `/static/js/map-tools.js?v=`)
 }
+
+// p31mRules returns every rule of one stylesheet that has head as one whole
+// part of its selector list, in source order.
+func p31mRules(t *testing.T, file, head string) []p16CSSRule {
+	t.Helper()
+	var out []p16CSSRule
+	for _, r := range p16ParseCSS(file, p16ReadStatic(t, file)) {
+		for _, part := range p16HeadParts(r.Head) {
+			if part == head {
+				out = append(out, r)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// p31mRule returns the effective declarations of one selector in one media
+// prelude (empty means top level): every rule that lists the selector as a
+// whole part of its head, later declarations winning, as the cascade does for
+// rules of equal weight. It fails when no rule matches.
+func p31mRule(t *testing.T, file, media, head string) p16CSSRule {
+	t.Helper()
+	merged := p16CSSRule{File: file, Media: media, Head: head, Decls: map[string]string{}}
+	matched := false
+	for _, r := range p31mRules(t, file, head) {
+		if r.Media != media {
+			continue
+		}
+		matched = true
+		for prop, value := range r.Decls {
+			merged.Decls[prop] = value
+		}
+	}
+	if !matched {
+		t.Fatalf("%s: no rule with head %q in media %q", file, head, media)
+	}
+	return merged
+}
+
+// TestMapToolsCSS pins the declared geometry and look of the tools layer
+// (D-26, UI-SPEC "The map pane, over the map", Surfaces 4 and 5). The tokens
+// are the scale; the allowed new literals are 320px (the cap of the laptop
+// search box) and 1005 (the results list), both from UI-SPEC Spacing. No
+// allow list of dimension literals exists in this package, so none was added.
+func TestMapToolsCSS(t *testing.T) {
+	const feed = "static/css/feed.css"
+	const phone = "static/css/phone.css"
+	const phoneMedia = "@media (max-width: 899.98px)"
+
+	// The layer: absolute inside the map pane, ignoring presses of its own,
+	// left of the layer clears Leaflet's zoom control. It declares no z index
+	// itself: a z indexed layer would be one stacking context and would hold
+	// the results list under the add button that comes later in the page.
+	// Each control carries 1000 and the results list 1005 (UI-SPEC).
+	layer := p31mRule(t, feed, "", ".map-tools")
+	p16MustDecl(t, ".map-tools", layer, map[string]string{
+		"position":       "absolute",
+		"top":            "0",
+		"left":           "calc(var(--space-2xl) + var(--space-sm))",
+		"right":          "var(--space-md)",
+		"height":         "var(--map-tools-height)",
+		"pointer-events": "none",
+	})
+	if _, has := layer.Decls["z-index"]; has {
+		t.Errorf(".map-tools declares a z index; the layer must not be a stacking context")
+	}
+
+	for _, head := range []string{".map-search__field", ".map-chips"} {
+		r := p31mRule(t, feed, "", head)
+		p16MustDecl(t, head, r, map[string]string{"position": "absolute", "z-index": "1000", "pointer-events": "none"})
+	}
+	p16MustDecl(t, ".map-chips", p31mRule(t, feed, "", ".map-chips"), map[string]string{
+		"top":                   "calc(var(--space-sm) + var(--touch-target-min) + var(--space-sm))",
+		"overflow-x":            "auto",
+		"overscroll-behavior-x": "contain",
+	})
+	p16MustDecl(t, ".map-search__field", p31mRule(t, feed, "", ".map-search__field"),
+		map[string]string{"top": "var(--space-sm)"})
+
+	// The laptop search box caps at 320px.
+	p16MustDecl(t, ".map-search__input", p31mRule(t, feed, "", ".map-search__input"), map[string]string{
+		"max-width":      "320px",
+		"min-height":     "var(--touch-target-min)",
+		"border":         "1px solid var(--color-border)",
+		"border-radius":  "8px",
+		"background":     "var(--color-bg)",
+		"color":          "var(--color-text)",
+		"font-size":      "var(--font-size-body)",
+		"pointer-events": "auto",
+	})
+
+	// Every control is at least the touch target and has the 8px corner.
+	controlHeads := []string{
+		".map-search__open", ".map-search__submit", ".map-search__close", ".map-chip",
+		".map-search__result",
+	}
+	for _, head := range controlHeads {
+		r := p31mRule(t, feed, "", head)
+		if got := r.Decls["min-height"]; got != "var(--touch-target-min)" {
+			t.Errorf("%s min-height is %q, want the touch target token", head, got)
+		}
+		if head != ".map-search__result" {
+			if got := r.Decls["border-radius"]; got != "8px" {
+				t.Errorf("%s border-radius is %q, want 8px (no pill)", head, got)
+			}
+		}
+	}
+	for _, head := range []string{".map-search__open", ".map-search__submit", ".map-search__close"} {
+		r := p31mRule(t, feed, "", head)
+		for _, prop := range []string{"width", "min-width"} {
+			if got := r.Decls[prop]; got != "var(--touch-target-min)" {
+				t.Errorf("%s %s is %q, want the touch target token (44 by 44)", head, prop, got)
+			}
+		}
+	}
+
+	// A chip at rest and a pressed chip, inverted and semibold. The ring is
+	// inset so the scroller does not clip it.
+	chip := p31mRule(t, feed, "", ".map-chip")
+	p16MustDecl(t, ".map-chip", chip, map[string]string{
+		"padding": "0 var(--space-md)", "background": "var(--color-bg)", "color": "var(--color-text)",
+		"font-size": "var(--font-size-label)", "pointer-events": "auto",
+	})
+	on := p31mRule(t, feed, "", `.map-chip[aria-pressed="true"]`)
+	p16MustDecl(t, "pressed chip", on, map[string]string{
+		"background": "var(--color-text)", "color": "var(--color-bg)", "font-weight": "var(--font-weight-semibold)",
+	})
+	p16MustDecl(t, "chip focus", p31mRule(t, feed, "", ".map-chip:focus-visible"),
+		map[string]string{"outline-offset": "-2px"})
+	forced := p31mRule(t, feed, "@media (forced-colors: active)", `.map-chip[aria-pressed="true"]`)
+	p16MustDecl(t, "forced colours chip", forced, map[string]string{"border": "2px solid CanvasText"})
+
+	// The results list and its status line sit above the add button and
+	// below the bottom bar (1010).
+	for _, head := range []string{".map-search__results", ".map-search__status:not(.visually-hidden)"} {
+		r := p31mRule(t, feed, "", head)
+		p16MustDecl(t, head, r, map[string]string{"z-index": "1005", "pointer-events": "auto"})
+	}
+
+	// The map label: not interactive, bottom left.
+	label := p31mRule(t, feed, "", ".map-label")
+	p16MustDecl(t, ".map-label", label, map[string]string{
+		"position": "absolute", "left": "var(--space-md)", "bottom": "var(--space-md)",
+		"background": "var(--color-bg)", "border": "1px solid var(--color-border)", "border-radius": "8px",
+		"font-size": "var(--font-size-label)", "font-weight": "var(--font-weight-semibold)",
+		"pointer-events": "none",
+	})
+
+	// The two context lines wrap and keep the touch target height.
+	for _, head := range []string{".place-line", ".filter-line"} {
+		p16MustDecl(t, head, p31mRule(t, feed, "", head), map[string]string{
+			"display": "flex", "flex-wrap": "wrap", "min-height": "var(--touch-target-min)",
+			"font-size": "var(--font-size-label)",
+		})
+	}
+
+	// The tools height token: two rows on a laptop, one on a phone.
+	main := p31mRule(t, "static/css/main.css", "@media (min-width: 900px)", ".app-shell > .pane--map")
+	if got := p19NoSpace(main.Decls["--map-tools-height"]); got !=
+		p19NoSpace("calc(var(--space-sm) + var(--touch-target-min) + var(--space-sm) + var(--touch-target-min))") {
+		t.Errorf("laptop --map-tools-height is %q", main.Decls["--map-tools-height"])
+	}
+	narrow := p31mRule(t, phone, phoneMedia, ".app-shell > .pane--map")
+	if got := p19NoSpace(narrow.Decls["--map-tools-height"]); got !=
+		p19NoSpace("calc(var(--space-sm) + var(--touch-target-min))") {
+		t.Errorf("phone --map-tools-height is %q", narrow.Decls["--map-tools-height"])
+	}
+
+	// The phone: one row, right inset clears the theme toggle, and the
+	// expanded search takes the full row.
+	layerNarrow := p31mRule(t, phone, phoneMedia, ".pane--map > .map-tools")
+	p16MustDecl(t, "phone layer", layerNarrow, map[string]string{
+		"right": "calc(var(--space-md) + var(--touch-target-min) + var(--space-sm))",
+	})
+	expanded := p31mRule(t, phone, phoneMedia, `.pane--map > .map-tools[data-search-open="true"]`)
+	p16MustDecl(t, "expanded phone layer", expanded, map[string]string{"right": "var(--space-md)"})
+	p16MustDecl(t, "phone chips", p31mRule(t, phone, phoneMedia, ".pane--map > .map-tools .map-chips"), map[string]string{
+		"top":  "var(--space-sm)",
+		"left": "calc(var(--touch-target-min) + var(--space-sm))",
+	})
+	results := p31mRule(t, phone, phoneMedia, ".pane--map > .map-tools .map-search__results")
+	p16MustDecl(t, "phone results", results, map[string]string{
+		"position": "fixed", "left": "var(--space-md)", "right": "var(--space-md)",
+		"top": "calc(var(--disclaimer-bar-height, 0px) + var(--space-sm) + var(--touch-target-min) + var(--space-xs))",
+	})
+	if !strings.Contains(results.Decls["max-height"], "100dvh") {
+		t.Errorf("phone results max-height %q does not stop above the bottom bar", results.Decls["max-height"])
+	}
+
+	// No colour literal anywhere in the added rules, and nothing here
+	// declares a font weight or size that is not a token.
+	hex := regexp.MustCompile(`#[0-9A-Fa-f]{3,8}\b`)
+	for _, r := range p16ParseCSS(feed, p16ReadStatic(t, feed)) {
+		if !strings.Contains(r.Head, "map-") && !strings.Contains(r.Head, "place-line") && !strings.Contains(r.Head, "filter-line") {
+			continue
+		}
+		for prop, value := range r.Decls {
+			if hex.MatchString(value) {
+				t.Errorf("%q %s: %q is a colour literal, tokens only", r.Head, prop, value)
+			}
+			if prop == "font-size" && !strings.HasPrefix(value, "var(--font-size-") {
+				t.Errorf("%q font-size %q is not a type size token", r.Head, value)
+			}
+			if prop == "font-weight" && !strings.HasPrefix(value, "var(--font-weight-") {
+				t.Errorf("%q font-weight %q is not a weight token", r.Head, value)
+			}
+			if strings.Contains(value, "999px") || strings.Contains(value, "50%") && prop == "border-radius" {
+				t.Errorf("%q %s: %q is a pill shape", r.Head, prop, value)
+			}
+		}
+	}
+}
+
+// TestMapToolsHideUnderSheet pins that the tools, the map label and the
+// results step aside while the phone detail sheet is open, through the one
+// existing hide rule, and that the theme toggle also steps aside while the
+// phone search is open (UI-SPEC "Hidden while the phone detail sheet is open").
+func TestMapToolsHideUnderSheet(t *testing.T) {
+	const phoneMedia = "@media (max-width: 899.98px)"
+	const sheet = `body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"])`
+	var hide *p16CSSRule
+	for _, r := range p16ParseCSS("static/css/phone.css", p16ReadStatic(t, "static/css/phone.css")) {
+		if r.Media == phoneMedia && strings.Contains(r.Head, ".leaflet-control-zoom") {
+			rule := r
+			hide = &rule
+		}
+	}
+	if hide == nil {
+		t.Fatalf("phone.css has no sheet hide rule")
+	}
+	if hide.Decls["display"] != "none" {
+		t.Errorf("the sheet hide rule declares display %q, want none", hide.Decls["display"])
+	}
+	parts := p16HeadParts(hide.Head)
+	for _, want := range []string{
+		sheet + " .leaflet-control-zoom",
+		sheet + " > .theme-toggle",
+		sheet + " .map-tools",
+		sheet + " .map-label",
+		sheet + " #map-search-results",
+		`body:has(.map-tools[data-search-open="true"]) > .theme-toggle`,
+	} {
+		found := false
+		for _, p := range parts {
+			if p == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("the sheet hide rule lacks the head %q", want)
+		}
+	}
+	// One rule, not two: the existing list was extended.
+	n := 0
+	for _, r := range p16ParseCSS("static/css/phone.css", p16ReadStatic(t, "static/css/phone.css")) {
+		if strings.Contains(r.Head, ".leaflet-control-zoom") && r.Decls["display"] == "none" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("phone.css holds %d rules hiding the zoom control, want exactly 1", n)
+	}
+}
+
+// TestSearchIconIsMasked pins the one new icon (UI-SPEC Design System): the
+// file exists and is a well formed stroke glyph, it is exempt from the
+// category walk through nonCategoryIcons, and feed.css masks it with the
+// literal url on map-search__icon, so the exemption cannot hide an orphan.
+func TestSearchIconIsMasked(t *testing.T) {
+	const path = "static/icons/search.svg"
+	svg := p13ReadStatic(t, path)
+	for _, want := range []string{`viewBox="0 0 24 24"`, `stroke="currentColor"`, `stroke-width="2"`, "<circle", "<path"} {
+		if !strings.Contains(svg, want) {
+			t.Errorf("%s lacks %s", path, want)
+		}
+	}
+	if strings.Contains(svg, "<script") || strings.Contains(svg, "href") {
+		t.Errorf("%s holds a script or a link, which a mask glyph never carries (T-03-06)", path)
+	}
+	ref := p13ReadStatic(t, "static/icons/x.svg")
+	refFirst, _, _ := strings.Cut(ref, "\n")
+	first, _, _ := strings.Cut(svg, "\n")
+	if first != refFirst {
+		t.Errorf("%s first line %q differs from the licence line of x.svg %q", path, first, refFirst)
+	}
+	if !nonCategoryIcons[path] {
+		t.Errorf("%s is not listed in nonCategoryIcons", path)
+	}
+
+	want := `url("/static/icons/search.svg")`
+	found := false
+	for _, r := range p31mRules(t, "static/css/feed.css", ".map-search__icon") {
+		if r.Decls["-webkit-mask-image"] == want && r.Decls["mask-image"] == want {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("feed.css has no .map-search__icon rule declaring both mask images as %s", want)
+	}
+	// The close glyph reuses x.svg.
+	closeWant := `url("/static/icons/x.svg")`
+	closeFound := false
+	for _, r := range p31mRules(t, "static/css/feed.css", ".map-search__close-icon") {
+		if r.Decls["-webkit-mask-image"] == closeWant && r.Decls["mask-image"] == closeWant {
+			closeFound = true
+		}
+	}
+	if !closeFound {
+		t.Errorf("feed.css has no .map-search__close-icon rule masking x.svg")
+	}
+}
+
+// TestMapChipsContrast computes the text pairs of the tools from the shipped
+// tokens in all four theme sources: a pressed chip (--color-bg on
+// --color-text), a chip, the search box and the map label (--color-text on
+// --color-bg) and the muted second line of a result (--color-text-muted on
+// --color-bg). All reach 4.5 to 1.
+func TestMapChipsContrast(t *testing.T) {
+	needed := []string{"--color-bg", "--color-text", "--color-text-muted"}
+	light1, light2, dark1, dark2 := extractThemeTokens(parseCSSRules(p13ReadStatic(t, "static/css/main.css")), needed)
+	sources := []struct {
+		name   string
+		tokens themeTokens
+	}{
+		{":root", light1}, {`:root[data-theme="light"]`, light2},
+		{"prefers dark :root", dark1}, {`:root[data-theme="dark"]`, dark2},
+	}
+	pairs := []struct{ label, fg, bg string }{
+		{"pressed chip", "--color-bg", "--color-text"},
+		{"chip, search box, map label", "--color-text", "--color-bg"},
+		{"result second line, place line", "--color-text-muted", "--color-bg"},
+	}
+	for _, s := range sources {
+		for _, p := range pairs {
+			fg := p31Resolve(t, s.tokens, p.fg)
+			bg := p31Resolve(t, s.tokens, p.bg)
+			if ratio := wcagContrastRatio(t, fg, bg, s.name+" "+p.label); ratio < 4.5 {
+				t.Errorf("%s: %s is %.3f:1, want at least 4.5:1", s.name, p.label, ratio)
+			}
+		}
+	}
+}
+
+// TestPopupClearsTheToolsOnALaptop pins the popup max height term: from 900px
+// the card scrolls inside a box that is one tools layer shorter, and the short
+// screen rule still comes last so it wins (UI-SPEC "Popup top reserve").
+func TestPopupClearsTheToolsOnALaptop(t *testing.T) {
+	const head = ".leaflet-container .leaflet-popup-content"
+	laptop := p31mRule(t, "static/css/trust.css", "@media (min-width: 900px)", head)
+	flat := p19NoSpace(laptop.Decls["max-height"])
+	if !strings.Contains(flat, "-var(--map-tools-height)") || !strings.Contains(flat, "100dvh") {
+		t.Errorf("laptop popup max-height %q does not subtract var(--map-tools-height)", laptop.Decls["max-height"])
+	}
+	all := p16ParseCSS("static/css/trust.css", p16ReadStatic(t, "static/css/trust.css"))
+	laptopIdx, shortIdx := -1, -1
+	for _, r := range all {
+		if r.Head != head {
+			continue
+		}
+		if r.Media == "@media (min-width: 900px)" {
+			laptopIdx = r.Index
+		}
+		if r.Media == "@media (max-height: 359px)" {
+			shortIdx = r.Index
+		}
+	}
+	if laptopIdx == -1 || shortIdx == -1 || laptopIdx >= shortIdx {
+		t.Errorf("the laptop popup rule (%d) must come before the short screen rule (%d)", laptopIdx, shortIdx)
+	}
+}

@@ -121,8 +121,75 @@
      note under it keep their own height instead of shrinking under a long
      list. (Moved here from feed.css, where plan 03.1-05 first put it.) */
   .pane--list > .view-tabs,
-  .pane--list > .feed-note {
+  .pane--list > .feed-note,
+  .pane--list > .place-line,
+  .pane--list > .filter-line {
     flex: none;
+  }
+
+  /* ---- The tools over the map: one row (03.1 D-26, UI-SPEC) ---- */
+
+  /* One row of one touch target with one small space above it. The layer and
+     the popup reserve read this; the laptop's two row value is in main.css. */
+  .app-shell > .pane--map {
+    --map-tools-height: calc(var(--space-sm) + var(--touch-target-min));
+  }
+
+  /* The layer ends where the theme toggle begins, 16px from the right edge
+     and 44px wide, with a small space between. While the search is open the
+     toggle steps aside (below), so the row takes the whole width. */
+  .pane--map > .map-tools {
+    right: calc(var(--space-md) + var(--touch-target-min) + var(--space-sm));
+  }
+
+  .pane--map > .map-tools[data-search-open="true"] {
+    right: var(--space-md);
+  }
+
+  /* Collapsed: a search button, then the chips in the same row. Open: the
+     box fills the row with Close at its end and the chips step aside. */
+  .pane--map > .map-tools .map-search__open {
+    display: flex;
+  }
+
+  .pane--map > .map-tools[data-search-open="true"] .map-search__open,
+  .pane--map > .map-tools[data-search-open="true"] .map-chips,
+  .pane--map > .map-tools[data-search-open="false"] .map-search__field {
+    display: none;
+  }
+
+  .pane--map > .map-tools .map-search__close {
+    display: flex;
+  }
+
+  /* The keyboard's search key submits; there is no second button in the row. */
+  .pane--map > .map-tools .map-search__submit {
+    display: none;
+  }
+
+  .pane--map > .map-tools .map-search__input {
+    max-width: none;
+  }
+
+  .pane--map > .map-tools .map-chips {
+    top: var(--space-sm);
+    left: calc(var(--touch-target-min) + var(--space-sm));
+  }
+
+  /* The results are fixed under the row, across the page and down to the
+     bottom bar, so they cover the list pane and not only the 40 percent
+     strip. They scroll inside themselves. */
+  .pane--map > .map-tools .map-search__status:not(.visually-hidden),
+  .pane--map > .map-tools .map-search__results {
+    position: fixed;
+    right: var(--space-md);
+    left: var(--space-md);
+    max-width: none;
+    top: calc(var(--disclaimer-bar-height, 0px) + var(--space-sm) + var(--touch-target-min) + var(--space-xs));
+  }
+
+  .pane--map > .map-tools .map-search__results {
+    max-height: calc(100dvh - (var(--disclaimer-bar-height, 0px) + var(--space-sm) + var(--touch-target-min) + var(--space-xs)) - (var(--touch-target-min) + var(--space-sm)) - var(--space-sm));
   }
 
   /* ---- Report rows as rounded cards ---- */
@@ -856,9 +923,15 @@
   }
 
   /* While the sheet is open the strip shows only the map, the pin and the
-     back arrow, so the zoom control and the theme toggle step aside. */
+     back arrow, so the zoom control, the theme toggle, the tools, the map
+     label and the search results step aside. The theme toggle also steps
+     aside while the search row is open, because the row takes its place. */
   body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) .leaflet-control-zoom,
-  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) > .theme-toggle {
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) > .theme-toggle,
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) .map-tools,
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) .map-label,
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) #map-search-results,
+  body:has(.map-tools[data-search-open="true"]) > .theme-toggle {
     display: none;
   }
 }

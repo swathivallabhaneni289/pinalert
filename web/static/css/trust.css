@@ -1500,6 +1500,17 @@
   color: var(--color-text);
 }
 
+/* From 900px the tools layer (the place search and the category chips) sits
+   over the top of the map, so the card scrolls inside a box that is one tools
+   layer shorter. The token is set on the map pane (main.css), the same value
+   the autopan top reserve measures (map.js). It comes before the short screen
+   rule below on purpose, so a very short laptop window still takes that one. */
+@media (min-width: 900px) {
+  .leaflet-container .leaflet-popup-content {
+    max-height: max(120px, calc(100dvh - var(--space-md) - var(--space-md) - var(--map-tools-height) - 20px));
+  }
+}
+
 /* Below 900px the fixed controls cover the top and bottom of the map, so the
    card scrolls inside a shorter box. The two sums are the autopan reserves
    plus the 20px Leaflet margin. 899.98px is the exact complement of the

@@ -40,7 +40,10 @@
 .past-group__cut[hidden],
 #feed-note[hidden],
 #place-line[hidden],
-#filter-line[hidden] {
+#filter-line[hidden],
+#map-label[hidden],
+#map-search-status[hidden],
+#map-search-results[hidden] {
   display: none;
 }
 
@@ -203,6 +206,320 @@
      phone only (phone.css). */
   #report-list .report-row.vis-hidden .report-row__trustline:not([hidden]) {
     color: var(--color-text-muted);
+  }
+}
+
+/*
+ * The two context lines of the list pane (03.1 D-14, D-17): "Showing reports
+ * near {Place}. Back to my location." and "Filtered by {Flood}. Clear". Each
+ * is a 14px sentence followed by one inline text button, wraps between the
+ * two, and keeps the 44px target height. Muted text sits on --color-bg only.
+ */
+.place-line,
+.filter-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-sm);
+  min-height: var(--touch-target-min);
+  margin: 0 0 var(--space-sm);
+  color: var(--color-text-muted);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+}
+
+/*
+ * The tools over the map (03.1 D-14 to D-18, UI-SPEC "The map pane, over the
+ * map"): the place search and the category chips. The layer comes before the
+ * map in the page so Tab reaches search and chips before the pins. It
+ * ignores presses outside its controls, so a drag that starts in a gap pans
+ * the map, and only its controls take presses.
+ *
+ * The layer itself declares no z index on purpose. A z indexed layer would be
+ * one stacking context, and the add button, which comes later in the page,
+ * would then paint over a result at any z index inside it. Each control
+ * carries 1000 (the add button and the theme toggle) and the results list
+ * 1005, above the add button and below the bottom bar (1010) and the sheet.
+ * The 1005 and the 320px cap of the laptop search box are the two literals
+ * UI-SPEC Spacing adds.
+ *
+ * The left inset clears Leaflet's zoom control. The laptop draws two rows (the
+ * search, then the chips) and a phone one (a search button, then the chips),
+ * the phone geometry being in phone.css. --map-tools-height is set on the map
+ * pane at each width and is also what the popup reserve reads.
+ */
+.map-tools {
+  position: absolute;
+  top: 0;
+  right: var(--space-md);
+  left: calc(var(--space-2xl) + var(--space-sm));
+  height: var(--map-tools-height);
+  pointer-events: none;
+}
+
+.map-search {
+  margin: 0;
+}
+
+/* The row one of a laptop: the box and the Search button. The row passes
+   presses on to the map; only its two controls take them. */
+.map-search__field {
+  position: absolute;
+  top: var(--space-sm);
+  right: 0;
+  left: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  pointer-events: none;
+}
+
+.map-search__input {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 320px;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  pointer-events: auto;
+}
+
+.map-search__input::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+
+/* The three 44 by 44 search controls: the phone's collapsed button, the
+   Search button and Close. The collapsed button and Close show on a phone
+   only (phone.css), so they start hidden here. */
+.map-search__open,
+.map-search__submit,
+.map-search__close {
+  box-sizing: border-box;
+  flex: none;
+  width: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.map-search__submit {
+  display: flex;
+}
+
+.map-search__open,
+.map-search__close {
+  display: none;
+}
+
+.map-search__open {
+  position: absolute;
+  top: var(--space-sm);
+  left: 0;
+  z-index: 1000;
+}
+
+.map-search__open:hover,
+.map-search__submit:hover,
+.map-search__close:hover {
+  background: var(--color-surface);
+}
+
+/* The magnifier and the cross are masks, so they take the control's text
+   colour in every theme. Both mask images sit on one line: the file name is
+   written once per rule. */
+.map-search__icon,
+.map-search__close-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.map-search__icon {
+  -webkit-mask-image: url("/static/icons/search.svg"); mask-image: url("/static/icons/search.svg");
+}
+
+.map-search__close-icon {
+  -webkit-mask-image: url("/static/icons/x.svg"); mask-image: url("/static/icons/x.svg");
+}
+
+/* Under the box on a laptop. The status line and the results never show
+   together (a count is announced, not drawn). The 320px cap is the box's. */
+.map-search__status:not(.visually-hidden),
+.map-search__results {
+  position: absolute;
+  top: calc(var(--space-sm) + var(--touch-target-min) + var(--space-xs));
+  right: 0;
+  left: 0;
+  z-index: 1005;
+  box-sizing: border-box;
+  max-width: 320px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  pointer-events: auto;
+}
+
+.map-search__status:not(.visually-hidden) {
+  margin: 0;
+  padding: var(--space-sm);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.map-search__results {
+  max-height: 60vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.map-search__result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--touch-target-min);
+  padding: var(--space-sm);
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.map-search__result:last-child {
+  border-bottom: 0;
+}
+
+.map-search__result:hover .map-search__result-name {
+  text-decoration: underline;
+}
+
+.map-search__result:focus-visible {
+  outline-offset: -2px;
+}
+
+.map-search__result-name {
+  overflow-wrap: anywhere;
+}
+
+.map-search__result-full {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  overflow-wrap: anywhere;
+}
+
+/* Row two of a laptop. The chips scroll sideways when the width is short; the
+   row ignores presses between them. */
+.map-chips {
+  position: absolute;
+  top: calc(var(--space-sm) + var(--touch-target-min) + var(--space-sm));
+  right: 0;
+  left: 0;
+  z-index: 1000;
+  display: flex;
+  gap: var(--space-sm);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  pointer-events: none;
+}
+
+.map-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.map-chip {
+  box-sizing: border-box;
+  flex: none;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+/* On is the inverted neutral, the same treatment as the selected category
+   tile, never a hue. The ring is inset so the scroller does not clip it. */
+.map-chip[aria-pressed="true"] {
+  border-color: var(--color-text);
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.map-chip:focus-visible {
+  outline-offset: -2px;
+}
+
+/* The one label at the bottom left of the map while Disputed or Past is
+   selected (D-13). Not interactive, so it takes no presses and no 44px floor
+   applies. Plan 13 writes its text. */
+.map-label {
+  position: absolute;
+  bottom: var(--space-md);
+  left: var(--space-md);
+  z-index: 1000;
+  box-sizing: border-box;
+  max-width: calc(100% - var(--space-md) - var(--space-md));
+  margin: 0;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  pointer-events: none;
+}
+
+@media (forced-colors: active) {
+  .map-chip[aria-pressed="true"] {
+    border: 2px solid CanvasText;
   }
 }
 
