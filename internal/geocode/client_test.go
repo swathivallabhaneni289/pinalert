@@ -509,7 +509,13 @@ func TestFailedUpstreamErrorHoldsNoReaderData(t *testing.T) {
 		secretEmail = "owner-contact@example.org"
 	)
 	near := &Point{Lat: 13.082680, Lon: 80.270718}
-	secrets := []string{secretQuery, secretEmail, "13.0826", "80.2707", "viewbox", "email="}
+	// The outgoing URL carries the centre only as a viewbox of the centre plus
+	// or minus 0.5, so the four viewbox numbers are the coordinate secrets
+	// that really travel. The raw centre values are kept as well.
+	secrets := []string{
+		secretQuery, secretEmail, "13.0826", "80.2707", "viewbox", "email=",
+		"79.770718", "13.582680", "80.770718", "12.582680",
+	}
 
 	// A server that is already closed refuses the connection, which makes
 	// net/http return a *url.Error carrying the full URL.
