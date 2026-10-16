@@ -1,4 +1,5 @@
-{{/* The shared report form fields, used by the main page and the Low data view. Each page supplies the dialog shell and its own location block before including this partial. */}}
+{{/* The shared report form fields, used by the main page and the Low data view. Each page supplies the dialog shell and its own location block before including this partial. The Low data view (Chrome.LowDataPage) keeps the form it was built with. The Post a report window on the main page gets the second branch; its Post report button, its error line and its Send after the wait button sit in the window's own pinned footer in index.html.tmpl. */}}
+{{if .Chrome.LowDataPage}}
         <div id="category-grid" role="radiogroup" aria-label="Category"></div>
 
         <label for="severity" class="visually-hidden">Severity</label>
@@ -34,3 +35,45 @@
           <button type="button" id="discard-confirm-discard" class="btn btn--destructive">Discard</button>
           <button type="button" id="discard-confirm-keep" class="btn">Keep editing</button>
         </div>
+{{else}}
+        <fieldset class="post-group">
+          <legend class="post-group__legend" id="category-legend">What is it?</legend>
+          <div id="category-grid" role="radiogroup" aria-labelledby="category-legend"></div>
+        </fieldset>
+
+        <fieldset class="post-group">
+          <legend class="post-group__legend" id="severity-legend">How serious?</legend>
+          <div id="severity-group" role="radiogroup" aria-labelledby="severity-legend">
+            <button type="button" class="severity-box severity-box--low" role="radio" aria-checked="true" tabindex="0" data-severity="low"><span class="severity-box__label">Low</span></button>
+            <button type="button" class="severity-box severity-box--medium" role="radio" aria-checked="false" tabindex="-1" data-severity="medium"><span class="severity-box__label">Medium</span></button>
+            <button type="button" class="severity-box severity-box--critical" role="radio" aria-checked="false" tabindex="-1" data-severity="critical"><span class="severity-box__label">Critical</span></button>
+          </div>
+        </fieldset>
+
+        <fieldset id="shelter-fields" hidden>
+          <legend>Shelter capacity</legend>
+          <label for="shelter-capacity-status">Capacity status</label>
+          <select id="shelter-capacity-status" name="shelter_capacity_status">
+            <option value="available">Available</option>
+            <option value="limited">Limited</option>
+            <option value="full">Full</option>
+            <option value="closed">Closed</option>
+          </select>
+          <label for="shelter-headcount">Headcount (optional)</label>
+          <input type="number" id="shelter-headcount" name="shelter_headcount" min="0">
+        </fieldset>
+
+        <div class="post-group">
+          <label for="description" class="post-group__legend">Describe it</label>
+          <textarea id="description" name="description" rows="4" maxlength="280"
+                    placeholder="For example: water above knee level near the signal, cars stuck."
+                    aria-describedby="description-help"></textarea>
+          <p id="description-help">Short and exact helps people confirm it. Up to 280 letters.</p>
+        </div>
+
+        <div id="discard-confirm" hidden>
+          <p>Discard this report? Your description and location won't be saved.</p>
+          <button type="button" id="discard-confirm-discard" class="btn btn--destructive">Discard</button>
+          <button type="button" id="discard-confirm-keep" class="btn">Keep editing</button>
+        </div>
+{{end}}

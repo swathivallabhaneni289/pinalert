@@ -151,28 +151,49 @@
       </div>
     </section>
 
-    <div class="modal-backdrop" id="report-modal" hidden>
-      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <h2 id="modal-title">Report an emergency</h2>
+    <div class="modal-backdrop post-window" id="report-modal" hidden>
+      <div class="modal-panel post-window__panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <header class="post-window__head">
+          <div class="post-window__titles">
+            <h2 id="modal-title" class="post-window__title">Post a report</h2>
+            <p class="post-window__line">Say what is happening and where.</p>
+          </div>
+          <button type="button" class="post-window__close" id="close-report" aria-label="Close">
+            <span class="app-icon app-icon--x" aria-hidden="true"></span>
+          </button>
+        </header>
         <p id="form-note" class="inline-note" hidden></p>
 
-        <label for="location-search">Search for a place or address</label>
-        <div class="location-search-field">
-          <input type="search" id="location-search" name="location_search" autocomplete="off"
-                 autocapitalize="off" spellcheck="false" role="combobox" aria-expanded="false"
-                 aria-autocomplete="list" aria-controls="location-search-results"
-                 placeholder="Type a place name or address">
-          <div id="location-search-results" role="listbox" aria-label="Place suggestions" hidden></div>
+        <div class="post-window__body">
+          <div class="post-window__map">
+            <div class="location-search-field">
+              <input type="search" id="location-search" name="location_search" autocomplete="off"
+                     autocapitalize="off" spellcheck="false" role="combobox" aria-expanded="false"
+                     aria-autocomplete="list" aria-controls="location-search-results"
+                     aria-label="Search an address or a landmark"
+                     placeholder="Search an address or a landmark">
+              <div id="location-search-results" role="listbox" aria-label="Place suggestions" hidden></div>
+            </div>
+            <p id="location-search-status" role="status" aria-live="polite" hidden></p>
+
+            <div id="modal-map"></div>
+            <p id="near-line"><strong id="near-place"></strong> Drag the pin or tap the map to move it.</p>
+            <p id="coord-readout" class="visually-hidden"></p>
+            <p id="location-notice" hidden>
+              Location access is off. Drag the map to your area, or tap the map to drop a pin.
+            </p>
+          </div>
+
+          <div class="post-window__form">
+            {{template "report_form.html.tmpl" .}}
+          </div>
         </div>
-        <p id="location-search-status" role="status" aria-live="polite" hidden></p>
 
-        <div id="modal-map"></div>
-        <p id="coord-readout"></p>
-        <p id="location-notice" hidden>
-          Location access is off. Drag the map to your area, or tap the map to drop a pin.
-        </p>
-
-        {{template "report_form.html.tmpl" .}}
+        <footer class="post-window__foot">
+          <p id="form-error" role="alert"></p>
+          <button type="button" class="btn" id="send-after-wait" hidden>Send after the wait</button>
+          <button type="button" id="submit-report" class="btn btn--primary">Post report</button>
+        </footer>
       </div>
     </div>
 

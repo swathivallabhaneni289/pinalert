@@ -366,3 +366,377 @@
 html[data-modal-open] {
   overflow: hidden;
 }
+
+/* ---- Post a report window (Phase 3.4, plan 09, UI-SPEC Surface 5) ----
+ * Only index.html.tmpl carries .post-window; the Low data view keeps the
+ * .modal-panel it was built with, so every rule below is scoped under it.
+ * Written mobile first: the phone is a full screen sheet on --color-bg with a
+ * header, one scrolling body (the map block, then the form groups) and a
+ * pinned footer. The laptop block at the end of this section makes it a
+ * centred two pane window. The window closes with the X only (D-02).
+ * Muted text is used only on --color-bg; the map block sits on --color-surface
+ * and so uses --color-text. */
+.modal-backdrop.post-window:not([hidden]) {
+  align-items: stretch;
+  justify-content: stretch;
+  background: var(--color-bg);
+}
+
+.post-window .post-window__panel {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  padding: 0;
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.post-window .post-window__panel > * + * {
+  margin-top: 0;
+}
+
+.post-window__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 20px var(--space-md) var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.post-window__titles {
+  min-width: 0;
+}
+
+.post-window__panel .post-window__title {
+  margin: 0;
+}
+
+.post-window__line {
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+.post-window__close {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.post-window__close .app-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.post-window .post-window__panel > #form-note {
+  flex: none;
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+}
+
+.post-window__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.post-window__map {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: 20px var(--space-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.post-window__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  padding: 20px var(--space-md);
+}
+
+.post-window .post-window__form > * + * {
+  margin-top: 0;
+}
+
+.post-window .post-window__map #location-search {
+  border-radius: 8px;
+}
+
+.post-window .post-window__map #location-search-status:not([hidden]) {
+  color: var(--color-text);
+}
+
+.post-window .post-window__map #location-notice {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+#near-line {
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text);
+}
+
+#near-place {
+  font-weight: var(--font-weight-semibold);
+}
+
+/* The footer holds the one Post report button, the form error and the
+ * Send after the wait button. There is no sentence under the button about the
+ * report showing as not confirmed, on either size (owner answer O-1). */
+.post-window__foot {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.post-window__foot #form-error {
+  min-height: 0;
+}
+
+.post-window__foot #submit-report {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 8px;
+}
+
+.post-window__foot #send-after-wait {
+  border-radius: 8px;
+}
+
+@media (min-width: 900px) {
+  .modal-backdrop.post-window:not([hidden]) {
+    top: var(--disclaimer-bar-height);
+    align-items: center;
+    justify-content: center;
+    background: rgb(0 0 0 / 45%);
+  }
+
+  .post-window .post-window__panel {
+    width: min(1180px, 94%);
+    height: min(780px, 92%);
+    border-radius: 12px;
+    box-shadow: var(--shadow-window);
+  }
+
+  .post-window__head {
+    padding: 20px var(--space-lg) var(--space-md);
+  }
+
+  .post-window__body {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    /* One row as tall as the body, so each pane fills it and the form pane
+       scrolls inside instead of stretching the row. */
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .post-window__map {
+    padding: 20px var(--space-lg);
+  }
+
+  .post-window__form {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 20px var(--space-lg);
+  }
+
+  .post-window__foot {
+    align-items: stretch;
+    padding: var(--space-md) var(--space-lg);
+  }
+
+  .post-window__foot #submit-report {
+    align-self: flex-end;
+    width: auto;
+    min-width: 160px;
+    min-height: var(--touch-target-min);
+  }
+}
+
+@media (forced-colors: active) {
+  .post-window .post-window__panel {
+    border: 1px solid CanvasText;
+  }
+}
+
+/* ---- The window's form groups (Phase 3.4, UI-SPEC Surface 5d) ----
+ * What is it? (eight tiles), How serious? (three boxes), the shelter fieldset
+ * as built, Describe it. The groups are plain blocks with a legend or label of
+ * Body 16/600 and 8px below it; the gap between groups is the 24px of
+ * .post-window__form. */
+.post-window .post-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.post-window .post-group__legend {
+  display: block;
+  box-sizing: border-box;
+  margin: 0 0 var(--space-sm);
+  padding: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+/* Eight tiles in four columns. A tile is a radio button on --color-bg with a
+ * 24px glyph in the muted colour and a label of 14px; the label wraps at word
+ * boundaries inside the tile and never breaks a word. The chosen tile is the
+ * soft grey fill every other chosen card uses, with the label at 600, the glyph
+ * at full contrast and the border unchanged at 1px: no dark fill, no dark
+ * border and no 2px border (owner answer O-2, mockup override 3). The Low data
+ * view does not carry .post-window, so it keeps the dark chosen tile of
+ * main.css. */
+.post-window #category-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-sm);
+}
+
+.post-window #category-grid .category-tile {
+  min-height: 72px;
+  padding: var(--space-sm) var(--space-xs);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-display);
+  text-align: center;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: manual;
+}
+
+.post-window #category-grid .category-tile .icon-glyph {
+  color: var(--color-text-muted);
+}
+
+.post-window #category-grid .category-tile--selected {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+.post-window #category-grid .category-tile--selected .icon-glyph {
+  color: var(--color-text);
+}
+
+/* Three severity boxes in a row. Each has a 4px edge in its own colour and the
+ * label only, at the top left; no radio circle and no hint line under them.
+ * The chosen box is filled with its own soft colour, with no outline change and
+ * no ring. The text stays --color-text on the tint. */
+.post-window #severity-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-sm);
+}
+
+.post-window .severity-box {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  min-height: calc(var(--touch-target-min) + var(--space-md));
+  padding: var(--space-sm) var(--space-12);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  text-align: left;
+  cursor: pointer;
+}
+
+.post-window .severity-box--low {
+  border-left: 4px solid var(--color-severity-low);
+}
+
+.post-window .severity-box--medium {
+  border-left: 4px solid var(--color-severity-medium);
+}
+
+.post-window .severity-box--critical {
+  border-left: 4px solid var(--color-severity-critical);
+}
+
+.post-window .severity-box--low[aria-checked="true"] {
+  background: var(--color-severity-low-bg);
+}
+
+.post-window .severity-box--medium[aria-checked="true"] {
+  background: var(--color-severity-medium-bg);
+}
+
+.post-window .severity-box--critical[aria-checked="true"] {
+  background: var(--color-severity-critical-bg);
+}
+
+/* Describe it: four rows, 16px, 8px by 12px inside, the line under it in the
+ * muted colour (the form pane is on --color-bg). */
+.post-window #description {
+  box-sizing: border-box;
+  padding: var(--space-sm) var(--space-12);
+  border-radius: 8px;
+  resize: vertical;
+}
+
+.post-window #description-help {
+  margin: var(--space-sm) 0 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+@media (min-width: 900px) {
+  .post-window #category-grid .category-tile {
+    min-height: 76px;
+  }
+}
+
+/* A forced colours theme replaces fills, so the chosen tile and the chosen box
+ * show a 1px Highlight border instead. */
+@media (forced-colors: active) {
+  .post-window #category-grid .category-tile--selected {
+    border-color: Highlight;
+  }
+
+  .post-window .severity-box[aria-checked="true"] {
+    border-top-color: Highlight;
+    border-right-color: Highlight;
+    border-bottom-color: Highlight;
+  }
+}

@@ -10,6 +10,15 @@
 // The fakes cover only what report-form.js calls: a minimal element model, a
 // fake Pinalert whose submitReport answers when the test says so, a fake
 // queue and a location object that is always set.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-23, D-24,
+// D-24a): setup({ window: true }) builds the Post a report window form (three
+// severity boxes in #severity-group and the X, #close-report) next to the Low
+// data form the tests above use (the slider and Cancel report). The tests at
+// the end cover the window mode: eight tiles from WINDOW_TILES, the severity
+// boxes, the X, and a report queued before the change (Rescue needed or
+// Earthquake) reopened through Edit and resend. The Phase 3.1 and Phase 4
+// hands-on tests are walked on this layout after Phase 3.4 is built.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -133,16 +142,30 @@ function setup(options) {
   backdrop.hidden = true;
   const form = make('div', 'report-form', backdrop);
   make('div', 'category-grid', form);
-  make('label', '', form);
-  const severity = make('input', 'severity', form);
-  severity.value = '1';
-  make('output', 'severity-readout', form);
+  if (options && options.window) {
+    // The Post a report window: three severity boxes instead of the slider, and
+    // the X in the window header instead of Cancel report.
+    const group = make('div', 'severity-group', form);
+    for (const key of ['low', 'medium', 'critical']) {
+      const box = make('button', '', group);
+      box.className = 'severity-box severity-box--' + key;
+      box.dataset.severity = key;
+      box.setAttribute('role', 'radio');
+      box.setAttribute('aria-checked', key === 'low' ? 'true' : 'false');
+      box.tabIndex = key === 'low' ? 0 : -1;
+    }
+  } else {
+    make('label', '', form);
+    const severity = make('input', 'severity', form);
+    severity.value = '1';
+    make('output', 'severity-readout', form);
+  }
   make('textarea', 'description', form);
   make('p', 'form-error', form);
   make('input', 'location-search', form);
   make('div', 'location-search-results', form);
   make('p', 'location-search-status', form);
-  make('div', 'shelter-fields', form);
+  make('div', 'shelter-fields', form).hidden = true;
   make('select', 'shelter-capacity-status', form);
   make('input', 'shelter-headcount', form);
   make('div', 'discard-confirm', form).hidden = true;
@@ -150,7 +173,7 @@ function setup(options) {
   make('button', 'discard-confirm-keep', form);
   make('p', 'form-note', form).hidden = true;
   make('button', 'send-after-wait', form).hidden = true;
-  make('button', 'cancel-report', form);
+  make('button', options && options.window ? 'close-report' : 'cancel-report', options && options.window ? backdrop : form);
   make('button', 'submit-report', form);
   make('div', 'notice-live');
   const opener = make('button', 'open-report');
@@ -163,8 +186,8 @@ function setup(options) {
   let queueSaveAnswer = () => Promise.resolve(true);
 
   const Pinalert = {
-    CATEGORIES: ['flood', 'road_blocked', 'shelter_open'],
-    CATEGORY_LABELS: { flood: 'Flood', road_blocked: 'Road blocked', shelter_open: 'Shelter open' },
+    CATEGORIES: ['flood', 'road_blocked', 'shelter_open', 'earthquake'],
+    CATEGORY_LABELS: { flood: 'Flood', road_blocked: 'Road blocked', shelter_open: 'Shelter open', earthquake: 'Earthquake' },
     CAPACITY_STATUSES: ['available', 'limited', 'full', 'closed'],
     SEVERITY_LABELS: { low: '1 · Low', medium: '2 · Medium', critical: '3 · Critical' },
     iconClass: (c) => 'icon-glyph icon-glyph--' + c,
@@ -235,7 +258,7 @@ function setup(options) {
     },
     submit() { el('submit-report').click(); },
     discard() {
-      el('cancel-report').click();
+      el(options && options.window ? 'close-report' : 'cancel-report').click();
       assert.equal(el('discard-confirm').hidden, false, 'a touched form asks before it closes');
       el('discard-confirm-discard').click();
     },
@@ -243,7 +266,7 @@ function setup(options) {
     // question, since that report is already on its way, and focus goes back
     // to the button that opened the form.
     cancelInFlight() {
-      el('cancel-report').click();
+      el(options && options.window ? 'close-report' : 'cancel-report').click();
       assert.equal(el('discard-confirm').hidden, true, 'a form whose post is out closes without the Discard question');
       assert.equal(el('report-backdrop').hidden, true, 'the form must close');
       assert.equal(doc.activeElement, opener, 'focus must go back to the opener');
@@ -813,4 +836,216 @@ test('a late answer leaves the question working on the form open now', async () 
   page.el('cancel-report').click();
   assert.equal(page.el('discard-confirm').hidden, false, 'the new draft has no post out, so closing asks first');
   assert.equal(page.el('report-backdrop').hidden, false);
+});
+
+// ----- The Post a report window (Phase 3.4, D-23, D-24, D-24a) -----
+
+const WINDOW_ORDER = ['flood', 'traffic', 'shelter_open', 'power_outage', 'road_blocked', 'fire', 'storm_cyclone', 'other'];
+const WINDOW_WORDS = ['Flood', 'Traffic', 'Shelter open', 'Power out', 'Road blocked', 'Fire', 'Storm', 'Other'];
+// service.RescueNeededRetiredMessage, the server's answer to a Rescue needed post.
+const RESCUE_RETIRED = 'Rescue needed is no longer a report category. Choose another one.';
+const QUEUED_PREFILL = {
+  severity: 'medium',
+  description: 'Water rising fast near the bridge',
+  latitude: 16.5,
+  longitude: 80.6,
+  written_at: '2026-10-16T08:00:00Z'
+};
+
+const tilesOf = (page) => page.el('category-grid').children;
+const chosenTiles = (page) => tilesOf(page).filter((tile) => tile.classList.contains('category-tile--selected'));
+const boxesOf = (page) => page.el('severity-group').children;
+const chosenBox = (page) => boxesOf(page).filter((box) => box.getAttribute('aria-checked') === 'true');
+const press = (el, key) => {
+  const evt = { type: 'keydown', key, preventDefault() {} };
+  el.dispatchEvent(evt);
+};
+
+test('window: eight tiles from WINDOW_TILES in order, none chosen on open', () => {
+  const page = setup({ window: true });
+  page.open();
+  const tiles = tilesOf(page);
+  assert.deepEqual(tiles.map((tile) => tile.dataset.category), WINDOW_ORDER);
+  assert.deepEqual(tiles.map((tile) => tile.textContent), WINDOW_WORDS);
+  assert.equal(chosenTiles(page).length, 0, 'no tile is chosen when the window opens');
+  assert.equal(tiles.filter((tile) => tile.tabIndex === 0).length, 1, 'one tile is in the tab order');
+  for (const retired of ['rescue_needed', 'earthquake']) {
+    assert.equal(WINDOW_ORDER.includes(retired), false);
+    assert.equal(tiles.some((tile) => tile.dataset.category === retired), false, retired + ' is not a tile');
+  }
+});
+
+test('window: Left and Right move by one, Up and Down by four, wrapping', () => {
+  const page = setup({ window: true });
+  page.open();
+  const at = () => chosenTiles(page)[0].dataset.category;
+  tilesOf(page)[0].click();
+  assert.equal(at(), 'flood');
+  press(tilesOf(page)[0], 'ArrowRight');
+  assert.equal(at(), 'traffic');
+  press(tilesOf(page)[1], 'ArrowDown');
+  assert.equal(at(), 'fire', 'four after index 1 is index 5');
+  press(tilesOf(page)[5], 'ArrowDown');
+  assert.equal(at(), 'traffic', 'four after index 5 wraps to index 1');
+  press(tilesOf(page)[1], 'ArrowUp');
+  assert.equal(at(), 'fire', 'four before index 1 wraps to index 5');
+  press(tilesOf(page)[5], 'ArrowLeft');
+  assert.equal(at(), 'road_blocked');
+  press(tilesOf(page)[0], 'ArrowLeft');
+  assert.equal(at(), 'other', 'Left from the first tile wraps to the last');
+  assert.equal(chosenTiles(page).length, 1);
+});
+
+test('window: the severity boxes start on Low, move and choose with Left and Right, and the payload follows', () => {
+  const page = setup({ window: true });
+  page.open();
+  assert.deepEqual(chosenBox(page).map((box) => box.dataset.severity), ['low']);
+  assert.equal(boxesOf(page).filter((box) => box.tabIndex === 0).length, 1, 'roving tabindex');
+
+  press(boxesOf(page)[0], 'ArrowRight');
+  assert.deepEqual(chosenBox(page).map((box) => box.dataset.severity), ['medium']);
+  press(boxesOf(page)[1], 'ArrowRight');
+  assert.deepEqual(chosenBox(page).map((box) => box.dataset.severity), ['critical']);
+  press(boxesOf(page)[2], 'ArrowRight');
+  assert.deepEqual(chosenBox(page).map((box) => box.dataset.severity), ['low'], 'wraps to Low');
+  press(boxesOf(page)[0], 'ArrowLeft');
+  assert.deepEqual(chosenBox(page).map((box) => box.dataset.severity), ['critical'], 'wraps back to Critical');
+
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  assert.equal(page.posts.length, 1);
+  assert.equal(page.posts[0].payload.severity, 'critical');
+  assert.equal(page.posts[0].payload.category, 'flood');
+});
+
+test('window: tapping a box chooses it, and closing and reopening starts on Low again', () => {
+  const page = setup({ window: true });
+  page.open();
+  boxesOf(page)[1].click();
+  assert.deepEqual(chosenBox(page).map((box) => box.dataset.severity), ['medium']);
+  page.discard();
+  page.open();
+  assert.deepEqual(chosenBox(page).map((box) => box.dataset.severity), ['low']);
+});
+
+test('window: the X closes it, asking first only when something was typed', () => {
+  const page = setup({ window: true });
+  page.open();
+  page.el('close-report').click();
+  assert.equal(page.el('report-backdrop').hidden, true, 'an untouched window closes at once');
+
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.el('close-report').click();
+  assert.equal(page.el('discard-confirm').hidden, false, 'a touched window asks first');
+  assert.equal(page.el('report-backdrop').hidden, false);
+  page.escape();
+  assert.equal(page.el('discard-confirm').hidden, true, 'Escape on the question keeps editing');
+  assert.equal(page.el('description').value, 'Water over the main road near the bridge');
+  page.discard();
+  assert.equal(page.el('report-backdrop').hidden, true);
+});
+
+test('window: Escape closes it as the X does, and a tap on the backdrop does not', () => {
+  const page = setup({ window: true });
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.el('report-backdrop').dispatchEvent({ type: 'click', target: page.el('report-backdrop'), preventDefault() {} });
+  assert.equal(page.el('discard-confirm').hidden, true, 'a tap beside the window asks nothing');
+  assert.equal(page.el('report-backdrop').hidden, false, 'and does not close it');
+  page.escape();
+  assert.equal(page.el('discard-confirm').hidden, false, 'Escape runs the X path and asks first');
+});
+
+test('window: submitting while a post is out lets the X close without asking', () => {
+  const page = setup({ window: true });
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.cancelInFlight();
+});
+
+test('queued rescue_needed reopens with no tile', () => {
+  const page = setup({ window: true });
+  assert.doesNotThrow(() => {
+    page.open({
+      requestId: 'dddddddddddddddd4444',
+      accountId: '7',
+      note: 'Not sent. ' + RESCUE_RETIRED,
+      prefill: Object.assign({ category: 'rescue_needed' }, QUEUED_PREFILL)
+    });
+  });
+  assert.equal(page.el('report-backdrop').hidden, false);
+  assert.equal(chosenTiles(page).length, 0, 'no tile is chosen');
+  assert.equal(tilesOf(page).filter((tile) => tile.getAttribute('aria-checked') === 'true').length, 0);
+  assert.deepEqual(chosenBox(page).map((box) => box.dataset.severity), ['medium'], 'the severity is restored');
+  assert.equal(page.el('description').value, QUEUED_PREFILL.description, 'the text is restored');
+  assert.equal(page.el('shelter-fields').hidden, true, 'no shelter fields without a shelter tile');
+  assert.equal(page.el('form-note').hidden, false);
+  assert.ok(page.el('form-note').textContent.includes(RESCUE_RETIRED), "the server's message shows with the form");
+
+  // Posting it again unchanged is stopped before it leaves the form: nothing is
+  // chosen, so the form asks for a tile, as for any new report.
+  page.submit();
+  assert.equal(page.posts.length, 0);
+  assert.equal(page.el('form-error').textContent, 'Choose a category to continue.');
+
+  // Choosing a tile posts the report under the id it was saved with.
+  tilesOf(page).find((tile) => tile.dataset.category === 'flood').click();
+  page.submit();
+  assert.equal(page.posts.length, 1);
+  assert.equal(page.posts[0].payload.request_id, 'dddddddddddddddd4444');
+  assert.equal(page.posts[0].payload.category, 'flood');
+  assert.equal(page.posts[0].payload.severity, 'medium');
+  assert.equal(page.posts[0].payload.expected_account_id, '7');
+});
+
+test('a server 400 for the category shows its message in the window and keeps the text', async () => {
+  const page = setup({ window: true });
+  page.open({ requestId: 'eeeeeeeeeeeeeeee5555', prefill: Object.assign({ category: 'flood' }, QUEUED_PREFILL) });
+  assert.deepEqual(chosenTiles(page).map((tile) => tile.dataset.category), ['flood']);
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 400, field: 'category', fieldMessage: RESCUE_RETIRED
+  }));
+  await settle();
+  assert.equal(page.el('form-error').textContent, RESCUE_RETIRED);
+  assert.equal(page.el('report-backdrop').hidden, false);
+  assert.equal(page.el('description').value, QUEUED_PREFILL.description);
+});
+
+test('queued earthquake reopens with no tile', () => {
+  const page = setup({ window: true });
+  assert.doesNotThrow(() => {
+    page.open({
+      requestId: 'ffffffffffffffff6666',
+      prefill: Object.assign({ category: 'earthquake' }, QUEUED_PREFILL)
+    });
+  });
+  assert.equal(chosenTiles(page).length, 0, 'Earthquake is not a tile in the window, so none is chosen');
+  assert.deepEqual(chosenBox(page).map((box) => box.dataset.severity), ['medium']);
+  assert.equal(page.el('description').value, QUEUED_PREFILL.description);
+  page.submit();
+  assert.equal(page.posts.length, 0);
+  assert.equal(page.el('form-error').textContent, 'Choose a category to continue.');
+
+  // The same entry opened in the Low data mode keeps the Earthquake tile.
+  const low = setup();
+  low.open({
+    requestId: 'ffffffffffffffff7777',
+    prefill: Object.assign({ category: 'earthquake' }, QUEUED_PREFILL)
+  });
+  const chosen = low.el('category-grid').children.filter((tile) => tile.classList.contains('category-tile--selected'));
+  assert.deepEqual(chosen.map((tile) => tile.dataset.category), ['earthquake']);
+});
+
+test('a queued shelter report still reopens with its tile and its shelter fields in the window', () => {
+  const page = setup({ window: true });
+  page.open({
+    requestId: 'aaaaaaaaaaaaaaaa8888',
+    prefill: Object.assign({ category: 'shelter_open', shelter_capacity_status: 'limited', shelter_headcount: 40 }, QUEUED_PREFILL)
+  });
+  assert.deepEqual(chosenTiles(page).map((tile) => tile.dataset.category), ['shelter_open']);
+  assert.equal(page.el('shelter-fields').hidden, false);
+  assert.equal(page.el('shelter-headcount').value, '40');
 });

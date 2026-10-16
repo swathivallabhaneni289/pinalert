@@ -47,7 +47,7 @@ function fakeEl(id) {
 // between opens, as a person turning location on or off would.
 function load(geo, address = 'http://localhost/') {
   const els = {};
-  for (const id of ['report-modal', 'coord-readout', 'location-notice', 'modal-map']) {
+  for (const id of ['report-modal', 'coord-readout', 'location-notice', 'modal-map', 'near-place']) {
     els[id] = fakeEl(id);
   }
   // opener is a link carrying data-open-report; shown says whether it takes part
@@ -348,4 +348,42 @@ test('post=1 in the address opens the window once and removes the parameter with
   const plain = load('grant', 'http://localhost/?view=disputed');
   assert.equal(plain.opened.length, 0);
   assert.equal(plain.replaced.length, 0);
+});
+
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-23): the Post
+// a report window has a line under the map. Its bold part reads Near {Place}.
+// after a picked search result and Pin at {lat}, {lon}. after a drag, a tap or
+// the device position. The tests below cover it. The Phase 3.1 and Phase 4
+// hands-on tests are walked on this layout after Phase 3.4 is built.
+test('the line under the map says Pin at for the device position, a tap and a drag', () => {
+  const s = load('grant');
+  assert.equal(s.els['near-place'].textContent, '', 'empty before the window opens');
+  s.open();
+  assert.equal(s.els['near-place'].textContent, 'Pin at 16.50620, 80.64800.');
+  s.tap(16.51, 80.65);
+  assert.equal(s.els['near-place'].textContent, 'Pin at 16.51000, 80.65000.');
+  const pin = s.pinsOnMap()[0];
+  pin.pos = { lat: 16.5, lng: 80.64 };
+  for (const fn of pin.handlers.dragend) { fn(); }
+  assert.equal(s.els['near-place'].textContent, 'Pin at 16.50000, 80.64000.');
+});
+
+test('a picked search result names the place, and moving the pin goes back to the coordinates', () => {
+  const s = load('deny');
+  s.open();
+  s.picker.choose({ lat: 16.52, lon: 80.62, displayName: 'Benz Circle, Vijayawada, India', name: 'Benz Circle' });
+  assert.equal(s.els['near-place'].textContent, 'Near Benz Circle.');
+  s.tap(16.53, 80.63);
+  assert.equal(s.els['near-place'].textContent, 'Pin at 16.53000, 80.63000.');
+
+  // A result with no short name falls back to the first part of its address.
+  s.picker.choose({ lat: 16.54, lon: 80.64, displayName: 'Governorpet, Vijayawada, India' });
+  assert.equal(s.els['near-place'].textContent, 'Near Governorpet.');
+
+  // A saved report's place has no name at all, so it reads as a pin.
+  s.picker.choose({ lat: 16.55, lon: 80.65, displayName: '' });
+  assert.equal(s.els['near-place'].textContent, 'Pin at 16.55000, 80.65000.');
+
+  s.close();
+  assert.equal(s.els['near-place'].textContent, '', 'closing the form clears the line');
 });

@@ -52,11 +52,27 @@
     }
   }
 
-  function updateCoordReadout(lat, lon) {
-    Pinalert.setText(coordReadout, lat.toFixed(5) + ', ' + lon.toFixed(5));
+  // The line under the map (Phase 3.4, UI-SPEC Surface 5b): its bold part
+  // reads "Near {Place}." when the pin came from a picked search result, and
+  // "Pin at {lat}, {lon}." when it was dragged, tapped or placed by the device.
+  // No lookup of an area name is built here; Phase 3.3 improves the line.
+  var nearPlace = document.getElementById('near-place');
+
+  function setNearLine(text) {
+    if (nearPlace) {
+      Pinalert.setText(nearPlace, text);
+    }
   }
 
-  function placeMarker(lat, lon) {
+  // updateCoordReadout writes the built readout, and the bold part of the line
+  // under the map from it, or from the short place name when one is given.
+  function updateCoordReadout(lat, lon, placeName) {
+    var readout = lat.toFixed(5) + ', ' + lon.toFixed(5);
+    Pinalert.setText(coordReadout, readout);
+    setNearLine(placeName ? 'Near ' + placeName + '.' : 'Pin at ' + readout + '.');
+  }
+
+  function placeMarker(lat, lon, placeName) {
     if (modalMarker) {
       modalMap.removeLayer(modalMarker);
     }
@@ -66,7 +82,7 @@
       var pos = modalMarker.getLatLng();
       updateCoordReadout(pos.lat, pos.lng);
     });
-    updateCoordReadout(lat, lon);
+    updateCoordReadout(lat, lon, placeName);
   }
 
   // placeMarkerAtTap moves the pin to the tapped spot. It does what a drag
@@ -227,6 +243,7 @@
       modalMarker = null;
     }
     Pinalert.setText(coordReadout, '');
+    setNearLine('');
   }
 
   // currentPosition reports the pin position, or null when no pin is set.
@@ -242,6 +259,18 @@
     return !!modalMarker;
   }
 
+  // shortPlaceName is the picked result's own short name, else the first part
+  // of its address, else an empty string (a saved report's place has none).
+  function shortPlaceName(result) {
+    if (typeof result.name === 'string' && result.name.trim() !== '') {
+      return result.name.trim();
+    }
+    if (typeof result.displayName === 'string') {
+      return result.displayName.split(',')[0].trim();
+    }
+    return '';
+  }
+
   // chooseSearchResult is called by the form when a suggestion is tapped. It
   // calls the existing placeMarker and modalMap.setView, the same pair
   // initLocation's GPS success callback calls, so there is exactly one pin
@@ -250,7 +279,7 @@
   // draggable with its own dragend handler, so it stays adjustable afterward
   // with no extra work.
   function chooseSearchResult(result) {
-    placeMarker(result.lat, result.lon);
+    placeMarker(result.lat, result.lon, shortPlaceName(result));
     modalMap.setView([result.lat, result.lon], SEARCH_RESULT_ZOOM);
   }
 

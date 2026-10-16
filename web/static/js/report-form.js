@@ -9,7 +9,8 @@
 // Location interface. The page passes a location object to mount. Required
 // methods:
 //   current()                       { latitude, longitude } or null
-//   choose(result)                  result is { lat, lon, displayName }
+//   choose(result)                  result is { lat, lon, displayName, name };
+//                                   name is the place's short name or absent
 //   isSet()                         whether a location is set
 //   missingMessage()                the sentence shown when none is set
 //   searchFailureMessage(message, status)
@@ -35,6 +36,37 @@
 
   var SEVERITY_BY_VALUE = { '1': 'low', '2': 'medium', '3': 'critical' };
   var SEVERITY_POSITIONS = ['1 · Low', '2 · Medium', '3 · Critical'];
+
+  // The form has two modes (Phase 3.4, UI-SPEC Surface 5e). The Post a report
+  // window on the main page is window mode: it has #severity-group and builds
+  // eight tiles from WINDOW_TILES and three severity boxes. The Low data view
+  // is the mode the form was built with: the range slider and the tile list of
+  // Pinalert.CATEGORIES. The mode is found once, at mount, by #severity-group.
+  //
+  // WINDOW_TILES is the only tile list of the window, in the order it shows.
+  // Rescue needed is not a tile any more (D-24a) and Earthquake is not a tile
+  // as drawn (orchestrator decision 3, the default until the owner answers); a
+  // ninth tile is one more line here. The server keeps both postable, and
+  // Pinalert.CATEGORIES stays the server's postable list, so a report queued
+  // before this change still sends as it was stored. Opening it from the queue
+  // with Edit and resend shows no tile chosen in this mode.
+  var WINDOW_TILES = [
+    { category: 'flood', word: 'Flood' },
+    { category: 'traffic', word: 'Traffic' },
+    { category: 'shelter_open', word: 'Shelter open' },
+    { category: 'power_outage', word: 'Power out' },
+    { category: 'road_blocked', word: 'Road blocked' },
+    { category: 'fire', word: 'Fire' },
+    { category: 'storm_cyclone', word: 'Storm' },
+    { category: 'other', word: 'Other' }
+  ];
+  // The window grid has four columns, so Up and Down move by four; the Low
+  // data grid has three.
+  var WINDOW_GRID_COLUMNS = 4;
+  var LOW_GRID_COLUMNS = 3;
+  // The three severity boxes of the window, in order. The first is the value
+  // the form opens on, as the slider's first position was.
+  var WINDOW_SEVERITIES = ['low', 'medium', 'critical'];
 
   // Location search (D-01, D-03, D-04). SEARCH_DEBOUNCE_MS is a user
   // experience knob only, not the policy compliance control: the actual
@@ -112,11 +144,20 @@
   var picker = null;
   var formVariant = 'main';
 
+  // The Low data view closes its form with the Cancel report button; the Post
+  // a report window closes it with the X in its header (Phase 3.4, D-02).
+  // Each page has one of the two, and both run the same close path.
   var cancelButton = null;
+  var closeButton = null;
   var submitButton = null;
   var categoryGrid = null;
   var severityInput = null;
   var severityReadout = null;
+  // Window mode: the radiogroup of three boxes, its boxes and the chosen one.
+  var severityGroup = null;
+  var severityBoxes = [];
+  var windowSeverity = WINDOW_SEVERITIES[0];
+  var windowMode = false;
   var descriptionField = null;
   var formError = null;
   var locationSearchInput = null;
@@ -266,7 +307,11 @@
         }
         break;
       case 'severity':
-        severityInput.focus();
+        if (windowMode) {
+          focusChosenSeverityBox();
+        } else {
+          severityInput.focus();
+        }
         break;
       case 'description':
         descriptionField.focus();
@@ -323,49 +368,77 @@
     closeForm();
   }
 
-  // buildCategoryGrid renders exactly nine tiles in Pinalert.CATEGORIES
-  // order, laid out 3x3 by modal.css's grid-template-columns. The grid is a
-  // proper radio group: role="radio" and aria-checked on every tile, a
-  // roving tabindex keeps exactly one tile in the tab order, and arrow keys
-  // move the selection (D-01, D-04).
+  // appendTile adds one tile to the grid: a radio button holding the category
+  // glyph and its word. Both grids build their tiles here.
+  function appendTile(category, word, index) {
+    var tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'category-tile';
+    tile.setAttribute('role', 'radio');
+    tile.setAttribute('aria-checked', 'false');
+    tile.tabIndex = index === 0 ? 0 : -1;
+    tile.dataset.category = category;
+
+    var glyph = document.createElement('span');
+    glyph.className = Pinalert.iconClass(category);
+    glyph.setAttribute('aria-hidden', 'true');
+
+    var label = document.createElement('span');
+    Pinalert.setText(label, word);
+
+    tile.appendChild(glyph);
+    tile.appendChild(label);
+    tile.addEventListener('click', function () {
+      selectCategory(category);
+      tile.focus();
+    });
+    tile.addEventListener('keydown', onCategoryTileKeydown);
+
+    categoryGrid.appendChild(tile);
+  }
+
+  // buildCategoryGrid renders the grid of the mode the form is in. The window
+  // shows the eight tiles of WINDOW_TILES in four columns; the Low data view
+  // shows every tile of Pinalert.CATEGORIES in order, laid out 3x3 by
+  // modal.css's grid-template-columns. The grid is a proper radio group:
+  // role="radio" and aria-checked on every tile, a roving tabindex keeps
+  // exactly one tile in the tab order, and arrow keys move the selection (D-01,
+  // D-04).
   function buildCategoryGrid() {
     categoryGrid.textContent = '';
-    Pinalert.CATEGORIES.forEach(function (category, index) {
-      var tile = document.createElement('button');
-      tile.type = 'button';
-      tile.className = 'category-tile';
-      tile.setAttribute('role', 'radio');
-      tile.setAttribute('aria-checked', 'false');
-      tile.tabIndex = index === 0 ? 0 : -1;
-      tile.dataset.category = category;
-
-      var glyph = document.createElement('span');
-      glyph.className = Pinalert.iconClass(category);
-      glyph.setAttribute('aria-hidden', 'true');
-
-      var label = document.createElement('span');
-      Pinalert.setText(label, Pinalert.CATEGORY_LABELS[category] || category);
-
-      tile.appendChild(glyph);
-      tile.appendChild(label);
-      tile.addEventListener('click', function () {
-        selectCategory(category);
-        tile.focus();
+    if (windowMode) {
+      WINDOW_TILES.forEach(function (entry, index) {
+        appendTile(entry.category, entry.word, index);
       });
-      tile.addEventListener('keydown', onCategoryTileKeydown);
-
-      categoryGrid.appendChild(tile);
+      return;
+    }
+    Pinalert.CATEGORIES.forEach(function (category, index) {
+      appendTile(category, Pinalert.CATEGORY_LABELS[category] || category, index);
     });
   }
 
-  // onCategoryTileKeydown implements arrow key navigation across the 3x3
-  // grid: Left and Right move by one, Up and Down move by a row (three),
-  // wrapping at the edges. Moving focus also selects: this is a single
-  // select radio group, not a two step focus then activate control.
+  // tileOffered says whether a category has a tile in the mode the form is in.
+  // A saved report whose category has none (Rescue needed, or Earthquake in
+  // the window) opens with no tile chosen.
+  function tileOffered(category) {
+    if (windowMode) {
+      return WINDOW_TILES.some(function (entry) {
+        return entry.category === category;
+      });
+    }
+    return Pinalert.CATEGORIES.indexOf(category) !== -1;
+  }
+
+  // onCategoryTileKeydown implements arrow key navigation across the grid:
+  // Left and Right move by one, Up and Down move by a row (four in the window,
+  // three in the Low data view), wrapping at the edges. Moving focus also
+  // selects: this is a single select radio group, not a two step focus then
+  // activate control.
   function onCategoryTileKeydown(e) {
     var tiles = Array.prototype.slice.call(categoryGrid.querySelectorAll('.category-tile'));
     var currentIndex = tiles.indexOf(e.currentTarget);
     var nextIndex = null;
+    var row = windowMode ? WINDOW_GRID_COLUMNS : LOW_GRID_COLUMNS;
 
     switch (e.key) {
       case 'ArrowRight':
@@ -375,10 +448,10 @@
         nextIndex = (currentIndex - 1 + tiles.length) % tiles.length;
         break;
       case 'ArrowDown':
-        nextIndex = (currentIndex + 3) % tiles.length;
+        nextIndex = (currentIndex + row) % tiles.length;
         break;
       case 'ArrowUp':
-        nextIndex = (currentIndex - 3 + tiles.length) % tiles.length;
+        nextIndex = (currentIndex - row + tiles.length) % tiles.length;
         break;
       default:
         return;
@@ -410,7 +483,83 @@
     }
   }
 
+  // The severity of the form in either mode: low, medium or critical. The
+  // window reads the box that is chosen, the Low data view the slider's value.
+  function currentSeverity() {
+    return windowMode ? windowSeverity : SEVERITY_BY_VALUE[severityInput.value];
+  }
+
+  // renderSeverityBoxes shows the chosen box in the three boxes of the window:
+  // aria-checked on each and a roving tabindex, so exactly one box is in the
+  // tab order. The chosen box takes its fill from CSS through aria-checked.
+  function renderSeverityBoxes() {
+    severityBoxes.forEach(function (box) {
+      var isChosen = box.dataset.severity === windowSeverity;
+      box.setAttribute('aria-checked', isChosen ? 'true' : 'false');
+      box.tabIndex = isChosen ? 0 : -1;
+    });
+  }
+
+  // setSeverity sets the severity in either mode. A value that is not one of
+  // the three is ignored.
+  function setSeverity(key) {
+    if (WINDOW_SEVERITIES.indexOf(key) === -1) {
+      return;
+    }
+    if (windowMode) {
+      windowSeverity = key;
+      renderSeverityBoxes();
+      return;
+    }
+    Object.keys(SEVERITY_BY_VALUE).forEach(function (value) {
+      if (SEVERITY_BY_VALUE[value] === key) {
+        severityInput.value = value;
+      }
+    });
+    updateSeverityReadout();
+  }
+
+  // focusChosenSeverityBox moves focus to the chosen severity box.
+  function focusChosenSeverityBox() {
+    for (var i = 0; i < severityBoxes.length; i++) {
+      if (severityBoxes[i].dataset.severity === windowSeverity) {
+        severityBoxes[i].focus();
+        return;
+      }
+    }
+  }
+
+  // onSeverityBoxKeydown makes the three boxes a radio group: Left and Right
+  // move to the next box and choose it, wrapping at the ends. Moving focus
+  // also chooses, as the tiles do.
+  function onSeverityBoxKeydown(e) {
+    var index = WINDOW_SEVERITIES.indexOf(e.currentTarget.dataset.severity);
+    var count = WINDOW_SEVERITIES.length;
+    var next = null;
+    if (e.key === 'ArrowRight') {
+      next = (index + 1) % count;
+    } else if (e.key === 'ArrowLeft') {
+      next = (index - 1 + count) % count;
+    } else {
+      return;
+    }
+    e.preventDefault();
+    markTouched();
+    setSeverity(WINDOW_SEVERITIES[next]);
+    focusChosenSeverityBox();
+  }
+
+  function onSeverityBoxClick(e) {
+    markTouched();
+    setSeverity(e.currentTarget.dataset.severity);
+    focusChosenSeverityBox();
+  }
+
   function updateSeverityReadout() {
+    if (windowMode) {
+      renderSeverityBoxes();
+      return;
+    }
     var severityKey = SEVERITY_BY_VALUE[severityInput.value];
     var label = Pinalert.SEVERITY_LABELS[severityKey];
     // aria-valuetext carries the number plus word form to a screen reader;
@@ -476,7 +625,7 @@
 
     row.addEventListener('click', function () {
       markTouched();
-      picker.choose({ lat: result.lat, lon: result.lon, displayName: result.display_name });
+      picker.choose({ lat: result.lat, lon: result.lon, displayName: result.display_name, name: result.name });
       clearSearchStatus();
       hideDropdown();
     });
@@ -718,8 +867,7 @@
       tiles[i].setAttribute('aria-checked', 'false');
       tiles[i].tabIndex = i === 0 ? 0 : -1;
     }
-    severityInput.value = '1';
-    updateSeverityReadout();
+    setSeverity(WINDOW_SEVERITIES[0]);
     descriptionField.value = '';
     Pinalert.setText(formError, '');
     // A form closed while its post was out reopens with a working button; the
@@ -771,10 +919,15 @@
     formVariant = options.variant || 'main';
 
     cancelButton = document.getElementById('cancel-report');
+    closeButton = document.getElementById('close-report');
     submitButton = document.getElementById('submit-report');
     categoryGrid = document.getElementById('category-grid');
     severityInput = document.getElementById('severity');
     severityReadout = document.getElementById('severity-readout');
+    severityGroup = document.getElementById('severity-group');
+    windowMode = !!severityGroup;
+    severityBoxes = windowMode ?
+      Array.prototype.slice.call(severityGroup.querySelectorAll('.severity-box')) : [];
     descriptionField = document.getElementById('description');
     formError = document.getElementById('form-error');
     locationSearchInput = document.getElementById('location-search');
@@ -792,7 +945,9 @@
 
     mounted = true;
 
-    buildSeverityControl();
+    if (!windowMode) {
+      buildSeverityControl();
+    }
     buildShelterCapacityOptions();
     updateSeverityReadout();
 
@@ -805,11 +960,23 @@
       }
     });
 
-    cancelButton.addEventListener('click', requestClose);
+    if (cancelButton) {
+      cancelButton.addEventListener('click', requestClose);
+    }
+    if (closeButton) {
+      closeButton.addEventListener('click', requestClose);
+    }
     submitButton.addEventListener('click', handleSubmit);
     locationSearchInput.addEventListener('input', onSearchInput);
-    severityInput.addEventListener('input', updateSeverityReadout);
-    severityInput.addEventListener('input', markTouched);
+    if (windowMode) {
+      severityBoxes.forEach(function (box) {
+        box.addEventListener('click', onSeverityBoxClick);
+        box.addEventListener('keydown', onSeverityBoxKeydown);
+      });
+    } else {
+      severityInput.addEventListener('input', updateSeverityReadout);
+      severityInput.addEventListener('input', markTouched);
+    }
     descriptionField.addEventListener('input', markTouched);
     descriptionField.addEventListener('blur', validateDescriptionOnBlur);
     shelterCapacityStatus.addEventListener('change', markTouched);
@@ -819,11 +986,16 @@
     if (sendAfterWaitBtn) {
       sendAfterWaitBtn.addEventListener('click', saveAfterWait);
     }
-    backdropEl.addEventListener('click', function (e) {
-      if (e.target === backdropEl) {
-        requestClose();
-      }
-    });
+    // The Post a report window closes with its X and Escape only (Phase 3.4,
+    // D-02): a tap beside the window must not lose what was typed. The Low data
+    // view, which has no X, keeps closing on a tap on its backdrop.
+    if (!closeButton) {
+      backdropEl.addEventListener('click', function (e) {
+        if (e.target === backdropEl) {
+          requestClose();
+        }
+      });
+    }
   }
 
   // openForm shows the form. options.opener is the element that gets focus
@@ -937,7 +1109,7 @@
     if (!selectedCategory) {
       return { field: 'category', message: 'Choose a category to continue.' };
     }
-    if (['1', '2', '3'].indexOf(severityInput.value) === -1) {
+    if (WINDOW_SEVERITIES.indexOf(currentSeverity()) === -1) {
       return { field: 'severity', message: 'Pick a severity level.' };
     }
     var description = descriptionField.value.trim();
@@ -971,7 +1143,7 @@
     var pos = picker.current();
     var payload = {
       category: selectedCategory,
-      severity: SEVERITY_BY_VALUE[severityInput.value],
+      severity: currentSeverity(),
       description: descriptionField.value.trim(),
       latitude: pos.latitude,
       longitude: pos.longitude
@@ -1126,15 +1298,13 @@
   // The last statement marks the form untouched, so closing it without a
   // change asks no question and leaves the saved report as it was.
   function applyPrefill(prefill) {
-    if (Pinalert.CATEGORIES.indexOf(prefill.category) !== -1) {
+    // A category with no tile in this mode (a report queued as Rescue needed,
+    // or as Earthquake and opened in the window) leaves every tile unchosen;
+    // choosing one is then the person's step, and Post asks for it.
+    if (tileOffered(prefill.category)) {
       selectCategory(prefill.category);
     }
-    Object.keys(SEVERITY_BY_VALUE).forEach(function (key) {
-      if (SEVERITY_BY_VALUE[key] === prefill.severity) {
-        severityInput.value = key;
-      }
-    });
-    updateSeverityReadout();
+    setSeverity(prefill.severity);
     if (typeof prefill.description === 'string') {
       descriptionField.value = prefill.description;
     }

@@ -95,38 +95,75 @@ func p410Window(text, anchor, terminator string) (string, bool) {
 	return rest[:end], true
 }
 
-// p410FormIDs is the main page's report form id list in its pinned order:
-// the first eight stay in the page (shell and location block), the last
-// thirteen live in the shared partial.
+// p410FormIDs is the main page's report form id list in its pinned order.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-23, D-24,
+// D-24a): the main page is the Post a report window. The first ten ids and the
+// last three stay in the page (the header with its X, the location block, the
+// pinned footer); the nine in the middle live in the shared partial's window
+// branch. Cancel report is gone from the window (the X closes it); it stays in
+// the partial's Low data branch. The Phase 3.1 and Phase 4 hands-on tests are
+// walked on this layout after Phase 3.4 is built.
 var p410FormIDs = []string{
-	"report-modal", "modal-title", "location-search", "location-search-results",
-	"location-search-status", "modal-map", "coord-readout", "location-notice",
-	"category-grid", "severity", "severity-readout", "description",
-	"shelter-fields", "shelter-capacity-status", "shelter-headcount", "form-error",
-	"submit-report", "cancel-report", "discard-confirm", "discard-confirm-discard",
+	"report-modal", "modal-title", "close-report", "location-search",
+	"location-search-results", "location-search-status", "modal-map", "near-place",
+	"coord-readout", "location-notice",
+	"category-grid", "severity-group", "shelter-fields", "shelter-capacity-status",
+	"shelter-headcount", "description", "discard-confirm", "discard-confirm-discard",
 	"discard-confirm-keep",
+	"form-error", "send-after-wait", "submit-report",
 }
+
+// p410PageIDCount is how many ids at the start of p410FormIDs stay in the page,
+// and p410FooterIDCount how many at its end (the pinned footer).
+const (
+	p410PageIDCount   = 10
+	p410FooterIDCount = 3
+)
 
 const p410IncludeAction = `{{template "report_form.html.tmpl" .}}`
 
+// p410LowOpen is the one template action the partial holds: it picks the form
+// the Low data view was built with or the Post a report window form.
+const p410LowOpen = "{{if .Chrome.LowDataPage}}"
+
+// p410Branches splits the partial into its Low data branch and its window
+// branch. The partial is a comment, the if, the Low markup, the else, the
+// window markup and the closing end.
+func p410Branches(t *testing.T, partial string) (low, window string) {
+	t.Helper()
+	open := strings.Index(partial, p410LowOpen)
+	elseAt := strings.Index(partial, "{{else}}")
+	endAt := strings.LastIndex(partial, "{{end}}")
+	if open == -1 || elseAt == -1 || endAt == -1 || !(open < elseAt && elseAt < endAt) {
+		t.Fatalf("report_form.html.tmpl must hold %s, {{else}} and {{end}} in that order (%d, %d, %d)",
+			p410LowOpen, open, elseAt, endAt)
+	}
+	return partial[open+len(p410LowOpen) : elseAt], partial[elseAt+len("{{else}}") : endAt]
+}
+
 func TestReportFormPartialKeepsMainFormOrder(t *testing.T) {
 	index := p410ReadTemplate(t, "index.html.tmpl")
-	partial := p410ReadTemplate(t, "report_form.html.tmpl")
+	partialFile := p410ReadTemplate(t, "report_form.html.tmpl")
+	lowBranch, partial := p410Branches(t, partialFile)
 
 	if n := strings.Count(index, p410IncludeAction); n != 1 {
 		t.Fatalf("index.html.tmpl must include the partial exactly once, found %d", n)
 	}
-	if strings.Contains(strings.ToLower(partial), "<html") {
+	if strings.Contains(strings.ToLower(partialFile), "<html") {
 		t.Errorf("the partial contains an html element opening tag, which would class it as a full page")
 	}
-	if regexp.MustCompile(`\{\{\s*\.`).MatchString(partial) {
+	if regexp.MustCompile(`\{\{\s*\.`).MatchString(partialFile) {
 		t.Errorf("the partial contains a template action that reads a view model field; it must be static markup")
+	}
+	if n := strings.Count(partialFile, "{{"); n != 4 {
+		t.Errorf("the partial holds %d template actions, want 4: the comment, the if, the else and the end", n)
 	}
 
 	inlined := strings.Replace(index, p410IncludeAction, partial, 1)
 	ids := p410IDs(inlined)
 	if !p410Subsequence(ids, p410FormIDs) {
-		t.Errorf("with the partial inlined the 21 form ids are not present in their pinned order: %v", ids)
+		t.Errorf("with the partial inlined the %d form ids are not present in their pinned order: %v", len(p410FormIDs), ids)
 	}
 	for _, id := range p410FormIDs {
 		n := 0
@@ -150,48 +187,74 @@ func TestReportFormPartialKeepsMainFormOrder(t *testing.T) {
 		}
 		return false
 	}
-	for _, id := range p410FormIDs[8:] {
+	sharedIDs := p410FormIDs[p410PageIDCount : len(p410FormIDs)-p410FooterIDCount]
+	pageOwnIDs := append(append([]string{}, p410FormIDs[:p410PageIDCount]...),
+		p410FormIDs[len(p410FormIDs)-p410FooterIDCount:]...)
+	for _, id := range sharedIDs {
 		if !has(partialIDs, id) {
-			t.Errorf("shared id %q is missing from the partial", id)
+			t.Errorf("shared id %q is missing from the partial's window branch", id)
 		}
 		if has(pageIDs, id) {
 			t.Errorf("shared id %q is still in index.html.tmpl itself", id)
 		}
 	}
-	for _, id := range p410FormIDs[:8] {
+	for _, id := range pageOwnIDs {
 		if !has(pageIDs, id) {
 			t.Errorf("page id %q is missing from index.html.tmpl", id)
 		}
 		if has(partialIDs, id) {
-			t.Errorf("page id %q must not be in the partial", id)
+			t.Errorf("page id %q must not be in the partial's window branch", id)
 		}
 	}
 
+	// The window closes with the X only (D-02): no Cancel report button in the
+	// window branch or the page. The Low data branch keeps the one it was built
+	// with.
 	const cancel = `id="cancel-report" class="btn">Cancel report</button>`
-	if n := strings.Count(partial, cancel); n != 1 {
-		t.Errorf("the partial must hold %q exactly once, found %d", cancel, n)
+	if n := strings.Count(lowBranch, cancel); n != 1 {
+		t.Errorf("the Low data branch must hold %q exactly once, found %d", cancel, n)
 	}
-	for name, text := range map[string]string{"index.html.tmpl": index, "report_form.html.tmpl": partial} {
+	for name, text := range map[string]string{"index.html.tmpl": index, "the window branch": partial} {
+		if strings.Contains(text, "cancel-report") || strings.Contains(text, "Cancel report") {
+			t.Errorf("%s still holds a Cancel report button (D-02)", name)
+		}
+	}
+	for name, text := range map[string]string{"index.html.tmpl": index, "report_form.html.tmpl": partialFile} {
 		if strings.Contains(text, ">Cancel<") {
 			t.Errorf("%s still holds a button whose whole text is the single word Cancel (P4-A23)", name)
 		}
 	}
 
 	for _, want := range []string{
-		"Post report",
 		"Discard this report? Your description and location won't be saved.",
 		"Discard",
 		"Keep editing",
-		"1 · Low",
 	} {
-		if !strings.Contains(partial, want) {
-			t.Errorf("the partial lost shipped copy %q", want)
+		if !strings.Contains(partial, want) || !strings.Contains(lowBranch, want) {
+			t.Errorf("a branch of the partial lost shipped copy %q", want)
 		}
+	}
+	if !strings.Contains(index, ">Post report</button>") {
+		t.Errorf("the window footer lost the Post report button")
+	}
+	if !strings.Contains(lowBranch, "Post report") || !strings.Contains(lowBranch, "1 · Low") {
+		t.Errorf("the Low data branch lost shipped copy")
 	}
 }
 
 func TestModalMapRulesMoved(t *testing.T) {
-	mapRules := parseCSSRules(p410ReadStatic(t, "static/css/modal-map.css"))
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-23, D-24,
+	// D-24a): modal-map.css also holds rules for the Post a report window, and
+	// every one of them starts with .post-window. The three shipped rules below
+	// are pinned as before; the window rules are left out of the count here and
+	// pinned by post_window_contract_test.go. The Phase 3.1 and Phase 4
+	// hands-on tests are walked on this layout after Phase 3.4 is built.
+	var mapRules []cssRule
+	for _, r := range parseCSSRules(p410ReadStatic(t, "static/css/modal-map.css")) {
+		if !strings.Contains(r.selectorHead, ".post-window") {
+			mapRules = append(mapRules, r)
+		}
+	}
 	want := map[string]map[string]string{
 		"#modal-map": {
 			"height":        "220px",
@@ -237,7 +300,8 @@ func TestModalMapRulesMoved(t *testing.T) {
 	modalRules := parseCSSRules(p410ReadStatic(t, "static/css/modal.css"))
 	for _, r := range modalRules {
 		for _, id := range []string{"#modal-map", "#coord-readout", "#location-notice"} {
-			if strings.Contains(r.selectorHead, id) {
+			// The window's own rules (Phase 3.4) are scoped under .post-window.
+			if strings.Contains(r.selectorHead, id) && !strings.Contains(r.selectorHead, ".post-window") {
 				t.Errorf("modal.css still has a rule naming %s: %q", id, r.selectorHead)
 			}
 		}
@@ -331,7 +395,13 @@ func TestReportFormNewFilesPlainText(t *testing.T) {
 }
 
 func TestReportFormDescriptionHint(t *testing.T) {
-	partial := p410ReadTemplate(t, "report_form.html.tmpl")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-23, D-24,
+	// D-24a): the hint line above the Description box is the Low data view's.
+	// The Post a report window has Describe it with its placeholder instead
+	// (UI-SPEC Surface 5d), so this test reads the Low data branch. The Phase 3.1
+	// and Phase 4 hands-on tests are walked on this layout after Phase 3.4 is
+	// built.
+	partial, _ := p410Branches(t, p410ReadTemplate(t, "report_form.html.tmpl"))
 	index := p410ReadTemplate(t, "index.html.tmpl")
 
 	const hint = `<p id="description-hint">Describe what is happening, for example: water is knee deep on Main Road and three people need help.</p>`
