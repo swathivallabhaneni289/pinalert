@@ -3,7 +3,7 @@
  *
  * Owned by plan 01-06. Consumes main.css's custom properties and shared
  * component classes (.report-row, .sev-*, .age-*, .icon-badge, .skeleton-row,
- * .empty-state, .error-state) exclusively — no raw hex color, no hard-coded
+ * .empty-state, .error-state) exclusively: no raw hex color, no hard-coded
  * pixel spacing outside a token, no font-size literal. This file adds only the
  * list container layout and row internals; the phone sheet is in phone.css.
  */
