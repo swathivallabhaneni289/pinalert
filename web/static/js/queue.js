@@ -60,7 +60,7 @@
   var COUNT_MANY_SUFFIX = ' reports saved on this device.';
   var HELP_LINE = 'Reports send by themselves when you have a signal and this page is open.';
   var HELP_LINE_MEMORY = "This browser can't keep reports for later. Keep this page open until they send.";
-  var HELP_LINE_UNREADABLE = "This page can't read the saved reports right now. Reload the page to send them.";
+  var HELP_LINE_UNREADABLE = "This page can't read the saved reports right now. Reload the page to send or discard them.";
   var STATUS_TEXT_WAITING = 'Waiting for a signal.';
   var STATUS_TEXT_SENDING = 'Sending.';
   var STATUS_TEXT_NO_ANSWER = "Pinalert didn't answer. Trying again.";
@@ -285,31 +285,60 @@
     // A row written again is wanted, even if an earlier delete of the same
     // request id has not reached the store.
     delete pendingRemovals[record.request_id];
+    // A connection that died without telling the page throws on its first
+    // use. It is dropped and the write tried once more on a new connection,
+    // so a lost connection never marks the browser as unable to keep reports.
     return ensureStore().then(function () {
-      return new Promise(function (resolve) {
-        var keepInMemory = function () {
-          memoryRows[record.request_id] = record;
-          memoryOnly = true;
-          resolve(false);
-        };
-        if (db === null) {
-          memoryRows[record.request_id] = record;
-          resolve(false);
-          return;
-        }
-        try {
-          var tx = db.transaction(STORE_NAME, 'readwrite');
-          tx.objectStore(STORE_NAME).put(record);
-          tx.oncomplete = function () {
-            delete memoryRows[record.request_id];
-            resolve(true);
-          };
-          tx.onerror = keepInMemory;
-          tx.onabort = keepInMemory;
-        } catch (e) {
-          keepInMemory();
-        }
+      return writeOnce(record);
+    }).then(function (result) {
+      if (result !== 'dead') {
+        return result;
+      }
+      return ensureStore().then(function () {
+        return writeOnce(record);
       });
+    }).then(function (result) {
+      return result === true;
+    });
+  }
+
+  // writeOnce resolves true when the row reached the store, false when it is
+  // kept in memory, and 'dead' when the connection threw on use.
+  function writeOnce(record) {
+    return new Promise(function (resolve) {
+      var keepInMemory = function () {
+        memoryRows[record.request_id] = record;
+        memoryOnly = true;
+        resolve(false);
+      };
+      if (db === null) {
+        memoryRows[record.request_id] = record;
+        resolve(false);
+        return;
+      }
+      var used = db;
+      var tx;
+      try {
+        tx = used.transaction(STORE_NAME, 'readwrite');
+      } catch (e) {
+        if (db === used) {
+          db = null;
+        }
+        memoryRows[record.request_id] = record;
+        resolve('dead');
+        return;
+      }
+      try {
+        tx.objectStore(STORE_NAME).put(record);
+        tx.oncomplete = function () {
+          delete memoryRows[record.request_id];
+          resolve(true);
+        };
+        tx.onerror = keepInMemory;
+        tx.onabort = keepInMemory;
+      } catch (e) {
+        keepInMemory();
+      }
     });
   }
 
@@ -475,18 +504,24 @@
     return runFlush(false);
   }
 
+  // discard resolves true when the row was removed and false when it was not:
+  // no such row, or a stored row the page cannot read right now, whose delete
+  // could not reach the store and would come back on a reload (WR-W06).
   function discard(requestId) {
     return storeReady.then(function () {
+      return loadRows();
+    }).then(function () {
       var record = findRow(requestId);
-      if (!record || !belongsToAccount(record)) {
-        return null;
+      if (!record || !belongsToAccount(record) || isStale(record)) {
+        renderStrip();
+        return false;
       }
       return removeRow(requestId).then(function () {
         return loadRows();
       }).then(function () {
         renderStrip();
         scheduleWake();
-        return null;
+        return true;
       });
     });
   }
@@ -909,8 +944,11 @@
     }
 
     var leased = isLeased(record);
+    // A row shown from the last good read while the store cannot be read gets
+    // no buttons: its delete could not reach the store (WR-W06).
+    var stale = isStale(record);
     var signature = [leased ? 'sending' : record.status, record.last_error, record.serious === true,
-      record.emergency_number, record.status === STATUS_BLOCKED ? record.next_try_at : ''].join('|');
+      record.emergency_number, record.status === STATUS_BLOCKED ? record.next_try_at : '', stale].join('|');
     if (rowEl.getAttribute('data-state') === signature) {
       return;
     }
@@ -948,10 +986,14 @@
     }
 
     // The buttons.
+    var hadFocus = actionsEl.contains(document.activeElement);
     Pinalert.setText(actionsEl, '');
     actionsEl.hidden = false;
-    if (leased) {
+    if (leased || stale) {
       actionsEl.hidden = true;
+      if (stale && hadFocus && headingEl) {
+        headingEl.focus();
+      }
       return;
     }
     if (record.status === STATUS_REJECTED) {
@@ -1076,8 +1118,12 @@
       }
     });
     yes.addEventListener('click', function () {
-      discard(record.request_id).then(function () {
-        Pinalert.showToast(DISCARDED_TOAST);
+      discard(record.request_id).then(function (removed) {
+        if (removed) {
+          Pinalert.showToast(DISCARDED_TOAST);
+        } else {
+          closeQuestion();
+        }
       });
     });
 

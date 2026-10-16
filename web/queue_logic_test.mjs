@@ -107,10 +107,10 @@ function makeIndexedDB(initial) {
   // failOpen makes every open fail, and closeAll closes every open connection
   // the way a browser does, firing onclose.
   const control = { failReads: 0, failOpen: false, opens: 0, connections: [] };
-  control.closeAll = () => {
+  control.closeAll = (silently = false) => {
     control.connections.forEach((database) => {
       database.closed = true;
-      if (database.onclose) { database.onclose(); }
+      if (!silently && database.onclose) { database.onclose(); }
     });
   };
   const store = {
@@ -408,23 +408,43 @@ await test('keeps saved reports on the strip and unsent while the store is unrea
   assert.equal(env.strip.hidden, false, 'the strip stays');
   assert.equal(env.strip.querySelector('.queue-strip__count').textContent, '2 reports saved on this device.');
   assert.equal(env.strip.querySelector('.queue-strip__help').textContent,
-    "This page can't read the saved reports right now. Reload the page to send them.");
+    "This page can't read the saved reports right now. Reload the page to send or discard them.");
   const sendBtn = env.strip.descendants().find((el) => el.id === 'queue-send-now');
   assert.equal(sendBtn.getAttribute('aria-disabled'), 'true');
 
-  // A discard while unreadable hides the row for good.
-  await env.queue.discard(first);
+  // A delete could not reach the store and the row would come back on a
+  // reload, so no row offers Discard and a discard is refused.
+  assert.equal(env.strip.querySelector('.queue-strip__discard'), null, 'no Discard while unreadable');
+  assert.equal(await env.queue.discard(first), false);
   await settle();
-  assert.equal(env.strip.querySelector('.queue-strip__count').textContent, '1 report saved on this device.');
+  assert.equal(env.strip.querySelector('.queue-strip__count').textContent, '2 reports saved on this device.');
+  assert.ok(env.store.has(first), 'the report is still on the device');
 
-  // The store opens again: the next pass sends the kept report only, and the
-  // discarded one is deleted from the store too.
+  // The store opens again: Discard is back and works, and the next pass sends
+  // the other report.
   env.idb.failOpen = false;
+  assert.equal(await env.queue.discard(first), true);
+  await settle();
+  assert.equal(env.store.has(first), false);
   await env.queue.flush();
   await settle();
   assert.deepEqual(env.submitted.slice(1).map((p) => p.description), ['second saved report']);
-  assert.equal(env.store.size, 0, 'the sent and the discarded report are both gone');
+  assert.equal(env.store.size, 0);
   assert.equal(env.strip.hidden, true);
+});
+
+await test('a save that meets a silently dead connection opens a new one (WR-W06)', async () => {
+  const id = 'req-qqqqqqqqqqqqqqqq-17';
+  const env = loadQueue({ answers: [() => Promise.reject({ queueable: true, status: 0 })] });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  env.idb.closeAll(true);
+  const persisted = await env.queue.save(record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z'));
+  await settle();
+  assert.equal(persisted, true, 'the report reached the store on a new connection');
+  assert.ok(env.store.has(id));
+  assert.equal(env.strip.querySelector('.queue-strip__help').textContent,
+    'Reports send by themselves when you have a signal and this page is open.');
 });
 
 await test('an open Discard question holds its row: no send, no rebuild, focus stays (WR-W07)', async () => {
