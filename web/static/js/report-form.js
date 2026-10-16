@@ -43,6 +43,18 @@
   // milliseconds (U8, D-16). A search that runs this long gets the same
   // failure sentence as one the server refused.
   var SEARCH_TIMEOUT_MS = 8000;
+  // The quiet retry (quick 261016-sne). Every search here starts from typing,
+  // so a 429 (the person's own budget) or a 503 (the geocoder busy or down)
+  // shows no failure line at first: the list on screen stays and the latest
+  // text is tried again after the answer's Retry-After, or SEARCH_RETRY_MS
+  // when it sent none, at most SEARCH_QUIET_RETRIES times. Only when the last
+  // try fails too does the failure line show. A wait longer than
+  // SEARCH_RETRY_MAX_MS is cut to it, so a person is never left waiting long
+  // in silence. A timeout or a network error is never tried again: those show
+  // the line at once, as before.
+  var SEARCH_QUIET_RETRIES = 3;
+  var SEARCH_RETRY_MS = 1000;
+  var SEARCH_RETRY_MAX_MS = 10000;
   // Must stay equal to the server's own minimum (minGeocodeQueryRunes in
   // internal/api/handlers/geocode.go): a smaller value here would only
   // produce requests the server refuses with a 400.
@@ -146,8 +158,12 @@
   var severityWrapper = null;
   var formTouched = false;
   var preDiscardFocusEl = null;
+  // The pending typing pause or quiet retry, or null. Both share this one
+  // timer, so newer text and closing the form cancel either.
   var searchDebounceTimer = null;
   var searchSeq = 0;
+  // How many quiet retries the text typed last has used.
+  var searchRetries = 0;
   // Session scoped and emptied by resetForm: both a Nominatim usage policy
   // ask (cache repeated queries) and what keeps a visitor retyping the
   // same place from firing duplicate requests. Keyed by the whole request,
@@ -558,7 +574,10 @@
   // or other multibyte query.
   function onSearchInput() {
     markTouched();
+    // Also cancels a pending quiet retry: newer text wins, and gets its own
+    // retries.
     window.clearTimeout(searchDebounceTimer);
+    searchRetries = 0;
     var query = locationSearchInput.value.trim();
     if (Array.from(query).length < MIN_QUERY_RUNES) {
       hideDropdown();
@@ -568,6 +587,19 @@
     searchDebounceTimer = window.setTimeout(function () {
       runSearch(query);
     }, SEARCH_DEBOUNCE_MS);
+  }
+
+  // searchRetryWait reads how long to wait before a quiet retry: the answer's
+  // Retry-After in whole seconds when it sent a usable one, else
+  // SEARCH_RETRY_MS, never more than SEARCH_RETRY_MAX_MS.
+  function searchRetryWait(res) {
+    var header = res && res.headers && typeof res.headers.get === 'function'
+      ? res.headers.get('Retry-After') : null;
+    var seconds = header === null ? NaN : Number(header);
+    if (!isFinite(seconds) || seconds <= 0) {
+      return SEARCH_RETRY_MS;
+    }
+    return Math.min(Math.max(seconds * 1000, SEARCH_RETRY_MS), SEARCH_RETRY_MAX_MS);
   }
 
   // runSearch mirrors votes.js's castVote error idiom exactly. The
@@ -613,6 +645,8 @@
             // fieldMessage, which stays undefined when the server sent none.
             var err = new Error(fieldError.message || 'Search request failed');
             err.fieldMessage = fieldError.message;
+            err.status = res.status;
+            err.retryWait = searchRetryWait(res);
             throw err;
           }
           if (mySeq !== searchSeq) {
@@ -624,6 +658,16 @@
       })
       .catch(function (err) {
         if (mySeq !== searchSeq) {
+          return;
+        }
+        // The quiet retry: the list and the status stay as they are, and
+        // no outcome is reported yet. The retry waits on the typing timer,
+        // so newer text or a closed form cancels it.
+        if (err && (err.status === 429 || err.status === 503) && searchRetries < SEARCH_QUIET_RETRIES) {
+          searchRetries += 1;
+          searchDebounceTimer = window.setTimeout(function () {
+            runSearch(query);
+          }, err.retryWait);
           return;
         }
         hideDropdown();
@@ -641,8 +685,10 @@
   // leaving any of them out lets the previous submission's dropdown,
   // message, or cached results appear in the next one.
   function resetSearch() {
+    // Also cancels a pending quiet retry.
     window.clearTimeout(searchDebounceTimer);
     searchDebounceTimer = null;
+    searchRetries = 0;
     // Discards any in flight response on arrival rather than letting it
     // resolve into a closed or reopened form, and ends the request itself.
     searchSeq += 1;
