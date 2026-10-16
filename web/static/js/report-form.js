@@ -522,28 +522,21 @@
     }
   }
 
-  // searchTimeoutSignal ends the search request before it, if any, and
-  // returns a signal that aborts the new request after SEARCH_TIMEOUT_MS or
-  // when a newer search starts. One server search can send up to four
-  // requests to the geocoder at one a second, so an older search left
-  // running would spend the budget the newer one needs. The controller is
-  // preferred because only it can be ended early; the browser's own timeout
-  // signal is the fallback, and with neither the request simply has no time
-  // limit.
-  function searchTimeoutSignal() {
+  // searchTimeLimit ends the search request before it, if any, and returns
+  // the new request's time limit (Pinalert.requestTimeout): its signal aborts
+  // the request after SEARCH_TIMEOUT_MS or when a newer search starts. One
+  // server search can send up to four requests to the geocoder at one a
+  // second, so an older search left running would spend the budget the newer
+  // one needs. The limit is the page's own timer, raced against the request
+  // and its body read, so a search whose aborted request never ends (WebKit
+  // can leave one unsettled) still fails at SEARCH_TIMEOUT_MS. The controller
+  // is preferred because only it can be ended early; the browser's own
+  // timeout signal is the fallback.
+  function searchTimeLimit() {
     abortSearchRequest();
-    if (typeof AbortController === 'function') {
-      var controller = new AbortController();
-      searchController = controller;
-      window.setTimeout(function () {
-        controller.abort();
-      }, SEARCH_TIMEOUT_MS);
-      return controller.signal;
-    }
-    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
-      return AbortSignal.timeout(SEARCH_TIMEOUT_MS);
-    }
-    return undefined;
+    var limit = Pinalert.requestTimeout(SEARCH_TIMEOUT_MS, 'address search');
+    searchController = limit.controller;
+    return limit;
   }
 
   // abortSearchRequest ends the search request in flight, if any. Its late
@@ -637,11 +630,13 @@
       return;
     }
 
-    fetch(url, { signal: searchTimeoutSignal() })
+    var limit = searchTimeLimit();
+    Promise.race([fetch(url, { signal: limit.signal }), limit.expired])
       .then(function (res) {
-        return res.json().catch(function () {
+        return Promise.race([res.json(), limit.expired]).catch(function () {
           return {};
         }).then(function (body) {
+          limit.clear();
           if (!res.ok) {
             var fieldError = (body && body.error) || {};
             // The Error text is never shown; the catch below reads
@@ -660,6 +655,7 @@
         });
       })
       .catch(function (err) {
+        limit.clear();
         if (mySeq !== searchSeq) {
           return;
         }

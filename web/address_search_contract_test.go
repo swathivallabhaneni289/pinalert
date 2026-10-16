@@ -73,15 +73,20 @@ func TestReportSearchSendsThePin(t *testing.T) {
 		"searchPin()",
 		"'&lat='", "'&lon='",
 		"searchCache.has(cacheKey)",
-		"fetch(url, { signal: searchTimeoutSignal() })")
+		"var limit = searchTimeLimit();",
+		"Promise.race([fetch(url, { signal: limit.signal }), limit.expired])",
+		"Promise.race([res.json(), limit.expired]).catch(function () {")
 	// The cache key is the whole request, pin included, so an answer for one
 	// area is never shown for another.
 	p13MustContain(t, "runSearch", run, "var cacheKey = url.toLowerCase();")
 
 	// A new search ends the request before it, so an old cascade stops using
-	// the server's one request a second budget.
-	p13MustContain(t, "searchTimeoutSignal", jsFunctionBody(t, form, "searchTimeoutSignal()"),
-		"abortSearchRequest()", "searchController = controller")
+	// the server's one request a second budget. The limit is the shared one of
+	// app.js, raced against the request, so a search whose aborted request
+	// never ends (WebKit) still fails at its limit
+	// (web/report_search_retry_test.mjs runs it).
+	p13MustContain(t, "searchTimeLimit", jsFunctionBody(t, form, "searchTimeLimit()"),
+		"abortSearchRequest()", "Pinalert.requestTimeout(SEARCH_TIMEOUT_MS, ", "searchController = limit.controller")
 	p13MustContain(t, "abortSearchRequest", jsFunctionBody(t, form, "abortSearchRequest()"),
 		"searchController.abort()", "searchController = null")
 	p13MustContain(t, "resetSearch", jsFunctionBody(t, form, "resetSearch()"), "abortSearchRequest()")

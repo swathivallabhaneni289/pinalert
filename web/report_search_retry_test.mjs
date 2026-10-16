@@ -4,13 +4,16 @@
 // screen stays, and the latest text is tried again once the wait passes (the
 // answer's Retry-After, or 1 second), at most 3 times. Newer text cancels a
 // pending try. Only when the last try also fails does the failure line show.
+// A search whose request never settles, as WebKit can leave an aborted one,
+// still fails at its 8 second limit with the same handling as a network error.
 //
 // Run it with: node --test web/report_search_retry_test.mjs
 // CI runs it with the other web/*.mjs files. It is not embedded in the server.
 // The fakes cover only what report-form.js calls: a minimal element model,
-// fake timers, a fetch the test answers by hand, a fake Pinalert and a
-// location object that is always set. Every advance stays under the search's
-// own 8 second limit, so that timer never fires on a request still out.
+// fake timers, a fetch the test answers by hand, a fake Pinalert with the real
+// time limit of app.js and a location object that is always set. Every
+// advance in the retry cases stays under the search's own 8 second limit, so
+// that timer never fires on a request still out.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -22,6 +25,12 @@ import crypto from 'node:crypto';
 
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(here, 'static', 'js', 'report-form.js'), 'utf8');
+// The real shared time limit of app.js (Pinalert.requestTimeout), cut out of
+// the file so the sandbox runs the page's own limit on its fake timers.
+const appSource = fs.readFileSync(path.join(here, 'static', 'js', 'app.js'), 'utf8');
+const limitAt = appSource.indexOf('  function requestTimeout(ms, what) {');
+assert.notEqual(limitAt, -1, 'app.js defines requestTimeout');
+const limitSource = appSource.slice(limitAt, appSource.indexOf('\n  }\n', limitAt) + 4);
 
 const FAILED = 'Search failed.';
 const TOO_MANY = 'Too many searches. Wait a few seconds and try again.';
@@ -105,7 +114,11 @@ class FakeEl {
   querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
 }
 
-function setup({ variant } = {}) {
+// setup mounts and opens the form. abortRejects says whether an abort ends
+// the request's promise, as Chromium does, or leaves it unsettled, as WebKit
+// sometimes does. nativeTimeout takes AbortController away and gives a native
+// timeout signal that never fires, so only the page's own timer is left.
+function setup({ variant, abortRejects = true, nativeTimeout = false } = {}) {
   const doc = {
     activeElement: null,
     handlers: {},
@@ -171,9 +184,11 @@ function setup({ variant } = {}) {
     if (req.signal) {
       req.signal.addEventListener('abort', () => {
         req.aborted = true;
-        const err = new Error('aborted');
-        err.name = 'AbortError';
-        reject(err);
+        if (abortRejects) {
+          const err = new Error('aborted');
+          err.name = 'AbortError';
+          reject(err);
+        }
       });
     }
     requests.push(req);
@@ -219,9 +234,15 @@ function setup({ variant } = {}) {
     PinalertQueue: { save: () => Promise.resolve(true), discard: () => {} }
   };
   const sandbox = { window, document: doc, CustomEvent, crypto, Map, Date, Math, JSON, Promise, Array, Object, isFinite, encodeURIComponent, fetch, AbortController };
+  if (nativeTimeout) {
+    delete sandbox.AbortController;
+    sandbox.AbortSignal = { timeout: () => ({ addEventListener() {} }) };
+  }
   window.Pinalert = Pinalert;
   sandbox.Pinalert = Pinalert;
   vm.createContext(sandbox);
+  vm.runInContext(limitSource, sandbox);
+  Pinalert.requestTimeout = sandbox.requestTimeout;
   vm.runInContext(source, sandbox);
   const Form = window.PinalertReportForm;
   Form.mount({ backdrop, form, location: picker, variant });
@@ -467,3 +488,52 @@ test('on the main form the page gets the server text and the status', async () =
   await settle();
   assert.deepEqual(p.failures, [[TOO_MANY, 429]]);
 });
+
+// A search whose request never settles: WebKit can leave an aborted request's
+// promise unsettled, so the 8 second limit is the page's own timer, raced
+// against the request. Each case runs with an abort that leaves the request
+// unsettled, one that rejects it, and a native timeout signal only.
+for (const mode of [
+  { name: 'abort leaves the request unsettled', abortRejects: false },
+  { name: 'abort rejects the request', abortRejects: true },
+  { name: 'native timeout signal only', nativeTimeout: true }
+]) {
+  const how = ' (' + mode.name + ')';
+
+  test('a search whose request never settles fails at its 8 second limit' + how, async () => {
+    const p = setup(mode);
+    p.type('Banjara');
+    p.advance(300);
+    assert.equal(p.requests.length, 1);
+    p.advance(7999);
+    await settle();
+    assert.equal(p.status.hidden, true, 'nothing before the limit');
+    assert.deepEqual(p.outcomes, []);
+    p.advance(1);
+    await settle();
+    assert.equal(p.requests[0].aborted, !mode.nativeTimeout, 'the page aborts its own controller at the limit');
+    assert.equal(p.status.hidden, false, 'the failure line shows, as for a network error');
+    assert.equal(p.status.textContent, FAILED);
+    assert.deepEqual(p.failures, [[undefined, undefined]], 'no server text and no status');
+    assert.equal(p.outcomes[p.outcomes.length - 1], 'unavailable');
+    p.advance(3000);
+    assert.equal(p.requests.length, 1, 'a search that hit its limit is not tried again');
+  });
+
+  test('an older search that never settles does not touch the newer one' + how, async () => {
+    const p = setup(mode);
+    p.type('Banjara');
+    p.advance(300);
+    p.type('Road No 12 Banjara');
+    p.advance(300);
+    assert.equal(p.requests.length, 2);
+    p.answer(p.requests[1], 200, roadNo12);
+    await settle();
+    assert.equal(p.rows().length, 2);
+    p.advance(8000);
+    await settle();
+    assert.equal(p.rows().length, 2, 'the older limit leaves the newer list alone');
+    assert.equal(p.status.hidden, true);
+    assert.deepEqual(p.failures, []);
+  });
+}
