@@ -662,9 +662,16 @@
         }
         // The quiet retry: the list and the status stay as they are, and
         // no outcome is reported yet. The retry waits on the typing timer,
-        // so newer text or a closed form cancels it.
-        if (err && (err.status === 429 || err.status === 503) && searchRetries < SEARCH_QUIET_RETRIES) {
+        // so newer text or a closed form cancels it. A refusal for text no
+        // longer in the box is dropped: the person kept typing while it was
+        // out, and the newer text's own pause must run.
+        var busy = err && (err.status === 429 || err.status === 503);
+        if (busy && query !== locationSearchInput.value.trim()) {
+          return;
+        }
+        if (busy && searchRetries < SEARCH_QUIET_RETRIES) {
           searchRetries += 1;
+          window.clearTimeout(searchDebounceTimer);
           searchDebounceTimer = window.setTimeout(function () {
             runSearch(query);
           }, err.retryWait);

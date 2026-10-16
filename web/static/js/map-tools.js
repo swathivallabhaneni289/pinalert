@@ -349,6 +349,13 @@ window.PinalertMapTools = (function () {
             // 429 or a 503 is tried again quietly, and the failure after the
             // last try shows its line in place of that list, as after Enter.
             var busy = res.status === 429 || res.status === 503;
+            // A refusal for text no longer in the box, or one that lands
+            // while the newer text's pause is running, is dropped quietly:
+            // retrying it would cancel that pause and bring back an older
+            // list.
+            if (searchQuiet && busy && (typingTimer !== null || q !== inputEl.value.trim())) {
+              return;
+            }
             if (searchQuiet && busy && quietFailures < QUIET_RETRIES) {
               quietFailures += 1;
               retryLater(q, retryWait(res));
