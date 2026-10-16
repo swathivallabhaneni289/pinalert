@@ -560,3 +560,21 @@ await test('names the saved account on each send and holds every row when the se
     ['first saved report', 'second saved report', 'not sent saved report']);
   assert.equal(again.store.size, 0);
 });
+
+await test('a sent report never comes back when the read after the send fails (WR-08)', async () => {
+  const id = 'req-rrrrrrrrrrrrrrrr-18';
+  let env = null;
+  env = loadQueue({
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z')],
+    // Both reads after the delete fail: the first one and the one on a new
+    // connection that readStored tries next.
+    answers: [() => { env.idb.failReads = 2; return Promise.resolve({ id: 1 }); }]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  assert.equal(env.submitted.length, 1);
+  assert.equal(env.store.size, 0, 'the delete reached the store');
+  assert.deepEqual(env.toasts, ['Report sent.']);
+  assert.equal(env.strip.hidden, true, 'the sent report must not be drawn again from the last good read');
+  assert.ok(!env.strip.textContent.includes('water over the road'));
+});

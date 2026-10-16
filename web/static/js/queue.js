@@ -104,6 +104,8 @@
   // strip then keeps the rows it last read (lastStored) and sends none of them.
   // pendingRemovals holds request ids whose delete has not reached the store
   // yet, so a discarded or sent row never comes back from lastStored (WR-W06).
+  // A delete that reaches the store takes its rows out of lastStored as well
+  // (WR-08).
   var storeOpened = false;
   var storeUnreadable = false;
   var reopenPromise = null;
@@ -366,6 +368,11 @@
           tx.oncomplete = function () {
             ids.forEach(function (id) {
               delete pendingRemovals[id];
+            });
+            // The deleted rows leave the last good read too, so a read that
+            // fails right after a send never draws a sent report again (WR-08).
+            lastStored = lastStored.filter(function (stored) {
+              return ids.indexOf(stored.request_id) === -1;
             });
             resolve();
           };
