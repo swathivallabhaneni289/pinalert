@@ -91,19 +91,15 @@ output from that mechanic.
       in a forwarded screenshot (a static baked-in count would defeat the point of this feature)
 
 **Closing the information loop:**
-- [ ] "I'm safe" check-in — anyone can post/search a safety check-in for themselves or an area
-- [ ] Needs ↔ offers matching — need (water/medicine/transport) and offer reports, filterable
-      together
-- [ ] Volunteer/rescue-team triage view — filtered to severity=critical + rescue-needed
+- Removed 2026-10-16 with Phase 6 (see Out of Scope): "I'm safe" check-in, needs and offers
+  matching, volunteer/rescue-team triage view
 - [ ] Shareable verified-report cards — a summary card resharable back into WhatsApp groups
+      (moved to Phase 8, the report page, on 2026-10-16)
 
 **Data quality / real-world coordination:**
 - [ ] Structured shelter capacity status (Available/Limited/Full/Closed + optional headcount)
-- [ ] Anonymous reporter receipt code — check a submitted report's status without re-posting
-- [ ] Responder claim + coverage-gap layer — mark a report "responding" so teams don't duplicate
-      effort, and surface genuinely unclaimed active reports. Must auto-expire and never silently
-      remove a report from the coverage-gap view — an unaccountable override on exactly the
-      reports where being wrong matters most is a documented abuse vector.
+- Removed 2026-10-16 with Phase 6 (see Out of Scope): anonymous reporter receipt code, responder
+  claim and coverage-gap layer
 - [ ] Human-contact verification tier — a volunteer who phoned the person can mark
       "contacted at HH:MM" with a field-verified priority that outranks passive voting, subject to
       the same expiry/reversibility requirement as the responder claim above
@@ -152,6 +148,12 @@ Phases 3.1, 3.2, 5, 8 and 9):**
       follows and no follower counts; first to cut if time runs short (Phase 9)
 
 ### Out of Scope
+
+**Removed by the owner, 2026-10-16 (Phase 6, Coordination):** "I'm safe" check-ins and search,
+needs and offers, the rescue team triage list, responder claims ("responding", "contacted at"),
+and the receipt code. Pinalert informs people that a situation is happening; it does not arrange
+help (owner: "we can't help them, this app is to inform people"). The shareable card stays and
+moved to Phase 8.
 
 **Stretch (build if core is solid and time remains):**
 - Photo attachment on a report — deferred, core loop works without it

@@ -86,26 +86,26 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Coordination
 
-- [ ] **COORD-01**: User can post an "I'm safe" check-in for themselves, tagged to a location
-- [ ] **COORD-02**: User can search "I'm safe" check-ins by name or area
-- [ ] **COORD-03**: User can post a "need" report (water/medicine/transport) or an "offer" report,
+- **COORD-01** (REMOVED 2026-10-16 with Phase 6, owner decision, see Out of Scope): User can post an "I'm safe" check-in for themselves, tagged to a location
+- **COORD-02** (REMOVED 2026-10-16 with Phase 6, owner decision, see Out of Scope): User can search "I'm safe" check-ins by name or area
+- **COORD-03** (REMOVED 2026-10-16 with Phase 6, owner decision, see Out of Scope): User can post a "need" report (water/medicine/transport) or an "offer" report,
       and view needs and offers near each other
 
-- [ ] **COORD-04**: User can view a triage list filtered to severity=critical or
+- **COORD-04** (REMOVED 2026-10-16 with Phase 6, owner decision, see Out of Scope): User can view a triage list filtered to severity=critical or
       category=rescue-needed reports
 
-- [ ] **COORD-05**: User can mark an active report "responding" with an optional ETA; the claim
+- **COORD-05** (REMOVED 2026-10-16 with Phase 6, owner decision, see Out of Scope): User can mark an active report "responding" with an optional ETA; the claim
       auto-expires and never permanently hides the report from the coverage-gap view
 
-- [ ] **COORD-06**: User can mark a report "contacted at HH:MM" after phoning the reporter
+- **COORD-06** (REMOVED 2026-10-16 with Phase 6, owner decision, see Out of Scope): User can mark a report "contacted at HH:MM" after phoning the reporter
       directly, with a field-verified priority that outranks passive vote count in the triage view
 
-- [ ] **COORD-07**: User can retrieve their own submitted report's current status via a receipt
+- **COORD-07** (REMOVED 2026-10-16 with Phase 6, owner decision, see Out of Scope): User can retrieve their own submitted report's current status via a receipt
       code, without re-posting to check
 
 - [ ] **COORD-08**: User can generate a shareable card for a report containing only a
       live-resolving status link — never a baked-in confirmation count or "verified" claim baked
-      into the image itself
+      into the image itself (moved to Phase 8, the report page, on 2026-10-16 when Phase 6 was removed)
 
 ### Robustness
 
@@ -460,6 +460,7 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Feature | Reason |
 |---------|--------|
+| Coordination features: "I'm safe" check-ins and search, needs and offers, a rescue team triage list, "responding" and "contacted at" marks, a receipt code (COORD-01 to COORD-07, Phase 6) | Owner decision 2026-10-16: Pinalert informs people that a situation is happening, it does not arrange help ("we can't help them, this app is to inform people"). A name search would also show people who never chose to be public, no phone numbers are stored, and My activity already shows a report's status. The shareable card (COORD-08) stays and moved to Phase 8. |
 | Missing/found person registry | Highest abuse-surface data type (third-party PII) on an anonymous, no-signup platform — needs a moderation-gated design that doesn't exist yet, not a quick CRUD add |
 | Per-incident real-time coordination channel (chat) | Materially more work than the rest of the feature set (real-time chat infra); revisit only if the core product gets real usage |
 | Full CAP-compliant alert feed with Update/Cancel lifecycle threading | Real interoperability value is speculative without an actual government integration path |
@@ -530,14 +531,14 @@ Populated during roadmap creation.
 | ALERT-02 | Phase 5 | Pending |
 | ALERT-03 | Phase 5 | Pending |
 | ALERT-04 | Phase 5 | Pending |
-| COORD-01 | Phase 6 | Pending |
-| COORD-02 | Phase 6 | Pending |
-| COORD-03 | Phase 6 | Pending |
-| COORD-04 | Phase 6 | Pending |
-| COORD-05 | Phase 6 | Pending |
-| COORD-06 | Phase 6 | Pending |
-| COORD-07 | Phase 6 | Pending |
-| COORD-08 | Phase 6 | Pending |
+| COORD-01 | none (Phase 6 removed 2026-10-16) | Removed |
+| COORD-02 | none (Phase 6 removed 2026-10-16) | Removed |
+| COORD-03 | none (Phase 6 removed 2026-10-16) | Removed |
+| COORD-04 | none (Phase 6 removed 2026-10-16) | Removed |
+| COORD-05 | none (Phase 6 removed 2026-10-16) | Removed |
+| COORD-06 | none (Phase 6 removed 2026-10-16) | Removed |
+| COORD-07 | none (Phase 6 removed 2026-10-16) | Removed |
+| COORD-08 | Phase 8 | Pending |
 | PAGE-01 | Phase 8 | Pending |
 | PAGE-02 | Phase 8 | Pending |
 | PROF-01 | Phase 9 | Pending |
@@ -546,7 +547,7 @@ Populated during roadmap creation.
 
 **Coverage:**
 
-- v1 requirements: 72 total (33 original + 5 new IDENT-01..05 added 2026-09-10 for the inserted
+- v1 requirements: 72 defined, 65 active after COORD-01 to COORD-07 were removed with Phase 6 on 2026-10-16 (33 original + 5 new IDENT-01..05 added 2026-09-10 for the inserted
   Phase 1.1: Identity & Login + 1 new UX-01 added 2026-09-18 from Phase 2 UAT + 20 new added
   2026-10-03 for roadmap Phases 3.1, 3.2, 5, 8 and 9: HIST 6, ALERT 4, NOTIF 5, PAGE 2, PROF 3
   + 2 new ROBUST-09 and ROBUST-10 added 2026-10-06 for the Phase 4 scope the owner added in discussion
@@ -554,16 +555,16 @@ Populated during roadmap creation.
   the take back of a mistaken Mark resolved + 9 new LAYOUT-01 to LAYOUT-09 added 2026-10-16 for the
   inserted Phase 3.4: App layout, from the owner's approved mockup (sketch 007).
   HIST-07 is a v2 item and is not counted.
-  By group: Foundation 6, Identity 5, Trust Engine 9, Coordination 8, Robustness 10, Ops 2,
+  By group: Foundation 6, Identity 5, Trust Engine 9, Coordination 1 (7 removed), Robustness 10, Ops 2,
   Presentation 1, Report History 8, Official Alerts 4, Updates & Following 8, Report Page 2,
   App Layout 9)
 
-- Mapped to phases: 72 (100%)
+- Mapped to phases: 65 active of 65 (100%); 7 removed (COORD-01 to COORD-07)
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-09-05*
-*Last updated: 2026-10-16: added LAYOUT-01 to LAYOUT-09 for the inserted Phase 3.4 (App layout, from the owner's approved mockup, sketch 007) and recorded the owner's decisions of 2026-10-15 and 2026-10-16 as dated notes on ROBUST-07, ROBUST-08, UX-01, HIST-01, NOTIF-01, NOTIF-04, NOTIF-05, PROF-01 to PROF-03, PWA-03 and PWA-06. Earlier update, 2026-10-14: HIST-01 to HIST-06 reworded to the tab strip Active, Disputed and Past, the fixed 7 day window, category chips and the approximate location for finished rescue reports, and HIST-08 and HIST-09 added (compact rows, take back of a mistaken Mark resolved), all from the Phase 3.1 discussion (03.1-CONTEXT.md). Earlier update, 2026-10-13: TRUST-05 and TRUST-07 marked complete when Phase 3 closed (UAT 11 of 11, verification passed). Earlier update, 2026-10-06: added ROBUST-09 and ROBUST-10 for the Phase 4 scope the owner added in discussion (the moderator screen with the Flag control, and the public Disclaimer and Policy pages) and reworded ROBUST-01, ROBUST-03 and ROBUST-04 to match. Earlier update, 2026-10-03: added HIST-01..06, ALERT-01..04, NOTIF-01..05, PAGE-01..02 and PROF-01..03
+*Last updated: 2026-10-16: Phase 6 removed by the owner (Pinalert informs, it does not arrange help); COORD-01 to COORD-07 moved to Out of Scope and COORD-08, the shareable card, remapped to Phase 8. Earlier the same day: added LAYOUT-01 to LAYOUT-09 for the inserted Phase 3.4 (App layout, from the owner's approved mockup, sketch 007) and recorded the owner's decisions of 2026-10-15 and 2026-10-16 as dated notes on ROBUST-07, ROBUST-08, UX-01, HIST-01, NOTIF-01, NOTIF-04, NOTIF-05, PROF-01 to PROF-03, PWA-03 and PWA-06. Earlier update, 2026-10-14: HIST-01 to HIST-06 reworded to the tab strip Active, Disputed and Past, the fixed 7 day window, category chips and the approximate location for finished rescue reports, and HIST-08 and HIST-09 added (compact rows, take back of a mistaken Mark resolved), all from the Phase 3.1 discussion (03.1-CONTEXT.md). Earlier update, 2026-10-13: TRUST-05 and TRUST-07 marked complete when Phase 3 closed (UAT 11 of 11, verification passed). Earlier update, 2026-10-06: added ROBUST-09 and ROBUST-10 for the Phase 4 scope the owner added in discussion (the moderator screen with the Flag control, and the public Disclaimer and Policy pages) and reworded ROBUST-01, ROBUST-03 and ROBUST-04 to match. Earlier update, 2026-10-03: added HIST-01..06, ALERT-01..04, NOTIF-01..05, PAGE-01..02 and PROF-01..03
 for roadmap Phases 3.1, 3.2, 5, 8 and 9 (raised by the owner after the Phase 3 popup sketch), plus
 v2 items PWA-06, PWA-07 and HIST-07. Earlier update, 2026-09-18: added UX-01 (in-app light/dark toggle) surfaced by Phase 2's UAT gap
 closure round, linked to plan 02-10; added IDENT-01..05 for Phase 1.1 (mandatory email+OTP login,

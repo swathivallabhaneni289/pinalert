@@ -12,15 +12,16 @@ trust display against trivial gaming (diversity-weighted counts, split confidenc
 signals) as a dedicated slice, because the geohash-precision and confirmer-location-capture
 decisions it resolves are genuinely load-bearing, not incidental polish. Phase 4 makes the app
 survive real conditions — degraded networks, abuse pressure, legal exposure. Phase 5 solves the
-empty-map-on-first-visit problem with official alerts (NDMA SACHET, in an Alerts view and banner), GDACS pins on the map and a working demo. Phase 6 closes the
-information loop with the coordination features (safety check-ins, needs/offers, triage,
-responder claims, shareable cards) that depend on the trust signals built in Phases 2-3.
+empty-map-on-first-visit problem with official alerts (NDMA SACHET, in an Alerts view and banner), GDACS pins on the map and a working demo. Phase 6 (coordination: safety check-ins, needs and
+offers, triage, responder claims, receipts) was removed on 2026-10-16 by the owner's decision that
+Pinalert informs people a situation is happening and does not arrange help; its shareable card
+moved to Phase 8.
 
 Added 2026-10-03, after the Phase 3 popup sketch: Phase 3.1 (report history views) and Phase 3.2
 (in-app updates and trusted-reporter alerts) sit right after Phase 3 because they consume its trust
 object, outcome labels and reliability tag. Phase 5 now leads with NDMA SACHET alerts. Phase 8
-(report page and comments) runs before Phase 6 because Phase 6's receipts and shareable cards link to its
-page, and Phase 9 (followable reporter profiles) comes last. Suggested cut order if time runs short, from the
+(report page and comments) ran before Phase 6 because Phase 6's receipts and shareable cards linked to its
+page (Phase 6 was removed on 2026-10-16 and the shareable card now lives in Phase 8), and Phase 9 (followable reporter profiles) comes last. Suggested cut order if time runs short, from the
 2026-10-03 independent reviews: Phase 9 first, then the Reliable-reporter filter and alerts (NOTIF-04 and
 NOTIF-05) from Phase 3.2, then the comments half of Phase 8, then the GDACS pins in Phase 5. Email digests
 stay in the backlog.
@@ -44,7 +45,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 3.3: Installable app and phone alerts** *(INSERTED 2026-10-15)* - The site can be installed to the home screen, and an installed phone can be notified, even with the site closed, for five kinds: rescue and critical reports near the person's home area (a town or area the person chose), on by default; severe official alerts for the area, on by default and switched on by Phase 5; and, off by default, changes to reports the person posted or voted on, a Reliable reporter posting near them, and someone they follow posting.
 - [ ] **Phase 4: Robustness — Real-World Resilience** - The app stays usable on degraded networks, under abuse/moderation pressure, and with clear legal footing.
 - [ ] **Phase 5: Official Feed & Demo Mode** - First-time visitors see official alerts (NDMA SACHET, including IMD and CWC) in an Alerts view and banner, GDACS pins on the map, and a working demo immediately, instead of an empty product.
-- [ ] **Phase 6: Coordination — Safety, Needs, and Response** - People can check in safe, exchange needs/offers, and responders can triage, claim, and verify reports without duplicating effort.
+- **Phase 6 (REMOVED 2026-10-16): Coordination** - Removed by the owner: Pinalert informs people that a situation is happening, it does not arrange help. Safety check-ins, needs and offers, the rescue team list, responder claims and the receipt code are dropped; the shareable card moved to Phase 8. The number is kept as a gap so Phases 7, 8 and 9 keep theirs.
 - [x] **Phase 7: Address search box for report location** - A reporter can type an address to place the report pin, alongside the draggable pin. (4 of 4 plans complete, UAT 6 of 6 passed, security review closed) (completed 2026-09-29)
 - [ ] **Phase 8: Report page and comments** - A reader can open any report into its own page with the trust block and a history timeline, and later read and add moderated comments.
 - [ ] **Phase 9: Followable reporter profiles** - Reporters who opt in and have earned the Reliable tag can be followed (their Followers and Following lists are public, owner decision 2026-10-16), and followers are told when they post. First to cut if time runs short.
@@ -551,27 +552,21 @@ Plans:
 **Plans**: TBD
 **UI hint**: yes
 
-### Phase 6: Coordination — Safety, Needs, and Response
+### Phase 6 (REMOVED 2026-10-16): Coordination, Safety, Needs, and Response
 
-**Goal**: Beyond raw reporting, people can find help, offer help, and responders can act on the most urgent, best-corroborated reports without duplicating effort or losing accountability.
-**Mode:** mvp
-**Depends on**: Phase 1, Phase 2, Phase 3, Phase 8 (receipts and shareable cards link to the report page)
-**Requirements**: COORD-01, COORD-02, COORD-03, COORD-04, COORD-05, COORD-06, COORD-07, COORD-08
-**Success Criteria** (what must be TRUE):
+**Status:** Removed by the owner on 2026-10-16, before any discussion or planning. The owner: "we can't help them, this app is to inform people." This matches the first-time welcome text approved in Phase 3.4 ("Pinalert cannot send help. It tells you a situation is happening.").
 
-  1. Anyone can post an "I'm safe" check-in tagged to a location, and search check-ins by name or area.
-  2. A user can post a "need" (water/medicine/transport) or an "offer" report and view needs and offers displayed near each other.
-  3. A volunteer/rescue team can view a triage list filtered to severity=critical or category=rescue-needed reports, ordered using the diversity-weighted trust signals from Phase 3, not raw self-declared severity alone.
-  4. A responder can mark an active report "responding" with an optional ETA that auto-expires and never permanently hides the report from the coverage-gap view; a volunteer who phoned the reporter can mark it "contacted at HH:MM," which outranks passive vote count in the triage view.
-  5. A reporter can check their own report's current status via a receipt code without re-posting, and anyone can generate a shareable card for a report containing only a live-resolving status link — never a baked-in confirmation count or "verified" claim in the image itself.
+**What happened to its parts:**
 
-**Plans**: TBD
-**UI hint**: yes
+  - Dropped: "I'm safe" check-ins and search by name or area (COORD-01, COORD-02; also a name search would show people who never chose to be public), needs and offers (COORD-03), the rescue team triage list (COORD-04), "responding" with an ETA (COORD-05), "contacted at HH:MM" (COORD-06; no phone numbers are stored, so nobody could phone the reporter), and the receipt code (COORD-07; login is required since Phase 1.1, so My activity, Posted by you already shows a report's status).
+  - Moved to Phase 8: the shareable card with only a live status link (COORD-08), because the card links to the report's own page.
+
+The number 6 is kept as a gap so Phases 7, 8 and 9 keep their numbers, folders and references.
 
 ## Progress
 
 **Execution Order:**
-Phases execute in the owner's build order (2026-10-16): 1 → 1.1 → 2 → 3 → 3.1 → 4 → 3.4 → 3.2 → 3.3 → 5 → 8 → 6 → 9; the explainer video last (3.1 and 4 are signed off before 3.4 starts, and 3.2 and 3.3 build into the 3.4 layout; Phase 7 shipped early; Phase 8 runs before Phase 6 because Phase 6's receipts and shareable cards link to the report page; Phase 9 is the first to cut)
+Phases execute in the owner's build order (2026-10-16): 1 → 1.1 → 2 → 3 → 3.1 → 4 → 3.4 → 3.2 → 3.3 → 5 → 8 → 9; the explainer video last (3.1 and 4 are signed off before 3.4 starts, and 3.2 and 3.3 build into the 3.4 layout; Phase 7 shipped early; Phase 6 was removed on 2026-10-16 and its shareable card moved to Phase 8; Phase 9 is the first to cut)
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -585,7 +580,7 @@ Phases execute in the owner's build order (2026-10-16): 1 → 1.1 → 2 → 3 �
 | 3.4 App layout | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 29/29 | In Progress|  |
 | 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
-| 6. Coordination — Safety, Needs, and Response | 0/TBD | Not started | - |
+| 6. Coordination (removed 2026-10-16, share card moved to Phase 8) | - | Removed | - |
 | 7. Address search box for report location | 4/4 | Complete | 2026-09-29 |
 | 8. Report page and comments | 0/TBD | Not started | - |
 | 9. Followable reporter profiles | 0/TBD | Not started | - |
@@ -797,7 +792,7 @@ Plans:
 ### Phase 8: Report page and comments
 
 **Goal:** A reader can open any report from the map popup or the feed into its own page, see the same trust block, and see how the report's trust changed over time. Once Phase 4's moderation and rate limiting exist, they can also read and add short comments, so the discussion about a situation stays inside the verified feed. Raised by the owner during Phase 1.1 and again after the Phase 3 popup sketch, and was deferred in PROJECT.md until moderation and free text abuse were scoped, so that scoping is the first job of this phase's discussion. The page ships first with a history timeline built from the vote log (posted, confirmed from N places, disputed, resolved), which has no free text. Comments follow.
-**Requirements**: PAGE-01, PAGE-02
+**Requirements**: PAGE-01, PAGE-02, COORD-08 (the shareable card, moved here from the removed Phase 6 on 2026-10-16)
 **Depends on:** Phase 3 (page and timeline), Phase 4 (comments only)
 **UI hint**: yes
 **Success Criteria** (what must be TRUE):
@@ -806,6 +801,7 @@ Plans:
   2. The page shows a timeline of how the report's trust changed (posted, confirmed from N places, disputed, resolved), built from the vote log, with no names or locations of voters.
   3. A signed-in user can read and add short comments on a report page. Every comment passes the moderation check and a per account rate limit, and comment text never reaches the page through a markup parsing sink.
   4. The popup footer shows a real comment count only, never a count the backend cannot supply.
+  5. Anyone can share a report, for example into a WhatsApp group, as a card that carries only a link to the report's live status, never a baked in confirmation count or a "verified" claim in the image, so a forward that is later disputed or resolved shows the current state when opened (COORD-08, moved from the removed Phase 6 on 2026-10-16).
 
 **Scope notes** (starting points for discuss-phase, not decisions):
 
