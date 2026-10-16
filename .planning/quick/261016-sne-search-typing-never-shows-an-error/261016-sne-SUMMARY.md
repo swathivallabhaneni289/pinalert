@@ -58,6 +58,11 @@ or a busy answer during typing is retried quietly instead of showing a failure l
     on these routes today, so 1 s is the real path.
 - The retry waits on `searchDebounceTimer`, so new text and closing the form both cancel it. New
   text starts its own count of 3.
+- **Older text is never retried over newer text.** Someone often keeps typing while a search is
+  still out. If that older search then gets a 429 or 503 and the box holds other text, the answer
+  is dropped quietly. The newer text's own pause still runs.
+  - Without this check, the retry for the older text later replaced the newer list.
+  - This was found in review after the first feat commits. Its fix is fea8d61.
 - **Unchanged:** a timeout, a network error and any other status show the line at once, as before.
   A retried 8 s timeout would leave someone waiting about 30 s in silence.
 - Still one `fetch(` in the file. A retry goes back through `runSearch(query)`.
@@ -72,6 +77,9 @@ or a busy answer during typing is retried quietly instead of showing a failure l
   - Escape or Close;
   - a press outside;
   - a pick.
+- A refusal for older text is dropped quietly, the same as on the report form. On the map that
+  covers two cases: the box holds other text, or the newer text's pause is running. Without
+  this, the older text's retry cancelled the newer pause, so the newer text was never asked.
 - When the last try fails, the old list closes and the failure line shows, as it does after Enter.
   - **This changes a 261016-sfu rule.** Before, a typed search never showed a failure line.
   - The plan's done list asks for "the failure line after the last try, for both scripts", so
@@ -100,8 +108,10 @@ or a busy answer during typing is retried quietly instead of showing a failure l
     `Geocode(stub, nil)`.
   - `internal/api/search_budget_test.go` (new): pins both defaults.
   - `cmd/server/main_test.go` (new): the program's constants equal the defaults.
-  - `web/report_search_retry_test.mjs` (new): 8 node tests.
-  - `web/place_search_typing_test.mjs`: 7 new node tests; the fake answer can carry headers.
+  - `web/report_search_retry_test.mjs` (new): 10 node tests.
+  - `web/place_search_typing_test.mjs`: 9 new node tests; the fake answer can carry headers.
+  - In each script, 2 of those tests cover a refusal for older text that lands during the newer
+    pause, or after the box drops under 3 letters.
   - `web/search_follow_ups_contract_test.go`: `setTimeout(` count in map-tools.js is now 2, and
     the new `TestSearchQuietRetry` pins the constants and the retry shape in both scripts.
 
@@ -114,6 +124,8 @@ or a busy answer during typing is retried quietly instead of showing a failure l
 | bbcb85f | test: failing tests for the quiet retry of both searches |
 | d74695e | feat: the report form retries a refused or busy search quietly |
 | 5996ca0 | feat: the map's place search retries a refused or busy typed search quietly |
+| ec245d1 | test: failing tests for a refusal of older text landing during the newer pause |
+| fea8d61 | fix: a refusal for older text never retries over the newer text |
 
 ## Tests
 
@@ -124,7 +136,9 @@ or a busy answer during typing is retried quietly instead of showing a failure l
   - 3005 `--- PASS`, 0 `--- FAIL`, 2 `--- SKIP`;
   - the two skips are `TestGeocodeLive` (needs `GEOCODE_LIVE=1`) and `TestScreeningFixture` (needs
     recorded OpenAI scores). Neither needs a database, so 0 database backed skips.
-- `node --test web/*.mjs`: 83 pass, 0 fail. That was 68; there are 15 new.
+- `node --test web/*.mjs`: 87 pass, 0 fail. That was 68; there are 19 new.
+- The whole end gate above was run again after the fix (fea8d61), on a newly created
+  `p4_quick_sne` that was dropped afterwards. The counts are the same.
 - `go test ./web/ -count=1`: ok.
 - No test calls Photon or Nominatim.
 - No em or en dash in any added line, checked over `git diff cf5d6f6`.
@@ -161,6 +175,10 @@ or a busy answer during typing is retried quietly instead of showing a failure l
    shows any failure line at once.
 5. Map search, a pending try: while a list is up, type fast, then press Escape or tap the map.
    No list should come back a second later.
+5a. Either search, typing over a slow answer. With DevTools throttling on Slow 4G:
+   - type `Banjara`, wait for the pause, then go straight on to `Banjara Hills`;
+   - the list should end on Banjara Hills rows;
+   - an older list should never come back about a second later.
 6. Two phones or two browsers signed in to different accounts on the same Wi-Fi. Both type at the
    same time; neither should be refused because of the other.
 7. To see the last try's line, block the geocoder in DevTools so it answers 503, or take the
