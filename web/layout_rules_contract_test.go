@@ -227,17 +227,17 @@ var chosenDarkAllowed = []layoutAllow{
 	{"static/css/app-bar.css", ".app-topbar__link[aria-current=\"page\"]",
 		"the laptop top bar's current place is a short bottom underline in the text colour on a bar, not a box or an outline around an option (UI-SPEC 1c)."},
 	{"static/css/phone.css", "body > .app-bar > .app-bar__item[aria-current=\"page\"]::before",
-		"the phone bottom bar's current place is a 4px bar drawn above the item, in the text colour, never a box or a ring around it (UI-SPEC 1b). Forced colours draws it as CanvasText."},
+		"Allowed 2026-10-17 (plan 03.4-16): the phone bottom bar's current place is a 4px bar drawn above the item, in the text colour, never a box or a ring around it (UI-SPEC 1b). Forced colours draws it as CanvasText."},
 	{"static/css/trust.css", ".vote-btn--confirm[aria-pressed=\"true\"]",
-		"the Confirm button's pressed state is the Phase 3 inverted neutral fill (03-UI-SPEC A13). The report popup and detail sheet are kept as built in 3.4 (UI-SPEC: Not designed here); the owner has not asked to change the vote buttons. Listed for the owner to rule on if the vote record should also be a soft fill."},
+		"Allowed 2026-10-17 (plan 03.4-16): the Confirm button's pressed state is the Phase 3 inverted neutral fill (03-UI-SPEC A13). The report popup and detail sheet are kept as built in 3.4 (UI-SPEC: Not designed here); the owner has not asked to change the vote buttons. Open owner question: should a pressed vote also be a soft fill, like every other chosen item?"},
 	{"static/css/trust.css", ".vote-btn--dispute[aria-pressed=\"true\"]",
-		"the Dispute button's pressed state, identical to Confirm (03-UI-SPEC A13); same reason as the Confirm entry."},
+		"Allowed 2026-10-17 (plan 03.4-16): the Dispute button's pressed state, identical to Confirm (03-UI-SPEC A13); same reason as the Confirm entry."},
 	{"static/css/trust.css", ".vote-btn[aria-pressed=\"true\"]:disabled:not([hidden])",
-		"a pressed vote button while busy keeps the inverted neutral fill of A13; same reason as the Confirm entry."},
+		"Allowed 2026-10-17 (plan 03.4-16): a pressed vote button while busy keeps the inverted neutral fill of A13; same reason as the Confirm entry."},
 	{"static/css/trust.css", ".vote-btn[aria-pressed=\"true\"][aria-disabled=\"true\"]:not([hidden])",
-		"a pressed vote button that is too far keeps the inverted neutral fill of A13; same reason as the Confirm entry."},
+		"Allowed 2026-10-17 (plan 03.4-16): a pressed vote button that is too far keeps the inverted neutral fill of A13; same reason as the Confirm entry."},
 	{"static/css/phone.css", ".leaflet-container .leaflet-detail-pane .vote-btn[aria-pressed=\"true\"]:not([hidden])",
-		"the phone detail sheet's pressed vote button, the A13 inverted neutral fill; same reason as the Confirm entry."},
+		"Allowed 2026-10-17 (plan 03.4-16): the phone detail sheet's pressed vote button, the A13 inverted neutral fill; same reason as the Confirm entry."},
 }
 
 // heavyBorder is true for a border width of 2px or more in a declaration value.
@@ -254,11 +254,12 @@ func TestNoDarkBorderOnChosenItems(t *testing.T) {
 	for _, r := range layoutRules(t) {
 		// Forced colours mode replaces the app's colours with the reader's own
 		// system palette and drops fills, so a chosen item can only show by a
-		// border in a system colour there (UI-SPEC: forced colours). That is
-		// the reader's palette, not the dark box D-04 rules out.
-		if strings.Contains(r.Media, "forced-colors") {
-			continue
-		}
+		// border in a system colour there. The width rule is relaxed in that
+		// block only; the text colour token is still refused everywhere.
+		// Finding 2026-10-17: UI-SPEC says chosen items add 1px solid
+		// Highlight, and feed.css draws the chosen chip as 2px solid CanvasText.
+		// It is a forced colours fallback of Phase 3.1, left as built.
+		forced := strings.Contains(r.Media, "forced-colors")
 		for _, raw := range p16HeadParts(r.Head) {
 			part := layoutStripNot(raw)
 			chosen := false
@@ -278,7 +279,7 @@ func TestNoDarkBorderOnChosenItems(t *testing.T) {
 					if strings.Contains(value, "var(--color-text)") {
 						problems = append(problems, prop+": "+value+" (dark border)")
 					}
-					if heavyBorder.MatchString(value) && !strings.Contains(prop, "radius") {
+					if !forced && heavyBorder.MatchString(value) {
 						problems = append(problems, prop+": "+value+" (2px or wider border)")
 					}
 				case prop == "outline" || prop == "outline-color" || prop == "box-shadow":
