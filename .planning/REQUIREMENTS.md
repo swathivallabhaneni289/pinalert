@@ -238,14 +238,14 @@ Requirements for initial release. Each maps to roadmap phases.
       same server trust object the popup uses, and never naming a voter, an account or a location;
       time based events are evaluated lazily when the bell refreshes
 
-- [ ] **NOTIF-04**: User can filter the feed to Reliable reporters only; critical and rescue-needed
-      reports always stay visible
+- [ ] **NOTIF-04**: User can filter the feed to Reliable reporters only; critical reports, and Rescue needed
+      reports stored before that category was retired for new reports on 2026-10-16, always stay visible
       (Amended 2026-10-16, owner decision: the Only Reliable reporters tick lives in the Show menu
       on Nearby)
 
 - [ ] **NOTIF-05**: User can opt in to an update when a Reliable reporter posts within a chosen
       distance of where the reader is looking; non-critical reports notify only once Live,
-      critical and rescue-needed reports immediately, with a cap on alerts per reporter per
+      critical reports immediately, with a cap on alerts per reporter per
       recipient per hour
       (Amended 2026-10-16, owner decision: the distance is measured from the person's home area,
       1, 2, 5 or 10 km, set in Settings as How far from my home area)
@@ -336,7 +336,7 @@ Requirements for initial release. Each maps to roadmap phases.
       draggable pin on the left, form on the right), and closes only with the X. The chosen
       severity is filled with its own soft colour, and a "Someone in danger right now? Call 112
       first, then post here." box with a Call 112 button and the What is happening? picks appears
-      only for a Critical or Rescue needed report (added 2026-10-16, Phase 3.4)
+      only for a Critical report (added 2026-10-16, Phase 3.4; Rescue needed was retired for new reports the same day and Traffic took its tile)
 
 - [ ] **LAYOUT-06**: One Settings page, opened from the gear on the phone and from the person menu
       on the laptop, stacks About you, Phone notifications, People and reports, About Pinalert
@@ -374,7 +374,7 @@ Deferred to future release. Tracked but not in current roadmap.
 - **PWA-03**: User can opt in to a push notification when a critical report appears near a saved
   location (Web Push/VAPID)
   (Amended 2026-10-16, owner decision: Phase 3.3 builds it; the saved location is the person's
-  home area, and rescue and critical reports near it are on by default once phone notifications
+  home area, and critical reports near it are on by default once phone notifications
   are on; severe official alerts also buzz the phone, see PWA-06)
 
 - **PWA-04**: A retraction pushes a proactive notification to every session that viewed/confirmed
@@ -564,7 +564,7 @@ Populated during roadmap creation.
 
 ---
 *Requirements defined: 2026-09-05*
-*Last updated: 2026-10-16: Phase 6 removed by the owner (Pinalert informs, it does not arrange help); COORD-01 to COORD-07 moved to Out of Scope and COORD-08, the shareable card, remapped to Phase 8. Earlier the same day: added LAYOUT-01 to LAYOUT-09 for the inserted Phase 3.4 (App layout, from the owner's approved mockup, sketch 007) and recorded the owner's decisions of 2026-10-15 and 2026-10-16 as dated notes on ROBUST-07, ROBUST-08, UX-01, HIST-01, NOTIF-01, NOTIF-04, NOTIF-05, PROF-01 to PROF-03, PWA-03 and PWA-06. Earlier update, 2026-10-14: HIST-01 to HIST-06 reworded to the tab strip Active, Disputed and Past, the fixed 7 day window, category chips and the approximate location for finished rescue reports, and HIST-08 and HIST-09 added (compact rows, take back of a mistaken Mark resolved), all from the Phase 3.1 discussion (03.1-CONTEXT.md). Earlier update, 2026-10-13: TRUST-05 and TRUST-07 marked complete when Phase 3 closed (UAT 11 of 11, verification passed). Earlier update, 2026-10-06: added ROBUST-09 and ROBUST-10 for the Phase 4 scope the owner added in discussion (the moderator screen with the Flag control, and the public Disclaimer and Policy pages) and reworded ROBUST-01, ROBUST-03 and ROBUST-04 to match. Earlier update, 2026-10-03: added HIST-01..06, ALERT-01..04, NOTIF-01..05, PAGE-01..02 and PROF-01..03
+*Last updated: 2026-10-16: Rescue needed retired for new reports and Traffic added in its place (owner decision, quick task 261016-w8t), so NOTIF-04, NOTIF-05, LAYOUT and PWA-03 lines now say critical; built requirements keep their rescue rules for stored rows. Earlier the same day: Phase 6 removed by the owner (Pinalert informs, it does not arrange help); COORD-01 to COORD-07 moved to Out of Scope and COORD-08, the shareable card, remapped to Phase 8. Earlier the same day: added LAYOUT-01 to LAYOUT-09 for the inserted Phase 3.4 (App layout, from the owner's approved mockup, sketch 007) and recorded the owner's decisions of 2026-10-15 and 2026-10-16 as dated notes on ROBUST-07, ROBUST-08, UX-01, HIST-01, NOTIF-01, NOTIF-04, NOTIF-05, PROF-01 to PROF-03, PWA-03 and PWA-06. Earlier update, 2026-10-14: HIST-01 to HIST-06 reworded to the tab strip Active, Disputed and Past, the fixed 7 day window, category chips and the approximate location for finished rescue reports, and HIST-08 and HIST-09 added (compact rows, take back of a mistaken Mark resolved), all from the Phase 3.1 discussion (03.1-CONTEXT.md). Earlier update, 2026-10-13: TRUST-05 and TRUST-07 marked complete when Phase 3 closed (UAT 11 of 11, verification passed). Earlier update, 2026-10-06: added ROBUST-09 and ROBUST-10 for the Phase 4 scope the owner added in discussion (the moderator screen with the Flag control, and the public Disclaimer and Policy pages) and reworded ROBUST-01, ROBUST-03 and ROBUST-04 to match. Earlier update, 2026-10-03: added HIST-01..06, ALERT-01..04, NOTIF-01..05, PAGE-01..02 and PROF-01..03
 for roadmap Phases 3.1, 3.2, 5, 8 and 9 (raised by the owner after the Phase 3 popup sketch), plus
 v2 items PWA-06, PWA-07 and HIST-07. Earlier update, 2026-09-18: added UX-01 (in-app light/dark toggle) surfaced by Phase 2's UAT gap
 closure round, linked to plan 02-10; added IDENT-01..05 for Phase 1.1 (mandatory email+OTP login,
