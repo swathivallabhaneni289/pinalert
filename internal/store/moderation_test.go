@@ -875,10 +875,13 @@ func TestWorkerCheckStatements(t *testing.T) {
 	}
 
 	model := "omni-moderation-latest"
-	if err := q.FinishModerationCheck(ctx, sqlcgen.FinishModerationCheckParams{
-		Verdict: "borderline", Scores: []byte(`{"hate":0.5}`), Model: &model, NeedsReview: true, ReportID: r,
+	if err := q.FinishCheckAndSetState(ctx, sqlcgen.FinishCheckAndSetStateParams{
+		ModerationState: "clear", Verdict: "borderline", Scores: []byte(`{"hate":0.5}`), Model: &model, NeedsReview: true, ReportID: r,
 	}); err != nil {
 		t.Fatalf("Finish: %v", err)
+	}
+	if s := modState(t, pool, r); s != "clear" {
+		t.Errorf("borderline report state = %q, want clear", s)
 	}
 	read := func() (string, string, string, bool) {
 		var st, verdict, scores string
@@ -897,8 +900,11 @@ func TestWorkerCheckStatements(t *testing.T) {
 		t.Errorf("finished check = %q %q checked %v; want done borderline true", st, verdict, checked)
 	}
 
-	if err := q.FinishModerationCheck(ctx, sqlcgen.FinishModerationCheckParams{Verdict: "pass", NeedsReview: false, ReportID: r}); err != nil {
+	if err := q.FinishCheckAndSetState(ctx, sqlcgen.FinishCheckAndSetStateParams{ModerationState: "removed", Verdict: "reject", NeedsReview: false, ReportID: r}); err != nil {
 		t.Fatalf("second Finish: %v", err)
+	}
+	if s := modState(t, pool, r); s != "clear" {
+		t.Errorf("a second worker write on a done check moved the report to %q, want clear", s)
 	}
 	if err := q.RescheduleModerationCheck(ctx, sqlcgen.RescheduleModerationCheckParams{NextAttemptAt: time.Now().Add(2 * time.Hour), ReportID: r}); err != nil {
 		t.Fatalf("Reschedule on done: %v", err)
@@ -912,20 +918,32 @@ func TestWorkerCheckStatements(t *testing.T) {
 		t.Errorf("Reschedule moved a done check (due-within-90-minutes %v, err %v)", due, err)
 	}
 
-	// SetReportModerationState.
+	// FinishCheckAndSetState moves the report.
 	p := modRawReport(t, pool, "worker release", "low", "pending", now, future)
 	modPendingCheck(t, q, p)
-	if err := q.SetReportModerationState(ctx, sqlcgen.SetReportModerationStateParams{ModerationState: "clear", ReportID: p}); err != nil {
-		t.Fatalf("SetReportModerationState: %v", err)
+	if err := q.FinishCheckAndSetState(ctx, sqlcgen.FinishCheckAndSetStateParams{ModerationState: "clear", Verdict: "pass", ReportID: p}); err != nil {
+		t.Fatalf("FinishCheckAndSetState: %v", err)
 	}
 	if s := modState(t, pool, p); s != "clear" {
 		t.Errorf("released report state = %q, want clear", s)
 	}
+	if c := modCheck(t, pool, p); c.Status != "done" {
+		t.Errorf("released report check = %q, want done", c.Status)
+	}
+
+	rejected := modRawReport(t, pool, "worker reject", "critical", "clear", now, future)
+	modPendingCheck(t, q, rejected)
+	if err := q.FinishCheckAndSetState(ctx, sqlcgen.FinishCheckAndSetStateParams{ModerationState: "removed", Verdict: "reject", ReportID: rejected}); err != nil {
+		t.Fatalf("FinishCheckAndSetState reject: %v", err)
+	}
+	if s := modState(t, pool, rejected); s != "removed" {
+		t.Errorf("rejected published serious report state = %q, want removed", s)
+	}
 
 	gone := modRawReport(t, pool, "worker removed", "low", "removed", now, future)
 	modPendingCheck(t, q, gone)
-	if err := q.SetReportModerationState(ctx, sqlcgen.SetReportModerationStateParams{ModerationState: "clear", ReportID: gone}); err != nil {
-		t.Fatalf("SetReportModerationState on removed: %v", err)
+	if err := q.FinishCheckAndSetState(ctx, sqlcgen.FinishCheckAndSetStateParams{ModerationState: "clear", Verdict: "pass", ReportID: gone}); err != nil {
+		t.Fatalf("FinishCheckAndSetState on removed: %v", err)
 	}
 	if s := modState(t, pool, gone); s != "removed" {
 		t.Errorf("removed report state = %q after a worker write, want removed", s)
@@ -936,7 +954,7 @@ func TestWorkerCheckStatements(t *testing.T) {
 	if err := q.KeepReport(ctx, kept); err != nil {
 		t.Fatalf("KeepReport: %v", err)
 	}
-	if err := q.SetReportModerationState(ctx, sqlcgen.SetReportModerationStateParams{ModerationState: "removed", ReportID: kept}); err != nil {
+	if err := q.FinishCheckAndSetState(ctx, sqlcgen.FinishCheckAndSetStateParams{ModerationState: "removed", Verdict: "reject", ReportID: kept}); err != nil {
 		t.Fatalf("late worker reject: %v", err)
 	}
 	if s := modState(t, pool, kept); s != "clear" {

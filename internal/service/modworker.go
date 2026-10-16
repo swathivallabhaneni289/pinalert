@@ -43,8 +43,7 @@ const (
 // WorkerQuerier is the part of the generated queries the worker uses.
 type WorkerQuerier interface {
 	ClaimDueModerationChecks(ctx context.Context, arg sqlcgen.ClaimDueModerationChecksParams) ([]sqlcgen.ClaimDueModerationChecksRow, error)
-	SetReportModerationState(ctx context.Context, arg sqlcgen.SetReportModerationStateParams) error
-	FinishModerationCheck(ctx context.Context, arg sqlcgen.FinishModerationCheckParams) error
+	FinishCheckAndSetState(ctx context.Context, arg sqlcgen.FinishCheckAndSetStateParams) error
 	RescheduleModerationCheck(ctx context.Context, arg sqlcgen.RescheduleModerationCheckParams) error
 }
 
@@ -66,12 +65,10 @@ var _ WorkerQuerier = (*sqlcgen.Queries)(nil)
 //     (D-03: severity never changes the verdict). Pass releases the report as
 //     clear. Borderline releases it as clear and marks the check for review
 //     (D-04). Reject withdraws it as removed at every severity, a published
-//     serious report included (R-03). The report state is written FIRST and
-//     the check closed SECOND: a crash between the two leaves a pending check
-//     beside a released report, which is re-screened harmlessly, where the
-//     other order would leave a done check beside a report stranded in pending
-//     that nothing would ever claim again. If the state write fails, the check
-//     is not closed, and the lease lapses so a later sweep tries again.
+//     serious report included (R-03). The check is closed and the report state
+//     written in one statement (FinishCheckAndSetState), so no crash can leave
+//     one written without the other. If that write fails, nothing changes and
+//     the lease lapses so a later sweep tries again.
 //  4. An unfinished call is classified. A quota or permanent provider error is
 //     never retried: the check is rescheduled to the report's expires_at,
 //     which the claim never reaches, so the check stays pending and the
@@ -92,10 +89,13 @@ var _ WorkerQuerier = (*sqlcgen.Queries)(nil)
 // reschedule to expires_at described above.
 //
 // A moderator Keep that races an in flight provider call cannot be undone by a
-// late reject: KeepReport closes the check in the same statement, and
-// SetReportModerationState, FinishModerationCheck and RescheduleModerationCheck
-// each write only while the check is still pending. The worker issues no
-// UPDATE of its own, and removed stays terminal through the same guard.
+// late reject: KeepReport closes the check, and FinishCheckAndSetState moves
+// the report only from a check row that this same statement changed from
+// pending to done. While Keep's transaction holds the check row the worker's
+// statement waits on it, then sees the check done and writes nothing.
+// RescheduleModerationCheck likewise touches only a pending check. The worker
+// issues no UPDATE of its own, and removed stays terminal through the same
+// statement.
 //
 // Log lines carry only the numeric report id, the attempt number, the verdict
 // or class word, the status number and the wait (T-04-04).
@@ -268,21 +268,15 @@ func (w *ModerationWorker) screenRow(ctx context.Context, row sqlcgen.ClaimDueMo
 		model = &m
 	}
 
-	if err := w.q.SetReportModerationState(ctx, sqlcgen.SetReportModerationStateParams{
+	if err := w.q.FinishCheckAndSetState(ctx, sqlcgen.FinishCheckAndSetStateParams{
 		ModerationState: string(state),
+		Verdict:         string(decision.Verdict),
+		Scores:          scoresJSON,
+		Model:           model,
+		NeedsReview:     needsReview,
 		ReportID:        row.ReportID,
 	}); err != nil {
-		log.Printf("moderation worker: report %d attempt %d: state write failed", row.ReportID, row.Attempts)
-		return err
-	}
-	if err := w.q.FinishModerationCheck(ctx, sqlcgen.FinishModerationCheckParams{
-		Verdict:     string(decision.Verdict),
-		Scores:      scoresJSON,
-		Model:       model,
-		NeedsReview: needsReview,
-		ReportID:    row.ReportID,
-	}); err != nil {
-		log.Printf("moderation worker: report %d attempt %d: check close failed", row.ReportID, row.Attempts)
+		log.Printf("moderation worker: report %d attempt %d: verdict write failed", row.ReportID, row.Attempts)
 		return err
 	}
 	log.Printf("moderation worker: report %d attempt %d verdict %s", row.ReportID, row.Attempts, decision.Verdict)

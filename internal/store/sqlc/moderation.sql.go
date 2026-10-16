@@ -89,32 +89,50 @@ func (q *Queries) ClaimDueModerationChecks(ctx context.Context, arg ClaimDueMode
 	return items, nil
 }
 
-const finishModerationCheck = `-- name: FinishModerationCheck :exec
-UPDATE moderation_checks
-SET status = 'done',
-    verdict = $1::text,
-    scores = $2::jsonb,
-    model = $3,
-    needs_review = $4::bool,
-    checked_at = now(),
-    lease_until = NULL
-WHERE report_id = $5
-  AND status = 'pending'
+const finishCheckAndSetState = `-- name: FinishCheckAndSetState :exec
+WITH fin AS (
+    UPDATE moderation_checks
+    SET status = 'done',
+        verdict = $2::text,
+        scores = $3::jsonb,
+        model = $4,
+        needs_review = $5::bool,
+        checked_at = now(),
+        lease_until = NULL
+    WHERE moderation_checks.report_id = $6
+      AND moderation_checks.status = 'pending'
+    RETURNING moderation_checks.report_id
+)
+UPDATE reports r
+SET moderation_state = $1
+FROM fin
+WHERE r.id = fin.report_id
+  AND r.moderation_state <> 'removed'
 `
 
-type FinishModerationCheckParams struct {
-	Verdict     string
-	Scores      []byte
-	Model       *string
-	NeedsReview bool
-	ReportID    int64
+type FinishCheckAndSetStateParams struct {
+	ModerationState string
+	Verdict         string
+	Scores          []byte
+	Model           *string
+	NeedsReview     bool
+	ReportID        int64
 }
 
-// Records the worker's verdict. Only a check that is still pending is
-// written, so a check already closed by Keep or Remove is never reopened or
-// overwritten by a late worker pass.
-func (q *Queries) FinishModerationCheck(ctx context.Context, arg FinishModerationCheckParams) error {
-	_, err := q.db.Exec(ctx, finishModerationCheck,
+// The worker's one write after a verdict: it closes the check and moves the
+// report in a single statement, and the report moves only when this statement
+// itself closed a pending check. The main UPDATE reads fin, so the check row
+// is locked first and the report row second. When Keep or Remove holds the
+// check row, the check UPDATE waits, then rechecks status = 'pending' against
+// the committed row, finds it done and changes nothing, so fin is empty and
+// the report is untouched: a late worker reject cannot withdraw a report a
+// moderator kept, and a check closed by Keep or Remove is never reopened or
+// overwritten. Removal is terminal, so a worker pass never undoes a moderator
+// Remove (R-03). One statement also leaves no crash window between the two
+// writes.
+func (q *Queries) FinishCheckAndSetState(ctx context.Context, arg FinishCheckAndSetStateParams) error {
+	_, err := q.db.Exec(ctx, finishCheckAndSetState,
+		arg.ModerationState,
 		arg.Verdict,
 		arg.Scores,
 		arg.Model,
@@ -589,30 +607,4 @@ func (q *Queries) ReviewQueue(ctx context.Context) ([]ReviewQueueRow, error) {
 		return nil, err
 	}
 	return items, nil
-}
-
-const setReportModerationState = `-- name: SetReportModerationState :exec
-UPDATE reports
-SET moderation_state = $1
-WHERE id = $2
-  AND moderation_state <> 'removed'
-  AND EXISTS (
-      SELECT 1 FROM moderation_checks mc
-      WHERE mc.report_id = reports.id AND mc.status = 'pending'
-  )
-`
-
-type SetReportModerationStateParams struct {
-	ModerationState string
-	ReportID        int64
-}
-
-// The worker's write to the report row after a verdict. Removal is terminal,
-// so a late worker pass can never undo a moderator Remove (R-03). A check
-// closed by Keep or Remove can no longer change the state: the worker is the
-// only caller and always writes while the check is still pending, so a late
-// worker reject cannot withdraw a report a moderator kept.
-func (q *Queries) SetReportModerationState(ctx context.Context, arg SetReportModerationStateParams) error {
-	_, err := q.db.Exec(ctx, setReportModerationState, arg.ModerationState, arg.ReportID)
-	return err
 }

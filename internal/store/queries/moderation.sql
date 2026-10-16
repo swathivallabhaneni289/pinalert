@@ -59,20 +59,36 @@ WHERE c.report_id = due.report_id
 RETURNING c.report_id, c.attempts, r.description, r.severity, r.category,
           r.moderation_state, r.expires_at;
 
--- name: FinishModerationCheck :exec
--- Records the worker's verdict. Only a check that is still pending is
--- written, so a check already closed by Keep or Remove is never reopened or
--- overwritten by a late worker pass.
-UPDATE moderation_checks
-SET status = 'done',
-    verdict = sqlc.arg(verdict)::text,
-    scores = sqlc.narg(scores)::jsonb,
-    model = sqlc.narg(model),
-    needs_review = sqlc.arg(needs_review)::bool,
-    checked_at = now(),
-    lease_until = NULL
-WHERE report_id = sqlc.arg(report_id)
-  AND status = 'pending';
+-- name: FinishCheckAndSetState :exec
+-- The worker's one write after a verdict: it closes the check and moves the
+-- report in a single statement, and the report moves only when this statement
+-- itself closed a pending check. The main UPDATE reads fin, so the check row
+-- is locked first and the report row second. When Keep or Remove holds the
+-- check row, the check UPDATE waits, then rechecks status = 'pending' against
+-- the committed row, finds it done and changes nothing, so fin is empty and
+-- the report is untouched: a late worker reject cannot withdraw a report a
+-- moderator kept, and a check closed by Keep or Remove is never reopened or
+-- overwritten. Removal is terminal, so a worker pass never undoes a moderator
+-- Remove (R-03). One statement also leaves no crash window between the two
+-- writes.
+WITH fin AS (
+    UPDATE moderation_checks
+    SET status = 'done',
+        verdict = sqlc.arg(verdict)::text,
+        scores = sqlc.narg(scores)::jsonb,
+        model = sqlc.narg(model),
+        needs_review = sqlc.arg(needs_review)::bool,
+        checked_at = now(),
+        lease_until = NULL
+    WHERE moderation_checks.report_id = sqlc.arg(report_id)
+      AND moderation_checks.status = 'pending'
+    RETURNING moderation_checks.report_id
+)
+UPDATE reports r
+SET moderation_state = sqlc.arg(moderation_state)
+FROM fin
+WHERE r.id = fin.report_id
+  AND r.moderation_state <> 'removed';
 
 -- name: RescheduleModerationCheck :exec
 -- The provider did not answer: try again later. last_error holds an error
@@ -83,21 +99,6 @@ SET next_attempt_at = sqlc.arg(next_attempt_at),
     last_error = sqlc.narg(last_error)
 WHERE report_id = sqlc.arg(report_id)
   AND status = 'pending';
-
--- name: SetReportModerationState :exec
--- The worker's write to the report row after a verdict. Removal is terminal,
--- so a late worker pass can never undo a moderator Remove (R-03). A check
--- closed by Keep or Remove can no longer change the state: the worker is the
--- only caller and always writes while the check is still pending, so a late
--- worker reject cannot withdraw a report a moderator kept.
-UPDATE reports
-SET moderation_state = sqlc.arg(moderation_state)
-WHERE id = sqlc.arg(report_id)
-  AND moderation_state <> 'removed'
-  AND EXISTS (
-      SELECT 1 FROM moderation_checks mc
-      WHERE mc.report_id = reports.id AND mc.status = 'pending'
-  );
 
 -- name: ReviewQueue :many
 -- List (a): posts the text check flagged as borderline and a person has not
