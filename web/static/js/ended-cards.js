@@ -5,9 +5,11 @@
 // the Status chip, What happened, When and Distance. The words themselves are
 // the Phase 3.1 Past words, unchanged.
 //
-// A row is read only. It holds no button and no link, and the whole row is not
-// a tab stop: nothing opens from it, like every other row of My activity. This
-// file fetches nothing, reads no store rows and computes no trust figure: the
+// A row is read only apart from one control: the take back of a mistaken Mark
+// resolved, which only the person who marked it sees (03.1 D-22, 03.4 plan 19),
+// mounted by votes.js's one builder. The row holds no link, and the whole row is
+// not a tab stop: nothing opens from it, like every other row of My activity.
+// This file fetches nothing, reads no store rows and computes no trust figure: the
 // counters, the outcome label and the closed and lifetime phrases are the
 // server's, written through Pinalert.setText.
 //
@@ -133,7 +135,7 @@ window.PinalertEnded = (function () {
     li.appendChild(distance);
 
     return {
-      el: li, glyph: glyph, title: title, sub: sub, severity: severity, chip: chip,
+      el: li, what: what, takeBack: null, glyph: glyph, title: title, sub: sub, severity: severity, chip: chip,
       happened: happened, facts: facts, trust: trust, firstCount: counts[0], secondCount: counts[1],
       when: when, distance: distance
     };
@@ -170,6 +172,42 @@ window.PinalertEnded = (function () {
       return history.closed_text || '';
     }
     return history.outcome_label || '';
+  }
+
+  // readEndedAgain reads the Ended nearby answer again after a take back and
+  // resolves true when it did, false when it could not. The read is
+  // ended-nearby.js's own (this file fetches nothing); it never rejects.
+  function readEndedAgain(reportId) {
+    var part = window.PinalertEndedNearby;
+    if (!part || typeof part.refresh !== 'function') {
+      return Promise.resolve(false);
+    }
+    return part.refresh(reportId);
+  }
+
+  // mountTakeBack puts the take back on the last line of the What happened
+  // cell for the person who marked this report resolved, and nothing for anyone
+  // else (03.1 D-22, 03.4 D-21, UI-SPEC Surface 3: rows are read only apart from
+  // the take back). Whether this viewer has one, and how many undos are left,
+  // is the server's answer in the report (your_resolution, undos_left) read by
+  // the one builder in votes.js; this file holds no limit and sends nothing.
+  function mountTakeBack(card, report) {
+    if (card.takeBack) {
+      card.takeBack.update(report);
+      return;
+    }
+    if (!window.PinalertVotes || typeof PinalertVotes.createTakeBackFor !== 'function') {
+      return;
+    }
+    var made = PinalertVotes.createTakeBackFor(report, {
+      readAgain: function () {
+        return readEndedAgain(report.id);
+      }
+    });
+    if (made) {
+      card.takeBack = made;
+      card.what.appendChild(made.el);
+    }
   }
 
   // updateEndedRow writes a row, text only. The state classes follow the Status
@@ -214,6 +252,7 @@ window.PinalertEnded = (function () {
 
     Pinalert.setText(card.when, whenWords(report));
     Pinalert.setText(card.distance, distanceWords(report));
+    mountTakeBack(card, report);
   }
 
   // cutLineText is the one cap line of both groups (C13): the number is the

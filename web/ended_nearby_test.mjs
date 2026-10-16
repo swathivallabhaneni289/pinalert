@@ -107,6 +107,13 @@ class FakeEl {
   }
   querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
   focus(options) { this.doc.activeElement = this; this.focused = options || {}; }
+  // Plan 19: the take back asks for its nearest popup ancestor and whether a
+  // node holds focus; neither matters in these sandboxes.
+  closest() { return null; }
+  contains(node) {
+    for (let n = node; n; n = n.parentNode) { if (n === this) { return true; } }
+    return false;
+  }
 }
 
 const IDS = {
@@ -184,6 +191,13 @@ function load({ search = '', position = null, radius = '12', answers = [], cells
       const next = answers.shift();
       if (next instanceof Error) { return Promise.reject(next); }
       const body = typeof next === 'function' ? next() : next;
+      // Plan 19: { refuse: status, error: {...} } is a refused write.
+      if (body && body.refuse) {
+        return Promise.resolve({
+          ok: false, status: body.refuse, headers: { get: () => null },
+          json: () => Promise.resolve({ error: body.error })
+        });
+      }
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
     },
     Request: function Request(target, init) { this.url = target; this.signal = init && init.signal; },
@@ -197,6 +211,7 @@ function load({ search = '', position = null, radius = '12', answers = [], cells
   vm.runInContext(read('app.js'), sandbox);
   vm.runInContext(read('trust.js'), sandbox);
   vm.runInContext(read('position.js'), sandbox);
+  vm.runInContext(read('votes.js'), sandbox);
   vm.runInContext(read('ended-cards.js'), sandbox);
   sandbox.Pinalert.showToast = (message) => toasts.push(message);
   return {
@@ -541,4 +556,142 @@ test('the page is untouched on another page: no Ended nearby element, no read', 
   delete m.doc.byId['ended-nearby'];
   assert.equal(m.start(), null);
   assert.equal(m.fetches.length, 0);
+});
+
+// ---- Phase 3.4 plan 19: the take back of a mistaken Mark resolved (03.1 D-22,
+// 03.4 D-21). The server decides who has one and how many undos are left; the
+// row only shows what votes.js's one builder makes of those fields.
+
+const MARKED = (left, extra = {}) => ({ your_resolution: 'resolve', undos_left: left, ...extra });
+const undoButton = (el) => el.querySelectorAll('.vote-btn--takeback')[0];
+const usedLine = (el) => el.querySelectorAll('.vote-takeback__count')[0];
+const USED = 'You have used both undos on this report.';
+
+function builtRow(report) {
+  const m = load();
+  const card = m.sandbox.PinalertEnded.createEndedRow(report.id);
+  m.sandbox.PinalertEnded.updateEndedRow(card, report);
+  return { m, card };
+}
+
+test('take back shows Undo for the person who marked it', () => {
+  const { card } = builtRow(resolvedReport(7, MARKED(2)));
+  assert.ok(card.takeBack, 'the row mounts the take back');
+  const undo = undoButton(card.el);
+  assert.ok(undo, 'the Undo button exists');
+  assert.equal(undo.hidden, false);
+  assert.ok(!undo.disabled, 'and is enabled');
+  assert.equal(undo.querySelector('.vote-btn__label').textContent, 'Undo');
+  assert.equal(undo.dataset.action, 'unresolve');
+  assert.equal(usedLine(card.el).hidden, true, 'no used sentence while undos are left');
+  assert.equal(card.takeBack.el.hidden, false);
+  assert.ok(card.what.children.includes(card.takeBack.el), 'it is the last line of the What happened cell');
+  assert.equal(card.takeBack.el.querySelectorAll('.vote-btn--reopen').length, 0, 'no Reopen on an Ended nearby row');
+});
+
+test('take back shows the used sentence when no undos are left', () => {
+  const { card } = builtRow(resolvedReport(8, MARKED(0)));
+  assert.ok(card.takeBack);
+  assert.equal(undoButton(card.el).hidden, true, 'no Undo button');
+  assert.equal(usedLine(card.el).hidden, false);
+  assert.equal(usedLine(card.el).textContent, USED);
+  assert.equal(card.takeBack.el.hidden, false);
+});
+
+test('take back shows nothing for anyone else', () => {
+  for (const extra of [
+    { your_resolution: null, undos_left: 2 },
+    { your_resolution: 'reopen', undos_left: 2 },
+    { your_resolution: null, undos_left: 0 },
+    { your_resolution: 'resolve' },
+    { your_resolution: null, undos_left: 2, is_own_report: true }
+  ]) {
+    const { card } = builtRow(resolvedReport(9, extra));
+    assert.equal(card.takeBack, null, JSON.stringify(extra));
+    assert.equal(undoButton(card.el), undefined);
+    assert.equal(card.el.querySelectorAll('.vote-takeback').length, 0);
+    assert.equal(card.el.querySelectorAll('button').length, 0, 'the row stays read only');
+  }
+});
+
+test('take back is never offered on a report that faded out, and a later answer can take it away', () => {
+  const faded = builtRow(expiredReport(10, MARKED(2)));
+  assert.equal(faded.card.takeBack, null, 'a faded report cannot be changed');
+
+  const { m, card } = builtRow(resolvedReport(11, MARKED(2)));
+  m.sandbox.PinalertEnded.updateEndedRow(card, resolvedReport(11, { your_resolution: null, undos_left: 2 }));
+  assert.equal(card.takeBack.el.hidden, true, 'the server stopped saying the viewer marked it');
+  assert.equal(undoButton(card.el).hidden, true);
+  m.sandbox.PinalertEnded.updateEndedRow(card, resolvedReport(11, MARKED(0)));
+  assert.equal(usedLine(card.el).textContent, USED, 'and a later answer can show the used sentence');
+  assert.equal(card.takeBack.el.hidden, false);
+});
+
+test('take back click sends unresolve for that report, reads the part again and the row leaves when the report is open again', async () => {
+  const m = load({
+    position: [12.97, 77.59],
+    answers: [answer([resolvedReport(31, MARKED(2)), resolvedReport(32)]), { visibility: 'live', undos_left: 1 },
+      answer([resolvedReport(32)])]
+  });
+  m.start();
+  await settle();
+  const undo = undoButton(rowsOf(m, 'ended-resolved-list')[0]);
+  assert.ok(undo);
+  assert.equal(undoButton(rowsOf(m, 'ended-resolved-list')[1]), undefined, 'the other row has none');
+  undo.click();
+  await settle();
+
+  assert.equal(m.fetches.length, 3);
+  const post = m.fetches[1];
+  assert.equal(new URL(post.url, 'http://x').pathname, '/api/reports/31/unresolve');
+  assert.equal(post.init.method, 'POST');
+  assert.equal(post.init.body, '{}', 'a take back sends no coordinates');
+  const reread = new URL(m.fetches[2].url, 'http://x');
+  assert.equal(reread.pathname, '/api/reports');
+  assert.equal(reread.searchParams.get('view'), 'past', 'the part is read again, not the Nearby list');
+  assert.deepEqual(rowsOf(m, 'ended-resolved-list').map((r) => r.dataset.reportId), ['32']);
+  assert.equal(m.by('ended-hub-count').textContent, '1');
+  assert.deepEqual(m.toasts, [m.sandbox.PinalertVotes.TAKE_BACK_SUCCEEDED_CLOSED_TOAST]);
+  assert.equal(shown(m.by('ended-skeleton')), false, 'no skeleton flashes during the quiet read');
+});
+
+test('take back refused by the server keeps the row, shows the server line and the part reads the answer', async () => {
+  const refusal = 'You have used both undos on this report.';
+  const m = load({
+    position: [12.97, 77.59],
+    answers: [answer([resolvedReport(41, MARKED(1))]), { refuse: 409, error: { field: 'undo', message: refusal } },
+      answer([resolvedReport(41, MARKED(0))])]
+  });
+  m.start();
+  await settle();
+  undoButton(rowsOf(m, 'ended-resolved-list')[0]).click();
+  await settle();
+
+  assert.equal(m.fetches.length, 3, 'the refusal reads the part again');
+  const row = rowsOf(m, 'ended-resolved-list')[0];
+  assert.equal(row.dataset.reportId, '41', 'the row stays');
+  assert.equal(undoButton(row).hidden, true, 'the new answer has no undo left');
+  assert.equal(usedLine(row).textContent, USED);
+  const line = row.querySelectorAll('.vote-error')[0];
+  assert.equal(line.hidden, false, 'the refusal line is carried to the redrawn row');
+  assert.equal(line.textContent, refusal);
+  assert.deepEqual(m.toasts, []);
+});
+
+test('take back when the part cannot be read again keeps the row and says it was saved', async () => {
+  const m = load({
+    position: [12.97, 77.59],
+    answers: [answer([resolvedReport(51, MARKED(2))]), { visibility: 'live', undos_left: 1 }, new Error('offline')]
+  });
+  m.start();
+  await settle();
+  const before = rowsOf(m, 'ended-resolved-list')[0];
+  undoButton(before).click();
+  await settle();
+  assert.equal(rowsOf(m, 'ended-resolved-list')[0], before, 'the rows are left as they were');
+  assert.equal(shown(m.by('ended-error')), false, 'a quiet read never shows the error state');
+  const line = before.querySelectorAll('.vote-error')[0];
+  assert.equal(line.hidden, false);
+  assert.ok(line.textContent.length > 0);
+  assert.equal(undoButton(before).disabled, false, 'the block is released');
 });

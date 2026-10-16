@@ -253,7 +253,7 @@ window.PinalertEndedNearby = (function () {
   // render draws an answer of the Past read. Zero reports and no partial flag is
   // the empty state; a partial flag always keeps its group on screen, so an
   // empty block is never claimed while the server says some are missing.
-  function render(answer) {
+  function render(answer, quiet) {
     var reports = answer && Array.isArray(answer.reports) ? answer.reports : [];
     var cut = answer && answer.cut ? answer.cut : {};
     var resolvedPartial = cut.resolved_partial === true;
@@ -276,7 +276,7 @@ window.PinalertEndedNearby = (function () {
     showState('groups');
     setHidden(colsEl, shown === 0);
     if (chosenId !== null && !linked.told) {
-      highlight(chosenId);
+      highlight(chosenId, quiet === true);
     }
     return shown;
   }
@@ -301,7 +301,7 @@ window.PinalertEndedNearby = (function () {
   // scrolling the window. It answers whether the row was found. The row takes
   // focus without scrolling when a region scrolls it, so a keyboard reader
   // starts there.
-  function highlight(reportId) {
+  function highlight(reportId, keepPlace) {
     var row = rowsById[String(reportId)];
     if (!row) {
       return false;
@@ -311,6 +311,10 @@ window.PinalertEndedNearby = (function () {
       previous[i].classList.remove('activity-card--chosen');
     }
     row.el.classList.add('activity-card--chosen');
+    if (keepPlace === true) {
+      // A quiet redraw after a take back keeps the fill and moves nothing.
+      return true;
+    }
     row.el.setAttribute('tabindex', '-1');
     var region = scrollRegionOf(row.el);
     if (region) {
@@ -326,22 +330,31 @@ window.PinalertEndedNearby = (function () {
   // load reads the Past answer once for the kept position and draws it. With no
   // position it sends nothing and shows the location state. It answers a
   // promise that settles when the part is drawn, whatever the result.
-  function load() {
+  //
+  // The quiet form (used by refresh, after a take back) shows no skeleton, asks
+  // for no linked report, moves nothing and leaves the rows as they are when the
+  // read fails: the caller learns of the failure from the null answer.
+  function load(quiet) {
     var position = readPosition();
+    if (quiet === true && !position) {
+      return Promise.resolve(null);
+    }
     var seq = ++readSeq;
     fillDistances(position);
     if (!position) {
       showState('location');
       return Promise.resolve(null);
     }
-    showState('loading');
+    if (quiet !== true) {
+      showState('loading');
+    }
 
     var url = '/api/reports' +
       '?lat=' + encodeURIComponent(position.lat) +
       '&lon=' + encodeURIComponent(position.lon) +
       '&radius_km=' + encodeURIComponent(readRadius()) +
       '&view=past';
-    if (chosenId !== null) {
+    if (chosenId !== null && quiet !== true) {
       url += '&report=' + encodeURIComponent(chosenId);
     }
 
@@ -357,14 +370,74 @@ window.PinalertEndedNearby = (function () {
       if (seq !== readSeq) {
         return null;
       }
-      render(body);
+      render(body, quiet === true);
       return body;
     }).catch(function () {
       limit.clear();
-      if (seq === readSeq) {
+      if (seq === readSeq && quiet !== true) {
         showState('error');
       }
       return null;
+    });
+  }
+
+  // focusLost says whether focus sits on nothing useful: no element, the page
+  // body or an element that left the page with the rows just replaced.
+  function focusLost() {
+    var active = document.activeElement;
+    return !active || active === document.body || active.isConnected === false;
+  }
+
+  // focusAfterRedraw puts focus back after a redraw took it: on the report's
+  // take back button when the new row still has one, else on its row, else (the
+  // report left the part) on the part's title.
+  function focusAfterRedraw(reportId) {
+    var row = rowsById[String(reportId)];
+    if (row) {
+      var undo = row.takeBack ? row.takeBack.el.querySelector('.vote-btn--takeback') : null;
+      if (undo && !undo.hidden && !undo.disabled) {
+        undo.focus();
+        return;
+      }
+      row.el.setAttribute('tabindex', '-1');
+      row.el.focus();
+      return;
+    }
+    var title = byId('activity-title-ended');
+    if (title) {
+      title.setAttribute('tabindex', '-1');
+      title.focus();
+    }
+  }
+
+  // refresh reads the part again after a take back and redraws it in place, with
+  // no skeleton. A line a row shows (the refusal of a take back) is carried to
+  // the same report's new row, and focus the redraw took goes back with
+  // focusAfterRedraw. It resolves true when the part was read again and false
+  // when it could not be, and never rejects.
+  function refresh(reportId) {
+    var carried = {};
+    Object.keys(rowsById).forEach(function (id) {
+      var row = rowsById[id];
+      var line = row.takeBack ? row.takeBack.message() : '';
+      if (line !== '') {
+        carried[id] = line;
+      }
+    });
+    return load(true).then(function (body) {
+      if (body === null) {
+        return false;
+      }
+      Object.keys(carried).forEach(function (id) {
+        var row = rowsById[id];
+        if (row && row.takeBack) {
+          row.takeBack.showMessage(carried[id]);
+        }
+      });
+      if (focusLost()) {
+        focusAfterRedraw(reportId);
+      }
+      return true;
     });
   }
 
@@ -376,6 +449,7 @@ window.PinalertEndedNearby = (function () {
 
   var api = {
     load: load,
+    refresh: refresh,
     render: render,
     fillDistances: fillDistances,
     highlight: highlight,
