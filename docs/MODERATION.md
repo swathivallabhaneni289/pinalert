@@ -203,6 +203,9 @@ and the backstop block beside it holds 6 more.
   one address, each at its own account limit, never meet it, while one machine flooding from one
   address is still capped. A backstop refusal says "A lot of requests are coming from your network
   right now", never that the person acted too fast.
+- The vote change cooldown never refuses the take back of a Mark resolved, so the Undo on the
+  message works within its 8 seconds; the limit of two undos per report bounds it instead, and a
+  quick resolve again after an Undo still waits out the cooldown.
 
 - The network backstop runs only when `CLIENT_IP_HEADER` is set. Until it is set on a host that
   sits behind a proxy, the existing per address limits (login link requests and place search)

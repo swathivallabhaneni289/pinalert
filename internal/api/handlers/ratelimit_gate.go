@@ -247,6 +247,27 @@ func (g *RateGate) AdmitReport(w http.ResponseWriter, r *http.Request, accountID
 // is refunded at its reservation instant whenever the wrapped handler answers
 // outside 200 to 299, a panic included, so a refused vote never burns it.
 func (g *RateGate) VoteMiddleware(kind service.VoteKind) func(http.Handler) http.Handler {
+	return g.voteMiddleware(kind, false)
+}
+
+// TakeBackMiddleware throttles the take back route (POST .../unresolve, the
+// Undo after Mark resolved, Phase 3.1 D-22) like VoteMiddleware on the
+// resolution kind, with one difference (IN-S01): the resolution cooldown
+// never refuses a take back. The Undo on the message is shown for 8 seconds
+// after a Mark resolved, inside the 30 second cooldown that mark started, so
+// a refusal would make that Undo always fail. The take back is already
+// bounded by the limit of two undos per account and report, by the vote
+// bucket and by the network backstop. It still takes the cooldown token when
+// one is free, so a take back starts a cooldown of its own, and it never
+// clears one: a quick re-resolve after an Undo stays limited as before.
+func (g *RateGate) TakeBackMiddleware() func(http.Handler) http.Handler {
+	return g.voteMiddleware(service.VoteKindResolution, true)
+}
+
+// voteMiddleware is VoteMiddleware and TakeBackMiddleware. takeBack true
+// admits a request the cooldown would refuse, without spending or refunding
+// anything from the cooldown for it.
+func (g *RateGate) voteMiddleware(kind service.VoteKind, takeBack bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			acc, ok := account.FromContext(r.Context())
@@ -275,6 +296,12 @@ func (g *RateGate) VoteMiddleware(kind service.VoteKind) func(http.Handler) http
 			}
 
 			change := g.voteChange.Reserve(voteChangeKey(acc.ID, id, kind))
+			if !change.OK && takeBack {
+				// A refused Reserve took nothing, so the running cooldown
+				// is left exactly as the earlier vote set it.
+				next.ServeHTTP(w, r)
+				return
+			}
 			if !change.OK {
 				logBlock(voteChangeBucket, acc.ID, change.RetryAfter)
 				writeRateLimited(w, voteChangeRateField, service.VoteChangeLimitMessage(change.RetryAfter), change.RetryAfter, false, "")

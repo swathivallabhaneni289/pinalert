@@ -442,8 +442,9 @@ func NewRouter(deps Deps) *chi.Mux {
 		// D-10 and D-11: each vote route is wrapped with the one gate's vote
 		// middleware, the per account vote bucket and the 30 second cooldown
 		// on casting the same kind of vote again on one report, on all five
-		// vote routes including the take back below. This closes WR-01, the
-		// missing throttle on the vote routes.
+		// vote routes; the take back below is never refused by that
+		// cooldown (IN-S01). This closes WR-01, the missing throttle on the
+		// vote routes.
 		r.With(rateGate.VoteMiddleware(service.VoteKindContent)).Post("/api/reports/{id}/confirm", handlers.CastVote(deps.Votes, service.VoteKindContent, service.VoteConfirm))
 		r.With(rateGate.VoteMiddleware(service.VoteKindContent)).Post("/api/reports/{id}/dispute", handlers.CastVote(deps.Votes, service.VoteKindContent, service.VoteDispute))
 		r.With(rateGate.VoteMiddleware(service.VoteKindResolution)).Post("/api/reports/{id}/resolve", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteResolve))
@@ -455,7 +456,11 @@ func NewRouter(deps Deps) *chi.Mux {
 		// take back only withdraws the caller's own resolve and claims
 		// nothing about the place. It needs no location, never counts as a
 		// reopen, and shares its limit of two with the poster's reopen.
-		r.With(rateGate.VoteMiddleware(service.VoteKindResolution)).Post("/api/reports/{id}/unresolve", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteUnresolve))
+		// TakeBackMiddleware is the vote throttle except that the 30 second
+		// resolution cooldown never refuses it (IN-S01), so the Undo shown
+		// for 8 seconds on the Mark resolved message works; the limit of two
+		// undos bounds it, and it never clears the cooldown a resolve set.
+		r.With(rateGate.TakeBackMiddleware()).Post("/api/reports/{id}/unresolve", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteUnresolve))
 		// POST /api/reports/{id}/flag (plan 04-20, D-09). Gated because a flag
 		// must belong to a verified account. A flat literal path like the vote
 		// routes. The flag bucket and the network backstop run in
