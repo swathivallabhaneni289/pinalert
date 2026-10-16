@@ -38,6 +38,10 @@ window.PinalertMapTools = (function () {
   var MESSAGE_UNAVAILABLE = 'Search unavailable. Try again in a moment.';
   var MESSAGE_RATE_LIMITED = 'Too many searches. Wait a few seconds and try again.';
   var MESSAGE_LOCATION_LOST = "Your location isn't available. Showing the default area.";
+  // The line above the results when a shorter text found them (quick task
+  // 261016-adr). The matched text is what the reader typed, cut down by the
+  // server, so it reaches the page through Pinalert.setText only.
+  var MESSAGE_PARTIAL_PREFIX = 'No exact match for the full address. Showing places for: ';
 
   var toolsEl = document.querySelector('.map-tools');
   var formEl = document.getElementById('map-search');
@@ -142,9 +146,20 @@ window.PinalertMapTools = (function () {
   }
 
   // renderResults draws at most MAX_RESULTS buttons, in the order received.
-  function renderResults(list) {
+  // When matched is set, a shorter text than the one typed found them, and one
+  // plain line saying so sits above the buttons. It is not a button, so the
+  // click handler's closest('.map-search__result') never picks it.
+  function renderResults(list, matched) {
     resultsEl.textContent = '';
     lastResults = [];
+    var partial = '';
+    if (typeof matched === 'string' && matched !== '') {
+      partial = MESSAGE_PARTIAL_PREFIX + matched + '.';
+      var note = document.createElement('p');
+      note.className = 'map-search__note';
+      Pinalert.setText(note, partial);
+      resultsEl.appendChild(note);
+    }
     for (var i = 0; i < list.length && lastResults.length < MAX_RESULTS; i++) {
       if (!validResult(list[i])) {
         continue;
@@ -174,13 +189,17 @@ window.PinalertMapTools = (function () {
       resultsEl.appendChild(button);
     }
     if (lastResults.length === 0) {
+      resultsEl.textContent = '';
       resultsEl.hidden = true;
       showStatus(MESSAGE_NO_MATCH, false);
       return;
     }
     resultsEl.hidden = false;
     var count = lastResults.length;
-    showStatus(count === 1 ? '1 result.' : String(count) + ' results.', true);
+    var countText = count === 1 ? '1 result.' : String(count) + ' results.';
+    // The quiet line is read out, not drawn, so it carries the partial
+    // match line too.
+    showStatus(partial ? partial + ' ' + countText : countText, true);
   }
 
   // messageFor picks the line for a refused or failed answer: the server's own
@@ -235,7 +254,8 @@ window.PinalertMapTools = (function () {
             showStatus(messageFor(res.status, body), false);
             return;
           }
-          renderResults(body && Array.isArray(body.results) ? body.results : []);
+          renderResults(body && Array.isArray(body.results) ? body.results : [],
+            body && body.matched_query);
         });
       })
       .catch(function (err) {

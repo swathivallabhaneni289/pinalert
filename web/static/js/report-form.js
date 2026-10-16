@@ -48,6 +48,10 @@
   // produce requests the server refuses with a 400.
   var MIN_QUERY_RUNES = 3;
   var SEARCH_NO_MATCH_MESSAGE = 'No matches found.';
+  // The line above the suggestions when a shorter text found them (quick task
+  // 261016-adr). The matched text is what the visitor typed, cut down by the
+  // server, so it reaches the page through Pinalert.setText only.
+  var SEARCH_PARTIAL_PREFIX = 'No exact match for the full address. Showing places for: ';
 
   // Outcome copy (D-18, D-02, D-12, P4-A12, P4-A13). The save toasts and the
   // held toast stay on screen for 6 seconds; Send after the wait uses the
@@ -131,8 +135,12 @@
   var searchSeq = 0;
   // Session scoped and emptied by resetForm: both a Nominatim usage policy
   // ask (cache repeated queries) and what keeps a visitor retyping the
-  // same place from firing duplicate requests.
+  // same place from firing duplicate requests. Keyed by the whole request,
+  // pin included, and each entry keeps the matched text with the results.
   var searchCache = new Map();
+  // The controller of the search request in flight, so a newer search can
+  // end it (quick task 261016-adr).
+  var searchController = null;
 
   // buildSeverityControl wraps the existing native label, range input and
   // output in a single container (once, at mount) so a sev-low, sev-medium
@@ -445,8 +453,10 @@
   // renderDropdown renders at most the results the server already
   // returned, in the order received: the proxy returns Nominatim's own
   // relevance order, and re-sorting client side risks disagreeing with
-  // that ranking for no benefit.
-  function renderDropdown(results) {
+  // that ranking for no benefit. When matched is set, a shorter text than
+  // the one typed found them, and one plain line saying so sits above the
+  // rows; each row still shows its full address.
+  function renderDropdown(results, matched) {
     if (!results || results.length === 0) {
       hideDropdown();
       showSearchStatus(SEARCH_NO_MATCH_MESSAGE);
@@ -455,6 +465,12 @@
     }
     clearSearchStatus();
     locationSearchResults.textContent = '';
+    if (typeof matched === 'string' && matched !== '') {
+      var note = document.createElement('p');
+      note.className = 'location-search-note';
+      Pinalert.setText(note, SEARCH_PARTIAL_PREFIX + matched + '.');
+      locationSearchResults.appendChild(note);
+    }
     results.forEach(function (result) {
       locationSearchResults.appendChild(renderResultRow(result));
     });
@@ -472,22 +488,51 @@
     }
   }
 
-  // searchTimeoutSignal returns a signal that aborts the search request after
-  // SEARCH_TIMEOUT_MS, by the browser's own timeout signal when it has one,
-  // else by a timer. It returns undefined when neither can be built, and the
-  // request then simply has no time limit.
+  // searchTimeoutSignal ends the search request before it, if any, and
+  // returns a signal that aborts the new request after SEARCH_TIMEOUT_MS or
+  // when a newer search starts. One server search can send up to four
+  // requests to the geocoder at one a second, so an older search left
+  // running would spend the budget the newer one needs. The controller is
+  // preferred because only it can be ended early; the browser's own timeout
+  // signal is the fallback, and with neither the request simply has no time
+  // limit.
   function searchTimeoutSignal() {
-    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
-      return AbortSignal.timeout(SEARCH_TIMEOUT_MS);
-    }
+    abortSearchRequest();
     if (typeof AbortController === 'function') {
       var controller = new AbortController();
+      searchController = controller;
       window.setTimeout(function () {
         controller.abort();
       }, SEARCH_TIMEOUT_MS);
       return controller.signal;
     }
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+      return AbortSignal.timeout(SEARCH_TIMEOUT_MS);
+    }
     return undefined;
+  }
+
+  // abortSearchRequest ends the search request in flight, if any. Its late
+  // answer is already dropped by the searchSeq guard; this also stops it
+  // on the server.
+  function abortSearchRequest() {
+    if (searchController) {
+      searchController.abort();
+      searchController = null;
+    }
+  }
+
+  // searchPin returns the report pin for the search to look around first,
+  // or null when there is no pin yet. A pin outside the range the server
+  // accepts is left out rather than turning the search into a refusal.
+  function searchPin() {
+    var pos = picker && typeof picker.current === 'function' ? picker.current() : null;
+    if (!pos || typeof pos.latitude !== 'number' || typeof pos.longitude !== 'number' ||
+        !isFinite(pos.latitude) || !isFinite(pos.longitude) ||
+        pos.latitude < -90 || pos.latitude > 90 || pos.longitude < -180 || pos.longitude > 180) {
+      return null;
+    }
+    return pos;
   }
 
   // onSearchInput is a pause based debounce: the timer is cleared and
@@ -526,13 +571,23 @@
     searchSeq += 1;
     var mySeq = searchSeq;
 
-    var cacheKey = query.toLowerCase();
+    // The pin, when there is one, makes the server look around it first.
+    var url = '/api/geocode?q=' + encodeURIComponent(query);
+    var pin = searchPin();
+    if (pin) {
+      url += '&lat=' + encodeURIComponent(pin.latitude.toFixed(5));
+      url += '&lon=' + encodeURIComponent(pin.longitude.toFixed(5));
+    }
+
+    var cacheKey = url.toLowerCase();
     if (searchCache.has(cacheKey)) {
-      renderDropdown(searchCache.get(cacheKey));
+      abortSearchRequest();
+      var hit = searchCache.get(cacheKey);
+      renderDropdown(hit.results, hit.matched);
       return;
     }
 
-    fetch('/api/geocode?q=' + encodeURIComponent(query), { signal: searchTimeoutSignal() })
+    fetch(url, { signal: searchTimeoutSignal() })
       .then(function (res) {
         return res.json().catch(function () {
           return {};
@@ -548,8 +603,8 @@
           if (mySeq !== searchSeq) {
             return;
           }
-          searchCache.set(cacheKey, body.results);
-          renderDropdown(body.results);
+          searchCache.set(cacheKey, { results: body.results, matched: body.matched_query });
+          renderDropdown(body.results, body.matched_query);
         });
       })
       .catch(function (err) {
@@ -574,8 +629,9 @@
     window.clearTimeout(searchDebounceTimer);
     searchDebounceTimer = null;
     // Discards any in flight response on arrival rather than letting it
-    // resolve into a closed or reopened form.
+    // resolve into a closed or reopened form, and ends the request itself.
     searchSeq += 1;
+    abortSearchRequest();
     locationSearchInput.value = '';
     hideDropdown();
     clearSearchStatus();
