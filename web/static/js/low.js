@@ -301,9 +301,13 @@
     body.appendChild(voteBlock.note);
     body.appendChild(voteBlock.error);
 
-    // The Flag control ends the row, outside the vote controls (P4-A6).
-    var flagControl = PinalertFlag.createFlagControl(report);
-    body.appendChild(flagControl.el);
+    // The Flag control ends the row, outside the vote controls (P4-A6). When
+    // flag.js did not load, the row is drawn without it rather than not at
+    // all (WR-W04).
+    var flagControl = window.PinalertFlag ? PinalertFlag.createFlagControl(report) : null;
+    if (flagControl) {
+      body.appendChild(flagControl.el);
+    }
 
     li.appendChild(badge);
     li.appendChild(body);
@@ -349,7 +353,9 @@
     PinalertVisibility.updateVisibilityTag(row.tag, report);
     PinalertTrust.updateTrustBlock(row.trust, report.trust);
     PinalertVotes.updateVoteBlock(row.voteBlock, report);
-    PinalertFlag.updateFlagControl(row.flag, report);
+    if (row.flag && window.PinalertFlag) {
+      PinalertFlag.updateFlagControl(row.flag, report);
+    }
   }
 
   // focusAfterRemoval puts focus on a real control when the row that held it
