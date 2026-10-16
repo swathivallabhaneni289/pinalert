@@ -67,10 +67,12 @@ func TestReviewFixA3LatestPlaceActionWins(t *testing.T) {
 	p13MustContain(t, "cancelRecenter", cancel, "recenterSeq += 1;")
 
 	tools := p19Code(t, "static/js/map-tools.js")
-	search := jsFunctionBody(t, tools, "search(query)")
+	search := jsFunctionBody(t, tools, "search(query, typed)")
 	p13MustNotContain(t, "search", search, "backPending")
+	// Since quick 261016-sfu a newer search ends the older one rather than
+	// being ignored, and only Enter or the button (not typing) cancels Back.
 	p13Ordered(t, search, "search",
-		"if (inFlight) {", "Array.from(q).length < MIN_QUERY_RUNES", "cancelBack();", "inFlight = true;")
+		"Array.from(q).length < MIN_QUERY_RUNES", "if (!quiet) {\n      cancelBack();", "inFlight = true;")
 	pick := jsFunctionBody(t, tools, "pickResult(i)")
 	p13Ordered(t, pick, "pickResult", "cancelBack();", "Pinalert.setCenter(pick.lat, pick.lon, false);")
 	cb := jsFunctionBody(t, tools, "cancelBack()")
