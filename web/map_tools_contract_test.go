@@ -120,12 +120,14 @@ func p31mSearchScript(t *testing.T) {
 		t.Errorf("map-tools.js has %d AbortController constructions, want 1", n)
 	}
 
-	search := jsFunctionBody(t, code, "search(query)")
+	// Since quick 261016-sfu a newer search ends the older one (abortSearch)
+	// instead of being ignored while the older one is out.
+	search := jsFunctionBody(t, code, "search(query, typed)")
 	p13MustContain(t, "search", search,
 		"encodeURIComponent(q)", "PinalertMap.getCenter()", "'&lat='", "'&lon='",
-		"Array.from(q).length < MIN_QUERY_RUNES", "if (inFlight", "controller.signal", "mySeq !== searchSeq")
+		"Array.from(q).length < MIN_QUERY_RUNES", "controller.signal", "mySeq !== searchSeq")
 	p13Ordered(t, search, "search",
-		"if (inFlight", "Array.from(q).length < MIN_QUERY_RUNES", "inFlight = true;", "fetch(")
+		"Array.from(q).length < MIN_QUERY_RUNES", "abortSearch();", "inFlight = true;", "fetch(")
 
 	// The three letter minimum, the status words (C27 to C32) and the ellipsis
 	// written as an escape, the style app.js uses.
@@ -139,9 +141,11 @@ func p31mSearchScript(t *testing.T) {
 		"' results.'", "'1 result.'",
 		"var MAX_RESULTS = 5;", "var RESULT_NAME_MAX = 32;", "var RESULT_ZOOM = 13;")
 
-	// No type ahead: the box is read on submit only.
+	// Type ahead (quick 261016-sfu): the box is read on submit and after a
+	// typing pause, pinned by TestPlaceSearchSuggestsWhileTyping. No other key
+	// listener sends anything.
 	p13MustNotContain(t, "map-tools.js", code,
-		"addEventListener('input'", "addEventListener('keyup'", "addEventListener('keypress'", "setTimeout(")
+		"addEventListener('keyup'", "addEventListener('keypress'")
 	p13MustContain(t, "map-tools.js", code, "addEventListener('submit'", "evt.preventDefault()")
 
 	// An aborted request is not an error line, and a late answer is dropped.
