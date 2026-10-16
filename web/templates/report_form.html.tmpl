@@ -63,6 +63,20 @@
           <input type="number" id="shelter-headcount" name="shelter_headcount" min="0">
         </fieldset>
 
+        <a id="call-112-box" class="call-box" href="{{.Chrome.Numbers.TelHref}}" aria-labelledby="call-112-action call-112-title call-112-line" hidden>
+          <span class="call-box__disc" aria-hidden="true"><span class="app-icon app-icon--phone"></span></span>
+          <span class="call-box__text">
+            <span class="call-box__title" id="call-112-title">Someone in danger right now?</span>
+            <span class="call-box__line" id="call-112-line">Call {{.Chrome.Numbers.Primary}} first, then post here.</span>
+          </span>
+          <span class="call-box__button" id="call-112-action">Call {{.Chrome.Numbers.Primary}}</span>
+        </a>
+
+        <fieldset id="happening-fields" class="post-group" hidden>
+          <legend class="post-group__legend" id="happening-legend">What is happening?</legend>
+          <div id="happening-group" role="radiogroup" aria-labelledby="happening-legend"></div>
+        </fieldset>
+
         <div class="post-group">
           <label for="description" class="post-group__legend">Describe it</label>
           <textarea id="description" name="description" rows="4" maxlength="280"

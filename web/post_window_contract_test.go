@@ -16,6 +16,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"pinalert/internal/service"
 )
 
 // postWindowBlock returns the #report-modal block of index.html.tmpl: from the
@@ -443,6 +445,267 @@ func TestLowFormKeepsBuiltMode(t *testing.T) {
 		if !strings.Contains(form, want) {
 			t.Errorf("report-form.js lost the Low data mode piece %q", want)
 		}
+	}
+}
+
+// TestPostWindowCallBoxCriticalOnly (plan 03.4-12, D-24, D-24a, D-30, T-34-53):
+// the Call 112 box is one tel link built from the configured primary number,
+// starts hidden, sits between the shelter fields and Describe it, and exists
+// only in the window branch. It shows for Critical only and never takes focus.
+func TestPostWindowCallBoxCriticalOnly(t *testing.T) {
+	partial := p410ReadTemplate(t, "report_form.html.tmpl")
+	lowBranch, window := p410Branches(t, partial)
+
+	const open = `<a id="call-112-box" class="call-box" href="{{.Chrome.Numbers.TelHref}}"`
+	if n := strings.Count(window, open); n != 1 {
+		t.Fatalf("the window branch holds %d Call 112 links built from Chrome.Numbers.TelHref, want 1", n)
+	}
+	start := strings.Index(window, open)
+	box := window[start : start+strings.Index(window[start:], "</a>")]
+	if !strings.Contains(box, " hidden>") {
+		t.Errorf("the Call 112 box must start hidden")
+	}
+	for _, want := range []string{
+		`<span class="call-box__disc" aria-hidden="true"><span class="app-icon app-icon--phone"></span></span>`,
+		`>Someone in danger right now?</span>`,
+		`>Call {{.Chrome.Numbers.Primary}} first, then post here.</span>`,
+		`<span class="call-box__button" id="call-112-action">Call {{.Chrome.Numbers.Primary}}</span>`,
+	} {
+		if n := strings.Count(box, want); n != 1 {
+			t.Errorf("the Call 112 box holds %q %d times, want 1", want, n)
+		}
+	}
+	// The button is a span: a button inside a link is invalid markup.
+	if strings.Contains(box, "<button") {
+		t.Errorf("the Call 112 box holds a button inside a link")
+	}
+	// The number is the configured one: no typed number and no typed tel link,
+	// in the box or anywhere in the partial.
+	if strings.Contains(partial, "tel:") {
+		t.Errorf("the partial holds a typed tel: link; the target is Chrome.Numbers.TelHref")
+	}
+	words := regexp.MustCompile(`\s(id|aria-labelledby|class)="[^"]*"`).ReplaceAllString(box, "")
+	if regexp.MustCompile(`\d{3}`).MatchString(strings.NewReplacer("{{", "", "}}", "").Replace(words)) {
+		t.Errorf("the Call 112 box types a number; it comes from the numbers setting")
+	}
+	// The link's accessible name is its three parts, button words first.
+	if !strings.Contains(box, `aria-labelledby="call-112-action call-112-title call-112-line"`) {
+		t.Errorf("the link must be named by its button words, its question and its line")
+	}
+
+	// It sits after the shelter fields and before Describe it, and the Low data
+	// branch has no box at all.
+	if !(strings.Index(window, `id="shelter-fields"`) < start && start < strings.Index(window, `id="description"`)) {
+		t.Errorf("the Call 112 box must sit between the shelter fields and Describe it")
+	}
+	for _, banned := range []string{"call-112", "call-box", "Someone in danger", "happening-", "What is happening?"} {
+		if strings.Contains(lowBranch, banned) {
+			t.Errorf("the Low data branch holds %q; the box and the picks are window only", banned)
+		}
+	}
+
+	// The script shows it for Critical only and gives it no focus.
+	form := p410CodeText(p410ReadStatic(t, "static/js/report-form.js"))
+	renderPart, ok := p410Window(form, "function renderCriticalPart() {", "\n  }\n")
+	if !ok {
+		t.Fatalf("report-form.js has no renderCriticalPart")
+	}
+	for _, want := range []string{
+		"var critical = windowSeverity === 'critical';",
+		"call112Box.hidden = !critical;",
+		"happeningFields.hidden = !critical;",
+		"setHappening(null);",
+	} {
+		if !strings.Contains(renderPart, want) {
+			t.Errorf("renderCriticalPart lacks %q", want)
+		}
+	}
+	if strings.Contains(form, "call112Box.focus") {
+		t.Errorf("report-form.js focuses the Call 112 box; it must not take focus")
+	}
+	// setSeverity is the one place the severity changes in the window, so every
+	// way in (tap, arrow key, reset, prefill) shows and hides the box.
+	setter, _ := p410Window(form, "function setSeverity(key) {", "\n  }\n")
+	if !strings.Contains(setter, "renderCriticalPart();") {
+		t.Errorf("setSeverity must call renderCriticalPart")
+	}
+
+	// The display rule carries :not([hidden]) so the hidden attribute wins.
+	rules := parseCSSRules(p410ReadStatic(t, "static/css/modal.css"))
+	display, ok := ruleBySelector(rules, ".post-window .call-box:not([hidden])")
+	if !ok {
+		t.Fatalf("modal.css has no .post-window .call-box:not([hidden]) rule")
+	}
+	dd := declsOf(display.declBody)
+	for name, want := range map[string]string{
+		"display":       "flex",
+		"gap":           "12px",
+		"padding":       "8px 8px 8px var(--space-12)",
+		"border":        "1px solid var(--color-severity-critical)",
+		"border-radius": "12px",
+		"background":    "var(--color-severity-critical-bg)",
+	} {
+		if dd[name] != want {
+			t.Errorf("the Call 112 box %s is %q, want %q", name, dd[name], want)
+		}
+	}
+	if _, bare := ruleBySelector(rules, ".post-window .call-box"); bare {
+		t.Errorf("a bare .post-window .call-box rule would defeat the hidden attribute; use :not([hidden])")
+	}
+	disc, ok := ruleBySelector(rules, ".post-window .call-box__disc")
+	if !ok || declsOf(disc.declBody)["width"] != "36px" || declsOf(disc.declBody)["height"] != "36px" ||
+		declsOf(disc.declBody)["background"] != "var(--color-alert-fill)" {
+		t.Errorf("the disc must be 36px on --color-alert-fill")
+	}
+	button, ok := ruleBySelector(rules, ".post-window .call-box__button")
+	if !ok {
+		t.Fatalf("modal.css has no .post-window .call-box__button rule")
+	}
+	bd := declsOf(button.declBody)
+	if bd["min-height"] != "44px" || bd["background"] != "var(--color-alert-fill)" || bd["color"] != "var(--color-on-alert-fill)" ||
+		bd["border-radius"] != "8px" || bd["font-weight"] != "var(--font-weight-semibold)" {
+		t.Errorf("the Call 112 button look is %v", bd)
+	}
+	mask, ok := ruleBySelector(rules, ".app-icon--phone")
+	if !ok || declsOf(mask.declBody)["mask-image"] != `url("/static/icons/phone.svg")` {
+		t.Errorf("modal.css must mask phone.svg for the disc")
+	}
+}
+
+// happeningFromScript reads the ordered value and word pairs of the
+// HAPPENING_PICKS constant in report-form.js.
+func happeningFromScript(t *testing.T) (values, words []string, block string) {
+	t.Helper()
+	form := p410ReadStatic(t, "static/js/report-form.js")
+	block, ok := p410Window(form, "var HAPPENING_PICKS = [", "];")
+	if !ok {
+		t.Fatalf("report-form.js has no HAPPENING_PICKS constant")
+	}
+	entry := regexp.MustCompile(`\{ value: '([a-z_]+)', word: '([^']+)' \}`)
+	for _, m := range entry.FindAllStringSubmatch(block, -1) {
+		values = append(values, m[1])
+		words = append(words, m[2])
+	}
+	return values, words, block
+}
+
+// TestPostWindowHappeningPicks (plan 03.4-12, D-24, D-24b, D-05, T-34-52): What
+// is happening? offers the seven picks of the server's closed set from one
+// constant, in order, optional, sent only with Critical, with no hint line.
+func TestPostWindowHappeningPicks(t *testing.T) {
+	values, words, block := happeningFromScript(t)
+	wantValues := []string{"water_rising", "people_trapped", "fire", "building_collapsed", "landslide", "medical_emergency", "other"}
+	wantWords := []string{"Water rising", "People trapped", "Fire", "Building collapsed", "Landslide", "Medical emergency", "Other"}
+	if !reflect.DeepEqual(values, wantValues) {
+		t.Errorf("HAPPENING_PICKS values = %v, want %v", values, wantValues)
+	}
+	if !reflect.DeepEqual(words, wantWords) {
+		t.Errorf("HAPPENING_PICKS words = %v, want %v", words, wantWords)
+	}
+	if strings.ContainsRune(block, rune(0x2013)) || strings.ContainsRune(block, rune(0x2014)) {
+		t.Errorf("HAPPENING_PICKS holds an em dash or an en dash")
+	}
+
+	// The server's closed set is the same seven values in the same order
+	// (service.Happenings, plan 03.4-02): the client sends nothing else.
+	var server []string
+	for _, h := range service.Happenings {
+		server = append(server, string(h))
+	}
+	if !reflect.DeepEqual(values, server) {
+		t.Errorf("HAPPENING_PICKS values = %v, the server's service.Happenings = %v", values, server)
+	}
+
+	window := windowBranch(t)
+	if n := strings.Count(window, ">What is happening?</legend>"); n != 1 {
+		t.Fatalf("the window branch holds %d What is happening? legends, want 1", n)
+	}
+	start := strings.Index(window, `<fieldset id="happening-fields" class="post-group" hidden>`)
+	if start == -1 {
+		t.Fatalf("the window branch has no hidden fieldset#happening-fields")
+	}
+	set := window[start : start+strings.Index(window[start:], "</fieldset>")]
+	if !strings.Contains(set, `<div id="happening-group" role="radiogroup" aria-labelledby="happening-legend"></div>`) {
+		t.Errorf("the picks must be a radiogroup named by the legend")
+	}
+	// No hint line under the legend or the picks (D-05), and no button of its
+	// own: the picks are built by the script from the one constant.
+	for _, banned := range []string{"<p", "hint", "<button", "optional", "Optional"} {
+		if strings.Contains(set, banned) {
+			t.Errorf("the happening fieldset holds %q; the picks carry no hint text (D-05)", banned)
+		}
+	}
+	if !(strings.Index(window, `id="call-112-box"`) < start && start < strings.Index(window, `id="description"`)) {
+		t.Errorf("the picks must sit right under the Call 112 box and above Describe it")
+	}
+
+	// The picks never appear for Low or Medium and are sent for Critical only.
+	form := p410CodeText(p410ReadStatic(t, "static/js/report-form.js"))
+	for _, want := range []string{
+		"if (windowMode && currentSeverity() === 'critical' && selectedHappening !== null) {",
+		"payload.happening = selectedHappening;",
+		"setHappening(value === selectedHappening ? null : value);",
+		"if (windowMode && windowSeverity === 'critical' && typeof prefill.happening === 'string') {",
+		"selectedHappening = isHappeningValue(value) ? value : null;",
+		"pick.setAttribute('role', 'radio');",
+		"Pinalert.setText(pick, entry.word);",
+		"e.key === 'ArrowRight'",
+	} {
+		if !strings.Contains(form, want) {
+			t.Errorf("report-form.js lacks %q", want)
+		}
+	}
+	if n := strings.Count(form, "payload.happening"); n != 1 {
+		t.Errorf("report-form.js sets payload.happening %d times, want 1 (in buildPayload)", n)
+	}
+	if n := strings.Count(form, "var HAPPENING_PICKS = ["); n != 1 {
+		t.Errorf("report-form.js declares HAPPENING_PICKS %d times, want 1", n)
+	}
+	// The Low data mode never builds the picks.
+	if !strings.Contains(form, "} else if (happeningGroup) {\n      buildHappeningPicks();") {
+		t.Errorf("the picks are built only in window mode, beside the severity control of the Low data mode")
+	}
+}
+
+// TestPostWindowPicksSoftFill (plan 03.4-12, D-04): a chosen pick has the soft
+// grey fill and weight 600 with the border unchanged, like the tiles; never a
+// dark fill, a dark border or a 2px border. A pick is 44px high with radius 8px.
+func TestPostWindowPicksSoftFill(t *testing.T) {
+	rules := parseCSSRules(p410ReadStatic(t, "static/css/modal.css"))
+	chosen, ok := ruleBySelector(rules, `.post-window .happening-pick[aria-checked="true"]`)
+	if !ok {
+		t.Fatalf("modal.css has no chosen rule for .happening-pick")
+	}
+	decls := declsOf(chosen.declBody)
+	if decls["background"] != "var(--color-surface)" {
+		t.Errorf("the chosen pick background is %q, want var(--color-surface)", decls["background"])
+	}
+	if decls["font-weight"] != "var(--font-weight-semibold)" {
+		t.Errorf("the chosen pick weight is %q, want var(--font-weight-semibold)", decls["font-weight"])
+	}
+	if decls["border-color"] != "var(--color-border)" {
+		t.Errorf("the chosen pick border colour is %q, want var(--color-border)", decls["border-color"])
+	}
+	for name, value := range decls {
+		if strings.Contains(name, "border") && (strings.Contains(value, "2px") || value == "var(--color-text)") {
+			t.Errorf("the chosen pick declares %s: %s; no dark and no 2px border", name, value)
+		}
+		if strings.Contains(name, "outline") || name == "box-shadow" {
+			t.Errorf("the chosen pick declares %s; it is a fill only", name)
+		}
+	}
+	base, ok := ruleBySelector(rules, ".post-window .happening-pick")
+	if !ok {
+		t.Fatalf("modal.css has no .post-window .happening-pick rule")
+	}
+	bd := declsOf(base.declBody)
+	if bd["min-height"] != "44px" || bd["border-radius"] != "8px" || bd["border"] != "1px solid var(--color-border)" ||
+		bd["font-size"] != "var(--font-size-label)" || bd["padding"] != "0 var(--space-12)" {
+		t.Errorf("the pick geometry is %v", bd)
+	}
+	group, ok := ruleBySelector(rules, ".post-window #happening-group")
+	if !ok || declsOf(group.declBody)["flex-wrap"] != "wrap" || declsOf(group.declBody)["gap"] != "var(--space-sm)" {
+		t.Errorf("the picks must sit in a wrapping row with a gap of var(--space-sm)")
 	}
 }
 

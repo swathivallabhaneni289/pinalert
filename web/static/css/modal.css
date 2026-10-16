@@ -721,6 +721,111 @@ html[data-modal-open] {
   color: var(--color-text-muted);
 }
 
+/* The Call 112 box (Critical only, D-24a). The whole box is the one tel link;
+ * the words Call 112 are drawn as a button on a span, because a button inside
+ * a link is invalid markup. It is hidden until Critical is chosen, so the
+ * display rule carries :not([hidden]). Same on both sizes. */
+.post-window .call-box:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  padding: 8px 8px 8px var(--space-12);
+  border: 1px solid var(--color-severity-critical);
+  border-radius: 12px;
+  background: var(--color-severity-critical-bg);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.post-window .call-box__disc {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--color-alert-fill);
+  color: var(--color-on-alert-fill);
+}
+
+.post-window .call-box__disc .app-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.app-icon--phone {
+  -webkit-mask-image: url("/static/icons/phone.svg");
+  mask-image: url("/static/icons/phone.svg");
+}
+
+.post-window .call-box__text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.post-window .call-box__title {
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.post-window .call-box__line {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text);
+}
+
+.post-window .call-box__button {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 8px;
+  background: var(--color-alert-fill);
+  color: var(--color-on-alert-fill);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* What is happening? (Critical only, D-24b): seven optional picks in a wrapping
+ * row. A pick is a radio button 44px high on --color-bg; the chosen pick is the
+ * soft grey fill and weight 600 with the border unchanged, like the tiles
+ * (D-04). No hint line sits under them (D-05). */
+.post-window #happening-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.post-window .happening-pick {
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 0 var(--space-12);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  cursor: pointer;
+}
+
+.post-window .happening-pick[aria-checked="true"] {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  font-weight: var(--font-weight-semibold);
+}
+
 @media (min-width: 900px) {
   .post-window #category-grid .category-tile {
     min-height: 76px;
@@ -738,5 +843,9 @@ html[data-modal-open] {
     border-top-color: Highlight;
     border-right-color: Highlight;
     border-bottom-color: Highlight;
+  }
+
+  .post-window .happening-pick[aria-checked="true"] {
+    border-color: Highlight;
   }
 }

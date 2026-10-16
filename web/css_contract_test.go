@@ -777,7 +777,11 @@ var phase34Icons = []string{
 // activity hub rows (check-circle is an older glyph that auth.css already
 // masks). The Phase 3.1 and Phase 4 hands-on tests are walked on this layout
 // after Phase 3.4 is built.
-var phase34IconsInUse = []string{"map-pin.svg", "megaphone.svg", "circle-plus.svg", "settings.svg", "plus.svg", "bell.svg", "chevron-right.svg", "circle-x.svg", "history.svg"}
+//
+// Amended 2026-10-17 by Phase 3.4 plan 12 (03.4-CONTEXT D-24a): phone.svg is
+// appended in the same commit as its mask rule in modal.css, the disc of the
+// Call 112 box that shows for Critical only.
+var phase34IconsInUse = []string{"map-pin.svg", "megaphone.svg", "circle-plus.svg", "settings.svg", "plus.svg", "bell.svg", "chevron-right.svg", "circle-x.svg", "history.svg", "phone.svg"}
 
 // TestNewIconsAreRegisteredAndUsed (plan 03.4-03) has two parts. First every
 // one of the ten Phase 3.4 glyph files exists, is registered in

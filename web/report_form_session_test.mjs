@@ -154,6 +154,13 @@ function setup(options) {
       box.setAttribute('aria-checked', key === 'low' ? 'true' : 'false');
       box.tabIndex = key === 'low' ? 0 : -1;
     }
+    // The Critical only part (plan 03.4-12): the Call 112 box and the What is
+    // happening? picks, both hidden until Critical is chosen. The picks
+    // themselves are built by report-form.js into #happening-group.
+    make('a', 'call-112-box', form).hidden = true;
+    const happening = make('fieldset', 'happening-fields', form);
+    happening.hidden = true;
+    make('div', 'happening-group', happening);
   } else {
     make('label', '', form);
     const severity = make('input', 'severity', form);
@@ -273,7 +280,9 @@ function setup(options) {
     },
     escape() {
       (doc.handlers.keydown || []).slice().forEach((h) => h({ key: 'Escape', preventDefault() {} }));
-    }
+    },
+    // active returns the element that has focus now.
+    active() { return doc.activeElement; }
   };
 }
 
@@ -1048,4 +1057,204 @@ test('a queued shelter report still reopens with its tile and its shelter fields
   assert.deepEqual(chosenTiles(page).map((tile) => tile.dataset.category), ['shelter_open']);
   assert.equal(page.el('shelter-fields').hidden, false);
   assert.equal(page.el('shelter-headcount').value, '40');
+});
+
+// ----- Phase 3.4 plan 12: the Call 112 box and the What is happening? picks -----
+
+const HAPPENING_VALUES = ['water_rising', 'people_trapped', 'fire', 'building_collapsed', 'landslide', 'medical_emergency', 'other'];
+const HAPPENING_WORDS = ['Water rising', 'People trapped', 'Fire', 'Building collapsed', 'Landslide', 'Medical emergency', 'Other'];
+
+const picksOf = (page) => page.el('happening-group').children;
+const chosenPicks = (page) => picksOf(page).filter((pick) => pick.getAttribute('aria-checked') === 'true');
+const chooseSeverity = (page, key) => boxesOf(page).find((box) => box.dataset.severity === key).click();
+
+test('window: the Call 112 box and the picks are hidden for Low and Medium', () => {
+  const page = setup({ window: true });
+  page.open();
+  assert.equal(page.el('call-112-box').hidden, true, 'Low: no box');
+  assert.equal(page.el('happening-fields').hidden, true, 'Low: no picks');
+  chooseSeverity(page, 'medium');
+  assert.equal(page.el('call-112-box').hidden, true, 'Medium: no box');
+  assert.equal(page.el('happening-fields').hidden, true, 'Medium: no picks');
+});
+
+test('window: choosing Critical shows the box and seven picks in order, none chosen', () => {
+  const page = setup({ window: true });
+  page.open();
+  chooseSeverity(page, 'critical');
+  assert.equal(page.el('call-112-box').hidden, false);
+  assert.equal(page.el('happening-fields').hidden, false);
+  assert.deepEqual(picksOf(page).map((pick) => pick.dataset.happening), HAPPENING_VALUES);
+  assert.deepEqual(picksOf(page).map((pick) => pick.textContent), HAPPENING_WORDS);
+  assert.equal(chosenPicks(page).length, 0, 'the pick is optional, so none is chosen');
+  assert.equal(picksOf(page).every((pick) => pick.getAttribute('role') === 'radio'), true);
+  assert.equal(picksOf(page).filter((pick) => pick.tabIndex === 0).length, 1, 'one pick is in the tab order');
+});
+
+test('window: the box and the picks do not take focus when they appear', () => {
+  const page = setup({ window: true });
+  page.open();
+  chooseSeverity(page, 'critical');
+  const after = page.active();
+  assert.notEqual(after, page.el('call-112-box'), 'the box takes no focus');
+  assert.equal(picksOf(page).includes(after), false, 'no pick takes focus');
+  assert.equal(after.dataset.severity, 'critical', 'focus stays on the Critical box that was tapped');
+});
+
+test('window: tapping People trapped chooses it and tapping it again clears it', () => {
+  const page = setup({ window: true });
+  page.open();
+  chooseSeverity(page, 'critical');
+  picksOf(page)[1].click();
+  assert.deepEqual(chosenPicks(page).map((pick) => pick.dataset.happening), ['people_trapped']);
+  picksOf(page)[1].click();
+  assert.equal(chosenPicks(page).length, 0, 'the chosen pick clears when tapped again');
+  assert.equal(picksOf(page).filter((pick) => pick.tabIndex === 0).length, 1, 'one pick stays in the tab order');
+});
+
+test('window: ArrowRight and ArrowLeft move and choose among the seven picks, wrapping', () => {
+  const page = setup({ window: true });
+  page.open();
+  chooseSeverity(page, 'critical');
+  picksOf(page)[0].click();
+  press(picksOf(page)[0], 'ArrowRight');
+  assert.deepEqual(chosenPicks(page).map((pick) => pick.dataset.happening), ['people_trapped']);
+  press(picksOf(page)[1], 'ArrowLeft');
+  assert.deepEqual(chosenPicks(page).map((pick) => pick.dataset.happening), ['water_rising']);
+  press(picksOf(page)[0], 'ArrowLeft');
+  assert.deepEqual(chosenPicks(page).map((pick) => pick.dataset.happening), ['other'], 'Left from the first wraps to the last');
+  press(picksOf(page)[6], 'ArrowRight');
+  assert.deepEqual(chosenPicks(page).map((pick) => pick.dataset.happening), ['water_rising'], 'Right from the last wraps to the first');
+});
+
+test('window: switching away from Critical hides both and clears the pick', () => {
+  const page = setup({ window: true });
+  page.open();
+  chooseSeverity(page, 'critical');
+  picksOf(page)[2].click();
+  chooseSeverity(page, 'medium');
+  assert.equal(page.el('call-112-box').hidden, true);
+  assert.equal(page.el('happening-fields').hidden, true);
+  assert.equal(chosenPicks(page).length, 0, 'the pick is cleared');
+  chooseSeverity(page, 'critical');
+  assert.equal(chosenPicks(page).length, 0, 'coming back to Critical finds no pick');
+  assert.equal(page.el('call-112-box').hidden, false);
+});
+
+test('window: Critical with a pick posts happening', () => {
+  const page = setup({ window: true });
+  page.open();
+  chooseSeverity(page, 'critical');
+  picksOf(page)[1].click();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  assert.equal(page.posts.length, 1);
+  assert.equal(page.posts[0].payload.severity, 'critical');
+  assert.equal(page.posts[0].payload.happening, 'people_trapped');
+});
+
+test('window: Critical without a pick posts no happening key', () => {
+  const page = setup({ window: true });
+  page.open();
+  chooseSeverity(page, 'critical');
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  assert.equal(page.posts.length, 1);
+  assert.equal(Object.hasOwn(page.posts[0].payload, 'happening'), false);
+});
+
+test('window: Medium never posts happening, even after a pick was made under Critical', () => {
+  const page = setup({ window: true });
+  page.open();
+  chooseSeverity(page, 'critical');
+  picksOf(page)[3].click();
+  chooseSeverity(page, 'medium');
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  assert.equal(page.posts.length, 1);
+  assert.equal(page.posts[0].payload.severity, 'medium');
+  assert.equal(Object.hasOwn(page.posts[0].payload, 'happening'), false);
+});
+
+test('window: closing and opening again finds no box and no pick', () => {
+  const page = setup({ window: true });
+  page.open();
+  chooseSeverity(page, 'critical');
+  picksOf(page)[4].click();
+  page.discard();
+  page.open();
+  assert.equal(page.el('call-112-box').hidden, true);
+  assert.equal(page.el('happening-fields').hidden, true);
+  chooseSeverity(page, 'critical');
+  assert.equal(chosenPicks(page).length, 0);
+});
+
+test('window: a report with no answer is saved with its pick', async () => {
+  const page = setup({ window: true });
+  page.open();
+  chooseSeverity(page, 'critical');
+  picksOf(page)[2].click();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject({ queueable: true, status: 0 });
+  await settle();
+  assert.equal(page.queueSaves.length, 1);
+  assert.equal(page.queueSaves[0].payload.happening, 'fire', 'the queued payload keeps the pick');
+});
+
+test('window: a queued Critical entry with happening fire reopens with the box and Fire chosen', () => {
+  const page = setup({ window: true });
+  page.open({
+    requestId: 'aaaaaaaaaaaaaaaa9999',
+    prefill: Object.assign({ category: 'flood' }, QUEUED_PREFILL, { severity: 'critical', happening: 'fire' })
+  });
+  assert.deepEqual(chosenBox(page).map((box) => box.dataset.severity), ['critical']);
+  assert.equal(page.el('call-112-box').hidden, false);
+  assert.equal(page.el('happening-fields').hidden, false);
+  assert.deepEqual(chosenPicks(page).map((pick) => pick.dataset.happening), ['fire']);
+  page.submit();
+  assert.equal(page.posts[0].payload.happening, 'fire');
+});
+
+test('window: a queued Critical entry without happening reopens with no pick', () => {
+  const page = setup({ window: true });
+  page.open({
+    requestId: 'aaaaaaaaaaaaaaaa9998',
+    prefill: Object.assign({ category: 'flood' }, QUEUED_PREFILL, { severity: 'critical' })
+  });
+  assert.equal(page.el('call-112-box').hidden, false);
+  assert.equal(chosenPicks(page).length, 0);
+  page.submit();
+  assert.equal(Object.hasOwn(page.posts[0].payload, 'happening'), false);
+});
+
+test('window: a queued happening that is not one of the seven, or not on Critical, reopens with no pick', () => {
+  const unknown = setup({ window: true });
+  unknown.open({
+    requestId: 'aaaaaaaaaaaaaaaa9997',
+    prefill: Object.assign({ category: 'flood' }, QUEUED_PREFILL, { severity: 'critical', happening: 'aliens' })
+  });
+  assert.equal(chosenPicks(unknown).length, 0);
+
+  const medium = setup({ window: true });
+  medium.open({
+    requestId: 'aaaaaaaaaaaaaaaa9996',
+    prefill: Object.assign({ category: 'flood' }, QUEUED_PREFILL, { severity: 'medium', happening: 'fire' })
+  });
+  assert.equal(medium.el('happening-fields').hidden, true);
+  assert.equal(chosenPicks(medium).length, 0);
+});
+
+test('the Low data form has no box and no picks, and its payload is unchanged', () => {
+  const page = setup();
+  page.open();
+  assert.equal(Boolean(page.el('call-112-box')), false);
+  assert.equal(Boolean(page.el('happening-fields')), false);
+  page.el('severity').value = '3';
+  page.el('severity').input();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  assert.equal(page.posts.length, 1);
+  assert.equal(page.posts[0].payload.severity, 'critical');
+  assert.equal(Object.hasOwn(page.posts[0].payload, 'happening'), false);
 });

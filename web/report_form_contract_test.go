@@ -153,11 +153,25 @@ func TestReportFormPartialKeepsMainFormOrder(t *testing.T) {
 	if strings.Contains(strings.ToLower(partialFile), "<html") {
 		t.Errorf("the partial contains an html element opening tag, which would class it as a full page")
 	}
-	if regexp.MustCompile(`\{\{\s*\.`).MatchString(partialFile) {
-		t.Errorf("the partial contains a template action that reads a view model field; it must be static markup")
+	// Amended 2026-10-17 by Phase 3.4 plan 12 (03.4-CONTEXT D-24a): the Call 112
+	// box of the window branch reads the configured emergency number, so the
+	// partial holds three more actions, and only these: the tel target
+	// (Chrome.Numbers.TelHref, a typed URL) and the number twice
+	// (Chrome.Numbers.Primary). Any other action that reads a view model field
+	// is still refused, and the Low data branch stays static markup.
+	allowed := regexp.MustCompile(`\{\{\s*\.Chrome\.Numbers\.(TelHref|Primary)\s*\}\}`)
+	rest := allowed.ReplaceAllString(partialFile, "")
+	if n := len(allowed.FindAllString(partialFile, -1)); n != 3 {
+		t.Errorf("the partial holds %d number actions, want 3: the tel target and the number twice", n)
 	}
-	if n := strings.Count(partialFile, "{{"); n != 4 {
-		t.Errorf("the partial holds %d template actions, want 4: the comment, the if, the else and the end", n)
+	if regexp.MustCompile(`\{\{\s*\.`).MatchString(rest) {
+		t.Errorf("the partial contains a template action that reads a view model field beyond the emergency number; it must be static markup")
+	}
+	if regexp.MustCompile(`\{\{\s*\.`).MatchString(lowBranch) {
+		t.Errorf("the Low data branch contains a template action that reads a view model field")
+	}
+	if n := strings.Count(rest, "{{"); n != 4 {
+		t.Errorf("the partial holds %d other template actions, want 4: the comment, the if, the else and the end", n)
 	}
 
 	inlined := strings.Replace(index, p410IncludeAction, partial, 1)
