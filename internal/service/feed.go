@@ -71,6 +71,25 @@ type ReportView struct {
 	Trust            Trust
 	WrittenAt        *time.Time
 	ViewerFlagged    bool
+	// ConfirmedByPeople is the server authored Show Confirmed membership
+	// (ConfirmedByPeople in confirmed.go). Resolve never reads it.
+	ConfirmedByPeople bool
+}
+
+// ListableInAll reports whether a report with visibility v belongs in the Show
+// menu's All read: Live, Provisional and Hidden together, which is the union of
+// ListableInFeed(false) and ListableInFeed(true). The server sends every report
+// with its view word and the client groups them (Live and Provisional first,
+// Hidden last). Retracted never appears, because a resolved report is out of the
+// live feed (D-12). ListableInFeed is untouched. Written as a switch with a fail
+// closed default so a state added later can never leak in.
+func (v Visibility) ListableInAll() bool {
+	switch v {
+	case VisibilityLive, VisibilityProvisional, VisibilityHidden:
+		return true
+	default:
+		return false
+	}
 }
 
 // ListableInFeed reports whether a report with visibility v should appear

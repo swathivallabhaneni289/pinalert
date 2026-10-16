@@ -325,6 +325,20 @@ func TestListableInFeed(t *testing.T) {
 	}
 }
 
+// TestListableInAllIsTheUnionOfBothFeedReads pins that All is exactly the active
+// read plus the disputed read, for every visibility, known or not.
+func TestListableInAllIsTheUnionOfBothFeedReads(t *testing.T) {
+	for _, v := range []service.Visibility{
+		service.VisibilityLive, service.VisibilityProvisional, service.VisibilityHidden,
+		service.VisibilityRetracted, service.VisibilityWithheld, service.Visibility("sideways"), service.Visibility(""),
+	} {
+		want := v.ListableInFeed(false) || v.ListableInFeed(true)
+		if got := v.ListableInAll(); got != want {
+			t.Errorf("Visibility(%q).ListableInAll() = %v, want the union %v", v, got, want)
+		}
+	}
+}
+
 func TestViewerContentVote(t *testing.T) {
 	t.Run("no rows yields an empty vote value", func(t *testing.T) {
 		got := service.ViewerContentVote(nil, 1, 9)
