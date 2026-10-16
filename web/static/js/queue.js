@@ -53,6 +53,7 @@
   var COUNT_MANY_SUFFIX = ' reports saved on this device.';
   var HELP_LINE = 'Reports send by themselves when you have a signal and this page is open.';
   var HELP_LINE_MEMORY = "This browser can't keep reports for later. Keep this page open until they send.";
+  var HELP_LINE_UNREADABLE = "This page can't read the saved reports right now. Reload the page to send them.";
   var STATUS_TEXT_WAITING = 'Waiting for a signal.';
   var STATUS_TEXT_SENDING = 'Sending.';
   var STATUS_TEXT_NO_ANSWER = "Pinalert didn't answer. Trying again.";
@@ -88,6 +89,17 @@
   var db = null;
   var storeReady = Promise.resolve();
   var memoryOnly = false;
+  // storeOpened is true once IndexedDB opened at least once, so a lost
+  // connection is opened again rather than read as "no saved reports".
+  // storeUnreadable is true while the last read failed even after that; the
+  // strip then keeps the rows it last read (lastStored) and sends none of them.
+  // pendingRemovals holds request ids whose delete has not reached the store
+  // yet, so a discarded or sent row never comes back from lastStored (WR-W06).
+  var storeOpened = false;
+  var storeUnreadable = false;
+  var reopenPromise = null;
+  var lastStored = [];
+  var pendingRemovals = {};
   var memoryRows = {};
   var rows = [];
   var rowEls = {};
@@ -133,8 +145,19 @@
       };
       request.onsuccess = function () {
         var database = request.result;
+        // A connection the browser closes (a tab sent to the background, a
+        // clear of site data) or one closed here for a version change is
+        // dropped, so the next storage call opens a new one.
         database.onversionchange = function () {
           database.close();
+          if (db === database) {
+            db = null;
+          }
+        };
+        database.onclose = function () {
+          if (db === database) {
+            db = null;
+          }
         };
         resolve(database);
       };
@@ -151,34 +174,80 @@
     return !!record && accountId !== '' && record.account_id === accountId;
   }
 
-  function readStored() {
+  // ensureStore opens IndexedDB again when a connection that once worked was
+  // lost. Only one open runs at a time; every caller shares it.
+  function ensureStore() {
+    if (db !== null || !storeOpened) {
+      return Promise.resolve(db);
+    }
+    if (reopenPromise === null) {
+      reopenPromise = openStore().then(function (database) {
+        reopenPromise = null;
+        if (database !== null && db === null) {
+          db = database;
+        }
+        return db;
+      });
+    }
+    return reopenPromise;
+  }
+
+  // readStoredOnce resolves this account's stored rows, [] when this browser
+  // never had a store, and null when the read failed (unknown, not empty).
+  function readStoredOnce() {
     return new Promise(function (resolve) {
       if (db === null) {
-        resolve([]);
+        resolve(storeOpened ? null : []);
         return;
       }
+      var used = db;
+      var failed = function () {
+        if (db === used) {
+          db = null;
+        }
+        resolve(null);
+      };
       try {
-        var tx = db.transaction(STORE_NAME, 'readonly');
+        var tx = used.transaction(STORE_NAME, 'readonly');
         var request = tx.objectStore(STORE_NAME).index(ACCOUNT_INDEX).getAll(IDBKeyRange.only(accountId));
         request.onsuccess = function () {
           resolve(request.result || []);
         };
-        request.onerror = function () {
-          resolve([]);
-        };
+        request.onerror = failed;
       } catch (e) {
-        resolve([]);
+        failed();
       }
     });
   }
 
+  // readStored reads once, and after a failed read drops the connection,
+  // opens a new one and reads again. It resolves null when both fail.
+  function readStored() {
+    return ensureStore().then(readStoredOnce).then(function (list) {
+      if (list !== null) {
+        return list;
+      }
+      return ensureStore().then(readStoredOnce);
+    });
+  }
+
   // loadRows reads this account's rows (the stored ones and any kept in
-  // memory), oldest written first, into rows.
+  // memory), oldest written first, into rows. When the store cannot be read
+  // the rows it last read stay, so they neither leave the strip nor look sent.
   function loadRows() {
     return readStored().then(function (stored) {
+      if (stored === null) {
+        storeUnreadable = true;
+        stored = lastStored;
+      } else {
+        storeUnreadable = false;
+        lastStored = stored;
+      }
       var byId = {};
       stored.forEach(function (record) {
-        byId[record.request_id] = record;
+        if (!pendingRemovals[record.request_id]) {
+          byId[record.request_id] = record;
+        }
       });
       Object.keys(memoryRows).forEach(function (id) {
         byId[id] = memoryRows[id];
@@ -204,49 +273,70 @@
   // putRow writes one row. It resolves true when the row reached IndexedDB and
   // false when it is kept in memory only.
   function putRow(record) {
-    return new Promise(function (resolve) {
-      var keepInMemory = function () {
-        memoryRows[record.request_id] = record;
-        memoryOnly = true;
-        resolve(false);
-      };
-      if (db === null) {
-        memoryRows[record.request_id] = record;
-        resolve(false);
-        return;
-      }
-      try {
-        var tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).put(record);
-        tx.oncomplete = function () {
-          delete memoryRows[record.request_id];
-          resolve(true);
+    // A row written again is wanted, even if an earlier delete of the same
+    // request id has not reached the store.
+    delete pendingRemovals[record.request_id];
+    return ensureStore().then(function () {
+      return new Promise(function (resolve) {
+        var keepInMemory = function () {
+          memoryRows[record.request_id] = record;
+          memoryOnly = true;
+          resolve(false);
         };
-        tx.onerror = keepInMemory;
-        tx.onabort = keepInMemory;
-      } catch (e) {
-        keepInMemory();
-      }
+        if (db === null) {
+          memoryRows[record.request_id] = record;
+          resolve(false);
+          return;
+        }
+        try {
+          var tx = db.transaction(STORE_NAME, 'readwrite');
+          tx.objectStore(STORE_NAME).put(record);
+          tx.oncomplete = function () {
+            delete memoryRows[record.request_id];
+            resolve(true);
+          };
+          tx.onerror = keepInMemory;
+          tx.onabort = keepInMemory;
+        } catch (e) {
+          keepInMemory();
+        }
+      });
     });
   }
 
-  // removeRow is the only function that deletes a stored row.
+  // removeRow is the only function that deletes a stored row. A delete that
+  // cannot reach the store stays pending: the row is hidden and never sent from
+  // this page, and the next removeRow deletes it together with its own row.
   function removeRow(requestId) {
     delete memoryRows[requestId];
-    return new Promise(function (resolve) {
-      if (db === null) {
-        resolve();
-        return;
-      }
-      try {
-        var tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).delete(requestId);
-        tx.oncomplete = resolve;
-        tx.onerror = resolve;
-        tx.onabort = resolve;
-      } catch (e) {
-        resolve();
-      }
+    if (storeOpened) {
+      pendingRemovals[requestId] = true;
+    }
+    return ensureStore().then(function () {
+      return new Promise(function (resolve) {
+        var ids = Object.keys(pendingRemovals);
+        if (db === null || ids.length === 0) {
+          resolve();
+          return;
+        }
+        try {
+          var tx = db.transaction(STORE_NAME, 'readwrite');
+          var store = tx.objectStore(STORE_NAME);
+          ids.forEach(function (id) {
+            store.delete(id);
+          });
+          tx.oncomplete = function () {
+            ids.forEach(function (id) {
+              delete pendingRemovals[id];
+            });
+            resolve();
+          };
+          tx.onerror = resolve;
+          tx.onabort = resolve;
+        } catch (e) {
+          resolve();
+        }
+      });
     });
   }
 
@@ -281,6 +371,8 @@
       db = database;
       if (db === null) {
         memoryOnly = true;
+      } else {
+        storeOpened = true;
       }
       return loadRows();
     }).then(function (list) {
@@ -418,7 +510,7 @@
       }).then(function (list) {
         var now = Date.now();
         var due = list.filter(function (record) {
-          if (record.sending_until > now) {
+          if (record.sending_until > now || isStale(record)) {
             return false;
           }
           if (record.status === STATUS_WAITING || record.status === STATUS_NO_ANSWER) {
@@ -482,7 +574,7 @@
     // meantime is not sent from a stale copy.
     return loadRows().then(function () {
       var current = findRow(record.request_id);
-      if (!current || !belongsToAccount(current) || isLeased(current)) {
+      if (!current || !belongsToAccount(current) || isLeased(current) || isStale(current)) {
         return 'skip';
       }
       current.sending_until = Date.now() + SENDING_LEASE_MS;
@@ -650,6 +742,12 @@
     return record.sending_until > Date.now();
   }
 
+  // isStale is true for a stored row shown from the last good read while the
+  // store cannot be read. It is never sent: another tab may have sent it.
+  function isStale(record) {
+    return storeUnreadable && !Object.prototype.hasOwnProperty.call(memoryRows, record.request_id);
+  }
+
   function renderStrip() {
     var list = rows.filter(function (record) {
       return belongsToAccount(record);
@@ -683,10 +781,17 @@
       ensureFrame();
       var count = list.length;
       Pinalert.setText(countEl, count + (count === 1 ? COUNT_ONE_SUFFIX : COUNT_MANY_SUFFIX));
-      Pinalert.setText(helpEl, memoryOnly ? HELP_LINE_MEMORY : HELP_LINE);
+      var help = HELP_LINE;
+      if (memoryOnly) {
+        help = HELP_LINE_MEMORY;
+      } else if (storeUnreadable) {
+        help = HELP_LINE_UNREADABLE;
+      }
+      Pinalert.setText(helpEl, help);
       var now = Date.now();
       var nothingToSend = list.every(function (record) {
-        return isLeased(record) || (record.status === STATUS_BLOCKED && record.next_try_at > now);
+        return isLeased(record) || isStale(record) ||
+          (record.status === STATUS_BLOCKED && record.next_try_at > now);
       });
       Pinalert.setText(sendBtn, passRunning ? SENDING_LABEL : SEND_NOW_LABEL);
       if (sessionLapsed || nothingToSend || passRunning) {

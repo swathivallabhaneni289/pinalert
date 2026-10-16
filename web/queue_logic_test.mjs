@@ -103,12 +103,27 @@ function makeIndexedDB(initial) {
   initial.forEach((record) => data.set(record.request_id, structuredClone(record)));
   let created = initial.length > 0;
   const later = (fn) => queueMicrotask(fn);
+  // control lets a case break the store: failReads makes that many reads fail,
+  // failOpen makes every open fail, and closeAll closes every open connection
+  // the way a browser does, firing onclose.
+  const control = { failReads: 0, failOpen: false, opens: 0, connections: [] };
+  control.closeAll = () => {
+    control.connections.forEach((database) => {
+      database.closed = true;
+      if (database.onclose) { database.onclose(); }
+    });
+  };
   const store = {
     createIndex() {},
     index() {
       return {
         getAll(range) {
           const request = { result: undefined, onsuccess: null, onerror: null };
+          if (control.failReads > 0) {
+            control.failReads -= 1;
+            later(() => { if (request.onerror) { request.onerror(); } });
+            return request;
+          }
           later(() => {
             // The fake ignores the key range on purpose and returns every row,
             // so the account check inside queue.js is what gets tested.
@@ -131,15 +146,27 @@ function makeIndexedDB(initial) {
   };
   return {
     data,
+    control,
     indexedDB: {
       open() {
         const request = { result: null, onupgradeneeded: null, onsuccess: null, onerror: null, onblocked: null };
+        control.opens += 1;
+        if (control.failOpen) {
+          later(() => { if (request.onerror) { request.onerror(); } });
+          return request;
+        }
         const database = {
+          closed: false,
+          onclose: null,
           objectStoreNames: { contains: () => created },
           createObjectStore() { created = true; return store; },
-          transaction: tx,
-          close() {}
+          transaction(name, mode) {
+            if (database.closed) { throw new Error('InvalidStateError'); }
+            return tx(mode);
+          },
+          close() { database.closed = true; }
         };
+        control.connections.push(database);
         request.result = database;
         later(() => {
           if (!created && request.onupgradeneeded) { request.onupgradeneeded(); }
@@ -202,7 +229,7 @@ function loadQueue({ records = [], answers = [], indexedDBThrows = false }) {
   const strip = doc.createElement('div');
   const live = doc.createElement('div');
   doc.byId['notice-live'] = live;
-  return { queue: win.PinalertQueue, strip, store: idb.data, submitted, toasts };
+  return { queue: win.PinalertQueue, strip, store: idb.data, idb: idb.control, submitted, toasts, doc };
 }
 
 async function settle() {
@@ -339,4 +366,63 @@ await test('keeps reports in memory when reading the indexedDB global throws (IN
   assert.equal(env.strip.hidden, false, 'the strip is drawn');
   assert.equal(env.strip.querySelector('.queue-strip__help').textContent,
     "This browser can't keep reports for later. Keep this page open until they send.");
+});
+
+await test('reads again on a new connection after a failed read (WR-W06)', async () => {
+  const id = 'req-iiiiiiiiiiiiiiii-9';
+  const env = loadQueue({
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z')],
+    answers: [() => Promise.reject({ queueable: true, status: 0 })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  assert.equal(env.submitted.length, 1);
+  env.idb.failReads = 1;
+  await env.queue.flush();
+  await settle();
+  assert.equal(env.idb.opens, 2, 'the store was opened again');
+  assert.equal(env.submitted.length, 2, 'the report was sent after the second read');
+  assert.equal(env.store.size, 0);
+});
+
+await test('keeps saved reports on the strip and unsent while the store is unreadable (WR-W06)', async () => {
+  const first = 'req-jjjjjjjjjjjjjjjj-10';
+  const second = 'req-kkkkkkkkkkkkkkkk-11';
+  const env = loadQueue({
+    records: [
+      record(first, '7', 'first saved report', '2026-10-01T00:00:00.000Z'),
+      record(second, '7', 'second saved report', '2026-10-02T00:00:00.000Z')
+    ],
+    answers: [() => Promise.reject({ queueable: true, status: 0 })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  assert.deepEqual(env.submitted.map((p) => p.description), ['first saved report']);
+
+  // The browser drops the connection and it cannot be opened again for now.
+  env.idb.failOpen = true;
+  env.idb.closeAll();
+  await env.queue.flush();
+  await settle();
+  assert.equal(env.submitted.length, 1, 'nothing is sent from the last good read');
+  assert.equal(env.strip.hidden, false, 'the strip stays');
+  assert.equal(env.strip.querySelector('.queue-strip__count').textContent, '2 reports saved on this device.');
+  assert.equal(env.strip.querySelector('.queue-strip__help').textContent,
+    "This page can't read the saved reports right now. Reload the page to send them.");
+  const sendBtn = env.strip.descendants().find((el) => el.id === 'queue-send-now');
+  assert.equal(sendBtn.getAttribute('aria-disabled'), 'true');
+
+  // A discard while unreadable hides the row for good.
+  await env.queue.discard(first);
+  await settle();
+  assert.equal(env.strip.querySelector('.queue-strip__count').textContent, '1 report saved on this device.');
+
+  // The store opens again: the next pass sends the kept report only, and the
+  // discarded one is deleted from the store too.
+  env.idb.failOpen = false;
+  await env.queue.flush();
+  await settle();
+  assert.deepEqual(env.submitted.slice(1).map((p) => p.description), ['second saved report']);
+  assert.equal(env.store.size, 0, 'the sent and the discarded report are both gone');
+  assert.equal(env.strip.hidden, true);
 });
