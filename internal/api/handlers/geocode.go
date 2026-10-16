@@ -108,13 +108,16 @@ func parseGeocodeQuery(w http.ResponseWriter, r *http.Request) (string, bool) {
 // Geocode produces the HTTP handler for GET /api/geocode.
 //
 // @Summary Search for a place or address by free-text query
-// @Description Proxies a search query to Nominatim and returns at most five matches, in India
-// @Description only. Requires a session verified by email through the magic-link flow. With the
-// @Description optional lat and lon (both or neither, the report pin) it looks in a box around
-// @Description the pin first and widens only when the box finds nothing. When the whole text
-// @Description finds nothing it tries again without the first part, at most twice, and
-// @Description matched_query then holds the shorter text that matched. A 503 means search is
-// @Description temporarily unavailable; report submission remains fully usable regardless.
+// @Description Searches Photon first, which matches close spellings and half typed words, and
+// @Description returns at most five matches, in India only. Requires a session verified by email
+// @Description through the magic-link flow. The optional lat and lon (both or neither, the report
+// @Description pin) make Photon prefer nearby places. Only when Photon fails, takes over 2 seconds or
+// @Description finds nothing does the search go to Nominatim, which looks in a box around the pin
+// @Description first and widens only when the box finds nothing; when the whole text finds nothing
+// @Description there it tries again without the first part, and matched_query then holds the
+// @Description shorter text that matched. At most four upstream requests are sent per search. A
+// @Description 503 means search is temporarily unavailable; report submission remains fully
+// @Description usable regardless.
 // @Tags geocode
 // @Produce json
 // @Param q query string true "Place or address text, 3 to 200 characters"

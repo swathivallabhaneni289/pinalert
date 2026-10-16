@@ -1,9 +1,10 @@
 // place.go is the HTTP surface of the reader's place search (HIST-05, D-14):
 // the search box on the history views that jumps the map to another area. It
 // is deliberately a separate handler from Geocode in geocode.go, which is the
-// report form's address search. Both run the same India only, near first,
-// fewer words search plan in internal/geocode. The reader lane uses its
-// own non waiting path on the shared geocoder limiter, its own cache, its own
+// report form's address search. Both run the same search in internal/geocode:
+// Photon first, then Nominatim's India only, near first, fewer words plan as
+// the fallback. The reader lane uses its own non waiting path on both shared
+// geocoder limiters, its own Nominatim cache, its own
 // per account budget and its own messages, so a reader browsing another area
 // can never queue in front of a reporter filing an emergency.
 package handlers
@@ -97,11 +98,13 @@ func placeErrorClass(err error) string {
 // @Summary Search for a place on the reader lane
 // @Description Place search for the history views. It runs on its own lane of the geocoder: it
 // @Description never queues ahead of a report search, repeated searches are answered from a cache, and each
-// @Description verified account has its own small budget. Results are in India only. With the
-// @Description optional lat and lon (both or neither) it looks in a box around the map centre
-// @Description first and widens only when the box finds nothing. When the whole text finds
-// @Description nothing it tries again without the first part, at most twice, and
-// @Description matched_query then holds the shorter text that matched.
+// @Description verified account has its own small budget. Results are in India only. It asks
+// @Description Photon first, which matches close spellings and half typed words; the optional
+// @Description lat and lon (both or neither, the map centre) make Photon prefer nearby places. Only
+// @Description when Photon fails, takes over 2 seconds or finds nothing does it go to Nominatim,
+// @Description which looks in a box around the map centre first and widens only when the box finds
+// @Description nothing; when the whole text finds nothing there it tries again without the first
+// @Description part, and matched_query then holds the shorter text that matched.
 // @Description A 429 or 503 never affects report submission, which has its own search.
 // @Tags geocode
 // @Produce json
