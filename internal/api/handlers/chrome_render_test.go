@@ -172,7 +172,7 @@ func TestChromeWithDefaults(t *testing.T) {
 		// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
 		// first-time flow, the login screen and the one reader. The Phase 3.1 and
 		// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
-		// The DisclaimerCurrent field marked the Disclaimer link of the bar and is gone.
+		// The field that marked the Disclaimer link of the bar as current is gone.
 		in := Chrome{ContactEmail: "a@example.com", LowDataPage: true}
 		got := in.withDefaults()
 		if got.ContactEmail != "a@example.com" || !got.LowDataPage {
