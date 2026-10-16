@@ -258,10 +258,11 @@ func TestRequestCapIsFour(t *testing.T) {
 }
 
 func TestFinalAnswerCachedUnderTheOriginalTextAndArea(t *testing.T) {
-	short2 := "Road No 12, Banjara Hills, Hyderabad"
+	// With a position the plan reaches the first shorter text only.
+	short1 := "Sai Residency, Road No 12, Banjara Hills, Hyderabad"
 	for name, search := range lanes {
 		t.Run(name, func(t *testing.T) {
-			rs := newRecordingServer(t, func(q url.Values) bool { return q.Get("q") == short2 })
+			rs := newRecordingServer(t, func(q url.Values) bool { return q.Get("q") == short1 })
 			c := newClientWithBaseURL(rs.server.URL, "", time.Millisecond, 10)
 			near := &Point{Lat: 17.40, Lon: 78.45}
 			if _, err := search(c, context.Background(), longAddress, near); err != nil {
@@ -277,12 +278,12 @@ func TestFinalAnswerCachedUnderTheOriginalTextAndArea(t *testing.T) {
 			if n := len(rs.sent()); n != before {
 				t.Fatalf("repeat search sent %d more requests, want 0", n-before)
 			}
-			if again.MatchedQuery != short2 || len(again.Results) != 1 {
+			if again.MatchedQuery != short1 || len(again.Results) != 1 {
 				t.Errorf("cached answer = %+v, want the matched text kept", again)
 			}
 
 			// The shorter text itself is not a cache key: only the original is.
-			if _, err := search(c, context.Background(), short2, near); err != nil {
+			if _, err := search(c, context.Background(), short1, near); err != nil {
 				t.Fatalf("shorter text search returned error: %v", err)
 			}
 			if n := len(rs.sent()); n == before {
