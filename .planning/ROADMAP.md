@@ -437,13 +437,61 @@ Plans:
 **Scope notes** (decisions are in `03.4-CONTEXT.md`; two small owner questions are open there, O-1 and O-2):
 
   1. Reworks built code: Phase 3.1's tab strip, Past tab and phone bottom bar; Phase 4's disclaimer bar on every page and account menu; quick tasks 261013-lrw and 261013-wm5. Contract tests that pin them get a dated amendment note naming the owner decision.
-  2. Builds places and empty states only; the bell and Updates (3.2), phone notifications and the What is happening picks (3.3), Official alerts content and the Demo button (5) and profiles (9) fill them later.
+  2. Builds places and empty states only; the bell and Updates (3.2), phone notifications (3.3), Official alerts content and the Demo button (5) and profiles (9) fill them later. This phase also stores the name, the home area and the What is happening pick (03.4-CONTEXT D-24b, 2026-10-16), which 3.3 then uses.
 
-**Plans:** 0 plans
+**Plans:** 18 plans
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 03.4 to break down)
+- [ ] 03.4-01-PLAN.md: Migration 00008 (consent, first run, name, home area cell, reports.happening), the account service, the three /api/me routes and the onboarding redirect behind a switch
+- [ ] 03.4-03-PLAN.md: New tokens and icons, one list of places drawn into the phone bottom bar and the laptop top bar, Report and Post a report replace the floating button
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 03.4-02-PLAN.md: The all view, the server authored Confirmed field with a truth table over every resolver step, happening on a new report (Critical only)
+- [ ] 03.4-04-PLAN.md: The person menu (Settings, Log out), the bell with an empty list, the Official alerts page with an honest empty state, the Settings page shell
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 03.4-05-PLAN.md: The laptop strip on Nearby only, the old bar removed, the light and dark button in the laptop top bar, the Phase 4 SC7 note in the bar tests
+- [ ] 03.4-06-PLAN.md: Settings About you: Name and Home area with their edit windows
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 03.4-07-PLAN.md: My activity: five parts, the phone list and part screens, the laptop stack with columns, old links still work
+- [ ] 03.4-08-PLAN.md: One reader for Disclaimer and Policy, full width standalone pages, the terms version
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 03.4-09-PLAN.md: Post a report: phone sheet and laptop two pane window, X only, eight tiles from one constant, severity boxes, queued items reopen cleanly
+- [ ] 03.4-10-PLAN.md: The first-time flow at /welcome (Welcome, Disclaimer and policy, Your location, About you) and the gate switched on
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 03.4-11-PLAN.md: The list head and Show menu, the disputed group, the Traffic chip, Past retired from Nearby
+- [ ] 03.4-12-PLAN.md: The Call 112 box and the What is happening picks for Critical
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 03.4-13-PLAN.md: The phone list sheet over the map, the map resize, the chosen row and pin, the grey disputed pin
+- [ ] 03.4-14-PLAN.md: Ended nearby from the position kept in the browser, finished report links land on their row
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 03.4-15-PLAN.md: Search a place in the Nearby top bar, the chosen chip soft fill, phone notices inside the sheet
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 03.4-16-PLAN.md: Rule guards, the three mockup overrides as tests, the dated notes (docs closing plan), full gate
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [ ] 03.4-17-PLAN.md: Browser check harness updated for the new layout (outside the repo, backed up first)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [ ] 03.4-18-PLAN.md: Harness layout walk in Chromium and WebKit at 320, 360, 390 and 1280, light and dark
 
 ### Phase 03.2: In-app updates and trusted-reporter alerts (INSERTED)
 
