@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinalert: {{if eq .Current "policy"}}Policy{{else}}Disclaimer{{end}}</title>
+  <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/app-bar.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/legal.css?v={{.AssetVersion}}">
+  <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
+</head>
+<body>
+  <div class="legal-reader" data-reader-page="{{.Current}}">
+    <div class="legal-reader__side">
+      <div class="legal-reader__head">
+        <h1 class="legal-reader__title">{{if eq .Current "policy"}}Policy{{else}}Disclaimer{{end}}</h1>
+        <a class="legal-close" href="/" aria-label="Close" data-reader-close><span class="app-icon app-icon--x" aria-hidden="true"></span></a>
+      </div>
+      <nav class="legal-parts" aria-label="Parts of this page">
+        <a href="#disclaimer"{{if ne .Current "policy"}} aria-current="page"{{end}}>Disclaimer</a>
+        <a href="#policy"{{if eq .Current "policy"}} aria-current="page"{{end}}>Policy</a>
+      </nav>
+    </div>
+    <main class="legal-box legal-text" id="reader-box" tabindex="0">
+      {{template "legal_disclaimer_body" .Legal}}
+      {{template "legal_policy_body" .Legal}}
+    </main>
+  </div>
+</body>
+</html>

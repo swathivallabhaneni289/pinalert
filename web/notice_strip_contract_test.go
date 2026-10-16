@@ -63,7 +63,7 @@ func TestStripOnlyOnNearby(t *testing.T) {
 	for _, name := range []string{
 		"profile.html.tmpl", "alerts.html.tmpl", "settings.html.tmpl",
 		"low.html.tmpl", "moderate.html.tmpl", "login_gate.html.tmpl",
-		"verify_outcome.html.tmpl", "disclaimer.html.tmpl", "policy.html.tmpl",
+		"verify_outcome.html.tmpl", "reader.html.tmpl", "legal_body.html.tmpl",
 	} {
 		if strings.Contains(stripReadTemplate(t, name), "notice_strip") {
 			t.Errorf("%s includes the strip; it is drawn on Nearby only (D-29)", name)

@@ -51,8 +51,7 @@ func TestDisclaimerBarOnEveryFullPage(t *testing.T) {
 		"templates/moderate.html.tmpl":       "header",
 		"templates/login_gate.html.tmpl":     "none",
 		"templates/verify_outcome.html.tmpl": "none",
-		"templates/disclaimer.html.tmpl":     "none",
-		"templates/policy.html.tmpl":         "none",
+		"templates/reader.html.tmpl":         "none",
 	}
 
 	wrapped := func(call string) *regexp.Regexp {

@@ -1,95 +1,95 @@
 /*
- * The Disclaimer and Policy pages (D-23, D-24, R-07): one reading column, the
- * numbers block, the label glossary and the link rows. Tokens only, no custom
+ * The Disclaimer and Policy (D-23, D-24, R-07, and Phase 3.4 D-06, D-31).
+ *
+ * Two things live here. The legal text itself (.legal-text: headings, copy,
+ * lists, the numbers block and the label glossary) is styled once and is used
+ * by the standalone /disclaimer and /policy pages and by the in app reader
+ * window, so the same words look the same everywhere. The standalone page
+ * (.legal-reader) is a full width reader, not a centred column: on the phone it
+ * is the full screen with the X at the top; from 900px it is a 260px column
+ * (title, X, the two part links) beside the text. Tokens only, no custom
  * property of its own. Every rule that sets display carries :not([hidden]).
  */
 
-.legal-page {
-  box-sizing: border-box;
-  max-width: 640px;
-  margin: 0 auto;
-  padding: var(--space-lg) var(--space-md);
+/* ---- The legal text -------------------------------------------------------- */
+
+.legal-text {
   color: var(--color-text);
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
 }
 
-.legal-page h1 {
-  margin: var(--space-sm) 0 var(--space-md);
-  font-size: var(--font-size-display);
-  line-height: var(--line-height-display);
-  font-weight: var(--font-weight-semibold);
-}
-
-.legal-page h2 {
+.legal-text h2 {
   margin: var(--space-xl) 0 var(--space-sm);
   font-size: var(--font-size-heading);
   line-height: var(--line-height-heading);
   font-weight: var(--font-weight-semibold);
 }
 
-/* Text size comes down from .legal-page. Only margins are set here, on direct
-   children, so the numbers block rules below keep their own sizes. */
-.legal-page > p {
+/* The two part headings, Disclaimer and Policy, open their part. */
+.legal-text h2[id="disclaimer"],
+.legal-text h2[id="policy"] {
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+}
+
+.legal-text > h2:first-child {
+  margin-top: 0;
+}
+
+/* Text size comes down from .legal-text. Only margins are set here, on direct
+   children, so the numbers block rules below keep their own sizes. A line never
+   runs longer than 72 characters; it stays left aligned in its column. */
+.legal-text > p,
+.legal-text > ul,
+.legal-text > dl,
+.legal-text > h2 {
+  max-width: 72ch;
+}
+
+.legal-text > p {
   margin: 0 0 var(--space-sm);
 }
 
-.legal-page > ul {
+.legal-text > ul {
   margin: 0 0 var(--space-sm);
   padding: 0 0 0 var(--space-lg);
 }
 
-.legal-page > ul > li {
+.legal-text > ul > li {
   margin: 0 0 var(--space-xs);
 }
 
-.legal-numbers p {
-  margin: 0 0 var(--space-xs);
-}
-
-.legal-page a {
+.legal-text a {
   color: var(--color-text);
   text-decoration: underline;
 }
 
-.legal-back:not([hidden]),
-.legal-links a:not([hidden]),
-.legal-contact a:not([hidden]) {
+.legal-text .legal-contact a:not([hidden]) {
   display: inline-flex;
   align-items: center;
   min-height: var(--touch-target-min);
 }
 
-.legal-back {
-  font-size: var(--font-size-body);
-  font-weight: var(--font-weight-semibold);
-}
-
-.legal-subtitle {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
-}
-
+.legal-subtitle,
 .legal-updated {
   color: var(--color-text-muted);
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
 }
 
-.legal-links:not([hidden]) {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-md);
-  margin-top: var(--space-xl);
-}
-
 .legal-numbers {
+  max-width: 72ch;
+  box-sizing: border-box;
   padding: var(--space-md);
   background: var(--color-surface);
   color: var(--color-text);
   border: 1px solid var(--color-border);
   border-radius: 8px;
+}
+
+.legal-numbers p {
+  margin: 0 0 var(--space-xs);
 }
 
 .legal-numbers__row {
@@ -128,6 +128,117 @@
 
 .legal-glossary dd {
   margin: var(--space-xs) 0 0;
+}
+
+/* ---- The standalone reader page (phone first) ------------------------------ */
+
+.legal-reader:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+}
+
+.legal-reader__side:not([hidden]) {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: 20px var(--space-md) 0;
+}
+
+.legal-reader__head:not([hidden]) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.legal-reader__title {
+  margin: 0;
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold);
+}
+
+.legal-close:not([hidden]) {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  border-radius: 8px;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.legal-close .app-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.legal-parts:not([hidden]) {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.legal-parts a:not([hidden]) {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  text-decoration: none;
+}
+
+.legal-parts a[aria-current="page"] {
+  font-weight: var(--font-weight-semibold);
+  text-decoration: underline;
+}
+
+/* The grey reader box. It is the one thing that scrolls on this page, so a
+   Policy link can put the Policy heading at the top of it. */
+.legal-box {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  box-sizing: border-box;
+  margin: var(--space-12) var(--space-md) var(--space-lg);
+  padding: var(--space-xs) 20px 20px;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border-radius: 8px;
+}
+
+/* ---- Laptop ---------------------------------------------------------------- */
+
+@media (min-width: 900px) {
+  .legal-reader:not([hidden]) {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    grid-template-rows: minmax(0, 1fr);
+    flex-direction: row;
+  }
+
+  .legal-reader__side:not([hidden]) {
+    padding: var(--space-lg) var(--space-md) var(--space-md) var(--space-lg);
+    gap: var(--space-md);
+  }
+
+  .legal-parts:not([hidden]) {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .legal-box {
+    margin: var(--space-md) var(--space-lg) var(--space-lg) 0;
+  }
 }
 
 @media (forced-colors: active) {

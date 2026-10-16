@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"pinalert/internal/account"
 	"pinalert/internal/api/handlers"
@@ -68,7 +69,14 @@ func legalEqual(a, b []string) bool {
 	return true
 }
 
+// Amended 2026-10-17 by Phase 3.4 plan 08 (03.4-CONTEXT D-31, D-06): the
+// Disclaimer and the Policy are one reader, so /disclaimer and /policy both
+// render the Disclaimer part and then the Policy part. The part headings
+// Disclaimer and Policy open each part (the Policy one carries id policy so a
+// link can land on it). The two pages differ only in the h1 and in which part
+// link is the current one.
 var legalDisclaimerH2s = []string{
+	"Disclaimer",
 	"Pinalert is not a substitute for emergency services",
 	"Emergency numbers",
 	"How to read what Pinalert shows",
@@ -89,13 +97,13 @@ func TestLegalPagesRender(t *testing.T) {
 		t.Errorf("Cache-Control = %q", got)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "<h1>Disclaimer</h1>") {
-		t.Errorf("missing h1 Disclaimer")
+	if n := strings.Count(body, `<h1 class="legal-reader__title">Disclaimer</h1>`); n != 1 {
+		t.Errorf("h1 Disclaimer appears %d times, want 1", n)
 	}
-	if got := legalH2s(t, body); !legalEqual(got, legalDisclaimerH2s) {
-		t.Errorf("h2 sequence = %q, want %q", got, legalDisclaimerH2s)
+	if got := legalH2s(t, body); !legalEqual(got, legalAllH2s(false)) {
+		t.Errorf("h2 sequence = %q, want %q", got, legalAllH2s(false))
 	}
-	for _, href := range []string{"/static/css/main.css?v=test", "/static/css/chrome.css?v=test", "/static/js/theme.js?v=test"} {
+	for _, href := range []string{"/static/css/main.css?v=test", "/static/css/chrome.css?v=test", "/static/css/app-bar.css?v=test", "/static/js/theme.js?v=test"} {
 		if n := strings.Count(body, href); n != 1 {
 			t.Errorf("%s appears %d times, want 1", href, n)
 		}
@@ -110,15 +118,21 @@ func TestLegalPagesRender(t *testing.T) {
 	// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
 	// first-time flow, the login screen and the one reader. The Phase 3.1 and
 	// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
-	// The page carries no bar, so no link of it is marked as the current page.
-	if strings.Contains(body, "disclaimer-bar") || strings.Contains(body, "notice-strip") || strings.Contains(body, "aria-current") {
-		t.Errorf("the Disclaimer page carries no bar, no strip and no current page mark")
+	// Amended 2026-10-17 by Phase 3.4 plan 08 (D-31): the page carries no bar
+	// and no strip. Its two part links (Disclaimer, Policy) are the only links
+	// marked as current, and the X (a link named Close to "/") replaces the old
+	// Back to Pinalert links.
+	if strings.Contains(body, "disclaimer-bar") || strings.Contains(body, "notice-strip") {
+		t.Errorf("the Disclaimer page carries no bar and no strip")
 	}
-	if n := strings.Count(body, `<a class="legal-back" href="/">Back to Pinalert</a>`); n != 1 {
-		t.Errorf("top Back to Pinalert link appears %d times, want 1", n)
+	if n := strings.Count(body, `aria-current="page"`); n != 1 || !strings.Contains(body, `<a href="#disclaimer" aria-current="page">Disclaimer</a>`) {
+		t.Errorf("the Disclaimer page must mark exactly the Disclaimer part link as current")
 	}
-	if n := strings.Count(body, `href="/">Back to Pinalert</a>`); n != 2 {
-		t.Errorf("Back to Pinalert links = %d, want 2", n)
+	if strings.Contains(body, "Back to Pinalert") {
+		t.Errorf("the Back to Pinalert links are replaced by the X")
+	}
+	if n := strings.Count(body, `<a class="legal-close" href="/" aria-label="Close"`); n != 1 {
+		t.Errorf("the X link appears %d times, want 1", n)
 	}
 	if strings.Contains(body, "ZgotmplZ") {
 		t.Errorf("page holds ZgotmplZ")
@@ -127,8 +141,8 @@ func TestLegalPagesRender(t *testing.T) {
 	if n := strings.Count(body, "/static/css/legal.css?v=test"); n != 1 {
 		t.Errorf("disclaimer legal.css appears %d times, want 1", n)
 	}
-	if !strings.Contains(body, `<a href="/policy">Policy</a>`) {
-		t.Errorf("disclaimer footer lacks the Policy link")
+	if !strings.Contains(body, `<a href="#policy">Policy</a>`) {
+		t.Errorf("the Disclaimer page lacks the Policy part link")
 	}
 
 	bad := legalRender(t, cfg, "nope", nil)
@@ -148,17 +162,17 @@ func TestLegalPagesRender(t *testing.T) {
 		t.Errorf("policy Cache-Control = %q", got)
 	}
 	pb := prec.Body.String()
-	if !strings.Contains(pb, "<h1>Policy</h1>") {
-		t.Errorf("missing h1 Policy")
+	if n := strings.Count(pb, `<h1 class="legal-reader__title">Policy</h1>`); n != 1 {
+		t.Errorf("h1 Policy appears %d times, want 1", n)
 	}
-	if got := legalH2s(t, pb); !legalEqual(got, legalPolicyH2sWithoutContact) {
-		t.Errorf("policy h2 sequence = %q, want %q", got, legalPolicyH2sWithoutContact)
+	if got := legalH2s(t, pb); !legalEqual(got, legalAllH2s(false)) {
+		t.Errorf("policy h2 sequence = %q, want %q", got, legalAllH2s(false))
 	}
 	ptext := legalText(t, pb)
 	if !strings.Contains(ptext, "Rules, privacy and terms") {
 		t.Errorf("policy subtitle missing")
 	}
-	for _, href := range []string{"/static/css/main.css?v=test", "/static/css/chrome.css?v=test", "/static/css/legal.css?v=test", "/static/js/theme.js?v=test"} {
+	for _, href := range []string{"/static/css/main.css?v=test", "/static/css/chrome.css?v=test", "/static/css/app-bar.css?v=test", "/static/css/legal.css?v=test", "/static/js/theme.js?v=test"} {
 		if n := strings.Count(pb, href); n != 1 {
 			t.Errorf("policy %s appears %d times, want 1", href, n)
 		}
@@ -166,18 +180,16 @@ func TestLegalPagesRender(t *testing.T) {
 	if n := strings.Count(pb, "<script"); n != 1 {
 		t.Errorf("policy <script appears %d times, want 1", n)
 	}
-	if !strings.Contains(pb, `href="/disclaimer">Disclaimer</a>`) || strings.Contains(pb, "aria-current") {
-		t.Errorf("policy bar link must not carry aria-current")
+	// Amended 2026-10-17 by Phase 3.4 plan 08 (D-31): the Policy part link is
+	// the current one on /policy and the part heading carries id policy.
+	if n := strings.Count(pb, `aria-current="page"`); n != 1 || !strings.Contains(pb, `<a href="#policy" aria-current="page">Policy</a>`) {
+		t.Errorf("the Policy page must mark exactly the Policy part link as current")
 	}
-	if n := strings.Count(pb, `href="/">Back to Pinalert</a>`); n != 2 {
-		t.Errorf("policy Back to Pinalert links = %d, want 2", n)
+	if n := strings.Count(pb, `<h2 id="policy">Policy</h2>`); n != 1 {
+		t.Errorf("the Policy heading with id policy appears %d times, want 1", n)
 	}
-	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
-	// D-31): see the note above; the bar link is gone, so the Policy page holds
-	// the Disclaimer link of its footer only. The Phase 3.1 and Phase 4 hands-on
-	// tests are walked on this layout after Phase 3.4 is built.
-	if !strings.Contains(pb, `<p class="legal-links">`) || strings.Count(pb, `href="/disclaimer"`) != 1 {
-		t.Errorf("policy needs the Disclaimer link in its footer, and no bar link")
+	if strings.Contains(pb, "Back to Pinalert") || strings.Contains(pb, `class="legal-links"`) {
+		t.Errorf("the Policy page keeps a Back to Pinalert link or the old footer; the X replaces them")
 	}
 	updated := regexp.MustCompile(`(?s)<p class="legal-updated">(.*?)</p>`).FindStringSubmatch(pb)
 	if updated == nil {
@@ -191,10 +203,20 @@ func TestLegalPagesRender(t *testing.T) {
 	if !strings.Contains(legalText(t, cookies), "before you sign in") {
 		t.Errorf("the cookie list must say the session cookie is set before you sign in")
 	}
-	if strings.Contains(pb, "tel:") || strings.Contains(pb, "ZgotmplZ") {
-		t.Errorf("policy holds a tel link or ZgotmplZ")
+	// Amended 2026-10-17 by Phase 3.4 plan 08 (D-31): the Policy page also
+	// holds the Disclaimer part, so its one tel link is the numbers block of
+	// the Disclaimer. The Policy part itself still has none.
+	if n := strings.Count(pb, "tel:"); n != 1 || strings.Contains(pb, "ZgotmplZ") {
+		t.Errorf("policy page tel: occurrences = %d (want 1, in the Disclaimer part) or ZgotmplZ", n)
+	}
+	if _, policyPart, found := strings.Cut(pb, `<h2 id="policy">`); !found || strings.Contains(policyPart, "tel:") {
+		t.Errorf("the Policy part must exist and hold no tel link")
 	}
 	for _, want := range []string{
+		// D-24a, D-18: the Rescue needed category is retired, so the serious
+		// report sentence names critical only and says what rescue reports
+		// already posted keep.
+		"If the check can't finish in time, a normal report waits and doesn't show to anyone until it does. A critical report is published at once and checked afterwards. A Rescue needed report posted before that category was retired keeps this rule until it fades.",
 		"For anything serious, such as a crime or a threat to someone's safety, contact the police directly. In an emergency call 112. Pinalert doesn't contact the police for you.",
 		"Browsers can delete saved data, so a report waiting to send isn't guaranteed to survive. Send it as soon as you have a signal.",
 		"Nothing listed here is deleted on a schedule today",
@@ -214,11 +236,39 @@ func TestLegalPagesRender(t *testing.T) {
 			t.Errorf("policy text lacks %q", want)
 		}
 	}
-	for _, banned := range []string{"threatening", "illegal"} {
-		if strings.Contains(strings.ToLower(ptext), banned) {
+	for _, banned := range []string{"threatening", "illegal", "critical or Rescue needed"} {
+		if strings.Contains(strings.ToLower(ptext), strings.ToLower(banned)) {
 			t.Errorf("policy text names %q", banned)
 		}
 	}
+	// D-18, D-24a: the Disclaimer's expiry sentence names the places that exist.
+	for _, want := range []string{
+		"After a fixed time a report is marked Expired and leaves the Nearby list, whether or not anyone confirms it. Ended reports stay under My activity, Ended nearby, for 7 days. Most reports last",
+	} {
+		if !strings.Contains(ptext, want) {
+			t.Errorf("page text lacks %q", want)
+		}
+	}
+	for _, gone := range []string{"leaves the Active list", "stay visible for a while under Past"} {
+		if strings.Contains(ptext, gone) {
+			t.Errorf("page text still holds the outdated %q", gone)
+		}
+	}
+}
+
+// legalAllH2s is the h2 sequence of both legal pages: the Disclaimer part, then
+// the Policy part. withContact adds the two contact headings.
+func legalAllH2s(withContact bool) []string {
+	out := append([]string{}, legalDisclaimerH2s...)
+	if withContact {
+		out = append(out, "Contact")
+	}
+	out = append(out, "Policy")
+	policy := legalPolicyH2sWithoutContact
+	if withContact {
+		policy = append(append([]string{}, policy[:7]...), "Complaints and removal requests", "Terms", "Changes to this page")
+	}
+	return append(out, policy...)
 }
 
 var legalPolicyH2sWithoutContact = []string{
@@ -236,9 +286,12 @@ var legalPolicyH2sWithoutContact = []string{
 func TestLegalPagesContactBlockOnlyWhenSet(t *testing.T) {
 	set := handlers.AuthConfig{AssetVersion: "test", Chrome: handlers.Chrome{ContactEmail: "moderation@example.org"}}
 	d := legalRender(t, set, handlers.LegalDisclaimerPage, nil).Body.String()
+	// Amended 2026-10-17 by Phase 3.4 plan 08 (D-31): both pages hold both parts,
+	// so the Contact heading closes the Disclaimer part and the Complaints
+	// heading sits inside the Policy part.
 	dh := legalH2s(t, d)
-	if len(dh) == 0 || dh[len(dh)-1] != "Contact" {
-		t.Errorf("disclaimer last h2 = %q, want Contact", dh)
+	if !legalEqual(dh, legalAllH2s(true)) {
+		t.Errorf("disclaimer page h2 with contact = %q, want %q", dh, legalAllH2s(true))
 	}
 	if !strings.Contains(legalText(t, d), "To report abuse or ask for something to be removed, write to moderation@example.org.") {
 		t.Errorf("disclaimer contact sentence missing")
@@ -247,9 +300,8 @@ func TestLegalPagesContactBlockOnlyWhenSet(t *testing.T) {
 		t.Errorf("disclaimer mailto link missing")
 	}
 	p := legalRender(t, set, handlers.LegalPolicyPage, nil).Body.String()
-	wantP := append(append([]string{}, legalPolicyH2sWithoutContact[:7]...), "Complaints and removal requests", "Terms", "Changes to this page")
-	if got := legalH2s(t, p); !legalEqual(got, wantP) {
-		t.Errorf("policy h2 with contact = %q, want %q", got, wantP)
+	if got := legalH2s(t, p); !legalEqual(got, legalAllH2s(true)) {
+		t.Errorf("policy page h2 with contact = %q, want %q", got, legalAllH2s(true))
 	}
 	if !strings.Contains(legalText(t, p), "To report abuse or ask for a report to be removed, write to moderation@example.org.") {
 		t.Errorf("policy contact sentence missing")
@@ -399,8 +451,14 @@ func TestLegalPagesGlossaryUsesAppSentences(t *testing.T) {
 	if !strings.Contains(text, want) {
 		t.Errorf("page text lacks %q", want)
 	}
-	if strings.Contains(text, "unless re-confirmed") || strings.Contains(strings.ToLower(text), "fade") {
-		t.Errorf("page uses the stale unless re-confirmed or fade wording")
+	// Amended 2026-10-17 by Phase 3.4 plan 08 (D-31, D-24a): the page now also
+	// holds the Policy part, whose new sentence says a Rescue needed report
+	// posted before the category was retired keeps its rule "until it fades".
+	// The stale wording is still banned in the Disclaimer part, which is the
+	// text before the Policy heading.
+	disclaimerPart, _, _ := strings.Cut(body, `<h2 id="policy">`)
+	if strings.Contains(text, "unless re-confirmed") || strings.Contains(strings.ToLower(legalText(t, disclaimerPart)), "fade") {
+		t.Errorf("the Disclaimer part uses the stale unless re-confirmed or fade wording")
 	}
 }
 
@@ -463,5 +521,30 @@ func TestLegalPagesPublicPrivateCache(t *testing.T) {
 		if strings.Contains(body, "legal-reader@example.com") || strings.Contains(body, "app-header") {
 			t.Errorf("%s logged in body holds account data", path)
 		}
+	}
+}
+
+// TestTermsVersionFollowsPolicyDate pins D-27: the terms version the first-time
+// flow records is the day the Policy shows as last updated, so changing the text
+// (and its date) asks everyone to agree again, and changing only one of the two
+// fails here. The date is read from the rendered page because the constant that
+// holds it is not exported.
+func TestTermsVersionFollowsPolicyDate(t *testing.T) {
+	rec := legalRender(t, handlers.AuthConfig{AssetVersion: "test"}, handlers.LegalPolicyPage, nil)
+	updated := regexp.MustCompile(`(?s)<p class="legal-updated">Last updated (.*?)</p>`).FindStringSubmatch(rec.Body.String())
+	if updated == nil {
+		t.Fatalf("the Policy page lacks the Last updated line")
+	}
+	shown, err := time.Parse("2 January 2006", strings.TrimSpace(updated[1]))
+	if err != nil {
+		t.Fatalf("the Last updated date %q does not parse: %v", updated[1], err)
+	}
+	version, err := time.Parse("2006-01-02", service.CurrentTermsVersion)
+	if err != nil {
+		t.Fatalf("CurrentTermsVersion %q is not a YYYY-MM-DD date: %v", service.CurrentTermsVersion, err)
+	}
+	if !shown.Equal(version) {
+		t.Errorf("the Policy says last updated %s but CurrentTermsVersion is %s; change them together (D-27)",
+			shown.Format("2006-01-02"), service.CurrentTermsVersion)
 	}
 }

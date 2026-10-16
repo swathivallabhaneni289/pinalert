@@ -38,8 +38,8 @@ import (
 var p427Phase4Files = []string{
 	"templates/notice_strip.html.tmpl",
 	"templates/report_form.html.tmpl",
-	"templates/disclaimer.html.tmpl",
-	"templates/policy.html.tmpl",
+	"templates/reader.html.tmpl",
+	"templates/legal_body.html.tmpl",
 	"templates/low.html.tmpl",
 	"templates/moderate.html.tmpl",
 	"templates/flag_dialog.html.tmpl",
@@ -57,9 +57,11 @@ var p427Phase4Files = []string{
 }
 
 // p427ViewWordAllowlist holds the only phrases allowed to mention a theme by
-// name: the Policy page tells the reader about their Light or Dark choice.
+// name: the Policy text tells the reader about their Light or Dark choice. Amended
+// 2026-10-17 by Phase 3.4 plan 08 (D-31): the Policy text now lives in the shared
+// body partial, so the allowance moves from the old policy page to it.
 var p427ViewWordAllowlist = map[string][]string{
-	"templates/policy.html.tmpl": {"Light or Dark"},
+	"templates/legal_body.html.tmpl": {"Light or Dark"},
 }
 
 // p427CSSThemeSyntax is CSS theme syntax that names the Light theme. It is
@@ -311,7 +313,7 @@ func TestPhase4NoBannedViewWords(t *testing.T) {
 			}
 		}
 		phrase := "Light or Dark"
-		if got := p427ViewWordAllowlist["templates/policy.html.tmpl"]; len(got) != 1 || got[0] != phrase {
+		if got := p427ViewWordAllowlist["templates/legal_body.html.tmpl"]; len(got) != 1 || got[0] != phrase {
 			t.Errorf("the policy allowlist = %v, want only %q", got, phrase)
 		}
 		if len(p427ViewWordAllowlist) != 1 {
