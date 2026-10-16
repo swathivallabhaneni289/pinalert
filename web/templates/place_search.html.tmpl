@@ -1,0 +1,24 @@
+{{/*
+  Search a place (Phase 3.4, D-11, UI-SPEC 2g). The field that sits in the
+  Nearby top bar on both sizes: always drawn, no separate open or close button.
+  app_bar.html.tmpl includes it on Nearby only. The magnifier is the submit
+  button, so Enter and the keyboard's search key submit the same form.
+
+  The ids are the ones map-tools.js reads. The status line and the results
+  panel belong to the form so one press outside it closes them. The results
+  words come from the geocoder and reach the page through Pinalert.setText
+  only (T-31-49).
+*/}}
+<form class="map-search place-search" role="search" id="map-search">
+  <div class="map-search__field">
+    <input type="search" class="map-search__input" id="map-search-input" name="place"
+           autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search"
+           maxlength="200" placeholder="Search a place" aria-label="Search a place">
+    <button type="submit" class="map-search__submit" id="map-search-submit"
+            aria-label="Search a place">
+      <span class="map-search__icon" aria-hidden="true"></span>
+    </button>
+  </div>
+  <p class="map-search__status" id="map-search-status" role="status" aria-live="polite" hidden></p>
+  <div class="map-search__results" id="map-search-results" hidden></div>
+</form>

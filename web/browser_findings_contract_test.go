@@ -47,31 +47,40 @@ func TestBrowserFindingF4TrustToggleTakesFocusOnClick(t *testing.T) {
 // tools layer (its height token is two rows on a laptop), so it never covers a
 // chip; the results list keeps its place under the box, and the phone keeps
 // its own fixed place below the one row.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11, D-04):
+// the place search is the field in the top bar and the tools layer holds the
+// chips alone, one row high. The finding still holds in the new shape: the
+// status line and the results hang from the field in the top bar, so neither
+// can cover a chip in the row under the bar. The line is now pinned under its
+// anchor (100% plus the small space), above the sheet by way of the top
+// chrome, and the chips row starts at one small space. The Phase 3.1 and
+// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
 func TestBrowserFindingF3SearchStatusSitsUnderTheChips(t *testing.T) {
 	const feed = "static/css/feed.css"
 	status := p31mRule(t, feed, "", ".map-search__status:not(.visually-hidden)")
 	p16MustDecl(t, "search status line", status, map[string]string{
-		"position": "absolute", "z-index": "1005", "pointer-events": "auto",
+		"position": "absolute", "z-index": "1030", "pointer-events": "auto",
 		"font-size": "var(--font-size-label)",
 	})
-	if got := p19NoSpace(status.Decls["top"]); got != p19NoSpace("calc(var(--map-tools-height) + var(--space-xs))") {
-		t.Errorf("search status line top is %q, want the tools height plus the small space", status.Decls["top"])
+	if got := p19NoSpace(status.Decls["top"]); got != p19NoSpace("calc(100% + var(--space-xs))") {
+		t.Errorf("search status line top is %q, want just under its anchor, the field in the top bar", status.Decls["top"])
 	}
 
 	results := p31mRule(t, feed, "", ".map-search__results")
-	if got := p19NoSpace(results.Decls["top"]); got != p19NoSpace("calc(var(--space-sm) + var(--touch-target-min) + var(--space-xs))") {
-		t.Errorf("search results top is %q, want just under the box", results.Decls["top"])
+	if got := p19NoSpace(results.Decls["top"]); got != p19NoSpace("calc(100% + var(--space-xs))") {
+		t.Errorf("search results top is %q, want just under the field", results.Decls["top"])
 	}
 
-	// The chips row starts at 8 + 44 + 8 and is one touch target tall, which
-	// is the laptop tools height, so a line under the tools clears it.
+	// The chips row starts one small space under the top of the layer and is
+	// one touch target tall, which is the one row tools height on both sizes.
 	chips := p31mRule(t, feed, "", ".map-chips")
-	if got := p19NoSpace(chips.Decls["top"]); got != p19NoSpace("calc(var(--space-sm) + var(--touch-target-min) + var(--space-sm))") {
+	if got := p19NoSpace(chips.Decls["top"]); got != p19NoSpace("var(--space-sm)") {
 		t.Errorf("chips row top is %q", chips.Decls["top"])
 	}
 	laptop := p31mRule(t, "static/css/main.css", "@media (min-width: 900px)", ".app-shell > .pane--map")
 	if got := p19NoSpace(laptop.Decls["--map-tools-height"]); got !=
-		p19NoSpace("calc(var(--space-sm) + var(--touch-target-min) + var(--space-sm) + var(--touch-target-min))") {
+		p19NoSpace("calc(var(--space-sm) + var(--touch-target-min) + var(--space-sm))") {
 		t.Errorf("laptop --map-tools-height is %q", laptop.Decls["--map-tools-height"])
 	}
 }

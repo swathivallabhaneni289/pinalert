@@ -1010,6 +1010,17 @@ func TestPopupPaddingTokensAgree(t *testing.T) {
 	// so the card's max height subtracts --map-tools-height once more, and the
 	// token is declared on the map pane at both widths. The short screen rule
 	// stays last, so it still wins on a very short laptop window.
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11, D-04):
+	// the token is now one row on both sizes (8px, 44px, 8px), since the place
+	// search left the layer for the top bar; the term in the popup rule is
+	// unchanged and follows the token. The Phase 3.1 and Phase 4 hands-on tests
+	// are walked on this layout after Phase 3.4 is built.
+	for _, file := range []string{"static/css/main.css", "static/css/phone.css"} {
+		if !strings.Contains(p19NoSpace(p13ReadStatic(t, file)), "--map-tools-height:calc(var(--space-sm)+var(--touch-target-min)+var(--space-sm));") {
+			t.Errorf("%s does not declare the one row --map-tools-height", file)
+		}
+	}
 	laptop, _ := p13Rule(t, rules, "min-width: 900px", contentHead)
 	if !strings.Contains(p19NoSpace(laptop.Decls["max-height"]), "-var(--map-tools-height)") {
 		t.Errorf("laptop max height %q does not subtract var(--map-tools-height)", laptop.Decls["max-height"])

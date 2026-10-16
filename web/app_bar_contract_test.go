@@ -1,6 +1,8 @@
 package web
 
 import (
+	"bytes"
+	"html/template"
 	"os"
 	"regexp"
 	"strconv"
@@ -224,4 +226,133 @@ func TestAppBarControlsMeetTouchTarget(t *testing.T) {
 	check("laptop place link", p16Rule(t, laptop, "", ".app-topbar__link"), "min-height")
 	check("Post a report", p16Rule(t, laptop, "", ".app-topbar__post"), "min-height")
 	check("wordmark link", p16Rule(t, laptop, "", ".app-topbar__brand"), "min-height")
+}
+
+// searchBarNavItem and searchBarNav are the shapes the app bar partial reads
+// from the page data (internal/api/handlers/nav.go NavView), rebuilt here
+// because this package cannot import the handlers. ShowGear is the method the
+// partial calls.
+type searchBarNavItem struct {
+	Key, Label, Href, Icon string
+	Current                bool
+}
+
+type searchBarNav struct {
+	Items    []searchBarNavItem
+	Current  string
+	Title    string
+	BackHref string
+}
+
+func (v searchBarNav) ShowGear() bool { return v.Current != "settings" }
+
+// renderTopBar draws the app_topbar block for the place with the given key.
+func renderTopBar(t *testing.T, current string) string {
+	t.Helper()
+	tmpl, err := template.ParseFS(TemplatesFS, "templates/*.tmpl")
+	if err != nil {
+		t.Fatalf("parsing the templates: %v", err)
+	}
+	items := []searchBarNavItem{
+		{Key: "nearby", Label: "Nearby", Href: "/", Icon: "map-pin"},
+		{Key: "alerts", Label: "Official alerts", Href: "/alerts", Icon: "megaphone"},
+		{Key: "activity", Label: "My activity", Href: "/profile", Icon: "user"},
+	}
+	nav := searchBarNav{Items: items, Current: current, Title: "Title"}
+	for i := range nav.Items {
+		nav.Items[i].Current = nav.Items[i].Key == current
+	}
+	var out bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&out, "app_topbar", map[string]any{"Nav": nav}); err != nil {
+		t.Fatalf("rendering the top bar for %q: %v", current, err)
+	}
+	return out.String()
+}
+
+// TestSearchOnlyOnNearby pins D-11 and UI-SPEC 1c: Search a place is drawn in
+// the top bar on Nearby and on no other place, between Post a report and the
+// bell, and the partial is included in one spot under a Nearby condition. The
+// bar is rendered for each place so the claim is about what a page draws, not
+// only about the source text.
+func TestSearchOnlyOnNearby(t *testing.T) {
+	bar := p13ReadTemplate(t, appBarTemplate)
+	if n := strings.Count(bar, `{{template "place_search.html.tmpl" .}}`); n != 1 {
+		t.Errorf("%s includes the search partial %d times, want 1", appBarTemplate, n)
+	}
+	includeAt := strings.Index(bar, `{{template "place_search.html.tmpl" .}}`)
+	ifAt := strings.LastIndex(bar[:includeAt], "{{if ")
+	if ifAt == -1 || !strings.HasPrefix(bar[ifAt:], `{{if eq .Nav.Current "nearby"}}`) {
+		t.Errorf("the search partial must sit directly under {{if eq .Nav.Current \"nearby\"}}")
+	}
+	// The key is the constant of the Go list, not a second spelling.
+	nav := goSourceText(t, "../internal/api/handlers/nav.go")
+	if !regexp.MustCompile(`NavNearby\s+=\s+"nearby"`).MatchString(nav) {
+		t.Errorf("nav.go no longer names the Nearby key \"nearby\", which the search condition reads")
+	}
+	// No page includes the partial on its own, and only the bar names it.
+	for _, page := range []string{"index.html.tmpl", "alerts.html.tmpl", "settings.html.tmpl", "profile.html.tmpl"} {
+		if strings.Contains(p13ReadTemplate(t, page), "place_search.html.tmpl") {
+			t.Errorf("%s includes the search partial itself; only the top bar does", page)
+		}
+	}
+
+	post := `data-open-report><span class="app-icon app-icon--plus"`
+	for _, tc := range []struct {
+		current string
+		want    bool
+	}{{"nearby", true}, {"alerts", false}, {"activity", false}, {"settings", false}} {
+		html := renderTopBar(t, tc.current)
+		has := strings.Contains(html, `id="map-search"`)
+		if has != tc.want {
+			t.Errorf("the %q top bar draws the search field: %v, want %v", tc.current, has, tc.want)
+		}
+		if !tc.want {
+			for _, id := range []string{"map-search-input", "map-search-submit", "map-search-status", "map-search-results"} {
+				if strings.Contains(html, `id="`+id+`"`) {
+					t.Errorf("the %q top bar draws #%s", tc.current, id)
+				}
+			}
+			continue
+		}
+		// The laptop order: Post a report, the search, the bell, the light and
+		// dark button, the person button.
+		p13Ordered(t, html, "the Nearby top bar", post, `id="map-search"`, `id="bell-trigger"`, `id="theme-toggle"`, `id="account-menu-trigger"`)
+	}
+}
+
+// TestSearchAlwaysVisible pins D-11: the field has no separate open or close
+// button and no collapsed state. The banned names are held here, so the page,
+// the script and the styles can be checked for their absence without naming
+// them anywhere else.
+func TestSearchAlwaysVisible(t *testing.T) {
+	banned := []string{"map-search-open", "map-search-close", "map-search__open", "map-search__close", "data-search-open", "Close search"}
+	files := []string{
+		"templates/place_search.html.tmpl", "templates/app_bar.html.tmpl", "templates/index.html.tmpl",
+		"static/js/map-tools.js", "static/css/feed.css", "static/css/phone.css", "static/css/app-bar.css", "static/css/main.css",
+	}
+	for _, file := range files {
+		var text string
+		if strings.HasPrefix(file, "templates/") {
+			text = p13ReadTemplate(t, strings.TrimPrefix(file, "templates/"))
+		} else {
+			text = p13ReadStatic(t, file)
+		}
+		for _, name := range banned {
+			if strings.Contains(text, name) {
+				t.Errorf("%s still holds %q; the search field is always drawn, with no open or close control", file, name)
+			}
+		}
+	}
+	// The partial's only button is the magnifier submit.
+	partial := p13ReadTemplate(t, "place_search.html.tmpl")
+	if n := strings.Count(partial, "<button"); n != 1 {
+		t.Errorf("place_search.html.tmpl holds %d buttons, want the one submit", n)
+	}
+	// The field gives width back before anything else leaves the bar (D-03):
+	// it shrinks from its 260px, and the 900 to 1099px rule trims the gaps.
+	appBar := p16ParseCSS("static/css/app-bar.css", p16ReadStatic(t, "static/css/app-bar.css"))
+	form := p16Rule(t, appBar, "", ".app-topbar > .map-search")
+	p16MustDecl(t, "top bar search form", form, map[string]string{"flex": "0 1 260px", "min-width": "0"})
+	p16Rule(t, appBar, "@media (min-width: 900px) and (max-width: 1099.98px)", ".app-topbar .app-topbar__brand")
+	p16Rule(t, appBar, "@media (min-width: 900px) and (max-width: 1099.98px)", ".app-topbar .app-topbar__link")
 }

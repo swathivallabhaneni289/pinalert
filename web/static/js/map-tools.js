@@ -1,6 +1,12 @@
-// map-tools.js: window.PinalertMapTools, the tools laid over the map. A place
+// map-tools.js: window.PinalertMapTools, the tools of the Nearby page. A place
 // search (HIST-05) and five category chips (HIST-06), plus the two context
 // lines of the list pane that say why the list is not the default one.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11): the
+// place search is the field in the Nearby top bar, on both sizes, always
+// drawn (place_search.html.tmpl). There is no open or close button and no
+// collapsed state any more; Escape closes the results and nothing else. The
+// chips stay over the top left of the map.
 //
 // This module owns the place search request, the only network call added by
 // 03.1. It is a module of its own because app.js keeps exactly two network
@@ -26,7 +32,7 @@
 //     most QUIET_RETRIES times, so suggestions catch up instead of stopping.
 //     Only when the last try fails too does the failure line show, since by
 //     then the search has really been unavailable for a few seconds. Newer
-//     typing, Enter, Escape, Close, a press outside and a pick all cancel a
+//     typing, Enter, Escape, a press outside and a pick all cancel a
 //     pending try, because it waits on the typing timer. A network error from
 //     typing stays quiet and is not tried again.
 //   - A search with no answer in SEARCH_TIMEOUT_MS fails like a network
@@ -62,8 +68,6 @@ window.PinalertMapTools = (function () {
   var RESULT_ZOOM = 13;
   // The session flag welcome.js sets when the first-time flow ends (D-27).
   var FOCUS_SEARCH_KEY = 'pinalert.focusSearch';
-  // The condition phone.css lays the one row phone tools out at.
-  var NARROW_QUERY = '(max-width: 899.98px)';
 
   // The status words (C27 to C32) and the location line (C35).
   var MESSAGE_SEARCHING = 'Searching\u2026';
@@ -77,11 +81,8 @@ window.PinalertMapTools = (function () {
   // server, so it reaches the page through Pinalert.setText only.
   var MESSAGE_PARTIAL_PREFIX = 'No exact match for the full address. Showing places for: ';
 
-  var toolsEl = document.querySelector('.map-tools');
   var formEl = document.getElementById('map-search');
-  var openBtn = document.getElementById('map-search-open');
   var inputEl = document.getElementById('map-search-input');
-  var closeBtn = document.getElementById('map-search-close');
   var statusEl = document.getElementById('map-search-status');
   var resultsEl = document.getElementById('map-search-results');
   var chipsEl = document.querySelector('.map-chips');
@@ -114,10 +115,6 @@ window.PinalertMapTools = (function () {
   // changes, so a store notification never drops focus from their button.
   var placeLineKey = null;
   var filterLineKey = null;
-
-  function isNarrow() {
-    return !!(window.matchMedia && window.matchMedia(NARROW_QUERY).matches);
-  }
 
   // cutName shortens a place name to RESULT_NAME_MAX characters, the last one
   // an ellipsis, the same cut the store applies to the place line.
@@ -153,21 +150,10 @@ window.PinalertMapTools = (function () {
     clearStatus();
   }
 
-  // setOpen expands or collapses the phone row. On a laptop the box is always
-  // drawn, so the attribute is only read by the phone rules.
-  function setOpen(open) {
-    toolsEl.setAttribute('data-search-open', open ? 'true' : 'false');
-    openBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-  }
-
-  // focusSearch returns focus to the search control: the search button on a
-  // phone, the box on a laptop.
+  // focusSearch returns focus to the search box. The box is always drawn in
+  // the top bar, on a phone and on a laptop.
   function focusSearch() {
-    if (isNarrow()) {
-      openBtn.focus();
-    } else {
-      inputEl.focus();
-    }
+    inputEl.focus();
   }
 
   // cancelTyping drops a pending typing pause, if any.
@@ -450,9 +436,6 @@ window.PinalertMapTools = (function () {
     Pinalert.fetchReports();
     closeResults();
     renderPlaceLine(Pinalert.state);
-    if (isNarrow()) {
-      setOpen(false);
-    }
     focusSearch();
   }
 
@@ -618,11 +601,6 @@ window.PinalertMapTools = (function () {
     if (!resultsEl.hidden || !statusEl.hidden) {
       abortSearch();
       closeResults();
-      return;
-    }
-    if (isNarrow() && toolsEl.getAttribute('data-search-open') === 'true') {
-      setOpen(false);
-      openBtn.focus();
     }
   }
 
@@ -630,7 +608,7 @@ window.PinalertMapTools = (function () {
   var wired = false;
 
   function init() {
-    if (wired || !toolsEl || !formEl || !inputEl || !resultsEl || !statusEl ||
+    if (wired || !formEl || !inputEl || !resultsEl || !statusEl ||
         typeof Pinalert === 'undefined') {
       return;
     }
@@ -639,18 +617,6 @@ window.PinalertMapTools = (function () {
     formEl.addEventListener('submit', function (evt) {
       evt.preventDefault();
       search();
-    });
-
-    openBtn.addEventListener('click', function () {
-      setOpen(true);
-      inputEl.focus();
-    });
-
-    closeBtn.addEventListener('click', function () {
-      abortSearch();
-      closeResults();
-      setOpen(false);
-      openBtn.focus();
     });
 
     resultsEl.addEventListener('click', function (evt) {
@@ -703,8 +669,8 @@ window.PinalertMapTools = (function () {
   // The first-time flow (D-27) ends on Nearby with focus on the place search.
   // welcome.js leaves one session flag behind; this takes it once, so a reload
   // or a later visit never moves focus. The flag holds no place and no
-  // position, only that the flow just ended. On a phone the search is behind
-  // its button, so focusSearch puts focus on that button.
+  // position, only that the flow just ended. The search is always drawn in the
+  // top bar, so focusSearch puts focus on the box on both sizes.
   function focusAfterFirstTimeFlow() {
     var flagged = false;
     try {

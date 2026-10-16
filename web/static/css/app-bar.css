@@ -169,6 +169,91 @@ html:has(.app-topbar) {
   height: 20px;
 }
 
+/* Search a place (Phase 3.4, D-11, UI-SPEC 2g): the field in the Nearby top
+   bar, between Post a report and the bell. 260px wide when there is room, and
+   it gives width back first when the bar is short, so the bell, the light and
+   dark button and the person button always stay on the screen (D-03). The
+   field is one 44px bordered box that holds the input and the magnifier, which
+   is the submit button. The form is the anchor of the results panel (feed.css).
+   The phone arrangement is in phone.css. */
+.app-topbar > .map-search {
+  position: relative;
+  flex: 0 1 260px;
+  min-width: 0;
+  margin: 0;
+}
+
+.map-search__field {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: var(--touch-target-min);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+}
+
+.map-search__input {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--touch-target-min);
+  padding: 0 0 0 var(--space-sm);
+  border: 0;
+  border-radius: 8px 0 0 8px;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.map-search__input::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+
+.map-search__input:focus-visible,
+.map-search__submit:focus-visible {
+  outline-offset: -2px;
+}
+
+/* The 44 by 44 hit area of the magnifier. */
+.map-search__submit {
+  box-sizing: border-box;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  padding: 0;
+  border: 0;
+  border-radius: 0 8px 8px 0;
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.map-search__submit:hover {
+  background: var(--color-surface);
+}
+
+/* From 900px to 1099px the bar is short of the room for the 260px field, so
+   the wordmark gap and the link padding give back a little, and the field
+   keeps at least the magnifier and about seven letters at 900px. */
+@media (min-width: 900px) and (max-width: 1099.98px) {
+  .app-topbar .app-topbar__brand {
+    margin-right: var(--space-sm);
+  }
+
+  .app-topbar .app-topbar__link {
+    padding: 0 var(--space-sm);
+  }
+}
+
 /* The bell (Phase 3.4, D-32, UI-SPEC Surface 9): a 44 by 44 button named
    Updates with a hairline border and an 8px corner on a laptop, borderless on
    a phone (phone.css). It carries no count while no updates exist. */

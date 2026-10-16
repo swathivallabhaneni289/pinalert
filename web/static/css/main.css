@@ -667,12 +667,13 @@ body {
     display: block;
   }
 
-  /* The height of the tools layer over the map (03.1 UI-SPEC): two rows on a
-     laptop, the search then the chips, each one touch target high with one
-     small space above, between and below. The layer and the popup reserve
-     both read it. The phone's one row value is set in phone.css. */
+  /* The height of the tools layer over the map (03.1 UI-SPEC, amended by
+     Phase 3.4, D-11): one row on a laptop, the chips, one touch target high
+     with one small space above and below, since the place search moved into
+     the top bar. The layer and the popup reserve both read it. The phone sets
+     the same one row value in phone.css. */
   .app-shell > .pane--map {
-    --map-tools-height: calc(var(--space-sm) + var(--touch-target-min) + var(--space-sm) + var(--touch-target-min));
+    --map-tools-height: calc(var(--space-sm) + var(--touch-target-min) + var(--space-sm));
   }
 }
 

@@ -361,10 +361,14 @@ func TestPhoneKeepsTheAccountTriggerAndDropsTheThemeToggle(t *testing.T) {
 			case ".app-topbar > .app-topbar__gear":
 				gear = &rule
 			}
-			if strings.Contains(part, `.map-tools[data-search-open="true"]`) && !strings.Contains(part, " .") {
-				if _, ok := r.Decls["right"]; ok {
-					t.Errorf("phone.css %q moves the open search row's right edge to %q; it must keep the collapsed inset", part, r.Decls["right"])
-				}
+			// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11,
+			// D-04): there is no open search row any more, so the check that no
+			// open state rule moves the layer's right edge is replaced by one
+			// that the old open state attribute is not used by any phone rule.
+			// The Phase 3.1 and Phase 4 hands-on tests are walked on this layout
+			// after Phase 3.4 is built.
+			if strings.Contains(part, "data-search-open") {
+				t.Errorf("phone.css %q uses the retired open search state", part)
 			}
 		}
 	}

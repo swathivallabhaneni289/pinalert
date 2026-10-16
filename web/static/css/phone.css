@@ -214,70 +214,63 @@
     flex: none;
   }
 
-  /* ---- The tools over the map: one row (03.1 D-26, UI-SPEC) ---- */
+  /* 03.4 nearby search and notices */
 
-  /* One row of one touch target with one small space above it. The layer and
-     the popup reserve read this; the laptop's two row value is in main.css. */
+  /* ---- The tools over the map: the chips, one row (D-11, UI-SPEC 2g) ----
+     One row of one touch target with a small space above and below it. The
+     layer and the popup reserve read this token; the laptop's value is in
+     main.css. The layer keeps the inset it had on the right. */
   .app-shell > .pane--map {
-    --map-tools-height: calc(var(--space-sm) + var(--touch-target-min));
+    --map-tools-height: calc(var(--space-sm) + var(--touch-target-min) + var(--space-sm));
   }
 
-  /* The layer ends where the account button's 44px slot begins, 16px from
-     the right edge, with a small space between. The button sits 16px under
-     the bar and the row 8px under it, so they share a band: the row keeps
-     this inset while the search is open too, which leaves Close clear of the
-     button at every phone width (review finding WR-W01). */
   .pane--map > .map-tools {
     right: calc(var(--space-md) + var(--touch-target-min) + var(--space-sm));
   }
 
-  /* Collapsed: a search button, then the chips in the same row. Open: the
-     box fills the row with Close at its end and the chips step aside. */
-  .pane--map > .map-tools .map-search__open {
-    display: flex;
-  }
-
-  .pane--map > .map-tools[data-search-open="true"] .map-search__open,
-  .pane--map > .map-tools[data-search-open="true"] .map-chips,
-  .pane--map > .map-tools[data-search-open="false"] .map-search__field {
+  /* ---- Search a place in the Nearby top bar (D-11, UI-SPEC 1b, 2g) ----
+     On Nearby the field takes the place of the title and the spacer, ahead of
+     the bell and the gear, and fills the width they leave. Fill --color-surface,
+     no border, 8px corner, 44px high. The placeholder and the magnifier use
+     --color-text, since muted text never sits on --color-surface. */
+  .app-topbar:has(> .map-search) > .app-topbar__title,
+  .app-topbar:has(> .map-search) > .app-topbar__spacer {
     display: none;
   }
 
-  .pane--map > .map-tools .map-search__close {
-    display: flex;
+  .app-topbar > .map-search {
+    position: static;
+    flex: 1 1 auto;
   }
 
-  /* The keyboard's search key submits; there is no second button in the row. */
-  .pane--map > .map-tools .map-search__submit {
-    display: none;
+  .app-topbar > .map-search .map-search__field {
+    border: 0;
+    background: var(--color-surface);
   }
 
-  .pane--map > .map-tools .map-search__input {
-    max-width: none;
+  .app-topbar > .map-search .map-search__input::placeholder {
+    color: var(--color-text);
+    opacity: 1;
   }
 
-  .pane--map > .map-tools .map-chips {
-    top: var(--space-sm);
-    left: calc(var(--touch-target-min) + var(--space-sm));
+  .app-topbar > .map-search .map-search__submit:hover {
+    background: var(--color-border);
   }
 
-  /* The results are fixed under the row, across the page and down to the
-     bottom bar, so they cover the list pane and not only the map
-     strip. They scroll inside themselves. */
-  .pane--map > .map-tools .map-search__status:not(.visually-hidden),
-  .pane--map > .map-tools .map-search__results {
-    position: fixed;
-    /* Above the list sheet (1020), so the results show over it at half and
-       full; below the report detail sheet (1080). */
-    z-index: 1030;
+  /* The results and the status line hang from the bar, full width less 16px
+     at each side, over the sheet, and scroll inside themselves. The bar is
+     the anchor (it is positioned), the form is not. The bar sits in the top
+     chrome (1050), above the sheet (1020) and under the detail sheet (1080). */
+  .app-topbar > .map-search .map-search__status:not(.visually-hidden),
+  .app-topbar > .map-search .map-search__results {
     right: var(--space-md);
     left: var(--space-md);
+    width: auto;
     max-width: none;
-    top: calc(var(--disclaimer-bar-height, 0px) + var(--app-topbar-height) + var(--space-sm) + var(--touch-target-min) + var(--space-xs));
   }
 
-  .pane--map > .map-tools .map-search__results {
-    max-height: calc(100dvh - (var(--disclaimer-bar-height, 0px) + var(--app-topbar-height) + var(--space-sm) + var(--touch-target-min) + var(--space-xs)) - (var(--app-bottombar-height) + env(safe-area-inset-bottom)) - var(--space-sm));
+  .app-topbar > .map-search .map-search__results {
+    max-height: calc(100dvh - (var(--disclaimer-bar-height, 0px) + var(--app-topbar-height) + var(--space-xs)) - (var(--app-bottombar-height) + env(safe-area-inset-bottom)) - var(--space-sm));
   }
 
   /* ---- Report rows as rounded cards ---- */

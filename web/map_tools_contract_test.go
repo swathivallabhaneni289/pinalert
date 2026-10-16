@@ -161,11 +161,16 @@ func p31mSearchScript(t *testing.T) {
 
 	// An aborted request is not an error line, and a late answer is dropped.
 	p13MustContain(t, "map-tools.js", code, "'AbortError'", "controller.abort()")
-	// Every dismissal cancels the request in flight (Escape, Close and a press
-	// outside the search), so a late answer never reopens the list (T-31-53).
+	// Every dismissal cancels the request in flight (Escape and a press outside
+	// the search), so a late answer never reopens the list (T-31-53).
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11, D-04):
+	// the Close button of the old phone row is gone with the collapsed state
+	// (the field in the top bar is always drawn), so its dismissal is no longer
+	// listed. The Phase 3.1 and Phase 4 hands-on tests are walked on this layout
+	// after Phase 3.4 is built.
 	for _, dismissal := range []string{
 		"if (!resultsEl.hidden || !statusEl.hidden) {\n      abortSearch();\n      closeResults();",
-		"closeBtn.addEventListener('click', function () {\n      abortSearch();\n      closeResults();",
 		"!formEl.contains(evt.target)) {\n        abortSearch();\n        closeResults();",
 	} {
 		if !strings.Contains(code, dismissal) {
@@ -211,8 +216,14 @@ func p31mSearchScript(t *testing.T) {
 		"closeResults();")
 	p13MustContain(t, "pickResult", pick, "focusSearch()")
 
-	// Dismissal: Escape closes the results, then the expanded phone row.
-	p13MustContain(t, "map-tools.js", code, "evt.key !== 'Escape'", "'(max-width: 899.98px)'")
+	// Dismissal: Escape closes the results and nothing else.
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11, D-04):
+	// there is no expanded phone row to close, so the phone query the script
+	// held is gone and Escape closes the results only. The Phase 3.1 and Phase
+	// 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+	p13MustContain(t, "map-tools.js", code, "evt.key !== 'Escape'")
+	p13MustNotContain(t, "map-tools.js", code, "matchMedia", "899.98")
 	closeBody := jsFunctionBody(t, code, "closeResults()")
 	p13MustContain(t, "closeResults", closeBody, "resultsEl.hidden = true", "lastResults = []")
 
@@ -334,13 +345,19 @@ func TestMapChips(t *testing.T) {
 // TestMapToolsMarkup pins the tools layer in the template (D-26): the layer
 // before the map inside the map pane, the search form with its accessible
 // names, the chips, the hidden map label and the script order.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11, D-04):
+// the search form moved out of the layer into place_search.html.tmpl, which
+// the top bar includes on Nearby only, so the layer holds the chips alone and
+// the form's pins read that partial. The accessible name and the placeholder
+// are Search a place, and the open and close controls are gone. The Phase 3.1
+// and Phase 4 hands-on tests are walked on this layout after Phase 3.4 is
+// built.
 func TestMapToolsMarkup(t *testing.T) {
 	tmpl := p13ReadTemplate(t, "index.html.tmpl")
 
 	p13Ordered(t, tmpl, "index.html.tmpl",
-		`<section class="pane pane--map">`, `class="map-tools"`, `<form class="map-search" role="search"`,
-		`id="map-search-open"`, `id="map-search-input"`, `id="map-search-submit"`, `id="map-search-close"`,
-		`id="map-search-status"`, `id="map-search-results"`, `class="map-chips"`, `id="map"`,
+		`<section class="pane pane--map">`, `class="map-tools"`, `class="map-chips"`, `id="map"`,
 		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10):
 		// the floating report button (id fab-report) that followed the map
 		// label is gone; the pane now ends with the map label. The Phase 3.1
@@ -357,35 +374,47 @@ func TestMapToolsMarkup(t *testing.T) {
 		t.Errorf("index.html.tmpl still holds the retired floating report button")
 	}
 
-	for _, want := range []string{
-		`type="search"`, `autocomplete="off"`, `autocapitalize="off"`, `spellcheck="false"`,
-		`enterkeyhint="search"`, `maxlength="200"`, `placeholder="Search for a place"`,
-		`aria-label="Search for a place"`, `aria-label="Close search"`,
-		`role="status" aria-live="polite"`, `aria-label="Filter by category"`, `role="group"`,
-	} {
+	for _, want := range []string{`aria-label="Filter by category"`, `role="group"`} {
 		if !strings.Contains(tmpl, want) {
 			t.Errorf("index.html.tmpl lacks %s in the tools layer", want)
+		}
+	}
+	// The page holds no search form of its own: the top bar includes it.
+	for _, banned := range []string{`id="map-search`, `<form class="map-search`, `Search for a place`, `Close search`} {
+		if strings.Contains(tmpl, banned) {
+			t.Errorf("index.html.tmpl still holds %q; the search is the top bar partial", banned)
 		}
 	}
 	// The map label is hidden until plan 13 fills it.
 	if !strings.Contains(tmpl, `<p class="map-label" id="map-label" hidden></p>`) {
 		t.Errorf("index.html.tmpl lacks the hidden map label paragraph")
 	}
-	// Every button inside the form is a plain button except the one submit,
-	// so no press submits by accident.
-	start := strings.Index(tmpl, `<form class="map-search"`)
-	if start == -1 {
-		t.Fatalf("index.html.tmpl has no search form")
-	}
-	form := tmpl[start:]
-	form = form[:strings.Index(form, `</form>`)]
-	for _, b := range regexp.MustCompile(`<button[^>]*>`).FindAllString(form, -1) {
-		if !strings.Contains(b, `type="button"`) && !strings.Contains(b, `id="map-search-submit"`) {
-			t.Errorf("a form button without type=button: %s", b)
+
+	// The partial: the field, its accessible names, the status line and the
+	// results panel, with the one submit button.
+	search := p13ReadTemplate(t, "place_search.html.tmpl")
+	for _, want := range []string{
+		`<form class="map-search place-search" role="search" id="map-search">`,
+		`type="search"`, `autocomplete="off"`, `autocapitalize="off"`, `spellcheck="false"`,
+		`enterkeyhint="search"`, `maxlength="200"`, `name="place"`, `id="map-search-input"`,
+		`placeholder="Search a place"`, `aria-label="Search a place"`,
+		`id="map-search-submit"`, `id="map-search-status"`, `id="map-search-results"`,
+		`role="status" aria-live="polite"`,
+	} {
+		if !strings.Contains(search, want) {
+			t.Errorf("place_search.html.tmpl lacks %s", want)
 		}
 	}
-	if n := strings.Count(form, `type="submit"`); n != 1 {
-		t.Errorf("the search form holds %d submit buttons, want 1", n)
+	if n := strings.Count(search, `aria-label="Search a place"`); n != 2 {
+		t.Errorf("place_search.html.tmpl names Search a place %d times, want 2 (the field and the submit button)", n)
+	}
+	// Every button inside the form is the one submit, so no press submits by
+	// accident and no extra control exists.
+	form := search[strings.Index(search, `<form`):]
+	form = form[:strings.Index(form, `</form>`)]
+	buttons := regexp.MustCompile(`<button[^>]*>`).FindAllString(form, -1)
+	if len(buttons) != 1 || !strings.Contains(buttons[0], `type="submit"`) || !strings.Contains(buttons[0], `id="map-search-submit"`) {
+		t.Errorf("the search form holds buttons %v, want only the one submit", buttons)
 	}
 
 	// map-tools.js loads deferred after map.js and feed.js.
@@ -464,36 +493,48 @@ func TestMapToolsCSS(t *testing.T) {
 		t.Errorf(".map-tools declares a z index; the layer must not be a stacking context")
 	}
 
-	for _, head := range []string{".map-search__field", ".map-chips"} {
-		r := p31mRule(t, feed, "", head)
-		p16MustDecl(t, head, r, map[string]string{"position": "absolute", "z-index": "1000", "pointer-events": "none"})
-	}
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11, D-04):
+	// the layer holds the chips only, on one row at the top, and the search box
+	// pins read the top bar field in app-bar.css (a 260px field that gives width
+	// back first, a 44px bordered box with an 8px corner, the magnifier as a 44
+	// by 44 submit). The Phase 3.1 and Phase 4 hands-on tests are walked on this
+	// layout after Phase 3.4 is built.
+	const appBar = "static/css/app-bar.css"
 	p16MustDecl(t, ".map-chips", p31mRule(t, feed, "", ".map-chips"), map[string]string{
-		"top":                   "calc(var(--space-sm) + var(--touch-target-min) + var(--space-sm))",
+		"position":              "absolute",
+		"z-index":               "1000",
+		"pointer-events":        "none",
+		"top":                   "var(--space-sm)",
 		"overflow-x":            "auto",
 		"overscroll-behavior-x": "contain",
 	})
-	p16MustDecl(t, ".map-search__field", p31mRule(t, feed, "", ".map-search__field"),
-		map[string]string{"top": "var(--space-sm)"})
-
-	// The laptop search box caps at 320px.
-	p16MustDecl(t, ".map-search__input", p31mRule(t, feed, "", ".map-search__input"), map[string]string{
-		"max-width":      "320px",
-		"min-height":     "var(--touch-target-min)",
-		"border":         "1px solid var(--color-border)",
-		"border-radius":  "8px",
-		"background":     "var(--color-bg)",
-		"color":          "var(--color-text)",
-		"font-size":      "var(--font-size-body)",
-		"pointer-events": "auto",
+	p16MustDecl(t, "top bar search form", p31mRule(t, appBar, "", ".app-topbar > .map-search"), map[string]string{
+		"position": "relative", "flex": "0 1 260px", "min-width": "0",
 	})
-
-	// Every control is at least the touch target and has the 8px corner.
-	controlHeads := []string{
-		".map-search__open", ".map-search__submit", ".map-search__close", ".map-chip",
-		".map-search__result",
+	p16MustDecl(t, ".map-search__field", p31mRule(t, appBar, "", ".map-search__field"), map[string]string{
+		"min-height":    "var(--touch-target-min)",
+		"border":        "1px solid var(--color-border)",
+		"border-radius": "8px",
+		"background":    "var(--color-bg)",
+	})
+	p16MustDecl(t, ".map-search__input", p31mRule(t, appBar, "", ".map-search__input"), map[string]string{
+		"min-height": "var(--touch-target-min)",
+		"min-width":  "0",
+		"border":     "0",
+		"color":      "var(--color-text)",
+		"font-size":  "var(--font-size-body)",
+	})
+	// The magnifier is the submit button, 44 by 44.
+	submit := p31mRule(t, appBar, "", ".map-search__submit")
+	for _, prop := range []string{"width", "min-width", "height", "min-height"} {
+		if got := submit.Decls[prop]; got != "var(--touch-target-min)" {
+			t.Errorf(".map-search__submit %s is %q, want the touch target token (44 by 44)", prop, got)
+		}
 	}
-	for _, head := range controlHeads {
+
+	// Every control of the layer is at least the touch target and has the 8px
+	// corner.
+	for _, head := range []string{".map-chip", ".map-search__result"} {
 		r := p31mRule(t, feed, "", head)
 		if got := r.Decls["min-height"]; got != "var(--touch-target-min)" {
 			t.Errorf("%s min-height is %q, want the touch target token", head, got)
@@ -501,14 +542,6 @@ func TestMapToolsCSS(t *testing.T) {
 		if head != ".map-search__result" {
 			if got := r.Decls["border-radius"]; got != "8px" {
 				t.Errorf("%s border-radius is %q, want 8px (no pill)", head, got)
-			}
-		}
-	}
-	for _, head := range []string{".map-search__open", ".map-search__submit", ".map-search__close"} {
-		r := p31mRule(t, feed, "", head)
-		for _, prop := range []string{"width", "min-width"} {
-			if got := r.Decls[prop]; got != "var(--touch-target-min)" {
-				t.Errorf("%s %s is %q, want the touch target token (44 by 44)", head, prop, got)
 			}
 		}
 	}
@@ -529,11 +562,18 @@ func TestMapToolsCSS(t *testing.T) {
 	forced := p31mRule(t, feed, "@media (forced-colors: active)", `.map-chip[aria-pressed="true"]`)
 	p16MustDecl(t, "forced colours chip", forced, map[string]string{"border": "2px solid CanvasText"})
 
-	// The results list and its status line sit above the add button and
-	// below the bottom bar (1010).
+	// The results list and its status line hang from the field in the top bar:
+	// 320px wide with the menu shadow on a laptop, z-index 1030 inside the sticky
+	// top chrome (1050), which puts them above the list sheet (1020) and under
+	// the report detail sheet (1080).
 	for _, head := range []string{".map-search__results", ".map-search__status:not(.visually-hidden)"} {
 		r := p31mRule(t, feed, "", head)
-		p16MustDecl(t, head, r, map[string]string{"z-index": "1005", "pointer-events": "auto"})
+		p16MustDecl(t, head, r, map[string]string{
+			"z-index": "1030", "pointer-events": "auto", "width": "320px", "box-shadow": "var(--shadow-menu)",
+		})
+	}
+	if chrome := p31mRule(t, "static/css/chrome.css", "", ".top-chrome"); chrome.Decls["z-index"] != "1050" {
+		t.Errorf(".top-chrome z-index is %q, want 1050 (the results panel's local 1030 is above the sheet through it)", chrome.Decls["z-index"])
 	}
 
 	// The map label: not interactive, bottom left.
@@ -553,15 +593,15 @@ func TestMapToolsCSS(t *testing.T) {
 		})
 	}
 
-	// The tools height token: two rows on a laptop, one on a phone.
+	// The tools height token: one row (8px, 44px, 8px) on both sizes (amended 2026-10-16 by Phase 3.4, D-11: the search left the layer).
 	main := p31mRule(t, "static/css/main.css", "@media (min-width: 900px)", ".app-shell > .pane--map")
 	if got := p19NoSpace(main.Decls["--map-tools-height"]); got !=
-		p19NoSpace("calc(var(--space-sm) + var(--touch-target-min) + var(--space-sm) + var(--touch-target-min))") {
+		p19NoSpace("calc(var(--space-sm) + var(--touch-target-min) + var(--space-sm))") {
 		t.Errorf("laptop --map-tools-height is %q", main.Decls["--map-tools-height"])
 	}
 	narrow := p31mRule(t, phone, phoneMedia, ".app-shell > .pane--map")
 	if got := p19NoSpace(narrow.Decls["--map-tools-height"]); got !=
-		p19NoSpace("calc(var(--space-sm) + var(--touch-target-min))") {
+		p19NoSpace("calc(var(--space-sm) + var(--touch-target-min) + var(--space-sm))") {
 		t.Errorf("phone --map-tools-height is %q", narrow.Decls["--map-tools-height"])
 	}
 
@@ -575,30 +615,37 @@ func TestMapToolsCSS(t *testing.T) {
 	p16MustDecl(t, "phone layer", layerNarrow, map[string]string{
 		"right": "calc(var(--space-md) + var(--touch-target-min) + var(--space-sm))",
 	})
-	p16MustDecl(t, "phone chips", p31mRule(t, phone, phoneMedia, ".pane--map > .map-tools .map-chips"), map[string]string{
-		"top":  "var(--space-sm)",
-		"left": "calc(var(--touch-target-min) + var(--space-sm))",
-	})
-	results := p31mRule(t, phone, phoneMedia, ".pane--map > .map-tools .map-search__results")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11, D-04):
+	// the chips sit at the left of the layer with no open button before them (the
+	// base rule's top is the one row), and the results hang from the top bar
+	// itself: absolute against the bar, full width less 16px at each side, under
+	// the bar by the small space (the base rule's 100% plus the small space),
+	// scrolling inside and stopping above the bottom bar. The earlier amendments
+	// (D-10, D-29, D-30, D-31) about the bar token read by the old fixed top
+	// went with that rule. The Phase 3.1 and Phase 4 hands-on tests are walked on
+	// this layout after Phase 3.4 is built.
+	for _, r := range p16ParseCSS(phone, p16ReadStatic(t, phone)) {
+		if strings.Contains(r.Head, ".map-chips") {
+			t.Errorf("phone.css still holds a phone only chips rule %q; the chips are the layer's only content", r.Head)
+		}
+	}
+	results := p31mRule(t, phone, phoneMedia, ".app-topbar > .map-search .map-search__results")
 	p16MustDecl(t, "phone results", results, map[string]string{
-		"position": "fixed", "left": "var(--space-md)", "right": "var(--space-md)",
-		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10):
-		// the phone title bar sits between the notice bar and the map, so the
-		// results start under it as well. The Phase 3.1 and Phase 4 hands-on
-		// tests are walked on this layout after Phase 3.4 is built.
-		//
-		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
-		// D-31): the bar on every page is replaced by the laptop strip on Nearby and
-		// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
-		// every page) is retired as worded; Disclaimer and Policy are reached from the
-		// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
-		// first-time flow, the login screen and the one reader. The token read here
-		// is 0px on a phone, where the strip is hidden.
-		"top": "calc(var(--disclaimer-bar-height, 0px) + var(--app-topbar-height) + var(--space-sm) + var(--touch-target-min) + var(--space-xs))",
+		"left": "var(--space-md)", "right": "var(--space-md)", "width": "auto", "max-width": "none",
 	})
 	if !strings.Contains(results.Decls["max-height"], "100dvh") {
 		t.Errorf("phone results max-height %q does not stop above the bottom bar", results.Decls["max-height"])
 	}
+	status := p31mRule(t, phone, phoneMedia, ".app-topbar > .map-search .map-search__status:not(.visually-hidden)")
+	p16MustDecl(t, "phone status line", status, map[string]string{"left": "var(--space-md)", "right": "var(--space-md)"})
+	field := p31mRule(t, phone, phoneMedia, ".app-topbar > .map-search .map-search__field")
+	p16MustDecl(t, "phone search field", field, map[string]string{"border": "0", "background": "var(--color-surface)"})
+	p16MustDecl(t, "phone search form", p31mRule(t, phone, phoneMedia, ".app-topbar > .map-search"),
+		map[string]string{"position": "static", "flex": "1 1 auto"})
+	// Muted text never sits on --color-surface: the placeholder is the text
+	// colour (rule 7 of the plan).
+	p16MustDecl(t, "phone placeholder", p31mRule(t, phone, phoneMedia, ".app-topbar > .map-search .map-search__input::placeholder"),
+		map[string]string{"color": "var(--color-text)"})
 
 	// No colour literal anywhere in the added rules, and nothing here
 	// declares a font weight or size that is not a token.
@@ -714,16 +761,13 @@ func TestSearchIconIsMasked(t *testing.T) {
 	if !found {
 		t.Errorf("feed.css has no .map-search__icon rule declaring both mask images as %s", want)
 	}
-	// The close glyph reuses x.svg.
-	closeWant := `url("/static/icons/x.svg")`
-	closeFound := false
-	for _, r := range p31mRules(t, "static/css/feed.css", ".map-search__close-icon") {
-		if r.Decls["-webkit-mask-image"] == closeWant && r.Decls["mask-image"] == closeWant {
-			closeFound = true
-		}
-	}
-	if !closeFound {
-		t.Errorf("feed.css has no .map-search__close-icon rule masking x.svg")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11, D-04):
+	// the search has no Close button any more, so the close glyph rule that
+	// masked x.svg is gone (x.svg stays in use by the bell, the post window and
+	// the other closers). The Phase 3.1 and Phase 4 hands-on tests are walked on
+	// this layout after Phase 3.4 is built.
+	if rules := p31mRules(t, "static/css/feed.css", ".map-search__close-icon"); len(rules) != 0 {
+		t.Errorf("feed.css still holds a .map-search__close-icon rule, the search has no Close button")
 	}
 }
 
