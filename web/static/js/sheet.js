@@ -447,7 +447,24 @@ window.PinalertSheet = (function () {
     if (target === handleEl || (target && target.id === 'show-button')) {
       return;
     }
+    if (!keyboardFocus(target)) {
+      return;
+    }
     setSnap('half');
+  }
+
+  // keyboardFocus is false for a focus a press gave (a tap on a row focuses it
+  // before the click), so a tap never grows the sheet that the tap is about to
+  // drop to short again. A browser without :focus-visible counts every focus.
+  function keyboardFocus(target) {
+    if (!target || typeof target.matches !== 'function') {
+      return true;
+    }
+    try {
+      return target.matches(':focus-visible');
+    } catch (e) {
+      return true;
+    }
   }
 
   // ---- Boot ----------------------------------------------------------------

@@ -299,6 +299,19 @@ test('focus on a row a short sheet clips grows it to half; the handle and Show b
   assert.equal(env.sheet.getAttribute('data-snap'), 'half');
 });
 
+test('a focus a press gave leaves a short sheet alone, so a tap on a row does not flicker it', () => {
+  const env = setup();
+  env.api.setSnap('short', { instant: true });
+  const byPress = new FakeEl('');
+  byPress.matches = (sel) => sel !== ':focus-visible';
+  env.sheet.fire('focusin', evt({ target: byPress }));
+  assert.equal(env.sheet.getAttribute('data-snap'), 'short');
+  const byKey = new FakeEl('');
+  byKey.matches = (sel) => sel === ':focus-visible';
+  env.sheet.fire('focusin', evt({ target: byKey }));
+  assert.equal(env.sheet.getAttribute('data-snap'), 'half');
+});
+
 test('the sheet never reads or writes anything of a report', () => {
   const code = source.replace(/\/\/.*$/gm, '');
   assert.equal(/Pinalert\.(state|select|fetch)|\.reports\b|innerHTML|fetch\(/.test(code), false);

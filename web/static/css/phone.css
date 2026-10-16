@@ -103,8 +103,18 @@
   /* While a finger drags the sheet nothing eases: the sheet and the map follow
      the finger at once. */
   .app-shell[data-dragging] > .pane--list,
-  .app-shell[data-dragging] .pane--map #map {
+  .app-shell[data-dragging] .pane--map #map,
+  .app-shell[data-dragging] .pane--map > .map-label {
     transition: none;
+  }
+
+  /* The map label (Show Disputed names the set the pins are) sits above the
+     sheet's edge and follows it, instead of the bottom of the box where the
+     sheet would cover it. 48px above the sheet top clears the attribution. */
+  .pane--map > .map-label {
+    top: calc(var(--sheet-top, 45%) - var(--space-2xl));
+    bottom: auto;
+    transition: top 0.3s cubic-bezier(.2, .8, .2, 1);
   }
 
   /* The handle row: a sticky strip at the top of the sheet holding the handle
@@ -257,6 +267,9 @@
   .pane--map > .map-tools .map-search__status:not(.visually-hidden),
   .pane--map > .map-tools .map-search__results {
     position: fixed;
+    /* Above the list sheet (1020), so the results show over it at half and
+       full; below the report detail sheet (1080). */
+    z-index: 1030;
     right: var(--space-md);
     left: var(--space-md);
     max-width: none;
@@ -1031,7 +1044,8 @@
    instantly (D-16); sheet.js reads the same query and settles at once. */
 @media (max-width: 899.98px) and (prefers-reduced-motion: reduce) {
   .app-shell > .pane--list,
-  .pane--map #map {
+  .pane--map #map,
+  .pane--map > .map-label {
     transition: none;
   }
 }

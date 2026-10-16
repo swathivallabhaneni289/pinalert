@@ -117,11 +117,18 @@ func TestSheetReducedMotion(t *testing.T) {
 	if got := mapBox.Decls["transition"]; got != "height 0.3s cubic-bezier(.2, .8, .2, 1)" {
 		t.Errorf("the map transition is %q, want height 0.3s cubic-bezier(.2, .8, .2, 1)", got)
 	}
-	dragging, _ := p13Rule(t, rules, sh13Phone, ".app-shell[data-dragging] > .pane--list, .app-shell[data-dragging] .pane--map #map")
+	dragging, _ := p13Rule(t, rules, sh13Phone, ".app-shell[data-dragging] > .pane--list, .app-shell[data-dragging] .pane--map #map, .app-shell[data-dragging] .pane--map > .map-label")
 	if got := dragging.Decls["transition"]; got != "none" {
 		t.Errorf("no transition may run while dragging, got %q", got)
 	}
-	calm, _ := p13Rule(t, rules, "(prefers-reduced-motion: reduce)", ".app-shell > .pane--list, .pane--map #map")
+	label, _ := p13Rule(t, rules, sh13Phone, ".pane--map > .map-label")
+	if label.Decls["top"] != "calc(var(--sheet-top, 45%) - var(--space-2xl))" || label.Decls["bottom"] != "auto" {
+		t.Errorf("the map label must follow the sheet's edge, not the bottom of the box where the sheet covers it: %v", label.Decls)
+	}
+	if got := label.Decls["transition"]; got != "top 0.3s cubic-bezier(.2, .8, .2, 1)" {
+		t.Errorf("the map label transition is %q, want it to ease with the sheet", got)
+	}
+	calm, _ := p13Rule(t, rules, "(prefers-reduced-motion: reduce)", ".app-shell > .pane--list, .pane--map #map, .pane--map > .map-label")
 	if got := calm.Decls["transition"]; got != "none" {
 		t.Errorf("reduced motion must switch the sheet and map transitions off, got %q", got)
 	}
