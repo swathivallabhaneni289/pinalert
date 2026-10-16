@@ -89,6 +89,10 @@ window.PinalertMap = (function () {
   // map's bounds undo is not tried for ever (keepCardClearOfTools).
   var TOOLS_TRIES = 3;
   var toolsTried = { popup: null, count: 0 };
+  // True only while keepCardClearOfTools pans. A pan with no animation fires
+  // moveend before it returns, and that nested check would see the card clear
+  // and reset the count, so the cap above could never be reached.
+  var clearingTools = false;
 
   // replacePrefixedClass is a deliberate third copy of feed.js's and
   // visibility.js's private helper of the same name and behaviour, not an
@@ -1095,9 +1099,11 @@ window.PinalertMap = (function () {
   // alone, as is a map the reader is still dragging. The map's bounds can undo
   // a pan (the whole world shown at a low zoom), so at most TOOLS_TRIES
   // corrections run in a row before the card is seen clear again or another
-  // popup opens, and the two can never pan back and forth for ever.
+  // popup opens, and the two can never pan back and forth for ever. The
+  // moveend of its own pan is skipped (clearingTools), so only a later, separate
+  // move can clear the count.
   function keepCardClearOfTools(popup) {
-    if (!map || !popup || !popup.isOpen() || phoneDetail()) {
+    if (clearingTools || !map || !popup || !popup.isOpen() || phoneDetail()) {
       return;
     }
     if (map.dragging && map.dragging.moving()) {
@@ -1126,7 +1132,12 @@ window.PinalertMap = (function () {
       return;
     }
     toolsTried.count += 1;
-    map.panBy([0, dy], { animate: false });
+    clearingTools = true;
+    try {
+      map.panBy([0, dy], { animate: false });
+    } finally {
+      clearingTools = false;
+    }
   }
 
   // panPopupIntoView moves the map at once, with no animation, so the open

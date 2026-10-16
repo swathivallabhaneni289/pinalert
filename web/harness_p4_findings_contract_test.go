@@ -8,7 +8,7 @@ import (
 // The Phase 4 browser harness (run outside the repo on 2026-10-16) measured
 // these problems in Chromium and WebKit. Each test pins the fix of one finding
 // so the source cannot drift back while the harness is not run. F-P4-5 is
-// pinned in TestPhoneDetailSheetCSS (phone_layout_contract_test.go).
+// pinned in TestPhoneDetailSheetStylesheet (phone_layout_contract_test.go).
 
 // TestHarnessFindingP4_6NoThemeToggleOnAnyPhonePage pins F-P4-6: the toggle
 // showed on Low data and Moderate under 900px because those pages do not load
@@ -86,10 +86,18 @@ func TestHarnessFindingP4_7OpenCardNeverSitsUnderTheTools(t *testing.T) {
 
 	clear := jsFunctionBody(t, code, "keepCardClearOfTools(popup)")
 	p13Ordered(t, clear, "keepCardClearOfTools",
-		"phoneDetail()", "map.dragging.moving()",
+		"if (clearingTools ||", "phoneDetail()", "map.dragging.moving()",
 		"refreshPanPadding();", "applyPanPadding(popup);",
 		"getBoundingClientRect()", "panPad.topLeft[1]",
-		"if (dy >= 0) {", "toolsTried.count >= TOOLS_TRIES", "map.panBy([0, dy], { animate: false });")
+		"if (dy >= 0) {", "toolsTried.count >= TOOLS_TRIES", "toolsTried.count += 1;",
+		"clearingTools = true;", "map.panBy([0, dy], { animate: false });", "} finally {", "clearingTools = false;")
+	// The pan with no animation fires moveend before it returns; the nested
+	// check must stand down, or it sees the card clear, resets the count and
+	// the cap against the map's bounds is never reached.
+	if n := strings.Count(code, "clearingTools = true;"); n != 1 {
+		t.Errorf("map.js sets clearingTools %d times, want 1 (around the one pan)", n)
+	}
+	p13MustContain(t, "map.js", code, "var clearingTools = false;")
 	p13MustNotContain(t, "keepCardClearOfTools", clear, "reducedMotion", "panPad.bottomRight", "dx")
 	p13MustContain(t, "map.js", code, "var TOOLS_TRIES = 3;")
 
