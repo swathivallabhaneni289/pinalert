@@ -31,6 +31,11 @@ type AuthConfig struct {
 	// Chrome is filled by api.NewRouter from Deps.Chrome. A zero value renders
 	// the default numbers through withDefaults.
 	Chrome Chrome
+	// DefaultRadiusKm is the list radius, filled by api.NewRouter from the page
+	// config so My activity reads Ended nearby with the same radius as Nearby
+	// (Phase 3.4, D-18). It is a display setting for the browser's read and is
+	// not a trust figure.
+	DefaultRadiusKm float64
 }
 
 // loginGateViewModel is exactly what login_gate.html.tmpl (and the
@@ -483,6 +488,10 @@ type profileViewModel struct {
 	// Nav is the data of the two app bars (Phase 3.4, D-10), built by navFor
 	// from constants only (T-34-13).
 	Nav NavView
+	// DefaultRadiusKm is the radius the browser sends when it reads Ended nearby
+	// (Phase 3.4, D-18), written as data-default-radius-km on the page. The
+	// reader's position is not here: it stays in the browser.
+	DefaultRadiusKm float64
 }
 
 // profileRelativeTime mirrors web/static/js/app.js's relativeTime: the same
@@ -752,6 +761,7 @@ func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) 
 			LowDataDefault:    lowDataChosen(r),
 			AccountID:         acc.ID,
 			Nav:               navFor(NavActivity),
+			DefaultRadiusKm:   cfg.DefaultRadiusKm,
 		}
 		// On a part screen the phone top bar names the part and its back arrow
 		// returns to the list (D-19). The list keeps the plain My activity title.

@@ -378,6 +378,8 @@ func NewRouter(deps Deps) *chi.Mux {
 	page.Chrome = deps.Chrome
 	auth := deps.Auth
 	auth.Chrome = deps.Chrome
+	// My activity reads Ended nearby with the same radius as Nearby (D-18).
+	auth.DefaultRadiusKm = deps.Page.DefaultRadiusKm
 
 	limiterClock := deps.LimiterClock
 	if limiterClock == nil {

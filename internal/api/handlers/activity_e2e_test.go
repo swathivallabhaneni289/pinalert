@@ -21,6 +21,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"pinalert/internal/api"
+	sqlcgen "pinalert/internal/store/sqlc"
 )
 
 // getProfile GETs /profile using client and returns the raw body, failing
@@ -1004,5 +1007,54 @@ func TestProfileRendersLogoutAndBottomNav(t *testing.T) {
 	}
 	if strings.Contains(nav[1], "Past") {
 		t.Errorf("bottom nav names a Past tab")
+	}
+}
+
+// TestActivityPageCarriesRadius proves My activity can read Ended nearby with
+// Nearby's own radius and without the server knowing where the reader is (Phase
+// 3.4 plan 14, D-18, T-34-60). The router copies the page config's radius into
+// the auth config, the page writes it as data-default-radius-km on the main
+// element, and the three scripts of the part (position.js, ended-cards.js and
+// ended-nearby.js) load once each, in that order, after app.js. The page carries
+// no reader position: only the browser holds it.
+func TestActivityPageCarriesRadius(t *testing.T) {
+	srv, mailer, _ := newE2EServerWith(t, func(d *api.Deps, _ *sqlcgen.Queries) {
+		d.Page.DefaultRadiusKm = 7
+	})
+	client := newVerifiedClient(t, srv, mailer, "activity-radius@example.com")
+	body := getProfile(t, client, srv.URL)
+
+	if !strings.Contains(body, `data-default-radius-km="7"`) {
+		t.Errorf("/profile does not carry the page radius as data-default-radius-km=\"7\": %s", body)
+	}
+	if n := strings.Count(body, "data-default-radius-km="); n != 1 {
+		t.Errorf("/profile writes data-default-radius-km %d times, want 1", n)
+	}
+
+	last := -1
+	for _, script := range []string{"app.js", "position.js", "ended-cards.js", "ended-nearby.js"} {
+		src := `/static/js/` + script + `?v=`
+		if n := strings.Count(body, src); n != 1 {
+			t.Errorf("/profile loads %s %d times, want 1", script, n)
+			continue
+		}
+		at := strings.Index(body, src)
+		if at < last {
+			t.Errorf("/profile loads %s before the script that must come first", script)
+		}
+		last = at
+	}
+
+	// The part's own elements are in the page, hidden or showing the skeleton, and
+	// nothing says where the reader is.
+	for _, want := range []string{`id="ended-nearby"`, `id="ended-skeleton"`, `id="ended-resolved-list"`, `id="ended-faded-list"`, `id="ended-hub-count" hidden`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/profile lacks %s", want)
+		}
+	}
+	for _, banned := range []string{"data-reader", "reader-lat", "reader_lat"} {
+		if strings.Contains(body, banned) {
+			t.Errorf("/profile carries %q: the server holds no reader position", banned)
+		}
 	}
 }

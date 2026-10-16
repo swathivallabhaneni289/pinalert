@@ -21,7 +21,7 @@
   <div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>
 
   <div class="app-content">
-  <main class="profile-page" data-account-id="{{.AccountID}}" data-part="{{.CurrentPart}}" data-resend-page="{{if .LowDataDefault}}/low{{else}}/{{end}}">
+  <main class="profile-page" data-account-id="{{.AccountID}}" data-part="{{.CurrentPart}}" data-resend-page="{{if .LowDataDefault}}/low{{else}}/{{end}}" data-default-radius-km="{{.DefaultRadiusKm}}">
     <h1 class="activity-heading">My activity</h1>
 
     <div class="queue-strip" id="queue-strip" hidden></div>
@@ -143,6 +143,9 @@
   {{template "app_bottombar" .}}
 
   <script src="/static/js/app.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/position.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/ended-cards.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/ended-nearby.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/votes.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/visibility.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/trust.js?v={{.AssetVersion}}" defer></script>

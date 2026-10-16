@@ -40,6 +40,26 @@ func TestEndedNearbyOneFetch(t *testing.T) {
 		"var REPORT_ID_PATTERN = /^[1-9][0-9]{0,17}$/;")
 }
 
+// TestEndedNearbyScriptsAndRadius pins that the template loads the three scripts
+// of the part once each, in order, after app.js, and writes the radius the read
+// sends from the server's page config (the e2e twin is TestActivityPageCarriesRadius).
+func TestEndedNearbyScriptsAndRadius(t *testing.T) {
+	tmpl := p13ReadTemplate(t, "profile.html.tmpl")
+	p13Ordered(t, tmpl, "scripts",
+		`/static/js/app.js?v={{.AssetVersion}}" defer`,
+		`/static/js/position.js?v={{.AssetVersion}}" defer`,
+		`/static/js/ended-cards.js?v={{.AssetVersion}}" defer`,
+		`/static/js/ended-nearby.js?v={{.AssetVersion}}" defer`)
+	for _, name := range []string{"position.js", "ended-cards.js", "ended-nearby.js"} {
+		if n := strings.Count(tmpl, "/static/js/"+name); n != 1 {
+			t.Errorf("profile.html.tmpl loads %s %d times, want 1", name, n)
+		}
+	}
+	if n := strings.Count(tmpl, `data-default-radius-km="{{.DefaultRadiusKm}}"`); n != 1 {
+		t.Errorf("profile.html.tmpl writes the radius %d times, want 1", n)
+	}
+}
+
 // TestEndedNearbyNoServerLocation pins D-27 and T-34-60: the reader's position is
 // read from the browser's own store and sent only as the query of the one read.
 // The script never saves it, never keeps it in any store, never posts it and never
