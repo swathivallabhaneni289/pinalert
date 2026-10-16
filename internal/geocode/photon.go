@@ -220,13 +220,25 @@ type photonCandidate struct {
 // "Hyderbad" gave a shop named "Hyderbad" before Hyderabad. A point of
 // interest whose name matches is never lifted, so an exact hospital name
 // keeps the place Photon gave it.
+//
+// A row whose label reads the same (in any case) as one already kept is
+// dropped: a city and its district, or one road split into several
+// OpenStreetMap ways, would otherwise fill the list with rows nobody can
+// tell apart.
 func rankPhoton(q string, candidates []photonCandidate) []Result {
 	results := make([]Result, 0, maxResults)
+	seen := make(map[string]bool, len(candidates))
 	for _, lifted := range []bool{true, false} {
 		for _, c := range candidates {
-			if (c.place && closeSpelling(q, c.name)) == lifted {
-				results = append(results, c.result)
+			if (c.place && closeSpelling(q, c.name)) != lifted {
+				continue
 			}
+			label := strings.ToLower(c.result.DisplayName)
+			if seen[label] {
+				continue
+			}
+			seen[label] = true
+			results = append(results, c.result)
 		}
 	}
 	if len(results) > maxResults {
