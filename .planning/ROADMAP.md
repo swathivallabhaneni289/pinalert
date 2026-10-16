@@ -40,6 +40,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Trust-Model Hardening — Diversity-Weighted Trust** - "Confirmed by N nearby" and the reliability/currency signals reflect distinct nearby corroboration, resistant to trivial gaming. (31 plans, completed 2026-10-13)
 - [ ] **Phase 3.1: Report history views** *(INSERTED 2026-10-03)* - A reader can switch the list and map between Active, Resolved, Disputed and Past reports, search another area, and filter by category and severity.
 - [ ] **Phase 3.2: In-app updates and trusted-reporter alerts** *(INSERTED 2026-10-03)* - A signed-in person is told inside the app when a report they care about changes, and can ask to hear when a Reliable reporter posts nearby.
+- [ ] **Phase 3.4: App layout** *(INSERTED 2026-10-16, runs after the 3.1 and 4 sign-offs and before 3.2)* - Every screen rebuilt from the approved clickable mockup (sketch 007): Nearby, Official alerts and My activity as the main places, the phone list as a sheet over the map, one Settings page, a two pane Post a report on the laptop, and a first-time flow with the disclaimer agreed, the same features on phone and laptop.
 - [ ] **Phase 3.3: Installable app and phone alerts** *(INSERTED 2026-10-15)* - The site can be installed to the home screen, and an installed phone gets a notification for critical and rescue needed reports in the person's rough area, even with the site closed.
 - [ ] **Phase 4: Robustness — Real-World Resilience** - The app stays usable on degraded networks, under abuse/moderation pressure, and with clear legal footing.
 - [ ] **Phase 5: Official Feed & Demo Mode** - First-time visitors see official alerts (NDMA SACHET, including IMD and CWC) in an Alerts view and banner, GDACS pins on the map, and a working demo immediately, instead of an empty product.
@@ -412,6 +413,34 @@ Plans:
 **Wave 5** *(blocked on Wave 4 completion)*
 
 - [x] 03.1-16-PLAN.md: The final gate: full suite, generated code, dashes, images, contrast
+
+### Phase 03.4: App layout (INSERTED)
+
+**Goal:** Rebuild where everything lives and how every screen looks, on the phone and the laptop, from the owner's approved clickable mockup (sketch 007, approved 2026-10-16), so the phone and the laptop offer exactly the same features, nothing is repeated, hidden off the edge or covered, and reporting from a phone is the quickest path. Promotes backlog 999.10. **Runs after the Phase 3.1 and Phase 4 sign-offs and before Phase 3.2** (it reworks parts of both, and 3.2 builds its bell, Updates and Settings rows into this layout); the number is out of order on purpose.
+**Requirements**: LAYOUT-01, LAYOUT-02, LAYOUT-03, LAYOUT-04, LAYOUT-05, LAYOUT-06, LAYOUT-07, LAYOUT-08, LAYOUT-09
+**Depends on:** Phase 3.1, Phase 4
+**UI hint**: yes (the design contract is sketch 007 plus `03.4-CONTEXT.md`)
+**Success Criteria** (what must be TRUE):
+
+  1. Three main places on both sizes, Nearby, Official alerts and My activity: a phone bottom bar with a fourth Report item, a laptop top bar with Post a report, search, the bell, the light and dark button and a person menu (My profile, Settings, Log out). The phone has a search row with the bell and the Settings gear, and no light and dark button.
+  2. Nearby has one Show menu (All, Confirmed, Disputed, plus the Reliable tick from 3.2); disputed reports sit labelled at the bottom of All without changing the resolver; on the phone the list is a sheet over the map (short, half, full; scrolling up grows it); tapping a report shows its pin and tapping a pin shows its report, on both sizes.
+  3. My activity holds Updates, Posted by you, You confirmed, You disputed and Ended nearby (3.1's Past content): on the phone a short list whose rows open their own screens with Back; on the laptop the parts stacked with aligned columns; every feature of today's Activity page kept.
+  4. Post a report opens full screen on the phone and as a two pane window on the laptop (map left, form right), closes with the X only, shows a chosen severity by its own soft colour, and shows a "Call 112 first" box only for Critical or Rescue.
+  5. One Settings page (gear on the phone, person menu on the laptop) with About you, Phone notifications, People and reports, About Pinalert (Disclaimer, Policy, Low data view) and Account sections, each row appearing only when its feature exists.
+  6. After the first sign in, a five step flow: Welcome, Disclaimer and policy read and agreed (Disagree points to the Demo), Your location, About you, Alerts (the last step arrives with 3.3).
+  7. The laptop shows the unofficial notice strip on every page; the phone does not (owner decision, departs from ROBUST-08, see 03.4-CONTEXT D-30); Disclaimer and Policy open in one reader.
+  8. The owner's rules hold on every screen: same features on both sizes, one way to close, nothing repeated, nothing off screen, chosen items never outlined in black, no faded text, laptop pages full width.
+
+**Scope notes** (decisions are in `03.4-CONTEXT.md`; two small owner questions are open there, O-1 and O-2):
+
+  1. Reworks built code: Phase 3.1's tab strip, Past tab and phone bottom bar; Phase 4's disclaimer bar on every page and account menu; quick tasks 261013-lrw and 261013-wm5. Contract tests that pin them get a dated amendment note naming the owner decision.
+  2. Builds places and empty states only; the bell and Updates (3.2), phone notifications and the What is happening picks (3.3), Official alerts content and the Demo button (5) and profiles (9) fill them later.
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 03.4 to break down)
 
 ### Phase 03.2: In-app updates and trusted-reporter alerts (INSERTED)
 
