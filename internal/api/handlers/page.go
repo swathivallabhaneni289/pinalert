@@ -4,6 +4,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"strconv"
 
 	"pinalert/internal/account"
 	"pinalert/web"
@@ -73,6 +74,40 @@ type pageViewModel struct {
 	Legal LegalText
 }
 
+// EndedNearbyPath is where the finished reports live since Phase 3.4: My
+// activity, part Ended nearby. It is the constant target of the redirects for
+// the old Past addresses (view=past, view=resolved).
+const EndedNearbyPath = "/profile?part=ended"
+
+// endedNearbyTarget answers the redirect target for a main page address that
+// asks for the finished reports, or false for any other address. The view must
+// be exactly past or resolved. A report parameter is carried over only when it
+// is all ASCII digits and parses to a positive int64; the id is written back
+// from the parsed integer, so nothing from the request reaches the target
+// except a number (T-34-49).
+func endedNearbyTarget(r *http.Request) (string, bool) {
+	q := r.URL.Query()
+	view := q.Get("view")
+	if view != "past" && view != "resolved" {
+		return "", false
+	}
+	target := EndedNearbyPath
+	raw := q.Get("report")
+	if raw == "" {
+		return target, true
+	}
+	for i := 0; i < len(raw); i++ {
+		if raw[i] < '0' || raw[i] > '9' {
+			return target, true
+		}
+	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id <= 0 {
+		return target, true
+	}
+	return target + "&report=" + strconv.FormatInt(id, 10), true
+}
+
 // ParsePageTemplate parses the embedded app shell template from
 // pinalert/web's embedded filesystem. html/template's contextual
 // auto-escaping is what keeps every server-injected value safe against the
@@ -97,9 +132,11 @@ func ParsePageTemplate() (*template.Template, error) {
 // Before it renders, Page follows the remembered Low data choice (D-17): a
 // bare address with the pinalert_low_data cookie answers a redirect to the Low
 // data view, and the address with full=1 clears the cookie and goes to the main
-// page. A main page address with any other query string is never redirected,
-// so a shared deep link opens where it says, and every target is a constant
-// (T-04-13).
+// page. A main page address with any other query string is never redirected to
+// the Low data view, so a shared deep link opens where it says, and every
+// target is a constant (T-04-13). The one exception is the retired Past
+// address (view=past or view=resolved), which goes to My activity, Ended nearby
+// (Phase 3.4, D-18) before any of the above.
 func Page(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acc, ok := account.FromContext(r.Context())
@@ -114,6 +151,18 @@ func Page(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 		// view, before any heavy asset is requested. Any other query string is
 		// never redirected, so a shared deep link opens where it says. Every
 		// target is a constant (T-04-13), so no loop and no open redirect exist.
+		// Phase 3.4 (D-18): the Past tab left Nearby. An address that asked for
+		// the finished reports (view past or resolved) goes to My activity,
+		// Ended nearby, and carries a report id along only when it is plain
+		// digits. The target is a constant plus a re-formatted integer, never a
+		// string taken from the request (T-34-49). It comes before the Low data
+		// handling so an old bookmark lands in the same place whatever else the
+		// address holds.
+		if target, ok := endedNearbyTarget(r); ok {
+			w.Header().Set("Cache-Control", "no-store")
+			http.Redirect(w, r, target, http.StatusFound)
+			return
+		}
 		if r.URL.Query().Get("full") == "1" {
 			clearLowDataCookie(w, r)
 			w.Header().Set("Cache-Control", "no-store")

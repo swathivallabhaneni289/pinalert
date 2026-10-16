@@ -33,12 +33,10 @@
  * working. #disputed-empty keeps its own guard in trust.css.
  */
 #feed-empty-history[hidden],
-#past-empty[hidden],
 #filter-empty[hidden],
-#past-groups[hidden],
-.past-group[hidden],
-.past-group__cut[hidden],
-#feed-note[hidden],
+#confirmed-empty[hidden],
+#show-menu[hidden],
+#alert-banner[hidden],
 #place-line[hidden],
 #filter-line[hidden],
 #map-label[hidden],
@@ -60,12 +58,11 @@
  * display rule names one of these ids bare.
  */
 .pane--list[data-loading] #report-list:not([hidden]),
-.pane--list[data-loading] #past-groups:not([hidden]),
 .pane--list[data-loading] #feed-count:not([hidden]),
 .pane--list[data-loading] #feed-empty:not([hidden]),
 .pane--list[data-loading] #feed-empty-history:not([hidden]),
 .pane--list[data-loading] #disputed-empty:not([hidden]),
-.pane--list[data-loading] #past-empty:not([hidden]),
+.pane--list[data-loading] #confirmed-empty:not([hidden]),
 .pane--list[data-loading] #filter-empty:not([hidden]),
 .pane--list[data-loading] #feed-error:not([hidden]) {
   display: none;
@@ -95,85 +92,270 @@
 }
 
 /*
- * The tab strip (03.1 D-01, D-02, UI-SPEC Surface 1): a grey track holding
- * three link tabs, the same look at every width. The tab text uses the normal
- * text colour because the muted colour reads 4.34 to 1 on the track. The
- * current tab is a white tab with a 1px border and weight 600, so it is never
- * told apart by colour alone.
+ * The official alert banner slot (Phase 3.4, D-15, UI-SPEC 2f). A link to
+ * /alerts that exists in the markup, hidden, with no data until Phase 5. When
+ * Phase 5 shows it: the critical tint, a 1px critical border, an 8px corner,
+ * a bold first line and a second line in the normal text colour.
  */
-.view-tabs {
+.alert-banner:not([hidden]) {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-xs);
-  padding: var(--space-xs);
-  margin: 0 0 var(--space-sm);
-  background: var(--color-surface);
+  align-items: flex-start;
+  column-gap: var(--space-sm);
+  margin: var(--space-sm) var(--space-md) 0;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-severity-critical);
   border-radius: 8px;
-}
-
-.view-tab {
-  flex: 1 1 0;
-  min-width: 0;
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: var(--touch-target-min);
-  padding: 0 var(--space-sm);
-  border: 1px solid transparent;
-  border-radius: 8px;
+  background: var(--color-severity-critical-bg);
   color: var(--color-text);
-  font-family: var(--font-family);
-  font-size: var(--font-size-body);
-  line-height: var(--line-height-body);
-  font-weight: var(--font-weight-regular);
-  text-align: center;
   text-decoration: none;
-  overflow-wrap: anywhere;
 }
 
-.view-tab:hover {
-  background: color-mix(in srgb, var(--color-border) 50%, transparent);
+.alert-banner__icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: var(--color-severity-critical);
+  -webkit-mask-image: url("/static/icons/storm_cyclone.svg");
+  mask-image: url("/static/icons/storm_cyclone.svg");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
 }
 
-.view-tab:active {
-  background: var(--color-border);
+.alert-banner__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
-/* After hover and press on purpose: the current tab does not change its fill. */
-.view-tab[aria-current="page"],
-.view-tab[aria-current="page"]:hover,
-.view-tab[aria-current="page"]:active {
-  background: var(--color-bg);
-  border-color: var(--color-border);
+.alert-banner__title {
   font-weight: var(--font-weight-semibold);
 }
 
-/* The global ring is inset so the track does not clip it. */
-.view-tab:focus-visible {
-  outline-offset: -2px;
+.alert-banner__line {
+  color: var(--color-text);
 }
 
-@media (forced-colors: active) {
-  .view-tab[aria-current="page"] {
-    border: 1px solid CanvasText;
-  }
-
-  .view-tab:hover,
-  .view-tab:active {
-    border-color: Highlight;
-  }
+/*
+ * The list head (Phase 3.4, D-13, UI-SPEC 2c): the count line on the left and
+ * the Show button on the right, with a hairline under them. Phone rules are in
+ * phone.css under "03.4 nearby list". The Show menu opens under the button.
+ */
+.list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  column-gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
 }
 
-/* The one line under the Disputed and Past headings. Muted text is placed
-   on --color-bg only. */
-.feed-note {
-  margin: 0 0 var(--space-sm);
+.list-head__count {
+  margin: 0;
+  min-width: 0;
   color: var(--color-text-muted);
   font-family: var(--font-family);
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
   font-weight: var(--font-weight-regular);
+}
+
+.show-control {
+  position: relative;
+  flex: none;
+}
+
+.show-button {
+  display: inline-flex;
+  align-items: center;
+  column-gap: var(--space-xs);
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.show-button:hover {
+  background: color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+
+.show-button:active {
+  background: var(--color-border);
+}
+
+.show-button__chevron {
+  width: 16px;
+  height: 16px;
+}
+
+.app-icon--chevron-down {
+  -webkit-mask-image: url("/static/icons/chevron-down.svg");
+  mask-image: url("/static/icons/chevron-down.svg");
+}
+
+.app-icon--check {
+  -webkit-mask-image: url("/static/icons/check.svg");
+  mask-image: url("/static/icons/check.svg");
+}
+
+.show-menu[hidden] {
+  display: none;
+}
+
+.show-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 1060;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  margin-top: var(--space-xs);
+  padding: var(--space-xs) 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-menu);
+}
+
+.show-menu__item {
+  display: flex;
+  align-items: center;
+  column-gap: var(--space-sm);
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-md);
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+  text-align: left;
+  cursor: pointer;
+}
+
+.show-menu__item:hover {
+  background: color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+
+.show-menu__item:focus-visible {
+  outline-offset: -2px;
+}
+
+.show-menu__item[aria-checked="true"] {
+  font-weight: var(--font-weight-semibold);
+}
+
+/* The check holds its place on every row, so the words line up; only the
+   chosen row draws it. */
+.show-menu__check {
+  width: 16px;
+  height: 16px;
+  visibility: hidden;
+}
+
+.show-menu__item[aria-checked="true"] .show-menu__check {
+  visibility: visible;
+}
+
+@media (forced-colors: active) {
+  .show-button,
+  .show-menu {
+    border-color: CanvasText;
+  }
+}
+
+/*
+ * The disputed row and its group (Phase 3.4, D-14, UI-SPEC 2e). Five cues,
+ * none of them colour alone and none of them fading: a grey dot and the
+ * category glyph at 20px, the Disputed tag, the bold line, the last group and
+ * (on the map) a grey pin. Text stays at full contrast (D-07): no rule here
+ * sets opacity, and the muted greys the hidden look uses elsewhere are put
+ * back to the normal text colour.
+ */
+#report-list .report-row.report-row--disputed {
+  display: flex;
+  align-items: flex-start;
+  column-gap: var(--space-sm);
+}
+
+#report-list .report-row.report-row--disputed > .icon-badge {
+  display: inline-flex;
+  flex: none;
+  width: auto;
+  height: 20px;
+  aspect-ratio: 1;
+  margin-top: var(--space-xs);
+  background: transparent;
+  outline: 0;
+}
+
+#report-list .report-row.report-row--disputed > .icon-badge .icon-glyph {
+  width: 100%;
+  height: 100%;
+}
+
+#report-list .report-row.report-row--disputed .report-row__body {
+  flex: 1 1 0;
+}
+
+#report-list .report-row.report-row--disputed .severity-label::before {
+  background-color: var(--color-age-stale);
+}
+
+#report-list .report-row.vis-hidden.report-row--disputed .visibility-tag:not([hidden]) {
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+#report-list .report-row.vis-hidden.report-row--disputed .report-row__meta,
+#report-list .report-row.vis-hidden.report-row--disputed .report-row__away:not([hidden]),
+#report-list .report-row.vis-hidden.report-row--disputed .report-row__far:not([hidden]),
+#report-list .report-row.vis-hidden.report-row--disputed .report-row__trustline:not([hidden]) {
+  color: var(--color-text);
+}
+
+/* The bold line of cue 3, on its own line above the counters. */
+#report-list .report-row .report-row__disputed-line:not([hidden]) {
+  order: 6;
+  flex: 0 0 100%;
+  margin: 0;
+  color: var(--color-severity-critical);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* The heading of the last group in Show All. */
+.report-group-head {
+  margin: var(--space-sm) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.report-group-head__text {
+  margin: 0;
+  color: var(--color-severity-critical);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+}
+
+#see-ended-reports {
+  text-decoration: none;
 }
 
 /* The inline text button shared by the place line, the filter line and any
@@ -211,42 +393,8 @@
   margin-top: var(--space-sm);
 }
 
-/* The laptop. The strip is capped at 360px and left aligned: the fixed
-   account button sits over the right end of the list pane, and a strip of
-   360px clears it even at 900px wide. The list heading is hidden on a laptop
-   while Active is selected (it keeps today's page) and shows on Disputed
-   and Past, through a selector that outranks phone.css's base hide. */
+/* The laptop. */
 @media (min-width: 900px) {
-  .view-tabs {
-    max-width: 360px;
-    margin: var(--space-md) 0 var(--space-sm);
-  }
-
-  #app-shell[data-feed-view="disputed"] .feed-heading,
-  #app-shell[data-feed-view="past"] .feed-heading {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    column-gap: var(--space-sm);
-    margin-bottom: var(--space-sm);
-  }
-
-  #app-shell[data-feed-view] .feed-heading__title {
-    margin: 0;
-    color: var(--color-text);
-    font-size: var(--font-size-heading);
-    line-height: var(--line-height-heading);
-    font-weight: var(--font-weight-semibold);
-  }
-
-  #app-shell[data-feed-view] .feed-heading__count {
-    margin: 0;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-label);
-    line-height: var(--line-height-label);
-    font-weight: var(--font-weight-regular);
-  }
-
   /* A hidden row is a transparent row over --color-bg, so the trust line may
      take the muted colour there, and only there: on a severity tint or on the
      provisional --color-surface tint muted fails 4.5 to 1. The good tone is
@@ -788,130 +936,6 @@
   content: "\00b7";
   content: "\00b7" / "";
   margin-right: var(--space-sm);
-}
-
-/*
- * The Past tab (03.1 D-07 to D-11, UI-SPEC Surface 3): two groups of white
- * cards copied from the owner's Past picture, the same at every width. A card
- * is read only, so no rule here styles a control. It carries no severity
- * colour, no left bar and no tint: severity is read in the opened report.
- * Muted text sits on --color-bg only. The one new literal of the phase is the
- * 0.04em letter spacing of the group label (UI-SPEC Typography).
- */
-#past-groups {
-  flex: none;
-}
-
-.past-group__label {
-  margin: var(--space-md) 0 var(--space-sm);
-  font-family: var(--font-family);
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
-  font-weight: var(--font-weight-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-text-muted);
-}
-
-.past-group__list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-/* The line that ends a group the server cut, "Showing the newest N." */
-.past-group__cut {
-  margin: var(--space-sm) 0 0;
-  font-family: var(--font-family);
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
-  font-weight: var(--font-weight-regular);
-  color: var(--color-text-muted);
-}
-
-.past-card {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: calc(var(--space-md) - 1px);
-  cursor: pointer;
-}
-
-/* The focus ring and the selected ring sit inside the card, so a card at the
-   edge of the pane is never clipped. */
-.past-card:focus-visible {
-  outline-offset: -2px;
-}
-
-.past-card--selected {
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: -2px;
-}
-
-/* The title is the report text, up to two lines. */
-.past-card__title {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  margin: 0;
-  font-family: var(--font-family);
-  font-size: var(--font-size-body);
-  line-height: var(--line-height-body);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text);
-}
-
-.past-card__meta {
-  margin: var(--space-xs) 0 0;
-  font-family: var(--font-family);
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
-  font-weight: var(--font-weight-regular);
-  color: var(--color-text-muted);
-  overflow-wrap: anywhere;
-}
-
-/* The facts line is the row trust line from the one builder, shown here as a
-   flex row that wraps only between whole facts. Its own hidden attribute
-   is honoured through :not([hidden]). */
-.past-card__facts:not([hidden]) {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  column-gap: var(--space-xs);
-  margin: var(--space-xs) 0 0;
-  font-family: var(--font-family);
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
-  font-weight: var(--font-weight-regular);
-  color: var(--color-text);
-  overflow-wrap: anywhere;
-}
-
-.past-card__outcome {
-  font-weight: var(--font-weight-semibold);
-}
-
-/* The numerals read in the regular weight, as the sample card draws them. */
-.past-card__facts .trust-num {
-  font-weight: var(--font-weight-regular);
-  color: inherit;
-}
-
-/* The dot before the second counter, and before the first one when the
-   outcome label stands in front of it. The alternative text is empty, so a
-   screen reader does not read it. */
-.past-card__count--second:not([hidden])::before,
-.past-card__outcome:not([hidden]) + .past-card__count:not([hidden])::before {
-  content: "\00b7";
-  content: "\00b7" / "";
-  margin-right: var(--space-xs);
 }
 
 @media (max-width: 899.98px) {

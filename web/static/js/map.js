@@ -327,6 +327,7 @@ window.PinalertMap = (function () {
     function boot(lat, lon, zoom, own) {
       map.setView([lat, lon], zoom);
       Pinalert.setCenter(lat, lon, own);
+      saveReaderFix(lat, lon, own);
       Pinalert.fetchReports();
       Pinalert.startPolling();
     }
@@ -339,6 +340,17 @@ window.PinalertMap = (function () {
         boot(fallbackLat, fallbackLon, 11, false);
       }
     );
+  }
+
+  // saveReaderFix keeps a device fix in this browser through PinalertPosition
+  // (Phase 3.4 D-20), so My activity can show Ended nearby and its distances.
+  // Only the reader's own fix is saved, never the fallback centre, and the
+  // position goes nowhere else: it stays in this browser. A page without the
+  // module saves nothing.
+  function saveReaderFix(lat, lon, own) {
+    if (own === true && window.PinalertPosition && typeof window.PinalertPosition.save === 'function') {
+      window.PinalertPosition.save(lat, lon);
+    }
   }
 
   // locateReader asks the browser for the reader's position once. A missing
@@ -387,6 +399,7 @@ window.PinalertMap = (function () {
         }
         Pinalert.clearPlace();
         Pinalert.setCenter(lat, lon, own);
+        saveReaderFix(lat, lon, own);
         moveTo(lat, lon, zoom);
         Pinalert.fetchReports();
         resolve({ own: own });
@@ -1307,10 +1320,10 @@ window.PinalertMap = (function () {
   }
 
   // updateMapLabel writes the one line label at the bottom left of the map
-  // (C41, D-13). It names the tab only while Disputed or Past is selected, so
-  // a reader who sees a pin that is not live knows which set the map shows.
-  // The words are fixed strings written through the text sink, and the label
-  // is hidden and emptied on the Active tab. It reads only the store's tab.
+  // (C41, D-13). It names the set only while Show Disputed is chosen, so a
+  // reader who sees only pins that are in dispute knows which set the map
+  // shows. The words are fixed strings written through the text sink, and the
+  // label is hidden and emptied otherwise. It reads only the store's choice.
   function updateMapLabel(state) {
     var labelEl = document.getElementById('map-label');
     if (!labelEl) {
@@ -1319,8 +1332,6 @@ window.PinalertMap = (function () {
     var words = '';
     if (state.view === 'disputed') {
       words = 'Showing disputed reports';
-    } else if (state.view === 'past') {
-      words = 'Showing past reports, last 7 days';
     }
     Pinalert.setText(labelEl, words);
     labelEl.hidden = words === '';
@@ -1336,10 +1347,12 @@ window.PinalertMap = (function () {
     removedPopupFocus = false;
     updateMapLabel(state);
 
-    // The pins are the list's reports plus, when a report link asked for one
-    // outside the list, that one report under the tab and chip that fit it
-    // (D-11, D-13). A copy is made so the store's own array is never changed.
-    var shown = state.reports;
+    // The pins are the list's reports under the Show choice (the same set the
+    // rows draw, one call for both) plus, when a report link asked for one
+    // outside the list, that one report under the Show choice and chip that
+    // fit it (D-11, D-13). A copy is made so the store's own array is never
+    // changed.
+    var shown = Pinalert.visibleReports();
     var linked = focusPinReport(state);
     if (linked !== null) {
       shown = shown.concat([linked]);
@@ -1378,25 +1391,28 @@ window.PinalertMap = (function () {
     openFocusOnce(state);
   }
 
-  // belongsToTab says whether a report is a member of a tab, from the
-  // server's own view word on the report. The Past tab holds both finished
-  // words. Nothing here reads a date.
-  function belongsToTab(report, view) {
+  // belongsToShow says whether a linked report is a member of the Show choice
+  // the reader is on, from the server's own view word on the report. Nearby
+  // draws only reports that are active or disputed: a finished report is no
+  // longer drawn here, its link lands on My activity (Phase 3.4, orchestrator
+  // decision 6). The Confirmed filter reads the server's confirmed_by_people.
+  // Nothing here reads a date or a count.
+  function belongsToShow(report, show) {
     var own = report ? report.view : '';
-    if (view === 'past') {
-      return own === 'resolved' || own === 'past';
+    if (own !== 'active' && own !== 'disputed') {
+      return false;
     }
-    return own === view;
+    return Pinalert.reportInShow(report, show);
   }
 
   // focusPinReport answers the linked report that needs its own pin, or null.
-  // It needs the store's focus to be ok, a report that is not already in the
-  // list (the list's own pin is used then), a place on the map, a tab the
-  // reader is on and a chip, when one is on, that matches its category. The
-  // focus object is the newest answer's (CR-01), so the pin and its popup
-  // always show the server's current state, and the store drops it when the
-  // link ends. The tab rule still keeps the pin off a tab the report does not
-  // belong to (D-13).
+  // It needs the store's focus to be ok, a report that is not already among
+  // the drawn pins (the list's own pin is used then), a place on the map, a
+  // Show choice the reader is on and a chip, when one is on, that matches its
+  // category. The focus object is the newest answer's (CR-01), so the pin and
+  // its popup always show the server's current state, and the store drops it
+  // when the link ends. The Show rule keeps the pin off a set the report does
+  // not belong to (D-13).
   function focusPinReport(state) {
     var focus = state.focus;
     if (!focus || focus.status !== 'ok' || !focus.report) {
@@ -1406,12 +1422,13 @@ window.PinalertMap = (function () {
     if (typeof report.latitude !== 'number' || typeof report.longitude !== 'number') {
       return null;
     }
-    for (var i = 0; i < state.reports.length; i++) {
-      if (String(state.reports[i].id) === String(report.id)) {
+    var drawn = Pinalert.visibleReports();
+    for (var i = 0; i < drawn.length; i++) {
+      if (String(drawn[i].id) === String(report.id)) {
         return null;
       }
     }
-    if (!belongsToTab(report, state.view)) {
+    if (!belongsToShow(report, state.show)) {
       return null;
     }
     if (state.category !== '' && report.category !== state.category) {
@@ -1421,9 +1438,10 @@ window.PinalertMap = (function () {
   }
 
   // openFocusOnce opens the popup of a /?report=ID link, once per link. It
-  // waits until the pin exists under the tab the reader is on, so a link to a
-  // finished report opens after its own tab is selected, and a later poll,
-  // tab change or return never opens it again. It reads the store and moves
+  // waits until the pin exists under the Show choice the reader is on, and a
+  // later poll, Show change or return never opens it again. A link to a
+  // finished report never gets here: the list leaves Nearby for My activity
+  // (feed.js handleFocus). It reads the store and moves
   // the map only; the list is not touched. The selection is announced as the
   // map's own, which lets the list highlight the row when it is in the list.
   function openFocusOnce(state) {

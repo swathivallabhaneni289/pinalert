@@ -137,8 +137,16 @@ func TestModerateUsesSetTextOnly(t *testing.T) {
 	row := jsFunctionBody(t, js, "buildRow(report, listKey, lists)")
 	p426WantAll(t, "buildRow", row, "'href'", "mainPageHref(report)")
 	href := jsFunctionBody(t, js, "mainPageHref(report)")
-	p426WantAll(t, "mainPageHref", href, "report.view === 'active'", "MAIN_PAGE_VIEWS.indexOf(report.view)",
-		"'/?report='", "'/?view='", "'&report='", "isReportId(report.id)", "moderationWord(report)")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+	// D-18): the Past tab left Nearby, so the link of a report that is active or
+	// disputed is /?report=ID (All shows a disputed report in its last group)
+	// and the link of a resolved or past report is /profile?part=ended&report=ID.
+	// Both come from two closed lists of view words and a numeric id. The Phase
+	// 3.1 and Phase 4 hands-on tests are walked on this layout after Phase 3.4
+	// is built.
+	p426WantAll(t, "mainPageHref", href, "NEARBY_VIEWS.indexOf(report.view)", "ENDED_VIEWS.indexOf(report.view)",
+		"'/?report='", "'/profile?part=ended&report='", "isReportId(report.id)", "moderationWord(report)")
+	p426WantNone(t, "mainPageHref", href, "'/?view='", "MAIN_PAGE_VIEWS")
 
 	flagGo, err := os.ReadFile("../internal/service/flag.go")
 	if err != nil {

@@ -314,11 +314,21 @@ func TestLowDataRoutesCookieRedirect(t *testing.T) {
 			t.Errorf("bare / redirect Cache-Control = %q", got)
 		}
 
-		for _, target := range []string{"/?view=resolved", "/?report=7", "/?resend=abc123"} {
+		for _, target := range []string{"/?report=7", "/?resend=abc123"} {
 			resp, _ = lowGet(t, client, srv.URL+target)
 			if resp.StatusCode != http.StatusOK {
 				t.Errorf("GET %s = %d, want 200 (deep links are never redirected)", target, resp.StatusCode)
 			}
+		}
+
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+		// D-18): the Past tab left Nearby, so /?view=resolved (and view=past) is
+		// answered with the constant redirect to My activity, Ended nearby. It is
+		// still never the redirect to the Low data view. The Phase 3.1 and Phase 4
+		// hands-on tests are walked on this layout after Phase 3.4 is built.
+		resp, _ = lowGet(t, client, srv.URL+"/?view=resolved")
+		if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/profile?part=ended" {
+			t.Errorf("GET /?view=resolved = %d to %q, want 302 to /profile?part=ended", resp.StatusCode, resp.Header.Get("Location"))
 		}
 
 		resp, _ = lowGet(t, client, srv.URL+"/?full=1")

@@ -12,6 +12,16 @@ import (
 // add its own without a clash. Nothing here needs a database or a server: the
 // tests read the embedded static and template trees and inspect the shipped
 // text, like the other contract files.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+// D-18): the tab strip, the heading and the Past groups are gone from the list
+// pane, and the Show button with its menu took their place. The tests that
+// pinned the strip keep their ideas on the new targets: the list head markup,
+// the address that nothing writes, the page restore, the empty blocks and
+// their words, the render and focus order, the status line, and the 44px
+// touch target, the 8px corner and the contrast of the Show button and menu.
+// The store test is amended in place. The Phase 3.1 and Phase 4 hands-on tests
+// are walked on this layout after Phase 3.4 is built.
 
 // vsListPane returns the markup of the list pane, from its opening section to
 // its closing tag, so a test never reads the map pane or the report modal.
@@ -36,147 +46,143 @@ func vsListPane(t *testing.T) string {
 	return index[start : start+end]
 }
 
-// TestViewStripMarkup pins the strip: one nav named Report views before the
-// list, three real links in the order Active, Disputed, Past, no checkbox left
-// in the list pane, and a bottom bar that still holds exactly two tabs.
+// TestViewStripMarkup pins the list head: no tab strip, no heading and no
+// checkbox in the list pane; the banner slot, then the count line and the Show
+// button with its menu, then the polite status line, then the list. The bottom
+// bar still comes from the one app_bottombar block.
 func TestViewStripMarkup(t *testing.T) {
 	pane := vsListPane(t)
 
-	if n := strings.Count(pane, `<nav class="view-tabs" aria-label="Report views">`); n != 1 {
-		t.Fatalf("the list pane holds %d nav.view-tabs named Report views, want 1", n)
-	}
-	nav := regexp.MustCompile(`(?s)<nav class="view-tabs"[^>]*>(.*?)</nav>`).FindStringSubmatch(pane)
-	if nav == nil {
-		t.Fatal("could not read the strip's links")
-	}
-	links := regexp.MustCompile(`<a class="view-tab"([^>]*)>([^<]*)</a>`).FindAllStringSubmatch(nav[1], -1)
-	if len(links) != 3 {
-		t.Fatalf("the strip holds %d links, want 3", len(links))
-	}
-	want := []struct{ href, word, view string }{
-		{"/", "Active", "active"},
-		{"/?view=disputed", "Disputed", "disputed"},
-		{"/?view=past", "Past", "past"},
-	}
-	for i, w := range want {
-		attrs, text := links[i][1], strings.TrimSpace(links[i][2])
-		if !strings.Contains(attrs, `href="`+w.href+`"`) || text != w.word ||
-			!strings.Contains(attrs, `data-feed-view="`+w.view+`"`) {
-			t.Errorf("link %d is %q %q, want href %q, text %q, view %q", i, attrs, text, w.href, w.word, w.view)
+	for _, gone := range []string{`class="view-tabs"`, `class="feed-heading"`, `id="feed-note"`, `id="past-groups"`, `type="checkbox"`} {
+		if strings.Contains(pane, gone) {
+			t.Errorf("the list pane still holds %q", gone)
 		}
-		current := strings.Contains(attrs, `aria-current="page"`)
-		if current != (i == 0) {
-			t.Errorf("link %d aria-current is %v, only the Active link is current in the served markup", i, current)
-		}
-	}
-	if strings.Contains(nav[1], "role=") || strings.Contains(nav[1], "tabindex") {
-		t.Errorf("the strip is a plain list of links: no tablist role and no roving tabindex")
 	}
 
-	p13Ordered(t, pane, "list pane", `class="view-tabs"`, `id="report-list"`)
-	if strings.Contains(pane, `type="checkbox"`) {
-		t.Errorf("a checkbox is left in the list pane, the strip replaced the disputed checkbox")
+	p13Ordered(t, pane, "list pane",
+		`id="alert-banner"`, `class="list-head"`, `id="feed-count"`, `id="show-button"`, `id="show-menu"`,
+		`id="feed-status"`, `id="place-line"`, `id="filter-line"`, `id="queue-strip"`, `id="feed-stale"`,
+		`id="report-list"`)
+
+	// The banner slot: a link to /alerts, hidden, no data until Phase 5.
+	banner := vsBlock(t, pane, `id="alert-banner"`)
+	banner = banner[:strings.Index(banner, ">")]
+	p13MustContain(t, "#alert-banner", banner, `href="/alerts"`, " hidden", `class="alert-banner"`)
+
+	// The Show button: a real button that opens a menu, named for what it holds.
+	button := vsBlock(t, pane, `id="show-button"`)
+	p13MustContain(t, "#show-button", button,
+		`type="button"`, `aria-haspopup="menu"`, `aria-expanded="false"`, `aria-controls="show-menu"`, ">Show: All<")
+
+	// The menu: three radio items in the order All, Confirmed, Disputed, the
+	// first checked, with no line of explanation under any of them (D-05) and
+	// no Only Reliable reporters tick until Phase 3.2.
+	menu := vsBlock(t, pane, `id="show-menu"`)
+	p13MustContain(t, "#show-menu", menu, `role="menu"`, " hidden")
+	items := regexp.MustCompile(`<button type="button" class="show-menu__item" role="menuitemradio" aria-checked="(true|false)" data-show="([a-z]+)">`).FindAllStringSubmatch(menu, -1)
+	want := [][2]string{{"true", "all"}, {"false", "confirmed"}, {"false", "disputed"}}
+	if len(items) != len(want) {
+		t.Fatalf("the Show menu holds %d radio items, want %d", len(items), len(want))
 	}
+	for i, w := range want {
+		if items[i][1] != w[0] || items[i][2] != w[1] {
+			t.Errorf("menu item %d is %v, want checked %q and show %q", i, items[i][1:], w[0], w[1])
+		}
+	}
+	p13Ordered(t, menu, "#show-menu", ">All<", ">Confirmed<", ">Disputed<")
+	p13MustNotContain(t, "#show-menu", menu, `type="checkbox"`, "Only Reliable reporters", "<p", "<small")
 
 	index := p13ReadTemplate(t, "index.html.tmpl")
 	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10):
 	// the phone bottom bar is the four item app bar, drawn from the one list of
 	// places by the app_bottombar block (a range over .Nav.Items plus the Report
-	// link), so the page includes the block instead of holding two tabs. The
-	// Phase 3.1 and Phase 4 hands-on tests are walked on this layout after
-	// Phase 3.4 is built.
+	// link), so the page includes the block instead of holding two tabs.
 	if n := strings.Count(index, `{{template "app_bottombar" .}}`); n != 1 {
 		t.Errorf("index.html.tmpl includes the bottom bar %d times, want exactly 1", n)
 	}
 	if strings.Contains(index, "bottom-nav") {
 		t.Errorf("index.html.tmpl still holds the old two tab bottom nav")
 	}
+
+	// The scripts: the menu and the card builders load before feed.js, after
+	// app.js and the position module.
+	p13Ordered(t, index, "index.html.tmpl scripts",
+		"/static/js/app.js", "/static/js/position.js", "/static/js/map.js", "/static/js/ended-cards.js",
+		"/static/js/show-menu.js", "/static/js/feed.js")
+	for _, script := range []string{"position.js", "ended-cards.js", "show-menu.js"} {
+		if n := strings.Count(index, "/static/js/"+script); n != 1 {
+			t.Errorf("index.html.tmpl loads %s %d times, want once", script, n)
+		}
+	}
 }
 
-// TestViewStripNeverWritesDefaultView pins D-04: the address never carries the
-// default tab. The parameter is deleted for Active and set only for Disputed
-// and Past, and no string in feed.js, app.js or the template writes the
-// default word as a parameter value.
-func TestViewStripNeverWritesDefaultView(t *testing.T) {
+// TestViewStripWritesNoAddress pins D-04 in its Phase 3.4 form: nothing writes
+// the Show choice into the address or the history. The default view word is
+// never sent, the only words sent are all and disputed, and feed.js and
+// show-menu.js never touch the history or navigate (the one navigation is the
+// replace of a finished report's link, pinned in TestFocusLeavesNearby...).
+func TestViewStripWritesNoAddress(t *testing.T) {
 	feed := p19Code(t, "static/js/feed.js")
-	sync := jsFunctionBody(t, feed, "syncViewURL(view)")
-	p13Ordered(t, sync, "syncViewURL",
-		"if (view === 'disputed' || view === 'past') {",
-		"url.searchParams.set(VIEW_PARAM, view);",
-		"} else {",
-		"url.searchParams.delete(VIEW_PARAM);")
-	if n := strings.Count(feed, "searchParams.set("); n != 1 {
-		t.Errorf("feed.js sets an address parameter in %d places, want exactly the one in syncViewURL", n)
+	menu := p19Code(t, "static/js/show-menu.js")
+	for name, text := range map[string]string{"feed.js": feed, "show-menu.js": menu} {
+		for _, banned := range []string{"history.", "pushState", "replaceState", "searchParams.set(", "searchParams.delete(", "location.assign", "location.href ="} {
+			if strings.Contains(text, banned) {
+				t.Errorf("%s contains %q: the Show choice is written into no address", name, banned)
+			}
+		}
 	}
 
 	banned := regexp.MustCompile(`view=active|VIEW_PARAM,\s*'active'|set\('view',\s*'active'\)`)
 	app := p19Code(t, "static/js/app.js")
 	index := p13ReadTemplate(t, "index.html.tmpl")
-	for name, text := range map[string]string{"feed.js": feed, "app.js": app, "index.html.tmpl": index} {
+	for name, text := range map[string]string{"feed.js": feed, "show-menu.js": menu, "app.js": app, "index.html.tmpl": index} {
 		if m := banned.FindString(text); m != "" {
-			t.Errorf("%s writes the default tab word as a parameter value: %q", name, m)
+			t.Errorf("%s writes the default view word as a parameter value: %q", name, m)
 		}
 	}
+
+	// The menu reads the address once, as an alias, in one function.
+	read := jsFunctionBody(t, menu, "readAlias(search)")
+	p13MustContain(t, "readAlias", read,
+		"new URLSearchParams(", "params.get('view')", "word === 'disputed'",
+		"params.get('show_disputed') === 'true'", "return 'all';")
+	p13MustNotContain(t, "readAlias", read, "innerHTML", "eval(")
 }
 
-// TestViewStripUsesReplaceState pins D-04 and D-05: a tab press and the one
-// time rewrite use history.replaceState, the history entry adding variant is
-// absent, the old bookmark is rewritten once on load, the page restore
-// re-reads the address and refetches, and the report parameter is never
-// removed from the address.
-func TestViewStripUsesReplaceState(t *testing.T) {
+// TestViewStripPageRestore pins D-05 and the back forward cache fix: a restored
+// page hands the store's Show choice back to the store and the menu before it
+// refetches, the report parameter is never removed from the address, and the
+// boot step hands the store its Show choice before the first request.
+func TestViewStripPageRestore(t *testing.T) {
 	feed := p19Code(t, "static/js/feed.js")
-
-	if n := strings.Count(feed, "history.replaceState("); n != 1 {
-		t.Errorf("feed.js calls history.replaceState in %d places, want exactly 1 (syncViewURL)", n)
-	}
-	if strings.Contains(feed, "pushState") || strings.Contains(feed, "location.assign") ||
-		strings.Contains(feed, "location.href =") {
-		t.Errorf("feed.js must not add a history entry or navigate: a tab press adds no Back step")
-	}
-
-	switchBody := jsFunctionBody(t, feed, "switchTab(view)")
-	p13Ordered(t, switchBody, "switchTab",
-		"Pinalert.setView(view);", "showTab(view);", "syncViewURL(view);", "Pinalert.fetchReports();")
-
-	read := jsFunctionBody(t, feed, "readViewFromURL()")
-	p13MustContain(t, "readViewFromURL", read,
-		"word === 'disputed' || word === 'past'", "word === 'resolved'",
-		"params.get(OLD_BOOKMARK_PARAM) === 'true'", "rewrite: true")
-	p13Ordered(t, feed, "feed.js load",
-		"var initialAddress = readViewFromURL();",
-		"Pinalert.setView(initialAddress.view);",
-		"if (initialAddress.rewrite) {",
-		"syncViewURL(initialAddress.view);")
-	if n := strings.Count(feed, "syncViewURL(initialAddress.view)"); n != 1 {
-		t.Errorf("the address is rewritten on load in %d places, want exactly once", n)
-	}
 
 	listener, anchorFound, terminatorFound := windowAfter(feed, "addEventListener('pageshow'", "});")
 	if !anchorFound || !terminatorFound {
 		t.Fatalf("could not bound the page restore listener in feed.js")
 	}
 	p13Ordered(t, listener, "page restore listener",
-		"evt.persisted", "readViewFromURL()", "Pinalert.setView(restored.view);", "Pinalert.fetchReports();")
+		"evt.persisted", "Pinalert.setShow(Pinalert.state.show);", "PinalertShowMenu.sync();", "Pinalert.fetchReports();")
 
 	if strings.Contains(feed, "delete(REPORT_PARAM)") || strings.Contains(feed, "delete('report')") {
 		t.Errorf("feed.js removes the report parameter from the address, a report link stays as it was sent")
 	}
 	p13MustContain(t, "feed.js", feed, "var REPORT_PARAM = 'report';")
-
-	click := regexp.MustCompile(`(?s)tabStripEl\.addEventListener\('click', function \(evt\) \{(.*?)\n    \}\);`).FindStringSubmatch(feed)
-	if click == nil {
-		t.Fatal("could not find the strip's click handler")
-	}
-	p13Ordered(t, click[1], "strip click handler",
-		"evt.button !== 0", "evt.metaKey", "evt.ctrlKey", "evt.shiftKey", "evt.altKey",
-		"evt.preventDefault();", "switchTab(")
+	p13Ordered(t, feed, "feed.js load",
+		"Pinalert.setShow(Pinalert.state.show);", "Pinalert.setFocusId(new URLSearchParams(window.location.search).get(REPORT_PARAM));",
+		"Pinalert.subscribe(render);")
 }
 
 // TestViewStripStoreContract pins the store the strip and every later screen
 // plug into: one view, one category, one place, one link id, the new request
-// parameters on the one list fetch, the staleness rules, and the poll skipping
-// the Past tab.
+// parameters on the one list fetch, the staleness rules, and the poll.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+// D-18, D-24a): the store's views are active (the default, which the Low data
+// view keeps), all and disputed; the Past word is gone, so the poll never
+// skips; the chip list swaps Rescue for Traffic; and the Show choice lives in
+// state.show beside setShow, reportInShow and visibleReports. The Phase 3.1
+// and Phase 4 hands-on tests are walked on this layout after Phase 3.4 is
+// built.
 func TestViewStripStoreContract(t *testing.T) {
 	app := p19Code(t, "static/js/app.js")
 
@@ -189,16 +195,17 @@ func TestViewStripStoreContract(t *testing.T) {
 	}
 
 	p13MustContain(t, "app.js state", app,
-		"view: 'active',", "category: '',", "place: null,", "focusId: null,", "focus: null,",
+		"view: 'active',", "show: 'all',", "category: '',", "place: null,", "focusId: null,", "focus: null,",
 		"recent: null,", "cut: null",
-		"var VIEWS = ['active', 'disputed', 'past'];")
+		"var VIEWS = ['active', 'all', 'disputed'];", "var SHOWS = ['all', 'confirmed', 'disputed'];")
+	p13MustNotContain(t, "app.js", app, "'past'")
 
 	fetchBody := jsFunctionBody(t, app, "fetchReports(options)")
 	p13Ordered(t, fetchBody, "fetchReports request",
 		"var sentView = state.view;", "var sentCategory = state.category;",
 		"var sentLat = state.center.lat;", "var sentLon = state.center.lon;",
 		"var sentFocusId = state.focusId;",
-		"if (sentView === 'disputed' || sentView === 'past') {",
+		"if (sentView === 'all' || sentView === 'disputed') {",
 		"url += '&view=' + sentView;",
 		"if (sentCategory !== '') {",
 		"url += '&category=' + encodeURIComponent(sentCategory);",
@@ -235,13 +242,14 @@ func TestViewStripStoreContract(t *testing.T) {
 	p13Ordered(t, fetchBody, "failure path",
 		".catch(function (err) {", "if (!rowsMatchStore()) {", "state.reports = [];", "state.status = 'error';")
 
-	// The poll skips while the Past tab is selected.
+	// The poll never skips: the Past tab is gone from Nearby, so every view is
+	// refreshed on the timer.
 	poll := jsFunctionBody(t, app, "startPolling()")
-	p13Ordered(t, poll, "startPolling",
-		"window.setInterval(function () {", "if (state.view === 'past') {\n        return;\n      }", "fetchReports();")
+	p13Ordered(t, poll, "startPolling", "window.setInterval(function () {", "fetchReports();")
+	p13MustNotContain(t, "startPolling", poll, "state.view", "'past'")
 
 	// The setters assign only (no notify, no fetch) and ignore a bad value.
-	for _, name := range []string{"setView(view)", "setCategory(slug)", "setPlace(place)", "clearPlace()", "setFocusId(id)"} {
+	for _, name := range []string{"setView(view)", "setShow(show)", "setCategory(slug)", "setPlace(place)", "clearPlace()", "setFocusId(id)"} {
 		body := jsFunctionBody(t, app, name)
 		p13MustNotContain(t, name, body, "notify(", "fetchReports(", "fetch(")
 	}
@@ -254,7 +262,25 @@ func TestViewStripStoreContract(t *testing.T) {
 	p13MustContain(t, "app.js", app, "var PLACE_NAME_MAX = 32;")
 
 	p13MustContain(t, "CHIP_LABELS", app,
-		"flood: 'Flood',", "rescue_needed: 'Rescue',", "shelter_open: 'Shelter',", "power_outage: 'Power'")
+		"flood: 'Flood',", "traffic: 'Traffic',", "shelter_open: 'Shelter',", "power_outage: 'Power'")
+	chips, chipsAnchor, chipsEnd := windowAfter(app, "var CHIP_LABELS = {", "};")
+	if !chipsAnchor || !chipsEnd {
+		t.Fatalf("could not bound the CHIP_LABELS table")
+	}
+	p13MustNotContain(t, "CHIP_LABELS", chips, "rescue_needed")
+
+	// The Show choice: the words, the one membership rule and the one visible
+	// set, all reading the server's two words only (D-13, D-14, TRUST-02).
+	p13MustContain(t, "setShow", jsFunctionBody(t, app, "setShow(show)"),
+		"SHOWS.indexOf(show) === -1", "state.show = show;", "show === 'disputed' ? 'disputed' : 'all'")
+	member := jsFunctionBody(t, app, "reportInShow(report, show)")
+	p13MustContain(t, "reportInShow", member,
+		"report.confirmed_by_people === true", "report.view !== 'disputed'", "report.view === 'disputed'")
+	p13MustNotContain(t, "reportInShow", member, "confirmed_places", "disputed_places", "trust.", ".length", ">=", "<=")
+	p13MustContain(t, "visibleReports", jsFunctionBody(t, app, "visibleReports()"),
+		"reportInShow(state.reports[i], state.show)")
+	p13MustContain(t, "disputedLast", jsFunctionBody(t, app, "disputedLast(reports)"),
+		"reports[i].view === 'disputed'", "live.concat(disputed)")
 
 	// The distance sentence: the browser formats, the server owns the number.
 	dist := jsFunctionBody(t, app, "distanceText(report)")
@@ -265,7 +291,8 @@ func TestViewStripStoreContract(t *testing.T) {
 		"state.center.own === true", "formatDistance(km)", "return '';")
 
 	exports := []string{
-		"CHIP_LABELS: CHIP_LABELS,", "VIEWS: VIEWS,", "setView: setView,", "setCategory: setCategory,",
+		"CHIP_LABELS: CHIP_LABELS,", "VIEWS: VIEWS,", "SHOWS: SHOWS,", "setView: setView,", "setShow: setShow,",
+		"reportInShow: reportInShow,", "visibleReports: visibleReports,", "disputedLast: disputedLast,", "setCategory: setCategory,",
 		"setPlace: setPlace,", "clearPlace: clearPlace,", "setFocusId: setFocusId,",
 		"distanceText: distanceText,",
 	}
@@ -303,25 +330,31 @@ func vsBlock(t *testing.T, pane, openAttr string) string {
 	return ""
 }
 
-// TestViewStripEmptyBlocks pins the list pane markup of the whole phase: the
-// status line, the note, the place line, the filter line, the Past groups and
-// the five empty blocks, each hidden at first, in the order of the UI spec's
-// page structure, with the spec's words.
+// vsRule returns the one rule of rules whose head equals head and whose media
+// contains media (an empty media means top level only), failing the test when
+// there is none.
+func vsRule(t *testing.T, rules []p13CSSRule, media, head string) p13CSSRule {
+	t.Helper()
+	r, _ := p13Rule(t, rules, media, head)
+	return r
+}
+
+// TestViewStripEmptyBlocks pins the list pane markup of the states: the status
+// line, the place line, the filter line, the five empty blocks and the error
+// block, each hidden at first, in the order of the UI spec, with the spec's
+// words (P34-C10).
 func TestViewStripEmptyBlocks(t *testing.T) {
 	pane := vsListPane(t)
 
 	p13Ordered(t, pane, "list pane",
-		`class="view-tabs"`, `id="feed-status"`, `class="feed-heading"`, `id="feed-note"`,
-		`id="place-line"`, `id="filter-line"`, `id="report-list"`, `id="past-groups"`,
-		`id="feed-skeleton"`, `id="feed-empty"`, `id="feed-empty-history"`, `id="disputed-empty"`,
-		`id="past-empty"`, `id="filter-empty"`, `id="feed-error"`)
+		`id="feed-status"`, `id="place-line"`, `id="filter-line"`, `id="report-list"`,
+		`id="feed-skeleton"`, `id="feed-empty"`, `id="feed-empty-history"`, `id="confirmed-empty"`,
+		`id="disputed-empty"`, `id="filter-empty"`, `id="feed-error"`)
 
 	for _, id := range []string{
-		"feed-status", "feed-note", "place-line", "filter-line", "past-groups", "feed-empty",
-		"feed-empty-history", "disputed-empty", "past-empty", "filter-empty", "feed-error",
-		"past-resolved", "past-expired", "past-resolved-list", "past-expired-list",
-		"past-resolved-cut", "past-expired-cut", "feed-heading-title", "see-past-reports",
-		"filter-empty-clear",
+		"feed-status", "place-line", "filter-line", "feed-empty", "feed-empty-history", "confirmed-empty",
+		"disputed-empty", "filter-empty", "feed-error", "see-ended-reports", "filter-empty-clear",
+		"show-button", "show-menu", "feed-count", "alert-banner",
 	} {
 		if n := strings.Count(pane, `id="`+id+`"`); n != 1 {
 			t.Errorf("the list pane holds id %q %d times, want exactly once", id, n)
@@ -333,9 +366,8 @@ func TestViewStripEmptyBlocks(t *testing.T) {
 
 	// Each of these ships hidden: a block nobody asked for is never drawn.
 	for _, id := range []string{
-		"feed-note", "place-line", "filter-line", "past-groups", "past-resolved", "past-expired",
-		"past-resolved-cut", "past-expired-cut", "feed-empty", "feed-empty-history",
-		"disputed-empty", "past-empty", "filter-empty", "feed-error",
+		"place-line", "filter-line", "feed-empty", "feed-empty-history", "confirmed-empty",
+		"disputed-empty", "filter-empty", "feed-error", "show-menu", "alert-banner",
 	} {
 		block := vsBlock(t, pane, `id="`+id+`"`)
 		open := block[:strings.Index(block, ">")]
@@ -345,11 +377,11 @@ func TestViewStripEmptyBlocks(t *testing.T) {
 	}
 
 	words := []struct{ id, heading, body, button string }{
-		{"feed-empty-history", "No active reports nearby", "Tap + to report what you're seeing.", "See past reports"},
-		{"past-empty", "No past reports nearby", "Nothing in this area was resolved or faded out in the last 7 days.", ""},
-		{"filter-empty", "Nothing matches your filters", "Try another category or clear the filter.", "Clear filter"},
+		{"feed-empty", "No reports near you yet", "Nothing has been reported in your area recently. Post a report to share what you're seeing.", ""},
+		{"feed-empty-history", "No active reports nearby", "Post a report to share what you're seeing.", "See ended reports"},
+		{"confirmed-empty", "No confirmed reports nearby", "Reports show here once people nearby confirm them.", ""},
 		{"disputed-empty", "No disputed reports nearby", "Reports only show up here if enough nearby people have disputed them.", ""},
-		{"feed-empty", "No reports near you yet", "Nothing has been reported in your area recently. Tap + to report what you're seeing.", ""},
+		{"filter-empty", "Nothing matches your filters", "Try another category or clear the filter.", "Clear filter"},
 	}
 	for _, w := range words {
 		block := vsBlock(t, pane, `id="`+w.id+`"`)
@@ -357,55 +389,35 @@ func TestViewStripEmptyBlocks(t *testing.T) {
 			t.Errorf("#%s must carry the empty-state class", w.id)
 		}
 		p13MustContain(t, "#"+w.id, block, "<h2>"+w.heading+"</h2>", w.body)
-		if w.button != "" {
+		switch {
+		case w.id == "feed-empty-history":
+			// The one link of the empty blocks goes to My activity, Ended nearby.
+			p13MustContain(t, "#"+w.id, block, `<a class="btn" id="see-ended-reports" href="/profile?part=ended">See ended reports</a>`)
+		case w.button != "":
 			p13MustContain(t, "#"+w.id, block, `<button type="button" class="btn"`, ">"+w.button+"</button>")
-		} else if strings.Contains(block, "<button") {
+		case strings.Contains(block, "<button"):
 			t.Errorf("#%s holds a button, it has none in the spec", w.id)
 		}
 	}
-
-	groups := vsBlock(t, pane, `id="past-groups"`)
-	p13Ordered(t, groups, "#past-groups",
-		`id="past-resolved"`, `<h3 class="past-group__label">Resolved</h3>`, `id="past-resolved-list"`,
-		`id="past-resolved-cut"`, `id="past-expired"`, `<h3 class="past-group__label">Expired</h3>`,
-		`id="past-expired-list"`, `id="past-expired-cut"`)
-	if n := strings.Count(groups, `class="past-group"`); n != 2 {
-		t.Errorf("#past-groups holds %d groups, want Resolved and Expired", n)
-	}
-
-	title := vsBlock(t, pane, `id="feed-heading-title"`)
-	if !strings.Contains(title, ">Nearby now</h2>") {
-		t.Errorf("the heading must start as Nearby now, got %q", title)
-	}
+	p13MustNotContain(t, "list pane", pane, "Tap + to report", "See past reports")
 }
 
-// TestViewStripPaneScript pins the per tab render of feed.js: the heading and
-// note words of C3 to C7, the count line words of C8 to C10, exactly one of
-// the empty blocks showing, a chip emptied list saying so and never the
-// history line, the two buttons, and focus falling back to the current tab.
+// TestViewStripPaneScript pins the render of feed.js under the Show choice: the
+// count line words (P34-C6), the empty block chosen in the order filter,
+// disputed, confirmed, history, general, exactly one of the empty blocks
+// showing, the three focus fallbacks, and the Clear filter button.
 func TestViewStripPaneScript(t *testing.T) {
 	feed := p19Code(t, "static/js/feed.js")
 
-	p13MustContain(t, "feed.js", feed,
-		"active: 'Nearby now', disputed: 'Disputed reports', past: 'Past reports'",
-		"disputed: 'Nearby people disputed these. You can still confirm or dispute them.',",
-		"past: 'Resolved and expired reports from the last 7 days.'")
-
-	heading := jsFunctionBody(t, feed, "updateFeedHeading(view)")
-	p13MustContain(t, "updateFeedHeading", heading,
-		"Pinalert.setText(feedHeadingTitleEl, heading);", "Pinalert.setText(feedNoteEl, note);",
-		"setHidden(feedNoteEl, note === '');", "appShellEl.setAttribute('data-feed-view', view);")
-	p13MustNotContain(t, "updateFeedHeading", heading, "innerHTML", "insertAdjacentHTML")
-
 	count := jsFunctionBody(t, feed, "updateFeedCount(state)")
 	p13MustContain(t, "updateFeedCount", count,
-		"view === 'disputed' ? 'disputed' : 'active'", "count === 1 ? 'report' : 'reports'",
-		"' \\u00b7 '")
+		"Pinalert.visibleReports().length", "' report, '", "' reports, '", "Pinalert.setText(feedCountEl, text);")
+	p13MustNotContain(t, "updateFeedCount", count, "innerHTML", "insertAdjacentHTML", "\\u00b7")
 
 	empty := jsFunctionBody(t, feed, "setEmptyState(kind)")
 	for _, pair := range []string{
 		"setHidden(emptyEl, kind !== 'general');", "setHidden(historyEmptyEl, kind !== 'history');",
-		"setHidden(disputedEmptyEl, kind !== 'disputed');", "setHidden(pastEmptyEl, kind !== 'past');",
+		"setHidden(confirmedEmptyEl, kind !== 'confirmed');", "setHidden(disputedEmptyEl, kind !== 'disputed');",
 		"setHidden(filterEmptyEl, kind !== 'filter');",
 	} {
 		if n := strings.Count(feed, pair); n != 1 {
@@ -421,141 +433,130 @@ func TestViewStripPaneScript(t *testing.T) {
 
 	render := jsFunctionBody(t, feed, "render(state)")
 	p13Ordered(t, render, "render",
-		"if (Pinalert.state.view === 'past') {", "renderPastTab(state);",
-		"if (state.reports.length === 0) {", "if (Pinalert.state.category !== '') {", "kind = 'filter';",
-		"kind = 'disputed';", "setEmptyState(kind);")
-	p13MustContain(t, "render", render, "updateFeedStatus(state);", "updateFeedHeading(Pinalert.state.view);")
-
-	past := jsFunctionBody(t, feed, "renderPastTab(state)")
-	p13Ordered(t, past, "renderPastTab",
-		"setHidden(reportListEl, true);", "clearRows();", "state.reports.length === 0",
-		"setEmptyState(Pinalert.state.category !== '' ? 'filter' : 'past');",
-		"setHidden(pastGroupsEl, false);")
+		"var visible = Pinalert.visibleReports();", "updateFeedStatus(state);",
+		"if (visible.length === 0) {", "Pinalert.state.category !== ''", "kind = 'filter';",
+		"Pinalert.state.show === 'disputed'", "kind = 'disputed';",
+		"Pinalert.state.show === 'confirmed'", "kind = 'confirmed';",
+		"kind = 'history';", "setEmptyState(kind);", "renderRows(visible);")
+	p13MustNotContain(t, "render", render, "state.reports.length === 0", "renderRows(state.reports)")
 
 	p13MustContain(t, "feed.js", feed,
-		"filterClearBtn.addEventListener('click', function () {", "Pinalert.setCategory('');",
-		"seePastBtn.addEventListener('click', function () {", "switchTab('past');")
+		"filterClearBtn.addEventListener('click', function () {", "Pinalert.setCategory('');")
 
-	// Focus falls back to the map first and then to the current tab link.
+	// Focus falls back to the map first and then to the Show button.
 	after := jsFunctionBody(t, feed, "focusAfterRemoval(candidates)")
 	p13Ordered(t, after, "focusAfterRemoval",
-		"getElementById('map')", "currentTabLink()", "viewToggleBtn.focus()", "var empties = [")
+		"getElementById('map')", "showButton()", "viewToggleBtn.focus()", "var empties = [")
 }
 
-// TestViewStripStatusAnnouncement pins C11: one sentence in the visually
-// hidden live region per tab, place or chip change, built from the store's own
-// numbers and words, written through setText, never repeated for a poll.
+// TestViewStripStatusAnnouncement pins UI-SPEC 2i: one sentence in the visually
+// hidden live region per Show, place or chip change, built from the store's
+// own numbers and words, written through setText, never repeated for a poll.
 func TestViewStripStatusAnnouncement(t *testing.T) {
 	feed := p19Code(t, "static/js/feed.js")
 	body := jsFunctionBody(t, feed, "updateFeedStatus(state)")
 
 	p13Ordered(t, body, "updateFeedStatus",
 		"state.status !== 'ok'",
-		"var key = store.view + '|' + placeName + '|' + store.category;",
+		"var key = store.show + '|' + placeName + '|' + store.category;",
 		"if (key === lastAnnouncedKey) {", "lastAnnouncedKey = key;",
 		"if (!statusStarted) {",
-		"var text = count + ' ' + store.view + (count === 1 ? ' report.' : ' reports.');",
+		"var count = Pinalert.visibleReports().length;",
+		"(count === 1 ? ' report' : ' reports')",
+		"SHOW_STATUS_WORDS[store.show]",
+		"text += '.';",
 		"text += ' Near ' + placeName + '.';",
 		"text += ' Filtered by '",
 		"Pinalert.setText(feedStatusEl, text);")
-	p13MustContain(t, "updateFeedStatus", body, "Pinalert.CHIP_LABELS[store.category]", "state.reports.length")
+	p13MustContain(t, "updateFeedStatus", body, "Pinalert.CHIP_LABELS[store.category]")
 	p13MustNotContain(t, "updateFeedStatus", body, "innerHTML", "insertAdjacentHTML")
+	p13MustContain(t, "feed.js", feed, "var SHOW_STATUS_WORDS = { confirmed: 'Show Confirmed', disputed: 'Show Disputed' };")
 	if n := strings.Count(feed, "Pinalert.setText(feedStatusEl,"); n != 1 {
 		t.Errorf("the status line is written in %d places, want exactly 1", n)
 	}
 	// The count of reports is not part of the key, so a poll that only changes
 	// the count never speaks again.
-	if strings.Contains(body, "state.reports.length + '|'") {
+	if strings.Contains(body, "reports.length + '|'") || strings.Contains(body, "visibleReports().length + '|'") {
 		t.Errorf("the announcement key must not hold the count")
 	}
 }
 
-// vsRule returns the one rule of rules whose head equals head and whose media
-// contains media (an empty media means top level only), failing the test when
-// there is none.
-func vsRule(t *testing.T, rules []p13CSSRule, media, head string) p13CSSRule {
-	t.Helper()
-	r, _ := p13Rule(t, rules, media, head)
-	return r
-}
-
-// TestViewStripNoPillAndTouchTarget pins the strip's look (UI-SPEC Surface 1):
-// a 44px target and an 8px corner on every tab, never a pill, the grey track,
-// the white current tab with a border and weight 600 (so it is never told apart
-// by colour alone), the inset focus ring, the forced colours border, the laptop
-// cap and margins, tokens only, and the checkbox rule gone.
+// TestViewStripNoPillAndTouchTarget pins the look of the Show button and menu
+// (UI-SPEC 2c): a 44px target and an 8px corner on the button and on every menu
+// row, never a pill, the 220px menu above the list on its own layer with the
+// menu shadow, the check kept in place so the words line up, the inline text
+// button, tokens only, and the checkbox rule gone.
 func TestViewStripNoPillAndTouchTarget(t *testing.T) {
 	rules := p13ParseCSS(p13ReadStatic(t, "static/css/feed.css"))
 
-	tab := vsRule(t, rules, "", ".view-tab")
+	button := vsRule(t, rules, "", ".show-button")
 	for prop, want := range map[string]string{
-		"min-height":      "var(--touch-target-min)",
-		"border-radius":   "8px",
-		"color":           "var(--color-text)",
-		"text-decoration": "none",
-	} {
-		if got := tab.Decls[prop]; got != want {
-			t.Errorf(".view-tab %s is %q, want %q", prop, got, want)
-		}
-	}
-	if r := tab.Decls["border-radius"]; r == "999px" || strings.Contains(r, "%") {
-		t.Errorf(".view-tab corner %q is a pill", r)
-	}
-
-	track := vsRule(t, rules, "", ".view-tabs")
-	for prop, want := range map[string]string{
-		"background":    "var(--color-surface)",
+		"min-height":    "var(--touch-target-min)",
 		"border-radius": "8px",
-		"flex-wrap":     "wrap",
-		"margin":        "0 0 var(--space-sm)",
+		"border":        "1px solid var(--color-border)",
+		"color":         "var(--color-text)",
+		"font-size":     "var(--font-size-label)",
 	} {
-		if got := track.Decls[prop]; got != want {
-			t.Errorf(".view-tabs %s is %q, want %q", prop, got, want)
+		if got := button.Decls[prop]; got != want {
+			t.Errorf(".show-button %s is %q, want %q", prop, got, want)
 		}
 	}
+	if r := button.Decls["border-radius"]; r == "999px" || strings.Contains(r, "%") {
+		t.Errorf(".show-button corner %q is a pill", r)
+	}
 
-	current := vsRule(t, rules, "", `.view-tab[aria-current="page"], .view-tab[aria-current="page"]:hover, .view-tab[aria-current="page"]:active`)
+	head := vsRule(t, rules, "", ".list-head")
 	for prop, want := range map[string]string{
-		"background":   "var(--color-bg)",
-		"border-color": "var(--color-border)",
-		"font-weight":  "var(--font-weight-semibold)",
+		"display":       "flex",
+		"padding":       "var(--space-sm) var(--space-md)",
+		"border-bottom": "1px solid var(--color-border)",
 	} {
-		if got := current.Decls[prop]; got != want {
-			t.Errorf("the current tab %s is %q, want %q", prop, got, want)
+		if got := head.Decls[prop]; got != want {
+			t.Errorf(".list-head %s is %q, want %q", prop, got, want)
 		}
 	}
 
-	focus := vsRule(t, rules, "", ".view-tab:focus-visible")
-	if got := focus.Decls["outline-offset"]; got != "-2px" {
-		t.Errorf(".view-tab:focus-visible outline-offset is %q, want -2px", got)
+	menu := vsRule(t, rules, "", ".show-menu")
+	for prop, want := range map[string]string{
+		"position":      "absolute",
+		"z-index":       "1060",
+		"min-width":     "220px",
+		"box-shadow":    "var(--shadow-menu)",
+		"border-radius": "8px",
+	} {
+		if got := menu.Decls[prop]; got != want {
+			t.Errorf(".show-menu %s is %q, want %q", prop, got, want)
+		}
 	}
 
-	forced := vsRule(t, rules, "forced-colors", `.view-tab[aria-current="page"]`)
-	if got := forced.Decls["border"]; got != "1px solid CanvasText" {
-		t.Errorf("the forced colours current tab border is %q, want 1px solid CanvasText", got)
+	item := vsRule(t, rules, "", ".show-menu__item")
+	if got := item.Decls["min-height"]; got != "var(--touch-target-min)" {
+		t.Errorf(".show-menu__item min-height is %q, want the 44px token", got)
+	}
+	if got := vsRule(t, rules, "", ".show-menu__item:focus-visible").Decls["outline-offset"]; got != "-2px" {
+		t.Errorf(".show-menu__item:focus-visible outline-offset is %q, want -2px", got)
+	}
+	// The check keeps its place on every row and shows only on the chosen one.
+	if got := vsRule(t, rules, "", ".show-menu__check").Decls["visibility"]; got != "hidden" {
+		t.Errorf(".show-menu__check visibility is %q, want hidden", got)
+	}
+	if got := vsRule(t, rules, "", `.show-menu__item[aria-checked="true"] .show-menu__check`).Decls["visibility"]; got != "visible" {
+		t.Errorf("the chosen row's check visibility is %q, want visible", got)
+	}
+	if got := vsRule(t, rules, "", `.show-menu[hidden]`).Decls["display"]; got != "none" {
+		t.Errorf(".show-menu[hidden] display is %q, want none", got)
+	}
+	forced := vsRule(t, rules, "forced-colors", ".show-button, .show-menu")
+	if got := forced.Decls["border-color"]; got != "CanvasText" {
+		t.Errorf("the forced colours border of the Show control is %q, want CanvasText", got)
 	}
 
-	button := vsRule(t, rules, "", ".inline-text-button")
-	if got := button.Decls["min-height"]; got != "var(--touch-target-min)" {
+	inline := vsRule(t, rules, "", ".inline-text-button")
+	if got := inline.Decls["min-height"]; got != "var(--touch-target-min)" {
 		t.Errorf(".inline-text-button min-height is %q, want the 44px token", got)
 	}
-	if got := button.Decls["border-radius"]; got != "8px" {
+	if got := inline.Decls["border-radius"]; got != "8px" {
 		t.Errorf(".inline-text-button corner is %q, want 8px", got)
-	}
-
-	laptop := vsRule(t, rules, "min-width: 900px", ".view-tabs")
-	if laptop.Decls["max-width"] != "360px" || laptop.Decls["margin"] != "var(--space-md) 0 var(--space-sm)" {
-		t.Errorf("the laptop strip is %v, want max-width 360px and margin var(--space-md) 0 var(--space-sm)", laptop.Decls)
-	}
-	heading := vsRule(t, rules, "min-width: 900px",
-		`#app-shell[data-feed-view="disputed"] .feed-heading, #app-shell[data-feed-view="past"] .feed-heading`)
-	if heading.Decls["display"] != "flex" {
-		t.Errorf("the laptop heading for Disputed and Past must display flex, got %q", heading.Decls["display"])
-	}
-	// phone.css hides .feed-heading with its base rule; the laptop rule must
-	// outrank it by specificity, with phone.css left as it is.
-	if !strings.Contains(heading.Head, "#app-shell") {
-		t.Errorf("the laptop heading rule must be more specific than phone.css's base hide")
 	}
 
 	// Tokens only: no colour literal in any declaration of feed.css.
@@ -575,11 +576,12 @@ func TestViewStripNoPillAndTouchTarget(t *testing.T) {
 	}
 }
 
-// TestViewStripContrast computes the two text pairs the strip and its note
-// introduce, from the shipped tokens in all four theme sources: the tab text
-// on the grey track and the muted note on the page background (UI-SPEC Color).
+// TestViewStripContrast computes the text pairs the list head and the disputed
+// cues introduce, from the shipped tokens in all four theme sources: the Show
+// button and menu text on the page background, the count line (muted) on the
+// page background, and the bold disputed line on the page background.
 func TestViewStripContrast(t *testing.T) {
-	needed := []string{"--color-bg", "--color-surface", "--color-text", "--color-text-muted"}
+	needed := []string{"--color-bg", "--color-surface", "--color-text", "--color-text-muted", "--color-severity-critical"}
 	light1, light2, dark1, dark2 := extractThemeTokens(parseCSSRules(p13ReadStatic(t, "static/css/main.css")), needed)
 	sources := []struct {
 		name   string
@@ -589,9 +591,10 @@ func TestViewStripContrast(t *testing.T) {
 		{"prefers dark :root", dark1}, {`:root[data-theme="dark"]`, dark2},
 	}
 	pairs := []struct{ name, fg, bg string }{
-		{"tab text on the track", "--color-text", "--color-surface"},
-		{"current tab text on the page background", "--color-text", "--color-bg"},
-		{"the note line on the page background", "--color-text-muted", "--color-bg"},
+		{"Show button text on the page background", "--color-text", "--color-bg"},
+		{"menu text on the page background", "--color-text", "--color-bg"},
+		{"the count line on the page background", "--color-text-muted", "--color-bg"},
+		{"the disputed line on the page background", "--color-severity-critical", "--color-bg"},
 	}
 	for _, s := range sources {
 		for _, p := range pairs {

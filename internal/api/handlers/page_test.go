@@ -373,3 +373,66 @@ func TestNavForMarksOnlyTheCurrentPlace(t *testing.T) {
 		}
 	}
 }
+
+// TestPageRedirectsPastViewToEndedNearby pins the retirement of the Past tab
+// (Phase 3.4, D-18, orchestrator decision 6): an address that asks for view
+// past or view resolved is answered with a redirect to the constant
+// /profile?part=ended, with the report id appended only when it is plain
+// digits that parse to a positive number, and re-written from the parsed
+// integer. view=disputed is left for the page (Show Disputed), and the answer
+// is never cacheable.
+func TestPageRedirectsPastViewToEndedNearby(t *testing.T) {
+	tmpl, err := ParsePageTemplate()
+	if err != nil {
+		t.Fatalf("ParsePageTemplate: %v", err)
+	}
+	handler := Page(tmpl, PageConfig{FallbackLat: 12.9716, FallbackLon: 77.5946, DefaultRadiusKm: 10})
+
+	cases := []struct {
+		name  string
+		query string
+		want  string
+	}{
+		{"past", "view=past", "/profile?part=ended"},
+		{"resolved", "view=resolved", "/profile?part=ended"},
+		{"past with a report", "view=past&report=42", "/profile?part=ended&report=42"},
+		{"resolved with a report", "view=resolved&report=7", "/profile?part=ended&report=7"},
+		{"leading zeros are re-written", "view=past&report=0042", "/profile?part=ended&report=42"},
+		{"zero is dropped", "view=past&report=0", "/profile?part=ended"},
+		{"a plus sign is dropped", "view=past&report=%2B5", "/profile?part=ended"},
+		{"a negative number is dropped", "view=past&report=-5", "/profile?part=ended"},
+		{"a crafted value is dropped", "view=past&report=1%26next%3Dhttps%3A%2F%2Fevil.example", "/profile?part=ended"},
+		{"a scheme is dropped", "view=resolved&report=https://evil.example", "/profile?part=ended"},
+		{"a number past int64 is dropped", "view=past&report=99999999999999999999", "/profile?part=ended"},
+		{"it comes before the full=1 handling", "view=past&full=1", "/profile?part=ended"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := newPageTestRequest()
+			req.URL.RawQuery = tc.query
+			rec := httptest.NewRecorder()
+			handler(rec, req)
+			res := rec.Result()
+			if res.StatusCode != http.StatusFound {
+				t.Fatalf("status = %d, want %d", res.StatusCode, http.StatusFound)
+			}
+			if got := res.Header.Get("Location"); got != tc.want {
+				t.Fatalf("Location = %q, want %q", got, tc.want)
+			}
+			if got := res.Header.Get("Cache-Control"); got != "no-store" {
+				t.Fatalf("Cache-Control = %q, want no-store", got)
+			}
+		})
+	}
+
+	// Addresses that are not the retired Past words are never redirected here.
+	for _, query := range []string{"view=disputed", "view=active", "view=all", "view=Past", "view=past%20", "report=5", ""} {
+		req := newPageTestRequest()
+		req.URL.RawQuery = query
+		rec := httptest.NewRecorder()
+		handler(rec, req)
+		if loc := rec.Result().Header.Get("Location"); strings.Contains(loc, "part=ended") {
+			t.Errorf("query %q was redirected to %q", query, loc)
+		}
+	}
+}

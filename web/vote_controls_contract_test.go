@@ -205,13 +205,19 @@ func TestFocusStepsAfterMarkResolved(t *testing.T) {
 	// Plan 03.1-14: the fallback now ends on the current tab link, found by
 	// its selector, before the view toggle and the empty blocks, and the three
 	// empty blocks plan 03.1-05 added are named too.
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+	// D-18): the tab strip is gone, so currentTabLink() finds the Show button
+	// (#show-button) and the Past empty block is the Confirmed empty block
+	// (#confirmed-empty). The Phase 3.1 and Phase 4 hands-on tests are walked on
+	// this layout after Phase 3.4 is built.
 	p09Ordered(t, afterRetract, "focusAfterRetract",
 		"removal.map", "removal.next", "removal.prev", "currentTabLink()", "'view-toggle'", "'feed-empty'",
-		"'feed-empty-history'", "'disputed-empty'", "'past-empty'", "'filter-empty'")
+		"'feed-empty-history'", "'disputed-empty'", "'confirmed-empty'", "'filter-empty'")
 	p09MustContain(t, "focusAfterRetract", afterRetract,
 		"setAttribute('tabindex', '-1')", "'popup'", "focusIsLost(")
 	p09MustContain(t, "currentTabLink", p09FuncBody(t, text, "currentTabLink()"),
-		".view-tabs .view-tab[aria-current=\"page\"]")
+		"getElementById('show-button')")
 
 	p09MustContain(t, "isDisplayed", p09FuncBody(t, text, "isDisplayed(el)"), "isConnected", "getClientRects()")
 	p09MustContain(t, "canTakeFocus", p09FuncBody(t, text, "canTakeFocus(el)"), "isDisplayed(", ".disabled", ".hidden")

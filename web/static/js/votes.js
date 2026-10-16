@@ -1376,7 +1376,7 @@
       document.getElementById('feed-empty'),
       document.getElementById('feed-empty-history'),
       document.getElementById('disputed-empty'),
-      document.getElementById('past-empty'),
+      document.getElementById('confirmed-empty'),
       document.getElementById('filter-empty')
     ];
     for (var j = 0; j < emptyStates.length; j++) {
@@ -1601,10 +1601,12 @@
     });
   }
 
-  // currentTabLink is the strip link of the tab that is showing, found by its
-  // selector, or null. The strip is feed.js's; this module only reads it.
+  // currentTabLink is the Show button of the list head (Phase 3.4 replaced the
+  // tab strip with it), found by its id, or null. The button is feed.js's and
+  // show-menu.js's; this module only reads it. The old name stays so the
+  // focus order below reads as it always did.
   function currentTabLink() {
-    return document.querySelector('.view-tabs .view-tab[aria-current="page"]');
+    return document.getElementById('show-button');
   }
 
   // takeBackSuccessMessage is C56 when the take back reopened a report that

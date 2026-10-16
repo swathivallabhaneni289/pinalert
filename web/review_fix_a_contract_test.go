@@ -41,10 +41,19 @@ func TestReviewFixALinkedReportRefreshes(t *testing.T) {
 	p13MustContain(t, "app.js", app, "dropFocus: dropFocus,")
 
 	// The reader's own changes end the link before the list is read again.
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+	// D-18): the tab press is a Show choice now (show-menu.js choose), which
+	// ends the link before it asks for a new read or draws the rows again; the
+	// link's own tab choice is gone with the tabs, and handleFocus never ends
+	// the link itself. The Phase 3.1 and Phase 4 hands-on tests are walked on
+	// this layout after Phase 3.4 is built.
 	feed := pt12Feed(t)
-	p13Ordered(t, jsFunctionBody(t, feed, "switchTab(view)"), "switchTab",
-		"Pinalert.dropFocus();", "Pinalert.setView(view);", "Pinalert.fetchReports();")
-	p13MustNotContain(t, "selectTabOnScreen", jsFunctionBody(t, feed, "selectTabOnScreen(view)"), "dropFocus")
+	menu := p19Code(t, "static/js/show-menu.js")
+	choose := jsFunctionBody(t, menu, "choose(show)")
+	p13Ordered(t, choose, "choose",
+		"Pinalert.setShow(show);", "Pinalert.dropFocus();", "Pinalert.fetchReports();", "Pinalert.redraw();")
+	p13MustNotContain(t, "handleFocus", jsFunctionBody(t, feed, "handleFocus(state)"), "dropFocus")
 	clearAt := strings.Index(feed, "filterClearBtn.addEventListener('click', function () {")
 	if clearAt == -1 {
 		t.Fatalf("feed.js lost the Clear filter listener")
@@ -119,8 +128,13 @@ func TestReviewFixAListPaneLoadingMark(t *testing.T) {
 		t.Fatalf("feed.css lacks the loading rule for the list pane")
 	}
 	hide := css[hideAt : hideAt+strings.Index(css[hideAt:], "}")]
-	for _, id := range []string{"#report-list", "#past-groups", "#feed-count", "#feed-empty",
-		"#feed-empty-history", "#disputed-empty", "#past-empty", "#filter-empty", "#feed-error"} {
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+	// D-18): the Past groups and the Past empty block left the pane, and the
+	// Confirmed empty block joined the list of blocks the loading mark hides.
+	// The Phase 3.1 and Phase 4 hands-on tests are walked on this layout after
+	// Phase 3.4 is built.
+	for _, id := range []string{"#report-list", "#feed-count", "#feed-empty",
+		"#feed-empty-history", "#disputed-empty", "#confirmed-empty", "#filter-empty", "#feed-error"} {
 		if !strings.Contains(hide, ".pane--list[data-loading] "+id+":not([hidden])") {
 			t.Errorf("the loading rule does not hide %s", id)
 		}

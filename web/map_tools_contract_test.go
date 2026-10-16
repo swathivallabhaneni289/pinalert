@@ -253,6 +253,12 @@ func p31mSearchScript(t *testing.T) {
 
 // TestMapChips pins the five category chips and the two context lines
 // (HIST-06, D-17, D-18, C33 to C38).
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-24a, D-13,
+// D-14): the Rescue chip is a Traffic chip (Rescue needed is no longer a
+// category people can post), in the same third place, and CHIP_LABELS names
+// traffic in place of rescue_needed. The Phase 3.1 and Phase 4 hands-on tests
+// are walked on this layout after Phase 3.4 is built.
 func TestMapChips(t *testing.T) {
 	code := p31mTools(t)
 	tmpl := p13ReadTemplate(t, "index.html.tmpl")
@@ -262,7 +268,7 @@ func TestMapChips(t *testing.T) {
 	chips := regexp.MustCompile(`<button type="button" class="map-chip" data-category="([a-z_]*)" aria-pressed="(true|false)">([A-Za-z]+)</button>`)
 	found := chips.FindAllStringSubmatch(tmpl, -1)
 	want := [][3]string{
-		{"", "true", "All"}, {"flood", "false", "Flood"}, {"rescue_needed", "false", "Rescue"},
+		{"", "true", "All"}, {"flood", "false", "Flood"}, {"traffic", "false", "Traffic"},
 		{"shelter_open", "false", "Shelter"}, {"power_outage", "false", "Power"},
 	}
 	if len(found) != len(want) {
@@ -280,7 +286,7 @@ func TestMapChips(t *testing.T) {
 	// The chip words come from the store's table, so the line and the chips
 	// cannot disagree.
 	app := p13ReadStatic(t, "static/js/app.js")
-	for _, slug := range []string{"flood", "rescue_needed", "shelter_open", "power_outage"} {
+	for _, slug := range []string{"flood", "traffic", "shelter_open", "power_outage"} {
 		if !strings.Contains(app, slug+": '") {
 			t.Errorf("app.js CHIP_LABELS lacks %q", slug)
 		}
