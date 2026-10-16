@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"testing"
+	"time"
 )
 
 const (
@@ -62,19 +63,25 @@ func TestGeocodePlaceRouteIsGated(t *testing.T) {
 	expectPlaceError(t, getPlace(t, verified, srv.URL), http.StatusServiceUnavailable, "q", placeUnavailable)
 }
 
-// TestGeocodePlaceRouteBudgetPerAccount: the fourth request in a row from one
+// TestGeocodePlaceRouteBudgetPerAccount: the ninth request in a row from one
 // account is refused, while a second account behind the same client address
-// still gets through, so the budget belongs to the account and not the IP.
+// still gets through, so the budget belongs to the account and not the IP. A
+// second later the first account has exactly one more (8 at once, then 1 a
+// second, quick 261016-sne).
 func TestGeocodePlaceRouteBudgetPerAccount(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
 	first := newVerifiedClient(t, srv, mailer, "place-budget-a@example.com")
 	second := newVerifiedClient(t, srv, mailer, "place-budget-b@example.com")
 
-	for i := 1; i <= 3; i++ {
+	for i := 1; i <= 8; i++ {
 		expectPlaceError(t, getPlace(t, first, srv.URL), http.StatusServiceUnavailable, "q", placeUnavailable)
 	}
 	expectPlaceError(t, getPlace(t, first, srv.URL), http.StatusTooManyRequests, "q", placeRateLimited)
 
 	// Same test server, same client IP, different verified account.
 	expectPlaceError(t, getPlace(t, second, srv.URL), http.StatusServiceUnavailable, "q", placeUnavailable)
+
+	time.Sleep(1100 * time.Millisecond)
+	expectPlaceError(t, getPlace(t, first, srv.URL), http.StatusServiceUnavailable, "q", placeUnavailable)
+	expectPlaceError(t, getPlace(t, first, srv.URL), http.StatusTooManyRequests, "q", placeRateLimited)
 }

@@ -1,18 +1,21 @@
 // geocode.go is the HTTP surface of the address-search feature: it
 // validates the q query parameter, calls the geocoding searcher, and shapes
-// the response. No rate-limiting logic lives here — the global 1 req/sec
-// policy ceiling lives in internal/geocode, and the per-IP anti-abuse
-// throttle is applied at route registration in internal/api/router.go
-// (plan 07-03).
+// the response. The process wide ceilings on Photon and Nominatim live in
+// internal/geocode. The person's own budget is checked here, keyed by the
+// verified account like the place search's (quick 261016-sne, D-16): carrier
+// NAT, or a host behind a proxy without CLIENT_IP_HEADER, puts many people
+// behind one address, so a per IP budget would make them share it.
 package handlers
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
 	"unicode/utf8"
 
+	"pinalert/internal/account"
 	"pinalert/internal/geocode"
 )
 
@@ -116,7 +119,8 @@ func parseGeocodeQuery(w http.ResponseWriter, r *http.Request) (string, bool) {
 // @Description without the first part and then without the second; matched_query then holds the
 // @Description shorter text that matched. When Photon fails or takes over 2 seconds, Nominatim alone
 // @Description runs those tries, in a box around the pin first. At most four upstream requests are
-// @Description sent per search. A
+// @Description sent per search. Each verified account has its own budget of 8 searches at once,
+// @Description then 1 a second; past it the answer is a 429. A
 // @Description 503 means search is temporarily unavailable; report submission remains fully
 // @Description usable regardless.
 // @Tags geocode
@@ -130,8 +134,23 @@ func parseGeocodeQuery(w http.ResponseWriter, r *http.Request) (string, bool) {
 // @Failure 429 {object} ErrorResponse
 // @Failure 503 {object} ErrorResponse
 // @Router /geocode [get]
-func Geocode(searcher GeocodeSearcher) http.HandlerFunc {
+func Geocode(searcher GeocodeSearcher, budget PlaceBudget) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// A request with no verified account is a programming error (a route
+		// mounted outside the gated group), the same shape GeocodePlace uses.
+		acc, ok := account.FromContext(r.Context())
+		if !ok {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		// The budget is keyed by the verified account, never the IP, and
+		// under a key of its own, so it never shares the place search's.
+		if budget != nil && !budget.Allow(fmt.Sprintf("geocode:%d", acc.ID)) {
+			writeFieldError(w, http.StatusTooManyRequests, "q", placeRateLimitedMessage)
+			return
+		}
+
 		if searcher == nil {
 			// A Deps{} literal that omits the dependency (e.g. a test that
 			// doesn't need geocoding) must degrade to the D-04 message

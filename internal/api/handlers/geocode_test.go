@@ -64,7 +64,7 @@ func TestGeocode_ValidatesQueryLength(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/api/geocode?q="+tc.q, nil)
 			rec := httptest.NewRecorder()
 
-			Geocode(stub)(rec, req)
+			Geocode(stub, nil)(rec, withAccount(req, 7))
 
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want 400", rec.Code)
@@ -95,7 +95,7 @@ func TestGeocode_CountsQueryLengthInRunes(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/geocode?q="+twoRunes, nil)
 		rec := httptest.NewRecorder()
 
-		Geocode(stub)(rec, req)
+		Geocode(stub, nil)(rec, withAccount(req, 7))
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400", rec.Code)
@@ -110,7 +110,7 @@ func TestGeocode_CountsQueryLengthInRunes(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/geocode?q="+threeRunes, nil)
 		rec := httptest.NewRecorder()
 
-		Geocode(stub)(rec, req)
+		Geocode(stub, nil)(rec, withAccount(req, 7))
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", rec.Code)
@@ -132,7 +132,7 @@ func TestGeocode_UpstreamFailureReturnsFriendlyError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/geocode?q=Bengaluru", nil)
 	rec := httptest.NewRecorder()
 
-	Geocode(stub)(rec, req)
+	Geocode(stub, nil)(rec, withAccount(req, 7))
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
@@ -153,7 +153,7 @@ func TestGeocode_NilSearcherReturnsFriendlyError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/geocode?q=Bengaluru", nil)
 	rec := httptest.NewRecorder()
 
-	Geocode(nil)(rec, req)
+	Geocode(nil, nil)(rec, withAccount(req, 7))
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
@@ -174,7 +174,7 @@ func TestGeocode_AllowlistsResponseFields(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/geocode?q=Bengaluru", nil)
 	rec := httptest.NewRecorder()
 
-	Geocode(stub)(rec, req)
+	Geocode(stub, nil)(rec, withAccount(req, 7))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -225,7 +225,7 @@ func TestGeocode_EmptyResultsSerialiseAsArray(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/geocode?q=Xyzzyplugh", nil)
 	rec := httptest.NewRecorder()
 
-	Geocode(stub)(rec, req)
+	Geocode(stub, nil)(rec, withAccount(req, 7))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -246,7 +246,7 @@ func TestGeocode_SetsPrivateCacheControl(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/geocode?q=Bengaluru", nil)
 	rec := httptest.NewRecorder()
 
-	Geocode(stub)(rec, req)
+	Geocode(stub, nil)(rec, withAccount(req, 7))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)

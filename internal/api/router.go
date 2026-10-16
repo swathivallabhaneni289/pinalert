@@ -53,11 +53,11 @@ type Deps struct {
 	// "search unavailable" message rather than panicking (the handler
 	// guards it).
 	Geocode handlers.GeocodeSearcher
-	// GeocodeRateLimit configures the per-IP token-bucket limiter wrapped
-	// around GET /api/geocode only. Left at its zero value,
-	// GeocodeRateLimitDefault below is used, matching RequestLinkRateLimit's
-	// contract — cmd/server/main.go is the one place the numbers are
-	// visible rather than buried as literals in this router.
+	// GeocodeRateLimit configures the per account budget of GET /api/geocode
+	// only (quick 261016-sne; it was a per IP limiter before). Left at its
+	// zero value, GeocodeRateLimitDefault below is used, matching
+	// RequestLinkRateLimit's contract: cmd/server/main.go is the one place the
+	// numbers are visible rather than buried as literals in this router.
 	GeocodeRateLimit GeocodeRateLimit
 	// PlaceSearch backs GET /api/geocode/place, the reader's place search on
 	// the history views (HIST-05, D-14). It is typed as the
@@ -190,25 +190,36 @@ type RequestLinkRateLimit struct {
 // left at its zero value.
 var RequestLinkRateLimitDefault = RequestLinkRateLimit{Burst: 5, Every: 60 * time.Second}
 
-// GeocodeRateLimit is the burst/refill configuration for the per-IP limiter
-// wrapping GET /api/geocode only.
+// GeocodeRateLimit is the burst/refill configuration for the per account
+// budget of GET /api/geocode only.
 type GeocodeRateLimit struct {
 	Burst int
 	Every time.Duration
 }
 
-// GeocodeRateLimitDefault is this plan's chosen budget — burst 3, one token
-// refilled every 2 seconds — used whenever Deps.GeocodeRateLimit is left at
-// its zero value. This is a fresh named budget, not a reuse of
-// RequestLinkRateLimitDefault (burst 5, one token per 60s): that budget was
-// tuned for "request a login link" traffic, which is rare and deliberate,
-// whereas typing into a search box is bursty within one report submission
-// and rare across a session, so it needs its own shape (07-RESEARCH.md Open
-// Question 2). This per-IP limiter is the secondary, anti-abuse control
-// only — the actual Nominatim policy ceiling (D-02) is the process-wide
-// limiter inside internal/geocode, because a per-IP limiter cannot bound
-// total outbound traffic across many clients.
-var GeocodeRateLimitDefault = GeocodeRateLimit{Burst: 3, Every: 2 * time.Second}
+// GeocodeRateLimitDefault and PlaceRateLimitDefault are the budgets of the two
+// searches, one person each, used whenever Deps leaves them at their zero
+// value (quick 261016-sne). Both are 8 searches at once, then 1 a second.
+//
+// Why these numbers. Both searches now run after a 300 ms pause in typing
+// (quick 261016-sfu), so one person typing one address sends a search at
+// most about every 300 ms while they type in short bursts. A burst of 8 covers
+// one address typed with several pauses, and a refill of 1 a second keeps up
+// with steady typing a little behind, which the browser's quiet retry of the
+// latest text (report-form.js, map-tools.js) absorbs without showing an
+// error. The old numbers (3, then 1 every 2 s for the report search; 3, then
+// 1 every 4 s for the place search) ran out within one address.
+//
+// Why per account. Both are keyed by the verified account, never the client
+// address: carrier NAT puts many phones behind one address, and on a host
+// behind a proxy without CLIENT_IP_HEADER every visitor may share one, so a
+// per IP budget would make them share these 8 searches (D-16).
+//
+// These budgets are anti abuse controls for one person only. The real ceilings
+// on Photon and Nominatim are the process wide limiters inside
+// internal/geocode, which bound total outbound traffic across every person and
+// are unchanged; a search past them is answered busy or waits, never sent.
+var GeocodeRateLimitDefault = GeocodeRateLimit{Burst: 8, Every: time.Second}
 
 // PlaceRateLimit is the burst/refill configuration of the per account budget
 // on GET /api/geocode/place.
@@ -217,11 +228,11 @@ type PlaceRateLimit struct {
 	Every time.Duration
 }
 
-// PlaceRateLimitDefault is the reader lane's budget: a burst of 3, then one
-// token every 4 seconds (RESEARCH A4). It is a per account budget and not a
-// per IP one because carrier NAT puts many phones behind one address, so a
-// per IP budget would lock out neighbours of a heavy searcher (D-16).
-var PlaceRateLimitDefault = PlaceRateLimit{Burst: 3, Every: 4 * time.Second}
+// PlaceRateLimitDefault is the reader lane's budget, the same as the report
+// search's (see GeocodeRateLimitDefault for the numbers and the reason). The
+// reader lane also never queues ahead of a report search inside
+// internal/geocode, so a larger budget here costs a reporter nothing.
+var PlaceRateLimitDefault = PlaceRateLimit{Burst: 8, Every: time.Second}
 
 // BucketLimit and RateLimits are aliases of the handlers types, the same types
 // under a second name. Package api imports handlers, so the gate in handlers
@@ -331,8 +342,9 @@ func NewRouter(deps Deps) *chi.Mux {
 	r.Use(middleware.RequestID)
 	// The client IP is the TCP peer address (DEC-U) unless Deps.ClientIPHeader
 	// names a header the host overwrites. When it does, that header becomes the
-	// client IP for every per IP limiter, so the request link and geocode
-	// limiters also key on it whenever it is present and parses, and fall back
+	// client IP for every per IP limiter, so the request link limiter (the two
+	// searches key on the account since quick 261016-sne) also keys on it
+	// whenever it is present and parses, and falls back
 	// to the peer address only when it is missing or unparseable. On a host
 	// that does not overwrite that header, a caller could rotate it to dodge
 	// those limiters (the T-01-92 property), so the setting is only for a host
@@ -481,12 +493,18 @@ func NewRouter(deps Deps) *chi.Mux {
 		// submission modal, which is already behind login (D-05); leaving
 		// it ungated would hand an unauthenticated caller a free proxy onto
 		// this app's shared Nominatim budget.
+		//
+		// Quick 261016-sne: it is NOT wrapped in the per IP middleware any
+		// more. The handler keys its budget by the verified account id, the
+		// same as the place search below, because carrier NAT shares one IP
+		// across many phones (D-16). The limiter type is ratelimit.PerIP,
+		// used here only as a keyed token bucket.
 		geocodeLimit := deps.GeocodeRateLimit
 		if geocodeLimit == (GeocodeRateLimit{}) {
 			geocodeLimit = GeocodeRateLimitDefault
 		}
-		geocodeLimiter := ratelimit.NewPerIP(geocodeLimit.Every, geocodeLimit.Burst)
-		r.With(geocodeLimiter.Middleware()).Get("/api/geocode", handlers.Geocode(deps.Geocode))
+		geocodeBudget := ratelimit.NewPerIP(geocodeLimit.Every, geocodeLimit.Burst)
+		r.Get("/api/geocode", handlers.Geocode(deps.Geocode, geocodeBudget))
 		// GET /api/geocode/place (HIST-05, D-14): the reader lane. A flat
 		// literal path next to /api/geocode, inside the gate for the same
 		// reason. It is NOT wrapped in the per IP middleware: the handler

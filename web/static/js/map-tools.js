@@ -20,6 +20,15 @@
 //     own typing must never read as Search unavailable. Enter and the button
 //     show every line. A typed search's results and count are shown and read
 //     out the same way as after Enter.
+//   - A typed search refused (429) or answered busy (503) is tried again
+//     quietly (quick 261016-sne): the list on screen stays, and the latest
+//     text is asked again after the answer's Retry-After or RETRY_WAIT_MS, at
+//     most QUIET_RETRIES times, so suggestions catch up instead of stopping.
+//     Only when the last try fails too does the failure line show, since by
+//     then the search has really been unavailable for a few seconds. Newer
+//     typing, Enter, Escape, Close, a press outside and a pick all cancel a
+//     pending try, because it waits on the typing timer. A network error from
+//     typing stays quiet and is not tried again.
 //   - Dragging or zooming the map never reads the list. Only a pick, a chip,
 //     Back to my location and Clear do (D-14).
 //   - A failed or refused search shows one plain line and blocks nothing. The
@@ -34,6 +43,12 @@ window.PinalertMapTools = (function () {
   // How long the reader must stop typing before the search runs by itself,
   // the same pause as the report form's search (SEARCH_DEBOUNCE_MS).
   var TYPING_PAUSE_MS = 300;
+  // The quiet retry of a typed search (see the rules at the top), the same
+  // numbers as the report form's. A Retry-After longer than RETRY_WAIT_MAX_MS
+  // is cut to it.
+  var QUIET_RETRIES = 3;
+  var RETRY_WAIT_MS = 1000;
+  var RETRY_WAIT_MAX_MS = 10000;
   var MAX_RESULTS = 5;
   var RESULT_NAME_MAX = 32;
   // The zoom a GPS start uses.
@@ -78,8 +93,10 @@ window.PinalertMapTools = (function () {
   // The text whose answer is on screen, so a pause on the same text asks
   // nothing again.
   var shownText = '';
-  // The pending typing pause, or null.
+  // The pending typing pause or quiet retry, or null.
   var typingTimer = null;
+  // How many quiet retries the text typed last has used.
+  var quietFailures = 0;
   // True while Back to my location waits for the browser's position.
   var backPending = false;
   // True after Back to my location found no position, until the next pick.
@@ -231,6 +248,29 @@ window.PinalertMapTools = (function () {
     showStatus(partial ? partial + ' ' + countText : countText, true);
   }
 
+  // retryWait reads how long to wait before a quiet retry: the answer's
+  // Retry-After in whole seconds when it sent a usable one, else
+  // RETRY_WAIT_MS, never more than RETRY_WAIT_MAX_MS.
+  function retryWait(res) {
+    var header = res && res.headers && typeof res.headers.get === 'function'
+      ? res.headers.get('Retry-After') : null;
+    var seconds = header === null ? NaN : Number(header);
+    if (!isFinite(seconds) || seconds <= 0) {
+      return RETRY_WAIT_MS;
+    }
+    return Math.min(Math.max(seconds * 1000, RETRY_WAIT_MS), RETRY_WAIT_MAX_MS);
+  }
+
+  // retryLater asks for q again, quietly, after wait milliseconds. It waits on
+  // the typing timer, so anything that ends a typing pause also ends it.
+  function retryLater(q, wait) {
+    cancelTyping();
+    typingTimer = window.setTimeout(function () {
+      typingTimer = null;
+      search(q, true);
+    }, wait);
+  }
+
   // messageFor picks the line for a refused or failed answer: the server's own
   // sentence when it sent one, else the fixed words for the status.
   function messageFor(status, body) {
@@ -305,8 +345,27 @@ window.PinalertMapTools = (function () {
           inFlight = false;
           if (!res.ok) {
             // A quiet search's refusal or failure leaves the screen as it
-            // was: the list for the text before stays until Enter asks.
-            if (!searchQuiet) {
+            // was: the list for the text before stays until Enter asks. A
+            // 429 or a 503 is tried again quietly, and the failure after the
+            // last try shows its line in place of that list, as after Enter.
+            var busy = res.status === 429 || res.status === 503;
+            // A refusal for text no longer in the box, or one that lands
+            // while the newer text's pause is running, is dropped quietly:
+            // retrying it would cancel that pause and bring back an older
+            // list.
+            if (searchQuiet && busy && (typingTimer !== null || q !== inputEl.value.trim())) {
+              return;
+            }
+            if (searchQuiet && busy && quietFailures < QUIET_RETRIES) {
+              quietFailures += 1;
+              retryLater(q, retryWait(res));
+              return;
+            }
+            var lastTry = searchQuiet && busy;
+            if (lastTry) {
+              closeResults();
+            }
+            if (!searchQuiet || lastTry) {
               showStatus(messageFor(res.status, body), false);
             }
             return;
@@ -334,7 +393,10 @@ window.PinalertMapTools = (function () {
   // search runs once the reader stops for TYPING_PAUSE_MS with at least 3
   // letters in the box. Under 3 letters drops any search quietly.
   function onInput() {
+    // Also cancels a pending quiet retry: newer text wins, and gets its own
+    // retries.
     cancelTyping();
+    quietFailures = 0;
     var q = inputEl.value.trim();
     if (Array.from(q).length < MIN_QUERY_RUNES) {
       abortSearch();
