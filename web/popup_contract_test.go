@@ -654,14 +654,17 @@ func TestPopupDialogFocusAndOpener(t *testing.T) {
 	feed := p19Code(t, "static/js/feed.js")
 	activate := jsFunctionBody(t, feed, "activateRow(id)")
 	p13MustContain(t, "activateRow", activate, "PinalertMap.flyTo(id, { opener: 'list' })")
-	moveFocus := jsFunctionBody(t, feed, "moveFocusIntoView(view)")
 	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): the
-	// map view's focus target after the popup is the visible opener of the
-	// report window (the Report item on a phone, Post a report on a laptop),
-	// found by reportOpener(), not the retired floating button. The Phase 3.1
-	// and Phase 4 hands-on tests are walked on this layout after Phase 3.4 is
-	// built.
-	p13Ordered(t, moveFocus, "moveFocusIntoView", "PinalertMap.focusOpenPopup()", "reportOpener()")
+	// visible opener of the report window (the Report item on a phone, Post a
+	// report on a laptop) is found by reportOpener(), not the retired floating
+	// button.
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16, D-17):
+	// moveFocusIntoView belonged to the List and Map switch and is gone with
+	// it; the list and the map are both on the page now, so no focus move
+	// between views remains. The test pins its absence. The Phase 3.1 and Phase
+	// 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+	p13MustNotContain(t, "feed.js", feed, "moveFocusIntoView", "switchView(")
 	opener := jsFunctionBody(t, feed, "reportOpener()")
 	p13MustContain(t, "reportOpener", opener, "[data-open-report]", "elementIsShown(openers[i])")
 	if strings.Contains(feed, "fab-report") {
@@ -845,8 +848,12 @@ func TestRenderRowsRemovesBeforePlacing(t *testing.T) {
 	p13MustContain(t, "clearRows", clear, "document.activeElement", "takeMapPopupFocus()", "focusAfterRemoval(")
 
 	after := jsFunctionBody(t, feed, "focusAfterRemoval(candidates)")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16, D-17):
+	// the List and Map switch is gone, so the fallback after the Show button is
+	// the sheet handle (#sheet-handle), shown only on a phone. The Phase 3.1 and
+	// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
 	p13Ordered(t, after, "focusAfterRemoval", "document.activeElement", "candidates.length", "getElementById('map')",
-		"viewToggleBtn", "'tabindex', '-1'")
+		"getElementById('sheet-handle')", "'tabindex', '-1'")
 	p13MustContain(t, "focusAfterRemoval", after, "report-row", "elementIsShown(")
 	if n := strings.Count(feed, "setHidden(emptyEl"); n != 1 {
 		t.Errorf("feed.js has %d setHidden(emptyEl calls, want exactly 1 (only setEmptyState shows or hides an empty state)", n)

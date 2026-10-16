@@ -20,51 +20,135 @@
 .app-bar,
 .app-topbar__title,
 .app-topbar__back,
-.app-topbar__gear {
+.app-topbar__gear,
+.sheet__handle-row {
   display: none;
 }
 
 @media (max-width: 899.98px) {
-  /* ---- Page frame: the map on top, the list under it, both always shown ---- */
+  /* 03.4 nearby sheet */
 
-  /* Two rows: the map takes a 176px strip (two of the 64px token and one of
-     the 48px token) and the list takes the rest. The strip was 40 percent of
-     the height; with the unofficial bar above the page that left room for one
-     report card, and at 390 by 844 the strip of 176px leaves room for three
-     whole cards above the bottom bar (browser check T13.4c, finding F1). The
-     shell is shorter than the viewport by the unofficial bar above it, exactly
-     as main.css states it, so the page itself never scrolls. The legacy unit
-     comes first and the dynamic unit second, the same pairing main.css uses. */
+  /* ---- Page frame: the map fills the box, the list is a sheet over it ----
+     (Phase 3.4, D-16, UI-SPEC 2b.) The box is the shell, which the page frame
+     below sizes between the title bar and the bottom bar. The map fills it;
+     the list pane is a sheet that sits over the lower part of the map with
+     three positions (short, half, full). sheet.js writes where the sheet top
+     is as the custom property --sheet-top on the shell, and both the sheet and
+     the map read it, so the map ends 16px under the sheet's rounded corners
+     (the overlap). Until the script runs, the sheet top is 45 percent of the
+     box, the half position. The shell is shorter than the viewport by the
+     unofficial bar above it, exactly as main.css states it, so the page itself
+     never scrolls. The legacy unit comes first and the dynamic unit second,
+     the same pairing main.css uses. */
   body > .app-shell {
+    position: relative;
+    display: block;
     height: calc(100vh - var(--disclaimer-bar-height));
     height: calc(100dvh - var(--disclaimer-bar-height));
-    grid-template-rows: calc(var(--space-3xl) * 2 + var(--space-2xl)) minmax(0, 1fr);
-    gap: 0;
   }
 
-  /* main.css shows one pane at a time below 900px. Both panes show here
-     whatever data-view says, so the switch button is gone. */
-  .app-shell[data-view] .pane--map {
-    display: block;
+  /* The page does not scroll as a document on Nearby, and the bounce is not
+     passed on to it. The sheet's own scroller uses contain. */
+  body.has-app-bar:has(> .app-shell) {
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 
-  .app-shell[data-view] .pane--list {
+  .app-shell > .pane--map {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+  }
+
+  .pane--map #map {
+    height: calc(var(--sheet-top, 45%) + var(--space-md));
+    transition: height 0.3s cubic-bezier(.2, .8, .2, 1);
+  }
+
+  /* The attribution and the bottom controls stay above the sheet's edge,
+     because the map runs 16px under it. */
+  .pane--map .leaflet-bottom {
+    margin-bottom: var(--space-md);
+  }
+
+  /* The sheet. A sibling of the map, never its child, so Leaflet's own touch
+     handling inside the map never sees the sheet's gestures. Not modal: no
+     inert, no focus trap, and every row stays in the tab order whatever the
+     position. The sides are padded 16px; the handle row and the list head
+     reach the edges with a negative margin. */
+  .app-shell > .pane--list {
+    position: absolute;
+    top: var(--sheet-top, 45%);
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 1020;
     display: flex;
     flex-direction: column;
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
-    /* 8px above the tab strip, 16px at the sides (finding F1). */
-    padding: var(--space-sm) var(--space-md) calc(var(--touch-target-min) * 2 + var(--space-sm) + var(--space-md) * 2);
+    padding: 0 var(--space-md) var(--space-md);
+    border-radius: 16px 16px 0 0;
+    background: var(--color-bg);
+    box-shadow: var(--shadow-sheet);
+    /* A focused row scrolled into view clears the handle and the list head. */
+    scroll-padding-top: calc(var(--touch-target-min) * 2 + var(--space-md));
+    transition: top 0.3s cubic-bezier(.2, .8, .2, 1);
   }
 
-  .pane--map #map {
-    height: calc(var(--space-3xl) * 2 + var(--space-2xl));
+  /* While a finger drags the sheet nothing eases: the sheet and the map follow
+     the finger at once. */
+  .app-shell[data-dragging] > .pane--list,
+  .app-shell[data-dragging] .pane--map #map {
+    transition: none;
   }
 
-  .app-shell > .view-toggle {
-    display: none;
+  /* The handle row: a sticky strip at the top of the sheet holding the handle
+     button. A drag on it moves the sheet, so the browser keeps its own panning
+     off it (touch-action none on this row and on the list head only). */
+  .pane--list > .sheet__handle-row {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    flex: none;
+    order: -3;
+    margin: 0 calc(var(--space-md) * -1);
+    border-radius: 16px 16px 0 0;
+    background: var(--color-bg);
+    touch-action: none;
+  }
+
+  .sheet__handle-row > .sheet__handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: var(--touch-target-min);
+    min-height: var(--touch-target-min);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--color-text);
+    cursor: grab;
+  }
+
+  .sheet__handle > .sheet__grabber {
+    display: block;
+    width: 40px;
+    height: 4px;
+    border-radius: 4px;
+    background-color: var(--color-age-stale);
+  }
+
+  /* Focus ring inset: the row's edges are the screen edges. */
+  .sheet__handle-row > .sheet__handle:focus-visible {
+    outline-offset: -3px;
   }
 
   #toast:not([hidden]) {
@@ -74,14 +158,20 @@
   /* 03.4 nearby list */
 
   /* The list head (Phase 3.4, D-13): the count on the left, the Show button
-     on the right. The pane already pads the sides by 16px, so the head adds
-     none, and it keeps its own height in the scrolling column. The Show menu
-     is right aligned under the button and never wider than the screen less
-     12px each side. */
+     on the right, sticky under the handle. It reaches the screen edges with
+     the same negative margin as the handle row and pads its own sides by 16px.
+     It keeps its own height in the scrolling column. The Show menu is right
+     aligned under the button and never wider than the screen less 12px each
+     side. */
   .pane--list > .list-head {
+    position: sticky;
+    top: var(--touch-target-min);
+    z-index: 2;
     flex: none;
-    padding-right: 0;
-    padding-left: 0;
+    order: -2;
+    margin: 0 calc(var(--space-md) * -1);
+    padding: var(--space-sm) var(--space-md);
+    touch-action: none;
   }
 
   .pane--list .show-menu {
@@ -90,9 +180,12 @@
     max-width: calc(100vw - var(--space-12) * 2);
   }
 
-  /* The official alert banner slot scrolls with the cards under the head. */
+  /* The official alert banner slot scrolls with the cards under the head: it
+     comes after the handle and the head in the sheet whatever its place in the
+     markup (on the laptop it sits above the head). */
   .pane--list > .alert-banner:not([hidden]) {
     flex: none;
+    order: -1;
     margin-right: 0;
     margin-left: 0;
   }
@@ -907,5 +1000,14 @@
 @media (max-width: 899.98px) and (forced-colors: active) {
   body > .app-bar > .app-bar__item[aria-current="page"]::before {
     background-color: CanvasText;
+  }
+}
+
+/* 03.4 nearby sheet: reduced motion. The sheet and the map above it snap
+   instantly (D-16); sheet.js reads the same query and settles at once. */
+@media (max-width: 899.98px) and (prefers-reduced-motion: reduce) {
+  .app-shell > .pane--list,
+  .pane--map #map {
+    transition: none;
   }
 }

@@ -65,7 +65,13 @@ func TestPageShellServesDOMContract(t *testing.T) {
 	wantIDs := []string{
 		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10):
 		// id fab-report left the list with the floating report button.
-		`id="app-shell"`, `id="map"`, `id="view-toggle"`,
+		//
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16,
+		// D-17): id view-toggle left the list with the List and Map switch; the
+		// list pane is the phone list sheet (report-sheet) with its handle
+		// button (sheet-handle). The Phase 3.1 and Phase 4 hands-on tests are
+		// walked on this layout after Phase 3.4 is built.
+		`id="app-shell"`, `id="map"`, `id="report-sheet"`, `id="sheet-handle"`,
 		`id="report-list"`, `id="feed-skeleton"`, `id="feed-empty"`, `id="feed-error"`,
 		`id="feed-retry"`, `id="report-modal"`, `id="modal-map"`, `id="coord-readout"`,
 		`id="location-notice"`, `id="location-search"`, `id="location-search-results"`,

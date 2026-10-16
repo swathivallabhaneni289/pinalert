@@ -1341,7 +1341,7 @@
   // focusAfterRetract moves focus when a resolve took the report out of the
   // feed and focus was lost with it (A52). From the popup it goes to the map
   // container. From the list it goes to the row that took the place, else
-  // the previous row, else the view toggle, else the empty state, which is
+  // the previous row, else the sheet handle, else the empty state, which is
   // made focusable for the purpose. Nothing is announced.
   function focusAfterRetract(origin, removal) {
     if (!focusIsLost(origin.controls) && !focusIsLost(removal.row)) {
@@ -1367,7 +1367,7 @@
       tabLink.focus();
       return;
     }
-    var toggle = document.getElementById('view-toggle');
+    var toggle = document.getElementById('sheet-handle');
     if (canTakeFocus(toggle)) {
       toggle.focus();
       return;

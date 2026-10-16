@@ -28,7 +28,11 @@ import (
 func vsListPane(t *testing.T) string {
 	t.Helper()
 	index := p13ReadTemplate(t, "index.html.tmpl")
-	start := strings.Index(index, `<section class="pane pane--list">`)
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16,
+	// D-17): the list pane is the phone list sheet and carries id="report-sheet"
+	// on its opening tag. The Phase 3.1 and Phase 4 hands-on tests are walked on
+	// this layout after Phase 3.4 is built.
+	start := strings.Index(index, `<section class="pane pane--list" id="report-sheet"`)
 	if start == -1 {
 		t.Fatal("index.html.tmpl has no list pane section")
 	}
@@ -444,9 +448,14 @@ func TestViewStripPaneScript(t *testing.T) {
 		"filterClearBtn.addEventListener('click', function () {", "Pinalert.setCategory('');")
 
 	// Focus falls back to the map first and then to the Show button.
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16, D-17):
+	// the List and Map switch is gone, so the Show button is followed by the
+	// sheet handle (#sheet-handle, shown only on a phone). The Phase 3.1 and
+	// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
 	after := jsFunctionBody(t, feed, "focusAfterRemoval(candidates)")
 	p13Ordered(t, after, "focusAfterRemoval",
-		"getElementById('map')", "showButton()", "viewToggleBtn.focus()", "var empties = [")
+		"getElementById('map')", "showButton()", "getElementById('sheet-handle')", "var empties = [")
 }
 
 // TestViewStripStatusAnnouncement pins UI-SPEC 2i: one sentence in the visually

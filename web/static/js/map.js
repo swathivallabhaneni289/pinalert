@@ -1482,7 +1482,7 @@ window.PinalertMap = (function () {
   function flyTo(id, opts) {
     var marker = markers[id];
     if (!marker || !map) {
-      return;
+      return false;
     }
     if (opts && opts.opener === 'list') {
       listOpenerId = String(id);
@@ -1500,6 +1500,43 @@ window.PinalertMap = (function () {
       popupOpener = { id: listOpenerId, kind: 'list' };
       listOpenerId = null;
     }
+    return true;
+  }
+
+  // PIN_HALF is half the 44 by 44 marker box: a pin whose centre is this far
+  // from an edge is whole inside it.
+  var PIN_HALF = 22;
+
+  // resizeToSheet runs when the phone list sheet has settled (sheet.js, after
+  // a snap, a resize or an orientation change). The map element's height
+  // follows the sheet's top by CSS (phone.css, the sheet top plus 16px), so
+  // here the map only measures itself again, with no animation and no pan of
+  // its own, and then brings the chosen pin inside the part of the map that
+  // shows above the sheet, so no pin is ever left under it (D-16, D-03). A
+  // sheet at full hides the whole map, so there is nothing to bring in. The
+  // report detail sheet covers the map from the 192px line down and
+  // centerPinInStrip has already put the pin in the strip above it, so an
+  // open phone detail is left alone. Whether the MapLibre basemap follows a
+  // resize of its Leaflet container is confirmed in a browser, not assumed.
+  function resizeToSheet(sheetTop) {
+    if (!map) {
+      return;
+    }
+    map.invalidateSize({ animate: false, pan: false });
+    if (!(sheetTop > 0) || (phoneDetail() && activePopup)) {
+      return;
+    }
+    var id = Pinalert.state.selectedId;
+    var marker = id === null || id === undefined ? null : markers[String(id)];
+    if (!marker) {
+      return;
+    }
+    var spaceMd = readSpaceToken('--space-md');
+    map.panInside(marker.getLatLng(), {
+      paddingTopLeft: [spaceMd + PIN_HALF, toolsReserve() + PIN_HALF],
+      paddingBottomRight: [spaceMd + PIN_HALF, spaceMd + PIN_HALF],
+      animate: !reducedMotion
+    });
   }
 
   // highlight briefly rings the pin at id — plan 01-06 calls this the other
@@ -1548,6 +1585,7 @@ window.PinalertMap = (function () {
     cancelRecenter: cancelRecenter,
     getCenter: getCenter,
     highlight: highlight,
+    resizeToSheet: resizeToSheet,
     focusOpenPopup: focusOpenPopup,
     takeRemovedPopupFocus: takeRemovedPopupFocus,
     focusMarker: focusMarker

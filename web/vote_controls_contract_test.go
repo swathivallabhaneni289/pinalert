@@ -211,8 +211,14 @@ func TestFocusStepsAfterMarkResolved(t *testing.T) {
 	// (#show-button) and the Past empty block is the Confirmed empty block
 	// (#confirmed-empty). The Phase 3.1 and Phase 4 hands-on tests are walked on
 	// this layout after Phase 3.4 is built.
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16, D-17):
+	// the List and Map switch is gone; the fallback between the Show button and
+	// the empty blocks is the sheet handle (#sheet-handle, shown only on a
+	// phone). The Phase 3.1 and Phase 4 hands-on tests are walked on this layout
+	// after Phase 3.4 is built.
 	p09Ordered(t, afterRetract, "focusAfterRetract",
-		"removal.map", "removal.next", "removal.prev", "currentTabLink()", "'view-toggle'", "'feed-empty'",
+		"removal.map", "removal.next", "removal.prev", "currentTabLink()", "'sheet-handle'", "'feed-empty'",
 		"'feed-empty-history'", "'disputed-empty'", "'confirmed-empty'", "'filter-empty'")
 	p09MustContain(t, "focusAfterRetract", afterRetract,
 		"setAttribute('tabindex', '-1')", "'popup'", "focusIsLost(")

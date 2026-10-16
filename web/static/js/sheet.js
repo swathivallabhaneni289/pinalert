@@ -106,6 +106,441 @@ window.PinalertSheet = (function () {
     return 'list';
   }
 
+  // ---- The glue ------------------------------------------------------------
+
+  var PHONE_QUERY = '(max-width: 899.98px)';
+  var REDUCED_QUERY = '(prefers-reduced-motion: reduce)';
+
+  // The sheet and the map above it ease for 0.3s (phone.css). The settle runs
+  // when the sheet's top transition ends, and this timer is the net for a snap
+  // that moves nothing, so the map is always measured again.
+  var SETTLE_MS = 350;
+
+  // The handle's two accessible names (UI-SPEC 2b). The name says what the
+  // button does next: it is the second one only at full.
+  var NAME_MORE = 'Show more of the list';
+  var NAME_MAP = 'Show the map again';
+
+  var boxEl = null;
+  var sheetEl = null;
+  var handleEl = null;
+  var handleRowEl = null;
+  var headEl = null;
+
+  var snap = 'half';
+  var tops = snapTops(0);
+  var active = false;
+  var reduced = false;
+  var remembered = null;
+  var settleTimer = null;
+  var relayoutFrame = null;
+  var phoneQuery = null;
+
+  // The pointer drag in flight, the touch gesture in flight, and the time up to
+  // which the click that follows a drag is swallowed.
+  var drag = null;
+  var touch = null;
+  var suppressClickUntil = 0;
+
+  function now() {
+    return window.performance && typeof window.performance.now === 'function' ? window.performance.now() : Date.now();
+  }
+
+  // measure reads the box height and works out the three tops from it.
+  function measure() {
+    tops = snapTops(boxEl ? boxEl.clientHeight : 0);
+    return tops;
+  }
+
+  // writeTop puts the sheet top on the box. The sheet and the map both read the
+  // custom property (phone.css), so one write moves both.
+  function writeTop(px) {
+    boxEl.style.setProperty('--sheet-top', px + 'px');
+  }
+
+  // applySnap records a position and writes the words that say it: data-snap on
+  // the sheet, aria-expanded true only at full, and the handle's name.
+  function applySnap(name) {
+    snap = name;
+    sheetEl.setAttribute('data-snap', name);
+    if (handleEl) {
+      handleEl.setAttribute('aria-expanded', name === 'full' ? 'true' : 'false');
+      handleEl.setAttribute('aria-label', name === 'full' ? NAME_MAP : NAME_MORE);
+    }
+  }
+
+  // syncMap tells the map the box above the sheet has its final size. The map
+  // measures itself again once, with no animation and no pan, and brings the
+  // chosen pin in when it fell under the sheet (map.js resizeToSheet). It waits
+  // one frame so the CSS height has landed.
+  function syncMap() {
+    var run = function () {
+      if (active && window.PinalertMap && typeof window.PinalertMap.resizeToSheet === 'function') {
+        window.PinalertMap.resizeToSheet(tops[snap]);
+      }
+    };
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(run);
+    } else {
+      run();
+    }
+  }
+
+  function settle() {
+    if (settleTimer !== null) {
+      window.clearTimeout(settleTimer);
+      settleTimer = null;
+    }
+    syncMap();
+  }
+
+  // withoutEasing writes a top at once, with the transitions switched off for
+  // that write only.
+  function withoutEasing(fn) {
+    boxEl.setAttribute('data-dragging', '');
+    fn();
+    void sheetEl.offsetHeight;
+    boxEl.removeAttribute('data-dragging');
+  }
+
+  // setSnap moves the sheet to full, half or short. It eases unless the person
+  // asked for reduced motion or opts.instant is true, and it measures the map
+  // again when the move has settled. It does nothing on a laptop.
+  function setSnap(name, opts) {
+    if (!active || ORDER.indexOf(name) === -1) {
+      return snap;
+    }
+    measure();
+    applySnap(name);
+    if (settleTimer !== null) {
+      window.clearTimeout(settleTimer);
+      settleTimer = null;
+    }
+    if (reduced || (opts && opts.instant)) {
+      withoutEasing(function () {
+        writeTop(tops[name]);
+      });
+      settle();
+    } else {
+      writeTop(tops[name]);
+      settleTimer = window.setTimeout(settle, SETTLE_MS);
+    }
+    return name;
+  }
+
+  function getSnap() {
+    return snap;
+  }
+
+  // remember keeps the position the sheet is in, once, before the report detail
+  // opens over the map and the sheet drops to short beneath it; restore puts
+  // the sheet back there when the detail closes (orchestrator decision 8). A
+  // second remember before a restore keeps the first.
+  function remember() {
+    if (active && remembered === null) {
+      remembered = snap;
+    }
+  }
+
+  function restore() {
+    if (remembered === null) {
+      return;
+    }
+    var back = remembered;
+    remembered = null;
+    setSnap(back);
+  }
+
+  // relayout recomputes the tops when the box changed size (a rotation, the
+  // address bar of the browser, the keyboard) and puts the sheet on its
+  // position again at once. It never runs while a finger holds the sheet.
+  function relayout() {
+    relayoutFrame = null;
+    if (!active || !boxEl || drag !== null || (touch !== null && touch.owner === 'sheet')) {
+      return;
+    }
+    setSnap(snap, { instant: true });
+  }
+
+  function scheduleRelayout() {
+    if (relayoutFrame !== null) {
+      return;
+    }
+    if (typeof window.requestAnimationFrame === 'function') {
+      relayoutFrame = window.requestAnimationFrame(relayout);
+    } else {
+      relayout();
+    }
+  }
+
+  // ---- Pointer drag on the handle row and the list head --------------------
+
+  // currentTop is where the sheet is right now, mid ease included, in pixels
+  // from the top of the box.
+  function currentTop() {
+    return sheetEl.offsetTop;
+  }
+
+  function clampTop(px) {
+    return Math.max(0, Math.min(tops.short, px));
+  }
+
+  function startDrag(startY, startSnap) {
+    measure();
+    return { y: startY, top: currentTop(), cur: currentTop(), startSnap: startSnap, moved: false };
+  }
+
+  // moveDrag follows the finger once it has moved more than a tap.
+  function moveDrag(state, y) {
+    var dy = y - state.y;
+    if (!state.moved) {
+      if (Math.abs(dy) < TAP_PX) {
+        return false;
+      }
+      state.moved = true;
+      boxEl.setAttribute('data-dragging', '');
+    }
+    state.cur = clampTop(state.top + dy);
+    writeTop(state.cur);
+    return true;
+  }
+
+  // endDrag lets go: the sheet eases to the position the release lands on, and
+  // the click that follows the release is swallowed.
+  function endDrag(state) {
+    if (!state.moved) {
+      return;
+    }
+    suppressClickUntil = now() + 60;
+    boxEl.removeAttribute('data-dragging');
+    setSnap(nearestSnap(tops, state.cur, state.top, state.startSnap));
+  }
+
+  function onPointerDown(evt) {
+    if (!active || drag !== null) {
+      return;
+    }
+    if (evt.button !== undefined && evt.button > 0) {
+      return;
+    }
+    if (evt.isPrimary === false) {
+      return;
+    }
+    if (evt.target && typeof evt.target.closest === 'function' && evt.target.closest('.show-menu')) {
+      return;
+    }
+    drag = startDrag(evt.clientY, snap);
+    drag.id = evt.pointerId;
+    document.addEventListener('pointermove', onPointerMove, { passive: false });
+    document.addEventListener('pointerup', onPointerUp);
+    document.addEventListener('pointercancel', onPointerUp);
+  }
+
+  function onPointerMove(evt) {
+    if (drag === null || evt.pointerId !== drag.id) {
+      return;
+    }
+    if (moveDrag(drag, evt.clientY) && evt.cancelable) {
+      evt.preventDefault();
+    }
+  }
+
+  function onPointerUp(evt) {
+    if (drag === null || evt.pointerId !== drag.id) {
+      return;
+    }
+    var finished = drag;
+    drag = null;
+    document.removeEventListener('pointermove', onPointerMove);
+    document.removeEventListener('pointerup', onPointerUp);
+    document.removeEventListener('pointercancel', onPointerUp);
+    endDrag(finished);
+  }
+
+  // swallowClick drops the click that follows a drag, before it reaches the
+  // handle or the Show button.
+  function swallowClick(evt) {
+    if (now() < suppressClickUntil) {
+      evt.stopPropagation();
+      evt.preventDefault();
+    }
+  }
+
+  // ---- Touch on the list body ----------------------------------------------
+
+  function insideDragZone(target) {
+    return !!(target && typeof target.closest === 'function' &&
+      target.closest('.sheet__handle-row, .list-head'));
+  }
+
+  function onTouchStart(evt) {
+    touch = null;
+    if (!active || !evt.touches || evt.touches.length !== 1 || insideDragZone(evt.target)) {
+      return;
+    }
+    touch = startDrag(evt.touches[0].clientY, snap);
+    touch.owner = null;
+  }
+
+  // onTouchMove decides who owns the gesture on its first movement, and takes
+  // the gesture from the browser only when the sheet owns it. The listener is
+  // not passive, so preventDefault holds (iOS Safari needs both).
+  function onTouchMove(evt) {
+    if (touch === null || !evt.touches || evt.touches.length !== 1) {
+      return;
+    }
+    var y = evt.touches[0].clientY;
+    if (touch.owner === null) {
+      var dy = y - touch.y;
+      if (Math.abs(dy) < 3) {
+        return;
+      }
+      touch.owner = gestureOwner(snap, sheetEl.scrollTop, dy);
+    }
+    if (touch.owner !== 'sheet') {
+      return;
+    }
+    if (evt.cancelable) {
+      evt.preventDefault();
+    }
+    moveDrag(touch, y);
+  }
+
+  function onTouchEnd() {
+    if (touch === null) {
+      return;
+    }
+    var finished = touch;
+    touch = null;
+    if (finished.owner === 'sheet') {
+      endDrag(finished);
+    }
+  }
+
+  // ---- The handle and the keyboard ------------------------------------------
+
+  function onHandleClick() {
+    if (!active) {
+      return;
+    }
+    setSnap(snap === 'full' ? 'half' : 'full');
+  }
+
+  function onHandleKey(evt) {
+    if (!active) {
+      return;
+    }
+    if (evt.key === 'ArrowUp' || evt.key === 'ArrowDown') {
+      evt.preventDefault();
+      setSnap(stepSnap(snap, evt.key === 'ArrowUp' ? 'up' : 'down'));
+    }
+  }
+
+  // onFocusIn grows a short sheet to half when focus lands on something that
+  // short sheet clips: a row, or an item of the Show menu. The handle and the
+  // Show button are always in view, so they leave the sheet where it is.
+  function onFocusIn(evt) {
+    if (!active || snap !== 'short') {
+      return;
+    }
+    var target = evt.target;
+    if (target === handleEl || (target && target.id === 'show-button')) {
+      return;
+    }
+    setSnap('half');
+  }
+
+  // ---- Boot ----------------------------------------------------------------
+
+  function refreshActive() {
+    var phone = !!phoneQuery && phoneQuery.matches;
+    if (phone === active) {
+      return;
+    }
+    active = phone;
+    if (active) {
+      measure();
+      setSnap('half', { instant: true });
+    } else {
+      remembered = null;
+      boxEl.style.removeProperty('--sheet-top');
+      boxEl.removeAttribute('data-dragging');
+    }
+  }
+
+  function listen(query, fn) {
+    if (!query) {
+      return;
+    }
+    if (typeof query.addEventListener === 'function') {
+      query.addEventListener('change', fn);
+    } else if (typeof query.addListener === 'function') {
+      query.addListener(fn);
+    }
+  }
+
+  function init() {
+    boxEl = document.getElementById('app-shell');
+    sheetEl = document.getElementById('report-sheet');
+    handleEl = document.getElementById('sheet-handle');
+    if (!boxEl || !sheetEl) {
+      return;
+    }
+    handleRowEl = sheetEl.querySelector('.sheet__handle-row');
+    headEl = sheetEl.querySelector('.list-head');
+
+    phoneQuery = window.matchMedia ? window.matchMedia(PHONE_QUERY) : null;
+    var reducedQuery = window.matchMedia ? window.matchMedia(REDUCED_QUERY) : null;
+    reduced = !!reducedQuery && reducedQuery.matches;
+    listen(reducedQuery, function () {
+      reduced = !!reducedQuery.matches;
+    });
+    listen(phoneQuery, refreshActive);
+
+    if (handleEl) {
+      handleEl.addEventListener('click', onHandleClick);
+      handleEl.addEventListener('keydown', onHandleKey);
+    }
+    [handleRowEl, headEl].forEach(function (el) {
+      if (el) {
+        el.addEventListener('pointerdown', onPointerDown);
+      }
+    });
+    sheetEl.addEventListener('click', swallowClick, true);
+    sheetEl.addEventListener('touchstart', onTouchStart, { passive: true });
+    sheetEl.addEventListener('touchmove', onTouchMove, { passive: false });
+    sheetEl.addEventListener('touchend', onTouchEnd);
+    sheetEl.addEventListener('touchcancel', onTouchEnd);
+    sheetEl.addEventListener('focusin', onFocusIn);
+    sheetEl.addEventListener('transitionend', function (evt) {
+      if (evt.target === sheetEl && evt.propertyName === 'top' && settleTimer !== null) {
+        settle();
+      }
+    });
+
+    // The box is measured with a ResizeObserver, not only the window: the
+    // address bar of the browser and the keyboard change the visible height
+    // without a classic resize.
+    if (typeof window.ResizeObserver === 'function') {
+      new window.ResizeObserver(scheduleRelayout).observe(boxEl);
+    }
+    window.addEventListener('resize', scheduleRelayout);
+    window.addEventListener('orientationchange', scheduleRelayout);
+    if (window.visualViewport && typeof window.visualViewport.addEventListener === 'function') {
+      window.visualViewport.addEventListener('resize', scheduleRelayout);
+    }
+
+    refreshActive();
+  }
+
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  }
+
   var api = {
     SHEET_SHORT_HEIGHT: SHEET_SHORT_HEIGHT,
     FLICK_PX: FLICK_PX,
@@ -113,7 +548,11 @@ window.PinalertSheet = (function () {
     snapTops: snapTops,
     nearestSnap: nearestSnap,
     stepSnap: stepSnap,
-    gestureOwner: gestureOwner
+    gestureOwner: gestureOwner,
+    setSnap: setSnap,
+    getSnap: getSnap,
+    remember: remember,
+    restore: restore
   };
 
   return api;

@@ -40,8 +40,14 @@ const phoneBlockMedia = "@media (max-width: 899.98px)"
 // .profile-logout left this list, because the Log out form is removed from the
 // Activity page (Log out lives in Settings and the person menu). The Phase 3.1
 // and Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16, D-17): the
+// sheet handle row joins this list, because the phone list sheet and its handle
+// are not drawn at 900px and up. The Phase 3.1 and Phase 4 hands-on tests are
+// walked on this layout after Phase 3.4 is built.
 var phoneBaseHideHeads = []string{
 	".feed-heading", ".app-bar", ".app-topbar__title", ".app-topbar__back", ".app-topbar__gear",
+	".sheet__handle-row",
 }
 
 // phoneRules parses phone.css alone.
@@ -178,7 +184,14 @@ func TestPhoneRulesLiveInTheNarrowBlock(t *testing.T) {
 					// the same corner the trust panel already uses. No control
 					// becomes a pill. The Phase 3.1 and Phase 4 hands-on tests are
 					// walked on this layout after Phase 3.4 is built.
-					ok := component == "0" || component == "4px" || component == "8px" || component == "12px" || component == "50%" || component == "0px"
+					//
+					// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT
+					// D-16, UI-SPEC 2b): 16px joins the allowed corners for the top
+					// corners of the phone list sheet and its handle row, the sheet's own
+					// radius. It is a sheet edge, not a control, so no control becomes
+					// a pill. The Phase 3.1 and Phase 4 hands-on tests are walked on
+					// this layout after Phase 3.4 is built.
+					ok := component == "0" || component == "4px" || component == "8px" || component == "12px" || component == "16px" || component == "50%" || component == "0px"
 					if !ok {
 						t.Errorf("%q border-radius %q is more than the 8px house corner", r.Head, value)
 					}
@@ -263,8 +276,17 @@ func TestPhoneBottomNavMarkup(t *testing.T) {
 	if strings.Contains(nav[1], "Past") {
 		t.Errorf("bottom nav names a Past tab, which needs a history view that does not exist")
 	}
-	if strings.Contains(index, `class="view-toggle" id="view-toggle"`) == false {
-		t.Errorf("the view toggle button stays in the markup, only phone.css hides it on phones")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16, D-17):
+	// the List and Map switch is retired. The list is a sheet over the map with
+	// a handle button (a real button with an expanded state, named by its
+	// action), and the markup holds no switch and no data-view attribute. The
+	// Phase 3.1 and Phase 4 hands-on tests are walked on this layout after
+	// Phase 3.4 is built.
+	if strings.Contains(index, `view-toggle`) || strings.Contains(index, `data-view=`) {
+		t.Errorf("the markup still holds the retired List and Map switch or its data-view attribute")
+	}
+	if !strings.Contains(index, `<button type="button" class="sheet__handle" id="sheet-handle" aria-expanded="false"`) {
+		t.Errorf("the phone list sheet needs its handle button with aria-expanded")
 	}
 }
 

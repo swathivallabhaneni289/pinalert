@@ -381,6 +381,16 @@ func TestReadOnlyLabelsRoundedControlsNot(t *testing.T) {
 		if r.File == "static/css/welcome.css" && (r.Head == ".welcome__progress" || r.Head == ".welcome__progress-fill" || r.Head == ".welcome__dot") {
 			continue
 		}
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16,
+		// UI-SPEC 2b): the grey grabber drawn on the phone list sheet's handle
+		// (40 by 4px, radius 4px) is a drawing inside the handle button, not a
+		// control: it is aria-hidden and cannot be pressed, the whole 44px row is
+		// the one button. phone.css is exempted for exactly this head. The Phase
+		// 3.1 and Phase 4 hands-on tests are walked on this layout after Phase 3.4
+		// is built.
+		if r.File == "static/css/phone.css" && r.Head == ".sheet__handle > .sheet__grabber" {
+			continue
+		}
 		// Amended 2026-10-17 by Phase 3.4 plan 12 (UI-SPEC Surface 5d item 3,
 		// D-24a): the 36px disc that holds the phone glyph in the Call 112 box
 		// is a drawing, not a control: it is aria-hidden and cannot be pressed,
@@ -432,7 +442,11 @@ func TestReadOnlyLabelsRoundedControlsNot(t *testing.T) {
 
 	// Non vacuous: the checked set holds the well known controls, and the
 	// exemptions are real rules that still declare 50 percent.
-	for _, head := range []string{".vote-btn:not([hidden])", ".btn", ".view-toggle"} {
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16): the
+	// List and Map switch is gone, so the Show button stands in as the third
+	// well known control. The Phase 3.1 and Phase 4 hands-on tests are walked on
+	// this layout after Phase 3.4 is built.
+	for _, head := range []string{".vote-btn:not([hidden])", ".btn", ".show-button"} {
 		if !checkedHeads[head] {
 			t.Errorf("the radius scan never checked a rule with head %q", head)
 		}

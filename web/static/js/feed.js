@@ -26,8 +26,6 @@
 
   var SEVERITY_RANK = { critical: 3, medium: 2, low: 1 };
 
-  var SVG_NS = 'http://www.w3.org/2000/svg';
-
   // REPORT_PARAM is the address parameter of a link to one report. It is read
   // once on load and never removed from the address.
   var REPORT_PARAM = 'report';
@@ -56,7 +54,6 @@
   var confirmedEmptyEl = document.getElementById('confirmed-empty');
   var errorEl = document.getElementById('feed-error');
   var retryBtn = document.getElementById('feed-retry');
-  var viewToggleBtn = document.getElementById('view-toggle');
   var appShellEl = document.getElementById('app-shell');
   var queueStripEl = document.getElementById('queue-strip');
   var showButtonEl = document.getElementById('show-button');
@@ -207,9 +204,6 @@
     applySelectionHighlight(id);
     if (window.PinalertMap && typeof PinalertMap.flyTo === 'function') {
       PinalertMap.flyTo(id, { opener: 'list' });
-    }
-    if (appShellEl && appShellEl.getAttribute('data-view') === 'list') {
-      switchView('map');
     }
   }
 
@@ -456,7 +450,7 @@
   // focusAfterRemoval is the one place focus is chosen after a poll removed
   // the report that owned it (A67, in the A52 order): the first displayed
   // row among the candidates, else the map, else the Show button, else
-  // the view toggle, else the empty state. It acts when focus fell to the page
+  // the sheet handle, else the empty state. It acts when focus fell to the page
   // body or sits in a popup that map.js already marked closed, and the browser
   // decides only where focus goes, never which reports exist.
   function focusAfterRemoval(candidates) {
@@ -482,8 +476,9 @@
       showEl.focus();
       return;
     }
-    if (elementIsShown(viewToggleBtn)) {
-      viewToggleBtn.focus();
+    var handle = document.getElementById('sheet-handle');
+    if (elementIsShown(handle)) {
+      handle.focus();
       return;
     }
     var empties = [emptyEl, historyEmptyEl, confirmedEmptyEl, disputedEmptyEl, filterEmptyEl];
@@ -1030,128 +1025,6 @@
     pane.scrollTo({ top: Math.max(0, top), behavior: calm ? 'auto' : 'smooth' });
   }
 
-  // createToggleIcon builds a minimal inline glyph for the view-toggle
-  // button. UI-SPEC's Icon Mapping only covers the 9 category icons; no
-  // dedicated map/list asset exists, and adding new SVG files under
-  // /static/icons (e.g. new-icon.svg) is outside this plan's two-file
-  // ownership. Built via the SVG DOM API (never a markup string),
-  // aria-hidden since the button's text label
-  // already carries the meaning.
-  function createToggleIcon(kind) {
-    var svg = document.createElementNS(SVG_NS, 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('width', '16');
-    svg.setAttribute('height', '16');
-    svg.setAttribute('aria-hidden', 'true');
-    svg.setAttribute('focusable', 'false');
-    svg.setAttribute('class', 'view-toggle__icon');
-
-    var path = document.createElementNS(SVG_NS, 'path');
-    path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', 'currentColor');
-    path.setAttribute('stroke-width', '2');
-    path.setAttribute('stroke-linecap', 'round');
-    path.setAttribute('stroke-linejoin', 'round');
-
-    if (kind === 'list') {
-      path.setAttribute('d', 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01');
-    } else {
-      path.setAttribute('d', 'M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z M9 4v14 M15 6v14');
-    }
-
-    svg.appendChild(path);
-    return svg;
-  }
-
-  // updateToggleLabel labels the button by its destination (Copywriting
-  // Contract): it reads "List" while the map is showing and "Map" while
-  // the list is showing.
-  function updateToggleLabel() {
-    if (!viewToggleBtn || !appShellEl) {
-      return;
-    }
-    var showingList = appShellEl.getAttribute('data-view') === 'list';
-    var destination = showingList ? 'Map' : 'List';
-
-    while (viewToggleBtn.firstChild) {
-      viewToggleBtn.removeChild(viewToggleBtn.firstChild);
-    }
-    viewToggleBtn.appendChild(createToggleIcon(showingList ? 'map' : 'list'));
-
-    var label = document.createElement('span');
-    Pinalert.setText(label, destination);
-    viewToggleBtn.appendChild(label);
-
-    viewToggleBtn.setAttribute('aria-label', 'Switch to ' + destination.toLowerCase() + ' view');
-    viewToggleBtn.setAttribute('aria-pressed', showingList ? 'true' : 'false');
-  }
-
-  function moveFocusIntoView(view) {
-    var target;
-    if (view === 'map') {
-      // An open popup card takes focus first (A51).
-      if (window.PinalertMap && typeof PinalertMap.focusOpenPopup === 'function' && PinalertMap.focusOpenPopup()) {
-        return;
-      }
-      target = reportOpener();
-    } else {
-      target = reportListEl && reportListEl.querySelector('.report-row');
-    }
-    if (target) {
-      target.focus();
-    } else if (viewToggleBtn) {
-      viewToggleBtn.focus();
-    }
-  }
-
-  // switchView flips the shell's data-view attribute; main.css owns every
-  // show/hide rule keyed off it. Order matters for the Leaflet fix below:
-  // the pane must be un-hidden before the resize event fires, or Leaflet
-  // reads a zero-size container.
-  function switchView(view) {
-    if (!appShellEl) {
-      return;
-    }
-    appShellEl.setAttribute('data-view', view);
-    updateToggleLabel();
-    syncNoticeCard();
-
-    if (view === 'map') {
-      // map.js keeps its Leaflet map instance private (its returned API is
-      // only {flyTo, highlight}), so this file cannot call invalidateSize()
-      // directly. Dispatching a window resize event is the standard way to
-      // reach it anyway: Leaflet's default trackResize option listens for
-      // exactly this event and calls the map's own invalidateSize() in
-      // response, which is what a map hidden-then-shown via display:none
-      // needs to stop rendering with a stale container size.
-      window.dispatchEvent(new Event('resize'));
-    }
-
-    moveFocusIntoView(view);
-  }
-
-  if (viewToggleBtn) {
-    // #view-toggle ships nested inside .pane--list in index.html.tmpl.
-    // main.css's narrow-screen rules set .pane--list to display:none while
-    // data-view="map" — an ancestor's display:none removes every
-    // descendant from rendering regardless of the descendant's own
-    // position/display values, so the position:fixed toggle button
-    // vanishes with it, stranding a narrow-screen visitor on the map with
-    // no way back to the list. Reparenting the button under #app-shell
-    // (a sibling of both panes) keeps main.css's breakpoint rules the sole,
-    // untouched authority — .view-toggle's own rules are all element-
-    // scoped, so nothing about its appearance or positioning depends on
-    // which element contains it.
-    if (appShellEl && viewToggleBtn.parentNode !== appShellEl) {
-      appShellEl.appendChild(viewToggleBtn);
-    }
-
-    viewToggleBtn.addEventListener('click', function () {
-      var current = appShellEl ? appShellEl.getAttribute('data-view') : 'map';
-      switchView(current === 'list' ? 'map' : 'list');
-    });
-  }
-
   if (retryBtn) {
     retryBtn.addEventListener('click', function () {
       Pinalert.fetchReports();
@@ -1224,7 +1097,6 @@
 
   Pinalert.subscribe(render);
   render(Pinalert.state);
-  updateToggleLabel();
 
   window.setInterval(refreshAgeAndTime, 60000);
   window.setInterval(refreshStaleLine, 60000);
@@ -1302,7 +1174,12 @@
   }
   if (noticeQueueBtn) {
     noticeQueueBtn.addEventListener('click', function () {
-      switchView('list');
+      // The list is always on the page now (a sheet on the phone, a column on
+      // the laptop), so the button only has to bring the waiting strip into
+      // view: a short sheet grows to half first.
+      if (window.PinalertSheet && window.PinalertSheet.getSnap() === 'short') {
+        window.PinalertSheet.setSnap('half');
+      }
       var heading = document.getElementById('queue-strip-heading');
       if (heading) {
         heading.focus();

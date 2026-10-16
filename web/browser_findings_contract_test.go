@@ -134,43 +134,49 @@ func TestBrowserFindingF2PhoneCardIsDenser(t *testing.T) {
 // TestBrowserFindingF1PhoneMapStripLeavesThreeCards pins finding F1: at 390
 // by 844 only one or two cards were whole above the bottom bar (UI-SPEC wants
 // at least three), because the map took 40 percent of the height and the
-// unofficial bar now sits above the page. The map strip is 176px on a phone
-// (64 + 64 + 48, tokens only), the grid row and the map box agree, and the
-// list pane starts 8px above the tab strip. The tab strip, the heading and
-// the 16px sides of the list are unchanged.
+// unofficial bar now sits above the page.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16, D-17):
+// the 176px map strip and its grid rows are gone. The map fills the box and
+// the list is a sheet over it (sheet.js writes --sheet-top); the map box ends
+// 16px under the sheet's top, and the sheet pads its sides by 16px and holds
+// the whole scrolling list. The three whole cards are met at Full and checked
+// in the browser pass. The Phase 3.1 and Phase 4 hands-on tests are walked on
+// this layout after Phase 3.4 is built.
 func TestBrowserFindingF1PhoneMapStripLeavesThreeCards(t *testing.T) {
 	const phone = "static/css/phone.css"
 	m := browserFindingsPhoneMedia
-	const strip = "calc(var(--space-3xl) * 2 + var(--space-2xl))"
 
 	shell := p31mRule(t, phone, m, "body > .app-shell")
-	if got := p19NoSpace(shell.Decls["grid-template-rows"]); got != p19NoSpace(strip+" minmax(0, 1fr)") {
-		t.Errorf("phone shell rows are %q, want the 176px strip then the list", shell.Decls["grid-template-rows"])
+	if _, rows := shell.Decls["grid-template-rows"]; rows {
+		t.Errorf("phone shell still declares grid rows %q: the 176px strip is gone", shell.Decls["grid-template-rows"])
 	}
+	p16MustDecl(t, "phone shell", shell, map[string]string{"position": "relative", "display": "block"})
 	mapBox := p31mRule(t, phone, m, ".pane--map #map")
-	if got := p19NoSpace(mapBox.Decls["height"]); got != p19NoSpace(strip) {
-		t.Errorf("phone map height is %q, want the same strip as the grid row", mapBox.Decls["height"])
+	if got := p19NoSpace(mapBox.Decls["height"]); got != p19NoSpace("calc(var(--sheet-top, 45%) + var(--space-md))") {
+		t.Errorf("phone map height is %q, want the sheet top plus the 16px overlap", mapBox.Decls["height"])
 	}
 
 	raw := p16ReadStatic(t, phone)
-	for _, old := range []string{"40vh", "40dvh"} {
+	for _, old := range []string{"40vh", "40dvh", "grid-template-rows"} {
 		if strings.Contains(raw, old) {
-			t.Errorf("phone.css still holds the old %s map height", old)
+			t.Errorf("phone.css still holds the old %s", old)
 		}
 	}
 
-	pane := p31mRule(t, phone, m, ".app-shell[data-view] .pane--list")
-	if !strings.HasPrefix(pane.Decls["padding"], "var(--space-sm) var(--space-md) ") {
-		t.Errorf("phone list pane padding is %q, want 8px on top and 16px at the sides", pane.Decls["padding"])
+	sheet := p31mRule(t, phone, m, ".app-shell > .pane--list")
+	if sheet.Decls["padding"] != "0 var(--space-md) var(--space-md)" {
+		t.Errorf("phone sheet padding is %q, want nothing on top and 16px at the sides and below", sheet.Decls["padding"])
 	}
 
-	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
-	// D-18): the tab strip and the heading are gone. The list head keeps its own
-	// height in the scrolling column and adds no side padding of its own, so the
-	// 16px sides of the list are unchanged. The Phase 3.1 and Phase 4 hands-on
-	// tests are walked on this layout after Phase 3.4 is built.
+	// The list head keeps its own height in the scrolling column, sticks under
+	// the 44px handle row, reaches the screen edges with a negative margin and
+	// pads its own 16px sides, so the 16px sides of the cards are unchanged.
 	p16MustDecl(t, "phone list head", p31mRule(t, phone, m, ".pane--list > .list-head"),
-		map[string]string{"flex": "none", "padding-right": "0", "padding-left": "0"})
+		map[string]string{
+			"position": "sticky", "top": "var(--touch-target-min)", "flex": "none",
+			"margin": "0 calc(var(--space-md) * -1)", "padding": "var(--space-sm) var(--space-md)",
+		})
 	for _, gone := range []string{".view-tabs", ".feed-heading", ".feed-note"} {
 		for _, name := range []string{"static/css/feed.css", phone} {
 			if strings.Contains(p16ReadStatic(t, name), gone) {

@@ -41,10 +41,15 @@ func TestReviewFixA2MapFollowsLoadingMark(t *testing.T) {
 
 	// The selector relies on the map pane and the list pane being children of
 	// the shell, in this order.
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16, D-17):
+	// the list pane is the phone list sheet and now carries id="report-sheet"
+	// on its opening tag. The Phase 3.1 and Phase 4 hands-on tests are walked on
+	// this layout after Phase 3.4 is built.
 	tmpl := p13ReadTemplate(t, "index.html.tmpl")
 	p13Ordered(t, tmpl, "index.html.tmpl panes",
 		`<div class="app-shell" id="app-shell"`, `<section class="pane pane--map">`,
-		`<p class="map-label" id="map-label" hidden></p>`, `<section class="pane pane--list">`)
+		`<p class="map-label" id="map-label" hidden></p>`, `<section class="pane pane--list" id="report-sheet"`)
 }
 
 // TestReviewFixA2LinkEndsOnRedrawClose pins the follow up of CR-01: a redraw

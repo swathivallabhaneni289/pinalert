@@ -3,10 +3,9 @@
  *
  * Owned by plan 01-06. Consumes main.css's custom properties and shared
  * component classes (.report-row, .sev-*, .age-*, .icon-badge, .skeleton-row,
- * .empty-state, .error-state, .view-toggle) exclusively — no raw hex color,
- * no hard-coded pixel spacing outside a token, no font-size literal. This
- * file adds only the list container layout, row internals, and the one
- * narrow-screen adjustment main.css does not already cover.
+ * .empty-state, .error-state) exclusively — no raw hex color, no hard-coded
+ * pixel spacing outside a token, no font-size literal. This file adds only the
+ * list container layout and row internals; the phone sheet is in phone.css.
  */
 
 /*
@@ -752,10 +751,6 @@
   height: 48%;
 }
 
-.view-toggle__icon {
-  flex-shrink: 0;
-}
-
 /*
  * Compact report rows, size A of sketch 006 (03.1 D-19 to D-21), at every
  * width. These rules were the phone card of phone.css and are lifted here so
@@ -920,14 +915,4 @@
   content: "\00b7";
   content: "\00b7" / "";
   margin-right: var(--space-sm);
-}
-
-@media (max-width: 899.98px) {
-  /* #view-toggle is reparented to #app-shell by feed.js precisely so it
-     survives main.css hiding .pane--list in narrow map view; this is just
-     the padding so the list's last row is not obscured by that
-     fixed-position button sitting over the bottom-left corner. */
-  #report-list {
-    padding-bottom: calc(var(--touch-target-min) + var(--space-lg) * 2);
-  }
 }

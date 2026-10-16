@@ -583,9 +583,10 @@ body {
 }
 
 /* -------------------------------------------------------------------------
- * Layout containers (D-06 wide-screen split view, D-07 narrow-screen
- * map-default with toggle). Plan 01-04 only sets/reads the `data-view`
- * attribute on #app-shell; all layout behavior lives here.
+ * Layout containers (D-06 wide-screen split view). Below 900px the list is a
+ * sheet over the map (Phase 3.4, D-16): phone.css lays it out and sheet.js
+ * moves it. The List and Map switch and the data-view attribute it drove are
+ * gone, so no rule here keys off a view.
  * ---------------------------------------------------------------------- */
 .app-shell {
   display: grid;
@@ -633,10 +634,6 @@ body {
   height: calc(100dvh - var(--disclaimer-bar-height));
 }
 
-.view-toggle {
-  display: none;
-}
-
 @media (min-width: 900px) {
   .app-shell {
     grid-template-columns: 1fr 1fr;
@@ -654,45 +651,6 @@ body {
      both read it. The phone's one row value is set in phone.css. */
   .app-shell > .pane--map {
     --map-tools-height: calc(var(--space-sm) + var(--touch-target-min) + var(--space-sm) + var(--touch-target-min));
-  }
-}
-
-@media (max-width: 899.98px) {
-  .app-shell[data-view="map"] .pane--list {
-    display: none;
-  }
-
-  .app-shell[data-view="map"] .pane--map {
-    display: block;
-  }
-
-  .app-shell[data-view="list"] .pane--map {
-    display: none;
-  }
-
-  .app-shell[data-view="list"] .pane--list {
-    display: block;
-  }
-
-  .view-toggle {
-    display: inline-flex;
-    position: fixed;
-    left: var(--space-lg);
-    bottom: var(--space-lg);
-    z-index: 1000;
-    min-height: var(--touch-target-min);
-    padding: var(--space-sm) var(--space-md);
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-xs);
-    border: 1px solid var(--color-border);
-    /* site-design-rules.md: no pill-shaped buttons. 8px matches the
-       category tile and the account menu panel, not a new scale; the
-       deferred UI phase may re-tokenise it. */
-    border-radius: 8px;
-    background: var(--color-bg);
-    color: var(--color-text);
-    cursor: pointer;
   }
 }
 
