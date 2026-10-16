@@ -1,0 +1,414 @@
+/*
+ * Pinalert welcome.css (Phase 3.4, plan 10, UI-SPEC Surface 7, D-27, D-28)
+ *
+ * The first-time flow at /welcome: four steps on a page of their own. Written
+ * mobile first. The phone is the base: full screen on --color-bg with a 4px
+ * progress bar at the top and stacked full width actions at the bottom. The
+ * laptop arrangement sits in the one min-width 900px block at the end: a window
+ * min(980px, 94%) wide with a 300px step panel on the left. There is no close
+ * control and nothing here handles Escape, because the flow is completed and not
+ * closed.
+ *
+ * Tokens only. The glyph base (.app-icon) comes from app-bar.css; the field,
+ * label and place list looks come from window.css; the legal text looks come
+ * from legal.css. Display rules carry :not([hidden]) so the hidden attribute
+ * still hides a step, the search block and the messages.
+ */
+
+/* ---- Glyphs this page draws that app-bar.css does not mask ---------------- */
+
+.welcome .app-icon--check {
+  -webkit-mask-image: url("/static/icons/check.svg");
+  mask-image: url("/static/icons/check.svg");
+}
+
+.welcome .app-icon--circle-alert {
+  -webkit-mask-image: url("/static/icons/circle-alert.svg");
+  mask-image: url("/static/icons/circle-alert.svg");
+}
+
+/* ---- Phone (the base) ----------------------------------------------------- */
+
+.welcome-page {
+  background: var(--color-bg);
+}
+
+.welcome {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  box-sizing: border-box;
+  height: 100vh;
+  height: 100dvh;
+  padding: 20px 20px 24px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+}
+
+/* The 4px bar: the track is the surface colour, the fill is the text colour,
+   and its width is the step over the number of steps. */
+.welcome__progress {
+  flex: none;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.welcome__progress-fill {
+  height: 100%;
+  width: 25%;
+  border-radius: 4px;
+  background: var(--color-text);
+}
+
+.welcome[data-step="2"] .welcome__progress-fill {
+  width: 50%;
+}
+
+.welcome[data-step="3"] .welcome__progress-fill {
+  width: 75%;
+}
+
+.welcome[data-step="4"] .welcome__progress-fill {
+  width: 100%;
+}
+
+/* The side panel is a laptop part. */
+.welcome__side {
+  display: none;
+}
+
+.welcome__pane {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.welcome__step:not([hidden]) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-md);
+  min-height: 0;
+}
+
+.welcome__label {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+}
+
+.welcome__title {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold);
+}
+
+.welcome__lead {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+/* Step 1: three cards. */
+.welcome__cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.welcome__card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
+
+.welcome__card-text {
+  min-width: 0;
+}
+
+.welcome__card-title {
+  margin: 0 0 var(--space-xs);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.welcome__card-body {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+/* The warning card: the Critical tint and border, the glyph in the Critical
+   colour. The text stays --color-text on the tint. */
+.welcome__card--warning {
+  border-color: var(--color-severity-critical);
+  background: var(--color-severity-critical-bg);
+}
+
+.welcome__card--warning > .app-icon {
+  color: var(--color-severity-critical);
+}
+
+/* Step 2: the one box that scrolls. */
+.welcome__scrollbox {
+  flex: 1 1 auto;
+  min-height: 14rem;
+  box-sizing: border-box;
+  padding: var(--space-xs) 20px 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+
+/* Disagree shows this one message and nothing else moves. */
+.welcome__notice:not([hidden]) {
+  display: block;
+  margin: 0;
+  padding: var(--space-sm) var(--space-12);
+  border-radius: 8px;
+  background: var(--color-severity-critical-bg);
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+/* Step 3: the icon tile and the search a person opens instead of the browser
+   question. */
+.welcome__tile {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.welcome__tile .app-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.welcome__search:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+/* Step 4. */
+.welcome__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+/* The actions sit at the bottom of the step. On the phone they are stacked
+   full width buttons 48px high. */
+.welcome__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: auto;
+  padding-top: var(--space-sm);
+}
+
+.welcome__actions .btn {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 var(--space-lg);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Disagree and Agree sit side by side on both sizes, equal width on the phone. */
+.welcome__actions--pair {
+  flex-direction: row;
+}
+
+.welcome__actions--pair .btn {
+  flex: 1 1 0;
+}
+
+/* ---- Laptop ---------------------------------------------------------------- */
+
+@media (min-width: 900px) {
+  .welcome-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: var(--color-surface);
+  }
+
+  .welcome {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    gap: 0;
+    width: min(980px, 94%);
+    height: min(680px, 92vh);
+    padding: 0;
+    overflow: hidden;
+    border-radius: 12px;
+    box-shadow: var(--shadow-window);
+  }
+
+  .welcome__progress {
+    display: none;
+  }
+
+  .welcome__side {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    padding: var(--space-xl) 28px;
+    overflow-y: auto;
+    background: var(--color-notice-bg);
+  }
+
+  .welcome__wordmark {
+    margin: 0;
+    color: var(--color-notice-text);
+    font-size: var(--font-size-display);
+    line-height: var(--line-height-display);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .welcome__tagline {
+    margin: 0;
+    color: var(--color-notice-sub);
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+  }
+
+  .welcome__steps {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-12);
+    margin: var(--space-md) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .welcome__steps-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-12);
+    color: var(--color-notice-dim);
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+    font-weight: var(--font-weight-regular);
+  }
+
+  /* The circle: a 28px ring with the number, or a tick once the step is done. */
+  .welcome__dot {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--color-notice-outline);
+    border-radius: 50%;
+    font-size: var(--font-size-caption);
+    line-height: var(--line-height-caption);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .welcome__dot-tick {
+    display: none;
+    width: 16px;
+    height: 16px;
+  }
+
+  .welcome__steps-item[data-state="current"] {
+    color: var(--color-notice-text);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .welcome__steps-item[data-state="current"] .welcome__dot {
+    border-color: var(--color-notice-text);
+    background: var(--color-notice-text);
+    color: var(--color-notice-bg);
+  }
+
+  .welcome__steps-item[data-state="done"] {
+    color: var(--color-notice-sub);
+  }
+
+  .welcome__steps-item[data-state="done"] .welcome__dot {
+    border-color: var(--color-notice-sub);
+  }
+
+  .welcome__steps-item[data-state="done"] .welcome__dot-num {
+    display: none;
+  }
+
+  .welcome__steps-item[data-state="done"] .welcome__dot-tick {
+    display: block;
+  }
+
+  .welcome__pane {
+    padding: var(--space-xl) 40px;
+    background: var(--color-bg);
+  }
+
+  /* The actions run left to right at the bottom of the pane, in the order of
+     the markup, 48px high with 24px of padding each side. */
+  .welcome__actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+  }
+
+  .welcome__actions .btn {
+    width: auto;
+  }
+
+  .welcome__actions--pair .btn {
+    flex: 0 0 auto;
+  }
+}
+
+@media (forced-colors: active) {
+  .welcome {
+    border: 1px solid CanvasText;
+  }
+
+  .welcome__card,
+  .welcome__scrollbox {
+    border: 1px solid CanvasText;
+  }
+
+  .welcome__progress-fill {
+    background: Highlight;
+  }
+
+  .welcome__steps-item[data-state="current"] .welcome__dot {
+    outline: 2px solid Highlight;
+  }
+}

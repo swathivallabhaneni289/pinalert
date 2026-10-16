@@ -217,11 +217,25 @@ func p31mSearchScript(t *testing.T) {
 	p13MustContain(t, "closeResults", closeBody, "resultsEl.hidden = true", "lastResults = []")
 
 	// Nothing about the reader's area outlives the visit (D-18, T-31-52).
-	for _, sink := range []string{"localStorage", "sessionStorage", "history.", "window.location", "URLSearchParams", "document.cookie"} {
+	for _, sink := range []string{"localStorage", "history.", "window.location", "URLSearchParams", "document.cookie"} {
 		if strings.Contains(code, sink) {
 			t.Errorf("map-tools.js touches %q, the place and the chip are never stored or written to the address", sink)
 		}
 	}
+	// Amended 2026-10-17 by Phase 3.4 plan 10 (D-27): sessionStorage was banned
+	// outright. The first-time flow ends by leaving one session flag that holds
+	// no place and no position, and map-tools.js takes it once to focus the
+	// search. So sessionStorage is allowed only to read and remove that one key,
+	// never to write: two uses, getItem and removeItem of FOCUS_SEARCH_KEY.
+	if n := strings.Count(code, "sessionStorage"); n != 2 {
+		t.Errorf("map-tools.js touches sessionStorage %d times, want exactly 2 (getItem and removeItem of the focus flag)", n)
+	}
+	p13MustContain(t, "map-tools.js focus flag", code,
+		"var FOCUS_SEARCH_KEY = 'pinalert.focusSearch';",
+		"window.sessionStorage.getItem(FOCUS_SEARCH_KEY)",
+		"window.sessionStorage.removeItem(FOCUS_SEARCH_KEY)",
+		"focusAfterFirstTimeFlow();")
+	p13MustNotContain(t, "map-tools.js focus flag", code, "sessionStorage.setItem")
 
 	p13MustContain(t, "map-tools.js exports", code,
 		"window.PinalertMapTools = (function () {",

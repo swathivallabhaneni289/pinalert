@@ -60,6 +60,8 @@ window.PinalertMapTools = (function () {
   var RESULT_NAME_MAX = 32;
   // The zoom a GPS start uses.
   var RESULT_ZOOM = 13;
+  // The session flag welcome.js sets when the first-time flow ends (D-27).
+  var FOCUS_SEARCH_KEY = 'pinalert.focusSearch';
   // The condition phone.css lays the one row phone tools out at.
   var NARROW_QUERY = '(max-width: 899.98px)';
 
@@ -694,6 +696,29 @@ window.PinalertMapTools = (function () {
     renderChips(Pinalert.state);
     renderPlaceLine(Pinalert.state);
     renderFilterLine(Pinalert.state);
+
+    focusAfterFirstTimeFlow();
+  }
+
+  // The first-time flow (D-27) ends on Nearby with focus on the place search.
+  // welcome.js leaves one session flag behind; this takes it once, so a reload
+  // or a later visit never moves focus. The flag holds no place and no
+  // position, only that the flow just ended. On a phone the search is behind
+  // its button, so focusSearch puts focus on that button.
+  function focusAfterFirstTimeFlow() {
+    var flagged = false;
+    try {
+      if (window.sessionStorage.getItem(FOCUS_SEARCH_KEY) !== null) {
+        flagged = true;
+        window.sessionStorage.removeItem(FOCUS_SEARCH_KEY);
+      }
+    } catch (err) {
+      // Private browsing can throw. Nothing to focus then.
+      return;
+    }
+    if (flagged) {
+      focusSearch();
+    }
   }
 
   init();

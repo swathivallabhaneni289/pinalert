@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"strings"
 	"testing"
 
 	"pinalert/internal/api"
@@ -17,5 +19,19 @@ func TestSearchBudgetsMatchTheRouterDefaults(t *testing.T) {
 	place := api.PlaceRateLimit{Burst: placeRateLimitBurst, Every: placeRateLimitEvery}
 	if place != api.PlaceRateLimitDefault {
 		t.Errorf("place search budget = %+v, want %+v", place, api.PlaceRateLimitDefault)
+	}
+}
+
+// TestOnboardingGateIsSwitchedOn pins that the real program turns the first-time
+// flow gate on (Phase 3.4 plan 10, D-27, orchestrator decision 5). The Deps
+// literal is built inside main, so the check reads the source: a refactor that
+// drops the field would leave every account unasked for consent.
+func TestOnboardingGateIsSwitchedOn(t *testing.T) {
+	raw, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("reading main.go: %v", err)
+	}
+	if n := strings.Count(string(raw), "OnboardingGate: true,"); n != 1 {
+		t.Errorf("main.go sets OnboardingGate: true %d times, want exactly 1", n)
 	}
 }

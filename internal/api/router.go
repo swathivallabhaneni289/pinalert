@@ -540,6 +540,11 @@ func NewRouter(deps Deps) *chi.Mux {
 		// They serve text/html, so they carry no swag annotation.
 		r.Get("/alerts", handlers.AlertsPage(deps.Template, page))
 		r.Get("/settings", handlers.SettingsPage(deps.Template, accounts, page))
+		// Phase 3.4 (D-27, plan 10): the first-time flow. It sits in this gated
+		// group because it belongs to the signed in account, and the onboarding
+		// middleware above lets this exact path through so the redirect to it
+		// cannot loop. A person already through the flow gets a 303 to "/".
+		r.Get("/welcome", handlers.WelcomePage(deps.Template, accounts, page))
 		// D-09's explicit log-out action; only POST is ever registered for
 		// this path (DEC-L: SameSite=Lax withholds the session cookie from
 		// a cross-site POST, so a forged logout carries no authenticated
