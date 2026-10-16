@@ -52,6 +52,9 @@ func TestDisclaimerBarOnEveryFullPage(t *testing.T) {
 		"templates/login_gate.html.tmpl":     "none",
 		"templates/verify_outcome.html.tmpl": "none",
 		"templates/reader.html.tmpl":         "none",
+		// Amended 2026-10-17 by Phase 3.4 plan 10 (D-27): the first-time flow is
+		// a page of its own with no bar, no strip and no top wrapper.
+		"templates/welcome.html.tmpl": "none",
 	}
 
 	wrapped := func(call string) *regexp.Regexp {

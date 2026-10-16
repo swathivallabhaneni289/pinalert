@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinalert: Welcome</title>
+  <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/app-bar.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/legal.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/window.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/welcome.css?v={{.AssetVersion}}">
+  <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
+</head>
+<body class="welcome-page">
+{{/*
+  The first-time flow (Phase 3.4, plan 10, UI-SPEC Surface 7, D-27, D-28).
+  A page of its own, not a window drawn over Nearby: the onboarding gate sends
+  an account here before any app page. There is no close control, because the
+  flow is completed and not closed. The Disclaimer and Policy text in step 2 is
+  the same two partials the reader shows (legal_body.html.tmpl), never a copy.
+  Every step counts "of 4"; the Alerts step is added by Phase 3.3, which then
+  renumbers this count and adds a name to welcomeSteps.
+*/}}
+  <div class="welcome" id="welcome" role="dialog" aria-modal="true" aria-labelledby="welcome-step-{{.StartStep}}-title" data-start-step="{{.StartStep}}" data-step="{{.StartStep}}">
+    <div class="welcome__progress" aria-hidden="true"><div class="welcome__progress-fill"></div></div>
+
+    <aside class="welcome__side">
+      <p class="welcome__wordmark">Pinalert</p>
+      <p class="welcome__tagline">What people near you are seeing, checked by people near you.</p>
+      <ol class="welcome__steps" aria-label="Steps">
+        {{range .Steps}}<li class="welcome__steps-item" data-step="{{.Number}}" data-state="{{if lt .Number $.StartStep}}done{{else if eq .Number $.StartStep}}current{{else}}waiting{{end}}"{{if eq .Number $.StartStep}} aria-current="step"{{end}}><span class="welcome__dot"><span class="welcome__dot-num">{{.Number}}</span><span class="app-icon app-icon--check welcome__dot-tick" aria-hidden="true"></span></span><span class="welcome__steps-name">{{.Name}}</span></li>
+        {{end}}
+      </ol>
+    </aside>
+
+    <div class="welcome__pane">
+
+      <section class="welcome__step" id="welcome-step-1" aria-labelledby="welcome-step-1-title"{{if ne .StartStep 1}} hidden{{end}}>
+        <p class="welcome__label">Step 1 of 4</p>
+        <h1 class="welcome__title" id="welcome-step-1-title" tabindex="-1">Welcome to Pinalert</h1>
+        <ul class="welcome__cards">
+          <li class="welcome__card">
+            <span class="app-icon app-icon--map-pin" aria-hidden="true"></span>
+            <div class="welcome__card-text">
+              <h2 class="welcome__card-title">Know what is happening around you.</h2>
+              <p class="welcome__card-body">People nearby post short reports: a flooded road, heavy traffic, an open shelter, a power cut.</p>
+            </div>
+          </li>
+          <li class="welcome__card">
+            <span class="app-icon app-icon--check" aria-hidden="true"></span>
+            <div class="welcome__card-text">
+              <h2 class="welcome__card-title">See how far to trust each report.</h2>
+              <p class="welcome__card-body">Others nearby confirm or dispute it. The more different places confirm a report, the more likely it is true, but a report can still be wrong.</p>
+            </div>
+          </li>
+          <li class="welcome__card welcome__card--warning">
+            <span class="app-icon app-icon--circle-alert" aria-hidden="true"></span>
+            <div class="welcome__card-text">
+              <h2 class="welcome__card-title">Pinalert cannot send help.</h2>
+              <p class="welcome__card-body">It tells you a situation is happening near you. If someone is in danger, call {{.Chrome.Numbers.Primary}} first.</p>
+            </div>
+          </li>
+        </ul>
+        <div class="welcome__actions">
+          <button type="button" class="btn btn--primary" id="welcome-continue-1">Continue</button>
+        </div>
+      </section>
+
+      <section class="welcome__step" id="welcome-step-2" aria-labelledby="welcome-step-2-title"{{if ne .StartStep 2}} hidden{{end}}>
+        <p class="welcome__label">Step 2 of 4</p>
+        <h1 class="welcome__title" id="welcome-step-2-title" tabindex="-1">Disclaimer and policy</h1>
+        <p class="welcome__lead">Please read this before you use Pinalert. Tap Agree to continue.</p>
+        <div class="welcome__scrollbox legal-text" id="welcome-scrollbox" tabindex="0" role="region" aria-label="Disclaimer and policy text">
+          {{template "legal_disclaimer_body" .Legal}}
+          {{template "legal_policy_body" .Legal}}
+        </div>
+        <div class="welcome__actions welcome__actions--pair">
+          <button type="button" class="btn" id="welcome-disagree">Disagree</button>
+          <button type="button" class="btn btn--primary" id="welcome-agree">Agree</button>
+        </div>
+        <p class="welcome__notice" id="welcome-disagree-message" role="status" hidden></p>
+        <p class="inline-error" id="welcome-error-2" role="alert" hidden></p>
+      </section>
+
+      <section class="welcome__step" id="welcome-step-3" aria-labelledby="welcome-step-3-title"{{if ne .StartStep 3}} hidden{{end}}>
+        <p class="welcome__label">Step 3 of 4</p>
+        <h1 class="welcome__title" id="welcome-step-3-title" tabindex="-1">Show what is happening near you</h1>
+        <span class="welcome__tile" aria-hidden="true"><span class="app-icon app-icon--map-pin"></span></span>
+        <p class="welcome__lead">Pinalert uses your location to show reports around you and to place the pin when you post. Your exact location is never shown to anyone and never stored.</p>
+        <div class="welcome__search" id="welcome-search-block" hidden>
+          <form id="welcome-search-form" novalidate>
+            <label class="app-window__label" for="welcome-search-input">Search a place</label>
+            <input class="app-window__field" type="search" id="welcome-search-input" name="q" maxlength="200" autocomplete="off" enterkeyhint="search" aria-describedby="welcome-search-status">
+          </form>
+          <p class="app-window__status" id="welcome-search-status" role="status" aria-live="polite" hidden></p>
+          <ul class="app-window__results" id="welcome-search-results" role="listbox" aria-label="Places found" hidden></ul>
+          <div class="welcome__actions">
+            <button type="button" class="btn btn--primary" id="welcome-continue-3">Continue</button>
+          </div>
+        </div>
+        <div class="welcome__actions">
+          <button type="button" class="btn btn--primary" id="welcome-allow-location">Allow location</button>
+          <button type="button" class="btn" id="welcome-search-open">Not now, I will search a place</button>
+        </div>
+      </section>
+
+      <section class="welcome__step" id="welcome-step-4" aria-labelledby="welcome-step-4-title"{{if ne .StartStep 4}} hidden{{end}}>
+        <p class="welcome__label">Step 4 of 4</p>
+        <h1 class="welcome__title" id="welcome-step-4-title" tabindex="-1">About you</h1>
+        <p class="welcome__lead">Both are optional. They show only if you later let others follow you.</p>
+        <div class="welcome__field">
+          <label class="app-window__label" for="welcome-name-input">Your name</label>
+          <input class="app-window__field" type="text" id="welcome-name-input" name="display_name" maxlength="60" autocomplete="name" placeholder="For example: Ravi Kumar" value="{{.DisplayName}}">
+        </div>
+        <div class="welcome__field">
+          <form id="welcome-home-form" novalidate>
+            <label class="app-window__label" for="welcome-home-input">Home area</label>
+            <input class="app-window__field" type="search" id="welcome-home-input" name="q" maxlength="200" autocomplete="off" enterkeyhint="search" placeholder="Search a place" value="{{.HomeAreaName}}" aria-describedby="welcome-home-prefilled welcome-home-help welcome-home-status">
+          </form>
+          <p class="app-window__help" id="welcome-home-prefilled" hidden>Filled in from your location.</p>
+          <p class="app-window__help" id="welcome-home-help">A town or area, never your street. Used for alerts.</p>
+          <p class="app-window__status" id="welcome-home-status" role="status" aria-live="polite" hidden></p>
+          <ul class="app-window__results" id="welcome-home-results" role="listbox" aria-label="Places found" hidden></ul>
+        </div>
+        <p class="inline-error" id="welcome-error-4" role="alert" hidden></p>
+        <div class="welcome__actions">
+          <button type="button" class="btn btn--primary" id="welcome-continue-4">Continue</button>
+          <button type="button" class="btn" id="welcome-skip">Skip</button>
+        </div>
+      </section>
+
+    </div>
+  </div>
+  <script src="/static/js/position.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/welcome.js?v={{.AssetVersion}}" defer></script>
+</body>
+</html>

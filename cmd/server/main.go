@@ -313,6 +313,14 @@ func main() {
 			Every: placeRateLimitEvery,
 		},
 		ClientIPHeader: clientIPHeader,
+		// The first-time flow gate is on (D-27, orchestrator decision 5). Every
+		// account that has not agreed to the current terms version or not
+		// finished the flow is sent to /welcome for page requests; existing
+		// accounts, the owner's included, see it once and no consent is
+		// backfilled. /api/, /welcome, the legal pages, the login and verify
+		// pages and every non GET request pass untouched, so the offline queue
+		// never meets a new refusal.
+		OnboardingGate: true,
 		// The six D-11 account shapes and the three network backstop shapes
 		// from the constants blocks above.
 		RateLimits: api.RateLimits{

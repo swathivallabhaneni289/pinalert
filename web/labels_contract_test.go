@@ -373,6 +373,14 @@ func TestReadOnlyLabelsRoundedControlsNot(t *testing.T) {
 			// .planning/sketches/005-phone-layout/README.md.
 			continue
 		}
+		// Amended 2026-10-17 by Phase 3.4 plan 10 (UI-SPEC Surface 7, D-27): the
+		// first-time flow's progress bar (4px high, radius 4px) and its step
+		// circles (28px, round) are indicators, not controls: nothing in them
+		// can be pressed. The owner's picture draws them round, so welcome.css
+		// is exempted for exactly these three heads and nothing else.
+		if r.File == "static/css/welcome.css" && (r.Head == ".welcome__progress" || r.Head == ".welcome__progress-fill" || r.Head == ".welcome__dot") {
+			continue
+		}
 		exempt := false
 		for _, name := range exemptControls {
 			if strings.Contains(r.Head, name) {
