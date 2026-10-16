@@ -837,7 +837,8 @@ paths:
         without the first part and then without the second; matched_query then holds the
         shorter text that matched. When Photon fails or takes over 2 seconds, Nominatim alone
         runs those tries, in a box around the pin first. At most four upstream requests are
-        sent per search. A
+        sent per search. Each verified account has its own budget of 8 searches at once,
+        then 1 a second; past it the answer is a 429. A
         503 means search is temporarily unavailable; report submission remains fully
         usable regardless.
       parameters:
@@ -885,7 +886,7 @@ paths:
       description: |-
         Place search for the history views. It runs on its own lane of the geocoder: it
         never queues ahead of a report search, repeated searches are answered from a cache, and each
-        verified account has its own small budget. Results are in India only. It asks
+        verified account has its own budget of 8 searches at once, then 1 a second. Results are in India only. It asks
         Photon first, which matches close spellings and half typed words; the optional
         lat and lon (both or neither, the map centre) make Photon prefer nearby places. When
         Photon finds nothing it asks Nominatim with the whole text, preferring places near

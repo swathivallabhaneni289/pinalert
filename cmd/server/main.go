@@ -50,25 +50,26 @@ const (
 	requestLinkRateLimitEvery = 60 * time.Second
 )
 
-// geocodeRateLimitBurst/Every are this plan's per-IP secondary budget for
-// GET /api/geocode: a burst of 3 immediately, one token refilled every 2
-// seconds thereafter. Deliberately shaped differently from the
-// request-link budget above: typing into a search box is bursty within
-// one report submission and rare across a session (07-RESEARCH.md Open
-// Question 2). The real D-02 policy ceiling is the process-wide
-// one-request-per-second limiter inside internal/geocode, not this number.
+// geocodeRateLimitBurst/Every are the per account budget of GET /api/geocode,
+// the report form's search: 8 searches at once, then one a second (quick
+// 261016-sne; it was per IP, 3 then one every 2 seconds). Deliberately shaped
+// differently from the request-link budget above: typing into a search box is
+// bursty within one report submission and rare across a session. Sized for
+// one person typing one address with a 300 ms pause between searches; see
+// api.GeocodeRateLimitDefault for the reasoning. The real D-02 policy ceiling
+// is the process wide limiter inside internal/geocode, not this number.
 const (
-	geocodeRateLimitBurst = 3
-	geocodeRateLimitEvery = 2 * time.Second
+	geocodeRateLimitBurst = 8
+	geocodeRateLimitEvery = time.Second
 )
 
 // placeRateLimitBurst/Every are the per account budget of GET
-// /api/geocode/place, the reader's place search: a burst of 3, then one token
-// every 4 seconds. Keyed by verified account, not by IP, because carrier NAT
-// shares one address across many phones.
+// /api/geocode/place, the reader's place search: the same 8 at once, then one
+// a second (it was 3, then one every 4 seconds). Keyed by verified account,
+// not by IP, because carrier NAT shares one address across many phones.
 const (
-	placeRateLimitBurst = 3
-	placeRateLimitEvery = 4 * time.Second
+	placeRateLimitBurst = 8
+	placeRateLimitEvery = time.Second
 )
 
 // The D-11 budgets, the one named place for every Phase 4 limit number. Each
@@ -305,8 +306,8 @@ func main() {
 			Burst: geocodeRateLimitBurst,
 			Every: geocodeRateLimitEvery,
 		},
-		// Burst 3, one token per 4 seconds, per verified account, applied
-		// only to GET /api/geocode/place (see api.NewRouter).
+		// Burst 8, one token a second, per verified account, applied only
+		// to GET /api/geocode/place (see api.NewRouter).
 		PlaceRateLimit: api.PlaceRateLimit{
 			Burst: placeRateLimitBurst,
 			Every: placeRateLimitEvery,

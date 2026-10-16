@@ -29,10 +29,11 @@ type PlaceSearcher interface {
 	SearchReader(ctx context.Context, q string, near *geocode.Point) (geocode.Answer, error)
 }
 
-// PlaceBudget is the per account search budget. *ratelimit.PerIP satisfies it
-// and is keyed by any string, so the key is built from the verified account
-// id and never from the client address (carrier NAT shares one IP across many
-// phones, D-16, D-28).
+// PlaceBudget is the per account search budget of both searches, each with
+// its own limiter and key prefix (quick 261016-sne). *ratelimit.PerIP
+// satisfies it and is keyed by any string, so the key is built from the
+// verified account id and never from the client address (carrier NAT shares
+// one IP across many phones, D-16, D-28).
 type PlaceBudget interface {
 	Allow(key string) bool
 }
@@ -98,7 +99,7 @@ func placeErrorClass(err error) string {
 // @Summary Search for a place on the reader lane
 // @Description Place search for the history views. It runs on its own lane of the geocoder: it
 // @Description never queues ahead of a report search, repeated searches are answered from a cache, and each
-// @Description verified account has its own small budget. Results are in India only. It asks
+// @Description verified account has its own budget of 8 searches at once, then 1 a second. Results are in India only. It asks
 // @Description Photon first, which matches close spellings and half typed words; the optional
 // @Description lat and lon (both or neither, the map centre) make Photon prefer nearby places. When
 // @Description Photon finds nothing it asks Nominatim with the whole text, preferring places near
