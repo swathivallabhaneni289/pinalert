@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinalert: Settings</title>
+  <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/app-bar.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/places.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
+  <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
+</head>
+<body class="has-app-bar">
+  <div class="top-chrome">
+    {{template "app_topbar" .}}
+  </div>
+  <div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>
+
+  <div class="app-content">
+  <main class="place-page" data-account-id="{{.AccountID}}">
+    <h1 class="place-head">Settings</h1>
+
+    <section class="place-section" aria-labelledby="settings-about-title">
+      <div class="place-section__intro">
+        <h2 class="place-section__title" id="settings-about-title">About Pinalert</h2>
+        <p class="place-section__line">The rules, how your data is used, and a text only version for weak networks.</p>
+      </div>
+      <div class="place-box">
+        <a class="place-row" href="/disclaimer">
+          <span class="place-row__text">
+            <span class="place-row__label">Disclaimer</span>
+            <span class="place-row__sub">Unofficial service, what it can and cannot promise</span>
+          </span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </a>
+        <a class="place-row" href="/policy#policy">
+          <span class="place-row__text">
+            <span class="place-row__label">Policy</span>
+            <span class="place-row__sub">Privacy, data kept, reporting rules</span>
+          </span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </a>
+        <a class="place-row" href="/low">
+          <span class="place-row__text">
+            <span class="place-row__label">Low data view</span>
+            <span class="place-row__sub">Text only, no map</span>
+          </span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </a>
+      </div>
+    </section>
+
+    <section class="place-section place-section--phone" aria-labelledby="settings-account-title">
+      <div class="place-section__intro">
+        <h2 class="place-section__title" id="settings-account-title">Account</h2>
+        <p class="place-section__line">Sign out, or remove your account and its data.</p>
+      </div>
+      <div class="place-box">
+        <form class="place-row-form" method="post" action="/auth/logout">
+          <button type="submit" class="place-row place-row--button">
+            <span class="place-row__text">
+              <span class="place-row__label">Log out</span>
+            </span>
+          </button>
+        </form>
+      </div>
+    </section>
+  </main>
+  </div>
+
+  {{template "app_bottombar" .}}
+
+  <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/app-bar.js?v={{.AssetVersion}}" defer></script>
+</body>
+</html>

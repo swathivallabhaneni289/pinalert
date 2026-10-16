@@ -109,3 +109,86 @@ func bellTagWith(t *testing.T, tmpl, attr string) string {
 	}
 	return tmpl[start : at+end+1]
 }
+
+// TestAlertsNeverSaysNoAlerts pins D-22 and T-34-17: the Official alerts page
+// says plainly that alerts are not connected yet and points to the state
+// disaster management authority, and it never claims that no warning is in
+// force, because Pinalert is not looking and that would be false reassurance in
+// an emergency.
+func TestAlertsNeverSaysNoAlerts(t *testing.T) {
+	page := p421ReadTemplate(t, "alerts.html.tmpl")
+	for _, want := range []string{
+		"Official alerts are not connected yet",
+		"Pinalert does not show government warnings yet. Check your state disaster management authority for official warnings.",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("alerts.html.tmpl lacks %q", want)
+		}
+	}
+	lower := strings.ToLower(page)
+	for _, banned := range []string{
+		"no" + " alerts", "no official" + " alerts", "no" + " warnings", "all" + " clear",
+		"nothing in" + " force", "in" + " force", "last" + " checked", "0" + " alerts",
+	} {
+		if strings.Contains(lower, banned) {
+			t.Errorf("alerts.html.tmpl holds %q, a claim Pinalert cannot back while alerts are not connected", banned)
+		}
+	}
+	// The page is a place with an empty state: no list, no count.
+	for _, banned := range []string{"<ul", "<ol", "<table", "data-count"} {
+		if strings.Contains(lower, banned) {
+			t.Errorf("alerts.html.tmpl holds %q; the list arrives with Phase 5", banned)
+		}
+	}
+	// D-29: the notice strip is not drawn here.
+	if strings.Contains(page, "disclaimer_bar.html.tmpl") {
+		t.Errorf("alerts.html.tmpl calls the notice strip partial")
+	}
+}
+
+// waitingSettingsLabels are the rows and the person menu item that wait for a
+// later phase (UI-SPEC Surface 6, Rows that wait, and Surface 1c). A row or a
+// control renders only when its feature exists (D-26). About you arrives in
+// plan 06 and is not listed here.
+var waitingSettingsLabels = []string{
+	"View my profile", "My profile",
+	"Phone notifications", "Critical reports near my home area", "Severe official alerts for my area",
+	"Changes to reports I posted or voted on", "A Reliable reporter posts near me", "Someone I follow posts",
+	"How far from my home area",
+	"People and reports", "Let others follow me", "Following", "Followers", "Muted reports", "Blocked people",
+	"Log out of all devices", "Delete my account",
+}
+
+// TestSettingsShowsOnlyExistingRows pins D-25 and D-26: Settings holds the
+// About Pinalert rows and the phone Account row, and none of the labels that
+// wait for a later phase, in the page or in the person menu.
+func TestSettingsShowsOnlyExistingRows(t *testing.T) {
+	page := p421ReadTemplate(t, "settings.html.tmpl")
+	for _, want := range []string{
+		"About Pinalert", "The rules, how your data is used, and a text only version for weak networks.",
+		"Disclaimer", "Unofficial service, what it can and cannot promise", `href="/disclaimer"`,
+		"Policy", "Privacy, data kept, reporting rules", `href="/policy#policy"`,
+		"Low data view", "Text only, no map", `href="/low"`,
+		"Account", "Sign out, or remove your account and its data.", `action="/auth/logout"`, "Log out",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("settings.html.tmpl lacks %q", want)
+		}
+	}
+	p421InOrder(t, "section order", page, "About Pinalert", `id="settings-account-title"`)
+	if got := strings.Count(page, "app-icon--chevron-right"); got != 3 {
+		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the three rows that open something", got)
+	}
+	header := p421ReadTemplate(t, "account_header.html.tmpl")
+	for _, label := range waitingSettingsLabels {
+		if strings.Contains(page, label) {
+			t.Errorf("settings.html.tmpl holds %q, a row that waits for a later phase", label)
+		}
+		if strings.Contains(header, label) {
+			t.Errorf("account_header.html.tmpl holds %q, an item that waits for a later phase", label)
+		}
+	}
+	if strings.Contains(page, "disclaimer_bar.html.tmpl") {
+		t.Errorf("settings.html.tmpl calls the notice strip partial")
+	}
+}

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pinalert: Official alerts</title>
+  <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/app-bar.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/places.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
+  <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
+</head>
+<body class="has-app-bar">
+  <div class="top-chrome">
+    {{template "app_topbar" .}}
+  </div>
+  <div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>
+
+  <div class="app-content">
+  <main class="place-page" data-account-id="{{.AccountID}}">
+    <h1 class="place-head">Official alerts</h1>
+
+    <section class="place-section">
+      <div class="empty-state place-empty">
+        <h2>Official alerts are not connected yet</h2>
+        <p>Pinalert does not show government warnings yet. Check your state disaster management authority for official warnings.</p>
+      </div>
+    </section>
+  </main>
+  </div>
+
+  {{template "app_bottombar" .}}
+
+  <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/app-bar.js?v={{.AssetVersion}}" defer></script>
+</body>
+</html>

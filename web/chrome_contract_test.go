@@ -33,6 +33,26 @@ func TestDisclaimerBarOnEveryFullPage(t *testing.T) {
 
 	for path, text := range pages {
 		t.Run(path, func(t *testing.T) {
+			// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29
+			// and D-06): the notice strip is not drawn on Official alerts or
+			// Settings, so these two pages carry no bar partial call. They open
+			// the body with the .top-chrome wrapper holding the shared top bar,
+			// and still link chrome.css once. Plan 05 rewrites this test for the
+			// strip. The Phase 3.1 and Phase 4 hands-on tests are walked on this
+			// layout after Phase 3.4 is built.
+			if strings.HasSuffix(path, "alerts.html.tmpl") || strings.HasSuffix(path, "settings.html.tmpl") {
+				if strings.Contains(text, chromeBarCall) {
+					t.Errorf("%s: this page draws no notice strip but calls the bar partial", path)
+				}
+				if !regexp.MustCompile(`(?s)<body[^>]*>\s*<div class="top-chrome">\s*` + regexp.QuoteMeta(chromeTopbarCall)).MatchString(text) {
+					t.Errorf("%s: <body> must be followed by <div class=\"top-chrome\"> and then the top bar call", path)
+				}
+				head, _, _ := strings.Cut(text, "</head>")
+				if got := strings.Count(head, chromeSheetLink); got != 1 {
+					t.Errorf("%s: chrome.css linked %d times in the head, want exactly 1", path, got)
+				}
+				return
+			}
 			if !bodyOpening.MatchString(text) {
 				t.Errorf("%s: <body> must be followed by <div class=\"top-chrome\"> and then the bar partial call, with only whitespace between", path)
 			}
