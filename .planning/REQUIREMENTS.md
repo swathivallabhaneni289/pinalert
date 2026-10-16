@@ -170,6 +170,8 @@ Requirements for initial release. Each maps to roadmap phases.
       independent confirmers) and showing the Phase 3 counters, so self-resolving cannot hide a
       dispute; a finished rescue-needed row shows an approximate location (about 1 km) and no
       description text (reworded 2026-10-14)
+      (Amended 2026-10-16, owner decision: the Past tab is replaced; its Resolved group now shows
+      as "Resolved" under My activity, Ended nearby, Phase 3.4, see 03.4-CONTEXT D-18)
 
 - [ ] **HIST-03**: The Expired group of the Past tab lists reports that expired in the last 7 days,
       each labelled with its outcome (confirmed by N people nearby, expired unconfirmed, or
@@ -177,10 +179,15 @@ Requirements for initial release. Each maps to roadmap phases.
       reports that expire unconfirmed get a neutral "Expired" label, never a negative one, and a
       finished rescue-needed row shows an approximate location (about 1 km) and no description text
       (reworded 2026-10-14)
+      (Amended 2026-10-16, owner decision: the Past tab is replaced; its Expired group now shows
+      as "Faded out" under My activity, Ended nearby, Phase 3.4, see 03.4-CONTEXT D-18)
 
 - [ ] **HIST-04**: When no active reports exist, the list says what happened recently using real
       counts only (for example "2 were resolved in the last 24 hours") and links to the Past tab
       (reworded 2026-10-14)
+      (Amended 2026-10-16, owner decision: the Past tab is replaced; the link goes to My activity,
+      Ended nearby, which shows the "Resolved" and "Faded out" groups, Phase 3.4, see 03.4-CONTEXT
+      D-18)
 
 - [ ] **HIST-05**: User can search for a place on the main map and see reports for that area, not
       only reports near their own location

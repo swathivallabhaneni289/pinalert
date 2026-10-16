@@ -452,7 +452,7 @@ Plans:
 **UI hint**: yes
 **Success Criteria** (what must be TRUE):
 
-  1. A bell next to the account icon shows an unread count that rides on the existing 30 second refresh, and opens an Updates list where tapping an update opens that report in the view it now belongs to (a deep link such as /?view=resolved&report=ID, using Phase 3.1's views).
+  1. A bell at the top right on the phone and beside the person menu on the laptop (owner decision 2026-10-16) shows an unread count that rides on the existing 30 second refresh, and opens a short list of the latest 10 updates with See all updates, which opens My activity, Updates; tapping an update opens that report in the view it now belongs to (a deep link such as /?view=resolved&report=ID, using Phase 3.1's views).
   2. A user follows a report automatically when they posted it or voted on it, and can mute any report.
   3. Updates about a followed report are sent for state changes only (the report reaches Live, is hidden by disputes, is resolved, or is within 1 hour of expiring), at most one per report per hour, in anonymous wording built from the same server trust object as the popup, never naming a voter, an account or a location. Every decision calls the single visibility resolver.
   4. A reader can filter the feed to Reliable reporters only (critical and rescue-needed reports always stay visible), and can opt in to an update when a Reliable reporter posts within a chosen distance of where they are looking. Non-critical reports notify only once they are Live, and critical and rescue-needed reports notify immediately.
@@ -461,9 +461,9 @@ Plans:
 
   1. Comment events plug in when Phase 8 ships (commenting will make the user follow the report). Email digests and Web Push are separate later work (see the backlog), and Web Push needs a PWA phase first.
   2. Care points: notification volume can be used to harass a reporter (dispute spam), so batch and cap per recipient. A notification must never bypass the provisional gate, which is why non-critical reports notify only once Live. The Reliable tag now grants reach and is farmable (Phase 3 D-03 prices gaming at extra verified accounts plus a claimed location), so cap how many alerts one reporter can trigger per recipient per hour, and treat burst detection (TRUSTX-03) as a dependency before the alert rule is widened beyond the in-app bell.
-  3. Anchors and clocks: the server stores no user location, so alert distance is measured from the reader's current map view or GPS fix when the bell refreshes, and alerts arrive only while the app is open (a saved location is deferred with PWA-03). The host sleeps, so time based events ("within 1 hour of expiring") are evaluated lazily on the bell refresh, not by a scheduler. Events come from the append-only vote log and report timestamps, so nothing latches (Phase 2 D-08).
+  3. Anchors and clocks: the server stores no user location except the home area the person chooses (a town or area, never a street, never taken from GPS silently; owner decision 2026-10-16, 03.2-CONTEXT D-20), and the Reliable reporter alert distance is measured from that home area (How far from my home area in Settings: 1, 2, 5 or 10 km); in this phase alerts arrive only while the app is open. The host sleeps, so time based events ("within 1 hour of expiring") are evaluated lazily on the bell refresh, not by a scheduler. Events come from the append-only vote log and report timestamps, so nothing latches (Phase 2 D-08).
   4. Data: an updates table with read state, a mutes table, and hourly cap bookkeeping. Implicit followers are derived from existing tables (the reporter through sessions, voters through votes). On a small deployment most reporters show New reporter (D-13), so the Reliable-only filter and alerts may run on an empty set until Phase 5's demo accounts exist. If the phase runs long, split NOTIF-04 and NOTIF-05 into a later phase.
-  5. Settings live in the account menu: in-app always on, email and push optional later. The Reliable-reporter alerts use the public tag only and expose no identity. Phase 3 D-14 keeps the tag display only inside Phase 3; here the filter and the alert rule are opt-in user choices and must never hide or reorder a report by default.
+  5. Settings live on a Settings page of their own, opened from the gear on the phone and from Settings in the laptop person menu (owner decision 2026-10-16, 03.4 D-25), not in the account menu: in-app always on, email and push optional later. The Reliable-reporter alerts use the public tag only and expose no identity. Phase 3 D-14 keeps the tag display only inside Phase 3; here the filter and the alert rule are opt-in user choices and must never hide or reorder a report by default.
 
 **Plans:** 0 plans
 
@@ -480,8 +480,8 @@ Plans:
 **Success Criteria** (what must be TRUE):
 
   1. The site can be installed to the home screen on Android, laptop and iPhone, opens like an app, and shows a short "Install to get alerts" prompt on iPhone where a notification only works after install.
-  2. A signed in person can opt in to phone notifications and choose a rough area (about a 5 km cell, never an exact position). Only that rough area is stored, and it can be removed at any time.
-  3. A phone notification goes out only for critical and rescue needed reports in the person's area, and only after the same visibility resolver that decides the feed says the report may be shown. It never bypasses the provisional gate, is capped per person per hour, and carries no voter, account or exact location.
+  2. A signed in person can opt in to phone notifications; "near" means within the distance they choose in Settings (1, 2, 5 or 10 km) of their home area (set in the first-time flow or in Settings, About you; a town or area, never an exact position). Only that home area is stored, and removing it in Settings deletes it (owner decision 2026-10-16, 03.3-CONTEXT D-21).
+  3. A phone notification goes out only for the kinds the person has switched on in Settings, Phone notifications (owner decision 2026-10-16, five kinds): rescue and critical reports within the chosen distance of the home area (on by default), severe official alerts for the area (on; the push plumbing is this phase's, Phase 5 adds the row and switches it on), changes to reports they posted or voted on (off), a Reliable reporter posting near them (off), and someone they follow posting (off; live with Phase 9's follows). A report notification goes out only after the same visibility resolver that decides the feed says the report may be shown. It never bypasses the provisional gate, is capped per person per hour, and carries no voter, account or exact location.
   4. Tapping a notification opens that report in the view it now belongs to (a /?report=ID style link from Phase 3.1).
   5. The in-app bell from Phase 3.2 keeps working for anyone who has not installed or has refused notifications, and a refused or unsupported device sees a plain message instead of a broken switch.
 
@@ -490,7 +490,7 @@ Plans:
   1. This is a privacy change: the site stored no location so far. Store only the rough area, only for people who opt in, and say so in plain words. Settle the storage and deletion rule in discuss-phase.
   2. Web Push needs HTTPS in production, a service worker and VAPID keys (library chosen in the stack notes: webpush-go). The keys are secrets and stay out of the repo.
   3. iOS 16.4 or later delivers push only to a site added to the home screen. Safari has no Background Sync, so the offline report queue stays on the IndexedDB baseline.
-  4. Care points: alert volume (cap per person per hour and per report), the farmable Reliable tag (notify on critical and rescue needed only in this phase), and a notification must be sent from the same decision the feed uses.
+  4. Care points: alert volume (cap per person per hour and per report), the farmable Reliable tag (the Reliable reporter kind is off by default; TRUSTX-03 burst detection is still a dependency before that rule reaches push, so the plan either records the gap with per reporter caps or holds the kind, see 03.3-CONTEXT), and a notification must be sent from the same decision the feed uses.
   5. Email digests (999.4) and official alerts by push (Phase 5 content) stay out of this phase.
 
 **Plans:** 0 plans
@@ -570,7 +570,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 1.1 → 2 → 3 → 3.1 → 3.2 → 4 → 5 → 8 → 6 → 9 (Phase 7 shipped early; Phase 8 runs before Phase 6 because Phase 6's receipts and shareable cards link to the report page; Phase 9 is the first to cut)
+Phases execute in the owner's build order (2026-10-16): 1 → 1.1 → 2 → 3 → 3.1 → 4 → 3.4 → 3.2 → 3.3 → 5 → 8 → 6 → 9; the explainer video last (3.1 and 4 are signed off before 3.4 starts, and 3.2 and 3.3 build into the 3.4 layout; Phase 7 shipped early; Phase 8 runs before Phase 6 because Phase 6's receipts and shareable cards link to the report page; Phase 9 is the first to cut)
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -580,6 +580,8 @@ Phases execute in numeric order: 1 → 1.1 → 2 → 3 → 3.1 → 3.2 → 4 →
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 31/31 | Complete | 2026-10-13 |
 | 3.1 Report history views | 16/16 | In Progress|  |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
+| 3.3 Installable app and phone alerts | 0/TBD | Not started | - |
+| 3.4 App layout | 0/TBD | Not started | - |
 | 4. Robustness — Real-World Resilience | 29/29 | In Progress|  |
 | 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
 | 6. Coordination — Safety, Needs, and Response | 0/TBD | Not started | - |
@@ -659,7 +661,7 @@ Plans:
 
 ### Phase 999.3: PWA shell and Web Push for updates and official alerts (BACKLOG, partly promoted to Phase 3.3 on 2026-10-15)
 
-**Note 2026-10-15:** the install step and push for critical and rescue needed reports moved into Phase 3.3. What stays here: pushing Severe or Extreme official alerts, which waits for Phase 5's feed. Keep from this entry for 3.3: ask for permission right after a person posts a report, not on first visit, and drop a stored subscription when its endpoint answers 410 Gone.
+**Note 2026-10-15, updated 2026-10-16:** the install step and phone push moved into Phase 3.3. Pushing Severe or Extreme official alerts no longer stays here: the owner decided it for Phase 5 on 2026-10-16 (on by default with a Settings switch, using the push plumbing from 3.3; see PWA-06). Keep from this entry for 3.3: drop a stored subscription when its endpoint answers 410 Gone. The permission ask right after a person posts was replaced by the owner's ask on first open or first sign in (03.3-CONTEXT D-09, now step 5 of the 3.4 first-time flow, 03.4 D-27).
 
 **Goal:** [Captured for future planning] Make the app installable (service worker, manifest, install to Home Screen) and deliver Phase 3.2's updates and Severe official alerts for the reader's district as Web Push (VAPID keys, `webpush-go`, stored subscriptions that are removed when an endpoint answers 410 Gone). Ask for permission right after a user posts a report, not on first visit. iPhones only receive web push in an installed app (iOS 16.4 and later), so the install step comes first. Raised by the owner on 2026-10-03; relates to the deferred PWA-03, PWA-04 and PWA-06. Severe or Extreme alerts only. Push text is built from the trust object at send time and links to the live report, so it never carries a count that can go stale.
 **Requirements:** PWA-06 (v2)
@@ -840,7 +842,7 @@ Plans:
 **Owner decisions (2026-10-16):**
 
   - The name and home area come from the first-time flow (step 4, About you, built in Phase 3.4); there is no nickname. Both show only on an opted in profile.
-  - Tapping an opted in reporter's name on a report opens their profile.
+  - A reporter's profile opens from their name in the report's trust block (the "See this reporter" link of scope note 2), shown only for opted in reporters.
   - My profile sits in the laptop person menu, and on the phone as View my profile in Settings, About you.
   - Let others follow me, Following, Followers and Blocked people are rows in Settings, People and reports.
 
