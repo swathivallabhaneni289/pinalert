@@ -33,6 +33,7 @@
   var QUEUE_FLUSH_MS = 30000;
   var WAIT_TICK_MS = 60000;
   var SENDING_LEASE_MS = 15000;
+  var MIN_BLOCKED_WAIT_S = 5;
   var LONG_TOAST_MS = 6000;
   var COUNT_EVENT = 'pinalert-queue-count';
   var REQUEST_ID_PATTERN = /^[A-Za-z0-9-]{16,64}$/;
@@ -43,7 +44,13 @@
   var STATUS_REJECTED = 'rejected';
   var STATUS_BLOCKED = 'blocked';
   var STATUS_SIGNED_OUT = 'signed_out';
-  var STATUSES = [STATUS_WAITING, STATUS_NO_ANSWER, STATUS_REJECTED, STATUS_BLOCKED, STATUS_SIGNED_OUT];
+  // The server refused the post because another account is signed in now
+  // than the one the report was saved under (WR-W09).
+  var STATUS_OTHER_ACCOUNT = 'other_account';
+  var STATUSES = [STATUS_WAITING, STATUS_NO_ANSWER, STATUS_REJECTED, STATUS_BLOCKED, STATUS_SIGNED_OUT,
+    STATUS_OTHER_ACCOUNT];
+  // The 409 field the server names for that refusal.
+  var OTHER_ACCOUNT_FIELD = 'expected_account_id';
 
   // The copy table. Plain characters only.
   var QUEUE_HEADING = 'Waiting to send';
@@ -53,6 +60,7 @@
   var COUNT_MANY_SUFFIX = ' reports saved on this device.';
   var HELP_LINE = 'Reports send by themselves when you have a signal and this page is open.';
   var HELP_LINE_MEMORY = "This browser can't keep reports for later. Keep this page open until they send.";
+  var HELP_LINE_UNREADABLE = "This page can't read the saved reports right now. Reload the page to send or discard them.";
   var STATUS_TEXT_WAITING = 'Waiting for a signal.';
   var STATUS_TEXT_SENDING = 'Sending.';
   var STATUS_TEXT_NO_ANSWER = "Pinalert didn't answer. Trying again.";
@@ -77,6 +85,8 @@
   var ANNOUNCE_NOT_SENT_PREFIX = 'Report not sent. ';
   var ANNOUNCE_BLOCKED_PREFIX = 'Report waiting to send. It will send by itself in ';
   var ANNOUNCE_SIGNED_OUT = 'Report waiting. Sign in again to send it.';
+  var STATUS_TEXT_OTHER_ACCOUNT = 'This report was saved under a different account than the one signed in now. Sign in to that account to send it. It stays saved on this device.';
+  var ANNOUNCE_OTHER_ACCOUNT = 'Report not sent. It was saved under a different account.';
 
   var mounted = false;
   var accountId = '';
@@ -88,6 +98,17 @@
   var db = null;
   var storeReady = Promise.resolve();
   var memoryOnly = false;
+  // storeOpened is true once IndexedDB opened at least once, so a lost
+  // connection is opened again rather than read as "no saved reports".
+  // storeUnreadable is true while the last read failed even after that; the
+  // strip then keeps the rows it last read (lastStored) and sends none of them.
+  // pendingRemovals holds request ids whose delete has not reached the store
+  // yet, so a discarded or sent row never comes back from lastStored (WR-W06).
+  var storeOpened = false;
+  var storeUnreadable = false;
+  var reopenPromise = null;
+  var lastStored = [];
+  var pendingRemovals = {};
   var memoryRows = {};
   var rows = [];
   var rowEls = {};
@@ -110,12 +131,15 @@
 
   function openStore() {
     return new Promise(function (resolve) {
-      if (typeof indexedDB === 'undefined' || !indexedDB) {
-        resolve(null);
-        return;
-      }
       var request;
+      // The feature test sits inside the try too: in some frames merely
+      // reading the indexedDB global throws, and the page then keeps its
+      // reports in memory instead of losing the strip (IN-W04).
       try {
+        if (typeof indexedDB === 'undefined' || !indexedDB) {
+          resolve(null);
+          return;
+        }
         request = indexedDB.open(DB_NAME, DB_VERSION);
       } catch (e) {
         resolve(null);
@@ -130,8 +154,19 @@
       };
       request.onsuccess = function () {
         var database = request.result;
+        // A connection the browser closes (a tab sent to the background, a
+        // clear of site data) or one closed here for a version change is
+        // dropped, so the next storage call opens a new one.
         database.onversionchange = function () {
           database.close();
+          if (db === database) {
+            db = null;
+          }
+        };
+        database.onclose = function () {
+          if (db === database) {
+            db = null;
+          }
         };
         resolve(database);
       };
@@ -148,34 +183,80 @@
     return !!record && accountId !== '' && record.account_id === accountId;
   }
 
-  function readStored() {
+  // ensureStore opens IndexedDB again when a connection that once worked was
+  // lost. Only one open runs at a time; every caller shares it.
+  function ensureStore() {
+    if (db !== null || !storeOpened) {
+      return Promise.resolve(db);
+    }
+    if (reopenPromise === null) {
+      reopenPromise = openStore().then(function (database) {
+        reopenPromise = null;
+        if (database !== null && db === null) {
+          db = database;
+        }
+        return db;
+      });
+    }
+    return reopenPromise;
+  }
+
+  // readStoredOnce resolves this account's stored rows, [] when this browser
+  // never had a store, and null when the read failed (unknown, not empty).
+  function readStoredOnce() {
     return new Promise(function (resolve) {
       if (db === null) {
-        resolve([]);
+        resolve(storeOpened ? null : []);
         return;
       }
+      var used = db;
+      var failed = function () {
+        if (db === used) {
+          db = null;
+        }
+        resolve(null);
+      };
       try {
-        var tx = db.transaction(STORE_NAME, 'readonly');
+        var tx = used.transaction(STORE_NAME, 'readonly');
         var request = tx.objectStore(STORE_NAME).index(ACCOUNT_INDEX).getAll(IDBKeyRange.only(accountId));
         request.onsuccess = function () {
           resolve(request.result || []);
         };
-        request.onerror = function () {
-          resolve([]);
-        };
+        request.onerror = failed;
       } catch (e) {
-        resolve([]);
+        failed();
       }
     });
   }
 
+  // readStored reads once, and after a failed read drops the connection,
+  // opens a new one and reads again. It resolves null when both fail.
+  function readStored() {
+    return ensureStore().then(readStoredOnce).then(function (list) {
+      if (list !== null) {
+        return list;
+      }
+      return ensureStore().then(readStoredOnce);
+    });
+  }
+
   // loadRows reads this account's rows (the stored ones and any kept in
-  // memory), oldest written first, into rows.
+  // memory), oldest written first, into rows. When the store cannot be read
+  // the rows it last read stay, so they neither leave the strip nor look sent.
   function loadRows() {
     return readStored().then(function (stored) {
+      if (stored === null) {
+        storeUnreadable = true;
+        stored = lastStored;
+      } else {
+        storeUnreadable = false;
+        lastStored = stored;
+      }
       var byId = {};
       stored.forEach(function (record) {
-        byId[record.request_id] = record;
+        if (!pendingRemovals[record.request_id]) {
+          byId[record.request_id] = record;
+        }
       });
       Object.keys(memoryRows).forEach(function (id) {
         byId[id] = memoryRows[id];
@@ -201,6 +282,29 @@
   // putRow writes one row. It resolves true when the row reached IndexedDB and
   // false when it is kept in memory only.
   function putRow(record) {
+    // A row written again is wanted, even if an earlier delete of the same
+    // request id has not reached the store.
+    delete pendingRemovals[record.request_id];
+    // A connection that died without telling the page throws on its first
+    // use. It is dropped and the write tried once more on a new connection,
+    // so a lost connection never marks the browser as unable to keep reports.
+    return ensureStore().then(function () {
+      return writeOnce(record);
+    }).then(function (result) {
+      if (result !== 'dead') {
+        return result;
+      }
+      return ensureStore().then(function () {
+        return writeOnce(record);
+      });
+    }).then(function (result) {
+      return result === true;
+    });
+  }
+
+  // writeOnce resolves true when the row reached the store, false when it is
+  // kept in memory, and 'dead' when the connection threw on use.
+  function writeOnce(record) {
     return new Promise(function (resolve) {
       var keepInMemory = function () {
         memoryRows[record.request_id] = record;
@@ -212,8 +316,19 @@
         resolve(false);
         return;
       }
+      var used = db;
+      var tx;
       try {
-        var tx = db.transaction(STORE_NAME, 'readwrite');
+        tx = used.transaction(STORE_NAME, 'readwrite');
+      } catch (e) {
+        if (db === used) {
+          db = null;
+        }
+        memoryRows[record.request_id] = record;
+        resolve('dead');
+        return;
+      }
+      try {
         tx.objectStore(STORE_NAME).put(record);
         tx.oncomplete = function () {
           delete memoryRows[record.request_id];
@@ -227,23 +342,39 @@
     });
   }
 
-  // removeRow is the only function that deletes a stored row.
+  // removeRow is the only function that deletes a stored row. A delete that
+  // cannot reach the store stays pending: the row is hidden and never sent from
+  // this page, and the next removeRow deletes it together with its own row.
   function removeRow(requestId) {
     delete memoryRows[requestId];
-    return new Promise(function (resolve) {
-      if (db === null) {
-        resolve();
-        return;
-      }
-      try {
-        var tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).delete(requestId);
-        tx.oncomplete = resolve;
-        tx.onerror = resolve;
-        tx.onabort = resolve;
-      } catch (e) {
-        resolve();
-      }
+    if (storeOpened) {
+      pendingRemovals[requestId] = true;
+    }
+    return ensureStore().then(function () {
+      return new Promise(function (resolve) {
+        var ids = Object.keys(pendingRemovals);
+        if (db === null || ids.length === 0) {
+          resolve();
+          return;
+        }
+        try {
+          var tx = db.transaction(STORE_NAME, 'readwrite');
+          var store = tx.objectStore(STORE_NAME);
+          ids.forEach(function (id) {
+            store.delete(id);
+          });
+          tx.oncomplete = function () {
+            ids.forEach(function (id) {
+              delete pendingRemovals[id];
+            });
+            resolve();
+          };
+          tx.onerror = resolve;
+          tx.onabort = resolve;
+        } catch (e) {
+          resolve();
+        }
+      });
     });
   }
 
@@ -278,14 +409,17 @@
       db = database;
       if (db === null) {
         memoryOnly = true;
+      } else {
+        storeOpened = true;
       }
       return loadRows();
     }).then(function (list) {
       // A page that passed the gate proves the session for this account, so a
-      // row that was waiting for a sign in is tried again.
+      // row that was waiting for a sign in, or refused because another account
+      // was signed in, is tried again.
       var writes = [];
       list.forEach(function (record) {
-        if (record.status === STATUS_SIGNED_OUT) {
+        if (record.status === STATUS_SIGNED_OUT || record.status === STATUS_OTHER_ACCOUNT) {
           record.status = STATUS_WAITING;
           writes.push(putRow(record));
         }
@@ -370,18 +504,24 @@
     return runFlush(false);
   }
 
+  // discard resolves true when the row was removed and false when it was not:
+  // no such row, or a stored row the page cannot read right now, whose delete
+  // could not reach the store and would come back on a reload (WR-W06).
   function discard(requestId) {
     return storeReady.then(function () {
+      return loadRows();
+    }).then(function () {
       var record = findRow(requestId);
-      if (!record || !belongsToAccount(record)) {
-        return null;
+      if (!record || !belongsToAccount(record) || isStale(record)) {
+        renderStrip();
+        return false;
       }
       return removeRow(requestId).then(function () {
         return loadRows();
       }).then(function () {
         renderStrip();
         scheduleWake();
-        return null;
+        return true;
       });
     });
   }
@@ -415,7 +555,7 @@
       }).then(function (list) {
         var now = Date.now();
         var due = list.filter(function (record) {
-          if (record.sending_until > now) {
+          if (record.sending_until > now || isStale(record) || questionOpen(record.request_id)) {
             return false;
           }
           if (record.status === STATUS_WAITING || record.status === STATUS_NO_ANSWER) {
@@ -479,15 +619,24 @@
     // meantime is not sent from a stale copy.
     return loadRows().then(function () {
       var current = findRow(record.request_id);
-      if (!current || !belongsToAccount(current) || isLeased(current)) {
+      // A row whose Discard question is open waits until the person answers it
+      // (WR-W07); a pass that picked it before the question opened skips it.
+      if (!current || !belongsToAccount(current) || isLeased(current) || isStale(current) ||
+          questionOpen(current.request_id)) {
         return 'skip';
       }
       current.sending_until = Date.now() + SENDING_LEASE_MS;
       current.attempts = (current.attempts || 0) + 1;
       current.payload.request_id = current.request_id;
+      // The post names the account the report was saved under, so the server
+      // refuses it when another account is signed in now (WR-W09). It is the
+      // digits only id the page already carries and nothing more. It is added
+      // to a copy, so the saved payload and the form that edits it never hold it.
+      var body = JSON.parse(JSON.stringify(current.payload));
+      body.expected_account_id = current.account_id;
       return putRow(current).then(function () {
         renderStrip();
-        return Pinalert.submitReport(current.payload).then(function (report) {
+        return Pinalert.submitReport(body).then(function (report) {
           return removeRow(current.request_id).then(function () {
             if (report && report.held === true) {
               Pinalert.showToast(HELD_TOAST_MESSAGE, null, LONG_TOAST_MS);
@@ -513,26 +662,39 @@
     record.sending_until = 0;
     var status = err && err.status;
     var outcome = 'kept';
+    var held = '';
     if (err && err.queueable === true) {
       record.status = (status === 502 || status === 503 || status === 504) ? STATUS_NO_ANSWER : STATUS_WAITING;
       outcome = 'stop';
     } else if (status === 429) {
       var seconds = typeof err.retryAfterSeconds === 'number' ? err.retryAfterSeconds : 60;
+      // A wait of 0, or one that cannot be read, would resend every second
+      // for as long as the server keeps refusing (IN-W07).
+      if (!isFinite(seconds) || seconds < MIN_BLOCKED_WAIT_S) {
+        seconds = MIN_BLOCKED_WAIT_S;
+      }
       record.status = STATUS_BLOCKED;
       record.next_try_at = Date.now() + 1000 * seconds;
       record.serious = err.serious === true;
       record.emergency_number = err.emergencyNumber || '';
       announce(blockedAnnouncement(record));
-    } else if (status === 401) {
+    } else if (status === 401 || (status === 409 && err.field === OTHER_ACCOUNT_FIELD)) {
+      // Signed out, or another account is signed in now than the one this
+      // page and its saved reports belong to (WR-W09). Every other report of
+      // this account would get the same answer, so they all wait, nothing more
+      // is sent from this page and Discard stays on each row. For another
+      // account the Not sent rows are held too: their Edit and resend would
+      // post through the form under the account signed in now.
+      held = status === 401 ? STATUS_SIGNED_OUT : STATUS_OTHER_ACCOUNT;
       rows.forEach(function (other) {
-        if (belongsToAccount(other) && other.status !== STATUS_REJECTED) {
-          other.status = STATUS_SIGNED_OUT;
+        if (belongsToAccount(other) && (other.status !== STATUS_REJECTED || held === STATUS_OTHER_ACCOUNT)) {
+          other.status = held;
           other.sending_until = 0;
         }
       });
-      record.status = STATUS_SIGNED_OUT;
+      record.status = held;
       sessionLapsed = true;
-      announce(ANNOUNCE_SIGNED_OUT);
+      announce(status === 401 ? ANNOUNCE_SIGNED_OUT : ANNOUNCE_OTHER_ACCOUNT);
       outcome = 'stop';
     } else {
       record.status = STATUS_REJECTED;
@@ -540,9 +702,9 @@
       announce(ANNOUNCE_NOT_SENT_PREFIX + record.last_error);
     }
     var writes = [putRow(record)];
-    if (status === 401) {
+    if (held !== '') {
       rows.forEach(function (other) {
-        if (other !== record && other.status === STATUS_SIGNED_OUT) {
+        if (other !== record && other.status === held) {
           writes.push(putRow(other));
         }
       });
@@ -647,6 +809,18 @@
     return record.sending_until > Date.now();
   }
 
+  // isStale is true for a stored row shown from the last good read while the
+  // store cannot be read. It is never sent: another tab may have sent it.
+  function isStale(record) {
+    return storeUnreadable && !Object.prototype.hasOwnProperty.call(memoryRows, record.request_id);
+  }
+
+  // questionOpen is true while the Discard question of that row is on screen.
+  function questionOpen(requestId) {
+    var rowEl = rowEls[requestId];
+    return !!rowEl && !!rowEl.querySelector('.queue-strip__confirm');
+  }
+
   function renderStrip() {
     var list = rows.filter(function (record) {
       return belongsToAccount(record);
@@ -680,10 +854,17 @@
       ensureFrame();
       var count = list.length;
       Pinalert.setText(countEl, count + (count === 1 ? COUNT_ONE_SUFFIX : COUNT_MANY_SUFFIX));
-      Pinalert.setText(helpEl, memoryOnly ? HELP_LINE_MEMORY : HELP_LINE);
+      var help = HELP_LINE;
+      if (memoryOnly) {
+        help = HELP_LINE_MEMORY;
+      } else if (storeUnreadable) {
+        help = HELP_LINE_UNREADABLE;
+      }
+      Pinalert.setText(helpEl, help);
       var now = Date.now();
       var nothingToSend = list.every(function (record) {
-        return isLeased(record) || (record.status === STATUS_BLOCKED && record.next_try_at > now);
+        return isLeased(record) || isStale(record) ||
+          (record.status === STATUS_BLOCKED && record.next_try_at > now);
       });
       Pinalert.setText(sendBtn, passRunning ? SENDING_LABEL : SEND_NOW_LABEL);
       if (sessionLapsed || nothingToSend || passRunning) {
@@ -756,9 +937,18 @@
     Pinalert.setText(categoryEl, known ? Pinalert.CATEGORY_LABELS[payload.category] : Pinalert.CATEGORY_LABELS.other);
     Pinalert.setText(textEl, payload.description);
 
+    // An open Discard question is never torn down by a render: the status line
+    // and the buttons catch up when the question closes (WR-W07).
+    if (rowEl.querySelector('.queue-strip__confirm')) {
+      return;
+    }
+
     var leased = isLeased(record);
+    // A row shown from the last good read while the store cannot be read gets
+    // no buttons: its delete could not reach the store (WR-W06).
+    var stale = isStale(record);
     var signature = [leased ? 'sending' : record.status, record.last_error, record.serious === true,
-      record.emergency_number, record.status === STATUS_BLOCKED ? record.next_try_at : ''].join('|');
+      record.emergency_number, record.status === STATUS_BLOCKED ? record.next_try_at : '', stale].join('|');
     if (rowEl.getAttribute('data-state') === signature) {
       return;
     }
@@ -789,19 +979,21 @@
       Pinalert.setText(statusEl, NOT_SENT_PREFIX + record.last_error);
     } else if (record.status === STATUS_SIGNED_OUT) {
       Pinalert.setText(statusEl, STATUS_TEXT_SIGNED_OUT);
+    } else if (record.status === STATUS_OTHER_ACCOUNT) {
+      Pinalert.setText(statusEl, STATUS_TEXT_OTHER_ACCOUNT);
     } else {
       Pinalert.setText(statusEl, STATUS_TEXT_WAITING);
     }
 
     // The buttons.
+    var hadFocus = actionsEl.contains(document.activeElement);
     Pinalert.setText(actionsEl, '');
-    var oldConfirm = rowEl.querySelector('.queue-strip__confirm');
-    if (oldConfirm) {
-      rowEl.removeChild(oldConfirm);
-    }
     actionsEl.hidden = false;
-    if (leased) {
+    if (leased || stale) {
       actionsEl.hidden = true;
+      if (stale && hadFocus && headingEl) {
+        headingEl.focus();
+      }
       return;
     }
     if (record.status === STATUS_REJECTED) {
@@ -871,7 +1063,9 @@
 
   function openDiscardConfirm(rowEl, record) {
     var actionsEl = rowEl.querySelector('.queue-strip__actions');
-    var discardBtn = rowEl.querySelector('.queue-strip__discard');
+    if (rowEl.querySelector('.queue-strip__confirm')) {
+      return;
+    }
     questionSeq += 1;
     var questionId = 'queue-question-' + questionSeq;
 
@@ -898,13 +1092,22 @@
     Pinalert.setText(yes, CONFIRM_DISCARD_LABEL);
     group.appendChild(yes);
 
+    // closeQuestion lets the row catch up with any change held back while the
+    // question was open, then puts focus on the row's Discard button as it is
+    // now (a catch up may have rebuilt it).
     var closeQuestion = function () {
       if (group.parentNode) {
         group.parentNode.removeChild(group);
       }
       actionsEl.hidden = false;
-      if (discardBtn) {
-        discardBtn.focus();
+      renderStrip();
+      scheduleWake();
+      var current = rowEls[record.request_id];
+      var target = current ? current.querySelector('.queue-strip__discard') : null;
+      if (target) {
+        target.focus();
+      } else if (headingEl && !stripEl.hidden) {
+        headingEl.focus();
       }
     };
     keep.addEventListener('click', closeQuestion);
@@ -915,8 +1118,12 @@
       }
     });
     yes.addEventListener('click', function () {
-      discard(record.request_id).then(function () {
-        Pinalert.showToast(DISCARDED_TOAST);
+      discard(record.request_id).then(function (removed) {
+        if (removed) {
+          Pinalert.showToast(DISCARDED_TOAST);
+        } else {
+          closeQuestion();
+        }
       });
     });
 
