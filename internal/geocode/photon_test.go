@@ -275,6 +275,28 @@ func TestPhotonLabels(t *testing.T) {
 			"Gachibowli, Hyderabad, Telangana",
 		},
 		{"nothing at all", photonProperties{}, ""},
+		// Quick 261016-sfu: live, some Hyderabad rows carry a ward as the
+		// district and no city. The county then names the city.
+		{
+			"ward as district and no city: the county names the city",
+			photonProperties{Name: "Banjara Hills", District: "Ward 92 Venkateshwara Colony", County: "Hyderabad", State: "Telangana"},
+			"Banjara Hills, Ward 92 Venkateshwara Colony, Hyderabad, Telangana",
+		},
+		{
+			"a city is kept and the county left out",
+			photonProperties{Name: "Gachibowli", City: "Hyderabad", County: "Rangareddy", State: "Telangana"},
+			"Gachibowli, Hyderabad, Telangana",
+		},
+		{
+			"a county named like the place is not repeated",
+			photonProperties{Name: "Hyderabad", County: "hyderabad", State: "Telangana"},
+			"Hyderabad, Telangana",
+		},
+		{
+			"a null county is skipped",
+			photonProperties{Name: "Kondapur", City: " ", County: "null", State: "Telangana"},
+			"Kondapur, Telangana",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -286,6 +308,25 @@ func TestPhotonLabels(t *testing.T) {
 				t.Fatalf("label %q holds null or an empty part", got)
 			}
 		})
+	}
+}
+
+// TestPhotonReadsTheCounty pins the county as Photon sends it, by its JSON
+// name, on a row with no city.
+func TestPhotonReadsTheCounty(t *testing.T) {
+	area := photonFeatureJSON(78.4347, 17.4156, map[string]any{
+		"name": "Banjara Hills", "district": "Ward 92 Venkateshwara Colony", "county": "Hyderabad",
+		"state": "Telangana", "countrycode": "IN", "osm_key": "place", "osm_value": "suburb",
+	})
+	ps := newPhotonStub(t, photonAnswers(t, area))
+	rs := newRecordingServer(t, nil)
+	c := newDualClient(ps.server.URL, rs.server.URL)
+	answer, err := c.Search(context.Background(), "Banjra Hills", nil)
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if len(answer.Results) != 1 || answer.Results[0].DisplayName != "Banjara Hills, Ward 92 Venkateshwara Colony, Hyderabad, Telangana" {
+		t.Fatalf("results = %+v, want the label to name Hyderabad", answer.Results)
 	}
 }
 
