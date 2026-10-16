@@ -426,3 +426,40 @@ await test('keeps saved reports on the strip and unsent while the store is unrea
   assert.equal(env.store.size, 0, 'the sent and the discarded report are both gone');
   assert.equal(env.strip.hidden, true);
 });
+
+await test('an open Discard question holds its row: no send, no rebuild, focus stays (WR-W07)', async () => {
+  const id = 'req-llllllllllllllll-12';
+  const env = loadQueue({
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z')],
+    answers: [() => Promise.reject({ queueable: true, status: 0 })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  assert.equal(env.submitted.length, 1);
+
+  const rowEl = env.strip.querySelector('.queue-strip__row');
+  const discardBtn = rowEl.querySelector('.queue-strip__discard');
+  discardBtn.handlers.click.forEach((fn) => fn());
+  const group = rowEl.querySelector('.queue-strip__confirm');
+  assert.ok(group, 'the question is open');
+  const keep = group.children.find((el) => el.textContent === 'Keep saved report');
+  assert.equal(env.doc.activeElement, keep);
+
+  // The signal returns while the person is deciding.
+  await env.queue.flush();
+  await settle();
+  assert.equal(env.submitted.length, 1, 'the report is not sent while the question is open');
+  assert.equal(group.parentNode, rowEl, 'the question is still on the row');
+  assert.ok(rowEl.contains(keep), 'Keep saved report is still on the row');
+  assert.equal(env.doc.activeElement, keep, 'focus stays on Keep saved report');
+
+  // Keep closes the question, focus goes to the row's Discard button and the
+  // next pass sends the report.
+  keep.handlers.click.forEach((fn) => fn());
+  assert.equal(rowEl.querySelector('.queue-strip__confirm'), null);
+  assert.equal(env.doc.activeElement, rowEl.querySelector('.queue-strip__discard'));
+  await env.queue.flush();
+  await settle();
+  assert.equal(env.submitted.length, 2);
+  assert.equal(env.store.size, 0);
+});

@@ -510,7 +510,7 @@
       }).then(function (list) {
         var now = Date.now();
         var due = list.filter(function (record) {
-          if (record.sending_until > now || isStale(record)) {
+          if (record.sending_until > now || isStale(record) || questionOpen(record.request_id)) {
             return false;
           }
           if (record.status === STATUS_WAITING || record.status === STATUS_NO_ANSWER) {
@@ -574,7 +574,10 @@
     // meantime is not sent from a stale copy.
     return loadRows().then(function () {
       var current = findRow(record.request_id);
-      if (!current || !belongsToAccount(current) || isLeased(current) || isStale(current)) {
+      // A row whose Discard question is open waits until the person answers it
+      // (WR-W07); a pass that picked it before the question opened skips it.
+      if (!current || !belongsToAccount(current) || isLeased(current) || isStale(current) ||
+          questionOpen(current.request_id)) {
         return 'skip';
       }
       current.sending_until = Date.now() + SENDING_LEASE_MS;
@@ -748,6 +751,12 @@
     return storeUnreadable && !Object.prototype.hasOwnProperty.call(memoryRows, record.request_id);
   }
 
+  // questionOpen is true while the Discard question of that row is on screen.
+  function questionOpen(requestId) {
+    var rowEl = rowEls[requestId];
+    return !!rowEl && !!rowEl.querySelector('.queue-strip__confirm');
+  }
+
   function renderStrip() {
     var list = rows.filter(function (record) {
       return belongsToAccount(record);
@@ -864,6 +873,12 @@
     Pinalert.setText(categoryEl, known ? Pinalert.CATEGORY_LABELS[payload.category] : Pinalert.CATEGORY_LABELS.other);
     Pinalert.setText(textEl, payload.description);
 
+    // An open Discard question is never torn down by a render: the status line
+    // and the buttons catch up when the question closes (WR-W07).
+    if (rowEl.querySelector('.queue-strip__confirm')) {
+      return;
+    }
+
     var leased = isLeased(record);
     var signature = [leased ? 'sending' : record.status, record.last_error, record.serious === true,
       record.emergency_number, record.status === STATUS_BLOCKED ? record.next_try_at : ''].join('|');
@@ -903,10 +918,6 @@
 
     // The buttons.
     Pinalert.setText(actionsEl, '');
-    var oldConfirm = rowEl.querySelector('.queue-strip__confirm');
-    if (oldConfirm) {
-      rowEl.removeChild(oldConfirm);
-    }
     actionsEl.hidden = false;
     if (leased) {
       actionsEl.hidden = true;
@@ -979,7 +990,9 @@
 
   function openDiscardConfirm(rowEl, record) {
     var actionsEl = rowEl.querySelector('.queue-strip__actions');
-    var discardBtn = rowEl.querySelector('.queue-strip__discard');
+    if (rowEl.querySelector('.queue-strip__confirm')) {
+      return;
+    }
     questionSeq += 1;
     var questionId = 'queue-question-' + questionSeq;
 
@@ -1006,13 +1019,22 @@
     Pinalert.setText(yes, CONFIRM_DISCARD_LABEL);
     group.appendChild(yes);
 
+    // closeQuestion lets the row catch up with any change held back while the
+    // question was open, then puts focus on the row's Discard button as it is
+    // now (a catch up may have rebuilt it).
     var closeQuestion = function () {
       if (group.parentNode) {
         group.parentNode.removeChild(group);
       }
       actionsEl.hidden = false;
-      if (discardBtn) {
-        discardBtn.focus();
+      renderStrip();
+      scheduleWake();
+      var current = rowEls[record.request_id];
+      var target = current ? current.querySelector('.queue-strip__discard') : null;
+      if (target) {
+        target.focus();
+      } else if (headingEl && !stripEl.hidden) {
+        headingEl.focus();
       }
     };
     keep.addEventListener('click', closeQuestion);
