@@ -436,6 +436,42 @@ test('newer text cancels a pending try and gets its own 3 tries', async () => {
   assert.equal(p.status.textContent, UNAVAILABLE);
 });
 
+test('a refusal for older text that lands during the newer pause is dropped', async () => {
+  const p = setup();
+  p.type('Banjara');
+  p.advance(300);
+  assert.equal(p.requests.length, 1);
+  p.type('Banjara Hills');
+  p.advance(100);
+  p.answer(p.requests[0], 429, {});
+  await settle();
+  p.advance(200);
+  assert.equal(p.requests.length, 2, 'the newer text goes out at its pause');
+  assert.equal(p.query(p.requests[1]), 'Banjara Hills');
+  p.answer(p.requests[1], 200, banjara);
+  await settle();
+  assert.equal(p.rows().length, 2, 'the newer list shows');
+  p.advance(3000);
+  assert.equal(p.requests.length, 2, 'the older text is never tried again');
+  assert.equal(p.rows().length, 2);
+});
+
+test('a refusal for older text after the box drops under 3 letters sends nothing', async () => {
+  const p = setup();
+  p.type('Banjara');
+  p.advance(300);
+  // Typing under 3 letters already ends the search out. Here the box changes
+  // with no input event, so only the retry's own check of the text in the
+  // box keeps the older text from being asked again.
+  p.input.value = 'Ba';
+  p.answer(p.requests[0], 429, {});
+  await settle();
+  p.advance(3000);
+  assert.equal(p.requests.length, 1);
+  assert.equal(p.results.hidden, true);
+  assert.equal(p.status.hidden, true);
+});
+
 test('Escape and a press outside stop a pending try', async () => {
   for (const stop of ['escape', 'outside']) {
     const p = setup();

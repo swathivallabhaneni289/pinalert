@@ -349,6 +349,40 @@ test('newer text cancels a pending try, and gets its own 3 tries', async () => {
   }
 });
 
+test('a refusal for older text that lands during the newer pause is dropped', async () => {
+  const p = setup();
+  p.type('Banjara');
+  p.advance(300);
+  assert.equal(p.requests.length, 1);
+  p.type('Banjara Hills');
+  p.advance(100);
+  p.answer(p.requests[0], 429, {});
+  await settle();
+  p.advance(200);
+  assert.equal(p.requests.length, 2, 'the newer text goes out at its pause');
+  assert.equal(p.query(p.requests[1]), 'Banjara Hills');
+  p.answer(p.requests[1], 200, roadNo12);
+  await settle();
+  assert.equal(p.rows().length, 2, 'the newer list shows');
+  p.advance(3000);
+  assert.equal(p.requests.length, 2, 'the older text is never tried again');
+  assert.equal(p.rows().length, 2);
+  assert.equal(p.status.hidden, true);
+});
+
+test('a refusal for older text after the box drops under 3 letters sends nothing', async () => {
+  const p = setup();
+  p.type('Banjara');
+  p.advance(300);
+  p.type('Ba');
+  p.answer(p.requests[0], 429, {});
+  await settle();
+  p.advance(3000);
+  assert.equal(p.requests.length, 1);
+  assert.equal(p.results.hidden, true);
+  assert.equal(p.status.hidden, true);
+});
+
 test('under 3 letters cancels a pending try', async () => {
   const p = setup();
   p.type('Banjara');
