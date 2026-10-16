@@ -738,6 +738,15 @@
 
     // requestFix asks for the exact position. Each request gets a number and a
     // late answer to an older request is ignored.
+    //
+    // The first attempt asks for a high accuracy fix. A phone that cannot give
+    // one in time (a cold GPS start, a GPS only provider indoors) answers with
+    // a timeout or "position unavailable", which is not a refusal, so it gets
+    // exactly one more attempt at the default accuracy, as votes.js does for a
+    // vote (WR-07 there, WR-W08 here). Only a refusal ends the request at once.
+    // The retry is a real fix taken now; a coarse one lands in the weak state,
+    // which asks the person before it is used. The retry is skipped when the
+    // form was closed or Retry was pressed meanwhile.
     function requestFix() {
       positionSeq += 1;
       var seq = positionSeq;
@@ -745,15 +754,20 @@
         onFail(seq, { code: 1, PERMISSION_DENIED: 1 });
         return;
       }
-      navigator.geolocation.getCurrentPosition(function (pos) {
-        onFix(seq, pos);
-      }, function (err) {
-        onFail(seq, err);
-      }, {
-        enableHighAccuracy: true,
-        timeout: LOCATION_TIMEOUT_MS,
-        maximumAge: 0
-      });
+      function attempt(highAccuracy) {
+        navigator.geolocation.getCurrentPosition(function (pos) {
+          onFix(seq, pos);
+        }, function (err) {
+          if (highAccuracy && seq === positionSeq && !(err && err.code === err.PERMISSION_DENIED)) {
+            attempt(false);
+            return;
+          }
+          onFail(seq, err);
+        }, highAccuracy
+          ? { enableHighAccuracy: true, timeout: LOCATION_TIMEOUT_MS, maximumAge: 0 }
+          : { enableHighAccuracy: false, timeout: LOCATION_TIMEOUT_MS, maximumAge: 0 });
+      }
+      attempt(true);
     }
 
     function start(hooks) {

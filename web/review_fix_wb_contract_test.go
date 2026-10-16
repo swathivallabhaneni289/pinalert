@@ -34,3 +34,39 @@ func TestReviewFixWBListenersIsolated(t *testing.T) {
 		t.Errorf("low.js must reach PinalertFlag only in the two guarded calls, found %d uses", strings.Count(low, "PinalertFlag."))
 	}
 }
+
+// TestReviewFixWBLowFormLocationRetry pins WR-W08: the Low data form asks for a
+// high accuracy fix first and, when that times out or the position is
+// unavailable, asks once more at the default accuracy, as votes.js does. A
+// refusal ends the request at once, and a request that a close or a Retry made
+// old starts no second attempt.
+func TestReviewFixWBLowFormLocationRetry(t *testing.T) {
+	low := p424ReadJS(t, "static/js/low.js")
+	request := jsFunctionBody(t, low, "requestFix()")
+	p424Ordered(t, "requestFix", request,
+		"positionSeq += 1;",
+		"var seq = positionSeq;",
+		"function attempt(highAccuracy) {",
+		"navigator.geolocation.getCurrentPosition(",
+		"onFix(seq, pos);",
+		"if (highAccuracy && seq === positionSeq && !(err && err.code === err.PERMISSION_DENIED)) {",
+		"attempt(false);",
+		"return;",
+		"onFail(seq, err);",
+		"{ enableHighAccuracy: true, timeout: LOCATION_TIMEOUT_MS, maximumAge: 0 }",
+		"{ enableHighAccuracy: false, timeout: LOCATION_TIMEOUT_MS, maximumAge: 0 }",
+		"attempt(true);")
+	for needle, want := range map[string]int{
+		"attempt(false)":      1,
+		"attempt(true)":       1,
+		"getCurrentPosition(": 1,
+	} {
+		if n := strings.Count(request, needle); n != want {
+			t.Errorf("requestFix holds %q %d times, want %d", needle, n, want)
+		}
+	}
+	// The list's own position request keeps its single default accuracy ask.
+	if n := strings.Count(low, "getCurrentPosition("); n != 2 {
+		t.Errorf("low.js asks for a position from %d places, want 2 (the list and the form)", n)
+	}
+}
