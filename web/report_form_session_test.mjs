@@ -25,7 +25,7 @@ const source = fs.readFileSync(path.join(here, 'static', 'js', 'report-form.js')
 const EARLIER_POSTED = 'Your earlier report was posted.';
 const EARLIER_HELD = "Your earlier report was received. It isn't shown yet. A text check has to finish first.";
 const EARLIER_SAVED = "No signal. Your earlier report is saved on this device and will send when you're back online.";
-const EARLIER_NOT_SAVED = 'Your earlier report could not be saved on this device, so it was not sent.';
+const EARLIER_NOT_SAVED = "Your earlier report couldn't be saved on this device, so it wasn't sent.";
 
 // ----- fake element model -----
 
@@ -329,7 +329,7 @@ test('an earlier post that is refused says why and leaves the new form alone', a
   await settle();
   assertNewDraftUntouched(page);
   assert.equal(page.el('severity').doc.activeElement, page.el('severity'), 'focus must not move in the new form');
-  assert.deepEqual(page.toasts, ['Your earlier report was not posted. That text is not allowed.']);
+  assert.deepEqual(page.toasts, ["Your earlier report wasn't posted. That text is not allowed."]);
   assert.equal(page.queueSaves.length, 0);
 });
 
@@ -343,7 +343,7 @@ test('a refused earlier post over the serious limit still gives the emergency nu
   await settle();
   assertNewDraftUntouched(page);
   assert.equal(page.el('send-after-wait').hidden, true, 'the new form must not offer Send after the wait');
-  assert.deepEqual(page.toasts, ['Your earlier report was not posted. Please wait 5 minutes. In an emergency, call 112 now.']);
+  assert.deepEqual(page.toasts, ["Your earlier report wasn't posted. Please wait 5 minutes. In an emergency, call 112 now."]);
   const action = page.toastActions[0];
   assert.ok(action, 'the serious toast must carry a Call action');
   assert.equal(action.label, 'Call 112');
@@ -362,7 +362,7 @@ test('a refused earlier post that is not a serious wait has no Call action', asy
     serious: false, emergencyNumber: ''
   }));
   await settle();
-  assert.deepEqual(page.toasts, ['Your earlier report was not posted. Please wait 5 minutes.']);
+  assert.deepEqual(page.toasts, ["Your earlier report wasn't posted. Please wait 5 minutes."]);
   assert.deepEqual(page.toastActions, [null]);
 });
 
@@ -400,7 +400,7 @@ test('a posted report is never called refused when the closing code throws', asy
   armed = true;
   page.posts[0].resolve({ id: 45 });
   await settle();
-  assert.ok(page.toasts.every((t) => !t.startsWith('Your earlier report was not posted.')),
+  assert.ok(page.toasts.every((t) => !t.startsWith("Your earlier report wasn't posted.")),
     'a posted report must not be told as refused: ' + JSON.stringify(page.toasts));
   assert.equal(page.queueSaves.length, 0, 'a posted report must not be saved again');
 });

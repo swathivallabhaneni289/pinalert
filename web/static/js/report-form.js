@@ -69,8 +69,8 @@
   var EARLIER_HELD_TOAST = "Your earlier report was received. It isn't shown yet. A text check has to finish first.";
   var EARLIER_SAVE_TOAST = "No signal. Your earlier report is saved on this device and will send when you're back online.";
   var EARLIER_SAVE_TOAST_MEMORY = 'No signal. Your earlier report is kept on this page only. Keep the page open until it sends.';
-  var EARLIER_NOT_SAVED_TOAST = 'Your earlier report could not be saved on this device, so it was not sent.';
-  var EARLIER_REFUSED_PREFIX = 'Your earlier report was not posted. ';
+  var EARLIER_NOT_SAVED_TOAST = "Your earlier report couldn't be saved on this device, so it wasn't sent.";
+  var EARLIER_REFUSED_PREFIX = "Your earlier report wasn't posted. ";
   var EARLIER_REFUSED_FALLBACK = 'Something went wrong.';
 
   var mounted = false;
