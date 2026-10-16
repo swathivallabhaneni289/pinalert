@@ -447,7 +447,7 @@ func TestExistingPagesRenderWithChrome(t *testing.T) {
 		}
 	})
 	t.Run("profile", func(t *testing.T) {
-		check(t, chromeExecute(t, tmpl, profileTemplateName, profileViewModel{Email: "a@example.com", Chrome: chrome}), false, 1)
+		check(t, chromeExecute(t, tmpl, profileTemplateName, profileViewModel{Chrome: chrome}), false, 1)
 	})
 	t.Run("zero_chrome", func(t *testing.T) {
 		check(t, chromeServeMap(t, tmpl, PageConfig{}), true, 1)
