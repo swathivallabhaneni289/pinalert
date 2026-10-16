@@ -439,7 +439,7 @@ Plans:
   1. Reworks built code: Phase 3.1's tab strip, Past tab and phone bottom bar; Phase 4's disclaimer bar on every page and account menu; quick tasks 261013-lrw and 261013-wm5. Contract tests that pin them get a dated amendment note naming the owner decision.
   2. Builds places and empty states only; the bell and Updates (3.2), phone notifications (3.3), Official alerts content and the Demo button (5) and profiles (9) fill them later. This phase also stores the name, the home area and the What is happening pick (03.4-CONTEXT D-24b, 2026-10-16), which 3.3 then uses.
 
-**Plans:** 14/20 plans executed
+**Plans:** 16/20 plans executed
 
 Plans:
 **Wave 1**
@@ -479,8 +479,8 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 03.4-15-PLAN.md: Search a place in the Nearby top bar, the chosen chip soft fill, phone notices inside the sheet
-- [ ] 03.4-19-PLAN.md: Gap closure: the take back of a mistaken Mark resolved on Ended nearby rows (03.1 D-22, 03.4 D-21), found after plan 14
+- [x] 03.4-15-PLAN.md: Search a place in the Nearby top bar, the chosen chip soft fill, phone notices inside the sheet
+- [x] 03.4-19-PLAN.md: Gap closure: the take back of a mistaken Mark resolved on Ended nearby rows (03.1 D-22, 03.4 D-21), found after plan 14
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
@@ -627,7 +627,7 @@ Phases execute in the owner's build order (2026-10-16): 1 → 1.1 → 2 → 3 �
 | 3.1 Report history views | 16/16 | In Progress|  |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
 | 3.3 Installable app and phone alerts | 0/TBD | Not started | - |
-| 3.4 App layout | 14/20 | In Progress|  |
+| 3.4 App layout | 16/20 | In Progress|  |
 | 4. Robustness — Real-World Resilience | 29/29 | In Progress|  |
 | 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
 | 6. Coordination (removed 2026-10-16, share card moved to Phase 8) | - | Removed | - |
