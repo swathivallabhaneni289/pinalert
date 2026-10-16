@@ -33,6 +33,7 @@
   var QUEUE_FLUSH_MS = 30000;
   var WAIT_TICK_MS = 60000;
   var SENDING_LEASE_MS = 15000;
+  var MIN_BLOCKED_WAIT_S = 5;
   var LONG_TOAST_MS = 6000;
   var COUNT_EVENT = 'pinalert-queue-count';
   var REQUEST_ID_PATTERN = /^[A-Za-z0-9-]{16,64}$/;
@@ -616,6 +617,11 @@
       outcome = 'stop';
     } else if (status === 429) {
       var seconds = typeof err.retryAfterSeconds === 'number' ? err.retryAfterSeconds : 60;
+      // A wait of 0, or one that cannot be read, would resend every second
+      // for as long as the server keeps refusing (IN-W07).
+      if (!isFinite(seconds) || seconds < MIN_BLOCKED_WAIT_S) {
+        seconds = MIN_BLOCKED_WAIT_S;
+      }
       record.status = STATUS_BLOCKED;
       record.next_try_at = Date.now() + 1000 * seconds;
       record.serious = err.serious === true;

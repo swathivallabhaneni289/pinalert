@@ -463,3 +463,21 @@ await test('an open Discard question holds its row: no send, no rebuild, focus s
   assert.equal(env.submitted.length, 2);
   assert.equal(env.store.size, 0);
 });
+
+await test('a 429 with a wait of 0 seconds waits at least 5 seconds (IN-W07)', async () => {
+  const id = 'req-mmmmmmmmmmmmmmmm-13';
+  const env = loadQueue({
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z')],
+    answers: [() => Promise.reject({ status: 429, retryAfterSeconds: 0, serious: false, emergencyNumber: '' })]
+  });
+  const before = Date.now();
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  const row = env.store.get(id);
+  assert.equal(row.status, 'blocked');
+  assert.ok(row.next_try_at >= before + 5000, 'next try is at least 5 seconds away, got ' + (row.next_try_at - before));
+
+  await env.queue.flush();
+  await settle();
+  assert.equal(env.submitted.length, 1, 'no resend before the wait is over');
+});
