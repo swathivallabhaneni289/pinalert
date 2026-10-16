@@ -188,6 +188,7 @@ var p422CopyConstants = []struct{ name, literal string }{
 	{"HELD_TOAST_MESSAGE", `"Report received. It isn't shown yet. A text check has to finish first."`},
 	{"DISCARDED_TOAST", `'Saved report discarded.'`},
 	{"DISCARD_FAILED_TOAST", `"This saved report couldn't be discarded. Try again."`},
+	{"DISCARD_SENDING_TOAST", `"This report is being sent right now, so it can't be discarded."`},
 	{"GENERIC_REASON", `'Something went wrong. Try again.'`},
 	{"ANNOUNCE_ONE_SUFFIX", `' report waiting to send.'`},
 	{"ANNOUNCE_MANY_SUFFIX", `' reports waiting to send.'`},

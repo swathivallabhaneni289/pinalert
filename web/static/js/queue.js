@@ -54,6 +54,7 @@
   // How a discard ended (discardOutcome).
   var DISCARD_REMOVED = 'removed';
   var DISCARD_FAILED = 'failed';
+  var DISCARD_SENDING = 'sending';
   var DISCARD_SKIPPED = 'skipped';
 
   // The copy table. Plain characters only.
@@ -84,6 +85,7 @@
   var HELD_TOAST_MESSAGE = "Report received. It isn't shown yet. A text check has to finish first.";
   var DISCARDED_TOAST = 'Saved report discarded.';
   var DISCARD_FAILED_TOAST = "This saved report couldn't be discarded. Try again.";
+  var DISCARD_SENDING_TOAST = "This report is being sent right now, so it can't be discarded.";
   var GENERIC_REASON = 'Something went wrong. Try again.';
   var ANNOUNCE_ONE_SUFFIX = ' report waiting to send.';
   var ANNOUNCE_MANY_SUFFIX = ' reports waiting to send.';
@@ -560,7 +562,8 @@
 
   // discardOutcome removes one row and resolves how that went:
   // DISCARD_REMOVED, DISCARD_FAILED when the delete could not reach the store
-  // (WR-03), or DISCARD_SKIPPED for no such row, or a stored row the page
+  // (WR-03), DISCARD_SENDING for a row whose lease is live (WR-04), or
+  // DISCARD_SKIPPED for no such row, or a stored row the page
   // cannot read right now, whose delete would come back on a reload (WR-W06).
   // A row that is not removed stays on the strip and can still be sent: the
   // person is told it was kept, so it is neither hidden nor deleted later.
@@ -572,6 +575,12 @@
       if (!record || !belongsToAccount(record) || isStale(record)) {
         renderStrip();
         return DISCARD_SKIPPED;
+      }
+      // A row another tab, or a pass of this one, is sending right now may be
+      // posted whatever happens here, so it is never discarded (WR-04).
+      if (isLeased(record)) {
+        renderStrip();
+        return DISCARD_SENDING;
       }
       var memoryCopy = Object.prototype.hasOwnProperty.call(memoryRows, requestId) ? memoryRows[requestId] : null;
       return removeRow(requestId).then(function (removed) {
@@ -1190,6 +1199,8 @@
         closeQuestion();
         if (outcome === DISCARD_FAILED) {
           Pinalert.showToast(DISCARD_FAILED_TOAST);
+        } else if (outcome === DISCARD_SENDING) {
+          Pinalert.showToast(DISCARD_SENDING_TOAST);
         }
       });
     });

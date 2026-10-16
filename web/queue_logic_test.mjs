@@ -629,6 +629,29 @@ await test('a discard that meets a silently dead connection deletes on a new one
   assert.equal(env.idb.opens, 2, 'the store was opened again');
 });
 
+await test('a report another tab is sending right now is never discarded (WR-04)', async () => {
+  const id = 'req-uuuuuuuuuuuuuuuu-21';
+  const env = loadQueue({
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z', {
+      status: 'rejected', last_error: 'Say what is happening.'
+    })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  const question = openDiscardQuestion(env);
+  // Another tab takes the row's lease while the question is open.
+  const leased = env.store.get(id);
+  leased.sending_until = Date.now() + 15000;
+  env.store.set(id, leased);
+  question.pressYes();
+  await settle();
+  assert.ok(env.store.has(id), 'the report being sent stays');
+  assert.deepEqual(env.toasts, ["This report is being sent right now, so it can't be discarded."]);
+  assert.equal(question.rowEl.querySelector('.queue-strip__confirm'), null, 'the question closes');
+  assert.equal(env.strip.querySelector('.queue-strip__status').textContent, 'Sending.');
+  assert.equal(await env.queue.discard(id), false);
+});
+
 await test('a sent report never comes back when the read after the send fails (WR-08)', async () => {
   const id = 'req-rrrrrrrrrrrrrrrr-18';
   let env = null;
