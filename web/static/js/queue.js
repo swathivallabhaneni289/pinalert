@@ -110,12 +110,15 @@
 
   function openStore() {
     return new Promise(function (resolve) {
-      if (typeof indexedDB === 'undefined' || !indexedDB) {
-        resolve(null);
-        return;
-      }
       var request;
+      // The feature test sits inside the try too: in some frames merely
+      // reading the indexedDB global throws, and the page then keeps its
+      // reports in memory instead of losing the strip (IN-W04).
       try {
+        if (typeof indexedDB === 'undefined' || !indexedDB) {
+          resolve(null);
+          return;
+        }
         request = indexedDB.open(DB_NAME, DB_VERSION);
       } catch (e) {
         resolve(null);

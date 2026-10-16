@@ -153,7 +153,7 @@ function makeIndexedDB(initial) {
 
 // ----- one sandbox per case -----
 
-function loadQueue({ records = [], answers = [] }) {
+function loadQueue({ records = [], answers = [], indexedDBThrows = false }) {
   const doc = makeDocument();
   const idb = makeIndexedDB(records);
   const submitted = [];
@@ -189,7 +189,16 @@ function loadQueue({ records = [], answers = [] }) {
     URLSearchParams
   };
   vm.createContext(sandbox);
-  vm.runInContext(source, sandbox);
+  if (indexedDBThrows) {
+    // Some frames throw on a plain read of the indexedDB global. A vm global
+    // never runs a getter, so the read goes through a with scope instead.
+    sandbox.throwingScope = Object.defineProperty({}, 'indexedDB', {
+      get() { throw new Error('SecurityError'); }
+    });
+    vm.runInContext('with (throwingScope) {\n' + source + '\n}', sandbox);
+  } else {
+    vm.runInContext(source, sandbox);
+  }
   const strip = doc.createElement('div');
   const live = doc.createElement('div');
   doc.byId['notice-live'] = live;
@@ -314,4 +323,20 @@ await test('draws Edit and resend as a link only for a single slash path', async
     assert.equal(hasEditControl(env.strip), false, 'no control for ' + value);
     assert.ok(env.strip.querySelector('.queue-strip__discard'), 'Discard report is still drawn for ' + value);
   }
+});
+
+await test('keeps reports in memory when reading the indexedDB global throws (IN-W04)', async () => {
+  const id = 'req-hhhhhhhhhhhhhhhh-8';
+  const env = loadQueue({
+    indexedDBThrows: true,
+    answers: [() => Promise.reject({ queueable: true, status: 0 })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  const persisted = await env.queue.save(record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z'));
+  await settle();
+  assert.equal(persisted, false, 'the report is kept in memory');
+  assert.equal(env.strip.hidden, false, 'the strip is drawn');
+  assert.equal(env.strip.querySelector('.queue-strip__help').textContent,
+    "This browser can't keep reports for later. Keep this page open until they send.");
 });
