@@ -2,14 +2,19 @@
 // and checks four things the Go source tests cannot: saved reports send oldest
 // first, a saved report is never discarded for age or failure, another
 // account's report is never sent, drawn or counted, and Edit and resend is
-// drawn as a link only for a single slash path.
+// drawn as a link only for a single slash path. The last cases run the real
+// app.js too, with a post that never settles, as WebKit can leave an aborted
+// one: the post fails at its 10 second limit as no answer, the send pass ends
+// and the row stays saved, and a body that stalls after a 201 is never taken
+// for no answer.
 //
 // Run it with: node --test web/queue_logic_test.mjs
 // CI runs it with the other web/*.mjs files (node --test web/*.mjs in
 // .github/workflows/ci.yml). It is not embedded in the server.
 // The fakes below cover only what queue.js calls: a small in memory IndexedDB,
 // a minimal element model, timers that never fire on their own, and a fake
-// Pinalert whose submitReport answers from a script per case.
+// Pinalert whose submitReport answers from a script per case, or the real
+// Pinalert of app.js with a fetch the case answers by hand.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,6 +25,7 @@ import vm from 'node:vm';
 
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(here, 'static', 'js', 'queue.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(here, 'static', 'js', 'app.js'), 'utf8');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -49,6 +55,7 @@ class FakeEl {
   }
   setAttribute(name, value) { this.attrs[name] = String(value); }
   getAttribute(name) { return Object.hasOwn(this.attrs, name) ? this.attrs[name] : null; }
+  hasAttribute(name) { return Object.hasOwn(this.attrs, name); }
   removeAttribute(name) { delete this.attrs[name]; }
   appendChild(node) { return this.insertBefore(node, null); }
   insertBefore(node, ref) {
@@ -92,9 +99,69 @@ function makeDocument() {
     byId: {},
     createElement(tag) { const el = new FakeEl(tag); el.ownerDocument = doc; return el; },
     createTextNode(text) { const el = new FakeEl('#text'); el.ownerDocument = doc; el.own = String(text); return el; },
-    getElementById(id) { return doc.byId[id] || null; }
+    getElementById(id) { return doc.byId[id] || null; },
+    querySelector() { return null; }
   };
+  doc.documentElement = doc.createElement('html');
   return doc;
+}
+
+// ----- the real app.js, for the hung post cases -----
+
+class FakeSignal {
+  constructor() { this.aborted = false; this.listeners = []; }
+  addEventListener(type, fn) { if (type === 'abort') { this.listeners.push(fn); } }
+  fire() {
+    if (this.aborted) { return; }
+    this.aborted = true;
+    this.listeners.forEach((fn) => fn());
+  }
+}
+
+class FakeAbortController {
+  constructor() { this.signal = new FakeSignal(); }
+  abort() { this.signal.fire(); }
+}
+
+// installRealApp evaluates app.js in the sandbox and makes its Pinalert the
+// one queue.js uses. Every request goes to the returned list for the case to
+// answer by hand. abortRejects says whether an abort ends the request's
+// promise, as Chromium does, or leaves it unsettled, as WebKit sometimes
+// does. nativeTimeout takes AbortController away and gives a native timeout
+// signal that never fires, so only the page's own timer is left.
+function installRealApp(sandbox, { abortRejects = false, nativeTimeout = false } = {}) {
+  const requests = [];
+  sandbox.fetch = (target, init) => new Promise((resolve, reject) => {
+    const signal = (init && init.signal) || (target && target.signal);
+    const req = {
+      url: typeof target === 'string' ? target : target.url,
+      method: (init && init.method) || 'GET',
+      body: init && init.body,
+      resolve,
+      reject,
+      aborted: false
+    };
+    if (signal && typeof signal.addEventListener === 'function') {
+      signal.addEventListener('abort', () => {
+        req.aborted = true;
+        if (abortRejects) {
+          const err = new Error('aborted');
+          err.name = 'AbortError';
+          reject(err);
+        }
+      });
+    }
+    requests.push(req);
+  });
+  sandbox.Request = function Request(target, init) { this.url = target; this.signal = init && init.signal; };
+  if (nativeTimeout) {
+    sandbox.AbortSignal = { timeout: () => new FakeSignal() };
+  } else {
+    sandbox.AbortController = FakeAbortController;
+  }
+  vm.runInContext(appSource, sandbox);
+  sandbox.Pinalert = sandbox.window.Pinalert;
+  return requests;
 }
 
 // ----- fake IndexedDB -----
@@ -198,7 +265,7 @@ function makeIndexedDB(initial) {
 
 // ----- one sandbox per case -----
 
-function loadQueue({ records = [], answers = [], indexedDBThrows = false, lockHeldElsewhere = false, withChannel = false }) {
+function loadQueue({ records = [], answers = [], indexedDBThrows = false, lockHeldElsewhere = false, withChannel = false, realApp = null }) {
   const doc = makeDocument();
   const idb = makeIndexedDB(records);
   const submitted = [];
@@ -251,6 +318,8 @@ function loadQueue({ records = [], answers = [], indexedDBThrows = false, lockHe
     };
   }
   vm.createContext(sandbox);
+  // realApp swaps the fake Pinalert for the real one of app.js.
+  const requests = realApp ? installRealApp(sandbox, realApp) : [];
   if (indexedDBThrows) {
     // Some frames throw on a plain read of the indexedDB global. A vm global
     // never runs a getter, so the read goes through a with scope instead.
@@ -266,7 +335,7 @@ function loadQueue({ records = [], answers = [], indexedDBThrows = false, lockHe
   doc.byId['notice-live'] = live;
   // otherTab delivers another tab's channel message to this page.
   const otherTab = (accountId) => channels.forEach((c) => { if (c.onmessage) { c.onmessage({ data: { account_id: accountId } }); } });
-  return { queue: win.PinalertQueue, strip, store: idb.data, idb: idb.control, submitted, toasts, doc, timers, live, posted, otherTab };
+  return { queue: win.PinalertQueue, strip, store: idb.data, idb: idb.control, submitted, toasts, doc, timers, live, posted, otherTab, requests, Pinalert: sandbox.Pinalert };
 }
 
 // wakeTimers returns the wake timers still set, made from index from on. The
@@ -983,3 +1052,103 @@ await test('a sent report never comes back when the read after the send fails (W
   assert.equal(env.strip.hidden, true, 'the sent report must not be drawn again from the last good read');
   assert.ok(!env.strip.textContent.includes('water over the road'));
 });
+
+// ----- a post that never settles (the WebKit hung post) -----
+
+// The three ways a browser can treat the page's abort: WebKit can leave the
+// aborted request's promise unsettled, Chromium rejects it, and a browser
+// with only a native timeout signal leaves just the page's own timer.
+const HUNG_MODES = [
+  { name: 'abort leaves the request unsettled', abortRejects: false },
+  { name: 'abort rejects the request', abortRejects: true },
+  { name: 'native timeout signal only', nativeTimeout: true }
+];
+
+// limitTimers returns the 10 second time limits still set.
+function limitTimers(env) {
+  return env.timers.filter((t) => !t.cleared && t.delay === 10000);
+}
+
+const created = (body) => ({ ok: true, status: 201, headers: { get: () => null }, json: () => Promise.resolve(body) });
+const listAnswer = () => ({ ok: true, status: 200, headers: { get: () => null }, json: () => Promise.resolve({ reports: [] }) });
+
+for (const mode of HUNG_MODES) {
+  const how = ' (' + mode.name + ')';
+
+  await test('a post that never settles fails at 10 seconds as no answer' + how, async () => {
+    const env = loadQueue({ realApp: mode });
+    let outcome = null;
+    env.Pinalert.submitReport({ description: 'water over the road' }).then(
+      (report) => { outcome = { report }; },
+      (err) => { outcome = { err }; });
+    await settle();
+    assert.equal(env.requests.length, 1);
+    assert.equal(env.requests[0].method, 'POST');
+    assert.equal(env.requests[0].url, '/api/reports');
+    const limits = limitTimers(env);
+    assert.equal(limits.length, 1, 'the post has one 10 second limit');
+    assert.equal(outcome, null, 'nothing before the limit');
+
+    limits[0].fn();
+    await settle();
+    assert.ok(outcome && outcome.err, 'the post failed at its limit');
+    assert.equal(outcome.err.status, 0);
+    assert.equal(outcome.err.queueable, true, 'the form saves the report on the device');
+    assert.equal(outcome.err.field, 'body');
+    assert.equal(outcome.err.fieldMessage, 'Something went wrong. Try again.');
+    assert.equal(env.requests[0].aborted, !mode.nativeTimeout, 'the page aborts its own controller at the limit');
+    assert.equal(env.requests.length, 1, 'no list refetch after a post that got no answer');
+  });
+
+  await test('a 201 whose body never ends is not taken for no answer' + how, async () => {
+    const env = loadQueue({ realApp: mode });
+    let outcome = null;
+    env.Pinalert.submitReport({ description: 'water over the road' }).then(
+      (report) => { outcome = { report }; },
+      (err) => { outcome = { err }; });
+    await settle();
+    env.requests[0].resolve({ ok: true, status: 201, headers: { get: () => null }, json: () => new Promise(() => {}) });
+    await settle();
+    assert.equal(outcome, null, 'the body read waits up to the limit');
+    limitTimers(env)[0].fn();
+    await settle();
+    // The body fallback, as an aborted body read always gave: the post went
+    // through, so the list is read again and nothing is saved on the device.
+    assert.equal(env.requests.length, 2, 'the list is read again after the post');
+    assert.equal(env.requests[1].method, 'GET');
+    env.requests[1].resolve(listAnswer());
+    await settle();
+    assert.ok(outcome && !outcome.err, 'the post resolves, it does not fail');
+    assert.equal(outcome.report, null);
+  });
+
+  await test('a queued send that never settles ends the pass at the limit and keeps the row' + how, async () => {
+    const id = 'req-hhhhhhhhhhhhhhhh-30';
+    const env = loadQueue({ records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z')], realApp: mode });
+    env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+    await settle();
+    assert.equal(env.requests.length, 1, 'the saved report is posted');
+    assert.equal(env.requests[0].method, 'POST');
+    assert.ok(env.store.get(id).sending_until > 0, 'the row is leased while its post is out');
+
+    limitTimers(env)[0].fn();
+    await settle();
+    assert.ok(env.store.has(id), 'the row stays saved');
+    assert.equal(env.store.get(id).status, 'waiting');
+    assert.equal(env.store.get(id).sending_until, 0, 'the lease is given back');
+    assert.equal(env.store.get(id).attempts, 1);
+
+    // The pass ended: a new pass sends the row again instead of returning the
+    // old pass that waits for good.
+    const again = env.queue.flush();
+    await settle();
+    assert.equal(env.requests.length, 2, 'a later pass sends the row again');
+    env.requests[1].resolve(created({ report: { id: 41 } }));
+    await settle();
+    assert.equal(env.requests.length, 3, 'the list is read again after the post');
+    env.requests[2].resolve(listAnswer());
+    await again;
+    await settle();
+    assert.equal(env.store.has(id), false, 'the sent report leaves the device');
+  });
+}
