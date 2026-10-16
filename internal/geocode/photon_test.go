@@ -421,6 +421,40 @@ func TestPhotonAnswerIsCutToFive(t *testing.T) {
 	}
 }
 
+// TestPhotonDropsRepeatedLabels: live on 2026-10-16 "Hyderbad" listed
+// "Hyderabad, Telangana" twice (the city and its district) and "Ring Road"
+// listed one road twice (split OpenStreetMap ways). A row that reads the same
+// as one above it is dropped, so the five rows are five different choices.
+func TestPhotonDropsRepeatedLabels(t *testing.T) {
+	district := photonFeatureJSON(78.47, 17.39, map[string]any{
+		"name": "Hyderabad", "state": "Telangana", "countrycode": "IN", "osm_key": "boundary", "type": "county",
+	})
+	roadA := photonFeatureJSON(78.44, 17.33, map[string]any{
+		"name": "Inner Ring Road", "locality": "New Balaji Nagar", "state": "Telangana", "countrycode": "IN", "osm_key": "highway",
+	})
+	roadB := photonFeatureJSON(78.45, 17.34, map[string]any{
+		"name": "Inner Ring Road", "locality": "new balaji nagar", "state": "Telangana", "countrycode": "IN", "osm_key": "highway",
+	})
+	ps := newPhotonStub(t, photonAnswers(t, indianCity("Hyderabad"), district, roadA, roadB, indianCity("Zaheerabad")))
+	rs := newRecordingServer(t, nil)
+	c := newDualClient(ps.server.URL, rs.server.URL)
+	answer, err := c.Search(context.Background(), "Hyderbad", nil)
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	var labels []string
+	for _, r := range answer.Results {
+		labels = append(labels, r.DisplayName)
+	}
+	want := []string{"Hyderabad, Telangana", "Inner Ring Road, New Balaji Nagar, Telangana", "Zaheerabad, Telangana"}
+	if !reflect.DeepEqual(labels, want) {
+		t.Fatalf("labels = %q, want %q", labels, want)
+	}
+	if answer.Results[0].Lat != 17.385 {
+		t.Fatalf("first row = %+v, want the first of the repeated rows kept", answer.Results[0])
+	}
+}
+
 func TestPhotonFailureFallsBackToNominatim(t *testing.T) {
 	short1 := "Sai Residency, Road No 12, Banjara Hills, Hyderabad"
 	cases := map[string]func(t *testing.T) func(w http.ResponseWriter, r *http.Request){
