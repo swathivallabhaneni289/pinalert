@@ -183,43 +183,40 @@ func TestAccountMenuItems(t *testing.T) {
 	}
 	panel := header[start : start+end]
 
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11, D-02 and
+	// D-26): the person menu holds Settings and Log out only. The email line, the
+	// Activity item, the Low data view and Open full version items, and the
+	// Disclaimer and Policy items left it (each now lives in one place: Settings,
+	// About Pinalert, or the nav), and the Low data view's stacked two line item
+	// went with them, so its two rules are gone from auth.css. My profile waits
+	// for Phase 9. The Phase 3.1 and Phase 4 hands-on tests are walked on this
+	// layout after Phase 3.4 is built.
 	p421InOrder(t, "menu item order", panel,
-		`class="account-menu__email"`, `href="/profile"`,
-		"{{if .Chrome.LowDataPage}}", `href="/?full=1"`, "Open full version",
-		"{{else}}", `href="/low"`, `aria-label="Low data view, Text only, no map"`, "Low data view",
-		`<span class="account-menu__line">Text only, no map</span>`, "{{end}}",
-		`href="/disclaimer"`, ">Disclaimer<", `href="/policy"`, ">Policy<",
-		`action="/auth/logout"`)
+		`href="/settings"`, "Settings",
+		`action="/auth/logout"`, "Log out")
+	for _, gone := range []string{
+		"account-menu__email", "account-menu__line", "account-menu__item--stacked",
+		`href="/profile"`, `href="/low"`, `href="/?full=1"`, `href="/disclaimer"`, `href="/policy"`,
+		"{{.Email}}", "{{if .Chrome.LowDataPage}}",
+	} {
+		if strings.Contains(panel, gone) {
+			t.Errorf("the person menu still holds %q", gone)
+		}
+	}
 
 	for _, tag := range p421AnchorTagRE.FindAllString(panel, -1) {
 		if !strings.Contains(tag, `role="menuitem"`) || !strings.Contains(tag, "account-menu__item") {
 			t.Errorf("menu link %s lacks role=menuitem or the account-menu__item class", tag)
-		}
-		if strings.Contains(tag, `href="/low"`) && !strings.Contains(tag, `class="account-menu__item account-menu__item--stacked"`) {
-			t.Errorf("the Low data view item has the wrong class attribute: %s", tag)
 		}
 	}
 	if strings.Contains(panel, "/moderate") {
 		t.Errorf("the account menu links to the moderator screen")
 	}
 
-	rules := parseCSSRules(p421ReadStatic(t, "css/auth.css"))
-	p421WantDecls(t, rules, ".account-menu__line", map[string]string{
-		"color": "var(--color-text)", "font-size": "var(--font-size-label)",
-		"line-height": "var(--line-height-label)", "font-weight": "var(--font-weight-regular)",
-	})
-	p421WantDecls(t, rules, ".account-menu__item--stacked", map[string]string{
-		"flex-direction": "column", "align-items": "flex-start",
-		"padding": "var(--space-xs) var(--space-sm)",
-	})
-	if r, ok := p421RuleFor(rules, ".account-menu__item--stacked"); ok {
-		if _, has := declsOf(r.declBody)["display"]; has {
-			t.Errorf(".account-menu__item--stacked declares display")
-		}
-	}
-	for _, r := range rules {
-		if strings.Contains(r.selectorHead, "account-menu__line") && strings.Contains(r.declBody, "--color-text-muted") {
-			t.Errorf("rule %q uses the muted colour", r.selectorHead)
+	authCSS := p421ReadStatic(t, "css/auth.css")
+	for _, gone := range []string{".account-menu__email", ".account-menu__line", ".account-menu__item--stacked"} {
+		if strings.Contains(stripCSSComments(authCSS), gone) {
+			t.Errorf("auth.css still styles %s, which the person menu no longer draws", gone)
 		}
 	}
 }

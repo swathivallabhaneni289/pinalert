@@ -534,6 +534,12 @@ func NewRouter(deps Deps) *chi.Mux {
 		// partial via {{template}}, which html/template only resolves
 		// within the template set it was parsed into (01.1-07-PLAN.md).
 		r.Get("/profile", handlers.Profile(deps.AuthService, deps.Template, auth))
+		// Phase 3.4 (D-22, D-25): the Official alerts place and the one
+		// Settings page. Both are gated because they belong to the signed in
+		// app, and both pass the onboarding middleware like every page above.
+		// They serve text/html, so they carry no swag annotation.
+		r.Get("/alerts", handlers.AlertsPage(deps.Template, page))
+		r.Get("/settings", handlers.SettingsPage(deps.Template, accounts, page))
 		// D-09's explicit log-out action; only POST is ever registered for
 		// this path (DEC-L: SameSite=Lax withholds the session cookie from
 		// a cross-site POST, so a forged logout carries no authenticated

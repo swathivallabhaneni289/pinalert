@@ -382,6 +382,15 @@
     text-decoration: none;
   }
 
+  /* The bell is the same touch target without the laptop border. The list it
+     opens keeps its laptop rules (app-bar.css) and is anchored to the bar, so
+     its right edge sits 12px inside the screen and its width limit is the
+     screen less 24px. */
+  .app-topbar > .app-topbar__bell {
+    border: 0;
+    background: none;
+  }
+
   /* The bottom bar: four equal items. 4px of padding at the top and sides and
      4px plus the home indicator inset at the bottom, so the bar is 65px high
      at 390px with the 1px border. It sits under the content in the flow, above

@@ -1,0 +1,153 @@
+/*
+ * Pinalert places.css (Phase 3.4, plan 04, UI-SPEC Surfaces 4 and 6)
+ *
+ * The shared layout of the simple places: Official alerts and Settings. Both
+ * are a page of sections; a section is a title and one line beside a box of
+ * rows (or, on Official alerts, the empty state). Written mobile first: the
+ * phone arrangement is the base, and the laptop arrangement sits in the one
+ * min-width 900px block at the end, so this file adds nothing to phone.css.
+ *
+ * Tokens only; muted text appears on --color-bg only, where it clears 4.5 to 1
+ * in both themes. Loads after app-bar.css and before phone.css.
+ */
+
+/* ---- Phone (the base) ----------------------------------------------------- */
+
+/* The page heading is a laptop line: on a phone the top bar title carries it. */
+.place-head {
+  display: none;
+}
+
+.place-section {
+  padding: var(--space-md) var(--space-md) var(--space-lg);
+}
+
+.place-section__title {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+}
+
+.place-section__line {
+  margin: var(--space-xs) 0 var(--space-12);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.place-box {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* A hairline between the rows, none above the first. The rows may sit in a
+   form (the Log out row posts), so the line belongs to the box's children. */
+.place-box > * + * {
+  border-top: 1px solid var(--color-border);
+}
+
+.place-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 52px;
+  padding: var(--space-sm) var(--space-12);
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.place-row__text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.place-row__label {
+  color: var(--color-text);
+}
+
+.place-row__sub {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.place-row > .app-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--color-text-muted);
+}
+
+.place-row-form {
+  margin: 0;
+}
+
+/* The empty state keeps the look main.css gives it; this only sets how much
+   room it takes inside a section. */
+.place-empty {
+  padding: var(--space-lg) var(--space-md);
+}
+
+/* ---- Laptop ---------------------------------------------------------------- */
+
+@media (min-width: 900px) {
+  .place-head {
+    display: block;
+    margin: 0;
+    padding: var(--space-lg) var(--space-lg) var(--space-sm);
+    color: var(--color-text);
+    font-size: var(--font-size-display);
+    line-height: var(--line-height-display);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  /* The title and its line in a 260px column on the left, the rows on the
+     right, across the full width of the page and never a centred column. */
+  .place-section {
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr);
+    gap: 40px;
+    padding: var(--space-lg) var(--space-lg) 40px;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .place-section__line {
+    margin: var(--space-xs) 0 0;
+  }
+
+  .place-row {
+    padding: var(--space-sm) var(--space-md);
+  }
+
+  /* Official alerts: the empty state takes the right column. */
+  .place-empty {
+    grid-column: 2;
+  }
+
+  /* The Account section is a phone section: the laptop has Log out in the
+     person menu, so the section is not drawn at all. */
+  .place-section--phone {
+    display: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .place-box,
+  .place-section {
+    border-color: CanvasText;
+  }
+}

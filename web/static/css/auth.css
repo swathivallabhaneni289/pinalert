@@ -358,6 +358,18 @@
   mask-image: url("/static/icons/user.svg");
 }
 
+/* The person menu glyphs are 20px (UI-SPEC Surface 1c), a step under the
+   24px auth glyph. */
+.account-menu__item .auth-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.auth-icon--settings {
+  -webkit-mask-image: url("/static/icons/settings.svg");
+  mask-image: url("/static/icons/settings.svg");
+}
+
 .auth-icon--log-out {
   -webkit-mask-image: url("/static/icons/log-out.svg");
   mask-image: url("/static/icons/log-out.svg");
@@ -421,15 +433,6 @@
   flex-shrink: 0;
 }
 
-.account-menu__email {
-  margin: 0 0 var(--space-xs) 0;
-  padding: var(--space-xs) var(--space-sm);
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
-  color: var(--color-text-muted);
-  word-break: break-all;
-}
-
 /* .account-menu__item, not an ID-prefixed descendant selector, so this
    rule's own `display` declaration never touches the panel's hidden-state
    guard above — a descendant's own display never overrides an ancestor's
@@ -454,25 +457,6 @@
   text-decoration: none;
   text-align: left;
   cursor: pointer;
-}
-
-/* The Low data view item is two lines in one link: the name, then a short
-   line under it. */
-.account-menu__item--stacked {
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  padding: var(--space-xs) var(--space-sm);
-}
-
-/* The second line is plain text colour, not muted: muted text on the panel
-   surface is under 4.5:1 in one of the two themes (UI-SPEC Color, Muted text
-   rule). */
-.account-menu__line {
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
-  font-weight: var(--font-weight-regular);
-  color: var(--color-text);
 }
 
 /* The theme control (quick task 260923-rra): a fixed-position floating

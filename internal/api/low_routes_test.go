@@ -153,11 +153,17 @@ func TestLowPageRenders(t *testing.T) {
 			`href="/?full=1"`,
 			`Open full version`,
 			`<h2 id="low-list-heading">Active reports</h2>`,
-			`reader@example.com`,
 		} {
 			if !strings.Contains(body, want) {
 				t.Errorf("body is missing %q", want)
 			}
+		}
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11
+		// and D-26): the person menu no longer shows the signed in email, so it
+		// is on no page (T-34-18). The Phase 3.1 and Phase 4 hands-on tests are
+		// walked on this layout after Phase 3.4 is built.
+		if strings.Contains(body, `reader@example.com`) {
+			t.Errorf("body renders the signed in email")
 		}
 		if got := strings.Count(body, `class="top-chrome"`); got != 1 {
 			t.Errorf("top-chrome appears %d times, want 1", got)

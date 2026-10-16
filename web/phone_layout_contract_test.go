@@ -85,6 +85,25 @@ func TestPhoneStylesheetIsLinkedLast(t *testing.T) {
 	if n := strings.Count(profile, phone); n != 1 {
 		t.Errorf("profile.html.tmpl links phone.css %d times, want exactly 1", n)
 	}
+
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10 and
+	// D-25): Official alerts and Settings are two more pages that carry the app
+	// bars, so phone.css is linked last on them too, after places.css. The
+	// Phase 3.1 and Phase 4 hands-on tests are walked on this layout after
+	// Phase 3.4 is built.
+	for _, name := range []string{"alerts.html.tmpl", "settings.html.tmpl"} {
+		page := p13ReadTemplate(t, name)
+		p13Ordered(t, page, name,
+			`/static/css/main.css?v={{.AssetVersion}}`,
+			`/static/css/auth.css?v={{.AssetVersion}}`,
+			appBar,
+			`/static/css/places.css?v={{.AssetVersion}}`,
+			phone,
+		)
+		if n := strings.Count(page, phone); n != 1 {
+			t.Errorf("%s links phone.css %d times, want exactly 1", name, n)
+		}
+	}
 }
 
 // TestPhoneRulesLiveInTheNarrowBlock pins that nothing in phone.css can reach
