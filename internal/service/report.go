@@ -268,10 +268,10 @@ func ValidateSubmitInput(in SubmitInput) error {
 	}
 
 	if in.Latitude < -90 || in.Latitude > 90 {
-		return ValidationError{"latitude", "Set a location by dragging the pin or allowing location access."}
+		return ValidationError{"latitude", "Set a location by searching, tapping the map, or allowing location access."}
 	}
 	if in.Longitude < -180 || in.Longitude > 180 {
-		return ValidationError{"longitude", "Set a location by dragging the pin or allowing location access."}
+		return ValidationError{"longitude", "Set a location by searching, tapping the map, or allowing location access."}
 	}
 
 	if in.Category == CategoryShelterOpen {
