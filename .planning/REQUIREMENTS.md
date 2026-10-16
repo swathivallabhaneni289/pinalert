@@ -264,7 +264,7 @@ Requirements for initial release. Each maps to roadmap phases.
       follower counts")
 
 - [ ] **PROF-03**: A user can follow and unfollow opted-in reporters privately, mute or block,
-      see their reports in a Following view and get updates when they post (non-critical only once
+      see their reports in a Following view (Amended 2026-10-16, owner decision: following is public, not private, through the Followers and Following lists; no Following main tab in the Phase 3.4 layout, where followed reporters' reports show is settled in Phase 9's discuss) and get updates when they post (non-critical only once
       Live, no coordinates or address in the text); switching the profile off, or losing the Reliable
       tag, ends all follows and pending alerts, and a reporter can remove all followers without
       seeing who they are
