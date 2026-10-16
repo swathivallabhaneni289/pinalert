@@ -196,7 +196,10 @@ func TestReviewFixARefusedTakeBackRefetches(t *testing.T) {
 		"setVoteButtonLabel(button, restingLabel);", "setBlockBusy(block, false);",
 		"showVoteError(block, takeBackErrorMessage(err));",
 		"if (canTakeFocus(button)) {", "button.focus();",
-		"answeredByServer(err) ? Pinalert.fetchReports({ afterWrite: true }) : Promise.resolve()",
+		// Amended 2026-10-17 by Phase 3.4 plan 19 (03.1 D-22, 03.4 D-21): the read goes
+		// through readAfterWrite, which is Pinalert.fetchReports({ afterWrite: true }) for
+		// the opened report and the page's own read for a take back on Ended nearby.
+		"answeredByServer(err) ? readAfterWrite(block) : Promise.resolve()",
 		"return refresh.then(function () {",
 		"if (!canTakeFocus(button)) {", "focusAfterTakeBack(origin);")
 

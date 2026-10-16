@@ -179,7 +179,10 @@ func TestTakeBackFinishedReportIsReadOnly(t *testing.T) {
 	// the label, release the block, then the toast and the focus steps.
 	back := p09FuncBody(t, text, "onTakeBackClick(block, button)")
 	p09Ordered(t, back, "onTakeBackClick",
-		"setBlockBusy(block, true);", "castVote(", "Pinalert.fetchReports({ afterWrite: true })",
+		// Amended 2026-10-17 by Phase 3.4 plan 19 (03.1 D-22, 03.4 D-21): the refetch is
+		// readAfterWrite(block), the opened report's Pinalert.fetchReports({ afterWrite: true })
+		// unless the block mounted by createTakeBackFor carries its own read.
+		"setBlockBusy(block, true);", "castVote(", "readAfterWrite(block)",
 		"setBlockBusy(block, false);", "Pinalert.showToast(message);", "focusAfterTakeBack(origin);",
 		"showVoteError(block, takeBackErrorMessage(err));")
 	p09MustContain(t, "onTakeBackClick", back,

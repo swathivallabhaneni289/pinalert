@@ -163,7 +163,10 @@ func TestEndedNearbyScriptBans(t *testing.T) {
 func TestEndedNearbyNeverEmptyBlockWhilePartial(t *testing.T) {
 	nearby := p13CodeLines(p16ReadStatic(t, "static/js/ended-nearby.js"))
 
-	render := jsFunctionBody(t, nearby, "render(answer)")
+	// Amended 2026-10-17 by Phase 3.4 plan 19: render takes a second argument, quiet,
+	// for the redraw after a take back (nothing scrolls or takes focus). The guards below
+	// are unchanged.
+	render := jsFunctionBody(t, nearby, "render(answer, quiet)")
 	p13MustContain(t, "render", render,
 		"var resolvedPartial = cut.resolved_partial === true;", "var expiredPartial = cut.expired_partial === true;",
 		"if (shown === 0 && !resolvedPartial && !expiredPartial) {", "showState('empty');")
@@ -308,4 +311,63 @@ func TestEndedNearbyContrastAcrossThemes(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestEndedNearbyTakeBackOnlyForMarker pins plan 19 (03.1 D-22, 03.4 D-21,
+// UI-SPEC Surface 3): an Ended nearby row is read only apart from the take back
+// of the person who marked the report resolved. Who has one, and how many undos
+// are left, is the server's answer read by the one builder in votes.js
+// (createTakeBackFor over takeBackState); the row script holds no limit, no
+// comparison on the undo count and no fetch of its own. The behaviour is run in
+// web/ended_nearby_test.mjs.
+func TestEndedNearbyTakeBackOnlyForMarker(t *testing.T) {
+	ended := p13CodeLines(p16ReadStatic(t, "static/js/ended-cards.js"))
+
+	p13MustContain(t, "ended-cards.js", ended,
+		"PinalertVotes.createTakeBackFor(report, {", "card.takeBack.update(report);", "card.what.appendChild(made.el);")
+	// No fetch, no limit, no judgement of who may take back.
+	p13MustNotContain(t, "ended-cards.js", ended,
+		"fetch(", "XMLHttpRequest", "castVote(", "undos_left", "your_resolution", "is_own_report",
+		"takeBackState", "innerHTML")
+	for _, number := range []string{"> 0", "> 1", "< 1", "< 2", "=== 0", "=== 1", "=== 2", "<= 2"} {
+		for _, line := range strings.Split(ended, "\n") {
+			if strings.Contains(strings.ToLower(line), "undo") && strings.Contains(line, number) {
+				t.Errorf("ended-cards.js compares an undo count in %q: the server is the only judge of the limit", strings.TrimSpace(line))
+			}
+		}
+	}
+	// The read after a take back is the part's own, asked of ended-nearby.js.
+	p13MustContain(t, "ended-cards.js", ended, "window.PinalertEndedNearby", "part.refresh(reportId)")
+
+	nearby := p13CodeLines(p16ReadStatic(t, "static/js/ended-nearby.js"))
+	p13MustContain(t, "ended-nearby.js", nearby, "refresh: refresh,", "load(true)")
+	if n := strings.Count(nearby, "fetch("); n != 1 {
+		t.Errorf("ended-nearby.js has %d fetch( calls, want 1: the take back's read goes through load", n)
+	}
+	refresh := jsFunctionBody(t, nearby, "refresh(reportId)")
+	p13MustNotContain(t, "refresh", refresh, "fetch(", "showState(", "scroll", "innerHTML")
+
+	// The builder in votes.js: one block, one decision, one handler.
+	votes := p13CodeLines(p16ReadStatic(t, "static/js/votes.js"))
+	build := jsFunctionBody(t, votes, "createTakeBackFor(report, options)")
+	p13MustContain(t, "createTakeBackFor", build,
+		"var firstState = takeBackState(report);", "createTakeBackBlock(report.id)",
+		"onTakeBackClick(block, parts.undoBtn);", "var state = takeBackState(next);")
+	p13MustNotContain(t, "createTakeBackFor", build,
+		"castVote(", "fetch(", "undos_left", "your_resolution", "innerHTML", "opacity")
+	if n := strings.Count(votes, "createTakeBackFor: createTakeBackFor"); n != 1 {
+		t.Errorf("votes.js exports createTakeBackFor %d times, want 1", n)
+	}
+	// votes.js runs before the two Ended nearby scripts, so a fast answer can never
+	// be drawn before the take back builder exists.
+	tmpl := p13ReadTemplate(t, "profile.html.tmpl")
+	votesAt := strings.Index(tmpl, "/static/js/votes.js?v=")
+	cardsAt := strings.Index(tmpl, "/static/js/ended-cards.js?v=")
+	nearbyAt := strings.Index(tmpl, "/static/js/ended-nearby.js?v=")
+	if votesAt == -1 || cardsAt == -1 || nearbyAt == -1 || votesAt > cardsAt || votesAt > nearbyAt {
+		t.Errorf("profile.html.tmpl must load votes.js before ended-cards.js and ended-nearby.js")
+	}
+	// The read after a take back is a choice of the block, nothing else changed.
+	p13MustContain(t, "readAfterWrite", jsFunctionBody(t, votes, "readAfterWrite(block)"),
+		"typeof block.readAgain === 'function'", "Pinalert.fetchReports({ afterWrite: true })")
 }

@@ -166,6 +166,27 @@ main.profile-page .activity-card__what .vote-controls:not([hidden]) {
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* The take back on an Ended nearby row (plan 19): the Undo button in the
+   shared outlined vote button look (trust.css), 44px, with the used both undos
+   sentence or a refusal line under it. It is the last line of the What happened
+   cell, in tokens only and never faded. */
+main.profile-page .activity-card__what .vote-takeback:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+}
+
+main.profile-page .activity-card__what .vote-takeback .vote-btn--takeback:not([hidden]) {
+  min-height: var(--touch-target-min);
+}
+
+main.profile-page .activity-card__what .vote-takeback .vote-note:not([hidden]),
+main.profile-page .activity-card__what .vote-takeback .vote-error:not([hidden]) {
+  margin: 0;
+}
+
 /* The disc: the category glyph on the report's severity tint. A disputed,
    expired, held or removed row has a grey disc (the surface token with a hairline
    and the text colour), a resolved one the Low tint. trust.css draws those

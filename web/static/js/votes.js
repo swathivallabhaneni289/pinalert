@@ -1659,6 +1659,99 @@
     }
   }
 
+  // readAfterWrite reads the report list again after a take back. A block of
+  // the opened report reads the Nearby store (Pinalert.fetchReports). A block
+  // mounted by createTakeBackFor carries its own read (block.readAgain, the
+  // page's own list), which resolves true when the list was read again and
+  // false when it could not be; neither ever rejects.
+  function readAfterWrite(block) {
+    if (typeof block.readAgain === 'function') {
+      return block.readAgain().then(function (ok) {
+        block.readWasLost = ok === false;
+      });
+    }
+    return Pinalert.fetchReports({ afterWrite: true });
+  }
+
+  // readFailed says whether the read readAfterWrite just made failed, so the
+  // row can say the take back was saved but the list is not refreshed.
+  function readFailed(block) {
+    if (typeof block.readAgain === 'function') {
+      return block.readWasLost === true;
+    }
+    return Pinalert.state.status === 'error';
+  }
+
+  // createTakeBackFor mounts the take back of the person who marked a report
+  // resolved on a row outside the opened report (My activity, Ended nearby;
+  // 03.1 D-22, 03.4 D-21). It is the one take back builder: the block is
+  // createTakeBackBlock, which part shows is takeBackState (this function
+  // computes no limit and judges nobody: the server sends undos_left and
+  // your_resolution for the viewer and refuses anyone else and a third undo),
+  // and the Undo button runs onTakeBackClick, the opened report's own handler
+  // with its labels, toasts and error lines. It returns null when the viewer
+  // has no take back on this report. The poster's Reopen is not part of it,
+  // Posted by you has that. options.readAgain reads the page's list again
+  // after a take back and resolves true or false (see readAfterWrite).
+  // It returns { el, update(report), message(), showMessage(text) }: update
+  // shows what a later answer of the server says, and the message pair lets a
+  // list that redraws its rows keep the line of a refused take back.
+  function createTakeBackFor(report, options) {
+    var firstState = takeBackState(report);
+    if (firstState !== 'undo' && firstState !== 'used') {
+      return null;
+    }
+    var parts = createTakeBackBlock(report.id);
+    parts.el.removeChild(parts.statement);
+    parts.el.removeChild(parts.reopenBtn);
+    parts.el.dataset.reportId = String(report.id);
+
+    var error = document.createElement('p');
+    error.className = 'vote-error';
+    error.setAttribute('role', 'alert');
+    error.hidden = true;
+    parts.el.appendChild(error);
+
+    var block = {
+      controls: parts.el,
+      error: error,
+      takeBack: parts,
+      lastReport: report,
+      isOwnReport: false,
+      readAgain: options && typeof options.readAgain === 'function' ? options.readAgain : null
+    };
+    parts.undoBtn.addEventListener('click', function () {
+      onTakeBackClick(block, parts.undoBtn);
+    });
+
+    function update(next) {
+      block.lastReport = next;
+      var state = takeBackState(next);
+      var showUndo = state === 'undo';
+      var showUsed = state === 'used';
+      parts.undoBtn.hidden = !showUndo;
+      Pinalert.setText(parts.count, showUsed ? TAKE_BACK_USED_MESSAGE : '');
+      parts.count.hidden = !showUsed;
+      parts.el.hidden = !(showUndo || showUsed);
+    }
+    update(report);
+
+    return {
+      el: parts.el,
+      update: update,
+      message: function () {
+        return error.hidden ? '' : error.textContent;
+      },
+      showMessage: function (text) {
+        if (text === '') {
+          clearVoteError(block);
+        } else {
+          showVoteError(block, text);
+        }
+      }
+    };
+  }
+
   // onTakeBackClick handles the Undo button and the poster's Reopen in the
   // opened report. Neither needs a location. The block is busy for the
   // request and the label names the action ("Undoing…" or "Reopening…"). The
@@ -1676,10 +1769,10 @@
 
     castVote(origin.reportId, action, { ownReport: isReopen && block.isOwnReport === true }).then(function (result) {
       var message = isReopen ? REOPEN_SUCCEEDED_TOAST : takeBackSuccessMessage(wasClosed, result);
-      return Pinalert.fetchReports({ afterWrite: true }).then(function () {
+      return readAfterWrite(block).then(function () {
         setVoteButtonLabel(button, restingLabel);
         setBlockBusy(block, false);
-        if (Pinalert.state.status === 'error') {
+        if (readFailed(block)) {
           showVoteError(block, VOTE_SAVED_REFRESH_FAILED_MESSAGE);
           block.refreshNotice = true;
         }
@@ -1702,7 +1795,7 @@
       if (canTakeFocus(button)) {
         button.focus();
       }
-      var refresh = answeredByServer(err) ? Pinalert.fetchReports({ afterWrite: true }) : Promise.resolve();
+      var refresh = answeredByServer(err) ? readAfterWrite(block) : Promise.resolve();
       return refresh.then(function () {
         if (!canTakeFocus(button)) {
           focusAfterTakeBack(origin);
@@ -1786,6 +1879,7 @@
     createVoteBlock: createVoteBlock,
     cancelResolveConfirm: cancelResolveConfirm,
     createReopenControl: createReopenControl,
+    createTakeBackFor: createTakeBackFor,
     setReopenLabel: setVoteButtonLabel,
     updateVoteBlock: updateVoteBlock,
     farFromCachedFix: farFromCachedFix,
