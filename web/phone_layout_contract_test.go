@@ -558,12 +558,20 @@ func TestPhoneDetailSheetStylesheet(t *testing.T) {
 	for _, r := range rules {
 		if strings.HasPrefix(r.Head, `body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"])`) &&
 			r.Decls["display"] == "none" &&
-			strings.Contains(r.Head, ".leaflet-control-zoom") && strings.Contains(r.Head, "> .theme-toggle") {
+			strings.Contains(r.Head, ".leaflet-control-zoom") && strings.Contains(r.Head, ".map-tools") {
 			detailMode = true
+		}
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-08, UX-01
+		// as amended): the theme toggle left this list; it is in the laptop top
+		// bar and hidden on every phone by .app-topbar > .theme-toggle. The Phase
+		// 3.1 and Phase 4 hands-on tests are walked on this layout after Phase 3.4
+		// is built.
+		if strings.Contains(r.Head, "> .theme-toggle") && strings.Contains(r.Head, "body:has(") {
+			t.Errorf("phone.css still has a body:has guard for the floating theme toggle: %q", r.Head)
 		}
 	}
 	if !detailMode {
-		t.Errorf("phone.css has no detail mode rule hiding the zoom control and the theme toggle")
+		t.Errorf("phone.css has no detail mode rule hiding the zoom control and the map tools")
 	}
 
 	// The markup the sheet restyles is never edited by the sheet: no rule here

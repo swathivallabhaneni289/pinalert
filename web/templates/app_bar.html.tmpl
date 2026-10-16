@@ -3,6 +3,8 @@
   list of main places, .Nav.Items (internal/api/handlers/nav.go). No place name
   is written here: a place added or renamed in that list appears in both bars.
 
+  The light and dark button sits in the laptop top bar, between the bell and
+  the person button (D-08); the phone hides it and follows the device setting.
   A page includes app_topbar inside .top-chrome and app_bottombar as the last
   child of body, so the phone bottom bar is an ordinary flex child under the
   content. The size that does not show a bar hides it with display none, which
@@ -33,6 +35,7 @@
     <p class="bell-list__empty">No updates yet</p>
     <a class="bell-list__all" href="/profile?part=updates">See all updates</a>
   </div>
+  {{template "theme_toggle.html.tmpl" .}}
   {{if .Nav.ShowGear}}
   <a class="app-topbar__gear" href="/settings" aria-label="Settings"><span class="app-icon app-icon--settings" aria-hidden="true"></span></a>
   {{end}}

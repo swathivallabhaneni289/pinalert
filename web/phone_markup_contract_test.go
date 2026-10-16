@@ -305,7 +305,14 @@ func TestPhoneRuleHeadsMatchTheMarkup(t *testing.T) {
 	// child of .top-chrome, so the pair of the finding is .app-topbar >
 	// .app-header. The Phase 3.1 and Phase 4 hands-on tests are walked on this
 	// layout after Phase 3.4 is built.
-	for _, want := range [][2]string{{".app-topbar", ".app-header"}, {"body", ".theme-toggle"}} {
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-08, UX-01
+	// as amended): the light and dark button is a child of the shared top bar on
+	// these pages (it floats as a child of body only on the Low data view and
+	// the moderator screen, which do not load phone.css), so the second pair is
+	// .app-topbar > .theme-toggle. The Phase 3.1 and Phase 4 hands-on tests are
+	// walked on this layout after Phase 3.4 is built.
+	for _, want := range [][2]string{{".app-topbar", ".app-header"}, {".app-topbar", ".theme-toggle"}} {
 		head := want[0] + " > " + want[1]
 		if !heads[head] {
 			t.Errorf("phone.css has no %q rule", head)
@@ -342,7 +349,7 @@ func TestPhoneKeepsTheAccountTriggerAndDropsTheThemeToggle(t *testing.T) {
 			switch part {
 			case ".app-topbar > .app-header":
 				header = &rule
-			case "body > .theme-toggle":
+			case ".app-topbar > .theme-toggle":
 				toggle = &rule
 			case ".pane--map > .map-tools":
 				layer = &rule
@@ -363,7 +370,7 @@ func TestPhoneKeepsTheAccountTriggerAndDropsTheThemeToggle(t *testing.T) {
 		t.Errorf("phone.css needs .app-topbar > .app-topbar__gear shown as a flex box, got %v", gear)
 	}
 	if toggle == nil || toggle.Decls["display"] != "none" {
-		t.Errorf("phone.css needs body > .theme-toggle { display: none }, got %v", toggle)
+		t.Errorf("phone.css needs .app-topbar > .theme-toggle { display: none } (Phase 3.4, D-08), got %v", toggle)
 	}
 	if layer == nil || p19NoSpace(layer.Decls["right"]) != p19NoSpace("calc(var(--space-md) + var(--touch-target-min) + var(--space-sm))") {
 		t.Errorf("phone.css .pane--map > .map-tools right must keep its inset, got %v", layer)

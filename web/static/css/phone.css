@@ -69,13 +69,6 @@
     display: none;
   }
 
-  /* No theme toggle on phones (owner decision of 2026-10-15): a phone follows
-     the device's own light or dark setting, and theme.js writes no theme on
-     the root below 900px. display none also takes it out of the tab order. */
-  body > .theme-toggle {
-    display: none;
-  }
-
   #toast:not([hidden]) {
     bottom: calc(var(--touch-target-min) + var(--space-sm) + var(--space-md));
   }
@@ -356,6 +349,7 @@
   .app-topbar > .app-topbar__brand,
   .app-topbar > .app-topbar__nav,
   .app-topbar > .app-topbar__post,
+  .app-topbar > .theme-toggle,
   .app-topbar > .app-header {
     display: none;
   }
@@ -1080,14 +1074,13 @@
 
   /* While the sheet is open the strip shows only the map, the pin and the
      back arrow, so the zoom control, the tools, the map label and the search
-     results step aside. The two theme toggle heads are kept as a second
-     guard; the toggle is already hidden on every phone (rule near the top). */
+     results step aside. (The two theme toggle guards that stood here went
+     with the floating toggle: the toggle is in the laptop top bar and
+     .app-topbar > .theme-toggle hides it on every phone.) */
   body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) .leaflet-control-zoom,
-  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) > .theme-toggle,
   body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) .map-tools,
   body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) .map-label,
-  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) #map-search-results,
-  body:has(.map-tools[data-search-open="true"]) > .theme-toggle {
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) #map-search-results {
     display: none;
   }
 }

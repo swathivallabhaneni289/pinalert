@@ -18,23 +18,49 @@ import (
 // phone width.
 func TestHarnessFindingP4_6NoThemeToggleOnAnyPhonePage(t *testing.T) {
 	const include = `{{template "theme_toggle.html.tmpl" .}}`
-	pages := 0
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-08, UX-01
+	// as amended): the light and dark button sits in the laptop top bar, so the
+	// pages that carry the bar (Nearby, My activity, Official alerts, Settings)
+	// include it through app_topbar and are hidden on a phone by the narrow
+	// block rule .app-topbar > .theme-toggle; only the Low data view and the
+	// moderator screen still include it themselves, as a direct child of body,
+	// where chrome.css hides it under 900px. The Phase 3.1 and Phase 4 hands-on
+	// tests are walked on this layout after Phase 3.4 is built.
+	const viaBar = `{{template "app_topbar" .}}`
+	direct := map[string]bool{}
+	carriers := map[string]bool{}
 	for path, text := range findFullPageTemplates(t) {
-		if !strings.Contains(text, include) {
+		hasBar := strings.Contains(text, viaBar)
+		if !strings.Contains(text, include) && !hasBar {
 			continue
 		}
-		pages++
+		carriers[path] = true
 		if !strings.Contains(text, "/static/css/chrome.css") {
-			t.Errorf("%s includes the theme toggle but does not link chrome.css, which hides it under 900px", path)
+			t.Errorf("%s carries the theme toggle but does not link chrome.css, which hides it under 900px", path)
 		}
+		if hasBar {
+			if strings.Contains(text, include) {
+				t.Errorf("%s: the page includes the theme toggle as well as the bar that holds it", path)
+			}
+			continue
+		}
+		direct[path] = true
 		// The hide rule's head is body > .theme-toggle, so the include must be
 		// a direct child of body (two space indent, outside .top-chrome).
 		if !strings.Contains(text, "\n  "+include+"\n") {
 			t.Errorf("%s: the theme toggle include is not a direct child of body, so body > .theme-toggle matches nothing", path)
 		}
 	}
-	if pages < 4 {
-		t.Errorf("only %d pages include the theme toggle, want the map, Activity, Low data and Moderate pages", pages)
+	if len(carriers) < 4 {
+		t.Errorf("only %d pages carry the theme toggle, want the map, Activity, Low data and Moderate pages", len(carriers))
+	}
+	for _, name := range []string{"templates/low.html.tmpl", "templates/moderate.html.tmpl"} {
+		if !direct[name] {
+			t.Errorf("%s must keep the floating theme toggle include (D-08: the pages with no top bar)", name)
+		}
+	}
+	if len(direct) != 2 {
+		t.Errorf("%d pages include the floating theme toggle themselves, want exactly the Low data and moderator pages: %v", len(direct), direct)
 	}
 
 	hide := p31mRule(t, "static/css/chrome.css", "@media (max-width: 899.98px)", "body > .theme-toggle")

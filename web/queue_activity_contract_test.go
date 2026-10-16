@@ -104,7 +104,12 @@ func TestQueueActivityStrip(t *testing.T) {
 	}
 	liveAt := strings.Index(profile, live)
 	chromeAt := strings.Index(profile, `class="top-chrome"`)
-	toggleAt := strings.Index(profile, `{{template "theme_toggle.html.tmpl" .}}`)
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-08): the
+	// light and dark button moved into the laptop top bar, so the page no
+	// longer includes it; the point the live region follows is the top bar that
+	// holds it. The Phase 3.1 and Phase 4 hands-on tests are walked on this
+	// layout after Phase 3.4 is built.
+	toggleAt := strings.Index(profile, `{{template "app_topbar" .}}`)
 	mainAt := strings.Index(profile, `<main class="profile-page"`)
 	if chromeAt == -1 || toggleAt == -1 || mainAt == -1 || !(chromeAt < toggleAt && toggleAt < liveAt && liveAt < mainAt) {
 		t.Errorf("#notice-live must sit after .top-chrome and the theme toggle and before main")

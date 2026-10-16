@@ -113,6 +113,13 @@ func TestDisclaimerBarOnEveryFullPage(t *testing.T) {
 				}
 			}
 
+			// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-08):
+			// the light and dark button is in the laptop top bar on the pages
+			// that carry it (app_bar.html.tmpl includes it), so only the Low
+			// data view and the moderator screen still call it themselves, and
+			// there it still follows the account header. The Phase 3.1 and
+			// Phase 4 hands-on tests are walked on this layout after Phase 3.4
+			// is built.
 			headerAt := strings.Index(text, chromeHeaderCall)
 			if topAt := strings.Index(text, chromeTopbarCall); topAt >= 0 {
 				headerAt = topAt

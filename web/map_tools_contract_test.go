@@ -619,13 +619,17 @@ func TestMapToolsHideUnderSheet(t *testing.T) {
 		t.Errorf("the sheet hide rule declares display %q, want none", hide.Decls["display"])
 	}
 	parts := p16HeadParts(hide.Head)
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-08, UX-01
+	// as amended): the light and dark button is in the laptop top bar and
+	// hidden on every phone by .app-topbar > .theme-toggle, so the two
+	// body > .theme-toggle guards of this list are gone with the floating
+	// toggle they hid. The Phase 3.1 and Phase 4 hands-on tests are walked on
+	// this layout after Phase 3.4 is built.
 	for _, want := range []string{
 		sheet + " .leaflet-control-zoom",
-		sheet + " > .theme-toggle",
 		sheet + " .map-tools",
 		sheet + " .map-label",
 		sheet + " #map-search-results",
-		`body:has(.map-tools[data-search-open="true"]) > .theme-toggle`,
 	} {
 		found := false
 		for _, p := range parts {

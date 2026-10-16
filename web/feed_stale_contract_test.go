@@ -325,10 +325,15 @@ func TestFeedStaleLine(t *testing.T) {
 		t.Fatalf("notice-live must appear once, found %d", n)
 	}
 	liveAt := strings.Index(tmpl, live)
-	toggleAt := strings.Index(tmpl, `{{template "theme_toggle.html.tmpl" .}}`)
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-08): the
+	// light and dark button moved into the laptop top bar, so the page no
+	// longer includes it; the point that the live region follows is the top
+	// bar that holds it. The Phase 3.1 and Phase 4 hands-on tests are walked on
+	// this layout after Phase 3.4 is built.
+	toggleAt := strings.Index(tmpl, `{{template "app_topbar" .}}`)
 	shellAt := strings.Index(tmpl, `id="app-shell"`)
 	if !(toggleAt != -1 && liveAt > toggleAt && liveAt < shellAt) {
-		t.Errorf("notice-live must sit after the theme toggle and before the shell (%d, %d, %d)", toggleAt, liveAt, shellAt)
+		t.Errorf("notice-live must sit after the top bar (which holds the theme toggle) and before the shell (%d, %d, %d)", toggleAt, liveAt, shellAt)
 	}
 
 	feed := p413ReadStatic(t, "static/js/feed.js")
