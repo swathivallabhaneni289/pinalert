@@ -52,11 +52,14 @@ How confirmations are counted, why a place is a precision 7 geohash cell, the 1 
    verification email. `BASE_URL` roots the absolute link every verification email carries
    (`{BASE_URL}/auth/verify?token=...`) — a wrong or unset-in-production value produces emailed
    links that resolve to the wrong host, so set it explicitly to your real deployed origin outside
-   local development. The address search box in the report modal geocodes through OSM Nominatim,
-   whose usage policy requires an identifying contact in the outbound User-Agent rather than a
-   stock HTTP library agent string; setting `NOMINATIM_CONTACT_EMAIL` puts your address in that
-   header and in Nominatim's optional `email` parameter. There is no signup and no API key for
-   this service. Leaving it unset is safe and the server still starts, falling back to the project
+   local development. Both place searches (the report form's and the map's) ask Photon
+   (photon.komoot.io, OpenStreetMap data, by komoot) first, because it matches close spellings and
+   half typed words, and fall back to OSM Nominatim only when Photon fails, takes over 2 seconds or
+   finds nothing. Nominatim's usage policy requires an identifying contact in the outbound
+   User-Agent rather than a stock HTTP library agent string; setting `NOMINATIM_CONTACT_EMAIL` puts
+   your address in that header, which both services receive, and in Nominatim's optional `email`
+   parameter. There is no signup and no API key for
+   either service. Leaving it unset is safe and the server still starts, falling back to the project
    repository URL as the identifier, so unlike `SESSION_SECRET` and `RESEND_API_KEY` this variable
    never blocks boot. The text check, the limits, the moderator screen and the numbers settings are
    described in [docs/MODERATION.md](./docs/MODERATION.md). A missing `OPENAI_API_KEY` outside

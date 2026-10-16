@@ -188,7 +188,8 @@ func main() {
 	assetVersion := strconv.FormatInt(time.Now().Unix(), 10)
 
 	// NOMINATIM_CONTACT_EMAIL is operator-supplied configuration for the
-	// address-search feature's outbound User-Agent to OSM Nominatim.
+	// address-search feature's outbound User-Agent to Photon and OSM
+	// Nominatim (and Nominatim's email parameter).
 	// Deliberately NOT a log.Fatal path, unlike SESSION_SECRET and
 	// RESEND_API_KEY above: those two fail fast outside ENV=development
 	// because a misconfigured deploy would otherwise boot into a state
