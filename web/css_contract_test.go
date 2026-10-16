@@ -770,7 +770,7 @@ func TestCategoryGlyphMaskRulesCoverEveryCategory(t *testing.T) {
 	formCategories := extractCategoryList(t, string(appJS), "var CATEGORIES = [")
 	retiredCategories := extractCategoryList(t, string(appJS), "var RETIRED_CATEGORIES = [")
 	if len(retiredCategories) == 0 {
-		t.Fatalf("extracted zero retired categories from app.js's RETIRED_CATEGORIES array — stored " +
+		t.Fatalf("extracted zero retired categories from app.js's RETIRED_CATEGORIES array: stored " +
 			"rescue_needed reports still render their glyph, so the retired list may not be empty")
 	}
 	// The two lists never share a slug: a category is either offered by the
