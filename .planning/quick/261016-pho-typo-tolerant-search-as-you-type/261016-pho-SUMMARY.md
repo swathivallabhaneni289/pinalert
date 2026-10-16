@@ -189,7 +189,7 @@ Read:
 - The typo and prefix cases are all found by Photon in under a second: Banjra Hills, Hyderbad,
   Banjara Hi, Gachib.
 - Hyderbad shows the city first, both with a pin and without one.
-- Hyderabad from a Delhi pin gives Hyderabad, Telangana, never Pakistan and never a Delhi building.
+- Hyderabad from a Delhi pin: the first three rows are all Hyderabad, Telangana, none in Pakistan.
 - The Road No 12 address finds plots on Road No 12 with built labels and no `null`.
 - Ring Road near Hyderabad gives Hyderabad's Inner Ring Road.
 
@@ -238,10 +238,14 @@ Read:
 
 ## Left open
 
-- **Telugu and Hindi script.** Photon found nothing for `హైదరాబాద్`. Its public data holds
-  English, German, French and the local `name` tag, and Hyderabad's `name` tag is English. So the
-  search fell to Nominatim, which gave universities with Hyderabad in their name, not the city.
-  Script searches work only as far as Nominatim's answers do.
+- **Telugu and Hindi script.** Photon found nothing for `హైదరాబాద్`, so the search fell to
+  Nominatim, which gave universities with Hyderabad in their name, not the city. The likely cause
+  is that Photon's data holds English, German, French and the local `name` tag only (this is what
+  Photon's README says of the published dumps; the public server was not checked), and
+  Hyderabad's `name` tag is English. Whether leaving out `lang=en` changes this was not tested,
+  since the live check runs once. Script searches work only as far as Nominatim's answers do.
+- **The live check ran through the report form's search only.** The map search shares the same
+  code path and is covered by the unit tests on both lanes and by browser check item 6.
 - **The Flat 4B address still finds nothing.** Photon misses the whole text. The Nominatim fallback
   now has 3 tries, so it never reaches `Road No 12, Banjara Hills, Hyderabad`, the text that would
   have matched. Photon itself finds that shorter text (row 5).
