@@ -17,7 +17,7 @@ ON CONFLICT (session_id) DO UPDATE SET account_id = EXCLUDED.account_id;
 -- name: GetAccountBySessionID :one
 -- A session with a NULL account_id yields no row (pgx.ErrNoRows), which
 -- callers must treat as "unverified", never as an error.
-SELECT accounts.id, accounts.email
+SELECT accounts.id, accounts.email, accounts.terms_version, accounts.first_run_done_at
 FROM sessions
 JOIN accounts ON sessions.account_id = accounts.id
 WHERE sessions.session_id = sqlc.arg(session_id);

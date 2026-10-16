@@ -33,7 +33,7 @@ type fakeAuthQuerier struct {
 	sessionRow    sqlcgen.GetAccountBySessionIDRow
 	sessionRowErr error
 	insertErr     error
-	byEmailRow    sqlcgen.Account
+	byEmailRow    sqlcgen.GetAccountByEmailRow
 	byEmailErr    error
 	bindErr       error
 
@@ -193,10 +193,10 @@ func (f *fakeAuthQuerier) InsertAccount(ctx context.Context, email string) error
 	return f.insertErr
 }
 
-func (f *fakeAuthQuerier) GetAccountByEmail(ctx context.Context, email string) (sqlcgen.Account, error) {
+func (f *fakeAuthQuerier) GetAccountByEmail(ctx context.Context, email string) (sqlcgen.GetAccountByEmailRow, error) {
 	*f.calls = append(*f.calls, "GetAccountByEmail")
 	if f.byEmailErr != nil {
-		return sqlcgen.Account{}, f.byEmailErr
+		return sqlcgen.GetAccountByEmailRow{}, f.byEmailErr
 	}
 	return f.byEmailRow, nil
 }
@@ -519,7 +519,7 @@ func TestAuthDatabaseErrorsCarryNoEmail(t *testing.T) {
 		q.tokenRow = sqlcgen.GetMagicLinkTokenByHashRow{Email: email, ExpiresAt: fixed.Add(time.Minute)}
 		q.sessionRowErr = pgx.ErrNoRows
 		q.consumeEmail = email
-		q.byEmailRow = sqlcgen.Account{ID: 7, Email: email}
+		q.byEmailRow = sqlcgen.GetAccountByEmailRow{ID: 7, Email: email}
 		return q
 	}
 
@@ -729,7 +729,7 @@ func TestVerifyTokenFreshTokenVerifies(t *testing.T) {
 	}
 	q.sessionRowErr = pgx.ErrNoRows // unverified session
 	q.consumeEmail = "fresh@example.com"
-	q.byEmailRow = sqlcgen.Account{ID: 42, Email: "fresh@example.com"}
+	q.byEmailRow = sqlcgen.GetAccountByEmailRow{ID: 42, Email: "fresh@example.com"}
 	svc := service.NewAuthService(q, &fakeMailer{calls: &[]string{}}, "https://pinalert.example", service.WithClock(func() time.Time { return fixed }))
 
 	outcome, email, err := svc.VerifyToken(context.Background(), "session-1", validRawToken(t))
@@ -776,7 +776,7 @@ func TestVerifyTokenSameAccountRebindIsNotConflict(t *testing.T) {
 	}
 	q.sessionRow = sqlcgen.GetAccountBySessionIDRow{ID: 7, Email: "same@example.com"}
 	q.consumeEmail = "same@example.com"
-	q.byEmailRow = sqlcgen.Account{ID: 7, Email: "same@example.com"}
+	q.byEmailRow = sqlcgen.GetAccountByEmailRow{ID: 7, Email: "same@example.com"}
 	svc := service.NewAuthService(q, &fakeMailer{calls: &[]string{}}, "https://pinalert.example", service.WithClock(func() time.Time { return fixed }))
 
 	outcome, email, err := svc.VerifyToken(context.Background(), "session-1", validRawToken(t))

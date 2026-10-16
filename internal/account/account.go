@@ -25,6 +25,13 @@ import "context"
 type Account struct {
 	ID    int64
 	Email string
+
+	// TermsVersion is the version of the terms text this account agreed to,
+	// or an empty string when it has agreed to none. FirstRunDone is true
+	// once the first-time flow was finished. Both come from the gate's own
+	// lookup of the account row and are never client asserted (D-27).
+	TermsVersion string
+	FirstRunDone bool
 }
 
 // ctxKey is an unexported struct type (never a string) so a value stored by

@@ -7,6 +7,8 @@ package sqlcgen
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const bindSessionAccount = `-- name: BindSessionAccount :exec
@@ -32,15 +34,17 @@ func (q *Queries) BindSessionAccount(ctx context.Context, arg BindSessionAccount
 }
 
 const getAccountBySessionID = `-- name: GetAccountBySessionID :one
-SELECT accounts.id, accounts.email
+SELECT accounts.id, accounts.email, accounts.terms_version, accounts.first_run_done_at
 FROM sessions
 JOIN accounts ON sessions.account_id = accounts.id
 WHERE sessions.session_id = $1
 `
 
 type GetAccountBySessionIDRow struct {
-	ID    int64
-	Email string
+	ID             int64
+	Email          string
+	TermsVersion   *string
+	FirstRunDoneAt pgtype.Timestamptz
 }
 
 // A session with a NULL account_id yields no row (pgx.ErrNoRows), which
@@ -48,7 +52,12 @@ type GetAccountBySessionIDRow struct {
 func (q *Queries) GetAccountBySessionID(ctx context.Context, sessionID string) (GetAccountBySessionIDRow, error) {
 	row := q.db.QueryRow(ctx, getAccountBySessionID, sessionID)
 	var i GetAccountBySessionIDRow
-	err := row.Scan(&i.ID, &i.Email)
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.TermsVersion,
+		&i.FirstRunDoneAt,
+	)
 	return i, err
 }
 

@@ -7,16 +7,75 @@ package sqlcgen
 
 import (
 	"context"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const acceptTerms = `-- name: AcceptTerms :exec
+UPDATE accounts
+SET terms_agreed_at = CASE
+        WHEN terms_version IS NOT DISTINCT FROM $1::text AND terms_agreed_at IS NOT NULL
+            THEN terms_agreed_at
+        ELSE now()
+    END,
+    terms_version = $1::text
+WHERE id = $2
+`
+
+type AcceptTermsParams struct {
+	TermsVersion string
+	ID           int64
+}
+
+// Records agreement to one version of the terms text (D-27). When the stored
+// version already equals the argument the first agreed time is kept, so a
+// repeat call is harmless; a different or missing version stamps the time now.
+func (q *Queries) AcceptTerms(ctx context.Context, arg AcceptTermsParams) error {
+	_, err := q.db.Exec(ctx, acceptTerms, arg.TermsVersion, arg.ID)
+	return err
+}
 
 const getAccountByEmail = `-- name: GetAccountByEmail :one
 SELECT id, email, created_at FROM accounts WHERE email = $1
 `
 
-func (q *Queries) GetAccountByEmail(ctx context.Context, email string) (Account, error) {
+type GetAccountByEmailRow struct {
+	ID        int64
+	Email     string
+	CreatedAt time.Time
+}
+
+func (q *Queries) GetAccountByEmail(ctx context.Context, email string) (GetAccountByEmailRow, error) {
 	row := q.db.QueryRow(ctx, getAccountByEmail, email)
-	var i Account
+	var i GetAccountByEmailRow
 	err := row.Scan(&i.ID, &i.Email, &i.CreatedAt)
+	return i, err
+}
+
+const getAccountProfile = `-- name: GetAccountProfile :one
+SELECT display_name, home_area_name, terms_version, first_run_done_at
+FROM accounts
+WHERE id = $1
+`
+
+type GetAccountProfileRow struct {
+	DisplayName    *string
+	HomeAreaName   *string
+	TermsVersion   *string
+	FirstRunDoneAt pgtype.Timestamptz
+}
+
+// The caller's own profile rows and onboarding state.
+func (q *Queries) GetAccountProfile(ctx context.Context, id int64) (GetAccountProfileRow, error) {
+	row := q.db.QueryRow(ctx, getAccountProfile, id)
+	var i GetAccountProfileRow
+	err := row.Scan(
+		&i.DisplayName,
+		&i.HomeAreaName,
+		&i.TermsVersion,
+		&i.FirstRunDoneAt,
+	)
 	return i, err
 }
 
@@ -33,5 +92,56 @@ ON CONFLICT (email) DO NOTHING
 // conflict path that matters most.
 func (q *Queries) InsertAccount(ctx context.Context, email string) error {
 	_, err := q.db.Exec(ctx, insertAccount, email)
+	return err
+}
+
+const markFirstRunDone = `-- name: MarkFirstRunDone :exec
+UPDATE accounts
+SET first_run_done_at = COALESCE(first_run_done_at, now())
+WHERE id = $1
+`
+
+// Marks the first-time flow finished. COALESCE keeps the first time, so a
+// repeat call changes nothing.
+func (q *Queries) MarkFirstRunDone(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, markFirstRunDone, id)
+	return err
+}
+
+const setAccountDisplayName = `-- name: SetAccountDisplayName :exec
+UPDATE accounts
+SET display_name = $1::text
+WHERE id = $2
+`
+
+type SetAccountDisplayNameParams struct {
+	DisplayName *string
+	ID          int64
+}
+
+// Saves the optional name; a NULL argument clears it.
+func (q *Queries) SetAccountDisplayName(ctx context.Context, arg SetAccountDisplayNameParams) error {
+	_, err := q.db.Exec(ctx, setAccountDisplayName, arg.DisplayName, arg.ID)
+	return err
+}
+
+const setAccountHomeArea = `-- name: SetAccountHomeArea :exec
+UPDATE accounts
+SET home_area_name = $1::text,
+    home_area_cell = $2::text
+WHERE id = $3
+`
+
+type SetAccountHomeAreaParams struct {
+	HomeAreaName *string
+	HomeAreaCell *string
+	ID           int64
+}
+
+// Saves or clears the home area. The name and the precision 5 cell are written
+// together (accounts_home_area_pair); both NULL clears it. The raw point is
+// never an argument here.
+func (q *Queries) SetAccountHomeArea(ctx context.Context, arg SetAccountHomeAreaParams) error {
+	_, err := q.db.Exec(ctx, setAccountHomeArea, arg.HomeAreaName, arg.HomeAreaCell, arg.ID)
 	return err
 }

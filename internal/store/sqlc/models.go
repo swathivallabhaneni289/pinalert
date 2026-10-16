@@ -11,9 +11,15 @@ import (
 )
 
 type Account struct {
-	ID        int64
-	Email     string
-	CreatedAt time.Time
+	ID             int64
+	Email          string
+	CreatedAt      time.Time
+	TermsAgreedAt  pgtype.Timestamptz
+	TermsVersion   *string
+	FirstRunDoneAt pgtype.Timestamptz
+	DisplayName    *string
+	HomeAreaName   *string
+	HomeAreaCell   *string
 }
 
 type EmailCooldown struct {
@@ -70,6 +76,7 @@ type Report struct {
 	RequestID             *string
 	RequestAccountID      *int64
 	ClientWrittenAt       pgtype.Timestamptz
+	Happening             *string
 }
 
 type ReportFlag struct {

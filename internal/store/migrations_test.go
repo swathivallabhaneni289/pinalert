@@ -431,3 +431,139 @@ func TestMigrationsUpDown(t *testing.T) {
 		t.Errorf("setting moderation_state to held: want SQLSTATE 23514, got %v", err)
 	}
 }
+
+// TestMigration00008 covers the Phase 3.4 migration (D-24b): the file carries
+// both goose markers, is embedded, builds nothing concurrently, and on a
+// database adds the account and reports columns with the CHECK constraints
+// that refuse a malformed cell, an over long name, a name without a cell and
+// an unknown What is happening value. Down removes everything again.
+func TestMigration00008(t *testing.T) {
+	const file = "migrations/00008_add_onboarding_and_happening.sql"
+	contents, err := MigrationsFS.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", file, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", file)
+	}
+	var code []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		code = append(code, line)
+	}
+	if strings.Contains(strings.ToUpper(strings.Join(code, "\n")), "CONCURRENTLY") {
+		t.Error("migration 00008 must not use CONCURRENTLY: goose runs it inside a transaction")
+	}
+	if strings.Count(text, "reports_happening_valid") < 2 {
+		t.Error("migration 00008 must add and drop reports_happening_valid")
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00008 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	defer db.Close()
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+
+	var accountID, reportID int64
+	t.Cleanup(func() {
+		if reportID != 0 {
+			_, _ = db.Exec("DELETE FROM reports WHERE id = $1", reportID)
+		}
+		if accountID != 0 {
+			_, _ = db.Exec("DELETE FROM accounts WHERE id = $1", accountID)
+		}
+		_ = goose.Up(db, "migrations")
+	})
+
+	accountColumns := "{terms_agreed_at,terms_version,first_run_done_at,display_name,home_area_name,home_area_cell}"
+	count := func(table, cols string) int {
+		var n int
+		err := db.QueryRow(`SELECT count(*) FROM information_schema.columns
+			WHERE table_schema = 'public' AND table_name = $1 AND column_name = ANY($2::text[])`,
+			table, cols).Scan(&n)
+		if err != nil {
+			t.Fatalf("counting columns of %s: %v", table, err)
+		}
+		return n
+	}
+	if got := count("accounts", accountColumns); got != 6 {
+		t.Errorf("after Up: %d of 6 new accounts columns present", got)
+	}
+	if got := count("reports", "{happening}"); got != 1 {
+		t.Errorf("after Up: reports.happening count %d, want 1", got)
+	}
+
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00008@example.com') RETURNING id`).Scan(&accountID); err != nil {
+		t.Fatalf("inserting account: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO reports (session_id, category, severity, description, latitude, longitude, geohash, expires_at)
+		VALUES ('migration-00008', 'road', 'info', 'for the 00008 test', 12.97, 77.59, 'tdr1w', now() + interval '1 hour')
+		RETURNING id`).Scan(&reportID); err != nil {
+		t.Fatalf("inserting report: %v", err)
+	}
+
+	wantCheck := func(label, query string, args ...any) {
+		t.Helper()
+		_, err := db.Exec(query, args...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
+			t.Errorf("%s: want SQLSTATE 23514, got %v", label, err)
+		}
+	}
+	wantCheck("a 6 character cell",
+		`UPDATE accounts SET home_area_name = 'Indiranagar', home_area_cell = 'tdr1wx' WHERE id = $1`, accountID)
+	wantCheck("a cell with a letter outside the geohash alphabet",
+		`UPDATE accounts SET home_area_name = 'Indiranagar', home_area_cell = 'tdr1a' WHERE id = $1`, accountID)
+	wantCheck("a 61 character name",
+		`UPDATE accounts SET display_name = $2 WHERE id = $1`, accountID, strings.Repeat("a", 61))
+	wantCheck("an empty name",
+		`UPDATE accounts SET display_name = '' WHERE id = $1`, accountID)
+	wantCheck("a home area name without a cell",
+		`UPDATE accounts SET home_area_name = 'Indiranagar' WHERE id = $1`, accountID)
+	wantCheck("a cell without a home area name",
+		`UPDATE accounts SET home_area_cell = 'tdr1w' WHERE id = $1`, accountID)
+	wantCheck("a terms version without a time",
+		`UPDATE accounts SET terms_version = '2026-10-16' WHERE id = $1`, accountID)
+	wantCheck("an unknown happening value",
+		`UPDATE reports SET happening = 'zombies' WHERE id = $1`, reportID)
+
+	if _, err := db.Exec(`UPDATE accounts SET home_area_name = 'Indiranagar', home_area_cell = 'tdr1w',
+		display_name = 'Asha', terms_version = '2026-10-16', terms_agreed_at = now() WHERE id = $1`, accountID); err != nil {
+		t.Errorf("a valid profile must be accepted: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE reports SET happening = 'water_rising' WHERE id = $1`, reportID); err != nil {
+		t.Errorf("a valid happening value must be accepted: %v", err)
+	}
+
+	name := "00008_add_onboarding_and_happening.sql"
+	version, err := goose.NumericComponent(name)
+	if err != nil {
+		t.Fatalf("parsing version of %s: %v", name, err)
+	}
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down to %d: %v", version-1, err)
+	}
+	if got := count("accounts", accountColumns); got != 0 {
+		t.Errorf("after Down: %d accounts columns still present", got)
+	}
+	if got := count("reports", "{happening}"); got != 0 {
+		t.Errorf("after Down: reports.happening still present")
+	}
+}
