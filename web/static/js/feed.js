@@ -112,13 +112,6 @@
   // scroll position and focus survive a background refresh.
   var rowsById = {};
 
-  // groupHeadEl is the one heading of the last group of Show All: it stands
-  // before the first disputed row, with the words "Disputed: may not be true",
-  // and is taken out of the list when no disputed row is drawn. It is a list
-  // item with no role of its own, so the list stays a list of rows and a
-  // heading.
-  var groupHeadEl = null;
-
   // handledFocus is the first focus object (the server's answer to a report
   // link) that handleFocus acted on, or null before one has landed. Every
   // answer carries a new focus object while the link is held (CR-01), so the
@@ -503,33 +496,6 @@
     }
   }
 
-  // placeGroupHead draws the heading of the last group at a slot of the list:
-  // "Disputed: may not be true". It is built once, as a list item with no
-  // role of its own, and moved to the slot when it is not already there.
-  function placeGroupHead(slot) {
-    if (groupHeadEl === null) {
-      groupHeadEl = document.createElement('li');
-      groupHeadEl.className = 'report-group-head';
-      groupHeadEl.setAttribute('role', 'presentation');
-      var text = document.createElement('p');
-      text.className = 'report-group-head__text';
-      Pinalert.setText(text, DISPUTED_LINE);
-      groupHeadEl.appendChild(text);
-    }
-    var expected = reportListEl.children[slot];
-    if (expected !== groupHeadEl) {
-      reportListEl.insertBefore(groupHeadEl, expected || null);
-    }
-  }
-
-  // removeGroupHead takes the heading out of the list when no disputed row is
-  // drawn.
-  function removeGroupHead() {
-    if (groupHeadEl !== null && groupHeadEl.parentNode) {
-      groupHeadEl.parentNode.removeChild(groupHeadEl);
-    }
-  }
-
   // renderRows keeps focus on a real control through a poll (A67, A71).
   // Departed rows are removed before the rest are placed. A row moves only
   // when its position changed, with moveBefore where the browser has it (it
@@ -539,12 +505,11 @@
   // Grouping (D-14): the rows are sorted in the feed's own order, then split
   // into two groups by the server's view word and nothing else: every report
   // that is not disputed first, every disputed report last, each group in the
-  // sorted order. Show All draws the heading of the last group before its
-  // first row; Show Disputed draws only that group, so it needs no heading.
+  // sorted order. The last group carries no heading of its own: each disputed
+  // row says "Disputed: may not be true" itself (UI-SPEC 2e cue 3), and the
+  // words are not repeated (D-02).
   function renderRows(reports) {
     var sorted = Pinalert.disputedLast(sortReports(reports));
-    var headerWanted = Pinalert.state.show === 'all' && sorted.length > 0 &&
-      isDisputed(sorted[sorted.length - 1]);
     var seen = {};
     for (var s = 0; s < sorted.length; s++) {
       seen[String(sorted[s].id)] = true;
@@ -579,16 +544,9 @@
     var activeBefore = document.activeElement;
     var movedFocus = false;
     var slot = 0;
-    var headShown = false;
     for (var i = 0; i < sorted.length; i++) {
       var report = sorted[i];
       var idKey = String(report.id);
-
-      if (headerWanted && !headShown && isDisputed(report)) {
-        placeGroupHead(slot);
-        headShown = true;
-        slot += 1;
-      }
 
       var row = rowsById[idKey];
       if (!row) {
@@ -610,10 +568,6 @@
       }
       slot += 1;
     }
-    if (!headShown) {
-      removeGroupHead();
-    }
-
     if (movedFocus && activeBefore && activeBefore.isConnected &&
         (!document.activeElement || document.activeElement === document.body)) {
       activeBefore.focus();
@@ -637,7 +591,6 @@
       rowsById[ids[j]].el.remove();
       delete rowsById[ids[j]];
     }
-    removeGroupHead();
     if (rowHadFocus || popupHadFocus) {
       focusAfterRemoval([]);
     }
