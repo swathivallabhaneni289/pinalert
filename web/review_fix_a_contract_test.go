@@ -102,7 +102,7 @@ func TestReviewFixAListPaneLoadingMark(t *testing.T) {
 		"var isBackgroundRefresh = state.status === 'ok' || state.reports.length > 0;",
 		"function rowsMatchStore() {",
 		"markListLoading(isBackgroundRefresh && !rowsMatchStore());",
-		"pending = fetch(url)",
+		"var answered = fetch(url)",
 		"lastAppliedSeq = mySeq;", "markListLoading(false);",
 		".catch(function (err) {", "if (!rowsMatchStore()) {", "state.status = 'error';")
 	if n := strings.Count(fetchBody, "markListLoading(false);\n        notify();"); n != 2 {
