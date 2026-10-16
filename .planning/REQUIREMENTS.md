@@ -350,7 +350,7 @@ Requirements for initial release. Each maps to roadmap phases.
       points to the Demo), Your location, About you (name and home area, both optional) and Alerts,
       which arrives with Phase 3.3 (added 2026-10-16, Phase 3.4)
 
-- [ ] **LAYOUT-08**: The laptop shows a dark strip at the top of every page (unofficial, not a
+- [ ] **LAYOUT-08**: The laptop shows a dark strip at the top of the Nearby and Post a report pages only (unofficial, not a
       government service, cannot send help, reports can be wrong, in danger call 112) with a Read
       the disclaimer link; by owner decision the phone shows no strip on its main screens and
       carries the disclaimer in the first-time flow and in Settings, About Pinalert (see ROBUST-08).
