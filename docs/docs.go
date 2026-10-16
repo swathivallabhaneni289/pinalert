@@ -75,7 +75,7 @@ const docTemplate = `{
         },
         "/geocode": {
             "get": {
-                "description": "Proxies a search query to Nominatim and returns at most five matches. Requires a\nsession verified by email through the magic-link flow. A 503 means search is\ntemporarily unavailable; report submission remains fully usable regardless.",
+                "description": "Proxies a search query to Nominatim and returns at most five matches, in India\nonly. Requires a session verified by email through the magic-link flow. With the\noptional lat and lon (both or neither, the report pin) it looks in a box around\nthe pin first and widens only when the box finds nothing. When the whole text\nfinds nothing it tries again without the first part, at most twice, and\nmatched_query then holds the shorter text that matched. A 503 means search is\ntemporarily unavailable; report submission remains fully usable regardless.",
                 "produces": [
                     "application/json"
                 ],
@@ -90,6 +90,18 @@ const docTemplate = `{
                         "name": "q",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Report pin latitude, -90 to 90, sent together with lon",
+                        "name": "lat",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Report pin longitude, -180 to 180, sent together with lat",
+                        "name": "lon",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -128,7 +140,7 @@ const docTemplate = `{
         },
         "/geocode/place": {
             "get": {
-                "description": "Place search for the history views. It runs on its own lane of the geocoder: it\nnever waits for a token, repeated searches are answered from a cache, and each\nverified account has its own small budget. The optional lat and lon (both or\nneither) bias results toward the map centre without hiding matches elsewhere.\nA 429 or 503 never affects report submission, which has its own search.",
+                "description": "Place search for the history views. It runs on its own lane of the geocoder: it\nnever queues ahead of a report search, repeated searches are answered from a cache, and each\nverified account has its own small budget. Results are in India only. With the\noptional lat and lon (both or neither) it looks in a box around the map centre\nfirst and widens only when the box finds nothing. When the whole text finds\nnothing it tries again without the first part, at most twice, and\nmatched_query then holds the shorter text that matched.\nA 429 or 503 never affects report submission, which has its own search.",
                 "produces": [
                     "application/json"
                 ],
@@ -1322,6 +1334,11 @@ const docTemplate = `{
         "handlers.GeocodeResponse": {
             "type": "object",
             "properties": {
+                "matched_query": {
+                    "description": "MatchedQuery is the shorter text that found these results when the\nwhole text found nothing. It is left out when the text as typed\nmatched, and when nothing matched.",
+                    "type": "string",
+                    "example": "Banjara Hills, Hyderabad"
+                },
                 "results": {
                     "type": "array",
                     "items": {
