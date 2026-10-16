@@ -98,6 +98,19 @@ type photonProperties struct {
 	State       string `json:"state"`
 	CountryCode string `json:"countrycode"`
 	OSMKey      string `json:"osm_key"`
+	// Type is Photon's own size of the row: house, street, locality,
+	// district, city, county, state, country or other.
+	Type string `json:"type"`
+}
+
+// cityLevelTypes are the Photon types at or above a city. Such a row never
+// takes the county into its label: live, Hyderabad the city carried a mandal
+// as its county.
+var cityLevelTypes = map[string]bool{
+	"city":    true,
+	"county":  true,
+	"state":   true,
+	"country": true,
 }
 
 // placeOSMKeys are the OpenStreetMap keys that make an answer a place rather
@@ -127,12 +140,15 @@ func cleanPart(s string) string {
 // skipped and a part already in the label (in any case) is not repeated, so
 // there is never a "null", an empty comma or "Hyderabad, Hyderabad".
 //
-// When there is no city the county takes its place, the next larger place
-// part Photon sends (quick 261016-sfu): live, some Hyderabad rows carry a
-// ward as the district and no city, and the county brings back "Hyderabad".
+// When a row below city level has no city, the county takes the city's
+// place, the next larger place part Photon sends (quick 261016-sfu). Live,
+// in Hyderabad that county was a mandal (Banjara Hills reads "..., Ward 92
+// Venkateshwara Colony, Shaikpet mandal, Telangana"), not the city. A city
+// level row (cityLevelTypes) never takes it, so Hyderabad itself still reads
+// "Hyderabad, Telangana".
 func photonLabel(p photonProperties) string {
 	city := p.City
-	if cleanPart(city) == "" {
+	if cleanPart(city) == "" && !cityLevelTypes[strings.ToLower(strings.TrimSpace(p.Type))] {
 		city = p.County
 	}
 	var parts []string
