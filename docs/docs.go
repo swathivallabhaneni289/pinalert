@@ -1850,6 +1850,20 @@ const docTemplate = `{
                     "type": "string",
                     "example": "42"
                 },
+                "happening": {
+                    "description": "Happening is the optional What is happening pick. It is accepted only with severity critical; with any other severity, or with a value outside the list, the post is refused with 400 on the field happening. A saved report written before this field existed has none and still posts.",
+                    "type": "string",
+                    "enum": [
+                        "water_rising",
+                        "people_trapped",
+                        "fire",
+                        "building_collapsed",
+                        "landslide",
+                        "medical_emergency",
+                        "other"
+                    ],
+                    "example": "people_trapped"
+                },
                 "latitude": {
                     "description": "Latitude must be between -90 and 90.",
                     "type": "number",

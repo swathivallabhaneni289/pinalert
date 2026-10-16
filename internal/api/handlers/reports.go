@@ -56,6 +56,8 @@ type SubmitReportRequest struct {
 	ShelterCapacityStatus *string `json:"shelter_capacity_status,omitempty" enums:"available,limited,full,closed" example:"available"`
 	// ShelterHeadcount is optional and only valid alongside category shelter_open.
 	ShelterHeadcount *int `json:"shelter_headcount,omitempty" example:"42"`
+	// Happening is the optional What is happening pick. It is accepted only with severity critical; with any other severity, or with a value outside the list, the post is refused with 400 on the field happening. A saved report written before this field existed has none and still posts.
+	Happening *string `json:"happening,omitempty" enums:"water_rising,people_trapped,fire,building_collapsed,landslide,medical_emergency,other" example:"people_trapped"`
 	// Optional retry key: 16 to 64 letters, digits or hyphens. Sending the same key again returns the report already stored instead of storing it twice.
 	RequestID *string `json:"request_id,omitempty" minLength:"16" maxLength:"64" example:"5f0c2a9e-8d1b-4c7e-9a33-2b6f1e4d7c10"`
 	// Optional, display only: when the device wrote the report, RFC 3339. A value that cannot be read is ignored, a future one is set to the server time and one older than 14 days is set to 14 days before it. It never changes created_at, expires_at, the order or the fade.
@@ -507,6 +509,10 @@ func SubmitReport(svc *service.ReportService, gate *RateGate) http.HandlerFunc {
 		}
 		if req.RequestID != nil {
 			in.RequestID = *req.RequestID
+		}
+		if req.Happening != nil {
+			h := service.Happening(*req.Happening)
+			in.Happening = &h
 		}
 
 		if err := service.ValidateSubmitInput(in); err != nil {
