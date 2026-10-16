@@ -63,14 +63,14 @@ RETURNING c.report_id, c.attempts, r.description, r.severity, r.category,
 -- The worker's one write after a verdict: it closes the check and moves the
 -- report in a single statement, and the report moves only when this statement
 -- itself closed a pending check. The main UPDATE reads fin, so the check row
--- is locked first and the report row second. When Keep or Remove holds the
--- check row, the check UPDATE waits, then rechecks status = 'pending' against
--- the committed row, finds it done and changes nothing, so fin is empty and
--- the report is untouched: a late worker reject cannot withdraw a report a
--- moderator kept, and a check closed by Keep or Remove is never reopened or
--- overwritten. Removal is terminal, so a worker pass never undoes a moderator
--- Remove (R-03). One statement also leaves no crash window between the two
--- writes.
+-- is locked first and the report row second, the order Keep and Remove also
+-- take (LockModerationCheck). When Keep or Remove holds the check row, the
+-- check UPDATE waits, then rechecks status = 'pending' against the committed
+-- row, finds it done and changes nothing, so fin is empty and the report is
+-- untouched: a late worker reject cannot withdraw a report a moderator kept,
+-- and a check closed by Keep or Remove is never reopened or overwritten.
+-- Removal is terminal, so a worker pass never undoes a moderator Remove
+-- (R-03). One statement also leaves no crash window between the two writes.
 WITH fin AS (
     UPDATE moderation_checks
     SET status = 'done',
@@ -191,11 +191,24 @@ FROM reports r
 LEFT JOIN moderation_checks c ON c.report_id = r.id
 WHERE r.id = sqlc.arg(report_id);
 
+-- name: LockModerationCheck :exec
+-- Takes the row lock on a report's check, the first statement of the Keep and
+-- Remove transaction. Postgres does not promise the order in which KeepReport
+-- and RemoveReport touch their CTE tables and the reports row, and the
+-- worker's FinishCheckAndSetState locks the check row before the report row;
+-- locking the check row first here gives both writers the same order, so they
+-- queue on the check row and cannot deadlock. A report with no check row locks
+-- nothing, and the worker never writes such a report.
+SELECT report_id FROM moderation_checks
+WHERE report_id = sqlc.arg(report_id)
+FOR UPDATE;
+
 -- name: KeepReport :exec
 -- Keep as one statement. Two data modifying CTEs close the check and dismiss
 -- the open flags; the main statement releases a pending report to clear. Keep
 -- accepts a pending post as it is and never touches a removed one, so removal
--- stays terminal (D-08, R-03).
+-- stays terminal (D-08, R-03). The service runs it inside a transaction after
+-- LockModerationCheck.
 WITH closed AS (
     UPDATE moderation_checks
     SET needs_review = false, status = 'done', lease_until = NULL
@@ -214,7 +227,8 @@ WHERE reports.id = sqlc.arg(report_id) AND reports.moderation_state = 'pending';
 -- name: RemoveReport :exec
 -- Remove as one statement, with the same two CTEs as Keep. The main statement
 -- sets removed on any report, listed or not, and removal is terminal (D-08,
--- R-03). The check is closed so the worker never claims it again.
+-- R-03). The check is closed so the worker never claims it again. Like Keep,
+-- the service runs it inside a transaction after LockModerationCheck.
 WITH closed AS (
     UPDATE moderation_checks
     SET needs_review = false, status = 'done', lease_until = NULL

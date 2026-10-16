@@ -247,6 +247,9 @@ func main() {
 		Template: tmpl,
 		// Parsed once from MODERATOR_EMAILS above; empty admits nobody.
 		ModeratorEmails: moderatorEmails,
+		// Keep and Remove lock the check row first inside one transaction,
+		// the order the moderation worker takes (WR-S01).
+		ModerationTx: service.PgxModerationTx(pool),
 		Page: handlers.PageConfig{
 			FallbackLat:     fallbackLat,
 			FallbackLon:     fallbackLon,

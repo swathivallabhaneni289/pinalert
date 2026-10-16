@@ -122,14 +122,14 @@ type FinishCheckAndSetStateParams struct {
 // The worker's one write after a verdict: it closes the check and moves the
 // report in a single statement, and the report moves only when this statement
 // itself closed a pending check. The main UPDATE reads fin, so the check row
-// is locked first and the report row second. When Keep or Remove holds the
-// check row, the check UPDATE waits, then rechecks status = 'pending' against
-// the committed row, finds it done and changes nothing, so fin is empty and
-// the report is untouched: a late worker reject cannot withdraw a report a
-// moderator kept, and a check closed by Keep or Remove is never reopened or
-// overwritten. Removal is terminal, so a worker pass never undoes a moderator
-// Remove (R-03). One statement also leaves no crash window between the two
-// writes.
+// is locked first and the report row second, the order Keep and Remove also
+// take (LockModerationCheck). When Keep or Remove holds the check row, the
+// check UPDATE waits, then rechecks status = 'pending' against the committed
+// row, finds it done and changes nothing, so fin is empty and the report is
+// untouched: a late worker reject cannot withdraw a report a moderator kept,
+// and a check closed by Keep or Remove is never reopened or overwritten.
+// Removal is terminal, so a worker pass never undoes a moderator Remove
+// (R-03). One statement also leaves no crash window between the two writes.
 func (q *Queries) FinishCheckAndSetState(ctx context.Context, arg FinishCheckAndSetStateParams) error {
 	_, err := q.db.Exec(ctx, finishCheckAndSetState,
 		arg.ModerationState,
@@ -334,9 +334,28 @@ WHERE reports.id = $1 AND reports.moderation_state = 'pending'
 // Keep as one statement. Two data modifying CTEs close the check and dismiss
 // the open flags; the main statement releases a pending report to clear. Keep
 // accepts a pending post as it is and never touches a removed one, so removal
-// stays terminal (D-08, R-03).
+// stays terminal (D-08, R-03). The service runs it inside a transaction after
+// LockModerationCheck.
 func (q *Queries) KeepReport(ctx context.Context, reportID int64) error {
 	_, err := q.db.Exec(ctx, keepReport, reportID)
+	return err
+}
+
+const lockModerationCheck = `-- name: LockModerationCheck :exec
+SELECT report_id FROM moderation_checks
+WHERE report_id = $1
+FOR UPDATE
+`
+
+// Takes the row lock on a report's check, the first statement of the Keep and
+// Remove transaction. Postgres does not promise the order in which KeepReport
+// and RemoveReport touch their CTE tables and the reports row, and the
+// worker's FinishCheckAndSetState locks the check row before the report row;
+// locking the check row first here gives both writers the same order, so they
+// queue on the check row and cannot deadlock. A report with no check row locks
+// nothing, and the worker never writes such a report.
+func (q *Queries) LockModerationCheck(ctx context.Context, reportID int64) error {
+	_, err := q.db.Exec(ctx, lockModerationCheck, reportID)
 	return err
 }
 
@@ -506,7 +525,8 @@ WHERE reports.id = $1
 
 // Remove as one statement, with the same two CTEs as Keep. The main statement
 // sets removed on any report, listed or not, and removal is terminal (D-08,
-// R-03). The check is closed so the worker never claims it again.
+// R-03). The check is closed so the worker never claims it again. Like Keep,
+// the service runs it inside a transaction after LockModerationCheck.
 func (q *Queries) RemoveReport(ctx context.Context, reportID int64) error {
 	_, err := q.db.Exec(ctx, removeReport, reportID)
 	return err
