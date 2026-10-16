@@ -191,7 +191,7 @@ func TestLegalPagesRender(t *testing.T) {
 		// that finishes late removes the report instead of rejecting it, the
 		// author then sees the same label a moderator removal shows, and the
 		// worker stores verdict, scores and model for every late check.
-		"If the text is clearly hateful, harassing or sexual, it is rejected and nothing is stored. If the check finishes only after the report was saved, the report is removed instead: it stays stored but shows to no one. If the text is borderline, it is posted and a moderator may look at it.",
+		"If the text is clearly hateful, harassing or sexual, it is rejected and nothing is stored. If such text is only caught after the report was saved, because the check finished late, the report is removed instead: it stays stored but shows to no one. If the text is borderline, it is posted and a moderator may look at it.",
 		`A removed report shows to no one. Its author sees "Removed after review" both when a moderator removed it and when the automatic check removed it after it was saved.`,
 		"The result and scores of the automatic check, and which model gave them, without the report text: for borderline reports and for any report whose check finished after it was saved.",
 	} {
