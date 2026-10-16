@@ -60,15 +60,24 @@ window.Pinalert = (function () {
     other: 'Other'
   };
 
-  // The three tabs of the list pane (03.1 D-01). The first is the default and
-  // is never written to the page address.
-  var VIEWS = ['active', 'disputed', 'past'];
+  // The words of the view parameter the store sends (03.4 D-13, D-14). active
+  // stays the store default and sends no parameter, because the Low data view
+  // uses the same store and keeps its built Active list. Nearby sets its own
+  // show state at boot, which reads all (Live, Provisional and Hidden by
+  // dispute in one answer) or disputed. The Past tab left Nearby in Phase 3.4,
+  // so there is no past word any more.
+  var VIEWS = ['active', 'all', 'disputed'];
 
-  // The plain word of each category chip (03.1 D-17). Only these four have a
-  // chip; the other five categories show under All.
+  // The three choices of the Show menu (03.4 D-13). all is the default.
+  var SHOWS = ['all', 'confirmed', 'disputed'];
+
+  // The plain word of each category chip (03.1 D-17, 03.4 D-24a). Only these
+  // four have a chip besides All; the other categories show under All.
+  // Traffic took the Rescue chip on 2026-10-16. A rescue report posted before
+  // that day shows under All until it fades.
   var CHIP_LABELS = {
     flood: 'Flood',
-    rescue_needed: 'Rescue',
+    traffic: 'Traffic',
     shelter_open: 'Shelter',
     power_outage: 'Power'
   };
@@ -114,10 +123,14 @@ window.Pinalert = (function () {
     // own is true only when the centre is the reader's own position, a fix the
     // browser gave. The fallback centre is never the reader (A94).
     center: { lat: config.fallbackLat, lon: config.fallbackLon, own: false },
-    // The tab of the list pane. It replaces the old Show disputed boolean
-    // (03.1 D-01) and keeps D-10's closed default: a visitor who has not
-    // asked for disputed or past reports never sees them.
+    // The report read the store asks for (one of VIEWS). The Low data view
+    // keeps the active default (no parameter). Nearby moves to all or disputed
+    // through setShow at boot, before its first request.
     view: 'active',
+    // The Show choice of Nearby (one of SHOWS). all and confirmed read the
+    // all answer, disputed reads the disputed answer. Confirmed is a filter
+    // over the all answer, see visibleReports.
+    show: 'all',
     // '' (All) or one category slug. Nothing is hidden until a chip is
     // tapped (03.1 D-17), and a fresh open starts with no filter (D-18).
     category: '',
@@ -281,6 +294,75 @@ window.Pinalert = (function () {
     }
   }
 
+  // setShow keeps the Show choice of Nearby (03.4 D-13, D-14) and the read it
+  // needs: Show Disputed reads the disputed answer, All and Confirmed read the
+  // all answer. A word outside SHOWS is ignored. Like the setters around it it
+  // only assigns: no notify, no fetch. It answers true when the read changed,
+  // so the caller knows to refetch; Confirmed against All is only a filter
+  // over rows already in the store, so the caller redraws with redraw.
+  function setShow(show) {
+    if (SHOWS.indexOf(show) === -1) {
+      return false;
+    }
+    var before = state.view;
+    state.show = show;
+    state.view = show === 'disputed' ? 'disputed' : 'all';
+    return state.view !== before;
+  }
+
+  // reportInShow says whether one report belongs to a Show choice. It reads
+  // two server authored words and nothing else: view (active or disputed) and
+  // confirmed_by_people (the server's own answer to "confirmed by people
+  // nearby", TRUST-02). The browser holds no threshold, no count and no
+  // judgement of its own. A disputed report is never in Confirmed.
+  function reportInShow(report, show) {
+    if (!report) {
+      return false;
+    }
+    if (show === 'confirmed') {
+      return report.confirmed_by_people === true && report.view !== 'disputed';
+    }
+    if (show === 'disputed') {
+      return report.view === 'disputed';
+    }
+    return true;
+  }
+
+  // visibleReports is the one set of reports the list rows and the map pins
+  // both draw (03.4 D-13). It is state.reports under the Show choice, as a
+  // new array, so the store's own array is never changed.
+  function visibleReports() {
+    var out = [];
+    for (var i = 0; i < state.reports.length; i++) {
+      if (reportInShow(state.reports[i], state.show)) {
+        out.push(state.reports[i]);
+      }
+    }
+    return out;
+  }
+
+  // disputedLast is a stable partition by the server's view word: every report
+  // that is not disputed first, in the order given, then every disputed report
+  // in the order given. It never judges a report itself (D-14).
+  function disputedLast(reports) {
+    var live = [];
+    var disputed = [];
+    for (var i = 0; i < reports.length; i++) {
+      if (reports[i] && reports[i].view === 'disputed') {
+        disputed.push(reports[i]);
+      } else {
+        live.push(reports[i]);
+      }
+    }
+    return live.concat(disputed);
+  }
+
+  // redraw tells every listener to draw the store again, for a change that
+  // needs no request (Confirmed against All).
+  function redraw() {
+    notify();
+  }
+
   function setCategory(slug) {
     if (slug === '' || KNOWN_CATEGORIES.indexOf(slug) !== -1) {
       state.category = slug;
@@ -425,13 +507,13 @@ window.Pinalert = (function () {
     // decides both surfaces' rows and pins together. There is no
     // map-specific query to add and none must ever be added: a second fetch
     // would be the first place the two surfaces could disagree about what
-    // exists, which is exactly what TRUST-02 forbids. The tab word is one of
+    // exists, which is exactly what TRUST-02 forbids. The view word is one of
     // two fixed strings (the store only ever holds a word from VIEWS), so it
     // needs no encoding; the category and the report id are encoded like the
     // coordinates above, and the server checks all three. Omitting a
     // parameter when it holds its default keeps the Active, unfiltered URL
-    // byte-identical to Phase 1's.
-    if (sentView === 'disputed' || sentView === 'past') {
+    // byte-identical to Phase 1's (the Low data view still sends it that way).
+    if (sentView === 'all' || sentView === 'disputed') {
       url += '&view=' + sentView;
     }
     if (sentCategory !== '') {
@@ -533,12 +615,6 @@ window.Pinalert = (function () {
       return;
     }
     pollTimer = window.setInterval(function () {
-      // The Past list is read when the tab opens, on a place or chip change,
-      // on a restored page and on Retry, never on the poll: it changes only
-      // when a report closes or fades, and it is the heavier read.
-      if (state.view === 'past') {
-        return;
-      }
       fetchReports();
     }, config.pollIntervalMs);
   }
@@ -1165,6 +1241,7 @@ window.Pinalert = (function () {
     CATEGORY_LABELS: CATEGORY_LABELS,
     CHIP_LABELS: CHIP_LABELS,
     VIEWS: VIEWS,
+    SHOWS: SHOWS,
     categoryLabel: categoryLabel,
     config: config,
     state: state,
@@ -1172,6 +1249,11 @@ window.Pinalert = (function () {
     setCenter: setCenter,
     feedIsAroundReader: feedIsAroundReader,
     setView: setView,
+    setShow: setShow,
+    reportInShow: reportInShow,
+    visibleReports: visibleReports,
+    disputedLast: disputedLast,
+    redraw: redraw,
     setCategory: setCategory,
     setPlace: setPlace,
     clearPlace: clearPlace,

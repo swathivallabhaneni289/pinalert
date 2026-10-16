@@ -175,8 +175,15 @@ func TestViewStripUsesReplaceState(t *testing.T) {
 
 // TestViewStripStoreContract pins the store the strip and every later screen
 // plug into: one view, one category, one place, one link id, the new request
-// parameters on the one list fetch, the staleness rules, and the poll skipping
-// the Past tab.
+// parameters on the one list fetch, the staleness rules, and the poll.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+// D-18, D-24a): the store's views are active (the default, which the Low data
+// view keeps), all and disputed; the Past word is gone, so the poll never
+// skips; the chip list swaps Rescue for Traffic; and the Show choice lives in
+// state.show beside setShow, reportInShow and visibleReports. The Phase 3.1
+// and Phase 4 hands-on tests are walked on this layout after Phase 3.4 is
+// built.
 func TestViewStripStoreContract(t *testing.T) {
 	app := p19Code(t, "static/js/app.js")
 
@@ -189,16 +196,17 @@ func TestViewStripStoreContract(t *testing.T) {
 	}
 
 	p13MustContain(t, "app.js state", app,
-		"view: 'active',", "category: '',", "place: null,", "focusId: null,", "focus: null,",
+		"view: 'active',", "show: 'all',", "category: '',", "place: null,", "focusId: null,", "focus: null,",
 		"recent: null,", "cut: null",
-		"var VIEWS = ['active', 'disputed', 'past'];")
+		"var VIEWS = ['active', 'all', 'disputed'];", "var SHOWS = ['all', 'confirmed', 'disputed'];")
+	p13MustNotContain(t, "app.js", app, "'past'")
 
 	fetchBody := jsFunctionBody(t, app, "fetchReports(options)")
 	p13Ordered(t, fetchBody, "fetchReports request",
 		"var sentView = state.view;", "var sentCategory = state.category;",
 		"var sentLat = state.center.lat;", "var sentLon = state.center.lon;",
 		"var sentFocusId = state.focusId;",
-		"if (sentView === 'disputed' || sentView === 'past') {",
+		"if (sentView === 'all' || sentView === 'disputed') {",
 		"url += '&view=' + sentView;",
 		"if (sentCategory !== '') {",
 		"url += '&category=' + encodeURIComponent(sentCategory);",
@@ -235,13 +243,14 @@ func TestViewStripStoreContract(t *testing.T) {
 	p13Ordered(t, fetchBody, "failure path",
 		".catch(function (err) {", "if (!rowsMatchStore()) {", "state.reports = [];", "state.status = 'error';")
 
-	// The poll skips while the Past tab is selected.
+	// The poll never skips: the Past tab is gone from Nearby, so every view is
+	// refreshed on the timer.
 	poll := jsFunctionBody(t, app, "startPolling()")
-	p13Ordered(t, poll, "startPolling",
-		"window.setInterval(function () {", "if (state.view === 'past') {\n        return;\n      }", "fetchReports();")
+	p13Ordered(t, poll, "startPolling", "window.setInterval(function () {", "fetchReports();")
+	p13MustNotContain(t, "startPolling", poll, "state.view", "'past'")
 
 	// The setters assign only (no notify, no fetch) and ignore a bad value.
-	for _, name := range []string{"setView(view)", "setCategory(slug)", "setPlace(place)", "clearPlace()", "setFocusId(id)"} {
+	for _, name := range []string{"setView(view)", "setShow(show)", "setCategory(slug)", "setPlace(place)", "clearPlace()", "setFocusId(id)"} {
 		body := jsFunctionBody(t, app, name)
 		p13MustNotContain(t, name, body, "notify(", "fetchReports(", "fetch(")
 	}
@@ -254,7 +263,25 @@ func TestViewStripStoreContract(t *testing.T) {
 	p13MustContain(t, "app.js", app, "var PLACE_NAME_MAX = 32;")
 
 	p13MustContain(t, "CHIP_LABELS", app,
-		"flood: 'Flood',", "rescue_needed: 'Rescue',", "shelter_open: 'Shelter',", "power_outage: 'Power'")
+		"flood: 'Flood',", "traffic: 'Traffic',", "shelter_open: 'Shelter',", "power_outage: 'Power'")
+	chips, chipsAnchor, chipsEnd := windowAfter(app, "var CHIP_LABELS = {", "};")
+	if !chipsAnchor || !chipsEnd {
+		t.Fatalf("could not bound the CHIP_LABELS table")
+	}
+	p13MustNotContain(t, "CHIP_LABELS", chips, "rescue_needed")
+
+	// The Show choice: the words, the one membership rule and the one visible
+	// set, all reading the server's two words only (D-13, D-14, TRUST-02).
+	p13MustContain(t, "setShow", jsFunctionBody(t, app, "setShow(show)"),
+		"SHOWS.indexOf(show) === -1", "state.show = show;", "show === 'disputed' ? 'disputed' : 'all'")
+	member := jsFunctionBody(t, app, "reportInShow(report, show)")
+	p13MustContain(t, "reportInShow", member,
+		"report.confirmed_by_people === true", "report.view !== 'disputed'", "report.view === 'disputed'")
+	p13MustNotContain(t, "reportInShow", member, "confirmed_places", "disputed_places", "trust.", ".length", ">=", "<=")
+	p13MustContain(t, "visibleReports", jsFunctionBody(t, app, "visibleReports()"),
+		"reportInShow(state.reports[i], state.show)")
+	p13MustContain(t, "disputedLast", jsFunctionBody(t, app, "disputedLast(reports)"),
+		"reports[i].view === 'disputed'", "live.concat(disputed)")
 
 	// The distance sentence: the browser formats, the server owns the number.
 	dist := jsFunctionBody(t, app, "distanceText(report)")
@@ -265,7 +292,8 @@ func TestViewStripStoreContract(t *testing.T) {
 		"state.center.own === true", "formatDistance(km)", "return '';")
 
 	exports := []string{
-		"CHIP_LABELS: CHIP_LABELS,", "VIEWS: VIEWS,", "setView: setView,", "setCategory: setCategory,",
+		"CHIP_LABELS: CHIP_LABELS,", "VIEWS: VIEWS,", "SHOWS: SHOWS,", "setView: setView,", "setShow: setShow,",
+		"reportInShow: reportInShow,", "visibleReports: visibleReports,", "disputedLast: disputedLast,", "setCategory: setCategory,",
 		"setPlace: setPlace,", "clearPlace: clearPlace,", "setFocusId: setFocusId,",
 		"distanceText: distanceText,",
 	}

@@ -25,8 +25,13 @@ func p31fMapCode(t *testing.T) string {
 }
 
 // TestMapFollowsLabel pins the one line label on the map (C41, D-13): it
-// names the tab only while Disputed or Past is selected, it is written
-// through the text sink, and it follows every store notification.
+// names the set only while Show Disputed is chosen, it is written through the
+// text sink, and it follows every store notification.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+// D-18): the Past tab left Nearby, so the label has one word left, for Show
+// Disputed, and the past words are pinned absent. The Phase 3.1 and Phase 4
+// hands-on tests are walked on this layout after Phase 3.4 is built.
 func TestMapFollowsLabel(t *testing.T) {
 	raw := p13ReadStatic(t, "static/js/map.js")
 	code := p31fMapCode(t)
@@ -35,20 +40,20 @@ func TestMapFollowsLabel(t *testing.T) {
 	p13MustContain(t, "updateMapLabel", label,
 		"document.getElementById('map-label')",
 		"'Showing disputed reports'",
-		"'Showing past reports, last 7 days'",
 		"state.view === 'disputed'",
-		"state.view === 'past'",
 		"Pinalert.setText(",
 		".hidden = ")
 	p13MustNotContain(t, "updateMapLabel", label,
-		"innerHTML", "insertAdjacentHTML", "fetchReports", "Pinalert.setView(")
+		"innerHTML", "insertAdjacentHTML", "fetchReports", "Pinalert.setView(",
+		"'Showing past reports, last 7 days'", "state.view === 'past'")
 
-	// Each word exists once in the whole file, comments included, so a second
-	// copy cannot drift from the first.
-	for _, want := range []string{"Showing disputed reports", "Showing past reports, last 7 days"} {
-		if n := strings.Count(raw, want); n != 1 {
-			t.Errorf("map.js names %q %d times, want exactly 1", want, n)
-		}
+	// The word exists once in the whole file, comments included, so a second
+	// copy cannot drift from the first, and the retired past word is gone.
+	if n := strings.Count(raw, "Showing disputed reports"); n != 1 {
+		t.Errorf("map.js names %q %d times, want exactly 1", "Showing disputed reports", n)
+	}
+	if strings.Contains(raw, "Showing past reports") {
+		t.Errorf("map.js still names the retired Past label")
 	}
 
 	// render runs on every store notification and calls the label first, so a
@@ -279,20 +284,30 @@ func TestMapFollowsApproximate(t *testing.T) {
 
 // TestMapFollowsFocusOnce pins D-11 and D-13: a report link keeps its pin on
 // the map when the report is outside the reader's area or the 7 day window,
-// only under the tab and the chip that fit it, and opens it once. The list is
-// never changed from here and the store is only read.
+// only under the Show choice and the chip that fit it, and opens it once. The
+// list is never changed from here and the store is only read.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+// D-18): the tab test is now a Show test. A linked report is drawn only when it
+// is active or disputed (a finished report is no longer drawn on Nearby, its
+// link lands on My activity) and when Pinalert.reportInShow, which reads the
+// server's view and confirmed_by_people words, lets it into the Show choice.
+// "Already in the list" now means in the drawn set (visibleReports). The Phase
+// 3.1 and Phase 4 hands-on tests are walked on this layout after Phase 3.4 is
+// built.
 func TestMapFollowsFocusOnce(t *testing.T) {
 	code := p31fMapCode(t)
 
 	pin := jsFunctionBody(t, code, "focusPinReport(state)")
 	p13MustContain(t, "focusPinReport", pin,
-		"state.focus", "focus.status !== 'ok'", "focus.report", "state.reports[", "belongsToTab(report, state.view)",
+		"state.focus", "focus.status !== 'ok'", "focus.report", "Pinalert.visibleReports()", "drawn[",
+		"belongsToShow(report, state.show)",
 		"state.category !== ''", "report.category !== state.category", "return null;", "return report;")
 	p13MustNotContain(t, "focusPinReport", pin, "new Date", "Date.now", "getTime", "expires_at", "created_at")
 
-	tab := jsFunctionBody(t, code, "belongsToTab(report, view)")
-	p13MustContain(t, "belongsToTab", tab, "report.view", "view === 'past'", "'resolved'", "'past'")
-	p13MustNotContain(t, "belongsToTab", tab, "new Date", "Date.now", "getTime")
+	show := jsFunctionBody(t, code, "belongsToShow(report, show)")
+	p13MustContain(t, "belongsToShow", show, "report.view", "'active'", "'disputed'", "Pinalert.reportInShow(report, show)")
+	p13MustNotContain(t, "belongsToShow", show, "new Date", "Date.now", "getTime", "'resolved'", "'past'")
 
 	render := jsFunctionBody(t, code, "render(state)")
 	p13Ordered(t, render, "render", "focusPinReport(state)", "upsertMarker(", "removeLayer(", "openFocusOnce(state)")

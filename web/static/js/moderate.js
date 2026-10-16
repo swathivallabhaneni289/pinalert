@@ -26,7 +26,11 @@
   var REPORT_ID_MAX_DIGITS = 15;
   var REPORT_ID_PATTERN = /^[0-9]+$/;
   var REPORT_PARAM_PATTERN = /(?:^|[?&#])report=([0-9]+)/;
-  var MAIN_PAGE_VIEWS = ['disputed', 'resolved', 'past'];
+  // The views a link can be built for. active and disputed reports open on
+  // Nearby (All shows a disputed report in its last group); resolved and past
+  // reports open on My activity, Ended nearby (Phase 3.4 D-18).
+  var NEARBY_VIEWS = ['active', 'disputed'];
+  var ENDED_VIEWS = ['resolved', 'past'];
 
   // The thirteen provider category keys in the order of their plain words.
   var SCORE_ORDER = [
@@ -293,11 +297,11 @@
     if (!isReportId(report.id) || moderationWord(report) !== '') {
       return '';
     }
-    if (report.view === 'active') {
+    if (NEARBY_VIEWS.indexOf(report.view) !== -1) {
       return '/?report=' + report.id;
     }
-    if (MAIN_PAGE_VIEWS.indexOf(report.view) !== -1) {
-      return '/?view=' + report.view + '&report=' + report.id;
+    if (ENDED_VIEWS.indexOf(report.view) !== -1) {
+      return '/profile?part=ended&report=' + report.id;
     }
     return '';
   }
