@@ -105,9 +105,11 @@ function makeIndexedDB(initial) {
   let created = initial.length > 0;
   const later = (fn) => queueMicrotask(fn);
   // control lets a case break the store: failReads makes that many reads fail,
-  // failOpen makes every open fail, and closeAll closes every open connection
-  // the way a browser does, firing onclose.
-  const control = { failReads: 0, failOpen: false, opens: 0, connections: [] };
+  // failOpen makes every open fail, failDeletes makes that many delete
+  // transactions abort, deadOnWrite makes that many write transactions find
+  // their connection silently dead (it throws on use), and closeAll closes
+  // every open connection the way a browser does, firing onclose.
+  const control = { failReads: 0, failOpen: false, failDeletes: 0, deadOnWrite: 0, opens: 0, connections: [] };
   control.closeAll = (silently = false) => {
     control.connections.forEach((database) => {
       database.closed = true;
@@ -140,7 +142,18 @@ function makeIndexedDB(initial) {
     const t = { oncomplete: null, onerror: null, onabort: null };
     t.objectStore = () => ({
       put(record) { data.set(record.request_id, structuredClone(record)); later(() => t.oncomplete && t.oncomplete()); },
-      delete(id) { data.delete(id); later(() => t.oncomplete && t.oncomplete()); },
+      delete(id) {
+        if (t.failing || control.failDeletes > 0) {
+          if (!t.failing) {
+            control.failDeletes -= 1;
+            t.failing = true;
+            later(() => t.onabort && t.onabort());
+          }
+          return;
+        }
+        data.delete(id);
+        later(() => t.oncomplete && t.oncomplete());
+      },
       index: store.index
     });
     return t;
@@ -162,6 +175,10 @@ function makeIndexedDB(initial) {
           objectStoreNames: { contains: () => created },
           createObjectStore() { created = true; return store; },
           transaction(name, mode) {
+            if (mode === 'readwrite' && control.deadOnWrite > 0) {
+              control.deadOnWrite -= 1;
+              database.closed = true;
+            }
             if (database.closed) { throw new Error('InvalidStateError'); }
             return tx(mode);
           },
@@ -559,6 +576,57 @@ await test('names the saved account on each send and holds every row when the se
   assert.deepEqual(again.submitted.map((p) => p.description),
     ['first saved report', 'second saved report', 'not sent saved report']);
   assert.equal(again.store.size, 0);
+});
+
+// openDiscardQuestion opens the Discard question on the row and returns a function
+// that presses Yes, discard report.
+function openDiscardQuestion(env) {
+  const rowEl = env.strip.querySelector('.queue-strip__row');
+  rowEl.querySelector('.queue-strip__discard').handlers.click.forEach((fn) => fn());
+  const group = rowEl.querySelector('.queue-strip__confirm');
+  assert.ok(group, 'the question is open');
+  const yes = group.children.find((el) => el.textContent === 'Yes, discard report');
+  return { rowEl, pressYes: () => yes.handlers.click.forEach((fn) => fn()) };
+}
+
+await test('a discard whose delete does not reach the store keeps the row and says so (WR-03)', async () => {
+  const id = 'req-ssssssssssssssss-19';
+  const env = loadQueue({
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z', {
+      status: 'rejected', last_error: 'Say what is happening.'
+    })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  const question = openDiscardQuestion(env);
+  env.idb.failDeletes = 1;
+  question.pressYes();
+  await settle();
+  assert.ok(env.store.has(id), 'the report is still on the device');
+  assert.ok(!env.toasts.includes('Saved report discarded.'), 'a failed delete must not be told as discarded');
+  assert.deepEqual(env.toasts, ["This saved report couldn't be discarded. Try again."]);
+  assert.equal(question.rowEl.querySelector('.queue-strip__confirm'), null, 'the question closes');
+  assert.ok(env.strip.querySelector('.queue-strip__discard'), 'the row is drawn again with its Discard button');
+  assert.equal(env.strip.querySelector('.queue-strip__count').textContent, '1 report saved on this device.');
+
+  // The next try reaches the store.
+  assert.equal(await env.queue.discard(id), true);
+  assert.equal(env.store.has(id), false);
+});
+
+await test('a discard that meets a silently dead connection deletes on a new one (WR-03)', async () => {
+  const id = 'req-tttttttttttttttt-20';
+  const env = loadQueue({
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z', {
+      status: 'rejected', last_error: 'Say what is happening.'
+    })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  env.idb.deadOnWrite = 1;
+  assert.equal(await env.queue.discard(id), true);
+  assert.equal(env.store.has(id), false, 'the delete reached the store on a new connection');
+  assert.equal(env.idb.opens, 2, 'the store was opened again');
 });
 
 await test('a sent report never comes back when the read after the send fails (WR-08)', async () => {

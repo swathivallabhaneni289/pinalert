@@ -1085,6 +1085,7 @@ All copy is plain words, with no em dash and no en dash. The existing Phase 1 to
 | Edit note in the form | Not sent. {REASON} |
 | Save toasts | No signal. Your report is saved on this device and will send when you're back online. / No signal. Your report is kept on this page only. Keep the page open until it sends. / (after Send after the wait) Report saved on this device. It will send when the wait is over. |
 | Result toasts | Report sent. Saved report discarded. |
+| Discard toast when the delete didn't reach the device storage (added 2026-10-16, review fix WR-03, `queue.js` DISCARD_FAILED_TOAST) | This saved report couldn't be discarded. Try again. (The question closes and the row stays, with its Discard button.) |
 | Row status, saved under another account (added 2026-10-16, review fix WR-W09, `queue.js` STATUS_TEXT_OTHER_ACCOUNT) | This report was saved under a different account than the one signed in now. Sign in to that account to send it. It stays saved on this device. |
 | Announcement, saved under another account (added 2026-10-16, `queue.js` ANNOUNCE_OTHER_ACCOUNT) | Report not sent. It was saved under a different account. |
 | Strip help line when the saved reports can't be read (added 2026-10-16, review fix WR-W06, `queue.js` HELP_LINE_UNREADABLE) | This page can't read the saved reports right now. Reload the page to send or discard them. |

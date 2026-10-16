@@ -51,6 +51,10 @@
     STATUS_OTHER_ACCOUNT];
   // The 409 field the server names for that refusal.
   var OTHER_ACCOUNT_FIELD = 'expected_account_id';
+  // How a discard ended (discardOutcome).
+  var DISCARD_REMOVED = 'removed';
+  var DISCARD_FAILED = 'failed';
+  var DISCARD_SKIPPED = 'skipped';
 
   // The copy table. Plain characters only.
   var QUEUE_HEADING = 'Waiting to send';
@@ -79,6 +83,7 @@
   var SENT_TOAST = 'Report sent.';
   var HELD_TOAST_MESSAGE = "Report received. It isn't shown yet. A text check has to finish first.";
   var DISCARDED_TOAST = 'Saved report discarded.';
+  var DISCARD_FAILED_TOAST = "This saved report couldn't be discarded. Try again.";
   var GENERIC_REASON = 'Something went wrong. Try again.';
   var ANNOUNCE_ONE_SUFFIX = ' report waiting to send.';
   var ANNOUNCE_MANY_SUFFIX = ' reports waiting to send.';
@@ -344,23 +349,46 @@
     });
   }
 
-  // removeRow is the only function that deletes a stored row. A delete that
-  // cannot reach the store stays pending: the row is hidden and never sent from
-  // this page, and the next removeRow deletes it together with its own row.
+  // removeRow is the only function that deletes a stored row. It resolves true
+  // when the row is gone: its delete reached the store, or this browser never
+  // had a store and the row lived in memory only. It resolves false when the
+  // delete could not reach the store (WR-03). Such a delete stays pending: the
+  // row is hidden and never sent from this page, and the next removeRow
+  // deletes it together with its own row. Like putRow, a connection that died
+  // without telling the page is dropped and the delete tried once more on a
+  // new one.
   function removeRow(requestId) {
     delete memoryRows[requestId];
-    if (storeOpened) {
-      pendingRemovals[requestId] = true;
+    if (!storeOpened) {
+      return Promise.resolve(true);
     }
-    return ensureStore().then(function () {
+    pendingRemovals[requestId] = true;
+    // attempt resolves true when the delete reached the store, false when it
+    // did not, and 'dead' when the connection threw on use.
+    var attempt = function () {
       return new Promise(function (resolve) {
+        if (!pendingRemovals[requestId]) {
+          // Another removeRow deleted this row meanwhile.
+          resolve(true);
+          return;
+        }
+        if (db === null) {
+          resolve(false);
+          return;
+        }
+        var used = db;
         var ids = Object.keys(pendingRemovals);
-        if (db === null || ids.length === 0) {
-          resolve();
+        var tx;
+        try {
+          tx = used.transaction(STORE_NAME, 'readwrite');
+        } catch (e) {
+          if (db === used) {
+            db = null;
+          }
+          resolve('dead');
           return;
         }
         try {
-          var tx = db.transaction(STORE_NAME, 'readwrite');
           var store = tx.objectStore(STORE_NAME);
           ids.forEach(function (id) {
             store.delete(id);
@@ -374,14 +402,26 @@
             lastStored = lastStored.filter(function (stored) {
               return ids.indexOf(stored.request_id) === -1;
             });
-            resolve();
+            resolve(true);
           };
-          tx.onerror = resolve;
-          tx.onabort = resolve;
+          tx.onerror = function () {
+            resolve(false);
+          };
+          tx.onabort = function () {
+            resolve(false);
+          };
         } catch (e) {
-          resolve();
+          resolve(false);
         }
       });
+    };
+    return ensureStore().then(attempt).then(function (result) {
+      if (result !== 'dead') {
+        return result;
+      }
+      return ensureStore().then(attempt);
+    }).then(function (result) {
+      return result === true;
     });
   }
 
@@ -511,24 +551,41 @@
     return runFlush(false);
   }
 
-  // discard resolves true when the row was removed and false when it was not:
-  // no such row, or a stored row the page cannot read right now, whose delete
-  // could not reach the store and would come back on a reload (WR-W06).
+  // discard resolves true when the row was removed and false when it was not.
   function discard(requestId) {
+    return discardOutcome(requestId).then(function (outcome) {
+      return outcome === DISCARD_REMOVED;
+    });
+  }
+
+  // discardOutcome removes one row and resolves how that went:
+  // DISCARD_REMOVED, DISCARD_FAILED when the delete could not reach the store
+  // (WR-03), or DISCARD_SKIPPED for no such row, or a stored row the page
+  // cannot read right now, whose delete would come back on a reload (WR-W06).
+  // A row that is not removed stays on the strip and can still be sent: the
+  // person is told it was kept, so it is neither hidden nor deleted later.
+  function discardOutcome(requestId) {
     return storeReady.then(function () {
       return loadRows();
     }).then(function () {
       var record = findRow(requestId);
       if (!record || !belongsToAccount(record) || isStale(record)) {
         renderStrip();
-        return false;
+        return DISCARD_SKIPPED;
       }
-      return removeRow(requestId).then(function () {
-        return loadRows();
-      }).then(function () {
-        renderStrip();
-        scheduleWake();
-        return true;
+      var memoryCopy = Object.prototype.hasOwnProperty.call(memoryRows, requestId) ? memoryRows[requestId] : null;
+      return removeRow(requestId).then(function (removed) {
+        if (!removed) {
+          delete pendingRemovals[requestId];
+          if (memoryCopy !== null) {
+            memoryRows[requestId] = memoryCopy;
+          }
+        }
+        return loadRows().then(function () {
+          renderStrip();
+          scheduleWake();
+          return removed ? DISCARD_REMOVED : DISCARD_FAILED;
+        });
       });
     });
   }
@@ -1125,11 +1182,14 @@
       }
     });
     yes.addEventListener('click', function () {
-      discard(record.request_id).then(function (removed) {
-        if (removed) {
+      discardOutcome(record.request_id).then(function (outcome) {
+        if (outcome === DISCARD_REMOVED) {
           Pinalert.showToast(DISCARDED_TOAST);
-        } else {
-          closeQuestion();
+          return;
+        }
+        closeQuestion();
+        if (outcome === DISCARD_FAILED) {
+          Pinalert.showToast(DISCARD_FAILED_TOAST);
         }
       });
     });

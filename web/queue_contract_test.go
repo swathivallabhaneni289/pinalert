@@ -187,6 +187,7 @@ var p422CopyConstants = []struct{ name, literal string }{
 	{"SENT_TOAST", `'Report sent.'`},
 	{"HELD_TOAST_MESSAGE", `"Report received. It isn't shown yet. A text check has to finish first."`},
 	{"DISCARDED_TOAST", `'Saved report discarded.'`},
+	{"DISCARD_FAILED_TOAST", `"This saved report couldn't be discarded. Try again."`},
 	{"GENERIC_REASON", `'Something went wrong. Try again.'`},
 	{"ANNOUNCE_ONE_SUFFIX", `' report waiting to send.'`},
 	{"ANNOUNCE_MANY_SUFFIX", `' reports waiting to send.'`},
@@ -228,12 +229,16 @@ func TestQueueNoMarkupSinksAndNoAgeDiscard(t *testing.T) {
 		t.Errorf("the one store delete call must sit inside removeRow")
 	}
 	if n := p422Count(code, "removeRow("); n != 3 {
-		t.Errorf("removeRow( occurs %d times, want 3 (the definition, the sent branch, discard)", n)
+		t.Errorf("removeRow( occurs %d times, want 3 (the definition, the sent branch, discardOutcome)", n)
 	}
-	for _, name := range []string{"sendRow(record)", "discard(requestId)"} {
+	for _, name := range []string{"sendRow(record)", "discardOutcome(requestId)"} {
 		if !strings.Contains(jsFunctionBody(t, code, name), "removeRow(") {
 			t.Errorf("%s must call removeRow", name)
 		}
+	}
+	// discard keeps its true or false answer and asks discardOutcome (WR-03).
+	if !strings.Contains(jsFunctionBody(t, code, "discard(requestId)"), "discardOutcome(requestId)") {
+		t.Errorf("discard(requestId) must go through discardOutcome")
 	}
 }
 
