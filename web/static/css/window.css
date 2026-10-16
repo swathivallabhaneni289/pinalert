@@ -1,0 +1,241 @@
+/*
+ * Pinalert window.css (Phase 3.4, plan 06, UI-SPEC Surface 6 and Surface 8)
+ *
+ * The one window component: a dialog that covers the page, with a header that
+ * holds a title and an X, and a body. The Settings edit windows use it now and
+ * the reader of the Disclaimer and Policy uses it in plan 08. There is one way
+ * to close it, the X (D-02): no backdrop click, no Cancel, no Done.
+ *
+ * Written mobile first. The phone window is full screen on --color-bg. The
+ * laptop window (one min-width 900px block at the end) is centred, min(480px,
+ * 92%) wide, with a 12px radius and --shadow-window. A page can widen it by
+ * setting --app-window-width on .app-window.
+ *
+ * Tokens only except the backdrop dim, which has no token. Display rules carry
+ * :not([hidden]) so the hidden attribute still hides a window (the failure of
+ * Phase 1's .modal-backdrop). Loads after places.css and before phone.css.
+ */
+
+/* ---- Phone (the base) ----------------------------------------------------- */
+
+.app-window:not([hidden]) {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  background: rgb(0 0 0 / 45%);
+}
+
+.app-window__panel {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+}
+
+.app-window__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 20px var(--space-md) var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app-window__title {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold);
+}
+
+.app-window__close {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.app-window__close .app-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.app-window__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-sm);
+  box-sizing: border-box;
+  margin: 0;
+  padding: var(--space-md);
+}
+
+.app-window__label {
+  display: block;
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+}
+
+.app-window__field {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--touch-target-min);
+  margin-top: var(--space-xs);
+  padding: var(--space-sm) var(--space-12);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.app-window__help,
+.app-window__status {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+/* The places found. The list takes its place in the window, under the field,
+   so it never covers the buttons or hangs outside a small screen. */
+.app-window__results {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.app-window__results > li + li {
+  border-top: 1px solid var(--color-border);
+}
+
+.app-window__option {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--touch-target-min);
+  padding: var(--space-sm) var(--space-12);
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.app-window__option[aria-selected="true"] {
+  background: var(--color-surface);
+  font-weight: var(--font-weight-semibold);
+}
+
+.app-window__option-sub {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+}
+
+.app-window__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.app-window__actions .btn {
+  width: 100%;
+}
+
+/* The quiet text button under the filled one: no box, an underline, 44px high. */
+.app-window__quiet {
+  min-height: var(--touch-target-min);
+  padding: var(--space-sm) var(--space-md);
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* While a window is open the page behind stops scrolling. The script marks
+   the root element, as the report form does (modal.css). */
+html[data-modal-open] {
+  overflow: hidden;
+}
+
+/* ---- Laptop ---------------------------------------------------------------- */
+
+@media (min-width: 900px) {
+  .app-window:not([hidden]) {
+    align-items: center;
+    justify-content: center;
+  }
+
+  .app-window__panel {
+    width: min(var(--app-window-width, 480px), 92%);
+    height: auto;
+    max-height: 92%;
+    border-radius: 12px;
+    box-shadow: var(--shadow-window);
+  }
+
+  .app-window__head {
+    padding: 20px var(--space-lg) var(--space-md);
+  }
+
+  .app-window__body {
+    padding: var(--space-lg);
+  }
+
+  .app-window__actions {
+    align-items: flex-start;
+  }
+
+  .app-window__actions .btn {
+    width: auto;
+  }
+}
+
+@media (forced-colors: active) {
+  .app-window__panel,
+  .app-window__field,
+  .app-window__results {
+    border: 1px solid CanvasText;
+  }
+
+  .app-window__option[aria-selected="true"] {
+    outline: 2px solid Highlight;
+  }
+}

@@ -24,10 +24,15 @@ type settingsViewModel struct {
 	// item is current; the phone top bar shows the title Settings and a back
 	// arrow whose address is the constant "/" (D-11, T-34-20).
 	Nav NavView
-	// Profile is the account's own name and home area. The About you section
-	// that shows it arrives in plan 06; the field is read now so that plan only
-	// adds markup.
+	// Profile is the account's own name and home area as the service returns
+	// them. The two strings below are what About you draws from it.
 	Profile service.AccountProfile
+	// DisplayName and HomeAreaName are the stored name and the stored home area
+	// place name as plain strings, empty when unset (D-24b). The template
+	// shows "Not set" for an empty one and html/template escapes both (T-34-26).
+	// The home area's coarse cell is never read into the page.
+	DisplayName  string
+	HomeAreaName string
 }
 
 // SettingsPage handles GET /settings: the one Settings page (Phase 3.4, D-25,
@@ -63,6 +68,12 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, cfg
 			AccountID:    acc.ID,
 			Nav:          navFor(NavSettings, navTitle("Settings"), navBack("/")),
 			Profile:      profile,
+		}
+		if profile.DisplayName != nil {
+			vm.DisplayName = *profile.DisplayName
+		}
+		if profile.HomeAreaName != nil {
+			vm.HomeAreaName = *profile.HomeAreaName
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
