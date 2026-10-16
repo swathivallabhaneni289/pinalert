@@ -3,7 +3,7 @@ status: testing
 phase: 04-robustness-real-world-resilience
 source: [04-VERIFICATION.md, 04-27-SUMMARY.md, 04-REVIEW-SERVER.md, 04-REVIEW-WEB.md]
 started: 2026-10-16T18:40:00+05:30
-updated: 2026-10-16T16:30:00+05:30
+updated: 2026-10-16T17:25:00+05:30
 ---
 
 ## Current Test
@@ -45,6 +45,7 @@ result: [pending]
 ### 7. Disclaimer: the state helplines line and the Sachet link
 expected: Checked 2026-10-16 against government sites: 112, 100, 101, 108 and 1070 match; 1077 is the district line in some states only (Andhra Pradesh uses 1070 for both). The Disclaimer page's link to NDMA's Sachet help desk lists some numbers that differ from the states' own sites (one looks a digit short). Recommended: say "in many states" for 1070 and 1077, and replace the Sachet link with a sentence telling people their state disaster authority's website lists local numbers.
 result: [pending]
+note: The recommended change is already made (commit 2204836, 2026-10-16): the page says many states use 1070 and 1077 and the SACHET help desk link is gone. Confirm it when you look, or ask to undo it.
 
 ### 8. Read the new messages once
 expected: The new messages are in the 04-UI-SPEC copy table (rows added 2026-10-16): the network limit message, "saved under a different account", "can't read the saved reports", the messages after closing the form while it was sending, and "No exact match for the full address". Recommended: keep as written.
