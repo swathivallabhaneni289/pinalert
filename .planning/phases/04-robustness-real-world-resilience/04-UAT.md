@@ -3,7 +3,7 @@ status: testing
 phase: 04-robustness-real-world-resilience
 source: [04-VERIFICATION.md, 04-27-SUMMARY.md, 04-REVIEW-SERVER.md, 04-REVIEW-WEB.md]
 started: 2026-10-16T18:40:00+05:30
-updated: 2026-10-16T18:40:00+05:30
+updated: 2026-10-16T21:05:00+05:30
 ---
 
 ## Current Test
@@ -58,8 +58,8 @@ result: [pending]
 expected: On a test copy you open on your laptop and phone: the unofficial bar in light and dark; the round account button at the top right of the phone (kept by Phase 4; the 3.2 bell will want that corner too); the phone following its own light or dark setting with no button; the Low data page; the Flag button and dialog; the moderator screen; the "waiting to send" strip on Activity; the Held and Removed labels on Activity (no outline on a phone, outlined on a laptop). Say what to move. Phase 3.1 items 3 and 10 are looked at in the same session.
 result: [pending]
 
-### 11. Viewing session: address search with typos (quick tasks 261016-adr and 261016-pho)
-expected: Type a close spelling or half a name, for example "Banjra Hills" or "Banjara Hi": the right place shows first, inside India and near you. A long address that isn't on the map shows the nearest road and says so.
+### 11. Viewing session: address search and placing the pin (quick tasks 261016-adr, -pho, -sfu, -sne, -tap)
+expected: Type a close spelling or half a name, for example "Banjra Hills" or "Banjara Hi": suggestions appear a moment after you stop typing, the right place shows first, inside India and near you, and typing fast never shows an error. Area names end with the mandal and the state, for example "Gachibowli, Serilingampalle mandal, Telangana". A long address that isn't on the map shows the nearest road and says so. Then a tap anywhere on the report form's small map puts the pin on the exact spot, with location on or off.
 result: [pending]
 
 ### 12. Record the moderation scores
