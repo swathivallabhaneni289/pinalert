@@ -330,6 +330,39 @@ func TestPhotonReadsTheCounty(t *testing.T) {
 	}
 }
 
+// TestPhotonCityRowGetsNoCounty is the shape the 261016-sfu live check sent:
+// Hyderabad the city carries a mandal as its county. A city level row never
+// takes the county, so the city reads "Hyderabad, Telangana" and its district
+// row, which reads the same, is still dropped as a repeat.
+func TestPhotonCityRowGetsNoCounty(t *testing.T) {
+	city := photonFeatureJSON(78.4867, 17.385, map[string]any{
+		"name": "Hyderabad", "county": "Bahadurpura mandal", "state": "Telangana", "countrycode": "IN",
+		"osm_key": "place", "osm_value": "city", "type": "city",
+	})
+	district := photonFeatureJSON(78.47, 17.39, map[string]any{
+		"name": "Hyderabad", "state": "Telangana", "countrycode": "IN", "osm_key": "boundary", "type": "county",
+	})
+	area := photonFeatureJSON(78.4347, 17.4156, map[string]any{
+		"name": "Banjara Hills", "district": "Ward 92 Venkateshwara Colony", "county": "Shaikpet mandal",
+		"state": "Telangana", "countrycode": "IN", "osm_key": "place", "osm_value": "suburb", "type": "district",
+	})
+	ps := newPhotonStub(t, photonAnswers(t, city, district, area))
+	rs := newRecordingServer(t, nil)
+	c := newDualClient(ps.server.URL, rs.server.URL)
+	answer, err := c.Search(context.Background(), "Hyderbad", nil)
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	var labels []string
+	for _, r := range answer.Results {
+		labels = append(labels, r.DisplayName)
+	}
+	want := []string{"Hyderabad, Telangana", "Banjara Hills, Ward 92 Venkateshwara Colony, Shaikpet mandal, Telangana"}
+	if !reflect.DeepEqual(labels, want) {
+		t.Fatalf("labels = %q, want %q", labels, want)
+	}
+}
+
 func TestPhotonHouseWithNoNameKeepsAnEmptyName(t *testing.T) {
 	house := photonFeatureJSON(78.4347, 17.4156, map[string]any{
 		"housenumber": "8-2-293/82", "street": "Road No. 12", "district": "Banjara Hills",

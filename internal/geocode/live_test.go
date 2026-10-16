@@ -1,6 +1,6 @@
 package geocode
 
-// The live check for quick task 261016-pho. It is the only test in this
+// The live check for quick tasks 261016-pho and 261016-sfu. It is the only test in this
 // package that calls the real Photon and Nominatim, and it is off unless
 // GEOCODE_LIVE=1, the same way MODERATION_LIVE gates the moderation recorder.
 // Run it by hand, rarely:
@@ -30,25 +30,27 @@ func TestGeocodeLive(t *testing.T) {
 		typed   string
 		near    *Point
 		pinName string
+		place   bool // the map's place search (SearchReader), not the report form's
 	}{
-		{"Banjra Hills", hyderabad, "Hyderabad"},
-		{"Hyderbad", hyderabad, "Hyderabad"},
-		{"Banjara Hi", hyderabad, "Hyderabad"},
-		{"Gachib", hyderabad, "Hyderabad"},
-		{"Road No 12 Banjara Hills Hyderabad", hyderabad, "Hyderabad"},
-		{"Flat 4B, Sai Residency, Road No 12, Banjara Hills, Hyderabad", hyderabad, "Hyderabad"},
-		{"Hyderabad", delhi, "Delhi"},
-		{"Ring Road", hyderabad, "Hyderabad"},
-		{"హైదరాబాద్", hyderabad, "Hyderabad"},
-		{"Hyderbad", nil, "none"},
+		{"Banjra Hills", hyderabad, "Hyderabad", false},
+		{"Hyderbad", hyderabad, "Hyderabad", false},
+		{"Banjara Hi", hyderabad, "Hyderabad", false},
+		{"Gachib", hyderabad, "Hyderabad", false},
+		{"Road No 12 Banjara Hills Hyderabad", hyderabad, "Hyderabad", false},
+		{"Flat 4B, Sai Residency, Road No 12, Banjara Hills, Hyderabad", hyderabad, "Hyderabad", false},
+		{"Hyderabad", delhi, "Delhi", false},
+		{"Ring Road", hyderabad, "Hyderabad", false},
+		{"హైదరాబాద్", hyderabad, "Hyderabad", false},
+		{"Hyderbad", nil, "none", false},
+		{"Flat 4B, Sai Residency, Road No 12, Banjara Hills, Hyderabad", nil, "none", true},
 	}
 
 	c := newClientWithProviders(photonSearchURL, nominatimSearchURL, os.Getenv("NOMINATIM_CONTACT_EMAIL"),
 		time.Second, 1, time.Second, 1)
 
 	rows := []string{
-		"| Typed | Pin | Answered by | Took | Matched text | First results |",
-		"| --- | --- | --- | --- | --- | --- |",
+		"| Typed | Search | Pin | Answered by | Took | Matched text | First results |",
+		"| --- | --- | --- | --- | --- | --- | --- |",
 	}
 	for i, tc := range cases {
 		if i > 0 {
@@ -57,12 +59,18 @@ func TestGeocodeLive(t *testing.T) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		start := time.Now()
-		answer, err := c.Search(ctx, tc.typed, tc.near)
+		lane := "report"
+		search := c.Search
+		if tc.place {
+			lane = "place"
+			search = c.SearchReader
+		}
+		answer, err := search(ctx, tc.typed, tc.near)
 		took := time.Since(start).Round(10 * time.Millisecond)
 		cancel()
 		if err != nil {
 			t.Errorf("%q: %v", tc.typed, err)
-			rows = append(rows, "| "+tc.typed+" | "+tc.pinName+" | error | "+took.String()+" | | "+err.Error()+" |")
+			rows = append(rows, "| "+tc.typed+" | "+lane+" | "+tc.pinName+" | error | "+took.String()+" | | "+err.Error()+" |")
 			continue
 		}
 		var first []string
@@ -84,7 +92,7 @@ func TestGeocodeLive(t *testing.T) {
 		if provider == "" {
 			provider = "cache"
 		}
-		rows = append(rows, "| "+tc.typed+" | "+tc.pinName+" | "+provider+" | "+took.String()+" | "+answer.MatchedQuery+" | "+results+" |")
+		rows = append(rows, "| "+tc.typed+" | "+lane+" | "+tc.pinName+" | "+provider+" | "+took.String()+" | "+answer.MatchedQuery+" | "+results+" |")
 	}
 	t.Log("\n" + strings.Join(rows, "\n"))
 }
