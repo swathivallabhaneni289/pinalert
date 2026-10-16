@@ -406,6 +406,11 @@ body {
   mask-image: url("/static/icons/shelter_open.svg");
 }
 
+.icon-glyph--traffic {
+  -webkit-mask-image: url("/static/icons/traffic.svg");
+  mask-image: url("/static/icons/traffic.svg");
+}
+
 .icon-glyph--rescue_needed {
   -webkit-mask-image: url("/static/icons/rescue_needed.svg");
   mask-image: url("/static/icons/rescue_needed.svg");

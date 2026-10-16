@@ -456,3 +456,23 @@ func TestProfileVotedRescueCardIsApproximate(t *testing.T) {
 		t.Errorf("a live rescue card changed: description %q detail %q", exactCard.Description, exactCard.Detail)
 	}
 }
+
+// TestCategoryLabelsCoverEveryKnownCategory: the Activity page words come from
+// categoryLabels, so every category a stored report may carry needs a label.
+// Traffic is new for 2026-10-16 and rescue_needed stays for old rows.
+func TestCategoryLabelsCoverEveryKnownCategory(t *testing.T) {
+	for _, c := range service.Categories {
+		if categoryLabels[c] == "" {
+			t.Errorf("category %q has no label in categoryLabels", c)
+		}
+	}
+	if len(categoryLabels) != len(service.Categories) {
+		t.Errorf("categoryLabels has %d entries, service.Categories has %d", len(categoryLabels), len(service.Categories))
+	}
+	if got := categoryLabels[service.CategoryTraffic]; got != "Traffic" {
+		t.Errorf("traffic label = %q, want %q", got, "Traffic")
+	}
+	if got := categoryLabels[service.CategoryRescueNeeded]; got != "Rescue needed" {
+		t.Errorf("rescue_needed label = %q, want %q", got, "Rescue needed")
+	}
+}

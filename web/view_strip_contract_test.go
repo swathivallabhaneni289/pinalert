@@ -238,7 +238,7 @@ func TestViewStripStoreContract(t *testing.T) {
 	p13MustContain(t, "setView", jsFunctionBody(t, app, "setView(view)"),
 		"VIEWS.indexOf(view) !== -1", "state.view = view;")
 	p13MustContain(t, "setCategory", jsFunctionBody(t, app, "setCategory(slug)"),
-		"slug === ''", "CATEGORIES.indexOf(slug) !== -1", "state.category = slug;")
+		"slug === ''", "KNOWN_CATEGORIES.indexOf(slug) !== -1", "state.category = slug;")
 	p13MustContain(t, "setPlace", jsFunctionBody(t, app, "setPlace(place)"),
 		"PLACE_NAME_MAX", "'\\u2026'", "state.place = { name: name, lat: place.lat, lon: place.lon };")
 	p13MustContain(t, "app.js", app, "var PLACE_NAME_MAX = 32;")

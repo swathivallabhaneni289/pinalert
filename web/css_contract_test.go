@@ -329,16 +329,18 @@ func TestPrimaryMapHasResolvedHeight(t *testing.T) {
 }
 
 // extractCategoryList returns every single-quoted string found between the
-// first "CATEGORIES = [" in js and the next "]" that follows it. Used by
-// TestCategoryGlyphMaskRulesCoverEveryCategory to read app.js's declared
-// category list without hand-maintaining a second copy of it in this test.
+// first occurrence of anchor in js (for example "var CATEGORIES = [") and the
+// next "]" that follows it. The anchor names the list, so reading the form
+// list can never pick up the retired list by accident. Used by
+// TestCategoryGlyphMaskRulesCoverEveryCategory and
+// TestTrafficReplacesRescueInTheForm to read app.js's declared category lists
+// without hand-maintaining a second copy of them in the tests.
 // Fails loudly (via t.Fatalf) if the array's own brackets cannot be located
 // at all — a parse that silently finds nothing would make every assertion
 // downstream of it vacuously true.
-func extractCategoryList(t *testing.T, js string) []string {
+func extractCategoryList(t *testing.T, js string, anchor string) []string {
 	t.Helper()
 
-	const anchor = "CATEGORIES = ["
 	idx := strings.Index(js, anchor)
 	if idx == -1 {
 		t.Fatalf("could not find %q in app.js — cannot locate the category allowlist to check against", anchor)
@@ -346,7 +348,7 @@ func extractCategoryList(t *testing.T, js string) []string {
 	rest := js[idx+len(anchor):]
 	end := strings.Index(rest, "]")
 	if end == -1 {
-		t.Fatalf("found %q in app.js but no closing bracket for the CATEGORIES array", anchor)
+		t.Fatalf("found %q in app.js but no closing bracket for that category array", anchor)
 	}
 	body := rest[:end]
 
@@ -673,9 +675,10 @@ func assertGlyphSizingAndNoOrphanedImageSelectors(t *testing.T) {
 // (01.1-UI-SPEC.md "New Icons") commits its own Lucide glyphs to the same
 // directory, styled through auth.css's distinct .auth-icon-- prefix rather
 // than .icon-glyph--. The category contract this test enforces governs only
-// the nine Pinalert.CATEGORIES glyphs; an entry here is exempt from the
+// the Pinalert.CATEGORIES form glyphs and the RETIRED_CATEGORIES glyph; an
+// entry here is exempt from the
 // "claimed by a mask rule" reverse-walk check below and nothing else — the
-// forward direction (every CATEGORIES entry has a rule) and the
+// forward direction (every category entry has a rule) and the
 // rule-points-at-a-real-category check are both untouched by this map.
 var nonCategoryIcons = map[string]bool{
 	"static/icons/mail.svg":         true,
@@ -739,8 +742,10 @@ var nonCategoryIcons = map[string]bool{
 var phase3TrustGlyphIcons = []string{"check.svg", "ban.svg", "shield-check.svg", "rotate-ccw.svg", "clock.svg", "x.svg", "chevron-down.svg"}
 
 // TestCategoryGlyphMaskRulesCoverEveryCategory guards the 01-13 fix's own
-// core claim: every category in Pinalert.CATEGORIES has exactly one CSS
-// mask rule pointing at a real, committed icon file. Nine hand-written
+// core claim: every category in Pinalert.CATEGORIES (the form list) and in
+// Pinalert.RETIRED_CATEGORIES (rescue_needed, still carried by old stored
+// reports) has exactly one CSS mask rule pointing at a real, committed icon
+// file. Ten hand-written
 // mask-source paths mean a single typo produces exactly one silently
 // invisible glyph on the report modal's 3x3 grid — a defect a human
 // visually scanning that grid would plausibly miss, and a test that only
@@ -762,7 +767,26 @@ func TestCategoryGlyphMaskRulesCoverEveryCategory(t *testing.T) {
 		t.Fatalf("failed to read embedded static/js/app.js: %v", err)
 	}
 
-	categories := extractCategoryList(t, string(appJS))
+	formCategories := extractCategoryList(t, string(appJS), "var CATEGORIES = [")
+	retiredCategories := extractCategoryList(t, string(appJS), "var RETIRED_CATEGORIES = [")
+	if len(retiredCategories) == 0 {
+		t.Fatalf("extracted zero retired categories from app.js's RETIRED_CATEGORIES array — stored " +
+			"rescue_needed reports still render their glyph, so the retired list may not be empty")
+	}
+	// The two lists never share a slug: a category is either offered by the
+	// form or retired for new reports, never both.
+	inForm := map[string]bool{}
+	for _, c := range formCategories {
+		inForm[c] = true
+	}
+	for _, c := range retiredCategories {
+		if inForm[c] {
+			t.Errorf("category %q is in both CATEGORIES and RETIRED_CATEGORIES in app.js", c)
+		}
+	}
+	// Old stored rows still render a retired glyph, so its rule must stay:
+	// the set checked below is the union of the form list and the retired list.
+	categories := append(append([]string{}, formCategories...), retiredCategories...)
 	if len(categories) == 0 {
 		t.Fatalf("extracted zero categories from app.js's CATEGORIES array — a parse that finds " +
 			"nothing would make every assertion below vacuously true, which is the classic way a " +

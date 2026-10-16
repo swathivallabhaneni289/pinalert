@@ -417,7 +417,7 @@ func TestIconGlyphsAreClassDriven(t *testing.T) {
 
 	const defAnchor = "function iconClass"
 	const exportAnchor = "iconClass: iconClass"
-	const allowlistRef = "CATEGORIES.indexOf"
+	const allowlistRef = "KNOWN_CATEGORIES.indexOf"
 
 	defIdx := strings.Index(appText, defAnchor)
 	if defIdx == -1 {
@@ -432,7 +432,7 @@ func TestIconGlyphsAreClassDriven(t *testing.T) {
 	// Bound the allowlist-reference check to iconClass's own body — from
 	// its definition to the next top-level function declaration in this
 	// file, or end of file if it is the last one — rather than the whole
-	// module. A CATEGORIES.indexOf reference found only elsewhere would not
+	// module. A KNOWN_CATEGORIES.indexOf reference found only elsewhere would not
 	// actually guard this specific helper against T-01-13-01.
 	afterDef := appText[defIdx+len(defAnchor):]
 	fnBody := afterDef
@@ -440,7 +440,7 @@ func TestIconGlyphsAreClassDriven(t *testing.T) {
 		fnBody = afterDef[:nextFuncIdx]
 	}
 	if !strings.Contains(fnBody, allowlistRef) {
-		t.Errorf("static/js/app.js: iconClass's own body does not reference the CATEGORIES allowlist "+
+		t.Errorf("static/js/app.js: iconClass's own body does not reference the known category allowlist "+
 			"(expected %q) — an unguarded rewrite of this helper would let a server-supplied category "+
 			"value reach className unchecked (T-01-13-01, direct continuation of T-01-17)", allowlistRef)
 	}
