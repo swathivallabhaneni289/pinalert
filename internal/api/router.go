@@ -382,6 +382,8 @@ func NewRouter(deps Deps) *chi.Mux {
 	// The flag service has no Deps field: it is built here from the sessions
 	// store, so every harness gets a non nil service (plan 04-20).
 	flags := service.NewFlagService(deps.Sessions)
+	// Same for the account service behind the /api/me routes (plan 03.4-01).
+	accounts := service.NewAccountService(deps.Sessions)
 
 	// --- Exempt: reachable without a verified account. ---
 
@@ -528,6 +530,17 @@ func NewRouter(deps Deps) *chi.Mux {
 		// a cross-site POST, so a forged logout carries no authenticated
 		// session — the same property would not hold for GET).
 		r.Post("/auth/logout", handlers.Logout(deps.Session))
+		// The three /api/me routes (plan 03.4-01, D-24b, D-27). Flat literal
+		// paths like the others. They are gated because they change the
+		// caller's own account and act only on the account the gate resolved;
+		// a cross site POST carries no session cookie (DEC-L), so no CSRF
+		// token is needed.
+		// POST /api/me/consent records agreement to the current terms version.
+		r.Post("/api/me/consent", handlers.AcceptTerms(accounts))
+		// PATCH /api/me/profile saves or clears the optional name and home area.
+		r.Patch("/api/me/profile", handlers.UpdateProfile(accounts))
+		// POST /api/me/first-run-done marks the first-time flow finished.
+		r.Post("/api/me/first-run-done", handlers.FirstRunDone(accounts))
 	})
 
 	// --- Moderator group (D-08): outside the access gate, so an unverified
