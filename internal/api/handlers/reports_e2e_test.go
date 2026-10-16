@@ -83,6 +83,9 @@ func newE2EServerWith(t *testing.T, tweak func(d *api.Deps, q *sqlcgen.Queries))
 		Auth:        handlers.AuthConfig{AssetVersion: "test"},
 		Template:    tmpl,
 		RateLimits:  e2eGenerousRateLimits,
+		// The moderator routes run their writes in the real transaction, as
+		// cmd/server/main.go wires them.
+		ModerationTx: service.PgxModerationTx(pool),
 	}
 	if tweak != nil {
 		tweak(&deps, queries)

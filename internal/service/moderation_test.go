@@ -204,6 +204,13 @@ func (f *fakeModerationQuerier) ModerationStatusForReport(_ context.Context, id 
 	return row, nil
 }
 
+func (f *fakeModerationQuerier) LockModerationCheck(context.Context, int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("LockModerationCheck")
+	return nil
+}
+
 func (f *fakeModerationQuerier) KeepReport(_ context.Context, id int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -654,5 +661,51 @@ func TestModerationKeepRemoveDecisions(t *testing.T) {
 		if got := modCallsAmong(f, "RemoveReport"); len(got) != 0 {
 			t.Errorf("RemoveReport ran after the audit failure: %v", got)
 		}
+	})
+
+	// The writes run inside the transaction with the check row locked first,
+	// and the re-read runs after it (WR-S01).
+	txCase := func(t *testing.T, act func(*service.ModerationService) error, want []string, wantErr error, wantRolledBack bool) {
+		t.Helper()
+		f := newFake(sqlcgen.ModerationStatusForReportRow{ModerationState: "clear", InFlagged: true})
+		var rolledBack bool
+		tx := func(_ context.Context, fn func(service.ModerationQuerier) error) error {
+			f.mu.Lock()
+			f.record("begin")
+			f.mu.Unlock()
+			err := fn(f)
+			f.mu.Lock()
+			if err != nil {
+				rolledBack = true
+				f.record("rollback")
+			} else {
+				f.record("commit")
+			}
+			f.mu.Unlock()
+			return err
+		}
+		s := service.NewModerationService(f, service.WithModerationClock(func() time.Time { return modT0 }), service.WithModerationTx(tx))
+		if err := act(s); !errors.Is(err, wantErr) {
+			t.Fatalf("error = %v, want %v", err, wantErr)
+		}
+		names := []string{"begin", "LockModerationCheck", "ModerationStatusForReport", "InsertModerationAction", "KeepReport", "RemoveReport", "commit", "rollback", "ReportForModeration"}
+		if got := modCallsAmong(f, names...); !reflect.DeepEqual(got, want) {
+			t.Errorf("calls = %v, want %v", got, want)
+		}
+		if rolledBack != wantRolledBack {
+			t.Errorf("rolled back = %v, want %v", rolledBack, wantRolledBack)
+		}
+	}
+	t.Run("keep locks the check first inside the transaction", func(t *testing.T) {
+		txCase(t, func(s *service.ModerationService) error { _, err := s.Keep(ctx, 5, 7); return err },
+			[]string{"begin", "LockModerationCheck", "ModerationStatusForReport", "InsertModerationAction", "KeepReport", "commit", "ReportForModeration"}, nil, false)
+	})
+	t.Run("remove locks the check first inside the transaction", func(t *testing.T) {
+		txCase(t, func(s *service.ModerationService) error { _, err := s.Remove(ctx, 5, 7); return err },
+			[]string{"begin", "LockModerationCheck", "ModerationStatusForReport", "InsertModerationAction", "RemoveReport", "commit", "ReportForModeration"}, nil, false)
+	})
+	t.Run("a 404 inside the transaction rolls back", func(t *testing.T) {
+		txCase(t, func(s *service.ModerationService) error { _, err := s.Keep(ctx, 99, 7); return err },
+			[]string{"begin", "LockModerationCheck", "ModerationStatusForReport", "rollback"}, service.ErrReportNotFound, true)
 	})
 }

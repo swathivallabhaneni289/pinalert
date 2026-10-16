@@ -43,11 +43,10 @@ type fakeWorkerQuerier struct {
 
 	rows []sqlcgen.ClaimDueModerationChecksRow
 
-	claimErr, setErr, finishErr, rescheduleErr error
+	claimErr, finishErr, rescheduleErr error
 
 	claimParams []sqlcgen.ClaimDueModerationChecksParams
-	sets        []sqlcgen.SetReportModerationStateParams
-	finishes    []sqlcgen.FinishModerationCheckParams
+	finishes    []sqlcgen.FinishCheckAndSetStateParams
 	reschedules []sqlcgen.RescheduleModerationCheckParams
 	calls       []string
 
@@ -76,15 +75,7 @@ func (f *fakeWorkerQuerier) ClaimDueModerationChecks(_ context.Context, arg sqlc
 	return rows, nil
 }
 
-func (f *fakeWorkerQuerier) SetReportModerationState(_ context.Context, arg sqlcgen.SetReportModerationStateParams) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls = append(f.calls, "set")
-	f.sets = append(f.sets, arg)
-	return f.setErr
-}
-
-func (f *fakeWorkerQuerier) FinishModerationCheck(_ context.Context, arg sqlcgen.FinishModerationCheckParams) error {
+func (f *fakeWorkerQuerier) FinishCheckAndSetState(_ context.Context, arg sqlcgen.FinishCheckAndSetStateParams) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, "finish")
@@ -182,8 +173,8 @@ func TestModerationWorkerBackoff(t *testing.T) {
 			if err := mwWorker(q, fs, c.jitter).SweepOnce(context.Background()); err != nil {
 				t.Fatalf("SweepOnce: %v", err)
 			}
-			if len(q.reschedules) != 1 || len(q.sets) != 0 || len(q.finishes) != 0 {
-				t.Fatalf("writes: %d reschedules, %d sets, %d finishes", len(q.reschedules), len(q.sets), len(q.finishes))
+			if len(q.reschedules) != 1 || len(q.finishes) != 0 {
+				t.Fatalf("writes: %d reschedules, %d finishes", len(q.reschedules), len(q.finishes))
 			}
 			got := q.reschedules[0]
 			if !got.NextAttemptAt.Equal(c.wantAt) {
@@ -218,16 +209,16 @@ func TestModerationWorkerWriteOrder(t *testing.T) {
 			if err := mwWorker(q, fs, 0.5).SweepOnce(context.Background()); err != nil {
 				t.Fatalf("SweepOnce: %v", err)
 			}
-			if got, want := q.snapshotCalls(), []string{"claim", "set", "finish"}; !reflect.DeepEqual(got, want) {
+			if got, want := q.snapshotCalls(), []string{"claim", "finish"}; !reflect.DeepEqual(got, want) {
 				t.Fatalf("calls %v, want %v", got, want)
 			}
 			if len(q.claimParams) != 1 || q.claimParams[0].LeaseSeconds != service.ModerationLeaseSeconds || q.claimParams[0].BatchLimit != service.ModerationBatchLimit {
 				t.Fatalf("claim params %+v", q.claimParams)
 			}
-			if q.sets[0].ReportID != 7 || service.ModerationState(q.sets[0].ModerationState) != c.wantState {
-				t.Fatalf("set %+v, want state %s", q.sets[0], c.wantState)
-			}
 			fin := q.finishes[0]
+			if service.ModerationState(fin.ModerationState) != c.wantState {
+				t.Fatalf("finish %+v, want state %s", fin, c.wantState)
+			}
 			if fin.ReportID != 7 || fin.Verdict != c.wantVerdict || fin.NeedsReview != c.wantReview {
 				t.Fatalf("finish %+v", fin)
 			}
@@ -247,13 +238,13 @@ func TestModerationWorkerWriteOrder(t *testing.T) {
 		})
 	}
 
-	t.Run("set error skips finish", func(t *testing.T) {
-		q := &fakeWorkerQuerier{rows: []sqlcgen.ClaimDueModerationChecksRow{mwRow(7, 1)}, setErr: errors.New("db down")}
+	t.Run("write error is returned", func(t *testing.T) {
+		q := &fakeWorkerQuerier{rows: []sqlcgen.ClaimDueModerationChecksRow{mwRow(7, 1)}, finishErr: errors.New("db down")}
 		err := mwWorker(q, screenerWith(mwPassScores), 0.5).SweepOnce(context.Background())
 		if err == nil {
 			t.Fatal("SweepOnce returned nil, want the write error")
 		}
-		if got, want := q.snapshotCalls(), []string{"claim", "set"}; !reflect.DeepEqual(got, want) {
+		if got, want := q.snapshotCalls(), []string{"claim", "finish"}; !reflect.DeepEqual(got, want) {
 			t.Fatalf("calls %v, want %v", got, want)
 		}
 	})

@@ -78,6 +78,7 @@ type ModerationQuerier interface {
 	ModerationQueueCounts(ctx context.Context) (sqlcgen.ModerationQueueCountsRow, error)
 	ReportForModeration(ctx context.Context, reportID int64) (sqlcgen.ReportForModerationRow, error)
 	ModerationStatusForReport(ctx context.Context, reportID int64) (sqlcgen.ModerationStatusForReportRow, error)
+	LockModerationCheck(ctx context.Context, reportID int64) error
 	KeepReport(ctx context.Context, reportID int64) error
 	RemoveReport(ctx context.Context, reportID int64) error
 	InsertModerationAction(ctx context.Context, arg sqlcgen.InsertModerationActionParams) error
@@ -86,6 +87,26 @@ type ModerationQuerier interface {
 }
 
 var _ ModerationQuerier = (*sqlcgen.Queries)(nil)
+
+// ModerationTxFunc runs fn inside one database transaction with a querier
+// bound to that transaction, commits when fn returns nil and rolls back
+// otherwise. Keep and Remove run their lock, lookup, audit row and state
+// change through it.
+type ModerationTxFunc func(ctx context.Context, fn func(q ModerationQuerier) error) error
+
+// TxBeginner is the part of a pgx pool that starts a transaction.
+type TxBeginner interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
+}
+
+// PgxModerationTx builds the production ModerationTxFunc over a pool.
+func PgxModerationTx(db TxBeginner) ModerationTxFunc {
+	return func(ctx context.Context, fn func(q ModerationQuerier) error) error {
+		return pgx.BeginFunc(ctx, db, func(tx pgx.Tx) error {
+			return fn(sqlcgen.New(tx))
+		})
+	}
+}
 
 // ModerationFlagCount is one reason with the number of open flags that chose
 // it. Label is the dialog's own label for the reason (FlagReasonLabel).
@@ -141,16 +162,21 @@ type ModerationQueues struct {
 //  4. Find reads one report by id (ErrReportNotFound for an unknown id), then
 //     the lists it is in.
 //
-// Steps of the writes:
+// Steps of the writes. Keep and Remove each run steps 5 or 6 inside one
+// transaction (ModerationTxFunc) whose first statement is LockModerationCheck:
+// the check row is locked before anything else, the same order the worker's
+// FinishCheckAndSetState takes, so a moderator and the worker queue on that
+// row and cannot deadlock (WR-S01). The lookup runs after the lock, so it sees
+// whatever the worker committed while Keep or Remove waited.
 //  5. Keep reads ModerationStatusForReport (ErrReportNotFound for an unknown
 //     id). When the report is in none of the three lists, which includes a
 //     removed report, it returns ErrAlreadyHandled. Otherwise it writes the
-//     audit row (InsertModerationAction, action keep), then KeepReport, then
-//     re-reads the report and builds its row. KeepReport clears the automatic
-//     flag, dismisses the open people flags and releases a pending report into
-//     the normal rules, so a held report enters the feed with no separate
-//     Release action. The re-read row carries no scores because the statement
-//     clears needs_review.
+//     audit row (InsertModerationAction, action keep), then KeepReport, then,
+//     after the commit, re-reads the report and builds its row. KeepReport
+//     clears the automatic flag, dismisses the open people flags and releases
+//     a pending report into the normal rules, so a held report enters the feed
+//     with no separate Release action. The re-read row carries no scores
+//     because the statement clears needs_review.
 //  6. Remove does the same lookup. A report whose state is removed returns
 //     ErrAlreadyHandled. Otherwise it writes the audit row (action remove),
 //     then RemoveReport, which withholds any report, listed or not, serious or
@@ -160,14 +186,19 @@ type ModerationQueues struct {
 //     moderator may Keep or Remove their own report: no special rule.
 //
 // Two Claude's Discretion readings the owner can veto. First, the audit row is
-// written before the state change, because the store uses no transaction and a
-// recorded attempt that did not apply is safer for repudiation than an applied
-// change with no record; a failed state change answers 500 and the moderator
-// retries. Second, two moderators acting on one report at the same instant may
-// both pass the 409 check and write two audit rows; that is accepted for an
-// owner run screen.
+// written in the same transaction as the state change and before it, so the
+// two commit together: a failed state change rolls its audit row back,
+// answers 500, and the moderator retries. Second, two moderators acting on
+// one report at the same instant queue on its check row, and the second one
+// then answers 409; a report with no check row (a seeded or older report that
+// is only flagged) has nothing to lock, so both may pass the 409 check and
+// write two audit rows, which is accepted for an owner run screen.
+//
+// Without WithModerationTx (the unit tests and the router tests that build no
+// pool) the same steps run on the plain querier with no transaction.
 type ModerationService struct {
 	q   ModerationQuerier
+	tx  ModerationTxFunc
 	now func() time.Time
 }
 
@@ -177,6 +208,12 @@ type ModerationOption func(*ModerationService)
 // WithModerationClock replaces the clock, for tests.
 func WithModerationClock(now func() time.Time) ModerationOption {
 	return func(s *ModerationService) { s.now = now }
+}
+
+// WithModerationTx runs the Keep and Remove writes inside a transaction
+// (PgxModerationTx in production). A nil tx leaves the plain querier.
+func WithModerationTx(tx ModerationTxFunc) ModerationOption {
+	return func(s *ModerationService) { s.tx = tx }
 }
 
 // NewModerationService builds the service over q.
@@ -425,37 +462,51 @@ func (s *ModerationService) Queues(ctx context.Context) (ModerationQueues, error
 	return out, nil
 }
 
-// act is the shared body of Keep and Remove: the status lookup, the decision,
-// the audit row, the state change and the re-read, in that order.
-func (s *ModerationService) act(ctx context.Context, id, moderatorID int64, action string) (ModerationRow, error) {
-	status, err := s.q.ModerationStatusForReport(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ModerationRow{}, ErrReportNotFound
-		}
-		return ModerationRow{}, err
+// inTx runs fn inside the configured transaction, or on the plain querier
+// when there is none.
+func (s *ModerationService) inTx(ctx context.Context, fn func(q ModerationQuerier) error) error {
+	if s.tx == nil {
+		return fn(s.q)
 	}
-	switch action {
-	case ModerationActionKeep:
-		if !status.InReview && !status.InFlagged && !status.InPending {
-			return ModerationRow{}, ErrAlreadyHandled
-		}
-	case ModerationActionRemove:
-		if ModerationState(status.ModerationState) == ModerationRemoved {
-			return ModerationRow{}, ErrAlreadyHandled
-		}
-	}
+	return s.tx(ctx, fn)
+}
 
-	if err := s.q.InsertModerationAction(ctx, sqlcgen.InsertModerationActionParams{
-		ReportID: id, ModeratorAccountID: moderatorID, Action: action,
-	}); err != nil {
-		return ModerationRow{}, err
-	}
-	if action == ModerationActionKeep {
-		err = s.q.KeepReport(ctx, id)
-	} else {
-		err = s.q.RemoveReport(ctx, id)
-	}
+// act is the shared body of Keep and Remove: the check row lock, the status
+// lookup, the decision, the audit row and the state change inside one
+// transaction, then the re-read, in that order.
+func (s *ModerationService) act(ctx context.Context, id, moderatorID int64, action string) (ModerationRow, error) {
+	err := s.inTx(ctx, func(q ModerationQuerier) error {
+		if err := q.LockModerationCheck(ctx, id); err != nil {
+			return err
+		}
+		status, err := q.ModerationStatusForReport(ctx, id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrReportNotFound
+			}
+			return err
+		}
+		switch action {
+		case ModerationActionKeep:
+			if !status.InReview && !status.InFlagged && !status.InPending {
+				return ErrAlreadyHandled
+			}
+		case ModerationActionRemove:
+			if ModerationState(status.ModerationState) == ModerationRemoved {
+				return ErrAlreadyHandled
+			}
+		}
+
+		if err := q.InsertModerationAction(ctx, sqlcgen.InsertModerationActionParams{
+			ReportID: id, ModeratorAccountID: moderatorID, Action: action,
+		}); err != nil {
+			return err
+		}
+		if action == ModerationActionKeep {
+			return q.KeepReport(ctx, id)
+		}
+		return q.RemoveReport(ctx, id)
+	})
 	if err != nil {
 		return ModerationRow{}, err
 	}

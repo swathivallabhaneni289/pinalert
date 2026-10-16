@@ -117,6 +117,13 @@ type Deps struct {
 	// gives, means nobody is a moderator and every moderator route answers
 	// 404.
 	ModeratorEmails map[string]struct{}
+	// ModerationTx runs the moderator Keep and Remove writes inside one
+	// transaction that locks the check row first, so a Keep and the
+	// background worker cannot deadlock (WR-S01). cmd/server/main.go sets it
+	// from the pool through service.PgxModerationTx. Nil, which every Deps{}
+	// literal that does not set it gives, runs the same writes without a
+	// transaction.
+	ModerationTx service.ModerationTxFunc
 }
 
 // requestLogger returns the access log middleware. It replaces chi's
@@ -499,9 +506,10 @@ func NewRouter(deps Deps) *chi.Mux {
 	// and not chi's 405 (correction 2). The local page copy carries Chrome. ---
 
 	// The moderator service has no Deps field: it is built here from the
-	// sessions store, so every harness gets a non nil service. With a nil
-	// deps.Sessions the gate answers 404 before any handler runs.
-	moderation := service.NewModerationService(deps.Sessions)
+	// sessions store and deps.ModerationTx, so every harness gets a non nil
+	// service. With a nil deps.Sessions the gate answers 404 before any
+	// handler runs.
+	moderation := service.NewModerationService(deps.Sessions, service.WithModerationTx(deps.ModerationTx))
 
 	r.Group(func(r chi.Router) {
 		r.Use(requireModerator(deps.Sessions, deps.ModeratorEmails))
