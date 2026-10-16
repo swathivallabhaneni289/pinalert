@@ -66,13 +66,15 @@ func newGateTestServer(t *testing.T) (*httptest.Server, *pgxpool.Pool, *gateFake
 var gateGenerousBucket = BucketLimit{Every: time.Millisecond, Burst: 1000}
 
 var gateGenerousRateLimits = RateLimits{
-	ReportSerious: gateGenerousBucket,
-	ReportOther:   gateGenerousBucket,
-	Vote:          gateGenerousBucket,
-	VoteChange:    gateGenerousBucket,
-	Flag:          gateGenerousBucket,
-	SubmitAttempt: gateGenerousBucket,
-	IPBackstop:    gateGenerousBucket,
+	ReportSerious:    gateGenerousBucket,
+	ReportOther:      gateGenerousBucket,
+	Vote:             gateGenerousBucket,
+	VoteChange:       gateGenerousBucket,
+	Flag:             gateGenerousBucket,
+	SubmitAttempt:    gateGenerousBucket,
+	IPBackstopReport: gateGenerousBucket,
+	IPBackstopVote:   gateGenerousBucket,
+	IPBackstopFlag:   gateGenerousBucket,
 }
 
 // newGateTestServerWith is newGateTestServer with a hook. Every bucket starts

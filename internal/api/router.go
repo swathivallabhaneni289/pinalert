@@ -98,7 +98,8 @@ type Deps struct {
 	// requestLogger). Left nil, a logger on standard output with the usual
 	// date and time prefix is used, which is where chi's own logger wrote.
 	RequestLog *log.Logger
-	// RateLimits holds the seven D-11 shapes. A zero field takes its
+	// RateLimits holds the six D-11 account shapes and the three network
+	// backstop shapes. A zero field takes its
 	// RateLimitsDefault value; cmd/server/main.go sets every field from its
 	// constants block.
 	RateLimits RateLimits
@@ -232,7 +233,11 @@ var RateLimitsDefault = RateLimits{
 	VoteChange:    BucketLimit{Every: 30 * time.Second, Burst: 1},
 	Flag:          BucketLimit{Every: 2 * time.Minute, Burst: 10},
 	SubmitAttempt: BucketLimit{Every: 6 * time.Second, Burst: 20},
-	IPBackstop:    BucketLimit{Every: 20 * time.Second, Burst: 60},
+	// The network backstop, one bucket per action family (WR-S02). The
+	// reasoning for the numbers sits beside the constants in cmd/server/main.go.
+	IPBackstopReport: BucketLimit{Every: time.Second, Burst: 2000},
+	IPBackstopVote:   BucketLimit{Every: 150 * time.Millisecond, Burst: 2000},
+	IPBackstopFlag:   BucketLimit{Every: 1200 * time.Millisecond, Burst: 1000},
 }
 
 // resolveRateLimits replaces every field equal to BucketLimit{} with the
@@ -250,7 +255,9 @@ func resolveRateLimits(l RateLimits) RateLimits {
 	fill(&l.VoteChange, RateLimitsDefault.VoteChange)
 	fill(&l.Flag, RateLimitsDefault.Flag)
 	fill(&l.SubmitAttempt, RateLimitsDefault.SubmitAttempt)
-	fill(&l.IPBackstop, RateLimitsDefault.IPBackstop)
+	fill(&l.IPBackstopReport, RateLimitsDefault.IPBackstopReport)
+	fill(&l.IPBackstopVote, RateLimitsDefault.IPBackstopVote)
+	fill(&l.IPBackstopFlag, RateLimitsDefault.IPBackstopFlag)
 	return l
 }
 

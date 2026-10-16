@@ -87,7 +87,7 @@ func TestIPBackstop(t *testing.T) {
 		return func(d *Deps, q *sqlcgen.Queries) {
 			d.Votes = service.NewVotingService(q)
 			d.ClientIPHeader = header
-			d.RateLimits.IPBackstop = BucketLimit{Every: time.Hour, Burst: 2}
+			d.RateLimits.IPBackstopVote = BucketLimit{Every: time.Hour, Burst: 2}
 			d.RequestLinkRateLimit = RequestLinkRateLimit{Burst: 100, Every: time.Millisecond}
 		}
 	}
@@ -133,7 +133,7 @@ func TestIPBackstop(t *testing.T) {
 		if parsed.Error.Field != "rate_vote" {
 			t.Errorf("field = %q, want rate_vote", parsed.Error.Field)
 		}
-		if want := service.VoteLimitMessage(time.Duration(n) * time.Second); parsed.Error.Message != want {
+		if want := service.NetworkLimitMessage(false, time.Duration(n)*time.Second); parsed.Error.Message != want {
 			t.Errorf("message = %q, want %q", parsed.Error.Message, want)
 		}
 
@@ -143,7 +143,7 @@ func TestIPBackstop(t *testing.T) {
 		}
 
 		logged := sink.String()
-		if want := "bucket=ip_backstop account=" + strconv.FormatInt(aID, 10); !strings.Contains(logged, want) {
+		if want := "bucket=ip_backstop_vote account=" + strconv.FormatInt(aID, 10); !strings.Contains(logged, want) {
 			t.Errorf("log lacks %q, got %q", want, logged)
 		}
 		for _, line := range strings.Split(logged, "\n") {

@@ -180,8 +180,8 @@ labels come from `FlagReasonLabel`). Rules:
 
 Every limit is a token bucket kept in the server's memory and keyed on the verified account,
 never on the session. The one exception is the network backstop, which is keyed on the client
-address and runs only when `CLIENT_IP_HEADER` is set. The numbers live in one constants block in
-`cmd/server/main.go`.
+address and runs only when `CLIENT_IP_HEADER` is set. The numbers live in two constants blocks
+side by side in `cmd/server/main.go`.
 
 | Bucket | Key | Burst | Refill | Constants |
 | ------ | --- | ----- | ------ | --------- |
@@ -191,9 +191,18 @@ address and runs only when `CLIENT_IP_HEADER` is set. The numbers live in one co
 | Vote change cooldown | account, report and kind | 1 | 1 per 30 seconds | `voteChangeBurst`, `voteChangeEvery` |
 | Flags | account | 10 | 1 per 2 minutes | `flagBurst`, `flagEvery` |
 | Submit attempts | account | 20 | 1 per 6 seconds | `submitAttemptBurst`, `submitAttemptEvery` |
-| Network backstop | client address | 60 | 1 per 20 seconds | `ipBackstopBurst`, `ipBackstopEvery` |
+| Network backstop, reports | client address | 2000 | 1 per second | `ipBackstopReportBurst`, `ipBackstopReportEvery` |
+| Network backstop, votes | client address | 2000 | 1 per 150 milliseconds | `ipBackstopVoteBurst`, `ipBackstopVoteEvery` |
+| Network backstop, flags | client address | 1000 | 1 per 1.2 seconds | `ipBackstopFlagBurst`, `ipBackstopFlagEvery` |
 
-The block holds 14 constants, a burst and a refill for each of the seven buckets.
+The account block holds 12 constants, a burst and a refill for each of the six account buckets,
+and the backstop block beside it holds 6 more.
+
+- The network backstop has one bucket per action family, so votes from a shared carrier address
+  can never use up report posting from it. Each family is sized so that about 100 accounts behind
+  one address, each at its own account limit, never meet it, while one machine flooding from one
+  address is still capped. A backstop refusal says "A lot of requests are coming from your network
+  right now", never that the person acted too fast.
 
 - The network backstop runs only when `CLIENT_IP_HEADER` is set. Until it is set on a host that
   sits behind a proxy, the existing per address limits (login link requests and place search)
