@@ -343,7 +343,12 @@ func TestReadOnlyLabelsRoundedControlsNot(t *testing.T) {
 		p16MustDecl(t, label, r, map[string]string{"border-radius": "12px"})
 	}
 
-	exemptControls := []string{".fab", ".theme-toggle", ".account-trigger", ".profile-back-link", ".icon-badge"}
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): .fab
+	// left the list with the floating report button; the exemption must stay
+	// backed by a real 50 percent rule, so a name with no rule would fail the
+	// non vacuous check below. The Phase 3.1 and Phase 4 hands-on tests are
+	// walked on this layout after Phase 3.4 is built.
+	exemptControls := []string{".theme-toggle", ".account-trigger", ".profile-back-link", ".icon-badge"}
 	checkedHeads := map[string]bool{}
 	for _, r := range all {
 		radius, ok := r.Decls["border-radius"]

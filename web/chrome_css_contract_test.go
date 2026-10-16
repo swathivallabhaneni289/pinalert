@@ -394,7 +394,13 @@ func TestTopChromeGeometry(t *testing.T) {
 			if !strings.Contains(r.declBody, "--disclaimer-bar-height") {
 				continue
 			}
-			for _, name := range []string{".fab", ".theme-toggle", ".view-toggle", "#toast"} {
+			// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10):
+			// .app-bar (the phone bottom bar) replaces .fab (the floating
+			// report button, now gone) as the bottom anchored control that must
+			// never read the notice bar token. The Phase 3.1 and Phase 4
+			// hands-on tests are walked on this layout after Phase 3.4 is
+			// built.
+			for _, name := range []string{".app-bar", ".theme-toggle", ".view-toggle", "#toast"} {
 				if strings.Contains(r.selectorHead, name) {
 					t.Errorf("%s: rule %q reads the bar token but is a bottom anchored control", path, r.selectorHead)
 				}

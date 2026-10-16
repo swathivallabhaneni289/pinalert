@@ -36,10 +36,10 @@
   --space-2xl: 48px;
   --space-3xl: 64px;
 
-  /* WCAG 2.5.5 accessibility floor — FAB, category tiles, slider thumb */
+  /* WCAG 2.5.5 accessibility floor: category tiles, slider thumb, bar controls */
   --touch-target-min: 44px;
 
-  /* Shadow under the map popup card and its tip. The same value the FAB uses. */
+  /* Shadow under the map popup card and its tip. */
   --shadow-popup: 0 2px 8px rgb(0 0 0 / 25%);
 
   /* Phase 3.4 shadows (UI-SPEC Color, new theme independent tokens): declared
@@ -514,37 +514,13 @@ body {
 }
 
 /* -------------------------------------------------------------------------
- * Neutral (non-severity) interactive elements — FAB and primary submit
- * button are deliberately NOT accent-colored (D-09, D-10): inverted
- * neutral treatment (--color-text on --color-bg) instead.
+ * Neutral (non-severity) buttons: the primary submit button is deliberately
+ * NOT accent-colored (D-09, D-10): inverted neutral treatment (--color-text on
+ * --color-bg) instead. The floating round report button that shared this
+ * treatment was retired in Phase 3.4 (D-10): the Report item of the phone
+ * bottom bar and the Post a report link of the laptop top bar open the report
+ * window now (app-bar.css, phone.css).
  * ---------------------------------------------------------------------- */
-/* bottom is raised by one touch-target height plus the small space token
-   (quick task 260923-rra) to make room for the theme toggle in the slot
-   below. See auth.css's .theme-toggle rule for the full D-A rationale, and
-   web/theme_contract_test.go's TestThemeToggleFloatsClearOfTheReportButton
-   for the geometry lock that keeps the two in sync. */
-.fab {
-  position: fixed;
-  right: var(--space-lg);
-  bottom: calc(var(--space-lg) + var(--touch-target-min) + var(--space-sm));
-  z-index: 1000; /* above Leaflet's control panes */
-  width: var(--touch-target-min);
-  height: var(--touch-target-min);
-  min-width: var(--touch-target-min);
-  min-height: var(--touch-target-min);
-  border: none;
-  border-radius: 50%;
-  background: var(--color-text);
-  color: var(--color-bg);
-  font-size: var(--font-size-display);
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
-}
-
 .btn {
   display: inline-flex;
   align-items: center;
@@ -639,8 +615,8 @@ body {
 }
 
 /* The primary Leaflet map container (the div index.html.tmpl gives id="map")
-   is the last in-flow box inside .pane--map: its only sibling, the FAB, is
-   position: fixed and so contributes no content height. With nothing else
+   is the last in-flow box inside .pane--map: its siblings are positioned
+   out of flow and so contribute no content height. With nothing else
    giving the pane's grid row a size, the container collapses to 0px, and
    L.map(container) in map.js's init() measures a zero-height box — Leaflet
    then has no area to paint tiles into at all (UAT Test 1 blocker).

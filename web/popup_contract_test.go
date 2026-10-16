@@ -646,7 +646,18 @@ func TestPopupDialogFocusAndOpener(t *testing.T) {
 	activate := jsFunctionBody(t, feed, "activateRow(id)")
 	p13MustContain(t, "activateRow", activate, "PinalertMap.flyTo(id, { opener: 'list' })")
 	moveFocus := jsFunctionBody(t, feed, "moveFocusIntoView(view)")
-	p13Ordered(t, moveFocus, "moveFocusIntoView", "PinalertMap.focusOpenPopup()", "'fab-report'")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): the
+	// map view's focus target after the popup is the visible opener of the
+	// report window (the Report item on a phone, Post a report on a laptop),
+	// found by reportOpener(), not the retired floating button. The Phase 3.1
+	// and Phase 4 hands-on tests are walked on this layout after Phase 3.4 is
+	// built.
+	p13Ordered(t, moveFocus, "moveFocusIntoView", "PinalertMap.focusOpenPopup()", "reportOpener()")
+	opener := jsFunctionBody(t, feed, "reportOpener()")
+	p13MustContain(t, "reportOpener", opener, "[data-open-report]", "elementIsShown(openers[i])")
+	if strings.Contains(feed, "fab-report") {
+		t.Errorf("feed.js still names the retired floating report button")
+	}
 }
 
 // TestListRowActivationOpensThePopupOnce pins A74: a row activation reaches

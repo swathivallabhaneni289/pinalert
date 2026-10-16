@@ -63,7 +63,9 @@ func TestPageShellServesDOMContract(t *testing.T) {
 	body := rec.Body.String()
 
 	wantIDs := []string{
-		`id="app-shell"`, `id="map"`, `id="fab-report"`, `id="view-toggle"`,
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10):
+		// id fab-report left the list with the floating report button.
+		`id="app-shell"`, `id="map"`, `id="view-toggle"`,
 		`id="report-list"`, `id="feed-skeleton"`, `id="feed-empty"`, `id="feed-error"`,
 		`id="feed-retry"`, `id="report-modal"`, `id="modal-map"`, `id="coord-readout"`,
 		`id="location-notice"`, `id="location-search"`, `id="location-search-results"`,

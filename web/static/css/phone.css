@@ -76,11 +76,6 @@
     display: none;
   }
 
-  .pane--map > .fab {
-    right: var(--space-md);
-    bottom: calc(var(--touch-target-min) + var(--space-sm) + var(--space-md));
-  }
-
   #toast:not([hidden]) {
     bottom: calc(var(--touch-target-min) + var(--space-sm) + var(--space-md));
   }

@@ -9,6 +9,14 @@
 // CI runs it with the other web/*.mjs files (node --test web/*.mjs in
 // .github/workflows/ci.yml). It is not embedded in the server.
 // The fakes cover only what modal.js calls.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10 and D-02):
+// the floating report button (fab-report) is gone. modal.js now opens the form
+// from a delegated click on any element carrying data-open-report, and once on
+// load when the address carries post=1, so the fake document records listeners
+// and the fake window carries a location and a history. The new tests at the
+// end cover both. The Phase 3.1 and Phase 4 hands-on tests are walked on this
+// layout after Phase 3.4 is built.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -37,15 +45,30 @@ function fakeEl(id) {
 // load runs modal.js once. geo is 'grant', 'deny', 'absent' or 'pending'
 // (the answer waits until the test calls answerGeo); setGeo changes it
 // between opens, as a person turning location on or off would.
-function load(geo) {
+function load(geo, address = 'http://localhost/') {
   const els = {};
-  for (const id of ['report-modal', 'fab-report', 'coord-readout', 'location-notice', 'modal-map']) {
+  for (const id of ['report-modal', 'coord-readout', 'location-notice', 'modal-map']) {
     els[id] = fakeEl(id);
   }
+  // opener is a link carrying data-open-report; shown says whether it takes part
+  // in layout at the size under test. Its parentNode chain ends at null.
+  const makeOpener = (name, shown) => ({
+    nodeType: 1,
+    name,
+    parentNode: null,
+    hasAttribute: (attr) => attr === 'data-open-report',
+    getClientRects: () => (shown ? [{}] : [])
+  });
+  const openers = [makeOpener('hidden-size', false), makeOpener('shown-size', true)];
+  const documentHandlers = {};
   const document = {
     getElementById: (id) => els[id] || null,
-    createElement: () => ({ getContext: () => null })
+    createElement: () => ({ getContext: () => null }),
+    addEventListener(type, fn) { (documentHandlers[type] = documentHandlers[type] || []).push(fn); },
+    querySelectorAll: (selector) => (selector === '[data-open-report]' ? openers : [])
   };
+  const replaced = [];
+  const opened = [];
 
   const maps = [];
   const markers = [];
@@ -102,9 +125,11 @@ function load(geo) {
   let picker = null;
   const window = {
     setTimeout: (fn) => { fn(); return 1; },
+    location: { href: address },
+    history: { state: null, replaceState: (...args) => { replaced.push(args); } },
     PinalertReportForm: {
       mount(opts) { picker = opts.location; },
-      open() {}
+      open(opts) { opened.push(opts); }
     }
   };
   const Pinalert = {
@@ -112,7 +137,7 @@ function load(geo) {
     setText: (el, v) => { el.textContent = v === null || v === undefined ? '' : String(v); }
   };
 
-  const sandbox = { window, document, navigator, Pinalert, L };
+  const sandbox = { window, document, navigator, Pinalert, L, URL };
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox);
   assert.ok(picker, 'modal.js mounted the form with its location interface');
@@ -136,6 +161,18 @@ function load(geo) {
     clickHandlers,
     pinsOnMap,
     tap,
+    openers,
+    opened,
+    replaced,
+    documentHandlers,
+    // click sends a click on target through the delegated document handler and
+    // reports whether the handler stopped the link from navigating.
+    click: (target, init = {}) => {
+      const event = { target, button: 0, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, defaultPrevented: false, ...init };
+      event.preventDefault = () => { event.defaultPrevented = true; };
+      for (const fn of documentHandlers.click || []) { fn(event); }
+      return event.defaultPrevented;
+    },
     open: () => picker.start(hooks),
     close: () => picker.reset(),
     setGeo: (m) => { mode = m; },
@@ -273,4 +310,42 @@ test('a chosen search result lands at street level zoom and a tap then moves the
   s.tap(16.5072, 80.6493);
   assert.deepEqual(at(s), { latitude: 16.5072, longitude: 80.6493 });
   assert.equal(s.pinsOnMap().length, 1);
+});
+
+test('a plain click on an opener opens the window with that element as the opener', () => {
+  const s = load('grant');
+  assert.equal(s.opened.length, 0, 'a plain address opens nothing on load');
+  const prevented = s.click(s.openers[1]);
+  assert.equal(prevented, true, 'the link does not navigate when the window is on the page');
+  assert.equal(s.opened.length, 1);
+  assert.equal(s.opened[0].opener, s.openers[1], 'focus returns to the clicked element');
+
+  // A click on something inside the link counts, one on a bare element does not.
+  const inner = { nodeType: 1, parentNode: s.openers[0], hasAttribute: () => false };
+  assert.equal(s.click(inner), true);
+  assert.equal(s.opened[1].opener, s.openers[0]);
+  const bare = { nodeType: 1, parentNode: null, hasAttribute: () => false };
+  assert.equal(s.click(bare), false);
+  assert.equal(s.opened.length, 2);
+});
+
+test('a click with a modifier key or a non primary button keeps its normal meaning', () => {
+  const s = load('grant');
+  for (const init of [{ metaKey: true }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }]) {
+    assert.equal(s.click(s.openers[1], init), false, JSON.stringify(init) + ' still follows the link');
+  }
+  assert.equal(s.click(s.openers[1], { defaultPrevented: true }), true);
+  assert.equal(s.opened.length, 0);
+});
+
+test('post=1 in the address opens the window once and removes the parameter without a new history entry', () => {
+  const s = load('grant', 'http://localhost/?post=1&view=disputed#top');
+  assert.equal(s.opened.length, 1, 'the window opens on load');
+  assert.equal(s.opened[0].opener, s.openers[1], 'the opener is the one shown at this size');
+  assert.equal(s.replaced.length, 1, 'the address is rewritten with replaceState, not pushState');
+  assert.equal(s.replaced[0][2], '/?view=disputed#top', 'only the post parameter is removed');
+
+  const plain = load('grant', 'http://localhost/?view=disputed');
+  assert.equal(plain.opened.length, 0);
+  assert.equal(plain.replaced.length, 0);
 });

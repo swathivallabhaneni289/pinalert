@@ -455,145 +455,61 @@ func resolveThemeGeometryLength(t *testing.T, tokens map[string]int, expr string
 	return sum
 }
 
-// TestThemeToggleFloatsClearOfTheReportButton is a computed geometry lock
-// against .fab (main.css) and .theme-toggle (auth.css): it proves the two
-// controls' vertical bands cannot intersect and separately locks which of
-// the two occupies the lower slot, per the user's explicit D-A decision
-// (see 260923-rra-PLAN.md).
+// TestThemeToggleFloatsClearOfTheReportButton is RETIRED (replaced by TestFloatingReportButtonIsGone).
 //
-// Honest limit of this test's claim: static arithmetic over the shipped
-// declarations proves the two controls cannot overlap, that the control is
-// the lower of the two, that the raised report-button offset is derived
-// rather than hardcoded, and, as a side effect worth stating, that both
-// stylesheets were actually edited, since a half-done swap leaves both
-// rules claiming the same offset and the bands then intersect completely.
-// It cannot prove a browser paints them as a deliberate-looking pair, that
-// the result reads the way the user meant, or that nothing else on the page
-// collides at a narrow viewport.
-func TestThemeToggleFloatsClearOfTheReportButton(t *testing.T) {
-	mainRaw, err := StaticFS.ReadFile("static/css/main.css")
-	if err != nil {
-		t.Fatalf("reading embedded static/css/main.css: %v", err)
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): the
+// floating round report button (.fab) that this computed geometry lock kept
+// clear of the theme toggle is gone. The Report item of the phone bottom bar
+// and the Post a report link of the laptop top bar open the report window
+// now, so there is no second control to stack against and no band to keep
+// apart. The Phase 3.1 and Phase 4 hands-on tests are walked on this layout
+// after Phase 3.4 is built.
+//
+// The one property of the old test that still holds on its own, the toggle's
+// own layout declarations, lives on in TestThemeToggleKeepsItsOwnLayout below.
+// TestFloatingReportButtonIsGone proves the report button is truly gone from the stylesheets so a
+// stray rule cannot come back unnoticed.
+func TestFloatingReportButtonIsGone(t *testing.T) {
+	for _, path := range []string{"static/css/main.css", "static/css/phone.css", "static/css/auth.css"} {
+		for _, r := range parseCSSRules(p16ReadStatic(t, path)) {
+			if strings.Contains(r.selectorHead, ".fab") {
+				t.Errorf("%s still has a rule for the retired floating report button: %q", path, r.selectorHead)
+			}
+		}
 	}
+}
+
+// TestThemeToggleKeepsItsOwnLayout keeps the two properties of the retired
+// stacking lock that do not depend on the report button (quick task
+// 260923-rra): the toggle floats at a fixed position at the large space token
+// from the right and the bottom, and, outside the account menu, it declares
+// its own display, align-items, justify-content and cursor, because it
+// inherits none of them from the menu item rule it used to free ride on.
+// Without the first three the 24px glyph sits on the button's text baseline
+// instead of centred in the 44px circle, a visible defect with a green build.
+func TestThemeToggleKeepsItsOwnLayout(t *testing.T) {
 	authRaw, err := StaticFS.ReadFile("static/css/auth.css")
 	if err != nil {
 		t.Fatalf("reading embedded static/css/auth.css: %v", err)
 	}
-
-	mainRules := parseCSSRules(string(mainRaw))
-	authRules := parseCSSRules(string(authRaw))
-
-	tokens := buildThemeGeometryTokenTable(t, mainRules)
-
-	fabRule, ok := ruleBySelector(mainRules, ".fab")
-	if !ok {
-		t.Fatalf("no exact %q rule found in static/css/main.css", ".fab")
-	}
-	toggleRule, ok := ruleBySelector(authRules, ".theme-toggle")
+	toggleRule, ok := ruleBySelector(parseCSSRules(string(authRaw)), ".theme-toggle")
 	if !ok {
 		t.Fatalf("no exact %q rule found in static/css/auth.css", ".theme-toggle")
 	}
-	fabDecls := declsOf(fabRule.declBody)
 	toggleDecls := declsOf(toggleRule.declBody)
 
 	if toggleDecls["position"] != "fixed" {
 		t.Errorf(".theme-toggle: expected position: fixed, got %q", toggleDecls["position"])
 	}
-
-	if toggleDecls["right"] != fabDecls["right"] {
-		t.Errorf(".theme-toggle right (%q) must be string-equal to .fab right (%q) — the two share one "+
-			"vertical line by sharing the same token", toggleDecls["right"], fabDecls["right"])
+	for prop, want := range map[string]string{"right": "var(--space-lg)", "bottom": "var(--space-lg)"} {
+		if got := strings.TrimSpace(toggleDecls[prop]); got != want {
+			t.Errorf(".theme-toggle %s is %q, want %q", prop, got, want)
+		}
 	}
-
-	fabBottomExpr := strings.TrimSpace(fabDecls["bottom"])
-	if !strings.HasPrefix(fabBottomExpr, "calc") {
-		t.Errorf(".fab: expected the bottom declaration to start with calc, got %q", fabBottomExpr)
-	}
-	if !strings.Contains(fabBottomExpr, "--touch-target-min") {
-		t.Errorf(".fab: expected the bottom declaration to reference --touch-target-min by name, which "+
-			"is what makes the raised offset derived from a control height rather than coincidentally "+
-			"equal to one — got %q", fabBottomExpr)
-	}
-	fabBottom := resolveThemeGeometryLength(t, tokens, fabBottomExpr)
-	if fabBottom <= 0 {
-		t.Errorf(".fab: resolved bottom must be a positive integer, got %d", fabBottom)
-	}
-
-	toggleBottomExpr := strings.TrimSpace(toggleDecls["bottom"])
-	if strings.Contains(toggleBottomExpr, "calc") {
-		t.Errorf(".theme-toggle: bottom must be a single plain token with no calc, got %q — any calc "+
-			"here means the two rules were swapped back or half edited", toggleBottomExpr)
-	}
-	toggleBottom := resolveThemeGeometryLength(t, tokens, toggleBottomExpr)
-	if toggleBottom <= 0 {
-		t.Errorf(".theme-toggle: resolved bottom must be a positive integer, got %d", toggleBottom)
-	}
-
-	fabZ, fabZErr := strconv.Atoi(strings.TrimSpace(fabDecls["z-index"]))
-	toggleZ, toggleZErr := strconv.Atoi(strings.TrimSpace(toggleDecls["z-index"]))
-	if fabZErr != nil || toggleZErr != nil {
-		t.Fatalf("both z-index values must parse as integers — .fab=%q .theme-toggle=%q", fabDecls["z-index"], toggleDecls["z-index"])
-	}
-	if toggleZ < fabZ {
-		t.Errorf(".theme-toggle z-index (%d) must be at least .fab's z-index (%d) — a lower value would "+
-			"let the report button's own stacking context cover the control", toggleZ, fabZ)
-	}
-
-	// THE ORDER LOCK: encodes the user's actual decision (D-A), not mere
-	// geometry. The band check below is direction agnostic and would pass
-	// just as happily with the two controls swapped, which is why this
-	// separate assertion has to exist: without it a later well-meaning
-	// "fix" restores the old arrangement with a fully green build.
-	if !(toggleBottom < fabBottom) {
-		t.Errorf("the control's resolved bottom (%d) must be strictly less than the report button's "+
-			"resolved bottom (%d), so the control occupies the LOWER slot — the user was asked directly "+
-			"and chose the toggle below the report button with the report button moved up, see D-A",
-			toggleBottom, fabBottom)
-	}
-
-	// THE BAND CHECK: direction agnostic, proves non-overlap and tightness.
-	fabHeight := resolveThemeGeometryLength(t, tokens, strings.TrimSpace(fabDecls["height"]))
-	toggleHeight := resolveThemeGeometryLength(t, tokens, strings.TrimSpace(toggleDecls["height"]))
-
-	type band struct {
-		bottom int
-		top    int
-	}
-	fabBand := band{bottom: fabBottom, top: fabBottom + fabHeight}
-	toggleBand := band{bottom: toggleBottom, top: toggleBottom + toggleHeight}
-
-	lower, upper := fabBand, toggleBand
-	if toggleBand.bottom < fabBand.bottom {
-		lower, upper = toggleBand, fabBand
-	}
-
-	gap := upper.bottom - lower.top
-	t.Logf("lower band: %d to %d; upper band: %d to %d; gap: %d", lower.bottom, lower.top, upper.bottom, upper.top, gap)
-
-	if lower.top > upper.bottom {
-		t.Errorf("the two controls' vertical bands intersect: lower band runs %d to %d, upper band runs "+
-			"%d to %d", lower.bottom, lower.top, upper.bottom, upper.top)
-	}
-	if gap <= 0 {
-		t.Errorf("gap between the two bands is %d — a gap of zero or less means the two circles touch "+
-			"or overlap", gap)
-	}
-	if gap > tokens["--space-lg"] {
-		t.Errorf("gap between the two bands is %d, larger than the large space token (%d) — the two no "+
-			"longer read as one stack", gap, tokens["--space-lg"])
-	}
-
-	// THE CASCADE ORPHAN GUARD: outside the account menu, .theme-toggle
-	// inherits none of display, align-items, justify-content or cursor from
-	// the menu item rule it used to free ride on. Without the first three,
-	// the 24px glyph sits on the button's text baseline instead of centered
-	// in the 44px circle — a visible defect with a green build.
 	for _, prop := range []string{"display", "align-items", "justify-content", "cursor"} {
 		if strings.TrimSpace(toggleDecls[prop]) == "" {
-			t.Errorf(".theme-toggle: missing its own %q declaration — outside the account menu it "+
-				"inherits nothing from .account-menu__item any more, and missing display, align-items or "+
-				"justify-content leaves the glyph sitting on the button's text baseline instead of "+
-				"centered in the 44px circle, a visible defect with a green build", prop)
+			t.Errorf(".theme-toggle: missing its own %q declaration, so the glyph would sit on the "+
+				"button's text baseline instead of centred in the 44px circle", prop)
 		}
 	}
 }

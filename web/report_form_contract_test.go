@@ -449,8 +449,20 @@ func TestReportFormLocationInterface(t *testing.T) {
 	}
 	p410NeedAll(t, "mount call", win(pin, "PinalertReportForm.mount(", ");"),
 		"variant: 'main'", "location: leafletLocation")
-	p410NeedAll(t, "fab click", win(pin, "fabButton.addEventListener('click'", "});"),
-		"PinalertReportForm.open(", "opener: fabButton")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10 and
+	// D-02): the floating report button is gone. One delegated click handler on
+	// the elements carrying data-open-report (the Report item of the phone
+	// bottom bar and the Post a report link of the laptop top bar) opens the
+	// form with the clicked element as the opener, and the address post=1 opens
+	// it once on load. The Phase 3.1 and Phase 4 hands-on tests are walked on
+	// this layout after Phase 3.4 is built.
+	p410NeedAll(t, "opener click", win(pin, "document.addEventListener('click'", "});"),
+		"openerFor(e.target)", "e.preventDefault()", "PinalertReportForm.open(", "opener: opener")
+	p410NeedAll(t, "post=1 on load", win(pin, "function openFromAddress(", "\n  openFromAddress();"),
+		"searchParams.has(POST_PARAM)", "searchParams.delete(POST_PARAM)", "history.replaceState(", "PinalertReportForm.open(")
+	if strings.Contains(pin, "fab-report") || strings.Contains(pin, "fabButton") {
+		t.Errorf("modal.js still names the retired floating report button")
+	}
 }
 
 // TestReportFormOwnsTheFormLogic (D-15, U6): the form functions live in

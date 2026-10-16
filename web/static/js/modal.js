@@ -7,7 +7,10 @@
 // marker, tap to place in every location state, the coordinate readout, the
 // main form's one missing location sentence and the main form's rule of
 // showing the server's own search failure message, or the fallback below
-// when the server sent none. It then mounts the form and opens it from the report button.
+// when the server sent none. It then mounts the form and opens it from the
+// openers: every element carrying data-open-report (the Report item of the
+// phone bottom bar and the Post a report link of the laptop top bar, Phase 3.4
+// D-10), and once on load when the address carries post=1.
 //
 // SECURITY (T-01-03, T-07-03): every string that reaches the DOM here is
 // inserted as text content, never assembled into markup for the browser to
@@ -17,12 +20,11 @@
   'use strict';
 
   var modal = document.getElementById('report-modal');
-  var fabButton = document.getElementById('fab-report');
   var coordReadout = document.getElementById('coord-readout');
   var locationNotice = document.getElementById('location-notice');
   var modalMapEl = document.getElementById('modal-map');
 
-  if (!modal || !fabButton) {
+  if (!modal) {
     return;
   }
 
@@ -285,7 +287,66 @@
     variant: 'main'
   });
 
-  fabButton.addEventListener('click', function () {
-    window.PinalertReportForm.open({ opener: fabButton });
+  var OPEN_ATTRIBUTE = 'data-open-report';
+  var POST_PARAM = 'post';
+
+  // openerFor finds the element carrying data-open-report that a click landed
+  // in, or null. Walks up by hand so a click on the glyph or the label inside
+  // the link still counts.
+  function openerFor(target) {
+    var node = target;
+    while (node && node.nodeType === 1) {
+      if (node.hasAttribute(OPEN_ATTRIBUTE)) {
+        return node;
+      }
+      node = node.parentNode;
+    }
+    return null;
+  }
+
+  // plainPrimaryClick is true for an unmodified left click. A click with a
+  // modifier key (open in a new tab, save the link) keeps its normal meaning.
+  function plainPrimaryClick(e) {
+    return e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+  }
+
+  // The openers are links to /?post=1, so they work without script. With the
+  // report window on the page the click opens it in place, with the clicked
+  // element as the opener so focus returns to it on close (D-02, D-10).
+  document.addEventListener('click', function (e) {
+    var opener = openerFor(e.target);
+    if (!opener || e.defaultPrevented || !plainPrimaryClick(e)) {
+      return;
+    }
+    e.preventDefault();
+    window.PinalertReportForm.open({ opener: opener });
   });
+
+  // shownOpener is the opener that takes part in layout at this size: the
+  // other size's opener is display none.
+  function shownOpener() {
+    var openers = document.querySelectorAll('[' + OPEN_ATTRIBUTE + ']');
+    for (var i = 0; i < openers.length; i += 1) {
+      if (openers[i].getClientRects().length > 0) {
+        return openers[i];
+      }
+    }
+    return null;
+  }
+
+  // openFromAddress opens the window once when the address carries post=1 (the
+  // link from any other place), then removes the parameter with replaceState,
+  // so no history entry is added and a reload does not open it again. Only the
+  // presence of the parameter is read (T-34-14); its value is never used.
+  function openFromAddress() {
+    var url = new URL(window.location.href);
+    if (!url.searchParams.has(POST_PARAM)) {
+      return;
+    }
+    url.searchParams.delete(POST_PARAM);
+    window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    window.PinalertReportForm.open({ opener: shownOpener() });
+  }
+
+  openFromAddress();
 }());

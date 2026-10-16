@@ -321,7 +321,15 @@ func TestMapToolsMarkup(t *testing.T) {
 		`<section class="pane pane--map">`, `class="map-tools"`, `<form class="map-search" role="search"`,
 		`id="map-search-open"`, `id="map-search-input"`, `id="map-search-submit"`, `id="map-search-close"`,
 		`id="map-search-status"`, `id="map-search-results"`, `class="map-chips"`, `id="map"`,
-		`id="map-label"`, `id="fab-report"`, `<section class="pane pane--list">`)
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10):
+		// the floating report button (id fab-report) that followed the map
+		// label is gone; the pane now ends with the map label. The Phase 3.1
+		// and Phase 4 hands-on tests are walked on this layout after Phase 3.4
+		// is built.
+		`id="map-label"`, `<section class="pane pane--list">`)
+	if strings.Contains(tmpl, `id="fab-report"`) {
+		t.Errorf("index.html.tmpl still holds the retired floating report button")
+	}
 
 	for _, want := range []string{
 		`type="search"`, `autocomplete="off"`, `autocapitalize="off"`, `spellcheck="false"`,
