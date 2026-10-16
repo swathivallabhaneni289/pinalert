@@ -105,7 +105,7 @@ class FakeEl {
   querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
 }
 
-function setup() {
+function setup({ variant } = {}) {
   const doc = {
     activeElement: null,
     handlers: {},
@@ -186,6 +186,8 @@ function setup() {
   });
 
   const outcomes = [];
+  // failures keeps what the form passed to searchFailureMessage each time.
+  const failures = [];
   const Pinalert = {
     CATEGORIES: ['flood', 'road_blocked', 'shelter_open'],
     CATEGORY_LABELS: { flood: 'Flood', road_blocked: 'Road blocked', shelter_open: 'Shelter open' },
@@ -204,7 +206,7 @@ function setup() {
     choose: () => {},
     isSet: () => true,
     missingMessage: () => 'Set a location.',
-    searchFailureMessage: () => FAILED,
+    searchFailureMessage: (text, status) => { failures.push([text, status]); return FAILED; },
     noteSearchOutcome: (o) => { outcomes.push(o); }
   };
   class CustomEvent {
@@ -222,14 +224,14 @@ function setup() {
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox);
   const Form = window.PinalertReportForm;
-  Form.mount({ backdrop, form, location: picker });
+  Form.mount({ backdrop, form, location: picker, variant });
   Form.open({ opener });
 
   const type = (text) => { input.value = text; input.dispatchEvent({ type: 'input' }); };
   const query = (req) => new URL(req.url, 'https://pinalert.example').searchParams.get('q');
   const rows = () => results.querySelectorAll('.location-search-result');
   const el = (id) => doc.byId[id];
-  return { input, status, results, requests, answer, advance, type, query, rows, outcomes, el };
+  return { input, status, results, requests, answer, advance, type, query, rows, outcomes, failures, el };
 }
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
@@ -426,4 +428,42 @@ test('a network error or a 500 still shows the failure line at once', async () =
   assert.equal(p.status.textContent, FAILED);
   p.advance(3000);
   assert.equal(p.requests.length, 2, 'a 500 is not tried again');
+});
+
+// The Low data page shares this search (F-P4-12): the same quiet tries, and
+// after the last one the page is given the status but never the server's text.
+for (const [code, body] of [[429, { error: { field: 'q', message: TOO_MANY } }],
+  [503, { error: { field: 'q', message: 'Search unavailable, try tapping the map instead.' } }]]) {
+  test('on the Low data page a ' + code + ' is tried again quietly, then the page gets the status and no server text', async () => {
+    const p = setup({ variant: 'low' });
+    p.type('Banjara Hills');
+    p.advance(300);
+    for (let i = 0; i < 3; i++) {
+      p.answer(p.requests[i], code, body);
+      await settle();
+      assert.equal(p.status.hidden, true, 'try ' + (i + 1) + ' failed quietly');
+      assert.deepEqual(p.failures, [], 'no sentence is asked for during the quiet tries');
+      p.advance(1000);
+      assert.equal(p.requests.length, i + 2);
+    }
+    p.answer(p.requests[3], code, body);
+    await settle();
+    assert.deepEqual(p.failures, [['', code]]);
+    assert.equal(p.status.textContent, FAILED);
+    assert.equal(p.outcomes[p.outcomes.length - 1], 'unavailable');
+  });
+}
+
+test('on the main form the page gets the server text and the status', async () => {
+  const p = setup();
+  p.type('Banjara Hills');
+  p.advance(300);
+  for (let i = 0; i < 3; i++) {
+    p.answer(p.requests[i], 429, { error: { message: TOO_MANY } });
+    await settle();
+    p.advance(1000);
+  }
+  p.answer(p.requests[3], 429, { error: { message: TOO_MANY } });
+  await settle();
+  assert.deepEqual(p.failures, [[TOO_MANY, 429]]);
 });

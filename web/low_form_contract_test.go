@@ -412,8 +412,19 @@ func TestLowDataSearchIgnoresServerText(t *testing.T) {
 	p419Has(t, "renderDropdown", dropdown, "'no_match'", "'match'")
 	p419Before(t, "renderDropdown", dropdown, "'no_match'", "return")
 
-	p419Has(t, "lowSearchFailureMessage", jsFunctionBody(t, low, "lowSearchFailureMessage()"),
-		"return LOW_SEARCH_UNAVAILABLE_MESSAGE")
+	p419Has(t, "runSearch", jsFunctionBody(t, form, "runSearch(query)"),
+		"picker.searchFailureMessage(serverText, err && err.status)")
+
+	// The server's text is never read on this page; the status picks one of
+	// the page's own sentences, the main form's words for a 429 (F-P4-12).
+	failure := jsFunctionBody(t, low, "lowSearchFailureMessage(_serverText, status)")
+	p419Has(t, "lowSearchFailureMessage", failure, "if (status === 429) {",
+		"return LOW_SEARCH_RATE_LIMITED_MESSAGE", "return LOW_SEARCH_UNAVAILABLE_MESSAGE")
+	if n := strings.Count(failure, "_serverText"); n != 1 {
+		t.Errorf("lowSearchFailureMessage must never read the server's text, found _serverText %d times", n)
+	}
+	p419Has(t, "low.js", low,
+		"var LOW_SEARCH_RATE_LIMITED_MESSAGE = 'Too many searches. Wait a few seconds and try again.';")
 
 	for name, text := range map[string]string{"low.js": low, "low.html.tmpl": page} {
 		p419Lacks(t, name, text, "Search unavailable, try tapping the map instead.",

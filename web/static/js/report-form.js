@@ -12,8 +12,11 @@
 //   choose(result)                  result is { lat, lon, displayName }
 //   isSet()                         whether a location is set
 //   missingMessage()                the sentence shown when none is set
-//   searchFailureMessage(message)   the sentence shown when a search fails;
-//                                   message is the server's own text or undefined
+//   searchFailureMessage(message, status)
+//                                   the sentence shown when a search fails;
+//                                   message is the server's own text or
+//                                   undefined, status the answer's HTTP status
+//                                   or undefined when nothing answered
 // Optional hooks, called only when present:
 //   start(hooks)                    on every open, after the dialog is shown;
 //                                   hooks.markTouched marks the form touched
@@ -679,10 +682,11 @@
         }
         hideDropdown();
         // The page without a map ignores the server's text and shows its own
-        // sentence; the main form keeps the server's message (U8). A timeout
-        // or a network error carries no server text on either page.
+        // sentence, picked by the status; the main form keeps the server's
+        // message (U8). A timeout or a network error carries no server text
+        // and no status on either page.
         var serverText = formVariant === 'low' ? '' : (err && err.fieldMessage);
-        showSearchStatus(picker.searchFailureMessage(serverText));
+        showSearchStatus(picker.searchFailureMessage(serverText, err && err.status));
         noteSearchOutcome('unavailable');
       });
   }

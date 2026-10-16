@@ -544,10 +544,11 @@ The primary button "Report an emergency" opens the report form. The form is the 
 |----------------|--------------------|
 | Set a location by searching, dragging the pin, or allowing location access. | Set a location by allowing location access or typing a place. |
 | Search unavailable, try tapping the map instead. | Search unavailable. Try your position again, or open the full version. |
+| Too many searches. Wait a few seconds and try again. (the server's 429, since quick 261016-sne) | Too many searches. Wait a few seconds and try again. (unchanged, F-P4-12) |
 | Location access is off. Drag the map to your area, or tap the map to drop a pin. | not shown (the denied state below replaces it) |
 | No matches found. | No matches found. (unchanged) |
 
-**The server's search message is ignored on this page.** On a failed search `modal.js` shows the server's own message (`fieldError.message || SEARCH_UNAVAILABLE_MESSAGE`), and the geocode handler sends exactly "Search unavailable, try tapping the map instead." on every 503 (pinned by `geocode_test.go`). Swapping a client constant would not change what the Low data view shows. So the Low data implementation of the search **ignores the server's message text** and maps the failure (any 503, a network error or a timeout) to the Low variant above, and the server message and its test are left as they are. Add a Low data check that no "tapping the map" sentence is ever shown on this page.
+**The server's search message is ignored on this page.** On a failed search `modal.js` shows the server's own message (`fieldError.message || SEARCH_UNAVAILABLE_MESSAGE`), and the geocode handler sends exactly "Search unavailable, try tapping the map instead." on every 503 (pinned by `geocode_test.go`). Swapping a client constant would not change what the Low data view shows. So the Low data implementation of the search **ignores the server's message text** and maps the failure (any 503, a network error or a timeout) to the Low variant above, and the server message and its test are left as they are. Add a Low data check that no "tapping the map" sentence is ever shown on this page. A 429 (the person's own search budget, quick 261016-sne) is told apart by its status, not its text: the Low data view shows its own copy of the main form's words for it, "Too many searches. Wait a few seconds and try again.", since waiting is the way forward on both pages and the sentence names no map (F-P4-12). Both pages first try a 429 or a 503 again quietly, up to 3 times, before any sentence shows.
 
 ### The location block (replaces the search box and the map)
 
@@ -1068,7 +1069,7 @@ All copy is plain words, with no em dash and no en dash. The existing Phase 1 to
 | Stale line | Last updated 4 minutes ago. Trying again. (`.inline-note`, no role) |
 | Stale announcements | Connection lost. Showing reports from 4 minutes ago. / Back online. The list is up to date. |
 | Location legend and label | Location. Or type a place or address. |
-| Validation (Low variants) | Set a location by allowing location access or typing a place. / Search unavailable. Try your position again, or open the full version. / Choose to use this position, or type a place. / Still finding your position. Wait a moment, or type a place. |
+| Validation (Low variants) | Set a location by allowing location access or typing a place. / Search unavailable. Try your position again, or open the full version. / Too many searches. Wait a few seconds and try again. (a 429, F-P4-12) / Choose to use this position, or type a place. / Still finding your position. Wait a moment, or type a place. |
 | Location states | Exact sentences in the table in Surface: Low Data View (all exact, including "Couldn't get your position in time." and, for Both failed, "Posting from here needs a location. Open the full version to place your report on the map."). |
 | Error state | Couldn't load reports. Check your connection and try again. |
 
