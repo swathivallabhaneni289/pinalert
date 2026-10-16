@@ -66,6 +66,16 @@ func TestMapFollowsLabel(t *testing.T) {
 // TestMapFollowsFinishedPins pins D-13: a finished pin is a ring and never a
 // filled severity dot, so a finished report is never read as live and the cue
 // is not colour alone. The state comes from the server's own fields only.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+// D-18): kept, not retired. No finished report can reach the Nearby map any
+// more (the Past tab is gone, belongsToShow draws only active and disputed
+// reports, and a link to a finished report leaves for My activity), so the
+// ring look is unreachable from Nearby for now. The map code and its pins stay
+// as built (UI-SPEC 2e keeps the ring look, and plan 03.4-13 owns the pin
+// rework), so this test keeps pinning them until that plan retires or reuses
+// them. The Phase 3.1 and Phase 4 hands-on tests are walked on this layout
+// after Phase 3.4 is built.
 func TestMapFollowsFinishedPins(t *testing.T) {
 	// displayState reads the server's history state after Resolved, never a
 	// date (T-31-61).

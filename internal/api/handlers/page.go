@@ -132,9 +132,11 @@ func ParsePageTemplate() (*template.Template, error) {
 // Before it renders, Page follows the remembered Low data choice (D-17): a
 // bare address with the pinalert_low_data cookie answers a redirect to the Low
 // data view, and the address with full=1 clears the cookie and goes to the main
-// page. A main page address with any other query string is never redirected,
-// so a shared deep link opens where it says, and every target is a constant
-// (T-04-13).
+// page. A main page address with any other query string is never redirected to
+// the Low data view, so a shared deep link opens where it says, and every
+// target is a constant (T-04-13). The one exception is the retired Past
+// address (view=past or view=resolved), which goes to My activity, Ended nearby
+// (Phase 3.4, D-18) before any of the above.
 func Page(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acc, ok := account.FromContext(r.Context())

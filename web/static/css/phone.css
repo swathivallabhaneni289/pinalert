@@ -71,7 +71,7 @@
     bottom: calc(var(--touch-target-min) + var(--space-sm) + var(--space-md));
   }
 
-  /* ---- 03.4 nearby list ---- */
+  /* 03.4 nearby list */
 
   /* The list head (Phase 3.4, D-13): the count on the left, the Show button
      on the right. The pane already pads the sides by 16px, so the head adds
