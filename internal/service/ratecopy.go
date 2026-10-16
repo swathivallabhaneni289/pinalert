@@ -68,6 +68,20 @@ func VoteChangeLimitMessage(wait time.Duration) string {
 	return "You changed this vote a moment ago. You can change it again in " + WaitPhrase(wait) + "."
 }
 
+// NetworkLimitMessage is the sentence shown when the network address backstop,
+// not the person's own allowance, refuses a request (WR-S02). Many phones can
+// share one carrier address, so it never says the person did anything too
+// fast. The 429 keeps the field of the action it refused (rate_report,
+// rate_vote or rate_flag) so the client shows it in the usual place; report
+// is true for a report post, which also says the typed text is kept (D-12).
+func NetworkLimitMessage(report bool, wait time.Duration) string {
+	msg := "A lot of requests are coming from your network right now. You can try again in " + WaitPhrase(wait) + "."
+	if report {
+		msg += " Your text is still here."
+	}
+	return msg
+}
+
 // FlagLimitMessage is the sentence shown in the Flag dialog when a reader has
 // flagged several reports in a short time. Its 429 field is rate_flag.
 func FlagLimitMessage(wait time.Duration) string {

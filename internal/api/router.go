@@ -98,7 +98,8 @@ type Deps struct {
 	// requestLogger). Left nil, a logger on standard output with the usual
 	// date and time prefix is used, which is where chi's own logger wrote.
 	RequestLog *log.Logger
-	// RateLimits holds the seven D-11 shapes. A zero field takes its
+	// RateLimits holds the six D-11 account shapes and the three network
+	// backstop shapes. A zero field takes its
 	// RateLimitsDefault value; cmd/server/main.go sets every field from its
 	// constants block.
 	RateLimits RateLimits
@@ -239,7 +240,11 @@ var RateLimitsDefault = RateLimits{
 	VoteChange:    BucketLimit{Every: 30 * time.Second, Burst: 1},
 	Flag:          BucketLimit{Every: 2 * time.Minute, Burst: 10},
 	SubmitAttempt: BucketLimit{Every: 6 * time.Second, Burst: 20},
-	IPBackstop:    BucketLimit{Every: 20 * time.Second, Burst: 60},
+	// The network backstop, one bucket per action family (WR-S02). The
+	// reasoning for the numbers sits beside the constants in cmd/server/main.go.
+	IPBackstopReport: BucketLimit{Every: time.Second, Burst: 2000},
+	IPBackstopVote:   BucketLimit{Every: 150 * time.Millisecond, Burst: 2000},
+	IPBackstopFlag:   BucketLimit{Every: 1200 * time.Millisecond, Burst: 1000},
 }
 
 // resolveRateLimits replaces every field equal to BucketLimit{} with the
@@ -257,7 +262,9 @@ func resolveRateLimits(l RateLimits) RateLimits {
 	fill(&l.VoteChange, RateLimitsDefault.VoteChange)
 	fill(&l.Flag, RateLimitsDefault.Flag)
 	fill(&l.SubmitAttempt, RateLimitsDefault.SubmitAttempt)
-	fill(&l.IPBackstop, RateLimitsDefault.IPBackstop)
+	fill(&l.IPBackstopReport, RateLimitsDefault.IPBackstopReport)
+	fill(&l.IPBackstopVote, RateLimitsDefault.IPBackstopVote)
+	fill(&l.IPBackstopFlag, RateLimitsDefault.IPBackstopFlag)
 	return l
 }
 
@@ -442,8 +449,9 @@ func NewRouter(deps Deps) *chi.Mux {
 		// D-10 and D-11: each vote route is wrapped with the one gate's vote
 		// middleware, the per account vote bucket and the 30 second cooldown
 		// on casting the same kind of vote again on one report, on all five
-		// vote routes including the take back below. This closes WR-01, the
-		// missing throttle on the vote routes.
+		// vote routes; the take back below is never refused by that
+		// cooldown (IN-S01). This closes WR-01, the missing throttle on the
+		// vote routes.
 		r.With(rateGate.VoteMiddleware(service.VoteKindContent)).Post("/api/reports/{id}/confirm", handlers.CastVote(deps.Votes, service.VoteKindContent, service.VoteConfirm))
 		r.With(rateGate.VoteMiddleware(service.VoteKindContent)).Post("/api/reports/{id}/dispute", handlers.CastVote(deps.Votes, service.VoteKindContent, service.VoteDispute))
 		r.With(rateGate.VoteMiddleware(service.VoteKindResolution)).Post("/api/reports/{id}/resolve", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteResolve))
@@ -455,7 +463,11 @@ func NewRouter(deps Deps) *chi.Mux {
 		// take back only withdraws the caller's own resolve and claims
 		// nothing about the place. It needs no location, never counts as a
 		// reopen, and shares its limit of two with the poster's reopen.
-		r.With(rateGate.VoteMiddleware(service.VoteKindResolution)).Post("/api/reports/{id}/unresolve", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteUnresolve))
+		// TakeBackMiddleware is the vote throttle except that the 30 second
+		// resolution cooldown never refuses it (IN-S01), so the Undo shown
+		// for 8 seconds on the Mark resolved message works; the limit of two
+		// undos bounds it, and it never clears the cooldown a resolve set.
+		r.With(rateGate.TakeBackMiddleware()).Post("/api/reports/{id}/unresolve", handlers.CastVote(deps.Votes, service.VoteKindResolution, service.VoteUnresolve))
 		// POST /api/reports/{id}/flag (plan 04-20, D-09). Gated because a flag
 		// must belong to a verified account. A flat literal path like the vote
 		// routes. The flag bucket and the network backstop run in

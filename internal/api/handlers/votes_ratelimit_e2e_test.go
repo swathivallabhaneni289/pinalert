@@ -320,9 +320,38 @@ func TestVoteRateLimitChangeCooldown(t *testing.T) {
 	if reopen.Field != "rate_vote_change" {
 		t.Errorf("reopen after resolve: field=%q, want rate_vote_change (one shared resolution key)", reopen.Field)
 	}
+
+	// IN-S01: the take back, the Undo on the Mark resolved message, is never
+	// refused by the resolution cooldown. The limiter clock has moved only a
+	// few milliseconds since the resolve, well inside the 8 second Undo.
+	if got := p09Status(p09Vote(t, c, srv.URL, id1, "unresolve", map[string]any{})); got != http.StatusOK {
+		t.Fatalf("take back within a second of the resolve = %d, want 200", got)
+	}
+	// The other rapid changes stay limited: the take back did not clear the
+	// cooldown the resolve started.
+	if again := p09Decode429(t, p09Vote(t, c, srv.URL, id1, "resolve", p09NearBody())); again.Field != "rate_vote_change" {
+		t.Errorf("resolve again right after the take back: field=%q, want rate_vote_change", again.Field)
+	}
+	if again := p09Decode429(t, p09Vote(t, c, srv.URL, id1, "reopen", p09NearBody())); again.Field != "rate_vote_change" {
+		t.Errorf("reopen right after the take back: field=%q, want rate_vote_change", again.Field)
+	}
+
 	clk.Advance(30 * time.Second)
 	if got := p09Status(p09Vote(t, c, srv.URL, id1, "dispute", p09NearBody())); got != http.StatusOK {
 		t.Errorf("dispute after the wait = %d, want 200", got)
+	}
+
+	// A take back made once the cooldown has run out starts a cooldown of its
+	// own, so a quick resolve after it is still limited.
+	if got := p09Status(p09Vote(t, c, srv.URL, id2, "resolve", p09NearBody())); got != http.StatusOK {
+		t.Fatalf("resolve R2 = %d, want 200", got)
+	}
+	clk.Advance(31 * time.Second)
+	if got := p09Status(p09Vote(t, c, srv.URL, id2, "unresolve", map[string]any{})); got != http.StatusOK {
+		t.Fatalf("take back R2 after the cooldown = %d, want 200", got)
+	}
+	if again := p09Decode429(t, p09Vote(t, c, srv.URL, id2, "resolve", p09NearBody())); again.Field != "rate_vote_change" || again.RetryAfterHeader != "30" {
+		t.Errorf("resolve R2 right after the take back: field=%q Retry-After=%q, want rate_vote_change 30", again.Field, again.RetryAfterHeader)
 	}
 }
 

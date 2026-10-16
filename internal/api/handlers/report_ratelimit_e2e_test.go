@@ -101,13 +101,15 @@ func (s *p15Screener) Screen(_ context.Context, text string) (moderation.Result,
 func p15Tweak(clk *p15Clock, scr *p15Screener, mutate func(d *api.Deps)) func(d *api.Deps, q *sqlcgen.Queries) {
 	return func(d *api.Deps, q *sqlcgen.Queries) {
 		d.RateLimits = api.RateLimits{
-			ReportSerious: p15Open,
-			ReportOther:   p15Open,
-			Vote:          p15Open,
-			VoteChange:    p15Open,
-			Flag:          p15Open,
-			SubmitAttempt: p15Open,
-			IPBackstop:    p15Open,
+			ReportSerious:    p15Open,
+			ReportOther:      p15Open,
+			Vote:             p15Open,
+			VoteChange:       p15Open,
+			Flag:             p15Open,
+			SubmitAttempt:    p15Open,
+			IPBackstopReport: p15Open,
+			IPBackstopVote:   p15Open,
+			IPBackstopFlag:   p15Open,
 		}
 		d.LimiterClock = clk.Now
 		d.RequestLinkRateLimit = api.RequestLinkRateLimit{Burst: 100, Every: time.Millisecond}
@@ -496,7 +498,7 @@ func TestReportRateLimitBody(t *testing.T) {
 		clk := newP15Clock(0)
 		srv, mailer, pool := newE2EServerWith(t, p15Tweak(clk, nil, func(d *api.Deps) {
 			d.ClientIPHeader = p15IPHeader
-			d.RateLimits.IPBackstop = api.BucketLimit{Every: time.Hour, Burst: 1}
+			d.RateLimits.IPBackstopReport = api.BucketLimit{Every: time.Hour, Burst: 1}
 		}))
 		a := newVerifiedClient(t, srv, mailer, "p15-ip-a@example.com")
 		b := newVerifiedClient(t, srv, mailer, "p15-ip-b@example.com")
@@ -505,12 +507,15 @@ func TestReportRateLimitBody(t *testing.T) {
 		if !got.Serious || got.EmergencyNumber != "112" || got.RetryAfterHeader != "3600" {
 			t.Fatalf("a critical again: %+v", got)
 		}
-		if got.Message != service.ReportLimitMessage(true, time.Hour) {
-			t.Fatalf("a critical again: message = %q", got.Message)
+		if got.Message != service.NetworkLimitMessage(true, time.Hour) {
+			t.Fatalf("a critical again: message = %q, want the network message", got.Message)
 		}
 		got = p15Blocked(t, "b low", b, srv.URL, p15Body("flood", "low", p15Valid), "203.0.113.7")
 		if got.Serious || got.HasNumber {
 			t.Fatalf("b low: %+v", got)
+		}
+		if got.Message != service.NetworkLimitMessage(true, time.Hour) {
+			t.Fatalf("b low: message = %q, want the network message", got.Message)
 		}
 		p15Expect(t, "a low other ip", a, srv.URL, p15Body("flood", "low", p15Valid), "203.0.113.8", http.StatusCreated)
 		p15Expect(t, "a low no header", a, srv.URL, p15Body("flood", "low", p15Valid), "", http.StatusCreated)
@@ -520,17 +525,61 @@ func TestReportRateLimitBody(t *testing.T) {
 	t.Run("backstop_off_without_setting", func(t *testing.T) {
 		clk := newP15Clock(0)
 		srv, mailer, _ := newE2EServerWith(t, p15Tweak(clk, nil, func(d *api.Deps) {
-			d.RateLimits.IPBackstop = api.BucketLimit{Every: time.Hour, Burst: 1}
+			d.RateLimits.IPBackstopReport = api.BucketLimit{Every: time.Hour, Burst: 1}
 		}))
 		a := newVerifiedClient(t, srv, mailer, "p15-off-a@example.com")
 		for i := 0; i < 3; i++ {
 			p15Expect(t, "post "+strconv.Itoa(i), a, srv.URL, p15Body("flood", "low", p15Valid), "203.0.113.7", http.StatusCreated)
 		}
 	})
+
+	// WR-S02: each action family has its own backstop, so votes from one
+	// shared address cannot starve report posting from it, and the vote
+	// refusal uses the neutral network sentence.
+	t.Run("votes_do_not_starve_reports", func(t *testing.T) {
+		clk := newP15Clock(0)
+		srv, mailer, pool := newE2EServerWith(t, p15Tweak(clk, nil, func(d *api.Deps) {
+			d.ClientIPHeader = p15IPHeader
+			d.RateLimits.IPBackstopVote = api.BucketLimit{Every: time.Hour, Burst: 1}
+		}))
+		a := newVerifiedClient(t, srv, mailer, "p15-family-a@example.com")
+		b := newVerifiedClient(t, srv, mailer, "p15-family-b@example.com")
+		vote := func(client *http.Client) *http.Response {
+			t.Helper()
+			req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/reports/900001/confirm",
+				bytes.NewReader([]byte(`{"latitude":12.9716,"longitude":77.5946}`)))
+			if err != nil {
+				t.Fatalf("building vote request: %v", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set(p15IPHeader, "203.0.113.7")
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("POST vote: %v", err)
+			}
+			return resp
+		}
+		first := vote(b)
+		first.Body.Close()
+		if first.StatusCode != http.StatusNotFound {
+			t.Fatalf("first vote = %d, want 404 (admitted, missing report)", first.StatusCode)
+		}
+		got := p15Decode429(t, vote(a))
+		if got.Field != "rate_vote" || got.Serious || got.HasNumber {
+			t.Fatalf("second vote: %+v, want rate_vote, serious false, no number", got)
+		}
+		if got.Message != service.NetworkLimitMessage(false, time.Hour) {
+			t.Fatalf("second vote: message = %q, want the network message", got.Message)
+		}
+		p15Expect(t, "a low from the same address", a, srv.URL, p15Body("flood", "low", p15Valid), "203.0.113.7", http.StatusCreated)
+		p15Expect(t, "a critical from the same address", a, srv.URL, p15Body("flood", "critical", p15Valid), "203.0.113.7", http.StatusCreated)
+		p15WantCount(t, pool, 2)
+	})
 }
 
-// p15BackstopBucketName is the bucket name 04-09 logs for the network backstop.
-const p15BackstopBucketName = "ip_backstop"
+// p15BackstopBucketName is the bucket name the gate logs for the report
+// family of the network backstop (WR-S02).
+const p15BackstopBucketName = "ip_backstop_report"
 
 // p15FailInsertsWithMarker makes any insert whose description holds
 // p15InsertFailsMarker fail with a real database error, whichever query or
@@ -702,7 +751,7 @@ func TestReportRateLimitLogsBlocks(t *testing.T) {
 		d.ClientIPHeader = p15IPHeader
 		d.RateLimits.ReportOther = api.BucketLimit{Every: time.Hour, Burst: 1}
 		d.RateLimits.ReportSerious = api.BucketLimit{Every: time.Hour, Burst: 1}
-		d.RateLimits.IPBackstop = api.BucketLimit{Every: time.Hour, Burst: 2}
+		d.RateLimits.IPBackstopReport = api.BucketLimit{Every: time.Hour, Burst: 2}
 	}))
 	const email = "p15-log-a@example.com"
 	const ip = "203.0.113.7"

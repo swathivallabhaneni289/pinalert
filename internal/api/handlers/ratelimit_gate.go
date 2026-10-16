@@ -30,8 +30,8 @@ type BucketLimit struct {
 	Burst int
 }
 
-// RateLimits holds the seven D-11 shapes. The api package aliases this type and
-// owns the defaults.
+// RateLimits holds the six account shapes of D-11 and the three network
+// backstop shapes. The api package aliases this type and owns the defaults.
 type RateLimits struct {
 	// ReportSerious is the allowance for serious reports, keyed per account.
 	ReportSerious BucketLimit
@@ -47,9 +47,14 @@ type RateLimits struct {
 	// SubmitAttempt is the allowance for submit attempts of any outcome, keyed
 	// per account, protecting the screening provider.
 	SubmitAttempt BucketLimit
-	// IPBackstop is the loose network address backstop, keyed on the client IP
-	// and used only when a deploy setting names the header carrying it.
-	IPBackstop BucketLimit
+	// IPBackstopReport, IPBackstopVote and IPBackstopFlag are the loose network
+	// address backstop, one bucket per action family keyed on the client IP, so
+	// votes from a shared carrier address can never starve report posting
+	// (WR-S02). They are used only when a deploy setting names the header
+	// carrying the client IP.
+	IPBackstopReport BucketLimit
+	IPBackstopVote   BucketLimit
+	IPBackstopFlag   BucketLimit
 }
 
 // RateLimitResponse is the one 429 body of every Phase 4 limiter. The
@@ -65,7 +70,13 @@ type RateLimitResponse struct {
 const (
 	voteBucket       = "vote"
 	voteChangeBucket = "vote_change"
-	ipBackstopBucket = "ip_backstop"
+
+	// The network backstop buckets, one per action family. The names go to
+	// the block log only, so the owner can see which family a shared address
+	// ever filled.
+	ipBackstopReportBucket = "ip_backstop_report"
+	ipBackstopVoteBucket   = "ip_backstop_vote"
+	ipBackstopFlagBucket   = "ip_backstop_flag"
 
 	voteRateField       = "rate_vote"
 	voteChangeRateField = "rate_vote_change"
@@ -88,15 +99,17 @@ const (
 
 // RateGate holds the Phase 4 rate limit buckets.
 type RateGate struct {
-	flag          *ratelimit.PerKey
-	vote          *ratelimit.PerKey
-	voteChange    *ratelimit.PerKey
-	ipBackstop    *ratelimit.PerKey
-	reportSerious *ratelimit.PerKey
-	reportOther   *ratelimit.PerKey
-	submitAttempt *ratelimit.PerKey
-	backstopOn    bool
-	chrome        Chrome
+	flag             *ratelimit.PerKey
+	vote             *ratelimit.PerKey
+	voteChange       *ratelimit.PerKey
+	ipBackstopReport *ratelimit.PerKey
+	ipBackstopVote   *ratelimit.PerKey
+	ipBackstopFlag   *ratelimit.PerKey
+	reportSerious    *ratelimit.PerKey
+	reportOther      *ratelimit.PerKey
+	submitAttempt    *ratelimit.PerKey
+	backstopOn       bool
+	chrome           Chrome
 }
 
 // bucketConfig turns one limit into a PerKey config. It sets no idle window, so
@@ -112,15 +125,17 @@ func NewRateGate(limits RateLimits, clock func() time.Time, clientIPHeader strin
 		clock = time.Now
 	}
 	return &RateGate{
-		flag:          ratelimit.NewPerKey(bucketConfig(limits.Flag, clock)),
-		vote:          ratelimit.NewPerKey(bucketConfig(limits.Vote, clock)),
-		voteChange:    ratelimit.NewPerKey(bucketConfig(limits.VoteChange, clock)),
-		ipBackstop:    ratelimit.NewPerKey(bucketConfig(limits.IPBackstop, clock)),
-		reportSerious: ratelimit.NewPerKey(bucketConfig(limits.ReportSerious, clock)),
-		reportOther:   ratelimit.NewPerKey(bucketConfig(limits.ReportOther, clock)),
-		submitAttempt: ratelimit.NewPerKey(bucketConfig(limits.SubmitAttempt, clock)),
-		backstopOn:    strings.TrimSpace(clientIPHeader) != "",
-		chrome:        chrome,
+		flag:             ratelimit.NewPerKey(bucketConfig(limits.Flag, clock)),
+		vote:             ratelimit.NewPerKey(bucketConfig(limits.Vote, clock)),
+		voteChange:       ratelimit.NewPerKey(bucketConfig(limits.VoteChange, clock)),
+		ipBackstopReport: ratelimit.NewPerKey(bucketConfig(limits.IPBackstopReport, clock)),
+		ipBackstopVote:   ratelimit.NewPerKey(bucketConfig(limits.IPBackstopVote, clock)),
+		ipBackstopFlag:   ratelimit.NewPerKey(bucketConfig(limits.IPBackstopFlag, clock)),
+		reportSerious:    ratelimit.NewPerKey(bucketConfig(limits.ReportSerious, clock)),
+		reportOther:      ratelimit.NewPerKey(bucketConfig(limits.ReportOther, clock)),
+		submitAttempt:    ratelimit.NewPerKey(bucketConfig(limits.SubmitAttempt, clock)),
+		backstopOn:       strings.TrimSpace(clientIPHeader) != "",
+		chrome:           chrome,
 	}
 }
 
@@ -143,11 +158,12 @@ func retryAfterSeconds(wait time.Duration) int {
 	return int((wait + time.Second - 1) / time.Second)
 }
 
-// reserveIPBackstop takes one token of the network backstop for the request's
-// client IP. It admits the request without spending anything when the backstop
-// is off or when the router found no valid client address. It never falls back
-// to the connection's peer address and never shares one bucket.
-func (g *RateGate) reserveIPBackstop(r *http.Request) ratelimit.Decision {
+// reserveIPBackstop takes one token of one action family's network backstop
+// for the request's client IP. It admits the request without spending
+// anything when the backstop is off or when the router found no valid client
+// address. It never falls back to the connection's peer address and never
+// shares one bucket.
+func (g *RateGate) reserveIPBackstop(r *http.Request, family *ratelimit.PerKey) ratelimit.Decision {
 	if !g.backstopOn {
 		return ratelimit.Decision{OK: true, Cancel: func() {}}
 	}
@@ -155,7 +171,7 @@ func (g *RateGate) reserveIPBackstop(r *http.Request) ratelimit.Decision {
 	if ip == "" {
 		return ratelimit.Decision{OK: true, Cancel: func() {}}
 	}
-	return g.ipBackstop.Reserve(ip)
+	return family.Reserve(ip)
 }
 
 // writeRateLimited writes the one Phase 4 429 shape: a Retry-After header in
@@ -201,8 +217,13 @@ func (g *RateGate) AdmitReport(w http.ResponseWriter, r *http.Request, accountID
 		return func() {}, false
 	}
 
-	if d := g.reserveIPBackstop(r); !d.OK {
-		return refuse(ipBackstopBucket, d.RetryAfter)
+	if d := g.reserveIPBackstop(r, g.ipBackstopReport); !d.OK {
+		// The network refusal keeps the serious flag and the number, so a
+		// serious post still shows the emergency line, but its sentence never
+		// blames the person: the address may be shared by many phones.
+		logBlock(ipBackstopReportBucket, accountID, d.RetryAfter)
+		writeRateLimited(w, reportRateField, service.NetworkLimitMessage(true, d.RetryAfter), d.RetryAfter, serious, number)
+		return func() {}, false
 	}
 	key := accountKey(accountID)
 	if d := g.submitAttempt.Reserve(key); !d.OK {
@@ -226,6 +247,27 @@ func (g *RateGate) AdmitReport(w http.ResponseWriter, r *http.Request, accountID
 // is refunded at its reservation instant whenever the wrapped handler answers
 // outside 200 to 299, a panic included, so a refused vote never burns it.
 func (g *RateGate) VoteMiddleware(kind service.VoteKind) func(http.Handler) http.Handler {
+	return g.voteMiddleware(kind, false)
+}
+
+// TakeBackMiddleware throttles the take back route (POST .../unresolve, the
+// Undo after Mark resolved, Phase 3.1 D-22) like VoteMiddleware on the
+// resolution kind, with one difference (IN-S01): the resolution cooldown
+// never refuses a take back. The Undo on the message is shown for 8 seconds
+// after a Mark resolved, inside the 30 second cooldown that mark started, so
+// a refusal would make that Undo always fail. The take back is already
+// bounded by the limit of two undos per account and report, by the vote
+// bucket and by the network backstop. It still takes the cooldown token when
+// one is free, so a take back starts a cooldown of its own, and it never
+// clears one: a quick re-resolve after an Undo stays limited as before.
+func (g *RateGate) TakeBackMiddleware() func(http.Handler) http.Handler {
+	return g.voteMiddleware(service.VoteKindResolution, true)
+}
+
+// voteMiddleware is VoteMiddleware and TakeBackMiddleware. takeBack true
+// admits a request the cooldown would refuse, without spending or refunding
+// anything from the cooldown for it.
+func (g *RateGate) voteMiddleware(kind service.VoteKind, takeBack bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			acc, ok := account.FromContext(r.Context())
@@ -234,9 +276,9 @@ func (g *RateGate) VoteMiddleware(kind service.VoteKind) func(http.Handler) http
 				return
 			}
 
-			if d := g.reserveIPBackstop(r); !d.OK {
-				logBlock(ipBackstopBucket, acc.ID, d.RetryAfter)
-				writeRateLimited(w, voteRateField, service.VoteLimitMessage(d.RetryAfter), d.RetryAfter, false, "")
+			if d := g.reserveIPBackstop(r, g.ipBackstopVote); !d.OK {
+				logBlock(ipBackstopVoteBucket, acc.ID, d.RetryAfter)
+				writeRateLimited(w, voteRateField, service.NetworkLimitMessage(false, d.RetryAfter), d.RetryAfter, false, "")
 				return
 			}
 
@@ -254,6 +296,12 @@ func (g *RateGate) VoteMiddleware(kind service.VoteKind) func(http.Handler) http
 			}
 
 			change := g.voteChange.Reserve(voteChangeKey(acc.ID, id, kind))
+			if !change.OK && takeBack {
+				// A refused Reserve took nothing, so the running cooldown
+				// is left exactly as the earlier vote set it.
+				next.ServeHTTP(w, r)
+				return
+			}
 			if !change.OK {
 				logBlock(voteChangeBucket, acc.ID, change.RetryAfter)
 				writeRateLimited(w, voteChangeRateField, service.VoteChangeLimitMessage(change.RetryAfter), change.RetryAfter, false, "")
@@ -284,9 +332,9 @@ func (g *RateGate) FlagMiddleware() func(http.Handler) http.Handler {
 				return
 			}
 
-			if d := g.reserveIPBackstop(r); !d.OK {
-				logBlock(ipBackstopBucket, acc.ID, d.RetryAfter)
-				writeRateLimited(w, flagRateField, service.FlagLimitMessage(d.RetryAfter), d.RetryAfter, false, "")
+			if d := g.reserveIPBackstop(r, g.ipBackstopFlag); !d.OK {
+				logBlock(ipBackstopFlagBucket, acc.ID, d.RetryAfter)
+				writeRateLimited(w, flagRateField, service.NetworkLimitMessage(false, d.RetryAfter), d.RetryAfter, false, "")
 				return
 			}
 

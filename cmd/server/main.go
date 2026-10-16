@@ -74,8 +74,8 @@ const (
 // The D-11 budgets, the one named place for every Phase 4 limit number. Each
 // bucket allows Burst at once and then one more every Every. The vote cooldown
 // is burst 1: a second vote of one kind on one report waits a full Every. The
-// submit attempt and network backstop shapes are research defaults that protect
-// the screening provider and the server. api.RateLimitsDefault mirrors these
+// submit attempt shape is a research default that protects the screening
+// provider; the network backstop has its own block below. api.RateLimitsDefault mirrors these
 // values for Deps literals that leave a field zero. Each bucket's idle window
 // follows from burst times refill (04-03).
 const (
@@ -91,8 +91,34 @@ const (
 	flagEvery          = 2 * time.Minute
 	submitAttemptBurst = 20
 	submitAttemptEvery = 6 * time.Second
-	ipBackstopBurst    = 60
-	ipBackstopEvery    = 20 * time.Second
+)
+
+// The network backstop (WR-S02), keyed on the client address and on only when
+// CLIENT_IP_HEADER is set. India's carrier NAT puts many phones behind one
+// address, so each action family has its own bucket (votes cannot starve
+// report posting) and each is sized so that about 100 accounts behind one
+// address, each at its own per account limit above, never meet it. One
+// machine flooding from one address through many accounts is still capped.
+//   - Votes: burst 2000 = 100 x voteBurst 20; one more every 150 ms
+//     (6.7 a second) = 100 x one per voteEvery 15 s.
+//   - Reports: burst 2000 = 100 x submitAttemptBurst 20, which covers every
+//     account's 5 serious plus 8 other posts with room for rejected tries;
+//     one more every second, above the 100 accounts' combined posting refill
+//     of 100 x (one per 5 minutes plus one per 15 minutes), about 0.44 a
+//     second, and still a cap of 60 posts a minute from one address.
+//   - Flags: burst 1000 = 100 x flagBurst 10; one more every 1.2 s =
+//     100 x one per flagEvery 2 minutes.
+//
+// These are not owner numbers (D-11 sets only the account allowances); tune
+// them from the block log, whose bucket names are ip_backstop_report,
+// ip_backstop_vote and ip_backstop_flag. api.RateLimitsDefault mirrors them.
+const (
+	ipBackstopReportBurst = 2000
+	ipBackstopReportEvery = time.Second
+	ipBackstopVoteBurst   = 2000
+	ipBackstopVoteEvery   = 150 * time.Millisecond
+	ipBackstopFlagBurst   = 1000
+	ipBackstopFlagEvery   = 1200 * time.Millisecond
 )
 
 func main() {
@@ -285,15 +311,18 @@ func main() {
 			Every: placeRateLimitEvery,
 		},
 		ClientIPHeader: clientIPHeader,
-		// The seven D-11 shapes from the constants block above.
+		// The six D-11 account shapes and the three network backstop shapes
+		// from the constants blocks above.
 		RateLimits: api.RateLimits{
-			ReportSerious: api.BucketLimit{Every: reportSeriousEvery, Burst: reportSeriousBurst},
-			ReportOther:   api.BucketLimit{Every: reportOtherEvery, Burst: reportOtherBurst},
-			Vote:          api.BucketLimit{Every: voteEvery, Burst: voteBurst},
-			VoteChange:    api.BucketLimit{Every: voteChangeEvery, Burst: voteChangeBurst},
-			Flag:          api.BucketLimit{Every: flagEvery, Burst: flagBurst},
-			SubmitAttempt: api.BucketLimit{Every: submitAttemptEvery, Burst: submitAttemptBurst},
-			IPBackstop:    api.BucketLimit{Every: ipBackstopEvery, Burst: ipBackstopBurst},
+			ReportSerious:    api.BucketLimit{Every: reportSeriousEvery, Burst: reportSeriousBurst},
+			ReportOther:      api.BucketLimit{Every: reportOtherEvery, Burst: reportOtherBurst},
+			Vote:             api.BucketLimit{Every: voteEvery, Burst: voteBurst},
+			VoteChange:       api.BucketLimit{Every: voteChangeEvery, Burst: voteChangeBurst},
+			Flag:             api.BucketLimit{Every: flagEvery, Burst: flagBurst},
+			SubmitAttempt:    api.BucketLimit{Every: submitAttemptEvery, Burst: submitAttemptBurst},
+			IPBackstopReport: api.BucketLimit{Every: ipBackstopReportEvery, Burst: ipBackstopReportBurst},
+			IPBackstopVote:   api.BucketLimit{Every: ipBackstopVoteEvery, Burst: ipBackstopVoteBurst},
+			IPBackstopFlag:   api.BucketLimit{Every: ipBackstopFlagEvery, Burst: ipBackstopFlagBurst},
 		},
 	}
 	router := api.NewRouter(deps)

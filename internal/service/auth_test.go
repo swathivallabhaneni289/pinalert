@@ -506,6 +506,64 @@ func TestRequestLinkClaimErrorSurfacesAsTransportError(t *testing.T) {
 	}
 }
 
+// TestAuthDatabaseErrorsCarryNoEmail is WR-S03: the handlers log these
+// errors with %v, so a database error in sign in must never put the visitor's
+// address into the server log. The injected errors hold no "@" themselves,
+// so any "@" in the result came from the service's own wrapping.
+func TestAuthDatabaseErrorsCarryNoEmail(t *testing.T) {
+	const email = "privacy-check@example.com"
+	dbErr := errors.New("connection reset by peer")
+	fixed := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	verifyFakes := func() *fakeAuthQuerier {
+		q, _ := newFakeQuerier()
+		q.tokenRow = sqlcgen.GetMagicLinkTokenByHashRow{Email: email, ExpiresAt: fixed.Add(time.Minute)}
+		q.sessionRowErr = pgx.ErrNoRows
+		q.consumeEmail = email
+		q.byEmailRow = sqlcgen.Account{ID: 7, Email: email}
+		return q
+	}
+
+	cases := []struct {
+		name string
+		run  func() error
+	}{
+		{"cooldown claim", func() error {
+			q, m, _ := newFakes()
+			q.cooldownClaimErr = dbErr
+			_, err := service.NewAuthService(q, m, "https://pinalert.example").RequestLink(context.Background(), email)
+			return err
+		}},
+		{"account insert", func() error {
+			q := verifyFakes()
+			q.insertErr = dbErr
+			svc := service.NewAuthService(q, &fakeMailer{calls: &[]string{}}, "https://pinalert.example", service.WithClock(func() time.Time { return fixed }))
+			_, _, err := svc.VerifyToken(context.Background(), "session-1", validRawToken(t))
+			return err
+		}},
+		{"account read", func() error {
+			q := verifyFakes()
+			q.byEmailErr = dbErr
+			svc := service.NewAuthService(q, &fakeMailer{calls: &[]string{}}, "https://pinalert.example", service.WithClock(func() time.Time { return fixed }))
+			_, _, err := svc.VerifyToken(context.Background(), "session-1", validRawToken(t))
+			return err
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.run()
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+			if !errors.Is(err, dbErr) {
+				t.Fatalf("error %q does not wrap the database error", err)
+			}
+			if strings.Contains(err.Error(), "@") {
+				t.Fatalf("error %q holds an email address", err)
+			}
+		})
+	}
+}
+
 // --- VerifyToken ---
 
 func newFakeQuerier() (*fakeAuthQuerier, *[]string) {

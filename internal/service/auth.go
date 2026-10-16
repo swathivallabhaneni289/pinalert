@@ -172,7 +172,9 @@ func (s *AuthService) RequestLink(ctx context.Context, rawEmail string) (string,
 			// already exists and is still within the window.
 			return "", ErrRateLimited
 		}
-		return "", fmt.Errorf("service: claiming email cooldown for %s: %w", email, err)
+		// No address in the message: the handler logs this error, and no
+		// email may reach the server log (WR-S03).
+		return "", fmt.Errorf("service: claiming email cooldown: %w", err)
 	}
 
 	raw, hash, err := auth.GenerateToken()
@@ -278,12 +280,14 @@ func (s *AuthService) VerifyToken(ctx context.Context, sessionID, rawToken strin
 		return "", "", fmt.Errorf("service: consuming magic-link token: %w", err)
 	}
 
+	// Neither message names the address: the handler logs these errors, and
+	// no email may reach the server log (WR-S03).
 	if err := s.q.InsertAccount(ctx, email); err != nil {
-		return "", "", fmt.Errorf("service: resolving account for %s: %w", email, err)
+		return "", "", fmt.Errorf("service: resolving account: %w", err)
 	}
 	account, err := s.q.GetAccountByEmail(ctx, email)
 	if err != nil {
-		return "", "", fmt.Errorf("service: reading resolved account for %s: %w", email, err)
+		return "", "", fmt.Errorf("service: reading resolved account: %w", err)
 	}
 
 	if err := s.q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{

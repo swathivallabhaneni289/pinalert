@@ -34,13 +34,15 @@ import (
 var e2eGenerousBucket = api.BucketLimit{Every: time.Millisecond, Burst: 1000}
 
 var e2eGenerousRateLimits = api.RateLimits{
-	ReportSerious: e2eGenerousBucket,
-	ReportOther:   e2eGenerousBucket,
-	Vote:          e2eGenerousBucket,
-	VoteChange:    e2eGenerousBucket,
-	Flag:          e2eGenerousBucket,
-	SubmitAttempt: e2eGenerousBucket,
-	IPBackstop:    e2eGenerousBucket,
+	ReportSerious:    e2eGenerousBucket,
+	ReportOther:      e2eGenerousBucket,
+	Vote:             e2eGenerousBucket,
+	VoteChange:       e2eGenerousBucket,
+	Flag:             e2eGenerousBucket,
+	SubmitAttempt:    e2eGenerousBucket,
+	IPBackstopReport: e2eGenerousBucket,
+	IPBackstopVote:   e2eGenerousBucket,
+	IPBackstopFlag:   e2eGenerousBucket,
 }
 
 // newE2EServer builds a real router with every dependency the access gate

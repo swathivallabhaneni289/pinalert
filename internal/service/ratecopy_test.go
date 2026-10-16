@@ -1,6 +1,6 @@
 package service_test
 
-// ratecopy_test.go is the TestServerCopy family member for the five server
+// ratecopy_test.go is the TestServerCopy family member for the server
 // composed rate limit messages and the wait phrase they share (04-PLAN-OUTLINE
 // "Server authored copy", plan 04-09). It reuses assertServerCopy from
 // servercopy_test.go and declares no fake.
@@ -56,6 +56,8 @@ func TestServerCopyRateLimits(t *testing.T) {
 		{"vote", service.VoteLimitMessage(15 * time.Second), "You're voting very quickly. You can vote again in 15 seconds."},
 		{"vote change", service.VoteChangeLimitMessage(30 * time.Second), "You changed this vote a moment ago. You can change it again in 30 seconds."},
 		{"flag", service.FlagLimitMessage(2 * time.Minute), "You've flagged several reports in a short time. You can flag another in 2 minutes."},
+		{"network", service.NetworkLimitMessage(false, 15*time.Second), "A lot of requests are coming from your network right now. You can try again in 15 seconds."},
+		{"network report", service.NetworkLimitMessage(true, time.Minute), "A lot of requests are coming from your network right now. You can try again in 1 minute. Your text is still here."},
 	}
 	for _, tc := range exact {
 		t.Run("exact "+tc.name, func(t *testing.T) {
@@ -74,6 +76,8 @@ func TestServerCopyRateLimits(t *testing.T) {
 		{"vote", service.VoteLimitMessage},
 		{"vote change", service.VoteChangeLimitMessage},
 		{"flag", service.FlagLimitMessage},
+		{"network", func(w time.Duration) string { return service.NetworkLimitMessage(false, w) }},
+		{"network report", func(w time.Duration) string { return service.NetworkLimitMessage(true, w) }},
 	}
 	waits := []time.Duration{time.Second, 15 * time.Second, 30 * time.Second, 5 * time.Minute, 15 * time.Minute, 2 * time.Hour}
 	for _, f := range forms {

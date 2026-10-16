@@ -71,13 +71,15 @@ func (c *p20Clock) Advance(d time.Duration) {
 func p20Tweak(clk *p20Clock, mutate func(d *api.Deps)) func(d *api.Deps, q *sqlcgen.Queries) {
 	return func(d *api.Deps, q *sqlcgen.Queries) {
 		d.RateLimits = api.RateLimits{
-			ReportSerious: p20Open,
-			ReportOther:   p20Open,
-			Vote:          p20Open,
-			VoteChange:    p20Open,
-			Flag:          p20Open,
-			SubmitAttempt: p20Open,
-			IPBackstop:    p20Open,
+			ReportSerious:    p20Open,
+			ReportOther:      p20Open,
+			Vote:             p20Open,
+			VoteChange:       p20Open,
+			Flag:             p20Open,
+			SubmitAttempt:    p20Open,
+			IPBackstopReport: p20Open,
+			IPBackstopVote:   p20Open,
+			IPBackstopFlag:   p20Open,
 		}
 		d.LimiterClock = clk.Now
 		d.RequestLinkRateLimit = api.RequestLinkRateLimit{Burst: 100, Every: time.Millisecond}
@@ -581,7 +583,7 @@ func TestFlagRateLimit(t *testing.T) {
 	t.Run("e the address backstop", func(t *testing.T) {
 		srv, mailer, _ := newE2EServerWith(t, p20Tweak(newP20Clock(), func(d *api.Deps) {
 			d.ClientIPHeader = p20IPHeader
-			d.RateLimits.IPBackstop = api.BucketLimit{Every: time.Hour, Burst: 1}
+			d.RateLimits.IPBackstopFlag = api.BucketLimit{Every: time.Hour, Burst: 1}
 		}))
 		a := newVerifiedClient(t, srv, mailer, "p20-rate-e-a@example.com")
 		b := newVerifiedClient(t, srv, mailer, "p20-rate-e-b@example.com")
@@ -594,6 +596,9 @@ func TestFlagRateLimit(t *testing.T) {
 		if got.Field != "rate_flag" || got.Serious {
 			t.Errorf("backstop 429 = %+v, want rate_flag and serious false", got)
 		}
+		if got.Message != service.NetworkLimitMessage(false, time.Hour) {
+			t.Errorf("backstop 429 message = %q, want the network message", got.Message)
+		}
 		p20Status(t, "C from .8", p20Flag(t, c, srv.URL, ids[0], "spam", "203.0.113.8"), http.StatusCreated)
 		p20Status(t, "D with no header", p20Flag(t, d, srv.URL, ids[0], "spam", ""), http.StatusCreated)
 	})
@@ -601,7 +606,7 @@ func TestFlagRateLimit(t *testing.T) {
 	t.Run("f block log lines", func(t *testing.T) {
 		srv, mailer, pool := newE2EServerWith(t, p20Tweak(newP20Clock(), func(d *api.Deps) {
 			d.ClientIPHeader = p20IPHeader
-			d.RateLimits.IPBackstop = api.BucketLimit{Every: time.Hour, Burst: 1}
+			d.RateLimits.IPBackstopFlag = api.BucketLimit{Every: time.Hour, Burst: 1}
 			d.RateLimits.Flag = api.BucketLimit{Every: time.Hour, Burst: 1}
 		}))
 		const emailB = "p20-rate-f-b@example.com"
@@ -629,7 +634,7 @@ func TestFlagRateLimit(t *testing.T) {
 		if len(blocks) != 2 {
 			t.Fatalf("block lines = %q, want 2", blocks)
 		}
-		if !strings.Contains(blocks[0], "bucket=ip_backstop ") || !strings.Contains(blocks[1], "bucket=flag ") {
+		if !strings.Contains(blocks[0], "bucket=ip_backstop_flag ") || !strings.Contains(blocks[1], "bucket=flag ") {
 			t.Errorf("block lines = %q, want the backstop then the flag bucket", blocks)
 		}
 		for _, line := range blocks {
