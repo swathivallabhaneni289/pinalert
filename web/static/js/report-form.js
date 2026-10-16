@@ -1090,10 +1090,11 @@
   // reportEarlierFailure handles a failed post whose form was closed while it
   // was out (WR-W03). A post that got no answer is saved on this device like
   // any other; a refused one is told in a toast with the server's reason and,
-  // for a serious wait, the emergency number. The form open now is never
-  // touched. Every failed post carries a numeric status; an error without one
-  // was thrown after a successful post by the closing code itself, so it is
-  // not told as a refusal.
+  // for a serious wait, the emergency number with a Call button on the toast
+  // that dials it, as the form's own tap to call link does. The form open now
+  // is never touched. Every failed post carries a numeric status; an error
+  // without one was thrown after a successful post by the closing code itself,
+  // so it is not told as a refusal.
   function reportEarlierFailure(payload, err, sent) {
     if (!err || typeof err.status !== 'number') {
       return;
@@ -1103,10 +1104,27 @@
       return;
     }
     var text = EARLIER_REFUSED_PREFIX + ((err && err.fieldMessage) || EARLIER_REFUSED_FALLBACK);
+    var action = null;
     if (err && err.serious === true && typeof err.emergencyNumber === 'string' && err.emergencyNumber !== '') {
       text += ' ' + EMERGENCY_CALL_PREFIX + err.emergencyNumber + EMERGENCY_CALL_SUFFIX;
+      action = callAction(err.emergencyNumber);
     }
-    Pinalert.showToast(text, null, LONG_TOAST_MS);
+    Pinalert.showToast(text, action, LONG_TOAST_MS);
+  }
+
+  // callAction is the toast action that dials number: the label and the
+  // accessible name are "Call {NUMBER}", the same name as the form's tap to
+  // call link, and a press opens the same tel: address. It returns nothing,
+  // so the toast closes after the press.
+  function callAction(number) {
+    return {
+      label: CALL_LABEL_PREFIX + number,
+      ariaLabel: CALL_LABEL_PREFIX + number,
+      onClick: function () {
+        window.location.href = 'tel:' + number;
+        return null;
+      }
+    };
   }
 
   // saveAfterWait saves a report blocked by a 429 as a Blocked row, so it sends

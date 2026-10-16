@@ -154,6 +154,7 @@ function setup(options) {
   const opener = make('button', 'open-report');
 
   const toasts = [];
+  const toastActions = [];
   const posts = [];
   const queueSaves = [];
   const queueDiscards = [];
@@ -166,7 +167,7 @@ function setup(options) {
     SEVERITY_LABELS: { low: '1 · Low', medium: '2 · Medium', critical: '3 · Critical' },
     iconClass: (c) => 'icon-glyph icon-glyph--' + c,
     setText: (el, v) => { el.textContent = v === null || v === undefined ? '' : String(v); },
-    showToast: (message) => { toasts.push(message); },
+    showToast: (message, action) => { toasts.push(message); toastActions.push(action || null); },
     lockPage: () => {},
     unlockPage: () => {},
     submitReport: (payload) => new Promise((resolve, reject) => {
@@ -193,6 +194,7 @@ function setup(options) {
   const window = {
     setTimeout: () => 0,
     clearTimeout: () => {},
+    location: { href: 'https://pinalert.example/' },
     PinalertQueue
   };
   const sandbox = { window, document: doc, CustomEvent, crypto, Map, Date, Math, JSON, Promise, Array, Object, isFinite, encodeURIComponent };
@@ -209,6 +211,8 @@ function setup(options) {
     el,
     opener,
     toasts,
+    toastActions,
+    window,
     posts,
     queueSaves,
     queueDiscards,
@@ -339,6 +343,26 @@ test('a refused earlier post over the serious limit still gives the emergency nu
   assertNewDraftUntouched(page);
   assert.equal(page.el('send-after-wait').hidden, true, 'the new form must not offer Send after the wait');
   assert.deepEqual(page.toasts, ['Your earlier report was not posted. Please wait 5 minutes. In an emergency, call 112 now.']);
+  const action = page.toastActions[0];
+  assert.ok(action, 'the serious toast must carry a Call action');
+  assert.equal(action.label, 'Call 112');
+  assert.equal(action.ariaLabel, 'Call 112');
+  const next = action.onClick();
+  assert.equal(page.window.location.href, 'tel:112', 'a press dials the number');
+  assert.ok(next === null || next === undefined, 'the toast closes after the press');
+  assertNewDraftUntouched(page);
+});
+
+test('a refused earlier post that is not a serious wait has no Call action', async () => {
+  const page = setup();
+  postThenReopen(page);
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 429, fieldMessage: 'Please wait 5 minutes.', retryAfterSeconds: 300,
+    serious: false, emergencyNumber: ''
+  }));
+  await settle();
+  assert.deepEqual(page.toasts, ['Your earlier report was not posted. Please wait 5 minutes.']);
+  assert.deepEqual(page.toastActions, [null]);
 });
 
 test('an earlier resend that succeeds removes only its own saved report', async () => {

@@ -90,8 +90,16 @@ func TestReviewFixWBLatePostLeavesNewForm(t *testing.T) {
 	p424Contains(t, "reportEarlierFailure", earlier,
 		"err.queueable === true", "saveToQueue(", "EARLIER_REFUSED_PREFIX", "EARLIER_REFUSED_FALLBACK",
 		"err.serious === true", "EMERGENCY_CALL_PREFIX + err.emergencyNumber + EMERGENCY_CALL_SUFFIX",
-		"Pinalert.showToast(text, null, LONG_TOAST_MS)")
+		"action = callAction(err.emergencyNumber);", "Pinalert.showToast(text, action, LONG_TOAST_MS)")
 	p424Lacks(t, "reportEarlierFailure", earlier, "formError", "focusField(", "submitButton", "closeForm(", "showLimitMessage(")
+	// The serious toast's Call button dials the number the way the form's tap to
+	// call link does, under the same accessible name.
+	p424Contains(t, "callAction", jsFunctionBody(t, form, "callAction(number)"),
+		"label: CALL_LABEL_PREFIX + number,", "ariaLabel: CALL_LABEL_PREFIX + number,",
+		"window.location.href = 'tel:' + number;")
+	if n := strings.Count(form, "var CALL_LABEL_PREFIX = 'Call ';"); n != 1 {
+		t.Errorf("CALL_LABEL_PREFIX is declared %d times as 'Call ', want 1", n)
+	}
 
 	wait := jsFunctionBody(t, form, "saveAfterWait()")
 	p424Ordered(t, "saveAfterWait", wait, "var session = formSession;", "if (session === formSession) {", "closeForm();",
