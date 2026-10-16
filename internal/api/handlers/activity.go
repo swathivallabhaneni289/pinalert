@@ -224,14 +224,15 @@ func buildActivityPage(page service.ActivityPage, current string, now time.Time)
 			pr.Tag = "Your dispute"
 			pr.Action = "You disputed this report"
 			pr.WhenText = "You disputed " + pr.When
-			pr.IconGlyph = "activity-glyph--dispute"
 		} else {
 			pr.Kind = activityKindVote
 			pr.Tag = "Your vote"
 			pr.Action = "You confirmed this report"
 			pr.WhenText = "You confirmed " + pr.When
-			pr.IconGlyph = "activity-glyph--vote"
 		}
+		// The disc shows the report's own category glyph on every card (UI-SPEC
+		// 3a); the part the card is in already says what the person did.
+		pr.IconGlyph = pr.CategoryGlyph
 		entries = append(entries, activityEntry{card: pr, at: vr.VotedAt})
 	}
 

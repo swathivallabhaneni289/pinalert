@@ -6,12 +6,15 @@ import (
 	"testing"
 )
 
-// This file holds the static contract tests of quick task 261013-wm5, the six
-// tab Activity page. Every helper and test name carries the wm5 prefix. Nothing
-// here needs a database or a server: the tests read the embedded template, the
-// script and the stylesheets and inspect the shipped text, like the other
-// contract files. The departures from the owner's picture and from the house
-// rules are written in .planning/sketches/004-activity-page/README.md.
+// This file holds the static contract tests of the My activity page. It began as
+// quick task 261013-wm5's six tab page tests and was amended 2026-10-16 by Phase
+// 3.4 (owner decision, 03.4-CONTEXT D-18 to D-21): the six tabs became five parts,
+// the tab script was removed, and the stylesheet became the laptop stack with
+// aligned columns. The helper and test names keep the wm5 prefix where they were
+// kept. Nothing here needs a database or a server: the tests read the embedded
+// template, the script and the stylesheets and inspect the shipped text, like the
+// other contract files. The Phase 3.1 and Phase 4 hands-on tests are walked on
+// this layout after Phase 3.4 is built.
 
 const wm5LaptopMedia = "@media (min-width: 900px)"
 
@@ -48,9 +51,11 @@ func wm5CardOpeningTag(t *testing.T, tmpl string) string {
 }
 
 // TestActivityPageTemplateMarkup pins the template: the stylesheet and script
-// order, the tab nav and the hooks each link carries, the card's tab and hidden
-// hooks inside its opening tag, the three chip words, no link inside a card
-// (W-08), and one empty state per tab written by a range.
+// order, the page heading and the data hooks of the page, the hub of five part
+// links, the five sections written by a range over the parts, the column head
+// row, the kept data attributes of the card and its six cells, no tab strip, no
+// email, no back link, no Log out form, no link or button inside a card (W-08),
+// and one empty state per part.
 func TestActivityPageTemplateMarkup(t *testing.T) {
 	tmpl := p13ReadTemplate(t, "profile.html.tmpl")
 
@@ -64,33 +69,64 @@ func TestActivityPageTemplateMarkup(t *testing.T) {
 
 	p13Ordered(t, tmpl, "scripts",
 		`/static/js/activity.js?v={{.AssetVersion}}" defer`,
-		`/static/js/activity-tabs.js?v={{.AssetVersion}}" defer`,
 		`/static/js/account-menu.js?v={{.AssetVersion}}" defer`)
-
-	nav := regexp.MustCompile(`(?s)<nav class="activity-tabs" aria-label="Activity views">(.*?)</nav>`).FindStringSubmatch(tmpl)
-	if nav == nil {
-		t.Fatal(`profile.html.tmpl has no <nav class="activity-tabs" aria-label="Activity views">`)
+	for _, gone := range []string{
+		"activity-tabs", `class="profile-logout"`, "profile-email", "profile-back-link", "activity-subtitle",
+		"{{.Email}}", "data-tabs=", "data-tab-empty", "activity-chip__word",
+	} {
+		if strings.Contains(tmpl, gone) {
+			t.Errorf("profile.html.tmpl still holds %q", gone)
+		}
 	}
-	p13Ordered(t, nav[1], "nav", `{{range .Tabs}}`,
-		`class="activity-tab"`, `href="{{.Href}}"`, `data-tab="{{.Key}}"`, `data-count="{{.Count}}"`,
-		`{{if .Selected}} aria-current="page"{{end}}`,
-		`<span class="activity-tab__label">{{.Label}}</span>`, `<span class="activity-tab__count">{{.Count}}</span>`)
+
+	mainTag := p25OpeningTag(t, tmpl, `<main class="profile-page"`)
+	for _, want := range []string{`data-account-id="{{.AccountID}}"`, `data-part="{{.CurrentPart}}"`} {
+		if !strings.Contains(mainTag, want) {
+			t.Errorf("the main tag %q does not contain %s", mainTag, want)
+		}
+	}
+	if !strings.Contains(tmpl, `<h1 class="activity-heading">My activity</h1>`) {
+		t.Errorf("the page heading My activity is missing")
+	}
+
+	hub := regexp.MustCompile(`(?s)<nav class="activity-hub" aria-label="My activity">(.*?)</nav>`).FindStringSubmatch(tmpl)
+	if hub == nil {
+		t.Fatal(`profile.html.tmpl has no <nav class="activity-hub" aria-label="My activity">`)
+	}
+	p13Ordered(t, hub[1], "hub", `{{range .Parts}}`, `class="activity-hub__row"`, `href="{{.Href}}"`,
+		`activity-hub__tile`, `app-icon--{{.Icon}}`, `activity-hub__name">{{.Name}}`, `activity-hub__summary">{{.Summary}}`,
+		`{{if .ShowCount}}`, `activity-hub__count">{{.Count}}`, `app-icon--chevron-right`)
+
+	// The five sections come from one range over the parts, in the order the Go
+	// list gives; TestActivityPartsRenderFromTheAddress counts the rendered ids.
+	section := regexp.MustCompile(`<section class="activity-part activity-part--\{\{\.Key\}\}" id="part-\{\{\.Key\}\}" data-part-key="\{\{\.Key\}\}"`)
+	if n := len(section.FindAllString(tmpl, -1)); n != 1 {
+		t.Errorf("the template writes the part section %d times, want once inside the range", n)
+	}
+	if !strings.Contains(tmpl, `{{if .Current}} data-current{{end}}`) {
+		t.Errorf("the part section does not write data-current from .Current")
+	}
+	p13Ordered(t, tmpl, "part head", `id="part-{{.Key}}-title">{{.Name}}{{if .ShowCount}} <span class="activity-part__count">{{.Count}}</span>{{end}}</h2>`, `activity-part__line">{{.Line}}`)
+
+	// The column head row and the six cells of a row, in the order the grid
+	// columns give them.
+	p13Ordered(t, tmpl, "column head row", `class="activity-cols"`, `>Report<`, `>Status<`, `>What happened<`, `>When<`, `>Distance<`)
+	p13Ordered(t, tmpl, "row cells",
+		`<li class="report-row`, `class="icon-badge activity-card__icon"`, `class="activity-card__report"`,
+		`class="activity-card__status"`, `class="activity-card__what"`, `class="activity-card__when"`,
+		`class="activity-card__distance"`, `</li>`)
+	if !strings.Contains(tmpl, `data-distance-for="{{.ReportID}}" data-lat="{{.Lat}}" data-lon="{{.Lon}}">Unknown</p>`) {
+		t.Errorf("the Distance cell does not carry data-distance-for, data-lat and data-lon and the word Unknown")
+	}
 
 	opening := wm5CardOpeningTag(t, tmpl)
-	for _, want := range []string{`data-tabs="{{.Tabs}}"`, `{{if .Hidden}}hidden{{end}}`, `activity-card--{{.Kind}}`} {
+	for _, want := range []string{`activity-card--{{.Kind}}`, `data-report-id="{{.ReportID}}"`, `data-trust="{{.TrustJSON}}"`, `data-can-reopen="true"`} {
 		if !strings.Contains(opening, want) {
 			t.Errorf("the card opening tag does not contain %s", want)
 		}
 	}
-
-	for _, word := range []string{
-		`activity-chip__word activity-chip__word--severity">{{.SeverityWord}}`,
-		`activity-chip__word activity-chip__word--resolved">Resolved`,
-		`activity-chip__word activity-chip__word--open">Not resolved`,
-	} {
-		if n := strings.Count(tmpl, word); n != 1 {
-			t.Errorf("chip word %q occurs %d times, want 1", word, n)
-		}
+	if strings.Contains(opening, "hidden") {
+		t.Errorf("the card opening tag still carries a hidden attribute, no card starts hidden now")
 	}
 
 	card := regexp.MustCompile(`(?s)<li class="report-row.*?</li>`).FindString(tmpl)
@@ -115,76 +151,74 @@ func TestActivityPageTemplateMarkup(t *testing.T) {
 		t.Errorf("the template card holds a button, the script mounts Reopen")
 	}
 
-	rangeAt := strings.LastIndex(tmpl, "{{range .Tabs}}")
-	emptyAt := strings.Index(tmpl, `data-tab-empty="{{.Key}}"`)
-	if rangeAt == -1 || emptyAt == -1 || rangeAt > emptyAt {
-		t.Errorf("the empty states are not written by a range over .Tabs (range at %d, empty at %d)", rangeAt, emptyAt)
+	// One empty state per part, written once inside the range, with the words
+	// the Go list owns; Ended nearby has its own shell with six states.
+	if n := strings.Count(tmpl, `<h3>{{.EmptyTitle}}</h3>`); n != 2 {
+		t.Errorf("the template writes the part empty title %d times, want 2 (the row parts and Ended nearby)", n)
 	}
-	if n := strings.Count(tmpl, "data-tab-empty="); n != 1 {
-		t.Errorf("data-tab-empty is written %d times, want once inside the range", n)
+	if n := strings.Count(tmpl, `<p>{{.EmptyText}}</p>`); n != 2 {
+		t.Errorf("the template writes the part empty text %d times, want 2 (the row parts and Ended nearby)", n)
 	}
-	for _, want := range []string{`{{if not .ShowEmpty}} hidden{{end}}`, `{{.EmptyTitle}}`, `{{.EmptyText}}`} {
-		if !strings.Contains(tmpl, want) {
-			t.Errorf("the empty state does not contain %s", want)
+	for _, id := range []string{
+		`id="ended-nearby"`, `id="ended-skeleton"`, `id="ended-resolved"`, `id="ended-faded"`,
+		`id="ended-empty" hidden`, `id="ended-location" hidden`, `id="ended-error" hidden`,
+	} {
+		if !strings.Contains(tmpl, id) {
+			t.Errorf("the Ended nearby shell lacks %s", id)
 		}
 	}
-
-	if !strings.Contains(tmpl, `<p class="activity-subtitle">A quick view of what's happening with your reports.</p>`) {
-		t.Errorf("the help line is missing or reworded")
+	for _, words := range []string{
+		"Ended nearby needs your location", "Open Nearby and allow location, then come back.",
+		"Couldn't load reports", "Check your connection and try again.", "Try again",
+	} {
+		if n := strings.Count(tmpl, words); n != 1 {
+			t.Errorf("the Ended nearby shell holds %q %d times, want 1", words, n)
+		}
+	}
+	// Only the skeleton is visible in the shell.
+	if strings.Contains(tmpl[strings.Index(tmpl, `id="ended-skeleton"`):], `id="ended-skeleton" hidden`) {
+		t.Errorf("the Ended nearby skeleton starts hidden")
 	}
 }
 
-// TestActivityTabsScriptContract pins activity-tabs.js (W-11, T-wm5-04): one
-// click listener, the address replaced and never pushed, only server written
-// data read, no markup sink, no network call, and scrolling limited to the
-// strip's own scroll position.
-func TestActivityTabsScriptContract(t *testing.T) {
-	raw := p16ReadStatic(t, "static/js/activity-tabs.js")
-	code := p13CodeLines(raw)
-
-	if n := strings.Count(raw, "addEventListener"); n != 1 {
-		t.Errorf("activity-tabs.js has %d addEventListener occurrences, want exactly 1", n)
+// TestActivityScriptKeepsTheBansOfTheRemovedTabScript replaces
+// TestActivityTabsScriptContract. The tab script is removed with the six tabs,
+// so the contract has no file to read; the bans it held (no markup sink, no
+// network call of its own, no scrolling of the page, no Date) are kept as a check
+// over activity.js, the one script of the page.
+func TestActivityScriptKeepsTheBansOfTheRemovedTabScript(t *testing.T) {
+	if _, err := StaticFS.ReadFile("static/js/activity-tabs.js"); err == nil {
+		t.Errorf("the removed tab script is still shipped")
 	}
-	if !strings.Contains(code, "window.history.replaceState(null, '', link.href)") {
-		t.Errorf("activity-tabs.js must call history.replaceState with the link's server built address")
-	}
-	if strings.Contains(code, "pushState") {
-		t.Errorf("activity-tabs.js uses the push form of the history API, a tab choice adds no Back steps")
-	}
-	p13MustContain(t, "activity-tabs.js", code,
-		"dataset.tabs", "dataset.tab", "dataset.count", "dataset.tabEmpty", "link.href",
-		"evt.button !== 0", "evt.metaKey", "evt.ctrlKey", "evt.shiftKey", "evt.altKey", "evt.preventDefault()",
-		"nav.scrollLeft")
-	p13MustNotContain(t, "activity-tabs.js", code,
+	code := p13CodeLines(p16ReadStatic(t, "static/js/activity.js"))
+	p13MustNotContain(t, "activity.js", code,
 		"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "createContextualFragment", "DOMParser",
-		"fetch(", "XMLHttpRequest", "sendBeacon", "Pinalert", "Date", "new Date",
-		"scrollIntoView", "window.scroll", "scrollTo(", "scrollBy(", "scrollingElement", "location.href =")
-	if n := strings.Count(code, "history."); n != 1 {
-		t.Errorf("activity-tabs.js touches the history object %d times, want 1", n)
-	}
+		"fetch(", "XMLHttpRequest", "sendBeacon", "new Date",
+		"scrollIntoView", "window.scroll", "scrollTo(", "scrollBy(", "scrollingElement", "location.href =", "pushState", "replaceState")
 }
 
-// TestActivityStylesheetContract pins activity.css: the hidden overrides
-// outside every media query, the laptop layout inside the 900px block, 44px
-// tabs, the drawn corners at their calc values, no important flag and no
-// clamp on a title.
+// TestActivityStylesheetContract pins activity.css: the hidden override outside
+// every media query, the hub and heading hidden by default, the laptop stack
+// inside the 900px block, the row grid shared by the head row and the rows, the
+// radius of the box, no important flag and no clamp on a title.
 func TestActivityStylesheetContract(t *testing.T) {
 	raw := p16ReadStatic(t, "static/css/activity.css")
 	rules := wm5ActivityRules(t)
 
-	if !strings.Contains(raw, "--u: 0.8px") {
-		t.Errorf("activity.css does not declare the one unit variable --u: 0.8px")
-	}
 	if strings.Contains(raw, "!important") {
 		t.Errorf("activity.css uses the important flag")
 	}
 	if strings.Contains(raw, "line-clamp") {
 		t.Errorf("activity.css clamps a title, a long word must wrap and a title is never clamped (A55)")
 	}
+	if !strings.Contains(raw, "minmax(0, 2.2fr)") {
+		t.Errorf("activity.css does not hold the Report column track minmax(0, 2.2fr)")
+	}
 
 	for _, head := range []string{
-		"main.profile-page .profile-report-list > .report-row[hidden]",
-		"main.profile-page .profile-activity > .activity-empty[hidden]",
+		"main.profile-page .activity-box [hidden]",
+		"main.profile-page > .activity-hub",
+		"main.profile-page > .activity-heading",
 	} {
 		r := wm5CSSRule(t, rules, "", head)
 		if r.Decls["display"] != "none" {
@@ -192,73 +226,77 @@ func TestActivityStylesheetContract(t *testing.T) {
 		}
 	}
 
-	// Laptop layout lives only inside the 900px block.
+	// The laptop stack lives only inside the 900px block.
 	for _, head := range []string{
-		"main.profile-page .profile-activity h2",
-		"main.profile-page .activity-tabs",
-		"main.profile-page .activity-tab",
-		"main.profile-page .activity-tab[aria-current=\"page\"]",
+		"main.profile-page > .activity-heading",
+		"main.profile-page .activity-part",
+		"main.profile-page .activity-box",
+		"main.profile-page .activity-cols",
 		"main.profile-page .profile-report-list > .activity-card",
-		"main.profile-page .activity-card .activity-chip",
-		"main.profile-page .profile-record",
 	} {
 		wm5CSSRule(t, rules, wm5LaptopMedia, head)
+	}
+	for _, head := range []string{"main.profile-page .activity-part", "main.profile-page .activity-cols"} {
 		for _, r := range rules {
-			// The card head also carries the all widths cursor rule and nothing
-			// else outside the block.
-			if r.Head == head && r.Media == "" && !(len(r.Decls) == 1 && r.Decls["cursor"] == "default") {
+			if r.Head == head && r.Media == "" {
 				t.Errorf("%s is also declared outside the 900px block, the laptop look must not reach phones", head)
 			}
 		}
 	}
 
-	tab := wm5CSSRule(t, rules, wm5LaptopMedia, "main.profile-page .activity-tab")
-	if tab.Decls["min-height"] != "44px" {
-		t.Errorf("tab min-height is %q, want 44px (W-14)", tab.Decls["min-height"])
+	part := wm5CSSRule(t, rules, wm5LaptopMedia, "main.profile-page .activity-part")
+	if part.Decls["grid-template-columns"] != "260px minmax(0, 1fr)" || part.Decls["gap"] != "40px" {
+		t.Errorf("a part is %q with gap %q, want 260px minmax(0, 1fr) and 40px", part.Decls["grid-template-columns"], part.Decls["gap"])
+	}
+	if !strings.Contains(part.Decls["border-top"], "1px solid var(--color-border)") {
+		t.Errorf("a part has border-top %q, want the hairline", part.Decls["border-top"])
+	}
+	box := wm5CSSRule(t, rules, wm5LaptopMedia, "main.profile-page .activity-box")
+	if box.Decls["border-radius"] != "12px" || box.Decls["overflow"] != "hidden" {
+		t.Errorf("the box has radius %q and overflow %q, want 12px and hidden", box.Decls["border-radius"], box.Decls["overflow"])
 	}
 
-	// The drawn corners, pinned at their calc values.
-	for _, c := range []struct{ head, radius string }{
-		{"main.profile-page .profile-report-list > .activity-card", "calc(14 * var(--u))"},
-		{"main.profile-page .activity-tab", "calc(16 * var(--u))"},
-		{"main.profile-page .activity-card .activity-card__tag", "calc(10 * var(--u))"},
-		{"main.profile-page .activity-card .activity-chip", "calc(10 * var(--u))"},
-		{"main.profile-page .activity-tab__count", "calc(13 * var(--u))"},
+	// The head row and the rows share one grid, so the columns line up.
+	const columns = "40px minmax(0, 2.2fr) 112px minmax(0, 1.5fr) 152px 72px"
+	head := wm5CSSRule(t, rules, wm5LaptopMedia, "main.profile-page .activity-cols")
+	row := wm5CSSRule(t, rules, wm5LaptopMedia, "main.profile-page .profile-report-list > .activity-card")
+	if head.Decls["grid-template-columns"] != columns {
+		t.Errorf("the head row columns are %q, want %q", head.Decls["grid-template-columns"], columns)
+	}
+	if row.Decls["grid-template-columns"] != columns {
+		t.Errorf("the row columns are %q, want the head row's %q", row.Decls["grid-template-columns"], columns)
+	}
+	if head.Decls["gap"] != row.Decls["gap"] || head.Decls["gap"] != "var(--space-md)" {
+		t.Errorf("the head row gap %q and the row gap %q must both be var(--space-md)", head.Decls["gap"], row.Decls["gap"])
+	}
+	if head.Decls["padding"] == row.Decls["padding"] {
+		// Not an error in itself, but the spec gives the two different padding.
+		t.Errorf("the head row and the rows have the same padding %q, the spec gives 8px and 16px", head.Decls["padding"])
+	}
+	if _, ok := row.Decls["height"]; ok {
+		t.Errorf("the row has a fixed height, the trust facts and Reopen need room")
+	}
+
+	// The chip and the disc follow the row's state class, so they follow a
+	// Reopen with no script.
+	for _, h := range []string{
+		"main.profile-page .activity-card.sev-critical .activity-chip",
+		"main.profile-page .activity-card.sev-medium .activity-chip",
+		"main.profile-page .activity-card.sev-low .activity-chip, main.profile-page .activity-card.vis-retracted .activity-chip",
+		"main.profile-page .activity-card.vis-hidden .activity-chip, main.profile-page .activity-card.vis-expired .activity-chip, main.profile-page .activity-card.vis-held .activity-chip, main.profile-page .activity-card.vis-removed .activity-chip",
 	} {
-		r := wm5CSSRule(t, rules, wm5LaptopMedia, c.head)
-		if r.Decls["border-radius"] != c.radius {
-			t.Errorf("%s border-radius is %q, want %q", c.head, r.Decls["border-radius"], c.radius)
-		}
+		wm5CSSRule(t, rules, "", h)
 	}
-	card := wm5CSSRule(t, rules, wm5LaptopMedia, "main.profile-page .profile-report-list > .activity-card")
-	if card.Decls["border-left"] != "calc(2 * var(--u)) solid var(--a-event)" {
-		t.Errorf("card bar is %q, want the 2u bar in the event colour", card.Decls["border-left"])
-	}
-	if card.Decls["min-height"] != "calc(122 * var(--u))" {
-		t.Errorf("card min-height is %q, want calc(122 * var(--u)), a card grows past the picture's height", card.Decls["min-height"])
-	}
-	if _, ok := card.Decls["height"]; ok {
-		t.Errorf("the card has a fixed height, the trust facts and Reopen need room")
-	}
-
-	// The chip shows exactly one word, chosen by the card's state class.
-	words := wm5CSSRule(t, rules, "", "main.profile-page .activity-card .activity-chip__word")
-	if words.Decls["display"] != "none" {
-		t.Errorf("chip words display is %q, want none until a state class shows one", words.Decls["display"])
-	}
-	wm5CSSRule(t, rules, "", "main.profile-page .activity-card:not(.vis-retracted):not(.vis-hidden) .activity-chip__word--severity")
-	wm5CSSRule(t, rules, "", "main.profile-page .activity-card.vis-retracted .activity-chip__word--resolved")
-	wm5CSSRule(t, rules, "", "main.profile-page .activity-card.vis-hidden .activity-chip__word--open")
 }
 
 // wm5Pair is one text pair of the page. Both names are custom properties of
 // activity.css or tokens of main.css.
 type wm5Pair struct{ fg, bg string }
 
-// TestActivityContrast checks every Activity text pair at 4.5 to 1 in both
-// themes, and the icon glyph pairs at 3 to 1 (W-14). Light values come from the
-// hex values of activity.css. Dark values come from the app tokens each
-// variable maps to in main.css.
+// TestActivityContrast checks every chip text pair of the Activity page at 4.5 to
+// 1 in both themes, plus the grey chip and the muted lines on the page colour.
+// Light values come from the hex values of activity.css. Dark values come from the
+// app tokens each variable maps to in main.css.
 func TestActivityContrast(t *testing.T) {
 	act := wm5ActivityRules(t)
 	main := p16ParseCSS("static/css/main.css", p16ReadStatic(t, "static/css/main.css"))
@@ -290,7 +328,7 @@ func TestActivityContrast(t *testing.T) {
 			t.Fatalf("variable %s does not resolve to a hex in %d steps", name, depth)
 		}
 		var value string
-		if strings.HasPrefix(name, "--a-") || name == "--u" {
+		if strings.HasPrefix(name, "--a-") {
 			value = lightAct[name]
 			if dark {
 				if v, ok := darkAct[name]; ok {
@@ -317,20 +355,14 @@ func TestActivityContrast(t *testing.T) {
 	}
 
 	text := []wm5Pair{
-		{"--a-h1", "--color-bg"},
-		{"--a-subtitle", "--color-bg"},
-		{"--a-title", "--a-card-bg"},
-		{"--a-sub", "--a-card-bg"},
-		{"--a-tab", "--color-bg"},
-		{"--a-tab", "--a-tab-hover-bg"},
-		{"--a-tab-sel-text", "--a-tab-sel-bg"},
-		{"--a-count-ink", "--a-count-bg"},
-		{"--a-tag-ink", "--a-tag-bg"},
 		{"--a-chip-critical-ink", "--a-chip-critical-bg"},
 		{"--a-chip-medium-ink", "--a-chip-medium-bg"},
 		{"--a-chip-low-ink", "--a-chip-low-bg"},
-		{"--a-chip-resolved-ink", "--a-chip-resolved-bg"},
-		{"--a-chip-open-ink", "--a-chip-open-bg"},
+		// The grey chip and the grey disc: the text token on the surface token.
+		{"--color-text", "--color-surface"},
+		// The muted lines sit on the page colour only.
+		{"--color-text-muted", "--color-bg"},
+		{"--color-text", "--color-bg"},
 	}
 	for _, dark := range []bool{false, true} {
 		theme := "light"
@@ -344,14 +376,32 @@ func TestActivityContrast(t *testing.T) {
 				t.Errorf("%s: %s %s on %s %s is %.2f to 1, want at least 4.5", theme, p.fg, fg, p.bg, bg, ratio)
 			}
 		}
-		for _, ev := range []string{"--a-ev-post", "--a-ev-vote", "--a-ev-dispute"} {
-			fg, bg := resolve("--a-icon-ink", dark, 0), resolve(ev, dark, 0)
-			ratio := wcagContrastRatio(t, fg, bg, ev+" ("+theme+")")
-			if ratio < 3.0 {
-				t.Errorf("%s: icon glyph %s on %s %s is %.2f to 1, want at least 3 for a graphic", theme, fg, ev, bg, ratio)
+	}
+}
+
+// TestActivityNoOpacity pins D-07: no row, card, text or chip of My activity is
+// faded. No declaration in activity.css, and none in the phone My activity
+// section of phone.css, sets an opacity below 1.
+func TestActivityNoOpacity(t *testing.T) {
+	opacity := regexp.MustCompile(`(?m)\bopacity\s*:\s*([^;}]+)`)
+	check := func(name, text string) {
+		t.Helper()
+		for _, m := range opacity.FindAllStringSubmatch(text, -1) {
+			v := strings.TrimSpace(m[1])
+			if v != "1" && v != "1.0" && v != "100%" {
+				t.Errorf("%s sets opacity %s, a disputed or expired row is marked by its grey disc and chip, never by fading (D-07)", name, v)
 			}
 		}
 	}
+	check("activity.css", p16ReadStatic(t, "static/css/activity.css"))
+
+	phone := p16ReadStatic(t, "static/css/phone.css")
+	start := strings.Index(phone, "/* 03.4 my activity")
+	end := strings.Index(phone, "/* ---- The report detail")
+	if start == -1 || end == -1 || end < start {
+		t.Fatalf("phone.css has no /* 03.4 my activity section before the report detail section")
+	}
+	check("the phone My activity section", phone[start:end])
 }
 
 // TestActivityUndosUsedSentence pins plan 03.1-07 (D-22, C52). The template

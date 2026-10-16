@@ -92,10 +92,16 @@ func TestQueueActivityStrip(t *testing.T) {
 	if closeAt := strings.Index(profile[stripAt:], "</div>"); closeAt == -1 || strings.Contains(profile[stripAt:stripAt+closeAt], "<h2") {
 		t.Errorf("the strip container holds a hard coded h2 or is not closed")
 	}
-	headingAt := strings.Index(profile, "<h2>Activity</h2>")
-	reportsAt := strings.Index(profile, "{{if .Reports}}")
-	if headingAt == -1 || reportsAt == -1 || !(headingAt < stripAt && stripAt < reportsAt) {
-		t.Errorf("the strip must sit after <h2>Activity</h2> and before {{if .Reports}}")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to D-21):
+	// the page heading is the h1 My activity and the first part of the page is
+	// the hub, so the strip sits between them: at the top of the list and above
+	// the first section (CSS keeps it off the other phone part screens). The
+	// Phase 3.1 and Phase 4 hands-on tests are walked on this layout after Phase
+	// 3.4 is built.
+	headingAt := strings.Index(profile, `<h1 class="activity-heading">My activity</h1>`)
+	hubAt := strings.Index(profile, `<nav class="activity-hub"`)
+	if headingAt == -1 || hubAt == -1 || !(headingAt < stripAt && stripAt < hubAt) {
+		t.Errorf("the strip must sit after the My activity heading and before the hub")
 	}
 
 	const live = `<div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>`
@@ -151,7 +157,11 @@ func TestQueueActivityStrip(t *testing.T) {
 	rawActivity := p25ReadStatic(t, "static/js/activity.js")
 	activity := stripJSComments(rawActivity)
 	mountAt := strings.Index(activity, "PinalertQueue.mount(")
-	guardAt := strings.Index(activity, "var list = document.querySelector('.profile-report-list');")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to D-21):
+	// the five parts each hold their own list, so the guard reads the rows of
+	// all of them. The Phase 3.1 and Phase 4 hands-on tests are walked on this
+	// layout after Phase 3.4 is built.
+	guardAt := strings.Index(activity, "var rows = document.querySelectorAll('.profile-report-list .report-row');")
 	if n := strings.Count(activity, "PinalertQueue.mount("); n != 1 {
 		t.Fatalf("activity.js has %d mount calls, want 1", n)
 	}
@@ -173,7 +183,10 @@ func TestQueueActivityStrip(t *testing.T) {
 		}
 	}
 	fallback := jsFunctionBody(t, activity, "queueFocusFallback()")
-	for _, want := range []string{".profile-report-list", "closest('[hidden]')", ".profile-back-link"} {
+	// Amended 2026-10-16 by Phase 3.4: the back link is gone, so the fallback
+	// names the hub rows (the phone list) after the report lists, and only a
+	// control that is on screen counts.
+	for _, want := range []string{".profile-report-list", "closest('[hidden]')", ".activity-hub__row", "offsetParent"} {
 		if !strings.Contains(fallback, want) {
 			t.Errorf("queueFocusFallback lacks %q", want)
 		}
@@ -207,17 +220,26 @@ func TestQueueEditAndResendLink(t *testing.T) {
 	activity := stripJSComments(p25ReadStatic(t, "static/js/activity.js"))
 	queue := stripJSComments(p25ReadStatic(t, "static/js/queue.js"))
 
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to D-21):
+	// the back link that told the page which form page this device uses is gone,
+	// so the server writes the same fact as data-resend-page on the page and
+	// resendHref compares that attribute. It is still compared and never copied,
+	// and the target is one of two constants. The Phase 3.1 and Phase 4 hands-on
+	// tests are walked on this layout after Phase 3.4 is built.
 	body := jsFunctionBody(t, activity, "resendHref(record)")
 	for _, want := range []string{
-		"querySelector('.profile-back-link')", "getAttribute('href') === '/low'", "'/low'",
+		"queuePage.dataset.resendPage === '/low'", "'/low'",
 		"'?resend='", "encodeURIComponent(record.request_id)",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("resendHref lacks %q", want)
 		}
 	}
-	if n := strings.Count(body, "getAttribute("); n != 1 {
-		t.Errorf("resendHref calls getAttribute %d times, want 1", n)
+	if n := strings.Count(body, "getAttribute("); n != 0 {
+		t.Errorf("resendHref calls getAttribute %d times, want 0", n)
+	}
+	if profile := p25ReadTemplate(t, "profile.html.tmpl"); !strings.Contains(profile, `data-resend-page="{{if .LowDataDefault}}/low{{else}}/{{end}}"`) {
+		t.Errorf("profile.html.tmpl does not write data-resend-page from LowDataDefault")
 	}
 	for _, banned := range []string{"document.cookie", "view="} {
 		if strings.Contains(body, banned) {

@@ -462,8 +462,8 @@ func TestActivityCardWordsPerKind(t *testing.T) {
 	type want struct{ tag, action, icon, kind string }
 	cases := map[int64]want{
 		1: {"Your post", "You posted this report", "icon-glyph--flood", "post"},
-		2: {"Your vote", "You confirmed this report", "activity-glyph--vote", "vote"},
-		3: {"Your dispute", "You disputed this report", "activity-glyph--dispute", "dispute"},
+		2: {"Your vote", "You confirmed this report", "icon-glyph--flood", "vote"},
+		3: {"Your dispute", "You disputed this report", "icon-glyph--flood", "dispute"},
 	}
 	for id, w := range cases {
 		c := wm5Card(t, view, id)

@@ -38,9 +38,11 @@
     });
   }
 
-  var list = document.querySelector('.profile-report-list');
-  if (!list) {
-    // Guard the whole module behind the list's presence so this file is
+  // The five parts each hold their own list. The module works on the rows of
+  // all of them, and one click listener on the page covers every part.
+  var rows = document.querySelectorAll('.profile-report-list .report-row');
+  if (!rows.length) {
+    // Guard the whole module behind the rows' presence so this file is
     // inert if it is ever loaded on another page.
     return;
   }
@@ -48,17 +50,22 @@
   // The words that stand in place of Reopen once both undos are used (C52).
   var UNDOS_USED_SENTENCE = 'You have used both undos on this report.';
 
+  // The visibility value that reads as Disputed on the Status chip. The two
+  // chip words a reopened report can take are written by the template on the
+  // chip itself (data-word-disputed and data-word-ongoing), so this file holds
+  // no label of its own.
+  var HIDDEN_VISIBILITY_SLUG = 'hidden';
+
   // reopenBlocks maps a report id to the { controls, button, error } object
-  // the shared builder in votes.js returns, built as rows are rendered below. One delegated click listener on `list`
-  // (Task 3) looks entries up here rather than each row carrying its own
-  // listener.
+  // the shared builder in votes.js returns, built as rows are rendered below.
+  // One delegated click listener on the page (Task 3) looks entries up here
+  // rather than each row carrying its own listener.
   var reopenBlocks = {};
 
   // trustBlocks maps a report id to the trust block instance built for that
   // row, so the Reopen success path can refresh the right one.
   var trustBlocks = {};
 
-  var rows = list.querySelectorAll('.report-row');
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
 
@@ -81,7 +88,9 @@
     };
 
     var tag = PinalertVisibility.createVisibilityTag();
-    var body = row.querySelector('.report-row__body');
+    // The What happened cell is where the state word, the trust block, Reopen
+    // and the used both undos sentence go (D-21).
+    var body = row.querySelector('.activity-card__what');
     PinalertVisibility.updateVisibilityTag(tag, report);
     PinalertVisibility.applyVisibilityClass(row, report);
 
@@ -100,10 +109,14 @@
       PinalertTrust.updateTrustBlock(trustBlock, readRowTrust(row));
       trustBlocks[row.dataset.reportId] = trustBlock;
     } else if (body) {
-      // With no sentence to go before, the reference is null and the insert
-      // puts the label at the end of the body.
-      var moderationNote = body.querySelector('.report-row__moderation-note');
-      body.insertBefore(tag, moderationNote);
+      // A held or removed row has no trust block. The state label goes in front
+      // of the server sentence in the Report cell, so it is read first. The
+      // stylesheet draws the label once, in the Status chip. With no sentence to
+      // go before, the reference is null and the insert puts the label at the end
+      // of the cell.
+      var moderationNote = row.querySelector('.report-row__moderation-note');
+      var moderationHost = moderationNote ? moderationNote.parentNode : body;
+      moderationHost.insertBefore(tag, moderationNote);
     }
 
     // Reopen (Task 3, D-16 amended). The button's render condition is the
@@ -138,7 +151,7 @@
   // acceptance criterion). Ignores every click that did not land on a
   // .vote-btn--reopen — there is exactly one action this list ever
   // dispatches.
-  list.addEventListener('click', function (evt) {
+  document.querySelector('.profile-page').addEventListener('click', function (evt) {
     var btn = evt.target.closest('.vote-btn--reopen');
     if (!btn) {
       return;
@@ -193,6 +206,14 @@
       PinalertVisibility.updateVisibilityTag(tag, updated);
       PinalertVisibility.applyVisibilityClass(row, updated);
 
+      // The Status chip follows the response too: Disputed when the report is
+      // now hidden, Ongoing otherwise. A reopened post is unexpired by
+      // construction, so Expired and Resolved cannot be the answer here.
+      var chip = row.querySelector('.activity-chip');
+      if (chip && updated.visibility !== PinalertVotes.RETRACTED_VISIBILITY_SLUG) {
+        Pinalert.setText(chip, updated.visibility === HIDDEN_VISIBILITY_SLUG ? chip.dataset.wordDisputed : chip.dataset.wordOngoing);
+      }
+
       // R-08: the trust block refreshes from the trust object in the same
       // response. The updater never touches the open state, so an open panel
       // stays open.
@@ -224,27 +245,27 @@
 
   // resendHref gives the saved reports strip the address of the page that has a
   // report form, with the saved report's request id. The page is the Low data
-  // view when the server rendered the back link to it, else the main page. The
-  // back link is only compared and never copied, and the target is one of two
-  // constants.
+  // view when the server wrote that address as the page's resend page (the
+  // device's remembered choice), else the main page. The attribute is only
+  // compared and never copied, and the target is one of two constants.
   function resendHref(record) {
-    var back = document.querySelector('.profile-back-link');
-    var page = back && back.getAttribute('href') === '/low' ? '/low' : '/';
+    var page = queuePage && queuePage.dataset.resendPage === '/low' ? '/low' : '/';
     return page + '?resend=' + encodeURIComponent(record.request_id);
   }
 
   // queueFocusFallback is where focus goes when the last saved report leaves
-  // the strip with focus inside it: the first control in the report list that
-  // is not hidden, else the back link, else nothing. This page has no Report
-  // button, so it names its own place.
+  // the strip with focus inside it: the first control in the report lists that
+  // is on screen (a part the phone is not showing has no layout box), else the
+  // first row of the list, else nothing. This page has no Report button, so it
+  // names its own place.
   function queueFocusFallback() {
-    var controls = document.querySelectorAll('.profile-report-list button, .profile-report-list a[href]');
+    var controls = document.querySelectorAll('.profile-report-list button, .profile-report-list a[href], .activity-hub__row');
     for (var c = 0; c < controls.length; c++) {
-      if (!controls[c].closest('[hidden]')) {
+      if (!controls[c].closest('[hidden]') && controls[c].offsetParent !== null) {
         return controls[c];
       }
     }
-    return document.querySelector('.profile-back-link');
+    return null;
   }
 
   // readRowTrust parses the row's trust attribute, which is the server's
