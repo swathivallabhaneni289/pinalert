@@ -283,7 +283,7 @@ func TestSubmitChecked(t *testing.T) {
 		for _, c := range []combo{
 			{service.CategoryFlood, service.SeverityLow},
 			{service.CategoryFlood, service.SeverityCritical},
-			{service.CategoryRescueNeeded, service.SeverityLow},
+			{service.CategoryTraffic, service.SeverityLow},
 		} {
 			fq := newFakeSubmitQuerier()
 			fs := screenerWith(map[string]float64{"hate": service.RejectScoreThreshold})
@@ -408,7 +408,7 @@ func TestSubmitChecked(t *testing.T) {
 	t.Run("unfinished_serious_published", func(t *testing.T) {
 		for _, c := range []combo{
 			{service.CategoryFlood, service.SeverityCritical},
-			{service.CategoryRescueNeeded, service.SeverityLow},
+			{service.CategoryTraffic, service.SeverityCritical},
 		} {
 			fq := newFakeSubmitQuerier()
 			svc := service.NewReportService(fq, service.WithScreener(&fakeTextScreener{err: transient}))
@@ -418,6 +418,25 @@ func TestSubmitChecked(t *testing.T) {
 			}
 			if fq.inserts[0].ModerationState != "pending" || len(fq.checks) != 1 || fq.checks[0].Status != "pending" {
 				t.Fatalf("%v: state %q, check rows %d", c, fq.inserts[0].ModerationState, len(fq.checks))
+			}
+		}
+	})
+
+	t.Run("retired_rescue_category_refused_before_anything_is_stored", func(t *testing.T) {
+		for _, s := range service.Severities {
+			fq := newFakeSubmitQuerier()
+			fs := screenerWith(map[string]float64{})
+			svc := service.NewReportService(fq, service.WithScreener(fs))
+			_, err := svc.SubmitChecked(ctx, "s1", 7, submitInputFor(service.CategoryRescueNeeded, s))
+			var ve service.ValidationError
+			if !errors.As(err, &ve) || ve.Field != "category" || ve.Message != service.RescueNeededRetiredMessage {
+				t.Fatalf("severity %q: err %v, want the category ValidationError with the retired message", s, err)
+			}
+			if len(fq.inserts) != 0 || fq.checkCalls != 0 {
+				t.Fatalf("severity %q: stored something: %d inserts, %d check writes", s, len(fq.inserts), fq.checkCalls)
+			}
+			if fs.calls != 0 {
+				t.Fatalf("severity %q: the screener ran %d times, want 0", s, fs.calls)
 			}
 		}
 	})

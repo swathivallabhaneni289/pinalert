@@ -30,6 +30,7 @@ var seedCategories = []string{
 	"road_blocked",
 	"power_outage",
 	"shelter_open",
+	"traffic",
 	"rescue_needed",
 	"other",
 }

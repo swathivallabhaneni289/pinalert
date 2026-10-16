@@ -294,6 +294,27 @@ func p15WantCount(t *testing.T, pool *pgxpool.Pool, want int) {
 	}
 }
 
+// p15RescueRefused posts a rescue_needed report and requires the 400 on the
+// field category with the retired message. The refusal comes before the
+// posting allowance, so a caller that is blocked or not sees the same answer
+// and the report count does not change.
+func p15RescueRefused(t *testing.T, label string, client *http.Client, baseURL string) {
+	t.Helper()
+	raw := p15Expect(t, label, client, baseURL, p15Body("rescue_needed", "low", p15Valid), "", http.StatusBadRequest)
+	var out struct {
+		Error struct {
+			Field   string `json:"field"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("%s: decoding %s: %v", label, raw, err)
+	}
+	if out.Error.Field != "category" || out.Error.Message != service.RescueNeededRetiredMessage {
+		t.Fatalf("%s: field %q message %q, want category and %q", label, out.Error.Field, out.Error.Message, service.RescueNeededRetiredMessage)
+	}
+}
+
 const (
 	p15OtherMsg15Min = "You've posted several reports in a short time. You can post again in 15 minutes. Your text is still here."
 	p15SeriousMsg5   = "You've posted several serious reports in a short time. You can post again in 5 minutes. Your text is still here."
@@ -337,9 +358,9 @@ func TestReportRateLimit(t *testing.T) {
 		p15Expect(t, "critical "+strconv.Itoa(i), a, srv.URL, p15Body("flood", "critical", p15Valid), "", http.StatusCreated)
 	}
 	for i := 0; i < 2; i++ {
-		p15Expect(t, "rescue "+strconv.Itoa(i), a, srv.URL, p15Body("rescue_needed", "low", p15Valid), "", http.StatusCreated)
+		p15Expect(t, "traffic "+strconv.Itoa(i), a, srv.URL, p15Body("traffic", "critical", p15Valid), "", http.StatusCreated)
 	}
-	got = p15Blocked(t, "6th serious", a, srv.URL, p15Body("rescue_needed", "low", p15Valid), "")
+	got = p15Blocked(t, "6th serious", a, srv.URL, p15Body("traffic", "critical", p15Valid), "")
 	if got.RetryAfterHeader != "300" || got.RetryAfterSeconds != 300 {
 		t.Fatalf("6th serious: Retry-After %q seconds %d, want 300", got.RetryAfterHeader, got.RetryAfterSeconds)
 	}
@@ -349,6 +370,11 @@ func TestReportRateLimit(t *testing.T) {
 	if !got.Serious || got.EmergencyNumber != "112" {
 		t.Fatalf("6th serious: serious %v number %q", got.Serious, got.EmergencyNumber)
 	}
+	p15WantCount(t, pool, 13)
+
+	// A rescue_needed post is refused with a 400 even while the serious bucket
+	// is empty: it never reaches the gate, so it uses no allowance.
+	p15RescueRefused(t, "rescue while blocked", a, srv.URL)
 	p15WantCount(t, pool, 13)
 
 	// The key is the account, not the session (D-10).
@@ -409,10 +435,11 @@ func TestReportRateLimitSeparateBuckets(t *testing.T) {
 		t.Fatalf("a medium: %+v", got)
 	}
 	p15Expect(t, "a critical fire", a, srv.URL, p15Body("fire", "critical", p15Valid), "", http.StatusCreated)
-	got = p15Blocked(t, "a rescue", a, srv.URL, p15Body("rescue_needed", "low", p15Valid), "")
+	got = p15Blocked(t, "a traffic critical", a, srv.URL, p15Body("traffic", "critical", p15Valid), "")
 	if !got.Serious || got.Message != seriousMsg || got.EmergencyNumber != "112" {
-		t.Fatalf("a rescue: %+v", got)
+		t.Fatalf("a traffic critical: %+v", got)
 	}
+	p15RescueRefused(t, "a rescue", a, srv.URL)
 	got = p15Blocked(t, "a low again", a, srv.URL, p15Body("flood", "low", p15Valid), "")
 	if got.Serious || got.Message != otherMsg || got.HasNumber {
 		t.Fatalf("a low again: %+v", got)

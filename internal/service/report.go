@@ -43,9 +43,9 @@ const (
 // any real shelter, small enough to reject a garbage/overflow value.
 const maxHeadcount = 100_000
 
-// Category is one of the nine report categories (D-01). The exact slugs and
-// their order are a contract: plan 01-05 renders the category grid from
-// Categories and plan 01-07 documents the enum from it.
+// Category is a report category (D-01). The exact slugs and their order are a
+// contract: the report form renders its category grid from the postable list
+// and the Swagger enums are documented from the two lists below.
 type Category string
 
 const (
@@ -56,11 +56,18 @@ const (
 	CategoryRoadBlocked  Category = "road_blocked"
 	CategoryPowerOutage  Category = "power_outage"
 	CategoryShelterOpen  Category = "shelter_open"
+	CategoryTraffic      Category = "traffic"
 	CategoryRescueNeeded Category = "rescue_needed"
 	CategoryOther        Category = "other"
 )
 
-// Categories is the ordered, canonical list of every valid category.
+// RescueNeededRetiredMessage is the 400 message for a new report that still
+// sends rescue_needed. Plain words, no dashes.
+const RescueNeededRetiredMessage = "Rescue needed is no longer a report category. Choose another one."
+
+// Categories is every category a stored report may carry, in order. Valid and
+// every read path (the category filter, the feed, the Activity page) use this
+// list, so a report stored as rescue_needed still reads, filters and renders.
 var Categories = []Category{
 	CategoryFlood,
 	CategoryEarthquake,
@@ -69,13 +76,41 @@ var Categories = []Category{
 	CategoryRoadBlocked,
 	CategoryPowerOutage,
 	CategoryShelterOpen,
+	CategoryTraffic,
 	CategoryRescueNeeded,
 	CategoryOther,
 }
 
-// Valid reports whether c is one of the nine canonical categories.
+// PostableCategories is the nine categories a new report may use, in order.
+// The report form renders its tiles from it and the POST enum documents it.
+// rescue_needed was retired for new reports on 2026-10-16 by owner decision,
+// and Traffic took its place. Stored rescue_needed rows keep their rules.
+var PostableCategories = []Category{
+	CategoryFlood,
+	CategoryEarthquake,
+	CategoryFire,
+	CategoryStormCyclone,
+	CategoryRoadBlocked,
+	CategoryPowerOutage,
+	CategoryShelterOpen,
+	CategoryTraffic,
+	CategoryOther,
+}
+
+// Valid reports whether c is one of the known categories, rescue_needed
+// included, because a stored report may still carry it.
 func (c Category) Valid() bool {
 	for _, v := range Categories {
+		if v == c {
+			return true
+		}
+	}
+	return false
+}
+
+// Postable reports whether a new report may use c.
+func (c Category) Postable() bool {
+	for _, v := range PostableCategories {
 		if v == c {
 			return true
 		}
@@ -250,6 +285,9 @@ type NearbyQuery struct {
 func ValidateSubmitInput(in SubmitInput) error {
 	if !in.Category.Valid() {
 		return ValidationError{"category", "Choose a category to continue."}
+	}
+	if !in.Category.Postable() {
+		return ValidationError{"category", RescueNeededRetiredMessage}
 	}
 	if !in.Severity.Valid() {
 		return ValidationError{"severity", "Pick a severity level."}

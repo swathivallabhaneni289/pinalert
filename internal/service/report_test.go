@@ -22,8 +22,8 @@ func validInput() service.SubmitInput {
 }
 
 func TestValidateSubmitInput(t *testing.T) {
-	t.Run("every category slug is accepted", func(t *testing.T) {
-		for _, c := range service.Categories {
+	t.Run("every postable category slug is accepted", func(t *testing.T) {
+		for _, c := range service.PostableCategories {
 			in := validInput()
 			in.Category = c
 			if c == service.CategoryShelterOpen {
@@ -37,11 +37,47 @@ func TestValidateSubmitInput(t *testing.T) {
 		}
 	})
 
+	t.Run("rescue_needed is refused at every severity with the retired message", func(t *testing.T) {
+		for _, s := range service.Severities {
+			in := validInput()
+			in.Category = service.CategoryRescueNeeded
+			in.Severity = s
+			err := service.ValidateSubmitInput(in)
+			assertFieldError(t, err, "category")
+			if got := err.(service.ValidationError).Message; got != service.RescueNeededRetiredMessage {
+				t.Errorf("severity %q: message = %q, want %q", s, got, service.RescueNeededRetiredMessage)
+			}
+		}
+	})
+
+	t.Run("every known category that is not postable is refused with the retired message", func(t *testing.T) {
+		refused := 0
+		for _, c := range service.Categories {
+			if c.Postable() {
+				continue
+			}
+			refused++
+			in := validInput()
+			in.Category = c
+			err := service.ValidateSubmitInput(in)
+			assertFieldError(t, err, "category")
+			if got := err.(service.ValidationError).Message; got != service.RescueNeededRetiredMessage {
+				t.Errorf("category %q: message = %q, want %q", c, got, service.RescueNeededRetiredMessage)
+			}
+		}
+		if refused == 0 {
+			t.Error("no known category is refused, so the retired path is not exercised")
+		}
+	})
+
 	t.Run("an unknown category is rejected naming the category field", func(t *testing.T) {
 		in := validInput()
 		in.Category = "not_a_real_category"
 		err := service.ValidateSubmitInput(in)
 		assertFieldError(t, err, "category")
+		if got := err.(service.ValidationError).Message; got != "Choose a category to continue." {
+			t.Errorf("unknown category message = %q, want %q", got, "Choose a category to continue.")
+		}
 	})
 
 	t.Run("every severity value is accepted", func(t *testing.T) {
@@ -236,6 +272,68 @@ func TestBoundingBox(t *testing.T) {
 			t.Errorf("expected full longitude range near the pole, got [%v, %v]", lonMin, lonMax)
 		}
 	})
+}
+
+// TestCategoryLists pins the two category lists. Categories is every category
+// a stored report may carry; PostableCategories is what a new report may use.
+// rescue_needed was retired for new reports on 2026-10-16 by owner decision
+// and traffic took its place, so stored rescue_needed rows are still valid.
+func TestCategoryLists(t *testing.T) {
+	known := []service.Category{
+		"flood", "earthquake", "fire", "storm_cyclone", "road_blocked",
+		"power_outage", "shelter_open", "traffic", "rescue_needed", "other",
+	}
+	postable := []service.Category{
+		"flood", "earthquake", "fire", "storm_cyclone", "road_blocked",
+		"power_outage", "shelter_open", "traffic", "other",
+	}
+	if len(service.Categories) != len(known) {
+		t.Fatalf("Categories = %v, want %v", service.Categories, known)
+	}
+	for i, c := range known {
+		if service.Categories[i] != c {
+			t.Errorf("Categories[%d] = %q, want %q", i, service.Categories[i], c)
+		}
+	}
+	if len(service.PostableCategories) != len(postable) {
+		t.Fatalf("PostableCategories = %v, want %v", service.PostableCategories, postable)
+	}
+	for i, c := range postable {
+		if service.PostableCategories[i] != c {
+			t.Errorf("PostableCategories[%d] = %q, want %q", i, service.PostableCategories[i], c)
+		}
+	}
+
+	for _, c := range []service.Category{service.CategoryRescueNeeded, service.CategoryTraffic} {
+		if !c.Valid() {
+			t.Errorf("%q.Valid() = false, want true", c)
+		}
+	}
+	if service.CategoryRescueNeeded.Postable() {
+		t.Error("rescue_needed is postable, want retired for new reports")
+	}
+	if !service.CategoryTraffic.Postable() {
+		t.Error("traffic is not postable")
+	}
+	if service.Category("not_a_real_category").Postable() {
+		t.Error("an unknown slug is postable")
+	}
+
+	// PostableCategories is Categories with exactly rescue_needed removed.
+	var withoutRescue []service.Category
+	for _, c := range service.Categories {
+		if c != service.CategoryRescueNeeded {
+			withoutRescue = append(withoutRescue, c)
+		}
+	}
+	if len(withoutRescue) != len(service.PostableCategories) {
+		t.Fatalf("Categories without rescue_needed = %v, PostableCategories = %v", withoutRescue, service.PostableCategories)
+	}
+	for i := range withoutRescue {
+		if withoutRescue[i] != service.PostableCategories[i] {
+			t.Errorf("position %d: %q vs %q", i, withoutRescue[i], service.PostableCategories[i])
+		}
+	}
 }
 
 func assertFieldError(t *testing.T, err error, field string) {
