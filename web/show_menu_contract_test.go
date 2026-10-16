@@ -89,15 +89,20 @@ func TestDisputedGroupCues(t *testing.T) {
 		"var DISPUTED_LEAD = 'Disputed, may not be true.';",
 		"var PROVISIONAL_LEAD = 'Not confirmed yet.';",
 		"'report-row__disputed-line'", "'report-row__lead visually-hidden'",
-		"'report-row--disputed'", "'report-group-head'", "'report-group-head__text'")
+		"'report-row--disputed'")
+	// Amended 2026-10-17 by Phase 3.4 plan 13: the group heading is removed; the
+	// UI-SPEC puts the words on each disputed row only (D-02 nothing repeated).
+	// The test now pins the absence of the heading item.
+	p13MustNotContain(t, "feed.js", feed, "report-group-head", "placeGroupHead", "removeGroupHead", "groupHeadEl")
 	if n := strings.Count(feed, "Disputed: may not be true"); n != 1 {
-		t.Errorf("feed.js names the disputed line %d times, want 1 (one constant for the row and the heading)", n)
+		t.Errorf("feed.js names the disputed line %d times, want 1 (the one constant of the row's bold line)", n)
 	}
+	p13MustNotContain(t, "feed.css", p13ReadStatic(t, "static/css/feed.css"), "report-group-head")
 
 	// The partition is a server word and nothing else, and it runs after the
 	// feed's own sort, so a disputed Critical report never sits above a live row.
 	render := jsFunctionBody(t, feed, "renderRows(reports)")
-	p13MustContain(t, "renderRows", render, "Pinalert.disputedLast(sortReports(reports))", "placeGroupHead(slot);", "isDisputed(")
+	p13MustContain(t, "renderRows", render, "Pinalert.disputedLast(sortReports(reports))")
 	disputed := jsFunctionBody(t, feed, "isDisputed(report)")
 	p13MustContain(t, "isDisputed", disputed, "report.view === 'disputed'")
 	p13MustNotContain(t, "isDisputed", disputed, "trust", "_places", "visibility", ">=", "<=")
@@ -132,10 +137,6 @@ func TestDisputedGroupCues(t *testing.T) {
 			t.Errorf("the disputed line %s is %q, want %q", prop, got, want)
 		}
 	}
-	head, _ := p13Rule(t, rules, "", ".report-group-head__text")
-	if got := head.Decls["color"]; got != "var(--color-severity-critical)" {
-		t.Errorf("the group heading color is %q, want the critical token", got)
-	}
 	dot, _ := p13Rule(t, rules, "", "#report-list .report-row.report-row--disputed .severity-label::before")
 	if got := dot.Decls["background-color"]; got != "var(--color-age-stale)" {
 		t.Errorf("the disputed dot is %q, want the grey --color-age-stale", got)
@@ -153,7 +154,7 @@ func TestDisputedGroupCues(t *testing.T) {
 	// any rule of the list's stylesheets that names them.
 	for _, name := range []string{"static/css/feed.css", "static/css/phone.css", "static/css/trust.css"} {
 		for _, r := range p13ParseCSS(p13ReadStatic(t, name)) {
-			if !strings.Contains(r.Head, "report-row") && !strings.Contains(r.Head, "report-group-head") &&
+			if !strings.Contains(r.Head, "report-row") &&
 				!strings.Contains(r.Head, "alert-banner") && !strings.Contains(r.Head, "vis-hidden") {
 				continue
 			}

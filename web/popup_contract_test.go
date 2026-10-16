@@ -649,19 +649,27 @@ func TestPopupDialogFocusAndOpener(t *testing.T) {
 	if n := strings.Count(code, "function onPopupOpen("); n != 1 {
 		t.Errorf("map.js declares onPopupOpen %d times, want exactly 1", n)
 	}
-	p13MustContain(t, "map.js", code, "flyTo: flyTo", "highlight: highlight", "focusOpenPopup: focusOpenPopup")
+	p13MustContain(t, "map.js", code, "flyTo: flyTo", "resizeToSheet: resizeToSheet", "focusOpenPopup: focusOpenPopup")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-17, D-04):
+	// the brief pin ring (highlight) is replaced by the grown chosen pin, so the
+	// export and its map-pin--highlight class are gone. The Phase 3.1 and Phase 4
+	// hands-on tests are walked on this layout after Phase 3.4 is built.
+	p13MustNotContain(t, "map.js", code, "highlight: highlight", "map-pin--highlight")
 
 	feed := p19Code(t, "static/js/feed.js")
 	activate := jsFunctionBody(t, feed, "activateRow(id)")
 	p13MustContain(t, "activateRow", activate, "PinalertMap.flyTo(id, { opener: 'list' })")
-	moveFocus := jsFunctionBody(t, feed, "moveFocusIntoView(view)")
 	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): the
-	// map view's focus target after the popup is the visible opener of the
-	// report window (the Report item on a phone, Post a report on a laptop),
-	// found by reportOpener(), not the retired floating button. The Phase 3.1
-	// and Phase 4 hands-on tests are walked on this layout after Phase 3.4 is
-	// built.
-	p13Ordered(t, moveFocus, "moveFocusIntoView", "PinalertMap.focusOpenPopup()", "reportOpener()")
+	// visible opener of the report window (the Report item on a phone, Post a
+	// report on a laptop) is found by reportOpener(), not the retired floating
+	// button.
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16, D-17):
+	// moveFocusIntoView belonged to the List and Map switch and is gone with
+	// it; the list and the map are both on the page now, so no focus move
+	// between views remains. The test pins its absence. The Phase 3.1 and Phase
+	// 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+	p13MustNotContain(t, "feed.js", feed, "moveFocusIntoView", "switchView(")
 	opener := jsFunctionBody(t, feed, "reportOpener()")
 	p13MustContain(t, "reportOpener", opener, "[data-open-report]", "elementIsShown(openers[i])")
 	if strings.Contains(feed, "fab-report") {
@@ -739,11 +747,22 @@ func TestMapSelectionNeverScrollsThePage(t *testing.T) {
 		t.Fatalf("could not bound the Pinalert.onSelect subscriber in feed.js (anchor %v, terminator %v)",
 			anchorFound, terminatorFound)
 	}
-	p13Ordered(t, subscriber, "onSelect subscriber", "source === 'map'", "applySelectionHighlight(id);")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-17, D-04):
+	// a pin tap chooses its row the same way a row tap chooses its pin. The map
+	// branch now also brings a short or full phone sheet to half, then reveals
+	// the row in the sheet's own scroll box; the subscriber still names no scroll
+	// call of its own and the page is never scrolled. A row tap flies the map and
+	// opens the report first and only then drops the sheet to short, remembering
+	// where it was. The Phase 3.1 and Phase 4 hands-on tests are walked on this
+	// layout after Phase 3.4 is built.
+	p13Ordered(t, subscriber, "onSelect subscriber", "source === 'map'", "applySelectionHighlight(id);",
+		"window.PinalertSheet.setSnap('half');", "revealRowInListPane(id);")
 	p13MustNotContain(t, "onSelect subscriber", subscriber, "scroll")
 
 	activate := jsFunctionBody(t, code, "activateRow(id)")
 	p13MustContain(t, "activateRow", activate, "applySelectionHighlight(id);")
+	p13Ordered(t, activate, "activateRow", "applySelectionHighlight(id);", "PinalertMap.flyTo(id, { opener: 'list' })",
+		"window.PinalertSheet.remember();", "window.PinalertSheet.setSnap('short');")
 }
 
 // TestPopupClosePressKeepsTheFocusAnswer pins A74 for a mouse close in WebKit.
@@ -845,8 +864,12 @@ func TestRenderRowsRemovesBeforePlacing(t *testing.T) {
 	p13MustContain(t, "clearRows", clear, "document.activeElement", "takeMapPopupFocus()", "focusAfterRemoval(")
 
 	after := jsFunctionBody(t, feed, "focusAfterRemoval(candidates)")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16, D-17):
+	// the List and Map switch is gone, so the fallback after the Show button is
+	// the sheet handle (#sheet-handle), shown only on a phone. The Phase 3.1 and
+	// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
 	p13Ordered(t, after, "focusAfterRemoval", "document.activeElement", "candidates.length", "getElementById('map')",
-		"viewToggleBtn", "'tabindex', '-1'")
+		"getElementById('sheet-handle')", "'tabindex', '-1'")
 	p13MustContain(t, "focusAfterRemoval", after, "report-row", "elementIsShown(")
 	if n := strings.Count(feed, "setHidden(emptyEl"); n != 1 {
 		t.Errorf("feed.js has %d setHidden(emptyEl calls, want exactly 1 (only setEmptyState shows or hides an empty state)", n)

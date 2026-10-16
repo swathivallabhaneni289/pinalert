@@ -19,9 +19,14 @@ var phoneMarkupPages = []string{"index.html.tmpl", "profile.html.tmpl"}
 
 // phoneScriptPlacedChildren are child combinator pairs whose child a script
 // places, so the template markup cannot show them. Each entry says which.
-var phoneScriptPlacedChildren = map[string]string{
-	".app-shell > .view-toggle": "feed.js appends the view toggle to the shell",
-}
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16, D-17):
+// the List and Map switch that feed.js appended to the shell is retired, so no
+// child is placed by a script now and the table is empty. Every child
+// combinator pair a phone rule names must be in the template markup. The Phase
+// 3.1 and Phase 4 hands-on tests are walked on this layout after Phase 3.4 is
+// built.
+var phoneScriptPlacedChildren = map[string]string{}
 
 type phoneMarkupElem struct {
 	tag     string

@@ -145,7 +145,6 @@ func TestUserVisibleCopyUsesPlainPunctuationAuthJS(t *testing.T) {
 func TestNoPillShapedControls(t *testing.T) {
 	const fullyRoundedRadius = "999px"
 	const interimRadius = "8px"
-	const viewToggleSelector = ".view-toggle"
 	const toastSelector = "#toast"
 	const severitySliderPrefix = ".severity-slider"
 
@@ -155,32 +154,17 @@ func TestNoPillShapedControls(t *testing.T) {
 	}
 	rules := parseCSSRules(string(raw))
 
-	// The view toggle has two rules sharing the same exact selector head:
-	// a base display rule and a responsive rule that alone carries a
-	// radius. Collect ALL of them; fatal if fewer than two are found,
-	// since a silently vanished premise is worse than no test at all.
-	var viewToggleRules []cssRule
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16, D-17):
+	// the List and Map switch is retired, so the premise that two .view-toggle
+	// rules exist is dropped and replaced by its absence: no rule of main.css
+	// may name the switch, and the sheet handle that took its place is a
+	// full width bar button with no radius of its own (phone.css). The pill
+	// ban, the toast and the severity slider checks below are unchanged. The
+	// Phase 3.1 and Phase 4 hands-on tests are walked on this layout after
+	// Phase 3.4 is built.
 	for _, r := range rules {
-		if r.selectorHead == viewToggleSelector {
-			viewToggleRules = append(viewToggleRules, r)
-		}
-	}
-	if len(viewToggleRules) < 2 {
-		t.Fatalf("expected at least 2 rules with exact selector head %q (a base display rule and a "+
-			"responsive rounded rule), found %d; the premise this test is built on may have silently "+
-			"evaporated", viewToggleSelector, len(viewToggleRules))
-	}
-	for _, r := range viewToggleRules {
-		decls := declsOf(r.declBody)
-		radius, ok := decls["border-radius"]
-		if !ok {
-			continue
-		}
-		if radius == fullyRoundedRadius {
-			t.Errorf("%s declares a fully-rounded border-radius (%s); site-design-rules.md forbids "+
-				"pill-shaped buttons", viewToggleSelector, radius)
-		} else if radius != interimRadius {
-			t.Errorf("%s declares border-radius %q, want the interim %q", viewToggleSelector, radius, interimRadius)
+		if strings.Contains(r.selectorHead, ".view-toggle") {
+			t.Errorf("main.css still holds a rule for the retired List and Map switch: %q", r.selectorHead)
 		}
 	}
 

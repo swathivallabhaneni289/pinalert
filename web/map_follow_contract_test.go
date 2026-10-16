@@ -76,6 +76,13 @@ func TestMapFollowsLabel(t *testing.T) {
 // rework), so this test keeps pinning them until that plan retires or reuses
 // them. The Phase 3.1 and Phase 4 hands-on tests are walked on this layout
 // after Phase 3.4 is built.
+//
+// Settled 2026-10-17 by Phase 3.4 plan 13: kept. The pin rework changed only
+// the chosen pin (it grows, no ring) and the disputed pin (grey), and neither
+// touches the finished ring look, which UI-SPEC 2e keeps unchanged for a
+// finished report opened by link. The rings are dead code on Nearby today and
+// harmless; retiring them is a separate cleanup nobody has asked for, so this
+// test keeps pinning them.
 func TestMapFollowsFinishedPins(t *testing.T) {
 	// displayState reads the server's history state after Resolved, never a
 	// date (T-31-61).

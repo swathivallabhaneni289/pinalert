@@ -41,7 +41,7 @@
     </div>
   </div>
   <div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>
-  <div class="app-shell" id="app-shell" data-view="map"
+  <div class="app-shell" id="app-shell"
        data-fallback-lat="{{.FallbackLat}}"
        data-fallback-lon="{{.FallbackLon}}"
        data-default-radius-km="{{.DefaultRadiusKm}}"
@@ -83,8 +83,13 @@
       <p class="map-label" id="map-label" hidden></p>
     </section>
 
-    <section class="pane pane--list">
-      <button type="button" class="view-toggle" id="view-toggle">List</button>
+    <section class="pane pane--list" id="report-sheet" role="region" aria-label="Reports near you" data-snap="half">
+      <div class="sheet__handle-row">
+        <button type="button" class="sheet__handle" id="sheet-handle" aria-expanded="false"
+                aria-controls="report-sheet" aria-label="Show more of the list">
+          <span class="sheet__grabber" aria-hidden="true"></span>
+        </button>
+      </div>
       <a class="alert-banner" id="alert-banner" href="/alerts" hidden>
         <span class="alert-banner__icon" aria-hidden="true"></span>
         <span class="alert-banner__text">
@@ -231,6 +236,7 @@
   <script src="/static/js/flag.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/report-form.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/position.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/sheet.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/map.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/modal.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/ended-cards.js?v={{.AssetVersion}}" defer></script>

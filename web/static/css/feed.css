@@ -3,10 +3,9 @@
  *
  * Owned by plan 01-06. Consumes main.css's custom properties and shared
  * component classes (.report-row, .sev-*, .age-*, .icon-badge, .skeleton-row,
- * .empty-state, .error-state, .view-toggle) exclusively — no raw hex color,
- * no hard-coded pixel spacing outside a token, no font-size literal. This
- * file adds only the list container layout, row internals, and the one
- * narrow-screen adjustment main.css does not already cover.
+ * .empty-state, .error-state) exclusively — no raw hex color, no hard-coded
+ * pixel spacing outside a token, no font-size literal. This file adds only the
+ * list container layout and row internals; the phone sheet is in phone.css.
  */
 
 /*
@@ -338,22 +337,6 @@
   font-weight: var(--font-weight-semibold);
 }
 
-/* The heading of the last group in Show All. */
-.report-group-head {
-  margin: var(--space-sm) 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.report-group-head__text {
-  margin: 0;
-  color: var(--color-severity-critical);
-  font-family: var(--font-family);
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
-  font-weight: var(--font-weight-semibold);
-}
-
 #see-ended-reports {
   text-decoration: none;
 }
@@ -402,6 +385,23 @@
   #report-list .report-row.vis-hidden .report-row__trustline:not([hidden]) {
     color: var(--color-text-muted);
   }
+}
+
+/* A chosen row (Phase 3.4, D-17, D-04). The fill is the soft grey in place of
+   the severity tint, and the head outranks the provisional and hidden card
+   backgrounds of phone.css, so a chosen row looks the same whatever its state.
+   There is no ring, outline or border here. Muted text never sits on
+   --color-surface, so the muted lines of a hidden row take the normal text
+   colour while it is chosen; phone.css does the same for the phone card. Full
+   contrast, no opacity. */
+#report-list .report-row.report-row--selected,
+#report-list .report-row.vis-provisional.report-row--selected,
+#report-list .report-row.vis-hidden.report-row--selected {
+  background: var(--color-surface);
+}
+
+#report-list .report-row.vis-hidden.report-row--selected .report-row__trustline:not([hidden]) {
+  color: var(--color-text);
 }
 
 /*
@@ -768,10 +768,6 @@
   height: 48%;
 }
 
-.view-toggle__icon {
-  flex-shrink: 0;
-}
-
 /*
  * Compact report rows, size A of sketch 006 (03.1 D-19 to D-21), at every
  * width. These rules were the phone card of phone.css and are lifted here so
@@ -791,7 +787,10 @@
 #report-list .report-row {
   position: relative;
   display: block;
-  padding: var(--space-md);
+  /* 12px above and below, 16px at the sides: five whole rows fit under the
+     strip, the top bar and the list head on a 1280 by 800 laptop (UI-SPEC 2e
+     and 2h). The phone card sets its own padding in phone.css. */
+  padding: var(--space-12) var(--space-md);
 }
 
 #report-list .report-row > .icon-badge {
@@ -936,14 +935,4 @@
   content: "\00b7";
   content: "\00b7" / "";
   margin-right: var(--space-sm);
-}
-
-@media (max-width: 899.98px) {
-  /* #view-toggle is reparented to #app-shell by feed.js precisely so it
-     survives main.css hiding .pane--list in narrow map view; this is just
-     the padding so the list's last row is not obscured by that
-     fixed-position button sitting over the bottom-left corner. */
-  #report-list {
-    padding-bottom: calc(var(--touch-target-min) + var(--space-lg) * 2);
-  }
 }

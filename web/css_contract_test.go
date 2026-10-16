@@ -1711,6 +1711,28 @@ func TestBadgeGlyphContrastAcrossAgeStagesAndThemes(t *testing.T) {
 		t.Fatalf("expected to evaluate exactly 18 severity x age-stage x theme pairings, evaluated %d — "+
 			"the matrix loop's own bounds may have changed", ran)
 	}
+
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-14, D-17,
+	// UI-SPEC 2e): the disputed pin is the grey --color-age-stale fill with a
+	// --color-text glyph on the laptop badge (the rule is pinned by
+	// TestDisputedPinGrey in sheet_contract_test.go), so that pair is resolved
+	// in both themes and held to the same 3.0:1 graphical-object floor. The
+	// Phase 3.1 and Phase 4 hands-on tests are walked on this layout after Phase
+	// 3.4 is built.
+	for _, th := range themes {
+		context := fmt.Sprintf("disputed pin theme=%s", th.name)
+		fillHex, fillOK := th.tokens["--color-age-stale"]
+		fgHex, fgOK := th.tokens["--color-text"]
+		if !fillOK || !fgOK {
+			t.Fatalf("%s: --color-age-stale or --color-text missing from the %s token table", context, th.name)
+		}
+		ratio := wcagContrastRatio(t, fillHex, fgHex, context)
+		t.Logf("disputed | - | %-5s | %s | %s | %.2f:1", th.name, fillHex, fgHex, ratio)
+		if ratio < 3.0 {
+			t.Errorf("%s: glyph %s against the grey fill %s computes to %.2f:1, below the 3.0:1 floor",
+				context, fgHex, fillHex, ratio)
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------

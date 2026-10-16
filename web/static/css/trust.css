@@ -215,6 +215,20 @@
   outline: 1px solid var(--color-border);
 }
 
+/* A disputed pin on the map (Phase 3.4, D-14, UI-SPEC 2e, T-34-57): the grey
+   fill --color-age-stale with a full contrast --color-text glyph, in place of
+   the transparent hairline above, so the pin matches its Disputed card (the
+   card's dot and glyph are the same grey). map.js adds the class from the
+   server's own view word (report.view === 'disputed'), the same word the card's
+   cues read, never from a count. Pins only, scoped to #map like the finished
+   pin rings: the card's shared .icon-badge head above is left as it is. Full
+   contrast and no opacity (D-07). The phone dot's grey is in phone.css. */
+#map .icon-badge--pin.icon-badge--disputed {
+  --badge-glyph-fg: var(--color-text);
+  background: var(--color-age-stale);
+  outline: 0;
+}
+
 /* Retracted (Task 3, 02-07, Activity page only) — declarations identical
    to .vis-hidden's above, property for property: "this is not currently
    active" reads consistently whether the reason is dispute or resolution,

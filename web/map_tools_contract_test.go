@@ -346,7 +346,13 @@ func TestMapToolsMarkup(t *testing.T) {
 		// label is gone; the pane now ends with the map label. The Phase 3.1
 		// and Phase 4 hands-on tests are walked on this layout after Phase 3.4
 		// is built.
-		`id="map-label"`, `<section class="pane pane--list">`)
+		//
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16,
+		// D-17): the list pane is the phone list sheet and now carries
+		// id="report-sheet" (with role, name and data-snap) on its opening tag,
+		// so the pin is the opening of the tag. The Phase 3.1 and Phase 4
+		// hands-on tests are walked on this layout after Phase 3.4 is built.
+		`id="map-label"`, `<section class="pane pane--list" id="report-sheet"`)
 	if strings.Contains(tmpl, `id="fab-report"`) {
 		t.Errorf("index.html.tmpl still holds the retired floating report button")
 	}

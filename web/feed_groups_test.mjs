@@ -2,11 +2,13 @@
 // app.js, visibility.js and trust.js) in a Node sandbox and checks what the
 // Nearby list draws under each Show choice (Phase 3.4, D-13, D-14, TRUST-02):
 //
-//   - Show All draws the not disputed rows first, then the heading
-//     "Disputed: may not be true", then the disputed rows, in that order;
+//   - Show All draws the not disputed rows first, then the disputed rows, in that
+//     order, with no heading item between them (Amended 2026-10-17 by Phase 3.4
+//     plan 13: the group heading is removed; the UI-SPEC puts the words on each
+//     disputed row only (D-02 nothing repeated));
 //   - a disputed row carries its cues (the Disputed class, the bold line, the
 //     screen reader lead), and a provisional row starts "Not confirmed yet.";
-//   - Show Disputed draws only disputed rows with no heading, Show Confirmed
+//   - Show Disputed draws only disputed rows, Show Confirmed
 //     only rows whose server field confirmed_by_people is true;
 //   - the count line reads "{N} reports, {R} km" under the Show choice;
 //   - each empty state is chosen by the Show choice;
@@ -197,7 +199,7 @@ function show(m, reports, extra = {}) {
 }
 
 const list = (m) => m.el('report-list').children;
-const ids = (m) => list(m).map((li) => (li.classList.contains('report-group-head') ? 'head' : li.dataset.reportId));
+const ids = (m) => list(m).map((li) => li.dataset.reportId);
 const shown = (el) => !el.hasAttribute('hidden');
 
 const SAMPLE = [
@@ -207,14 +209,14 @@ const SAMPLE = [
   report(4, 'disputed', { confirmed_by_people: false, severity: 'critical' })
 ];
 
-test('Show All draws the not disputed rows first, then the heading, then the disputed rows', () => {
+test('Show All draws the not disputed rows first, then the disputed rows, with no heading item', () => {
   const m = load();
   show(m, SAMPLE);
   // The feed's own order is critical first: the provisional Critical report
   // leads its group, and the disputed Critical report leads the last group.
-  assert.deepEqual(ids(m), ['3', '1', 'head', '4', '2']);
-  const head = list(m)[2];
-  assert.equal(head.textContent, 'Disputed: may not be true');
+  assert.deepEqual(ids(m), ['3', '1', '4', '2']);
+  assert.equal(list(m).length, 4, 'no heading item stands in the list (D-02: the words are on each disputed row)');
+  assert.equal(list(m).filter((li) => li.classList.contains('report-row')).length, 4);
 });
 
 test('a disputed row carries its cues, a live row carries none', () => {
@@ -255,7 +257,7 @@ test('no row is ever faded by script: no opacity is set anywhere', () => {
   assert.equal(/opacity|\.style\b|cssText/.test(code), false, 'feed.js sets no style at all');
 });
 
-test('Show Disputed draws only the disputed rows and no heading', () => {
+test('Show Disputed draws only the disputed rows', () => {
   const m = load();
   m.Pinalert.setShow('disputed');
   show(m, [SAMPLE[1], SAMPLE[3]]);
@@ -269,29 +271,29 @@ test('Show Confirmed draws only reports whose server field is true', () => {
   assert.deepEqual(ids(m), ['1']);
 });
 
-test('changing from All to Confirmed takes the heading and the disputed rows out of the list', () => {
+test('changing from All to Confirmed takes the disputed rows out of the list', () => {
   const m = load();
   show(m, SAMPLE);
-  assert.equal(list(m).length, 5);
+  assert.equal(list(m).length, 4);
   m.Pinalert.setShow('confirmed');
   m.Pinalert.redraw();
   assert.deepEqual(ids(m), ['1']);
   m.Pinalert.setShow('all');
   m.Pinalert.redraw();
-  assert.deepEqual(ids(m), ['3', '1', 'head', '4', '2']);
+  assert.deepEqual(ids(m), ['3', '1', '4', '2']);
 });
 
-test('the heading goes when the last disputed row goes', () => {
+test('the disputed rows go when the last disputed report goes', () => {
   const m = load();
   show(m, SAMPLE);
   show(m, [SAMPLE[0], SAMPLE[2]]);
   assert.deepEqual(ids(m), ['3', '1']);
 });
 
-test('the heading is drawn when every report is disputed', () => {
+test('a list of only disputed reports draws just those rows', () => {
   const m = load();
   show(m, [SAMPLE[1], SAMPLE[3]]);
-  assert.deepEqual(ids(m), ['head', '4', '2']);
+  assert.deepEqual(ids(m), ['4', '2']);
 });
 
 test('the count line reads {N} reports, {R} km under the Show choice', () => {

@@ -680,7 +680,11 @@ func TestQueueNoticeCardRow(t *testing.T) {
 		t.Errorf("the card re-sync line must stay last (%d, %d)", lastUse, resync)
 	}
 	click := p422Window(t, feed, "noticeQueueBtn.addEventListener(", "});")
-	p422Ordered(t, "the Show waiting reports click", click, "switchView('list')", "queue-strip-heading")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16, D-17):
+	// the List and Map switch is gone, so the click grows a short sheet to half
+	// (PinalertSheet) before it focuses the strip heading. The Phase 3.1 and
+	// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+	p422Ordered(t, "the Show waiting reports click", click, "PinalertSheet.setSnap('half')", "queue-strip-heading")
 	queue := p422Code(p422Static(t, "static/js/queue.js"))
 	p422Need(t, "queue.js", queue, "'queue-strip-heading'", "tabindex")
 }

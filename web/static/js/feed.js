@@ -26,8 +26,6 @@
 
   var SEVERITY_RANK = { critical: 3, medium: 2, low: 1 };
 
-  var SVG_NS = 'http://www.w3.org/2000/svg';
-
   // REPORT_PARAM is the address parameter of a link to one report. It is read
   // once on load and never removed from the address.
   var REPORT_PARAM = 'report';
@@ -56,7 +54,6 @@
   var confirmedEmptyEl = document.getElementById('confirmed-empty');
   var errorEl = document.getElementById('feed-error');
   var retryBtn = document.getElementById('feed-retry');
-  var viewToggleBtn = document.getElementById('view-toggle');
   var appShellEl = document.getElementById('app-shell');
   var queueStripEl = document.getElementById('queue-strip');
   var showButtonEl = document.getElementById('show-button');
@@ -101,23 +98,10 @@
   var lastAnnouncedKey = '';
   var statusStarted = false;
 
-  // PHONE_QUERY is the same 899.98px complement of the 900px query that
-  // main.css, trust.css and phone.css use. Below it the list is its own scroll
-  // box under a fixed height map (phone.css), so moving the list never moves
-  // the map.
-  var PHONE_QUERY = '(max-width: 899.98px)';
-
   // rowsById reconciles rendered <li> nodes by report id across polls,
   // rather than clearing and rebuilding the list every 30 seconds, so
   // scroll position and focus survive a background refresh.
   var rowsById = {};
-
-  // groupHeadEl is the one heading of the last group of Show All: it stands
-  // before the first disputed row, with the words "Disputed: may not be true",
-  // and is taken out of the list when no disputed row is drawn. It is a list
-  // item with no role of its own, so the list stays a list of rows and a
-  // heading.
-  var groupHeadEl = null;
 
   // handledFocus is the first focus object (the server's answer to a report
   // link) that handleFocus acted on, or null before one has landed. Every
@@ -209,14 +193,24 @@
     el.hidden = !line;
   }
 
+  // activateRow chooses a report from the list (D-17): the row takes the soft
+  // fill, its pin grows (map.js, from the same selection), the map brings the
+  // pin into view and the report opens as built (the popup on a laptop, the
+  // detail sheet on a phone). On a phone the list sheet then drops to short
+  // beneath the detail sheet and remembers where it was; map.js hands it back
+  // when the detail closes. The sheet moves last, after the report has opened,
+  // because opening a report closes a previous one and that close restores the
+  // sheet. PinalertSheet does nothing on a laptop.
   function activateRow(id) {
     Pinalert.select(id, 'list');
     applySelectionHighlight(id);
+    var opened = true;
     if (window.PinalertMap && typeof PinalertMap.flyTo === 'function') {
-      PinalertMap.flyTo(id, { opener: 'list' });
+      opened = PinalertMap.flyTo(id, { opener: 'list' }) !== false;
     }
-    if (appShellEl && appShellEl.getAttribute('data-view') === 'list') {
-      switchView('map');
+    if (opened && window.PinalertSheet) {
+      window.PinalertSheet.remember();
+      window.PinalertSheet.setSnap('short');
     }
   }
 
@@ -463,7 +457,7 @@
   // focusAfterRemoval is the one place focus is chosen after a poll removed
   // the report that owned it (A67, in the A52 order): the first displayed
   // row among the candidates, else the map, else the Show button, else
-  // the view toggle, else the empty state. It acts when focus fell to the page
+  // the sheet handle, else the empty state. It acts when focus fell to the page
   // body or sits in a popup that map.js already marked closed, and the browser
   // decides only where focus goes, never which reports exist.
   function focusAfterRemoval(candidates) {
@@ -489,8 +483,9 @@
       showEl.focus();
       return;
     }
-    if (elementIsShown(viewToggleBtn)) {
-      viewToggleBtn.focus();
+    var handle = document.getElementById('sheet-handle');
+    if (elementIsShown(handle)) {
+      handle.focus();
       return;
     }
     var empties = [emptyEl, historyEmptyEl, confirmedEmptyEl, disputedEmptyEl, filterEmptyEl];
@@ -503,33 +498,6 @@
     }
   }
 
-  // placeGroupHead draws the heading of the last group at a slot of the list:
-  // "Disputed: may not be true". It is built once, as a list item with no
-  // role of its own, and moved to the slot when it is not already there.
-  function placeGroupHead(slot) {
-    if (groupHeadEl === null) {
-      groupHeadEl = document.createElement('li');
-      groupHeadEl.className = 'report-group-head';
-      groupHeadEl.setAttribute('role', 'presentation');
-      var text = document.createElement('p');
-      text.className = 'report-group-head__text';
-      Pinalert.setText(text, DISPUTED_LINE);
-      groupHeadEl.appendChild(text);
-    }
-    var expected = reportListEl.children[slot];
-    if (expected !== groupHeadEl) {
-      reportListEl.insertBefore(groupHeadEl, expected || null);
-    }
-  }
-
-  // removeGroupHead takes the heading out of the list when no disputed row is
-  // drawn.
-  function removeGroupHead() {
-    if (groupHeadEl !== null && groupHeadEl.parentNode) {
-      groupHeadEl.parentNode.removeChild(groupHeadEl);
-    }
-  }
-
   // renderRows keeps focus on a real control through a poll (A67, A71).
   // Departed rows are removed before the rest are placed. A row moves only
   // when its position changed, with moveBefore where the browser has it (it
@@ -539,12 +507,11 @@
   // Grouping (D-14): the rows are sorted in the feed's own order, then split
   // into two groups by the server's view word and nothing else: every report
   // that is not disputed first, every disputed report last, each group in the
-  // sorted order. Show All draws the heading of the last group before its
-  // first row; Show Disputed draws only that group, so it needs no heading.
+  // sorted order. The last group carries no heading of its own: each disputed
+  // row says "Disputed: may not be true" itself (UI-SPEC 2e cue 3), and the
+  // words are not repeated (D-02).
   function renderRows(reports) {
     var sorted = Pinalert.disputedLast(sortReports(reports));
-    var headerWanted = Pinalert.state.show === 'all' && sorted.length > 0 &&
-      isDisputed(sorted[sorted.length - 1]);
     var seen = {};
     for (var s = 0; s < sorted.length; s++) {
       seen[String(sorted[s].id)] = true;
@@ -579,16 +546,9 @@
     var activeBefore = document.activeElement;
     var movedFocus = false;
     var slot = 0;
-    var headShown = false;
     for (var i = 0; i < sorted.length; i++) {
       var report = sorted[i];
       var idKey = String(report.id);
-
-      if (headerWanted && !headShown && isDisputed(report)) {
-        placeGroupHead(slot);
-        headShown = true;
-        slot += 1;
-      }
 
       var row = rowsById[idKey];
       if (!row) {
@@ -610,10 +570,6 @@
       }
       slot += 1;
     }
-    if (!headShown) {
-      removeGroupHead();
-    }
-
     if (movedFocus && activeBefore && activeBefore.isConnected &&
         (!document.activeElement || document.activeElement === document.body)) {
       activeBefore.focus();
@@ -637,7 +593,6 @@
       rowsById[ids[j]].el.remove();
       delete rowsById[ids[j]];
     }
-    removeGroupHead();
     if (rowHadFocus || popupHadFocus) {
       focusAfterRemoval([]);
     }
@@ -1052,151 +1007,37 @@
   }
 
   // revealRowInListPane brings the row of a pin the reader just picked into the
-  // list pane's own box, on a phone only. Below 900px the list is a scroll box
-  // under a fixed height map (phone.css), so moving the list never moves the
-  // map, which was the reason A87 gave for leaving the list alone. It sets the
-  // PANE's scroll position and nothing else: the page is never scrolled, and
-  // applySelectionHighlight above stays free of any scroll.
+  // list's own scroll box (D-17). On a phone that box is the sheet
+  // (#report-sheet, phone.css), so moving the list never moves the map, which
+  // was the reason A87 gave for leaving the list alone; on a laptop the pane is
+  // not a scroll box (the document scrolls), so the check below leaves it and
+  // the page alone. It sets the SHEET's scroll position and nothing else: the
+  // page is never scrolled, and applySelectionHighlight above stays free of any
+  // scroll. "Nearest": a row that is already whole under the sticky handle and
+  // list head stays where it is; any other row is scrolled to sit just under
+  // them. Smooth unless the person asked for reduced motion.
   function revealRowInListPane(id) {
-    if (!window.matchMedia || !window.matchMedia(PHONE_QUERY).matches) {
-      return;
-    }
     var row = rowsById[String(id)];
-    var pane = reportListEl ? reportListEl.closest('.pane--list') : null;
-    if (!row || !pane || pane.scrollHeight <= pane.clientHeight) {
+    var sheet = document.getElementById('report-sheet');
+    if (!row || !sheet || sheet.scrollHeight <= sheet.clientHeight) {
       return;
     }
     var gap = parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue('--space-sm'));
     if (isNaN(gap)) {
       gap = 0;
     }
-    var paneBox = pane.getBoundingClientRect();
+    var sheetBox = sheet.getBoundingClientRect();
+    var head = sheet.querySelector('.list-head');
+    var stuck = head ? head.getBoundingClientRect().bottom - sheetBox.top : 0;
     var rowBox = row.el.getBoundingClientRect();
-    var top = rowBox.top - paneBox.top + pane.scrollTop - gap;
+    var rowTop = rowBox.top - sheetBox.top;
+    var rowBottom = rowBox.bottom - sheetBox.top;
+    if (rowTop >= stuck + gap && rowBottom <= sheet.clientHeight) {
+      return;
+    }
+    var top = rowTop + sheet.scrollTop - stuck - gap;
     var calm = !!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    pane.scrollTo({ top: Math.max(0, top), behavior: calm ? 'auto' : 'smooth' });
-  }
-
-  // createToggleIcon builds a minimal inline glyph for the view-toggle
-  // button. UI-SPEC's Icon Mapping only covers the 9 category icons; no
-  // dedicated map/list asset exists, and adding new SVG files under
-  // /static/icons (e.g. new-icon.svg) is outside this plan's two-file
-  // ownership. Built via the SVG DOM API (never a markup string),
-  // aria-hidden since the button's text label
-  // already carries the meaning.
-  function createToggleIcon(kind) {
-    var svg = document.createElementNS(SVG_NS, 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('width', '16');
-    svg.setAttribute('height', '16');
-    svg.setAttribute('aria-hidden', 'true');
-    svg.setAttribute('focusable', 'false');
-    svg.setAttribute('class', 'view-toggle__icon');
-
-    var path = document.createElementNS(SVG_NS, 'path');
-    path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', 'currentColor');
-    path.setAttribute('stroke-width', '2');
-    path.setAttribute('stroke-linecap', 'round');
-    path.setAttribute('stroke-linejoin', 'round');
-
-    if (kind === 'list') {
-      path.setAttribute('d', 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01');
-    } else {
-      path.setAttribute('d', 'M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z M9 4v14 M15 6v14');
-    }
-
-    svg.appendChild(path);
-    return svg;
-  }
-
-  // updateToggleLabel labels the button by its destination (Copywriting
-  // Contract): it reads "List" while the map is showing and "Map" while
-  // the list is showing.
-  function updateToggleLabel() {
-    if (!viewToggleBtn || !appShellEl) {
-      return;
-    }
-    var showingList = appShellEl.getAttribute('data-view') === 'list';
-    var destination = showingList ? 'Map' : 'List';
-
-    while (viewToggleBtn.firstChild) {
-      viewToggleBtn.removeChild(viewToggleBtn.firstChild);
-    }
-    viewToggleBtn.appendChild(createToggleIcon(showingList ? 'map' : 'list'));
-
-    var label = document.createElement('span');
-    Pinalert.setText(label, destination);
-    viewToggleBtn.appendChild(label);
-
-    viewToggleBtn.setAttribute('aria-label', 'Switch to ' + destination.toLowerCase() + ' view');
-    viewToggleBtn.setAttribute('aria-pressed', showingList ? 'true' : 'false');
-  }
-
-  function moveFocusIntoView(view) {
-    var target;
-    if (view === 'map') {
-      // An open popup card takes focus first (A51).
-      if (window.PinalertMap && typeof PinalertMap.focusOpenPopup === 'function' && PinalertMap.focusOpenPopup()) {
-        return;
-      }
-      target = reportOpener();
-    } else {
-      target = reportListEl && reportListEl.querySelector('.report-row');
-    }
-    if (target) {
-      target.focus();
-    } else if (viewToggleBtn) {
-      viewToggleBtn.focus();
-    }
-  }
-
-  // switchView flips the shell's data-view attribute; main.css owns every
-  // show/hide rule keyed off it. Order matters for the Leaflet fix below:
-  // the pane must be un-hidden before the resize event fires, or Leaflet
-  // reads a zero-size container.
-  function switchView(view) {
-    if (!appShellEl) {
-      return;
-    }
-    appShellEl.setAttribute('data-view', view);
-    updateToggleLabel();
-    syncNoticeCard();
-
-    if (view === 'map') {
-      // map.js keeps its Leaflet map instance private (its returned API is
-      // only {flyTo, highlight}), so this file cannot call invalidateSize()
-      // directly. Dispatching a window resize event is the standard way to
-      // reach it anyway: Leaflet's default trackResize option listens for
-      // exactly this event and calls the map's own invalidateSize() in
-      // response, which is what a map hidden-then-shown via display:none
-      // needs to stop rendering with a stale container size.
-      window.dispatchEvent(new Event('resize'));
-    }
-
-    moveFocusIntoView(view);
-  }
-
-  if (viewToggleBtn) {
-    // #view-toggle ships nested inside .pane--list in index.html.tmpl.
-    // main.css's narrow-screen rules set .pane--list to display:none while
-    // data-view="map" — an ancestor's display:none removes every
-    // descendant from rendering regardless of the descendant's own
-    // position/display values, so the position:fixed toggle button
-    // vanishes with it, stranding a narrow-screen visitor on the map with
-    // no way back to the list. Reparenting the button under #app-shell
-    // (a sibling of both panes) keeps main.css's breakpoint rules the sole,
-    // untouched authority — .view-toggle's own rules are all element-
-    // scoped, so nothing about its appearance or positioning depends on
-    // which element contains it.
-    if (appShellEl && viewToggleBtn.parentNode !== appShellEl) {
-      appShellEl.appendChild(viewToggleBtn);
-    }
-
-    viewToggleBtn.addEventListener('click', function () {
-      var current = appShellEl ? appShellEl.getAttribute('data-view') : 'map';
-      switchView(current === 'list' ? 'map' : 'list');
-    });
+    sheet.scrollTo({ top: Math.max(0, top), behavior: calm ? 'auto' : 'smooth' });
   }
 
   if (retryBtn) {
@@ -1259,19 +1100,24 @@
   Pinalert.setFocusId(new URLSearchParams(window.location.search).get(REPORT_PARAM));
 
   Pinalert.onSelect(function (id, source) {
-    // A selection that starts from the map applies the row highlight only
-    // and never scrolls the page or the list (A87). Guard on source so a
-    // list-originated selection, which activateRow already highlighted, is
-    // not highlighted a second time.
+    // A selection that starts from the map chooses its row the same way (D-17):
+    // the row takes the soft fill, the phone sheet comes up to half so the row
+    // can be seen (it is not remembered: the sheet stays at half when the
+    // report closes), and the sheet's own scroll box brings the row under the
+    // head. It never scrolls the page (A87). Guard on source so a
+    // list-originated selection, which activateRow already handled, is not
+    // handled a second time.
     if (source === 'map') {
       applySelectionHighlight(id);
+      if (window.PinalertSheet && window.PinalertSheet.getSnap() !== 'half') {
+        window.PinalertSheet.setSnap('half');
+      }
       revealRowInListPane(id);
     }
   });
 
   Pinalert.subscribe(render);
   render(Pinalert.state);
-  updateToggleLabel();
 
   window.setInterval(refreshAgeAndTime, 60000);
   window.setInterval(refreshStaleLine, 60000);
@@ -1349,7 +1195,12 @@
   }
   if (noticeQueueBtn) {
     noticeQueueBtn.addEventListener('click', function () {
-      switchView('list');
+      // The list is always on the page now (a sheet on the phone, a column on
+      // the laptop), so the button only has to bring the waiting strip into
+      // view: a short sheet grows to half first.
+      if (window.PinalertSheet && window.PinalertSheet.getSnap() === 'short') {
+        window.PinalertSheet.setSnap('half');
+      }
       var heading = document.getElementById('queue-strip-heading');
       if (heading) {
         heading.focus();
