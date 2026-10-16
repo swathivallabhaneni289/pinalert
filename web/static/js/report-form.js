@@ -1068,9 +1068,14 @@
   // was out (WR-W03). A post that got no answer is saved on this device like
   // any other; a refused one is told in a toast with the server's reason and,
   // for a serious wait, the emergency number. The form open now is never
-  // touched.
+  // touched. Every failed post carries a numeric status; an error without one
+  // was thrown after a successful post by the closing code itself, so it is
+  // not told as a refusal.
   function reportEarlierFailure(payload, err, sent) {
-    if (err && err.queueable === true) {
+    if (!err || typeof err.status !== 'number') {
+      return;
+    }
+    if (err.queueable === true) {
       saveToQueue(payload, err.status >= 502 ? 'no_answer' : 'waiting', sent);
       return;
     }

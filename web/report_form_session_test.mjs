@@ -111,7 +111,7 @@ class FakeEl {
 
 // ----- the page -----
 
-function setup() {
+function setup(options) {
   const doc = {
     activeElement: null,
     handlers: {},
@@ -184,6 +184,9 @@ function setup() {
     missingMessage: () => 'Set a location.',
     searchFailureMessage: () => 'Search failed.'
   };
+  if (options && typeof options.pickerReset === 'function') {
+    picker.reset = options.pickerReset;
+  }
   class CustomEvent {
     constructor(type, init) { this.type = type; this.detail = init && init.detail; }
   }
@@ -350,6 +353,20 @@ test('a post answered while its form is still open closes it as before', async (
   assert.equal(page.el('report-backdrop').hidden, true);
   assert.equal(page.el('description').value, '');
   assert.deepEqual(page.toasts, ['Report posted.']);
+});
+
+test('a posted report is never called refused when the closing code throws', async () => {
+  let armed = false;
+  const page = setup({ pickerReset: () => { if (armed) { throw new Error('map script missing'); } } });
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  armed = true;
+  page.posts[0].resolve({ id: 45 });
+  await settle();
+  assert.ok(page.toasts.every((t) => !t.startsWith('Your earlier report was not posted.')),
+    'a posted report must not be told as refused: ' + JSON.stringify(page.toasts));
+  assert.equal(page.queueSaves.length, 0, 'a posted report must not be saved again');
 });
 
 test('a post refused while its form is still open shows the message in the form', async () => {
