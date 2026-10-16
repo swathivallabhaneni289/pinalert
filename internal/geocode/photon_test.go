@@ -472,9 +472,8 @@ func TestPhotonFailureFallsBackToNominatim(t *testing.T) {
 				}
 			}
 		},
-		"nothing found": func(t *testing.T) func(w http.ResponseWriter, r *http.Request) {
-			return photonAnswers(t)
-		},
+		// "Nothing found" is not a failure: since quick 261016-sfu it runs
+		// the order pinned in order_test.go.
 	}
 	for name, respond := range cases {
 		for lane, search := range lanes {
@@ -507,12 +506,13 @@ func TestPhotonFailureFallsBackToNominatim(t *testing.T) {
 }
 
 // TestRequestCapIsFourAcrossBothProviders pins the reading of the cap: four
-// upstream requests per search in total, so a search that asked Photon has
-// three Nominatim tries left.
+// upstream requests per search in total, so a search whose Photon request
+// failed has three Nominatim tries left. When Photon finds nothing instead,
+// TestOrderWhenPhotonFindsNothing pins the order.
 func TestRequestCapIsFourAcrossBothProviders(t *testing.T) {
 	for name, search := range lanes {
 		t.Run(name, func(t *testing.T) {
-			ps := newPhotonStub(t, photonAnswers(t))
+			ps := newPhotonStub(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusBadGateway) })
 			rs := newRecordingServer(t, nil)
 			c := newDualClient(ps.server.URL, rs.server.URL)
 			near := &Point{Lat: 17.4, Lon: 78.45}
