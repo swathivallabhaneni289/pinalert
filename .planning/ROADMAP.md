@@ -485,6 +485,7 @@ Plans:
 **Wave 9** *(blocked on Wave 8 completion)*
 
 - [ ] 03.4-16-PLAN.md: Rule guards, the three mockup overrides as tests, the dated notes (docs closing plan), full gate
+- [ ] 03.4-20-PLAN.md: Gap closure: the laptop Nearby two columns (420px list on the left, map on the right, only the cards scroll) and the pin to row scroll on the laptop (UI-SPEC 2a, D-17), found after plan 13
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
