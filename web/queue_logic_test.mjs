@@ -490,14 +490,19 @@ await test('names the saved account on each send and holds every row when the se
     field: 'expected_account_id',
     fieldMessage: 'This report was saved under a different account than the one signed in now. Sign in to that account to send it.'
   });
+  const notSent = 'req-pppppppppppppppp-16';
   const env = loadQueue({
     records: [
       record(first, '7', 'first saved report', '2026-10-01T00:00:00.000Z'),
-      record(second, '7', 'second saved report', '2026-10-02T00:00:00.000Z')
+      record(second, '7', 'second saved report', '2026-10-02T00:00:00.000Z'),
+      record(notSent, '7', 'not sent saved report', '2026-10-03T00:00:00.000Z', {
+        status: 'rejected', last_error: 'Say what is happening.'
+      })
     ],
     answers: [otherAccount]
   });
-  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  // onEdit is given, so a Not sent row would draw Edit and resend.
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3, onEdit: () => {} });
   await settle();
 
   assert.equal(env.submitted.length, 1, 'the pass stops at the refusal');
@@ -506,18 +511,20 @@ await test('names the saved account on each send and holds every row when the se
   assert.equal(Object.hasOwn(env.store.get(first).payload, 'expected_account_id'), false,
     'the saved payload never holds it');
 
-  for (const id of [first, second]) {
+  for (const id of [first, second, notSent]) {
     assert.ok(env.store.has(id), 'the report stays saved');
     assert.equal(env.store.get(id).status, 'other_account');
   }
   const statusLines = env.strip.descendants().filter((el) => el.className.split(/\s+/).includes('queue-strip__status'));
-  assert.equal(statusLines.length, 2);
+  assert.equal(statusLines.length, 3);
   statusLines.forEach((el) => {
     assert.equal(el.textContent, 'This report was saved under a different account than the one signed in now. ' +
       'Sign in to that account to send it. It stays saved on this device.');
   });
   const discards = env.strip.descendants().filter((el) => el.className.split(/\s+/).includes('queue-strip__discard'));
-  assert.equal(discards.length, 2, 'Discard report stays on each row');
+  assert.equal(discards.length, 3, 'Discard report stays on each row');
+  assert.equal(env.strip.descendants().some((el) => el.textContent === 'Edit and resend'), false,
+    'no row offers Edit and resend, which would post under the account signed in now');
 
   await env.queue.flush();
   await settle();
@@ -528,6 +535,7 @@ await test('names the saved account on each send and holds every row when the se
   const again = loadQueue({ records: [...env.store.values()] });
   again.queue.mount({ strip: again.strip, accountId: '7', headingLevel: 3 });
   await settle();
-  assert.deepEqual(again.submitted.map((p) => p.description), ['first saved report', 'second saved report']);
+  assert.deepEqual(again.submitted.map((p) => p.description),
+    ['first saved report', 'second saved report', 'not sent saved report']);
   assert.equal(again.store.size, 0);
 });

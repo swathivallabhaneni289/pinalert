@@ -647,10 +647,12 @@
       // Signed out, or another account is signed in now than the one this
       // page and its saved reports belong to (WR-W09). Every other report of
       // this account would get the same answer, so they all wait, nothing more
-      // is sent from this page and Discard stays on each row.
+      // is sent from this page and Discard stays on each row. For another
+      // account the Not sent rows are held too: their Edit and resend would
+      // post through the form under the account signed in now.
       held = status === 401 ? STATUS_SIGNED_OUT : STATUS_OTHER_ACCOUNT;
       rows.forEach(function (other) {
-        if (belongsToAccount(other) && other.status !== STATUS_REJECTED) {
+        if (belongsToAccount(other) && (other.status !== STATUS_REJECTED || held === STATUS_OTHER_ACCOUNT)) {
           other.status = held;
           other.sending_until = 0;
         }
