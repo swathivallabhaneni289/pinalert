@@ -820,9 +820,19 @@ func TestQueueFormCopyAndPrefill(t *testing.T) {
 	}
 	p422Need(t, "openForm(options)", open, "options.note", "options.requestId", "announce(")
 	apply := jsFunctionBody(t, form, "applyPrefill(prefill)")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-23, D-24,
+	// D-24a): applyPrefill restores the severity through setSeverity, which
+	// sets the chosen box in the window or the slider in the Low data view
+	// (the slider path keeps SEVERITY_BY_VALUE and updateSeverityReadout()), and
+	// it selects a tile only when tileOffered says the mode has one for the
+	// category, so a queued Rescue needed or Earthquake item opens with no tile
+	// chosen. The Phase 3.1 and Phase 4 hands-on tests are walked on this layout
+	// after Phase 3.4 is built.
 	p422Need(t, "applyPrefill(prefill)", apply,
-		"selectCategory(", "SEVERITY_BY_VALUE", "updateSeverityReadout()", "showShelterFields()",
+		"selectCategory(", "tileOffered(", "setSeverity(", "showShelterFields()",
 		"picker.choose(", "displayName: ''")
+	p422Need(t, "setSeverity(key)", jsFunctionBody(t, form, "setSeverity(key)"),
+		"SEVERITY_BY_VALUE", "updateSeverityReadout()")
 	if !strings.HasSuffix(strings.TrimSpace(apply), "formTouched = false;\n  }") {
 		t.Errorf("formTouched = false must be the last statement of applyPrefill")
 	}

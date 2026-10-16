@@ -69,8 +69,13 @@ func TestPageShellServesDOMContract(t *testing.T) {
 		`id="report-list"`, `id="feed-skeleton"`, `id="feed-empty"`, `id="feed-error"`,
 		`id="feed-retry"`, `id="report-modal"`, `id="modal-map"`, `id="coord-readout"`,
 		`id="location-notice"`, `id="location-search"`, `id="location-search-results"`,
-		`id="location-search-status"`, `id="category-grid"`, `id="severity"`,
-		`id="severity-readout"`, `id="description"`, `id="shelter-fields"`,
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-23, D-24,
+		// D-24a): the window has three severity boxes in #severity-group, not the
+		// range slider (severity, severity-readout), which stays in the Low data
+		// view. The Phase 3.1 and Phase 4 hands-on tests are walked on this
+		// layout after Phase 3.4 is built.
+		`id="location-search-status"`, `id="category-grid"`, `id="severity-group"`,
+		`id="near-place"`, `id="description"`, `id="shelter-fields"`,
 		`id="shelter-capacity-status"`, `id="shelter-headcount"`, `id="form-error"`,
 		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-23, D-24,
 		// D-24a): the Post a report window closes with the X (close-report), not

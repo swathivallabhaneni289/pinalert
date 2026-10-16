@@ -100,7 +100,7 @@ func p410Window(text, anchor, terminator string) (string, bool) {
 // Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-23, D-24,
 // D-24a): the main page is the Post a report window. The first ten ids and the
 // last three stay in the page (the header with its X, the location block, the
-// pinned footer); the ten in the middle live in the shared partial's window
+// pinned footer); the nine in the middle live in the shared partial's window
 // branch. Cancel report is gone from the window (the X closes it); it stays in
 // the partial's Low data branch. The Phase 3.1 and Phase 4 hands-on tests are
 // walked on this layout after Phase 3.4 is built.
@@ -108,9 +108,9 @@ var p410FormIDs = []string{
 	"report-modal", "modal-title", "close-report", "location-search",
 	"location-search-results", "location-search-status", "modal-map", "near-place",
 	"coord-readout", "location-notice",
-	"category-grid", "severity", "severity-readout", "description",
-	"shelter-fields", "shelter-capacity-status", "shelter-headcount",
-	"discard-confirm", "discard-confirm-discard", "discard-confirm-keep",
+	"category-grid", "severity-group", "shelter-fields", "shelter-capacity-status",
+	"shelter-headcount", "description", "discard-confirm", "discard-confirm-discard",
+	"discard-confirm-keep",
 	"form-error", "send-after-wait", "submit-report",
 }
 

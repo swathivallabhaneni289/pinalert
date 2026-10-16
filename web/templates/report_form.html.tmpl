@@ -36,16 +36,19 @@
           <button type="button" id="discard-confirm-keep" class="btn">Keep editing</button>
         </div>
 {{else}}
-        <div id="category-grid" role="radiogroup" aria-label="Category"></div>
+        <fieldset class="post-group">
+          <legend class="post-group__legend" id="category-legend">What is it?</legend>
+          <div id="category-grid" role="radiogroup" aria-labelledby="category-legend"></div>
+        </fieldset>
 
-        <label for="severity" class="visually-hidden">Severity</label>
-        <input type="range" id="severity" min="1" max="3" step="1" value="1"
-               aria-label="Severity" aria-valuetext="1 · Low" class="severity-slider">
-        <output id="severity-readout" for="severity">1 · Low</output>
-
-        <label for="description">Description</label>
-        <p id="description-hint">Describe what is happening, for example: water is knee deep on Main Road and three people need help.</p>
-        <textarea id="description" name="description" rows="3" aria-describedby="description-hint"></textarea>
+        <fieldset class="post-group">
+          <legend class="post-group__legend" id="severity-legend">How serious?</legend>
+          <div id="severity-group" role="radiogroup" aria-labelledby="severity-legend">
+            <button type="button" class="severity-box severity-box--low" role="radio" aria-checked="true" tabindex="0" data-severity="low"><span class="severity-box__label">Low</span></button>
+            <button type="button" class="severity-box severity-box--medium" role="radio" aria-checked="false" tabindex="-1" data-severity="medium"><span class="severity-box__label">Medium</span></button>
+            <button type="button" class="severity-box severity-box--critical" role="radio" aria-checked="false" tabindex="-1" data-severity="critical"><span class="severity-box__label">Critical</span></button>
+          </div>
+        </fieldset>
 
         <fieldset id="shelter-fields" hidden>
           <legend>Shelter capacity</legend>
@@ -59,6 +62,14 @@
           <label for="shelter-headcount">Headcount (optional)</label>
           <input type="number" id="shelter-headcount" name="shelter_headcount" min="0">
         </fieldset>
+
+        <div class="post-group">
+          <label for="description" class="post-group__legend">Describe it</label>
+          <textarea id="description" name="description" rows="4" maxlength="280"
+                    placeholder="For example: water above knee level near the signal, cars stuck."
+                    aria-describedby="description-help"></textarea>
+          <p id="description-help">Short and exact helps people confirm it. Up to 280 letters.</p>
+        </div>
 
         <div id="discard-confirm" hidden>
           <p>Discard this report? Your description and location won't be saved.</p>
