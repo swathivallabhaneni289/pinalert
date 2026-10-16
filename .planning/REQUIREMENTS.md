@@ -133,9 +133,15 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **ROBUST-07**: A first-time visitor sees a populated, working demo (seeded past-event
       timeline) and can trigger a simulated report to try the confirm/dispute flow themselves
+      (Amended 2026-10-16, owner decision: a Demo button on the login screen opens a sandboxed
+      practice copy with no login; the sample is the 2024 Vijayawada floods along the Budameru, with
+      real place names and made-up reports, each marked Demo)
 
 - [ ] **ROBUST-08**: Every page displays a persistent disclaimer that Pinalert is unofficial, not
       affiliated with any government agency, and not a substitute for calling emergency services
+      (Amended 2026-10-16, owner decision: met on the laptop; on the phone the owner chose no strip,
+      so the disclaimer is read and agreed in the first-time flow and is one tap away in Settings,
+      About Pinalert; the legal review risk stays, see 03.4-CONTEXT D-30)
 
 - [ ] **ROBUST-09**: A moderator (the owner, or anyone on a server-side list) can open a screen no
       one else can open, see automatically flagged posts, user flags and posts whose text check
@@ -155,6 +161,9 @@ Requirements for initial release. Each maps to roadmap phases.
       an Expired group), and voting stays available in Active and Disputed, so a Hidden report can
       still be confirmed back, but not in Past, except that the person who marked a report resolved
       can take that mark back and the poster can reopen (added 2026-10-03, reworded 2026-10-14)
+      (Amended 2026-10-16, owner decision: Phase 3.4 replaces this tab strip with the Show menu on
+      Nearby (All, Confirmed, Disputed) and the Ended nearby part of My activity, which takes the
+      Past content)
 
 - [ ] **HIST-02**: The Resolved group of the Past tab lists reports that people closed in the last
       7 days, each labelled with when it was resolved and who closed it (the reporter alone or
@@ -209,6 +218,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **NOTIF-01**: A signed-in user sees a bell with an unread count and an Updates list;
       tapping an update opens the report (added 2026-10-03)
+      (Amended 2026-10-16, owner decision: the bell sits top right on the phone and beside the
+      person menu on the laptop and opens the latest 10 updates; See all updates opens My activity,
+      Updates)
 
 - [ ] **NOTIF-02**: A user automatically follows a report they posted or voted on and can mute any
       report
@@ -221,24 +233,37 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **NOTIF-04**: User can filter the feed to Reliable reporters only; critical and rescue-needed
       reports always stay visible
+      (Amended 2026-10-16, owner decision: the Only Reliable reporters tick lives in the Show menu
+      on Nearby)
 
 - [ ] **NOTIF-05**: User can opt in to an update when a Reliable reporter posts within a chosen
       distance of where the reader is looking; non-critical reports notify only once Live,
       critical and rescue-needed reports immediately, with a cap on alerts per reporter per
       recipient per hour
+      (Amended 2026-10-16, owner decision: the distance is measured from the person's home area,
+      1, 2, 5 or 10 km, set in Settings as How far from my home area)
 
 - [ ] **PROF-01**: A user can opt in to a public reporter profile with a nickname (never the
       email); it is off by default and available only to Reliable reporters, and nicknames are unique,
       screened and exclude reserved words such as agency names
+      (Amended 2026-10-16, owner decision: the name given in the first-time flow replaces the
+      nickname and keeps the reserved word screening; the profile is still opt in)
 
 - [ ] **PROF-02**: A profile shows the reliability tag with its counts, member since, and recent
       finished reports at a coarse location, with no email and no follower counts
+      (Amended 2026-10-16, owner decision: readers also tap one to five stars, with guard rails,
+      and from 5 raters on the stars are half report outcomes and half the tapped average, see
+      ROADMAP Phase 9; the public Followers and Following lists in PROF-03's note replace "no
+      follower counts")
 
 - [ ] **PROF-03**: A user can follow and unfollow opted-in reporters privately, mute or block,
       see their reports in a Following view and get updates when they post (non-critical only once
       Live, no coordinates or address in the text); switching the profile off, or losing the Reliable
       tag, ends all follows and pending alerts, and a reporter can remove all followers without
       seeing who they are
+      (Amended 2026-10-16, owner decision: the Followers and Following lists are public on the
+      profile, and anyone without their own opted in profile shows only as a number, never by name,
+      so "remove all followers without seeing who they are" no longer holds, see ROADMAP Phase 9)
 
 ### Report Page & Comments
 
@@ -265,6 +290,71 @@ Requirements for initial release. Each maps to roadmap phases.
       (added 2026-09-18 from Phase 2 UAT — the app already renders both palettes via
       `prefers-color-scheme`/`[data-theme]`, but nothing lets a user choose independently of the
       OS setting)
+      (Amended 2026-10-16, owner decision of 2026-10-15: the in-app button stays on the laptop; the
+      phone has no button and follows the device's light or dark setting, see 03.4-CONTEXT D-08)
+
+### App Layout
+
+- [ ] **LAYOUT-01**: The app has three main places on the phone and the laptop alike, Nearby (opens
+      first), Official alerts and My activity: the phone shows them in a bottom bar with a fourth
+      Report item and keeps the bell and the Settings gear at the top right of every screen, and the
+      laptop shows them in a top bar with Post a report, Search a place, the bell, the light and dark
+      button and a person menu (My profile, Settings, Log out). Both sizes reach the same features
+      (added 2026-10-16, Phase 3.4)
+
+- [ ] **LAYOUT-02**: Nearby shows "N reports, 5 km" and one Show menu (All by default, Confirmed,
+      Disputed, and NOTIF-04's Only Reliable reporters tick) instead of a tab strip; in All, disputed
+      reports sit at the bottom under "Disputed: may not be true" with a grey icon and a Disputed
+      tag, never faded, as presentation only, so the single visibility resolver and its Hidden
+      outcome do not change. The official alert banner sits at the top of the list only when a
+      Severe or Extreme alert covers the area, and opens Official alerts (added 2026-10-16,
+      Phase 3.4)
+
+- [ ] **LAYOUT-03**: On the phone the Nearby list is a sheet over the map with three positions
+      (short, half by default, full): scrolling up first grows it, a grey handle can be dragged or
+      tapped, and the map resizes so no pin hides under it. On both sizes, tapping a report shows
+      its pin and tapping a pin shows its report, and the chosen card gets a soft grey fill (added
+      2026-10-16, Phase 3.4)
+
+- [ ] **LAYOUT-04**: My activity holds five parts, Updates, Posted by you, You confirmed, You
+      disputed and Ended nearby (reports near the reader resolved or faded out in the last 7 days,
+      the old Past content): the phone opens on a short list whose rows open each part on its own
+      screen with a back arrow, and the laptop stacks the parts with their rows lined up in columns.
+      Every feature of today's Activity page stays, including the trust counts and panel, the state
+      word, Reopen and take back, the reporter record and the empty states (added 2026-10-16,
+      Phase 3.4)
+
+- [ ] **LAYOUT-05**: Post a report opens full screen from the phone's Report item and as a wide two
+      pane window from the laptop's Post a report button (map with the address search and the
+      draggable pin on the left, form on the right), and closes only with the X. The chosen
+      severity is filled with its own soft colour, and a "Someone in danger right now? Call 112
+      first, then post here." box with a Call 112 button and the What is happening? picks appears
+      only for a Critical or Rescue needed report (added 2026-10-16, Phase 3.4)
+
+- [ ] **LAYOUT-06**: One Settings page, opened from the gear on the phone and from the person menu
+      on the laptop, stacks About you, Phone notifications, People and reports, About Pinalert
+      (Disclaimer, Policy, Low data view) and Account (Log out of all devices, Delete my account).
+      A row appears only once its feature exists, and later phases add their rows here, never a
+      second settings place (added 2026-10-16, Phase 3.4)
+
+- [ ] **LAYOUT-07**: After the first sign in, a five step first-time flow runs (full screen with a
+      progress bar on the phone, a wide window with the step list on the laptop): Welcome,
+      Disclaimer and policy read in a scroll box and agreed (only Agree moves on, and Disagree
+      points to the Demo), Your location, About you (name and home area, both optional) and Alerts,
+      which arrives with Phase 3.3 (added 2026-10-16, Phase 3.4)
+
+- [ ] **LAYOUT-08**: The laptop shows a dark strip at the top of every page (unofficial, not a
+      government service, cannot send help, reports can be wrong, in danger call 112) with a Read
+      the disclaimer link; by owner decision the phone shows no strip on its main screens and
+      carries the disclaimer in the first-time flow and in Settings, About Pinalert (see ROBUST-08).
+      Disclaimer and Policy open in one reader that closes with the X; whether both sizes should
+      match here is still open, see 03.4-CONTEXT O-1 (added 2026-10-16, Phase 3.4)
+
+- [ ] **LAYOUT-09**: Every screen keeps the owner's rules: the phone and the laptop offer the same
+      features, only arranged differently; nothing is repeated and each window has one way to
+      close, the X; nothing a user needs sits off screen or under something floating; a chosen
+      option is never outlined in black; no text is faded; laptop pages use the full width; and the
+      phone follows the device's light or dark setting (added 2026-10-16, Phase 3.4)
 
 ## v2 Requirements
 
@@ -276,6 +366,9 @@ Deferred to future release. Tracked but not in current roadmap.
 - **PWA-02**: Feed updates live without a manual refresh (websockets)
 - **PWA-03**: User can opt in to a push notification when a critical report appears near a saved
   location (Web Push/VAPID)
+  (Amended 2026-10-16, owner decision: Phase 3.3 builds it; the saved location is the person's
+  home area, and rescue and critical reports near it are on by default once phone notifications
+  are on; severe official alerts also buzz the phone, see PWA-06)
 
 - **PWA-04**: A retraction pushes a proactive notification to every session that viewed/confirmed
   the report while it was live (needs a `report_views` table)
@@ -285,6 +378,9 @@ Deferred to future release. Tracked but not in current roadmap.
 
 - **PWA-06**: Phase 3.2's updates and Severe or Extreme official alerts for the reader's district are
   delivered as Web Push to installed PWAs
+  (Amended 2026-10-16, owner decision: Phase 3.3 builds the updates part; Severe or Extreme
+  official alerts covering the home area buzz the phone, on by default with a Settings switch,
+  using 3.3's push plumbing and turned on in Phase 5)
 
 - **PWA-07**: Opt-in email digests of updates (needs a DNS verified sending domain)
 
@@ -404,6 +500,15 @@ Populated during roadmap creation.
 | NOTIF-03 | Phase 3.2 | Pending |
 | NOTIF-04 | Phase 3.2 | Pending |
 | NOTIF-05 | Phase 3.2 | Pending |
+| LAYOUT-01 | Phase 3.4 | Pending |
+| LAYOUT-02 | Phase 3.4 | Pending |
+| LAYOUT-03 | Phase 3.4 | Pending |
+| LAYOUT-04 | Phase 3.4 | Pending |
+| LAYOUT-05 | Phase 3.4 | Pending |
+| LAYOUT-06 | Phase 3.4 | Pending |
+| LAYOUT-07 | Phase 3.4 | Pending |
+| LAYOUT-08 | Phase 3.4 | Pending |
+| LAYOUT-09 | Phase 3.4 | Pending |
 | ROBUST-01 | Phase 4 | Pending |
 | ROBUST-02 | Phase 4 | Pending |
 | ROBUST-03 | Phase 4 | Pending |
@@ -434,21 +539,24 @@ Populated during roadmap creation.
 
 **Coverage:**
 
-- v1 requirements: 63 total (33 original + 5 new IDENT-01..05 added 2026-09-10 for the inserted
+- v1 requirements: 72 total (33 original + 5 new IDENT-01..05 added 2026-09-10 for the inserted
   Phase 1.1: Identity & Login + 1 new UX-01 added 2026-09-18 from Phase 2 UAT + 20 new added
   2026-10-03 for roadmap Phases 3.1, 3.2, 5, 8 and 9: HIST 6, ALERT 4, NOTIF 5, PAGE 2, PROF 3
   + 2 new ROBUST-09 and ROBUST-10 added 2026-10-06 for the Phase 4 scope the owner added in discussion
   + 2 new HIST-08 and HIST-09 added 2026-10-14 from the Phase 3.1 discussion, the compact rows and
-  the take back of a mistaken Mark resolved. HIST-07 is a v2 item and is not counted.
+  the take back of a mistaken Mark resolved + 9 new LAYOUT-01 to LAYOUT-09 added 2026-10-16 for the
+  inserted Phase 3.4: App layout, from the owner's approved mockup (sketch 007).
+  HIST-07 is a v2 item and is not counted.
   By group: Foundation 6, Identity 5, Trust Engine 9, Coordination 8, Robustness 10, Ops 2,
-  Presentation 1, Report History 8, Official Alerts 4, Updates & Following 8, Report Page 2)
+  Presentation 1, Report History 8, Official Alerts 4, Updates & Following 8, Report Page 2,
+  App Layout 9)
 
-- Mapped to phases: 63 (100%)
+- Mapped to phases: 72 (100%)
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-09-05*
-*Last updated: 2026-10-14: HIST-01 to HIST-06 reworded to the tab strip Active, Disputed and Past, the fixed 7 day window, category chips and the approximate location for finished rescue reports, and HIST-08 and HIST-09 added (compact rows, take back of a mistaken Mark resolved), all from the Phase 3.1 discussion (03.1-CONTEXT.md). Earlier update, 2026-10-13: TRUST-05 and TRUST-07 marked complete when Phase 3 closed (UAT 11 of 11, verification passed). Earlier update, 2026-10-06: added ROBUST-09 and ROBUST-10 for the Phase 4 scope the owner added in discussion (the moderator screen with the Flag control, and the public Disclaimer and Policy pages) and reworded ROBUST-01, ROBUST-03 and ROBUST-04 to match. Earlier update, 2026-10-03: added HIST-01..06, ALERT-01..04, NOTIF-01..05, PAGE-01..02 and PROF-01..03
+*Last updated: 2026-10-16: added LAYOUT-01 to LAYOUT-09 for the inserted Phase 3.4 (App layout, from the owner's approved mockup, sketch 007) and recorded the owner's decisions of 2026-10-15 and 2026-10-16 as dated notes on ROBUST-07, ROBUST-08, UX-01, HIST-01, NOTIF-01, NOTIF-04, NOTIF-05, PROF-01 to PROF-03, PWA-03 and PWA-06. Earlier update, 2026-10-14: HIST-01 to HIST-06 reworded to the tab strip Active, Disputed and Past, the fixed 7 day window, category chips and the approximate location for finished rescue reports, and HIST-08 and HIST-09 added (compact rows, take back of a mistaken Mark resolved), all from the Phase 3.1 discussion (03.1-CONTEXT.md). Earlier update, 2026-10-13: TRUST-05 and TRUST-07 marked complete when Phase 3 closed (UAT 11 of 11, verification passed). Earlier update, 2026-10-06: added ROBUST-09 and ROBUST-10 for the Phase 4 scope the owner added in discussion (the moderator screen with the Flag control, and the public Disclaimer and Policy pages) and reworded ROBUST-01, ROBUST-03 and ROBUST-04 to match. Earlier update, 2026-10-03: added HIST-01..06, ALERT-01..04, NOTIF-01..05, PAGE-01..02 and PROF-01..03
 for roadmap Phases 3.1, 3.2, 5, 8 and 9 (raised by the owner after the Phase 3 popup sketch), plus
 v2 items PWA-06, PWA-07 and HIST-07. Earlier update, 2026-09-18: added UX-01 (in-app light/dark toggle) surfaced by Phase 2's UAT gap
 closure round, linked to plan 02-10; added IDENT-01..05 for Phase 1.1 (mandatory email+OTP login,

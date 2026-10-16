@@ -49,6 +49,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 8: Report page and comments** - A reader can open any report into its own page with the trust block and a history timeline, and later read and add moderated comments.
 - [ ] **Phase 9: Followable reporter profiles** - Reporters who opt in and have earned the Reliable tag can be followed privately, and followers are told when they post. First to cut if time runs short.
 
+Build order (owner, 2026-10-16): sign off 3.1 and 4, then 3.4, 3.2, 3.3, 5, 8, 6, 9; the explainer video last.
+
 ## Phase Details
 
 ### Phase 1: Foundation — Report & Map
@@ -446,7 +448,7 @@ Plans:
 
 **Goal:** A signed-in person is told inside the app when something changes on a report they care about, and can ask to hear when a Reliable reporter posts nearby, so they know the current situation without reopening the app and hunting for it. Raised by the owner on 2026-10-03, and earlier in Phase 1.1 as "notify a reporter when someone confirms or disputes their report". Inserted right after Phase 3 because the updates are worded from Phase 3's trust object and the alerts use Phase 3's public reliability tag.
 **Requirements**: NOTIF-01, NOTIF-02, NOTIF-03, NOTIF-04, NOTIF-05
-**Depends on:** Phase 3, Phase 3.1
+**Depends on:** Phase 3, Phase 3.1, Phase 3.4 (added 2026-10-16: 3.2 builds its bell, Updates and Settings rows into the 3.4 layout)
 **UI hint**: yes
 **Success Criteria** (what must be TRUE):
 
@@ -537,6 +539,13 @@ Plans:
   4. Read only: no confirm or dispute controls, never mixed into crowd counts. The Alerts tab and the banner sit in the list panel beside Nearby. Shading the affected areas on the map comes later.
   5. Optional later: an Open-Meteo rain outlook line (free for non-commercial use, credit required). The "replay the last 24 hours" time slider is in the backlog and would extend this phase's demo.
   6. Demo mode must be decided here: login is required to view anything (Phase 1.1 D-05), so a first-time visitor and a recruiter see the login screen, not the demo. A likely answer is a separately entered, read-only or sandboxed /demo route exempt from the login gate (an amendment to D-05 plus an update to the pinned exempt-route test), with fixtures kept out of the live tables and exempt from the 1 km and self-vote rules by construction, so seeded rows never leak into real counts or reporter tags. Resend domain verification is a prerequisite of the first public share.
+
+**Owner decisions (2026-10-16):**
+
+  - Demo: a Demo button on the login screen opens a sandboxed practice copy with no login, so nothing touches real reports or ratings. The sample is the 2024 Vijayawada floods along the Budameru, with real place names on the map and made-up reports, each visibly marked Demo, and no real people or real reports.
+  - Severe or Extreme official alerts (NDMA SACHET, IMD, CWC) covering the person's home area buzz the phone, on by default with a switch in Settings. The push plumbing comes from Phase 3.3; this phase adds the Settings row and turns the alerts on.
+  - Official alerts is a main place of the app, built by Phase 3.4 and filled by this phase, in place of the Alerts tab in the list panel that scope note 4 describes.
+  - The explainer video comes after the project is finished: Claude designs and renders it (60 to 90 seconds, captions, the app's look, the house rules), the owner approves it, and it goes on YouTube as unlisted, linked next to the Demo button on the login screen and in the README.
 
 **Plans**: TBD
 **UI hint**: yes
@@ -720,7 +729,9 @@ Plans:
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)
 
-### Phase 999.10: App-wide design pass (BACKLOG, owner priority)
+### Phase 999.10: App-wide design pass (PROMOTED to Phase 3.4, 2026-10-16)
+
+**Note 2026-10-16:** this owner priority item is covered by sketch 007 (`.planning/sketches/007-app-layout/`, approved 2026-10-16) and Phase 3.4 (`.planning/phases/03.4-app-layout/03.4-CONTEXT.md`); do not promote it again.
 
 **Goal:** [Captured for future planning] Make the whole app look intentionally designed: a radius, shadow and motion token scale, smooth restrained transitions on buttons and surfaces, background and surface elevation, and light and dark polish across every page. Phase 3's UI contract already redesigns the popup card, vote buttons, trust block and Activity rows, so this covers everything else. The owner said on 2026-10-06 "we should concentrate on the designing part of this project too". Where it goes is undecided: recommended right after Phase 3, so the new popup is styled once. Open part of gap `ui-visual-polish` (see `.planning/debug/ui-visual-polish.md` and `02-UAT.md` finding F5). Needs `/gsd-ui-phase` first.
 **Requirements:** TBD
@@ -825,6 +836,13 @@ Plans:
   1. Care points: a nickname makes one person's reports linkable, and Phase 3 D-10's "not a privacy risk" holds only while no nickname is shown, so opt-in is required and history shows coarse locations only. A notification must respect the provisional gate so it cannot amplify an unconfirmed report. No follower counts and no likes. Amended 2026-10-16: the owner chose tapped star ratings over the advice against them, so the guard rails above are the defence against a popularity game and against brigading (TRUSTX-03 burst detection becomes more important), and the plan must say how a tapped rating can be removed or ignored when abuse is found.
   2. The "See this reporter" link sits inside the trust block's explanation panel and appears only for opted-in reporters.
   3. Data: a nickname and a public-profile flag on accounts, a `follows` table and a block list. Following is private.
+
+**Owner decisions (2026-10-16):**
+
+  - The name and home area come from the first-time flow (step 4, About you, built in Phase 3.4); there is no nickname. Both show only on an opted in profile.
+  - Tapping an opted in reporter's name on a report opens their profile.
+  - My profile sits in the laptop person menu, and on the phone as View my profile in Settings, About you.
+  - Let others follow me, Following, Followers and Blocked people are rows in Settings, People and reports.
 
 **Plans:** 0 plans
 
