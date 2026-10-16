@@ -314,10 +314,18 @@ func (c *Client) fetchPhoton(ctx context.Context, q string, near *Point) ([]Resu
 	return rankPhoton(q, candidates), nil
 }
 
-// waitForPhotonToken is the report search's turn at Photon's limiter: a wait
-// bounded by photonLimiterWait.
-func (c *Client) waitForPhotonToken(ctx context.Context) error {
-	waitCtx, cancel := context.WithTimeout(ctx, photonLimiterWait)
+// waitForPhotonToken is the report search's turn at Photon's limiter for its
+// Photon try i. The first try waits at most photonLimiterWait, since
+// Nominatim is right behind it. A shorter text's try (i > 0) waits up to
+// limiterWaitTimeout like a Nominatim try: by then Photon is the best chance
+// left, and at one Photon request a second its next token is most of a second
+// away.
+func (c *Client) waitForPhotonToken(ctx context.Context, i int) error {
+	wait := photonLimiterWait
+	if i > 0 {
+		wait = limiterWaitTimeout
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, wait)
 	defer cancel()
 	if err := c.photonLimiter.Wait(waitCtx); err != nil {
 		return fmt.Errorf("geocode: photon limiter wait: %w", err)
@@ -325,11 +333,13 @@ func (c *Client) waitForPhotonToken(ctx context.Context) error {
 	return nil
 }
 
-// takeReaderPhotonToken is the place search's turn at Photon's limiter: a
-// token only if one is free right now, so a reader never queues ahead of a
-// report search (D-16).
-func (c *Client) takeReaderPhotonToken(ctx context.Context) error {
-	return takeReaderTokenFrom(ctx, c.photonLimiter, 0)
+// takeReaderPhotonToken is the place search's turn at Photon's limiter for
+// its Photon try i, by the reader rule (takeReaderTokenFrom): the first try
+// takes a token only if one is free right now, a later one waits without
+// reserving and gives up when a report search is waiting, so a reader never
+// queues ahead of a report search (D-16).
+func (c *Client) takeReaderPhotonToken(ctx context.Context, i int) error {
+	return takeReaderTokenFrom(ctx, c.photonLimiter, i)
 }
 
 // photonOutcome is what asking Photon came to.
@@ -340,11 +350,12 @@ type photonOutcome struct {
 	failed bool // Photon errored, timed out or had no token: never cached
 }
 
-// askPhoton is the Photon half of a search: its cache, its limiter and one
+// askPhoton is one Photon try for text: its cache, its limiter and one
 // request. An error is returned only when the search itself must end: the
 // reader found no free token, or the caller went away. Any other Photon
 // failure is reported as failed, and the search goes on to Nominatim.
-func (c *Client) askPhoton(ctx context.Context, key, q string, near *Point, take func(ctx context.Context) error) (photonOutcome, error) {
+func (c *Client) askPhoton(ctx context.Context, text string, near *Point, take func(ctx context.Context) error) (photonOutcome, error) {
+	key := cacheKey(text, near)
 	if cached, ok := c.photon.get(key); ok {
 		// A cached empty answer means Photon found nothing here before.
 		return photonOutcome{answer: cached, found: len(cached.Results) > 0}, nil
@@ -357,7 +368,7 @@ func (c *Client) askPhoton(ctx context.Context, key, q string, near *Point, take
 		// unavailable rather than make the person wait longer.
 		return photonOutcome{failed: true}, nil
 	}
-	results, err := c.fetchPhoton(ctx, q, near)
+	results, err := c.fetchPhoton(ctx, text, near)
 	if err != nil {
 		if ctx.Err() != nil {
 			// The browser gave up or the server is shutting down: no
