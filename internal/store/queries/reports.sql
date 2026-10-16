@@ -1,11 +1,11 @@
 -- name: InsertReport :one
 INSERT INTO reports (
     session_id, category, severity, description, latitude, longitude, geohash,
-    shelter_capacity_status, shelter_headcount, created_at, expires_at
+    shelter_capacity_status, shelter_headcount, happening, created_at, expires_at
 ) VALUES (
     sqlc.arg(session_id), sqlc.arg(category), sqlc.arg(severity), sqlc.arg(description),
     sqlc.arg(latitude), sqlc.arg(longitude), sqlc.arg(geohash),
-    sqlc.arg(shelter_capacity_status), sqlc.arg(shelter_headcount),
+    sqlc.arg(shelter_capacity_status), sqlc.arg(shelter_headcount), sqlc.narg(happening),
     sqlc.arg(created_at), sqlc.arg(expires_at)
 )
 RETURNING id, category, severity, description, latitude, longitude, geohash,
@@ -116,12 +116,12 @@ WHERE r.id = ANY(sqlc.arg(report_ids)::bigint[]);
 -- predicate or ordering (R-05, D-19).
 INSERT INTO reports (
     session_id, category, severity, description, latitude, longitude, geohash,
-    shelter_capacity_status, shelter_headcount, created_at, expires_at,
+    shelter_capacity_status, shelter_headcount, happening, created_at, expires_at,
     moderation_state, request_id, request_account_id, client_written_at
 ) VALUES (
     sqlc.arg(session_id), sqlc.arg(category), sqlc.arg(severity), sqlc.arg(description),
     sqlc.arg(latitude), sqlc.arg(longitude), sqlc.arg(geohash),
-    sqlc.arg(shelter_capacity_status), sqlc.arg(shelter_headcount),
+    sqlc.arg(shelter_capacity_status), sqlc.arg(shelter_headcount), sqlc.narg(happening),
     sqlc.arg(created_at), sqlc.arg(expires_at),
     sqlc.arg(moderation_state), sqlc.narg(request_id), sqlc.narg(request_account_id),
     sqlc.narg(client_written_at)

@@ -478,6 +478,22 @@ The server decides every vote. The browser only helps the voter get a fresh loca
 
 The hint is advisory. A forced vote is still refused by the server.
 
+## Show menu: Confirmed
+
+The Show menu on the Nearby list has a Confirmed choice. Which reports are in it is decided by the server and sent as the field `confirmed_by_people` on every report in the feed. The browser reads that field and shows it. It never counts confirmations and it is never sent a threshold.
+
+A report is in Confirmed when all of these are true:
+
+- It is active: live, not retracted, not expired, not disputed, not held and not removed.
+- People at `IndependentAgreementThreshold` different spots, 2, have confirmed it. This is the same spot count the trust object shows, so Confirmed and "Confirmed by N people" cannot disagree.
+- The disputes are not a majority. A majority means at least 2 spots disputed it and more spots disputed it than confirmed it.
+
+The Critical case is the one to read twice. A Critical report is shown at once, with no waiting for confirmation, and disputes cannot hide it. That is the critical bypass in `Resolve`, and it decides showing, not being confirmed. So an unconfirmed Critical report is in the All list but is not in Confirmed, and its `confirmed_by_people` is false. A Critical report that people have confirmed is in Confirmed, unless the disputes are a majority; then it stays visible but is not listed as confirmed. Reports stored with the older rescue needed category follow the same rule. The choice that a confirmed Critical report belongs in Confirmed is a default waiting for the owner's answer; changing it is a small edit to `ConfirmedByPeople` and the Critical rows of `TestConfirmedByPeople`.
+
+For a report the bypass does not touch, Confirmed is the same thing as the resolver's live because confirmed answer. `TestConfirmedByPeopleAgreesWithResolveForNonCritical` checks that over a grid of confirm and dispute counts, and `TestConfirmedByPeople` has a row for every rung of `Resolve` and for the Critical rows. `TestFeedViewAll` shows the field on the wire. `ConfirmedByPeople` is never read by `Resolve`, `ViewOf` or `BuildTrust`, so it changes no count and no visibility.
+
+The All choice is a separate read, `view=all`, which returns the active and the disputed reports together, each with its own view word, so the list can put disputed ones last. It never returns a retracted, expired, held or removed report (`TestWithheldReportsInNoFeed` and `TestFeedViewAll`).
+
 ## Where the roadmap words are met
 
 | Roadmap words | What ships | Where in code | Test |

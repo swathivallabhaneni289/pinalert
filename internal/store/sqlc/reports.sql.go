@@ -15,12 +15,12 @@ import (
 const insertReport = `-- name: InsertReport :one
 INSERT INTO reports (
     session_id, category, severity, description, latitude, longitude, geohash,
-    shelter_capacity_status, shelter_headcount, created_at, expires_at
+    shelter_capacity_status, shelter_headcount, happening, created_at, expires_at
 ) VALUES (
     $1, $2, $3, $4,
     $5, $6, $7,
-    $8, $9,
-    $10, $11
+    $8, $9, $10,
+    $11, $12
 )
 RETURNING id, category, severity, description, latitude, longitude, geohash,
           shelter_capacity_status, shelter_headcount, created_at, expires_at
@@ -36,6 +36,7 @@ type InsertReportParams struct {
 	Geohash               string
 	ShelterCapacityStatus *string
 	ShelterHeadcount      *int32
+	Happening             *string
 	CreatedAt             time.Time
 	ExpiresAt             time.Time
 }
@@ -65,6 +66,7 @@ func (q *Queries) InsertReport(ctx context.Context, arg InsertReportParams) (Ins
 		arg.Geohash,
 		arg.ShelterCapacityStatus,
 		arg.ShelterHeadcount,
+		arg.Happening,
 		arg.CreatedAt,
 		arg.ExpiresAt,
 	)
@@ -88,15 +90,15 @@ func (q *Queries) InsertReport(ctx context.Context, arg InsertReportParams) (Ins
 const insertReportIdempotent = `-- name: InsertReportIdempotent :one
 INSERT INTO reports (
     session_id, category, severity, description, latitude, longitude, geohash,
-    shelter_capacity_status, shelter_headcount, created_at, expires_at,
+    shelter_capacity_status, shelter_headcount, happening, created_at, expires_at,
     moderation_state, request_id, request_account_id, client_written_at
 ) VALUES (
     $1, $2, $3, $4,
     $5, $6, $7,
-    $8, $9,
-    $10, $11,
-    $12, $13, $14,
-    $15
+    $8, $9, $10,
+    $11, $12,
+    $13, $14, $15,
+    $16
 )
 ON CONFLICT (request_account_id, request_id) WHERE request_id IS NOT NULL DO NOTHING
 RETURNING id, category, severity, description, latitude, longitude, geohash,
@@ -113,6 +115,7 @@ type InsertReportIdempotentParams struct {
 	Geohash               string
 	ShelterCapacityStatus *string
 	ShelterHeadcount      *int32
+	Happening             *string
 	CreatedAt             time.Time
 	ExpiresAt             time.Time
 	ModerationState       string
@@ -156,6 +159,7 @@ func (q *Queries) InsertReportIdempotent(ctx context.Context, arg InsertReportId
 		arg.Geohash,
 		arg.ShelterCapacityStatus,
 		arg.ShelterHeadcount,
+		arg.Happening,
 		arg.CreatedAt,
 		arg.ExpiresAt,
 		arg.ModerationState,

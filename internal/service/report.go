@@ -141,6 +141,45 @@ func (s Severity) Valid() bool {
 	return false
 }
 
+// Happening is the What is happening pick on a Critical report (D-24, D-24a):
+// one of seven closed values the report form offers. It is optional, accepted
+// only together with severity critical, and stored in reports.happening. It is
+// display and routing data for later phases: Resolve never reads it.
+type Happening string
+
+const (
+	HappeningWaterRising       Happening = "water_rising"
+	HappeningPeopleTrapped     Happening = "people_trapped"
+	HappeningFire              Happening = "fire"
+	HappeningBuildingCollapsed Happening = "building_collapsed"
+	HappeningLandslide         Happening = "landslide"
+	HappeningMedicalEmergency  Happening = "medical_emergency"
+	HappeningOther             Happening = "other"
+)
+
+// Happenings is the ordered, canonical list of the seven picks, in the order the
+// report form shows them.
+var Happenings = []Happening{
+	HappeningWaterRising,
+	HappeningPeopleTrapped,
+	HappeningFire,
+	HappeningBuildingCollapsed,
+	HappeningLandslide,
+	HappeningMedicalEmergency,
+	HappeningOther,
+}
+
+// Valid reports whether h is one of the seven picks. Comparison is exact, with
+// no case folding and no trimming.
+func (h Happening) Valid() bool {
+	for _, v := range Happenings {
+		if v == h {
+			return true
+		}
+	}
+	return false
+}
+
 // CapacityStatus is a shelter-open report's occupancy status.
 type CapacityStatus string
 
@@ -191,8 +230,11 @@ type SubmitInput struct {
 	Longitude             float64
 	ShelterCapacityStatus *CapacityStatus
 	ShelterHeadcount      *int
-	RequestID             string
-	WrittenAt             *time.Time
+	// Happening is optional and accepted only with severity critical (D-24a: the
+	// picks show for Critical only). nil is absent. Stored, never read by Resolve.
+	Happening *Happening
+	RequestID string
+	WrittenAt *time.Time
 }
 
 // WrittenAtMaxAge is how far before created_at a stored written time may lie.
@@ -218,6 +260,16 @@ func ClampWrittenAt(w *time.Time, now time.Time) *time.Time {
 		out = now.Add(-WrittenAtMaxAge).UTC()
 	}
 	return &out
+}
+
+// happeningParam converts the optional pick to the nullable column value: nil
+// stays NULL.
+func happeningParam(h *Happening) *string {
+	if h == nil {
+		return nil
+	}
+	s := string(*h)
+	return &s
 }
 
 // writtenAtParam converts the clamped written time to the nullable column
@@ -275,7 +327,12 @@ type NearbyQuery struct {
 	RadiusKm        float64
 	ViewerAccountID int64
 	IncludeDisputed bool
-	Category        Category
+	// All is the Show menu's All (D-14): Live, Provisional and Hidden reports in
+	// one read, each with its own view word, so the client can list the disputed
+	// ones last. It takes precedence over IncludeDisputed, never reveals a
+	// Retracted, expired, held or removed report, and changes no count.
+	All      bool
+	Category Category
 }
 
 // ValidateSubmitInput enforces every server-side rule a report submission
@@ -328,6 +385,17 @@ func ValidateSubmitInput(in SubmitInput) error {
 	if in.ShelterHeadcount != nil {
 		if *in.ShelterHeadcount < 0 || *in.ShelterHeadcount > maxHeadcount {
 			return ValidationError{"shelter_headcount", "Headcount must be a realistic number of people."}
+		}
+	}
+
+	// The What is happening pick: a known value, and only for a Critical report
+	// (D-24, D-24a). An empty string is not absent: absent is nil.
+	if in.Happening != nil {
+		if !in.Happening.Valid() {
+			return ValidationError{"happening", "Choose what is happening from the list."}
+		}
+		if in.Severity != SeverityCritical {
+			return ValidationError{"happening", "What is happening only applies to Critical reports."}
 		}
 	}
 
@@ -684,6 +752,7 @@ func (s *ReportService) SubmitChecked(ctx context.Context, sessionID string, acc
 		Geohash:               gh,
 		ShelterCapacityStatus: capacityStatus,
 		ShelterHeadcount:      headcount,
+		Happening:             happeningParam(in.Happening),
 		CreatedAt:             now,
 		ExpiresAt:             expiresAt,
 		ModerationState:       string(state),
@@ -953,7 +1022,11 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 		tally := BuildVoteTally(reportVotes, r.ID, reporterID)
 		meta := ReportMeta{Severity: r.Severity, Category: r.Category, Moderation: ModerationState(ex.ModerationState)}
 		vis, reason := Resolve(meta, tally, now)
-		if !vis.ListableInFeed(q.IncludeDisputed) {
+		if q.All {
+			if !vis.ListableInAll() {
+				continue
+			}
+		} else if !vis.ListableInFeed(q.IncludeDisputed) {
 			continue
 		}
 		if q.Category != "" && r.Category != q.Category {
@@ -992,6 +1065,9 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 			// Display only, set after Resolve and never read by it (R-05).
 			WrittenAt:     WrittenAtForDisplay(r.CreatedAt, writtenAtPtr(ex.ClientWrittenAt)),
 			ViewerFlagged: ex.ViewerFlagged,
+			// Server authored Show Confirmed membership, beside ViewOf and from the
+			// same tally. Resolve never reads it (TRUST-02).
+			ConfirmedByPeople: ConfirmedByPeople(vis, view, tally),
 		})
 	}
 	if err := s.attachUndos(ctx, q.ViewerAccountID, views, now); err != nil {

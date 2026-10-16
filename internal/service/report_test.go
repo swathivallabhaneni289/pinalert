@@ -396,3 +396,72 @@ func TestValidateSubmitInputCountsRunes(t *testing.T) {
 		check(t, "  \n"+strings.Repeat("న", 10)+" \n ", "")
 	})
 }
+
+func ptrHappening(h service.Happening) *service.Happening { return &h }
+
+// TestValidateSubmitHappening pins the What is happening pick (D-24, D-24a):
+// one of seven values, accepted only with severity critical, optional always.
+func TestValidateSubmitHappening(t *testing.T) {
+	want := []service.Happening{
+		service.HappeningWaterRising, service.HappeningPeopleTrapped, service.HappeningFire,
+		service.HappeningBuildingCollapsed, service.HappeningLandslide, service.HappeningMedicalEmergency,
+		service.HappeningOther,
+	}
+	if len(service.Happenings) != 7 {
+		t.Fatalf("Happenings has %d values, want 7", len(service.Happenings))
+	}
+	for i, h := range want {
+		if service.Happenings[i] != h {
+			t.Errorf("Happenings[%d] = %q, want %q", i, service.Happenings[i], h)
+		}
+	}
+	slugs := []string{"water_rising", "people_trapped", "fire", "building_collapsed", "landslide", "medical_emergency", "other"}
+	for i, s := range slugs {
+		if string(want[i]) != s {
+			t.Errorf("constant %d is %q, want %q", i, want[i], s)
+		}
+	}
+
+	t.Run("each of the seven passes with critical", func(t *testing.T) {
+		for _, h := range service.Happenings {
+			in := validInput()
+			in.Severity = service.SeverityCritical
+			in.Happening = ptrHappening(h)
+			if err := service.ValidateSubmitInput(in); err != nil {
+				t.Errorf("happening %q with critical: %v", h, err)
+			}
+		}
+	})
+	t.Run("any value with low or medium is refused on happening", func(t *testing.T) {
+		for _, sev := range []service.Severity{service.SeverityLow, service.SeverityMedium} {
+			for _, h := range service.Happenings {
+				in := validInput()
+				in.Severity = sev
+				in.Happening = ptrHappening(h)
+				assertFieldError(t, service.ValidateSubmitInput(in), "happening")
+			}
+		}
+	})
+	t.Run("an unknown, wrong case or empty value is refused on happening", func(t *testing.T) {
+		for _, bad := range []service.Happening{"flood", "Fire", "FIRE", "people trapped", "", " fire"} {
+			in := validInput()
+			in.Severity = service.SeverityCritical
+			in.Happening = ptrHappening(bad)
+			assertFieldError(t, service.ValidateSubmitInput(in), "happening")
+		}
+	})
+	t.Run("no happening passes for every severity", func(t *testing.T) {
+		for _, sev := range service.Severities {
+			in := validInput()
+			in.Severity = sev
+			if err := service.ValidateSubmitInput(in); err != nil {
+				t.Errorf("severity %q without happening: %v", sev, err)
+			}
+		}
+	})
+	t.Run("Valid is an exact match", func(t *testing.T) {
+		if !service.HappeningFire.Valid() || service.Happening("Fire").Valid() || service.Happening("").Valid() {
+			t.Error("Valid must accept the seven slugs and nothing else")
+		}
+	})
+}

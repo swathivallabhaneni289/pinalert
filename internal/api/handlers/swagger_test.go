@@ -618,7 +618,7 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 	p14AssertEnum(t, p14SwaggerProp(t, defProps, "handlers.HistoryResponse", "state"), []string{"resolved", "expired"})
 	p14AssertEnum(t, p14SwaggerProp(t, defProps, "handlers.FocusResponse", "status"), []string{"ok", "too_old", "unavailable"})
 	p14AssertEnum(t, p14SwaggerProp(t, defProps, "handlers.FeedReportResponse", "view"), []string{"active", "disputed", "resolved", "past"})
-	p14AssertEnum(t, p14SwaggerProp(t, defProps, "handlers.ReportListResponse", "view"), []string{"active", "disputed", "past"})
+	p14AssertEnum(t, p14SwaggerProp(t, defProps, "handlers.ReportListResponse", "view"), []string{"all", "active", "disputed", "past"})
 	p14AssertEnum(t, p14SwaggerProp(t, defProps, "handlers.FeedReportResponse", "your_resolution"), []string{"resolve", "reopen", "unresolve"})
 	for owner, keys := range map[string]map[string]string{
 		"handlers.FeedReportResponse": {"history": "handlers.HistoryResponse"},

@@ -3,6 +3,8 @@ package handlers
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"pinalert/internal/account"
@@ -76,5 +78,42 @@ func TestNearbyRejectsNaNQueryValues(t *testing.T) {
 				t.Errorf("message = %q, want %q", message, tc.message)
 			}
 		})
+	}
+}
+
+// TestParseFeedViewAll pins the request only word all: it parses to its own
+// mode, it is not a service partition word, it refuses a show_disputed that
+// disagrees with it, and the unknown view message lists it.
+func TestParseFeedViewAll(t *testing.T) {
+	got, problem := parseFeedView(url.Values{"view": {"all"}})
+	if problem != nil || got != feedViewAll {
+		t.Fatalf("view=all = %q, %+v, want the all mode and no problem", got, problem)
+	}
+	if feedViewAll.Valid() {
+		t.Error("all must not be one of service.FeedViews")
+	}
+
+	if _, problem := parseFeedView(url.Values{"view": {"all"}, "show_disputed": {"true"}}); problem == nil || problem.Field != "view" {
+		t.Errorf("view=all with show_disputed=true = %+v, want a problem on the field view", problem)
+	}
+	if got, problem := parseFeedView(url.Values{"view": {"all"}, "show_disputed": {"false"}}); problem != nil || got != feedViewAll {
+		t.Errorf("view=all with show_disputed=false = %q, %+v, want the all mode", got, problem)
+	}
+
+	_, problem = parseFeedView(url.Values{"view": {"everything"}})
+	if problem == nil || problem.Field != "view" {
+		t.Fatalf("unknown view = %+v, want a problem on the field view", problem)
+	}
+	for _, word := range []string{"all", "active", "disputed", "past"} {
+		if !strings.Contains(problem.Message, word) {
+			t.Errorf("unknown view message %q does not list %q", problem.Message, word)
+		}
+	}
+
+	// Through the handler, view=all with a conflicting show_disputed answers 400
+	// on the field view before the service is reached.
+	status, field, _ := nearbyStatus(t, "lat=12.97&lon=77.59&radius_km=5&view=all&show_disputed=true")
+	if status != http.StatusBadRequest || field != "view" {
+		t.Errorf("handler: status %d field %q, want 400 on view", status, field)
 	}
 }

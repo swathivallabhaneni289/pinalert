@@ -108,7 +108,7 @@ func TestWithheldReportsInNoFeed(t *testing.T) {
 					}
 				}
 			}
-			for _, view := range []string{"disputed", "past"} {
+			for _, view := range []string{"all", "disputed", "past"} {
 				list, body := h10Get(t, client, h10URL(srv.URL, p407Lat, p407Lon, "view="+view))
 				for _, r := range list.Reports {
 					for _, id := range withheld {

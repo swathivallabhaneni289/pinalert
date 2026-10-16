@@ -56,6 +56,8 @@ type SubmitReportRequest struct {
 	ShelterCapacityStatus *string `json:"shelter_capacity_status,omitempty" enums:"available,limited,full,closed" example:"available"`
 	// ShelterHeadcount is optional and only valid alongside category shelter_open.
 	ShelterHeadcount *int `json:"shelter_headcount,omitempty" example:"42"`
+	// Happening is the optional What is happening pick. It is accepted only with severity critical; with any other severity, or with a value outside the list, the post is refused with 400 on the field happening. A saved report written before this field existed has none and still posts.
+	Happening *string `json:"happening,omitempty" enums:"water_rising,people_trapped,fire,building_collapsed,landslide,medical_emergency,other" example:"people_trapped"`
 	// Optional retry key: 16 to 64 letters, digits or hyphens. Sending the same key again returns the report already stored instead of storing it twice.
 	RequestID *string `json:"request_id,omitempty" minLength:"16" maxLength:"64" example:"5f0c2a9e-8d1b-4c7e-9a33-2b6f1e4d7c10"`
 	// Optional, display only: when the device wrote the report, RFC 3339. A value that cannot be read is ignored, a future one is set to the server time and one older than 14 days is set to 14 days before it. It never changes created_at, expires_at, the order or the fade.
@@ -183,6 +185,13 @@ type FeedReportResponse struct {
 	// flagged it, which the server refuses. It is filled from the one batched
 	// extras read, so the feed's round trips stay constant.
 	ViewerFlagged bool `json:"viewer_flagged" example:"false"`
+	// ConfirmedByPeople is the server authored Show Confirmed membership: true only
+	// for an active report that people at different nearby spots have confirmed
+	// (and whose disputes are not a majority). It is not the same as visibility
+	// live: a Critical report is shown at once but is confirmed only once people
+	// confirm it. The client renders it and never recomputes it (TRUST-02). Always
+	// present.
+	ConfirmedByPeople bool `json:"confirmed_by_people" example:"true"`
 }
 
 // HistoryResponse is how a finished report ended. State is resolved or
@@ -235,12 +244,13 @@ type FocusResponse struct {
 // and focus objects.
 type ReportListResponse struct {
 	// View is the tab these reports belong to. resolved is only an alias of
-	// past on the way in and is answered as past.
-	View string `json:"view" enums:"active,disputed,past" example:"active"`
+	// past on the way in and is answered as past. all is the Show menu's All:
+	// the reports carry their own view word, active or disputed.
+	View string `json:"view" enums:"all,active,disputed,past" example:"active"`
 	// Reports is never null. The past view lists the resolved group first and
 	// then the expired group, each newest first.
 	Reports []FeedReportResponse `json:"reports"`
-	// Recent is present only on an active, unfiltered view with no reports.
+	// Recent is present only on an active or all, unfiltered view with no reports.
 	Recent *RecentResponse `json:"recent,omitempty"`
 	// Cut is present only on the past view.
 	Cut *CutResponse `json:"cut,omitempty"`
@@ -339,6 +349,7 @@ func reportViewToResponse(v service.ReportView) FeedReportResponse {
 		UndosLeft:             v.UndosLeft,
 		WrittenAt:             writtenAt,
 		ViewerFlagged:         v.ViewerFlagged,
+		ConfirmedByPeople:     v.ConfirmedByPeople,
 	}
 }
 
@@ -499,6 +510,10 @@ func SubmitReport(svc *service.ReportService, gate *RateGate) http.HandlerFunc {
 		if req.RequestID != nil {
 			in.RequestID = *req.RequestID
 		}
+		if req.Happening != nil {
+			h := service.Happening(*req.Happening)
+			in.Happening = &h
+		}
 
 		if err := service.ValidateSubmitInput(in); err != nil {
 			var ve service.ValidationError
@@ -583,11 +598,14 @@ func SubmitReport(svc *service.ReportService, gate *RateGate) http.HandlerFunc {
 // session (see SubmitReport's doc comment); the gate refuses an unverified
 // reader with 401 before any report data is looked up.
 //
-// @Summary List the reports near a point for one view: active, disputed or past
+// @Summary List the reports near a point for one view: all, active, disputed or past
 // @Description Runs the indexed bounding-box prefilter followed by exact Haversine distance,
 // @Description then resolves each report fresh via the shared resolver. This single endpoint serves
 // @Description the map, the list, the Past tab, the counts for an empty Active tab and a report link;
 // @Description there is no separate route per tab.
+// @Description all is the Show menu's All: active and disputed reports in one answer, nearest first. Every
+// @Description report carries its own view word, so a client that groups by it lists disputed ones last.
+// @Description A resolved, expired, held or removed report is never in all.
 // @Description The view parameter picks the tab. active (the default) is Live and Provisional reports,
 // @Description nearest first. disputed is only reports currently hidden by disputes, replacing the
 // @Description default view rather than adding to it; a critical or rescue-needed report stays Live
@@ -607,7 +625,7 @@ func SubmitReport(svc *service.ReportService, gate *RateGate) http.HandlerFunc {
 // @Description window, too_old when it ended more than seven days ago, or unavailable when there is no such
 // @Description report or no tab lists it. Not found and every unlisted state share the one unavailable
 // @Description answer. The reports array still holds the reader's own area.
-// @Description recent ({resolved_24h, expired_24h}) is present only when the view is active, no category
+// @Description recent ({resolved_24h, expired_24h}) is present only when the view is active or all, no category
 // @Description was sent and there are no reports, so an empty tab can say what happened lately.
 // @Description A finished Rescue report never leaves the API exact on the past view or on a link: its
 // @Description description is empty, its latitude, longitude and geohash are a blurred point,
@@ -623,7 +641,7 @@ func SubmitReport(svc *service.ReportService, gate *RateGate) http.HandlerFunc {
 // @Param lat query number true "Latitude of the query center (required, -90 to 90)"
 // @Param lon query number true "Longitude of the query center (required, -180 to 180)"
 // @Param radius_km query number false "Search radius in kilometers (defaults to 10, bounded to 0.1-50)" minimum(0.1) maximum(50) default(10)
-// @Param view query string false "Which tab to list: active (the default), disputed or past. resolved is an alias of past." Enums(active,disputed,past,resolved)
+// @Param view query string false "Which tab to list: active (the default), all, disputed or past. all is active and disputed together. resolved is an alias of past." Enums(all,active,disputed,past,resolved)
 // @Param show_disputed query boolean false "Older way to select the disputed view. true selects disputed; with another view it is refused (defaults to false)"
 // @Param category query string false "Keep only this report category in the chosen view (default: all)" Enums(flood,earthquake,fire,storm_cyclone,road_blocked,power_outage,shelter_open,traffic,rescue_needed,other)
 // @Param report query integer false "A report id from a link; answered in the focus object" minimum(1)
@@ -748,6 +766,7 @@ func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 				RadiusKm:        radiusKm,
 				ViewerAccountID: acc.ID,
 				IncludeDisputed: view == service.FeedViewDisputed,
+				All:             view == feedViewAll,
 				Category:        category,
 			})
 			if err != nil {
@@ -758,10 +777,10 @@ func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 			views = nearby
 		}
 
-		// The counts for an empty Active tab (D-12): only the unfiltered
-		// active view, and only when it came back empty, so a page with
+		// The counts for an empty Active tab (D-12) and an empty All: only the
+		// unfiltered active or all view, and only when it came back empty, so a page with
 		// reports and every filtered page cost nothing extra.
-		if view == service.FeedViewActive && category == "" && len(views) == 0 {
+		if (view == service.FeedViewActive || view == feedViewAll) && category == "" && len(views) == 0 {
 			counts, err := svc.RecentHistoryCounts(r.Context(), service.RecentQuery{
 				Latitude:  lat,
 				Longitude: lon,
@@ -806,6 +825,13 @@ func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 	}
 }
 
+// feedViewAll is the request only word for the Show menu's All (D-14). It is a
+// read mode of GET /api/reports and not a tab, so it is deliberately not in
+// service.FeedViews, whose Valid() other callers rely on to mean the four
+// partition words. Every report in an all answer still carries its own view
+// word (active or disputed).
+const feedViewAll service.FeedView = "all"
+
 // paramProblem names the one query parameter that failed validation and the
 // message the 400 carries.
 type paramProblem struct {
@@ -836,6 +862,9 @@ func parseFeedView(q url.Values) (service.FeedView, *paramProblem) {
 		// Absent or blank: the default view.
 	case "active":
 		explicit = true
+	case "all":
+		view = feedViewAll
+		explicit = true
 	case "disputed":
 		view = service.FeedViewDisputed
 		explicit = true
@@ -843,7 +872,7 @@ func parseFeedView(q url.Values) (service.FeedView, *paramProblem) {
 		view = service.FeedViewPast
 		explicit = true
 	default:
-		return "", &paramProblem{Field: "view", Message: "view must be active, disputed or past."}
+		return "", &paramProblem{Field: "view", Message: "view must be all, active, disputed or past."}
 	}
 
 	if showDisputed {

@@ -332,14 +332,14 @@
         },
         "/reports": {
             "get": {
-                "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance,\nthen resolves each report fresh via the shared resolver. This single endpoint serves\nthe map, the list, the Past tab, the counts for an empty Active tab and a report link;\nthere is no separate route per tab.\nThe view parameter picks the tab. active (the default) is Live and Provisional reports,\nnearest first. disputed is only reports currently hidden by disputes, replacing the\ndefault view rather than adding to it; a critical or rescue-needed report stays Live\nhowever heavily it is disputed, so it appears only in the active view. past is what was\nresolved and what ran out its time in the last seven days, the resolved group first and\nthen the expired group, each newest first and cut at 25 with the cut object saying so.\nresolved is accepted as a read only alias of past and answered as past. A resolved\n(retracted) report is never returned by the active or the disputed view; it is listed\nonly in the past view, and no past entry changes an active count.\nshow_disputed=true still selects the disputed view so old links keep working; sent with\nanother view it is refused with 400 on the field view.\nThe category parameter keeps one report category in the chosen view and is refused with\n400 when it is not one of the ten known categories. rescue_needed is still accepted here\nso reports stored before 2026-10-16 can be found.\nThe report parameter is a report id from a link. When it is sent the focus object answers\nit: ok with that report even when it lies outside the radius and outside the seven day\nwindow, too_old when it ended more than seven days ago, or unavailable when there is no such\nreport or no tab lists it. Not found and every unlisted state share the one unavailable\nanswer. The reports array still holds the reader's own area.\nrecent ({resolved_24h, expired_24h}) is present only when the view is active, no category\nwas sent and there are no reports, so an empty tab can say what happened lately.\nA finished Rescue report never leaves the API exact on the past view or on a link: its\ndescription is empty, its latitude, longitude and geohash are a blurred point,\napproximate is true and distance_km is measured to that point. A live Rescue report and\nfinished Flood, Shelter and Power reports stay exact.\nEvery report carries your_vote, your_resolution, undos_left and is_own_report relative to\nthe calling verified account. Requires a session verified by email through the\nmagic-link flow; an unverified caller receives 401 and no report data.\nEvery report also carries a trust object: how many people at different nearby spots confirmed and disputed it, counted once per spot and not once per vote.\nlat, lon and radius_km must be finite numbers; NaN is refused with 400 and the name of the parameter.",
+                "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance,\nthen resolves each report fresh via the shared resolver. This single endpoint serves\nthe map, the list, the Past tab, the counts for an empty Active tab and a report link;\nthere is no separate route per tab.\nall is the Show menu's All: active and disputed reports in one answer, nearest first. Every\nreport carries its own view word, so a client that groups by it lists disputed ones last.\nA resolved, expired, held or removed report is never in all.\nThe view parameter picks the tab. active (the default) is Live and Provisional reports,\nnearest first. disputed is only reports currently hidden by disputes, replacing the\ndefault view rather than adding to it; a critical or rescue-needed report stays Live\nhowever heavily it is disputed, so it appears only in the active view. past is what was\nresolved and what ran out its time in the last seven days, the resolved group first and\nthen the expired group, each newest first and cut at 25 with the cut object saying so.\nresolved is accepted as a read only alias of past and answered as past. A resolved\n(retracted) report is never returned by the active or the disputed view; it is listed\nonly in the past view, and no past entry changes an active count.\nshow_disputed=true still selects the disputed view so old links keep working; sent with\nanother view it is refused with 400 on the field view.\nThe category parameter keeps one report category in the chosen view and is refused with\n400 when it is not one of the ten known categories. rescue_needed is still accepted here\nso reports stored before 2026-10-16 can be found.\nThe report parameter is a report id from a link. When it is sent the focus object answers\nit: ok with that report even when it lies outside the radius and outside the seven day\nwindow, too_old when it ended more than seven days ago, or unavailable when there is no such\nreport or no tab lists it. Not found and every unlisted state share the one unavailable\nanswer. The reports array still holds the reader's own area.\nrecent ({resolved_24h, expired_24h}) is present only when the view is active or all, no category\nwas sent and there are no reports, so an empty tab can say what happened lately.\nA finished Rescue report never leaves the API exact on the past view or on a link: its\ndescription is empty, its latitude, longitude and geohash are a blurred point,\napproximate is true and distance_km is measured to that point. A live Rescue report and\nfinished Flood, Shelter and Power reports stay exact.\nEvery report carries your_vote, your_resolution, undos_left and is_own_report relative to\nthe calling verified account. Requires a session verified by email through the\nmagic-link flow; an unverified caller receives 401 and no report data.\nEvery report also carries a trust object: how many people at different nearby spots confirmed and disputed it, counted once per spot and not once per vote.\nlat, lon and radius_km must be finite numbers; NaN is refused with 400 and the name of the parameter.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "reports"
                 ],
-                "summary": "List the reports near a point for one view: active, disputed or past",
+                "summary": "List the reports near a point for one view: all, active, disputed or past",
                 "parameters": [
                     {
                         "type": "number",
@@ -366,13 +366,14 @@
                     },
                     {
                         "enum": [
+                            "all",
                             "active",
                             "disputed",
                             "past",
                             "resolved"
                         ],
                         "type": "string",
-                        "description": "Which tab to list: active (the default), disputed or past. resolved is an alias of past.",
+                        "description": "Which tab to list: active (the default), all, disputed or past. all is active and disputed together. resolved is an alias of past.",
                         "name": "view",
                         "in": "query"
                     },
@@ -1269,6 +1270,11 @@
                     ],
                     "example": "flood"
                 },
+                "confirmed_by_people": {
+                    "description": "ConfirmedByPeople is the server authored Show Confirmed membership: true only\nfor an active report that people at different nearby spots have confirmed\n(and whose disputes are not a majority). It is not the same as visibility\nlive: a Critical report is shown at once but is confirmed only once people\nconfirm it. The client renders it and never recomputes it (TRUST-02). Always\npresent.",
+                    "type": "boolean",
+                    "example": true
+                },
                 "created_at": {
                     "type": "string",
                     "example": "2026-09-05T14:03:00.000Z"
@@ -1630,7 +1636,7 @@
                     ]
                 },
                 "recent": {
-                    "description": "Recent is present only on an active, unfiltered view with no reports.",
+                    "description": "Recent is present only on an active or all, unfiltered view with no reports.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/handlers.RecentResponse"
@@ -1645,9 +1651,10 @@
                     }
                 },
                 "view": {
-                    "description": "View is the tab these reports belong to. resolved is only an alias of\npast on the way in and is answered as past.",
+                    "description": "View is the tab these reports belong to. resolved is only an alias of\npast on the way in and is answered as past. all is the Show menu's All:\nthe reports carry their own view word, active or disputed.",
                     "type": "string",
                     "enum": [
+                        "all",
                         "active",
                         "disputed",
                         "past"
@@ -1835,6 +1842,20 @@
                     "description": "Optional, sent by the device queue with a saved report: the id, in digits, of the account the report was saved under, the same id the signed in page already shows. When it is present and is not the signed in account the post is refused with 409 on the field expected_account_id and nothing is stored. Leave it out for a fresh post.",
                     "type": "string",
                     "example": "42"
+                },
+                "happening": {
+                    "description": "Happening is the optional What is happening pick. It is accepted only with severity critical; with any other severity, or with a value outside the list, the post is refused with 400 on the field happening. A saved report written before this field existed has none and still posts.",
+                    "type": "string",
+                    "enum": [
+                        "water_rising",
+                        "people_trapped",
+                        "fire",
+                        "building_collapsed",
+                        "landslide",
+                        "medical_emergency",
+                        "other"
+                    ],
+                    "example": "people_trapped"
                 },
                 "latitude": {
                     "description": "Latitude must be between -90 and 90.",

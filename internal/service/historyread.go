@@ -286,6 +286,9 @@ func baseView(in viewInput) ReportView {
 		ViewerVote:       ViewerContentVote(c.votes, r.ID, in.ViewerAccountID),
 		ViewerResolution: ViewerResolution(c.votes, r.ID, in.ViewerAccountID),
 		IsOwnReport:      in.ViewerAccountID != 0 && c.reporterID != nil && *c.reporterID == in.ViewerAccountID,
+		// Server authored Show Confirmed membership, as Nearby fills it. A finished
+		// report is never active, so it is false; a linked active report is exact.
+		ConfirmedByPeople: ConfirmedByPeople(c.visibility, c.view, c.tally),
 		Trust: BuildTrust(TrustInput{
 			Rows:              c.votes,
 			ReportID:          r.ID,
