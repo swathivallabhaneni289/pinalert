@@ -3,7 +3,7 @@ status: testing
 phase: 04-robustness-real-world-resilience
 source: [04-VERIFICATION.md, 04-27-SUMMARY.md, 04-REVIEW-SERVER.md, 04-REVIEW-WEB.md]
 started: 2026-10-16T18:40:00+05:30
-updated: 2026-10-16T21:05:00+05:30
+updated: 2026-10-16T16:30:00+05:30
 ---
 
 ## Current Test
@@ -27,7 +27,7 @@ expected: Only once CLIENT_IP_HEADER is set on the real host. One network addres
 result: [pending]
 
 ### 3. Low data page size
-expected: The Low data page downloads about 509 KB (about 153 KB compressed) against the planned 256 KB. Decide after the browser check on a slow 3G connection, which is still to run on the fixed code.
+expected: The Low data page is about 160 KB as it travels (compressed), under the planned 256 KB, which the UI-SPEC counts compressed; unpacked it is about 536 KB. Measured in the browser check on 2026-10-16: the list shows in about 5 seconds on a slow connection (400 ms delay, 50 KB a second) and about 14 seconds on the slowest setting (Slow 3G). Recommended: keep it as is.
 result: [pending]
 
 ### 4. The gibberish rule counts letters only (04-02, D-05)
@@ -51,7 +51,7 @@ expected: The new messages are in the 04-UI-SPEC copy table (rows added 2026-10-
 result: [pending]
 
 ### 9. Small behaviour notes
-expected: Accept unless you disagree. (a) A late removal by the automatic check shows the author "Removed after review", the same as a moderator's; the Policy page now says so. (b) Closing the report form while it is sending closes at once and a message tells the outcome; edits typed after pressing Post are dropped. (c) A report whose check record could not be saved twice stays held with no automatic recovery; moderators can still find it by number. (d) The abuse check's quota errors are not retried. (e) The developer API page (/swagger) has no unofficial bar. (f) A moderator's Keep or Remove and its audit record are now saved together.
+expected: Accept unless you disagree. (a) A late removal by the automatic check shows the author "Removed after review", the same as a moderator's; the Policy page now says so. (b) Closing the report form while it is sending closes at once and a message tells the outcome; edits typed after pressing Post are dropped. (c) A report whose check record could not be saved twice stays held with no automatic recovery; moderators can still find it by number. (d) The abuse check's quota errors are not retried. (e) The developer API page (/swagger) has no unofficial bar. (f) A moderator's Keep or Remove and its audit record are now saved together. (g) Right after Undo, marking the same report resolved again waits 30 seconds; the Undo itself never waits.
 result: [pending]
 
 ### 10. Viewing session: Phase 4 screens
