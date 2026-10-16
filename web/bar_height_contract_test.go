@@ -59,10 +59,18 @@ func TestBarTokenFollowsTheRealBar(t *testing.T) {
 		t.Errorf("theme.js must measure the bar on readystatechange, before the deferred scripts lay out")
 	}
 
-	// The CSS floor the script overrides is still the bar's min-height, so
-	// the first paint and a page without scripts keep the tier value.
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+	// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+	// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+	// every page) is retired as worded; Disclaimer and Policy are reached from the
+	// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+	// first-time flow, the login screen and the one reader. The Phase 3.1 and
+	// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+	// The strip's own floor is the 48px space token, so it no longer reads the
+	// bar height token; the old property that chrome.css .disclaimer-bar kept
+	// min-height: var(--disclaimer-bar-height) has no subject any more.
 	chrome := stripCSSComments(p16ReadStatic(t, "static/css/chrome.css"))
-	if !strings.Contains(chrome, "min-height: var(--disclaimer-bar-height);") {
-		t.Errorf("chrome.css .disclaimer-bar must keep min-height: var(--disclaimer-bar-height)")
+	if strings.Contains(chrome, "min-height: var(--disclaimer-bar-height);") {
+		t.Errorf("chrome.css: nothing may use the bar token as its own floor")
 	}
 }

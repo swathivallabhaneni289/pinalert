@@ -165,9 +165,17 @@ func TestChromeWithDefaults(t *testing.T) {
 	})
 
 	t.Run("other fields pass through untouched", func(t *testing.T) {
-		in := Chrome{ContactEmail: "a@example.com", DisclaimerCurrent: true, LowDataPage: true}
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+		// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+		// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+		// every page) is retired as worded; Disclaimer and Policy are reached from the
+		// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+		// first-time flow, the login screen and the one reader. The Phase 3.1 and
+		// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+		// The DisclaimerCurrent field marked the Disclaimer link of the bar and is gone.
+		in := Chrome{ContactEmail: "a@example.com", LowDataPage: true}
 		got := in.withDefaults()
-		if got.ContactEmail != "a@example.com" || !got.DisclaimerCurrent || !got.LowDataPage {
+		if got.ContactEmail != "a@example.com" || !got.LowDataPage {
 			t.Errorf("got %+v, want fields untouched", got)
 		}
 	})
@@ -214,11 +222,19 @@ func TestChromeWithDefaults(t *testing.T) {
 	})
 }
 
-// chromeDefaultSentence is the exact D-22 bar text with the default numbers.
-const chromeDefaultSentence = "Unofficial, not a government service. Emergency? Call 112 (older numbers 100, 101, 108 may also work). Disclaimer"
+// chromeDefaultSentence is the exact D-29 strip text with the default number.
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+// every page) is retired as worded; Disclaimer and Policy are reached from the
+// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+// first-time flow, the login screen and the one reader. The Phase 3.1 and
+// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+// The older numbers parenthetical of the bar is not repeated in the strip.
+const chromeDefaultSentence = "Unofficial, not a government service. Pinalert cannot send help, it shows what people near you are seeing. Reports can sometimes be wrong. In danger, call 112. Read the disclaimer"
 
 var (
-	chromeBarPattern   = regexp.MustCompile(`(?s)<aside class="disclaimer-bar".*?</aside>`)
+	chromeBarPattern   = regexp.MustCompile(`(?s)<aside class="notice-strip".*?</aside>`)
 	chromeTagPattern   = regexp.MustCompile(`(?s)<[^>]*>`)
 	chromeSpacePattern = regexp.MustCompile(`\s+`)
 )
@@ -283,16 +299,44 @@ func chromeExecute(t *testing.T, tmpl *template.Template, name string, vm any) s
 	return buf.String()
 }
 
-func TestDisclaimerBarSentenceIsExact(t *testing.T) {
-	tmpl := chromeParse(t)
-	if got := chromeBarText(t, chromeServeLogin(t, tmpl, AuthConfig{})); got != chromeDefaultSentence {
-		t.Errorf("login bar = %q, want %q", got, chromeDefaultSentence)
-	}
-	if got := chromeBarText(t, chromeServeMap(t, tmpl, PageConfig{})); got != chromeDefaultSentence {
-		t.Errorf("map bar = %q, want %q", got, chromeDefaultSentence)
+// chromeNoStrip fails the test when a rendered page holds the notice strip.
+func chromeNoStrip(t *testing.T, name, body string) {
+	t.Helper()
+	if strings.Contains(body, "notice-strip") {
+		t.Errorf("%s: the notice strip is for the Nearby page only", name)
 	}
 }
 
+// TestDisclaimerBarSentenceIsExact is the strip's exact sentence on the page
+// that carries it, and the login page without it.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+// every page) is retired as worded; Disclaimer and Policy are reached from the
+// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+// first-time flow, the login screen and the one reader. The Phase 3.1 and
+// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+func TestDisclaimerBarSentenceIsExact(t *testing.T) {
+	tmpl := chromeParse(t)
+	chromeNoStrip(t, "login", chromeServeLogin(t, tmpl, AuthConfig{}))
+	if got := chromeBarText(t, chromeServeMap(t, tmpl, PageConfig{})); got != chromeDefaultSentence {
+		t.Errorf("map strip = %q, want %q", got, chromeDefaultSentence)
+	}
+}
+
+// TestDisclaimerBarDropsEmptyNumbers keeps the property that the number is the
+// configured one and that nothing else of the older list is printed.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+// every page) is retired as worded; Disclaimer and Policy are reached from the
+// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+// first-time flow, the login screen and the one reader. The Phase 3.1 and
+// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+// The strip prints the primary number only; the older numbers parenthetical is
+// left to the Disclaimer.
 func TestDisclaimerBarDropsEmptyNumbers(t *testing.T) {
 	tmpl := chromeParse(t)
 	cases := []struct {
@@ -303,99 +347,111 @@ func TestDisclaimerBarDropsEmptyNumbers(t *testing.T) {
 		{
 			"no older numbers",
 			Chrome{Numbers: EmergencyNumbers{Primary: "999"}},
-			"Unofficial, not a government service. Emergency? Call 999. Disclaimer",
+			"Unofficial, not a government service. Pinalert cannot send help, it shows what people near you are seeing. Reports can sometimes be wrong. In danger, call 999. Read the disclaimer",
 		},
 		{
-			"one older number",
+			"one older number is not repeated",
 			Chrome{Numbers: EmergencyNumbers{Primary: "112", Older: []string{"100"}}},
-			"Unofficial, not a government service. Emergency? Call 112 (older numbers 100 may also work). Disclaimer",
+			chromeDefaultSentence,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := chromeBarText(t, chromeServeLogin(t, tmpl, AuthConfig{Chrome: tc.chrome})); got != tc.want {
-				t.Errorf("login bar = %q, want %q", got, tc.want)
-			}
 			if got := chromeBarText(t, chromeServeMap(t, tmpl, PageConfig{Chrome: tc.chrome})); got != tc.want {
-				t.Errorf("map bar = %q, want %q", got, tc.want)
+				t.Errorf("map strip = %q, want %q", got, tc.want)
 			}
+			chromeNoStrip(t, "login", chromeServeLogin(t, tmpl, AuthConfig{Chrome: tc.chrome}))
 		})
 	}
 }
 
+// TestDisclaimerBarHasNoTelLink: a laptop cannot dial, so the strip holds the
+// number as plain text and one plain link to the Disclaimer.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+// every page) is retired as worded; Disclaimer and Policy are reached from the
+// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+// first-time flow, the login screen and the one reader. The Phase 3.1 and
+// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
 func TestDisclaimerBarHasNoTelLink(t *testing.T) {
 	tmpl := chromeParse(t)
 
-	raw, err := fs.ReadFile(web.TemplatesFS, "templates/disclaimer_bar.html.tmpl")
+	raw, err := fs.ReadFile(web.TemplatesFS, "templates/notice_strip.html.tmpl")
 	if err != nil {
 		t.Fatalf("reading the partial: %v", err)
 	}
 	if strings.Contains(string(raw), "tel:") || strings.Contains(string(raw), "TelHref") {
-		t.Error("the bar partial must hold no telephone link")
+		t.Error("the strip partial must hold no telephone link")
 	}
 
-	pages := map[string]string{
-		"login": chromeServeLogin(t, tmpl, AuthConfig{}),
-		"map":   chromeServeMap(t, tmpl, PageConfig{}),
+	region := chromeBarRegion(t, chromeServeMap(t, tmpl, PageConfig{}))
+	if strings.Contains(region, "tel:") {
+		t.Error("map: strip holds a tel link")
 	}
-	for name, body := range pages {
-		region := chromeBarRegion(t, body)
-		if strings.Contains(region, "tel:") {
-			t.Errorf("%s: bar holds a tel link", name)
-		}
-		if got := strings.Count(region, "<a "); got != 1 {
-			t.Errorf("%s: bar holds %d links, want 1", name, got)
-		}
-		if !strings.Contains(region, `<a href="/disclaimer">`) {
-			t.Errorf("%s: bar link is not a plain link to /disclaimer", name)
-		}
-		if strings.Contains(region, "aria-current") {
-			t.Errorf("%s: default render must not carry aria-current", name)
-		}
-		for _, line := range []string{"1070", "1077"} {
-			if strings.Contains(region, line) {
-				t.Errorf("%s: bar shows the state line %s", name, line)
-			}
-		}
+	if got := strings.Count(region, "<a "); got != 1 {
+		t.Errorf("map: strip holds %d links, want 1", got)
 	}
-
-	current := chromeExecute(t, tmpl, loginGateTemplateName, loginGateViewModel{Chrome: Chrome{DisclaimerCurrent: true}.withDefaults()})
-	if !strings.Contains(chromeBarRegion(t, current), `aria-current="page"`) {
-		t.Error("DisclaimerCurrent must put aria-current=page on the link")
+	if got := strings.Count(region, "<button"); got != 0 {
+		t.Errorf("map: strip holds %d buttons, want none", got)
 	}
-	if got := chromeBarText(t, current); got != chromeDefaultSentence {
-		t.Errorf("current page bar = %q, want %q", got, chromeDefaultSentence)
+	if !strings.Contains(region, `<a class="notice-strip__link" href="/disclaimer">Read the disclaimer</a>`) {
+		t.Error("map: strip link is not a plain link to /disclaimer")
+	}
+	if strings.Contains(region, "aria-current") {
+		t.Error("map: default render must not carry aria-current")
+	}
+	for _, line := range []string{"1070", "1077"} {
+		if strings.Contains(region, line) {
+			t.Errorf("map: strip shows the state line %s", line)
+		}
 	}
 }
 
+// TestExistingPagesRenderWithChrome renders every page that used to carry the
+// bar and checks where the strip and the .top-chrome wrapper now are.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+// every page) is retired as worded; Disclaimer and Policy are reached from the
+// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+// first-time flow, the login screen and the one reader. The Phase 3.1 and
+// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
 func TestExistingPagesRenderWithChrome(t *testing.T) {
 	tmpl := chromeParse(t)
 	chrome := Chrome{}.withDefaults()
 
-	check := func(t *testing.T, body string) {
+	// check wants the strip (or none) and the number of top-chrome wrappers.
+	check := func(t *testing.T, body string, strip bool, wrappers int) {
 		t.Helper()
-		if got := chromeBarText(t, body); got != chromeDefaultSentence {
-			t.Errorf("bar = %q, want %q", got, chromeDefaultSentence)
+		if strip {
+			if got := chromeBarText(t, body); got != chromeDefaultSentence {
+				t.Errorf("strip = %q, want %q", got, chromeDefaultSentence)
+			}
+		} else {
+			chromeNoStrip(t, "page", body)
 		}
-		if got := strings.Count(body, `class="top-chrome"`); got != 1 {
-			t.Errorf("top-chrome appears %d times, want 1", got)
+		if got := strings.Count(body, `class="top-chrome"`); got != wrappers {
+			t.Errorf("top-chrome appears %d times, want %d", got, wrappers)
 		}
 	}
 
-	t.Run("map", func(t *testing.T) { check(t, chromeServeMap(t, tmpl, PageConfig{})) })
-	t.Run("login", func(t *testing.T) { check(t, chromeServeLogin(t, tmpl, AuthConfig{})) })
+	t.Run("map", func(t *testing.T) { check(t, chromeServeMap(t, tmpl, PageConfig{}), true, 1) })
+	t.Run("login", func(t *testing.T) { check(t, chromeServeLogin(t, tmpl, AuthConfig{}), false, 0) })
 	t.Run("verify", func(t *testing.T) {
 		for _, outcome := range []string{"verified", "expired", "used", "malformed", "conflict"} {
 			vm := verifyOutcomeViewModel{Outcome: outcome, Email: "a@example.com", CurrentEmail: "b@example.com", Chrome: chrome}
-			check(t, chromeExecute(t, tmpl, verifyOutcomeTemplateName, vm))
+			check(t, chromeExecute(t, tmpl, verifyOutcomeTemplateName, vm), false, 0)
 		}
 	})
 	t.Run("profile", func(t *testing.T) {
-		check(t, chromeExecute(t, tmpl, profileTemplateName, profileViewModel{Email: "a@example.com", Chrome: chrome}))
+		check(t, chromeExecute(t, tmpl, profileTemplateName, profileViewModel{Email: "a@example.com", Chrome: chrome}), false, 1)
 	})
 	t.Run("zero_chrome", func(t *testing.T) {
-		check(t, chromeServeMap(t, tmpl, PageConfig{}))
-		check(t, chromeServeLogin(t, tmpl, AuthConfig{}))
+		check(t, chromeServeMap(t, tmpl, PageConfig{}), true, 1)
+		check(t, chromeServeLogin(t, tmpl, AuthConfig{}), false, 0)
 	})
 }
 

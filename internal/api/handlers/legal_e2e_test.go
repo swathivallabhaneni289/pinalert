@@ -103,8 +103,16 @@ func TestLegalPagesRender(t *testing.T) {
 	if n := strings.Count(body, "<script"); n != 1 {
 		t.Errorf("<script appears %d times, want 1 (theme.js only)", n)
 	}
-	if !strings.Contains(body, `href="/disclaimer" aria-current="page"`) {
-		t.Errorf("the bar Disclaimer link must carry aria-current=page")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+	// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+	// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+	// every page) is retired as worded; Disclaimer and Policy are reached from the
+	// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+	// first-time flow, the login screen and the one reader. The Phase 3.1 and
+	// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+	// The page carries no bar, so no link of it is marked as the current page.
+	if strings.Contains(body, "disclaimer-bar") || strings.Contains(body, "notice-strip") || strings.Contains(body, "aria-current") {
+		t.Errorf("the Disclaimer page carries no bar, no strip and no current page mark")
 	}
 	if n := strings.Count(body, `<a class="legal-back" href="/">Back to Pinalert</a>`); n != 1 {
 		t.Errorf("top Back to Pinalert link appears %d times, want 1", n)
@@ -164,8 +172,12 @@ func TestLegalPagesRender(t *testing.T) {
 	if n := strings.Count(pb, `href="/">Back to Pinalert</a>`); n != 2 {
 		t.Errorf("policy Back to Pinalert links = %d, want 2", n)
 	}
-	if !strings.Contains(pb, `<p class="legal-links">`) || strings.Count(pb, `href="/disclaimer"`) != 2 {
-		t.Errorf("policy needs the Disclaimer link in the bar and in the footer")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+	// D-31): see the note above; the bar link is gone, so the Policy page holds
+	// the Disclaimer link of its footer only. The Phase 3.1 and Phase 4 hands-on
+	// tests are walked on this layout after Phase 3.4 is built.
+	if !strings.Contains(pb, `<p class="legal-links">`) || strings.Count(pb, `href="/disclaimer"`) != 1 {
+		t.Errorf("policy needs the Disclaimer link in its footer, and no bar link")
 	}
 	updated := regexp.MustCompile(`(?s)<p class="legal-updated">(.*?)</p>`).FindStringSubmatch(pb)
 	if updated == nil {

@@ -221,9 +221,18 @@ func TestLoginLowDataPanel(t *testing.T) {
 				t.Errorf("panel hrefs = %q, want %q", hrefs, tc.wantLinks)
 			}
 
-			// Focus order: the bar link, the email field, the send button, then the panel.
+			// Focus order: the email field, the send button, then the panel.
+			// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+			// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+			// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+			// every page) is retired as worded; Disclaimer and Policy are reached from the
+			// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+			// first-time flow, the login screen and the one reader. The Phase 3.1 and
+			// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+			// The login screen has no bar link first; it keeps its own Disclaimer and
+			// Policy links in the panel.
 			p421AssertInOrder(t, "focus order", body,
-				`href="/disclaimer"`, `id="login-email"`, `id="request-link"`, `class="login-ways"`)
+				`id="login-email"`, `id="request-link"`, `class="login-ways"`)
 			// Column order inside the wrapper.
 			p421AssertInOrder(t, "column order", body,
 				`class="login-column"`, `id="login-form-panel"`, `id="check-inbox"`, `class="login-ways"`)

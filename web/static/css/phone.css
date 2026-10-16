@@ -320,6 +320,13 @@
     flex: none;
   }
 
+  /* The laptop notice strip is not drawn on a phone, on any screen (Phase
+     3.4, D-30). display none also takes it out of the reading order, and
+     theme.js then writes 0 into the bar height token. */
+  body > .notice-strip {
+    display: none;
+  }
+
   /* With a zero flex basis the shell takes the space between the bars and its
      own height rule below no longer sets its size. min-height 0 lets it shrink
      below the min-height main.css gives it. */

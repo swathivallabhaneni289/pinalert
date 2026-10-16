@@ -24,8 +24,8 @@
   <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
 </head>
 <body class="has-app-bar">
+  {{template "notice_strip.html.tmpl" .}}
   <div class="top-chrome">
-    {{template "disclaimer_bar.html.tmpl" .}}
     {{template "app_topbar" .}}
   </div>
   {{template "theme_toggle.html.tmpl" .}}

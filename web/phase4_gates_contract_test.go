@@ -25,8 +25,18 @@ import (
 
 // p427Phase4Files lists the 18 files Phase 4 added, relative to the web
 // package. Templates are read from TemplatesFS, everything else from StaticFS.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30, D-31):
+// the bar on every page is replaced by the laptop strip on Nearby and Post a
+// report only. Phase 4 SC7 (both legal pages linked from the bar on every page)
+// is retired as worded; Disclaimer and Policy are reached from the laptop
+// strip's Read the disclaimer link, Settings, About Pinalert, the first-time
+// flow, the login screen and the one reader. The Phase 3.1 and Phase 4
+// hands-on tests are walked on this layout after Phase 3.4 is built. The first
+// entry was the bar partial; its successor, the strip partial, takes its place
+// so the gates still scan the notice copy.
 var p427Phase4Files = []string{
-	"templates/disclaimer_bar.html.tmpl",
+	"templates/notice_strip.html.tmpl",
 	"templates/report_form.html.tmpl",
 	"templates/disclaimer.html.tmpl",
 	"templates/policy.html.tmpl",

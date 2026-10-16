@@ -358,13 +358,25 @@ func TestTopChromeGeometry(t *testing.T) {
 	mustDecl(chromeRules, ".top-chrome", "position", "sticky")
 	mustDecl(chromeRules, ".top-chrome", "top", "0")
 	mustDecl(chromeRules, ".top-chrome", "z-index", "1050")
-	mustDecl(chromeRules, ".disclaimer-bar", "min-height", "var(--disclaimer-bar-height)")
-	if r, ok := ruleBySelector(chromeRules, ".disclaimer-bar"); ok {
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+	// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+	// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+	// every page) is retired as worded; Disclaimer and Policy are reached from the
+	// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+	// first-time flow, the login screen and the one reader. The Phase 3.1 and
+	// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+	// The strip's floor is the 48px token --space-2xl; it no longer reads the
+	// bar height token (theme.js writes the strip's measured height into it).
+	mustDecl(chromeRules, ".notice-strip", "min-height", "var(--space-2xl)")
+	if r, ok := ruleBySelector(chromeRules, ".notice-strip"); ok {
 		if _, has := declsOf(r.declBody)["height"]; has {
-			t.Error(".disclaimer-bar must not declare height; the token is its min-height")
+			t.Error(".notice-strip must not declare height; its content sets it")
+		}
+		if strings.Contains(r.declBody, "--disclaimer-bar-height") {
+			t.Error(".notice-strip must not read the token it is measured into")
 		}
 	}
-	mustDecl(chromeRules, ".disclaimer-bar p", "margin", "0")
+	mustDecl(chromeRules, ".notice-strip__text", "margin", "0")
 	mustDecl(chromeRules, "html", "scroll-padding-top", "calc(var(--disclaimer-bar-height) + var(--space-sm))")
 
 	mustDecl(authRules, ".app-header", "position", "absolute")

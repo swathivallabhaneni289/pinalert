@@ -9,13 +9,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"html"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"reflect"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -29,10 +27,6 @@ import (
 	"pinalert/internal/service"
 	sqlcgen "pinalert/internal/store/sqlc"
 )
-
-// modBarSentence is the unofficial bar text on the moderator page with the
-// default emergency numbers.
-const modBarSentence = "Unofficial, not a government service. Emergency? Call 112 (older numbers 100, 101, 108 may also work). Disclaimer"
 
 // modNoFollow stops a client following a redirect, so a 302 is seen as a 302.
 func modNoFollow(_ *http.Request, _ []*http.Request) error {
@@ -100,16 +94,6 @@ func modSameAsUnknown(t *testing.T, client *http.Client, baseURL, method, path, 
 	}
 }
 
-// modStrip removes tags from an HTML fragment, unescapes entities and collapses
-// whitespace.
-var modTagPattern = regexp.MustCompile(`<[^>]*>`)
-
-func modStrip(s string) string {
-	s = modTagPattern.ReplaceAllString(s, "")
-	s = html.UnescapeString(s)
-	return strings.Join(strings.Fields(s), " ")
-}
-
 // modRenderPage calls ModeratePage with the given config and request context
 // and returns the recorder.
 func modRenderPage(t *testing.T, cfg handlers.PageConfig, method string, withAccount bool) *httptest.ResponseRecorder {
@@ -173,17 +157,22 @@ func TestModeratorPageRenders(t *testing.T) {
 		t.Error("the account email is rendered on the page")
 	}
 
-	start := strings.Index(body, `<aside class="disclaimer-bar"`)
-	end := strings.Index(body, "</aside>")
-	if start < 0 || end < start {
-		t.Fatal("the unofficial bar is missing")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+	// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+	// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+	// every page) is retired as worded; Disclaimer and Policy are reached from the
+	// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+	// first-time flow, the login screen and the one reader. The Phase 3.1 and
+	// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+	// The moderator screen draws neither the bar nor the strip, and the top
+	// chrome now holds the account header alone.
+	for _, gone := range []string{`disclaimer-bar`, `notice-strip`} {
+		if strings.Contains(body, gone) {
+			t.Errorf("the moderator screen still draws %q", gone)
+		}
 	}
-	if got := modStrip(body[start : end+len("</aside>")]); got != modBarSentence {
-		t.Errorf("bar text = %q, want %q", got, modBarSentence)
-	}
-	// The bar comes first in the top chrome, then the account header.
-	if bar, header := strings.Index(body, `class="disclaimer-bar"`), strings.Index(body, `class="app-header"`); bar < 0 || header < bar {
-		t.Errorf("the bar (%d) must come before the account header (%d)", bar, header)
+	if header, chrome := strings.Index(body, `class="app-header"`), strings.Index(body, `class="top-chrome"`); chrome < 0 || header < chrome {
+		t.Errorf("the account header (%d) must sit inside the top chrome (%d)", header, chrome)
 	}
 
 	for _, banned := range []string{"leaflet", "unpkg", "feed.css", "modal.css", "map.js"} {
@@ -193,8 +182,8 @@ func TestModeratorPageRenders(t *testing.T) {
 	}
 
 	custom := modRenderPage(t, handlers.PageConfig{Chrome: handlers.Chrome{Numbers: handlers.EmergencyNumbers{Primary: "999"}}}, http.MethodGet, true)
-	if !strings.Contains(custom.Body.String(), "Call 999") {
-		t.Error("a configured primary number does not reach the bar")
+	if strings.Contains(custom.Body.String(), "Call 999") || strings.Contains(custom.Body.String(), "notice-strip") {
+		t.Error("the moderator screen carries no notice, whatever number is configured")
 	}
 
 	if rec := modRenderPage(t, handlers.PageConfig{}, http.MethodGet, false); rec.Code != http.StatusInternalServerError {
