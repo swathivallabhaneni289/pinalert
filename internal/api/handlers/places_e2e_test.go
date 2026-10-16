@@ -120,7 +120,20 @@ func TestSettingsRows(t *testing.T) {
 	if strings.Join(hrefs, ",") != strings.Join(wantHrefs, ",") {
 		t.Errorf("About Pinalert rows go to %v, want %v", hrefs, wantHrefs)
 	}
+	// Amended 2026-10-17 by Phase 3.4 plan 06 (D-25, D-24b): About you renders
+	// first with its two rows, which are buttons that open edit windows, so the
+	// link rows above are still exactly the three About Pinalert ones.
+	buttons := regexp.MustCompile(`<button type="button" class="place-row" id="([^"]*)"`).FindAllStringSubmatch(body, -1)
+	var buttonIDs []string
+	for _, m := range buttons {
+		buttonIDs = append(buttonIDs, m[1])
+	}
+	if strings.Join(buttonIDs, ",") != "settings-name-row,settings-home-row" {
+		t.Errorf("About you rows are %v, want the Name row then the Home area row and nothing else", buttonIDs)
+	}
 	for _, want := range []string{
+		"About you", "Your name and home area. Shown only on your public profile.",
+		"Shown only if you let others follow you", "Used for alerts, never your exact spot", "Not set",
 		"About Pinalert", "Disclaimer", "Policy", "Low data view", "Text only, no map",
 		"Account", "Sign out, or remove your account and its data.",
 		`<form class="place-row-form" method="post" action="/auth/logout">`,
@@ -173,5 +186,66 @@ func TestSettingsBackAndNoGear(t *testing.T) {
 	menu := p421Text(p421Region(t, body, `<div id="account-menu"`))
 	if menu != "Settings Log out" {
 		t.Errorf("person menu text = %q, want %q", menu, "Settings Log out")
+	}
+}
+
+// TestSettingsAboutYouValues proves D-24b and T-34-26: About you is the first
+// section of /settings, it shows Not set for a person with no name and no home
+// area, and after the person saves both through the route of plan 01 it shows
+// the stored text, escaped, in the rows, in the data-value attributes the
+// windows prefill from, and with the Remove home area button visible.
+func TestSettingsAboutYouValues(t *testing.T) {
+	srv, mailer, _ := newE2EServer(t)
+	client := newVerifiedClient(t, srv, mailer, "places-about-you@example.com")
+
+	_, body := getPlacePage(t, client, srv.URL, "/settings")
+	for _, want := range []string{
+		"About you", "Your name and home area. Shown only on your public profile.",
+		"Shown only if you let others follow you", "Used for alerts, never your exact spot",
+		`id="settings-name-value">Not set</span>`, `id="settings-home-value">Not set</span>`,
+		`id="settings-name-row" aria-haspopup="dialog" data-value=""`,
+		`id="settings-home-row" aria-haspopup="dialog" data-value=""`,
+		`id="settings-name-window"`, `id="settings-home-window"`,
+		`id="settings-home-remove" hidden>Remove home area</button>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/settings (nothing stored) lacks %q", want)
+		}
+	}
+	if you, about := strings.Index(body, "settings-you-title"), strings.Index(body, "settings-about-title"); you == -1 || about == -1 || you > about {
+		t.Errorf("About you must come before About Pinalert (you at %d, about at %d)", you, about)
+	}
+	if strings.Contains(body, "View my profile") {
+		t.Errorf("/settings draws View my profile, which waits for Phase 9")
+	}
+
+	// Save a name and a home area with markup in them, the way the windows do.
+	meWant(t, "PATCH name", meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile",
+		`{"display_name":"<b>Ravi</b> & \"Co\""}`), http.StatusOK)
+	meWant(t, "PATCH home area", meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile",
+		`{"home_area":{"name":"Indiranagar <i>x</i>, Bengaluru","lat":12.9784,"lon":77.6408}}`), http.StatusOK)
+
+	_, body = getPlacePage(t, client, srv.URL, "/settings")
+	for _, want := range []string{
+		`id="settings-name-value">&lt;b&gt;Ravi&lt;/b&gt; &amp; &#34;Co&#34;</span>`,
+		`id="settings-home-value">Indiranagar &lt;i&gt;x&lt;/i&gt;, Bengaluru</span>`,
+		`data-value="&lt;b&gt;Ravi&lt;/b&gt; &amp; &#34;Co&#34;"`,
+		`data-value="Indiranagar &lt;i&gt;x&lt;/i&gt;, Bengaluru"`,
+		`id="settings-home-remove">Remove home area</button>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/settings (stored values) lacks %q", want)
+		}
+	}
+	for _, banned := range []string{"<b>Ravi</b>", "<i>x</i>", `id="settings-name-value">Not set`, `id="settings-home-value">Not set`} {
+		if strings.Contains(body, banned) {
+			t.Errorf("/settings holds %q", banned)
+		}
+	}
+	// Only the place name is ever drawn: no coordinate reaches the page.
+	for _, banned := range []string{"12.9784", "77.6408"} {
+		if strings.Contains(body, banned) {
+			t.Errorf("/settings holds the coordinate %q", banned)
+		}
 	}
 }

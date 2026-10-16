@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/app-bar.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/places.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/window.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
   <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
 </head>
@@ -21,6 +22,31 @@
   <div class="app-content">
   <main class="place-page" data-account-id="{{.AccountID}}">
     <h1 class="place-head">Settings</h1>
+
+    <section class="place-section" aria-labelledby="settings-you-title">
+      <div class="place-section__intro">
+        <h2 class="place-section__title" id="settings-you-title">About you</h2>
+        <p class="place-section__line">Your name and home area. Shown only on your public profile.</p>
+      </div>
+      <div class="place-box">
+        <button type="button" class="place-row" id="settings-name-row" aria-haspopup="dialog" data-value="{{.DisplayName}}">
+          <span class="place-row__text">
+            <span class="place-row__label">Name</span>
+            <span class="place-row__sub">Shown only if you let others follow you</span>
+          </span>
+          <span class="place-row__value" id="settings-name-value">{{if .DisplayName}}{{.DisplayName}}{{else}}Not set{{end}}</span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="place-row" id="settings-home-row" aria-haspopup="dialog" data-value="{{.HomeAreaName}}">
+          <span class="place-row__text">
+            <span class="place-row__label">Home area</span>
+            <span class="place-row__sub">Used for alerts, never your exact spot</span>
+          </span>
+          <span class="place-row__value" id="settings-home-value">{{if .HomeAreaName}}{{.HomeAreaName}}{{else}}Not set{{end}}</span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </button>
+      </div>
+    </section>
 
     <section class="place-section" aria-labelledby="settings-about-title">
       <div class="place-section__intro">
@@ -68,6 +94,46 @@
       </div>
     </section>
   </main>
+  </div>
+
+  <div class="app-window app-window--edit" id="settings-name-window" hidden>
+    <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-name-title">
+      <div class="app-window__head">
+        <h2 class="app-window__title" id="settings-name-title">Name</h2>
+        <button type="button" class="app-window__close" id="settings-name-close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
+      </div>
+      <form class="app-window__body" id="settings-name-form" novalidate>
+        <label class="app-window__label" for="settings-name-input">Your name</label>
+        <input class="app-window__field" type="text" id="settings-name-input" name="display_name" maxlength="60" autocomplete="name" placeholder="For example: Ravi Kumar">
+        <p class="inline-error" id="settings-name-error" role="alert" hidden></p>
+        <div class="app-window__actions">
+          <button type="submit" class="btn btn--primary" id="settings-name-save">Save name</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="app-window app-window--edit" id="settings-home-window" hidden>
+    <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-home-title">
+      <div class="app-window__head">
+        <h2 class="app-window__title" id="settings-home-title">Home area</h2>
+        <button type="button" class="app-window__close" id="settings-home-close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
+      </div>
+      <div class="app-window__body">
+        <form id="settings-home-form" novalidate>
+          <label class="app-window__label" for="settings-home-input">Home area</label>
+          <input class="app-window__field" type="search" id="settings-home-input" name="q" maxlength="200" autocomplete="off" enterkeyhint="search" placeholder="Search a place" aria-describedby="settings-home-help settings-home-status">
+        </form>
+        <p class="app-window__help" id="settings-home-help">A town or area, never your street. Used for alerts.</p>
+        <p class="app-window__status" id="settings-home-status" role="status" aria-live="polite" hidden></p>
+        <ul class="app-window__results" id="settings-home-results" role="listbox" aria-label="Places found" hidden></ul>
+        <p class="inline-error" id="settings-home-error" role="alert" hidden></p>
+        <div class="app-window__actions">
+          <button type="button" class="btn btn--primary" id="settings-home-save" disabled>Save home area</button>
+          <button type="button" class="app-window__quiet" id="settings-home-remove"{{if not .HomeAreaName}} hidden{{end}}>Remove home area</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   {{template "app_bottombar" .}}

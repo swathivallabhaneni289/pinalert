@@ -86,6 +86,19 @@
   line-height: var(--line-height-label);
 }
 
+/* The stored value on the right of a row that opens an edit window (About you).
+   Muted text sits on --color-bg only, where it clears 4.5 to 1 in both themes.
+   A long place name wraps instead of pushing the chevron off the row. */
+.place-row__value {
+  flex: 0 1 auto;
+  max-width: 50%;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
 .place-row > .app-icon {
   width: 20px;
   height: 20px;
