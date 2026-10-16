@@ -480,6 +480,7 @@ Plans:
 **Wave 8** *(blocked on Wave 7 completion)*
 
 - [ ] 03.4-15-PLAN.md: Search a place in the Nearby top bar, the chosen chip soft fill, phone notices inside the sheet
+- [ ] 03.4-19-PLAN.md: Gap closure: the take back of a mistaken Mark resolved on Ended nearby rows (03.1 D-22, 03.4 D-21), found after plan 14
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
