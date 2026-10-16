@@ -426,11 +426,13 @@ Plans:
 **Success Criteria** (what must be TRUE):
 
   1. Three main places on both sizes, Nearby, Official alerts and My activity: a phone bottom bar with a fourth Report item, a laptop top bar with Post a report, search, the bell, the light and dark button and a person menu (My profile, Settings, Log out). The phone has a search row with the bell and the Settings gear, and no light and dark button.
+     (Amended 2026-10-16 by Phase 3.4, owner decision, see 03.4-CONTEXT D-26: My profile in the person menu arrives with Phase 9, because profiles are Phase 9; until then the menu holds Settings and Log out.)
   2. Nearby has one Show menu (All, Confirmed, Disputed, plus the Reliable tick from 3.2); disputed reports sit labelled at the bottom of All without changing the resolver; on the phone the list is a sheet over the map (short, half, full; scrolling up grows it); tapping a report shows its pin and tapping a pin shows its report, on both sizes.
   3. My activity holds Updates, Posted by you, You confirmed, You disputed and Ended nearby (3.1's Past content): on the phone a short list whose rows open their own screens with Back; on the laptop the parts stacked with aligned columns; every feature of today's Activity page kept.
   4. Post a report opens full screen on the phone and as a two pane window on the laptop (map left, form right), closes with the X only, shows a chosen severity by its own soft colour, and shows a "Call 112 first" box only for Critical (Rescue needed was retired for new reports on 2026-10-16 and Traffic took its tile, owner decision).
   5. One Settings page (gear on the phone, person menu on the laptop) with About you, Phone notifications, People and reports, About Pinalert (Disclaimer, Policy, Low data view) and Account sections, each row appearing only when its feature exists.
   6. After the first sign in, a five step flow: Welcome, Disclaimer and policy read and agreed (Disagree points to the Demo), Your location, About you, Alerts (the last step arrives with 3.3).
+     (Amended 2026-10-16 by Phase 3.4, owner decision, see 03.4-CONTEXT D-27 and the orchestrator's sequencing decision 5: four steps render in 3.4, the Alerts step arrives with Phase 3.3, and the Disagree message reads "You need to agree to use Pinalert." until Phase 5 adds the sentence about the Demo.)
   7. The laptop shows the unofficial notice strip on the Nearby and Post a report pages only (owner, 2026-10-16, see 03.4-CONTEXT D-29); the phone does not (owner decision, departs from ROBUST-08, see 03.4-CONTEXT D-30); Disclaimer and Policy open in one reader.
   8. The owner's rules hold on every screen: same features on both sizes, one way to close, nothing repeated, nothing off screen, chosen items never outlined in black, no faded text, laptop pages full width.
 
@@ -438,6 +440,7 @@ Plans:
 
   1. Reworks built code: Phase 3.1's tab strip, Past tab and phone bottom bar; Phase 4's disclaimer bar on every page and account menu; quick tasks 261013-lrw and 261013-wm5. Contract tests that pin them get a dated amendment note naming the owner decision.
   2. Builds places and empty states only; the bell and Updates (3.2), phone notifications (3.3), Official alerts content and the Demo button (5) and profiles (9) fill them later. This phase also stores the name, the home area and the What is happening pick (03.4-CONTEXT D-24b, 2026-10-16), which 3.3 then uses.
+     (Amended 2026-10-16 by Phase 3.4, owner decision, see 03.4-CONTEXT O-1, O-2 and D-24b: O-1 and O-2 were answered on 2026-10-16, so no owner question is open before planning. O-1: the strip is laptop only, on Nearby and Post a report, and the "Not confirmed yet" line under Post report is built on neither size. O-2: the chosen category tile is the soft grey fill with no dark border. The What is happening picks are placed and stored in 3.4 and used in 3.3. Two small owner questions are still pending and are not decided here: whether Earthquake should be a tile in Post a report, and whether a confirmed Critical report belongs in Show: Confirmed.)
 
 **Plans:** 16/20 plans executed
 
@@ -566,6 +569,7 @@ Plans:
   5. Every page displays a persistent disclaimer that Pinalert is unofficial, not affiliated with any government agency, and not a substitute for calling emergency services.
   6. A moderator (the owner, or anyone on the server list) can open a screen that everyone else gets a plain 404 for, see automatically flagged posts, user flags and posts whose text check has not finished, and Keep or Remove any post; any signed-in reader can flag a post with a reason from a quiet control, and a flag alone never hides a post.
   7. A public Disclaimer page and a public Policy page, readable without logging in, state what Pinalert is not, the emergency numbers, what is screened and kept, and how to complain or ask for removal, and both are linked from the bar on every page.
+     (Amended 2026-10-16 by Phase 3.4, owner decision, see 03.4-CONTEXT D-29, D-30 and D-31: SC7 is retired as worded. The bar on every page is replaced by the laptop strip on Nearby and Post a report only, and the phone has no strip. Disclaimer and Policy are reached from the strip's Read the disclaimer link, Settings, About Pinalert, the first-time flow, the login screen and one reader. The Phase 3.1 and Phase 4 hands-on tests are walked once, on the new layout, after Phase 3.4 is built.)
 
 **Plans**: 29/29 plans complete
 **UI hint**: yes

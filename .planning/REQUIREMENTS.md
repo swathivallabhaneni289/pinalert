@@ -308,6 +308,8 @@ Requirements for initial release. Each maps to roadmap phases.
       laptop shows them in a top bar with Post a report, Search a place, the bell, the light and dark
       button and a person menu (My profile, Settings, Log out). Both sizes reach the same features
       (added 2026-10-16, Phase 3.4)
+      (Amended 2026-10-16 by Phase 3.4, owner decision, see 03.4-CONTEXT D-26: My profile in the
+      person menu arrives with Phase 9; until then the menu holds Settings and Log out)
 
 - [ ] **LAYOUT-02**: Nearby shows "N reports, 5 km" and one Show menu (All by default, Confirmed,
       Disputed, and NOTIF-04's Only Reliable reporters tick) instead of a tab strip; in All, disputed
@@ -316,6 +318,10 @@ Requirements for initial release. Each maps to roadmap phases.
       outcome do not change. The official alert banner sits at the top of the list only when a
       Severe or Extreme alert covers the area, and opens Official alerts (added 2026-10-16,
       Phase 3.4)
+      (Amended 2026-10-16 by Phase 3.4, owner decision, see 03.4-CONTEXT: the Only Reliable
+      reporters tick renders with Phase 3.2 (NOTIF-04); Confirmed means confirmed by people nearby,
+      a field the server writes (orchestrator decision 4). Still pending with the owner, not
+      decided here: whether a confirmed Critical report belongs in Show: Confirmed)
 
 - [ ] **LAYOUT-03**: On the phone the Nearby list is a sheet over the map with three positions
       (short, half by default, full): scrolling up first grows it, a grey handle can be dragged or
@@ -349,6 +355,9 @@ Requirements for initial release. Each maps to roadmap phases.
       Disclaimer and policy read in a scroll box and agreed (only Agree moves on, and Disagree
       points to the Demo), Your location, About you (name and home area, both optional) and Alerts,
       which arrives with Phase 3.3 (added 2026-10-16, Phase 3.4)
+      (Amended 2026-10-16 by Phase 3.4, owner decision, see 03.4-CONTEXT D-27: the Disagree
+      sentence that points to the Demo arrives with Phase 5; until then Disagree says "You need to
+      agree to use Pinalert.")
 
 - [ ] **LAYOUT-08**: The laptop shows a dark strip at the top of the Nearby and Post a report pages only (unofficial, not a
       government service, cannot send help, reports can be wrong, in danger call 112) with a Read
@@ -356,6 +365,9 @@ Requirements for initial release. Each maps to roadmap phases.
       carries the disclaimer in the first-time flow and in Settings, About Pinalert (see ROBUST-08).
       Disclaimer and Policy open in one reader that closes with the X; whether both sizes should
       match here is still open, see 03.4-CONTEXT O-1 (added 2026-10-16, Phase 3.4)
+      (Amended 2026-10-16 by Phase 3.4, owner decision, see 03.4-CONTEXT O-1: answered. The strip
+      is laptop only, on Nearby and Post a report, and the "Not confirmed yet" line under Post
+      report is built on neither size; this replaces the "still open" wording above)
 
 - [ ] **LAYOUT-09**: Every screen keeps the owner's rules: the phone and the laptop offer the same
       features, only arranged differently; nothing is repeated and each window has one way to
