@@ -15,18 +15,31 @@ import (
 	"strings"
 	"testing"
 
+	"pinalert/internal/account"
 	"pinalert/internal/geocode"
 )
 
+// geocodeRequest builds a GET /api/geocode request from a verified account,
+// which the handler needs for its per account budget (quick 261016-sne).
 func geocodeRequest(query url.Values) *http.Request {
-	return httptest.NewRequest(http.MethodGet, "/api/geocode?"+query.Encode(), nil)
+	return geocodeRequestAs(7, query)
+}
+
+// geocodeRequestAs is geocodeRequest for a given account id.
+func geocodeRequestAs(accountID int64, query url.Values) *http.Request {
+	return withAccount(httptest.NewRequest(http.MethodGet, "/api/geocode?"+query.Encode(), nil), accountID)
+}
+
+// withAccount puts a verified account in the request's context.
+func withAccount(req *http.Request, accountID int64) *http.Request {
+	return req.WithContext(account.WithAccount(req.Context(), account.Account{ID: accountID, Email: "a@example.com"}))
 }
 
 func TestGeocodePassesThePinAsNear(t *testing.T) {
 	t.Run("with lat and lon", func(t *testing.T) {
 		stub := &stubSearcher{results: []geocode.Result{}}
 		rec := httptest.NewRecorder()
-		Geocode(stub)(rec, geocodeRequest(url.Values{"q": {"Banjara Hills"}, "lat": {"17.41560"}, "lon": {"78.43470"}}))
+		Geocode(stub, nil)(rec, geocodeRequest(url.Values{"q": {"Banjara Hills"}, "lat": {"17.41560"}, "lon": {"78.43470"}}))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
 		}
@@ -37,7 +50,7 @@ func TestGeocodePassesThePinAsNear(t *testing.T) {
 	t.Run("without them", func(t *testing.T) {
 		stub := &stubSearcher{results: []geocode.Result{}}
 		rec := httptest.NewRecorder()
-		Geocode(stub)(rec, geocodeRequest(url.Values{"q": {"Banjara Hills"}}))
+		Geocode(stub, nil)(rec, geocodeRequest(url.Values{"q": {"Banjara Hills"}}))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", rec.Code)
 		}
@@ -68,7 +81,7 @@ func TestGeocodeValidatesLatLon(t *testing.T) {
 			stub := &stubSearcher{results: []geocode.Result{}}
 			tc.query.Set("q", "Banjara Hills")
 			rec := httptest.NewRecorder()
-			Geocode(stub)(rec, geocodeRequest(tc.query))
+			Geocode(stub, nil)(rec, geocodeRequest(tc.query))
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want 400", rec.Code)
 			}
@@ -112,7 +125,7 @@ func TestBothSearchesCarryMatchedQuery(t *testing.T) {
 
 	reporter := func(matchedText string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
-		Geocode(&stubSearcher{results: result, matched: matchedText})(rec,
+		Geocode(&stubSearcher{results: result, matched: matchedText}, nil)(rec,
 			geocodeRequest(url.Values{"q": {"Flat 4B, Banjara Hills, Hyderabad"}}))
 		return rec
 	}
@@ -155,7 +168,7 @@ func TestGeocodeFailureLogHoldsNoPin(t *testing.T) {
 
 	failure := &url.Error{Op: "Get", URL: "https://nominatim.example/search?q=flooded-colony&viewbox=78.0,17.9,79.0,16.9", Err: geocode.ErrReaderBusy}
 	rec := httptest.NewRecorder()
-	Geocode(&stubSearcher{err: failure})(rec,
+	Geocode(&stubSearcher{err: failure}, nil)(rec,
 		geocodeRequest(url.Values{"q": {"flooded-colony"}, "lat": {"17.41560"}, "lon": {"78.43470"}}))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
