@@ -99,7 +99,7 @@ func TestFinishedRescueNeverLeaksOnPastOrLink(t *testing.T) {
 	poster := newVerifiedClient(t, srv, mailer, "h10-rescue-poster@example.com")
 	reader := newVerifiedClient(t, srv, mailer, "h10-rescue-reader@example.com")
 
-	id := h10Post(t, poster, srv.URL, h10RescueBody())
+	id := storeReportAs(t, pool, poster, srv.URL, h10RescueBody())
 	idStr := strconv.FormatInt(id, 10)
 
 	// Live: exact on the default view and on a link.
@@ -160,7 +160,7 @@ func TestFinishedRescueNeverLeaksOnPastOrLink(t *testing.T) {
 	}
 
 	// A Rescue report that ran out its time is blurred the same way.
-	expiredID := h10Post(t, poster, srv.URL, h10RescueBody())
+	expiredID := storeReportAs(t, pool, poster, srv.URL, h10RescueBody())
 	h10MovePast(t, pool, expiredID, 3*3600, 3600)
 	past, raw := h10Get(t, reader, h10URL(srv.URL, 12.9800, 77.6000, "view=past"))
 	h10AssertBlurred(t, "expired rescue past view", h10Find(past.Reports, expiredID), raw, 12.9800, 77.6000)
@@ -175,7 +175,7 @@ func TestFinishedRescueNeverLeaksOnPastOrLink(t *testing.T) {
 // blurred. A live Rescue report and finished Flood, Shelter and Power reports
 // keep their text and exact coordinates (D-23).
 func TestLiveRescueAndFinishedFloodStayExact(t *testing.T) {
-	srv, mailer, _ := newE2EServer(t)
+	srv, mailer, pool := newE2EServer(t)
 	client := newVerifiedClient(t, srv, mailer, "h10-exact@example.com")
 
 	const lat, lon = 12.9716123, 77.5946457
@@ -203,7 +203,7 @@ func TestLiveRescueAndFinishedFloodStayExact(t *testing.T) {
 		h10Resolve(t, client, srv.URL, id, lat, lon)
 		ids[name] = id
 	}
-	liveRescue := h10Post(t, client, srv.URL, h10RescueBody())
+	liveRescue := storeReportAs(t, pool, client, srv.URL, h10RescueBody())
 
 	past, raw := h10Get(t, client, h10URL(srv.URL, h10Lat, h10Lon, "view=past"))
 	for name, id := range ids {

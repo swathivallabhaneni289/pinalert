@@ -166,7 +166,7 @@ func TestShowDisputedRevealsHiddenReports(t *testing.T) {
 // reachable assertion is a critical Retracted report — D-07 puts Retracted
 // above the critical bypass.
 func TestFeedNeverReturnsRetractedReports(t *testing.T) {
-	srv, mailer, _ := newE2EServer(t)
+	srv, mailer, pool := newE2EServer(t)
 	client := newVerifiedClient(t, srv, mailer, "feed-retracted-a@example.com")
 
 	const lat, lon = 12.9716, 77.5946
@@ -184,7 +184,7 @@ func TestFeedNeverReturnsRetractedReports(t *testing.T) {
 		}
 	}
 
-	criticalID := submitReportGetID(t, client, srv.URL, map[string]any{
+	criticalID := storeReportAs(t, pool, client, srv.URL, map[string]any{
 		"category":    "rescue_needed",
 		"severity":    "critical",
 		"description": "Person trapped, needs rescue urgently",

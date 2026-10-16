@@ -42,8 +42,8 @@ const (
 // aliasing a store row) so swag can document it by name and so a column
 // added to the store later cannot silently change this contract.
 type SubmitReportRequest struct {
-	// Category is one of the nine canonical report categories (internal/service.Categories).
-	Category string `json:"category" enums:"flood,earthquake,fire,storm_cyclone,road_blocked,power_outage,shelter_open,rescue_needed,other" example:"flood"`
+	// Category is one of the nine categories a new report can use (internal/service.PostableCategories). rescue_needed was retired on 2026-10-16 and is refused with 400 on the field category.
+	Category string `json:"category" enums:"flood,earthquake,fire,storm_cyclone,road_blocked,power_outage,shelter_open,traffic,other" example:"flood"`
 	// Severity affects triage ordering only; self-declaring critical never bypasses the provisional-visibility gate (internal/service.Severities).
 	Severity string `json:"severity" enums:"low,medium,critical" example:"medium"`
 	// Description is a free text account of the report, 10 to 1000 characters after trimming, counted as characters rather than bytes.
@@ -74,8 +74,9 @@ const expectedAccountMessage = "This report was saved under a different account 
 // see package doc comment. It never includes session_id (threat register
 // T-01-02).
 type ReportResponse struct {
-	ID          int64   `json:"id" example:"42"`
-	Category    string  `json:"category" enums:"flood,earthquake,fire,storm_cyclone,road_blocked,power_outage,shelter_open,rescue_needed,other" example:"flood"`
+	ID int64 `json:"id" example:"42"`
+	// rescue_needed appears only on a report stored before 2026-10-16 (internal/service.Categories).
+	Category    string  `json:"category" enums:"flood,earthquake,fire,storm_cyclone,road_blocked,power_outage,shelter_open,traffic,rescue_needed,other" example:"flood"`
 	Severity    string  `json:"severity" enums:"low,medium,critical" example:"critical"`
 	Description string  `json:"description" example:"Water rising fast near the market bridge."`
 	Latitude    float64 `json:"latitude" example:"13.0827"`
@@ -111,8 +112,9 @@ type SubmitReportResponse struct {
 // one can never silently alter the other. The duplication with
 // ReportResponse is deliberate for that same reason.
 type FeedReportResponse struct {
-	ID          int64   `json:"id" example:"42"`
-	Category    string  `json:"category" enums:"flood,earthquake,fire,storm_cyclone,road_blocked,power_outage,shelter_open,rescue_needed,other" example:"flood"`
+	ID int64 `json:"id" example:"42"`
+	// rescue_needed appears only on a report stored before 2026-10-16 (internal/service.Categories).
+	Category    string  `json:"category" enums:"flood,earthquake,fire,storm_cyclone,road_blocked,power_outage,shelter_open,traffic,rescue_needed,other" example:"flood"`
 	Severity    string  `json:"severity" enums:"low,medium,critical" example:"critical"`
 	Description string  `json:"description" example:"Water rising fast near the market bridge."`
 	Latitude    float64 `json:"latitude" example:"13.0827"`
@@ -417,12 +419,13 @@ type ErrorResponse struct {
 // @Description GET /auth/verify) — an unverified caller receives 401. id, geohash, created_at
 // @Description and expires_at are computed server-side and can never be set by the client.
 // @Description The description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.
-// @Description When the check cannot finish in time, a critical or rescue_needed report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.
-// @Description Posting is limited per verified account, with separate allowances for serious reports (critical, or rescue_needed at any severity) and for every other report.
+// @Description When the check cannot finish in time, a critical report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.
+// @Description Posting is limited per verified account, with separate allowances for serious reports (critical) and for every other report.
 // @Description A blocked post gets 429 with a Retry-After header and stores nothing, and a rejected or failed post does not use the allowance.
 // @Description An optional request_id makes a retry safe: a repeated key answers 200 with the stored report and is checked before any limit or text check.
 // @Description An optional written_at is display only and never changes created_at or expires_at.
 // @Description An optional expected_account_id, sent by the device queue with a saved report, names the account the report was saved under. When it is not the signed in account the post gets 409 on the field expected_account_id before any other check, stores nothing and uses no allowance; the answer names neither account. A post without it is not checked.
+// @Description The category rescue_needed is no longer accepted for a new report and is refused with 400 on the field category. Reports already stored with it keep their rules and still appear in GET /api/reports.
 // @Tags reports
 // @Accept json
 // @Produce json
@@ -597,7 +600,8 @@ func SubmitReport(svc *service.ReportService, gate *RateGate) http.HandlerFunc {
 // @Description show_disputed=true still selects the disputed view so old links keep working; sent with
 // @Description another view it is refused with 400 on the field view.
 // @Description The category parameter keeps one report category in the chosen view and is refused with
-// @Description 400 when it is not one of the nine.
+// @Description 400 when it is not one of the ten known categories. rescue_needed is still accepted here
+// @Description so reports stored before 2026-10-16 can be found.
 // @Description The report parameter is a report id from a link. When it is sent the focus object answers
 // @Description it: ok with that report even when it lies outside the radius and outside the seven day
 // @Description window, too_old when it ended more than seven days ago, or unavailable when there is no such
@@ -621,7 +625,7 @@ func SubmitReport(svc *service.ReportService, gate *RateGate) http.HandlerFunc {
 // @Param radius_km query number false "Search radius in kilometers (defaults to 10, bounded to 0.1-50)" minimum(0.1) maximum(50) default(10)
 // @Param view query string false "Which tab to list: active (the default), disputed or past. resolved is an alias of past." Enums(active,disputed,past,resolved)
 // @Param show_disputed query boolean false "Older way to select the disputed view. true selects disputed; with another view it is refused (defaults to false)"
-// @Param category query string false "Keep only this report category in the chosen view (default: all)" Enums(flood,earthquake,fire,storm_cyclone,road_blocked,power_outage,shelter_open,rescue_needed,other)
+// @Param category query string false "Keep only this report category in the chosen view (default: all)" Enums(flood,earthquake,fire,storm_cyclone,road_blocked,power_outage,shelter_open,traffic,rescue_needed,other)
 // @Param report query integer false "A report id from a link; answered in the focus object" minimum(1)
 // @Success 200 {object} ReportListResponse
 // @Failure 400 {object} ErrorResponse
@@ -852,7 +856,8 @@ func parseFeedView(q url.Values) (service.FeedView, *paramProblem) {
 }
 
 // parseCategory reads the optional category filter: absent or blank means all,
-// anything else must be exactly one of service.Categories.
+// anything else must be exactly one of service.Categories, rescue_needed
+// included, so a report stored before it was retired can still be found.
 func parseCategory(q url.Values) (service.Category, *paramProblem) {
 	raw := q.Get("category")
 	if raw == "" {

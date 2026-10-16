@@ -22,6 +22,7 @@ import (
 	"pinalert/internal/moderation"
 	"pinalert/internal/service"
 	sqlcgen "pinalert/internal/store/sqlc"
+	"pinalert/internal/testutil"
 )
 
 const (
@@ -184,7 +185,7 @@ func TestSubmitScreening(t *testing.T) {
 		scr := p11Scores(map[string]float64{"hate": service.RejectScoreThreshold})
 		srv, mailer, pool := p11Server(t, scr)
 		client := newVerifiedClient(t, srv, mailer, "p11-hate@example.com")
-		for _, c := range [][2]string{{"flood", "low"}, {"flood", "medium"}, {"flood", "critical"}, {"rescue_needed", "low"}} {
+		for _, c := range [][2]string{{"flood", "low"}, {"flood", "medium"}, {"flood", "critical"}, {"traffic", "low"}} {
 			resp := postReport(t, client, srv.URL, p11Body(c[0], c[1], text))
 			if resp.StatusCode != http.StatusUnprocessableEntity {
 				t.Fatalf("%v: status %d, want 422", c, resp.StatusCode)
@@ -193,6 +194,15 @@ func TestSubmitScreening(t *testing.T) {
 			if field != "description" || msg != service.RejectMessage(service.RejectHateful) {
 				t.Fatalf("%v: field %q message %q", c, field, msg)
 			}
+		}
+		// A retired category is refused before the screener runs, so the call
+		// count below stays at four.
+		resp := postReport(t, client, srv.URL, p11Body("rescue_needed", "low", text))
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("rescue_needed: status %d, want 400", resp.StatusCode)
+		}
+		if field, msg := decodeErrorResponse(t, resp); field != "category" || msg != service.RescueNeededRetiredMessage {
+			t.Fatalf("rescue_needed: field %q message %q", field, msg)
 		}
 		if n := p11ReportCount(t, pool); n != 0 {
 			t.Fatalf("reports stored %d, want 0", n)
@@ -422,7 +432,7 @@ func TestSubmitScreeningPendingSeriousPublished(t *testing.T) {
 	srv, mailer, pool := p11Server(t, scr)
 	client := newVerifiedClient(t, srv, mailer, "p11-serious@example.com")
 
-	for _, c := range [][2]string{{"flood", "critical"}, {"rescue_needed", "low"}} {
+	for _, c := range [][2]string{{"flood", "critical"}, {"traffic", "critical"}} {
 		status, body := p11Post(t, client, srv.URL, p11Body(c[0], c[1], "Family stuck on a roof, water rising fast"))
 		if status != http.StatusCreated {
 			t.Fatalf("%v: status %d, want 201: %v", c, status, body)
@@ -441,6 +451,22 @@ func TestSubmitScreeningPendingSeriousPublished(t *testing.T) {
 		if !ok || fr.Visibility != "live" || fr.VisibilityReason != "critical_bypasses_gates" {
 			t.Fatalf("%v: feed row %+v found %v, want live via the critical bypass", c, fr, ok)
 		}
+	}
+
+	// A new post can no longer be rescue_needed.
+	status, _ := p11Post(t, client, srv.URL, p11Body("rescue_needed", "low", "Family stuck on a roof, water rising fast"))
+	if status != http.StatusBadRequest {
+		t.Fatalf("rescue_needed post: status %d, want 400", status)
+	}
+
+	// The read side rule for a row already stored as rescue_needed is
+	// unchanged: an unfinished text check still shows it live through the
+	// critical or rescue bypass.
+	stored := storeReportAs(t, pool, client, srv.URL, p11Body("rescue_needed", "low", "Family stuck on a roof, water rising fast"))
+	testutil.MustExec(t, pool, `UPDATE reports SET moderation_state = 'pending' WHERE id = $1`, stored)
+	fr, ok := p11FeedRow(t, client, srv.URL, stored, false)
+	if !ok || fr.Visibility != "live" || fr.VisibilityReason != "critical_bypasses_gates" {
+		t.Fatalf("stored pending rescue: feed row %+v found %v, want live via the critical bypass", fr, ok)
 	}
 }
 

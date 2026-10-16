@@ -275,6 +275,7 @@ var categoryLabels = map[service.Category]string{
 	service.CategoryRoadBlocked:  "Road blocked",
 	service.CategoryPowerOutage:  "Power outage",
 	service.CategoryShelterOpen:  "Shelter open",
+	service.CategoryTraffic:      "Traffic",
 	service.CategoryRescueNeeded: "Rescue needed",
 	service.CategoryOther:        "Other",
 }

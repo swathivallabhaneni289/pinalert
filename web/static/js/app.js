@@ -16,11 +16,20 @@
 window.Pinalert = (function () {
   'use strict';
 
-  // Nine categories, in the server's declared order (service.Categories).
+  // The nine categories a new report can use, in the server's declared order
+  // (service.PostableCategories). They feed the report form's tiles. Traffic
+  // took the Rescue needed slot on 2026-10-16 by owner decision.
   var CATEGORIES = [
     'flood', 'earthquake', 'fire', 'storm_cyclone', 'road_blocked',
-    'power_outage', 'shelter_open', 'rescue_needed', 'other'
+    'power_outage', 'shelter_open', 'traffic', 'other'
   ];
+
+  // Categories a report stored before 2026-10-16 may still carry. No new
+  // report can use them, but old rows keep their label, icon and chip.
+  var RETIRED_CATEGORIES = ['rescue_needed'];
+
+  // Every category the server may send (service.Categories).
+  var KNOWN_CATEGORIES = CATEGORIES.concat(RETIRED_CATEGORIES);
 
   var SEVERITIES = ['low', 'medium', 'critical'];
 
@@ -46,6 +55,7 @@ window.Pinalert = (function () {
     road_blocked: 'Road blocked',
     power_outage: 'Power outage',
     shelter_open: 'Shelter open',
+    traffic: 'Traffic',
     rescue_needed: 'Rescue needed',
     other: 'Other'
   };
@@ -272,7 +282,7 @@ window.Pinalert = (function () {
   }
 
   function setCategory(slug) {
-    if (slug === '' || CATEGORIES.indexOf(slug) !== -1) {
+    if (slug === '' || KNOWN_CATEGORIES.indexOf(slug) !== -1) {
       state.category = slug;
     }
   }
@@ -683,14 +693,14 @@ window.Pinalert = (function () {
     return 'sev-' + severity;
   }
 
-  // iconClass validates category against CATEGORIES before building a class
+  // iconClass validates category against KNOWN_CATEGORIES before building a class
   // name (T-01-17): an unexpected value from the API can never be reflected
   // into className unchecked. Falls back to the "other" category for
   // anything unrecognised. Returns the fixed base class plus the
   // category-specific class, space-separated, so a caller can assign the
   // pair straight to an element's className.
   function iconClass(category) {
-    var validated = CATEGORIES.indexOf(category) === -1 ? 'other' : category;
+    var validated = KNOWN_CATEGORIES.indexOf(category) === -1 ? 'other' : category;
     return 'icon-glyph icon-glyph--' + validated;
   }
 
@@ -1147,6 +1157,7 @@ window.Pinalert = (function () {
 
   return {
     CATEGORIES: CATEGORIES,
+    KNOWN_CATEGORIES: KNOWN_CATEGORIES,
     SEVERITIES: SEVERITIES,
     CAPACITY_STATUSES: CAPACITY_STATUSES,
     SEVERITY_LABELS: SEVERITY_LABELS,

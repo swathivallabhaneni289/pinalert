@@ -436,7 +436,7 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 
 	for _, category := range []string{
 		"flood", "earthquake", "fire", "storm_cyclone", "road_blocked",
-		"power_outage", "shelter_open", "rescue_needed", "other",
+		"power_outage", "shelter_open", "traffic", "rescue_needed", "other",
 	} {
 		if !strings.Contains(body, category) {
 			t.Errorf("docs/swagger.json is missing category enum value %q", category)
@@ -735,5 +735,64 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 	// counterpart for this plan's new field).
 	if strings.Contains(body, "reporter_account_id") || strings.Contains(body, "reporterAccountId") {
 		t.Fatalf("docs/swagger.json must never document a reporter_account_id/reporterAccountId field")
+	}
+}
+
+// TestSwaggerCategoryEnumsSplitPostableFromStored: the POST request lists the
+// nine categories a new report may use (service.PostableCategories), while the
+// response shapes and the GET category filter list all ten known categories
+// (service.Categories), because a report stored as rescue_needed before
+// 2026-10-16 can still be read and filtered. Order is part of the contract.
+func TestSwaggerCategoryEnumsSplitPostableFromStored(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "swagger.json"))
+	if err != nil {
+		t.Fatalf("reading docs/swagger.json: %v", err)
+	}
+	var spec struct {
+		Definitions map[string]struct {
+			Properties map[string]struct {
+				Enum []string `json:"enum"`
+			} `json:"properties"`
+		} `json:"definitions"`
+		Paths map[string]map[string]struct {
+			Parameters []struct {
+				Name string   `json:"name"`
+				In   string   `json:"in"`
+				Enum []string `json:"enum"`
+			} `json:"parameters"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		t.Fatalf("parsing docs/swagger.json: %v", err)
+	}
+
+	known := make([]string, 0, len(service.Categories))
+	for _, c := range service.Categories {
+		known = append(known, string(c))
+	}
+	postable := make([]string, 0, len(service.PostableCategories))
+	for _, c := range service.PostableCategories {
+		postable = append(postable, string(c))
+	}
+
+	check := func(label string, got, want []string) {
+		t.Helper()
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("%s enum = %v, want %v", label, got, want)
+		}
+	}
+	check("handlers.SubmitReportRequest category", spec.Definitions["handlers.SubmitReportRequest"].Properties["category"].Enum, postable)
+	check("handlers.ReportResponse category", spec.Definitions["handlers.ReportResponse"].Properties["category"].Enum, known)
+	check("handlers.FeedReportResponse category", spec.Definitions["handlers.FeedReportResponse"].Properties["category"].Enum, known)
+
+	var found bool
+	for _, p := range spec.Paths["/reports"]["get"].Parameters {
+		if p.Name == "category" && p.In == "query" {
+			found = true
+			check("GET /reports category query", p.Enum, known)
+		}
+	}
+	if !found {
+		t.Error("GET /reports documents no category query parameter")
 	}
 }

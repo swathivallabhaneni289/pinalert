@@ -88,6 +88,7 @@ func TestFeedViewParameterParsing(t *testing.T) {
 		{"", "", false},
 		{"category=", "", false},
 		{"category=flood", service.CategoryFlood, false},
+		{"category=traffic", service.CategoryTraffic, false},
 		{"category=rescue_needed", service.CategoryRescueNeeded, false},
 		{"category=Flood", "", true},
 		{"category=water", "", true},

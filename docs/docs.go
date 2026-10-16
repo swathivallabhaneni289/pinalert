@@ -205,7 +205,7 @@ const docTemplate = `{
         },
         "/reports": {
             "get": {
-                "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance,\nthen resolves each report fresh via the shared resolver. This single endpoint serves\nthe map, the list, the Past tab, the counts for an empty Active tab and a report link;\nthere is no separate route per tab.\nThe view parameter picks the tab. active (the default) is Live and Provisional reports,\nnearest first. disputed is only reports currently hidden by disputes, replacing the\ndefault view rather than adding to it; a critical or rescue-needed report stays Live\nhowever heavily it is disputed, so it appears only in the active view. past is what was\nresolved and what ran out its time in the last seven days, the resolved group first and\nthen the expired group, each newest first and cut at 25 with the cut object saying so.\nresolved is accepted as a read only alias of past and answered as past. A resolved\n(retracted) report is never returned by the active or the disputed view; it is listed\nonly in the past view, and no past entry changes an active count.\nshow_disputed=true still selects the disputed view so old links keep working; sent with\nanother view it is refused with 400 on the field view.\nThe category parameter keeps one report category in the chosen view and is refused with\n400 when it is not one of the nine.\nThe report parameter is a report id from a link. When it is sent the focus object answers\nit: ok with that report even when it lies outside the radius and outside the seven day\nwindow, too_old when it ended more than seven days ago, or unavailable when there is no such\nreport or no tab lists it. Not found and every unlisted state share the one unavailable\nanswer. The reports array still holds the reader's own area.\nrecent ({resolved_24h, expired_24h}) is present only when the view is active, no category\nwas sent and there are no reports, so an empty tab can say what happened lately.\nA finished Rescue report never leaves the API exact on the past view or on a link: its\ndescription is empty, its latitude, longitude and geohash are a blurred point,\napproximate is true and distance_km is measured to that point. A live Rescue report and\nfinished Flood, Shelter and Power reports stay exact.\nEvery report carries your_vote, your_resolution, undos_left and is_own_report relative to\nthe calling verified account. Requires a session verified by email through the\nmagic-link flow; an unverified caller receives 401 and no report data.\nEvery report also carries a trust object: how many people at different nearby spots confirmed and disputed it, counted once per spot and not once per vote.\nlat, lon and radius_km must be finite numbers; NaN is refused with 400 and the name of the parameter.",
+                "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance,\nthen resolves each report fresh via the shared resolver. This single endpoint serves\nthe map, the list, the Past tab, the counts for an empty Active tab and a report link;\nthere is no separate route per tab.\nThe view parameter picks the tab. active (the default) is Live and Provisional reports,\nnearest first. disputed is only reports currently hidden by disputes, replacing the\ndefault view rather than adding to it; a critical or rescue-needed report stays Live\nhowever heavily it is disputed, so it appears only in the active view. past is what was\nresolved and what ran out its time in the last seven days, the resolved group first and\nthen the expired group, each newest first and cut at 25 with the cut object saying so.\nresolved is accepted as a read only alias of past and answered as past. A resolved\n(retracted) report is never returned by the active or the disputed view; it is listed\nonly in the past view, and no past entry changes an active count.\nshow_disputed=true still selects the disputed view so old links keep working; sent with\nanother view it is refused with 400 on the field view.\nThe category parameter keeps one report category in the chosen view and is refused with\n400 when it is not one of the ten known categories. rescue_needed is still accepted here\nso reports stored before 2026-10-16 can be found.\nThe report parameter is a report id from a link. When it is sent the focus object answers\nit: ok with that report even when it lies outside the radius and outside the seven day\nwindow, too_old when it ended more than seven days ago, or unavailable when there is no such\nreport or no tab lists it. Not found and every unlisted state share the one unavailable\nanswer. The reports array still holds the reader's own area.\nrecent ({resolved_24h, expired_24h}) is present only when the view is active, no category\nwas sent and there are no reports, so an empty tab can say what happened lately.\nA finished Rescue report never leaves the API exact on the past view or on a link: its\ndescription is empty, its latitude, longitude and geohash are a blurred point,\napproximate is true and distance_km is measured to that point. A live Rescue report and\nfinished Flood, Shelter and Power reports stay exact.\nEvery report carries your_vote, your_resolution, undos_left and is_own_report relative to\nthe calling verified account. Requires a session verified by email through the\nmagic-link flow; an unverified caller receives 401 and no report data.\nEvery report also carries a trust object: how many people at different nearby spots confirmed and disputed it, counted once per spot and not once per vote.\nlat, lon and radius_km must be finite numbers; NaN is refused with 400 and the name of the parameter.",
                 "produces": [
                     "application/json"
                 ],
@@ -264,6 +264,7 @@ const docTemplate = `{
                             "road_blocked",
                             "power_outage",
                             "shelter_open",
+                            "traffic",
                             "rescue_needed",
                             "other"
                         ],
@@ -302,7 +303,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Creates a location-tagged report under the caller's session. Requires a session\nverified by email through the magic-link flow (POST /auth/request-link, then\nGET /auth/verify) — an unverified caller receives 401. id, geohash, created_at\nand expires_at are computed server-side and can never be set by the client.\nThe description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.\nWhen the check cannot finish in time, a critical or rescue_needed report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.\nPosting is limited per verified account, with separate allowances for serious reports (critical, or rescue_needed at any severity) and for every other report.\nA blocked post gets 429 with a Retry-After header and stores nothing, and a rejected or failed post does not use the allowance.\nAn optional request_id makes a retry safe: a repeated key answers 200 with the stored report and is checked before any limit or text check.\nAn optional written_at is display only and never changes created_at or expires_at.\nAn optional expected_account_id, sent by the device queue with a saved report, names the account the report was saved under. When it is not the signed in account the post gets 409 on the field expected_account_id before any other check, stores nothing and uses no allowance; the answer names neither account. A post without it is not checked.",
+                "description": "Creates a location-tagged report under the caller's session. Requires a session\nverified by email through the magic-link flow (POST /auth/request-link, then\nGET /auth/verify) — an unverified caller receives 401. id, geohash, created_at\nand expires_at are computed server-side and can never be set by the client.\nThe description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.\nWhen the check cannot finish in time, a critical report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.\nPosting is limited per verified account, with separate allowances for serious reports (critical) and for every other report.\nA blocked post gets 429 with a Retry-After header and stores nothing, and a rejected or failed post does not use the allowance.\nAn optional request_id makes a retry safe: a repeated key answers 200 with the stored report and is checked before any limit or text check.\nAn optional written_at is display only and never changes created_at or expires_at.\nAn optional expected_account_id, sent by the device queue with a saved report, names the account the report was saved under. When it is not the signed in account the post gets 409 on the field expected_account_id before any other check, stores nothing and uses no allowance; the answer names neither account. A post without it is not checked.\nThe category rescue_needed is no longer accepted for a new report and is refused with 400 on the field category. Reports already stored with it keep their rules and still appear in GET /api/reports.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1125,6 +1126,7 @@ const docTemplate = `{
                     "example": false
                 },
                 "category": {
+                    "description": "rescue_needed appears only on a report stored before 2026-10-16 (internal/service.Categories).",
                     "type": "string",
                     "enum": [
                         "flood",
@@ -1134,6 +1136,7 @@ const docTemplate = `{
                         "road_blocked",
                         "power_outage",
                         "shelter_open",
+                        "traffic",
                         "rescue_needed",
                         "other"
                     ],
@@ -1500,6 +1503,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "category": {
+                    "description": "rescue_needed appears only on a report stored before 2026-10-16 (internal/service.Categories).",
                     "type": "string",
                     "enum": [
                         "flood",
@@ -1509,6 +1513,7 @@ const docTemplate = `{
                         "road_blocked",
                         "power_outage",
                         "shelter_open",
+                        "traffic",
                         "rescue_needed",
                         "other"
                     ],
@@ -1649,7 +1654,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "category": {
-                    "description": "Category is one of the nine canonical report categories (internal/service.Categories).",
+                    "description": "Category is one of the nine categories a new report can use (internal/service.PostableCategories). rescue_needed was retired on 2026-10-16 and is refused with 400 on the field category.",
                     "type": "string",
                     "enum": [
                         "flood",
@@ -1659,7 +1664,7 @@ const docTemplate = `{
                         "road_blocked",
                         "power_outage",
                         "shelter_open",
-                        "rescue_needed",
+                        "traffic",
                         "other"
                     ],
                     "example": "flood"
