@@ -224,50 +224,44 @@
     wireControl();
   }
 
-  // THE BAR HEIGHT (review finding WR-W05). Every page shell, the map, the
-  // popups, the notice card and the document scroll padding subtract
-  // --disclaimer-bar-height, whose CSS value is a fixed tier per width. At
-  // enlarged text the sticky unofficial bar grows past the tier, the page
-  // then scrolls, and the bar covers the map tools and focused controls. So
-  // this module, the one script every page with the bar loads, writes the
-  // bar's real height into the token on the root. The CSS tier stays the
-  // value until this runs, and the whole value when scripts do not run.
+  // THE BAR HEIGHT (review finding WR-W05, reworked by Phase 3.4, D-29). Every
+  // page shell, the map, the popups, the notice card and the document scroll
+  // padding subtract --disclaimer-bar-height. Its CSS value is 0px, because
+  // the only thing it measures now is the laptop notice strip, which is drawn
+  // on the Nearby page only and hidden on a phone. At enlarged text or a
+  // narrower laptop the strip wraps and grows, and the shells would then
+  // overflow the screen, so this module, the one script every page loads,
+  // writes the strip's real height into the token on the root. It writes 0px
+  // when there is no strip on the page or the strip is not displayed (the
+  // phone), so crossing the 900px line in either direction follows the layout.
   //
-  // The bar's own min-height reads the same token. Measuring the bar while
-  // the last measurement holds it up would let it grow but never shrink
-  // again (a smaller text size, a rotation, a wider tier), so each
-  // measurement first drops the written value and reads the bar against
-  // the CSS tier alone. Both writes happen in one task, so nothing paints in
-  // between.
+  // The strip's own floor is the 48px space token and never reads the bar
+  // token, so a measurement needs no reset first and cannot be held up by the
+  // last value it wrote.
   var BAR_PROPERTY = '--disclaimer-bar-height';
   var barEl = null;
 
   function measureBar() {
-    if (!barEl || !barEl.isConnected) {
+    var rootStyle = document.documentElement.style;
+    if (!barEl || !barEl.isConnected || barEl.offsetHeight === 0) {
+      rootStyle.setProperty(BAR_PROPERTY, '0px');
       return;
     }
-    var rootStyle = document.documentElement.style;
-    rootStyle.removeProperty(BAR_PROPERTY);
-    var height = barEl.getBoundingClientRect().height;
-    if (height > 0) {
-      rootStyle.setProperty(BAR_PROPERTY, height + 'px');
-    }
+    rootStyle.setProperty(BAR_PROPERTY, barEl.getBoundingClientRect().height + 'px');
   }
 
-  // watchBar measures once, then again whenever the bar's text box changes
-  // size (text size, wrapping) and on every window resize (a width tier can
-  // lower the floor while the text keeps its lines). Only the text box is
-  // observed: its height is the text's own, never the floor's, and the bar
-  // itself is not, because measureBar resizes the bar from inside the
-  // callback and observing it would end in a ResizeObserver loop error.
+  // watchBar measures once, then again whenever the strip changes size (text
+  // size, wrapping, hidden by the phone rule) and on every window resize. The
+  // strip itself is observed: writing the token resizes the shells and the
+  // map, never the strip, so there is no ResizeObserver loop.
   function watchBar() {
-    barEl = document.querySelector('.disclaimer-bar');
+    barEl = document.querySelector('.notice-strip');
+    measureBar();
     if (!barEl) {
       return;
     }
-    measureBar();
-    if (typeof ResizeObserver === 'function' && barEl.firstElementChild) {
-      new ResizeObserver(measureBar).observe(barEl.firstElementChild);
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(measureBar).observe(barEl);
     }
     window.addEventListener('resize', measureBar);
   }

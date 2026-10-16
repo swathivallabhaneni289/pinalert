@@ -61,7 +61,12 @@ func TestSlowNoticeLoadsFirst(t *testing.T) {
 
 	firstUnpkgScript := strings.Index(tmpl, `<script src="https://unpkg.com`)
 	shellAt := strings.Index(tmpl, `id="app-shell"`)
-	toggleAt := strings.Index(tmpl, `{{template "theme_toggle.html.tmpl" .}}`)
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-08): the
+	// light and dark button moved into the laptop top bar, so the page no
+	// longer includes it; the point the card follows is the top bar that holds
+	// it. The Phase 3.1 and Phase 4 hands-on tests are walked on this layout
+	// after Phase 3.4 is built.
+	toggleAt := strings.Index(tmpl, `{{template "app_topbar" .}}`)
 	for _, marker := range []string{`class="top-chrome"`, `id="notice-card"`, `id="notice-live"`} {
 		at := strings.Index(tmpl, marker)
 		if at == -1 || at > firstUnpkgScript {
@@ -192,6 +197,14 @@ func TestNoticeCardGeometry(t *testing.T) {
 	if len(heights) != 2 || !strings.Contains(heights[0][1], "100vh") || !strings.Contains(heights[1][1], "100dvh") {
 		t.Errorf(".notice-card must hold two max-height declarations, 100vh first and 100dvh second, found %v", heights)
 	}
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+	// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+	// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+	// every page) is retired as worded; Disclaimer and Policy are reached from the
+	// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+	// first-time flow, the login screen and the one reader. The Phase 3.1 and
+	// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+	// The card still subtracts the token, now the strip's height or 0px.
 	for _, h := range heights {
 		if !strings.Contains(h[1], "var(--disclaimer-bar-height)") {
 			t.Errorf("max-height %q must subtract the bar height", h[1])

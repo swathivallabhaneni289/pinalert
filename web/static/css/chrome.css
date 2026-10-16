@@ -1,7 +1,7 @@
 /*
- * Shared page chrome: the sticky wrapper at the top of every full page and
- * the thin unofficial notice inside it (D-21, D-22, P4-A1). Tokens only; the
- * bar height rules and the document scroll padding belong to a later plan.
+ * Shared page chrome: the sticky wrapper at the top of a full page (it holds
+ * the top bar or the account header) and, on the laptop Nearby page only, the
+ * dark notice strip above it (Phase 3.4, D-29). Tokens only.
  */
 
 /* A focused control or a scrolled to row never lands under the sticky bar. */
@@ -28,47 +28,76 @@ html {
   }
 }
 
-.disclaimer-bar {
+/* The laptop notice strip (Phase 3.4, D-29, UI-SPEC Surface 8a). A dark strip
+   in normal flow above the top bar, drawn on the laptop Nearby page only (and
+   so above the Post a report window, which opens over Nearby). The phone hides
+   it in phone.css (D-30). Its height is content driven with a 48px floor, so a
+   wrap at a narrower laptop or larger text grows it and never clips; theme.js
+   writes the measured height into --disclaimer-bar-height, which is 0px on
+   every page without the strip. */
+.notice-strip {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  gap: var(--space-sm);
   box-sizing: border-box;
-  /* A floor, never a height: larger text still grows the bar. */
-  min-height: var(--disclaimer-bar-height);
-  padding: var(--space-xs) var(--space-sm);
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
-  border-radius: 0;
-  box-shadow: none;
-  color: var(--color-text);
+  min-height: var(--space-2xl);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-notice-bg);
+  border-bottom: 1px solid var(--color-notice-outline);
+  color: var(--color-notice-text);
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
   font-weight: var(--font-weight-regular);
 }
 
-@media (min-width: 480px) {
-  .disclaimer-bar {
-    padding: var(--space-xs) var(--space-md);
-  }
+.notice-strip__icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: var(--color-notice-icon);
+  -webkit-mask-image: url("/static/icons/circle-alert.svg");
+  mask-image: url("/static/icons/circle-alert.svg");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
 }
 
-.disclaimer-bar p {
+.notice-strip__text {
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
+  color: var(--color-notice-sub);
 }
 
-.disclaimer-bar a {
-  color: var(--color-text);
+.notice-strip__lead,
+.notice-strip__number {
+  color: var(--color-notice-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+.notice-strip__link {
+  flex: none;
+  color: var(--color-notice-text);
   font-weight: var(--font-weight-semibold);
   text-decoration: underline;
   white-space: nowrap;
 }
 
 @media (forced-colors: active) {
-  .disclaimer-bar {
+  .notice-strip {
     border-bottom: 1px solid CanvasText;
     color: CanvasText;
   }
 
-  .disclaimer-bar a {
+  .notice-strip__icon {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+
+  .notice-strip__link {
     color: LinkText;
   }
 }

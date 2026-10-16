@@ -318,14 +318,70 @@ func TestThemeToggleRendersAsAFloatingControl(t *testing.T) {
 	includeFilename := strings.TrimPrefix(themeTogglePath, "templates/")
 	includeAction := `{{template "` + includeFilename + `" .}}`
 
-	for _, page := range []string{"templates/index.html.tmpl", "templates/profile.html.tmpl"} {
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-08, UX-01
+	// as amended): the light and dark button sits in the laptop top bar, so the
+	// include lives once in app_bar.html.tmpl (every page that carries the bar:
+	// Nearby, My activity, Official alerts, Settings) and the map and Activity
+	// pages no longer include it themselves. The Low data view and the
+	// moderator screen have no top bar and keep the floating include, once
+	// each. The phone has none in either place and follows the device setting.
+	// The Phase 3.1 and Phase 4 hands-on tests are walked on this layout after
+	// Phase 3.4 is built.
+	for page, want := range map[string]int{
+		"templates/app_bar.html.tmpl":  1,
+		"templates/low.html.tmpl":      1,
+		"templates/moderate.html.tmpl": 1,
+		"templates/index.html.tmpl":    0,
+		"templates/profile.html.tmpl":  0,
+		"templates/alerts.html.tmpl":   0,
+		"templates/settings.html.tmpl": 0,
+	} {
 		raw, err := TemplatesFS.ReadFile(page)
 		if err != nil {
 			t.Fatalf("reading embedded %s: %v", page, err)
 		}
-		if got := strings.Count(string(raw), includeAction); got != 1 {
-			t.Errorf("%s: expected the include action %q to appear exactly once, found %d", page, includeAction, got)
+		if got := strings.Count(string(raw), includeAction); got != want {
+			t.Errorf("%s: expected the include action %q to appear %d times, found %d", page, includeAction, want, got)
 		}
+	}
+
+	// The bar case: the button is an ordinary child of the laptop bar, and the
+	// phone hides both arrangements.
+	barCSS := stripCSSComments(p16ReadStatic(t, "static/css/app-bar.css"))
+	barRule, ok := ruleBySelector(parseCSSRules(barCSS), ".app-topbar .theme-toggle")
+	if !ok {
+		t.Fatal("app-bar.css has no .app-topbar .theme-toggle rule")
+	}
+	barDecls := declsOf(barRule.declBody)
+	for prop, want := range map[string]string{
+		"position":      "static",
+		"border":        "1px solid var(--color-border)",
+		"border-radius": "8px",
+		"background":    "var(--color-bg)",
+		"box-shadow":    "none",
+	} {
+		if barDecls[prop] != want {
+			t.Errorf(".app-topbar .theme-toggle %s = %q, want %q", prop, barDecls[prop], want)
+		}
+	}
+	// The floating arrangement stays on the plain class for the two pages with
+	// no bar (auth.css) and is hidden on a phone by chrome.css.
+	floating, ok := ruleBySelector(parseCSSRules(stripCSSComments(p16ReadStatic(t, "static/css/auth.css"))), ".theme-toggle")
+	if !ok || declsOf(floating.declBody)["position"] != "fixed" {
+		t.Error("auth.css .theme-toggle must keep the floating position: fixed for the Low data view and the moderator screen")
+	}
+	hiddenOnPhone := false
+	// The head is one of several in a shared hide list, so split the list.
+	for _, r := range phoneRules(t) {
+		for _, head := range p16HeadParts(r.Head) {
+			if strings.TrimSpace(head) == ".app-topbar > .theme-toggle" && r.Media == phoneBlockMedia && r.Decls["display"] == "none" {
+				hiddenOnPhone = true
+			}
+		}
+	}
+	if !hiddenOnPhone {
+		t.Error("phone.css must hide .app-topbar > .theme-toggle inside its narrow block")
 	}
 
 	// h. That same include action appears zero times on the three

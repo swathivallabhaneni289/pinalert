@@ -560,6 +560,14 @@ func TestMapToolsCSS(t *testing.T) {
 		// the phone title bar sits between the notice bar and the map, so the
 		// results start under it as well. The Phase 3.1 and Phase 4 hands-on
 		// tests are walked on this layout after Phase 3.4 is built.
+		//
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+		// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+		// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+		// every page) is retired as worded; Disclaimer and Policy are reached from the
+		// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+		// first-time flow, the login screen and the one reader. The token read here
+		// is 0px on a phone, where the strip is hidden.
 		"top": "calc(var(--disclaimer-bar-height, 0px) + var(--app-topbar-height) + var(--space-sm) + var(--touch-target-min) + var(--space-xs))",
 	})
 	if !strings.Contains(results.Decls["max-height"], "100dvh") {
@@ -611,13 +619,17 @@ func TestMapToolsHideUnderSheet(t *testing.T) {
 		t.Errorf("the sheet hide rule declares display %q, want none", hide.Decls["display"])
 	}
 	parts := p16HeadParts(hide.Head)
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-08, UX-01
+	// as amended): the light and dark button is in the laptop top bar and
+	// hidden on every phone by .app-topbar > .theme-toggle, so the two
+	// body > .theme-toggle guards of this list are gone with the floating
+	// toggle they hid. The Phase 3.1 and Phase 4 hands-on tests are walked on
+	// this layout after Phase 3.4 is built.
 	for _, want := range []string{
 		sheet + " .leaflet-control-zoom",
-		sheet + " > .theme-toggle",
 		sheet + " .map-tools",
 		sheet + " .map-label",
 		sheet + " #map-search-results",
-		`body:has(.map-tools[data-search-open="true"]) > .theme-toggle`,
 	} {
 		found := false
 		for _, p := range parts {

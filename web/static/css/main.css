@@ -92,15 +92,16 @@
   --font-weight-regular: 400;
   --font-weight-semibold: 600;
 
-  /* Height of the unofficial notice bar at the top of every full page. It is
-     the bar's min-height, never its height, so larger text still grows the
-     bar. Three tiers: 67.8px here (three lines on a phone), 48.2px from 480px
-     wide (two lines) and 28.6px from 900px wide (one line); the two wider
-     tiers are declared after the theme blocks. Declared in this file only.
-     Once the page is parsed, theme.js writes the bar's measured height over
-     it on the root, so at enlarged text the shells follow the real bar; the
-     tiers stay the first paint value and the value without scripts. */
-  --disclaimer-bar-height: calc(var(--space-xs) * 2 + var(--font-size-label) * var(--line-height-label) * 3 + 1px);
+  /* Height of the laptop notice strip above the top bar (Phase 3.4, D-29). The
+     strip is drawn on the laptop Nearby page only, so this is 0px on every
+     other page and on the phone, and every shell that subtracts it keeps
+     working without a per page edit. The strip's height is content driven
+     (48px at least), so no width tier states it. Declared in this file only.
+     Once the page is parsed, theme.js writes the strip's measured height over
+     it on the root, and writes 0px again when the strip is absent or not
+     displayed. The token name is kept from the Phase 4 bar so the rules that
+     read it need no edit. */
+  --disclaimer-bar-height: 0px;
 
   /* Phase 3.4 app bars (UI-SPEC Surface 1): the phone top bar is one touch
      target with a small space above and below (60px), and the phone bottom
@@ -234,18 +235,11 @@
   --color-age-stale: #C9CDD1;
 }
 
-/* The two wider tiers of the bar height token. isDarkMediaRootHead in
+/* The laptop lengths of the app bars. isDarkMediaRootHead in
    web/css_contract_test.go classes any @media :root head as a dark colour
-   source, so these blocks declare this one length and no colour. */
-@media (min-width: 480px) {
-  :root {
-    --disclaimer-bar-height: calc(var(--space-xs) * 2 + var(--font-size-label) * var(--line-height-label) * 2 + 1px);
-  }
-}
-
+   source, so this block declares lengths and no colour. */
 @media (min-width: 900px) {
   :root {
-    --disclaimer-bar-height: calc(var(--space-xs) * 2 + var(--font-size-label) * var(--line-height-label) + 1px);
     /* Phase 3.4: the laptop top bar is 44px of control, 8px above and below
        and a 1px hairline; the laptop has no bottom bar. Lengths only here. */
     --app-topbar-height: calc(var(--touch-target-min) + var(--space-md) + 1px);

@@ -349,6 +349,15 @@ func TestPopupCardSurfaceAndGeometry(t *testing.T) {
 		"overflow-y":  "auto",
 		"max-width":   "calc(100vw - var(--space-md) - var(--space-md))",
 	})
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+	// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+	// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+	// every page) is retired as worded; Disclaimer and Policy are reached from the
+	// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+	// first-time flow, the login screen and the one reader. The Phase 3.1 and
+	// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+	// The popup max heights still subtract the token once; the token is the
+	// strip's height on laptop Nearby and 0px elsewhere.
 	const baseMax = "max-height: max(120px, calc(100dvh - var(--space-md) - var(--space-md) - 20px - var(--disclaimer-bar-height)))"
 	body := p17Squash(content.declBody)
 	fallback := strings.Index(body, "max-height: 70vh")

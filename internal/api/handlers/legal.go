@@ -63,7 +63,6 @@ func Legal(tmpl *template.Template, cfg AuthConfig, page string) http.HandlerFun
 		}
 
 		chrome := cfg.Chrome.withDefaults()
-		chrome.DisclaimerCurrent = page == LegalDisclaimerPage
 
 		vm := legalViewModel{
 			AssetVersion: cfg.AssetVersion,

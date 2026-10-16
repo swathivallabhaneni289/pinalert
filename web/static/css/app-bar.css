@@ -187,6 +187,30 @@ html:has(.app-topbar) {
   cursor: pointer;
 }
 
+/* The light and dark button in the laptop bar (Phase 3.4, D-08, UI-SPEC 1c):
+   a 44 by 44 bordered icon button with an 8px corner, between the bell and the
+   person button. auth.css gives .theme-toggle its floating arrangement (fixed
+   to the bottom right corner, a round shadowed disc), which the Low data view
+   and the moderator screen keep; inside the bar the same button is an ordinary
+   flex child, so this rule, one class heavier and loaded later, lays it back
+   into the flow. The phone hides it (phone.css); the phone follows the device
+   setting. */
+.app-topbar .theme-toggle {
+  position: static;
+  flex: none;
+  right: auto;
+  bottom: auto;
+  z-index: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  box-shadow: none;
+}
+
+.app-topbar .theme-toggle:hover {
+  background: var(--color-surface);
+}
+
 /* The list opens under the bar, right aligned to the bar, and is anchored to
    the bar itself (.app-topbar is positioned), so the percentage width limit is
    a share of the bar and never of the button. The display rule carries the

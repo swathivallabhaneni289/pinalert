@@ -26,14 +26,6 @@ import (
 	"pinalert/web"
 )
 
-// lowBarSentence is the exact default sentence of the unofficial bar (D-22).
-const lowBarSentence = "Unofficial, not a government service. Emergency? Call 112 (older numbers 100, 101, 108 may also work). Disclaimer"
-
-var (
-	lowTagPattern   = regexp.MustCompile(`<[^>]*>`)
-	lowSpacePattern = regexp.MustCompile(`\s+`)
-)
-
 // lowRequestWithAccount builds a GET request whose context carries a verified
 // account, as the access gate would leave it.
 func lowRequestWithAccount(target string, id int64, email string) *http.Request {
@@ -42,20 +34,24 @@ func lowRequestWithAccount(target string, id int64, email string) *http.Request 
 	return req.WithContext(ctx)
 }
 
-// lowBarText cuts the disclaimer bar element out of body, strips its tags and
-// collapses whitespace.
-func lowBarText(t *testing.T, body string) string {
+// lowNoNotice fails the test when the Low data page draws the Phase 4 bar or
+// the laptop notice strip.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+// every page) is retired as worded; Disclaimer and Policy are reached from the
+// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+// first-time flow, the login screen and the one reader. The Phase 3.1 and
+// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+// The Low data view keeps its layout and loses the bar.
+func lowNoNotice(t *testing.T, body string) {
 	t.Helper()
-	start := strings.Index(body, `<aside class="disclaimer-bar"`)
-	if start < 0 {
-		t.Fatalf("no disclaimer bar in the page")
+	for _, gone := range []string{"disclaimer-bar", "notice-strip"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("the Low data page still draws %q", gone)
+		}
 	}
-	end := strings.Index(body[start:], "</aside>")
-	if end < 0 {
-		t.Fatalf("the disclaimer bar is not closed")
-	}
-	text := lowTagPattern.ReplaceAllString(body[start:start+end], "")
-	return strings.TrimSpace(lowSpacePattern.ReplaceAllString(text, " "))
 }
 
 // lowMainTag returns the opening tag of the main element that holds id="app-shell".
@@ -171,9 +167,7 @@ func TestLowPageRenders(t *testing.T) {
 		if got := strings.Count(body, `id="notice-live"`); got != 1 {
 			t.Errorf("notice-live appears %d times, want 1", got)
 		}
-		if got := lowBarText(t, body); got != lowBarSentence {
-			t.Errorf("bar = %q, want %q", got, lowBarSentence)
-		}
+		lowNoNotice(t, body)
 
 		main := lowMainTag(t, body)
 		if !strings.HasPrefix(main, "<main") {
@@ -223,15 +217,13 @@ func TestLowPageRenders(t *testing.T) {
 		}
 	})
 
-	t.Run("zero config renders the default sentence", func(t *testing.T) {
+	t.Run("zero config renders without a notice", func(t *testing.T) {
 		rec := httptest.NewRecorder()
 		handlers.LowPage(tmpl, handlers.PageConfig{})(rec, lowRequestWithAccount("/low", 7, "a@example.com"))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", rec.Code)
 		}
-		if got := lowBarText(t, rec.Body.String()); got != lowBarSentence {
-			t.Errorf("bar = %q", got)
-		}
+		lowNoNotice(t, rec.Body.String())
 	})
 
 	t.Run("no account is a 500 without a cookie", func(t *testing.T) {

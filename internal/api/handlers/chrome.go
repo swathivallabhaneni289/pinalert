@@ -135,16 +135,15 @@ func LoadEmergencyNumbers(lookup func(string) (string, bool)) EmergencyNumbers {
 	return n
 }
 
-// Chrome is the data every full page shares for the unofficial bar and the
-// legal pages. It is one value built by main.go from env and passed through
-// api.Deps.Chrome. LowDataPage is set only by the Low data page (04-18) and
-// DisclaimerCurrent only by the Disclaimer page (04-12). No later plan edits
-// this file.
+// Chrome is the data every full page shares for the laptop notice strip and
+// the legal pages. It is one value built by main.go from env and passed
+// through api.Deps.Chrome. LowDataPage is set only by the Low data page
+// (04-18). The field that marked the Disclaimer page as current went with the
+// bar it served (Phase 3.4, 03.4-05).
 type Chrome struct {
-	Numbers           EmergencyNumbers
-	ContactEmail      string
-	DisclaimerCurrent bool
-	LowDataPage       bool
+	Numbers      EmergencyNumbers
+	ContactEmail string
+	LowDataPage  bool
 }
 
 // withDefaults returns a copy whose Numbers is the default set when the

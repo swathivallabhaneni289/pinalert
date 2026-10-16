@@ -55,8 +55,16 @@ func TestLegalPagesTemplateSource(t *testing.T) {
 		if w := legalBannedWord(strings.Join(names, " ")); w != "" {
 			t.Errorf("%s holds the word %q in a class or comment", name, w)
 		}
-		if strings.Count(src, `{{template "disclaimer_bar.html.tmpl" .}}`) != 1 {
-			t.Errorf("%s must call the bar partial once", name)
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+		// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+		// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+		// every page) is retired as worded; Disclaimer and Policy are reached from the
+		// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+		// first-time flow, the login screen and the one reader. The Phase 3.1 and
+		// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+		// The two legal pages carry no bar and no strip.
+		if strings.Contains(src, "disclaimer_bar.html.tmpl") || strings.Contains(src, "notice_strip.html.tmpl") {
+			t.Errorf("%s must call neither the old bar partial nor the strip", name)
 		}
 		main := strings.Index(src, "/static/css/main.css")
 		chrome := strings.Index(src, "/static/css/chrome.css")
@@ -68,9 +76,9 @@ func TestLegalPagesTemplateSource(t *testing.T) {
 		if strings.Count(src, "<script") != 1 {
 			t.Errorf("%s loads a script other than theme.js", name)
 		}
-		bar := strings.Index(src, `<body>`)
-		if bar < 0 || !strings.HasPrefix(strings.TrimSpace(src[bar+len("<body>"):]), `<div class="top-chrome">`) {
-			t.Errorf("%s body must open with div.top-chrome", name)
+		body := strings.Index(src, `<body>`)
+		if body < 0 || !strings.HasPrefix(strings.TrimSpace(src[body+len("<body>"):]), `<main class="legal-page">`) {
+			t.Errorf("%s body must open with main.legal-page, with no bar wrapper", name)
 		}
 	}
 	if pol, ok := pages["templates/policy.html.tmpl"]; ok && strings.Contains(pol, "CallHref") {
