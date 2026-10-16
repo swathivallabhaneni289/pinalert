@@ -193,6 +193,16 @@ definitions:
         - other
         example: flood
         type: string
+      confirmed_by_people:
+        description: |-
+          ConfirmedByPeople is the server authored Show Confirmed membership: true only
+          for an active report that people at different nearby spots have confirmed
+          (and whose disputes are not a majority). It is not the same as visibility
+          live: a Critical report is shown at once but is confirmed only once people
+          confirm it. The client renders it and never recomputes it (TRUST-02). Always
+          present.
+        example: true
+        type: boolean
       created_at:
         example: "2026-09-05T14:03:00.000Z"
         type: string
@@ -503,8 +513,8 @@ definitions:
       recent:
         allOf:
         - $ref: '#/definitions/handlers.RecentResponse'
-        description: Recent is present only on an active, unfiltered view with no
-          reports.
+        description: Recent is present only on an active or all, unfiltered view with
+          no reports.
       reports:
         description: |-
           Reports is never null. The past view lists the resolved group first and
@@ -515,8 +525,10 @@ definitions:
       view:
         description: |-
           View is the tab these reports belong to. resolved is only an alias of
-          past on the way in and is answered as past.
+          past on the way in and is answered as past. all is the Show menu's All:
+          the reports carry their own view word, active or disputed.
         enum:
+        - all
         - active
         - disputed
         - past
@@ -1083,6 +1095,9 @@ paths:
         then resolves each report fresh via the shared resolver. This single endpoint serves
         the map, the list, the Past tab, the counts for an empty Active tab and a report link;
         there is no separate route per tab.
+        all is the Show menu's All: active and disputed reports in one answer, nearest first. Every
+        report carries its own view word, so a client that groups by it lists disputed ones last.
+        A resolved, expired, held or removed report is never in all.
         The view parameter picks the tab. active (the default) is Live and Provisional reports,
         nearest first. disputed is only reports currently hidden by disputes, replacing the
         default view rather than adding to it; a critical or rescue-needed report stays Live
@@ -1102,7 +1117,7 @@ paths:
         window, too_old when it ended more than seven days ago, or unavailable when there is no such
         report or no tab lists it. Not found and every unlisted state share the one unavailable
         answer. The reports array still holds the reader's own area.
-        recent ({resolved_24h, expired_24h}) is present only when the view is active, no category
+        recent ({resolved_24h, expired_24h}) is present only when the view is active or all, no category
         was sent and there are no reports, so an empty tab can say what happened lately.
         A finished Rescue report never leaves the API exact on the past view or on a link: its
         description is empty, its latitude, longitude and geohash are a blurred point,
@@ -1131,9 +1146,10 @@ paths:
         minimum: 0.1
         name: radius_km
         type: number
-      - description: 'Which tab to list: active (the default), disputed or past. resolved
-          is an alias of past.'
+      - description: 'Which tab to list: active (the default), all, disputed or past.
+          all is active and disputed together. resolved is an alias of past.'
         enum:
+        - all
         - active
         - disputed
         - past
@@ -1182,7 +1198,8 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
-      summary: 'List the reports near a point for one view: active, disputed or past'
+      summary: 'List the reports near a point for one view: all, active, disputed
+        or past'
       tags:
       - reports
     post:

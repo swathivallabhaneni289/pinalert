@@ -31,7 +31,9 @@ func TestFeedViewParameterParsing(t *testing.T) {
 		{"blank is absent", "view=", service.FeedViewActive, ""},
 		{"capital Past", "view=Past", "", "view"},
 		{"upper PAST", "view=PAST", "", "view"},
-		{"all", "view=all", "", "view"},
+		{"all", "view=all", feedViewAll, ""},
+		{"all with show_disputed", "view=all&show_disputed=true", "", "view"},
+		{"capital All", "view=All", "", "view"},
 		{"unknown", "view=bogus", "", "view"},
 		{"show_disputed true alone", "show_disputed=true", service.FeedViewDisputed, ""},
 		{"show_disputed true with disputed", "show_disputed=true&view=disputed", service.FeedViewDisputed, ""},
@@ -72,7 +74,7 @@ func TestFeedViewParameterParsing(t *testing.T) {
 
 	// The two messages the wire contract names.
 	q, _ := url.ParseQuery("view=bogus")
-	if _, p := parseFeedView(q); p == nil || p.Message != "view must be active, disputed or past." {
+	if _, p := parseFeedView(q); p == nil || p.Message != "view must be all, active, disputed or past." {
 		t.Errorf("unknown view message = %+v", p)
 	}
 	q, _ = url.ParseQuery("show_disputed=true&view=past")

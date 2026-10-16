@@ -170,6 +170,36 @@ func TestWithheldInNoView(t *testing.T) {
 		}
 	})
 
+	t.Run("ListableInAll", func(t *testing.T) {
+		otherListable := false
+		for _, v := range Visibilities {
+			got := v.ListableInAll()
+			if v == VisibilityWithheld && got {
+				t.Error("withheld is listable in All")
+			}
+			if v != VisibilityWithheld && got {
+				otherListable = true
+			}
+		}
+		if !otherListable {
+			t.Error("no other visibility is listable in All, so the predicate looks constant false")
+		}
+	})
+
+	t.Run("ConfirmedByPeople", func(t *testing.T) {
+		tally := VoteTally{ConfirmCells: IndependentAgreementThreshold + 3}
+		for _, v := range Visibilities {
+			for _, view := range append([]FeedView{FeedViewNone}, FeedViews...) {
+				if v == VisibilityWithheld && ConfirmedByPeople(v, view, tally) {
+					t.Errorf("a withheld report is confirmed in view %q", view)
+				}
+			}
+		}
+		if !ConfirmedByPeople(VisibilityLive, FeedViewActive, tally) {
+			t.Error("a live confirmed active report is not confirmed, so the function looks constant false")
+		}
+	})
+
 	t.Run("source guard", func(t *testing.T) {
 		src, err := os.ReadFile("moderation_view_test.go")
 		if err != nil {

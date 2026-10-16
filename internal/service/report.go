@@ -275,7 +275,12 @@ type NearbyQuery struct {
 	RadiusKm        float64
 	ViewerAccountID int64
 	IncludeDisputed bool
-	Category        Category
+	// All is the Show menu's All (D-14): Live, Provisional and Hidden reports in
+	// one read, each with its own view word, so the client can list the disputed
+	// ones last. It takes precedence over IncludeDisputed, never reveals a
+	// Retracted, expired, held or removed report, and changes no count.
+	All      bool
+	Category Category
 }
 
 // ValidateSubmitInput enforces every server-side rule a report submission
@@ -953,7 +958,11 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 		tally := BuildVoteTally(reportVotes, r.ID, reporterID)
 		meta := ReportMeta{Severity: r.Severity, Category: r.Category, Moderation: ModerationState(ex.ModerationState)}
 		vis, reason := Resolve(meta, tally, now)
-		if !vis.ListableInFeed(q.IncludeDisputed) {
+		if q.All {
+			if !vis.ListableInAll() {
+				continue
+			}
+		} else if !vis.ListableInFeed(q.IncludeDisputed) {
 			continue
 		}
 		if q.Category != "" && r.Category != q.Category {
@@ -992,6 +1001,9 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 			// Display only, set after Resolve and never read by it (R-05).
 			WrittenAt:     WrittenAtForDisplay(r.CreatedAt, writtenAtPtr(ex.ClientWrittenAt)),
 			ViewerFlagged: ex.ViewerFlagged,
+			// Server authored Show Confirmed membership, beside ViewOf and from the
+			// same tally. Resolve never reads it (TRUST-02).
+			ConfirmedByPeople: ConfirmedByPeople(vis, view, tally),
 		})
 	}
 	if err := s.attachUndos(ctx, q.ViewerAccountID, views, now); err != nil {
