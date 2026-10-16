@@ -962,11 +962,15 @@
     Pinalert.setText(noticeLiveEl, text);
   }
 
-  // listPaneHidden is true on a phone while the map view is shown, when the
-  // list pane, and so the stale line, is not displayed.
+  // listPaneHidden is true when the list pane, and so the queue strip and the
+  // stale line, is not displayed. It asks the layout, not data-view: the
+  // phone layout shows the map and the list together whatever data-view says
+  // (phone.css), so the attribute alone would hide the list on every phone
+  // and the notice card would repeat, over the list, what the list already
+  // shows (review finding WR-W02). A pane with no layout box is not shown.
   function listPaneHidden() {
-    return !!appShellEl && appShellEl.getAttribute('data-view') === 'map' &&
-      narrowQuery !== null && narrowQuery.matches;
+    var pane = appShellEl ? appShellEl.querySelector('.pane--list') : null;
+    return !!pane && pane.getClientRects().length === 0;
   }
 
   // openSavedReport opens the report form for a saved report (Edit and
@@ -1642,8 +1646,10 @@
   window.setInterval(refreshAgeAndTime, 60000);
   window.setInterval(refreshStaleLine, 60000);
 
-  // The Stale row of the notice card follows the viewport width, because on a
-  // phone it shows only while the map fills the screen.
+  // The Queue and Stale rows of the notice card follow the layout, because
+  // they show only while the list pane is not displayed. The breakpoint
+  // listener catches the width tier change; the resize listener catches any
+  // other layout change that shows or hides the pane.
   if (narrowQuery) {
     if (typeof narrowQuery.addEventListener === 'function') {
       narrowQuery.addEventListener('change', syncNoticeCard);
@@ -1651,6 +1657,7 @@
       narrowQuery.addListener(syncNoticeCard);
     }
   }
+  window.addEventListener('resize', syncNoticeCard);
 
   // pageshow / back-forward-cache refetch (02-UAT.md gap 3, "major").
   //

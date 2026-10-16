@@ -516,14 +516,16 @@ func TestMapToolsCSS(t *testing.T) {
 		t.Errorf("phone --map-tools-height is %q", narrow.Decls["--map-tools-height"])
 	}
 
-	// The phone: one row, right inset clears the theme toggle, and the
-	// expanded search takes the full row.
+	// The phone: one row whose right inset clears the account button's 44px
+	// slot. Review finding WR-W01 (Phase 4): the open search row used to take
+	// the full width, and its Close button then sat under the account button,
+	// which stays on phones. The open row now keeps the collapsed inset, so
+	// no phone rule for the open state moves its right edge
+	// (TestPhoneKeepsTheAccountTriggerAndDropsTheThemeToggle pins that).
 	layerNarrow := p31mRule(t, phone, phoneMedia, ".pane--map > .map-tools")
 	p16MustDecl(t, "phone layer", layerNarrow, map[string]string{
 		"right": "calc(var(--space-md) + var(--touch-target-min) + var(--space-sm))",
 	})
-	expanded := p31mRule(t, phone, phoneMedia, `.pane--map > .map-tools[data-search-open="true"]`)
-	p16MustDecl(t, "expanded phone layer", expanded, map[string]string{"right": "var(--space-md)"})
 	p16MustDecl(t, "phone chips", p31mRule(t, phone, phoneMedia, ".pane--map > .map-tools .map-chips"), map[string]string{
 		"top":  "var(--space-sm)",
 		"left": "calc(var(--touch-target-min) + var(--space-sm))",

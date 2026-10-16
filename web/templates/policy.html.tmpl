@@ -25,12 +25,12 @@
 
     <h2>How the automatic check works</h2>
     <p>The text of a report is sent to OpenAI's moderation service. Only the description is sent, never your account, your sign in, your network address or your location. OpenAI documents no retention and no training use for moderation requests.</p>
-    <p>If the text is clearly hateful, harassing or sexual, it is rejected and nothing is stored. If it is borderline, it is posted and a moderator may look at it.</p>
+    <p>If the text is clearly hateful, harassing or sexual, it is rejected and nothing is stored. If such text is only caught after the report was saved, because the check finished late, the report is removed instead: it stays stored but shows to no one. If the text is borderline, it is posted and a moderator may look at it.</p>
     <p>If the check can't finish in time, a normal report waits and doesn't show to anyone until it does. A serious report, critical or Rescue needed, is published at once and checked afterwards.</p>
     <p>The check can be wrong, which is why moderators exist. No photos are accepted.</p>
 
     <h2>What moderators can do</h2>
-    <p>Moderators can read reports, keep them or remove them. A removed report shows to no one, and its author sees "Removed after review". A flag on a report never hides it by itself. It only asks a moderator to look. The person who flagged is never shown to the author.</p>
+    <p>Moderators can read reports, keep them or remove them. A removed report shows to no one. Its author sees "Removed after review" both when a moderator removed it and when the automatic check removed it after it was saved. A flag on a report never hides it by itself. It only asks a moderator to look. The person who flagged is never shown to the author.</p>
 
     <h2>Limits</h2>
     <p>Each account can post, vote and flag reports only so fast, to stop spam. When you reach a limit, Pinalert says how long to wait and keeps what you typed.</p>
@@ -40,7 +40,7 @@
       <li>Your email address, to sign you in. It is never shown to other people.</li>
       <li>Each report, with its location, its time and your account.</li>
       <li>Your votes, kept as a rough square about 150 metres wide and not as an exact point.</li>
-      <li>The scores of the automatic check for borderline reports, without the report text.</li>
+      <li>The result and scores of the automatic check, and which model gave them, without the report text: for borderline reports and for any report whose check finished after it was saved.</li>
       <li>Flags you send, and their reasons.</li>
     </ul>
     <p>Nothing listed here is deleted on a schedule today: reports, votes, flags and sign in records stay stored, and an expired report only stops showing in the lists.</p>

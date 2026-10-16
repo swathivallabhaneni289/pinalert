@@ -23,6 +23,10 @@
 // the API. Anything absent, corrupt or unrecognised is treated as no
 // stored preference at all and falls through to a one-time value derived
 // from the operating system preference, never a live third mode.
+//
+// PHONES (owner decision of 2026-10-15): below 900px wide there is no toggle
+// and the page follows the device's own light or dark setting live, so this
+// module leaves the root without a theme attribute there (isPhone below).
 (function () {
   'use strict';
 
@@ -91,11 +95,27 @@
     return 'light';
   }
 
+  // PHONE_QUERY is the phone layout's own breakpoint (phone.css). Below 900px
+  // there is no toggle (owner decision of 2026-10-15): the phone follows the
+  // device's own light or dark setting, so the root carries no theme
+  // attribute there and the prefers-color-scheme block in main.css decides.
+  // A choice saved from the laptop toggle is neither applied nor overwritten
+  // on a phone width.
+  var phoneQuery = window.matchMedia ? window.matchMedia('(max-width: 899.98px)') : null;
+
+  function isPhone() {
+    return phoneQuery !== null && phoneQuery.matches;
+  }
+
   // applyMode is the only place a value reaches the root element in this
   // file: one setAttribute call site, downstream of the validation above.
-  // There is no removeAttribute branch any more: with the follow-the-OS
-  // mode gone, no state ever wants the attribute absent.
+  // The one removeAttribute call is the phone width, where the device
+  // setting decides and no mode is written at all.
   function applyMode(mode) {
+    if (isPhone()) {
+      document.documentElement.removeAttribute('data-theme');
+      return;
+    }
     document.documentElement.setAttribute('data-theme', mode);
   }
 
@@ -120,9 +140,37 @@
   // this very first evaluation is what guarantees the operating system is
   // consulted once ever, not once per visit with no memory of the last
   // answer.
+  // On a phone width nothing is persisted, so a phone visit never turns the
+  // device setting of that moment into a saved laptop choice.
   var currentMode = initialMode();
   applyMode(currentMode);
-  persistMode(currentMode);
+  if (!isPhone()) {
+    persistMode(currentMode);
+  }
+
+  // Crossing the breakpoint (a rotated tablet, a resized window) moves
+  // between the two rules: narrow drops the attribute, wide applies the
+  // saved choice, or on a first wide visit the one just derived.
+  function onWidthChange() {
+    if (!isPhone()) {
+      currentMode = initialMode();
+      persistMode(currentMode);
+    }
+    applyMode(currentMode);
+    var control = document.getElementById('theme-toggle');
+    var icon = document.getElementById('theme-toggle-icon');
+    if (control && icon) {
+      render(control, icon, currentMode);
+    }
+  }
+
+  if (phoneQuery !== null) {
+    if (typeof phoneQuery.addEventListener === 'function') {
+      phoneQuery.addEventListener('change', onWidthChange);
+    } else if (typeof phoneQuery.addListener === 'function') {
+      phoneQuery.addListener(onWidthChange);
+    }
+  }
 
   // render applies the given mode's glyph and both accessible-name
   // attributes to the control. It is called once at wire time, to show the
@@ -168,5 +216,70 @@
     document.addEventListener('DOMContentLoaded', wireControl);
   } else {
     wireControl();
+  }
+
+  // THE BAR HEIGHT (review finding WR-W05). Every page shell, the map, the
+  // popups, the notice card and the document scroll padding subtract
+  // --disclaimer-bar-height, whose CSS value is a fixed tier per width. At
+  // enlarged text the sticky unofficial bar grows past the tier, the page
+  // then scrolls, and the bar covers the map tools and focused controls. So
+  // this module, the one script every page with the bar loads, writes the
+  // bar's real height into the token on the root. The CSS tier stays the
+  // value until this runs, and the whole value when scripts do not run.
+  //
+  // The bar's own min-height reads the same token. Measuring the bar while
+  // the last measurement holds it up would let it grow but never shrink
+  // again (a smaller text size, a rotation, a wider tier), so each
+  // measurement first drops the written value and reads the bar against
+  // the CSS tier alone. Both writes happen in one task, so nothing paints in
+  // between.
+  var BAR_PROPERTY = '--disclaimer-bar-height';
+  var barEl = null;
+
+  function measureBar() {
+    if (!barEl || !barEl.isConnected) {
+      return;
+    }
+    var rootStyle = document.documentElement.style;
+    rootStyle.removeProperty(BAR_PROPERTY);
+    var height = barEl.getBoundingClientRect().height;
+    if (height > 0) {
+      rootStyle.setProperty(BAR_PROPERTY, height + 'px');
+    }
+  }
+
+  // watchBar measures once, then again whenever the bar's text box changes
+  // size (text size, wrapping) and on every window resize (a width tier can
+  // lower the floor while the text keeps its lines). Only the text box is
+  // observed: its height is the text's own, never the floor's, and the bar
+  // itself is not, because measureBar resizes the bar from inside the
+  // callback and observing it would end in a ResizeObserver loop error.
+  function watchBar() {
+    barEl = document.querySelector('.disclaimer-bar');
+    if (!barEl) {
+      return;
+    }
+    measureBar();
+    if (typeof ResizeObserver === 'function' && barEl.firstElementChild) {
+      new ResizeObserver(measureBar).observe(barEl.firstElementChild);
+    }
+    window.addEventListener('resize', measureBar);
+  }
+
+  // The bar is measured as soon as the document is parsed, on the
+  // readystatechange to interactive, which comes before the deferred scripts
+  // run, so the map and the other scripts lay out against the real bar.
+  function onReadyState() {
+    if (document.readyState === 'loading') {
+      return;
+    }
+    document.removeEventListener('readystatechange', onReadyState);
+    watchBar();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('readystatechange', onReadyState);
+  } else {
+    watchBar();
   }
 }());

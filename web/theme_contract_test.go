@@ -154,10 +154,11 @@ func TestThemeModuleUsesNoMarkupParsingSink(t *testing.T) {
 // before it is ever reflected into the root theme attribute. There must be
 // exactly one place a value can reach the DOM, one setAttribute call site
 // for the root theme attribute, and it must be downstream of an indexOf
-// membership check against that fixed list. There is no removeAttribute
-// call site any more: with follow-the-OS gone (D-D), there is no branch
-// that wants the attribute absent, so the single setAttribute call is the
-// only write path left.
+// membership check against that fixed list. The single setAttribute call is
+// the only write path. Since review finding WR-W01 (Phase 4) there is one
+// removeAttribute call, inside applyMode, for the phone width, where the
+// owner decided (2026-10-15) the page follows the device setting with no
+// toggle; TestPhoneFollowsTheDeviceTheme pins it.
 //
 // This test also positively asserts theme.js references matchMedia at all,
 // the one-time operating-system read that seeds a first-ever visit's
