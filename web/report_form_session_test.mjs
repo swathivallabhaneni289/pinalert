@@ -224,22 +224,33 @@ function setup(options) {
       el('cancel-report').click();
       assert.equal(el('discard-confirm').hidden, false, 'a touched form asks before it closes');
       el('discard-confirm-discard').click();
+    },
+    // cancelInFlight closes the form while its post is out: no Discard
+    // question, since that report is already on its way, and focus goes back
+    // to the button that opened the form.
+    cancelInFlight() {
+      el('cancel-report').click();
+      assert.equal(el('discard-confirm').hidden, true, 'a form whose post is out closes without the Discard question');
+      assert.equal(el('report-backdrop').hidden, true, 'the form must close');
+      assert.equal(doc.activeElement, opener, 'focus must go back to the opener');
+    },
+    escape() {
+      (doc.handlers.keydown || []).slice().forEach((h) => h({ key: 'Escape', preventDefault() {} }));
     }
   };
 }
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
-// postThenReopen sends a first report, discards the form while the post is
-// out, opens the form again and types a second draft.
+// postThenReopen sends a first report, closes the form while the post is out
+// (with no Discard question), opens the form again and types a second draft.
 function postThenReopen(page, openOptions) {
   page.open(openOptions);
   page.fill('Water over the main road near the bridge');
   page.submit();
   assert.equal(page.posts.length, 1);
   assert.equal(page.el('submit-report').disabled, true);
-  page.discard();
-  assert.equal(page.el('report-backdrop').hidden, true);
+  page.cancelInFlight();
   page.open();
   page.fill('A second report about the shelter');
 }
@@ -397,4 +408,117 @@ test('a post with no answer while its form is still open saves and closes as bef
   assert.equal(page.queueSaves[0].request_id, first.payload.request_id);
   assert.equal(page.queueSaves[0].status, 'no_answer');
   assert.deepEqual(page.toasts, ["No signal. Your report is saved on this device and will send when you're back online."]);
+});
+
+// ----- closing the form while its post is out -----
+
+test('Escape while the post is out closes the form without the Discard question', () => {
+  const page = setup();
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.escape();
+  assert.equal(page.el('discard-confirm').hidden, true);
+  assert.equal(page.el('report-backdrop').hidden, true);
+  assert.equal(page.el('description').doc.activeElement, page.opener);
+});
+
+test('an edit typed after Post does not bring the question back while the post is out', () => {
+  const page = setup();
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.el('description').value = 'Water over the main road near the old bridge';
+  page.el('description').input();
+  page.cancelInFlight();
+});
+
+test('a Discard question open when Post is pressed goes away', () => {
+  const page = setup();
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.el('cancel-report').click();
+  assert.equal(page.el('discard-confirm').hidden, false);
+  page.submit();
+  assert.equal(page.posts.length, 1);
+  assert.equal(page.el('discard-confirm').hidden, true, 'the question must not stay over a report already sent');
+  page.cancelInFlight();
+});
+
+test('after a refusal the form holds the report again, so closing asks first', async () => {
+  const page = setup();
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 422, field: 'description', fieldMessage: 'That text is not allowed.'
+  }));
+  await settle();
+  page.el('cancel-report').click();
+  assert.equal(page.el('discard-confirm').hidden, false, 'a refused report is only in the form now');
+  assert.equal(page.el('report-backdrop').hidden, false);
+});
+
+test('after a wait refusal the form holds the report again, so closing asks first', async () => {
+  const page = setup();
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 429, fieldMessage: 'Please wait 5 minutes.', retryAfterSeconds: 300
+  }));
+  await settle();
+  page.el('cancel-report').click();
+  assert.equal(page.el('discard-confirm').hidden, false);
+});
+
+test('a report with no answer that cannot be saved is back in the form, so closing asks first', async () => {
+  const page = setup();
+  page.setQueueSave(() => Promise.reject(new Error('not valid')));
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), { queueable: true, status: 504 }));
+  await settle();
+  assert.equal(page.el('report-backdrop').hidden, false);
+  page.el('cancel-report').click();
+  assert.equal(page.el('discard-confirm').hidden, false);
+});
+
+test('a report with no answer still being saved closes without the question', async () => {
+  const page = setup();
+  page.setQueueSave(() => new Promise(() => {}));
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), { queueable: true, status: 504 }));
+  await settle();
+  assert.equal(page.queueSaves.length, 1);
+  page.cancelInFlight();
+});
+
+test('Send after the wait still saving closes without the question', async () => {
+  const page = setup();
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 429, fieldMessage: 'Please wait 5 minutes.', retryAfterSeconds: 300
+  }));
+  await settle();
+  page.setQueueSave(() => new Promise(() => {}));
+  page.el('send-after-wait').click();
+  assert.equal(page.queueSaves.length, 1);
+  assert.equal(page.queueSaves[0].status, 'blocked');
+  page.cancelInFlight();
+});
+
+test('a late answer leaves the question working on the form open now', async () => {
+  const page = setup();
+  postThenReopen(page);
+  page.posts[0].resolve({ id: 46 });
+  await settle();
+  page.el('cancel-report').click();
+  assert.equal(page.el('discard-confirm').hidden, false, 'the new draft has no post out, so closing asks first');
+  assert.equal(page.el('report-backdrop').hidden, false);
 });

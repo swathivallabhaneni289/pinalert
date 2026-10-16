@@ -115,6 +115,12 @@
   // newer number belongs to a form that has since closed, so it must not touch
   // the open form, its fields, its message or its button (WR-W03).
   var formSession = 0;
+  // postInFlight is true from the moment Post sends this form's report until
+  // the form gets it back: a refusal it shows, a failed save, or a close. While
+  // it is true the report is already on its way, its outcome will be told
+  // whatever happens to the form, so closing the form must not claim to
+  // discard it. An answer for a form that has since closed never touches it.
+  var postInFlight = false;
 
   var selectedCategory = null;
   var lastFocusedEl = null;
@@ -243,11 +249,17 @@
   // Buttons: "Discard" (destructive) and "Keep editing".
   // The copy itself lives as static markup in report_form.html.tmpl; this
   // file only owns the show, hide and focus behaviour around it.
+  // While a post is out (postInFlight) the form closes without the question:
+  // that report is already on its way and a toast tells how it ends, so "won't
+  // be saved" would be untrue. Edits typed after Post are not asked about
+  // either; a post answered while the form is open closes it the same way.
   function requestClose() {
     if (!discardConfirm.hidden) {
       return;
     }
-    if (formTouched) {
+    if (postInFlight) {
+      closeForm();
+    } else if (formTouched) {
       preDiscardFocusEl = document.activeElement;
       discardConfirm.hidden = false;
       discardConfirmDiscard.focus();
@@ -590,6 +602,7 @@
     // late answer to that post never touches the button again (WR-W03).
     submitButton.disabled = false;
     Pinalert.setText(submitButton, 'Post report');
+    postInFlight = false;
     if (sendAfterWaitBtn) {
       sendAfterWaitBtn.hidden = true;
     }
@@ -866,6 +879,11 @@
     submitButton.disabled = true;
     Pinalert.setText(submitButton, 'Posting…');
     Pinalert.setText(formError, '');
+    // The report is on its way from here. A Discard question still open would
+    // now ask about a report that is already sent, so it goes.
+    postInFlight = true;
+    discardConfirm.hidden = true;
+    preDiscardFocusEl = null;
 
     // What this post needs once its answer arrives, taken now: resetForm
     // empties the shared values when the form closes, and a form opened later
@@ -903,12 +921,16 @@
       submitButton.disabled = false;
       Pinalert.setText(submitButton, 'Post report');
       // The visitor's input stays intact: the form does not close and no
-      // field is cleared on a failed submission.
+      // field is cleared on a failed submission. A report that got no answer
+      // stays in flight until saveToQueue settles; a refused one is back in the
+      // form, so closing asks again.
       if (err && err.queueable === true) {
         saveToQueue(payload, err.status >= 502 ? 'no_answer' : 'waiting', sent);
       } else if (err && err.status === 429) {
+        postInFlight = false;
         showLimitMessage(err);
       } else {
+        postInFlight = false;
         Pinalert.setText(formError, (err && err.fieldMessage) || 'Something went wrong. Try again.');
         if (err && err.field) {
           focusField(err.field);
@@ -1041,6 +1063,7 @@
         Pinalert.showToast(EARLIER_NOT_SAVED_TOAST, null, LONG_TOAST_MS);
         return;
       }
+      postInFlight = false;
       Pinalert.setText(formError, 'Something went wrong. Try again.');
     };
     if (!window.PinalertQueue) {
@@ -1104,8 +1127,10 @@
     var writtenAt = resendWrittenAt || firstSubmitAt;
     payload.written_at = writtenAt;
     // The save is out while the form can still be closed; its answer must
-    // then leave a form opened later alone (WR-W03).
+    // then leave a form opened later alone (WR-W03). Closing meanwhile asks no
+    // Discard question, since the report is being saved.
     var session = formSession;
+    postInFlight = true;
     window.PinalertQueue.save({
       request_id: currentRequestId,
       payload: payload,
@@ -1124,6 +1149,7 @@
         Pinalert.showToast(EARLIER_NOT_SAVED_TOAST, null, LONG_TOAST_MS);
         return;
       }
+      postInFlight = false;
       Pinalert.setText(formError, 'Something went wrong. Try again.');
     });
   }
