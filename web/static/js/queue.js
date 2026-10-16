@@ -138,6 +138,10 @@
   var reopenWaitMs = 0;
   var reopenNotBefore = 0;
   var sessionLapsed = false;
+  // otherAccountSignedIn is true once this page learned that another account
+  // is signed in now (a 409 for another account, or another tab's account).
+  // Edit and resend is then hidden; a 401 alone leaves it (WR-05).
+  var otherAccountSignedIn = false;
   var persistAsked = false;
   var questionSeq = 0;
 
@@ -517,6 +521,7 @@
         channel.onmessage = function (evt) {
           if (evt && evt.data && evt.data.account_id !== accountId) {
             sessionLapsed = true;
+            otherAccountSignedIn = true;
             renderStrip();
           }
         };
@@ -788,18 +793,27 @@
       // Signed out, or another account is signed in now than the one this
       // page and its saved reports belong to (WR-W09). Every other report of
       // this account would get the same answer, so they all wait, nothing more
-      // is sent from this page and Discard stays on each row. A Not sent row
-      // keeps its status either way: it is sent only when the person asks,
-      // and while the session lapsed it offers no Edit and resend.
+      // is sent from this page and Discard stays on each row. Any other Not
+      // sent row keeps its status either way: it is sent only when the person
+      // asks, and while another account is signed in it offers no Edit and
+      // resend.
       held = status === 401 ? STATUS_SIGNED_OUT : STATUS_OTHER_ACCOUNT;
       rows.forEach(function (other) {
         if (other !== record && other.request_id !== record.request_id && belongsToAccount(other)) {
           holdRow(other, held);
         }
       });
-      holdRow(record, held);
-      if (record.status === STATUS_REJECTED && held === STATUS_OTHER_ACCOUNT && err.fieldMessage) {
-        record.last_error = err.fieldMessage;
+      if (held === STATUS_SIGNED_OUT) {
+        // The row that drew the 401 waits for a sign in whatever its status,
+        // a Not sent row sent by hand included.
+        record.sending_until = 0;
+        record.status = STATUS_SIGNED_OUT;
+      } else {
+        holdRow(record, held);
+        if (record.status === STATUS_REJECTED && err.fieldMessage) {
+          record.last_error = err.fieldMessage;
+        }
+        otherAccountSignedIn = true;
       }
       sessionLapsed = true;
       announce(status === 401 ? ANNOUNCE_SIGNED_OUT : ANNOUNCE_OTHER_ACCOUNT);
@@ -1112,7 +1126,7 @@
     var stale = isStale(record);
     var signature = [leased ? 'sending' : record.status, record.last_error, record.serious === true,
       record.emergency_number, record.status === STATUS_BLOCKED ? record.next_try_at : '', stale,
-      sessionLapsed].join('|');
+      otherAccountSignedIn].join('|');
     if (rowEl.getAttribute('data-state') === signature) {
       return;
     }
@@ -1206,11 +1220,11 @@
 
   // buildEditControl is the one place an Edit and resend control is made. It
   // returns null when this page has no form to open and no link to one, and
-  // while the session lapsed (signed out, or another account signed in), when
-  // a resend could not be posted for this account. A page that passes a link
-  // builder gets a link, and the edit callback is not used.
+  // while another account is signed in, when a resend could not be posted for
+  // this account (WR-05). A page that passes a link builder gets a link, and
+  // the edit callback is not used.
   function buildEditControl(record) {
-    if (sessionLapsed) {
+    if (otherAccountSignedIn) {
       return null;
     }
     if (typeof resendHref === 'function') {

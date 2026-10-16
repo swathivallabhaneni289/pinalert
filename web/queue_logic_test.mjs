@@ -765,6 +765,29 @@ await test('a wake that sends nothing waits twice as long each time, up to a min
   assert.deepEqual(delays, [1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000, 60000]);
 });
 
+await test('a Not sent row sent by hand while signed out waits for a sign in, and the others keep Edit (WR-05)', async () => {
+  const mine = 'req-abababababababab-27';
+  const other = 'req-cdcdcdcdcdcdcdcd-28';
+  const env = loadQueue({
+    records: [
+      record(mine, '7', 'first not sent report', '2026-10-01T00:00:00.000Z', { status: 'rejected', last_error: 'Say what is happening.' }),
+      record(other, '7', 'second not sent report', '2026-10-02T00:00:00.000Z', { status: 'rejected', last_error: 'Say what is happening.' })
+    ],
+    answers: [() => Promise.reject({ status: 401, fieldMessage: 'Sign in first.' })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3, onEdit: () => {} });
+  await settle();
+  const sendBtn = env.strip.descendants().find((el) => el.id === 'queue-send-now');
+  sendBtn.handlers.click.forEach((fn) => fn());
+  await settle();
+  assert.equal(env.submitted.length, 1, 'the pass stops at the 401');
+  assert.equal(env.store.get(mine).status, 'signed_out', 'the row that drew the 401 waits for a sign in');
+  assert.equal(env.store.get(other).status, 'rejected', 'a Not sent row not sent keeps its status');
+  assert.ok(env.strip.descendants().some((el) => el.textContent === 'Sign in again'), 'the Sign in again link is drawn');
+  assert.ok(env.strip.descendants().some((el) => el.textContent === 'Edit and resend'),
+    'a 401 does not take Edit and resend away from the other Not sent row');
+});
+
 await test('a saved payload never keeps the account a resend named (WR-02)', async () => {
   const id = 'req-zzzzzzzzzzzzzzzz-26';
   const env = loadQueue({ answers: [() => Promise.reject({ queueable: true, status: 0 })] });
