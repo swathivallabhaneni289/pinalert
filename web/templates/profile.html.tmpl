@@ -10,17 +10,19 @@
   <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/activity.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/app-bar.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
   <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
 </head>
-<body>
+<body class="has-app-bar">
   <div class="top-chrome">
     {{template "disclaimer_bar.html.tmpl" .}}
-    {{template "account_header.html.tmpl" .}}
+    {{template "app_topbar" .}}
   </div>
   {{template "theme_toggle.html.tmpl" .}}
   <div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>
 
+  <div class="app-content">
   <main class="profile-page" data-account-id="{{.AccountID}}">
     <a href="{{if .LowDataDefault}}/low{{else}}/{{end}}" class="profile-back-link" aria-label="{{if .LowDataDefault}}Back to Low data view{{else}}Back to map{{end}}" title="{{if .LowDataDefault}}Back to Low data view{{else}}Back to map{{end}}"><span class="auth-icon auth-icon--arrow-left" aria-hidden="true"></span></a>
 
@@ -85,13 +87,11 @@
       {{end}}
     </section>
   </main>
-
-  <nav class="bottom-nav" aria-label="Main">
-    <a class="bottom-nav__tab" href="/">Feed</a>
-    <a class="bottom-nav__tab" href="/profile" aria-current="page">Activity</a>
-  </nav>
+  </div>
 
   <div id="toast" role="status" aria-live="polite" hidden></div>
+
+  {{template "app_bottombar" .}}
 
   <script src="/static/js/app.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/votes.js?v={{.AssetVersion}}" defer></script>

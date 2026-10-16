@@ -63,6 +63,10 @@ type pageViewModel struct {
 	AccountID int64
 	// Chrome is the shared bar data, already defaulted.
 	Chrome Chrome
+	// Nav is the data of the two app bars (Phase 3.4, D-10): the main places
+	// with the current one marked, and the phone top bar title. It is built by
+	// navFor and holds constants only (T-34-13).
+	Nav NavView
 }
 
 // ParsePageTemplate parses the embedded app shell template from
@@ -128,6 +132,7 @@ func Page(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 			Email:           acc.Email,
 			AccountID:       acc.ID,
 			Chrome:          cfg.Chrome.withDefaults(),
+			Nav:             navFor(NavNearby),
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		// DEC-Q: the shell now renders a person's email address into every

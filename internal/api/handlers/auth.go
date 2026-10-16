@@ -468,6 +468,9 @@ type profileViewModel struct {
 	// binds saved reports to the account that wrote them. It is never the
 	// email and is never shown.
 	AccountID int64
+	// Nav is the data of the two app bars (Phase 3.4, D-10), built by navFor
+	// from constants only (T-34-13).
+	Nav NavView
 }
 
 // profileRelativeTime mirrors web/static/js/app.js's relativeTime: the same
@@ -718,6 +721,7 @@ func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) 
 			PolicyPointerTail: policyTail,
 			LowDataDefault:    lowDataChosen(r),
 			AccountID:         acc.ID,
+			Nav:               navFor(NavActivity),
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

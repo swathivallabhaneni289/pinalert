@@ -71,6 +71,12 @@ func TestPageShellServesDOMContract(t *testing.T) {
 		`id="severity-readout"`, `id="description"`, `id="shelter-fields"`,
 		`id="shelter-capacity-status"`, `id="shelter-headcount"`, `id="form-error"`,
 		`id="submit-report"`, `id="cancel-report"`, `id="discard-confirm"`, `id="toast"`,
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10):
+		// the two app bars are part of the page contract (the top bar with the
+		// Post a report link, the phone bottom bar with the Report link). The
+		// Phase 3.1 and Phase 4 hands-on tests are walked on this layout after
+		// Phase 3.4 is built.
+		`class="app-topbar"`, `class="app-bar"`, `class="app-topbar__post" href="/?post=1" data-open-report`,
 	}
 	for _, want := range wantIDs {
 		if !strings.Contains(body, want) {
@@ -297,5 +303,55 @@ func TestPageShellCarriesVoteRadius(t *testing.T) {
 	typed := regexp.MustCompile(`VoteRadiusKm:\s*[0-9]`)
 	if n := len(typed.FindAll(src, -1)); n != 0 {
 		t.Errorf("cmd/server/main.go types a number into VoteRadiusKm %d times, want 0", n)
+	}
+}
+
+// TestNavForMarksOnlyTheCurrentPlace pins the one list of main places (Phase
+// 3.4, D-10 and D-12): navFor copies mainNavItems, so a call never changes the
+// list a later call reads, marks the matching place current and nothing else,
+// and Settings (which is not a main place) marks none and hides the gear.
+func TestNavForMarksOnlyTheCurrentPlace(t *testing.T) {
+	before := make([]NavItem, len(mainNavItems))
+	copy(before, mainNavItems)
+
+	for _, tc := range []struct {
+		current, title string
+		wantCurrent    int
+	}{
+		{NavNearby, "Nearby", 0},
+		{NavAlerts, "Official alerts", 1},
+		{NavActivity, "My activity", 2},
+	} {
+		v := navFor(tc.current)
+		if len(v.Items) != 3 {
+			t.Fatalf("navFor(%q) has %d items, want 3", tc.current, len(v.Items))
+		}
+		for i, item := range v.Items {
+			if item.Current != (i == tc.wantCurrent) {
+				t.Errorf("navFor(%q) item %q current = %v", tc.current, item.Label, item.Current)
+			}
+		}
+		if v.Title != tc.title {
+			t.Errorf("navFor(%q) title = %q, want %q", tc.current, v.Title, tc.title)
+		}
+		if !v.ShowGear() {
+			t.Errorf("navFor(%q) hides the gear", tc.current)
+		}
+	}
+
+	settings := navFor(NavSettings, navTitle("Settings"), navBack("/"))
+	for _, item := range settings.Items {
+		if item.Current {
+			t.Errorf("Settings marks %q current; it is not a main place", item.Label)
+		}
+	}
+	if settings.Title != "Settings" || settings.BackHref != "/" || settings.ShowGear() {
+		t.Errorf("Settings view = %+v, want title Settings, back to /, no gear", settings)
+	}
+
+	for i := range mainNavItems {
+		if mainNavItems[i] != before[i] {
+			t.Errorf("navFor changed mainNavItems[%d] to %+v", i, mainNavItems[i])
+		}
 	}
 }

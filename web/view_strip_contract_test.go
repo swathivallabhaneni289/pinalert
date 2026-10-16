@@ -74,12 +74,17 @@ func TestViewStripMarkup(t *testing.T) {
 	}
 
 	index := p13ReadTemplate(t, "index.html.tmpl")
-	bottom := regexp.MustCompile(`(?s)<nav class="bottom-nav"[^>]*>(.*?)</nav>`).FindStringSubmatch(index)
-	if bottom == nil {
-		t.Fatal("index.html.tmpl has no bottom nav")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10):
+	// the phone bottom bar is the four item app bar, drawn from the one list of
+	// places by the app_bottombar block (a range over .Nav.Items plus the Report
+	// link), so the page includes the block instead of holding two tabs. The
+	// Phase 3.1 and Phase 4 hands-on tests are walked on this layout after
+	// Phase 3.4 is built.
+	if n := strings.Count(index, `{{template "app_bottombar" .}}`); n != 1 {
+		t.Errorf("index.html.tmpl includes the bottom bar %d times, want exactly 1", n)
 	}
-	if n := strings.Count(bottom[1], `class="bottom-nav__tab"`); n != 2 {
-		t.Errorf("the bottom bar holds %d tabs, want exactly Feed and Activity", n)
+	if strings.Contains(index, "bottom-nav") {
+		t.Errorf("index.html.tmpl still holds the old two tab bottom nav")
 	}
 }
 

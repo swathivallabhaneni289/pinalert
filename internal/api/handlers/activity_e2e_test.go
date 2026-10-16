@@ -896,19 +896,31 @@ func TestProfileRendersLogoutAndBottomNav(t *testing.T) {
 		t.Errorf("Log out form is not inside the Activity section before the list (section %d, form %d, list %d)", activity, logout, list)
 	}
 
-	nav := regexp.MustCompile(`(?s)<nav class="bottom-nav"[^>]*>(.*?)</nav>`).FindStringSubmatch(body)
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): the
+	// two tab Feed and Activity bar is replaced by the four item app bar. My
+	// activity is the current place, the Report link opens the report window,
+	// and the Log out form above stays until plan 07 rebuilds this page. The
+	// Phase 3.1 and Phase 4 hands-on tests are walked on this layout after
+	// Phase 3.4 is built.
+	if strings.Contains(body, "bottom-nav") {
+		t.Errorf("/profile still carries the old two tab bottom nav")
+	}
+	nav := regexp.MustCompile(`(?s)<nav class="app-bar"[^>]*>(.*?)</nav>`).FindStringSubmatch(body)
 	if nav == nil {
-		t.Fatalf("/profile has no bottom nav: %s", body)
+		t.Fatalf("/profile has no app bar: %s", body)
 	}
-	tabs := regexp.MustCompile(`<a class="bottom-nav__tab"([^>]*)>([^<]*)</a>`).FindAllStringSubmatch(nav[1], -1)
-	if len(tabs) != 2 {
-		t.Fatalf("bottom nav has %d tabs, want 2: %s", len(tabs), nav[1])
+	tabs := regexp.MustCompile(`<a class="app-bar__item[^"]*" href="([^"]*)"([^>]*)>.*?<span class="app-bar__label">([^<]*)</span></a>`).FindAllStringSubmatch(nav[1], -1)
+	if len(tabs) != 4 {
+		t.Fatalf("app bar has %d items, want 4: %s", len(tabs), nav[1])
 	}
-	if strings.Contains(tabs[0][1], "aria-current") || strings.TrimSpace(tabs[0][2]) != "Feed" || !strings.Contains(tabs[0][1], `href="/"`) {
-		t.Errorf("first tab is %q %q, want a plain Feed link to /", tabs[0][1], tabs[0][2])
-	}
-	if !strings.Contains(tabs[1][1], `aria-current="page"`) || strings.TrimSpace(tabs[1][2]) != "Activity" {
-		t.Errorf("second tab is %q %q, want the current Activity tab", tabs[1][1], tabs[1][2])
+	for i, want := range []struct {
+		href, label string
+		current     bool
+	}{{"/", "Nearby", false}, {"/alerts", "Official alerts", false}, {"/profile", "My activity", true}, {"/?post=1", "Report", false}} {
+		got := tabs[i]
+		if got[1] != want.href || got[3] != want.label || strings.Contains(got[2], "aria-current") != want.current {
+			t.Errorf("item %d is href %q label %q attrs %q, want %q %q current=%v", i, got[1], got[3], got[2], want.href, want.label, want.current)
+		}
 	}
 	if strings.Contains(nav[1], "Past") {
 		t.Errorf("bottom nav names a Past tab")

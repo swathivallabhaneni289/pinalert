@@ -29,8 +29,14 @@ const phoneBlockMedia = "@media (max-width: 899.98px)"
 // its distance segment on a laptop as the phone already does, so the class is
 // no longer hidden at 900px and up (feed.css styles it). The old list held four
 // heads, ending ".report-row__away", ".profile-logout".
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10 and D-11):
+// .bottom-nav left this list, replaced by the phone only parts of the app bars,
+// .app-bar (the four item bottom bar) and the title bar's title, back arrow and
+// Settings gear. The Phase 3.1 and Phase 4 hands-on tests are walked on this
+// layout after Phase 3.4 is built.
 var phoneBaseHideHeads = []string{
-	".feed-heading", ".bottom-nav", ".profile-logout",
+	".feed-heading", ".app-bar", ".app-topbar__title", ".app-topbar__back", ".app-topbar__gear", ".profile-logout",
 }
 
 // phoneRules parses phone.css alone.
@@ -43,8 +49,15 @@ func phoneRules(t *testing.T) []p16CSSRule {
 // other app stylesheet on the feed and on the Activity page, with the same
 // AssetVersion query the others carry, so it can override main.css's narrow
 // rules without a specificity trick.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): the new
+// app-bar.css links right before phone.css on both pages, so the phone rules of
+// the bars override its laptop rules without a specificity trick, and phone.css
+// stays last. The Phase 3.1 and Phase 4 hands-on tests are walked on this
+// layout after Phase 3.4 is built.
 func TestPhoneStylesheetIsLinkedLast(t *testing.T) {
 	phone := `/static/css/phone.css?v={{.AssetVersion}}`
+	appBar := `/static/css/app-bar.css?v={{.AssetVersion}}`
 
 	index := p13ReadTemplate(t, "index.html.tmpl")
 	p13Ordered(t, index, "index.html.tmpl",
@@ -53,6 +66,7 @@ func TestPhoneStylesheetIsLinkedLast(t *testing.T) {
 		`/static/css/feed.css?v={{.AssetVersion}}`,
 		`/static/css/trust.css?v={{.AssetVersion}}`,
 		`/static/css/auth.css?v={{.AssetVersion}}`,
+		appBar,
 		phone,
 	)
 	if n := strings.Count(index, phone); n != 1 {
@@ -65,6 +79,7 @@ func TestPhoneStylesheetIsLinkedLast(t *testing.T) {
 		`/static/css/feed.css?v={{.AssetVersion}}`,
 		`/static/css/trust.css?v={{.AssetVersion}}`,
 		`/static/css/auth.css?v={{.AssetVersion}}`,
+		appBar,
 		phone,
 	)
 	if n := strings.Count(profile, phone); n != 1 {
@@ -102,7 +117,7 @@ func TestPhoneRulesLiveInTheNarrowBlock(t *testing.T) {
 					// Four classes since quick task 261013-wm5 (the record card
 					// shows at every width), three since plan 03.1-09 (the row
 					// distance shows at every width).
-					t.Errorf("base rule head %q is not one of the three phone only classes", part)
+					t.Errorf("base rule head %q is not one of the phone only classes in phoneBaseHideHeads", part)
 				}
 			}
 		default:
@@ -128,7 +143,11 @@ func TestPhoneRulesLiveInTheNarrowBlock(t *testing.T) {
 				}
 			case "border-radius":
 				for _, component := range strings.Fields(value) {
-					ok := component == "0" || component == "8px" || component == "50%" || component == "0px"
+					// Amended 2026-10-16 by Phase 3.4 (UI-SPEC Radius scale): 4px
+					// joins the allowed corners for the short bar above the
+					// current bottom bar item. It is below the 8px house corner,
+					// so no control becomes a pill.
+					ok := component == "0" || component == "4px" || component == "8px" || component == "50%" || component == "0px"
 					if !ok {
 						t.Errorf("%q border-radius %q is more than the 8px house corner", r.Head, value)
 					}
@@ -173,27 +192,42 @@ func TestPhoneHeadsNeverEqualAnExactLookupHead(t *testing.T) {
 	}
 }
 
-// TestPhoneBottomNavMarkup pins the bottom bar on the feed: exactly two tabs,
-// Feed current, Activity linking to the account page, and no Past tab (the
-// history view does not exist, so a Past tab would be a dead control).
+// TestPhoneBottomNavMarkup pins the bottom bar on the feed.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): the bar
+// is the four item app bar, the three main places drawn from the one Go list
+// (a range over .Nav.Items, the current place marked aria-current) and then the
+// Report link to /?post=1, which opens the report window and is never current.
+// The old two tab Feed and Activity bar is gone. A Past tab is still absent. The
+// Phase 3.1 and Phase 4 hands-on tests are walked on this layout after Phase
+// 3.4 is built.
 func TestPhoneBottomNavMarkup(t *testing.T) {
 	index := p13ReadTemplate(t, "index.html.tmpl")
+	if n := strings.Count(index, `{{template "app_bottombar" .}}`); n != 1 {
+		t.Fatalf("index.html.tmpl includes the bottom bar %d times, want exactly 1", n)
+	}
+	if strings.Contains(index, "bottom-nav") {
+		t.Errorf("index.html.tmpl still holds the old two tab bottom nav")
+	}
 
-	nav := regexp.MustCompile(`(?s)<nav class="bottom-nav"[^>]*>(.*?)</nav>`).FindStringSubmatch(index)
+	bar := p13ReadTemplate(t, "app_bar.html.tmpl")
+	_, bottom, found := strings.Cut(bar, `{{define "app_bottombar"}}`)
+	if !found {
+		t.Fatal("app_bar.html.tmpl has no app_bottombar block")
+	}
+	nav := regexp.MustCompile(`(?s)<nav class="app-bar" aria-label="Main">(.*?)</nav>`).FindStringSubmatch(bottom)
 	if nav == nil {
-		t.Fatal("index.html.tmpl has no nav.bottom-nav")
+		t.Fatal("the app_bottombar block has no nav.app-bar labelled Main")
 	}
-	tabs := regexp.MustCompile(`<a class="bottom-nav__tab"([^>]*)>([^<]*)</a>`).FindAllStringSubmatch(nav[1], -1)
-	if len(tabs) != 2 {
-		t.Fatalf("bottom nav has %d tabs, want 2", len(tabs))
+	if n := strings.Count(nav[1], "{{range .Nav.Items}}"); n != 1 {
+		t.Errorf("the bottom bar ranges over .Nav.Items %d times, want 1", n)
 	}
-	if !strings.Contains(tabs[0][1], `href="/"`) || !strings.Contains(tabs[0][1], `aria-current="page"`) ||
-		strings.TrimSpace(tabs[0][2]) != "Feed" {
-		t.Errorf("first tab is %q %q, want the current Feed tab linking to /", tabs[0][1], tabs[0][2])
+	if !strings.Contains(nav[1], `{{if .Current}} aria-current="page"{{end}}`) {
+		t.Errorf("the bottom bar items must mark the current place with aria-current from the list")
 	}
-	if !strings.Contains(tabs[1][1], `href="/profile"`) || strings.Contains(tabs[1][1], "aria-current") ||
-		strings.TrimSpace(tabs[1][2]) != "Activity" {
-		t.Errorf("second tab is %q %q, want the plain Activity tab linking to /profile", tabs[1][1], tabs[1][2])
+	report := regexp.MustCompile(`<a class="app-bar__item app-bar__item--report" href="/\?post=1" data-open-report>`)
+	if !report.MatchString(nav[1]) {
+		t.Errorf("the bottom bar needs the Report link to /?post=1 with data-open-report")
 	}
 	if strings.Contains(nav[1], "Past") {
 		t.Errorf("bottom nav names a Past tab, which needs a history view that does not exist")
@@ -305,22 +339,17 @@ func TestPhoneActivityPageMarkup(t *testing.T) {
 		`{{with .Record}}`, `<section class="profile-record"`, `{{.Label}}`, `{{.Counts}}`, "</section>\n      {{end}}",
 		`<ol class="profile-report-list">`)
 
-	nav := regexp.MustCompile(`(?s)<nav class="bottom-nav"[^>]*>(.*?)</nav>`).FindStringSubmatch(profile)
-	if nav == nil {
-		t.Fatal("profile.html.tmpl has no bottom nav")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): the
+	// Activity page carries the same four item app bar as the map page, drawn
+	// from the one list of places; the current place is marked by the list
+	// (checked on the rendered page by TestAppBarCurrentItem). The Phase 3.1
+	// and Phase 4 hands-on tests are walked on this layout after Phase 3.4 is
+	// built.
+	if n := strings.Count(profile, `{{template "app_bottombar" .}}`); n != 1 {
+		t.Fatalf("profile.html.tmpl includes the bottom bar %d times, want exactly 1", n)
 	}
-	tabs := regexp.MustCompile(`<a class="bottom-nav__tab"([^>]*)>([^<]*)</a>`).FindAllStringSubmatch(nav[1], -1)
-	if len(tabs) != 2 {
-		t.Fatalf("bottom nav has %d tabs, want 2", len(tabs))
-	}
-	if strings.Contains(tabs[0][1], "aria-current") || strings.TrimSpace(tabs[0][2]) != "Feed" {
-		t.Errorf("first tab is %q %q, want a plain Feed tab", tabs[0][1], tabs[0][2])
-	}
-	if !strings.Contains(tabs[1][1], `aria-current="page"`) || strings.TrimSpace(tabs[1][2]) != "Activity" {
-		t.Errorf("second tab is %q %q, want the current Activity tab", tabs[1][1], tabs[1][2])
-	}
-	if strings.Contains(nav[1], "Past") {
-		t.Errorf("bottom nav names a Past tab")
+	if strings.Contains(profile, "bottom-nav") {
+		t.Errorf("profile.html.tmpl still holds the old two tab bottom nav")
 	}
 
 	if n := strings.Count(profile, `class="profile-back-link"`); n != 1 {

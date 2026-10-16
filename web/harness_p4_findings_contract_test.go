@@ -196,7 +196,11 @@ func TestHarnessFindingP4_9MessageClearsTheOpenedReport(t *testing.T) {
 	index := pages["templates/index.html.tmpl"]
 	shellAt := strings.Index(index, `<div class="app-shell"`)
 	toastAt := strings.Index(index, "\n    <div id=\"toast\"")
-	navAt := strings.Index(index, `<nav class="bottom-nav"`)
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): the
+	// phone bottom bar is the app_bottombar block, still the last child after
+	// the shell. The Phase 3.1 and Phase 4 hands-on tests are walked on this
+	// layout after Phase 3.4 is built.
+	navAt := strings.Index(index, `{{template "app_bottombar" .}}`)
 	if shellAt == -1 || toastAt < shellAt || navAt < toastAt {
 		t.Errorf("index.html.tmpl: #toast is not a direct child of .app-shell, so the laptop rule matches nothing")
 	}

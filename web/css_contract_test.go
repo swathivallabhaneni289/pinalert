@@ -771,7 +771,7 @@ var phase34Icons = []string{
 //     (the app bars) in its second task.
 //   - plan 04 appends bell and chevron-right, plan 07 appends history and
 //     circle-x, plan 12 appends phone.
-var phase34IconsInUse = []string{}
+var phase34IconsInUse = []string{"map-pin.svg", "megaphone.svg", "circle-plus.svg", "settings.svg", "plus.svg"}
 
 // TestNewIconsAreRegisteredAndUsed (plan 03.4-03) has two parts. First every
 // one of the ten Phase 3.4 glyph files exists, is registered in

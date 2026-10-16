@@ -49,12 +49,35 @@ var phoneVoidTags = map[string]bool{
 
 // phoneExpandTemplate inlines the partials a page includes, two levels deep,
 // then drops every remaining template action, so both branches of an if stay.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): the two
+// app bars are named blocks, app_topbar and app_bottombar, of one file,
+// app_bar.html.tmpl, so an include of either name is expanded to its block of
+// that file instead of a file of its own name. The Phase 3.1 and Phase 4
+// hands-on tests are walked on this layout after Phase 3.4 is built.
 func phoneExpandTemplate(t *testing.T, name string) string {
 	t.Helper()
 	text := p13ReadTemplate(t, name)
 	for level := 0; level < 2; level++ {
 		text = phoneIncludeRE.ReplaceAllStringFunc(text, func(m string) string {
-			return p13ReadTemplate(t, phoneIncludeRE.FindStringSubmatch(m)[1])
+			inc := phoneIncludeRE.FindStringSubmatch(m)[1]
+			switch inc {
+			case "app_topbar", "app_bottombar":
+				bar := p13ReadTemplate(t, "app_bar.html.tmpl")
+				top, bottom, ok := strings.Cut(bar, `{{define "app_bottombar"}}`)
+				if !ok {
+					t.Fatalf("app_bar.html.tmpl has no app_bottombar block")
+				}
+				if inc == "app_bottombar" {
+					return bottom
+				}
+				_, topBlock, ok := strings.Cut(top, `{{define "app_topbar"}}`)
+				if !ok {
+					t.Fatalf("app_bar.html.tmpl has no app_topbar block")
+				}
+				return topBlock
+			}
+			return p13ReadTemplate(t, inc)
 		})
 	}
 	text = phoneCommentRE.ReplaceAllString(text, "")
@@ -277,7 +300,12 @@ func TestPhoneRuleHeadsMatchTheMarkup(t *testing.T) {
 			}
 		}
 	}
-	for _, want := range [][2]string{{".top-chrome", ".app-header"}, {"body", ".theme-toggle"}} {
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10 and
+	// D-11): the account header is a child of the shared top bar, which is the
+	// child of .top-chrome, so the pair of the finding is .app-topbar >
+	// .app-header. The Phase 3.1 and Phase 4 hands-on tests are walked on this
+	// layout after Phase 3.4 is built.
+	for _, want := range [][2]string{{".app-topbar", ".app-header"}, {"body", ".theme-toggle"}} {
 		head := want[0] + " > " + want[1]
 		if !heads[head] {
 			t.Errorf("phone.css has no %q rule", head)
@@ -290,45 +318,55 @@ func TestPhoneRuleHeadsMatchTheMarkup(t *testing.T) {
 	}
 }
 
-// TestPhoneKeepsTheAccountTriggerAndDropsTheThemeToggle pins what the two
-// rules say (owner decision of 2026-10-15 for the toggle, Phase 4 P4-A4 for
-// the trigger): the trigger is shown, the toggle is not displayed at all, so
-// it also leaves the tab order, and the open search row keeps the collapsed
-// row's right inset, which clears the trigger's 44px slot.
+// TestPhoneKeepsTheAccountTriggerAndDropsTheThemeToggle pins what the rules
+// say (owner decision of 2026-10-15 for the toggle, Phase 4 P4-A4 for the
+// trigger): the toggle is not displayed at all on a phone, so it also leaves
+// the tab order, and the open search row keeps the collapsed row's right
+// inset.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10 and D-11):
+// the phone no longer draws the person button. The title bar holds the
+// Settings gear (and the back arrow where a screen has one) instead, so the
+// account header is hidden inside the top bar on a phone and the gear and
+// back controls are shown. The theme toggle stays hidden on the phone (D-08).
+// The Phase 3.1 and Phase 4 hands-on tests are walked on this layout after
+// Phase 3.4 is built.
 func TestPhoneKeepsTheAccountTriggerAndDropsTheThemeToggle(t *testing.T) {
-	var header, toggle, layer *p16CSSRule
+	var header, toggle, layer, gear *p16CSSRule
 	for _, r := range phoneRules(t) {
 		if r.Media != phoneBlockMedia {
 			continue
 		}
 		rule := r
-		switch r.Head {
-		case ".top-chrome > .app-header":
-			header = &rule
-		case "body > .theme-toggle":
-			toggle = &rule
-		case ".pane--map > .map-tools":
-			layer = &rule
-		}
 		for _, part := range p16HeadParts(r.Head) {
-			if strings.Contains(part, ".app-header") && r.Decls["display"] == "none" {
-				t.Errorf("phone.css hides the account header with %q; it stays on phones", part)
+			switch part {
+			case ".app-topbar > .app-header":
+				header = &rule
+			case "body > .theme-toggle":
+				toggle = &rule
+			case ".pane--map > .map-tools":
+				layer = &rule
+			case ".app-topbar > .app-topbar__gear":
+				gear = &rule
 			}
 			if strings.Contains(part, `.map-tools[data-search-open="true"]`) && !strings.Contains(part, " .") {
 				if _, ok := r.Decls["right"]; ok {
-					t.Errorf("phone.css %q moves the open search row's right edge to %q; it must keep the collapsed inset so Close clears the account button", part, r.Decls["right"])
+					t.Errorf("phone.css %q moves the open search row's right edge to %q; it must keep the collapsed inset", part, r.Decls["right"])
 				}
 			}
 		}
 	}
-	if header == nil || header.Decls["display"] != "block" {
-		t.Errorf("phone.css needs .top-chrome > .app-header { display: block }, got %v", header)
+	if header == nil || header.Decls["display"] != "none" {
+		t.Errorf("phone.css needs .app-topbar > .app-header { display: none } (the gear replaces the person button), got %v", header)
+	}
+	if gear == nil || gear.Decls["display"] != "flex" {
+		t.Errorf("phone.css needs .app-topbar > .app-topbar__gear shown as a flex box, got %v", gear)
 	}
 	if toggle == nil || toggle.Decls["display"] != "none" {
 		t.Errorf("phone.css needs body > .theme-toggle { display: none }, got %v", toggle)
 	}
 	if layer == nil || p19NoSpace(layer.Decls["right"]) != p19NoSpace("calc(var(--space-md) + var(--touch-target-min) + var(--space-sm))") {
-		t.Errorf("phone.css .pane--map > .map-tools right must clear the account button's slot, got %v", layer)
+		t.Errorf("phone.css .pane--map > .map-tools right must keep its inset, got %v", layer)
 	}
 }
 
