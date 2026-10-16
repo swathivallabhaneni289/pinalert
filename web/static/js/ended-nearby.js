@@ -209,17 +209,21 @@ window.PinalertEndedNearby = (function () {
   // linkedReport returns the linked report of a focus answer when it belongs to
   // a group and is not already in one, else null. A report that is not
   // available is told once, in words.
-  function linkedReport(answer, split) {
+  function linkedReport(answer, split, quiet) {
     var focus = answer && answer.focus;
     if (!focus || chosenId === null) {
       return { report: null, told: false };
     }
     if (focus.status === 'too_old') {
-      Pinalert.showToast(TOO_OLD_TOAST);
+      if (!quiet) {
+        Pinalert.showToast(TOO_OLD_TOAST);
+      }
       return { report: null, told: true };
     }
     if (focus.status === 'unavailable') {
-      Pinalert.showToast(UNAVAILABLE_TOAST);
+      if (!quiet) {
+        Pinalert.showToast(UNAVAILABLE_TOAST);
+      }
       return { report: null, told: true };
     }
     var report = focus.status === 'ok' ? focus.report : null;
@@ -259,7 +263,7 @@ window.PinalertEndedNearby = (function () {
     var resolvedPartial = cut.resolved_partial === true;
     var expiredPartial = cut.expired_partial === true;
     var split = splitByState(reports);
-    var linked = linkedReport(answer, split);
+    var linked = linkedReport(answer, split, quiet === true);
     var linkedState = linked.report ? stateOf(linked.report) : '';
 
     rowsById = {};
@@ -331,9 +335,10 @@ window.PinalertEndedNearby = (function () {
   // position it sends nothing and shows the location state. It answers a
   // promise that settles when the part is drawn, whatever the result.
   //
-  // The quiet form (used by refresh, after a take back) shows no skeleton, asks
-  // for no linked report, moves nothing and leaves the rows as they are when the
-  // read fails: the caller learns of the failure from the null answer.
+  // The quiet form (used by refresh, after a take back) shows no skeleton, still
+  // asks for the linked report so a row drawn on top of its group stays, tells
+  // nothing in words a second time, moves nothing and leaves the rows as they are
+  // when the read fails: the caller learns of the failure from the null answer.
   function load(quiet) {
     var position = readPosition();
     if (quiet === true && !position) {
@@ -354,7 +359,7 @@ window.PinalertEndedNearby = (function () {
       '&lon=' + encodeURIComponent(position.lon) +
       '&radius_km=' + encodeURIComponent(readRadius()) +
       '&view=past';
-    if (chosenId !== null && quiet !== true) {
+    if (chosenId !== null) {
       url += '&report=' + encodeURIComponent(chosenId);
     }
 

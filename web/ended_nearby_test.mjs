@@ -678,6 +678,35 @@ test('take back refused by the server keeps the row, shows the server line and t
   assert.deepEqual(m.toasts, []);
 });
 
+test('take back on a linked report drawn on top of its group keeps that row and its refusal line', async () => {
+  const refusal = 'You have used both undos on this report.';
+  const linked = resolvedReport(9, MARKED(1));
+  const m = load({
+    search: '?part=ended&report=9',
+    position: [12.97, 77.59],
+    answers: [
+      answer([resolvedReport(1), resolvedReport(2)], { focus: { status: 'ok', report: linked } }),
+      { refuse: 409, error: { field: 'undo', message: refusal } },
+      answer([resolvedReport(1), resolvedReport(2)], { focus: { status: 'ok', report: resolvedReport(9, MARKED(0)) } })
+    ]
+  });
+  m.start();
+  await settle();
+  assert.deepEqual(rowsOf(m, 'ended-resolved-list').map((r) => r.dataset.reportId), ['9', '1', '2']);
+  undoButton(rowsOf(m, 'ended-resolved-list')[0]).click();
+  await settle();
+
+  assert.equal(new URL(m.fetches[2].url, 'http://x').searchParams.get('report'), '9', 'the quiet read still asks for the linked report');
+  const rows = rowsOf(m, 'ended-resolved-list');
+  assert.deepEqual(rows.map((r) => r.dataset.reportId), ['9', '1', '2'], 'the linked row stays');
+  assert.ok(rows[0].classList.contains('activity-card--chosen'), 'and keeps its fill');
+  const line = rows[0].querySelectorAll('.vote-error')[0];
+  assert.equal(line.hidden, false);
+  assert.equal(line.textContent, refusal);
+  assert.equal(usedLine(rows[0]).textContent, USED);
+  assert.deepEqual(m.toasts, [], 'nothing is told twice');
+});
+
 test('take back when the part cannot be read again keeps the row and says it was saved', async () => {
   const m = load({
     position: [12.97, 77.59],

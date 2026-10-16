@@ -358,6 +358,15 @@ func TestEndedNearbyTakeBackOnlyForMarker(t *testing.T) {
 	if n := strings.Count(votes, "createTakeBackFor: createTakeBackFor"); n != 1 {
 		t.Errorf("votes.js exports createTakeBackFor %d times, want 1", n)
 	}
+	// votes.js runs before the two Ended nearby scripts, so a fast answer can never
+	// be drawn before the take back builder exists.
+	tmpl := p13ReadTemplate(t, "profile.html.tmpl")
+	votesAt := strings.Index(tmpl, "/static/js/votes.js?v=")
+	cardsAt := strings.Index(tmpl, "/static/js/ended-cards.js?v=")
+	nearbyAt := strings.Index(tmpl, "/static/js/ended-nearby.js?v=")
+	if votesAt == -1 || cardsAt == -1 || nearbyAt == -1 || votesAt > cardsAt || votesAt > nearbyAt {
+		t.Errorf("profile.html.tmpl must load votes.js before ended-cards.js and ended-nearby.js")
+	}
 	// The read after a take back is a choice of the block, nothing else changed.
 	p13MustContain(t, "readAfterWrite", jsFunctionBody(t, votes, "readAfterWrite(block)"),
 		"typeof block.readAgain === 'function'", "Pinalert.fetchReports({ afterWrite: true })")
