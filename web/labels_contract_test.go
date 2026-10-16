@@ -381,6 +381,14 @@ func TestReadOnlyLabelsRoundedControlsNot(t *testing.T) {
 		if r.File == "static/css/welcome.css" && (r.Head == ".welcome__progress" || r.Head == ".welcome__progress-fill" || r.Head == ".welcome__dot") {
 			continue
 		}
+		// Amended 2026-10-17 by Phase 3.4 plan 12 (UI-SPEC Surface 5d item 3,
+		// D-24a): the 36px disc that holds the phone glyph in the Call 112 box
+		// is a drawing, not a control: it is aria-hidden and cannot be pressed,
+		// the whole box is the one link. The owner's picture draws it round, so
+		// modal.css is exempted for exactly this head and nothing else.
+		if r.File == "static/css/modal.css" && r.Head == ".post-window .call-box__disc" {
+			continue
+		}
 		exempt := false
 		for _, name := range exemptControls {
 			if strings.Contains(r.Head, name) {

@@ -37,13 +37,21 @@ import (
 // the icons are counted inside the budget, which is set from the measurement,
 // and dropping one would need a low.css rule that plan 04-27 does not own.
 //
+// Re-measured on 2026-10-17 by Phase 3.4 plan 12, which added the Call 112 box
+// and the What is happening? picks to report-form.js and modal.css; both files
+// are linked by the Low data view too, although the Low data view shows none of
+// it. 590992 raw bytes (html 9891, css 195049, js 372643, icons 13409, other 0;
+// gzip level 5 total 176129 bytes); budget 679936. Before this change the total
+// was about 581000, so the earlier Phase 3.4 plans had already used most of the
+// headroom the 2026-10-16 measurement left.
+//
 // To change the budget after an intended change: re-measure with
 // go test ./web/ -run TestLowDataByteBudget -v, set both constants together in
 // one commit and update the Low data view size budget section of
 // docs/MODERATION.md.
 const (
-	lowDataMeasuredBytes = 509094
-	lowDataByteBudget    = 585728
+	lowDataMeasuredBytes = 590992
+	lowDataByteBudget    = 679936
 )
 
 type p427Rule struct {

@@ -1152,3 +1152,44 @@ for (const mode of HUNG_MODES) {
     assert.equal(env.store.has(id), false, 'the sent report leaves the device');
   });
 }
+
+// Phase 3.4 plan 12 (D-24b, T-34-54): the happening pick of a Critical report
+// is stored in the saved payload and sent unchanged; an entry saved before the
+// field existed has no such key and still sends, with no key added.
+await test('a saved Critical report with a happening pick is sent with the same value, and one without it is sent without the key', async () => {
+  const withPick = 'req-iiiiiiiiiiiiiiii-31';
+  const withoutPick = 'req-jjjjjjjjjjjjjjjj-32';
+  const env = loadQueue({
+    records: [
+      record(withPick, '7', 'people on the roof', '2026-10-01T00:00:00.000Z', {
+        payload: { category: 'flood', severity: 'critical', description: 'people on the roof', latitude: 12.97, longitude: 77.59, happening: 'people_trapped' }
+      }),
+      record(withoutPick, '7', 'an older saved report', '2026-10-02T00:00:00.000Z', {
+        payload: { category: 'flood', severity: 'critical', description: 'an older saved report', latitude: 12.97, longitude: 77.59 }
+      })
+    ]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  assert.equal(env.submitted.length, 2, 'both saved reports are sent');
+  assert.equal(env.submitted[0].description, 'people on the roof');
+  assert.equal(env.submitted[0].happening, 'people_trapped', 'the pick is resent with the same value');
+  assert.equal(env.submitted[1].description, 'an older saved report');
+  assert.equal(Object.hasOwn(env.submitted[1], 'happening'), false, 'an entry without a pick is sent without the key');
+  assert.equal(env.store.size, 0);
+});
+
+await test('a report saved with a happening pick keeps it in the stored payload', async () => {
+  const env = loadQueue({ records: [] });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  const id = 'req-kkkkkkkkkkkkkkkk-33';
+  await env.queue.save({
+    request_id: id,
+    payload: { category: 'flood', severity: 'critical', description: 'water rising fast', latitude: 12.97, longitude: 77.59, happening: 'water_rising' },
+    written_at: '2026-10-03T00:00:00.000Z',
+    status: 'blocked',
+    next_try_at: Date.now() + 60000
+  });
+  assert.equal(env.store.get(id).payload.happening, 'water_rising');
+});

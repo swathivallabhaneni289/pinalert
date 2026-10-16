@@ -262,6 +262,18 @@ Measured on 2026-10-16, after plans 04-24 and 04-25 made their last Low data edi
 - budget: 585728 bytes, which is the measured total plus 15 percent, rounded up to the next
   1024 bytes.
 
+Re-measured on 2026-10-17 by Phase 3.4 plan 12. The Call 112 box and the What is happening? picks
+grew `report-form.js` and `modal.css`, which the Low data view links although it shows neither
+(the Low data form keeps the form it was built with). The Phase 3.4 plans before it had already
+used most of the headroom above (the total was about 581000 bytes before this change). The
+figures now are:
+
+- measured total: 590992 bytes raw, made of 9891 bytes of HTML, 195049 bytes of stylesheets
+  (7 files), 372643 bytes of scripts (10 files) and 13409 bytes of icons (28 files);
+- gzip level 5 for the same files: 176129 bytes, informational only;
+- budget: 679936 bytes, the new measured total plus 15 percent, rounded up to the next 1024
+  bytes.
+
 Raw bytes are tested although the first design described a compressed budget (orchestrator
 decision 2). The router now compresses text, but the transfer size depends on the client, so raw
 bytes are the conservative bound.

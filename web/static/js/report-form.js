@@ -67,6 +67,19 @@
   // The three severity boxes of the window, in order. The first is the value
   // the form opens on, as the slider's first position was.
   var WINDOW_SEVERITIES = ['low', 'medium', 'critical'];
+  // What is happening? (Phase 3.4, D-24, D-24b): seven optional single choice
+  // picks, shown with the Call 112 box and only while Critical is chosen. The
+  // value is the closed set the server accepts as happening, and only with a
+  // Critical report. This is the only list of them, in the order they show.
+  var HAPPENING_PICKS = [
+    { value: 'water_rising', word: 'Water rising' },
+    { value: 'people_trapped', word: 'People trapped' },
+    { value: 'fire', word: 'Fire' },
+    { value: 'building_collapsed', word: 'Building collapsed' },
+    { value: 'landslide', word: 'Landslide' },
+    { value: 'medical_emergency', word: 'Medical emergency' },
+    { value: 'other', word: 'Other' }
+  ];
 
   // Location search (D-01, D-03, D-04). SEARCH_DEBOUNCE_MS is a user
   // experience knob only, not the policy compliance control: the actual
@@ -158,6 +171,13 @@
   var severityBoxes = [];
   var windowSeverity = WINDOW_SEVERITIES[0];
   var windowMode = false;
+  // Window mode, Critical only: the Call 112 box, the What is happening?
+  // fieldset, its radiogroup, the picks and the chosen value (null for none).
+  var call112Box = null;
+  var happeningFields = null;
+  var happeningGroup = null;
+  var happeningButtons = [];
+  var selectedHappening = null;
   var descriptionField = null;
   var formError = null;
   var locationSearchInput = null;
@@ -315,6 +335,14 @@
         break;
       case 'description':
         descriptionField.focus();
+        break;
+      case 'happening':
+        // The server named the pick: land on the chosen one, else the first.
+        if (happeningButtons.length > 0) {
+          (happeningButtons.filter(function (pick) {
+            return pick.tabIndex === 0;
+          })[0] || happeningButtons[0]).focus();
+        }
         break;
       case 'shelter_capacity_status':
         shelterCapacityStatus.focus();
@@ -500,6 +528,134 @@
     });
   }
 
+  // buildHappeningPicks renders the seven picks of HAPPENING_PICKS into the
+  // radiogroup, once, at mount. None is chosen, so the first holds the tab
+  // stop until one is. Each word reaches the page through Pinalert.setText.
+  function buildHappeningPicks() {
+    happeningGroup.textContent = '';
+    happeningButtons = [];
+    HAPPENING_PICKS.forEach(function (entry) {
+      var pick = document.createElement('button');
+      pick.type = 'button';
+      pick.className = 'happening-pick';
+      pick.setAttribute('role', 'radio');
+      pick.setAttribute('aria-checked', 'false');
+      pick.tabIndex = -1;
+      pick.dataset.happening = entry.value;
+      Pinalert.setText(pick, entry.word);
+      pick.addEventListener('click', onHappeningClick);
+      pick.addEventListener('keydown', onHappeningKeydown);
+      happeningGroup.appendChild(pick);
+      happeningButtons.push(pick);
+    });
+    renderHappening();
+  }
+
+  // renderHappening shows the chosen pick (or none): aria-checked on each and
+  // a roving tabindex. With none chosen the first pick holds the tab stop.
+  function renderHappening() {
+    happeningButtons.forEach(function (pick, index) {
+      var isChosen = pick.dataset.happening === selectedHappening;
+      pick.setAttribute('aria-checked', isChosen ? 'true' : 'false');
+      pick.tabIndex = isChosen || (selectedHappening === null && index === 0) ? 0 : -1;
+    });
+  }
+
+  function isHappeningValue(value) {
+    return HAPPENING_PICKS.some(function (entry) {
+      return entry.value === value;
+    });
+  }
+
+  // setHappening chooses a pick, or clears it with null. A value outside the
+  // list clears it, so nothing but a value of HAPPENING_PICKS is ever sent.
+  function setHappening(value) {
+    selectedHappening = isHappeningValue(value) ? value : null;
+    renderHappening();
+  }
+
+  function focusChosenHappening() {
+    for (var i = 0; i < happeningButtons.length; i++) {
+      if (happeningButtons[i].dataset.happening === selectedHappening) {
+        happeningButtons[i].focus();
+        return;
+      }
+    }
+  }
+
+  // Tapping the chosen pick again clears it; the pick is never required.
+  function onHappeningClick(e) {
+    markTouched();
+    var value = e.currentTarget.dataset.happening;
+    setHappening(value === selectedHappening ? null : value);
+  }
+
+  // Left and Right move to the next pick and choose it, wrapping at the ends,
+  // as the severity boxes do.
+  function onHappeningKeydown(e) {
+    var index = happeningButtons.indexOf(e.currentTarget);
+    var count = happeningButtons.length;
+    var next = null;
+    if (e.key === 'ArrowRight') {
+      next = (index + 1) % count;
+    } else if (e.key === 'ArrowLeft') {
+      next = (index - 1 + count) % count;
+    } else {
+      return;
+    }
+    e.preventDefault();
+    markTouched();
+    setHappening(happeningButtons[next].dataset.happening);
+    focusChosenHappening();
+  }
+
+  // scrollIntoFormView brings el into view inside the form's own scroll
+  // container, and only when part of it is off screen. It never scrolls the
+  // page and never moves focus. A page or test without layout does nothing.
+  function scrollIntoFormView(el) {
+    if (typeof el.getBoundingClientRect !== 'function' || typeof window.getComputedStyle !== 'function') {
+      return;
+    }
+    var scroller = el.parentNode;
+    while (scroller && scroller !== document.body) {
+      var style = window.getComputedStyle(scroller);
+      if (style && /(auto|scroll)/.test(style.overflowY) && scroller.scrollHeight > scroller.clientHeight) {
+        break;
+      }
+      scroller = scroller.parentNode;
+    }
+    if (!scroller || scroller === document.body || typeof scroller.getBoundingClientRect !== 'function') {
+      return;
+    }
+    var box = el.getBoundingClientRect();
+    var view = scroller.getBoundingClientRect();
+    if (box.bottom > view.bottom) {
+      scroller.scrollTop += Math.min(box.bottom - view.bottom, box.top - view.top);
+    } else if (box.top < view.top) {
+      scroller.scrollTop -= view.top - box.top;
+    }
+  }
+
+  // renderCriticalPart shows the Call 112 box and the What is happening? picks
+  // while Critical is chosen and hides both otherwise, clearing the pick so it
+  // is never sent with another severity (D-24, D-24a). The box does not take
+  // focus. It runs from setSeverity, so a tap, an arrow key, a reset and a
+  // prefill all go through it.
+  function renderCriticalPart() {
+    if (!call112Box || !happeningFields) {
+      return;
+    }
+    var critical = windowSeverity === 'critical';
+    var wasHidden = happeningFields.hidden;
+    call112Box.hidden = !critical;
+    happeningFields.hidden = !critical;
+    if (!critical) {
+      setHappening(null);
+    } else if (wasHidden) {
+      scrollIntoFormView(call112Box);
+    }
+  }
+
   // setSeverity sets the severity in either mode. A value that is not one of
   // the three is ignored.
   function setSeverity(key) {
@@ -509,6 +665,7 @@
     if (windowMode) {
       windowSeverity = key;
       renderSeverityBoxes();
+      renderCriticalPart();
       return;
     }
     Object.keys(SEVERITY_BY_VALUE).forEach(function (value) {
@@ -928,6 +1085,9 @@
     windowMode = !!severityGroup;
     severityBoxes = windowMode ?
       Array.prototype.slice.call(severityGroup.querySelectorAll('.severity-box')) : [];
+    call112Box = document.getElementById('call-112-box');
+    happeningFields = document.getElementById('happening-fields');
+    happeningGroup = document.getElementById('happening-group');
     descriptionField = document.getElementById('description');
     formError = document.getElementById('form-error');
     locationSearchInput = document.getElementById('location-search');
@@ -947,6 +1107,8 @@
 
     if (!windowMode) {
       buildSeverityControl();
+    } else if (happeningGroup) {
+      buildHappeningPicks();
     }
     buildShelterCapacityOptions();
     updateSeverityReadout();
@@ -1155,6 +1317,12 @@
         payload.shelter_headcount = parseInt(headcountValue, 10);
       }
     }
+    // The pick goes with a Critical report only, and only when one is chosen;
+    // the server refuses it with any other severity (D-24b). A Critical
+    // report without a pick sends no key at all.
+    if (windowMode && currentSeverity() === 'critical' && selectedHappening !== null) {
+      payload.happening = selectedHappening;
+    }
     return payload;
   }
 
@@ -1305,6 +1473,11 @@
       selectCategory(prefill.category);
     }
     setSeverity(prefill.severity);
+    // The pick comes back only with Critical and only when it is one of the
+    // seven; an older saved report has none and reopens with no pick chosen.
+    if (windowMode && windowSeverity === 'critical' && typeof prefill.happening === 'string') {
+      setHappening(prefill.happening);
+    }
     if (typeof prefill.description === 'string') {
       descriptionField.value = prefill.description;
     }
