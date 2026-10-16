@@ -199,9 +199,8 @@ func TestPageShellRendersAccountMenu(t *testing.T) {
 		`id="account-menu"`,
 		`role="menu"`,
 		`hidden`,
-		pageTestAccount.Email,
 		`role="menuitem"`,
-		`href="/profile"`,
+		`href="/settings"`,
 		`method="post"`,
 		`action="/auth/logout"`,
 	}
@@ -209,6 +208,13 @@ func TestPageShellRendersAccountMenu(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing account menu contract substring: %s", want)
 		}
+	}
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11 and
+	// D-26): the person menu holds Settings and Log out only, so the signed in
+	// email is no longer on the page (UI-SPEC 1c). The Phase 3.1 and Phase 4
+	// hands-on tests are walked on this layout after Phase 3.4 is built.
+	if strings.Contains(body, pageTestAccount.Email) {
+		t.Errorf("the page still renders the signed in email %q", pageTestAccount.Email)
 	}
 }
 

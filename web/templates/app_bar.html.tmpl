@@ -24,6 +24,15 @@
   <h1 class="app-topbar__title">{{.Nav.Title}}</h1>
   <span class="app-topbar__spacer"></span>
   <a class="app-topbar__post" href="/?post=1" data-open-report><span class="app-icon app-icon--plus" aria-hidden="true"></span><span class="app-topbar__post-label">Post a report</span></a>
+  <button type="button" id="bell-trigger" class="app-topbar__bell" aria-label="Updates" aria-haspopup="dialog" aria-expanded="false" aria-controls="bell-list"><span class="app-icon app-icon--bell" aria-hidden="true"></span></button>
+  <div id="bell-list" class="bell-list" role="dialog" aria-label="Updates" hidden>
+    <div class="bell-list__head">
+      <p class="bell-list__title">Updates</p>
+      <button type="button" class="bell-list__close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
+    </div>
+    <p class="bell-list__empty">No updates yet</p>
+    <a class="bell-list__all" href="/profile?part=updates">See all updates</a>
+  </div>
   {{if .Nav.ShowGear}}
   <a class="app-topbar__gear" href="/settings" aria-label="Settings"><span class="app-icon app-icon--settings" aria-hidden="true"></span></a>
   {{end}}

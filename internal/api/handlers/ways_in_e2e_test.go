@@ -335,8 +335,13 @@ func TestActivityBackLinkFollowsDeviceDefault(t *testing.T) {
 				t.Errorf("%s: back link lacks %s: %s", label, want, anchor)
 			}
 		}
-		if !strings.Contains(p421Region(t, body, `<div id="account-menu"`), `href="/low"`) {
-			t.Errorf("%s: the Activity menu does not offer the Low data view", label)
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11
+		// and D-02): the Low data view link left the person menu for Settings,
+		// About Pinalert, so the Activity menu must not offer it; only the
+		// back link follows the remembered choice. The Phase 3.1 and Phase 4
+		// hands-on tests are walked on this layout after Phase 3.4 is built.
+		if strings.Contains(p421Region(t, body, `<div id="account-menu"`), `href="/low"`) {
+			t.Errorf("%s: the Activity menu still offers the Low data view", label)
 		}
 	}
 
@@ -374,20 +379,20 @@ func TestAccountMenuRendersPerPage(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", rec.Code)
 		}
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11,
+		// D-02 and D-26): the person menu holds Settings and Log out only on
+		// every page, and shows no email. The Phase 3.1 and Phase 4 hands-on
+		// tests are walked on this layout after Phase 3.4 is built.
 		menu := p421Region(t, rec.Body.String(), `<div id="account-menu"`)
-		p421AssertInOrder(t, "menu markup", menu,
-			`href="/profile"`, `href="/low"`, `href="/disclaimer"`, `href="/policy"`, `action="/auth/logout"`)
-		if !strings.Contains(menu, `aria-label="Low data view, Text only, no map"`) {
-			t.Errorf("the Low data view item lacks its accessible name")
-		}
+		p421AssertInOrder(t, "menu markup", menu, `href="/settings"`, `action="/auth/logout"`)
 		text := p421Text(menu)
-		p421AssertInOrder(t, "menu text", text,
-			"Activity", "Low data view Text only, no map", "Disclaimer", "Policy", "Log out")
-		if !strings.HasSuffix(text, "Log out") {
-			t.Errorf("the menu text does not end with Log out: %q", text)
+		if text != "Settings Log out" {
+			t.Errorf("the menu text = %q, want %q", text, "Settings Log out")
 		}
-		if strings.Contains(menu, "/?full=1") {
-			t.Errorf("the main page menu offers Open full version")
+		for _, banned := range []string{"/?full=1", `href="/low"`, `href="/disclaimer"`, `href="/policy"`, `href="/profile"`, "waysin-p421@example.com"} {
+			if strings.Contains(menu, banned) {
+				t.Errorf("the main page menu still holds %s", banned)
+			}
 		}
 		for _, tag := range regexp.MustCompile(`<a [^>]*>`).FindAllString(menu, -1) {
 			if !strings.Contains(tag, `role="menuitem"`) {
@@ -402,17 +407,18 @@ func TestAccountMenuRendersPerPage(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", rec.Code)
 		}
+		// Same amendment as the main page above. The Low data view's own Open
+		// full version button is on the page body, not in the menu.
 		menu := p421Region(t, rec.Body.String(), `<div id="account-menu"`)
-		p421AssertInOrder(t, "menu markup", menu,
-			`href="/profile"`, `href="/?full=1"`, `href="/disclaimer"`, `href="/policy"`, `action="/auth/logout"`)
-		if strings.Contains(menu, `href="/low"`) || strings.Contains(menu, "Text only, no map") {
-			t.Errorf("the Low data view menu still offers the Low data view item")
-		}
+		p421AssertInOrder(t, "menu markup", menu, `href="/settings"`, `action="/auth/logout"`)
 		text := p421Text(menu)
-		p421AssertInOrder(t, "menu text", text,
-			"Activity", "Open full version", "Disclaimer", "Policy", "Log out")
-		if !strings.HasSuffix(text, "Log out") {
-			t.Errorf("the menu text does not end with Log out: %q", text)
+		if text != "Settings Log out" {
+			t.Errorf("the menu text = %q, want %q", text, "Settings Log out")
+		}
+		for _, banned := range []string{`href="/low"`, "Text only, no map", `href="/?full=1"`, `href="/disclaimer"`, `href="/policy"`, `href="/profile"`} {
+			if strings.Contains(menu, banned) {
+				t.Errorf("the Low data view menu still holds %s", banned)
+			}
 		}
 	})
 }

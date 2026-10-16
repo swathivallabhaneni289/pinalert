@@ -165,8 +165,12 @@ func TestModeratorPageRenders(t *testing.T) {
 	} {
 		once("heading or line", text)
 	}
-	if !strings.Contains(body, "mod@example.com") {
-		t.Error("the account email is missing from the page")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11 and
+	// D-26): the account menu no longer shows the signed in email, so the
+	// moderator screen must not render it either (T-34-18). The Phase 3.1 and
+	// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+	if strings.Contains(body, "mod@example.com") {
+		t.Error("the account email is rendered on the page")
 	}
 
 	start := strings.Index(body, `<aside class="disclaimer-bar"`)

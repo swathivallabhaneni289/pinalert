@@ -68,6 +68,21 @@
   mask-image: url("/static/icons/arrow-left.svg");
 }
 
+.app-icon--bell {
+  -webkit-mask-image: url("/static/icons/bell.svg");
+  mask-image: url("/static/icons/bell.svg");
+}
+
+.app-icon--x {
+  -webkit-mask-image: url("/static/icons/x.svg");
+  mask-image: url("/static/icons/x.svg");
+}
+
+.app-icon--chevron-right {
+  -webkit-mask-image: url("/static/icons/chevron-right.svg");
+  mask-image: url("/static/icons/chevron-right.svg");
+}
+
 /* ---- Scroll padding -------------------------------------------------------
    A focused control or a scrolled to row never lands under the sticky chrome,
    which is now the notice bar and the top bar. */
@@ -77,6 +92,7 @@ html:has(.app-topbar) {
 
 /* ---- The top bar (laptop; the phone arrangement is in phone.css) ---------- */
 .app-topbar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-sm);
@@ -151,6 +167,101 @@ html:has(.app-topbar) {
 .app-topbar__post .app-icon {
   width: 20px;
   height: 20px;
+}
+
+/* The bell (Phase 3.4, D-32, UI-SPEC Surface 9): a 44 by 44 button named
+   Updates with a hairline border and an 8px corner on a laptop, borderless on
+   a phone (phone.css). It carries no count while no updates exist. */
+.app-topbar__bell {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+/* The list opens under the bar, right aligned to the bar, and is anchored to
+   the bar itself (.app-topbar is positioned), so the percentage width limit is
+   a share of the bar and never of the button. The display rule carries the
+   :not([hidden]) guard so the hidden attribute keeps closing it. */
+.bell-list:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  position: absolute;
+  top: calc(100% + var(--space-xs));
+  right: var(--space-12);
+  z-index: 1060;
+  width: 340px;
+  max-width: calc(100% - 24px);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-menu);
+}
+
+.bell-list__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: 0 var(--space-xs) 0 var(--space-12);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.bell-list__title {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.bell-list__close {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.bell-list__close .app-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.bell-list__empty {
+  margin: 0;
+  padding: var(--space-md) var(--space-12);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.bell-list__all {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch-target-min);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
 }
 
 /* The person button sits in the bar's flow on a laptop. auth.css hangs the
