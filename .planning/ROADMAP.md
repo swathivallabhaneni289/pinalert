@@ -661,7 +661,7 @@ Plans:
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)
 
-### Phase 999.7: Address search: look near the reader first and retry with fewer words (BACKLOG)
+### Phase 999.7: Address search: look near the reader first and retry with fewer words (DONE as quick task 261016-adr, 2026-10-16)
 
 **Goal:** [Captured for future planning] Phase 7's address search finds nothing for longer addresses (Nominatim needs every word to exist) and ranks results worldwide ("Ring Road" returned five roads in Hanoi). Send `countrycodes=in`, look in a box around the pin first and widen only when empty, then retry once with the leading words dropped and label it a closest match; keep the one request per second policy limit; evaluate Photon if results stay poor. Raised by the owner on 2026-10-06 (finding F2 in `02-UAT.md`, with the evidence). The owner should approve the behaviour first.
 **Requirements:** TBD
