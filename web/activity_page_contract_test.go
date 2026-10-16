@@ -106,7 +106,7 @@ func TestActivityPageTemplateMarkup(t *testing.T) {
 	if !strings.Contains(tmpl, `{{if .Current}} data-current{{end}}`) {
 		t.Errorf("the part section does not write data-current from .Current")
 	}
-	p13Ordered(t, tmpl, "part head", `id="part-{{.Key}}-title">{{.Name}}{{if .ShowCount}} <span class="activity-part__count">{{.Count}}</span>{{end}}</h2>`, `activity-part__line">{{.Line}}`)
+	p13Ordered(t, tmpl, "part head", `id="activity-title-{{.Key}}">{{.Name}}{{if .ShowCount}} <span class="activity-part__count">{{.Count}}</span>{{end}}</h2>`, `activity-part__line">{{.Line}}`)
 
 	// The column head row and the six cells of a row, in the order the grid
 	// columns give them.

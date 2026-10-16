@@ -33,9 +33,9 @@
     </nav>
 
     {{range .Parts}}
-    <section class="activity-part activity-part--{{.Key}}" id="part-{{.Key}}" data-part-key="{{.Key}}"{{if .Current}} data-current{{end}} aria-labelledby="part-{{.Key}}-title">
+    <section class="activity-part activity-part--{{.Key}}" id="part-{{.Key}}" data-part-key="{{.Key}}"{{if .Current}} data-current{{end}} aria-labelledby="activity-title-{{.Key}}">
       <div class="activity-part__head">
-        <h2 class="activity-part__title" id="part-{{.Key}}-title">{{.Name}}{{if .ShowCount}} <span class="activity-part__count">{{.Count}}</span>{{end}}</h2>
+        <h2 class="activity-part__title" id="activity-title-{{.Key}}">{{.Name}}{{if .ShowCount}} <span class="activity-part__count">{{.Count}}</span>{{end}}</h2>
         <p class="activity-part__line">{{.Line}}</p>
       </div>
       <div class="activity-part__body">

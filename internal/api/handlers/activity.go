@@ -118,9 +118,9 @@ func parseActivityPart(rawPart, rawTab string) string {
 }
 
 // activityPart is one part of the page: its words, its address, how many cards
-// it holds and the cards themselves. Summary is the hub row's one line and
-// ShowCount is false for the two parts the server holds no rows for (Updates is
-// Phase 3.2's, Ended nearby is a read the browser makes).
+// it holds and the cards themselves. Summary is the hub row's one line.
+// ShowCount is false only for Ended nearby, whose rows are a read the browser
+// makes; Updates shows 0 until Phase 3.2 fills it.
 type activityPart struct {
 	Key        string
 	Name       string
@@ -266,6 +266,9 @@ func buildActivityPage(page service.ActivityPage, current string, now time.Time)
 		}
 		switch spec.Key {
 		case activityPartUpdates:
+			// Phase 3.2 fills Updates; until then it shows the number 0 and the
+			// "{N} new" tag is that phase's to add.
+			p.ShowCount = true
 			p.Summary = hubUpdatesNone
 		case activityPartPosted:
 			p.ShowCount = true

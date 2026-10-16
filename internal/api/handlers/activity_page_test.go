@@ -270,8 +270,13 @@ func TestActivityPartMembership(t *testing.T) {
 		view := wm5Cards(t, wm5MixedPage(), "")
 		for _, key := range []string{"updates", "ended"} {
 			p := wm5Part(t, view, key)
-			if len(p.Rows) != 0 || p.Count != 0 || p.ShowCount {
-				t.Errorf("part %q rows %d count %d showcount %v, want no server rows", key, len(p.Rows), p.Count, p.ShowCount)
+			if len(p.Rows) != 0 || p.Count != 0 {
+				t.Errorf("part %q rows %d count %d, want no server rows", key, len(p.Rows), p.Count)
+			}
+			// Updates shows the number 0 until Phase 3.2; Ended nearby shows no
+			// count until the browser read of a later plan fills it.
+			if wantShow := key == "updates"; p.ShowCount != wantShow {
+				t.Errorf("part %q ShowCount = %v, want %v", key, p.ShowCount, wantShow)
 			}
 		}
 	})

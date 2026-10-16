@@ -826,9 +826,8 @@ func TestActivityPartsRenderFromTheAddress(t *testing.T) {
 		if got := strings.Join(gotIDs, ","); got != "part-updates,part-posted,part-confirmed,part-disputed,part-ended" {
 			t.Errorf("section ids = %s", got)
 		}
-		if n := strings.Count(body, `id="part-`); n != 10 {
-			// Five sections and five title ids.
-			t.Errorf(`found %d id="part- attributes, want 10 (five sections and five titles)`, n)
+		if n := strings.Count(body, `id="part-`); n != 5 {
+			t.Errorf(`found %d id="part- attributes, want 5 sections`, n)
 		}
 		if strings.Contains(body, " data-current") {
 			t.Errorf("the list marks a part as current")
@@ -858,7 +857,7 @@ func TestActivityPartsRenderFromTheAddress(t *testing.T) {
 				t.Errorf("part %q holds %d rows, want %d", key, rowCount, len(wantIDs[key]))
 			}
 			switch key {
-			case "updates", "ended":
+			case "ended":
 				if count != nil {
 					t.Errorf("hub row %q shows a count %s, the server holds no rows for it", key, count[1])
 				}
