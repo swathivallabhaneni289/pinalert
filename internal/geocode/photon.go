@@ -46,6 +46,19 @@ const (
 	// eat the time the Nominatim fallback needs inside the report form's
 	// 8 second limit.
 	defaultPhotonTimeout = 2 * time.Second
+	// defaultPhotonRetryTimeout bounds the one retry of the whole text after
+	// the first Photon try ran out of defaultPhotonTimeout (F-P4-11). A cold
+	// first answer, the first request after the server starts, can take
+	// longer than 2 seconds, and Nominatim cannot match the misspellings
+	// Photon is asked for, so a slow first try is asked once more, a little
+	// longer, before the search falls back. The retry takes a Photon token
+	// only if one is free right now: it never waits, so it never queues
+	// ahead of a report search (D-16) and never adds a limiter wait. On the
+	// report form, with Photon hanging both times and Nominatim answering,
+	// the search ends after about 2 + 2.5 s of Photon plus two Nominatim
+	// tries (about 1.5 s with the limiter wait between them), so about 6 s,
+	// 6.5 s with a full Photon queue, inside the browser's 8 second limit.
+	defaultPhotonRetryTimeout = 2500 * time.Millisecond
 	// photonFetchLimit asks for more than are shown, so the India filter and
 	// the ranking still leave five.
 	photonFetchLimit = "10"
@@ -279,10 +292,18 @@ func rankPhoton(q string, candidates []photonCandidate) []Result {
 // fetchPhoton sends one search to Photon and returns the usable Indian
 // answers, ranked. It never touches a limiter; the caller has taken a token.
 // The request has its own time limit, so a slow Photon ends in an error the
-// caller can fall back from.
-func (c *Client) fetchPhoton(ctx context.Context, q string, near *Point) ([]Result, error) {
-	ctx, cancel := context.WithTimeout(ctx, c.photonTimeout)
+// caller can fall back from. An error caused by that time limit, and not by
+// the caller going away, wraps errPhotonTimedOut.
+func (c *Client) fetchPhoton(parent context.Context, q string, near *Point, limit time.Duration) ([]Result, error) {
+	ctx, cancel := context.WithTimeout(parent, limit)
 	defer cancel()
+	// timedOut marks an error as this request running out of its own time.
+	timedOut := func(err error) error {
+		if parent.Err() == nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("%w: %w", errPhotonTimedOut, err)
+		}
+		return err
+	}
 
 	params := url.Values{}
 	params.Set("q", q)
@@ -302,7 +323,7 @@ func (c *Client) fetchPhoton(ctx context.Context, q string, near *Point) ([]Resu
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("geocode: executing photon request: %w", scrubURLError(err))
+		return nil, timedOut(fmt.Errorf("geocode: executing photon request: %w", scrubURLError(err)))
 	}
 	defer resp.Body.Close()
 
@@ -312,7 +333,7 @@ func (c *Client) fetchPhoton(ctx context.Context, q string, near *Point) ([]Resu
 
 	var body photonResponse
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return nil, fmt.Errorf("geocode: decoding photon response: %w", err)
+		return nil, timedOut(fmt.Errorf("geocode: decoding photon response: %w", err))
 	}
 
 	candidates := make([]photonCandidate, 0, len(body.Features))
@@ -371,19 +392,42 @@ func (c *Client) takeReaderPhotonToken(ctx context.Context, i int) error {
 	return takeReaderTokenFrom(ctx, c.photonLimiter, i)
 }
 
+// takePhotonRetryToken is either search's turn at Photon's limiter for the
+// retry of a first try that ran out of time: a token only if one is free
+// right now. It never waits and never reserves, so a reader's retry never
+// queues ahead of a report search (D-16), and a report search's retry adds
+// no wait. With no token free the retry is skipped and the search falls back
+// to Nominatim, as it did before the retry existed.
+func (c *Client) takePhotonRetryToken(context.Context) error {
+	if !c.photonLimiter.Allow() {
+		return errPhotonRetryNoToken
+	}
+	return nil
+}
+
+// errPhotonTimedOut marks a Photon request that ran out of its own time
+// limit, the only failure that earns the first try its retry.
+var errPhotonTimedOut = errors.New("geocode: photon gave no answer within its time limit")
+
+// errPhotonRetryNoToken is the retry finding no free Photon token. It is a
+// plain Photon failure, never ErrReaderBusy, so the search falls back.
+var errPhotonRetryNoToken = errors.New("geocode: no photon token free for the retry")
+
 // photonOutcome is what asking Photon came to.
 type photonOutcome struct {
-	answer Answer
-	found  bool // Photon answered with at least one match
-	sent   int  // requests actually sent to Photon (0 or 1)
-	failed bool // Photon errored, timed out or had no token: never cached
+	answer   Answer
+	found    bool // Photon answered with at least one match
+	sent     int  // requests actually sent to Photon
+	failed   bool // Photon errored, timed out or had no token: never cached
+	timedOut bool // the request ran out of its own time limit
 }
 
 // askPhoton is one Photon try for text: its cache, its limiter and one
-// request. An error is returned only when the search itself must end: the
-// reader found no free token, or the caller went away. Any other Photon
-// failure is reported as failed, and the search goes on to Nominatim.
-func (c *Client) askPhoton(ctx context.Context, text string, near *Point, take func(ctx context.Context) error) (photonOutcome, error) {
+// request with the time limit given. An error is returned only when the
+// search itself must end: the reader found no free token, or the caller went
+// away. Any other Photon failure is reported as failed, and the search goes
+// on (to the retry after a time out of the first try, else to Nominatim).
+func (c *Client) askPhoton(ctx context.Context, text string, near *Point, take func(ctx context.Context) error, limit time.Duration) (photonOutcome, error) {
 	key := cacheKey(text, near)
 	if cached, ok := c.photon.get(key); ok {
 		// A cached empty answer means Photon found nothing here before.
@@ -397,14 +441,14 @@ func (c *Client) askPhoton(ctx context.Context, text string, near *Point, take f
 		// unavailable rather than make the person wait longer.
 		return photonOutcome{failed: true}, nil
 	}
-	results, err := c.fetchPhoton(ctx, text, near)
+	results, err := c.fetchPhoton(ctx, text, near, limit)
 	if err != nil {
 		if ctx.Err() != nil {
 			// The browser gave up or the server is shutting down: no
 			// fallback request for an answer nobody will read.
 			return photonOutcome{}, err
 		}
-		return photonOutcome{sent: 1, failed: true}, nil
+		return photonOutcome{sent: 1, failed: true, timedOut: errors.Is(err, errPhotonTimedOut)}, nil
 	}
 	answer := Answer{Results: results, provider: providerPhoton}
 	c.photon.put(key, answer)

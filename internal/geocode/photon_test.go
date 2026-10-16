@@ -556,6 +556,7 @@ func TestPhotonFailureFallsBackToNominatim(t *testing.T) {
 				rs := newRecordingServer(t, func(q url.Values) bool { return q.Get("q") == short1 })
 				c := newDualClient(ps.server.URL, rs.server.URL)
 				c.photonTimeout = 100 * time.Millisecond
+				c.photonRetryTimeout = 150 * time.Millisecond
 
 				start := time.Now()
 				answer, err := search(c, context.Background(), longAddress, nil)
@@ -565,8 +566,16 @@ func TestPhotonFailureFallsBackToNominatim(t *testing.T) {
 				if elapsed := time.Since(start); elapsed > 2*time.Second {
 					t.Errorf("search took %v, want the photon timeout to cut it short", elapsed)
 				}
-				if ps.count() != 1 {
-					t.Errorf("photon got %d requests, want 1", ps.count())
+				// Only a try that ran out of time gets the one retry
+				// (F-P4-11); a fast failure falls back at once. Either way
+				// the Nominatim plan without a pin reaches the first shorter
+				// text on its second try, inside what the cap leaves.
+				wantPhoton := 1
+				if name == "timeout" {
+					wantPhoton = 2
+				}
+				if ps.count() != wantPhoton {
+					t.Errorf("photon got %d requests, want %d", ps.count(), wantPhoton)
 				}
 				if got, want := rs.texts(), []string{longAddress, short1}; !reflect.DeepEqual(got, want) {
 					t.Fatalf("nominatim texts = %q, want %q", got, want)

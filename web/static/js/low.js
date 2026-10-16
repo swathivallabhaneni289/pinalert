@@ -67,6 +67,10 @@
   // sentence cannot name it (D-20).
   var LOW_LOCATION_SAVED_MESSAGE = 'Using the saved location. The report will be placed there, not at your position.';
   var LOW_SEARCH_UNAVAILABLE_MESSAGE ='Search unavailable. Try your position again, or open the full version.';
+  // A search refused for the person's own search budget (a 429) gets the
+  // main report form's words: waiting a few seconds is the way forward on
+  // both pages, and they name no map (F-P4-12).
+  var LOW_SEARCH_RATE_LIMITED_MESSAGE = 'Too many searches. Wait a few seconds and try again.';
 
   var basisEl = document.getElementById('low-basis');
   var retryPositionBtn = document.getElementById('low-retry-position');
@@ -583,9 +587,14 @@
   }
 
   // lowSearchFailureMessage is the location object's answer to a failed place
-  // search. It takes no argument on purpose: the server's own text is never
-  // shown on this page, only the Low data sentence (U8).
-  function lowSearchFailureMessage() {
+  // search. The server's own text, its first argument, is never read: this
+  // page shows only its own sentences (U8). The status picks one: a 429 gets
+  // the main form's words, anything else (a 503, a timeout, no answer) the
+  // Low data sentence.
+  function lowSearchFailureMessage(_serverText, status) {
+    if (status === 429) {
+      return LOW_SEARCH_RATE_LIMITED_MESSAGE;
+    }
     return LOW_SEARCH_UNAVAILABLE_MESSAGE;
   }
 

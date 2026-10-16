@@ -198,7 +198,7 @@ function makeIndexedDB(initial) {
 
 // ----- one sandbox per case -----
 
-function loadQueue({ records = [], answers = [], indexedDBThrows = false, lockHeldElsewhere = false }) {
+function loadQueue({ records = [], answers = [], indexedDBThrows = false, lockHeldElsewhere = false, withChannel = false }) {
   const doc = makeDocument();
   const idb = makeIndexedDB(records);
   const submitted = [];
@@ -239,6 +239,17 @@ function loadQueue({ records = [], answers = [], indexedDBThrows = false, lockHe
     URL,
     URLSearchParams
   };
+  // withChannel gives the page a BroadcastChannel. channels holds every one
+  // the page opened and posted keeps what it posted; a case delivers another
+  // tab's message by calling a channel's onmessage.
+  const channels = [];
+  const posted = [];
+  if (withChannel) {
+    sandbox.BroadcastChannel = class {
+      constructor(name) { this.name = name; this.onmessage = null; channels.push(this); }
+      postMessage(data) { posted.push(structuredClone(data)); }
+    };
+  }
   vm.createContext(sandbox);
   if (indexedDBThrows) {
     // Some frames throw on a plain read of the indexedDB global. A vm global
@@ -253,7 +264,9 @@ function loadQueue({ records = [], answers = [], indexedDBThrows = false, lockHe
   const strip = doc.createElement('div');
   const live = doc.createElement('div');
   doc.byId['notice-live'] = live;
-  return { queue: win.PinalertQueue, strip, store: idb.data, idb: idb.control, submitted, toasts, doc, timers };
+  // otherTab delivers another tab's channel message to this page.
+  const otherTab = (accountId) => channels.forEach((c) => { if (c.onmessage) { c.onmessage({ data: { account_id: accountId } }); } });
+  return { queue: win.PinalertQueue, strip, store: idb.data, idb: idb.control, submitted, toasts, doc, timers, live, posted, otherTab };
 }
 
 // wakeTimers returns the wake timers still set, made from index from on. The
@@ -611,6 +624,156 @@ await test('names the saved account on each send and holds the rows that send by
   assert.equal(again.store.get(legacy).last_error, 'Something went wrong. Try again.');
   assert.ok(again.strip.descendants().some((el) => el.textContent === 'Edit and resend'),
     'Edit and resend is back for the right account');
+});
+
+const OTHER_ACCOUNT_LINE = 'This report was saved under a different account than the one signed in now. ' +
+  'Sign in to that account to send it. It stays saved on this device.';
+
+function statusLines(env) {
+  return env.strip.descendants()
+    .filter((el) => el.className.split(/\s+/).includes('queue-strip__status'))
+    .map((el) => el.textContent);
+}
+
+// announcements fires the announcement timers not fired yet and returns what
+// each one said.
+function announcements(env) {
+  return env.timers.filter((t) => t.delay === 50 && !t.fired).map((t) => {
+    t.fired = true;
+    t.fn();
+    return env.live.textContent;
+  });
+}
+
+await test("another tab's account holds the rows exactly as the 409 does, and this account's tab puts them back (F-P4-8)", async () => {
+  const waiting = 'req-zzzzzzzzzzzzzzzz-30';
+  const blocked = 'req-zzzzzzzzzzzzzzzz-31';
+  const notSent = 'req-zzzzzzzzzzzzzzzz-32';
+  const noAnswer = 'req-zzzzzzzzzzzzzzzz-33';
+  const later = Date.now() + 10 * 60 * 1000;
+  // The post of the waiting row is blocked, as in the harness: it never
+  // answers while the other account signs in.
+  const env = loadQueue({
+    withChannel: true,
+    lockHeldElsewhere: true,
+    records: [
+      record(waiting, '7', 'waiting saved report', '2026-10-01T00:00:00.000Z'),
+      record(blocked, '7', 'blocked saved report', '2026-10-02T00:00:00.000Z', { status: 'blocked', next_try_at: later }),
+      record(notSent, '7', 'not sent saved report', '2026-10-03T00:00:00.000Z', {
+        status: 'rejected', last_error: 'Say what is happening.'
+      }),
+      record(noAnswer, '7', 'no answer saved report', '2026-10-04T00:00:00.000Z', { status: 'no_answer' })
+    ]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3, onEdit: () => {} });
+  await settle();
+  assert.deepEqual(env.posted, [{ account_id: '7' }], 'the page tells the other tabs its account');
+  assert.equal(env.submitted.length, 0, 'another tab holds the flush lock, so nothing is sent here');
+  assert.deepEqual(statusLines(env), [
+    'Waiting for a signal.',
+    'Waiting to send. It will send by itself in 1 minute.',
+    'Not sent. Say what is happening.',
+    "Pinalert didn't answer. Trying again."
+  ]);
+  assert.ok(env.strip.descendants().some((el) => el.textContent === 'Edit and resend'));
+  announcements(env);
+
+  // Another tab opens for account 8.
+  env.otherTab('8');
+  await settle();
+  assert.deepEqual(statusLines(env), [OTHER_ACCOUNT_LINE, OTHER_ACCOUNT_LINE, 'Not sent. Say what is happening.',
+    OTHER_ACCOUNT_LINE], 'each row that sends by itself reads as the 409 makes it read');
+  for (const [id, was] of [[waiting, 'waiting'], [blocked, 'blocked'], [noAnswer, 'no_answer']]) {
+    assert.equal(env.store.get(id).status, 'other_account', id + ' is held in the store');
+    assert.equal(env.store.get(id).held_from, was, id + ' keeps its earlier status');
+  }
+  assert.equal(env.store.get(notSent).status, 'rejected');
+  assert.equal(env.store.get(notSent).last_error, 'Say what is happening.');
+  assert.equal(env.strip.descendants().some((el) => el.textContent === 'Edit and resend'), false,
+    'no row offers Edit and resend');
+  const discards = env.strip.descendants().filter((el) => el.className.split(/\s+/).includes('queue-strip__discard'));
+  assert.equal(discards.length, 4, 'Discard report stays on each row');
+  const sendBtn = env.strip.descendants().find((el) => el.id === 'queue-send-now');
+  assert.equal(sendBtn.getAttribute('aria-disabled'), 'true', 'Send now does nothing');
+  assert.deepEqual(announcements(env), ['Report not sent. It was saved under a different account.']);
+
+  // A second message changes nothing and says nothing again.
+  env.otherTab('8');
+  await settle();
+  assert.equal(env.store.get(waiting).held_from, 'waiting');
+  assert.deepEqual(announcements(env), []);
+
+  // A tab opens for account 7 again: every row is back exactly.
+  env.otherTab('7');
+  await settle();
+  assert.equal(env.store.get(waiting).status, 'waiting');
+  assert.equal(env.store.get(blocked).status, 'blocked');
+  assert.equal(env.store.get(blocked).next_try_at, later);
+  assert.equal(env.store.get(noAnswer).status, 'no_answer');
+  assert.equal(env.store.get(notSent).status, 'rejected');
+  for (const id of [waiting, blocked, noAnswer]) {
+    assert.equal(Object.hasOwn(env.store.get(id), 'held_from'), false, id + ' has no held_from left');
+  }
+  assert.deepEqual(statusLines(env), [
+    'Waiting for a signal.',
+    'Waiting to send. It will send by itself in 1 minute.',
+    'Not sent. Say what is happening.',
+    "Pinalert didn't answer. Trying again."
+  ]);
+  assert.ok(env.strip.descendants().some((el) => el.textContent === 'Edit and resend'),
+    'Edit and resend is back for the right account');
+  assert.equal(sendBtn.getAttribute('aria-disabled'), null, 'Send now works again');
+});
+
+await test('the right account back in another tab sends again (F-P4-8)', async () => {
+  const id = 'req-zzzzzzzzzzzzzzzz-34';
+  const env = loadQueue({
+    withChannel: true,
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z')],
+    answers: [() => Promise.reject({ queueable: true, status: 0 })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  assert.equal(env.submitted.length, 1);
+  env.otherTab('8');
+  await settle();
+  await env.queue.flush();
+  await settle();
+  assert.equal(env.submitted.length, 1, 'nothing is sent while another account is signed in');
+  env.otherTab('7');
+  await settle();
+  assert.equal(env.submitted.length, 2, 'the held report is sent once the right account is back');
+  assert.equal(env.store.size, 0);
+});
+
+await test("a send out when another tab's account arrives keeps its row held (F-P4-8)", async () => {
+  const id = 'req-zzzzzzzzzzzzzzzz-35';
+  let fail = null;
+  const env = loadQueue({
+    withChannel: true,
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z')],
+    answers: [() => new Promise((resolve, reject) => { fail = reject; })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  assert.equal(env.submitted.length, 1, 'the post is out');
+  env.otherTab('8');
+  await settle();
+  assert.equal(env.store.get(id).status, 'other_account');
+  // The blocked post then fails with no answer.
+  fail({ queueable: true, status: 0 });
+  await settle();
+  assert.equal(env.store.get(id).status, 'other_account', 'the late failure does not undo the hold');
+  assert.equal(env.store.get(id).held_from, 'waiting');
+  assert.deepEqual(statusLines(env), [OTHER_ACCOUNT_LINE]);
+
+  // A report saved now is held too.
+  const fresh = 'req-zzzzzzzzzzzzzzzz-36';
+  await env.queue.save(record(fresh, '7', 'second report', '2026-10-02T00:00:00.000Z'));
+  await settle();
+  assert.equal(env.store.get(fresh).status, 'other_account');
+  assert.equal(env.store.get(fresh).held_from, 'waiting');
+  assert.deepEqual(statusLines(env), [OTHER_ACCOUNT_LINE, OTHER_ACCOUNT_LINE]);
 });
 
 // openDiscardQuestion opens the Discard question on the row and returns a function

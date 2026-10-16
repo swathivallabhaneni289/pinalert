@@ -97,10 +97,11 @@ type Client struct {
 
 	// Photon, asked first. An empty photonURL turns Photon off, which only
 	// the Nominatim tests do.
-	photonURL     string
-	photonLimiter *rate.Limiter
-	photonTimeout time.Duration
-	photon        *answerCache // Photon answers, shared by both searches
+	photonURL          string
+	photonLimiter      *rate.Limiter
+	photonTimeout      time.Duration
+	photonRetryTimeout time.Duration // the first try's one retry (F-P4-11)
+	photon             *answerCache  // Photon answers, shared by both searches
 }
 
 // NewClient constructs a Client pointed at the real Photon and Nominatim
@@ -127,16 +128,17 @@ func newClientWithBaseURL(baseURL, contactEmail string, every time.Duration, bur
 // limiter rates given. An empty photonURL turns Photon off.
 func newClientWithProviders(photonURL, nominatimURL, contactEmail string, every time.Duration, burst int, photonEvery time.Duration, photonBurst int) *Client {
 	return &Client{
-		httpClient:    &http.Client{Timeout: httpClientTimeout},
-		limiter:       rate.NewLimiter(rate.Every(every), burst),
-		baseURL:       nominatimURL,
-		contactEmail:  contactEmail,
-		reader:        newAnswerCache(),
-		reporter:      newAnswerCache(),
-		photonURL:     photonURL,
-		photonLimiter: rate.NewLimiter(rate.Every(photonEvery), photonBurst),
-		photonTimeout: defaultPhotonTimeout,
-		photon:        newAnswerCache(),
+		httpClient:         &http.Client{Timeout: httpClientTimeout},
+		limiter:            rate.NewLimiter(rate.Every(every), burst),
+		baseURL:            nominatimURL,
+		contactEmail:       contactEmail,
+		reader:             newAnswerCache(),
+		reporter:           newAnswerCache(),
+		photonURL:          photonURL,
+		photonLimiter:      rate.NewLimiter(rate.Every(photonEvery), photonBurst),
+		photonTimeout:      defaultPhotonTimeout,
+		photonRetryTimeout: defaultPhotonRetryTimeout,
+		photon:             newAnswerCache(),
 	}
 }
 
@@ -212,6 +214,10 @@ func (c *Client) Search(ctx context.Context, q string, near *Point) (Answer, err
 // is taken from each provider (take is called with the provider's own try
 // index, 0 for its first) and which Nominatim cache it uses.
 //
+//   - A first Photon try that runs out of its time limit is tried once more,
+//     with defaultPhotonRetryTimeout and only if a Photon token is free right
+//     now, and the retry's outcome takes its place (F-P4-11). No other
+//     failure, and no later Photon try, is retried.
 //   - A Photon answer with matches for the whole text, fresh or cached, is
 //     the answer.
 //   - Otherwise the lane's cache is read.
@@ -241,9 +247,22 @@ func (c *Client) search(ctx context.Context, q string, near *Point, cache *answe
 	}
 
 	texts := searchTexts(q)
-	photon, err := c.askPhoton(ctx, texts[0], near, func(ctx context.Context) error { return takePhoton(ctx, 0) })
+	photon, err := c.askPhoton(ctx, texts[0], near, func(ctx context.Context) error { return takePhoton(ctx, 0) }, c.photonTimeout)
 	if err != nil {
 		return Answer{}, err
+	}
+	if photon.timedOut {
+		// A first try that ran out of time gets one retry before the search
+		// falls back (F-P4-11): a cold first answer can be slow, and Nominatim
+		// cannot match the misspellings Photon is asked for. The retry counts
+		// against maxUpstreamPerSearch like any request, and what it comes to
+		// (found, nothing found, failed again) takes the first try's place.
+		retry, err := c.askPhoton(ctx, texts[0], near, c.takePhotonRetryToken, c.photonRetryTimeout)
+		if err != nil {
+			return Answer{}, err
+		}
+		retry.sent += photon.sent
+		photon = retry
 	}
 	if photon.found {
 		return photon.answer, nil
@@ -314,7 +333,7 @@ func (c *Client) afterPhotonFoundNothing(ctx context.Context, texts []string, ne
 		text := texts[i]
 		if !photonDown {
 			tryIndex := i
-			out, err := c.askPhoton(ctx, text, near, func(ctx context.Context) error { return takePhoton(ctx, tryIndex) })
+			out, err := c.askPhoton(ctx, text, near, func(ctx context.Context) error { return takePhoton(ctx, tryIndex) }, c.photonTimeout)
 			if err != nil {
 				return Answer{}, false, err
 			}

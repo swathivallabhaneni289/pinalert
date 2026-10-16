@@ -434,30 +434,47 @@ window.Pinalert = (function () {
     if (!document.documentElement.hasAttribute('data-feed-requested')) {
       document.documentElement.setAttribute('data-feed-requested', 'true');
     }
-    // A request that stalls is abandoned after 10 seconds. The signal covers
-    // the wait for the headers and for the body. It travels in a Request so
-    // the call below keeps its one argument form.
+    // A request that stalls is abandoned after 10 seconds and counts as a
+    // failed poll. The limit is this call's own timer, never the request's
+    // promise: WebKit can leave an aborted request's promise unsettled for
+    // good, and the stale line, a refetch after a write and the next list
+    // request of the Low data view all wait on this call. So when the timer
+    // fires, the call fails at once, whether or not the request ever ends.
+    // The timer also aborts the request, so it stops on the network too. The
+    // limit covers the wait for the headers and for the body. The signal
+    // travels in a Request so the call below keeps its one argument form.
     var signal;
-    var abortTimer = null;
-    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
-      signal = AbortSignal.timeout(10000);
-    } else if (typeof AbortController !== 'undefined') {
-      var controller = new AbortController();
+    var controller = null;
+    if (typeof AbortController !== 'undefined') {
+      controller = new AbortController();
       signal = controller.signal;
-      abortTimer = window.setTimeout(function () {
-        controller.abort();
-      }, 10000);
+    } else if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+      signal = AbortSignal.timeout(10000);
     }
     url = new Request(url, { signal: signal });
+    var abortTimer = null;
+    var timedOut = new Promise(function (resolve, reject) {
+      abortTimer = window.setTimeout(function () {
+        if (controller !== null) {
+          controller.abort();
+        }
+        var limitErr = new Error('fetchReports: no answer in 10 seconds');
+        limitErr.name = 'TimeoutError';
+        reject(limitErr);
+      }, 10000);
+    });
 
-    pending = fetch(url)
+    var answered = fetch(url)
       .then(function (res) {
         if (!res.ok) {
           throw new Error('fetchReports: HTTP ' + res.status);
         }
         noteServerClock(res.headers && res.headers.get('Date'));
         return res.json();
-      })
+      });
+    // Whichever comes first wins: the answer, or the timer. A late end of the
+    // other one changes nothing.
+    pending = Promise.race([answered, timedOut])
       .then(function (body) {
         if (abortTimer !== null) {
           window.clearTimeout(abortTimer);

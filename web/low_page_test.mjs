@@ -1,0 +1,319 @@
+// low_page_test.mjs - runs the real web/static/js/app.js and
+// web/static/js/low.js together in a Node sandbox and checks the Low data
+// view's behaviour the Go source tests cannot:
+//
+//   - a failed place search on this page shows the page's own sentences,
+//     picked by the answer's status, never the server's text (F-P4-12);
+//   - a list request whose promise never settles, as WebKit can leave an
+//     aborted one, still fails at the 10 second limit: the stale line shows,
+//     the call's promise resolves and the next list request goes out (the
+//     WebKit stale line finding). feed.js draws its stale line from the same
+//     store state, but it needs the map and most of the main page, so it is
+//     not loaded here.
+//
+// Run it with: node --test web/low_page_test.mjs
+// CI runs it with the other web/*.mjs files. It is not embedded in the server.
+// The fakes cover only what the two scripts call: a minimal element model,
+// fake timers the test moves by hand, a fetch the test answers by hand and a
+// fake shared report form that keeps the location object low.js gives it.
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import url from 'node:url';
+import vm from 'node:vm';
+
+const here = path.dirname(url.fileURLToPath(import.meta.url));
+const appSource = fs.readFileSync(path.join(here, 'static', 'js', 'app.js'), 'utf8');
+const lowSource = fs.readFileSync(path.join(here, 'static', 'js', 'low.js'), 'utf8');
+
+class FakeEl {
+  constructor(doc, tag, id) {
+    this.doc = doc;
+    this.tagName = tag.toUpperCase();
+    this.id = id || '';
+    this.children = [];
+    this.parentNode = null;
+    this.own = '';
+    this.attrs = {};
+    this.handlers = {};
+    this.className = '';
+    this.disabled = false;
+  }
+  get textContent() { return this.own + this.children.map((c) => c.textContent).join(''); }
+  set textContent(v) {
+    this.children.forEach((c) => { c.parentNode = null; });
+    this.children = [];
+    this.own = String(v);
+  }
+  get hidden() { return Object.hasOwn(this.attrs, 'hidden'); }
+  set hidden(v) { if (v) { this.attrs.hidden = ''; } else { delete this.attrs.hidden; } }
+  setAttribute(n, v) { this.attrs[n] = String(v); }
+  getAttribute(n) { return Object.hasOwn(this.attrs, n) ? this.attrs[n] : null; }
+  hasAttribute(n) { return Object.hasOwn(this.attrs, n); }
+  removeAttribute(n) { delete this.attrs[n]; }
+  appendChild(node) {
+    if (node.parentNode) { node.parentNode.removeChild(node); }
+    this.children.push(node);
+    node.parentNode = this;
+    return node;
+  }
+  removeChild(node) {
+    const at = this.children.indexOf(node);
+    if (at !== -1) { this.children.splice(at, 1); }
+    node.parentNode = null;
+    return node;
+  }
+  remove() { if (this.parentNode) { this.parentNode.removeChild(this); } }
+  contains(node) {
+    for (let n = node; n; n = n.parentNode) { if (n === this) { return true; } }
+    return false;
+  }
+  addEventListener(type, fn) { (this.handlers[type] = this.handlers[type] || []).push(fn); }
+  removeEventListener(type, fn) { this.handlers[type] = (this.handlers[type] || []).filter((h) => h !== fn); }
+  querySelector() { return null; }
+  querySelectorAll() { return []; }
+  focus() { this.doc.activeElement = this; }
+}
+
+// The ids low.js and app.js look up on the Low data page.
+const PAGE_IDS = [
+  'low-list', 'low-basis', 'low-retry-position', 'low-stale', 'low-stale-text', 'low-stale-retry',
+  'low-skeleton', 'low-empty', 'low-empty-title', 'low-empty-text', 'low-error', 'low-retry', 'low-full',
+  'notice-live', 'report-modal', 'low-report', 'low-location-status'
+];
+
+// loadLowPage evaluates app.js and then low.js against a Low data page. fetch
+// keeps every call for the test to answer; abortRejects says whether an
+// abort ends the call's promise, as Chromium does, or leaves it unsettled, as
+// WebKit sometimes does. nativeTimeout swaps AbortController for a native
+// AbortSignal.timeout that never fires. stored is the remembered position and
+// geolocation the fake position service, both absent unless given.
+function loadLowPage({ abortRejects = true, nativeTimeout = false, stored = null, geolocation = null } = {}) {
+  const doc = {
+    activeElement: null,
+    byId: {},
+    createElement(tag) { return new FakeEl(doc, tag); },
+    getElementById(id) { return doc.byId[id] || null; },
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+    addEventListener() {},
+    removeEventListener() {}
+  };
+  doc.documentElement = new FakeEl(doc, 'html');
+  PAGE_IDS.forEach((id) => { doc.byId[id] = new FakeEl(doc, id === 'low-list' ? 'ul' : 'div', id); });
+
+  // Fake timers: the test moves the clock. Intervals repeat.
+  let now = 0;
+  let nextId = 1;
+  const timers = new Map();
+  const advance = (ms) => {
+    const end = now + ms;
+    for (;;) {
+      const due = [...timers.entries()].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+      if (!due) { break; }
+      const [id, timer] = due;
+      now = timer.at;
+      if (timer.every) { timer.at += timer.every; } else { timers.delete(id); }
+      timer.fn();
+    }
+    now = end;
+  };
+
+  // Every list request is kept with its abort state for the test to answer.
+  const requests = [];
+  const fetch = (target) => new Promise((resolve, reject) => {
+    const signal = target && target.signal;
+    const req = { url: target && target.url, resolve, reject, aborted: false };
+    if (signal && typeof signal.addEventListener === 'function') {
+      signal.addEventListener('abort', () => {
+        req.aborted = true;
+        if (abortRejects) {
+          const err = new Error('aborted');
+          err.name = 'AbortError';
+          reject(err);
+        }
+      });
+    }
+    requests.push(req);
+  });
+  const answer = (req, body) => req.resolve({
+    ok: true,
+    status: 200,
+    headers: { get: () => null },
+    json: () => Promise.resolve(body)
+  });
+
+  class FakeSignal {
+    constructor() { this.aborted = false; this.listeners = []; }
+    addEventListener(type, fn) { if (type === 'abort') { this.listeners.push(fn); } }
+    fire() {
+      if (this.aborted) { return; }
+      this.aborted = true;
+      this.listeners.forEach((fn) => fn());
+    }
+  }
+  class AbortController {
+    constructor() { this.signal = new FakeSignal(); }
+    abort() { this.signal.fire(); }
+  }
+
+  const mounted = [];
+  const window = {
+    setTimeout(fn, ms) { const id = nextId++; timers.set(id, { at: now + (ms || 0), fn }); return id; },
+    clearTimeout(id) { timers.delete(id); },
+    setInterval(fn, ms) { const id = nextId++; timers.set(id, { at: now + ms, fn, every: ms }); return id; },
+    clearInterval(id) { timers.delete(id); },
+    addEventListener() {},
+    localStorage: { getItem: () => (stored ? JSON.stringify(stored) : null), setItem: () => {} },
+    PinalertReportForm: { mount(options) { mounted.push(options); }, open() {} }
+  };
+  const sandbox = {
+    window,
+    document: doc,
+    navigator: geolocation ? { geolocation } : {},
+    fetch,
+    Request: function Request(target, init) { this.url = target; this.signal = init && init.signal; },
+    AbortController,
+    Promise,
+    Date,
+    Math,
+    JSON,
+    Array,
+    Object,
+    String,
+    Number,
+    isFinite,
+    isNaN,
+    parseFloat,
+    parseInt,
+    encodeURIComponent
+  };
+  if (nativeTimeout) {
+    // A browser with no AbortController but a native timeout signal, one
+    // that never ends the request: only the page's own timer is left.
+    delete sandbox.AbortController;
+    sandbox.AbortSignal = { timeout: () => new FakeSignal() };
+  }
+  sandbox.PinalertReportForm = window.PinalertReportForm;
+  vm.createContext(sandbox);
+  vm.runInContext(appSource, sandbox);
+  sandbox.Pinalert = window.Pinalert;
+  vm.runInContext(lowSource, sandbox);
+  return { Pinalert: window.Pinalert, el: (id) => doc.byId[id], requests, answer, advance, mounted };
+}
+
+const settle = async () => {
+  for (let i = 0; i < 10; i++) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+};
+
+const STALE_LINE = 'Last updated just now. Trying again.';
+
+// The WebKit stale line finding: an aborted request whose promise never
+// settles must not keep the stale line, or anything else that waits on the
+// list, from happening. Each case runs with both ways the page can set its
+// time limit: its own controller, and a native timeout signal.
+for (const nativeTimeout of [false, true]) {
+  const how = nativeTimeout ? ' (native timeout signal)' : ' (controller)';
+
+  test('a poll whose request never settles shows the stale line at 10 seconds' + how, async () => {
+    const page = loadLowPage({ abortRejects: false, nativeTimeout });
+    await settle();
+    assert.equal(page.requests.length, 1, 'the first list request is out');
+    page.answer(page.requests[0], { reports: [] });
+    await settle();
+    assert.equal(page.Pinalert.state.status, 'ok');
+    assert.equal(page.el('low-stale').hidden, true);
+
+    // The poll 30 seconds later gets no answer, ever, and its abort does not
+    // end its promise.
+    page.advance(30000);
+    assert.equal(page.requests.length, 2, 'the poll went out');
+    page.advance(9999);
+    await settle();
+    assert.equal(page.el('low-stale').hidden, true, 'nothing before the limit');
+    page.advance(1);
+    await settle();
+    assert.equal(page.requests[1].aborted, !nativeTimeout, 'the page aborts its own controller at the limit');
+    assert.equal(page.Pinalert.state.status, 'error', 'the poll failed at its limit');
+    assert.equal(page.el('low-stale').hidden, false, 'the stale line shows');
+    assert.equal(page.el('low-stale-text').textContent, STALE_LINE);
+    assert.equal(page.el('notice-live').textContent, 'Connection lost. Showing reports from just now.');
+
+    // The next poll answers, and the line goes.
+    page.advance(20000);
+    assert.equal(page.requests.length, 3);
+    page.answer(page.requests[2], { reports: [] });
+    await settle();
+    assert.equal(page.Pinalert.state.status, 'ok');
+    assert.equal(page.el('low-stale').hidden, true);
+  });
+
+  test('the promise of a list request that never settles resolves at the limit' + how, async () => {
+    const page = loadLowPage({ abortRejects: false, nativeTimeout });
+    await settle();
+    page.answer(page.requests[0], { reports: [] });
+    await settle();
+    let done = false;
+    page.Pinalert.fetchReports({ afterWrite: true }).then(() => { done = true; });
+    page.advance(9999);
+    await settle();
+    assert.equal(done, false);
+    page.advance(1);
+    await settle();
+    assert.equal(done, true, 'a refetch after a write is not left waiting for good');
+    assert.equal(page.Pinalert.state.status, 'error');
+  });
+
+  test('a stored position list that never settles does not hold back the fresh one' + how, async () => {
+    let found = null;
+    const geolocation = { getCurrentPosition(onFound) { found = onFound; } };
+    const page = loadLowPage({ abortRejects: false, nativeTimeout, stored: { lat: 17.385, lon: 78.4867 }, geolocation });
+    await settle();
+    assert.equal(page.requests.length, 1, 'the list for the stored position is out');
+    found({ coords: { latitude: 17.4, longitude: 78.45 } });
+    await settle();
+    assert.equal(page.requests.length, 1, 'the fresh list waits for the stored one, in order');
+    page.advance(10000);
+    await settle();
+    assert.equal(page.requests.length, 2, 'the fresh list goes out once the stored one hit its limit');
+    assert.match(page.requests[1].url, /lat=17\.4&lon=78\.45/);
+    page.answer(page.requests[1], { reports: [] });
+    await settle();
+    assert.equal(page.Pinalert.state.status, 'ok');
+    assert.equal(page.el('low-basis').textContent, 'Near your position.');
+  });
+}
+
+test('an answer that lands before the limit clears the limit' , async () => {
+  const page = loadLowPage({ abortRejects: false });
+  await settle();
+  page.answer(page.requests[0], { reports: [] });
+  await settle();
+  page.advance(10000);
+  await settle();
+  assert.equal(page.requests[0].aborted, false, 'an answered request is never aborted');
+  assert.equal(page.Pinalert.state.status, 'ok');
+  assert.equal(page.el('low-stale').hidden, true);
+});
+
+test('a refused search on the Low data page shows the main form words, any other failure the Low sentence (F-P4-12)', () => {
+  const page = loadLowPage();
+  assert.equal(page.mounted.length, 1, 'low.js mounts the shared report form');
+  const location = page.mounted[0].location;
+  assert.equal(page.mounted[0].variant, 'low');
+
+  const tooMany = 'Too many searches. Wait a few seconds and try again.';
+  const unavailable = 'Search unavailable. Try your position again, or open the full version.';
+  // The form passes '' as the server's text on this page, and the status.
+  assert.equal(location.searchFailureMessage('', 429), tooMany);
+  assert.equal(location.searchFailureMessage('', 503), unavailable);
+  assert.equal(location.searchFailureMessage('', undefined), unavailable, 'a timeout or no answer');
+  assert.equal(location.searchFailureMessage('', 500), unavailable);
+  // The server's text is never shown, whatever it says.
+  assert.equal(location.searchFailureMessage('Search unavailable, try tapping the map instead.', 503), unavailable);
+  assert.equal(location.searchFailureMessage('Anything at all', 429), tooMany);
+});

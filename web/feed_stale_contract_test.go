@@ -93,10 +93,19 @@ func TestFetchReportsBackgroundRefreshAndTimeout(t *testing.T) {
 	p413MustContain(t, "fetchReports", b,
 		"AbortSignal.timeout(10000)", "new AbortController()", "controller.abort()",
 		"signal: signal", "url = new Request(url, { signal: signal });",
-		"pending = fetch(url)", "setAttribute('data-feed-requested', 'true')")
+		"var answered = fetch(url)", "setAttribute('data-feed-requested', 'true')")
 	flagAt := strings.Index(b, "data-feed-requested")
 	requestAt := strings.Index(b, "url = new Request(")
-	fetchAt := strings.Index(b, "pending = fetch(url)")
+	fetchAt := strings.Index(b, "var answered = fetch(url)")
+
+	// The WebKit stale line finding: the 10 second limit is the call's own
+	// timer, raced against the answer, so the failure path runs when the timer
+	// fires even if the aborted request's promise never settles. The node test
+	// web/low_page_test.mjs runs this with a fetch that never settles.
+	p413Ordered(t, "fetchReports time limit", b,
+		"var timedOut = new Promise(function (resolve, reject) {",
+		"abortTimer = window.setTimeout(function () {", "controller.abort();", "reject(limitErr);",
+		"}, 10000);", "var answered = fetch(url)", "pending = Promise.race([answered, timedOut])")
 	if !(flagAt != -1 && requestAt != -1 && fetchAt != -1 && flagAt < fetchAt && requestAt < fetchAt) {
 		t.Errorf("the flag and the Request must come before the request call (flag %d, request %d, call %d)",
 			flagAt, requestAt, fetchAt)

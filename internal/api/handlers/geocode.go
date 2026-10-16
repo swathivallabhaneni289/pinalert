@@ -117,8 +117,9 @@ func parseGeocodeQuery(w http.ResponseWriter, r *http.Request) (string, bool) {
 // @Description pin) make Photon prefer nearby places. When Photon finds nothing the search asks
 // @Description Nominatim with the whole text, preferring places near the pin, then Photon again
 // @Description without the first part and then without the second; matched_query then holds the
-// @Description shorter text that matched. When Photon fails or takes over 2 seconds, Nominatim alone
-// @Description runs those tries, in a box around the pin first. At most four upstream requests are
+// @Description shorter text that matched. A first Photon request that takes over 2 seconds is
+// @Description sent once more, with 2.5 seconds. When Photon fails, or is too slow both times,
+// @Description Nominatim alone runs those tries, in a box around the pin first. At most four upstream requests are
 // @Description sent per search. Each verified account has its own budget of 8 searches at once,
 // @Description then 1 a second; past it the answer is a 429. A
 // @Description 503 means search is temporarily unavailable; report submission remains fully

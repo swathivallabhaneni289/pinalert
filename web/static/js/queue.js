@@ -482,21 +482,8 @@
       }
       return loadRows();
     }).then(function (list) {
-      // A page that passed the gate proves the session for this account, so a
-      // row that was waiting for a sign in is tried again, and a row held
-      // because another account was signed in goes back to the status it had
-      // (WR-05).
-      var writes = [];
-      list.forEach(function (record) {
-        if (record.status === STATUS_SIGNED_OUT) {
-          record.status = STATUS_WAITING;
-          writes.push(putRow(record));
-        } else if (record.status === STATUS_OTHER_ACCOUNT) {
-          releaseRow(record);
-          writes.push(putRow(record));
-        }
-      });
-      return Promise.all(writes);
+      // A page that passed the gate proves the session for this account.
+      return restoreRows(list);
     });
 
     storeReady.then(function () {
@@ -515,14 +502,22 @@
     window.setInterval(flush, QUEUE_FLUSH_MS);
     window.setInterval(refreshWaits, WAIT_TICK_MS);
 
+    // Every page that mounts tells the other tabs which account it was drawn
+    // for. Another account means that account is signed in now, so this
+    // page's rows are held exactly as after the server's 409 (F-P4-8). This
+    // page's own account means its session is proven again, so the rows go
+    // back exactly as on a reload.
     if (typeof BroadcastChannel === 'function') {
       try {
         var channel = new BroadcastChannel(CHANNEL_NAME);
         channel.onmessage = function (evt) {
-          if (evt && evt.data && evt.data.account_id !== accountId) {
-            sessionLapsed = true;
-            otherAccountSignedIn = true;
-            renderStrip();
+          if (!evt || !evt.data) {
+            return;
+          }
+          if (evt.data.account_id !== accountId) {
+            holdForOtherAccount();
+          } else {
+            restoreForThisAccount();
           }
         };
         channel.postMessage({ account_id: accountId });
@@ -560,6 +555,11 @@
         emergency_number: typeof record.emergency_number === 'string' ? record.emergency_number : '',
         sending_until: 0
       };
+      // A report saved while another account is signed in is held at once,
+      // like every other row of this page (F-P4-8).
+      if (otherAccountSignedIn) {
+        holdRow(row, STATUS_OTHER_ACCOUNT);
+      }
       return putRow(row).then(function (persisted) {
         return loadRows().then(function () {
           requestPersist();
@@ -823,6 +823,11 @@
       record.last_error = (err && err.fieldMessage) || GENERIC_REASON;
       announce(ANNOUNCE_NOT_SENT_PREFIX + record.last_error);
     }
+    // A send that was out when another tab said another account is signed in
+    // must not put its row back to sending by itself (F-P4-8).
+    if (held === '' && otherAccountSignedIn) {
+      holdRow(record, STATUS_OTHER_ACCOUNT);
+    }
     var writes = [putRow(record)];
     if (held !== '') {
       rows.forEach(function (other) {
@@ -875,6 +880,77 @@
       row.last_error = row.last_error || GENERIC_REASON;
     }
     delete row.held_from;
+  }
+
+  // restoreRows runs when this account's session is proven (a page that
+  // passed the gate, or another tab drawn for this account): a row waiting
+  // for a sign in is tried again, and a row held because another account was
+  // signed in goes back to the status it had (WR-05). It resolves once the
+  // changed rows are written.
+  function restoreRows(list) {
+    var writes = [];
+    list.forEach(function (record) {
+      if (!belongsToAccount(record)) {
+        return;
+      }
+      if (record.status === STATUS_SIGNED_OUT) {
+        record.status = STATUS_WAITING;
+        writes.push(putRow(record));
+      } else if (record.status === STATUS_OTHER_ACCOUNT) {
+        releaseRow(record);
+        writes.push(putRow(record));
+      }
+    });
+    return Promise.all(writes);
+  }
+
+  // holdForOtherAccount runs when another tab says another account is signed
+  // in now. It does what the server's 409 does (see classify): nothing more is
+  // sent, Edit and resend goes, and each row that would send by itself is held
+  // with its status kept in held_from, so its line reads that it was saved
+  // under a different account. The held rows are written, so a reload for the
+  // right account, or restoreForThisAccount, puts them back exactly (F-P4-8).
+  function holdForOtherAccount() {
+    var first = !otherAccountSignedIn;
+    sessionLapsed = true;
+    otherAccountSignedIn = true;
+    renderStrip();
+    scheduleWake();
+    return storeReady.then(function () {
+      return loadRows();
+    }).then(function (list) {
+      var writes = [];
+      list.forEach(function (record) {
+        if (belongsToAccount(record) && HELD_FOR_OTHER_ACCOUNT.indexOf(record.status) !== -1) {
+          holdRow(record, STATUS_OTHER_ACCOUNT);
+          writes.push(putRow(record));
+        }
+      });
+      if (first && writes.length > 0) {
+        announce(ANNOUNCE_OTHER_ACCOUNT);
+      }
+      return Promise.all(writes);
+    }).then(function () {
+      renderStrip();
+      scheduleWake();
+    });
+  }
+
+  // restoreForThisAccount runs when another tab was drawn for this page's own
+  // account, which proves that account is signed in again. Every held row
+  // goes back exactly as on a reload, Edit and resend returns, and sending
+  // starts again. Should another account still be signed in after all, the
+  // server's 409 holds the rows again on the next send.
+  function restoreForThisAccount() {
+    sessionLapsed = false;
+    otherAccountSignedIn = false;
+    return storeReady.then(function () {
+      return loadRows();
+    }).then(restoreRows).then(function () {
+      renderStrip();
+      scheduleWake();
+      flush();
+    });
   }
 
   function scheduleWake() {

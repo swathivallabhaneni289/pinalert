@@ -194,7 +194,7 @@ func TestViewStripStoreContract(t *testing.T) {
 		"url += '&category=' + encodeURIComponent(sentCategory);",
 		"if (sentFocusId !== null) {",
 		"url += '&report=' + encodeURIComponent(sentFocusId);",
-		"pending = fetch(url)")
+		"var answered = fetch(url)")
 	if n := strings.Count(fetchBody, "'&view='"); n != 1 {
 		t.Errorf("fetchReports builds the view parameter in %d places, want 1", n)
 	}

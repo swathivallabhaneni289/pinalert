@@ -2599,7 +2599,7 @@ func TestFetchReportsDropsOnlyResponsesOlderThanTheLastApplied(t *testing.T) {
 	}
 	floorAt := strings.Index(body, "if (options && options.afterWrite === true && mySeq > writeFloor) {\n      writeFloor = mySeq;\n    }")
 	seqAt := strings.Index(body, "var mySeq = ++fetchSeq;")
-	fetchCallAt := strings.Index(body, "pending = fetch(url)")
+	fetchCallAt := strings.Index(body, "var answered = fetch(url)")
 	if floorAt == -1 || seqAt == -1 || fetchCallAt == -1 || !(seqAt < floorAt && floorAt < fetchCallAt) {
 		t.Errorf("writeFloor must be raised for an afterWrite call right after its number is taken and before the request is sent (seq %d, floor %d, fetch %d)", seqAt, floorAt, fetchCallAt)
 	}
