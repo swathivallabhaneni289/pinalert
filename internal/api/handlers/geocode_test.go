@@ -16,18 +16,21 @@ import (
 // it was called with and returning canned results or a canned error.
 type stubSearcher struct {
 	results  []geocode.Result
+	matched  string
 	err      error
 	gotQuery string
+	gotNear  *geocode.Point
 	calls    int
 }
 
-func (s *stubSearcher) Search(ctx context.Context, q string) ([]geocode.Result, error) {
+func (s *stubSearcher) Search(ctx context.Context, q string, near *geocode.Point) (geocode.Answer, error) {
 	s.calls++
 	s.gotQuery = q
+	s.gotNear = near
 	if s.err != nil {
-		return nil, s.err
+		return geocode.Answer{}, s.err
 	}
-	return s.results, nil
+	return geocode.Answer{Results: s.results, MatchedQuery: s.matched}, nil
 }
 
 // decodeErrorBody decodes a 4xx/5xx response body into its {error:{field,
