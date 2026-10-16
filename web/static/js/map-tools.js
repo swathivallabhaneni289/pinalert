@@ -10,9 +10,16 @@
 // and the map pins always come from one answer (D-15, D-17).
 //
 // Rules this file keeps:
-//   - Nothing is sent while the reader types. The box is read on submit only,
-//     at least 3 letters, and a second submit during a request is ignored, so
-//     the geocoder is never loaded by keystrokes (D-14, T-31-51).
+//   - The box is read on submit, and after the reader stops typing for
+//     TYPING_PAUSE_MS (quick 261016-sfu, which replaced the submit only rule
+//     of D-14 and T-31-51). Never per keystroke, never under 3 letters. A newer
+//     search ends the older one, and Enter for the text already out takes that
+//     search over instead of asking again.
+//   - A search started by typing is quiet: no Searching line, no too short
+//     line and no failure line, since the reader did not ask for it and their
+//     own typing must never read as Search unavailable. Enter and the button
+//     show every line. A typed search's results and count are shown and read
+//     out the same way as after Enter.
 //   - Dragging or zooming the map never reads the list. Only a pick, a chip,
 //     Back to my location and Clear do (D-14).
 //   - A failed or refused search shows one plain line and blocks nothing. The
@@ -24,6 +31,9 @@ window.PinalertMapTools = (function () {
   'use strict';
 
   var MIN_QUERY_RUNES = 3;
+  // How long the reader must stop typing before the search runs by itself,
+  // the same pause as the report form's search (SEARCH_DEBOUNCE_MS).
+  var TYPING_PAUSE_MS = 300;
   var MAX_RESULTS = 5;
   var RESULT_NAME_MAX = 32;
   // The zoom a GPS start uses.
@@ -61,6 +71,15 @@ window.PinalertMapTools = (function () {
   var searchSeq = 0;
   var inFlight = false;
   var controller = null;
+  // The text of the search in flight, and whether it is quiet (started by
+  // typing, not by Enter or the button).
+  var searchText = '';
+  var searchQuiet = false;
+  // The text whose answer is on screen, so a pause on the same text asks
+  // nothing again.
+  var shownText = '';
+  // The pending typing pause, or null.
+  var typingTimer = null;
   // True while Back to my location waits for the browser's position.
   var backPending = false;
   // True after Back to my location found no position, until the next pick.
@@ -104,6 +123,7 @@ window.PinalertMapTools = (function () {
     resultsEl.hidden = true;
     resultsEl.textContent = '';
     lastResults = [];
+    shownText = '';
     clearStatus();
   }
 
@@ -124,9 +144,18 @@ window.PinalertMapTools = (function () {
     }
   }
 
-  // abortSearch drops the request in flight, if any, and invalidates its
-  // answer.
+  // cancelTyping drops a pending typing pause, if any.
+  function cancelTyping() {
+    if (typingTimer !== null) {
+      window.clearTimeout(typingTimer);
+      typingTimer = null;
+    }
+  }
+
+  // abortSearch drops a pending typing pause and the request in flight, if
+  // any, and invalidates its answer.
   function abortSearch() {
+    cancelTyping();
     searchSeq += 1;
     inFlight = false;
     if (controller) {
@@ -212,26 +241,50 @@ window.PinalertMapTools = (function () {
     return status === 429 ? MESSAGE_RATE_LIMITED : MESSAGE_UNAVAILABLE;
   }
 
-  // search runs one place search. It sends nothing for fewer than 3 letters,
-  // nothing while an earlier search is still in flight, and drops an answer
-  // that is no longer the newest. A search that goes out while Back to my
-  // location is still waiting cancels it: the latest action wins (IN-07).
-  function search(query) {
+  // search runs one place search. typed is true when the typing pause started
+  // it, which makes it quiet (see the rules at the top). It sends nothing for
+  // fewer than 3 letters, ends an older search still in flight, and drops an
+  // answer that is no longer the newest. A search from Enter or the button
+  // that goes out while Back to my location is still waiting cancels it: the
+  // latest action wins (IN-07). Typing alone is not an action that moves the
+  // map, so it leaves Back alone.
+  function search(query, typed) {
+    var quiet = typed === true;
     var q = String(query === undefined ? inputEl.value : query).trim();
-    if (inFlight) {
-      return;
-    }
+    cancelTyping();
     if (Array.from(q).length < MIN_QUERY_RUNES) {
-      closeResults();
-      showStatus(MESSAGE_TOO_SHORT, false);
+      if (!quiet) {
+        abortSearch();
+        closeResults();
+        showStatus(MESSAGE_TOO_SHORT, false);
+      }
       return;
     }
-    cancelBack();
-    closeResults();
+    if (inFlight && q === searchText) {
+      // Enter for the text already out takes that search over, so the
+      // reader sees Searching and any failure line, without a second request.
+      if (!quiet && searchQuiet) {
+        searchQuiet = false;
+        cancelBack();
+        closeResults();
+        showStatus(MESSAGE_SEARCHING, false);
+      }
+      return;
+    }
+    if (quiet && !inFlight && q === shownText) {
+      return;
+    }
+    abortSearch();
+    if (!quiet) {
+      cancelBack();
+      closeResults();
+      showStatus(MESSAGE_SEARCHING, false);
+    }
     searchSeq += 1;
     var mySeq = searchSeq;
     inFlight = true;
-    showStatus(MESSAGE_SEARCHING, false);
+    searchText = q;
+    searchQuiet = quiet;
 
     var url = '/api/geocode/place?q=' + encodeURIComponent(q);
     var centre = PinalertMap.getCenter();
@@ -251,11 +304,16 @@ window.PinalertMapTools = (function () {
           }
           inFlight = false;
           if (!res.ok) {
-            showStatus(messageFor(res.status, body), false);
+            // A quiet search's refusal or failure leaves the screen as it
+            // was: the list for the text before stays until Enter asks.
+            if (!searchQuiet) {
+              showStatus(messageFor(res.status, body), false);
+            }
             return;
           }
           renderResults(body && Array.isArray(body.results) ? body.results : [],
             body && body.matched_query);
+          shownText = q;
         });
       })
       .catch(function (err) {
@@ -266,8 +324,27 @@ window.PinalertMapTools = (function () {
           return;
         }
         inFlight = false;
-        showStatus(MESSAGE_UNAVAILABLE, false);
+        if (!searchQuiet) {
+          showStatus(MESSAGE_UNAVAILABLE, false);
+        }
       });
+  }
+
+  // onInput is the typing path: every keystroke restarts the pause, and the
+  // search runs once the reader stops for TYPING_PAUSE_MS with at least 3
+  // letters in the box. Under 3 letters drops any search quietly.
+  function onInput() {
+    cancelTyping();
+    var q = inputEl.value.trim();
+    if (Array.from(q).length < MIN_QUERY_RUNES) {
+      abortSearch();
+      closeResults();
+      return;
+    }
+    typingTimer = window.setTimeout(function () {
+      typingTimer = null;
+      search(q, true);
+    }, TYPING_PAUSE_MS);
   }
 
   // pickResult moves the map and the list to the i'th result. The centre is
@@ -280,6 +357,9 @@ window.PinalertMapTools = (function () {
       return;
     }
     var name = pick.name || pick.display_name;
+    // A pick ends a typing pause or a typed search still out, so its late
+    // answer never reopens the list.
+    abortSearch();
     // A pick wins over a Back to my location still waiting (IN-07).
     cancelBack();
     // A place change ends a report link (CR-01).
@@ -451,6 +531,11 @@ window.PinalertMapTools = (function () {
     if (evt.key !== 'Escape') {
       return;
     }
+    // Escape also stops a typing pause or a search still out, even with
+    // nothing on screen yet.
+    if (typingTimer !== null || inFlight) {
+      abortSearch();
+    }
     if (!resultsEl.hidden || !statusEl.hidden) {
       abortSearch();
       closeResults();
@@ -499,9 +584,12 @@ window.PinalertMapTools = (function () {
 
     formEl.addEventListener('keydown', onKeydown);
 
-    // A press outside the search closes the results and the status line.
+    inputEl.addEventListener('input', onInput);
+
+    // A press outside the search closes the results and the status line, and
+    // stops a typing pause or a search still out.
     document.addEventListener('pointerdown', function (evt) {
-      if ((!resultsEl.hidden || !statusEl.hidden) && !formEl.contains(evt.target)) {
+      if ((!resultsEl.hidden || !statusEl.hidden || typingTimer !== null || inFlight) && !formEl.contains(evt.target)) {
         abortSearch();
         closeResults();
       }
