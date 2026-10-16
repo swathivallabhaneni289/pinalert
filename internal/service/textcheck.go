@@ -47,9 +47,11 @@ type TextCheck struct {
 }
 
 // InlineScreenTimeout bounds the one attempt made while the person waits. The
-// HTTP server write timeout is 10 s and the screener client timeout is 10 s, so
-// an inline retry would race them (RESEARCH Area A landmine 1). Retries happen
-// in the background (D-01).
+// HTTP server write timeout is 10 s and the screener client's whole round trip
+// deadline is 3 s (requestTimeout in internal/moderation/client.go), so an
+// inline retry, with its backoff or a Retry-After wait, could run past the
+// write timeout (RESEARCH Area A landmine 1). Retries happen in the
+// background (D-01).
 const InlineScreenTimeout = 3 * time.Second
 
 // CheckText screens one piece of free text. The order is the specification:
