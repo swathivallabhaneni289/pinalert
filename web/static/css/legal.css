@@ -121,12 +121,6 @@
 }
 
 .legal-numbers__note,
-.legal-numbers__index {
-  color: var(--color-text);
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
-}
-
 .legal-glossary dt {
   margin: var(--space-md) 0 0;
   font-weight: var(--font-weight-semibold);

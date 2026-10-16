@@ -294,8 +294,8 @@ func TestLegalPagesNumbersBlock(t *testing.T) {
 		"Older numbers for police (100), fire (101) and ambulance (108).",
 		"Try 112 first.",
 		"1070 and 1077",
-		"State disaster management authorities",
-		"Pinalert hasn't checked the numbers on that site.",
+		"many states use 1070 for the state disaster helpline and 1077 for the district control room.",
+		"These vary by state. Check your state disaster management authority's website.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("page text lacks %q", want)
@@ -304,8 +304,10 @@ func TestLegalPagesNumbersBlock(t *testing.T) {
 	if n := strings.Count(text, "national"); n != 1 {
 		t.Errorf("the word national appears %d times, want 1", n)
 	}
-	if !strings.Contains(def, `href="https://sachet.ndma.gov.in/HelpDesk"`) || !strings.Contains(def, `rel="noopener noreferrer"`) {
-		t.Errorf("SACHET link missing or lacks rel")
+	// The SACHET help desk link was removed on 2026-10-16: a government check that
+	// day found numbers on it that differ from the states' own sites.
+	if strings.Contains(def, "sachet.ndma.gov.in") {
+		t.Errorf("the SACHET help desk link must stay removed")
 	}
 
 	custom := handlers.AuthConfig{AssetVersion: "test", Chrome: handlers.Chrome{Numbers: handlers.EmergencyNumbers{Primary: "999", Older: []string{"100", "101", "108"}}}}
