@@ -92,13 +92,13 @@ func TestTakeBackLimitHidesActivityReopen(t *testing.T) {
 // Rescue report of B, B then resolved it, and A's card shows the coarse words
 // and none of the description, while B's own card keeps the exact text.
 func TestActivityVotedRescueCard(t *testing.T) {
-	srv, mailer, _ := newE2EServer(t)
+	srv, mailer, pool := newE2EServer(t)
 	a := newVerifiedClient(t, srv, mailer, "activity-p31-rescue-a@example.com")
 	b := newVerifiedClient(t, srv, mailer, "activity-p31-rescue-b@example.com")
 	loc := map[string]any{"latitude": 12.9716, "longitude": 77.5946}
 	const secret = "Grandmother stuck on the roof of the blue house on Temple Street"
 
-	rescueID := submitReportGetID(t, b, srv.URL, map[string]any{
+	rescueID := storeReportAs(t, pool, b, srv.URL, map[string]any{
 		"category":    "rescue_needed",
 		"severity":    "critical",
 		"description": secret,

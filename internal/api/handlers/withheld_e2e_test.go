@@ -75,7 +75,7 @@ func TestWithheldReportsInNoFeed(t *testing.T) {
 	removedCritical := submitReportGetID(t, author, srv.URL, p407ReportBody("flood", "critical", descRemovedCritical))
 	heldLow := submitReportGetID(t, author, srv.URL, p407ReportBody("flood", "low", descHeldLow))
 	pendingCritical := submitReportGetID(t, author, srv.URL, p407ReportBody("flood", "critical", descPendingCritical))
-	pendingRescue := submitReportGetID(t, author, srv.URL, p407ReportBody("rescue_needed", "low", descPendingRescue))
+	pendingRescue := storeReportAs(t, pool, author, srv.URL, p407ReportBody("rescue_needed", "low", descPendingRescue))
 	clearLow := submitReportGetID(t, author, srv.URL, p407ReportBody("flood", "low", descClearLow))
 
 	p407SetModeration(t, pool, removedLow, "removed")

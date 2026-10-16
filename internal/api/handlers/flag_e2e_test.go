@@ -452,7 +452,7 @@ func TestFlagWithheldReport(t *testing.T) {
 	removedCritical := submitReportGetID(t, a, srv.URL, p20Body("flood", "critical"))
 	heldLow := submitReportGetID(t, a, srv.URL, p20Body("flood", "low"))
 	pendingCritical := submitReportGetID(t, a, srv.URL, p20Body("flood", "critical"))
-	pendingRescue := submitReportGetID(t, a, srv.URL, p20Body("rescue_needed", "low"))
+	pendingRescue := storeReportAs(t, pool, a, srv.URL, p20Body("rescue_needed", "low"))
 	expired := submitReportGetID(t, a, srv.URL, p20Body("flood", "low"))
 	p20SetModeration(t, pool, removedLow, "removed")
 	p20SetModeration(t, pool, removedCritical, "removed")
