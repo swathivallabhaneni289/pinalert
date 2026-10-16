@@ -190,9 +190,11 @@ func (c *Client) buildRequest(ctx context.Context, q string, extra url.Values) (
 
 // Search is the report form's address search. Photon is asked first, with a
 // bounded wait for its limiter and its own time limit (see askPhoton). When
-// Photon fails, times out or finds nothing, the Nominatim search plan runs
-// (see searchPlan) and returns the first non empty answer, with MatchedQuery
-// set when a shorter text found it. Before every Nominatim request the rate
+// Photon finds nothing, Nominatim is asked with the whole text and Photon
+// with the shorter texts (see afterPhotonFoundNothing); when Photon fails or
+// times out, the Nominatim search plan runs (see searchPlan). Either way the
+// first non empty answer is returned, with MatchedQuery set when a shorter
+// text found it. Before every Nominatim request the rate
 // limiter is waited on (Wait, never Allow: a one second wait serves two
 // simultaneous typers better than instantly rejecting the second one), and
 // each wait is bounded by limiterWaitTimeout, so contention degrades into an
@@ -207,39 +209,140 @@ func (c *Client) Search(ctx context.Context, q string, near *Point) (Answer, err
 }
 
 // search is the order both lanes share. The lane decides how a limiter token
-// is taken from each provider and which Nominatim cache it uses.
+// is taken from each provider (take is called with the provider's own try
+// index, 0 for its first) and which Nominatim cache it uses.
 //
-//   - A Photon answer with matches, fresh or cached, is the answer.
-//   - Otherwise the Nominatim plan runs, after its own cache, with whatever
-//     is left of the maxUpstreamPerSearch requests once Photon's is counted.
-//   - A Nominatim answer is cached in the lane's cache, except an empty one
-//     after Photon failed: Photon may be back on the next search, and an
-//     empty answer must not hide it for six hours.
+//   - A Photon answer with matches for the whole text, fresh or cached, is
+//     the answer.
+//   - Otherwise the lane's cache is read.
+//   - When Photon failed (an error, its time limit or no token), the
+//     Nominatim plan runs with whatever is left of the maxUpstreamPerSearch
+//     requests once Photon's is counted (quick 261016-pho).
+//   - When Photon found nothing, the order of quick 261016-sfu runs (see
+//     afterPhotonFoundNothing): Nominatim with the whole text, then Photon
+//     with the shorter texts.
+//   - The answer is cached in the lane's cache, except an empty one after
+//     Photon failed: Photon may be back on the next search, and an empty
+//     answer must not hide it for six hours.
 func (c *Client) search(ctx context.Context, q string, near *Point, cache *answerCache,
-	takePhoton func(ctx context.Context) error, takeNominatim func(ctx context.Context, i int) error) (Answer, error) {
+	takePhoton, takeNominatim func(ctx context.Context, i int) error) (Answer, error) {
 	key := cacheKey(q, near)
-	var photon photonOutcome
-	if c.photonURL != "" {
-		var err error
-		photon, err = c.askPhoton(ctx, key, q, near, takePhoton)
+	if c.photonURL == "" {
+		// Nominatim only, which only this package's tests build.
+		if cached, ok := cache.get(key); ok {
+			return cached, nil
+		}
+		answer, err := c.run(ctx, q, near, takeNominatim, maxUpstreamPerSearch)
 		if err != nil {
 			return Answer{}, err
 		}
-		if photon.found {
-			return photon.answer, nil
-		}
+		cache.put(key, answer)
+		return answer, nil
+	}
+
+	texts := searchTexts(q)
+	photon, err := c.askPhoton(ctx, texts[0], near, func(ctx context.Context) error { return takePhoton(ctx, 0) })
+	if err != nil {
+		return Answer{}, err
+	}
+	if photon.found {
+		return photon.answer, nil
 	}
 	if cached, ok := cache.get(key); ok {
 		return cached, nil
 	}
-	answer, err := c.run(ctx, q, near, takeNominatim, maxUpstreamPerSearch-photon.sent)
+
+	var answer Answer
+	failed := photon.failed
+	if failed {
+		answer, err = c.run(ctx, q, near, takeNominatim, maxUpstreamPerSearch-photon.sent)
+	} else {
+		answer, failed, err = c.afterPhotonFoundNothing(ctx, texts, near, takePhoton, takeNominatim, maxUpstreamPerSearch-photon.sent)
+	}
 	if err != nil {
 		return Answer{}, err
 	}
-	if !photon.failed || len(answer.Results) > 0 {
+	if !failed || len(answer.Results) > 0 {
 		cache.put(key, answer)
 	}
 	return answer, nil
+}
+
+// afterPhotonFoundNothing is the rest of the order once Photon found nothing
+// for the whole text (quick 261016-sfu), stopping at the first request that
+// finds something:
+//
+//  1. Nominatim with the whole text, once. It is better than Photon at an
+//     exact full address. With a position it gets a viewbox around it but no
+//     bounded, so nearby places come first and a whole address in another
+//     city is still found.
+//  2. Photon with the first shorter text, then with the second. A shorter
+//     text that finds something is the answer's MatchedQuery.
+//
+// budget is what is left of maxUpstreamPerSearch. A Nominatim error ends the
+// search: an error is never turned into an empty list, because the texts not
+// yet tried were never sent. Once Photon fails in this search (an error, its
+// time limit or, on the report search, no token in time) it is not asked
+// again, and the texts left go to Nominatim the same way as step 1. failed
+// reports that, so an empty answer is not cached.
+func (c *Client) afterPhotonFoundNothing(ctx context.Context, texts []string, near *Point,
+	takePhoton, takeNominatim func(ctx context.Context, i int) error, budget int) (Answer, bool, error) {
+	nominatimTries := 0
+	askNominatim := func(text string) ([]Result, error) {
+		if err := takeNominatim(ctx, nominatimTries); err != nil {
+			return nil, err
+		}
+		nominatimTries++
+		budget--
+		return c.fetch(ctx, text, nearParams(near))
+	}
+
+	if budget <= 0 {
+		return Answer{Results: []Result{}, provider: providerPhoton}, false, nil
+	}
+	results, err := askNominatim(texts[0])
+	if err != nil {
+		return Answer{}, false, err
+	}
+	if len(results) > 0 {
+		return Answer{Results: results, provider: providerNominatim}, false, nil
+	}
+
+	photonDown := false
+	last := providerNominatim
+	for i := 1; i < len(texts) && budget > 0; i++ {
+		text := texts[i]
+		if !photonDown {
+			tryIndex := i
+			out, err := c.askPhoton(ctx, text, near, func(ctx context.Context) error { return takePhoton(ctx, tryIndex) })
+			if err != nil {
+				return Answer{}, false, err
+			}
+			budget -= out.sent
+			if out.found {
+				answer := out.answer
+				answer.MatchedQuery = text
+				return answer, false, nil
+			}
+			if !out.failed {
+				last = providerPhoton
+				continue
+			}
+			photonDown = true
+			if budget <= 0 {
+				break
+			}
+		}
+		results, err := askNominatim(text)
+		if err != nil {
+			return Answer{}, false, err
+		}
+		if len(results) > 0 {
+			return Answer{Results: results, MatchedQuery: text, provider: providerNominatim}, photonDown, nil
+		}
+		last = providerNominatim
+	}
+	return Answer{Results: []Result{}, provider: last}, photonDown, nil
 }
 
 // waitForToken is the reporter lane's turn at the limiter, taken before
@@ -295,6 +398,18 @@ func (a attempt) params(near *Point) url.Values {
 	if !a.boxed || near == nil {
 		return nil
 	}
+	extra := nearParams(near)
+	extra.Set("bounded", "1")
+	return extra
+}
+
+// nearParams returns the viewbox around near, nearBoxDegrees each way, or nil
+// without a position. On its own a viewbox only makes Nominatim prefer places
+// inside it; bounded=1 is what holds the search inside.
+func nearParams(near *Point) url.Values {
+	if near == nil {
+		return nil
+	}
 	extra := url.Values{}
 	// Nominatim wants left, top, right, bottom: longitude first.
 	extra.Set("viewbox", strings.Join([]string{
@@ -303,7 +418,6 @@ func (a attempt) params(near *Point) url.Values {
 		strconv.FormatFloat(near.Lon+nearBoxDegrees, 'f', 6, 64),
 		strconv.FormatFloat(near.Lat-nearBoxDegrees, 'f', 6, 64),
 	}, ","))
-	extra.Set("bounded", "1")
 	return extra
 }
 
@@ -600,7 +714,8 @@ func cacheKey(q string, near *Point) string {
 //   - A cached answer costs no token.
 //   - The first try on each provider takes a token only if one is free right
 //     now, and returns ErrReaderBusy if not.
-//   - A later Nominatim try (the widened one or a shorter text) waits for
+//   - A later try on either provider (Nominatim's widened one or a shorter
+//     text on either) waits for
 //     the limiter without reserving a token: it gives up at once if a reporter is
 //     already waiting (the bucket is in debt), otherwise it sleeps until a
 //     token would be free and then takes it only if it still is. A reporter

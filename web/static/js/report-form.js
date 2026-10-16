@@ -38,7 +38,7 @@
   // one request per second ceiling D-02 requires is enforced by the
   // process wide limiter inside internal/geocode, so this number can be
   // tuned for feel without reasoning about compliance.
-  var SEARCH_DEBOUNCE_MS = 600;
+  var SEARCH_DEBOUNCE_MS = 300;
   // How long one place search may take before it counts as failed, in
   // milliseconds (U8, D-16). A search that runs this long gets the same
   // failure sentence as one the server refused.

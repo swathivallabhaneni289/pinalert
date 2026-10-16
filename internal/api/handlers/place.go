@@ -100,11 +100,12 @@ func placeErrorClass(err error) string {
 // @Description never queues ahead of a report search, repeated searches are answered from a cache, and each
 // @Description verified account has its own small budget. Results are in India only. It asks
 // @Description Photon first, which matches close spellings and half typed words; the optional
-// @Description lat and lon (both or neither, the map centre) make Photon prefer nearby places. Only
-// @Description when Photon fails, takes over 2 seconds or finds nothing does it go to Nominatim,
-// @Description which looks in a box around the map centre first and widens only when the box finds
-// @Description nothing; when the whole text finds nothing there it tries again without the first
-// @Description part, and matched_query then holds the shorter text that matched.
+// @Description lat and lon (both or neither, the map centre) make Photon prefer nearby places. When
+// @Description Photon finds nothing it asks Nominatim with the whole text, preferring places near
+// @Description the map centre, then Photon again without the first part and then without the
+// @Description second; matched_query then holds the shorter text that matched. When Photon fails
+// @Description or takes over 2 seconds, Nominatim alone runs those tries, in a box around the map
+// @Description centre first. At most four upstream requests are sent per search.
 // @Description A 429 or 503 never affects report submission, which has its own search.
 // @Tags geocode
 // @Produce json

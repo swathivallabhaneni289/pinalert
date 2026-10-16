@@ -34,7 +34,7 @@ func TestPartialMatchLineInBothSearches(t *testing.T) {
 		"resultsEl.appendChild(note)",
 		"document.createElement('button')")
 	p13MustContain(t, "renderResults", render, "MESSAGE_PARTIAL_PREFIX + matched + '.'")
-	p13MustContain(t, "search", jsFunctionBody(t, tools, "search(query)"), "body.matched_query")
+	p13MustContain(t, "search", jsFunctionBody(t, tools, "search(query, typed)"), "body.matched_query")
 
 	// Report form: the same, inside the suggestion list, and the cache keeps
 	// the matched text so a repeat search shows the line again.

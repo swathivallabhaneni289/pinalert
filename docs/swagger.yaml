@@ -832,11 +832,12 @@ paths:
         Searches Photon first, which matches close spellings and half typed words, and
         returns at most five matches, in India only. Requires a session verified by email
         through the magic-link flow. The optional lat and lon (both or neither, the report
-        pin) make Photon prefer nearby places. Only when Photon fails, takes over 2 seconds or
-        finds nothing does the search go to Nominatim, which looks in a box around the pin
-        first and widens only when the box finds nothing; when the whole text finds nothing
-        there it tries again without the first part, and matched_query then holds the
-        shorter text that matched. At most four upstream requests are sent per search. A
+        pin) make Photon prefer nearby places. When Photon finds nothing the search asks
+        Nominatim with the whole text, preferring places near the pin, then Photon again
+        without the first part and then without the second; matched_query then holds the
+        shorter text that matched. When Photon fails or takes over 2 seconds, Nominatim alone
+        runs those tries, in a box around the pin first. At most four upstream requests are
+        sent per search. A
         503 means search is temporarily unavailable; report submission remains fully
         usable regardless.
       parameters:
@@ -886,11 +887,12 @@ paths:
         never queues ahead of a report search, repeated searches are answered from a cache, and each
         verified account has its own small budget. Results are in India only. It asks
         Photon first, which matches close spellings and half typed words; the optional
-        lat and lon (both or neither, the map centre) make Photon prefer nearby places. Only
-        when Photon fails, takes over 2 seconds or finds nothing does it go to Nominatim,
-        which looks in a box around the map centre first and widens only when the box finds
-        nothing; when the whole text finds nothing there it tries again without the first
-        part, and matched_query then holds the shorter text that matched.
+        lat and lon (both or neither, the map centre) make Photon prefer nearby places. When
+        Photon finds nothing it asks Nominatim with the whole text, preferring places near
+        the map centre, then Photon again without the first part and then without the
+        second; matched_query then holds the shorter text that matched. When Photon fails
+        or takes over 2 seconds, Nominatim alone runs those tries, in a box around the map
+        centre first. At most four upstream requests are sent per search.
         A 429 or 503 never affects report submission, which has its own search.
       parameters:
       - description: Place text, 3 to 200 characters

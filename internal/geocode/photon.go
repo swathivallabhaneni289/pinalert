@@ -30,9 +30,13 @@ const photonSearchURL = "https://photon.komoot.io/api/"
 const (
 	// photonLimiterEvery and photonLimiterBurst cap Photon at two requests a
 	// second across the whole process. Photon's public server asks only for
-	// a reasonable number of requests and is meant for search as you type;
-	// one person typing with the browser's 600 ms pause never waits, and many
-	// people typing at once cannot flood it.
+	// a reasonable number of requests and is meant for search as you type.
+	// Both browser searches wait for a 300 ms pause in typing, and a search
+	// that finds nothing for the whole text may ask Photon three times, so a
+	// fast typer can find the bucket empty: the report search then waits a
+	// little or falls back to Nominatim, the place search answers busy, which
+	// its typing path keeps off the screen. Many people typing at once cannot
+	// flood it.
 	photonLimiterEvery = 500 * time.Millisecond
 	photonLimiterBurst = 2
 	// photonLimiterWait bounds how long a report search waits for a Photon
@@ -90,9 +94,23 @@ type photonProperties struct {
 	Locality    string `json:"locality"`
 	District    string `json:"district"`
 	City        string `json:"city"`
+	County      string `json:"county"`
 	State       string `json:"state"`
 	CountryCode string `json:"countrycode"`
 	OSMKey      string `json:"osm_key"`
+	// Type is Photon's own size of the row: house, street, locality,
+	// district, city, county, state, country or other.
+	Type string `json:"type"`
+}
+
+// cityLevelTypes are the Photon types at or above a city. Such a row never
+// takes the county into its label: live, Hyderabad the city carried a mandal
+// as its county.
+var cityLevelTypes = map[string]bool{
+	"city":    true,
+	"county":  true,
+	"state":   true,
+	"country": true,
 }
 
 // placeOSMKeys are the OpenStreetMap keys that make an answer a place rather
@@ -121,9 +139,20 @@ func cleanPart(s string) string {
 // locality, district, city and state, in that order. Missing parts are
 // skipped and a part already in the label (in any case) is not repeated, so
 // there is never a "null", an empty comma or "Hyderabad, Hyderabad".
+//
+// When a row below city level has no city, the county takes the city's
+// place, the next larger place part Photon sends (quick 261016-sfu). Live,
+// in Hyderabad that county was a mandal (Banjara Hills reads "..., Ward 92
+// Venkateshwara Colony, Shaikpet mandal, Telangana"), not the city. A city
+// level row (cityLevelTypes) never takes it, so Hyderabad itself still reads
+// "Hyderabad, Telangana".
 func photonLabel(p photonProperties) string {
+	city := p.City
+	if cleanPart(city) == "" && !cityLevelTypes[strings.ToLower(strings.TrimSpace(p.Type))] {
+		city = p.County
+	}
 	var parts []string
-	for _, raw := range []string{p.Name, p.HouseNumber, p.Street, p.Locality, p.District, p.City, p.State} {
+	for _, raw := range []string{p.Name, p.HouseNumber, p.Street, p.Locality, p.District, city, p.State} {
 		part := cleanPart(raw)
 		if part == "" {
 			continue
@@ -314,10 +343,18 @@ func (c *Client) fetchPhoton(ctx context.Context, q string, near *Point) ([]Resu
 	return rankPhoton(q, candidates), nil
 }
 
-// waitForPhotonToken is the report search's turn at Photon's limiter: a wait
-// bounded by photonLimiterWait.
-func (c *Client) waitForPhotonToken(ctx context.Context) error {
-	waitCtx, cancel := context.WithTimeout(ctx, photonLimiterWait)
+// waitForPhotonToken is the report search's turn at Photon's limiter for its
+// Photon try i. The first try waits at most photonLimiterWait, since
+// Nominatim is right behind it. A shorter text's try (i > 0) waits up to
+// limiterWaitTimeout like a Nominatim try: by then Photon is the best chance
+// left, and at one Photon request a second its next token is most of a second
+// away.
+func (c *Client) waitForPhotonToken(ctx context.Context, i int) error {
+	wait := photonLimiterWait
+	if i > 0 {
+		wait = limiterWaitTimeout
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, wait)
 	defer cancel()
 	if err := c.photonLimiter.Wait(waitCtx); err != nil {
 		return fmt.Errorf("geocode: photon limiter wait: %w", err)
@@ -325,11 +362,13 @@ func (c *Client) waitForPhotonToken(ctx context.Context) error {
 	return nil
 }
 
-// takeReaderPhotonToken is the place search's turn at Photon's limiter: a
-// token only if one is free right now, so a reader never queues ahead of a
-// report search (D-16).
-func (c *Client) takeReaderPhotonToken(ctx context.Context) error {
-	return takeReaderTokenFrom(ctx, c.photonLimiter, 0)
+// takeReaderPhotonToken is the place search's turn at Photon's limiter for
+// its Photon try i, by the reader rule (takeReaderTokenFrom): the first try
+// takes a token only if one is free right now, a later one waits without
+// reserving and gives up when a report search is waiting, so a reader never
+// queues ahead of a report search (D-16).
+func (c *Client) takeReaderPhotonToken(ctx context.Context, i int) error {
+	return takeReaderTokenFrom(ctx, c.photonLimiter, i)
 }
 
 // photonOutcome is what asking Photon came to.
@@ -340,11 +379,12 @@ type photonOutcome struct {
 	failed bool // Photon errored, timed out or had no token: never cached
 }
 
-// askPhoton is the Photon half of a search: its cache, its limiter and one
+// askPhoton is one Photon try for text: its cache, its limiter and one
 // request. An error is returned only when the search itself must end: the
 // reader found no free token, or the caller went away. Any other Photon
 // failure is reported as failed, and the search goes on to Nominatim.
-func (c *Client) askPhoton(ctx context.Context, key, q string, near *Point, take func(ctx context.Context) error) (photonOutcome, error) {
+func (c *Client) askPhoton(ctx context.Context, text string, near *Point, take func(ctx context.Context) error) (photonOutcome, error) {
+	key := cacheKey(text, near)
 	if cached, ok := c.photon.get(key); ok {
 		// A cached empty answer means Photon found nothing here before.
 		return photonOutcome{answer: cached, found: len(cached.Results) > 0}, nil
@@ -357,7 +397,7 @@ func (c *Client) askPhoton(ctx context.Context, key, q string, near *Point, take
 		// unavailable rather than make the person wait longer.
 		return photonOutcome{failed: true}, nil
 	}
-	results, err := c.fetchPhoton(ctx, q, near)
+	results, err := c.fetchPhoton(ctx, text, near)
 	if err != nil {
 		if ctx.Err() != nil {
 			// The browser gave up or the server is shutting down: no

@@ -111,11 +111,12 @@ func parseGeocodeQuery(w http.ResponseWriter, r *http.Request) (string, bool) {
 // @Description Searches Photon first, which matches close spellings and half typed words, and
 // @Description returns at most five matches, in India only. Requires a session verified by email
 // @Description through the magic-link flow. The optional lat and lon (both or neither, the report
-// @Description pin) make Photon prefer nearby places. Only when Photon fails, takes over 2 seconds or
-// @Description finds nothing does the search go to Nominatim, which looks in a box around the pin
-// @Description first and widens only when the box finds nothing; when the whole text finds nothing
-// @Description there it tries again without the first part, and matched_query then holds the
-// @Description shorter text that matched. At most four upstream requests are sent per search. A
+// @Description pin) make Photon prefer nearby places. When Photon finds nothing the search asks
+// @Description Nominatim with the whole text, preferring places near the pin, then Photon again
+// @Description without the first part and then without the second; matched_query then holds the
+// @Description shorter text that matched. When Photon fails or takes over 2 seconds, Nominatim alone
+// @Description runs those tries, in a box around the pin first. At most four upstream requests are
+// @Description sent per search. A
 // @Description 503 means search is temporarily unavailable; report submission remains fully
 // @Description usable regardless.
 // @Tags geocode

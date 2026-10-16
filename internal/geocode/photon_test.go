@@ -275,6 +275,28 @@ func TestPhotonLabels(t *testing.T) {
 			"Gachibowli, Hyderabad, Telangana",
 		},
 		{"nothing at all", photonProperties{}, ""},
+		// Quick 261016-sfu: live, some Hyderabad rows carry a ward as the
+		// district and no city. The county then names the city.
+		{
+			"ward as district and no city: the county names the city",
+			photonProperties{Name: "Banjara Hills", District: "Ward 92 Venkateshwara Colony", County: "Hyderabad", State: "Telangana"},
+			"Banjara Hills, Ward 92 Venkateshwara Colony, Hyderabad, Telangana",
+		},
+		{
+			"a city is kept and the county left out",
+			photonProperties{Name: "Gachibowli", City: "Hyderabad", County: "Rangareddy", State: "Telangana"},
+			"Gachibowli, Hyderabad, Telangana",
+		},
+		{
+			"a county named like the place is not repeated",
+			photonProperties{Name: "Hyderabad", County: "hyderabad", State: "Telangana"},
+			"Hyderabad, Telangana",
+		},
+		{
+			"a null county is skipped",
+			photonProperties{Name: "Kondapur", City: " ", County: "null", State: "Telangana"},
+			"Kondapur, Telangana",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -286,6 +308,58 @@ func TestPhotonLabels(t *testing.T) {
 				t.Fatalf("label %q holds null or an empty part", got)
 			}
 		})
+	}
+}
+
+// TestPhotonReadsTheCounty pins the county as Photon sends it, by its JSON
+// name, on a row with no city.
+func TestPhotonReadsTheCounty(t *testing.T) {
+	area := photonFeatureJSON(78.4347, 17.4156, map[string]any{
+		"name": "Banjara Hills", "district": "Ward 92 Venkateshwara Colony", "county": "Hyderabad",
+		"state": "Telangana", "countrycode": "IN", "osm_key": "place", "osm_value": "suburb",
+	})
+	ps := newPhotonStub(t, photonAnswers(t, area))
+	rs := newRecordingServer(t, nil)
+	c := newDualClient(ps.server.URL, rs.server.URL)
+	answer, err := c.Search(context.Background(), "Banjra Hills", nil)
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if len(answer.Results) != 1 || answer.Results[0].DisplayName != "Banjara Hills, Ward 92 Venkateshwara Colony, Hyderabad, Telangana" {
+		t.Fatalf("results = %+v, want the label to name Hyderabad", answer.Results)
+	}
+}
+
+// TestPhotonCityRowGetsNoCounty is the shape the 261016-sfu live check sent:
+// Hyderabad the city carries a mandal as its county. A city level row never
+// takes the county, so the city reads "Hyderabad, Telangana" and its district
+// row, which reads the same, is still dropped as a repeat.
+func TestPhotonCityRowGetsNoCounty(t *testing.T) {
+	city := photonFeatureJSON(78.4867, 17.385, map[string]any{
+		"name": "Hyderabad", "county": "Bahadurpura mandal", "state": "Telangana", "countrycode": "IN",
+		"osm_key": "place", "osm_value": "city", "type": "city",
+	})
+	district := photonFeatureJSON(78.47, 17.39, map[string]any{
+		"name": "Hyderabad", "state": "Telangana", "countrycode": "IN", "osm_key": "boundary", "type": "county",
+	})
+	area := photonFeatureJSON(78.4347, 17.4156, map[string]any{
+		"name": "Banjara Hills", "district": "Ward 92 Venkateshwara Colony", "county": "Shaikpet mandal",
+		"state": "Telangana", "countrycode": "IN", "osm_key": "place", "osm_value": "suburb", "type": "district",
+	})
+	ps := newPhotonStub(t, photonAnswers(t, city, district, area))
+	rs := newRecordingServer(t, nil)
+	c := newDualClient(ps.server.URL, rs.server.URL)
+	answer, err := c.Search(context.Background(), "Hyderbad", nil)
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	var labels []string
+	for _, r := range answer.Results {
+		labels = append(labels, r.DisplayName)
+	}
+	want := []string{"Hyderabad, Telangana", "Banjara Hills, Ward 92 Venkateshwara Colony, Shaikpet mandal, Telangana"}
+	if !reflect.DeepEqual(labels, want) {
+		t.Fatalf("labels = %q, want %q", labels, want)
 	}
 }
 
@@ -472,9 +546,8 @@ func TestPhotonFailureFallsBackToNominatim(t *testing.T) {
 				}
 			}
 		},
-		"nothing found": func(t *testing.T) func(w http.ResponseWriter, r *http.Request) {
-			return photonAnswers(t)
-		},
+		// "Nothing found" is not a failure: since quick 261016-sfu it runs
+		// the order pinned in order_test.go.
 	}
 	for name, respond := range cases {
 		for lane, search := range lanes {
@@ -507,12 +580,13 @@ func TestPhotonFailureFallsBackToNominatim(t *testing.T) {
 }
 
 // TestRequestCapIsFourAcrossBothProviders pins the reading of the cap: four
-// upstream requests per search in total, so a search that asked Photon has
-// three Nominatim tries left.
+// upstream requests per search in total, so a search whose Photon request
+// failed has three Nominatim tries left. When Photon finds nothing instead,
+// TestOrderWhenPhotonFindsNothing pins the order.
 func TestRequestCapIsFourAcrossBothProviders(t *testing.T) {
 	for name, search := range lanes {
 		t.Run(name, func(t *testing.T) {
-			ps := newPhotonStub(t, photonAnswers(t))
+			ps := newPhotonStub(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusBadGateway) })
 			rs := newRecordingServer(t, nil)
 			c := newDualClient(ps.server.URL, rs.server.URL)
 			near := &Point{Lat: 17.4, Lon: 78.45}
