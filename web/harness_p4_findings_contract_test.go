@@ -65,3 +65,44 @@ func TestHarnessFindingP4_6NoThemeToggleOnAnyPhonePage(t *testing.T) {
 	p13Ordered(t, body, "theme toggle click handler",
 		"if (isPhone()) {", "return;", "currentMode = MODES[nextIndex];", "persistMode(currentMode);")
 }
+
+// TestHarnessFindingP4_7OpenCardNeverSitsUnderTheTools pins F-P4-7: at
+// 1000x900 a report opened from its row settled with its close button under
+// the place search's Search button. The top reserve already covers the tools
+// layer at every width (refreshPanPadding, outside the phone branch); what
+// failed was the pan, because Leaflet's autopan runs inside the open and a
+// list row press flies the map while it runs. keepCardClearOfTools checks the
+// card after every open and every move, at any motion setting, refreshes the
+// paddings first, only moves the card down, stands down on the phone sheet
+// and while dragging, and gives up after a few tries so the map's bounds and
+// it cannot pan back and forth.
+func TestHarnessFindingP4_7OpenCardNeverSitsUnderTheTools(t *testing.T) {
+	code := p19Code(t, "static/js/map.js")
+
+	refresh := jsFunctionBody(t, code, "refreshPanPadding()")
+	if !strings.Contains(refresh, "\n    top = Math.max(top, toolsReserve());") {
+		t.Errorf("refreshPanPadding must take the tools reserve at every width, outside the phone branch")
+	}
+
+	clear := jsFunctionBody(t, code, "keepCardClearOfTools(popup)")
+	p13Ordered(t, clear, "keepCardClearOfTools",
+		"phoneDetail()", "map.dragging.moving()",
+		"refreshPanPadding();", "applyPanPadding(popup);",
+		"getBoundingClientRect()", "panPad.topLeft[1]",
+		"if (dy >= 0) {", "toolsTried.count >= TOOLS_TRIES", "map.panBy([0, dy], { animate: false });")
+	p13MustNotContain(t, "keepCardClearOfTools", clear, "reducedMotion", "panPad.bottomRight", "dx")
+	p13MustContain(t, "map.js", code, "var TOOLS_TRIES = 3;")
+
+	moveEnd := jsFunctionBody(t, code, "onMapMoveEnd()")
+	p13Ordered(t, moveEnd, "onMapMoveEnd", "if (activePopup) {", "keepCardClearOfTools(activePopup);")
+
+	open := jsFunctionBody(t, code, "onPopupOpen(evt)")
+	p13Ordered(t, open, "onPopupOpen",
+		"refreshPanPadding();", "applyPanPadding(popup);",
+		"toolsTried = { popup: popup, count: 0 };", "keepCardClearOfTools(popup);",
+		"card.focus({ preventScroll: true });")
+
+	if n := strings.Count(code, "keepCardClearOfTools("); n != 3 {
+		t.Errorf("map.js has %d keepCardClearOfTools( occurrences, want 3 (one declaration, the open and the move end)", n)
+	}
+}
