@@ -108,8 +108,10 @@ func TestLegalPagesRender(t *testing.T) {
 			t.Errorf("%s appears %d times, want 1", href, n)
 		}
 	}
-	if n := strings.Count(body, "<script"); n != 1 {
-		t.Errorf("<script appears %d times, want 1 (theme.js only)", n)
+	// Amended 2026-10-17 by Phase 3.4 plan 08 (D-31): reader.js is the second
+	// script (the X goes back, /policy opens at the Policy part).
+	if n := strings.Count(body, "<script"); n != 2 || strings.Count(body, "/static/js/reader.js?v=test") != 1 {
+		t.Errorf("<script appears %d times, want 2 (theme.js and reader.js)", n)
 	}
 	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
 	// D-31): the bar on every page is replaced by the laptop strip on Nearby and
@@ -125,13 +127,13 @@ func TestLegalPagesRender(t *testing.T) {
 	if strings.Contains(body, "disclaimer-bar") || strings.Contains(body, "notice-strip") {
 		t.Errorf("the Disclaimer page carries no bar and no strip")
 	}
-	if n := strings.Count(body, `aria-current="page"`); n != 1 || !strings.Contains(body, `<a href="#disclaimer" aria-current="page">Disclaimer</a>`) {
+	if n := strings.Count(body, `aria-current="page"`); n != 1 || !strings.Contains(body, `<a id="reader-part-disclaimer" href="#disclaimer" aria-current="page">Disclaimer</a>`) {
 		t.Errorf("the Disclaimer page must mark exactly the Disclaimer part link as current")
 	}
 	if strings.Contains(body, "Back to Pinalert") {
 		t.Errorf("the Back to Pinalert links are replaced by the X")
 	}
-	if n := strings.Count(body, `<a class="legal-close" href="/" aria-label="Close"`); n != 1 {
+	if n := strings.Count(body, `<a class="legal-close" id="reader-close-link" href="/" aria-label="Close"`); n != 1 {
 		t.Errorf("the X link appears %d times, want 1", n)
 	}
 	if strings.Contains(body, "ZgotmplZ") {
@@ -141,7 +143,7 @@ func TestLegalPagesRender(t *testing.T) {
 	if n := strings.Count(body, "/static/css/legal.css?v=test"); n != 1 {
 		t.Errorf("disclaimer legal.css appears %d times, want 1", n)
 	}
-	if !strings.Contains(body, `<a href="#policy">Policy</a>`) {
+	if !strings.Contains(body, `<a id="reader-part-policy" href="#policy">Policy</a>`) {
 		t.Errorf("the Disclaimer page lacks the Policy part link")
 	}
 
@@ -177,12 +179,12 @@ func TestLegalPagesRender(t *testing.T) {
 			t.Errorf("policy %s appears %d times, want 1", href, n)
 		}
 	}
-	if n := strings.Count(pb, "<script"); n != 1 {
-		t.Errorf("policy <script appears %d times, want 1", n)
+	if n := strings.Count(pb, "<script"); n != 2 {
+		t.Errorf("policy <script appears %d times, want 2 (theme.js and reader.js)", n)
 	}
 	// Amended 2026-10-17 by Phase 3.4 plan 08 (D-31): the Policy part link is
 	// the current one on /policy and the part heading carries id policy.
-	if n := strings.Count(pb, `aria-current="page"`); n != 1 || !strings.Contains(pb, `<a href="#policy" aria-current="page">Policy</a>`) {
+	if n := strings.Count(pb, `aria-current="page"`); n != 1 || !strings.Contains(pb, `<a id="reader-part-policy" href="#policy" aria-current="page">Policy</a>`) {
 		t.Errorf("the Policy page must mark exactly the Policy part link as current")
 	}
 	if n := strings.Count(pb, `<h2 id="policy">Policy</h2>`); n != 1 {
@@ -520,6 +522,50 @@ func TestLegalPagesPublicPrivateCache(t *testing.T) {
 		}
 		if strings.Contains(body, "legal-reader@example.com") || strings.Contains(body, "app-header") {
 			t.Errorf("%s logged in body holds account data", path)
+		}
+	}
+}
+
+// TestReaderWindowRendersOnNearbyAndSettings proves D-31 end to end: Nearby and
+// Settings carry the in app reader window, hidden, holding the very same legal
+// text the public pages render, with the Policy anchor once, and no account
+// data inside it (R-07, T-34-34, T-34-35).
+func TestReaderWindowRendersOnNearbyAndSettings(t *testing.T) {
+	srv, mailer, _ := newE2EServer(t)
+	const email = "reader-window@example.com"
+	client := newVerifiedClient(t, srv, mailer, email)
+
+	public := legalText(t, legalRender(t, handlers.AuthConfig{AssetVersion: "test"}, handlers.LegalPolicyPage, nil).Body.String())
+	// The box runs from its opening tag to the Last updated line, which closes
+	// the Policy part.
+	windowPattern := regexp.MustCompile(`(?s)<div class="app-window__box legal-text" id="reader-box" tabindex="0">(.*?<p class="legal-updated">.*?</p>)`)
+
+	for _, path := range []string{"/", "/settings"} {
+		resp, body := getPlacePage(t, client, srv.URL, path)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s status = %d, want 200", path, resp.StatusCode)
+		}
+		if n := strings.Count(body, `id="reader-window" hidden`); n != 1 {
+			t.Errorf("%s holds %d hidden reader windows, want 1", path, n)
+		}
+		if n := strings.Count(body, `id="policy"`); n != 1 {
+			t.Errorf("%s holds id=policy %d times, want 1", path, n)
+		}
+		if n := strings.Count(body, "/static/js/reader.js?v="); n != 1 {
+			t.Errorf("%s loads reader.js %d times, want 1", path, n)
+		}
+		inner := windowPattern.FindStringSubmatch(body)
+		if inner == nil {
+			t.Fatalf("%s: the reader box was not found", path)
+		}
+		if strings.Contains(inner[1], email) {
+			t.Errorf("%s: the reader window holds the account email", path)
+		}
+		// The window text is the public text: the Disclaimer and Policy bodies
+		// the standalone page renders (the Last updated line is in both).
+		got := legalText(t, inner[1])
+		if !strings.Contains(public, got) {
+			t.Errorf("%s: the reader window text is not the text of the public pages", path)
 		}
 	}
 }

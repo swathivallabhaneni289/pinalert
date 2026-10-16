@@ -1,0 +1,23 @@
+{{/*
+  The in app reader window (Phase 3.4, plan 08, UI-SPEC Surface 8c, D-31).
+  One window for the Disclaimer and the Policy. reader.js sets the title to
+  Disclaimer or Policy, scrolls the box, and closes it with the X, Escape or a
+  click on the backdrop. The text is the shared legal body, never a second copy.
+  Included by the pages that open it (Nearby and Settings); the dot must carry
+  a Legal value (LegalText).
+*/}}
+<div class="app-window app-window--reader" id="reader-window" hidden>
+  <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="reader-title">
+    <div class="app-window__head">
+      <div class="app-window__titles">
+        <h2 class="app-window__title" id="reader-title">Disclaimer</h2>
+        <p class="app-window__updated">Last updated {{.Legal.PolicyLastUpdated}}</p>
+      </div>
+      <button type="button" class="app-window__close" id="reader-close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
+    </div>
+    <div class="app-window__box legal-text" id="reader-box" tabindex="0">
+      {{template "legal_disclaimer_body" .Legal}}
+      {{template "legal_policy_body" .Legal}}
+    </div>
+  </div>
+</div>

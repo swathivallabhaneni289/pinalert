@@ -4,7 +4,9 @@
  * The one window component: a dialog that covers the page, with a header that
  * holds a title and an X, and a body. The Settings edit windows use it now and
  * the reader of the Disclaimer and Policy uses it in plan 08. There is one way
- * to close it, the X (D-02): no backdrop click, no Cancel, no Done.
+ * to close an edit window, the X (D-02): no backdrop click, no Cancel, no Done.
+ * The reader is the one exception (D-31): it closes with the X, Escape and a
+ * click on the backdrop, because it only shows text and holds nothing to lose.
  *
  * Written mobile first. The phone window is full screen on --color-bg. The
  * laptop window (one min-width 900px block at the end) is centred, min(480px,
@@ -113,6 +115,7 @@
 }
 
 .app-window__help,
+.app-window__updated,
 .app-window__status {
   margin: 0;
   color: var(--color-text-muted);
@@ -189,6 +192,34 @@
   cursor: pointer;
 }
 
+/* The reader (D-31). The title and the "Last updated" line sit together at the
+   left of the header; the text is one grey box that scrolls inside the panel, so
+   the header and the X stay put while the text moves. */
+.app-window__titles {
+  min-width: 0;
+}
+
+.app-window__updated {
+  margin-top: var(--space-xs);
+}
+
+.app-window--reader .app-window__panel {
+  overflow: hidden;
+}
+
+.app-window__box {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  box-sizing: border-box;
+  margin: var(--space-12) var(--space-md) var(--space-lg);
+  padding: var(--space-xs) 20px 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--color-surface);
+  border-radius: 8px;
+}
+
 /* While a window is open the page behind stops scrolling. The script marks
    the root element, as the report form does (modal.css). */
 html[data-modal-open] {
@@ -225,6 +256,16 @@ html[data-modal-open] {
 
   .app-window__actions .btn {
     width: auto;
+  }
+
+  /* The reader is 820 by 760 and never taller than the screen. */
+  .app-window--reader .app-window__panel {
+    width: min(820px, 92%);
+    height: min(760px, 92%);
+  }
+
+  .app-window__box {
+    margin: var(--space-md) var(--space-lg) var(--space-lg);
   }
 }
 

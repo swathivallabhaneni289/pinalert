@@ -111,7 +111,10 @@ func TestSettingsRows(t *testing.T) {
 	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
 		t.Errorf("Cache-Control = %q, want no-store", got)
 	}
-	rows := regexp.MustCompile(`<a class="place-row" href="([^"]*)">`).FindAllStringSubmatch(body, -1)
+	// Amended 2026-10-17 by Phase 3.4 plan 08 (D-31): the Disclaimer and Policy
+	// rows keep their plain hrefs and also carry data-open-reader, so a click
+	// opens the in app reader window.
+	rows := regexp.MustCompile(`<a class="place-row" href="([^"]*)"(?: data-open-reader="[^"]*")?>`).FindAllStringSubmatch(body, -1)
 	var hrefs []string
 	for _, m := range rows {
 		hrefs = append(hrefs, m[1])

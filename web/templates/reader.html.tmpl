@@ -11,15 +11,15 @@
   <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
 </head>
 <body>
-  <div class="legal-reader" data-reader-page="{{.Current}}">
+  <div class="legal-reader" id="reader-page" data-reader-page="{{.Current}}">
     <div class="legal-reader__side">
       <div class="legal-reader__head">
         <h1 class="legal-reader__title">{{if eq .Current "policy"}}Policy{{else}}Disclaimer{{end}}</h1>
-        <a class="legal-close" href="/" aria-label="Close" data-reader-close><span class="app-icon app-icon--x" aria-hidden="true"></span></a>
+        <a class="legal-close" id="reader-close-link" href="/" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></a>
       </div>
       <nav class="legal-parts" aria-label="Parts of this page">
-        <a href="#disclaimer"{{if ne .Current "policy"}} aria-current="page"{{end}}>Disclaimer</a>
-        <a href="#policy"{{if eq .Current "policy"}} aria-current="page"{{end}}>Policy</a>
+        <a id="reader-part-disclaimer" href="#disclaimer"{{if ne .Current "policy"}} aria-current="page"{{end}}>Disclaimer</a>
+        <a id="reader-part-policy" href="#policy"{{if eq .Current "policy"}} aria-current="page"{{end}}>Policy</a>
       </nav>
     </div>
     <main class="legal-box legal-text" id="reader-box" tabindex="0">
@@ -27,5 +27,6 @@
       {{template "legal_policy_body" .Legal}}
     </main>
   </div>
+  <script src="/static/js/reader.js?v={{.AssetVersion}}" defer></script>
 </body>
 </html>

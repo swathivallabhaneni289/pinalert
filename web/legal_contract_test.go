@@ -112,8 +112,11 @@ func TestLegalPagesTemplateSource(t *testing.T) {
 	if main < 0 || !(main < chrome && chrome < appBar && appBar < legal && legal < theme) {
 		t.Errorf("reader.html.tmpl head must link main.css, chrome.css, app-bar.css (for the X glyph), legal.css, then theme.js")
 	}
-	if strings.Count(reader, "<script") != 1 {
-		t.Errorf("reader.html.tmpl loads a script other than theme.js")
+	// Amended 2026-10-17 by Phase 3.4 plan 08 (D-31): the page loads theme.js in
+	// the head and reader.js, deferred, at the end of the body (the X goes back,
+	// /policy opens at the Policy part).
+	if strings.Count(reader, "<script") != 2 || !strings.Contains(reader, "/static/js/reader.js?v={{.AssetVersion}}\" defer") {
+		t.Errorf("reader.html.tmpl must load theme.js and a deferred reader.js, and nothing else")
 	}
 	bodyAt := strings.Index(reader, `<body>`)
 	if bodyAt < 0 || !strings.HasPrefix(strings.TrimSpace(reader[bodyAt+len("<body>"):]), `<div class="legal-reader"`) {

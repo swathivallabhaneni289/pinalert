@@ -33,6 +33,9 @@ type settingsViewModel struct {
 	// The home area's coarse cell is never read into the page.
 	DisplayName  string
 	HomeAreaName string
+	// Legal is the text of the in app reader window opened from the About
+	// Pinalert rows (D-31). It holds nothing about the account (R-07).
+	Legal LegalText
 }
 
 // SettingsPage handles GET /settings: the one Settings page (Phase 3.4, D-25,
@@ -62,12 +65,14 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, cfg
 			return
 		}
 
+		chrome := cfg.Chrome.withDefaults()
 		vm := settingsViewModel{
 			AssetVersion: cfg.AssetVersion,
-			Chrome:       cfg.Chrome.withDefaults(),
+			Chrome:       chrome,
 			AccountID:    acc.ID,
 			Nav:          navFor(NavSettings, navTitle("Settings"), navBack("/")),
 			Profile:      profile,
+			Legal:        legalTextFor(chrome),
 		}
 		if profile.DisplayName != nil {
 			vm.DisplayName = *profile.DisplayName
