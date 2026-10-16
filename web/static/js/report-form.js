@@ -605,6 +605,7 @@
     postInFlight = false;
     if (sendAfterWaitBtn) {
       sendAfterWaitBtn.hidden = true;
+      sendAfterWaitBtn.disabled = false;
     }
     if (noteEl) {
       noteEl.hidden = true;
@@ -855,6 +856,11 @@
   }
 
   function handleSubmit() {
+    // A report already on its way, or being saved, is never posted again from
+    // the same form (WR-06); the button is off then too.
+    if (postInFlight) {
+      return;
+    }
     var validationResult = validate();
     if (validationResult) {
       Pinalert.setText(formError, validationResult.message);
@@ -918,15 +924,18 @@
         reportEarlierFailure(payload, err, sent);
         return;
       }
-      submitButton.disabled = false;
-      Pinalert.setText(submitButton, 'Post report');
       // The visitor's input stays intact: the form does not close and no
       // field is cleared on a failed submission. A report that got no answer
-      // stays in flight until saveToQueue settles; a refused one is back in the
-      // form, so closing asks again.
+      // stays in flight until saveToQueue settles, and Post stays off until
+      // then, so the same report is never posted and saved at once (WR-06); a
+      // refused one is back in the form, so closing asks again.
       if (err && err.queueable === true) {
         saveToQueue(payload, err.status >= 502 ? 'no_answer' : 'waiting', sent);
-      } else if (err && err.status === 429) {
+        return;
+      }
+      submitButton.disabled = false;
+      Pinalert.setText(submitButton, 'Post report');
+      if (err && err.status === 429) {
         postInFlight = false;
         showLimitMessage(err);
       } else {
@@ -1064,6 +1073,8 @@
         return;
       }
       postInFlight = false;
+      submitButton.disabled = false;
+      Pinalert.setText(submitButton, 'Post report');
       Pinalert.setText(formError, 'Something went wrong. Try again.');
     };
     if (!window.PinalertQueue) {
@@ -1130,7 +1141,7 @@
   // saveAfterWait saves a report blocked by a 429 as a Blocked row, so it sends
   // by itself when the wait is over (D-12, D-18).
   function saveAfterWait() {
-    if (!lastLimit || !window.PinalertQueue) {
+    if (!lastLimit || !window.PinalertQueue || postInFlight) {
       return;
     }
     var validationResult = validate();
@@ -1147,9 +1158,13 @@
     // The save is out while the form can still be closed; its answer must
     // then leave a form opened later alone (WR-W03). Closing meanwhile asks no
     // Discard question, since the report is being saved, and a question still
-    // open from before the press goes.
+    // open from before the press goes. Post and this button stay off until
+    // the save settles, so the report is never posted and saved at once
+    // (WR-06).
     var session = formSession;
     postInFlight = true;
+    submitButton.disabled = true;
+    sendAfterWaitBtn.disabled = true;
     discardConfirm.hidden = true;
     preDiscardFocusEl = null;
     window.PinalertQueue.save({
@@ -1171,6 +1186,8 @@
         return;
       }
       postInFlight = false;
+      submitButton.disabled = false;
+      sendAfterWaitBtn.disabled = false;
       Pinalert.setText(formError, 'Something went wrong. Try again.');
     });
   }

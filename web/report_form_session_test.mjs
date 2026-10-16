@@ -93,7 +93,8 @@ class FakeEl {
     (this.handlers[evt.type] || []).slice().forEach((h) => h(evt));
     return true;
   }
-  click() { this.dispatchEvent({ type: 'click', preventDefault() {} }); }
+  // A disabled button fires no click, as in a browser.
+  click() { if (!this.disabled) { this.dispatchEvent({ type: 'click', preventDefault() {} }); } }
   input() { this.dispatchEvent({ type: 'input' }); }
   focus() { this.doc.activeElement = this; }
   closest() { return null; }
@@ -554,6 +555,78 @@ test('a Discard question open when Send after the wait is pressed goes away', as
   assert.equal(page.queueSaves.length, 1);
   assert.equal(page.el('discard-confirm').hidden, true, 'the question must not stay over a report being saved');
   page.cancelInFlight();
+});
+
+// ----- Post stays off while a report is being saved (WR-06) -----
+
+test('Post stays off while a report with no answer is being saved', async () => {
+  const page = setup();
+  page.setQueueSave(() => new Promise(() => {}));
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), { queueable: true, status: 504 }));
+  await settle();
+  assert.equal(page.queueSaves.length, 1);
+  assert.equal(page.el('submit-report').disabled, true, 'Post must stay off while the save is out');
+  page.submit();
+  assert.equal(page.posts.length, 1, 'no second post while the report is being saved');
+});
+
+test('a failed save after no answer gives Post back', async () => {
+  const page = setup();
+  page.setQueueSave(() => Promise.reject(new Error('not valid')));
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), { queueable: true, status: 504 }));
+  await settle();
+  assert.equal(page.el('submit-report').disabled, false);
+  assert.equal(page.el('submit-report').textContent, 'Post report');
+});
+
+test('Post and Send after the wait stay off while Send after the wait saves', async () => {
+  const page = setup();
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 429, fieldMessage: 'Please wait 5 minutes.', retryAfterSeconds: 300
+  }));
+  await settle();
+  page.setQueueSave(() => new Promise(() => {}));
+  page.el('send-after-wait').click();
+  assert.equal(page.queueSaves.length, 1);
+  assert.equal(page.el('submit-report').disabled, true, 'Post must stay off while the save is out');
+  assert.equal(page.el('send-after-wait').disabled, true, 'Send after the wait must stay off while the save is out');
+  page.submit();
+  page.el('send-after-wait').click();
+  assert.equal(page.posts.length, 1, 'no second post while the report is being saved');
+  assert.equal(page.queueSaves.length, 1, 'no second save');
+});
+
+test('a failed Send after the wait gives both buttons back, and a new form starts with them on', async () => {
+  const page = setup();
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 429, fieldMessage: 'Please wait 5 minutes.', retryAfterSeconds: 300
+  }));
+  await settle();
+  page.setQueueSave(() => Promise.reject(new Error('not valid')));
+  page.el('send-after-wait').click();
+  await settle();
+  assert.equal(page.el('submit-report').disabled, false);
+  assert.equal(page.el('send-after-wait').disabled, false);
+
+  page.setQueueSave(() => Promise.resolve(true));
+  page.el('send-after-wait').click();
+  await settle();
+  assert.equal(page.el('report-backdrop').hidden, true, 'the saved report closes the form');
+  page.open();
+  assert.equal(page.el('submit-report').disabled, false);
+  assert.equal(page.el('send-after-wait').disabled, false);
 });
 
 test('a late answer leaves the question working on the form open now', async () => {

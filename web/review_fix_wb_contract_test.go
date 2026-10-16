@@ -76,8 +76,9 @@ func TestReviewFixWBLatePostLeavesNewForm(t *testing.T) {
 		"submitButton.disabled = false;", "closeForm();",
 		".catch(function (err) {",
 		"if (sent.session !== formSession) {", "reportEarlierFailure(payload, err, sent);", "return;",
-		"submitButton.disabled = false;",
-		"saveToQueue(payload, err.status >= 502 ? 'no_answer' : 'waiting', sent);")
+		// Post stays off while a report with no answer is being saved (WR-06).
+		"saveToQueue(payload, err.status >= 502 ? 'no_answer' : 'waiting', sent);", "return;",
+		"submitButton.disabled = false;")
 	p424Lacks(t, "handleSubmit", submit, "discard(resendRequestId)")
 
 	queued := jsFunctionBody(t, form, "saveToQueue(payload, status, sent)")
@@ -124,8 +125,16 @@ func TestReviewFixWBCloseWhilePosting(t *testing.T) {
 	p424Ordered(t, "saveToQueue", jsFunctionBody(t, form, "saveToQueue(payload, status, sent)"),
 		"if (sent.session !== formSession) {", "return;", "postInFlight = false;")
 	p424Ordered(t, "saveAfterWait", jsFunctionBody(t, form, "saveAfterWait()"),
-		"postInFlight = true;", "discardConfirm.hidden = true;", "window.PinalertQueue.save(",
-		"if (session !== formSession) {", "return;", "postInFlight = false;")
+		"postInFlight = true;", "submitButton.disabled = true;", "sendAfterWaitBtn.disabled = true;",
+		"discardConfirm.hidden = true;", "window.PinalertQueue.save(",
+		"if (session !== formSession) {", "return;", "postInFlight = false;",
+		"submitButton.disabled = false;", "sendAfterWaitBtn.disabled = false;")
+	// WR-06: a report on its way or being saved is never posted again, and a
+	// failed save gives Post back.
+	p424Ordered(t, "handleSubmit", jsFunctionBody(t, form, "handleSubmit()"), "if (postInFlight) {", "return;", "validate()")
+	p424Ordered(t, "saveToQueue", jsFunctionBody(t, form, "saveToQueue(payload, status, sent)"),
+		"postInFlight = false;", "submitButton.disabled = false;")
+	p424Contains(t, "resetForm", jsFunctionBody(t, form, "resetForm()"), "sendAfterWaitBtn.disabled = false;")
 }
 
 // TestReviewFixWBLowFormLocationRetry pins WR-W08: the Low data form asks for a
