@@ -34,6 +34,10 @@ added the tap handler again.
 6. **Copy** (fa6b458). The missing location message in modal.js shows only when no pin is set, so
    naming a drag was wrong there (there's no pin to drag). It now reads:
    `Set a location by searching, tapping the map, or allowing location access.`
+   This differs from the plan's literal "tap or drag". The form calls `missingMessage()` only
+   behind `if (!picker.isSet())` (report-form.js line 894), so a pin never exists when it shows.
+   If the owner wants the plan's wording anyway, it's one edit in modal.js plus the two tests:
+   `Set a location by searching, tapping the map or dragging the pin, or allowing location access.`
    The location off notice in `index.html.tmpl` already said "tap the map to drop a pin", so it's
    unchanged. No CSS or template change.
 
@@ -58,11 +62,12 @@ added the tap handler again.
 
 - `go build ./...`: ok
 - `go vet ./...`: ok
-- `go test ./web/ -count=1`: ok (346 `--- PASS` lines with `-v`, 0 FAIL, 0 SKIP)
+- `go test ./web/ -count=1`: ok (346 top level `--- PASS` lines with `-v`, subtests not counted,
+  0 FAIL, 0 SKIP)
 - `node --test web/*.mjs`: 77 tests, 77 pass, 0 fail, 0 skipped (9 of them new)
 - `DATABASE_URL=postgres://localhost:5432/p4_quick_tap?sslmode=disable go test ./... -p 1 -count=1 -v`
   on a freshly created `p4_quick_tap` (dropped afterwards): every package ok, 2998 `--- PASS`
-  lines, 0 FAIL, 2 `--- SKIP` lines, both opt in live checks and not database backed
+  lines counting subtests, 0 FAIL, 2 `--- SKIP` lines, both opt in live checks and not database backed
   (`TestGeocodeLive` needs GEOCODE_LIVE=1, `TestScreeningFixture` needs recorded moderation
   scores). 0 database backed skips.
 
@@ -92,3 +97,6 @@ added the tap handler again.
    expected; say so if it feels wrong.
 10. No pin: with location denied and no tap, press Post. The message reads "Set a
     location by searching, tapping the map, or allowing location access."
+11. Pinch zoom with two fingers: the pin must not jump when the fingers lift.
+12. Do the taps on a normal phone that draws the vector map (OpenFreeMap), not only in the
+    plain tile fallback. The node test's fake Leaflet runs the fallback path only.
