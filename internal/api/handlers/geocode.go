@@ -26,7 +26,7 @@ import (
 // test-only surface to internal/geocode. *geocode.Client satisfies this
 // interface unchanged.
 type GeocodeSearcher interface {
-	Search(ctx context.Context, q string) ([]geocode.Result, error)
+	Search(ctx context.Context, q string, near *geocode.Point) (geocode.Answer, error)
 }
 
 // minGeocodeQueryRunes and maxGeocodeQueryRunes bound the q parameter,
@@ -68,6 +68,26 @@ type GeocodeResult struct {
 // response.
 type GeocodeResponse struct {
 	Results []GeocodeResult `json:"results"`
+	// MatchedQuery is the shorter text that found these results when the
+	// whole text found nothing. It is left out when the text as typed
+	// matched, and when nothing matched.
+	MatchedQuery string `json:"matched_query,omitempty" example:"Banjara Hills, Hyderabad"`
+}
+
+// geocodeAnswer shapes a search answer field by field. Results is a non nil
+// slice, so an empty result set marshals as [] and not null, which is what
+// drives the browser's "No matches found." path (D-04).
+func geocodeAnswer(answer geocode.Answer) GeocodeResponse {
+	results := make([]GeocodeResult, 0, len(answer.Results))
+	for _, res := range answer.Results {
+		results = append(results, GeocodeResult{
+			Name:        res.Name,
+			DisplayName: res.DisplayName,
+			Lat:         res.Lat,
+			Lon:         res.Lon,
+		})
+	}
+	return GeocodeResponse{Results: results, MatchedQuery: answer.MatchedQuery}
 }
 
 // parseGeocodeQuery reads and validates the q query parameter, following
@@ -88,12 +108,18 @@ func parseGeocodeQuery(w http.ResponseWriter, r *http.Request) (string, bool) {
 // Geocode produces the HTTP handler for GET /api/geocode.
 //
 // @Summary Search for a place or address by free-text query
-// @Description Proxies a search query to Nominatim and returns at most five matches. Requires a
-// @Description session verified by email through the magic-link flow. A 503 means search is
+// @Description Proxies a search query to Nominatim and returns at most five matches, in India
+// @Description only. Requires a session verified by email through the magic-link flow. With the
+// @Description optional lat and lon (both or neither, the report pin) it looks in a box around
+// @Description the pin first and widens only when the box finds nothing. When the whole text
+// @Description finds nothing it tries again without the first part, at most twice, and
+// @Description matched_query then holds the shorter text that matched. A 503 means search is
 // @Description temporarily unavailable; report submission remains fully usable regardless.
 // @Tags geocode
 // @Produce json
 // @Param q query string true "Place or address text, 3 to 200 characters"
+// @Param lat query number false "Report pin latitude, -90 to 90, sent together with lon"
+// @Param lon query number false "Report pin longitude, -180 to 180, sent together with lat"
 // @Success 200 {object} GeocodeResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
@@ -116,28 +142,24 @@ func Geocode(searcher GeocodeSearcher) http.HandlerFunc {
 			return
 		}
 
-		found, err := searcher.Search(r.Context(), q)
+		// The report pin, both or neither, checked like the place search's
+		// map centre. A bad value is refused before any upstream call.
+		near, ok := parsePlaceCentre(w, r)
+		if !ok {
+			return
+		}
+
+		answer, err := searcher.Search(r.Context(), q, near)
 		if err != nil {
-			log.Printf("handlers: Geocode: %v", err)
+			// The error class only: the error text could carry the search
+			// text and, now, the area around the pin.
+			log.Printf("handlers: Geocode: search failed (%s)", placeErrorClass(err))
 			writeFieldError(w, http.StatusServiceUnavailable, "q", geocodeUnavailableMessage)
 			return
 		}
 
-		// A non-nil empty slice, so an empty result set marshals as [] and
-		// not null, which is what drives the browser's "No matches found."
-		// path (D-04).
-		results := make([]GeocodeResult, 0, len(found))
-		for _, res := range found {
-			results = append(results, GeocodeResult{
-				Name:        res.Name,
-				DisplayName: res.DisplayName,
-				Lat:         res.Lat,
-				Lon:         res.Lon,
-			})
-		}
-
 		// Set before writeJSON, since writeJSON calls WriteHeader.
 		w.Header().Set("Cache-Control", geocodeCacheControl)
-		writeJSON(w, http.StatusOK, GeocodeResponse{Results: results})
+		writeJSON(w, http.StatusOK, geocodeAnswer(answer))
 	}
 }

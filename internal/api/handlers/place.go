@@ -1,7 +1,8 @@
 // place.go is the HTTP surface of the reader's place search (HIST-05, D-14):
 // the search box on the history views that jumps the map to another area. It
 // is deliberately a separate handler from Geocode in geocode.go, which is the
-// report form's address search and stays unchanged. The reader lane uses its
+// report form's address search. Both run the same India only, near first,
+// fewer words search plan in internal/geocode. The reader lane uses its
 // own non waiting path on the shared geocoder limiter, its own cache, its own
 // per account budget and its own messages, so a reader browsing another area
 // can never queue in front of a reporter filing an emergency.
@@ -24,7 +25,7 @@ import (
 // the same reason GeocodeSearcher exists: the busy and failure paths are unit
 // tested here without a live upstream. *geocode.Client satisfies it.
 type PlaceSearcher interface {
-	SearchReader(ctx context.Context, q string, near *geocode.Point) ([]geocode.Result, error)
+	SearchReader(ctx context.Context, q string, near *geocode.Point) (geocode.Answer, error)
 }
 
 // PlaceBudget is the per account search budget. *ratelimit.PerIP satisfies it
@@ -43,7 +44,7 @@ const (
 )
 
 // parsePlaceCentre reads the optional lat and lon query parameters, the map
-// centre used as a non bounded bias. Both or neither: it returns nil for
+// centre the search looks around first. Both or neither: it returns nil for
 // neither, and on a bad value it writes the 400 itself and returns ok=false.
 func parsePlaceCentre(w http.ResponseWriter, r *http.Request) (*geocode.Point, bool) {
 	query := r.URL.Query()
@@ -95,9 +96,12 @@ func placeErrorClass(err error) string {
 //
 // @Summary Search for a place on the reader lane
 // @Description Place search for the history views. It runs on its own lane of the geocoder: it
-// @Description never waits for a token, repeated searches are answered from a cache, and each
-// @Description verified account has its own small budget. The optional lat and lon (both or
-// @Description neither) bias results toward the map centre without hiding matches elsewhere.
+// @Description never queues ahead of a report search, repeated searches are answered from a cache, and each
+// @Description verified account has its own small budget. Results are in India only. With the
+// @Description optional lat and lon (both or neither) it looks in a box around the map centre
+// @Description first and widens only when the box finds nothing. When the whole text finds
+// @Description nothing it tries again without the first part, at most twice, and
+// @Description matched_query then holds the shorter text that matched.
 // @Description A 429 or 503 never affects report submission, which has its own search.
 // @Tags geocode
 // @Produce json
@@ -143,7 +147,7 @@ func GeocodePlace(searcher PlaceSearcher, budget PlaceBudget) http.HandlerFunc {
 			return
 		}
 
-		found, err := searcher.SearchReader(r.Context(), q, near)
+		answer, err := searcher.SearchReader(r.Context(), q, near)
 		if err != nil {
 			// A fixed message and the error class only. The error text can
 			// carry the request URL, and that holds the reader's search
@@ -153,19 +157,8 @@ func GeocodePlace(searcher PlaceSearcher, budget PlaceBudget) http.HandlerFunc {
 			return
 		}
 
-		// A non nil empty slice, so an empty result set marshals as [].
-		results := make([]GeocodeResult, 0, len(found))
-		for _, res := range found {
-			results = append(results, GeocodeResult{
-				Name:        res.Name,
-				DisplayName: res.DisplayName,
-				Lat:         res.Lat,
-				Lon:         res.Lon,
-			})
-		}
-
 		// Set before writeJSON, since writeJSON calls WriteHeader.
 		w.Header().Set("Cache-Control", geocodeCacheControl)
-		writeJSON(w, http.StatusOK, GeocodeResponse{Results: results})
+		writeJSON(w, http.StatusOK, geocodeAnswer(answer))
 	}
 }

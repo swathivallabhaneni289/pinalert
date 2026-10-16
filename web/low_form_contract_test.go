@@ -408,7 +408,7 @@ func TestLowDataSearchIgnoresServerText(t *testing.T) {
 	p419Has(t, "runSearch", jsFunctionBody(t, form, "runSearch(query)"), "signal: searchTimeoutSignal()",
 		"formVariant === 'low'", "picker.searchFailureMessage(", "'unavailable'")
 
-	dropdown := jsFunctionBody(t, form, "renderDropdown(results)")
+	dropdown := jsFunctionBody(t, form, "renderDropdown(results, matched)")
 	p419Has(t, "renderDropdown", dropdown, "'no_match'", "'match'")
 	p419Before(t, "renderDropdown", dropdown, "'no_match'", "return")
 

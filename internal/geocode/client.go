@@ -28,6 +28,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/time/rate"
 )
@@ -88,7 +89,8 @@ type Client struct {
 	limiter      *rate.Limiter
 	baseURL      string
 	contactEmail string
-	reader       *readerCache
+	reader       *answerCache
+	reporter     *answerCache
 }
 
 // NewClient constructs a Client pointed at the real Nominatim service,
@@ -111,7 +113,8 @@ func newClientWithBaseURL(baseURL, contactEmail string, every time.Duration, bur
 		limiter:      rate.NewLimiter(rate.Every(every), burst),
 		baseURL:      baseURL,
 		contactEmail: contactEmail,
-		reader:       newReaderCache(),
+		reader:       newAnswerCache(),
+		reporter:     newAnswerCache(),
 	}
 }
 
@@ -136,13 +139,16 @@ func (c *Client) userAgent() string {
 // concatenation, so this proxy cannot become an open proxy or an SSRF pivot
 // (T-07-01).
 //
-// extra carries the fixed, server-computed parameters the reader lane adds
-// (viewbox and bounded); Search passes nil so its request is unchanged.
+// Every request is India only: countrycodes is a fixed parameter here, not
+// something a caller passes, so no path can forget it. extra carries the
+// other fixed, server computed parameters (viewbox and bounded) a boxed try
+// adds; a widened try passes nil.
 func (c *Client) buildRequest(ctx context.Context, q string, extra url.Values) (*http.Request, error) {
 	params := url.Values{}
 	params.Set("q", q)
 	params.Set("format", "jsonv2")
 	params.Set("limit", resultLimit)
+	params.Set("countrycodes", countryCodes)
 	if c.contactEmail != "" {
 		params.Set("email", c.contactEmail)
 	}
@@ -160,19 +166,182 @@ func (c *Client) buildRequest(ctx context.Context, q string, extra url.Values) (
 	return req, nil
 }
 
-// Search issues one rate-limited, identified GET to Nominatim for q and
-// returns the matches as Results with numeric coordinates. The rate limiter
-// is waited on first (Wait, never Allow — a 1-second wait serves two
+// Search is the report form's address search. It runs the search plan (see
+// searchPlan) and returns the first non empty answer, with MatchedQuery set
+// when a shorter text found it. Before every upstream request the rate
+// limiter is waited on (Wait, never Allow: a one second wait serves two
 // simultaneous typers better than instantly rejecting the second one), and
-// that wait is itself bounded by limiterWaitTimeout so contention degrades
-// into an error rather than an unbounded queue.
-func (c *Client) Search(ctx context.Context, q string) ([]Result, error) {
+// each wait is bounded by limiterWaitTimeout, so contention degrades into an
+// error, the "Search unavailable" answer, rather than an unbounded queue. A
+// wait that runs out part way through the plan is that same error, never an
+// empty list, because the texts not yet tried were never sent.
+//
+// near is the report pin, or nil. The final answer, an empty one included,
+// is cached under the original text and area; errors never are.
+func (c *Client) Search(ctx context.Context, q string, near *Point) (Answer, error) {
+	key := cacheKey(q, near)
+	if cached, ok := c.reporter.get(key); ok {
+		return cached, nil
+	}
+	answer, err := c.run(ctx, q, near, c.waitForToken)
+	if err != nil {
+		return Answer{}, err
+	}
+	c.reporter.put(key, answer)
+	return answer, nil
+}
+
+// waitForToken is the reporter lane's turn at the limiter, taken before
+// every upstream request.
+func (c *Client) waitForToken(ctx context.Context, _ int) error {
 	waitCtx, cancel := context.WithTimeout(ctx, limiterWaitTimeout)
 	defer cancel()
 	if err := c.limiter.Wait(waitCtx); err != nil {
-		return nil, fmt.Errorf("geocode: rate limiter wait: %w", err)
+		return fmt.Errorf("geocode: rate limiter wait: %w", err)
 	}
-	return c.fetch(ctx, q, nil)
+	return nil
+}
+
+// Answer is what a search returns: the matches, and the shorter text that
+// found them when the text as typed found nothing. MatchedQuery is empty
+// when the text as typed matched, and when nothing matched at all.
+type Answer struct {
+	Results      []Result
+	MatchedQuery string
+}
+
+// Search plan tuning (quick task 261016-adr, backlog 999.7).
+const (
+	// countryCodes keeps every search inside India.
+	countryCodes = "in"
+	// nearBoxDegrees is the half width of the box searched first around a
+	// known position, about 55 km each way.
+	nearBoxDegrees = 0.5
+	// maxShorterTries is how many times the most specific part is dropped.
+	maxShorterTries = 2
+	// maxUpstreamPerSearch caps the upstream requests one search may send,
+	// the widened tries and the shorter tries included. At one request a
+	// second this keeps the worst search to about three seconds of waiting.
+	maxUpstreamPerSearch = 4
+	// minShorterRunes is the shortest text a shorter try may send, the same
+	// minimum the handlers apply to what people type.
+	minShorterRunes = 3
+)
+
+// attempt is one upstream request in a search plan.
+type attempt struct {
+	text      string
+	boxed     bool
+	shortened bool
+}
+
+// params returns the request parameters an attempt adds: a bounded viewbox
+// around near for a boxed try, nothing for a widened one.
+func (a attempt) params(near *Point) url.Values {
+	if !a.boxed || near == nil {
+		return nil
+	}
+	extra := url.Values{}
+	// Nominatim wants left, top, right, bottom: longitude first.
+	extra.Set("viewbox", strings.Join([]string{
+		strconv.FormatFloat(near.Lon-nearBoxDegrees, 'f', 6, 64),
+		strconv.FormatFloat(near.Lat+nearBoxDegrees, 'f', 6, 64),
+		strconv.FormatFloat(near.Lon+nearBoxDegrees, 'f', 6, 64),
+		strconv.FormatFloat(near.Lat-nearBoxDegrees, 'f', 6, 64),
+	}, ","))
+	extra.Set("bounded", "1")
+	return extra
+}
+
+// searchTexts returns the text as typed (trimmed) followed by at most
+// maxShorterTries shorter forms, each made from the one before by
+// dropMostSpecific.
+func searchTexts(q string) []string {
+	texts := []string{strings.TrimSpace(q)}
+	current := texts[0]
+	for i := 0; i < maxShorterTries; i++ {
+		next, ok := dropMostSpecific(current)
+		if !ok {
+			break
+		}
+		texts = append(texts, next)
+		current = next
+	}
+	return texts
+}
+
+// dropMostSpecific drops the first comma separated part of text, or the first
+// word when there is only one part. Parts and words are trimmed and empty
+// parts skipped, so "Flat 2 ,, Banjara Hills" becomes "Banjara Hills". It
+// reports false when nothing is left to drop or what is left is shorter than
+// minShorterRunes.
+func dropMostSpecific(text string) (string, bool) {
+	var parts []string
+	for _, part := range strings.Split(text, ",") {
+		if part = strings.Join(strings.Fields(part), " "); part != "" {
+			parts = append(parts, part)
+		}
+	}
+	var next string
+	switch {
+	case len(parts) >= 2:
+		next = strings.Join(parts[1:], ", ")
+	case len(parts) == 1:
+		words := strings.Fields(parts[0])
+		if len(words) < 2 {
+			return "", false
+		}
+		next = strings.Join(words[1:], " ")
+	default:
+		return "", false
+	}
+	if utf8.RuneCountInString(next) < minShorterRunes {
+		return "", false
+	}
+	return next, true
+}
+
+// searchPlan is the ordered list of upstream requests for one search. Each
+// text, the whole one first, is tried inside the box around near and then
+// widened; without near there is only the widened try. A text counts as
+// finding nothing only when both of its tries came back empty, and only then
+// is a shorter text tried. The list is cut at maxUpstreamPerSearch, so with a
+// position the second shorter text is never reached.
+func searchPlan(q string, near *Point) []attempt {
+	var plan []attempt
+	for i, text := range searchTexts(q) {
+		if near != nil {
+			plan = append(plan, attempt{text: text, boxed: true, shortened: i > 0})
+		}
+		plan = append(plan, attempt{text: text, boxed: false, shortened: i > 0})
+	}
+	if len(plan) > maxUpstreamPerSearch {
+		plan = plan[:maxUpstreamPerSearch]
+	}
+	return plan
+}
+
+// run sends the search plan in order and stops at the first try that finds
+// something. take is called before every request with the try's index and
+// decides how the lane gets its limiter token; its error ends the search.
+func (c *Client) run(ctx context.Context, q string, near *Point, take func(ctx context.Context, i int) error) (Answer, error) {
+	for i, a := range searchPlan(q, near) {
+		if err := take(ctx, i); err != nil {
+			return Answer{}, err
+		}
+		results, err := c.fetch(ctx, a.text, a.params(near))
+		if err != nil {
+			return Answer{}, err
+		}
+		if len(results) > 0 {
+			answer := Answer{Results: results}
+			if a.shortened {
+				answer.MatchedQuery = a.text
+			}
+			return answer, nil
+		}
+	}
+	return Answer{Results: []Result{}}, nil
 }
 
 // UpstreamStatusError is returned when Nominatim answers with a non 2xx
@@ -246,151 +415,179 @@ func (c *Client) fetch(ctx context.Context, q string, extra url.Values) ([]Resul
 }
 
 // ErrReaderBusy means the reader lane found no free limiter token and gave
-// up at once instead of waiting. The handler maps it to the plain "Search
+// up instead of queueing. The handler maps it to the plain "Search
 // unavailable" message (D-16, D-28).
 var ErrReaderBusy = errors.New("geocode: reader lane busy")
 
-// Point is a map centre used to bias reader place search toward the area the
-// reader is looking at.
+// Point is a position a search looks around first: the report pin for the
+// report form's search, the map centre for the reader's place search.
 type Point struct {
 	Lat, Lon float64
 }
 
-// Reader lane tuning (03.1 RESEARCH A4). All four are easy to retune: they
-// are plain constants with no other code depending on their values.
+// Cache tuning (03.1 RESEARCH A4), shared by both lanes, each of which has a
+// cache of its own. All three are easy to retune: they are plain constants
+// with no other code depending on their values.
 const (
-	// readerCacheEntries bounds the in memory cache of reader searches.
-	readerCacheEntries = 256
-	// readerCacheTTL is how long a cached answer is served before the next
+	// searchCacheEntries bounds each in memory cache of searches.
+	searchCacheEntries = 256
+	// searchCacheTTL is how long a cached answer is served before the next
 	// identical search goes upstream again. Place names barely change.
-	readerCacheTTL = 6 * time.Hour
-	// readerBiasDegrees is the half width of the viewbox sent around the map
-	// centre, about 55 km each way.
-	readerBiasDegrees = 0.5
-	// readerBucketDegrees is the grid the map centre is rounded to for the
-	// cache key, about 11 km, so one reader's ranking is never served for a
-	// different area but panning a little still hits the cache.
-	readerBucketDegrees = 0.1
+	searchCacheTTL = 6 * time.Hour
+	// cacheBucketDegrees is the grid a position is rounded to for the cache
+	// key, about 11 km, so one area's answer is never served for a different
+	// area but moving a little still hits the cache.
+	cacheBucketDegrees = 0.1
 )
 
-// readerCache is a small bounded TTL cache for reader searches: a mutex, a
-// map, and an insertion ordered list for eviction. now is a field so tests
-// can move the clock.
-type readerCache struct {
+// readerWakeSlack is added to a reader's computed wait for its next token, so
+// float rounding at the boundary does not make the Allow after the wait fail.
+const readerWakeSlack = 5 * time.Millisecond
+
+// answerCache is a small bounded TTL cache of search answers: a mutex, a map,
+// and an insertion ordered list for eviction. now is a field so tests can
+// move the clock.
+type answerCache struct {
 	mu      sync.Mutex
 	now     func() time.Time
 	entries map[string]*list.Element
 	order   *list.List // front is the oldest entry
 }
 
-type readerCacheEntry struct {
-	key     string
-	results []Result
-	stored  time.Time
+type answerCacheEntry struct {
+	key    string
+	answer Answer
+	stored time.Time
 }
 
-func newReaderCache() *readerCache {
-	return &readerCache{
+func newAnswerCache() *answerCache {
+	return &answerCache{
 		now:     time.Now,
 		entries: make(map[string]*list.Element),
 		order:   list.New(),
 	}
 }
 
+// copyAnswer copies the result list, so a caller can never change a cached
+// answer. An empty list stays a non nil empty list.
+func copyAnswer(a Answer) Answer {
+	return Answer{Results: append([]Result{}, a.Results...), MatchedQuery: a.MatchedQuery}
+}
+
 // get returns a fresh cached answer, dropping an expired one.
-func (rc *readerCache) get(key string) ([]Result, bool) {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-	el, ok := rc.entries[key]
+func (ac *answerCache) get(key string) (Answer, bool) {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	el, ok := ac.entries[key]
 	if !ok {
-		return nil, false
+		return Answer{}, false
 	}
-	entry := el.Value.(*readerCacheEntry)
-	if rc.now().Sub(entry.stored) >= readerCacheTTL {
-		rc.order.Remove(el)
-		delete(rc.entries, key)
-		return nil, false
+	entry := el.Value.(*answerCacheEntry)
+	if ac.now().Sub(entry.stored) >= searchCacheTTL {
+		ac.order.Remove(el)
+		delete(ac.entries, key)
+		return Answer{}, false
 	}
-	return append([]Result(nil), entry.results...), true
+	return copyAnswer(entry.answer), true
 }
 
 // put stores an answer and evicts the oldest entry past the bound.
-func (rc *readerCache) put(key string, results []Result) {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-	stored := append([]Result(nil), results...)
-	if el, ok := rc.entries[key]; ok {
-		entry := el.Value.(*readerCacheEntry)
-		entry.results = stored
-		entry.stored = rc.now()
+func (ac *answerCache) put(key string, answer Answer) {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	stored := copyAnswer(answer)
+	if el, ok := ac.entries[key]; ok {
+		entry := el.Value.(*answerCacheEntry)
+		entry.answer = stored
+		entry.stored = ac.now()
 		return
 	}
-	rc.entries[key] = rc.order.PushBack(&readerCacheEntry{key: key, results: stored, stored: rc.now()})
-	for rc.order.Len() > readerCacheEntries {
-		oldest := rc.order.Front()
-		rc.order.Remove(oldest)
-		delete(rc.entries, oldest.Value.(*readerCacheEntry).key)
+	ac.entries[key] = ac.order.PushBack(&answerCacheEntry{key: key, answer: stored, stored: ac.now()})
+	for ac.order.Len() > searchCacheEntries {
+		oldest := ac.order.Front()
+		ac.order.Remove(oldest)
+		delete(ac.entries, oldest.Value.(*answerCacheEntry).key)
 	}
 }
 
 // size reports how many entries the cache holds.
-func (rc *readerCache) size() int {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-	return rc.order.Len()
+func (ac *answerCache) size() int {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	return ac.order.Len()
 }
 
-// readerCacheKey builds the cache key from the normalised text (trimmed,
-// lower cased, runs of whitespace collapsed) and the map centre rounded to
-// readerBucketDegrees, or the word none when there is no centre.
-func readerCacheKey(q string, near *Point) string {
+// cacheKey builds the cache key from the normalised original text (trimmed,
+// lower cased, runs of whitespace collapsed) and the position rounded to
+// cacheBucketDegrees, or the word none when there is no position. A shorter
+// text a search fell back to is never a key: the answer is stored under what
+// the person typed.
+func cacheKey(q string, near *Point) string {
 	text := strings.ToLower(strings.Join(strings.Fields(q), " "))
 	if near == nil {
 		return text + "|none"
 	}
-	latBucket := int(math.Round(near.Lat / readerBucketDegrees))
-	lonBucket := int(math.Round(near.Lon / readerBucketDegrees))
+	latBucket := int(math.Round(near.Lat / cacheBucketDegrees))
+	lonBucket := int(math.Round(near.Lon / cacheBucketDegrees))
 	return text + "|" + strconv.Itoa(latBucket) + "," + strconv.Itoa(lonBucket)
 }
 
-// SearchReader is the reader's place search lane (HIST-05). It shares the
-// process wide limiter with Search but never waits for it: a cached answer
-// costs no token, otherwise it takes a token only if one is free right now
-// and returns ErrReaderBusy if not. A reporter's Search that is waiting
-// leaves the bucket in debt, so a reader can never jump ahead of a reporter
-// filing an emergency (D-16, D-28).
+// SearchReader is the reader's place search lane (HIST-05). It runs the same
+// search plan as Search and shares the process wide limiter with it, but it
+// never holds a place in the limiter's queue, so a reader can never jump
+// ahead of a reporter filing an emergency (D-16, D-28):
 //
-// When near is set the request carries a non bounded viewbox around it, the
-// planner's call on backlog 999.7: a viewbox with bounded=0 ranks matches
-// near the map centre first without hiding matches elsewhere. Successful
-// answers, including an empty list, are cached; errors never are.
-func (c *Client) SearchReader(ctx context.Context, q string, near *Point) ([]Result, error) {
-	key := readerCacheKey(q, near)
+//   - A cached answer costs no token.
+//   - The first try takes a token only if one is free right now, and returns
+//     ErrReaderBusy if not.
+//   - A later try (the widened one or a shorter text) waits for the limiter
+//     without reserving a token: it gives up at once if a reporter is
+//     already waiting (the bucket is in debt), otherwise it sleeps until a
+//     token would be free and then takes it only if it still is. A reporter
+//     who started waiting in that gap gets the token and the reader gets
+//     ErrReaderBusy. This is how quick task 261016-adr keeps "the limiter is
+//     waited on for every request" without breaking D-16.
+//
+// Running out of limiter time part way through is ErrReaderBusy, never an
+// empty list. Successful answers, an empty one included, are cached; errors
+// never are.
+func (c *Client) SearchReader(ctx context.Context, q string, near *Point) (Answer, error) {
+	key := cacheKey(q, near)
 	if cached, ok := c.reader.get(key); ok {
 		return cached, nil
 	}
-
-	if !c.limiter.Allow() {
-		return nil, ErrReaderBusy
-	}
-
-	var extra url.Values
-	if near != nil {
-		extra = url.Values{}
-		// Nominatim wants left, top, right, bottom: longitude first.
-		extra.Set("viewbox", strings.Join([]string{
-			strconv.FormatFloat(near.Lon-readerBiasDegrees, 'f', 6, 64),
-			strconv.FormatFloat(near.Lat+readerBiasDegrees, 'f', 6, 64),
-			strconv.FormatFloat(near.Lon+readerBiasDegrees, 'f', 6, 64),
-			strconv.FormatFloat(near.Lat-readerBiasDegrees, 'f', 6, 64),
-		}, ","))
-		extra.Set("bounded", "0")
-	}
-
-	results, err := c.fetch(ctx, strings.TrimSpace(q), extra)
+	answer, err := c.run(ctx, q, near, c.takeReaderToken)
 	if err != nil {
-		return nil, err
+		return Answer{}, err
 	}
-	c.reader.put(key, results)
-	return results, nil
+	c.reader.put(key, answer)
+	return answer, nil
+}
+
+// takeReaderToken is the reader lane's turn at the limiter for try i.
+func (c *Client) takeReaderToken(ctx context.Context, i int) error {
+	if i > 0 {
+		tokens := c.limiter.Tokens()
+		if tokens < 0 {
+			// A reporter's Wait already holds the next token.
+			return ErrReaderBusy
+		}
+		if tokens < 1 {
+			wait := time.Duration((1-tokens)/float64(c.limiter.Limit())*float64(time.Second)) + readerWakeSlack
+			if wait > limiterWaitTimeout {
+				return ErrReaderBusy
+			}
+			timer := time.NewTimer(wait)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
+	}
+	if !c.limiter.Allow() {
+		return ErrReaderBusy
+	}
+	return nil
 }

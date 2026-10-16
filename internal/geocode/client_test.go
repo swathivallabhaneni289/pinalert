@@ -27,7 +27,7 @@ func TestClient_Search_SetsUserAgent(t *testing.T) {
 	defer server.Close()
 
 	c := newClientWithBaseURL(server.URL, "", defaultLimiterEvery, defaultLimiterBurst)
-	if _, err := c.Search(context.Background(), "Bengaluru"); err != nil {
+	if _, err := c.Search(context.Background(), "Bengaluru", nil); err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
 
@@ -50,8 +50,10 @@ func TestClient_Search_ForwardsOnlyQueryToFixedEndpoint(t *testing.T) {
 	var gotPath string
 	var gotQuery url.Values
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		gotQuery = r.URL.Query()
+		if gotQuery == nil {
+			gotPath = r.URL.Path
+			gotQuery = r.URL.Query()
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[]`))
 	}))
@@ -59,7 +61,7 @@ func TestClient_Search_ForwardsOnlyQueryToFixedEndpoint(t *testing.T) {
 
 	c := newClientWithBaseURL(server.URL+"/search", "contact@example.com", defaultLimiterEvery, defaultLimiterBurst)
 	q := "New York & Elsewhere"
-	if _, err := c.Search(context.Background(), q); err != nil {
+	if _, err := c.Search(context.Background(), q, nil); err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
 
@@ -79,7 +81,11 @@ func TestClient_Search_ForwardsOnlyQueryToFixedEndpoint(t *testing.T) {
 		t.Fatalf("email = %q, want contact@example.com", got)
 	}
 
-	wantKeys := map[string]bool{"q": true, "format": true, "limit": true, "email": true}
+	if got := gotQuery.Get("countrycodes"); got != "in" {
+		t.Fatalf("countrycodes = %q, want in", got)
+	}
+
+	wantKeys := map[string]bool{"q": true, "format": true, "limit": true, "email": true, "countrycodes": true}
 	for key := range gotQuery {
 		if !wantKeys[key] {
 			t.Fatalf("unexpected forwarded query key %q", key)
@@ -98,7 +104,8 @@ func TestClient_Search_ParsesStringCoordinates(t *testing.T) {
 	defer server.Close()
 
 	c := newClientWithBaseURL(server.URL, "", defaultLimiterEvery, defaultLimiterBurst)
-	results, err := c.Search(context.Background(), "Bengaluru")
+	answer, err := c.Search(context.Background(), "Bengaluru", nil)
+	results := answer.Results
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -132,7 +139,8 @@ func TestClient_Search_SkipsUnparseableRecords(t *testing.T) {
 	defer server.Close()
 
 	c := newClientWithBaseURL(server.URL, "", defaultLimiterEvery, defaultLimiterBurst)
-	results, err := c.Search(context.Background(), "test")
+	answer, err := c.Search(context.Background(), "test", nil)
+	results := answer.Results
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -159,7 +167,7 @@ func TestClient_Search_SerializesConcurrentCalls(t *testing.T) {
 
 	start := time.Now()
 	for i := 0; i < 3; i++ {
-		if _, err := c.Search(context.Background(), "q"); err != nil {
+		if _, err := c.Search(context.Background(), fmt.Sprintf("place%d", i), nil); err != nil {
 			t.Fatalf("Search call %d returned error: %v", i, err)
 		}
 	}
@@ -187,12 +195,12 @@ func TestClient_Search_LimiterWaitTimeout(t *testing.T) {
 	c := newClientWithBaseURL(server.URL, "", 10*time.Second, 1)
 
 	// First call succeeds and consumes the only token.
-	if _, err := c.Search(context.Background(), "first"); err != nil {
+	if _, err := c.Search(context.Background(), "first", nil); err != nil {
 		t.Fatalf("first Search returned error: %v", err)
 	}
 
 	start := time.Now()
-	_, err := c.Search(context.Background(), "second")
+	_, err := c.Search(context.Background(), "second", nil)
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -215,7 +223,8 @@ func TestClient_Search_UpstreamNon200(t *testing.T) {
 	defer server.Close()
 
 	c := newClientWithBaseURL(server.URL, "", defaultLimiterEvery, defaultLimiterBurst)
-	results, err := c.Search(context.Background(), "q")
+	answer, err := c.Search(context.Background(), "q", nil)
+	results := answer.Results
 	if err == nil {
 		t.Fatal("Search returned nil error, want non-nil")
 	}
@@ -234,7 +243,8 @@ func TestClient_Search_MalformedBody(t *testing.T) {
 	defer server.Close()
 
 	c := newClientWithBaseURL(server.URL, "", defaultLimiterEvery, defaultLimiterBurst)
-	results, err := c.Search(context.Background(), "q")
+	answer, err := c.Search(context.Background(), "q", nil)
+	results := answer.Results
 	if err == nil {
 		t.Fatal("Search returned nil error, want non-nil")
 	}
@@ -259,7 +269,7 @@ func TestClient_Search_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), -1*time.Second)
 	defer cancel()
 
-	_, err := c.Search(ctx, "q")
+	_, err := c.Search(ctx, "q", nil)
 	if err == nil {
 		t.Fatal("Search returned nil error, want non-nil")
 	}
@@ -329,11 +339,13 @@ func TestSearchReaderCacheHitCostsNoUpstreamCall(t *testing.T) {
 	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	c.reader.now = func() time.Time { return now }
 
-	first, err := c.SearchReader(context.Background(), "Velachery Chennai", nil)
+	firstAnswer, err := c.SearchReader(context.Background(), "Velachery Chennai", nil)
+	first := firstAnswer.Results
 	if err != nil {
 		t.Fatalf("first SearchReader returned error: %v", err)
 	}
-	second, err := c.SearchReader(context.Background(), "  velachery   CHENNAI ", nil)
+	secondAnswer, err := c.SearchReader(context.Background(), "  velachery   CHENNAI ", nil)
+	second := secondAnswer.Results
 	if err != nil {
 		t.Fatalf("second SearchReader returned error: %v", err)
 	}
@@ -344,7 +356,7 @@ func TestSearchReaderCacheHitCostsNoUpstreamCall(t *testing.T) {
 		t.Fatalf("upstream served %d requests, want 1", got)
 	}
 
-	now = now.Add(readerCacheTTL - time.Minute)
+	now = now.Add(searchCacheTTL - time.Minute)
 	if _, err := c.SearchReader(context.Background(), "velachery chennai", nil); err != nil {
 		t.Fatalf("third SearchReader returned error: %v", err)
 	}
@@ -369,7 +381,7 @@ func TestSearchReaderDoesNotStarveSearch(t *testing.T) {
 	c := newClientWithBaseURL(server.URL, "", 300*time.Millisecond, 1)
 
 	// The first Search takes the only token at once.
-	if _, err := c.Search(context.Background(), "first"); err != nil {
+	if _, err := c.Search(context.Background(), "first", nil); err != nil {
 		t.Fatalf("first Search returned error: %v", err)
 	}
 
@@ -377,7 +389,7 @@ func TestSearchReaderDoesNotStarveSearch(t *testing.T) {
 	// debt for as long as it waits.
 	done := make(chan error, 1)
 	go func() {
-		_, err := c.Search(context.Background(), "second")
+		_, err := c.Search(context.Background(), "second", nil)
 		done <- err
 	}()
 	time.Sleep(60 * time.Millisecond)
@@ -415,8 +427,8 @@ func TestSearchReaderBiasAndBucket(t *testing.T) {
 	if got.Get("q") != "velachery" || got.Get("format") != "jsonv2" || got.Get("limit") != "5" {
 		t.Fatalf("q, format or limit wrong: %v", got)
 	}
-	if got.Get("bounded") != "0" {
-		t.Fatalf("bounded = %q, want 0", got.Get("bounded"))
+	if got.Get("bounded") != "1" {
+		t.Fatalf("bounded = %q, want 1", got.Get("bounded"))
 	}
 	parts := strings.Split(got.Get("viewbox"), ",")
 	if len(parts) != 4 {
@@ -471,21 +483,21 @@ func TestSearchReaderCacheIsBounded(t *testing.T) {
 	server, calls, _ := readerServer(t)
 	c := newClientWithBaseURL(server.URL, "", time.Microsecond, 1000)
 
-	for i := 0; i < readerCacheEntries+1; i++ {
+	for i := 0; i < searchCacheEntries+1; i++ {
 		if _, err := c.SearchReader(context.Background(), fmt.Sprintf("place %04d", i), nil); err != nil {
 			t.Fatalf("SearchReader %d returned error: %v", i, err)
 		}
 	}
-	if got := atomic.LoadInt64(calls); got != int64(readerCacheEntries+1) {
-		t.Fatalf("upstream served %d requests, want %d", got, readerCacheEntries+1)
+	if got := atomic.LoadInt64(calls); got != int64(searchCacheEntries+1) {
+		t.Fatalf("upstream served %d requests, want %d", got, searchCacheEntries+1)
 	}
-	if n := c.reader.size(); n != readerCacheEntries {
-		t.Fatalf("cache holds %d entries, want %d", n, readerCacheEntries)
+	if n := c.reader.size(); n != searchCacheEntries {
+		t.Fatalf("cache holds %d entries, want %d", n, searchCacheEntries)
 	}
 
 	// The newest key is still cached, the oldest was evicted.
 	before := atomic.LoadInt64(calls)
-	if _, err := c.SearchReader(context.Background(), fmt.Sprintf("place %04d", readerCacheEntries), nil); err != nil {
+	if _, err := c.SearchReader(context.Background(), fmt.Sprintf("place %04d", searchCacheEntries), nil); err != nil {
 		t.Fatalf("newest SearchReader returned error: %v", err)
 	}
 	if got := atomic.LoadInt64(calls); got != before {
@@ -551,7 +563,7 @@ func TestFailedUpstreamErrorHoldsNoReaderData(t *testing.T) {
 	})
 	t.Run("reporter lane, connection refused", func(t *testing.T) {
 		c := newClientWithBaseURL(baseURL, secretEmail, defaultLimiterEvery, defaultLimiterBurst)
-		_, err := c.Search(context.Background(), secretQuery)
+		_, err := c.Search(context.Background(), secretQuery, nil)
 		check(t, err)
 	})
 	t.Run("reader lane, cancelled context keeps its class", func(t *testing.T) {

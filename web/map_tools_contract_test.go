@@ -179,7 +179,7 @@ func p31mSearchScript(t *testing.T) {
 
 	// A result is at most five buttons; the name is cut and the full name is
 	// a second line.
-	render := jsFunctionBody(t, code, "renderResults(list)")
+	render := jsFunctionBody(t, code, "renderResults(list, matched)")
 	p13MustContain(t, "renderResults", render,
 		"MAX_RESULTS", "document.createElement('button')", "'map-search__result'",
 		"map-search__result-name", "map-search__result-full", "cutName(")

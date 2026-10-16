@@ -24,20 +24,21 @@ import (
 // called with and returning canned results or a canned error.
 type stubPlaceSearcher struct {
 	results []geocode.Result
+	matched string
 	err     error
 	calls   int
 	gotQ    string
 	gotNear *geocode.Point
 }
 
-func (s *stubPlaceSearcher) SearchReader(ctx context.Context, q string, near *geocode.Point) ([]geocode.Result, error) {
+func (s *stubPlaceSearcher) SearchReader(ctx context.Context, q string, near *geocode.Point) (geocode.Answer, error) {
 	s.calls++
 	s.gotQ = q
 	s.gotNear = near
 	if s.err != nil {
-		return nil, s.err
+		return geocode.Answer{}, s.err
 	}
-	return s.results, nil
+	return geocode.Answer{Results: s.results, MatchedQuery: s.matched}, nil
 }
 
 // stubPlaceBudget is a PlaceBudget test double recording every key it saw.
