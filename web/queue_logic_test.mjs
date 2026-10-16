@@ -532,7 +532,7 @@ await test('a 429 with a wait of 0 seconds waits at least 5 seconds (IN-W07)', a
   assert.equal(env.submitted.length, 1, 'no resend before the wait is over');
 });
 
-await test('names the saved account on each send and holds every row when the server refuses it (WR-W09)', async () => {
+await test('names the saved account on each send and holds the rows that send by themselves when the server refuses it (WR-W09, WR-05)', async () => {
   const first = 'req-nnnnnnnnnnnnnnnn-14';
   const second = 'req-oooooooooooooooo-15';
   const otherAccount = () => Promise.reject({
@@ -541,17 +541,20 @@ await test('names the saved account on each send and holds every row when the se
     fieldMessage: 'This report was saved under a different account than the one signed in now. Sign in to that account to send it.'
   });
   const notSent = 'req-pppppppppppppppp-16';
+  const later = Date.now() + 10 * 60 * 1000;
   const env = loadQueue({
     records: [
       record(first, '7', 'first saved report', '2026-10-01T00:00:00.000Z'),
-      record(second, '7', 'second saved report', '2026-10-02T00:00:00.000Z'),
+      record(second, '7', 'second saved report', '2026-10-02T00:00:00.000Z', {
+        status: 'blocked', next_try_at: later
+      }),
       record(notSent, '7', 'not sent saved report', '2026-10-03T00:00:00.000Z', {
         status: 'rejected', last_error: 'Say what is happening.'
       })
     ],
     answers: [otherAccount]
   });
-  // onEdit is given, so a Not sent row would draw Edit and resend.
+  // onEdit is given, so a Not sent row draws Edit and resend.
   env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3, onEdit: () => {} });
   await settle();
 
@@ -561,33 +564,53 @@ await test('names the saved account on each send and holds every row when the se
   assert.equal(Object.hasOwn(env.store.get(first).payload, 'expected_account_id'), false,
     'the saved payload never holds it');
 
-  for (const id of [first, second, notSent]) {
+  // Only the rows that would send by themselves are held (WR-05); the Not
+  // sent row keeps its status and its reason.
+  for (const id of [first, second]) {
     assert.ok(env.store.has(id), 'the report stays saved');
     assert.equal(env.store.get(id).status, 'other_account');
   }
+  assert.equal(env.store.get(notSent).status, 'rejected');
+  assert.equal(env.store.get(notSent).last_error, 'Say what is happening.');
   const statusLines = env.strip.descendants().filter((el) => el.className.split(/\s+/).includes('queue-strip__status'));
-  assert.equal(statusLines.length, 3);
-  statusLines.forEach((el) => {
-    assert.equal(el.textContent, 'This report was saved under a different account than the one signed in now. ' +
-      'Sign in to that account to send it. It stays saved on this device.');
-  });
+  assert.deepEqual(statusLines.map((el) => el.textContent), [
+    'This report was saved under a different account than the one signed in now. ' +
+      'Sign in to that account to send it. It stays saved on this device.',
+    'This report was saved under a different account than the one signed in now. ' +
+      'Sign in to that account to send it. It stays saved on this device.',
+    'Not sent. Say what is happening.'
+  ]);
   const discards = env.strip.descendants().filter((el) => el.className.split(/\s+/).includes('queue-strip__discard'));
   assert.equal(discards.length, 3, 'Discard report stays on each row');
   assert.equal(env.strip.descendants().some((el) => el.textContent === 'Edit and resend'), false,
-    'no row offers Edit and resend, which would post under the account signed in now');
+    'while another account is signed in no row offers Edit and resend');
 
   await env.queue.flush();
   await settle();
   assert.equal(env.submitted.length, 1, 'nothing more is sent from this page');
 
-  // A page that mounts for the saved account again proves its session, so the
-  // rows are tried again.
-  const again = loadQueue({ records: [...env.store.values()] });
-  again.queue.mount({ strip: again.strip, accountId: '7', headingLevel: 3 });
+  // A page that mounts for the saved account again proves its session, so
+  // each held row goes back to the status it had: the waiting one is sent,
+  // the blocked one keeps its wait and the Not sent one waits for the person.
+  // A held row saved by older code, with no earlier status, becomes Not sent
+  // rather than sending by itself.
+  const legacy = 'req-yyyyyyyyyyyyyyyy-25';
+  const again = loadQueue({
+    records: [...env.store.values(),
+      record(legacy, '7', 'held by older code', '2026-10-04T00:00:00.000Z', { status: 'other_account' })]
+  });
+  again.queue.mount({ strip: again.strip, accountId: '7', headingLevel: 3, onEdit: () => {} });
   await settle();
-  assert.deepEqual(again.submitted.map((p) => p.description),
-    ['first saved report', 'second saved report', 'not sent saved report']);
-  assert.equal(again.store.size, 0);
+  assert.deepEqual(again.submitted.map((p) => p.description), ['first saved report']);
+  assert.equal(again.store.has(first), false);
+  assert.equal(again.store.get(second).status, 'blocked');
+  assert.equal(again.store.get(second).next_try_at, later);
+  assert.equal(Object.hasOwn(again.store.get(second), 'held_from'), false);
+  assert.equal(again.store.get(notSent).status, 'rejected');
+  assert.equal(again.store.get(legacy).status, 'rejected');
+  assert.equal(again.store.get(legacy).last_error, 'Something went wrong. Try again.');
+  assert.ok(again.strip.descendants().some((el) => el.textContent === 'Edit and resend'),
+    'Edit and resend is back for the right account');
 });
 
 // openDiscardQuestion opens the Discard question on the row and returns a function

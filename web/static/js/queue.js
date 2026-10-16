@@ -54,6 +54,9 @@
     STATUS_OTHER_ACCOUNT];
   // The 409 field the server names for that refusal.
   var OTHER_ACCOUNT_FIELD = 'expected_account_id';
+  // The statuses of rows that send by themselves, the only ones held on that
+  // refusal (WR-05).
+  var HELD_FOR_OTHER_ACCOUNT = [STATUS_WAITING, STATUS_NO_ANSWER, STATUS_BLOCKED];
   // How a discard ended (discardOutcome).
   var DISCARD_REMOVED = 'removed';
   var DISCARD_FAILED = 'failed';
@@ -476,12 +479,16 @@
       return loadRows();
     }).then(function (list) {
       // A page that passed the gate proves the session for this account, so a
-      // row that was waiting for a sign in, or refused because another account
-      // was signed in, is tried again.
+      // row that was waiting for a sign in is tried again, and a row held
+      // because another account was signed in goes back to the status it had
+      // (WR-05).
       var writes = [];
       list.forEach(function (record) {
-        if (record.status === STATUS_SIGNED_OUT || record.status === STATUS_OTHER_ACCOUNT) {
+        if (record.status === STATUS_SIGNED_OUT) {
           record.status = STATUS_WAITING;
+          writes.push(putRow(record));
+        } else if (record.status === STATUS_OTHER_ACCOUNT) {
+          releaseRow(record);
           writes.push(putRow(record));
         }
       });
@@ -778,17 +785,19 @@
       // Signed out, or another account is signed in now than the one this
       // page and its saved reports belong to (WR-W09). Every other report of
       // this account would get the same answer, so they all wait, nothing more
-      // is sent from this page and Discard stays on each row. For another
-      // account the Not sent rows are held too: their Edit and resend would
-      // post through the form under the account signed in now.
+      // is sent from this page and Discard stays on each row. A Not sent row
+      // keeps its status either way: it is sent only when the person asks,
+      // and while the session lapsed it offers no Edit and resend.
       held = status === 401 ? STATUS_SIGNED_OUT : STATUS_OTHER_ACCOUNT;
       rows.forEach(function (other) {
-        if (belongsToAccount(other) && (other.status !== STATUS_REJECTED || held === STATUS_OTHER_ACCOUNT)) {
-          other.status = held;
-          other.sending_until = 0;
+        if (other !== record && other.request_id !== record.request_id && belongsToAccount(other)) {
+          holdRow(other, held);
         }
       });
-      record.status = held;
+      holdRow(record, held);
+      if (record.status === STATUS_REJECTED && held === STATUS_OTHER_ACCOUNT && err.fieldMessage) {
+        record.last_error = err.fieldMessage;
+      }
       sessionLapsed = true;
       announce(status === 401 ? ANNOUNCE_SIGNED_OUT : ANNOUNCE_OTHER_ACCOUNT);
       outcome = 'stop';
@@ -800,7 +809,7 @@
     var writes = [putRow(record)];
     if (held !== '') {
       rows.forEach(function (other) {
-        if (other !== record && other.status === held) {
+        if (other !== record && other.request_id !== record.request_id && other.status === held) {
           writes.push(putRow(other));
         }
       });
@@ -819,6 +828,38 @@
   // not send (another tab holds the flush lock, say) is tried after 1 second,
   // then 2, 4 and so on, up to a minute (WR-07). A row being sent wakes the
   // page when its lease ends.
+  // holdRow puts one row on hold after a 401 or a 409 for another account.
+  // Signed out holds every row but a Not sent one, as before. Another account
+  // holds only the rows that would send by themselves, and keeps the status
+  // each had in held_from, so a page that loads for the right account again
+  // puts it back exactly (WR-05).
+  function holdRow(row, held) {
+    row.sending_until = 0;
+    if (held === STATUS_SIGNED_OUT) {
+      if (row.status !== STATUS_REJECTED) {
+        row.status = held;
+      }
+      return;
+    }
+    if (HELD_FOR_OTHER_ACCOUNT.indexOf(row.status) !== -1) {
+      row.held_from = row.status;
+      row.status = held;
+    }
+  }
+
+  // releaseRow puts a row held for another account back to the status it had.
+  // A row held by older code, which kept no earlier status, becomes Not sent,
+  // so it waits for the person instead of sending by itself.
+  function releaseRow(row) {
+    if (HELD_FOR_OTHER_ACCOUNT.indexOf(row.held_from) !== -1) {
+      row.status = row.held_from;
+    } else {
+      row.status = STATUS_REJECTED;
+      row.last_error = row.last_error || GENERIC_REASON;
+    }
+    delete row.held_from;
+  }
+
   function scheduleWake() {
     if (wakeTimer !== null) {
       window.clearTimeout(wakeTimer);
@@ -1067,7 +1108,8 @@
     // no buttons: its delete could not reach the store (WR-W06).
     var stale = isStale(record);
     var signature = [leased ? 'sending' : record.status, record.last_error, record.serious === true,
-      record.emergency_number, record.status === STATUS_BLOCKED ? record.next_try_at : '', stale].join('|');
+      record.emergency_number, record.status === STATUS_BLOCKED ? record.next_try_at : '', stale,
+      sessionLapsed].join('|');
     if (rowEl.getAttribute('data-state') === signature) {
       return;
     }
@@ -1160,9 +1202,14 @@
   }
 
   // buildEditControl is the one place an Edit and resend control is made. It
-  // returns null when this page has no form to open and no link to one. A page
-  // that passes a link builder gets a link, and the edit callback is not used.
+  // returns null when this page has no form to open and no link to one, and
+  // while the session lapsed (signed out, or another account signed in), when
+  // a resend could not be posted for this account. A page that passes a link
+  // builder gets a link, and the edit callback is not used.
   function buildEditControl(record) {
+    if (sessionLapsed) {
+      return null;
+    }
     if (typeof resendHref === 'function') {
       var target = safeResendHref(resendHref(record));
       return target === '' ? null : createResendLink(target);
