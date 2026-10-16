@@ -386,6 +386,22 @@
     return !!el && el.isConnected && el.getClientRects().length > 0;
   }
 
+  // reportOpener is the control that opens the report window at the current
+  // size: the Report item of the bottom bar on a phone, the Post a report link
+  // of the top bar on a laptop (Phase 3.4, D-10). Each size hides the other
+  // with display none, so the one with a layout box is the visible one. It is
+  // found by the data-open-report attribute, not by an id, and it is null when
+  // neither takes part in layout.
+  function reportOpener() {
+    var openers = document.querySelectorAll('[data-open-report]');
+    for (var i = 0; i < openers.length; i += 1) {
+      if (elementIsShown(openers[i])) {
+        return openers[i];
+      }
+    }
+    return null;
+  }
+
   // currentTabLink is the link of the selected tab, or null without a strip.
   function currentTabLink() {
     return tabStripEl ? tabStripEl.querySelector('.view-tab[aria-current="page"]') : null;
@@ -981,7 +997,7 @@
       return;
     }
     window.PinalertReportForm.open({
-      opener: opener || document.getElementById('fab-report'),
+      opener: opener || reportOpener(),
       prefill: record.payload,
       note: note,
       requestId: record.request_id,
@@ -990,10 +1006,10 @@
   }
 
   // queueFocusFallback is where focus goes when the last saved report leaves:
-  // the first report row, else the Report an emergency button.
+  // the first report row, else the opener of the report window.
   function queueFocusFallback() {
     var firstRow = reportListEl ? reportListEl.querySelector('.report-row') : null;
-    return firstRow || document.getElementById('fab-report');
+    return firstRow || reportOpener();
   }
 
   // syncNoticeCard sets the Stale row of the notice card (shown only while the
@@ -1377,7 +1393,7 @@
       if (window.PinalertMap && typeof PinalertMap.focusOpenPopup === 'function' && PinalertMap.focusOpenPopup()) {
         return;
       }
-      target = document.getElementById('fab-report');
+      target = reportOpener();
     } else {
       target = reportListEl && reportListEl.querySelector('.report-row');
       if (!target && pastGroupsEl) {

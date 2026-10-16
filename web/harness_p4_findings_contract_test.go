@@ -173,7 +173,11 @@ func TestHarnessFindingP4_9MessageClearsTheOpenedReport(t *testing.T) {
 	if shell.Decls["gap"] != "var(--space-xl)" || shell.Decls["grid-template-columns"] != "1fr 1fr" {
 		t.Errorf("the laptop shell is %v; the message band assumes two equal halves 32px apart", shell.Decls)
 	}
-	p16MustDecl(t, "report button", p31mRule(t, main, "", ".fab"), map[string]string{"right": "var(--space-lg)"})
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): the
+	// floating report button is gone, so the right end of the band is the
+	// theme toggle's column alone (the same 24px plus 44px the formula
+	// reserves). The Phase 3.1 and Phase 4 hands-on tests are walked on this
+	// layout after Phase 3.4 is built.
 	p16MustDecl(t, "theme toggle", p31mRule(t, "static/css/auth.css", "", ".theme-toggle"), map[string]string{"right": "var(--space-lg)"})
 
 	// The head comes after the action head of equal weight, so it caps both.
@@ -196,7 +200,11 @@ func TestHarnessFindingP4_9MessageClearsTheOpenedReport(t *testing.T) {
 	index := pages["templates/index.html.tmpl"]
 	shellAt := strings.Index(index, `<div class="app-shell"`)
 	toastAt := strings.Index(index, "\n    <div id=\"toast\"")
-	navAt := strings.Index(index, `<nav class="bottom-nav"`)
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): the
+	// phone bottom bar is the app_bottombar block, still the last child after
+	// the shell. The Phase 3.1 and Phase 4 hands-on tests are walked on this
+	// layout after Phase 3.4 is built.
+	navAt := strings.Index(index, `{{template "app_bottombar" .}}`)
 	if shellAt == -1 || toastAt < shellAt || navAt < toastAt {
 		t.Errorf("index.html.tmpl: #toast is not a direct child of .app-shell, so the laptop rule matches nothing")
 	}

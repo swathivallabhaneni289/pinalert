@@ -476,36 +476,22 @@
 }
 
 /* The theme control (quick task 260923-rra): a fixed-position floating
-   button in the LOWER of two stacked slots in the bottom-right corner, with
-   the report button (.fab, main.css) raised into the slot above it. It is
-   no longer a menu row.
+   button in the bottom-right corner. It is no longer a menu row.
 
-   This arrangement is a direct user decision (D-A), not an inferred
-   layout, and should not be "corrected" back. Asked whether they wanted
-   the toggle above the report button or below it with the report button
-   moving up, the user chose below with the report button moving up.
-   Reaching this arrangement required moving .fab too: the report button's
-   band already ran from the large space token up by one touch-target
-   height, so a 44px control placed beneath an unmoved report button had
-   nowhere to go but off screen. That is why main.css is in scope for this
-   change at all. The stack's bottom-most pixel is unchanged from what
-   previously shipped, since whichever control holds the lower slot sits at
-   the same large space token the report button used to, so clearance over
-   Leaflet's default bottom-right attribution strip is exactly as before.
-   Resolved arithmetic, so a future reader does not have to redo it: the
-   control's band runs 24px to 68px, the report button's runs 76px to
-   120px, and the gap between them is the 8px small space token.
-
-   Both offsets are expressed in tokens on purpose, so changing the large
-   space token moves both controls together and keeps the gap intact. The
-   geometry test in web/theme_contract_test.go
-   (TestThemeToggleFloatsClearOfTheReportButton) fails the build both if the
-   two bands ever overlap and if the two controls are ever swapped back. */
+   History, kept so a reader does not move it back: the toggle was the lower
+   of two stacked slots, with the round report button raised into the slot
+   above it (a direct user decision, D-A). Phase 3.4 (D-10) retired that
+   report button, so the toggle is the only control in the corner now and the
+   geometry test that locked the two bands apart
+   (TestThemeToggleFloatsClearOfTheReportButton) is retired with it. The
+   offset stays a token, so changing the large space token moves it, and
+   its clearance over Leaflet's default bottom-right attribution strip is
+   exactly as before. */
 .theme-toggle {
   position: fixed;
   right: var(--space-lg);
   bottom: var(--space-lg);
-  z-index: 1000; /* above Leaflet's control panes, matching .fab */
+  z-index: 1000; /* above Leaflet's control panes */
   display: flex;
   align-items: center;
   justify-content: center;

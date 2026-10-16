@@ -1,0 +1,197 @@
+/*
+ * Pinalert app-bar.css (Phase 3.4, plan 03, UI-SPEC Surface 1)
+ *
+ * The shared frame of the main places: the laptop top bar (wordmark, the three
+ * places, Post a report, the person button) and the glyph masks both bars use.
+ * The phone arrangement (the 60px title bar, the gear, the bottom bar) lives in
+ * phone.css under "03.4 app bars", inside its one narrow block, as the house
+ * rule for phone rules says. Both bars are in the markup once; each size hides
+ * the other with display none in phone.css, which also takes it out of the tab
+ * order. Tokens only; every colour comes from main.css.
+ *
+ * Loads after chrome.css and before phone.css, so a phone rule of the same
+ * weight wins without a specificity trick.
+ */
+
+/* ---- Glyph masks ---------------------------------------------------------
+   One literal url per file, the 03.1 search.svg precedent, so
+   TestNewIconsAreRegisteredAndUsed can see the file is used. The colour is
+   currentColor, so a glyph follows the text colour of its control in both
+   themes. 24px is the bar glyph size in UI-SPEC Spacing, 20px the laptop
+   button glyph. */
+.app-icon {
+  display: block;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.app-icon--map-pin {
+  -webkit-mask-image: url("/static/icons/map-pin.svg");
+  mask-image: url("/static/icons/map-pin.svg");
+}
+
+.app-icon--megaphone {
+  -webkit-mask-image: url("/static/icons/megaphone.svg");
+  mask-image: url("/static/icons/megaphone.svg");
+}
+
+.app-icon--user {
+  -webkit-mask-image: url("/static/icons/user.svg");
+  mask-image: url("/static/icons/user.svg");
+}
+
+.app-icon--circle-plus {
+  -webkit-mask-image: url("/static/icons/circle-plus.svg");
+  mask-image: url("/static/icons/circle-plus.svg");
+}
+
+.app-icon--settings {
+  -webkit-mask-image: url("/static/icons/settings.svg");
+  mask-image: url("/static/icons/settings.svg");
+}
+
+.app-icon--plus {
+  -webkit-mask-image: url("/static/icons/plus.svg");
+  mask-image: url("/static/icons/plus.svg");
+}
+
+.app-icon--arrow-left {
+  -webkit-mask-image: url("/static/icons/arrow-left.svg");
+  mask-image: url("/static/icons/arrow-left.svg");
+}
+
+/* ---- Scroll padding -------------------------------------------------------
+   A focused control or a scrolled to row never lands under the sticky chrome,
+   which is now the notice bar and the top bar. */
+html:has(.app-topbar) {
+  scroll-padding-top: calc(var(--disclaimer-bar-height) + var(--app-topbar-height) + var(--space-sm));
+}
+
+/* ---- The top bar (laptop; the phone arrangement is in phone.css) ---------- */
+.app-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: var(--app-topbar-height);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app-topbar__brand {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  margin-right: var(--space-lg);
+  color: var(--color-text);
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+}
+
+.app-topbar__nav {
+  display: flex;
+  align-items: center;
+}
+
+.app-topbar__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-12);
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app-topbar__link[aria-current="page"] {
+  border-bottom-color: var(--color-text);
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+.app-topbar__spacer {
+  flex: 1 1 auto;
+}
+
+/* The one filled button of the bar. It is a link to /?post=1, so it works
+   without script; modal.js opens the report window in place when the page has
+   one. A modest 8px corner, never a pill. */
+.app-topbar__post {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  min-width: 160px;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-md);
+  border-radius: 8px;
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app-topbar__post .app-icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* The person button sits in the bar's flow on a laptop. auth.css hangs the
+   header off the bottom edge of the sticky wrapper for the pages that still
+   use that arrangement; inside the top bar it is an ordinary flex child. The
+   menu panel keeps hanging from it (#account-menu is positioned against this
+   header). */
+.app-topbar .app-header {
+  position: relative;
+  top: auto;
+  right: auto;
+}
+
+@media (forced-colors: active) {
+  .app-topbar {
+    border-bottom: 1px solid CanvasText;
+  }
+
+  .app-topbar__link[aria-current="page"] {
+    border-bottom-color: CanvasText;
+  }
+
+  .app-topbar__post {
+    border: 1px solid CanvasText;
+  }
+}
+
+/* ---- The laptop page frame -------------------------------------------------
+   The top bar is a second sticky bar above the shell, so the shell and the map
+   give up its height as well as the notice bar's, and the page does not gain a
+   scrollbar of its own. The 100vh form is the legacy fallback and 100dvh the
+   dynamic unit, the pairing main.css uses. These rules only apply at 900px and
+   up; the phone shell is arranged in phone.css. */
+@media (min-width: 900px) {
+  body.has-app-bar .app-shell {
+    min-height: calc(100vh - var(--disclaimer-bar-height) - var(--app-topbar-height));
+    min-height: calc(100dvh - var(--disclaimer-bar-height) - var(--app-topbar-height));
+  }
+
+  body.has-app-bar #map {
+    height: calc(100vh - var(--disclaimer-bar-height) - var(--app-topbar-height));
+    height: calc(100dvh - var(--disclaimer-bar-height) - var(--app-topbar-height));
+  }
+}

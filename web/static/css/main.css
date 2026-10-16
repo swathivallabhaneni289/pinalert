@@ -27,22 +27,55 @@
   /* Spacing scale — 4px-multiple, per UI-SPEC "Spacing Scale" */
   --space-xs: 4px;
   --space-sm: 8px;
+  /* Phase 3.4 (UI-SPEC Spacing Scale): 12 joins the scale for card padding,
+     card gaps and the phone top bar edge, so no padding is built from a sum. */
+  --space-12: 12px;
   --space-md: 16px;
   --space-lg: 24px;
   --space-xl: 32px;
   --space-2xl: 48px;
   --space-3xl: 64px;
 
-  /* WCAG 2.5.5 accessibility floor — FAB, category tiles, slider thumb */
+  /* WCAG 2.5.5 accessibility floor: category tiles, slider thumb, bar controls */
   --touch-target-min: 44px;
 
-  /* Shadow under the map popup card and its tip. The same value the FAB uses. */
+  /* Shadow under the map popup card and its tip. */
   --shadow-popup: 0 2px 8px rgb(0 0 0 / 25%);
 
+  /* Phase 3.4 shadows (UI-SPEC Color, new theme independent tokens): declared
+     once here and not repeated in the dark sources, the --shadow-popup
+     precedent. The sheet shadow falls upward from the phone list sheet, the
+     menu shadow sits under the Show menu, the person menu and the bell list,
+     and the window shadow sits under the Post a report window, the first
+     time window and the reader. */
+  --shadow-sheet: 0 -2px 12px rgb(0 0 0 / 14%);
+  --shadow-menu: 0 4px 16px rgb(0 0 0 / 18%);
+  --shadow-window: 0 12px 40px rgb(0 0 0 / 30%);
+
+  /* Phase 3.4 fixed colours (UI-SPEC Color): drawn in the same colours in both
+     themes, so a theme swapped token would fail contrast. The alert fill is
+     the bell count badge, the N new tag, the unread dot and the Call 112
+     buttons (white on it is 5.4 to 1). The notice colours are the dark strip
+     and the first time side panel, which stay dark in both themes. */
+  --color-alert-fill: #C0392B;
+  --color-on-alert-fill: #FFFFFF;
+  --color-notice-bg: #1A1D21;
+  --color-notice-text: #FFFFFF;
+  --color-notice-sub: #C9CDD1;
+  --color-notice-dim: #9CA3AF;
+  --color-notice-outline: #4B4F55;
+  --color-notice-icon: #F5C451;
+
   /* Typography — system UI stack, no web-font request (render-blocking fetch is the wrong
-     trade for an emergency tool). Exactly four size roles, exactly two weights. */
+     trade for an emergency tool). Four size roles for the app and one 12px caption
+     (Phase 3.4, UI-SPEC departure D4) limited to a closed list: the bottom bar labels,
+     the column heads of My activity and Official alerts, the bell count digits, the
+     first time step digits and the bell list time line. Exactly two weights. */
   --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     sans-serif;
+
+  --font-size-caption: 12px;
+  --line-height-caption: 1.3;
 
   --font-size-label: 14px;
   --line-height-label: 1.4;
@@ -68,6 +101,15 @@
      it on the root, so at enlarged text the shells follow the real bar; the
      tiers stay the first paint value and the value without scripts. */
   --disclaimer-bar-height: calc(var(--space-xs) * 2 + var(--font-size-label) * var(--line-height-label) * 3 + 1px);
+
+  /* Phase 3.4 app bars (UI-SPEC Surface 1): the phone top bar is one touch
+     target with a small space above and below (60px), and the phone bottom
+     bar is a bar item (48px plus 8px) with 4px of padding and a 1px border
+     (65px; the home indicator inset is added on the bar itself). The laptop
+     tier below declares 61px for the top bar (its 1px hairline) and 0 for the
+     bottom bar. Pages that carry the bars subtract these tokens. */
+  --app-topbar-height: calc(var(--touch-target-min) + var(--space-md));
+  --app-bottombar-height: calc(var(--space-2xl) + var(--space-sm) + var(--space-sm) + 1px);
 
   /* Base surfaces & text — light values (UI-SPEC "Color → Base surfaces & text") */
   --color-bg: #FFFFFF;
@@ -204,6 +246,10 @@
 @media (min-width: 900px) {
   :root {
     --disclaimer-bar-height: calc(var(--space-xs) * 2 + var(--font-size-label) * var(--line-height-label) + 1px);
+    /* Phase 3.4: the laptop top bar is 44px of control, 8px above and below
+       and a 1px hairline; the laptop has no bottom bar. Lengths only here. */
+    --app-topbar-height: calc(var(--touch-target-min) + var(--space-md) + 1px);
+    --app-bottombar-height: 0px;
   }
 }
 
@@ -468,37 +514,13 @@ body {
 }
 
 /* -------------------------------------------------------------------------
- * Neutral (non-severity) interactive elements — FAB and primary submit
- * button are deliberately NOT accent-colored (D-09, D-10): inverted
- * neutral treatment (--color-text on --color-bg) instead.
+ * Neutral (non-severity) buttons: the primary submit button is deliberately
+ * NOT accent-colored (D-09, D-10): inverted neutral treatment (--color-text on
+ * --color-bg) instead. The floating round report button that shared this
+ * treatment was retired in Phase 3.4 (D-10): the Report item of the phone
+ * bottom bar and the Post a report link of the laptop top bar open the report
+ * window now (app-bar.css, phone.css).
  * ---------------------------------------------------------------------- */
-/* bottom is raised by one touch-target height plus the small space token
-   (quick task 260923-rra) to make room for the theme toggle in the slot
-   below. See auth.css's .theme-toggle rule for the full D-A rationale, and
-   web/theme_contract_test.go's TestThemeToggleFloatsClearOfTheReportButton
-   for the geometry lock that keeps the two in sync. */
-.fab {
-  position: fixed;
-  right: var(--space-lg);
-  bottom: calc(var(--space-lg) + var(--touch-target-min) + var(--space-sm));
-  z-index: 1000; /* above Leaflet's control panes */
-  width: var(--touch-target-min);
-  height: var(--touch-target-min);
-  min-width: var(--touch-target-min);
-  min-height: var(--touch-target-min);
-  border: none;
-  border-radius: 50%;
-  background: var(--color-text);
-  color: var(--color-bg);
-  font-size: var(--font-size-display);
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
-}
-
 .btn {
   display: inline-flex;
   align-items: center;
@@ -593,8 +615,8 @@ body {
 }
 
 /* The primary Leaflet map container (the div index.html.tmpl gives id="map")
-   is the last in-flow box inside .pane--map: its only sibling, the FAB, is
-   position: fixed and so contributes no content height. With nothing else
+   is the last in-flow box inside .pane--map: its siblings are positioned
+   out of flow and so contribute no content height. With nothing else
    giving the pane's grid row a size, the container collapses to 0px, and
    L.map(container) in map.js's init() measures a zero-height box — Leaflet
    then has no area to paint tiles into at all (UAT Test 1 blocker).

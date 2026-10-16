@@ -729,6 +729,202 @@ var nonCategoryIcons = map[string]bool{
 	// exemption reasoning as the glyphs above. TestSearchIconIsMasked proves
 	// the rule and the file line up, so the exemption cannot hide an orphan.
 	"static/icons/search.svg": true,
+	// Phase 3.4 app layout (plan 03.4-03, UI-SPEC Design System): ten Lucide
+	// outline glyphs copied from the mockup, each drawn by a literal
+	// url("/static/icons/<name>") mask rule, same exemption reasoning as
+	// search.svg. TestNewIconsAreRegisteredAndUsed proves the files exist and
+	// that every glyph a plan has started to mask is referenced by a literal
+	// url, so the exemption cannot hide an orphan.
+	// bell: the bell button and the bell list (plan 04).
+	"static/icons/bell.svg": true,
+	// settings: the phone top bar gear and the person menu row (plan 03, 04).
+	"static/icons/settings.svg": true,
+	// circle-plus: the phone bottom bar Report item (plan 03).
+	"static/icons/circle-plus.svg": true,
+	// circle-x: the ended reports and Not true marks of My activity (plan 07).
+	"static/icons/circle-x.svg": true,
+	// history: the Ended nearby row of My activity (plan 07).
+	"static/icons/history.svg": true,
+	// megaphone: the Official alerts bottom bar item (plan 03).
+	"static/icons/megaphone.svg": true,
+	// map-pin: the Nearby bottom bar item (plan 03).
+	"static/icons/map-pin.svg": true,
+	// phone: the Call 112 buttons (plan 12).
+	"static/icons/phone.svg": true,
+	// plus: the laptop Post a report button (plan 03).
+	"static/icons/plus.svg": true,
+	// chevron-right: the hub rows and the bell list rows (plan 04).
+	"static/icons/chevron-right.svg": true,
+}
+
+// phase34Icons lists the ten Phase 3.4 glyph files, all exempted through
+// nonCategoryIcons above.
+var phase34Icons = []string{
+	"bell.svg", "settings.svg", "circle-plus.svg", "circle-x.svg", "history.svg",
+	"megaphone.svg", "map-pin.svg", "phone.svg", "plus.svg", "chevron-right.svg",
+}
+
+// phase34IconsInUse lists the Phase 3.4 glyphs whose mask rule exists in a
+// shipped stylesheet. Each plan appends the icons it masks, in the same commit
+// as the rule:
+//   - plan 03.4-03 appends map-pin, megaphone, circle-plus, settings and plus
+//     (the app bars) in its second task.
+//   - plan 04 appends bell and chevron-right, plan 07 appends history and
+//     circle-x, plan 12 appends phone.
+var phase34IconsInUse = []string{"map-pin.svg", "megaphone.svg", "circle-plus.svg", "settings.svg", "plus.svg"}
+
+// TestNewIconsAreRegisteredAndUsed (plan 03.4-03) has two parts. First every
+// one of the ten Phase 3.4 glyph files exists, is registered in
+// nonCategoryIcons and is a plain stroke glyph with the licence line of the
+// existing glyphs. Second every glyph in phase34IconsInUse is drawn by a
+// literal url("/static/icons/<name>") in some stylesheet, so the exemption
+// cannot hide an orphan.
+func TestNewIconsAreRegisteredAndUsed(t *testing.T) {
+	if len(phase34Icons) != 10 {
+		t.Fatalf("phase34Icons holds %d names, want the ten of UI-SPEC Design System", len(phase34Icons))
+	}
+	ref, err := fs.ReadFile(StaticFS, "static/icons/search.svg")
+	if err != nil {
+		t.Fatalf("reading the reference glyph static/icons/search.svg: %v", err)
+	}
+	refFirst, _, _ := strings.Cut(string(ref), "\n")
+	for _, name := range phase34Icons {
+		path := "static/icons/" + name
+		raw, err := fs.ReadFile(StaticFS, path)
+		if err != nil {
+			t.Errorf("%s is missing from the embedded tree: %v", path, err)
+			continue
+		}
+		if !nonCategoryIcons[path] {
+			t.Errorf("%s is not registered in nonCategoryIcons", path)
+		}
+		text := string(raw)
+		first, _, _ := strings.Cut(text, "\n")
+		if first != refFirst {
+			t.Errorf("%s first line %q differs from search.svg's licence line %q", path, first, refFirst)
+		}
+		for _, want := range []string{`viewBox="0 0 24 24"`, `stroke="currentColor"`, `stroke-width="2"`} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s lacks %s", path, want)
+			}
+		}
+		if strings.Contains(text, "<script") || strings.Contains(text, "href") {
+			t.Errorf("%s holds a script or a link, which a mask glyph never carries (T-03-06)", path)
+		}
+	}
+
+	inAll := map[string]bool{}
+	for _, name := range phase34Icons {
+		inAll[name] = true
+	}
+	var sheets []string
+	err = fs.WalkDir(StaticFS, "static/css", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && strings.HasSuffix(path, ".css") {
+			raw, readErr := fs.ReadFile(StaticFS, path)
+			if readErr != nil {
+				return readErr
+			}
+			sheets = append(sheets, string(raw))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking static/css: %v", err)
+	}
+	for _, name := range phase34IconsInUse {
+		if !inAll[name] {
+			t.Errorf("phase34IconsInUse names %q, which is not one of the ten Phase 3.4 glyphs", name)
+			continue
+		}
+		want := `url("/static/icons/` + name + `")`
+		found := false
+		for _, css := range sheets {
+			if strings.Contains(css, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("no stylesheet masks %s with the literal %s", name, want)
+		}
+	}
+}
+
+// TestPhase34DesignTokensDeclaredOnce (plan 03.4-03, UI-SPEC Color and
+// Typography) pins the new design tokens: each is declared exactly once on
+// the light :root block of main.css with the contract value, and none is
+// repeated in a dark source. The colour and shadow tokens are theme
+// independent, the --shadow-popup precedent: the mockup draws them in the same
+// fixed colours in both themes.
+func TestPhase34DesignTokensDeclaredOnce(t *testing.T) {
+	rules := parseCSSRules(p408ReadStatic(t, "static/css/main.css"))
+	want := map[string]string{
+		// 12px joins the spacing scale for card padding and the phone bar edge.
+		"--space-12": "12px",
+		// The 12px caption is limited to the closed list in UI-SPEC Typography.
+		"--font-size-caption":   "12px",
+		"--line-height-caption": "1.3",
+		// The alert fill: bell badge, N new tag, unread dot, Call 112 buttons.
+		"--color-alert-fill":    "#C0392B",
+		"--color-on-alert-fill": "#FFFFFF",
+		// The dark strip and the first time side panel, dark in both themes.
+		"--color-notice-bg":      "#1A1D21",
+		"--color-notice-text":    "#FFFFFF",
+		"--color-notice-sub":     "#C9CDD1",
+		"--color-notice-dim":     "#9CA3AF",
+		"--color-notice-outline": "#4B4F55",
+		"--color-notice-icon":    "#F5C451",
+		// Phone sheet top edge, menus and bell list, windows.
+		"--shadow-sheet":  "0 -2px 12px rgb(0 0 0 / 14%)",
+		"--shadow-menu":   "0 4px 16px rgb(0 0 0 / 18%)",
+		"--shadow-window": "0 12px 40px rgb(0 0 0 / 30%)",
+	}
+	counts := map[string]int{}
+	values := map[string]string{}
+	var darkDeclared []string
+	for _, r := range rules {
+		decls := declsOf(r.declBody)
+		for name := range want {
+			v, ok := decls[name]
+			if !ok {
+				continue
+			}
+			head := strings.TrimSpace(r.selectorHead)
+			if head == ":root" && !isDarkMediaRootHead(r.selectorHead) {
+				counts[name]++
+				values[name] = v
+			} else {
+				darkDeclared = append(darkDeclared, name+" in "+head)
+			}
+		}
+	}
+	for name, v := range want {
+		if counts[name] != 1 {
+			t.Errorf("main.css declares %s %d times on :root, want exactly 1", name, counts[name])
+			continue
+		}
+		if values[name] != v {
+			t.Errorf("%s is %q, want %q", name, values[name], v)
+		}
+	}
+	for _, d := range darkDeclared {
+		t.Errorf("%s: a theme independent Phase 3.4 token must not be repeated in another source", d)
+	}
+	// The two bar heights are lengths declared on :root and in the 900px tier.
+	for _, name := range []string{"--app-topbar-height", "--app-bottombar-height"} {
+		n := 0
+		for _, r := range rules {
+			if _, ok := declsOf(r.declBody)[name]; ok {
+				n++
+			}
+		}
+		if n != 2 {
+			t.Errorf("main.css declares %s %d times, want the phone value and the 900px value", name, n)
+		}
+	}
 }
 
 // phase3TrustGlyphIcons lists the Phase 3 glyph files exempted from the

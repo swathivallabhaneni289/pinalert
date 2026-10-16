@@ -18,7 +18,10 @@
 /* Phone only elements. They are built into the markup and shown only below
    900px, so the layout at 900px and up has nothing new in it. */
 .feed-heading,
-.bottom-nav,
+.app-bar,
+.app-topbar__title,
+.app-topbar__back,
+.app-topbar__gear,
 .profile-logout {
   display: none;
 }
@@ -66,24 +69,11 @@
     display: none;
   }
 
-  /* The account button stays on phones (Phase 4, P4-A4): it hangs 16px under
-     the unofficial bar at the right edge, and its menu holds the Low data and
-     Policy ways in. The rule only says so out loud; the head is checked
-     against the real markup by TestPhoneRuleHeadsMatchTheMarkup. */
-  .top-chrome > .app-header {
-    display: block;
-  }
-
   /* No theme toggle on phones (owner decision of 2026-10-15): a phone follows
      the device's own light or dark setting, and theme.js writes no theme on
      the root below 900px. display none also takes it out of the tab order. */
   body > .theme-toggle {
     display: none;
-  }
-
-  .pane--map > .fab {
-    right: var(--space-md);
-    bottom: calc(var(--touch-target-min) + var(--space-sm) + var(--space-md));
   }
 
   #toast:not([hidden]) {
@@ -188,11 +178,11 @@
     right: var(--space-md);
     left: var(--space-md);
     max-width: none;
-    top: calc(var(--disclaimer-bar-height, 0px) + var(--space-sm) + var(--touch-target-min) + var(--space-xs));
+    top: calc(var(--disclaimer-bar-height, 0px) + var(--app-topbar-height) + var(--space-sm) + var(--touch-target-min) + var(--space-xs));
   }
 
   .pane--map > .map-tools .map-search__results {
-    max-height: calc(100dvh - (var(--disclaimer-bar-height, 0px) + var(--space-sm) + var(--touch-target-min) + var(--space-xs)) - (var(--touch-target-min) + var(--space-sm)) - var(--space-sm));
+    max-height: calc(100dvh - (var(--disclaimer-bar-height, 0px) + var(--app-topbar-height) + var(--space-sm) + var(--touch-target-min) + var(--space-xs)) - (var(--app-bottombar-height) + env(safe-area-inset-bottom)) - var(--space-sm));
   }
 
   /* ---- Report rows as rounded cards ---- */
@@ -303,46 +293,154 @@
     outline-offset: 0;
   }
 
-  /* ---- The bottom bar ---- */
+  /* 03.4 app bars */
 
-  .bottom-nav {
+  /* The phone arrangement of the two bars (Phase 3.4, plan 03, UI-SPEC
+     Surface 1). The markup is app_bar.html.tmpl: one Go list of places drawn
+     twice, here as the 60px title bar and the four item bottom bar, and on a
+     laptop as the top bar (app-bar.css). The bars take their height from the
+     page frame, not from a fixed position: the body is a column the height of
+     the screen, the notice bar and the title bar above, the bottom bar below,
+     and the content between them takes what is left, so the shell needs no
+     measurement of its own and the page never scrolls as a document. */
+
+  /* The frame. block-size is the height of the screen written in the logical
+     form on purpose: the full height of the screen belongs to the body, never
+     to the shell or the map, which still give up the notice bar's height as
+     TestPhoneShellSubtractsTheBar requires. The legacy unit comes first and
+     the dynamic unit second. */
+  body.has-app-bar {
     display: flex;
-    position: fixed;
-    right: 0;
-    bottom: 0;
-    left: 0;
+    flex-direction: column;
+    block-size: 100vh;
+    block-size: 100dvh;
+  }
+
+  body.has-app-bar > .top-chrome {
+    flex: none;
+  }
+
+  /* With a zero flex basis the shell takes the space between the bars and its
+     own height rule below no longer sets its size. min-height 0 lets it shrink
+     below the min-height main.css gives it. */
+  body.has-app-bar > .app-shell {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
+  /* A page whose content is longer than the screen scrolls inside this
+     region, so the bars never move. */
+  body.has-app-bar > .app-content {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* The title bar: no bottom border, 8px above, below and at the right, 12px
+     at the left, 4px between its controls. The laptop only parts are hidden.
+     The person button is not drawn on a phone; the gear takes its place. */
+  .top-chrome > .app-topbar {
+    gap: var(--space-xs);
+    padding: var(--space-sm) var(--space-sm) var(--space-sm) var(--space-12);
+    border-bottom: 0;
+  }
+
+  .app-topbar > .app-topbar__brand,
+  .app-topbar > .app-topbar__nav,
+  .app-topbar > .app-topbar__post,
+  .app-topbar > .app-header {
+    display: none;
+  }
+
+  .app-topbar > .app-topbar__title {
+    display: block;
+    flex: 0 1 auto;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: var(--color-text);
+    font-size: var(--font-size-heading);
+    line-height: var(--line-height-heading);
+    font-weight: var(--font-weight-semibold);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Back and the gear: one touch target, no border, the glyph at 24px in the
+     text colour. */
+  .app-topbar > .app-topbar__back,
+  .app-topbar > .app-topbar__gear {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: var(--touch-target-min);
+    height: var(--touch-target-min);
+    border-radius: 8px;
+    color: var(--color-text);
+    text-decoration: none;
+  }
+
+  /* The bottom bar: four equal items. 4px of padding at the top and sides and
+     4px plus the home indicator inset at the bottom, so the bar is 65px high
+     at 390px with the 1px border. It sits under the content in the flow, above
+     the list sheet in the stack order and below the detail sheet (1080), which
+     covers it as built. */
+  body > .app-bar {
+    display: flex;
+    flex: none;
+    position: relative;
     z-index: 1010;
-    min-height: calc(var(--touch-target-min) + var(--space-sm));
+    gap: var(--space-xs);
+    padding: var(--space-xs) var(--space-xs) calc(var(--space-xs) + env(safe-area-inset-bottom));
     background: var(--color-bg);
     border-top: 1px solid var(--color-border);
   }
 
-  .bottom-nav .bottom-nav__tab {
+  body > .app-bar > .app-bar__item {
     display: flex;
     flex: 1 1 0;
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    position: relative;
     gap: var(--space-xs);
-    min-height: var(--touch-target-min);
+    min-width: 0;
+    min-height: calc(var(--space-2xl) + var(--space-sm));
+    border-radius: 8px;
     color: var(--color-text-muted);
-    font-size: var(--font-size-label);
-    line-height: var(--line-height-label);
+    font-size: var(--font-size-caption);
+    line-height: var(--line-height-caption);
     font-weight: var(--font-weight-regular);
     text-decoration: none;
+    white-space: nowrap;
   }
 
-  .bottom-nav .bottom-nav__tab[aria-current="page"] {
+  /* The current place is the text colour, bold, with a short bar above it. The
+     bar is drawn against the top of the whole bar, so it rises by the padding
+     the bar gives its items. */
+  body > .app-bar > .app-bar__item[aria-current="page"] {
     color: var(--color-text);
     font-weight: var(--font-weight-semibold);
   }
 
-  .bottom-nav .bottom-nav__tab[aria-current="page"]::before {
+  body > .app-bar > .app-bar__item[aria-current="page"]::before {
     content: "";
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background-color: currentColor;
+    position: absolute;
+    top: calc(var(--space-xs) * -1);
+    right: 28%;
+    left: 28%;
+    height: var(--space-xs);
+    border-radius: 0 0 4px 4px;
+    background-color: var(--color-text);
+  }
+
+  /* Report is drawn like the others, in the text colour, never a filled block
+     and never current, so it has no bar above it. */
+  body > .app-bar > .app-bar__item--report {
+    color: var(--color-text);
+    font-weight: var(--font-weight-semibold);
   }
 
   /* ---- The Activity page ----
@@ -985,5 +1083,24 @@
 @media (max-width: 899.98px) and (max-height: 359px) {
   .leaflet-container .leaflet-detail-pane .leaflet-popup {
     top: var(--disclaimer-bar-height);
+  }
+}
+
+/* 03.4 app bars: the narrowest phones. At 380px and below the four items share
+   the bar by their own width instead of equal thirds, with 4px at each side, so
+   "Official alerts" stays on one line at 320px (D-03). Labels are no wrap at
+   every width. The query keeps the 899.98px bound so the file's rule holds. */
+@media (max-width: 899.98px) and (max-width: 380px) {
+  body > .app-bar > .app-bar__item {
+    flex: 1 1 auto;
+    padding: 0 var(--space-xs);
+  }
+}
+
+/* The short bar above the current item is a background, which a forced colours
+   theme replaces, so it takes the system text colour. */
+@media (max-width: 899.98px) and (forced-colors: active) {
+  body > .app-bar > .app-bar__item[aria-current="page"]::before {
+    background-color: CanvasText;
   }
 }

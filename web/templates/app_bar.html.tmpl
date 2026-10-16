@@ -1,0 +1,41 @@
+{{/*
+  The two app bars of Phase 3.4 (UI-SPEC Surface 1), both built from the one Go
+  list of main places, .Nav.Items (internal/api/handlers/nav.go). No place name
+  is written here: a place added or renamed in that list appears in both bars.
+
+  A page includes app_topbar inside .top-chrome and app_bottombar as the last
+  child of body, so the phone bottom bar is an ordinary flex child under the
+  content. The size that does not show a bar hides it with display none, which
+  also takes it out of the tab order. Report and Post a report are links to
+  /?post=1, so they work without script; modal.js opens the report window in
+  place when it is on the page.
+*/}}
+{{define "app_topbar"}}
+<header class="app-topbar">
+  <a class="app-topbar__brand" href="/">Pinalert</a>
+  <nav class="app-topbar__nav" aria-label="Main">
+    {{range .Nav.Items}}
+    <a class="app-topbar__link" href="{{.Href}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a>
+    {{end}}
+  </nav>
+  {{if .Nav.BackHref}}
+  <a class="app-topbar__back" href="{{.Nav.BackHref}}" aria-label="Back"><span class="app-icon app-icon--arrow-left" aria-hidden="true"></span></a>
+  {{end}}
+  <h1 class="app-topbar__title">{{.Nav.Title}}</h1>
+  <span class="app-topbar__spacer"></span>
+  <a class="app-topbar__post" href="/?post=1" data-open-report><span class="app-icon app-icon--plus" aria-hidden="true"></span><span class="app-topbar__post-label">Post a report</span></a>
+  {{if .Nav.ShowGear}}
+  <a class="app-topbar__gear" href="/settings" aria-label="Settings"><span class="app-icon app-icon--settings" aria-hidden="true"></span></a>
+  {{end}}
+  {{template "account_header.html.tmpl" .}}
+</header>
+{{end}}
+
+{{define "app_bottombar"}}
+<nav class="app-bar" aria-label="Main">
+  {{range .Nav.Items}}
+  <a class="app-bar__item" href="{{.Href}}"{{if .Current}} aria-current="page"{{end}}><span class="app-icon app-icon--{{.Icon}}" aria-hidden="true"></span><span class="app-bar__label">{{.Label}}</span></a>
+  {{end}}
+  <a class="app-bar__item app-bar__item--report" href="/?post=1" data-open-report><span class="app-icon app-icon--circle-plus" aria-hidden="true"></span><span class="app-bar__label">Report</span></a>
+</nav>
+{{end}}

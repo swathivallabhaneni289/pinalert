@@ -304,7 +304,17 @@ var p16PxValue = regexp.MustCompile(`^(-?[0-9.]+)(px|%)$`)
 // matched exactly, in phone.css only, and each is a departure written in
 // .planning/sketches/005-phone-layout/README.md.
 const (
-	// phoneTabDotHead is the dot above the current tab word of the bottom bar.
+	// phoneTabDotHead was the dot above the current tab word of the old two tab
+	// bottom bar.
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): the
+	// bottom bar is the four item app bar, whose current item shows a short bar
+	// above it with a 4px corner at its bottom edge, not a round dot. The head
+	// below no longer exists in phone.css; the constant is kept so the
+	// exemption in TestReadOnlyLabelsRoundedControlsNot stays harmless, and the
+	// new bar needs none because its corner is far from fully rounded. The Phase
+	// 3.1 and Phase 4 hands-on tests are walked on this layout after Phase 3.4 is
+	// built.
 	phoneTabDotHead = `.bottom-nav .bottom-nav__tab[aria-current="page"]::before`
 	// phoneBackArrowHead is the round back arrow that Leaflet's close anchor
 	// becomes on the report detail sheet.
@@ -333,7 +343,12 @@ func TestReadOnlyLabelsRoundedControlsNot(t *testing.T) {
 		p16MustDecl(t, label, r, map[string]string{"border-radius": "12px"})
 	}
 
-	exemptControls := []string{".fab", ".theme-toggle", ".account-trigger", ".profile-back-link", ".icon-badge"}
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): .fab
+	// left the list with the floating report button; the exemption must stay
+	// backed by a real 50 percent rule, so a name with no rule would fail the
+	// non vacuous check below. The Phase 3.1 and Phase 4 hands-on tests are
+	// walked on this layout after Phase 3.4 is built.
+	exemptControls := []string{".theme-toggle", ".account-trigger", ".profile-back-link", ".icon-badge"}
 	checkedHeads := map[string]bool{}
 	for _, r := range all {
 		radius, ok := r.Decls["border-radius"]

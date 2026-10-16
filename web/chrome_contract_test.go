@@ -11,6 +11,9 @@ const (
 	chromeBarCall    = `{{template "disclaimer_bar.html.tmpl" .}}`
 	chromeHeaderCall = `{{template "account_header.html.tmpl" .}}`
 	chromeToggleCall = `{{template "theme_toggle.html.tmpl" .}}`
+	// chromeTopbarCall is the shared top bar of the map and Activity pages
+	// (Phase 3.4); its block in app_bar.html.tmpl calls the account header.
+	chromeTopbarCall = `{{template "app_topbar" .}}`
 	chromeSheetLink  = `href="/static/css/chrome.css?v={{.AssetVersion}}"`
 )
 
@@ -39,6 +42,16 @@ func TestDisclaimerBarOnEveryFullPage(t *testing.T) {
 
 			barAt := strings.Index(text, chromeBarCall)
 			headerAt := strings.Index(text, chromeHeaderCall)
+			// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT
+			// D-10): on the map and Activity pages the account header is drawn
+			// by the shared top bar, so the page calls app_topbar right after
+			// the bar, and app_bar.html.tmpl's app_topbar block calls the
+			// account header (checked below). The Phase 3.1 and Phase 4
+			// hands-on tests are walked on this layout after Phase 3.4 is
+			// built.
+			if topAt := strings.Index(text, chromeTopbarCall); topAt >= 0 {
+				headerAt = topAt
+			}
 			toggleAt := strings.Index(text, chromeToggleCall)
 			hasAccount := strings.HasSuffix(path, "index.html.tmpl") || strings.HasSuffix(path, "profile.html.tmpl") || strings.HasSuffix(path, "low.html.tmpl") || strings.HasSuffix(path, "moderate.html.tmpl")
 
@@ -52,6 +65,16 @@ func TestDisclaimerBarOnEveryFullPage(t *testing.T) {
 				}
 				if toggleAt < headerAt {
 					t.Errorf("%s: the theme toggle call must come after the account header call", path)
+				}
+				if strings.HasPrefix(text[headerAt:], chromeTopbarCall) {
+					bar, err := fs.ReadFile(TemplatesFS, "templates/app_bar.html.tmpl")
+					if err != nil {
+						t.Fatalf("reading the app bar partial: %v", err)
+					}
+					topbar, _, _ := strings.Cut(string(bar), `{{define "app_bottombar"}}`)
+					if !strings.Contains(topbar, chromeHeaderCall) {
+						t.Errorf("%s: the app_topbar block must call the account header", path)
+					}
 				}
 			} else if headerAt >= 0 {
 				t.Errorf("%s: this page has no account and must not call the account header", path)

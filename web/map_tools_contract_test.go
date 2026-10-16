@@ -321,7 +321,15 @@ func TestMapToolsMarkup(t *testing.T) {
 		`<section class="pane pane--map">`, `class="map-tools"`, `<form class="map-search" role="search"`,
 		`id="map-search-open"`, `id="map-search-input"`, `id="map-search-submit"`, `id="map-search-close"`,
 		`id="map-search-status"`, `id="map-search-results"`, `class="map-chips"`, `id="map"`,
-		`id="map-label"`, `id="fab-report"`, `<section class="pane pane--list">`)
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10):
+		// the floating report button (id fab-report) that followed the map
+		// label is gone; the pane now ends with the map label. The Phase 3.1
+		// and Phase 4 hands-on tests are walked on this layout after Phase 3.4
+		// is built.
+		`id="map-label"`, `<section class="pane pane--list">`)
+	if strings.Contains(tmpl, `id="fab-report"`) {
+		t.Errorf("index.html.tmpl still holds the retired floating report button")
+	}
 
 	for _, want := range []string{
 		`type="search"`, `autocomplete="off"`, `autocapitalize="off"`, `spellcheck="false"`,
@@ -548,7 +556,11 @@ func TestMapToolsCSS(t *testing.T) {
 	results := p31mRule(t, phone, phoneMedia, ".pane--map > .map-tools .map-search__results")
 	p16MustDecl(t, "phone results", results, map[string]string{
 		"position": "fixed", "left": "var(--space-md)", "right": "var(--space-md)",
-		"top": "calc(var(--disclaimer-bar-height, 0px) + var(--space-sm) + var(--touch-target-min) + var(--space-xs))",
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10):
+		// the phone title bar sits between the notice bar and the map, so the
+		// results start under it as well. The Phase 3.1 and Phase 4 hands-on
+		// tests are walked on this layout after Phase 3.4 is built.
+		"top": "calc(var(--disclaimer-bar-height, 0px) + var(--app-topbar-height) + var(--space-sm) + var(--touch-target-min) + var(--space-xs))",
 	})
 	if !strings.Contains(results.Decls["max-height"], "100dvh") {
 		t.Errorf("phone results max-height %q does not stop above the bottom bar", results.Decls["max-height"])
