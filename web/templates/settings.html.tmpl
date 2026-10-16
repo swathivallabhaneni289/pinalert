@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/app-bar.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/places.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/legal.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/window.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
   <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
@@ -54,14 +55,14 @@
         <p class="place-section__line">The rules, how your data is used, and a text only version for weak networks.</p>
       </div>
       <div class="place-box">
-        <a class="place-row" href="/disclaimer">
+        <a class="place-row" href="/disclaimer" data-open-reader="disclaimer">
           <span class="place-row__text">
             <span class="place-row__label">Disclaimer</span>
             <span class="place-row__sub">Unofficial service, what it can and cannot promise</span>
           </span>
           <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
         </a>
-        <a class="place-row" href="/policy#policy">
+        <a class="place-row" href="/policy#policy" data-open-reader="policy">
           <span class="place-row__text">
             <span class="place-row__label">Policy</span>
             <span class="place-row__sub">Privacy, data kept, reporting rules</span>
@@ -136,10 +137,13 @@
     </div>
   </div>
 
+  {{template "reader_dialog.html.tmpl" .}}
+
   {{template "app_bottombar" .}}
 
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/app-bar.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/settings.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/reader.js?v={{.AssetVersion}}" defer></script>
 </body>
 </html>

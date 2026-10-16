@@ -396,8 +396,11 @@ func TestDisclaimerBarHasNoTelLink(t *testing.T) {
 	if got := strings.Count(region, "<button"); got != 0 {
 		t.Errorf("map: strip holds %d buttons, want none", got)
 	}
-	if !strings.Contains(region, `<a class="notice-strip__link" href="/disclaimer">Read the disclaimer</a>`) {
-		t.Error("map: strip link is not a plain link to /disclaimer")
+	// Amended 2026-10-17 by Phase 3.4 plan 08 (D-31): the link keeps its plain
+	// href and also carries the reader opener, so a click opens the in app
+	// reader and a visitor without script still reaches /disclaimer.
+	if !strings.Contains(region, `<a class="notice-strip__link" href="/disclaimer" data-open-reader="disclaimer">Read the disclaimer</a>`) {
+		t.Error("map: strip link is not a link to /disclaimer that opens the reader")
 	}
 	if strings.Contains(region, "aria-current") {
 		t.Error("map: default render must not carry aria-current")

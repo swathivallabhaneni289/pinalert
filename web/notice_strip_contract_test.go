@@ -63,7 +63,7 @@ func TestStripOnlyOnNearby(t *testing.T) {
 	for _, name := range []string{
 		"profile.html.tmpl", "alerts.html.tmpl", "settings.html.tmpl",
 		"low.html.tmpl", "moderate.html.tmpl", "login_gate.html.tmpl",
-		"verify_outcome.html.tmpl", "disclaimer.html.tmpl", "policy.html.tmpl",
+		"verify_outcome.html.tmpl", "reader.html.tmpl", "legal_body.html.tmpl",
 	} {
 		if strings.Contains(stripReadTemplate(t, name), "notice_strip") {
 			t.Errorf("%s includes the strip; it is drawn on Nearby only (D-29)", name)
@@ -132,13 +132,15 @@ func TestStripSentence(t *testing.T) {
 }
 
 // TestStripLinkIsReadTheDisclaimer pins the one link: Read the disclaimer, to
-// /disclaimer (plan 08 turns it into the reader opener), no new tab.
+// /disclaimer, no new tab. Amended 2026-10-17 by Phase 3.4 plan 08 (D-31): the link
+// also carries data-open-reader="disclaimer", so a click opens the in app reader
+// and a visitor without script still follows the plain href.
 func TestStripLinkIsReadTheDisclaimer(t *testing.T) {
 	src := stripReadTemplate(t, "notice_strip.html.tmpl")
 	if got := strings.Count(src, "<a "); got != 1 {
 		t.Fatalf("the strip holds %d links, want exactly 1", got)
 	}
-	want := `<a class="notice-strip__link" href="/disclaimer">Read the disclaimer</a>`
+	want := `<a class="notice-strip__link" href="/disclaimer" data-open-reader="disclaimer">Read the disclaimer</a>`
 	if !strings.Contains(src, want) {
 		t.Errorf("the strip link is not %q", want)
 	}

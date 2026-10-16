@@ -13,7 +13,18 @@ var (
 	legalNamePattern   = regexp.MustCompile(`(?s)class="[^"]*"|\{\{/\*.*?\*/\}\}|<!--.*?-->`)
 )
 
-var legalTemplateNames = []string{"templates/disclaimer.html.tmpl", "templates/policy.html.tmpl"}
+// Amended 2026-10-17 by Phase 3.4 plan 08 (owner decision, 03.4-CONTEXT D-31,
+// D-06): the Disclaimer and the Policy are one reader. Two templates hold the
+// legal text and the page around it: the standalone reader page that both
+// addresses render, and the body partials that the page, the in app reader
+// window and the first time flow all include. The two old page templates are
+// gone.
+const (
+	legalReaderTemplate = "templates/reader.html.tmpl"
+	legalBodyTemplate   = "templates/legal_body.html.tmpl"
+)
+
+var legalTemplateNames = []string{legalReaderTemplate, legalBodyTemplate}
 
 // legalBannedWord reports a banned word in text, splitting identifiers on hyphens,
 // underscores and every other non letter.
@@ -28,12 +39,20 @@ func legalBannedWord(text string) string {
 
 func TestLegalPagesTemplateSource(t *testing.T) {
 	pages := findFullPageTemplates(t)
-	for _, name := range legalTemplateNames {
-		src, ok := pages[name]
-		if !ok {
-			t.Errorf("findFullPageTemplates does not return %s", name)
-			continue
+	sources := map[string]string{legalBodyTemplate: stripReadTemplate(t, "legal_body.html.tmpl")}
+	reader, ok := pages[legalReaderTemplate]
+	if !ok {
+		t.Fatalf("findFullPageTemplates does not return %s", legalReaderTemplate)
+	}
+	sources[legalReaderTemplate] = reader
+	for _, gone := range []string{"templates/disclaimer.html.tmpl", "templates/policy.html.tmpl"} {
+		if _, still := pages[gone]; still {
+			t.Errorf("%s must be gone: the reader page and the body partials replace it (D-31)", gone)
 		}
+	}
+
+	for _, name := range legalTemplateNames {
+		src := sources[name]
 		for _, banned := range []string{"account_header.html.tmpl", "theme_toggle.html.tmpl", ".Email", "logout", "data-account-id"} {
 			if strings.Contains(src, banned) {
 				t.Errorf("%s holds %q (R-07)", name, banned)
@@ -66,23 +85,50 @@ func TestLegalPagesTemplateSource(t *testing.T) {
 		if strings.Contains(src, "disclaimer_bar.html.tmpl") || strings.Contains(src, "notice_strip.html.tmpl") {
 			t.Errorf("%s must call neither the old bar partial nor the strip", name)
 		}
-		main := strings.Index(src, "/static/css/main.css")
-		chrome := strings.Index(src, "/static/css/chrome.css")
-		legal := strings.Index(src, "/static/css/legal.css")
-		theme := strings.Index(src, "/static/js/theme.js")
-		if main < 0 || !(main < chrome && chrome < legal && legal < theme) {
-			t.Errorf("%s head must link main.css, chrome.css, legal.css, then theme.js", name)
-		}
-		if strings.Count(src, "<script") != 1 {
-			t.Errorf("%s loads a script other than theme.js", name)
-		}
-		body := strings.Index(src, `<body>`)
-		if body < 0 || !strings.HasPrefix(strings.TrimSpace(src[body+len("<body>"):]), `<main class="legal-page">`) {
-			t.Errorf("%s body must open with main.legal-page, with no bar wrapper", name)
+	}
+
+	// The body partials: both are defined once and the Policy part has no tap to
+	// call link, which belongs to the Disclaimer's numbers block.
+	body := sources[legalBodyTemplate]
+	for _, def := range []string{`{{define "legal_disclaimer_body"}}`, `{{define "legal_policy_body"}}`} {
+		if strings.Count(body, def) != 1 {
+			t.Errorf("legal_body.html.tmpl must define %s exactly once", def)
 		}
 	}
-	if pol, ok := pages["templates/policy.html.tmpl"]; ok && strings.Contains(pol, "CallHref") {
-		t.Errorf("policy.html.tmpl uses CallHref, the Policy page has no tap to call link")
+	_, policyPart, found := strings.Cut(body, `{{define "legal_policy_body"}}`)
+	if !found {
+		t.Fatalf("legal_body.html.tmpl has no policy part")
+	}
+	if strings.Contains(policyPart, "CallHref") {
+		t.Errorf("the policy part uses CallHref, the Policy has no tap to call link")
+	}
+
+	// The reader page: head, one body wrapper, the two partials.
+	main := strings.Index(reader, "/static/css/main.css")
+	chrome := strings.Index(reader, "/static/css/chrome.css")
+	appBar := strings.Index(reader, "/static/css/app-bar.css")
+	legal := strings.Index(reader, "/static/css/legal.css")
+	theme := strings.Index(reader, "/static/js/theme.js")
+	if main < 0 || !(main < chrome && chrome < appBar && appBar < legal && legal < theme) {
+		t.Errorf("reader.html.tmpl head must link main.css, chrome.css, app-bar.css (for the X glyph), legal.css, then theme.js")
+	}
+	// Amended 2026-10-17 by Phase 3.4 plan 08 (D-31): the page loads theme.js in
+	// the head and reader.js, deferred, at the end of the body (the X goes back,
+	// /policy opens at the Policy part).
+	if strings.Count(reader, "<script") != 2 || !strings.Contains(reader, "/static/js/reader.js?v={{.AssetVersion}}\" defer") {
+		t.Errorf("reader.html.tmpl must load theme.js and a deferred reader.js, and nothing else")
+	}
+	bodyAt := strings.Index(reader, `<body>`)
+	if bodyAt < 0 || !strings.HasPrefix(strings.TrimSpace(reader[bodyAt+len("<body>"):]), `<div class="legal-reader"`) {
+		t.Errorf("reader.html.tmpl body must open with div.legal-reader, with no bar wrapper")
+	}
+	if strings.Contains(reader, "Back to Pinalert") {
+		t.Errorf("reader.html.tmpl keeps a Back to Pinalert link; the X replaces it (D-31)")
+	}
+	for _, part := range []string{`{{template "legal_disclaimer_body" .Legal}}`, `{{template "legal_policy_body" .Legal}}`} {
+		if strings.Count(reader, part) != 1 {
+			t.Errorf("reader.html.tmpl must include %s once", part)
+		}
 	}
 }
 
@@ -124,7 +170,7 @@ func TestLegalPagesCSS(t *testing.T) {
 		}
 		if strings.Contains(r.declBody, "--color-text-muted") {
 			for _, sel := range p408Selectors(r.selectorHead) {
-				if sel != ".legal-updated" && sel != ".legal-subtitle" {
+				if !strings.HasSuffix(sel, ".legal-updated") && !strings.HasSuffix(sel, ".legal-subtitle") {
 					t.Errorf("%q uses --color-text-muted, allowed only on .legal-updated and .legal-subtitle", sel)
 				}
 			}
@@ -138,10 +184,28 @@ func TestLegalPagesCSS(t *testing.T) {
 		}
 	}
 
-	page, ok := ruleBySelector(rules, ".legal-page")
-	if !ok || declsOf(page.declBody)["max-width"] != "640px" {
-		t.Errorf(".legal-page must declare max-width: 640px")
+	// Amended 2026-10-17 by Phase 3.4 plan 08 (03.4-CONTEXT D-06, D-31): the
+	// standalone pages use the full laptop width, so the old 640px reading
+	// column (.legal-page max-width) is gone. The page is the Settings split, a
+	// 260px left column and the text in 1fr, and a line of text is capped at
+	// 72ch, left aligned, inside that column.
+	if _, old := ruleBySelector(rules, ".legal-page"); old {
+		t.Errorf("legal.css still holds the centred .legal-page column (D-06)")
 	}
+	if strings.Contains(css, "640px") || strings.Contains(css, "margin: 0 auto") {
+		t.Errorf("legal.css holds the old 640px column or a centring margin (D-06)")
+	}
+	if !regexp.MustCompile(`@media \(min-width: 900px\)\s*\{\s*\.legal-reader:not\(\[hidden\]\)\s*\{[^}]*grid-template-columns:\s*260px 1fr`).MatchString(css) {
+		t.Errorf("legal.css lacks the laptop grid: .legal-reader with grid-template-columns 260px 1fr inside one min-width 900px block")
+	}
+	if !regexp.MustCompile(`max-width:\s*72ch`).MatchString(css) {
+		t.Errorf("legal.css lacks the 72ch line length cap")
+	}
+	box, ok := ruleBySelector(rules, ".legal-box")
+	if !ok || declsOf(box.declBody)["background"] != "var(--color-surface)" {
+		t.Errorf(".legal-box must be the --color-surface reader box")
+	}
+
 	numbers, ok := ruleBySelector(rules, ".legal-numbers")
 	if !ok {
 		t.Fatalf("legal.css has no .legal-numbers rule")

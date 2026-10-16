@@ -67,6 +67,10 @@ type pageViewModel struct {
 	// with the current one marked, and the phone top bar title. It is built by
 	// navFor and holds constants only (T-34-13).
 	Nav NavView
+	// Legal is the text of the in app reader window (D-31): the same values the
+	// public /disclaimer and /policy pages render, so the window cannot drift from
+	// them. It holds nothing about the account (R-07, T-34-34).
+	Legal LegalText
 }
 
 // ParsePageTemplate parses the embedded app shell template from
@@ -123,6 +127,7 @@ func Page(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 				return
 			}
 		}
+		chrome := cfg.Chrome.withDefaults()
 		vm := pageViewModel{
 			FallbackLat:     cfg.FallbackLat,
 			FallbackLon:     cfg.FallbackLon,
@@ -131,8 +136,9 @@ func Page(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 			AssetVersion:    cfg.AssetVersion,
 			Email:           acc.Email,
 			AccountID:       acc.ID,
-			Chrome:          cfg.Chrome.withDefaults(),
+			Chrome:          chrome,
 			Nav:             navFor(NavNearby),
+			Legal:           legalTextFor(chrome),
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		// DEC-Q: the shell now renders a person's email address into every
