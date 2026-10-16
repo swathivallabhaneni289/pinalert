@@ -4,10 +4,10 @@
 // The form logic lives in report-form.js and reads location only through a
 // small interface. This file is the Leaflet implementation of that interface.
 // It keeps the pieces that need a map: the modal map, the one draggable
-// marker, the tap to place fallback, the coordinate readout, the main form's
-// one missing location sentence and the main form's rule of showing the
-// server's own search failure message, or the fallback below when the server
-// sent none. It then mounts the form and opens it from the report button.
+// marker, tap to place in every location state, the coordinate readout, the
+// main form's one missing location sentence and the main form's rule of
+// showing the server's own search failure message, or the fallback below
+// when the server sent none. It then mounts the form and opens it from the report button.
 //
 // SECURITY (T-01-03, T-07-03): every string that reaches the DOM here is
 // inserted as text content, never assembled into markup for the browser to
@@ -67,6 +67,17 @@
     updateCoordReadout(lat, lon);
   }
 
+  // placeMarkerAtTap moves the pin to the tapped spot. It does what a drag
+  // does: the form counts it as an edit and the readout shows the new place.
+  // It runs whether location is on, off or denied (backlog 999.6, F1 in
+  // 02-UAT.md). A tap on the pin itself never reaches the map, because a
+  // Leaflet marker does not pass its own clicks on, and Leaflet sends no
+  // click after the map or the pin was dragged.
+  function placeMarkerAtTap(e) {
+    markFormTouched();
+    placeMarker(e.latlng.lat, e.latlng.lng);
+  }
+
   // hasVectorBasemap reports whether this browser can render the
   // OpenFreeMap vector basemap through the MapLibre bridge: both vendor
   // globals must have loaded, and the browser must grant a WebGL2
@@ -99,9 +110,10 @@
 
   // initLocation centres the modal's own Leaflet instance on the visitor's
   // GPS position at zoom 16 with a draggable marker (D-02). Submission is
-  // never blocked on geolocation — a denied prompt during an emergency must
-  // not become a dead end, so denial/timeout/insecure-context falls back to
-  // the configured centre plus tap-to-place.
+  // never blocked on geolocation: a denied prompt during an emergency must
+  // not become a dead end, so denial, timeout or an insecure context falls
+  // back to the configured centre. A tap places or moves the pin in every
+  // case; its handler is added once, when the map is built (IN-W10).
   function initLocation() {
     // Mirrors map.js's init() guard: if Leaflet's own script failed to
     // load, L is undefined and every call below would throw an uncaught
@@ -151,6 +163,10 @@
         // own maximum.
         modalMap.setMaxZoom(rasterLayer.options.maxZoom);
       }
+
+      // Added here, once per map, so a tap moves the pin in every location
+      // state and a reopen never stacks a second handler (IN-W10).
+      modalMap.on('click', placeMarkerAtTap);
     }
 
     locationNotice.hidden = true;
@@ -193,10 +209,6 @@
     window.setTimeout(function () {
       modalMap.invalidateSize();
     }, 0);
-    modalMap.on('click', function (e) {
-      markFormTouched();
-      placeMarker(e.latlng.lat, e.latlng.lng);
-    });
   }
 
   // startLocation runs on every open of the form, after the dialog is shown.
@@ -240,8 +252,10 @@
     modalMap.setView([result.lat, result.lon], SEARCH_RESULT_ZOOM);
   }
 
+  // missingLocationMessage shows only when no pin is set, so it names a tap,
+  // the way to make one, rather than a drag, which needs a pin already there.
   function missingLocationMessage() {
-    return 'Set a location by searching, dragging the pin, or allowing location access.';
+    return 'Set a location by searching, tapping the map, or allowing location access.';
   }
 
   function searchUnavailableMessage(serverMessage) {

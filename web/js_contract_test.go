@@ -672,10 +672,15 @@ func TestLocationSearchUsesTextSinksAndExistingPinPlacement(t *testing.T) {
 	}
 
 	// 7. The submit-time location message names all three ways to set a
-	// location and lives only in the picker; the stale two-way sentence is
-	// gone from both files.
-	const newLocationMessage = "Set a location by searching, dragging the pin, or allowing location access."
-	const oldLocationMessage = "Set a location by dragging the pin or allowing location access."
+	// location and lives only in the picker; the stale sentences are gone
+	// from both files. It shows only when no pin is set, so it names a tap
+	// on the map (quick task 261016-tap), not a drag of a pin that isn't
+	// there.
+	const newLocationMessage = "Set a location by searching, tapping the map, or allowing location access."
+	staleLocationMessages := []string{
+		"Set a location by dragging the pin or allowing location access.",
+		"Set a location by searching, dragging the pin, or allowing location access.",
+	}
 	if n := strings.Count(pickerText, newLocationMessage); n != 1 {
 		t.Errorf("expected modal.js to contain %q exactly once, found %d", newLocationMessage, n)
 	}
@@ -683,9 +688,11 @@ func TestLocationSearchUsesTextSinksAndExistingPinPlacement(t *testing.T) {
 		t.Errorf("expected report-form.js to contain %q zero times, found %d", newLocationMessage, n)
 	}
 	for name, text := range map[string]string{"report-form.js": formText, "modal.js": pickerText} {
-		if n := strings.Count(text, oldLocationMessage); n != 0 {
-			t.Errorf("expected %s to contain the stale two-way location message %q zero times, found %d",
-				name, oldLocationMessage, n)
+		for _, stale := range staleLocationMessages {
+			if n := strings.Count(text, stale); n != 0 {
+				t.Errorf("expected %s to contain the stale location message %q zero times, found %d",
+					name, stale, n)
+			}
 		}
 	}
 }
