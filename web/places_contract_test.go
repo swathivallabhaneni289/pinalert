@@ -293,10 +293,58 @@ func TestSettingsWindowsCloseWithXOnly(t *testing.T) {
 			t.Errorf("window.css holds %q", banned)
 		}
 	}
+	if !strings.Contains(page, `<script src="/static/js/settings.js?v={{.AssetVersion}}" defer></script>`) {
+		t.Errorf("settings.html.tmpl does not load settings.js with defer and the asset version")
+	}
 	rawCSS := p421ReadStatic(t, "css/window.css")
 	for _, dash := range []rune{0x2013, 0x2014} {
 		if strings.ContainsRune(rawCSS, dash) {
 			t.Errorf("window.css holds the dash character U+%04X", dash)
+		}
+	}
+}
+
+// TestSettingsScriptContract pins D-24b, D-02, T-34-26 and T-34-27 on
+// settings.js: it never asks for the device position, never parses markup,
+// never sends a map centre with the place search, saves through the one
+// profile route with PATCH, and has no handler that closes a window from a
+// click on its backdrop.
+func TestSettingsScriptContract(t *testing.T) {
+	raw := p421ReadStatic(t, "js/settings.js")
+	js := stripJSComments(raw)
+	for _, want := range []string{
+		"'PATCH'", "/api/me/profile", "/api/geocode/place?q=", "textContent", "'Escape'", "display_name", "home_area",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("settings.js lacks %q", want)
+		}
+	}
+	for _, banned := range []string{
+		"geolocation", "watchPosition", "getCurrentPosition",
+		"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "DOMParser", "createContextualFragment", "eval(", "new Function",
+		"&lat=", "&lon=", "localStorage", "sessionStorage",
+	} {
+		if strings.Contains(js, banned) {
+			t.Errorf("settings.js uses %q: the device position, a markup parsing sink or a map centre has no place here", banned)
+		}
+	}
+	// Only the row buttons, the X, the forms, the save and remove buttons and
+	// the keyboard are bound. A window itself gets no click handler, so a click
+	// on the backdrop closes nothing (D-02).
+	for _, banned := range []string{"nameWin.addEventListener('click'", "homeWin.addEventListener('click'", "win.addEventListener('click'"} {
+		if strings.Contains(js, banned) {
+			t.Errorf("settings.js binds %q: a window closes with the X and Escape only", banned)
+		}
+	}
+	for _, dash := range []rune{0x2013, 0x2014} {
+		if strings.ContainsRune(raw, dash) {
+			t.Errorf("settings.js holds the dash character U+%04X", dash)
+		}
+	}
+	page := p421ReadTemplate(t, "settings.html.tmpl")
+	for _, dash := range []rune{0x2013, 0x2014} {
+		if strings.ContainsRune(page, dash) {
+			t.Errorf("settings.html.tmpl holds the dash character U+%04X", dash)
 		}
 	}
 }
