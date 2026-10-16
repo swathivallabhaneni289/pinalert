@@ -30,9 +30,13 @@ const photonSearchURL = "https://photon.komoot.io/api/"
 const (
 	// photonLimiterEvery and photonLimiterBurst cap Photon at two requests a
 	// second across the whole process. Photon's public server asks only for
-	// a reasonable number of requests and is meant for search as you type;
-	// one person typing with the browser's 600 ms pause never waits, and many
-	// people typing at once cannot flood it.
+	// a reasonable number of requests and is meant for search as you type.
+	// Both browser searches wait for a 300 ms pause in typing, and a search
+	// that finds nothing for the whole text may ask Photon three times, so a
+	// fast typer can find the bucket empty: the report search then waits a
+	// little or falls back to Nominatim, the place search answers busy, which
+	// its typing path keeps off the screen. Many people typing at once cannot
+	// flood it.
 	photonLimiterEvery = 500 * time.Millisecond
 	photonLimiterBurst = 2
 	// photonLimiterWait bounds how long a report search waits for a Photon
