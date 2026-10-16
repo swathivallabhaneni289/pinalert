@@ -124,7 +124,8 @@ func TestReviewFixWBCloseWhilePosting(t *testing.T) {
 	p424Ordered(t, "saveToQueue", jsFunctionBody(t, form, "saveToQueue(payload, status, sent)"),
 		"if (sent.session !== formSession) {", "return;", "postInFlight = false;")
 	p424Ordered(t, "saveAfterWait", jsFunctionBody(t, form, "saveAfterWait()"),
-		"postInFlight = true;", "if (session !== formSession) {", "return;", "postInFlight = false;")
+		"postInFlight = true;", "discardConfirm.hidden = true;", "window.PinalertQueue.save(",
+		"if (session !== formSession) {", "return;", "postInFlight = false;")
 }
 
 // TestReviewFixWBLowFormLocationRetry pins WR-W08: the Low data form asks for a

@@ -538,6 +538,24 @@ test('Send after the wait still saving closes without the question', async () =>
   page.cancelInFlight();
 });
 
+test('a Discard question open when Send after the wait is pressed goes away', async () => {
+  const page = setup();
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 429, fieldMessage: 'Please wait 5 minutes.', retryAfterSeconds: 300
+  }));
+  await settle();
+  page.el('cancel-report').click();
+  assert.equal(page.el('discard-confirm').hidden, false);
+  page.setQueueSave(() => new Promise(() => {}));
+  page.el('send-after-wait').click();
+  assert.equal(page.queueSaves.length, 1);
+  assert.equal(page.el('discard-confirm').hidden, true, 'the question must not stay over a report being saved');
+  page.cancelInFlight();
+});
+
 test('a late answer leaves the question working on the form open now', async () => {
   const page = setup();
   postThenReopen(page);

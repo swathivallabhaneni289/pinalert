@@ -1146,9 +1146,12 @@
     payload.written_at = writtenAt;
     // The save is out while the form can still be closed; its answer must
     // then leave a form opened later alone (WR-W03). Closing meanwhile asks no
-    // Discard question, since the report is being saved.
+    // Discard question, since the report is being saved, and a question still
+    // open from before the press goes.
     var session = formSession;
     postInFlight = true;
+    discardConfirm.hidden = true;
+    preDiscardFocusEl = null;
     window.PinalertQueue.save({
       request_id: currentRequestId,
       payload: payload,
