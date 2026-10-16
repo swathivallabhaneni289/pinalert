@@ -252,8 +252,10 @@
     modalMap.setView([result.lat, result.lon], SEARCH_RESULT_ZOOM);
   }
 
+  // missingLocationMessage shows only when no pin is set, so it names a tap,
+  // the way to make one, rather than a drag, which needs a pin already there.
   function missingLocationMessage() {
-    return 'Set a location by searching, dragging the pin, or allowing location access.';
+    return 'Set a location by searching, tapping the map, or allowing location access.';
   }
 
   function searchUnavailableMessage(serverMessage) {

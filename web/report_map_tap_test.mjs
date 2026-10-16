@@ -256,6 +256,14 @@ test('dragging the pin still moves the readout and counts as an edit', () => {
   assert.equal(s.touched.count, 3);
 });
 
+test('the missing location message names a tap on the map', () => {
+  const s = load('deny');
+  s.open();
+  assert.equal(s.picker.isSet(), false);
+  assert.equal(s.picker.missingMessage(),
+    'Set a location by searching, tapping the map, or allowing location access.');
+});
+
 test('a chosen search result lands at street level zoom and a tap then moves the pin', () => {
   const s = load('deny');
   s.open();
