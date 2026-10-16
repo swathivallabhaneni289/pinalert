@@ -48,3 +48,9 @@ Pictures were taken in the session scratchpad only, never saved here.
 Listed in `03.4-CONTEXT.md` under "Conflicts and risks": the phone carries no disclaimer strip (ROBUST-08), the phone
 has no light and dark button (UX-01), Phase 3.1's tab strip and Past tab are replaced, and today's six tab Activity
 page layout is replaced while keeping every feature.
+
+## Owner answers after approval (2026-10-16, these win over the file)
+
+Three things in this file are not built as drawn: the laptop notice strip shows on Nearby and Post a report only, the
+"Not confirmed yet" line under Post report is dropped on both sizes, and a chosen category tile gets the soft grey fill
+instead of the dark border. Details and line numbers: `03.4-CONTEXT.md`, "Where the build departs from the mockup".
