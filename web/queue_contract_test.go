@@ -756,7 +756,7 @@ func TestQueueHeldSubmitToast(t *testing.T) {
 		"Pinalert.showToast(HELD_TOAST_MESSAGE, null, LONG_TOAST_MS)",
 		"Pinalert.showToast('Report posted.')",
 	)
-	p422Need(t, "saveToQueue(payload, status)", jsFunctionBody(t, form, "saveToQueue(payload, status)"),
+	p422Need(t, "saveToQueue(payload, status, sent)", jsFunctionBody(t, form, "saveToQueue(payload, status, sent)"),
 		"Pinalert.showToast(persisted ? SAVE_TOAST : SAVE_TOAST_MEMORY, null, LONG_TOAST_MS)")
 	p422Need(t, "sendRow(record)", jsFunctionBody(t, queue, "sendRow(record)"),
 		"held === true",
@@ -808,7 +808,7 @@ func TestQueueFormCopyAndPrefill(t *testing.T) {
 		"noteEl.hidden = true", "currentRequestId = null", "resendRequestId = null", "lastLimit = null")
 	submit := jsFunctionBody(t, form, "handleSubmit()")
 	success := p422Window(t, submit, "Pinalert.submitReport(payload).then(", ".catch(")
-	p422Need(t, "the success path of handleSubmit", success, "PinalertQueue.discard(resendRequestId)")
+	p422Need(t, "the success path of handleSubmit", success, "PinalertQueue.discard(sent.resendRequestId)")
 
 	at := strings.Index(submit, ".written_at =")
 	if at == -1 || !strings.Contains(submit[at:at+60], "resendWrittenAt") {
@@ -817,8 +817,11 @@ func TestQueueFormCopyAndPrefill(t *testing.T) {
 	if n := p422Count(submit, ".written_at ="); n != 1 {
 		t.Errorf("handleSubmit sets written_at %d times, want 1", n)
 	}
-	queued := jsFunctionBody(t, form, "saveToQueue(payload, status)")
-	p422Need(t, "saveToQueue(payload, status)", queued, ".written_at =", "firstSubmitAt")
+	// The written time is taken when the post goes out (WR-W03) and saveToQueue
+	// reads it from there.
+	p422Need(t, "handleSubmit()", submit, "writtenAt: resendWrittenAt || firstSubmitAt")
+	queued := jsFunctionBody(t, form, "saveToQueue(payload, status, sent)")
+	p422Need(t, "saveToQueue(payload, status, sent)", queued, ".written_at =", "sent.writtenAt")
 	if strings.Contains(form, "navigator."+"onLine") {
 		t.Errorf("report-form.js must never read the browser's online flag")
 	}

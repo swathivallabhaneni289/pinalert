@@ -211,10 +211,26 @@ window.Pinalert = (function () {
     }
   }
 
+  // notify calls every listener with the state. Each call is isolated: a
+  // listener that throws (for example because one of the page's scripts did
+  // not load) cannot stop the listeners after it, and its error never reaches
+  // the caller, where fetchReports would read it as a failed request (WR-W04).
+  // The error is thrown again on a timer, so it still shows in the browser's
+  // own error log.
   function notify() {
     for (var i = 0; i < listeners.length; i++) {
-      listeners[i](state);
+      try {
+        listeners[i](state);
+      } catch (e) {
+        rethrowLater(e);
+      }
     }
+  }
+
+  function rethrowLater(e) {
+    window.setTimeout(function () {
+      throw e;
+    }, 0);
   }
 
   // subscribe registers fn to be called with state on every transition.
