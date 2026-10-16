@@ -106,7 +106,10 @@ func TestActivityPageTemplateMarkup(t *testing.T) {
 	if !strings.Contains(tmpl, `{{if .Current}} data-current{{end}}`) {
 		t.Errorf("the part section does not write data-current from .Current")
 	}
-	p13Ordered(t, tmpl, "part head", `id="activity-title-{{.Key}}">{{.Name}}{{if .ShowCount}} <span class="activity-part__count">{{.Count}}</span>{{end}}</h2>`, `activity-part__line">{{.Line}}`)
+	// Amended 2026-10-17 by Phase 3.4 plan 14 (D-18, D-19): Ended nearby has no
+	// server count, so its title and hub row carry a hidden count element that
+	// ended-nearby.js fills after the read.
+	p13Ordered(t, tmpl, "part head", `id="activity-title-{{.Key}}">{{.Name}}{{if .ShowCount}} <span class="activity-part__count">{{.Count}}</span>{{else if eq .Key "ended"}} <span class="activity-part__count" id="ended-title-count" hidden></span>{{end}}</h2>`, `activity-part__line">{{.Line}}`)
 
 	// The column head row and the six cells of a row, in the order the grid
 	// columns give them.
@@ -185,7 +188,13 @@ func TestActivityPageTemplateMarkup(t *testing.T) {
 // TestActivityTabsScriptContract. The tab script is removed with the six tabs,
 // so the contract has no file to read; the bans it held (no markup sink, no
 // network call of its own, no scrolling of the page, no Date) are kept as a check
-// over activity.js, the one script of the page.
+// over activity.js, the page's script for the rows it was served.
+//
+// Amended 2026-10-17 by Phase 3.4 plan 14 (D-18): ended-nearby.js is the one
+// other script of the page, and the one allowed reader. It holds the page's one
+// network read (Ended nearby, TestEndedNearbyOneFetch) and may scroll one
+// element, the page's own content region, but never the window; its own bans are
+// pinned by TestEndedNearbyScriptBans. activity.js keeps every ban unchanged.
 func TestActivityScriptKeepsTheBansOfTheRemovedTabScript(t *testing.T) {
 	if _, err := StaticFS.ReadFile("static/js/activity-tabs.js"); err == nil {
 		t.Errorf("the removed tab script is still shipped")

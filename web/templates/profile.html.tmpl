@@ -28,14 +28,14 @@
 
     <nav class="activity-hub" aria-label="My activity">
       {{range .Parts}}
-      <a class="activity-hub__row" href="{{.Href}}" data-part-link="{{.Key}}"><span class="activity-hub__tile" aria-hidden="true"><span class="app-icon app-icon--{{.Icon}}"></span></span><span class="activity-hub__text"><span class="activity-hub__name">{{.Name}}</span><span class="activity-hub__summary">{{.Summary}}</span></span>{{if .ShowCount}}<span class="activity-hub__count">{{.Count}}</span>{{end}}<span class="app-icon app-icon--chevron-right activity-hub__chevron" aria-hidden="true"></span></a>
+      <a class="activity-hub__row" href="{{.Href}}" data-part-link="{{.Key}}"><span class="activity-hub__tile" aria-hidden="true"><span class="app-icon app-icon--{{.Icon}}"></span></span><span class="activity-hub__text"><span class="activity-hub__name">{{.Name}}</span><span class="activity-hub__summary">{{.Summary}}</span></span>{{if .ShowCount}}<span class="activity-hub__count">{{.Count}}</span>{{else if eq .Key "ended"}}<span class="activity-hub__count" id="ended-hub-count" hidden></span>{{end}}<span class="app-icon app-icon--chevron-right activity-hub__chevron" aria-hidden="true"></span></a>
       {{end}}
     </nav>
 
     {{range .Parts}}
     <section class="activity-part activity-part--{{.Key}}" id="part-{{.Key}}" data-part-key="{{.Key}}"{{if .Current}} data-current{{end}} aria-labelledby="activity-title-{{.Key}}">
       <div class="activity-part__head">
-        <h2 class="activity-part__title" id="activity-title-{{.Key}}">{{.Name}}{{if .ShowCount}} <span class="activity-part__count">{{.Count}}</span>{{end}}</h2>
+        <h2 class="activity-part__title" id="activity-title-{{.Key}}">{{.Name}}{{if .ShowCount}} <span class="activity-part__count">{{.Count}}</span>{{else if eq .Key "ended"}} <span class="activity-part__count" id="ended-title-count" hidden></span>{{end}}</h2>
         <p class="activity-part__line">{{.Line}}</p>
       </div>
       <div class="activity-part__body">
@@ -57,15 +57,23 @@
             <div class="skeleton-row"></div>
             <div class="skeleton-row"></div>
           </div>
+          <div class="activity-cols" id="ended-cols" aria-hidden="true" hidden>
+            <span class="activity-cols__disc"></span>
+            <span>Report</span>
+            <span>Status</span>
+            <span>What happened</span>
+            <span>When</span>
+            <span class="activity-cols__distance">Distance</span>
+          </div>
           <div class="activity-group" id="ended-resolved" hidden>
             <p class="activity-group__label">Resolved</p>
-            <ol class="activity-group__list"></ol>
-            <p class="activity-group__cut" hidden></p>
+            <ol class="activity-group__list profile-report-list" id="ended-resolved-list"></ol>
+            <p class="activity-group__cut" id="ended-resolved-cut" hidden></p>
           </div>
           <div class="activity-group" id="ended-faded" hidden>
             <p class="activity-group__label">Faded out</p>
-            <ol class="activity-group__list"></ol>
-            <p class="activity-group__cut" hidden></p>
+            <ol class="activity-group__list profile-report-list" id="ended-faded-list"></ol>
+            <p class="activity-group__cut" id="ended-faded-cut" hidden></p>
           </div>
           <div class="empty-state profile-empty-state activity-empty" id="ended-empty" hidden>
             <h3>{{.EmptyTitle}}</h3>
@@ -78,7 +86,7 @@
           <div class="error-state activity-empty" id="ended-error" hidden>
             <h3>Couldn't load reports</h3>
             <p>Check your connection and try again.</p>
-            <button type="button" class="activity-retry">Try again</button>
+            <button type="button" class="activity-retry" id="ended-retry">Try again</button>
           </div>
         </div>
         {{else}}

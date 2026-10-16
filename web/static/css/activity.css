@@ -305,10 +305,12 @@ main.profile-page .profile-record .profile-record__counts {
 }
 
 /* Ended nearby: the two groups, the cut line and the states. The rows of the
-   groups are drawn by the browser read in a later plan; the shell is here. */
+   groups are drawn by ended-nearby.js from the Past answer. The label and the
+   cut line sit flush with the cards on a phone and take the box padding on a
+   laptop (the 900px block below). */
 main.profile-page .activity-group__label {
   margin: 0;
-  padding: var(--space-12) var(--space-lg) var(--space-xs);
+  padding: var(--space-12) 0 var(--space-xs);
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
   font-weight: var(--font-weight-semibold);
@@ -325,10 +327,52 @@ main.profile-page .activity-group__list {
 
 main.profile-page .activity-group__cut {
   margin: 0;
-  padding: var(--space-sm) var(--space-lg);
+  padding: var(--space-sm) 0;
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
   color: var(--color-text-muted);
+}
+
+/* An Ended nearby row. What happened is the server's sentence, closed text or
+   outcome label, in the heavier weight, and the two counters follow it on the
+   trust line the other lists use, with a middle dot between them. Every colour
+   is a token on the page colour, so the contrast pin of this part
+   (TestEndedNearbyContrastAcrossThemes) covers it in both themes. */
+main.profile-page .activity-card__happened {
+  margin: 0;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+main.profile-page .activity-card--ended .activity-card__facts:not([hidden]) {
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+}
+
+main.profile-page .activity-card--ended .report-row__trustline-count--second::before {
+  content: "\00b7";
+  margin: 0 var(--space-xs);
+}
+
+/* The row a link to a finished report chose: the soft grey fill. The row text
+   keeps its colours, which hold 4.5 to 1 on the surface token in both themes. */
+main.profile-page .profile-report-list > .activity-card.activity-card--chosen {
+  background: var(--color-surface);
+}
+
+/* Muted text on the surface fill is 4.34 to 1 in the light theme, under the 4.5
+   bar, so the detail line of the chosen row takes the text colour. */
+main.profile-page .profile-report-list > .activity-card--chosen .activity-card__sub {
+  color: var(--color-text);
+}
+
+main.profile-page .activity-card--chosen:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
 }
 
 main.profile-page .activity-skeleton {
@@ -465,5 +509,19 @@ main.profile-page .activity-retry {
 
   main.profile-page .activity-card__distance {
     text-align: right;
+  }
+
+  /* The Ended nearby groups sit inside the box: the label and the cut line
+     take the row padding, and the second group is parted by a hairline. */
+  main.profile-page .activity-group__label {
+    padding: var(--space-12) var(--space-lg) var(--space-xs);
+  }
+
+  main.profile-page .activity-group__cut {
+    padding: var(--space-sm) var(--space-lg);
+  }
+
+  main.profile-page .activity-group + .activity-group {
+    border-top: 1px solid var(--color-border);
   }
 }

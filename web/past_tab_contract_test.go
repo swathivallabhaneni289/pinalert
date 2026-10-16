@@ -56,99 +56,120 @@ func TestPastTabLeftNearby(t *testing.T) {
 	p13MustNotContain(t, "feed.css", css, ".past-card", ".past-group", "#past-groups", "#past-empty")
 }
 
-// TestPastCardMarkup pins D-11: a card is one tab stop, holds no button and no
-// link, opens the report through the caller's onOpen on a click, Enter or
-// Space, and ends with the visually hidden Open report cue.
+// TestPastCardMarkup pins the Ended nearby row (D-11 amended by Phase 3.4 plan
+// 14, D-20, D-21): a finished report is a My activity row of six cells in the
+// grid order, disc, Report, Status, What happened, When, Distance. It is read
+// only: it holds no button and no link, takes no tab stop and has no click or key
+// handler, because nothing opens from a row of that page.
+//
+// Amended 2026-10-17 by Phase 3.4 plan 14: the Past card (one tab stop, an Open
+// report cue, an onOpen callback) became the row, so the assertions follow the
+// row's DOM. The no button, no link and no markup sink assertions are kept.
 func TestPastCardMarkup(t *testing.T) {
 	ended := pt12Ended(t)
-	body := jsFunctionBody(t, ended, "createPastCard(id, onOpen)")
+	body := jsFunctionBody(t, ended, "createEndedRow(id)")
 
-	p13MustContain(t, "createPastCard", body,
-		"createElement('li')", "'past-card'", "setAttribute('tabindex', '0')", "dataset.reportId = String(id)",
-		"'past-card__title'", "'past-card__meta'", "'past-card__facts'", "'past-card__open-cue visually-hidden'",
-		"Pinalert.setText(cue, 'Open report');",
-		"addEventListener('click'", "addEventListener('keydown'",
-		"evt.key === 'Enter' || evt.key === ' ' || evt.key === 'Spacebar'", "onOpen(id);")
-	p13MustNotContain(t, "createPastCard", body,
-		"createElement('button')", "createElement('a')", "createElement('input')", "innerHTML", "href")
-	p13Ordered(t, body, "createPastCard",
-		"li.appendChild(title);", "li.appendChild(meta);", "li.appendChild(facts);", "li.appendChild(cue);")
+	p13MustContain(t, "createEndedRow", body,
+		"createElement('li')", "'report-row activity-card activity-card--ended'", "dataset.reportId = String(id)",
+		"'icon-badge activity-card__icon'", "setAttribute('aria-hidden', 'true')",
+		"'activity-card__report'", "'report-row__title'", "'report-row__meta activity-card__sub'",
+		"'activity-card__status'", "'visually-hidden'", "'activity-chip'",
+		"'activity-card__what'", "'activity-card__happened'", "'activity-card__facts'",
+		"'activity-card__when'", "'activity-card__distance'")
+	p13MustNotContain(t, "createEndedRow", body,
+		"createElement('button')", "createElement('a')", "createElement('input')", "innerHTML", "href",
+		"tabindex", "addEventListener(", "onOpen")
+	p13Ordered(t, body, "createEndedRow",
+		"li.appendChild(badge);", "li.appendChild(report);", "li.appendChild(status);",
+		"li.appendChild(what);", "li.appendChild(when);", "li.appendChild(distance);")
 
-	update := jsFunctionBody(t, ended, "updatePastCard(card, report)")
-	p13MustNotContain(t, "updatePastCard", update, "appendChild(card.cue", "card.el.appendChild(")
-	p13MustContain(t, "updatePastCard", update, "past-card--selected")
+	update := jsFunctionBody(t, ended, "updateEndedRow(card, report)")
+	p13MustNotContain(t, "updateEndedRow", update, "card.el.appendChild(", "addEventListener(")
+	p13MustContain(t, "updateEndedRow", update, "'vis-retracted'", "'vis-expired'", "Pinalert.severityClass(report)",
+		"Pinalert.iconClass(report.category)", "STATUS_RESOLVED", "STATUS_EXPIRED")
 }
 
-// TestPastCardWords pins D-08 to D-10: the meta and facts lines are the
-// server's words joined by the app's middle dot, every string goes through
-// setText, and the browser computes no count and no outcome.
+// TestPastCardWords pins D-08 to D-10: the When and What happened cells are the
+// server's words, every string goes through setText, and the browser computes
+// no count and no outcome.
+//
+// Amended 2026-10-17 by Phase 3.4 plan 14: the one meta line (category, closed
+// text and time) became the Report, What happened and When cells. Every word
+// assertion is kept at its new place: the closed text and the outcome label are
+// What happened, the relative time, Faded and the lifetime phrase are When.
 func TestPastCardWords(t *testing.T) {
 	ended := pt12Ended(t)
 
-	meta := jsFunctionBody(t, ended, "buildPastMeta(report)")
-	p13MustContain(t, "buildPastMeta", meta,
-		"history.closed_text", "Pinalert.relativeTime(history.at)", "'Faded '", "history.lifetime_text",
-		"history.state === 'resolved'", "SEPARATOR")
-	p13MustNotContain(t, "buildPastMeta", meta, "innerHTML", "Math.", "parseInt(")
+	when := jsFunctionBody(t, ended, "whenWords(report)")
+	p13MustContain(t, "whenWords", when,
+		"Pinalert.relativeTime(history.at)", "'Faded '", "history.lifetime_text",
+		"history.state === 'resolved'", "'Resolved '")
+	p13MustNotContain(t, "whenWords", when, "innerHTML", "Math.", "parseInt(")
+
+	happened := jsFunctionBody(t, ended, "happenedWords(report)")
+	p13MustContain(t, "happenedWords", happened,
+		"history.closed_text", "history.outcome_label", "history.state === 'resolved'")
+	p13MustNotContain(t, "happenedWords", happened, "innerHTML", "Math.", "parseInt(", "+ 1")
 
 	// The facts line is the one trust line builder: the standing pin of
 	// TestTrustBlockMountedOnBothSurfaces keeps every trust field name out of
 	// the scripts, so the numerals and words come from PinalertTrust.
-	create := jsFunctionBody(t, ended, "createPastCard(id, onOpen)")
-	p13MustContain(t, "createPastCard", create,
-		"PinalertTrust.createTrustLine();", "facts.classList.add('past-card__facts');",
-		"'past-card__outcome'", "querySelectorAll('.report-row__trustline-count')",
-		"classList.add('past-card__count')", "classList.add('past-card__count', 'past-card__count--second')")
+	create := jsFunctionBody(t, ended, "createEndedRow(id)")
+	p13MustContain(t, "createEndedRow", create,
+		"PinalertTrust.createTrustLine();", "facts.classList.add('activity-card__facts');",
+		"querySelectorAll('.report-row__trustline-count')")
 
-	update := jsFunctionBody(t, ended, "updatePastCard(card, report)")
-	p13MustContain(t, "updatePastCard", update,
-		"Pinalert.setText(card.title,", "Pinalert.setText(card.meta, buildPastMeta(report));",
+	update := jsFunctionBody(t, ended, "updateEndedRow(card, report)")
+	p13MustContain(t, "updateEndedRow", update,
+		"Pinalert.setText(card.title,", "Pinalert.setText(card.happened, sentence);",
+		"Pinalert.setText(card.when, whenWords(report));",
 		"PinalertTrust.updateTrustLine(card.trust, report.trust);", "card.trust.word.hidden = true;",
-		"history.outcome_label", "history.outcome === 'corroborated'",
-		"Pinalert.setText(card.outcome,", "card.firstCount.hidden", "card.secondCount.hidden")
-	p13MustNotContain(t, "updatePastCard", update,
+		"history.outcome === 'corroborated'", "card.firstCount.hidden", "card.secondCount.hidden")
+	p13MustNotContain(t, "updateEndedRow", update,
 		"innerHTML", "insertAdjacentHTML", "Math.", "parseInt(", "+ 1", "_text", "createTextNode(")
 	if strings.Contains(ended, "confirmed_text") || strings.Contains(ended, "disputed_text") {
-		t.Errorf("ended-cards.js names a trust text field, a Past card must use PinalertTrust's trust line")
+		t.Errorf("ended-cards.js names a trust text field, a row must use PinalertTrust's trust line")
 	}
 
-	// The label is written first, and the corroborated outcome leaves the
-	// confirm count to the label while no other outcome hides it.
-	p13Ordered(t, update, "updatePastCard facts",
-		"history.outcome_label", "card.firstCount.hidden", "history.outcome === 'corroborated'",
-		"card.secondCount.hidden")
+	// The corroborated outcome leaves the confirm count to the label while no
+	// other outcome hides it.
+	p13Ordered(t, update, "updateEndedRow facts",
+		"history.outcome === 'corroborated'", "card.firstCount.hidden", "card.secondCount.hidden")
 
 	// The module is exported under one name for My activity.
 	p13MustContain(t, "ended-cards.js", ended, "window.PinalertEnded = (function () {",
-		"createPastCard: createPastCard,", "updatePastCard: updatePastCard,", "buildPastMeta: buildPastMeta,",
-		"groupLineText: groupLineText,", "cutLineText: cutLineText,")
-	p13MustNotContain(t, "ended-cards.js", ended, "fetch(", "scrollIntoView", "innerHTML", "insertAdjacentHTML")
+		"createEndedRow: createEndedRow,", "updateEndedRow: updateEndedRow,", "whenWords: whenWords,",
+		"happenedWords: happenedWords,", "cutLineText: cutLineText,", "groupLineText: groupLineText",
+		"kmWords: kmWords,", "distanceWords: distanceWords,")
+	p13MustNotContain(t, "ended-cards.js", ended, "fetch(", "scrollIntoView", "innerHTML", "insertAdjacentHTML",
+		"createPastCard", "updatePastCard", "buildPastMeta", "past-card")
 }
 
-// TestPastCardApproximate pins D-23 and T-31-55: a finished Rescue card is
-// titled Rescue needed, its meta begins Approximate location and the
-// description is read only when the report is not approximate.
+// TestPastCardApproximate pins D-23 and T-31-55: a finished Rescue row is
+// titled Rescue needed, its Report cell line reads Approximate location, its
+// distance reads "about {n} km" and the description is read only when the
+// report is not approximate.
 func TestPastCardApproximate(t *testing.T) {
 	ended := pt12Ended(t)
 
 	p13MustContain(t, "ended-cards.js", ended,
 		"var FINISHED_RESCUE_TITLE = 'Rescue needed';", "var APPROXIMATE_LABEL = 'Approximate location';")
 
-	update := jsFunctionBody(t, ended, "updatePastCard(card, report)")
-	p13MustContain(t, "updatePastCard", update,
+	update := jsFunctionBody(t, ended, "updateEndedRow(card, report)")
+	p13MustContain(t, "updateEndedRow", update,
 		"var approximate = report.approximate === true;",
-		"approximate ? FINISHED_RESCUE_TITLE : report.description")
+		"approximate ? FINISHED_RESCUE_TITLE : report.description",
+		"approximate ? APPROXIMATE_LABEL : Pinalert.categoryLabel(report.category)")
 	if n := strings.Count(update, "report.description"); n != 1 {
-		t.Errorf("updatePastCard reads report.description %d times, want exactly the one guarded by approximate", n)
+		t.Errorf("updateEndedRow reads report.description %d times, want exactly the one guarded by approximate", n)
 	}
 	if strings.Contains(update, "description") && !strings.Contains(update, "approximate ? FINISHED_RESCUE_TITLE : report.description") {
-		t.Errorf("updatePastCard reads the description outside the approximate guard")
+		t.Errorf("updateEndedRow reads the description outside the approximate guard")
 	}
 
-	meta := jsFunctionBody(t, ended, "buildPastMeta(report)")
-	p13MustContain(t, "buildPastMeta", meta,
-		"report.approximate === true", "APPROXIMATE_LABEL : Pinalert.categoryLabel(report.category)")
-	p13MustNotContain(t, "buildPastMeta", meta, "description")
+	distance := jsFunctionBody(t, ended, "distanceWords(report)")
+	p13MustContain(t, "distanceWords", distance,
+		"report.approximate === true", "'about ' + Math.max(1, Math.round(km)) + ' km'")
 }
 
 // TestRecentSentence pins C39's counts sentence {A}: only the parts whose
