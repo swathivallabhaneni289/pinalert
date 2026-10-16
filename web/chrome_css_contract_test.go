@@ -209,6 +209,14 @@ func TestDisclaimerBarToken(t *testing.T) {
 			continue
 		}
 		decls := declsOf(roots[0].declBody)
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10):
+		// the 900px tier also carries the two app bar lengths (the laptop top
+		// bar is 61px, the laptop has no bottom bar), so they are set aside
+		// before the "only the bar token" count. Both are lengths, never a
+		// colour. The Phase 3.1 and Phase 4 hands-on tests are walked on this
+		// layout after Phase 3.4 is built.
+		delete(decls, "--app-topbar-height")
+		delete(decls, "--app-bottombar-height")
 		if len(decls) != 1 {
 			t.Errorf("%s :root must declare only %s, got %v", tier.query, token, decls)
 		}
@@ -738,6 +746,10 @@ func TestChromeCSSTokensOnly(t *testing.T) {
 	sizes := map[string]bool{
 		"var(--font-size-label)": true, "var(--font-size-body)": true,
 		"var(--font-size-heading)": true, "var(--font-size-display)": true,
+		// Phase 3.4 (plan 03.4-03, UI-SPEC departure D4): the 12px caption token,
+		// limited to the closed list in UI-SPEC Typography (bottom bar labels,
+		// column heads, bell count digits, step digits, bell list time line).
+		"var(--font-size-caption)": true,
 	}
 	weights := map[string]bool{"var(--font-weight-regular)": true, "var(--font-weight-semibold)": true}
 	for _, r := range parseCSSRules(raw) {
