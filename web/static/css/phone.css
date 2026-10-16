@@ -66,18 +66,19 @@
     display: none;
   }
 
-  /* The account button hides on phones. Activity is a tab in the bottom bar
-     and the email and Log out live on the Activity page. */
-  body > .app-header {
-    display: none;
+  /* The account button stays on phones (Phase 4, P4-A4): it hangs 16px under
+     the unofficial bar at the right edge, and its menu holds the Low data and
+     Policy ways in. The rule only says so out loud; the head is checked
+     against the real markup by TestPhoneRuleHeadsMatchTheMarkup. */
+  .top-chrome > .app-header {
+    display: block;
   }
 
-  /* The theme toggle moves to the top right corner of the map. The bottom
-     right corner holds only the add button above the bar. */
+  /* No theme toggle on phones (owner decision of 2026-10-15): a phone follows
+     the device's own light or dark setting, and theme.js writes no theme on
+     the root below 900px. display none also takes it out of the tab order. */
   body > .theme-toggle {
-    top: var(--space-md);
-    right: var(--space-md);
-    bottom: auto;
+    display: none;
   }
 
   .pane--map > .fab {
@@ -139,15 +140,13 @@
     --map-tools-height: calc(var(--space-sm) + var(--touch-target-min));
   }
 
-  /* The layer ends where the theme toggle begins, 16px from the right edge
-     and 44px wide, with a small space between. While the search is open the
-     toggle steps aside (below), so the row takes the whole width. */
+  /* The layer ends where the account button's 44px slot begins, 16px from
+     the right edge, with a small space between. The button sits 16px under
+     the bar and the row 8px under it, so they share a band: the row keeps
+     this inset while the search is open too, which leaves Close clear of the
+     button at every phone width (review finding WR-W01). */
   .pane--map > .map-tools {
     right: calc(var(--space-md) + var(--touch-target-min) + var(--space-sm));
-  }
-
-  .pane--map > .map-tools[data-search-open="true"] {
-    right: var(--space-md);
   }
 
   /* Collapsed: a search button, then the chips in the same row. Open: the
@@ -397,8 +396,9 @@
     margin: 0 0 var(--space-md);
   }
 
-  /* The theme toggle stays fixed at the top right, so Log out keeps a right
-     margin of the touch target plus the small space. */
+  /* The account button hangs at the top right, 16px under the bar, level
+     with this row, so Log out keeps a right margin of the touch target plus
+     the small space. */
   main.profile-page .profile-logout {
     display: block;
     grid-area: logout;
@@ -965,9 +965,9 @@
   }
 
   /* While the sheet is open the strip shows only the map, the pin and the
-     back arrow, so the zoom control, the theme toggle, the tools, the map
-     label and the search results step aside. The theme toggle also steps
-     aside while the search row is open, because the row takes its place. */
+     back arrow, so the zoom control, the tools, the map label and the search
+     results step aside. The two theme toggle heads are kept as a second
+     guard; the toggle is already hidden on every phone (rule near the top). */
   body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) .leaflet-control-zoom,
   body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) > .theme-toggle,
   body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) .map-tools,

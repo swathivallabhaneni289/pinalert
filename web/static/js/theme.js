@@ -23,6 +23,10 @@
 // the API. Anything absent, corrupt or unrecognised is treated as no
 // stored preference at all and falls through to a one-time value derived
 // from the operating system preference, never a live third mode.
+//
+// PHONES (owner decision of 2026-10-15): below 900px wide there is no toggle
+// and the page follows the device's own light or dark setting live, so this
+// module leaves the root without a theme attribute there (isPhone below).
 (function () {
   'use strict';
 
@@ -91,11 +95,27 @@
     return 'light';
   }
 
+  // PHONE_QUERY is the phone layout's own breakpoint (phone.css). Below 900px
+  // there is no toggle (owner decision of 2026-10-15): the phone follows the
+  // device's own light or dark setting, so the root carries no theme
+  // attribute there and the prefers-color-scheme block in main.css decides.
+  // A choice saved from the laptop toggle is neither applied nor overwritten
+  // on a phone width.
+  var phoneQuery = window.matchMedia ? window.matchMedia('(max-width: 899.98px)') : null;
+
+  function isPhone() {
+    return phoneQuery !== null && phoneQuery.matches;
+  }
+
   // applyMode is the only place a value reaches the root element in this
   // file: one setAttribute call site, downstream of the validation above.
-  // There is no removeAttribute branch any more: with the follow-the-OS
-  // mode gone, no state ever wants the attribute absent.
+  // The one removeAttribute call is the phone width, where the device
+  // setting decides and no mode is written at all.
   function applyMode(mode) {
+    if (isPhone()) {
+      document.documentElement.removeAttribute('data-theme');
+      return;
+    }
     document.documentElement.setAttribute('data-theme', mode);
   }
 
@@ -120,9 +140,37 @@
   // this very first evaluation is what guarantees the operating system is
   // consulted once ever, not once per visit with no memory of the last
   // answer.
+  // On a phone width nothing is persisted, so a phone visit never turns the
+  // device setting of that moment into a saved laptop choice.
   var currentMode = initialMode();
   applyMode(currentMode);
-  persistMode(currentMode);
+  if (!isPhone()) {
+    persistMode(currentMode);
+  }
+
+  // Crossing the breakpoint (a rotated tablet, a resized window) moves
+  // between the two rules: narrow drops the attribute, wide applies the
+  // saved choice, or on a first wide visit the one just derived.
+  function onWidthChange() {
+    if (!isPhone()) {
+      currentMode = initialMode();
+      persistMode(currentMode);
+    }
+    applyMode(currentMode);
+    var control = document.getElementById('theme-toggle');
+    var icon = document.getElementById('theme-toggle-icon');
+    if (control && icon) {
+      render(control, icon, currentMode);
+    }
+  }
+
+  if (phoneQuery !== null) {
+    if (typeof phoneQuery.addEventListener === 'function') {
+      phoneQuery.addEventListener('change', onWidthChange);
+    } else if (typeof phoneQuery.addListener === 'function') {
+      phoneQuery.addListener(onWidthChange);
+    }
+  }
 
   // render applies the given mode's glyph and both accessible-name
   // attributes to the control. It is called once at wire time, to show the
