@@ -130,6 +130,12 @@
   var finding = false;
   var hintEl = null;
 
+  // apiRequest sends one moderation request. A timeoutMs above 0 gives it the
+  // shared time limit of app.js (Pinalert.requestTimeout): the page's own
+  // timer raced against the request and its body read, so a read whose
+  // aborted request never ends (WebKit can leave one unsettled) still fails
+  // as no answer at the limit. A body that stalls lands in the body fallback,
+  // as an aborted body read did. A timeoutMs of 0 sends with no limit.
   function apiRequest(method, path, timeoutMs) {
     var options = {
       method: method,
@@ -137,34 +143,35 @@
       cache: 'no-store',
       headers: { 'Accept': 'application/json' }
     };
-    var timer = null;
+    var limit = null;
     if (timeoutMs > 0) {
-      if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
-        options.signal = AbortSignal.timeout(timeoutMs);
-      } else if (typeof AbortController !== 'undefined') {
-        var controller = new AbortController();
-        options.signal = controller.signal;
-        timer = window.setTimeout(function () {
-          controller.abort();
-        }, timeoutMs);
+      limit = Pinalert.requestTimeout(timeoutMs, 'moderation');
+      if (limit.signal) {
+        options.signal = limit.signal;
       }
     }
-    return fetch(path, options).then(function (res) {
-      if (timer !== null) {
-        window.clearTimeout(timer);
+    var withinLimit = function (promise) {
+      return limit !== null ? Promise.race([promise, limit.expired]) : promise;
+    };
+    var clearLimit = function () {
+      if (limit !== null) {
+        limit.clear();
       }
+    };
+    return withinLimit(fetch(path, options)).then(function (res) {
       if (!res.ok) {
+        clearLimit();
         return { status: res.status, ok: false, body: null };
       }
-      return res.json().then(function (body) {
+      return withinLimit(res.json()).then(function (body) {
+        clearLimit();
         return { status: res.status, ok: true, body: body };
       }, function () {
+        clearLimit();
         return { status: res.status, ok: true, body: null };
       });
     }, function () {
-      if (timer !== null) {
-        window.clearTimeout(timer);
-      }
+      clearLimit();
       return Promise.reject({ noAnswer: true });
     });
   }

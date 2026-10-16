@@ -281,38 +281,30 @@ window.PinalertFlag = (function () {
     return message;
   }
 
+  // sendFlag posts the flag with the shared time limit of app.js
+  // (Pinalert.requestTimeout). The limit is the page's own timer raced
+  // against the post and its body read, so a post whose aborted request never
+  // ends (WebKit can leave one unsettled) still shows the offline line at
+  // FLAG_TIMEOUT_MS instead of leaving the dialog sending for good. A body
+  // that stalls lands in the body fallback, as an aborted body read did.
   function sendFlag(reason) {
     setSending(true);
-    var signal;
-    var timer = null;
-    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
-      signal = AbortSignal.timeout(FLAG_TIMEOUT_MS);
-    } else if (typeof AbortController === 'function') {
-      var controller = new AbortController();
-      signal = controller.signal;
-      timer = window.setTimeout(function () {
-        controller.abort();
-      }, FLAG_TIMEOUT_MS);
-    }
-    fetch('/api/reports/' + encodeURIComponent(current.reportId) + '/flag', {
+    var limit = Pinalert.requestTimeout(FLAG_TIMEOUT_MS, 'flag');
+    Promise.race([fetch('/api/reports/' + encodeURIComponent(current.reportId) + '/flag', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
       body: JSON.stringify({ reason: reason }),
-      signal: signal
-    }).then(function (res) {
-      return res.json().catch(function () {
+      signal: limit.signal
+    }), limit.expired]).then(function (res) {
+      return Promise.race([res.json(), limit.expired]).catch(function () {
         return {};
       }).then(function (body) {
-        if (timer !== null) {
-          window.clearTimeout(timer);
-        }
+        limit.clear();
         handleAnswer(res.status, body, res.headers);
       });
     }, function () {
-      if (timer !== null) {
-        window.clearTimeout(timer);
-      }
+      limit.clear();
       setSending(false);
       showError(FLAG_OFFLINE_MESSAGE);
     });

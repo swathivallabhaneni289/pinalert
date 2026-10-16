@@ -403,9 +403,10 @@ func TestLowDataSearchIgnoresServerText(t *testing.T) {
 		"typeof picker.noteSearchOutcome === 'function'")
 	p419Count(t, "report-form.js", form, "fetch(", 1)
 
-	p419Has(t, "searchTimeoutSignal", jsFunctionBody(t, form, "searchTimeoutSignal()"),
-		"AbortSignal.timeout(SEARCH_TIMEOUT_MS)", "AbortController")
-	p419Has(t, "runSearch", jsFunctionBody(t, form, "runSearch(query)"), "signal: searchTimeoutSignal()",
+	p419Has(t, "searchTimeLimit", jsFunctionBody(t, form, "searchTimeLimit()"),
+		"Pinalert.requestTimeout(SEARCH_TIMEOUT_MS, ")
+	p419Has(t, "runSearch", jsFunctionBody(t, form, "runSearch(query)"), "signal: limit.signal",
+		"limit.expired",
 		"formVariant === 'low'", "picker.searchFailureMessage(", "'unavailable'")
 
 	dropdown := jsFunctionBody(t, form, "renderDropdown(results, matched)")

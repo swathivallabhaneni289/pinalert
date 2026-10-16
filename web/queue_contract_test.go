@@ -293,8 +293,14 @@ func TestQueueSubmitReportClassifiesQueueable(t *testing.T) {
 	app := p422Code(raw)
 	b := jsFunctionBody(t, app, "submitReport(payload)")
 	p422Need(t, "submitReport(payload)", b,
-		"requestTimeout(SUBMIT_TIMEOUT_MS)",
+		"requestTimeout(SUBMIT_TIMEOUT_MS, 'submitReport')",
 		"signal: timeout.signal",
+		// The WebKit hung post: the post and its body read race the page's
+		// own timer, so a post whose aborted request never ends still fails
+		// at the limit (the hung post cases of web/queue_logic_test.mjs run it).
+		"return Promise.race([fetch('/api/reports', {",
+		"}), timeout.expired]).then(function (res) {",
+		"return Promise.race([res.json(), timeout.expired]).catch(function () {",
 		"err.status = res.status",
 		"QUEUEABLE_STATUSES.indexOf(res.status) !== -1",
 		"retry_after_seconds",
@@ -681,8 +687,8 @@ func TestQueueLowSavedLocation(t *testing.T) {
 
 func TestQueueTimeoutFallback(t *testing.T) {
 	app := p422Code(p422Static(t, "static/js/app.js"))
-	timeout := jsFunctionBody(t, app, "requestTimeout(ms)")
-	p422Need(t, "requestTimeout(ms)", timeout,
+	timeout := jsFunctionBody(t, app, "requestTimeout(ms, what)")
+	p422Need(t, "requestTimeout(ms, what)", timeout,
 		"typeof AbortSignal", "AbortSignal.timeout(ms)", "new AbortController()", "setTimeout(", "clearTimeout(")
 	submit := jsFunctionBody(t, app, "submitReport(payload)")
 	p422Need(t, "submitReport(payload)", submit, "err.queueable = true")

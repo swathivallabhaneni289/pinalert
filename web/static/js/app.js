@@ -178,6 +178,8 @@ window.Pinalert = (function () {
   // as unanswered, and these answers from a proxy also mean "try later".
   var SUBMIT_TIMEOUT_MS = 10000;
   var QUEUEABLE_STATUSES = [502, 503, 504];
+  // A list request with no answer in 10 seconds counts as a failed poll.
+  var LIST_TIMEOUT_MS = 10000;
   var toastSeq = 0;
   var toastHasAction = false;
   var toastPending = false;
@@ -435,34 +437,16 @@ window.Pinalert = (function () {
       document.documentElement.setAttribute('data-feed-requested', 'true');
     }
     // A request that stalls is abandoned after 10 seconds and counts as a
-    // failed poll. The limit is this call's own timer, never the request's
-    // promise: WebKit can leave an aborted request's promise unsettled for
-    // good, and the stale line, a refetch after a write and the next list
-    // request of the Low data view all wait on this call. So when the timer
-    // fires, the call fails at once, whether or not the request ever ends.
-    // The timer also aborts the request, so it stops on the network too. The
-    // limit covers the wait for the headers and for the body. The signal
+    // failed poll. The limit is this call's own timer (requestTimeout), never
+    // the request's promise: WebKit can leave an aborted request's promise
+    // unsettled for good, and the stale line, a refetch after a write and the
+    // next list request of the Low data view all wait on this call. So when
+    // the timer fires, the call fails at once, whether or not the request ever
+    // ends. The timer also aborts the request, so it stops on the network too.
+    // The limit covers the wait for the headers and for the body. The signal
     // travels in a Request so the call below keeps its one argument form.
-    var signal;
-    var controller = null;
-    if (typeof AbortController !== 'undefined') {
-      controller = new AbortController();
-      signal = controller.signal;
-    } else if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
-      signal = AbortSignal.timeout(10000);
-    }
-    url = new Request(url, { signal: signal });
-    var abortTimer = null;
-    var timedOut = new Promise(function (resolve, reject) {
-      abortTimer = window.setTimeout(function () {
-        if (controller !== null) {
-          controller.abort();
-        }
-        var limitErr = new Error('fetchReports: no answer in 10 seconds');
-        limitErr.name = 'TimeoutError';
-        reject(limitErr);
-      }, 10000);
-    });
+    var limit = requestTimeout(LIST_TIMEOUT_MS, 'fetchReports');
+    url = new Request(url, { signal: limit.signal });
 
     var answered = fetch(url)
       .then(function (res) {
@@ -474,11 +458,9 @@ window.Pinalert = (function () {
       });
     // Whichever comes first wins: the answer, or the timer. A late end of the
     // other one changes nothing.
-    pending = Promise.race([answered, timedOut])
+    pending = Promise.race([answered, limit.expired])
       .then(function (body) {
-        if (abortTimer !== null) {
-          window.clearTimeout(abortTimer);
-        }
+        limit.clear();
         if (isStale()) {
           return whenFresh();
         }
@@ -513,9 +495,7 @@ window.Pinalert = (function () {
         notify();
       })
       .catch(function (err) {
-        if (abortTimer !== null) {
-          window.clearTimeout(abortTimer);
-        }
+        limit.clear();
         if (isStale()) {
           return whenFresh();
         }
@@ -553,26 +533,61 @@ window.Pinalert = (function () {
     }, config.pollIntervalMs);
   }
 
-  // requestTimeout gives a post a 10 second limit (D-18). The signal covers
-  // the wait for the answer and for its body. clear stops the fallback timer
-  // once an answer has come.
-  function requestTimeout(ms) {
-    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
-      return { signal: AbortSignal.timeout(ms), clear: function () {} };
+  // requestTimeout gives one request a time limit of ms milliseconds that
+  // ends on time even when the request does not. It is the one time limit of
+  // every request in the client: the list, the post, both searches, the flag
+  // and the moderation reads (Pinalert.requestTimeout).
+  //
+  // The limit is the page's own timer, never the request's promise: WebKit
+  // can leave an aborted request's promise unsettled for good, so a limit
+  // that waits for the abort to end the request can wait forever. When the
+  // timer fires, expired rejects with an Error named TimeoutError, and only
+  // then is the request aborted, so a caller that races its request against
+  // expired fails at the limit whether or not the request ever ends, and
+  // never sees the abort's own AbortError first. A caller races the body read
+  // against expired too, so a body that stalls lands where an aborted body
+  // read always landed. The abort stops the request on the network.
+  //
+  // signal goes on the request. controller ends the request early (a newer
+  // search ends the older one); it is null in a browser without one, where
+  // the browser's own timeout signal stops the request instead. clear stops
+  // the timer once the answer, body included, has come. what names the
+  // caller in the error's text, which is never shown.
+  function requestTimeout(ms, what) {
+    var controller = null;
+    var signal;
+    if (typeof AbortController !== 'undefined') {
+      controller = new AbortController();
+      signal = controller.signal;
+    } else if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+      signal = AbortSignal.timeout(ms);
     }
-    if (typeof AbortController === 'function') {
-      var controller = new AbortController();
-      var timer = window.setTimeout(function () {
-        controller.abort();
-      }, ms);
-      return {
-        signal: controller.signal,
-        clear: function () {
-          window.clearTimeout(timer);
+    var timer = null;
+    var expired = new Promise(function (resolve, reject) {
+      timer = window.setTimeout(function () {
+        timer = null;
+        var limitErr = new Error((what || 'request') + ': no answer in ' + (ms / 1000) + ' seconds');
+        limitErr.name = 'TimeoutError';
+        reject(limitErr);
+        if (controller !== null) {
+          controller.abort();
         }
-      };
-    }
-    return { signal: undefined, clear: function () {} };
+      }, ms);
+    });
+    // A limit that fires after its race was already decided rejects nobody's
+    // promise, so it must not count as an unhandled rejection.
+    expired.catch(function () {});
+    return {
+      signal: signal,
+      controller: controller,
+      expired: expired,
+      clear: function () {
+        if (timer !== null) {
+          window.clearTimeout(timer);
+          timer = null;
+        }
+      }
+    };
   }
 
   // submitReport POSTs to /api/reports, resolves with the created report or
@@ -582,19 +597,24 @@ window.Pinalert = (function () {
   // no answer came, the request timed out or the answer was a 502, 503 or
   // 504); a 429 adds .retryAfterSeconds, .serious and .emergencyNumber
   // (P4-A13). The created report passes through unchanged, so its held flag
-  // reaches the caller.
+  // reaches the caller. A post that hangs, even one whose aborted request
+  // never ends, fails at SUBMIT_TIMEOUT_MS as no answer, so the form saves
+  // the report on the device and the queue's send pass ends with the row kept.
+  // A body that stalls after the headers lands in the body fallback, as an
+  // aborted body read always did, never in the no answer path: the post may
+  // have made the report already.
   function submitReport(payload) {
-    var timeout = requestTimeout(SUBMIT_TIMEOUT_MS);
-    return fetch('/api/reports', {
+    var timeout = requestTimeout(SUBMIT_TIMEOUT_MS, 'submitReport');
+    return Promise.race([fetch('/api/reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
       signal: timeout.signal
-    }).then(function (res) {
-      timeout.clear();
-      return res.json().catch(function () {
+    }), timeout.expired]).then(function (res) {
+      return Promise.race([res.json(), timeout.expired]).catch(function () {
         return {};
       }).then(function (body) {
+        timeout.clear();
         if (!res.ok) {
           var fieldError = (body && body.error) || {
             field: 'body',
@@ -1149,6 +1169,7 @@ window.Pinalert = (function () {
     fetchReports: fetchReports,
     startPolling: startPolling,
     submitReport: submitReport,
+    requestTimeout: requestTimeout,
     select: select,
     onSelect: onSelect,
     severityClass: severityClass,

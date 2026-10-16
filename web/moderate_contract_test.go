@@ -365,7 +365,8 @@ func TestModerateTransportAndNoPolling(t *testing.T) {
 	}
 	api := jsFunctionBody(t, js, "apiRequest(method, path, timeoutMs)")
 	p426WantAll(t, "apiRequest", api, "fetch(", "credentials: 'same-origin'", "cache: 'no-store'", "timeoutMs > 0",
-		"AbortSignal.timeout(timeoutMs)", "new AbortController()", "res.ok", "noAnswer: true")
+		"Pinalert.requestTimeout(timeoutMs, ", "Promise.race([promise, limit.expired])",
+		"withinLimit(fetch(path, options))", "withinLimit(res.json())", "res.ok", "noAnswer: true")
 	p426WantNone(t, "whole file", js, "setInterval", "indexedDB", "localStorage", "sessionStorage",
 		"document.addEventListener", "window.addEventListener")
 	if n := strings.Count(js, "addEventListener("); n != 3 {

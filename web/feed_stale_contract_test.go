@@ -91,8 +91,8 @@ func TestFetchReportsBackgroundRefreshAndTimeout(t *testing.T) {
 	p413Ordered(t, "fetchReports", b, phase3, widen, "if (!isBackgroundRefresh) {")
 
 	p413MustContain(t, "fetchReports", b,
-		"AbortSignal.timeout(10000)", "new AbortController()", "controller.abort()",
-		"signal: signal", "url = new Request(url, { signal: signal });",
+		"var limit = requestTimeout(LIST_TIMEOUT_MS, 'fetchReports');",
+		"url = new Request(url, { signal: limit.signal });",
 		"var answered = fetch(url)", "setAttribute('data-feed-requested', 'true')")
 	flagAt := strings.Index(b, "data-feed-requested")
 	requestAt := strings.Index(b, "url = new Request(")
@@ -103,15 +103,30 @@ func TestFetchReportsBackgroundRefreshAndTimeout(t *testing.T) {
 	// fires even if the aborted request's promise never settles. The node test
 	// web/low_page_test.mjs runs this with a fetch that never settles.
 	p413Ordered(t, "fetchReports time limit", b,
-		"var timedOut = new Promise(function (resolve, reject) {",
-		"abortTimer = window.setTimeout(function () {", "controller.abort();", "reject(limitErr);",
-		"}, 10000);", "var answered = fetch(url)", "pending = Promise.race([answered, timedOut])")
+		"var limit = requestTimeout(LIST_TIMEOUT_MS, 'fetchReports');",
+		"var answered = fetch(url)", "pending = Promise.race([answered, limit.expired])")
 	if !(flagAt != -1 && requestAt != -1 && fetchAt != -1 && flagAt < fetchAt && requestAt < fetchAt) {
 		t.Errorf("the flag and the Request must come before the request call (flag %d, request %d, call %d)",
 			flagAt, requestAt, fetchAt)
 	}
-	if n := strings.Count(b, "10000"); n < 2 {
-		t.Errorf("the 10000 ms limit must appear for the native signal and the fallback timer, found %d", n)
+	if n := strings.Count(app, "var LIST_TIMEOUT_MS = 10000;"); n != 1 {
+		t.Errorf("LIST_TIMEOUT_MS must be declared once as 10000, found %d", n)
+	}
+
+	// The shared time limit: the page's own timer rejects expired with a
+	// TimeoutError before it aborts the request, so a race against expired
+	// fails at the limit even when the aborted request never ends, and never
+	// sees the abort's AbortError first. The controller is preferred; the
+	// browser's own timeout signal is the fallback.
+	limit := jsFunctionBody(t, app, "requestTimeout(ms, what)")
+	p413Ordered(t, "requestTimeout", limit,
+		"if (typeof AbortController !== 'undefined') {", "controller = new AbortController();",
+		"AbortSignal.timeout(ms)", "var expired = new Promise(function (resolve, reject) {",
+		"timer = window.setTimeout(function () {", "limitErr.name = 'TimeoutError';",
+		"reject(limitErr);", "controller.abort();", "}, ms);", "expired.catch(function () {});",
+		"expired: expired", "window.clearTimeout(timer);")
+	if n := strings.Count(app, "requestTimeout: requestTimeout"); n != 1 {
+		t.Errorf("requestTimeout must be exported once on Pinalert, found %d", n)
 	}
 
 	success, ok, _ := windowAfter(b, ".then(function (body) {", ".catch(")
@@ -119,7 +134,7 @@ func TestFetchReportsBackgroundRefreshAndTimeout(t *testing.T) {
 		t.Fatal("could not locate the success handler of fetchReports")
 	}
 	p413Ordered(t, "success handler", success,
-		"window.clearTimeout(abortTimer)", "if (isStale()) {", "lastAppliedSeq = mySeq;",
+		"limit.clear();", "if (isStale()) {", "lastAppliedSeq = mySeq;",
 		"state.hasLoaded = true;", "state.lastUpdatedAt = Date.now();", "notify();")
 
 	failure, ok, _ := windowAfter(b, ".catch(function (err) {", "});")
@@ -127,7 +142,7 @@ func TestFetchReportsBackgroundRefreshAndTimeout(t *testing.T) {
 		t.Fatal("could not locate the failure handler of fetchReports")
 	}
 	p413Ordered(t, "failure handler", failure,
-		"window.clearTimeout(abortTimer)", "if (isStale()) {", "state.status = 'error'")
+		"limit.clear();", "if (isStale()) {", "state.status = 'error'")
 	if n := strings.Count(failure, "return"); n != 1 {
 		t.Errorf("the failure handler must hold exactly one return (the stale guard), found %d", n)
 	}
