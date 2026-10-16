@@ -202,6 +202,12 @@
     render(control, icon, currentMode);
 
     control.addEventListener('click', function () {
+      // The toggle is hidden below 900px (chrome.css, phone.css), so a press
+      // can only come from a stale layout; it must neither flip the icon nor
+      // overwrite the laptop choice (browser finding F-P4-6).
+      if (isPhone()) {
+        return;
+      }
       var nextIndex = (MODES.indexOf(currentMode) + 1) % MODES.length;
       currentMode = MODES[nextIndex];
       applyMode(currentMode);
