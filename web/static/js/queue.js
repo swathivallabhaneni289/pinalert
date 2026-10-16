@@ -539,6 +539,9 @@
     return storeReady.then(function () {
       var payload = JSON.parse(JSON.stringify(record.payload));
       payload.request_id = requestId;
+      // The account a post names is added to each send from the row's own
+      // account_id, never kept in the saved payload (WR-02).
+      delete payload.expected_account_id;
       var row = {
         request_id: requestId,
         account_id: accountId,

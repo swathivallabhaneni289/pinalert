@@ -676,6 +676,63 @@ test('a Discard question open when Send after the wait is pressed goes away', as
   page.cancelInFlight();
 });
 
+// ----- Edit and resend names the saved account (WR-02) -----
+
+const RESEND = { requestId: 'cccccccccccccccc3333', accountId: '7', prefill: { written_at: '2026-10-16T08:00:00Z' } };
+const OTHER_ACCOUNT_MESSAGE = 'This report was saved under a different account than the one signed in now. ' +
+  'Sign in to that account to send it.';
+
+test('Edit and resend posts the account the report was saved under; a fresh post does not', async () => {
+  const page = setup();
+  page.open(RESEND);
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  assert.equal(page.posts[0].payload.request_id, 'cccccccccccccccc3333');
+  assert.equal(page.posts[0].payload.expected_account_id, '7', 'a resend names the saved account');
+  page.posts[0].resolve({ id: 50 });
+  await settle();
+
+  page.open();
+  page.fill('A second report about the shelter');
+  page.submit();
+  assert.equal(Object.hasOwn(page.posts[1].payload, 'expected_account_id'), false, 'a fresh post names no account');
+
+  // An id that is not digits only is never sent.
+  const odd = setup();
+  odd.open(Object.assign({}, RESEND, { accountId: '7 or 8' }));
+  odd.fill('Water over the main road near the bridge');
+  odd.submit();
+  assert.equal(Object.hasOwn(odd.posts[0].payload, 'expected_account_id'), false);
+});
+
+test('a resend refused for another account keeps the text and the saved report', async () => {
+  const page = setup();
+  page.open(RESEND);
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 409, field: 'expected_account_id', fieldMessage: OTHER_ACCOUNT_MESSAGE
+  }));
+  await settle();
+  assert.equal(page.el('report-backdrop').hidden, false, 'the form stays open');
+  assert.equal(page.el('form-error').textContent, OTHER_ACCOUNT_MESSAGE);
+  assert.equal(page.el('description').value, 'Water over the main road near the bridge');
+  assert.deepEqual(page.queueDiscards, [], 'the saved report stays');
+  assert.deepEqual(page.queueSaves, []);
+  assert.equal(page.el('submit-report').disabled, false);
+});
+
+test('a resend with no answer is saved without the account it names', async () => {
+  const page = setup();
+  page.open(RESEND);
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), { queueable: true, status: 0 }));
+  await settle();
+  assert.equal(page.queueSaves.length, 1);
+  assert.equal(Object.hasOwn(page.queueSaves[0].payload, 'expected_account_id'), false, 'the saved payload never holds it');
+});
+
 // ----- Post stays off while a report is being saved (WR-06) -----
 
 test('Post stays off while a report with no answer is being saved', async () => {

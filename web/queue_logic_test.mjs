@@ -765,6 +765,21 @@ await test('a wake that sends nothing waits twice as long each time, up to a min
   assert.deepEqual(delays, [1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000, 60000]);
 });
 
+await test('a saved payload never keeps the account a resend named (WR-02)', async () => {
+  const id = 'req-zzzzzzzzzzzzzzzz-26';
+  const env = loadQueue({ answers: [() => Promise.reject({ queueable: true, status: 0 })] });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  const saved = record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z');
+  saved.payload.expected_account_id = '8';
+  await env.queue.save(saved);
+  await settle();
+  assert.equal(Object.hasOwn(env.store.get(id).payload, 'expected_account_id'), false);
+  await env.queue.flush();
+  await settle();
+  assert.equal(env.submitted.at(-1).expected_account_id, '7', 'a send names the account the row is bound to');
+});
+
 await test('a sent report never comes back when the read after the send fails (WR-08)', async () => {
   const id = 'req-rrrrrrrrrrrrrrrr-18';
   let env = null;

@@ -162,6 +162,27 @@ func TestReviewFixWBCloseWhilePosting(t *testing.T) {
 	p424Contains(t, "resetForm", jsFunctionBody(t, form, "resetForm()"), "sendAfterWaitBtn.disabled = false;")
 }
 
+// TestReviewFixWBResendNamesSavedAccount pins WR-02 of the skeptic check: the
+// form's Edit and resend of a saved row names the account the row was saved
+// under, as a queue send does, and a report typed now names none. The saved
+// payload never keeps it. web/report_form_session_test.mjs runs each case.
+func TestReviewFixWBResendNamesSavedAccount(t *testing.T) {
+	form := p424ReadJS(t, "static/js/report-form.js")
+	p424Ordered(t, "openForm", jsFunctionBody(t, form, "openForm(options)"),
+		"resendRequestId = options.requestId;", "/^[0-9]+$/.test(options.accountId)", "resendAccountId = options.accountId;")
+	p424Ordered(t, "handleSubmit", jsFunctionBody(t, form, "handleSubmit()"),
+		"if (resendAccountId) {", "payload.expected_account_id = resendAccountId;", "Pinalert.submitReport(payload).then(")
+	p424Contains(t, "resetForm", jsFunctionBody(t, form, "resetForm()"), "resendAccountId = null;")
+	p424Contains(t, "saveToQueue", jsFunctionBody(t, form, "saveToQueue(payload, status, sent)"), "delete payload.expected_account_id;")
+	p424Contains(t, "earlierRecord", jsFunctionBody(t, form, "earlierRecord(payload, err, sent)"), "delete payload.expected_account_id;")
+	p424Contains(t, "queue save", jsFunctionBody(t, p424ReadJS(t, "static/js/queue.js"), "save(record)"),
+		"delete payload.expected_account_id;")
+	for _, page := range []string{"static/js/feed.js", "static/js/low.js"} {
+		p424Contains(t, page+" openSavedReport", jsFunctionBody(t, p424ReadJS(t, page), "openSavedReport(record, opener, note)"),
+			"requestId: record.request_id,", "accountId: record.account_id")
+	}
+}
+
 // TestReviewFixWBLowFormLocationRetry pins WR-W08: the Low data form asks for a
 // high accuracy fix first and, when that times out or the position is
 // unavailable, asks once more at the default accuracy, as votes.js does. A

@@ -121,6 +121,9 @@
   var firstSubmitAt = null;
   var resendRequestId = null;
   var resendWrittenAt = null;
+  // resendAccountId is the digits only id of the account a saved report was
+  // saved under, set only when the form was opened from that report (WR-02).
+  var resendAccountId = null;
   var lastLimit = null;
   // formSession numbers the form's openings: closeForm raises it. A post
   // keeps the number it was sent under, and an answer that arrives under a
@@ -627,6 +630,7 @@
     firstSubmitAt = null;
     resendRequestId = null;
     resendWrittenAt = null;
+    resendAccountId = null;
     lastLimit = null;
     if (picker && typeof picker.reset === 'function') {
       picker.reset();
@@ -734,6 +738,12 @@
     if (options && typeof options.requestId === 'string' && REQUEST_ID_PATTERN.test(options.requestId)) {
       currentRequestId = options.requestId;
       resendRequestId = options.requestId;
+      // Its post names the account it was saved under, as a queue send does,
+      // so the server refuses it when another account is signed in now
+      // (WR-02). The id is digits only and nothing more.
+      if (typeof options.accountId === 'string' && /^[0-9]+$/.test(options.accountId)) {
+        resendAccountId = options.accountId;
+      }
     }
     if (options && options.prefill && typeof options.prefill === 'object') {
       applyPrefill(options.prefill);
@@ -892,6 +902,11 @@
     // line on a fresh post (R-05, D-19).
     if (resendWrittenAt) {
       payload.written_at = resendWrittenAt;
+    }
+    // A resend of a saved report names the account it was saved under (WR-02).
+    // A report typed now names none. A save after this post drops it again.
+    if (resendAccountId) {
+      payload.expected_account_id = resendAccountId;
     }
 
     submitButton.disabled = true;
@@ -1095,6 +1110,7 @@
     }
     var writtenAt = sent.writtenAt;
     payload.written_at = writtenAt;
+    delete payload.expected_account_id;
     window.PinalertQueue.save({
       request_id: payload.request_id,
       payload: payload,
@@ -1161,6 +1177,7 @@
   // the queue does with its own sends.
   function earlierRecord(payload, err, sent) {
     payload.written_at = sent.writtenAt;
+    delete payload.expected_account_id;
     var record = {
       request_id: payload.request_id,
       payload: payload,
