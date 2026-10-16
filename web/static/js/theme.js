@@ -217,4 +217,71 @@
   } else {
     wireControl();
   }
+
+  // THE BAR HEIGHT (review finding WR-W05). Every page shell, the map, the
+  // popups, the notice card and the document scroll padding subtract
+  // --disclaimer-bar-height, whose CSS value is a fixed tier per width. At
+  // enlarged text the sticky unofficial bar grows past the tier, the page
+  // then scrolls, and the bar covers the map tools and focused controls. So
+  // this module, the one script every page with the bar loads, writes the
+  // bar's real height into the token on the root. The CSS tier stays the
+  // value until this runs, and the whole value when scripts do not run.
+  //
+  // The bar's own min-height reads the same token. Measuring the bar while
+  // the last measurement holds it up would let it grow but never shrink
+  // again (a smaller text size, a rotation, a wider tier), so each
+  // measurement first drops the written value and reads the bar against
+  // the CSS tier alone. Both writes happen in one task, so nothing paints in
+  // between.
+  var BAR_PROPERTY = '--disclaimer-bar-height';
+  var barEl = null;
+
+  function measureBar() {
+    if (!barEl || !barEl.isConnected) {
+      return;
+    }
+    var rootStyle = document.documentElement.style;
+    rootStyle.removeProperty(BAR_PROPERTY);
+    var height = barEl.getBoundingClientRect().height;
+    if (height > 0) {
+      rootStyle.setProperty(BAR_PROPERTY, height + 'px');
+    }
+  }
+
+  // watchBar measures once, then again whenever the bar's text box changes
+  // size (text size, wrapping) and on every window resize (a width tier can
+  // lower the floor while the text keeps its lines). The text box is
+  // observed because its height is the text's own, never the floor's.
+  function watchBar() {
+    barEl = document.querySelector('.disclaimer-bar');
+    if (!barEl) {
+      return;
+    }
+    measureBar();
+    if (typeof ResizeObserver === 'function') {
+      var observer = new ResizeObserver(measureBar);
+      observer.observe(barEl);
+      if (barEl.firstElementChild) {
+        observer.observe(barEl.firstElementChild);
+      }
+    }
+    window.addEventListener('resize', measureBar);
+  }
+
+  // The bar is measured as soon as the document is parsed, on the
+  // readystatechange to interactive, which comes before the deferred scripts
+  // run, so the map and the other scripts lay out against the real bar.
+  function onReadyState() {
+    if (document.readyState === 'loading') {
+      return;
+    }
+    document.removeEventListener('readystatechange', onReadyState);
+    watchBar();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('readystatechange', onReadyState);
+  } else {
+    watchBar();
+  }
 }());

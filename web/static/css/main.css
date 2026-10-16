@@ -63,7 +63,10 @@
      the bar's min-height, never its height, so larger text still grows the
      bar. Three tiers: 67.8px here (three lines on a phone), 48.2px from 480px
      wide (two lines) and 28.6px from 900px wide (one line); the two wider
-     tiers are declared after the theme blocks. Declared in this file only. */
+     tiers are declared after the theme blocks. Declared in this file only.
+     Once the page is parsed, theme.js writes the bar's measured height over
+     it on the root, so at enlarged text the shells follow the real bar; the
+     tiers stay the first paint value and the value without scripts. */
   --disclaimer-bar-height: calc(var(--space-xs) * 2 + var(--font-size-label) * var(--line-height-label) * 3 + 1px);
 
   /* Base surfaces & text — light values (UI-SPEC "Color → Base surfaces & text") */
