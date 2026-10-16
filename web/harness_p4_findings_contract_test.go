@@ -106,3 +106,73 @@ func TestHarnessFindingP4_7OpenCardNeverSitsUnderTheTools(t *testing.T) {
 		t.Errorf("map.js has %d keepCardClearOfTools( occurrences, want 3 (one declaration, the open and the move end)", n)
 	}
 }
+
+// TestHarnessFindingP4_9MessageClearsTheOpenedReport pins F-P4-9: at 1280 by
+// 800 the message (921px wide, centred) covered the opened report's Undo. On
+// the map page from 900px the message sits in the list half, between the list
+// pane's left edge and the column of the report button and the theme toggle,
+// so it never meets a report opened in the map half. The width is the band,
+// written in tokens only; the phone rule and the other pages are unchanged.
+func TestHarnessFindingP4_9MessageClearsTheOpenedReport(t *testing.T) {
+	const main = "static/css/main.css"
+	const head = ".app-shell > #toast:not([hidden])"
+	toast := p31mRule(t, main, "@media (min-width: 900px)", head)
+	// Band from 50% + 16 (half the 32px gap) + 16 to 100% - (24 + 44 + 16).
+	wantLeft := "calc(75% + (var(--space-xl) / 2 - var(--space-lg) - var(--touch-target-min)) / 2)"
+	wantMax := "calc(50% - var(--space-xl) / 2 - var(--space-md) * 2 - var(--space-lg) - var(--touch-target-min))"
+	if p19NoSpace(toast.Decls["left"]) != p19NoSpace(wantLeft) {
+		t.Errorf("laptop map page message left is %q, want the middle of the list band %q", toast.Decls["left"], wantLeft)
+	}
+	if p19NoSpace(toast.Decls["max-width"]) != p19NoSpace(wantMax) {
+		t.Errorf("laptop map page message max-width is %q, want the list band %q", toast.Decls["max-width"], wantMax)
+	}
+	for _, prop := range []string{"transform", "animation", "width", "bottom"} {
+		if _, ok := toast.Decls[prop]; ok {
+			t.Errorf("%s sets %s; the centred transform, the animation, the width and the bottom stay the base rule's", head, prop)
+		}
+	}
+
+	// The band's ends are the shell gap and the round buttons' column.
+	shell := p31mRule(t, main, "@media (min-width: 900px)", ".app-shell")
+	if shell.Decls["gap"] != "var(--space-xl)" || shell.Decls["grid-template-columns"] != "1fr 1fr" {
+		t.Errorf("the laptop shell is %v; the message band assumes two equal halves 32px apart", shell.Decls)
+	}
+	p16MustDecl(t, "report button", p31mRule(t, main, "", ".fab"), map[string]string{"right": "var(--space-lg)"})
+	p16MustDecl(t, "theme toggle", p31mRule(t, "static/css/auth.css", "", ".theme-toggle"), map[string]string{"right": "var(--space-lg)"})
+
+	// The head comes after the action head of equal weight, so it caps both.
+	var actionAt, bandAt = -1, -1
+	for _, r := range p16ParseCSS(main, p16ReadStatic(t, main)) {
+		switch r.Head {
+		case "#toast.toast--action:not([hidden])":
+			actionAt = r.Index
+		case head:
+			bandAt = r.Index
+		}
+	}
+	if actionAt == -1 || bandAt <= actionAt {
+		t.Errorf("the laptop message rule (%d) must come after the action rule (%d)", bandAt, actionAt)
+	}
+
+	// The map page's message is a direct child of the shell; the other pages'
+	// messages are not, so they stay centred.
+	pages := findFullPageTemplates(t)
+	index := pages["templates/index.html.tmpl"]
+	shellAt := strings.Index(index, `<div class="app-shell"`)
+	toastAt := strings.Index(index, "\n    <div id=\"toast\"")
+	navAt := strings.Index(index, `<nav class="bottom-nav"`)
+	if shellAt == -1 || toastAt < shellAt || navAt < toastAt {
+		t.Errorf("index.html.tmpl: #toast is not a direct child of .app-shell, so the laptop rule matches nothing")
+	}
+	for _, page := range []string{"templates/low.html.tmpl", "templates/profile.html.tmpl", "templates/moderate.html.tmpl"} {
+		if strings.Contains(pages[page], `class="app-shell"`) {
+			t.Errorf("%s now has an .app-shell; check the laptop message rule still only moves the map page's message", page)
+		}
+	}
+
+	// The phone keeps its own place above the bottom bar.
+	phone := p31mRule(t, "static/css/phone.css", "@media (max-width: 899.98px)", "#toast:not([hidden])")
+	if p19NoSpace(phone.Decls["bottom"]) != p19NoSpace("calc(var(--touch-target-min) + var(--space-sm) + var(--space-md))") || len(phone.Decls) != 1 {
+		t.Errorf("the phone message rule changed: %v", phone.Decls)
+	}
+}
