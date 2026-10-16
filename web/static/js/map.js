@@ -234,6 +234,38 @@ window.PinalertMap = (function () {
     }
   }
 
+  // LAPTOP_SETTLE_MS is how long the map box must hold one size before the map
+  // is told about it.
+  var LAPTOP_SETTLE_MS = 150;
+
+  // watchMapBox tells the map its new size once the laptop layout has settled
+  // (Phase 3.4 plan 20, D-03). On a laptop the map is the right column of the
+  // grid, so the window, the 900px breakpoint, the top bar or a strip line can
+  // each change the size of its box; Leaflet's own window listener does not see
+  // all of those. A ResizeObserver on the map element waits for it to hold one
+  // size for LAPTOP_SETTLE_MS and then measures once, with no animation and no
+  // pan, never on every frame. The phone keeps its own settle path (sheet.js,
+  // resizeToSheet), whose height ease would otherwise fire this on each frame,
+  // so a phone width does nothing here. Browsers without ResizeObserver keep
+  // Leaflet's window listener alone.
+  function watchMapBox(container) {
+    if (typeof ResizeObserver !== 'function') {
+      return;
+    }
+    var timer = 0;
+    new ResizeObserver(function () {
+      if (timer) {
+        window.clearTimeout(timer);
+      }
+      timer = window.setTimeout(function () {
+        timer = 0;
+        if (map && !phoneDetail()) {
+          map.invalidateSize({ animate: false, pan: false });
+        }
+      }, LAPTOP_SETTLE_MS);
+    }).observe(container);
+  }
+
   function init() {
     var container = document.getElementById('map');
     if (!container || typeof L === 'undefined') {
@@ -304,6 +336,7 @@ window.PinalertMap = (function () {
     container.addEventListener('focusout', onMapFocusOut);
     container.addEventListener('pointerdown', onMapPointerDown);
     container.addEventListener('keydown', onMapKeydown);
+    watchMapBox(container);
 
     Pinalert.subscribe(render);
     Pinalert.onSelect(function (id, source) {

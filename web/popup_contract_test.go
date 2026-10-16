@@ -963,8 +963,19 @@ func TestPopupResizeUpdatesOnlyWithoutFocus(t *testing.T) {
 
 	initBody := jsFunctionBody(t, code, "init()")
 	p13MustContain(t, "init", initBody, "map.on('resize', onMapResize)")
-	if n := strings.Count(code, "new ResizeObserver("); n != 1 {
-		t.Errorf("map.js creates %d ResizeObservers, want exactly 1", n)
+	// Amended 2026-10-17 by Phase 3.4 plan 20 (UI-SPEC 2a, D-03): the laptop map
+	// column can change size for reasons Leaflet's window listener does not see,
+	// so watchMapBox owns a second ResizeObserver, on the map element, which only
+	// measures the map after the layout has settled. The popup card observer
+	// (observePopupCard) stays the only one that relays out a popup.
+	if n := strings.Count(code, "new ResizeObserver("); n != 2 {
+		t.Errorf("map.js creates %d ResizeObservers, want 2 (the popup card and the laptop map box)", n)
+	}
+	if n := strings.Count(jsFunctionBody(t, code, "watchMapBox(container)"), "new ResizeObserver("); n != 1 {
+		t.Errorf("watchMapBox creates %d ResizeObservers, want 1", n)
+	}
+	if n := strings.Count(jsFunctionBody(t, code, "observePopupCard(marker, card)"), "new ResizeObserver("); n != 1 {
+		t.Errorf("observePopupCard creates %d ResizeObservers, want 1", n)
 	}
 }
 

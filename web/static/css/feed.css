@@ -675,6 +675,25 @@
   list-style: none;
 }
 
+/* The cards region on a laptop (Phase 3.4 plan 20, UI-SPEC 2a): the list is the
+   one part of the list pane that scrolls. main.css makes the pane a flex column
+   whose head and strip lines keep their height; this list takes what is left
+   (shrinking, never growing past its rows) and scrolls inside itself, with
+   the scroll kept from reaching the page. The phone sheet is its own scroll
+   box (phone.css) and is not touched. Rows keep their height. */
+@media (min-width: 900px) {
+  #report-list {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  #report-list > .report-row {
+    flex: none;
+  }
+}
+
 /* Rows are clickable (Task 3's map/list linkage); main.css owns the
    flex/border/background layout itself. */
 .report-row {

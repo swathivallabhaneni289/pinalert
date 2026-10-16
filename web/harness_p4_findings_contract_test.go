@@ -179,9 +179,12 @@ func TestHarnessFindingP4_9MessageClearsTheOpenedReport(t *testing.T) {
 	const main = "static/css/main.css"
 	const head = ".app-shell > #toast:not([hidden])"
 	toast := p31mRule(t, main, "@media (min-width: 900px)", head)
-	// Band from 50% + 16 (half the 32px gap) + 16 to 100% - (24 + 44 + 16).
-	wantLeft := "calc(75% + (var(--space-xl) / 2 - var(--space-lg) - var(--touch-target-min)) / 2)"
-	wantMax := "calc(50% - var(--space-xl) / 2 - var(--space-md) * 2 - var(--space-lg) - var(--touch-target-min))"
+	// Amended 2026-10-17 by Phase 3.4 plan 20 (UI-SPEC 2a, D-17): the laptop list
+	// pane is 420px on the left and the map takes the rest, so the message band
+	// is the list pane (0 to 420px, 16px of space at each side), not the right
+	// half. The map column, where a report opens, is never under the message.
+	wantLeft := "calc(420px / 2)"
+	wantMax := "calc(420px - var(--space-md) * 2)"
 	if p19NoSpace(toast.Decls["left"]) != p19NoSpace(wantLeft) {
 		t.Errorf("laptop map page message left is %q, want the middle of the list band %q", toast.Decls["left"], wantLeft)
 	}
@@ -194,10 +197,10 @@ func TestHarnessFindingP4_9MessageClearsTheOpenedReport(t *testing.T) {
 		}
 	}
 
-	// The band's ends are the shell gap and the round buttons' column.
+	// The band is the first column of the shell, which has no gap.
 	shell := p31mRule(t, main, "@media (min-width: 900px)", ".app-shell")
-	if shell.Decls["gap"] != "var(--space-xl)" || shell.Decls["grid-template-columns"] != "1fr 1fr" {
-		t.Errorf("the laptop shell is %v; the message band assumes two equal halves 32px apart", shell.Decls)
+	if shell.Decls["gap"] != "0" || shell.Decls["grid-template-columns"] != "420px minmax(0, 1fr)" {
+		t.Errorf("the laptop shell is %v; the message band assumes a 420px list column with no gap", shell.Decls)
 	}
 	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): the
 	// floating report button is gone, so the right end of the band is the

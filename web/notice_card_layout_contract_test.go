@@ -68,7 +68,11 @@ func TestPhoneNoticeRowsSitInsideTheSheet(t *testing.T) {
 	p16MustDecl(t, "phone notice card", card, map[string]string{
 		"position": "static", "flex": "none", "max-width": "none", "max-height": "none",
 	})
-	// A laptop: the built fixed place, bottom left over the map.
+	// The built fixed rule stays as the base in chrome.css.
+	// Amended 2026-10-17 by Phase 3.4 plan 20 (UI-SPEC 2a): the laptop list pane
+	// is 420px on the left, so the old fixed bottom left place would now sit on
+	// top of the cards. On a laptop the card is a strip line in the pane under
+	// the head (main.css, laptop block), pinned by TestLaptopNearbyTwoColumns.
 	base := p31mRule(t, "static/css/chrome.css", "", ".notice-card")
-	p16MustDecl(t, "laptop notice card", base, map[string]string{"position": "fixed", "z-index": "1000"})
+	p16MustDecl(t, "notice card base", base, map[string]string{"position": "fixed", "z-index": "1000"})
 }

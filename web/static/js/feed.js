@@ -1009,16 +1009,19 @@
   // revealRowInListPane brings the row of a pin the reader just picked into the
   // list's own scroll box (D-17). On a phone that box is the sheet
   // (#report-sheet, phone.css), so moving the list never moves the map, which
-  // was the reason A87 gave for leaving the list alone; on a laptop the pane is
-  // not a scroll box (the document scrolls), so the check below leaves it and
-  // the page alone. It sets the SHEET's scroll position and nothing else: the
-  // page is never scrolled, and applySelectionHighlight above stays free of any
-  // scroll. "Nearest": a row that is already whole under the sticky handle and
-  // list head stays where it is; any other row is scrolled to sit just under
-  // them. Smooth unless the person asked for reduced motion.
+  // was the reason A87 gave for leaving the list alone. On a laptop (Phase 3.4
+  // plan 20, UI-SPEC 2a) the pane holds the head and the strip lines still and
+  // only the cards list scrolls, so the box is #report-list; the head is
+  // outside it and takes no room in the arithmetic below. The box is chosen by
+  // the layout query at the moment of the pick. It sets that ONE box's scroll
+  // position and nothing else: the page is never scrolled, and
+  // applySelectionHighlight above stays free of any scroll. "Nearest": a row
+  // that is already whole under the sticky handle and list head stays where it
+  // is; any other row is scrolled to sit just under them. Smooth unless the
+  // person asked for reduced motion.
   function revealRowInListPane(id) {
     var row = rowsById[String(id)];
-    var sheet = document.getElementById('report-sheet');
+    var sheet = narrowQuery && narrowQuery.matches ? document.getElementById('report-sheet') : reportListEl;
     if (!row || !sheet || sheet.scrollHeight <= sheet.clientHeight) {
       return;
     }
@@ -1028,14 +1031,19 @@
     }
     var sheetBox = sheet.getBoundingClientRect();
     var head = sheet.querySelector('.list-head');
-    var stuck = head ? head.getBoundingClientRect().bottom - sheetBox.top : 0;
+    // The head is inside the box only on a phone (it is stuck under the handle
+    // there). On a laptop the box starts at the first card, so nothing is
+    // reserved above it and no gap is left either.
+    var inside = head && sheet.contains(head);
+    var stuck = inside ? head.getBoundingClientRect().bottom - sheetBox.top : 0;
+    var lead = inside ? stuck + gap : 0;
     var rowBox = row.el.getBoundingClientRect();
     var rowTop = rowBox.top - sheetBox.top;
     var rowBottom = rowBox.bottom - sheetBox.top;
-    if (rowTop >= stuck + gap && rowBottom <= sheet.clientHeight) {
+    if (rowTop >= lead && rowBottom <= sheet.clientHeight) {
       return;
     }
-    var top = rowTop + sheet.scrollTop - stuck - gap;
+    var top = rowTop + sheet.scrollTop - lead;
     var calm = !!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     sheet.scrollTo({ top: Math.max(0, top), behavior: calm ? 'auto' : 'smooth' });
   }

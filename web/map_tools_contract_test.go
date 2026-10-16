@@ -606,6 +606,8 @@ func TestMapToolsCSS(t *testing.T) {
 		p19NoSpace("calc(var(--space-sm) + var(--touch-target-min) + var(--space-sm))") {
 		t.Errorf("laptop --map-tools-height is %q", main.Decls["--map-tools-height"])
 	}
+	// Amended 2026-10-17 by Phase 3.4 plan 20 (UI-SPEC 2a, D-17): the laptop list pane is 420px on the left and the map takes the rest.
+	p16MustDecl(t, "laptop map pane", main, map[string]string{"grid-column": "2", "grid-row": "1"})
 	narrow := p31mRule(t, phone, phoneMedia, ".app-shell > .pane--map")
 	if got := p19NoSpace(narrow.Decls["--map-tools-height"]); got !=
 		p19NoSpace("calc(var(--space-sm) + var(--touch-target-min) + var(--space-sm))") {
