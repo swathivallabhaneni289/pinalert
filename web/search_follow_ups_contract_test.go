@@ -50,7 +50,10 @@ func TestPlaceSearchSuggestsWhileTyping(t *testing.T) {
 	p13MustContain(t, "cancelTyping", cancel, "window.clearTimeout(typingTimer)", "typingTimer = null")
 
 	// Every way a search ends also ends a pending pause, so a late timer
-	// never reopens the list after Escape, Close, a press outside or a pick.
+	// never reopens the list after Escape, a press outside or a pick. (Amended
+	// 2026-10-16 by Phase 3.4, D-11: the Close button is gone with the
+	// collapsed state. The Phase 3.1 and Phase 4 hands-on tests are walked on
+	// this layout after Phase 3.4 is built.)
 	abort := jsFunctionBody(t, code, "abortSearch()")
 	p13MustContain(t, "abortSearch", abort, "cancelTyping();", "controller.abort()")
 	pick := jsFunctionBody(t, code, "pickResult(i)")

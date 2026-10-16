@@ -66,6 +66,14 @@ func TestSlowNoticeLoadsFirst(t *testing.T) {
 	// longer includes it; the point the card follows is the top bar that holds
 	// it. The Phase 3.1 and Phase 4 hands-on tests are walked on this layout
 	// after Phase 3.4 is built.
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-03, D-01):
+	// the card moved from the top of the body into the list pane, right after
+	// the list head, so on a phone its rows sit inside the sheet and never float
+	// over the list. It is still parsed before the first vendor script, which is
+	// what the slow message needs when the libraries hang; on a laptop its fixed
+	// bottom left place is unchanged. The Phase 3.1 and Phase 4 hands-on tests
+	// are walked on this layout after Phase 3.4 is built.
 	toggleAt := strings.Index(tmpl, `{{template "app_topbar" .}}`)
 	for _, marker := range []string{`class="top-chrome"`, `id="notice-card"`, `id="notice-live"`} {
 		at := strings.Index(tmpl, marker)
@@ -74,8 +82,11 @@ func TestSlowNoticeLoadsFirst(t *testing.T) {
 		}
 	}
 	cardAt := strings.Index(tmpl, `id="notice-card"`)
-	if !(toggleAt != -1 && cardAt > toggleAt && cardAt < shellAt) {
-		t.Errorf("the card must sit after the theme toggle and before the shell (%d, %d, %d)", toggleAt, cardAt, shellAt)
+	listHeadAt := strings.Index(tmpl, `class="list-head"`)
+	listAt := strings.Index(tmpl, `<ol id="report-list">`)
+	if !(toggleAt != -1 && shellAt > toggleAt && listHeadAt > shellAt && cardAt > listHeadAt && cardAt < listAt) {
+		t.Errorf("the card must sit in the list pane, after the list head and before the list (%d, %d, %d, %d, %d)",
+			toggleAt, shellAt, listHeadAt, cardAt, listAt)
 	}
 	p413MustContain(t, "index.html.tmpl", tmpl,
 		`<p class="notice-card__text">Taking long?</p>`,

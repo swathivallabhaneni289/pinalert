@@ -427,23 +427,20 @@
 
 /*
  * The tools over the map (03.1 D-14 to D-18, UI-SPEC "The map pane, over the
- * map"): the place search and the category chips. The layer comes before the
- * map in the page so Tab reaches search and chips before the pins. It
- * ignores presses outside its controls, so a drag that starts in a gap pans
- * the map, and only its controls take presses.
+ * map"): the category chips. Amended 2026-10-16 by Phase 3.4 (owner decision,
+ * 03.4-CONTEXT D-11): the place search left this layer for the Nearby top bar
+ * (app-bar.css, phone.css), so the layer is chips only and one row high. The
+ * layer comes before the map in the page so Tab reaches the chips before the
+ * pins. It ignores presses outside its controls, so a drag that starts in a
+ * gap pans the map, and only the chips take presses.
  *
  * The layer itself declares no z index on purpose. A z indexed layer would be
- * one stacking context, and the add button, which comes later in the page,
- * would then paint over a result at any z index inside it. Each control
- * carries 1000 (the add button and the theme toggle) and the results list
- * 1005, above the add button and below the bottom bar (1010) and the sheet.
- * The 1005 and the 320px cap of the laptop search box are the two literals
- * UI-SPEC Spacing adds.
+ * one stacking context. Each chip carries 1000, below the bottom bar (1010)
+ * and the sheet.
  *
- * The left inset clears Leaflet's zoom control. The laptop draws two rows (the
- * search, then the chips) and a phone one (a search button, then the chips),
- * the phone geometry being in phone.css. --map-tools-height is set on the map
- * pane at each width and is also what the popup reserve reads.
+ * The left inset clears Leaflet's zoom control. --map-tools-height is set on
+ * the map pane at each width (one row on both: 8px, 44px, 8px) and is also
+ * what the popup reserve reads.
  */
 .map-tools {
   position: absolute;
@@ -454,96 +451,10 @@
   pointer-events: none;
 }
 
-.map-search {
-  margin: 0;
-}
-
-/* The row one of a laptop: the box and the Search button. The row passes
-   presses on to the map; only its two controls take them. */
-.map-search__field {
-  position: absolute;
-  top: var(--space-sm);
-  right: 0;
-  left: 0;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  pointer-events: none;
-}
-
-.map-search__input {
-  box-sizing: border-box;
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: 320px;
-  min-height: var(--touch-target-min);
-  padding: 0 var(--space-sm);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-family: var(--font-family);
-  font-size: var(--font-size-body);
-  line-height: var(--line-height-body);
-  pointer-events: auto;
-}
-
-.map-search__input::placeholder {
-  color: var(--color-text-muted);
-  opacity: 1;
-}
-
-/* The three 44 by 44 search controls: the phone's collapsed button, the
-   Search button and Close. The collapsed button and Close show on a phone
-   only (phone.css), so they start hidden here. */
-.map-search__open,
-.map-search__submit,
-.map-search__close {
-  box-sizing: border-box;
-  flex: none;
-  width: var(--touch-target-min);
-  min-width: var(--touch-target-min);
-  height: var(--touch-target-min);
-  min-height: var(--touch-target-min);
-  padding: 0;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-bg);
-  color: var(--color-text);
-  cursor: pointer;
-  pointer-events: auto;
-}
-
-.map-search__submit {
-  display: flex;
-}
-
-.map-search__open,
-.map-search__close {
-  display: none;
-}
-
-.map-search__open {
-  position: absolute;
-  top: var(--space-sm);
-  left: 0;
-  z-index: 1000;
-}
-
-.map-search__open:hover,
-.map-search__submit:hover,
-.map-search__close:hover {
-  background: var(--color-surface);
-}
-
-/* The magnifier and the cross are masks, so they take the control's text
-   colour in every theme. Both mask images sit on one line: the file name is
-   written once per rule. */
-.map-search__icon,
-.map-search__close-icon {
+/* The magnifier is a mask, so it takes the control's text colour in every
+   theme. Both mask images sit on one line: the file name is written once per
+   rule. The control that holds it is in app-bar.css. */
+.map-search__icon {
   display: block;
   width: 20px;
   height: 20px;
@@ -554,40 +465,33 @@
   mask-repeat: no-repeat;
   -webkit-mask-position: center;
   mask-position: center;
-}
-
-.map-search__icon {
   -webkit-mask-image: url("/static/icons/search.svg"); mask-image: url("/static/icons/search.svg");
 }
 
-.map-search__close-icon {
-  -webkit-mask-image: url("/static/icons/x.svg"); mask-image: url("/static/icons/x.svg");
-}
-
-/* Under the box on a laptop. The status line and the results never show
-   together (a count is announced, not drawn). The 320px cap is the box's. */
+/* Under the field in the top bar (the form is the anchor on a laptop; phone.css
+   anchors it to the bar). The status line and the results never show together
+   (a count is announced, not drawn). The panel is 320px wide on a laptop, the
+   one literal UI-SPEC Spacing adds. The panel sits inside the sticky top
+   chrome (1050), so its own 1030 is a local order: it is above the list sheet
+   (1020) and under the report detail sheet (1080) by way of the chrome. */
 .map-search__status:not(.visually-hidden),
 .map-search__results {
   position: absolute;
-  top: calc(var(--space-sm) + var(--touch-target-min) + var(--space-xs));
-  right: 0;
+  top: calc(100% + var(--space-xs));
   left: 0;
-  z-index: 1005;
+  z-index: 1030;
   box-sizing: border-box;
-  max-width: 320px;
+  width: 320px;
+  max-width: calc(100vw - var(--space-md) - var(--space-md));
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-bg);
+  box-shadow: var(--shadow-menu);
   color: var(--color-text);
   pointer-events: auto;
 }
 
-/* The status line sits under the whole tools layer, so on a laptop it is
-   below the chips row and never takes a press meant for a chip (browser
-   check T13.8i, finding F3). The results stay under the box. phone.css
-   places both on a phone. */
 .map-search__status:not(.visually-hidden) {
-  top: calc(var(--map-tools-height) + var(--space-xs));
   margin: 0;
   padding: var(--space-sm);
   font-family: var(--font-family);
@@ -656,11 +560,11 @@
   overflow-wrap: anywhere;
 }
 
-/* Row two of a laptop. The chips scroll sideways when the width is short; the
-   row ignores presses between them. */
+/* The one row of the tools layer, on both sizes. The chips scroll sideways
+   when the width is short; the row ignores presses between them. */
 .map-chips {
   position: absolute;
-  top: calc(var(--space-sm) + var(--touch-target-min) + var(--space-sm));
+  top: var(--space-sm);
   right: 0;
   left: 0;
   z-index: 1000;
@@ -692,15 +596,39 @@
   font-weight: var(--font-weight-regular);
   cursor: pointer;
   pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
 }
 
-/* On is the inverted neutral, the same treatment as the selected category
-   tile, never a hue. The ring is inset so the scroller does not clip it. */
+/* A chosen chip (Phase 3.4, D-04, UI-SPEC 2g): the soft grey fill every other
+   chosen card uses, weight 600 and a check before the word, so the state does
+   not rest on colour alone. No dark fill and no dark border. The border keeps
+   its width and goes transparent, so the chip does not change size. The focus
+   ring is inset so the scroller does not clip it. */
 .map-chip[aria-pressed="true"] {
-  border-color: var(--color-text);
-  background: var(--color-text);
-  color: var(--color-bg);
+  border-color: transparent;
+  background: var(--color-surface);
+  color: var(--color-text);
   font-weight: var(--font-weight-semibold);
+}
+
+/* The check is drawn from check.svg as a mask, in the chip's text colour, so
+   the chip's markup stays the word alone. */
+.map-chip[aria-pressed="true"]::before {
+  content: "";
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-image: url("/static/icons/check.svg"); mask-image: url("/static/icons/check.svg");
 }
 
 .map-chip:focus-visible {

@@ -30,16 +30,6 @@
   <div class="top-chrome">
     {{template "app_topbar" .}}
   </div>
-  <div class="notice-card" id="notice-card" hidden>
-    <div class="notice-card__row" id="notice-slow" hidden>
-      <p class="notice-card__text">Taking long?</p>
-      <a class="notice-card__link" href="/low">Open the low data view.</a>
-    </div>
-    <div class="notice-card__row" id="notice-queue" hidden><p class="notice-card__text" id="notice-queue-text"></p><button type="button" class="btn" id="notice-queue-show">Show waiting reports</button></div>
-    <div class="notice-card__row" id="notice-stale" hidden>
-      <p class="notice-card__text" id="notice-stale-text"></p>
-    </div>
-  </div>
   <div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>
   <div class="app-shell" id="app-shell"
        data-fallback-lat="{{.FallbackLat}}"
@@ -50,27 +40,7 @@
        data-account-id="{{.AccountID}}">
 
     <section class="pane pane--map">
-      <div class="map-tools" data-search-open="false">
-        <form class="map-search" role="search" id="map-search">
-          <button type="button" class="map-search__open" id="map-search-open"
-                  aria-label="Search for a place" aria-expanded="false" aria-controls="map-search-input">
-            <span class="map-search__icon" aria-hidden="true"></span>
-          </button>
-          <div class="map-search__field">
-            <input type="search" class="map-search__input" id="map-search-input" name="place"
-                   autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search"
-                   maxlength="200" placeholder="Search for a place" aria-label="Search for a place">
-            <button type="submit" class="map-search__submit" id="map-search-submit"
-                    aria-label="Search for a place">
-              <span class="map-search__icon" aria-hidden="true"></span>
-            </button>
-            <button type="button" class="map-search__close" id="map-search-close" aria-label="Close search">
-              <span class="map-search__close-icon" aria-hidden="true"></span>
-            </button>
-          </div>
-          <p class="map-search__status" id="map-search-status" role="status" aria-live="polite" hidden></p>
-          <div class="map-search__results" id="map-search-results" hidden></div>
-        </form>
+      <div class="map-tools">
         <div class="map-chips" role="group" aria-label="Filter by category">
           <button type="button" class="map-chip" data-category="" aria-pressed="true">All</button>
           <button type="button" class="map-chip" data-category="flood" aria-pressed="false">Flood</button>
@@ -119,6 +89,16 @@
               <span class="show-menu__word">Disputed</span>
             </button>
           </div>
+        </div>
+      </div>
+      <div class="notice-card" id="notice-card" hidden>
+        <div class="notice-card__row" id="notice-slow" hidden>
+          <p class="notice-card__text">Taking long?</p>
+          <a class="notice-card__link" href="/low">Open the low data view.</a>
+        </div>
+        <div class="notice-card__row" id="notice-queue" hidden><p class="notice-card__text" id="notice-queue-text"></p><button type="button" class="btn" id="notice-queue-show">Show waiting reports</button></div>
+        <div class="notice-card__row" id="notice-stale" hidden>
+          <p class="notice-card__text" id="notice-stale-text"></p>
         </div>
       </div>
       <p class="visually-hidden" id="feed-status" role="status"></p>

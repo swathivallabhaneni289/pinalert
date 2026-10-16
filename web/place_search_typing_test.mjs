@@ -112,13 +112,13 @@ function setup({ abortRejects = true, nativeTimeout = false } = {}) {
     if (parent) { parent.appendChild(el); }
     return el;
   };
-  const tools = make('div', '');
-  tools.className = 'map-tools';
-  doc.byClass['.map-tools'] = tools;
-  const form = make('form', 'map-search', tools);
-  make('button', 'map-search-open', tools);
+  // Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11, D-04):
+  // the form is the always drawn field in the top bar, so the fake page has
+  // the form with the input, the status line and the results, and no tools
+  // layer parent, no open button and no close button. The Phase 3.1 and
+  // Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+  const form = make('form', 'map-search');
   const input = make('input', 'map-search-input', form);
-  make('button', 'map-search-close', form);
   const status = make('p', 'map-search-status', form);
   status.hidden = true;
   const results = make('div', 'map-search-results', form);
@@ -200,7 +200,7 @@ function setup({ abortRejects = true, nativeTimeout = false } = {}) {
   const enter = () => form.dispatch({ type: 'submit', preventDefault() {} });
   const query = (req) => new URL(req.url, 'https://pinalert.example').searchParams.get('q');
   const rows = () => results.querySelectorAll('.map-search__result');
-  return { input, status, results, outside, doc, requests, answer, advance, type, enter, query, rows, timers };
+  return { input, status, results, outside, doc, form, requests, answer, advance, type, enter, query, rows, timers };
 }
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
@@ -365,6 +365,33 @@ test('a press outside during a pause stops it, and a pick stops a typed search',
   p.advance(1000);
   assert.equal(p.requests.length, 3);
   assert.equal(p.results.hidden, true);
+});
+
+// Added 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11, D-04): the
+// field is always drawn, so a pick returns focus to the field itself and
+// Escape closes the results and the status line and nothing else.
+test('a pick closes the results and returns focus to the field', async () => {
+  const p = setup();
+  p.type('Hyderabad');
+  p.advance(300);
+  p.answer(p.requests[0], 200, hyderabad);
+  await settle();
+  assert.equal(p.rows().length, 1);
+  p.results.dispatch({ type: 'click', target: p.rows()[0] });
+  assert.equal(p.results.hidden, true);
+  assert.equal(p.doc.activeElement, p.input, 'focus goes back to the field');
+});
+
+test('Escape closes the results and the status line', async () => {
+  const p = setup();
+  p.type('Hyderabad');
+  p.advance(300);
+  p.answer(p.requests[0], 200, hyderabad);
+  await settle();
+  assert.equal(p.results.hidden, false);
+  p.form.dispatch({ type: 'keydown', key: 'Escape' });
+  assert.equal(p.results.hidden, true);
+  assert.equal(p.status.hidden, true);
 });
 
 const TOO_MANY = 'Too many searches. Wait a few seconds and try again.';
