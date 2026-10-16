@@ -67,7 +67,7 @@ The word "report" already means three things in the product. This table fixes th
 | a report | one emergency post a person made (existing Phase 1 to 3 word) | rows, popup, Activity, Low data view |
 | Report an emergency | the control that starts a new post (the plus button and its accessible name, and the same words on the Low data view button) | main page, Low data view |
 | Post report | the button that sends the new post form (existing) | report form |
-| Cancel report | the secondary button of the new post form, renamed from "Cancel" (P4-A23). It closes the form and asks first when the form has input | report form (main page and Low data view) |
+| Cancel report | the secondary button of the new post form, renamed from "Cancel" (P4-A23). It closes the form and asks first when the form has input (Note 2026-10-16: while a post from the form is still out it closes without asking, because that report is already on its way) | report form (main page and Low data view) |
 | Flag this report | the quiet control that tells moderators something is wrong with a report (D-09). To flag a report means telling the moderators about it, nothing more: a flag never hides anything. Never called a strike or an abuse report on screen. After sending it reads "Flagged". Accessible name: "Flag this report, {Category}, {time}" (starts with the visible words) | popup, list row, Low data view row |
 | moderators | the owner and anyone on the server list (D-08). People see "moderators" or "a moderator", never a name | Flag dialog, Activity removal line |
 | Low data view | the text only page (D-13). Always these three words, always with the line "Text only, no map" under its title | everywhere it is named |
@@ -1085,6 +1085,9 @@ All copy is plain words, with no em dash and no en dash. The existing Phase 1 to
 | Edit note in the form | Not sent. {REASON} |
 | Save toasts | No signal. Your report is saved on this device and will send when you're back online. / No signal. Your report is kept on this page only. Keep the page open until it sends. / (after Send after the wait) Report saved on this device. It will send when the wait is over. |
 | Result toasts | Report sent. Saved report discarded. |
+| Row status, saved under another account (added 2026-10-16, review fix WR-W09, `queue.js` STATUS_TEXT_OTHER_ACCOUNT) | This report was saved under a different account than the one signed in now. Sign in to that account to send it. It stays saved on this device. |
+| Announcement, saved under another account (added 2026-10-16, `queue.js` ANNOUNCE_OTHER_ACCOUNT) | Report not sent. It was saved under a different account. |
+| Strip help line when the saved reports can't be read (added 2026-10-16, review fix WR-W06, `queue.js` HELP_LINE_UNREADABLE) | This page can't read the saved reports right now. Reload the page to send or discard them. |
 | Notice card rows | Taking long? Open the low data view. {N} waiting to send. (button: Show waiting reports) Last updated {N} minutes ago. |
 | Written label | Written 4 hours ago |
 | Wait format | {N} seconds. {N} minutes. {N} hours (singular: 1 second, 1 minute, 1 hour), rounded up. |
@@ -1098,6 +1101,10 @@ All copy is plain words, with no em dash and no en dash. The existing Phase 1 to
 | Published, borderline | The same toast as Published: Report posted. No other string. |
 | Rejected text | The four messages in Surface: Submit Outcomes (hateful, harassing, sexual, random characters). There is no catch all message. |
 | Rate limit messages | The seven messages in Surface: Submit Outcomes (form, form serious, queued row, queued row serious, vote, changed vote, flag). The two serious messages end: In an emergency, call 112 now. |
+| Network backstop message (added 2026-10-16, review fix WR-S02, `internal/service/ratecopy.go` NetworkLimitMessage) | Report post: A lot of requests are coming from your network right now. You can try again in {WAIT}. Your text is still here. / Vote or flag: A lot of requests are coming from your network right now. You can try again in {WAIT}. ({WAIT} follows the Wait format row of the Offline queue table.) |
+| Saved report posted under another account, server 409 on `expected_account_id` (added 2026-10-16, review fix WR-W09, `internal/api/handlers/reports.go` expectedAccountMessage) | This report was saved under a different account than the one signed in now. Sign in to that account to send it. |
+| Late answer toasts, for a post whose form was closed while it was out (added 2026-10-16, review fix WR-W03, `report-form.js`) | Your earlier report was posted. / Your earlier report was received. It isn't shown yet. A text check has to finish first. / No signal. Your earlier report is saved on this device and will send when you're back online. / No signal. Your earlier report is kept on this page only. Keep the page open until it sends. / Your earlier report could not be saved on this device, so it was not sent. / Your earlier report was not posted. {REASON} (with no reason from the server: Your earlier report was not posted. Something went wrong.) A serious wait adds: In an emergency, call {NUMBER} now. and the toast gets the action button Call {NUMBER} (accessible name the same), which dials the number. |
+| Closing the form while its post is out (added 2026-10-16) | No string. The form closes without the Discard question, because the report is already on its way and a late answer toast above tells how it ends. |
 | Activity held | Label Waiting for a text check. Sentence: It isn't shown in any feed until a text check finishes. Reload the page later to see where it stands. (A held row past expiry shows Expired and no sentence.) |
 | Activity removed | Label Removed after review. Sentence: This report was removed after review, so it no longer shows to anyone. Then, only when a contact address is configured: If you have a question, see the Policy page. |
 
