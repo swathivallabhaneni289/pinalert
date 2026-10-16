@@ -5,7 +5,8 @@
 // drawn as a link only for a single slash path.
 //
 // Run it with: node --test web/queue_logic_test.mjs
-// It is not part of CI (CI runs Go only) and is not embedded in the server.
+// CI runs it with the other web/*.mjs files (node --test web/*.mjs in
+// .github/workflows/ci.yml). It is not embedded in the server.
 // The fakes below cover only what queue.js calls: a small in memory IndexedDB,
 // a minimal element model, timers that never fire on their own, and a fake
 // Pinalert whose submitReport answers from a script per case.

@@ -5,7 +5,8 @@
 // ended: posted, held, saved on the device or refused.
 //
 // Run it with: node --test web/report_form_session_test.mjs
-// It is not part of CI (CI runs Go only) and is not embedded in the server.
+// CI runs it with the other web/*.mjs files (node --test web/*.mjs in
+// .github/workflows/ci.yml). It is not embedded in the server.
 // The fakes cover only what report-form.js calls: a minimal element model, a
 // fake Pinalert whose submitReport answers when the test says so, a fake
 // queue and a location object that is always set.

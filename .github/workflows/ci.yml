@@ -36,6 +36,13 @@ jobs:
           go-version: '1.25'
       - run: go build -v ./...
       - run: go vet ./...
+      # The browser script tests run the shipped web/static/js files in a Node
+      # sandbox with node:test. They need no npm install and no setup action:
+      # the runner's own Node runs them (Node 22 on ubuntu-24.04, Node 24 on
+      # ubuntu-26.04; both pass). The version is printed for the log.
+      - run: |
+          node --version
+          node --test web/*.mjs
       # -p 1: packages share one Postgres DB and each calls testutil.NewTestDB's
       # TRUNCATE ... RESTART IDENTITY at test start; running packages concurrently
       # lets one package's truncate delete/recycle another's in-flight rows.
