@@ -164,9 +164,18 @@ func TestBrowserFindingF1PhoneMapStripLeavesThreeCards(t *testing.T) {
 		t.Errorf("phone list pane padding is %q, want 8px on top and 16px at the sides", pane.Decls["padding"])
 	}
 
-	// The tab strip and the heading keep their phone spacing.
-	p16MustDecl(t, "phone heading", p31mRule(t, phone, m, ".pane--list > .feed-heading"),
-		map[string]string{"margin-bottom": "var(--space-sm)"})
-	p16MustDecl(t, "tab strip", p31mRule(t, "static/css/feed.css", "", ".view-tabs"),
-		map[string]string{"margin": "0 0 var(--space-sm)"})
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+	// D-18): the tab strip and the heading are gone. The list head keeps its own
+	// height in the scrolling column and adds no side padding of its own, so the
+	// 16px sides of the list are unchanged. The Phase 3.1 and Phase 4 hands-on
+	// tests are walked on this layout after Phase 3.4 is built.
+	p16MustDecl(t, "phone list head", p31mRule(t, phone, m, ".pane--list > .list-head"),
+		map[string]string{"flex": "none", "padding-right": "0", "padding-left": "0"})
+	for _, gone := range []string{".view-tabs", ".feed-heading", ".feed-note"} {
+		for _, name := range []string{"static/css/feed.css", phone} {
+			if strings.Contains(p16ReadStatic(t, name), gone) {
+				t.Errorf("%s still holds %s of the retired tab strip and heading", name, gone)
+			}
+		}
+	}
 }

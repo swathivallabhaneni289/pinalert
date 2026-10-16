@@ -71,74 +71,69 @@ func TestFeedRefetchesOnBackForwardCacheRestore(t *testing.T) {
 	}
 }
 
-// TestDisputedFilterIsCarriedInThePageURL proves the UAT gap 5 scope
-// reversal (dated 2026-09-17, recorded on 02-UI-SPEC.md's "Show disputed
-// filter (D-10, D-11)" section) in its 03.1 form: the tab's state round-trips
-// through the page URL instead of resetting on reload, using
-// history.replaceState (never the history entry adding variant, so a tab press
-// never creates a Back-button step) and never localStorage (the tab is view
-// state, not a preference, and must not silently persist into a later visit).
-// The URL parameter name is read out of BOTH embedded files rather than
-// hardcoded here, so a rename on either side can only drift this test, never
-// let the two silently diverge into two vocabularies for one idea.
+// TestDisputedFilterIsCarriedInThePageURL proves the address half of Show
+// Disputed (UAT gap 5, 2026-09-17, in its Phase 3.4 form).
 //
-// Test change on purpose (plan 03.1-05, D-04 and D-05): this test pinned
-// DISPUTED_PARAM, the &name=true literal in app.js and the checkbox assignment
-// showDisputedToggleEl.checked. The parameter is now view, the literal in app.js
-// is '&view=', and the store is driven from the address by Pinalert.setView.
-//
-// Honest limit of this test's claim: static inspection proves the
-// parameter name, the replaceState and localStorage shape, and that the store
-// is assigned from a URL reader are all present and mutually consistent. It
-// cannot prove a real browser's address bar actually updates, or that a reload
-// actually restores the tab with no visible flash of the other one: that is
-// the human check's job.
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+// D-18): the tab strip is gone, so the page address no longer carries the
+// choice. The old link /?view=disputed (and the older show_disputed=true
+// bookmark) is an alias that show-menu.js reads once at boot to open Show
+// Disputed, and nothing is written back: feed.js and show-menu.js call neither
+// replaceState nor pushState and keep nothing in localStorage. The word the
+// alias reads is byte-identical to the word app.js sends to the server, so the
+// page and the server still share one vocabulary. The Phase 3.1 and Phase 4
+// hands-on tests are walked on this layout after Phase 3.4 is built.
 func TestDisputedFilterIsCarriedInThePageURL(t *testing.T) {
 	feedRaw, err := fs.ReadFile(StaticFS, "static/js/feed.js")
 	if err != nil {
 		t.Fatalf("failed to read embedded static/js/feed.js: %v", err)
 	}
-	feedText := string(feedRaw)
-
+	menuRaw, err := fs.ReadFile(StaticFS, "static/js/show-menu.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded static/js/show-menu.js: %v", err)
+	}
 	appRaw, err := fs.ReadFile(StaticFS, "static/js/app.js")
 	if err != nil {
 		t.Fatalf("failed to read embedded static/js/app.js: %v", err)
 	}
-	appText := string(appRaw)
-
-	paramConstRE := regexp.MustCompile(`VIEW_PARAM\s*=\s*'([^']+)'`)
-	paramMatch := paramConstRE.FindStringSubmatch(feedText)
-	if paramMatch == nil {
-		t.Fatalf("could not find feed.js's VIEW_PARAM constant declaration")
-	}
-	feedParamName := paramMatch[1]
+	feedText, menuText, appText := string(feedRaw), string(menuRaw), string(appRaw)
 
 	appParamRE := regexp.MustCompile(`'&([A-Za-z_]+)=' \+ sentView`)
 	appMatch := appParamRE.FindStringSubmatch(appText)
 	if appMatch == nil {
 		t.Fatalf("could not find app.js's fetchReports view parameter literal")
 	}
-	appParamName := appMatch[1]
-
-	if feedParamName != appParamName {
-		t.Fatalf("feed.js's URL parameter name %q is not byte-identical to app.js's fetch "+
-			"parameter name %q: the page URL and the fetch URL must share one vocabulary",
-			feedParamName, appParamName)
+	aliasRE := regexp.MustCompile(`params\.get\('([A-Za-z_]+)'\)`)
+	paramNames := map[string]bool{}
+	for _, m := range aliasRE.FindAllStringSubmatch(menuText, -1) {
+		paramNames[m[1]] = true
+	}
+	if !paramNames[appMatch[1]] {
+		t.Fatalf("show-menu.js does not read the %q parameter app.js sends: the page URL and the "+
+			"fetch URL must share one vocabulary (it reads %v)", appMatch[1], paramNames)
+	}
+	if !strings.Contains(menuText, "word === 'disputed'") {
+		t.Fatalf("show-menu.js does not open Show Disputed from view=disputed")
+	}
+	if !strings.Contains(menuText, "params.get('show_disputed') === 'true'") {
+		t.Fatalf("show-menu.js dropped the old show_disputed=true bookmark alias")
 	}
 
-	if n := strings.Count(feedText, "replaceState"); n < 1 {
-		t.Fatalf("expected at least one replaceState reference in feed.js, found %d", n)
+	for name, text := range map[string]string{"feed.js": feedText, "show-menu.js": menuText} {
+		for _, banned := range []string{"replaceState", "pushState", "localStorage", "sessionStorage"} {
+			if strings.Contains(text, banned) {
+				t.Fatalf("%s references %s: the Show choice is view state, written nowhere, and must "+
+					"not silently persist into a later visit the viewer never asked for", name, banned)
+			}
+		}
 	}
-	if n := strings.Count(feedText, "pushState"); n != 0 {
-		t.Fatalf("expected zero references to the history entry adding variant in feed.js: a tab "+
-			"press must not create a Back-button step, found %d", n)
+	if n := strings.Count(menuText, "readAlias("); n != 2 {
+		t.Fatalf("show-menu.js must define readAlias once and call it once at boot, found %d mentions", n)
 	}
-	if strings.Contains(feedText, "localStorage") {
-		t.Fatalf("feed.js references localStorage: the tab is view state, not a preference, and " +
-			"must not silently persist into a later visit the viewer never asked for")
+	if strings.Contains(feedText, "readAlias(") {
+		t.Fatalf("feed.js reads the alias too: it is read in exactly one place")
 	}
-	if !strings.Contains(feedText, "Pinalert.setView(initialAddress.view);") {
-		t.Fatalf("expected the store's tab to be assigned from the address reader in feed.js's " +
-			"module body")
+	if !strings.Contains(feedText, "Pinalert.setShow(Pinalert.state.show);") {
+		t.Fatalf("expected feed.js's boot step to hand the store's Show choice back to the store")
 	}
 }

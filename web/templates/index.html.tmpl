@@ -74,7 +74,7 @@
         <div class="map-chips" role="group" aria-label="Filter by category">
           <button type="button" class="map-chip" data-category="" aria-pressed="true">All</button>
           <button type="button" class="map-chip" data-category="flood" aria-pressed="false">Flood</button>
-          <button type="button" class="map-chip" data-category="rescue_needed" aria-pressed="false">Rescue</button>
+          <button type="button" class="map-chip" data-category="traffic" aria-pressed="false">Traffic</button>
           <button type="button" class="map-chip" data-category="shelter_open" aria-pressed="false">Shelter</button>
           <button type="button" class="map-chip" data-category="power_outage" aria-pressed="false">Power</button>
         </div>
@@ -85,17 +85,38 @@
 
     <section class="pane pane--list">
       <button type="button" class="view-toggle" id="view-toggle">List</button>
-      <nav class="view-tabs" aria-label="Report views">
-        <a class="view-tab" href="/" data-feed-view="active" aria-current="page">Active</a>
-        <a class="view-tab" href="/?view=disputed" data-feed-view="disputed">Disputed</a>
-        <a class="view-tab" href="/?view=past" data-feed-view="past">Past</a>
-      </nav>
-      <p class="visually-hidden" id="feed-status" role="status"></p>
-      <div class="feed-heading">
-        <h2 class="feed-heading__title" id="feed-heading-title">Nearby now</h2>
-        <p class="feed-heading__count" id="feed-count"></p>
+      <a class="alert-banner" id="alert-banner" href="/alerts" hidden>
+        <span class="alert-banner__icon" aria-hidden="true"></span>
+        <span class="alert-banner__text">
+          <strong class="alert-banner__title" id="alert-banner-title"></strong>
+          <span class="alert-banner__line" id="alert-banner-line"></span>
+        </span>
+      </a>
+      <div class="list-head">
+        <p class="list-head__count" id="feed-count"></p>
+        <div class="show-control">
+          <button type="button" class="show-button" id="show-button" aria-haspopup="menu"
+                  aria-expanded="false" aria-controls="show-menu">
+            <span class="show-button__label" id="show-button-label">Show: All</span>
+            <span class="app-icon app-icon--chevron-down show-button__chevron" aria-hidden="true"></span>
+          </button>
+          <div class="show-menu" id="show-menu" role="menu" aria-label="Show" hidden>
+            <button type="button" class="show-menu__item" role="menuitemradio" aria-checked="true" data-show="all">
+              <span class="app-icon app-icon--check show-menu__check" aria-hidden="true"></span>
+              <span class="show-menu__word">All</span>
+            </button>
+            <button type="button" class="show-menu__item" role="menuitemradio" aria-checked="false" data-show="confirmed">
+              <span class="app-icon app-icon--check show-menu__check" aria-hidden="true"></span>
+              <span class="show-menu__word">Confirmed</span>
+            </button>
+            <button type="button" class="show-menu__item" role="menuitemradio" aria-checked="false" data-show="disputed">
+              <span class="app-icon app-icon--check show-menu__check" aria-hidden="true"></span>
+              <span class="show-menu__word">Disputed</span>
+            </button>
+          </div>
+        </div>
       </div>
-      <p class="feed-note" id="feed-note" hidden></p>
+      <p class="visually-hidden" id="feed-status" role="status"></p>
       <p class="place-line" id="place-line" hidden></p>
       <p class="filter-line" id="filter-line" hidden></p>
       <div class="queue-strip" id="queue-strip" hidden></div>
@@ -104,18 +125,6 @@
         <button type="button" class="btn" id="feed-stale-retry">Retry now</button>
       </div>
       <ol id="report-list"></ol>
-      <div id="past-groups" hidden>
-        <section class="past-group" id="past-resolved" hidden>
-          <h3 class="past-group__label">Resolved</h3>
-          <ol class="past-group__list" id="past-resolved-list"></ol>
-          <p class="past-group__cut" id="past-resolved-cut" hidden></p>
-        </section>
-        <section class="past-group" id="past-expired" hidden>
-          <h3 class="past-group__label">Expired</h3>
-          <ol class="past-group__list" id="past-expired-list"></ol>
-          <p class="past-group__cut" id="past-expired-cut" hidden></p>
-        </section>
-      </div>
       <div id="feed-skeleton">
         <div class="skeleton-row"></div>
         <div class="skeleton-row"></div>
@@ -124,20 +133,20 @@
       </div>
       <div class="empty-state" id="feed-empty" hidden>
         <h2>No reports near you yet</h2>
-        <p>Nothing has been reported in your area recently. Tap + to report what you're seeing.</p>
+        <p>Nothing has been reported in your area recently. Post a report to share what you're seeing.</p>
       </div>
       <div class="empty-state" id="feed-empty-history" hidden>
         <h2>No active reports nearby</h2>
-        <p id="feed-empty-history-body">Tap + to report what you're seeing.</p>
-        <button type="button" class="btn" id="see-past-reports">See past reports</button>
+        <p id="feed-empty-history-body">Post a report to share what you're seeing.</p>
+        <a class="btn" id="see-ended-reports" href="/profile?part=ended">See ended reports</a>
+      </div>
+      <div class="empty-state" id="confirmed-empty" hidden>
+        <h2>No confirmed reports nearby</h2>
+        <p>Reports show here once people nearby confirm them.</p>
       </div>
       <div class="empty-state" id="disputed-empty" hidden>
         <h2>No disputed reports nearby</h2>
         <p>Reports only show up here if enough nearby people have disputed them.</p>
-      </div>
-      <div class="empty-state" id="past-empty" hidden>
-        <h2>No past reports nearby</h2>
-        <p>Nothing in this area was resolved or faded out in the last 7 days.</p>
       </div>
       <div class="empty-state" id="filter-empty" hidden>
         <h2>Nothing matches your filters</h2>
@@ -221,8 +230,11 @@
   <script src="/static/js/queue.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/flag.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/report-form.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/position.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/map.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/modal.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/ended-cards.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/show-menu.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/feed.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/map-tools.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>

@@ -17,7 +17,6 @@
 
 /* Phone only elements. They are built into the markup and shown only below
    900px, so the layout at 900px and up has nothing new in it. */
-.feed-heading,
 .app-bar,
 .app-topbar__title,
 .app-topbar__back,
@@ -72,31 +71,30 @@
     bottom: calc(var(--touch-target-min) + var(--space-sm) + var(--space-md));
   }
 
-  /* ---- The heading of the list ---- */
+  /* ---- 03.4 nearby list ---- */
 
-  .pane--list > .feed-heading {
-    display: flex;
+  /* The list head (Phase 3.4, D-13): the count on the left, the Show button
+     on the right. The pane already pads the sides by 16px, so the head adds
+     none, and it keeps its own height in the scrolling column. The Show menu
+     is right aligned under the button and never wider than the screen less
+     12px each side. */
+  .pane--list > .list-head {
     flex: none;
-    justify-content: space-between;
-    align-items: baseline;
-    column-gap: var(--space-sm);
-    margin-bottom: var(--space-sm);
+    padding-right: 0;
+    padding-left: 0;
   }
 
-  .feed-heading .feed-heading__title {
-    margin: 0;
-    font-size: var(--font-size-heading);
-    line-height: var(--line-height-heading);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
+  .pane--list .show-menu {
+    right: 0;
+    left: auto;
+    max-width: calc(100vw - var(--space-12) * 2);
   }
 
-  .feed-heading .feed-heading__count {
-    margin: 0;
-    font-size: var(--font-size-label);
-    line-height: var(--line-height-label);
-    font-weight: var(--font-weight-regular);
-    color: var(--color-text-muted);
+  /* The official alert banner slot scrolls with the cards under the head. */
+  .pane--list > .alert-banner:not([hidden]) {
+    flex: none;
+    margin-right: 0;
+    margin-left: 0;
   }
 
   .pane--list #report-list {
@@ -104,11 +102,9 @@
     padding-bottom: 0;
   }
 
-  /* The pane is a scrolling flex column, so the tab strip and the one line
-     note under it keep their own height instead of shrinking under a long
-     list. (Moved here from feed.css, where plan 03.1-05 first put it.) */
-  .pane--list > .view-tabs,
-  .pane--list > .feed-note,
+  /* The pane is a scrolling flex column, so the strip lines under the head
+     keep their own height instead of shrinking under a long list. (Moved
+     here from feed.css, where plan 03.1-05 first put it.) */
   .pane--list > .place-line,
   .pane--list > .filter-line {
     flex: none;

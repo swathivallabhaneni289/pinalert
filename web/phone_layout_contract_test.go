@@ -268,23 +268,33 @@ func TestPhoneBottomNavMarkup(t *testing.T) {
 	}
 }
 
-// TestPhoneFeedHeadingMarkup pins the heading and the live count slot inside
-// the list pane, behind the tab strip and in front of the list itself.
+// TestPhoneFeedHeadingMarkup pins the list head and the live count slot inside
+// the list pane, in front of the list itself.
 //
 // Test change on purpose (plan 03.1-05): the title gained id="feed-heading-title"
 // so feed.js can write Nearby now, Disputed reports or Past reports into it,
 // and the strip sits first in the pane. The old literal was
 // <h2 class="feed-heading__title">Nearby now</h2>.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+// D-15, D-18): the tab strip and the heading are gone. The pane holds, in
+// order, the hidden official alert banner slot, the list head (the count line
+// and the Show button with its menu), the polite status line and the list.
+// The Phase 3.1 and Phase 4 hands-on tests are walked on this layout after
+// Phase 3.4 is built.
 func TestPhoneFeedHeadingMarkup(t *testing.T) {
 	index := p13ReadTemplate(t, "index.html.tmpl")
 	p13Ordered(t, index, "index.html.tmpl",
 		`class="pane pane--list"`,
-		`<nav class="view-tabs"`,
-		`<div class="feed-heading">`,
-		`<h2 class="feed-heading__title" id="feed-heading-title">Nearby now</h2>`,
-		`<p class="feed-heading__count" id="feed-count"></p>`,
+		`<a class="alert-banner" id="alert-banner" href="/alerts" hidden>`,
+		`<div class="list-head">`,
+		`<p class="list-head__count" id="feed-count"></p>`,
+		`id="show-button"`,
+		`<div class="show-menu" id="show-menu" role="menu"`,
+		`id="feed-status"`,
 		`<ol id="report-list">`,
 	)
+	p13MustNotContain(t, "index.html.tmpl", index, `<nav class="view-tabs"`, `class="feed-heading"`, `id="feed-heading-title"`)
 	if n := strings.Count(index, `id="feed-count"`); n != 1 {
 		t.Errorf("index.html.tmpl has %d feed-count nodes, want 1", n)
 	}
@@ -297,10 +307,16 @@ func TestPhoneFeedHeadingMarkup(t *testing.T) {
 func TestPhoneFeedScriptContract(t *testing.T) {
 	code := p19Code(t, "static/js/feed.js")
 
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+	// D-18): the count line is "{N} reports, {R} km", N being the cards shown
+	// under the Show choice (Pinalert.visibleReports), with no tab word in it.
+	// The Phase 3.1 and Phase 4 hands-on tests are walked on this layout after
+	// Phase 3.4 is built.
 	count := jsFunctionBody(t, code, "updateFeedCount(state)")
 	p13MustContain(t, "updateFeedCount", count,
-		"Pinalert.config.defaultRadiusKm", "state.reports.length", "'disputed'", "'active'",
+		"Pinalert.config.defaultRadiusKm", "Pinalert.visibleReports().length", "' report, '", "' reports, '",
 		"Pinalert.setText(feedCountEl, text)")
+	p13MustNotContain(t, "updateFeedCount", count, "'disputed'", "'active'", "'past'")
 	p13MustNotContain(t, "updateFeedCount", count, "innerHTML", "insertAdjacentHTML")
 
 	render := jsFunctionBody(t, code, "render(state)")

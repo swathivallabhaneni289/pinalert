@@ -1243,21 +1243,29 @@ func TestShowDisputedUsesOneSharedQueryParam(t *testing.T) {
 		}
 	}
 
-	// feed.js reads the old bookmark parameter exactly once, in its constant
-	// declaration, and issues no fetch( call of its own: there is still one
-	// query, built in one place, sent once per report list.
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+	// D-18): the old bookmark parameter is read exactly once, by the Show menu
+	// script at boot (show-menu.js readAlias), and feed.js no longer names it.
+	// feed.js still issues no fetch( call of its own: there is still one query,
+	// built in one place, sent once per report list. The Phase 3.1 and Phase 4
+	// hands-on tests are walked on this layout after Phase 3.4 is built.
 	feedRaw, err := fs.ReadFile(StaticFS, "static/js/feed.js")
 	if err != nil {
 		t.Fatalf("static/js/feed.js: could not read embedded file: %v", err)
 	}
 	feedText := stripCSSComments(string(feedRaw))
-	if n := strings.Count(feedText, "show_disputed"); n != 1 {
-		t.Errorf("static/js/feed.js: expected exactly one occurrence of the old bookmark "+
-			"parameter's name (its constant declaration), found %d", n)
+	if n := strings.Count(feedText, "show_disputed"); n != 0 {
+		t.Errorf("static/js/feed.js: expected no mention of the old bookmark parameter "+
+			"(show-menu.js owns the alias), found %d", n)
 	}
-	if !regexp.MustCompile(`OLD_BOOKMARK_PARAM\s*=\s*'show_disputed'`).MatchString(feedText) {
-		t.Errorf("static/js/feed.js: its sole show_disputed reference is not the " +
-			"OLD_BOOKMARK_PARAM constant declaration, any other use would need its own review")
+	menuText := p19Code(t, "static/js/show-menu.js")
+	if n := strings.Count(menuText, "show_disputed"); n != 1 {
+		t.Errorf("static/js/show-menu.js: expected exactly one code occurrence of the old bookmark "+
+			"parameter's name, found %d", n)
+	}
+	if !regexp.MustCompile(`params\.get\('show_disputed'\) === 'true'`).MatchString(menuText) {
+		t.Errorf("static/js/show-menu.js: its sole show_disputed reference is not the alias test " +
+			"in readAlias, any other use would need its own review")
 	}
 	if n := strings.Count(feedText, "fetch("); n != 0 {
 		t.Errorf("static/js/feed.js: expected zero fetch( calls, found %d: a fetch( call here "+
@@ -1349,20 +1357,38 @@ func TestFeedExplainsAnEmptyDisputedResult(t *testing.T) {
 	}
 	html := string(htmlRaw)
 
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+	// D-18): the tab strip is replaced by the list head with the Show button, so
+	// the Show button must come before #report-list, and the checkbox ban is
+	// narrowed to everything outside #show-menu, so Phase 3.2's Only Reliable
+	// reporters tick can live in the menu. The Phase 3.1 and Phase 4 hands-on
+	// tests are walked on this layout after Phase 3.4 is built.
+	menuAt := strings.Index(html, `<div class="show-menu" id="show-menu"`)
+	if menuAt == -1 {
+		t.Fatalf("could not locate the Show menu in the template")
+	}
+	menuEnd := strings.Index(html[menuAt:], "</div>")
+	if menuEnd == -1 {
+		t.Fatalf("could not find the end of the Show menu in the template")
+	}
+	outsideMenu := html[:menuAt] + html[menuAt+menuEnd:]
 	for _, gone := range []string{`id="show-disputed-toggle"`, "filter-toggle", "Show disputed reports", `type="checkbox"`} {
-		if strings.Contains(html, gone) {
-			t.Errorf("the list pane still holds %q, which the tab strip replaced", gone)
+		if strings.Contains(outsideMenu, gone) {
+			t.Errorf("the page still holds %q outside the Show menu, which the Show menu replaced", gone)
 		}
 	}
-
-	stripPos := strings.Index(html, `class="view-tabs"`)
-	listPos := strings.Index(html, `id="report-list"`)
-	if stripPos == -1 || listPos == -1 {
-		t.Fatalf("could not locate both the tab strip and the report list in the template")
+	if strings.Contains(html, `class="view-tabs"`) {
+		t.Errorf("the page still holds the tab strip")
 	}
-	if stripPos >= listPos {
-		t.Errorf("the tab strip must appear before #report-list in the template, found strip at %d, "+
-			"list at %d", stripPos, listPos)
+
+	showPos := strings.Index(html, `id="show-button"`)
+	listPos := strings.Index(html, `id="report-list"`)
+	if showPos == -1 || listPos == -1 {
+		t.Fatalf("could not locate both the Show button and the report list in the template")
+	}
+	if showPos >= listPos {
+		t.Errorf("the Show button must appear before #report-list in the template, found button at %d, "+
+			"list at %d", showPos, listPos)
 	}
 
 	if n := strings.Count(html, `id="disputed-empty"`); n != 1 {
@@ -1414,19 +1440,25 @@ func TestFeedExplainsAnEmptyDisputedResult(t *testing.T) {
 			"own body")
 	}
 
-	if !strings.Contains(feedText, "Pinalert.state.view") {
-		t.Errorf("feed.js does not reference Pinalert.state.view: the empty-state choice must " +
-			"describe the data actually in hand (the store's tab), not an intent that may not " +
-			"have been fetched yet (the pressed link)")
+	if !strings.Contains(feedText, "Pinalert.state.show") {
+		t.Errorf("feed.js does not reference Pinalert.state.show: the empty-state choice must " +
+			"describe the data actually in hand (the store's Show choice), not an intent that " +
+			"may not have been fetched yet (the pressed menu item)")
 	}
 
 	if !strings.Contains(feedText, "addEventListener('click'") {
-		t.Errorf("feed.js does not attach a click listener: the strip must call the store's " +
+		t.Errorf("feed.js does not attach a click listener: Clear filter must call the store's " +
 			"setter and refetch on a press")
 	}
 	if !strings.Contains(feedText, "Pinalert.fetchReports()") {
-		t.Errorf("feed.js does not call Pinalert.fetchReports(): pressing a tab must refetch, " +
+		t.Errorf("feed.js does not call Pinalert.fetchReports(): clearing a filter must refetch, " +
 			"never filter state.reports in place")
+	}
+	// The Show menu, which replaced the strip's click handler, refetches or
+	// redraws through the store and filters on the server's words only.
+	menuText := p19Code(t, "static/js/show-menu.js")
+	if !strings.Contains(menuText, "Pinalert.fetchReports()") || !strings.Contains(menuText, "Pinalert.redraw()") {
+		t.Errorf("show-menu.js must refetch for a new read and redraw for Confirmed against All")
 	}
 }
 
@@ -2449,8 +2481,13 @@ func TestFeedErrorStateKeepsStaleRows(t *testing.T) {
 	// pinned as setHidden(reportListEl, state.reports.length === 0). It now
 	// names the condition once, hides the list only without rows, and removes
 	// the stale rows through clearRows when it does, so focus is restored.
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+	// D-18): the rows to keep are the visible set under the Show choice, held in
+	// the local named visible (Pinalert.visibleReports). The Phase 3.1 and Phase
+	// 4 hands-on tests are walked on this layout after Phase 3.4 is built.
 	for _, want := range []string{
-		"var hasRows = state.reports.length > 0;",
+		"var hasRows = visible.length > 0;",
 		"setHidden(reportListEl, !hasRows);",
 		"if (!hasRows) {\n        clearRows();\n      }",
 	} {

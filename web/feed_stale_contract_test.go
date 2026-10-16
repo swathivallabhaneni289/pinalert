@@ -242,6 +242,13 @@ func TestUpdatedAgoPhrases(t *testing.T) {
 // keeps the rows and the pins; the Couldn't load reports panel belongs to
 // renderFirstLoad alone. Honest limit: source shapes only; the Node sandbox
 // runs and the human check show that rows stay on a real screen.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-13, D-14,
+// D-18): the rows to keep are the visible set under the Show choice
+// (Pinalert.visibleReports, held in the local named visible), and the list is
+// hidden in one place, the empty branch, because the Past tab and its hide are
+// gone. The Phase 3.1 and Phase 4 hands-on tests are walked on this layout
+// after Phase 3.4 is built.
 func TestFeedRenderKeepsRowsOnError(t *testing.T) {
 	feed := p413ReadStatic(t, "static/js/feed.js")
 	r := jsFunctionBody(t, feed, "render(state)")
@@ -260,12 +267,12 @@ func TestFeedRenderKeepsRowsOnError(t *testing.T) {
 	start := strings.Index(r, "if (state.status === 'error') {")
 	errBlock, _, _ := strings.Cut(r[start:], "return;")
 	p413MustContain(t, "the error block", errBlock,
-		"var hasRows = state.reports.length > 0;", "setHidden(reportListEl, !hasRows);",
+		"var hasRows = visible.length > 0;", "setHidden(reportListEl, !hasRows);",
 		"if (!hasRows) {\n        clearRows();\n      }", "setEmptyState('none');")
 	p413MustNotContain(t, "the error block", errBlock, "setHidden(errorEl, false)", "renderRows(")
 
-	if n := strings.Count(r, "setHidden(reportListEl, true)"); n != 2 {
-		t.Errorf("render must hide the list in exactly two places (the Past hide and the empty branch), found %d", n)
+	if n := strings.Count(r, "setHidden(reportListEl, true)"); n != 1 {
+		t.Errorf("render must hide the list in exactly one place (the empty branch; the Past hide left with the Past tab), found %d", n)
 	}
 	if n := strings.Count(feed, "setHidden(errorEl, false)"); n != 1 {
 		t.Errorf("feed.js must show the error panel once, found %d", n)
