@@ -1,0 +1,1699 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pinalert app layout</title>
+<style>
+:root {
+  --space-xs: 4px; --space-sm: 8px; --space-md: 16px; --space-lg: 24px;
+  --touch: 44px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --bg: #FFFFFF; --surface: #F1F3F4; --border: #E1E4E8; --text: #1A1D21; --muted: #6B7280;
+  --low: #2F9E64; --medium: #C48419; --critical: #C0392B;
+  --low-bg: #E7F5EC; --medium-bg: #FCF3DC; --critical-bg: #FBE9E7;
+  --stale: #C9CDD1;
+  --water: #CFE3F2; --land: #EEF0EC; --road: #FFFFFF; --park: #DDEBD9;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0B0D10; --surface: #16181C; --border: #2A2D31; --text: #F3F4F6; --muted: #9CA3AF;
+    --low: #34D399; --medium: #E5A93B; --critical: #E5695C;
+    --low-bg: #123524; --medium-bg: #3A2C10; --critical-bg: #3A1512; --stale: #4B4F55;
+    --water: #1C3346; --land: #1A1D20; --road: #2B2F34; --park: #1E2A1F;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0B0D10; --surface: #16181C; --border: #2A2D31; --text: #F3F4F6; --muted: #9CA3AF;
+  --low: #34D399; --medium: #E5A93B; --critical: #E5695C;
+  --low-bg: #123524; --medium-bg: #3A2C10; --critical-bg: #3A1512; --stale: #4B4F55;
+  --water: #1C3346; --land: #1A1D20; --road: #2B2F34; --park: #1E2A1F;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body { font-family: var(--font); font-size: 16px; line-height: 1.5; color: var(--text); background: var(--surface); }
+button { font: inherit; color: inherit; }
+.ico { display: inline-block; width: 20px; height: 20px; background: currentColor; flex: none;
+  -webkit-mask: var(--i) center / contain no-repeat; mask: var(--i) center / contain no-repeat; }
+.i-bell { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTAuMjY4IDIxYTIgMiAwIDAgMCAzLjQ2NCAwIi8+PHBhdGggZD0iTTMuMjYyIDE1LjMyNkExIDEgMCAwIDAgNCAxN2gxNmExIDEgMCAwIDAgLjc0LTEuNjczQzE5LjQxIDEzLjk1NiAxOCAxMi40OTkgMTggOEE2IDYgMCAwIDAgNiA4YzAgNC40OTktMS40MTEgNS45NTYtMi43MzggNy4zMjYiLz48L3N2Zz4K); } .i-gear { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTIuMjIgMmgtLjQ0YTIgMiAwIDAgMC0yIDJ2LjE4YTIgMiAwIDAgMS0xIDEuNzNsLS40My4yNWEyIDIgMCAwIDEtMiAwbC0uMTUtLjA4YTIgMiAwIDAgMC0yLjczLjczbC0uMjIuMzhhMiAyIDAgMCAwIC43MyAyLjczbC4xNS4xYTIgMiAwIDAgMSAxIDEuNzJ2LjUxYTIgMiAwIDAgMS0xIDEuNzRsLS4xNS4wOWEyIDIgMCAwIDAtLjczIDIuNzNsLjIyLjM4YTIgMiAwIDAgMCAyLjczLjczbC4xNS0uMDhhMiAyIDAgMCAxIDIgMGwuNDMuMjVhMiAyIDAgMCAxIDEgMS43M1YyMGEyIDIgMCAwIDAgMiAyaC40NGEyIDIgMCAwIDAgMi0ydi0uMThhMiAyIDAgMCAxIDEtMS43M2wuNDMtLjI1YTIgMiAwIDAgMSAyIDBsLjE1LjA4YTIgMiAwIDAgMCAyLjczLS43M2wuMjItLjM5YTIgMiAwIDAgMC0uNzMtMi43M2wtLjE1LS4wOGEyIDIgMCAwIDEtMS0xLjc0di0uNWEyIDIgMCAwIDEgMS0xLjc0bC4xNS0uMDlhMiAyIDAgMCAwIC43My0yLjczbC0uMjItLjM4YTIgMiAwIDAgMC0yLjczLS43M2wtLjE1LjA4YTIgMiAwIDAgMS0yIDBsLS40My0uMjVhMiAyIDAgMCAxLTEtMS43M1Y0YTIgMiAwIDAgMC0yLTJ6Ii8+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMyIvPjwvc3ZnPgo=); } .i-search { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1zZWFyY2giCiAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIxMDAlIgogIGhlaWdodD0iMTAwJSIKICB2aWV3Qm94PSIwIDAgMjQgMjQiCiAgZmlsbD0ibm9uZSIKICBzdHJva2U9ImN1cnJlbnRDb2xvciIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCiAgYXJpYS1oaWRkZW49InRydWUiCiAgZm9jdXNhYmxlPSJmYWxzZSIKPgogIDxwYXRoIGQ9Im0yMSAyMS00LjM0LTQuMzQiIC8+CiAgPGNpcmNsZSBjeD0iMTEiIGN5PSIxMSIgcj0iOCIgLz4KPC9zdmc+Cg==); }
+.i-plus { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNNSAxMmgxNCIvPjxwYXRoIGQ9Ik0xMiA1djE0Ii8+PC9zdmc+Cg==); } .i-user { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS11c2VyIgogIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIKICB3aWR0aD0iMTAwJSIKICBoZWlnaHQ9IjEwMCUiCiAgdmlld0JveD0iMCAwIDI0IDI0IgogIGZpbGw9Im5vbmUiCiAgc3Ryb2tlPSJjdXJyZW50Q29sb3IiCiAgc3Ryb2tlLXdpZHRoPSIyIgogIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIKICBzdHJva2UtbGluZWpvaW49InJvdW5kIgogIGFyaWEtaGlkZGVuPSJ0cnVlIgogIGZvY3VzYWJsZT0iZmFsc2UiCj4KICA8cGF0aCBkPSJNMTkgMjF2LTJhNCA0IDAgMCAwLTQtNEg5YTQgNCAwIDAgMC00IDR2MiIgLz4KICA8Y2lyY2xlIGN4PSIxMiIgY3k9IjciIHI9IjQiIC8+Cjwvc3ZnPgo=); } .i-down { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1jaGV2cm9uLWRvd24iCiAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIxMDAlIgogIGhlaWdodD0iMTAwJSIKICB2aWV3Qm94PSIwIDAgMjQgMjQiCiAgZmlsbD0ibm9uZSIKICBzdHJva2U9ImN1cnJlbnRDb2xvciIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCiAgYXJpYS1oaWRkZW49InRydWUiCiAgZm9jdXNhYmxlPSJmYWxzZSIKPgogIDxwYXRoIGQ9Im02IDkgNiA2IDYtNiIgLz4KPC9zdmc+Cg==); }
+.i-sun { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1zdW4iCiAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIxMDAlIgogIGhlaWdodD0iMTAwJSIKICB2aWV3Qm94PSIwIDAgMjQgMjQiCiAgZmlsbD0ibm9uZSIKICBzdHJva2U9ImN1cnJlbnRDb2xvciIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCiAgYXJpYS1oaWRkZW49InRydWUiCiAgZm9jdXNhYmxlPSJmYWxzZSIKPgogIDxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjQiIC8+CiAgPHBhdGggZD0iTTEyIDJ2MiIgLz4KICA8cGF0aCBkPSJNMTIgMjB2MiIgLz4KICA8cGF0aCBkPSJtNC45MyA0LjkzIDEuNDEgMS40MSIgLz4KICA8cGF0aCBkPSJtMTcuNjYgMTcuNjYgMS40MSAxLjQxIiAvPgogIDxwYXRoIGQ9Ik0yIDEyaDIiIC8+CiAgPHBhdGggZD0iTTIwIDEyaDIiIC8+CiAgPHBhdGggZD0ibTYuMzQgMTcuNjYtMS40MSAxLjQxIiAvPgogIDxwYXRoIGQ9Im0xOS4wNyA0LjkzLTEuNDEgMS40MSIgLz4KPC9zdmc+); } .i-moon { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1tb29uIgogIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIKICB3aWR0aD0iMTAwJSIKICBoZWlnaHQ9IjEwMCUiCiAgdmlld0JveD0iMCAwIDI0IDI0IgogIGZpbGw9Im5vbmUiCiAgc3Ryb2tlPSJjdXJyZW50Q29sb3IiCiAgc3Ryb2tlLXdpZHRoPSIyIgogIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIKICBzdHJva2UtbGluZWpvaW49InJvdW5kIgogIGFyaWEtaGlkZGVuPSJ0cnVlIgogIGZvY3VzYWJsZT0iZmFsc2UiCj4KICA8cGF0aCBkPSJNMTIgM2E2IDYgMCAwIDAgOSA5IDkgOSAwIDEgMS05LTlaIiAvPgo8L3N2Zz4=); } .i-x { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS14IgogIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIKICB3aWR0aD0iMTAwJSIKICBoZWlnaHQ9IjEwMCUiCiAgdmlld0JveD0iMCAwIDI0IDI0IgogIGZpbGw9Im5vbmUiCiAgc3Ryb2tlPSJjdXJyZW50Q29sb3IiCiAgc3Ryb2tlLXdpZHRoPSIyIgogIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIKICBzdHJva2UtbGluZWpvaW49InJvdW5kIgogIGFyaWEtaGlkZGVuPSJ0cnVlIgogIGZvY3VzYWJsZT0iZmFsc2UiCj4KICA8cGF0aCBkPSJNMTggNiA2IDE4IiAvPgogIDxwYXRoIGQ9Im02IDYgMTIgMTIiIC8+Cjwvc3ZnPgo=); }
+.i-back { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1hcnJvdy1sZWZ0IgogIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIKICB3aWR0aD0iMTAwJSIKICBoZWlnaHQ9IjEwMCUiCiAgdmlld0JveD0iMCAwIDI0IDI0IgogIGZpbGw9Im5vbmUiCiAgc3Ryb2tlPSJjdXJyZW50Q29sb3IiCiAgc3Ryb2tlLXdpZHRoPSIyIgogIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIKICBzdHJva2UtbGluZWpvaW49InJvdW5kIgogIGFyaWEtaGlkZGVuPSJ0cnVlIgogIGZvY3VzYWJsZT0iZmFsc2UiCj4KICA8cGF0aCBkPSJtMTIgMTktNy03IDctNyIgLz4KICA8cGF0aCBkPSJNMTkgMTJINSIgLz4KPC9zdmc+); } .i-out { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1sb2ctb3V0IgogIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIKICB3aWR0aD0iMTAwJSIKICBoZWlnaHQ9IjEwMCUiCiAgdmlld0JveD0iMCAwIDI0IDI0IgogIGZpbGw9Im5vbmUiCiAgc3Ryb2tlPSJjdXJyZW50Q29sb3IiCiAgc3Ryb2tlLXdpZHRoPSIyIgogIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIKICBzdHJva2UtbGluZWpvaW49InJvdW5kIgogIGFyaWEtaGlkZGVuPSJ0cnVlIgogIGZvY3VzYWJsZT0iZmFsc2UiCj4KICA8cGF0aCBkPSJtMTYgMTcgNS01LTUtNSIgLz4KICA8cGF0aCBkPSJNMjEgMTJIOSIgLz4KICA8cGF0aCBkPSJNOSAyMUg1YTIgMiAwIDAgMS0yLTJWNWEyIDIgMCAwIDEgMi0yaDQiIC8+Cjwvc3ZnPgo=); } .i-check { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1jaGVjayIKICB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciCiAgd2lkdGg9IjEwMCUiCiAgaGVpZ2h0PSIxMDAlIgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iY3VycmVudENvbG9yIgogIHN0cm9rZS13aWR0aD0iMiIKICBzdHJva2UtbGluZWNhcD0icm91bmQiCiAgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIKICBhcmlhLWhpZGRlbj0idHJ1ZSIKICBmb2N1c2FibGU9ImZhbHNlIgo+CiAgPHBhdGggZD0iTTIwIDYgOSAxN2wtNS01IiAvPgo8L3N2Zz4K); }
+.i-pin { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMjAgMTBjMCA0Ljk5My01LjUzOSAxMC4xOTMtNy4zOTkgMTEuNzk5YTEgMSAwIDAgMS0xLjIwMiAwQzkuNTM5IDIwLjE5MyA0IDE0Ljk5MyA0IDEwYTggOCAwIDAgMSAxNiAwIi8+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMCIgcj0iMyIvPjwvc3ZnPgo=); } .i-mega { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJtMyAxMSAxOC01djEyTDMgMTR2LTN6Ii8+PHBhdGggZD0iTTExLjYgMTYuOGEzIDMgMCAxIDEtNS44LTEuNiIvPjwvc3ZnPgo=); }
+.i-flood { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1kcm9wbGV0IgogIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIKICB3aWR0aD0iMTAwJSIKICBoZWlnaHQ9IjEwMCUiCiAgdmlld0JveD0iMCAwIDI0IDI0IgogIGZpbGw9Im5vbmUiCiAgc3Ryb2tlPSJjdXJyZW50Q29sb3IiCiAgc3Ryb2tlLXdpZHRoPSIyIgogIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIKICBzdHJva2UtbGluZWpvaW49InJvdW5kIgogIGFyaWEtaGlkZGVuPSJ0cnVlIgogIGZvY3VzYWJsZT0iZmFsc2UiCj4KICA8cGF0aCBkPSJNMTIgMjJhNyA3IDAgMCAwIDctN2MwLTItMS0zLjktMy01LjVzLTMuNS00LTQtNi41Yy0uNSAyLjUtMiA0LjktNCA2LjVDNiAxMS4xIDUgMTMgNSAxNWE3IDcgMCAwIDAgNyA3eiIgLz4KPC9zdmc+Cg==); } .i-rescue { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1saWZlLWJ1b3kiCiAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIxMDAlIgogIGhlaWdodD0iMTAwJSIKICB2aWV3Qm94PSIwIDAgMjQgMjQiCiAgZmlsbD0ibm9uZSIKICBzdHJva2U9ImN1cnJlbnRDb2xvciIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCiAgYXJpYS1oaWRkZW49InRydWUiCiAgZm9jdXNhYmxlPSJmYWxzZSIKPgogIDxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjEwIiAvPgogIDxwYXRoIGQ9Im00LjkzIDQuOTMgNC4yNCA0LjI0IiAvPgogIDxwYXRoIGQ9Im0xNC44MyA5LjE3IDQuMjQtNC4yNCIgLz4KICA8cGF0aCBkPSJtMTQuODMgMTQuODMgNC4yNCA0LjI0IiAvPgogIDxwYXRoIGQ9Im05LjE3IDE0LjgzLTQuMjQgNC4yNCIgLz4KICA8Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSI0IiAvPgo8L3N2Zz4K); } .i-shelter { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1ob3VzZSIKICB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciCiAgd2lkdGg9IjEwMCUiCiAgaGVpZ2h0PSIxMDAlIgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iY3VycmVudENvbG9yIgogIHN0cm9rZS13aWR0aD0iMiIKICBzdHJva2UtbGluZWNhcD0icm91bmQiCiAgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIKICBhcmlhLWhpZGRlbj0idHJ1ZSIKICBmb2N1c2FibGU9ImZhbHNlIgo+CiAgPHBhdGggZD0iTTE1IDIxdi04YTEgMSAwIDAgMC0xLTFoLTRhMSAxIDAgMCAwLTEgMXY4IiAvPgogIDxwYXRoIGQ9Ik0zIDEwYTIgMiAwIDAgMSAuNzA5LTEuNTI4bDctNmEyIDIgMCAwIDEgMi41ODIgMGw3IDZBMiAyIDAgMCAxIDIxIDEwdjlhMiAyIDAgMCAxLTIgMkg1YTIgMiAwIDAgMS0yLTJ6IiAvPgo8L3N2Zz4K); }
+.i-power { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS16YXAtb2ZmIgogIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIKICB3aWR0aD0iMTAwJSIKICBoZWlnaHQ9IjEwMCUiCiAgdmlld0JveD0iMCAwIDI0IDI0IgogIGZpbGw9Im5vbmUiCiAgc3Ryb2tlPSJjdXJyZW50Q29sb3IiCiAgc3Ryb2tlLXdpZHRoPSIyIgogIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIKICBzdHJva2UtbGluZWpvaW49InJvdW5kIgogIGFyaWEtaGlkZGVuPSJ0cnVlIgogIGZvY3VzYWJsZT0iZmFsc2UiCj4KICA8cGF0aCBkPSJNMTAuNzY4IDUuMTExIDEzLjQ0IDIuNDRhMS41IDEuNSAwIDAxMi40NzQgMS41NjFsLTEuNjMzIDQuNjI1IiAvPgogIDxwYXRoIGQ9Im0xOC44ODkgMTMuMjMyLjY3Mi0uNjcyQTEuNSAxLjUgMCAwMDE4LjUgMTBoLTIuODQ0IiAvPgogIDxwYXRoIGQ9Im0yIDIgMjAgMjAiIC8+CiAgPHBhdGggZD0ibTcuOTQgNy45NC0zLjUgMy40OTlBMS41IDEuNSAwIDAwNS41IDE0aDQuMDAyYS41LjUgMCAwMS40NzEuNjY2TDguMDg2IDIwYTEuNSAxLjUgMCAwMDIuNDc1IDEuNTZsNS41LTUuNSIgLz4KPC9zdmc+Cg==); } .i-road { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1jb25zdHJ1Y3Rpb24iCiAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIxMDAlIgogIGhlaWdodD0iMTAwJSIKICB2aWV3Qm94PSIwIDAgMjQgMjQiCiAgZmlsbD0ibm9uZSIKICBzdHJva2U9ImN1cnJlbnRDb2xvciIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCiAgYXJpYS1oaWRkZW49InRydWUiCiAgZm9jdXNhYmxlPSJmYWxzZSIKPgogIDxyZWN0IHg9IjIiIHk9IjYiIHdpZHRoPSIyMCIgaGVpZ2h0PSI4IiByeD0iMSIgLz4KICA8cGF0aCBkPSJNMTcgMTR2NyIgLz4KICA8cGF0aCBkPSJNNyAxNHY3IiAvPgogIDxwYXRoIGQ9Ik0xNyAzdjMiIC8+CiAgPHBhdGggZD0iTTcgM3YzIiAvPgogIDxwYXRoIGQ9Ik0xMCAxNCAyLjMgNi4zIiAvPgogIDxwYXRoIGQ9Im0xNCA2IDcuNyA3LjciIC8+CiAgPHBhdGggZD0ibTggNiA4IDgiIC8+Cjwvc3ZnPgo=); } .i-storm { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS13aW5kIgogIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIKICB3aWR0aD0iMTAwJSIKICBoZWlnaHQ9IjEwMCUiCiAgdmlld0JveD0iMCAwIDI0IDI0IgogIGZpbGw9Im5vbmUiCiAgc3Ryb2tlPSJjdXJyZW50Q29sb3IiCiAgc3Ryb2tlLXdpZHRoPSIyIgogIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIKICBzdHJva2UtbGluZWpvaW49InJvdW5kIgogIGFyaWEtaGlkZGVuPSJ0cnVlIgogIGZvY3VzYWJsZT0iZmFsc2UiCj4KICA8cGF0aCBkPSJNMTIuOCAxOS42QTIgMiAwIDEgMCAxNCAxNkgyIiAvPgogIDxwYXRoIGQ9Ik0xNy41IDhhMi41IDIuNSAwIDEgMSAyIDRIMiIgLz4KICA8cGF0aCBkPSJNOS44IDQuNEEyIDIgMCAxIDEgMTEgOEgyIiAvPgo8L3N2Zz4K); }
+
+/* ---- Mockup chrome (not part of the app) ---- */
+.mock-note { display: flex; flex-wrap: wrap; gap: var(--space-sm) var(--space-md); align-items: center; padding: var(--space-sm) var(--space-md);
+  font-size: 14px; color: var(--muted); background: var(--surface); border-bottom: 1px solid var(--border); }
+.mock-note a { color: var(--text); font-weight: 600; }
+.mock-note a[aria-current="page"] { text-decoration: none; color: var(--muted); font-weight: 400; }
+.is-phone.framed body { display: flex; flex-direction: column; align-items: center; }
+.is-phone.framed .mock-note { width: 100%; justify-content: center; }
+.is-phone.framed .app { width: 390px; height: 800px; margin: var(--space-md) 0; border: 10px solid #1A1D21; border-radius: 36px; overflow: hidden; }
+
+/* ---- App shell ---- */
+.app { position: relative; display: flex; flex-direction: column; background: var(--bg); overflow: hidden; }
+.is-laptop .app { height: calc(100vh - 41px); }
+.is-phone:not(.framed) .app { height: calc(100dvh - 41px - 72px); }
+.iconbtn { position: relative; display: inline-flex; align-items: center; justify-content: center; width: var(--touch); height: var(--touch);
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg); cursor: pointer; }
+.iconbtn:focus-visible, .tab:focus-visible, .navlink:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.badge { position: absolute; top: 4px; right: 4px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px;
+  background: var(--text); color: var(--bg); font-size: 12px; line-height: 18px; font-weight: 600; text-align: center; }
+.search { display: flex; align-items: center; gap: var(--space-sm); height: var(--touch); padding: 0 12px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--bg); color: var(--muted); font-size: 15px; min-width: 0; }
+
+/* Top bar */
+.topbar { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); background: var(--bg);
+  border-bottom: 1px solid var(--border); z-index: 20; }
+.topbar .spacer { flex: 1; }
+.wordmark { font-weight: 700; font-size: 18px; margin-right: var(--space-lg); }
+.navlink { display: inline-flex; align-items: center; height: var(--touch); padding: 0 12px; border: 0; background: none; cursor: pointer;
+  color: var(--muted); font-size: 15px; border-bottom: 2px solid transparent; border-radius: 0; }
+.navlink[aria-current="page"] { color: var(--text); font-weight: 600; border-bottom-color: var(--text); }
+.screen-title { font-size: 18px; font-weight: 600; }
+.is-phone .laptop-only { display: none !important; }
+.is-laptop .phone-only { display: none !important; }
+.is-phone .topbar.over-map { position: absolute; top: 0; left: 0; right: 0; border: 0; background: transparent; padding: 12px; }
+.is-phone .topbar.over-map .search { flex: 1; box-shadow: 0 1px 4px rgb(0 0 0 / 15%); }
+.is-phone .topbar.over-map .iconbtn { box-shadow: 0 1px 4px rgb(0 0 0 / 15%); }
+
+/* Screens */
+.screen { display: none; flex: 1; min-height: 0; }
+.app[data-screen="nearby"] .screen-nearby,
+.app[data-screen="alerts"] .screen-alerts,
+.app[data-screen="activity"] .screen-activity,
+.app[data-screen="settings"] .screen-settings { display: flex; }
+.scroll { overflow-y: auto; min-height: 0; }
+
+/* Nearby */
+.screen-nearby { position: relative; }
+.is-laptop .screen-nearby { flex-direction: row; }
+.is-phone .screen-nearby { flex-direction: column; }
+.map { position: relative; background: var(--land); overflow: hidden; }
+.map svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.is-laptop .map { flex: 1; order: 2; }
+.is-phone .map { flex: 0 0 40%; }
+.pin { position: absolute; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; color: #fff; border: 2px solid #fff; box-shadow: 0 1px 4px rgb(0 0 0 / 30%); }
+.maplabel { position: absolute; font-size: 12px; color: var(--muted); white-space: nowrap; pointer-events: none; }
+.pin .ico { width: 18px; height: 18px; }
+.pin.critical { background: var(--critical); } .pin.medium { background: var(--medium); } .pin.low { background: var(--low); }
+.pin.disputed { background: var(--stale); color: #4B4F55; }
+.listpane { display: flex; flex-direction: column; min-height: 0; }
+.is-laptop .listpane { width: 420px; flex: none; order: 1; border-right: 1px solid var(--border); }
+.is-phone .listpane { flex: 1; }
+.listhead { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--border); }
+.listhead .count { flex: 1; font-size: 14px; color: var(--muted); }
+.showbtn { display: inline-flex; align-items: center; gap: 4px; height: 36px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); cursor: pointer; font-size: 14px; }
+.showbtn .ico { width: 16px; height: 16px; }
+.menu { position: absolute; z-index: 40; min-width: 220px; padding: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 18%); }
+.menu[hidden] { display: none; }
+.menu button, .menu a { display: flex; align-items: center; gap: var(--space-sm); width: 100%; min-height: var(--touch); padding: 0 12px; border: 0;
+  background: none; text-align: left; cursor: pointer; border-radius: 6px; font-size: 15px; color: var(--text); text-decoration: none; }
+.menu button:hover, .menu a:hover { background: var(--surface); }
+.menu .tick { width: 16px; height: 16px; visibility: hidden; }
+.menu [aria-checked="true"] .tick { visibility: visible; }
+.menu .hint { display: block; padding: 4px 12px 8px; font-size: 13px; color: var(--muted); }
+.banner { display: flex; gap: var(--space-sm); align-items: flex-start; margin: var(--space-sm) var(--space-md) 0; padding: 10px 12px;
+  border-radius: 8px; background: var(--critical-bg); border: 1px solid var(--critical); cursor: pointer; text-align: left; width: calc(100% - 32px); }
+.banner .ico { color: var(--critical); margin-top: 2px; }
+.banner b { display: block; font-size: 15px; }
+.banner span { font-size: 13px; color: var(--muted); }
+.cards { display: flex; flex-direction: column; gap: var(--space-sm); padding: var(--space-sm) var(--space-md) var(--space-md); }
+.is-laptop .cards { padding-bottom: var(--space-md); }
+.card { display: flex; gap: 12px; padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; }
+.card .dot { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: none; }
+.card.critical .dot { background: var(--critical-bg); color: var(--critical); }
+.card.medium .dot { background: var(--medium-bg); color: var(--medium); }
+.card.low .dot { background: var(--low-bg); color: var(--low); }
+.card.disputed { opacity: .62; }
+.card.disputed .dot { background: var(--surface); color: var(--muted); }
+.card .body { min-width: 0; flex: 1; }
+.card .top { display: flex; gap: var(--space-sm); align-items: baseline; }
+.card .title { flex: 1; font-weight: 600; font-size: 15px; line-height: 1.35; }
+.chip { flex: none; font-size: 12px; font-weight: 600; padding: 2px 6px; border-radius: 4px; }
+.chip.critical { background: var(--critical-bg); color: var(--critical); }
+.chip.medium { background: var(--medium-bg); color: var(--medium); }
+.chip.low { background: var(--low-bg); color: var(--low); }
+.chip.grey { background: var(--surface); color: var(--muted); }
+.card .desc { font-size: 14px; color: var(--text); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .meta { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.card .meta b { color: var(--text); font-weight: 600; }
+.card.disputed .meta b { color: var(--critical); }
+.tag { display: inline-block; font-size: 12px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; margin-bottom: 2px; }
+.fab { position: absolute; right: 16px; bottom: 16px; width: 56px; height: 56px; border-radius: 50%; border: 0; background: var(--text); color: var(--bg);
+  display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgb(0 0 0 / 25%); cursor: pointer; z-index: 15; }
+.fab .ico { width: 26px; height: 26px; }
+.postbtn { display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 14px; border: 0; border-radius: 6px; background: var(--text);
+  color: var(--bg); font-weight: 600; font-size: 15px; cursor: pointer; }
+.postbtn .ico { width: 18px; height: 18px; }
+
+/* Bottom bar */
+.bottom-nav { display: flex; border-top: 1px solid var(--border); background: var(--bg); z-index: 20; padding-bottom: env(safe-area-inset-bottom); }
+.bottom-nav button { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 56px;
+  border: 0; background: none; color: var(--muted); font-size: 13px; cursor: pointer; }
+.bottom-nav button[aria-current="page"] { color: var(--text); font-weight: 600; }
+.bottom-nav .ico { width: 22px; height: 22px; }
+
+/* Pages */
+.page { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.is-laptop .page-inner { width: 100%; padding: 0 var(--space-sm); }
+.pagehead { padding: var(--space-md) var(--space-md) var(--space-sm); }
+.is-laptop .pagehead { padding: var(--space-lg) var(--space-md) var(--space-md); }
+.is-laptop .screen-alerts .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: var(--space-md); }
+.is-laptop .act-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: var(--space-lg); padding: 0 var(--space-md) var(--space-lg); align-items: start; }
+.is-laptop .act-layout .tabs { flex-direction: column; margin: 0; padding: 6px; position: sticky; top: 0; }
+.is-laptop .act-layout .tab { display: flex; justify-content: space-between; width: 100%; height: 44px; text-align: left; font-size: 15px; }
+.is-laptop .act-layout .subhead, .is-laptop .act-layout .cards { padding-left: 0; padding-right: 0; }
+.is-laptop .act-layout .subhead { padding-top: 0; }
+.is-laptop #act-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: var(--space-md); padding-top: var(--space-sm); }
+.is-laptop #act-cards .group { grid-column: 1 / -1; }
+.is-laptop .screen-settings .page-inner { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); align-items: start; padding: 0 var(--space-sm) var(--space-lg); }
+.is-laptop .screen-settings .pagehead { grid-column: 1 / -1; }
+.is-laptop .screen-settings .setsec { margin: var(--space-sm); }
+.pagehead h1 { margin: 0; font-size: 22px; line-height: 1.25; }
+.pagehead p { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
+.alertcard { display: block; padding: 12px; border: 1px solid var(--border); border-left: 4px solid var(--critical); border-radius: 8px; background: var(--bg); }
+.alertcard.moderate { border-left-color: var(--medium); }
+.alertcard .who { font-size: 13px; color: var(--muted); }
+.alertcard h3 { margin: 2px 0; font-size: 16px; }
+.alertcard p { margin: 0; font-size: 14px; }
+.tabs { display: flex; gap: 4px; margin: 0 var(--space-md); padding: 4px; background: var(--surface); border-radius: 8px; overflow-x: auto;
+  scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { flex: none; height: 36px; padding: 0 12px; border: 0; border-radius: 6px; background: none; color: var(--muted); font-size: 14px; cursor: pointer; white-space: nowrap; }
+.tab[aria-selected="true"] { background: var(--bg); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgb(0 0 0 / 12%); }
+.tab .n { color: var(--muted); font-weight: 400; margin-left: 4px; }
+.subhead { display: flex; align-items: center; justify-content: space-between; padding: var(--space-sm) var(--space-md) 0; }
+.subhead .count { font-size: 14px; color: var(--muted); }
+.group { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: var(--space-sm) 0 0; }
+.panel[hidden] { display: none; }
+.bellpop { width: 340px; max-width: calc(100% - 24px); padding: 0; }
+.bellpop header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--border); font-weight: 600; }
+.bellpop ol { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow-y: auto; }
+.bellpop li { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; line-height: 1.4; cursor: pointer; }
+.bellpop li.unread { box-shadow: inset 3px 0 0 var(--text); }
+.bellpop li small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.bellpop footer { padding: 4px; }
+.bellpop footer button { justify-content: center; font-weight: 600; }
+
+/* Settings */
+.setsec { margin: var(--space-sm) var(--space-md) var(--space-md); border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
+.setsec h2 { margin: 0; padding: 12px 12px 4px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 12px; border-top: 1px solid var(--border); }
+.setsec h2 + .row { border-top: 0; }
+.row .lbl { flex: 1; min-width: 0; font-size: 15px; }
+.row .lbl small { display: block; font-size: 13px; color: var(--muted); }
+.row .val { font-size: 15px; color: var(--muted); }
+.row input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--text); flex: none; }
+.row select { font: inherit; font-size: 15px; height: 36px; padding: 0 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); }
+.row.danger .lbl { color: var(--critical); font-weight: 600; }
+.row.link { cursor: pointer; }
+.row.link::after { content: ""; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-top: 2px solid var(--muted); transform: rotate(45deg); }
+.backbtn { border: 0; }
+.is-phone .pagehead h1 { display: none; }
+.is-phone .pagehead p { margin-top: 0; }
+
+/* ---- Stacked sections (alerts, activity, settings) ---- */
+.sect { padding: 0 var(--space-md) var(--space-lg); }
+.sect-head h2 { margin: 0; font-size: 17px; line-height: 1.3; }
+.sect-head h2 .n { margin-left: 4px; color: var(--muted); font-weight: 400; }
+.sect-head p { margin: 2px 0 var(--space-sm); font-size: 14px; color: var(--muted); }
+.box { border: 1px solid var(--border); border-radius: 12px; background: var(--bg); overflow: hidden; }
+.box > .row:first-child, .box > .colhead + .row { border-top: 0; }
+.colhead { display: grid; gap: var(--space-md); align-items: center; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border);
+  font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+
+/* Report rows */
+.lrow { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; grid-template-areas: "dot main status" "dot what what" "dot when dist";
+  column-gap: 12px; row-gap: 2px; padding: 12px; border-top: 1px solid var(--border); align-items: start; }
+.box > .lrow:first-child, .box > .colhead + .lrow { border-top: 0; }
+.lrow .dot { grid-area: dot; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.lrow.critical .dot { background: var(--critical-bg); color: var(--critical); }
+.lrow.medium .dot { background: var(--medium-bg); color: var(--medium); }
+.lrow.low .dot { background: var(--low-bg); color: var(--low); }
+.lrow.disputed .dot { background: var(--surface); color: var(--muted); }
+.lrow.disputed .c-main, .lrow.disputed .c-what { opacity: .7; }
+.lrow .c-main { grid-area: main; min-width: 0; }
+.lrow .t, .arow .t { font-weight: 600; font-size: 15px; line-height: 1.35; }
+.lrow .d, .arow .d { font-size: 14px; color: var(--muted); }
+.lrow .c-status { grid-area: status; }
+.lrow .c-what { grid-area: what; font-size: 13px; color: var(--muted); }
+.lrow .c-what b { color: var(--text); font-weight: 600; }
+.lrow .c-when { grid-area: when; font-size: 13px; color: var(--muted); }
+.lrow .c-dist { grid-area: dist; font-size: 13px; color: var(--muted); text-align: right; }
+
+/* Alert rows */
+.arow { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "main lvl" "who who" "when until";
+  column-gap: 12px; row-gap: 2px; padding: 12px; border-top: 1px solid var(--border); }
+.box > .arow:first-child, .box > .colhead + .arow { border-top: 0; }
+.arow .c-lvl { grid-area: lvl; } .arow .c-main { grid-area: main; min-width: 0; }
+.arow .c-who { grid-area: who; font-size: 13px; color: var(--muted); }
+.arow .c-when { grid-area: when; font-size: 13px; color: var(--muted); }
+.arow .c-when::before { content: "Issued "; }
+.arow .c-until { grid-area: until; font-size: 13px; color: var(--muted); text-align: right; }
+.arow .c-until::before { content: "Until "; }
+
+/* Laptop: heading on the left, the stacked list on the right, columns lined up */
+.is-laptop .pagehead { padding: var(--space-lg) var(--space-lg) var(--space-sm); }
+.is-laptop .sect { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: var(--space-xl, 32px); padding: var(--space-lg); border-top: 1px solid var(--border); }
+.is-laptop .sect-head p { margin-bottom: 0; }
+.is-laptop .actcols, .is-laptop .lrow { grid-template-columns: 40px minmax(0, 2.2fr) 110px minmax(0, 1.5fr) 150px 72px; }
+.is-laptop .lrow { grid-template-areas: none; align-items: center; padding: 12px 16px; column-gap: var(--space-md); }
+.is-laptop .lrow > * { grid-area: auto; }
+.is-laptop .lrow .c-dist { text-align: right; }
+.is-laptop .actcols span:last-child { text-align: right; }
+.is-laptop .alertcols, .is-laptop .arow { grid-template-columns: 110px minmax(0, 2.6fr) minmax(0, 1.2fr) 110px 150px; }
+.is-laptop .arow { grid-template-areas: none; align-items: center; padding: 12px 16px; column-gap: var(--space-md); }
+.is-laptop .arow > * { grid-area: auto; }
+.is-laptop .arow .c-lvl { order: -1; }
+.is-laptop .arow .c-when::before, .is-laptop .arow .c-until::before { content: none; }
+.is-laptop .arow .c-until { text-align: left; }
+.is-laptop .lrow .c-what, .is-laptop .lrow .c-when, .is-laptop .lrow .c-dist,
+.is-laptop .arow .c-who, .is-laptop .arow .c-when, .is-laptop .arow .c-until { font-size: 14px; }
+.is-laptop .screen-settings .row { padding: 10px 16px; }
+
+/* ==== v4: designed notice strip ==== */
+.i-alert { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1jaXJjbGUtYWxlcnQiCiAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIxMDAlIgogIGhlaWdodD0iMTAwJSIKICB2aWV3Qm94PSIwIDAgMjQgMjQiCiAgZmlsbD0ibm9uZSIKICBzdHJva2U9ImN1cnJlbnRDb2xvciIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCiAgYXJpYS1oaWRkZW49InRydWUiCiAgZm9jdXNhYmxlPSJmYWxzZSIKPgogIDxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjEwIiAvPgogIDxsaW5lIHgxPSIxMiIgeDI9IjEyIiB5MT0iOCIgeTI9IjEyIiAvPgogIDxsaW5lIHgxPSIxMiIgeDI9IjEyLjAxIiB5MT0iMTYiIHkyPSIxNiIgLz4KPC9zdmc+Cg==); } .i-phone { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTMuODMyIDE2LjU2OGExIDEgMCAwIDAgMS4yMTMtLjMwM2wuMzU1LS40NjVBMiAyIDAgMCAxIDE3IDE1aDNhMiAyIDAgMCAxIDIgMnYzYTIgMiAwIDAgMS0yIDJBMTggMTggMCAwIDEgMiA0YTIgMiAwIDAgMSAyLTJoM2EyIDIgMCAwIDEgMiAydjNhMiAyIDAgMCAxLS44IDEuNmwtLjQ2OC4zNTFhMSAxIDAgMCAwLS4yOTIgMS4yMzMgMTQgMTQgMCAwIDAgNi4zOTIgNi4zODQiLz48L3N2Zz4K); }
+.notice { flex: none; display: flex; align-items: center; gap: 10px; padding: 8px 16px; min-height: 48px;
+  background: #1A1D21; color: #FFFFFF; border-bottom: 1px solid #2A2D31; font-size: 14px; line-height: 1.35; text-align: left; }
+.notice .ico { width: 20px; height: 20px; color: #F5C451; }
+.notice-text { flex: 1; min-width: 0; }
+.notice-text b { font-weight: 600; }
+.notice-text .sub { color: #C9CDD1; }
+.notice-call { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 36px; padding: 0 12px; border-radius: 6px;
+  background: #C0392B; color: #FFFFFF; font-weight: 700; font-size: 15px; text-decoration: none; }
+.notice-call .ico { width: 16px; height: 16px; color: #FFFFFF; }
+.notice-link { flex: none; color: #FFFFFF; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.notice a:focus-visible { outline: 2px solid #FFFFFF; outline-offset: 2px; }
+.is-phone .notice { padding: 6px 12px; gap: 8px; font-size: 13px; }
+
+/* ==== v4: more air, larger text, no faded text (contrast) ==== */
+.sect-head h2 { font-size: 19px; }
+.sect-head p { font-size: 14px; margin: 4px 0 12px; }
+.lrow .t, .arow .t { font-size: 16px; line-height: 1.4; }
+.lrow .d, .arow .d { font-size: 15px; line-height: 1.45; }
+.lrow.disputed .c-main, .lrow.disputed .c-what { opacity: 1; }
+
+/* Phone: every item is its own card with room around it */
+.is-phone .sect { padding: var(--space-md) var(--space-md) var(--space-lg); }
+.is-phone .sect + .sect { border-top: 8px solid var(--surface); }
+.is-phone .screen-alerts .box, .is-phone .screen-activity .box { border: 0; background: none; overflow: visible; display: flex; flex-direction: column; gap: 12px; }
+.is-phone .lrow, .is-phone .arow { border: 1px solid var(--border); border-radius: 12px; background: var(--bg); padding: 16px; }
+.is-phone .box > .lrow, .is-phone .box > .arow { border-top: 1px solid var(--border); }
+.is-phone .lrow { grid-template-columns: 40px minmax(0, 1fr) auto; grid-template-areas: "dot status when" "main main main" "what what dist";
+  column-gap: 0; row-gap: 10px; align-items: center; }
+.is-phone .lrow .c-status { padding-left: 12px; }
+.is-phone .lrow .c-when { font-size: 14px; text-align: right; }
+.is-phone .lrow .c-what, .is-phone .lrow .c-dist { padding-top: 10px; border-top: 1px solid var(--border); font-size: 14px; }
+.is-phone .lrow .c-dist { text-align: right; padding-left: 12px; }
+.is-phone .lrow .d { margin-top: 4px; }
+.is-phone .arow { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "lvl lvl" "main main" "who who" "when until"; row-gap: 8px; column-gap: 0; }
+.is-phone .arow .c-who { font-size: 14px; }
+.is-phone .arow .c-when, .is-phone .arow .c-until { padding-top: 10px; border-top: 1px solid var(--border); font-size: 14px; }
+.is-phone .arow .c-until { padding-left: 12px; }
+.is-phone .chip { font-size: 13px; padding: 3px 8px; }
+
+/* Laptop: taller rows, wider gaps */
+.is-laptop .sect { padding: var(--space-lg) var(--space-lg) 40px; gap: 40px; }
+.is-laptop .colhead { padding: 10px 20px; }
+.is-laptop .lrow, .is-laptop .arow { padding: 18px 20px; }
+.is-laptop .lrow .d, .is-laptop .arow .d { margin-top: 2px; }
+.is-laptop .chip { font-size: 13px; padding: 3px 8px; }
+
+/* ==== v5: phone notice that sits on the map ==== */
+.i-fire { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1mbGFtZSIKICB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciCiAgd2lkdGg9IjEwMCUiCiAgaGVpZ2h0PSIxMDAlIgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iY3VycmVudENvbG9yIgogIHN0cm9rZS13aWR0aD0iMiIKICBzdHJva2UtbGluZWNhcD0icm91bmQiCiAgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIKICBhcmlhLWhpZGRlbj0idHJ1ZSIKICBmb2N1c2FibGU9ImZhbHNlIgo+CiAgPHBhdGggZD0iTTEyIDNxMSA0IDQgNi41dDMgNS41YTEgMSAwIDAgMS0xNCAwIDUgNSAwIDAgMSAxLTMgMSAxIDAgMCAwIDUgMGMwLTItMS41LTMtMS41LTVxMC0yIDIuNS00IiAvPgo8L3N2Zz4K); } .i-other { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1mbGFnIgogIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIKICB3aWR0aD0iMTAwJSIKICBoZWlnaHQ9IjEwMCUiCiAgdmlld0JveD0iMCAwIDI0IDI0IgogIGZpbGw9Im5vbmUiCiAgc3Ryb2tlPSJjdXJyZW50Q29sb3IiCiAgc3Ryb2tlLXdpZHRoPSIyIgogIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIKICBzdHJva2UtbGluZWpvaW49InJvdW5kIgogIGFyaWEtaGlkZGVuPSJ0cnVlIgogIGZvY3VzYWJsZT0iZmFsc2UiCj4KICA8cGF0aCBkPSJNNCAyMlY0YTEgMSAwIDAgMSAuNC0uOEE2IDYgMCAwIDEgOCAyYzMgMCA1IDIgNy4zMzMgMnEyIDAgMy4wNjctLjhBMSAxIDAgMCAxIDIwIDR2MTBhMSAxIDAgMCAxLS40LjhBNiA2IDAgMCAxIDE2IDE2Yy0zIDAtNS0yLTgtMmE2IDYgMCAwIDAtNCAxLjUyOCIgLz4KPC9zdmc+Cg==); }
+.notice-mini { display: flex; align-items: center; gap: 8px; font-size: 14px; line-height: 1.3; color: var(--text); }
+.notice-mini > .ico { width: 18px; height: 18px; color: #B7791F; }
+.notice-mini .nm-text b { font-weight: 600; }
+.notice-mini .nm-text a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+.notice-mini .nm-call { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 10px; border-radius: 6px;
+  background: #C0392B; color: #FFFFFF; font-weight: 700; font-size: 14px; text-decoration: none; flex: none; }
+.notice-mini .nm-call .ico { width: 15px; height: 15px; }
+.notice-mini.float { position: absolute; top: 64px; left: 12px; z-index: 21; padding: 4px 4px 4px 10px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 1px 4px rgb(0 0 0 / 15%); }
+.notice-mini.flat { padding: 6px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.notice-mini.flat .nm-text { flex: 1; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .notice-mini > .ico { color: #F5C451; } }
+:root[data-theme="dark"] .notice-mini > .ico { color: #F5C451; }
+
+/* ==== v5: Post a report ==== */
+.btn-quiet { height: 40px; padding: 0 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); cursor: pointer; font-weight: 600; }
+.modal-back { position: absolute; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgb(0 0 0 / 45%); }
+.dialog { display: flex; flex-direction: column; background: var(--bg); border-radius: 12px; overflow: hidden; box-shadow: 0 12px 40px rgb(0 0 0 / 30%); }
+.is-laptop .dialog { width: min(1180px, 94%); height: min(780px, 92%); }
+.is-phone .modal-back { align-items: stretch; }
+.is-phone .dialog { width: 100%; height: 100%; border-radius: 0; }
+.dlg-head { display: flex; align-items: flex-start; gap: var(--space-md); padding: 20px 24px 16px; border-bottom: 1px solid var(--border); }
+.dlg-head > div { flex: 1; }
+.dlg-head h2 { margin: 0; font-size: 22px; }
+.dlg-head p { margin: 4px 0 0; color: var(--muted); font-size: 15px; }
+.dlg-body { flex: 1; min-height: 0; display: grid; overflow: hidden; }
+.is-laptop .dlg-body { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+.is-phone .dlg-body { grid-template-rows: auto; overflow-y: auto; display: block; }
+.dlg-map { display: flex; flex-direction: column; gap: 10px; padding: 20px 24px; background: var(--surface); min-height: 0; }
+.dlg-mapbox { flex: 1; min-height: 220px; border-radius: 10px; border: 1px solid var(--border); }
+.is-phone .dlg-mapbox { flex: none; height: 220px; }
+.dlg-map .loc { margin: 0; font-size: 14px; color: var(--muted); }
+.dlg-map .loc b { color: var(--text); }
+.bigpin { position: absolute; width: 44px; height: 44px; margin: -44px 0 0 -22px; display: flex; align-items: center; justify-content: center;
+  color: #C0392B; filter: drop-shadow(0 2px 3px rgb(0 0 0 / 35%)); }
+.bigpin .ico { width: 44px; height: 44px; }
+.dlg-form { padding: 20px 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 22px; }
+.dlg-form fieldset { margin: 0; padding: 0; border: 0; }
+.dlg-form legend, .dlg-form .legend { display: block; font-weight: 600; font-size: 16px; margin-bottom: 10px; }
+.dlg-form legend small { display: block; font-weight: 400; font-size: 13px; color: var(--muted); margin-top: 2px; }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 76px; padding: 8px 4px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg); cursor: pointer; font-size: 14px; text-align: center; line-height: 1.2; }
+.tile .ico { width: 24px; height: 24px; color: var(--muted); }
+.tile[aria-pressed="true"] { border: 2px solid var(--text); font-weight: 600; }
+.tile[aria-pressed="true"] .ico { color: var(--text); }
+.seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.seg button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 60px; padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--bg); cursor: pointer; text-align: left; }
+.seg button small { font-size: 13px; color: var(--muted); }
+.seg button[data-sev="low"] { border-left: 4px solid var(--low); }
+.seg button[data-sev="medium"] { border-left: 4px solid var(--medium); }
+.seg button[data-sev="critical"] { border-left: 4px solid var(--critical); }
+.seg button[data-sev="low"][aria-pressed="true"] { background: var(--low-bg); }
+.seg button[data-sev="medium"][aria-pressed="true"] { background: var(--medium-bg); }
+.seg button[data-sev="critical"][aria-pressed="true"] { background: var(--critical-bg); }
+.picks { display: flex; flex-wrap: wrap; gap: 8px; }
+.picks button { height: 40px; padding: 0 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); cursor: pointer; font-size: 14px; }
+.picks button[aria-pressed="true"] { border: 2px solid var(--text); font-weight: 600; }
+.desc textarea { width: 100%; font: inherit; font-size: 16px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); resize: vertical; }
+.desc small { display: block; margin-top: 6px; font-size: 13px; color: var(--muted); }
+.dlg-foot { display: flex; align-items: center; gap: 10px; padding: 14px 24px; border-top: 1px solid var(--border); background: var(--bg); }
+.dlg-foot .hint { flex: 1; font-size: 14px; color: var(--muted); }
+.is-phone .dlg-head, .is-phone .dlg-map, .is-phone .dlg-form, .is-phone .dlg-foot { padding-left: 16px; padding-right: 16px; }
+.is-phone .dlg-foot .hint { display: none; }
+.is-phone .dlg-foot .postbtn, .is-phone .dlg-foot .btn-quiet { flex: 1; height: 48px; justify-content: center; }
+.is-phone .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.is-phone .tile { min-height: 72px; font-size: 13px; }
+.is-phone .seg button small { display: none; }
+
+/* ==== v6: Report button on the phone ==== */
+.fab { width: auto; height: 52px; padding: 0 20px 0 16px; gap: 8px; border-radius: 14px; font-size: 16px; font-weight: 700;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 28%); }
+.fab .ico { width: 22px; height: 22px; }
+
+/* ==== v6: first time flow ==== */
+.onb-back { position: absolute; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; background: rgb(0 0 0 / 50%); }
+.onb { display: flex; background: var(--bg); overflow: hidden; }
+.is-laptop .onb { width: min(980px, 94%); min-height: min(600px, 92%); border-radius: 14px; box-shadow: 0 12px 40px rgb(0 0 0 / 30%); }
+.is-phone .onb-back { align-items: stretch; }
+.is-phone .onb { width: 100%; height: 100%; }
+.onb-side { width: 300px; flex: none; padding: 32px 28px; background: #1A1D21; color: #FFFFFF; display: flex; flex-direction: column; gap: 12px; }
+.onb-side .wordmark { font-size: 22px; margin: 0; }
+.onb-tag { margin: 0; color: #C9CDD1; font-size: 15px; }
+.onb-steps { list-style: none; margin: 28px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; counter-reset: s; }
+.onb-steps li { counter-increment: s; display: flex; align-items: center; gap: 12px; min-height: 40px; color: #9CA3AF; font-size: 15px; }
+.onb-steps li::before { content: counter(s); width: 28px; height: 28px; border-radius: 50%; border: 1px solid #4B4F55; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+.onb-steps li.on { color: #FFFFFF; font-weight: 600; }
+.onb-steps li.on::before { background: #FFFFFF; color: #1A1D21; border-color: #FFFFFF; }
+.onb-steps li.done { color: #C9CDD1; }
+.onb-steps li.done::before { content: "\2713"; border-color: #C9CDD1; }
+.onb-main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 32px 40px; overflow-y: auto; }
+.is-phone .onb-main { padding: 20px 20px 24px; }
+.onb-progress { height: 4px; background: var(--surface); border-radius: 2px; margin-bottom: 12px; }
+.onb-progress span { display: block; height: 100%; width: 25%; background: var(--text); border-radius: 2px; }
+.onb-count { margin: 0 0 8px; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.onb-step { display: flex; flex-direction: column; gap: 16px; flex: 1; }
+.onb-step h2 { margin: 0; font-size: 26px; line-height: 1.2; }
+.onb-lead { margin: 0; font-size: 16px; color: var(--muted); }
+.onb-points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.onb-points li { display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; font-size: 15px; line-height: 1.45; }
+.onb-points li .ico { width: 22px; height: 22px; margin-top: 1px; color: var(--text); }
+.onb-points li.warn { background: var(--critical-bg); border-color: var(--critical); }
+.onb-points li.warn .ico { color: var(--critical); }
+.onb-agree { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; line-height: 1.45; cursor: pointer; }
+.onb-agree input { width: 22px; height: 22px; margin: 0; accent-color: var(--text); flex: none; }
+.onb-agree a { color: var(--text); font-weight: 600; }
+.onb-hero { width: 64px; height: 64px; border-radius: 16px; background: var(--surface); display: flex; align-items: center; justify-content: center; }
+.onb-hero .ico { width: 32px; height: 32px; }
+.onb-list { margin: 0; padding-left: 22px; font-size: 16px; line-height: 1.6; }
+.onb-note { margin: 0; padding: 10px 12px; background: var(--surface); border-radius: 8px; font-size: 14px; }
+.field { display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: 15px; }
+.field input { font: inherit; font-weight: 400; font-size: 16px; height: 48px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
+.field small { font-weight: 400; font-size: 13px; color: var(--muted); }
+.onb-actions { margin-top: auto; padding-top: 8px; display: flex; gap: 10px; flex-wrap: wrap; }
+.onb-actions .postbtn, .onb-actions .btn-quiet { height: 48px; padding: 0 20px; font-size: 16px; justify-content: center; }
+.is-phone .onb-actions { flex-direction: column; }
+.is-phone .onb-actions .postbtn, .is-phone .onb-actions .btn-quiet { width: 100%; }
+.postbtn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ==== v7: Report lives in the bottom bar, so it never covers anything ==== */
+.bottom-nav .bn-report { color: var(--text); font-weight: 700; }
+.bottom-nav .bn-report .bn-box { display: flex; align-items: center; justify-content: center; width: 44px; height: 30px; border-radius: 8px;
+  background: var(--text); color: var(--bg); }
+.bottom-nav .bn-report .bn-box .ico { width: 20px; height: 20px; }
+/* v7: on the phone the search row and the notice sit above the map, never on top of it */
+.is-phone .topbar.near-top { border-bottom: 0; padding: 8px 12px; }
+.is-phone .topbar.near-top .search { flex: 1; }
+.is-phone .screen-nearby .notice-mini.flat { border-top: 1px solid var(--border); }
+
+/* ==== v8: phone top area and bottom bar, finished ==== */
+:root { --amber-bg: #FFF7E6; --amber-line: #F0DDB4; --amber-ink: #8A5A00; }
+:root[data-theme="dark"] { --amber-bg: #2A2112; --amber-line: #4A3A1C; --amber-ink: #F5C451; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --amber-bg: #2A2112; --amber-line: #4A3A1C; --amber-ink: #F5C451; } }
+
+.is-phone .topbar.near-top, .is-phone #phone-topbar { gap: 4px; padding: 8px 8px 8px 12px; border-bottom: 0; }
+.is-phone .topbar.near-top .search { height: 44px; border: 0; background: var(--surface); border-radius: 10px; color: var(--muted); }
+.is-phone .topbar .iconbtn { border: 0; background: none; width: 44px; height: 44px; }
+.is-phone .topbar .iconbtn .ico { width: 22px; height: 22px; }
+.is-phone .topbar .badge { top: 5px; right: 5px; background: #C0392B; color: #FFFFFF; }
+
+.notice-mini.flat { gap: 10px; padding: 8px 12px; min-height: 48px; background: var(--amber-bg); border-top: 1px solid var(--amber-line);
+  border-bottom: 1px solid var(--amber-line); color: var(--text); }
+.is-phone .screen-nearby .notice-mini.flat { border-top: 1px solid var(--amber-line); }
+.notice-mini > .ico { color: var(--amber-ink); width: 20px; height: 20px; }
+.notice-mini .nm-text { flex: 1; font-size: 14px; }
+.notice-mini .nm-text b { display: block; font-weight: 700; line-height: 1.2; }
+.notice-mini .nm-text a { font-size: 13px; color: var(--text); }
+.notice-mini .nm-call { height: 36px; padding: 0 12px; border-radius: 8px; font-size: 15px; }
+
+.bottom-nav { min-height: 68px; padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); gap: 2px; align-items: stretch; }
+.bottom-nav button { position: relative; min-height: 56px; gap: 4px; font-size: 12px; font-weight: 500; border-radius: 10px; }
+.bottom-nav button .ico { width: 24px; height: 24px; }
+.bottom-nav button[aria-current="page"] { color: var(--text); font-weight: 700; }
+.bottom-nav button[aria-current="page"]::before { content: ""; position: absolute; top: -6px; left: 28%; right: 28%; height: 3px; border-radius: 0 0 3px 3px; background: var(--text); }
+.bottom-nav .bn-report { flex: 1 1 0; margin: 2px 2px 2px 6px; background: var(--text); color: var(--bg); font-weight: 700; font-size: 13px; }
+.bottom-nav .bn-report .bn-box { width: auto; height: auto; background: none; color: inherit; }
+.bottom-nav .bn-report .bn-box .ico { width: 24px; height: 24px; }
+.bottom-nav .bn-report:active { opacity: .85; }
+
+/* ==== v9: read and agree, and the Disclaimer reader ==== */
+.terms-box { flex: 1; min-height: 200px; overflow-y: auto; padding: 4px 20px 20px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); font-size: 15px; line-height: 1.55; }
+.terms-box h3 { margin: 20px 0 6px; font-size: 19px; }
+.terms-box h4 { margin: 16px 0 4px; font-size: 16px; }
+.terms-box p { margin: 0 0 8px; }
+.terms-call { display: flex; gap: 12px; align-items: flex-start; margin: 8px 0 12px; padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; font-size: 14px; }
+.terms-call .nm-call { display: inline-flex; align-items: center; gap: 5px; height: 36px; padding: 0 12px; border-radius: 8px; background: #C0392B; color: #FFFFFF; font-weight: 700; text-decoration: none; flex: none; }
+.terms-call .nm-call .ico { width: 15px; height: 15px; }
+.onb-terms { min-height: 0; }
+.is-laptop .onb { height: min(680px, 92%); }
+.terms-actions { margin-top: 0; justify-content: flex-end; }
+.is-phone .terms-actions { flex-direction: row; }
+.is-phone .terms-actions .postbtn, .is-phone .terms-actions .btn-quiet { flex: 1; }
+.terms-refuse { margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--critical-bg); color: var(--text); font-size: 14px; }
+.reader { display: flex; flex-direction: column; background: var(--bg); overflow: hidden; }
+.reader > .terms-box { margin: 16px 24px; border-radius: 10px; }
+.is-laptop .reader { width: min(820px, 92%); height: min(760px, 92%); border-radius: 14px; box-shadow: 0 12px 40px rgb(0 0 0 / 30%); }
+.is-phone .reader { width: 100%; height: 100%; }
+.is-phone .reader > .terms-box { margin: 12px 16px; }
+
+/* ==== v10: phone call box at the top, Report tab the same size as the others ==== */
+.callbox { display: flex; align-items: center; gap: 12px; margin: 0 12px 8px; padding: 8px 8px 8px 10px; min-height: 52px;
+  background: var(--critical-bg); border: 1px solid var(--critical); border-radius: 10px; color: var(--text); text-decoration: none; flex: none; }
+.callbox .cb-ico { width: 36px; height: 36px; border-radius: 50%; background: #C0392B; color: #FFFFFF; display: flex; align-items: center; justify-content: center; flex: none; }
+.callbox .cb-ico .ico { width: 18px; height: 18px; }
+.callbox .cb-text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.callbox .cb-text b { font-size: 16px; font-weight: 700; }
+.callbox .cb-text small { font-size: 13px; color: var(--muted); }
+.callbox .cb-go { flex: none; height: 36px; padding: 0 16px; border-radius: 8px; background: #C0392B; color: #FFFFFF; font-weight: 700; font-size: 15px;
+  display: flex; align-items: center; }
+#notice-flat.callbox { margin-top: 4px; }
+
+.bottom-nav .bn-report { margin: 0; background: none; color: var(--text); font-weight: 600; font-size: 12px; }
+.bottom-nav .bn-report .bn-box { width: 36px; height: 26px; border-radius: 7px; background: var(--text); color: var(--bg); display: flex; align-items: center; justify-content: center; }
+.bottom-nav .bn-report .bn-box .ico { width: 18px; height: 18px; }
+.is-phone .lrow .c-what, .is-phone .lrow .c-dist, .is-phone .arow .c-when, .is-phone .arow .c-until { align-self: stretch; }
+.is-phone .lrow { grid-template-areas: "dot status status" "main main main" "when when when" "what what dist"; }
+.is-phone .lrow .c-when { text-align: left; margin-top: -4px; }
+
+/* ==== v11: one way to close each window, call 112 where it matters ==== */
+.callbox.callfirst { margin: 0; }
+.is-phone .dlg-foot .postbtn { flex: 1; }
+.is-laptop .dlg-foot .postbtn { min-width: 160px; justify-content: center; }
+.reader > .terms-box { margin-bottom: 24px; }
+
+/* ==== v12: no repeats ==== */
+.card.disputed { opacity: 1; }
+.card.disputed .title { color: var(--text); }
+.notice .n112 { color: #FFFFFF; font-weight: 700; }
+.menu-check { display: flex; gap: 10px; align-items: flex-start; margin: 4px 0 0; padding: 10px 12px 8px; border-top: 1px solid var(--border); cursor: pointer; font-size: 15px; }
+.menu-check input { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--text); flex: none; }
+.menu-check small { display: block; font-size: 13px; color: var(--muted); }
+.urow { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 14px 16px; border-top: 1px solid var(--border); font-size: 15px; line-height: 1.45; }
+.box > .urow:first-child { border-top: 0; }
+.urow .u-dot { width: 8px; height: 8px; border-radius: 50%; background: transparent; align-self: center; }
+.urow.unread .u-dot { background: #C0392B; }
+.urow.unread .u-text { font-weight: 600; }
+.urow .u-when { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.is-phone .screen-activity #updates .box { display: block; border: 1px solid var(--border); background: var(--bg); overflow: hidden; }
+.is-phone .urow { grid-template-columns: 10px minmax(0, 1fr); grid-template-areas: "dot text" ". when"; row-gap: 2px; }
+.is-phone .urow .u-dot { grid-area: dot; } .is-phone .urow .u-text { grid-area: text; } .is-phone .urow .u-when { grid-area: when; }
+.is-phone .screen-activity .pagehead { display: none; }
+/* fix: WebKit adds the legend height again under a fieldset; floating the legend stops it */
+.dlg-form legend { float: left; width: 100%; padding: 0; }
+.dlg-form legend + * { clear: both; }
+
+/* ==== v15: phone Nearby list as a sheet over the map (peek, half, full) ==== */
+.is-phone .screen-nearby { position: relative; }
+.is-phone .screen-nearby .map { flex: none; height: 45%; transition: height .3s cubic-bezier(.2, .8, .2, 1); }
+.is-phone .listpane { position: absolute; left: 0; right: 0; bottom: 0; top: 50%; z-index: 10; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--bg); border-radius: 16px 16px 0 0; box-shadow: 0 -2px 12px rgb(0 0 0 / 14%); transition: top .3s cubic-bezier(.2, .8, .2, 1); }
+.is-phone .listpane.dragging, .is-phone .screen-nearby .map.dragging { transition: none; }
+.is-phone .sheet-grab { order: 0; position: sticky; top: 0; z-index: 3; background: var(--bg); display: flex; justify-content: center; padding: 6px 0 0; touch-action: none; }
+.sheet-handle { width: 64px; height: 24px; border: 0; background: none; cursor: grab; display: flex; align-items: center; justify-content: center; }
+.sheet-handle span { width: 40px; height: 5px; border-radius: 3px; background: var(--stale); }
+.sheet-handle:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; border-radius: 6px; }
+.is-phone .listpane .listhead { order: 1; position: sticky; top: 30px; z-index: 3; background: var(--bg); touch-action: none; }
+.is-phone .listpane .banner { order: 2; margin-top: var(--space-sm); }
+.is-phone .listpane .cards { order: 3; overflow: visible; padding-bottom: var(--space-lg); }
+/* tapping a report shows its pin on the map, on phone and laptop */
+.card { cursor: pointer; }
+.card.card-focus { background: var(--surface); }
+.pin { transition: transform .2s; }
+.pin.pin-focus { transform: scale(1.35); z-index: 6; border-width: 3px; box-shadow: 0 2px 10px rgb(0 0 0 / 45%); }
+
+/* ==== v15: My activity on the phone gets a tab strip, the laptop keeps the stacked sections ==== */
+.is-phone .act-tabs { position: sticky; top: 0; z-index: 4; margin: 0; padding: 8px 12px; background: var(--bg); border-bottom: 1px solid var(--border); }
+.is-phone .act-tabs .tabs { margin: 0; }
+.is-phone .screen-activity .sect { padding-top: var(--space-md); }
+/* the tab already names the part, so the phone does not repeat it as a heading */
+.is-phone .screen-activity .sect-head h2 { display: none; }
+
+/* ==== v16: every My activity tab visible at once on the phone, nothing hidden off the edge ==== */
+.is-phone .act-tabs .tabs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; overflow: visible; }
+.is-phone .act-tabs .tab { grid-column: span 2; height: 44px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 6px; font-size: 15px; }
+.is-phone .act-tabs .tab:nth-child(n+4) { grid-column: span 3; }
+.is-phone .act-tabs .tab .n { margin-left: 0; }
+/* fix: on narrow phones (360px and less) "Official alerts" broke onto two lines; keep every label on one line */
+@media (max-width: 380px) { .bottom-nav button { flex: 1 1 auto; white-space: nowrap; padding: 0 2px; } }
+
+/* ==== v17: My activity tabs on the phone as small tiles: icon, name, count ==== */
+.i-checkcircle { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1jaGVjay1jaXJjbGUiCiAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIxMDAlIgogIGhlaWdodD0iMTAwJSIKICB2aWV3Qm94PSIwIDAgMjQgMjQiCiAgZmlsbD0ibm9uZSIKICBzdHJva2U9ImN1cnJlbnRDb2xvciIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCiAgYXJpYS1oaWRkZW49InRydWUiCiAgZm9jdXNhYmxlPSJmYWxzZSIKPgogIDxwYXRoIGQ9Ik0yMS44MDEgMTBBMTAgMTAgMCAxIDEgMTcgMy4zMzUiIC8+CiAgPHBhdGggZD0ibTkgMTEgMyAzTDIyIDQiIC8+Cjwvc3ZnPgo=); } .i-circlex { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxMCIvPjxwYXRoIGQ9Im0xNSA5LTYgNiIvPjxwYXRoIGQ9Im05IDkgNiA2Ii8+PC9zdmc+Cg==); } .i-history { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMyAxMmE5IDkgMCAxIDAgOS05IDkuNzUgOS43NSAwIDAgMC02Ljc0IDIuNzRMMyA4Ii8+PHBhdGggZD0iTTMgM3Y1aDUiLz48cGF0aCBkPSJNMTIgN3Y1bDQgMiIvPjwvc3ZnPgo=); }
+.is-phone .act-tabs .tabs { padding: 6px; gap: 6px; }
+.is-phone .act-tabs .act-tab { position: relative; flex-direction: column; justify-content: center; gap: 4px; height: 68px; padding: 6px 4px; font-size: 14px;
+  color: var(--muted); border-radius: 8px; }
+.is-phone .act-tabs .act-tab .ico { width: 22px; height: 22px; }
+.is-phone .act-tabs .act-tab .t-label { line-height: 1.2; white-space: nowrap; }
+.is-phone .act-tabs .act-tab .t-count { position: absolute; top: 6px; right: 8px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 6px;
+  background: var(--border); color: var(--text); font-size: 12px; font-weight: 700; line-height: 20px; text-align: center; }
+.is-phone .act-tabs .act-tab[aria-selected="true"] { color: var(--text); font-weight: 600; }
+.is-phone .act-tabs .act-tab[aria-selected="true"] .t-count { background: var(--text); color: var(--bg); }
+
+/* ==== v18: My activity on the phone opens on one short list; each row opens its part ==== */
+.i-circleplus { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxMCIvPjxwYXRoIGQ9Ik04IDEyaDgiLz48cGF0aCBkPSJNMTIgOHY4Ii8+PC9zdmc+Cg==); } .i-chev { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJtOSAxOCA2LTYtNi02Ii8+PC9zdmc+Cg==); }
+.hub { margin: var(--space-md); border: 1px solid var(--border); border-radius: 12px; background: var(--bg); overflow: hidden; }
+.hub-row { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 72px; padding: 12px 12px 12px 14px; border: 0;
+  border-top: 1px solid var(--border); background: none; text-align: left; cursor: pointer; color: var(--text); }
+.hub-row:first-child { border-top: 0; }
+.hub-row:active { background: var(--surface); }
+.hub-row:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; }
+.hub-ico { width: 40px; height: 40px; border-radius: 10px; background: var(--surface); display: flex; align-items: center; justify-content: center; flex: none; }
+.hub-ico .ico { width: 22px; height: 22px; }
+.hub-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.hub-text b { font-size: 16px; font-weight: 600; }
+.hub-text small { font-size: 14px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hub-n { flex: none; font-size: 15px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.hub-new { flex: none; height: 24px; padding: 0 8px; border-radius: 6px; background: #C0392B; color: #FFFFFF; font-size: 13px; font-weight: 700; line-height: 24px; }
+.hub-row .i-chev { width: 18px; height: 18px; color: var(--muted); flex: none; }
+
+/* ==== v18: Report in the bottom bar drawn like the other items, only darker ==== */
+.bottom-nav .bn-report { color: var(--text); font-weight: 600; }
+.bottom-nav .bn-report .ico { width: 24px; height: 24px; }
+
+/* ==== Sketch 008: the report's own page (Phase 8), added to the approved layout ==== */
+/* The laptop notice strip shows on Nearby and Post a report only (03.4 D-29); the report page belongs to Nearby. */
+.is-laptop .app:not([data-screen="nearby"]):not([data-screen="report"]) > .notice { display: none; }
+.app[data-screen="report"] .screen-report { display: flex; }
+.is-laptop .screen-report { flex-direction: row; }
+.is-phone .screen-report { flex-direction: column; }
+.rp-map-slot { display: flex; min-height: 0; }
+.is-laptop .rp-map-slot { flex: 0 0 38%; border-right: 1px solid var(--border); }
+.is-phone .rp-map-slot { flex: 0 0 168px; }
+.rp-map-slot .map { flex: 1; height: auto !important; }
+.rp-scroll { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
+.rp-inner { padding: 16px 16px 32px; }
+.is-laptop .rp-inner { padding: 12px 32px 40px; }
+.rp-back { display: inline-flex; align-items: center; gap: 6px; height: 44px; margin: 0 0 8px -8px; padding: 0 12px 0 8px; border: 0; border-radius: 6px;
+  background: none; color: var(--text); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+.rp-back:hover { background: var(--surface); }
+.rp-head { display: flex; gap: 14px; align-items: flex-start; }
+.rp-head .dot { width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: none; }
+.rp-head .dot .ico { width: 24px; height: 24px; }
+.rp-head.critical .dot { background: var(--critical-bg); color: var(--critical); }
+.rp-head.medium .dot { background: var(--medium-bg); color: var(--medium); }
+.rp-head.low .dot { background: var(--low-bg); color: var(--low); }
+.rp-head.disputed .dot { background: var(--surface); color: var(--muted); }
+.rp-title { margin: 0; font-size: 20px; line-height: 1.3; font-weight: 600; }
+.rp-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 6px 0 0; font-size: 14px; color: var(--muted); }
+.rp-words { margin: 16px 0 0; font-size: 16px; line-height: 1.5; }
+.rp-trust { margin-top: 16px; }
+.tr-row { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; padding: 12px 14px; border-top: 1px solid var(--border); font-size: 15px; line-height: 1.45; }
+.tr-row:first-child { border-top: 0; }
+.tr-lbl { color: var(--muted); font-size: 14px; }
+.tr-val b { font-weight: 600; }
+.tr-val .warn { color: var(--critical); font-weight: 600; }
+.rp-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.vote { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 18px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--text); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+.vote .ico { width: 18px; height: 18px; }
+.vote[data-vote="confirm"][aria-pressed="true"] { background: var(--low-bg); color: var(--low); border-color: transparent; }
+.vote[data-vote="dispute"][aria-pressed="true"] { background: var(--critical-bg); color: var(--critical); border-color: transparent; }
+.is-phone .rp-actions .vote { flex: 1 1 0; padding: 0 10px; }
+.rp-resolved { display: flex; align-items: center; gap: 12px; min-height: 44px; font-size: 15px; font-weight: 600; }
+.rp-quiet { display: flex; flex-wrap: wrap; gap: 0 20px; margin-top: 4px; }
+.linkbtn { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0; border: 0; background: none; color: var(--muted);
+  font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.linkbtn .ico { width: 16px; height: 16px; }
+.linkbtn[disabled] { cursor: default; }
+.rp-resolved .linkbtn { color: var(--text); text-decoration: underline; }
+.rp-cols { display: grid; gap: 28px; margin-top: 28px; }
+.is-laptop .rp-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; align-items: start; }
+.rv-b .rp-side .rp-cols { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+.rp-sec h2 { margin: 0 0 12px; font-size: 18px; line-height: 1.3; }
+.rp-sec h2 .n { margin-left: 4px; color: var(--muted); font-weight: 400; }
+.tl { list-style: none; margin: 0; padding: 0; }
+.tl li { display: grid; grid-template-columns: 64px 16px minmax(0, 1fr); gap: 10px; padding-bottom: 16px; font-size: 15px; line-height: 1.45; }
+.tl li:last-child { padding-bottom: 0; }
+.tl-time { color: var(--muted); font-size: 14px; text-align: right; }
+.tl-mark { position: relative; }
+.tl-mark::before { content: ""; position: absolute; top: 6px; left: 3px; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+.tl-mark::after { content: ""; position: absolute; top: 20px; bottom: -18px; left: 7px; width: 2px; background: var(--border); }
+.tl li:last-child .tl-mark::after { display: none; }
+.tl-mark.good::before { background: var(--low); }
+.tl-mark.bad::before { background: var(--critical); }
+.cm { list-style: none; margin: 0; padding: 0; }
+.cm li { padding: 12px 14px; border-top: 1px solid var(--border); }
+.cm li:first-child { border-top: 0; }
+.cm-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.cm-meta b { color: var(--text); font-weight: 600; }
+.cm-tag { padding: 1px 6px; border-radius: 4px; background: var(--surface); color: var(--text); font-size: 12px; font-weight: 600; }
+.cm p { margin: 4px 0 0; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
+.cm-empty { padding: 14px; color: var(--muted); font-size: 15px; }
+.cm-form { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.cm-form label { font-size: 14px; font-weight: 600; }
+.cm-form textarea { width: 100%; min-height: 76px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text); font: inherit; font-size: 16px; line-height: 1.4; }
+.cm-foot { display: flex; align-items: center; gap: 12px; }
+.cm-count { flex: 1; font-size: 13px; color: var(--muted); }
+.card .openrep { display: none; width: 100%; height: 44px; margin-top: 10px; align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+.card .openrep .ico { width: 18px; height: 18px; }
+.card.card-focus .openrep { display: flex; }
+.rp-side { display: none; }
+.is-laptop.rv-b #sheet.showing-report { width: 520px; }
+.is-laptop.rv-b #sheet.showing-report > :not(.rp-side) { display: none; }
+.is-laptop.rv-b #sheet.showing-report > .rp-side { display: block; flex: 1; min-height: 0; overflow-y: auto; padding: 12px 24px 32px; }
+.share-dlg { width: min(440px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow-y: auto; background: var(--bg); border-radius: 12px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 20%); }
+.share-body { display: flex; flex-direction: column; gap: 16px; padding: 16px 24px 24px; }
+.is-phone .share-body { padding: 16px; }
+.share-card { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.sc-top { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--surface); }
+.sc-top .dot { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--bg); }
+.sc-top .dot .ico { width: 18px; height: 18px; }
+.sc-brand { font-size: 15px; font-weight: 700; }
+.sc-body { padding: 12px 14px; }
+.sc-title { font-size: 15px; font-weight: 600; line-height: 1.35; }
+.sc-line { margin-top: 4px; font-size: 14px; color: var(--muted); }
+.sc-url { margin-top: 8px; font-size: 13px; color: var(--muted); }
+.share-actions { display: flex; gap: 8px; }
+.share-actions > button { flex: 1 1 0; height: 44px; justify-content: center; }
+.mock-note .rv-pick { display: inline-flex; gap: var(--space-sm); align-items: center; }
+.is-phone #share-modal { align-items: flex-end; }
+.is-phone #share-modal .share-dlg { width: 100%; max-height: 90%; border-radius: 12px 12px 0 0; }
+.i-traffic { --i: url(data:image/svg+xml;base64,PCEtLSBAbGljZW5zZSBsdWNpZGUtc3RhdGljIHYxLjQxLjAgLSBJU0MgLS0+CjxzdmcKICBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1jYXItZnJvbnQiCiAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIxMDAlIgogIGhlaWdodD0iMTAwJSIKICB2aWV3Qm94PSIwIDAgMjQgMjQiCiAgZmlsbD0ibm9uZSIKICBzdHJva2U9ImN1cnJlbnRDb2xvciIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCiAgYXJpYS1oaWRkZW49InRydWUiCiAgZm9jdXNhYmxlPSJmYWxzZSIKPgogIDxwYXRoIGQ9Im0yMSA4LTIgMi0xLjUtMy43QTIgMiAwIDAgMCAxNS42NDYgNUg4LjRhMiAyIDAgMCAwLTEuOTAzIDEuMjU3TDUgMTAgMyA4IiAvPgogIDxwYXRoIGQ9Ik03IDE0aC4wMSIgLz4KICA8cGF0aCBkPSJNMTcgMTRoLjAxIiAvPgogIDxyZWN0IHdpZHRoPSIxOCIgaGVpZ2h0PSI4IiB4PSIzIiB5PSIxMCIgcng9IjIiIC8+CiAgPHBhdGggZD0iTTUgMTh2MiIgLz4KICA8cGF0aCBkPSJNMTkgMTh2MiIgLz4KPC9zdmc+Cg==); }
+.i-share { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxjaXJjbGUgY3g9IjE4IiBjeT0iNSIgcj0iMyIvPjxjaXJjbGUgY3g9IjYiIGN5PSIxMiIgcj0iMyIvPjxjaXJjbGUgY3g9IjE4IiBjeT0iMTkiIHI9IjMiLz48bGluZSB4MT0iOC41OSIgeDI9IjE1LjQyIiB5MT0iMTMuNTEiIHkyPSIxNy40OSIvPjxsaW5lIHgxPSIxNS40MSIgeDI9IjguNTkiIHkxPSI2LjUxIiB5Mj0iMTAuNDkiLz48L3N2Zz4=); }
+.i-flag { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik00IDE1czEtMSA0LTEgNSAyIDggMiA0LTEgNC0xVjNzLTEgMS00IDEtNS0yLTgtMi00IDEtNCAxeiIvPjxsaW5lIHgxPSI0IiB4Mj0iNCIgeTE9IjIyIiB5Mj0iMTUiLz48L3N2Zz4=); }
+.i-belloff { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik04LjcgM0E2IDYgMCAwIDEgMTggOGEyMS4zIDIxLjMgMCAwIDAgLjYgNSIvPjxwYXRoIGQ9Ik0xNyAxN0gzczMtMiAzLTlhNC42NyA0LjY3IDAgMCAxIC4zLTEuNyIvPjxwYXRoIGQ9Ik0xMC4zIDIxYTEuOTQgMS45NCAwIDAgMCAzLjQgMCIvPjxwYXRoIGQ9Im0yIDIgMjAgMjAiLz48L3N2Zz4=); }
+.i-comment { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0yMSAxNWEyIDIgMCAwIDEtMiAySDdsLTQgNFY1YTIgMiAwIDAgMSAyLTJoMTRhMiAyIDAgMCAxIDIgMnoiLz48L3N2Zz4=); }
+.i-link { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0xMCAxM2E1IDUgMCAwIDAgNy41NC41NGwzLTNhNSA1IDAgMCAwLTcuMDctNy4wN2wtMS43MiAxLjcxIi8+PHBhdGggZD0iTTE0IDExYTUgNSAwIDAgMC03LjU0LS41NGwtMyAzYTUgNSAwIDAgMCA3LjA3IDcuMDdsMS43MS0xLjcxIi8+PC9zdmc+); }
+.i-right { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Im05IDE4IDYtNi02LTYiLz48L3N2Zz4=); }
+</style>
+</head>
+<body>
+<div class="mock-note" id="mock-note">
+  <span>Mockup with sample reports (Vijayawada floods). Tap a report, then Open report.</span>
+  <a href="?view=laptop" data-view="laptop">Laptop view</a>
+  <a href="?view=phone" data-view="phone">Phone view</a>
+  <span class="rv-pick laptop-only">Report page on the laptop: <a href="?view=laptop&rp=a" data-rv="a">A, its own page</a> <a href="?view=laptop&rp=b" data-rv="b">B, beside the map</a></span>
+  <a href="#" id="replay-welcome">Show the first time screens</a>
+</div>
+
+<div class="app" id="app" data-screen="nearby">
+  <aside class="notice laptop-only" role="note"><span class="ico i-alert"></span><span class="notice-text"><b>Unofficial, not a government service.</b><span class="sub"> Pinalert cannot send help, it shows what people near you are seeing. Reports can sometimes be wrong. In danger, call <b class="n112">112</b>.</span></span><a class="notice-link" href="#">Read the disclaimer</a></aside>
+
+  <!-- Laptop top bar: always on screen -->
+  <header class="topbar laptop-only">
+    <span class="wordmark">Pinalert</span>
+    <nav aria-label="Main">
+      <button class="navlink" data-go="nearby" aria-current="page">Nearby</button>
+      <button class="navlink" data-go="alerts">Official alerts</button>
+      <button class="navlink" data-go="activity">My activity</button>
+    </nav>
+    <span class="spacer"></span>
+    <button class="postbtn" data-open="report"><span class="ico i-plus"></span>Post a report</button>
+    <span class="search" style="width:260px"><span class="ico i-search"></span>Search a place</span>
+    <button class="iconbtn" data-pop="bell" aria-label="Updates, 3 new"><span class="ico i-bell"></span><span class="badge">3</span></button>
+    <button class="iconbtn" id="theme-btn" aria-label="Light or dark"><span class="ico i-moon"></span></button>
+    <button class="iconbtn" data-pop="person" aria-label="Account menu"><span class="ico i-user"></span></button>
+  </header>
+
+  <!-- Phone top bar for pages other than Nearby -->
+  <header class="topbar phone-only" id="phone-topbar" hidden>
+    <button class="iconbtn backbtn" id="settings-back" aria-label="Back" hidden><span class="ico i-back"></span></button>
+    <span class="screen-title" id="phone-title">Official alerts</span>
+    <span class="spacer"></span>
+    <button class="iconbtn" data-pop="bell" aria-label="Updates, 3 new"><span class="ico i-bell"></span><span class="badge">3</span></button>
+    <button class="iconbtn" data-go="settings" aria-label="Settings"><span class="ico i-gear"></span></button>
+  </header>
+
+  <!-- NEARBY -->
+  <section class="screen screen-nearby" aria-label="Nearby">
+      <header class="topbar near-top phone-only">
+        <span class="search"><span class="ico i-search"></span>Search a place</span>
+        <button class="iconbtn" data-pop="bell" aria-label="Updates, 3 new"><span class="ico i-bell"></span><span class="badge">3</span></button>
+        <button class="iconbtn" data-go="settings" aria-label="Settings"><span class="ico i-gear"></span></button>
+      </header>
+    <div class="map" aria-label="Map">
+      <svg viewBox="0 0 400 300" preserveAspectRatio="none" aria-hidden="true">
+        <rect width="400" height="300" fill="var(--land)"/>
+        <path d="M0 250 C 80 230, 140 270, 220 250 S 340 225, 400 240 L400 300 L0 300 Z" fill="var(--water)"/>
+        <path d="M60 0 C 90 60, 120 90, 150 140 S 190 210, 200 250" fill="none" stroke="var(--water)" stroke-width="9"/>
+        <rect x="250" y="40" width="70" height="45" rx="4" fill="var(--park)"/>
+        <g stroke="var(--road)" stroke-width="7" fill="none" stroke-linecap="round">
+          <path d="M0 120 L400 95"/><path d="M180 0 L240 300"/><path d="M300 0 L280 230"/><path d="M0 200 L240 170"/>
+        </g>
+      </svg>
+      <span class="maplabel" style="left:64%;top:26%">Benz Circle</span>
+      <span class="maplabel" style="left:16%;top:94%">Krishna River</span>
+      <span class="maplabel" style="left:5%;top:20%">Budameru</span>
+      <span class="maplabel" style="left:24%;top:53%">Singh Nagar</span>
+      <span class="maplabel" style="left:74%;top:52%">Patamata</span>
+      <span class="maplabel" style="left:80%;top:72%">Gunadala</span>
+      <span class="pin critical" style="left:62%;top:36%"><span class="ico i-flood"></span></span>
+      <span class="pin medium" style="left:30%;top:47%"><span class="ico i-traffic"></span></span>
+      <span class="pin low" style="left:78%;top:44%"><span class="ico i-shelter"></span></span>
+      <span class="pin medium" style="left:86%;top:64%"><span class="ico i-power"></span></span>
+      <span class="pin medium" style="left:42%;top:72%"><span class="ico i-road"></span></span>
+      <span class="pin disputed" style="left:20%;top:80%"><span class="ico i-flood"></span></span>
+
+    </div>
+
+    <div class="listpane" id="sheet">
+      <div class="sheet-grab phone-only" id="sheet-grab"><button class="sheet-handle" id="sheet-handle" aria-label="Show more of the list" aria-expanded="false"><span></span></button></div>
+      <button class="banner" data-go="alerts">
+        <span class="ico i-storm"></span>
+        <span><b>Official alert: heavy rain, Krishna district</b><span>IMD, until 9 pm today. Tap to read.</span></span>
+      </button>
+      <div class="listhead">
+        <span class="count" id="near-count">6 reports, 5 km</span>
+        <button class="showbtn" data-pop="show" aria-haspopup="menu"><span id="show-label">Show: All</span><span class="ico i-down"></span></button>
+      </div>
+      <div class="cards scroll" id="near-cards"></div>
+      <div class="rp-side" id="rp-side"></div>
+    </div>
+  </section>
+
+  <!-- OFFICIAL ALERTS -->
+  <section class="screen screen-alerts">
+    <div class="page scroll">
+      <div class="pagehead">
+        <h1>Official alerts</h1>
+        <p>Warnings from NDMA, IMD and CWC for your area. Last checked 4 minutes ago.</p>
+      </div>
+      <div class="sect">
+        <div class="sect-head">
+          <h2>In force now <span class="n">3</span></h2>
+          <p>Krishna and NTR districts. Expired alerts drop off on their own.</p>
+        </div>
+        <div class="box">
+          <div class="colhead alertcols laptop-only"><span>Level</span><span>Alert</span><span>Issued by</span><span>Issued</span><span>Until</span></div>
+          <article class="arow severe">
+            <span class="c-lvl"><span class="chip critical">Severe</span></span>
+            <div class="c-main"><div class="t">Heavy rainfall warning, Krishna district</div><div class="d">Very heavy rain likely in isolated places. Avoid low lying areas near the Budameru.</div></div>
+            <span class="c-who">India Meteorological Department</span>
+            <span class="c-when">6:10 am</span>
+            <span class="c-until">9:00 pm today</span>
+          </article>
+          <article class="arow">
+            <span class="c-lvl"><span class="chip medium">Moderate</span></span>
+            <div class="c-main"><div class="t">Flood watch, Krishna River at Prakasam Barrage</div><div class="d">River level rising, expected to stay above the warning level tonight.</div></div>
+            <span class="c-who">Central Water Commission</span>
+            <span class="c-when">5:30 am</span>
+            <span class="c-until">6:00 am tomorrow</span>
+          </article>
+          <article class="arow">
+            <span class="c-lvl"><span class="chip medium">Moderate</span></span>
+            <div class="c-main"><div class="t">Thunderstorm and lightning, NTR district</div><div class="d">Stay indoors during thunderstorms.</div></div>
+            <span class="c-who">NDMA SACHET</span>
+            <span class="c-when">7:00 am</span>
+            <span class="c-until">1:00 pm today</span>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MY ACTIVITY -->
+  <section class="screen screen-activity">
+    <div class="page scroll">
+      <div class="pagehead">
+        <h1>My activity</h1>
+      </div>
+      <div id="act-sections"></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="screen screen-settings">
+    <div class="page scroll">
+      <div class="pagehead laptop-only"><h1>Settings</h1></div>
+      <div class="sect">
+        <div class="sect-head"><h2>About you</h2><p>Your name and home area. Shown only on your public profile.</p></div>
+        <div class="box">
+          <div class="row link"><span class="lbl">Name<small>Shown only if you let others follow you</small></span><span class="val">Sample Name</span></div>
+          <div class="row link"><span class="lbl">Home area<small>Used for alerts, never your exact spot</small></span><span class="val">Patamata</span></div>
+          <div class="row link phone-only"><span class="lbl">View my profile<small>What other people see</small></span></div>
+        </div>
+      </div>
+      <div class="sect">
+        <div class="sect-head"><h2>Phone notifications</h2><p>What makes your phone buzz when Pinalert is closed.</p></div>
+        <div class="box">
+          <div class="row"><span class="lbl">Phone notifications on this device<small>Buzz even when Pinalert is closed</small></span><input type="checkbox" checked aria-label="Phone notifications"></div>
+          <div class="row"><span class="lbl">Critical reports near my home area</span><input type="checkbox" checked aria-label="Critical reports"></div>
+          <div class="row"><span class="lbl">Severe official alerts for my area<small>Cyclone, very heavy rain, river flood</small></span><input type="checkbox" checked aria-label="Official alerts"></div>
+          <div class="row"><span class="lbl">Changes to reports I posted or voted on</span><input type="checkbox" aria-label="Changes"></div>
+          <div class="row"><span class="lbl">A Reliable reporter posts near me</span><input type="checkbox" aria-label="Reliable reporter"></div>
+          <div class="row"><span class="lbl">Someone I follow posts</span><input type="checkbox" aria-label="Follows"></div>
+          <div class="row"><span class="lbl">How far from my home area</span>
+            <select aria-label="Distance"><option>1 km</option><option selected>2 km</option><option>5 km</option><option>10 km</option></select></div>
+        </div>
+      </div>
+      <div class="sect">
+        <div class="sect-head"><h2>People and reports</h2><p>Your public profile and the lists that go with it.</p></div>
+        <div class="box">
+          <div class="row"><span class="lbl">Let others follow me<small>Turns on your public profile</small></span><input type="checkbox" aria-label="Let others follow me"></div>
+          <div class="row link"><span class="lbl">Following</span><span class="val">3</span></div>
+          <div class="row link"><span class="lbl">Followers</span><span class="val">0</span></div>
+          <div class="row link"><span class="lbl">Muted reports</span><span class="val">1</span></div>
+          <div class="row link"><span class="lbl">Blocked people</span><span class="val">0</span></div>
+        </div>
+      </div>
+      <div class="sect">
+        <div class="sect-head"><h2>About Pinalert</h2><p>The rules, how your data is used, and a lighter version for weak networks.</p></div>
+        <div class="box">
+          <div class="row link" data-reader><span class="lbl">Disclaimer<small>Unofficial service, what it can and cannot promise</small></span></div>
+          <div class="row link" data-reader><span class="lbl">Policy<small>Privacy, data kept, reporting rules</small></span></div>
+          <div class="row link"><span class="lbl">Low data view<small>Text only, no map</small></span></div>
+        </div>
+      </div>
+      <div class="sect">
+        <div class="sect-head"><h2>Account</h2><p>Sign out, or remove your account and its data.</p></div>
+        <div class="box">
+          <div class="row link phone-only"><span class="lbl">Log out</span></div>
+          <div class="row link"><span class="lbl">Log out of all devices</span></div>
+          <div class="row link danger"><span class="lbl">Delete my account</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- REPORT PAGE (sketch 008, Phase 8): opened from Open report on a tapped card -->
+  <section class="screen screen-report" aria-label="Report">
+    <div class="rp-map-slot" id="rp-map-slot"></div>
+    <div class="rp-scroll" id="rp-scroll"><div class="rp-inner" id="rp-page"></div></div>
+  </section>
+
+  <nav class="bottom-nav phone-only" aria-label="Main">
+    <button data-go="nearby" aria-current="page"><span class="ico i-pin"></span>Nearby</button>
+    <button data-go="alerts"><span class="ico i-mega"></span>Official alerts</button>
+    <button data-go="activity"><span class="ico i-user"></span>My activity</button>
+    <button class="bn-report" data-open="report"><span class="ico i-circleplus"></span>Report</button>
+  </nav>
+
+  <!-- FIRST TIME: welcome, terms, location, about you, alerts -->
+  <div class="onb-back" id="onb" hidden>
+    <div class="onb">
+      <aside class="onb-side laptop-only">
+        <span class="wordmark">Pinalert</span>
+        <p class="onb-tag">What people near you are seeing, checked by people near you.</p>
+        <ol class="onb-steps" id="onb-steps">
+          <li>Welcome</li><li>Disclaimer and policy</li><li>Your location</li><li>About you</li><li>Alerts</li>
+        </ol>
+      </aside>
+      <div class="onb-main">
+        <div class="onb-progress phone-only"><span id="onb-bar"></span></div>
+        <p class="onb-count" id="onb-count">Step 1 of 5</p>
+
+        <section class="onb-step" data-step="1">
+          <h2>Welcome to Pinalert</h2>
+          <ul class="onb-points">
+            <li><span class="ico i-pin"></span><span><b>Know what is happening around you.</b> People nearby post short reports: a flooded road, an open shelter, a power cut, a jammed road.</span></li>
+            <li><span class="ico i-check"></span><span><b>See how far to trust each report.</b> Others nearby confirm or dispute it. The more different places confirm a report, the more likely it is true, but a report can still be wrong.</span></li>
+            <li class="warn"><span class="ico i-alert"></span><span><b>Pinalert cannot send help.</b> It tells you a situation is happening near you. If someone is in danger, call 112 first.</span></li>
+          </ul>
+          <div class="onb-actions"><button class="postbtn" data-onb="next">Continue</button></div>
+        </section>
+
+        <section class="onb-step onb-terms" data-step="2" hidden>
+          <h2>Disclaimer and policy</h2>
+          <p class="onb-lead">Please read this before you use Pinalert. Tap Agree to continue.</p>
+          <div class="terms-box" tabindex="0" aria-label="Disclaimer and policy text"></div>
+          <div class="onb-actions terms-actions"><button class="btn-quiet" data-terms="disagree">Disagree</button><button class="postbtn" data-onb="next">Agree</button></div>
+          <p class="terms-refuse" id="terms-refuse" hidden>You need to agree to use Pinalert. You can still look around in the Demo without agreeing.</p>
+        </section>
+
+        <section class="onb-step" data-step="3" hidden>
+          <span class="onb-hero"><span class="ico i-pin"></span></span>
+          <h2>Show what is happening near you</h2>
+          <p class="onb-lead">Pinalert uses your location to show reports around you and to place the pin when you post. Your exact location is never shown to anyone and never stored.</p>
+          <div class="onb-actions"><button class="postbtn" data-onb="next">Allow location</button><button class="btn-quiet" data-onb="next">Not now, I will search a place</button></div>
+        </section>
+
+        <section class="onb-step" data-step="4" hidden>
+          <h2>About you</h2>
+          <p class="onb-lead">Both are optional. They show only if you later let others follow you.</p>
+          <label class="field"><span>Your name</span><input type="text" placeholder="For example: Ravi Kumar"></label>
+          <label class="field"><span>Home area</span><input type="text" value="Patamata, Vijayawada"><small>Filled in from your location. A town or area, never your street. Used for alerts.</small></label>
+          <div class="onb-actions"><button class="postbtn" data-onb="next">Continue</button><button class="btn-quiet" data-onb="next">Skip</button></div>
+        </section>
+
+        <section class="onb-step" data-step="5" hidden>
+          <span class="onb-hero"><span class="ico i-bell"></span></span>
+          <h2>Get alerts when it matters</h2>
+          <p class="onb-lead">Your phone buzzes only for:</p>
+          <ul class="onb-list">
+            <li>Critical reports near your home area</li>
+            <li>Severe official alerts for your area, like a cyclone warning</li>
+          </ul>
+          <p class="onb-note phone-only">On iPhone, add Pinalert to your home screen first: tap Share, then Add to Home Screen.</p>
+          <p class="onb-lead">You can change this any time in Settings.</p>
+          <div class="onb-actions"><button class="postbtn" data-onb="done">Allow alerts</button><button class="btn-quiet" data-onb="done">Not now</button></div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- DISCLAIMER AND POLICY, opened from any Disclaimer or Policy link -->
+  <div class="onb-back" id="reader" hidden>
+    <div class="reader" role="dialog" aria-modal="true" aria-labelledby="reader-title">
+      <header class="dlg-head"><div><h2 id="reader-title">Disclaimer and policy</h2><p>Last updated 16 October 2026</p></div>
+        <button class="iconbtn" data-reader-close aria-label="Close"><span class="ico i-x"></span></button></header>
+      <div class="terms-box" tabindex="0"></div>
+    </div>
+  </div>
+
+  <template id="terms-text">
+    <h3>Disclaimer</h3>
+    <p><b>Pinalert is unofficial.</b> It is not a government service and is not connected to any government agency or emergency service.</p>
+    <p><b>Pinalert cannot send help.</b> It shows you what people near you are reporting, so you know a situation is happening. If someone is in danger, call 112 first, then post here if you want to.</p>
+    <div class="terms-call"><a class="nm-call" href="tel:112"><span class="ico i-phone"></span>Call 112</a><span>India's emergency number for police, fire and ambulance. For floods and cyclones the state disaster helpline is often 1070 and the district control room 1077. Check your state's website, numbers can change.</span></div>
+    <h4>Reports can be wrong</h4>
+    <p>A report is what someone near the place says they saw. Confirmations from different places nearby make it more likely to be right, not certain. Serious reports show at once, before anyone confirms them. Do not make safety decisions from Pinalert alone.</p>
+    <h4>Reports expire</h4>
+    <p>After a fixed time a report ends and leaves the Nearby list, whether or not anyone confirms it. Ended reports stay under My activity, Ended nearby, for 7 days.</p>
+    <h3 id="policy-start">Policy</h3>
+    <h4>What you can post</h4>
+    <p>Reports about emergencies and conditions you can see near you. Hateful, harassing or sexual text is not allowed, and neither are reports made to mislead. Urgent wording, addresses and phone numbers are fine in a genuine report.</p>
+    <h4>How reports are checked</h4>
+    <p>The text of a report is checked automatically by a moderation service. Only the text is sent, never your account, your network address or your location. Moderators can remove reports that break the rules. A flag never hides a report by itself.</p>
+    <h4>Your data</h4>
+    <p>Pinalert keeps your reports, votes and sign in records. Your exact location is never stored; your home area is a town or area you choose. There are no advertising or tracking cookies. You can delete your account in Settings, or ask for a report to be removed.</p>
+    <h4>Limits</h4>
+    <p>Each account can post, vote and flag only so fast, to stop spam. Pinalert says how long to wait and keeps what you typed.</p>
+    <h4>Terms</h4>
+    <p>Using Pinalert means you accept these rules. Pinalert is provided as it is, with no promise of accuracy or that it is always available.</p>
+  </template>
+
+  <!-- POST A REPORT -->
+  <div class="modal-back" id="report-modal" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
+      <header class="dlg-head">
+        <div>
+          <h2 id="dlg-title">Post a report</h2>
+          <p>Say what is happening and where.</p>
+        </div>
+        <button class="iconbtn" data-close-modal aria-label="Close"><span class="ico i-x"></span></button>
+      </header>
+      <div class="dlg-body">
+        <div class="dlg-map">
+          <span class="search"><span class="ico i-search"></span>Search an address or a landmark</span>
+          <div class="map dlg-mapbox" aria-label="Map, drag the pin to the spot">
+            <svg viewBox="0 0 400 300" preserveAspectRatio="none" aria-hidden="true">
+              <rect width="400" height="300" fill="var(--land)"/>
+              <path d="M0 250 C 80 230, 140 270, 220 250 S 340 225, 400 240 L400 300 L0 300 Z" fill="var(--water)"/>
+              <path d="M60 0 C 90 60, 120 90, 150 140 S 190 210, 200 250" fill="none" stroke="var(--water)" stroke-width="9"/>
+              <g stroke="var(--road)" stroke-width="7" fill="none" stroke-linecap="round">
+                <path d="M0 120 L400 95"/><path d="M180 0 L240 300"/><path d="M300 0 L280 230"/><path d="M0 200 L240 170"/>
+              </g>
+            </svg>
+            <span class="maplabel" style="left:58%;top:30%">Benz Circle</span>
+            <span class="maplabel" style="left:24%;top:53%">Singh Nagar</span>
+            <span class="bigpin" style="left:55%;top:42%"><span class="ico i-pin"></span></span>
+          </div>
+          <p class="loc"><b>Near Benz Circle, Vijayawada.</b> Drag the pin or tap the map to move it.</p>
+        </div>
+        <div class="dlg-form">
+          <fieldset>
+            <legend>What is it?</legend>
+            <div class="tiles">
+              <button type="button" class="tile" aria-pressed="true" data-cat="flood"><span class="ico i-flood"></span>Flood</button>
+              <button type="button" class="tile" aria-pressed="false" data-cat="traffic"><span class="ico i-traffic"></span>Traffic</button>
+              <button type="button" class="tile" aria-pressed="false" data-cat="shelter"><span class="ico i-shelter"></span>Shelter open</button>
+              <button type="button" class="tile" aria-pressed="false" data-cat="power"><span class="ico i-power"></span>Power out</button>
+              <button type="button" class="tile" aria-pressed="false" data-cat="road"><span class="ico i-road"></span>Road blocked</button>
+              <button type="button" class="tile" aria-pressed="false" data-cat="fire"><span class="ico i-fire"></span>Fire</button>
+              <button type="button" class="tile" aria-pressed="false" data-cat="storm"><span class="ico i-storm"></span>Storm</button>
+              <button type="button" class="tile" aria-pressed="false" data-cat="other"><span class="ico i-other"></span>Other</button>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>How serious?</legend>
+            <div class="seg">
+              <button type="button" aria-pressed="false" data-sev="low"><b>Low</b></button>
+              <button type="button" aria-pressed="true" data-sev="medium"><b>Medium</b></button>
+              <button type="button" aria-pressed="false" data-sev="critical"><b>Critical</b></button>
+            </div>
+          </fieldset>
+          <a class="callbox callfirst" id="callfirst" href="tel:112" hidden><span class="cb-ico"><span class="ico i-phone"></span></span><span class="cb-text"><b>Someone in danger right now?</b><small>Call 112 first, then post here.</small></span><span class="cb-go">Call 112</span></a>
+          <fieldset id="whats" hidden>
+            <legend>What is happening? <small>Phone alerts show this, never your own words</small></legend>
+            <div class="picks">
+              <button type="button" aria-pressed="true">Water rising</button>
+              <button type="button" aria-pressed="false">People trapped</button>
+              <button type="button" aria-pressed="false">Fire</button>
+              <button type="button" aria-pressed="false">Building collapsed</button>
+              <button type="button" aria-pressed="false">Landslide</button>
+              <button type="button" aria-pressed="false">Medical emergency</button>
+              <button type="button" aria-pressed="false">Other</button>
+            </div>
+          </fieldset>
+          <label class="desc">
+            <span class="legend">Describe it</span>
+            <textarea rows="4" maxlength="280" placeholder="For example: water above knee level near the signal, cars stuck."></textarea>
+            <small>Short and exact helps people confirm it. Up to 280 letters.</small>
+          </label>
+        </div>
+      </div>
+      <footer class="dlg-foot">
+        <span class="hint">It shows as "Not confirmed yet" until people nearby confirm it.</span>
+        <button class="postbtn" data-close-modal>Post report</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- SHARE, opened from Share on a report -->
+  <div class="modal-back" id="share-modal" hidden>
+    <div class="share-dlg" role="dialog" aria-modal="true" aria-labelledby="share-title">
+      <header class="dlg-head"><div><h2 id="share-title">Share this report</h2></div>
+        <button class="iconbtn" data-close-share aria-label="Close"><span class="ico i-x"></span></button></header>
+      <div class="share-body">
+        <div class="share-card" aria-label="What people see">
+          <div class="sc-top"><span class="dot" id="sc-dot"><span class="ico i-flood"></span></span><span class="sc-brand">Pinalert</span></div>
+          <div class="sc-body">
+            <div class="sc-title" id="sc-title"></div>
+            <div class="sc-line">Open to see if this is still true right now.</div>
+            <div class="sc-url" id="sc-url"></div>
+          </div>
+        </div>
+        <div class="share-actions">
+          <button class="postbtn" data-share-wa>WhatsApp</button>
+          <button class="btn-quiet" data-copy><span class="ico i-link"></span> Copy link</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pop overs -->
+  <div class="menu" id="pop-show" role="menu" hidden>
+    <button role="menuitemradio" aria-checked="true" data-show="all"><span class="ico i-check tick"></span>All</button>
+    <button role="menuitemradio" aria-checked="false" data-show="confirmed"><span class="ico i-check tick"></span>Confirmed</button>
+    <button role="menuitemradio" aria-checked="false" data-show="disputed"><span class="ico i-check tick"></span>Disputed</button>
+    <span class="hint">In All, disputed reports sit at the bottom.</span>
+    <label class="menu-check"><input type="checkbox" id="only-reliable"><span>Only Reliable reporters<small>Critical reports always stay visible</small></span></label>
+  </div>
+  <div class="menu" id="pop-postshow" role="menu" hidden>
+    <button role="menuitemradio" aria-checked="true" data-pshow="all"><span class="ico i-check tick"></span>All</button>
+    <button role="menuitemradio" aria-checked="false" data-pshow="happening"><span class="ico i-check tick"></span>Ongoing</button>
+    <button role="menuitemradio" aria-checked="false" data-pshow="resolved"><span class="ico i-check tick"></span>Resolved</button>
+  </div>
+  <div class="menu" id="pop-person" role="menu" hidden>
+    <a href="#" role="menuitem" data-go="settings-profile"><span class="ico i-user"></span>My profile</a>
+    <a href="#" role="menuitem" data-go="settings"><span class="ico i-gear"></span>Settings</a>
+    <a href="#" role="menuitem"><span class="ico i-out"></span>Log out</a>
+  </div>
+  <div class="menu bellpop" id="pop-bell" role="dialog" aria-label="Updates" hidden>
+    <header>Updates<button class="iconbtn" style="width:32px;height:32px;border:0" data-close aria-label="Close"><span class="ico i-x"></span></button></header>
+    <ol>
+      <li class="unread">Your report "Water above knee level, Eluru Road" is now confirmed by people nearby.<small>5 min ago</small></li>
+      <li class="unread">A Reliable reporter posted near you: traffic jam, Eluru Road. Not confirmed yet.<small>12 min ago</small></li>
+      <li class="unread">"Budameru bridge closed", which you confirmed, was marked resolved.<small>30 min ago</small></li>
+      <li>"Prakasam Barrage gates broken" is now disputed by people nearby.<small>1 hour ago</small></li>
+      <li>Your report "No power in Gunadala" ends in about 1 hour.<small>1 hour ago</small></li>
+    </ol>
+    <footer><button class="menu-all" data-go="activity" style="display:flex;width:100%;min-height:44px;align-items:center;justify-content:center;border:0;background:none;cursor:pointer;font-weight:600">See all updates</button></footer>
+  </div>
+</div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var params = new URLSearchParams(location.search);
+  var view = params.get('view');
+  var narrow = window.matchMedia('(max-width: 899px)').matches;
+  var phone = view === 'phone' || (!view && narrow);
+  root.classList.add(phone ? 'is-phone' : 'is-laptop');
+  if (phone && !narrow) root.classList.add('framed');
+  document.querySelectorAll('[data-view]').forEach(function (a) {
+    if ((a.dataset.view === 'phone') === phone) a.setAttribute('aria-current', 'page');
+  });
+
+  var reports = [
+    { sev: 'critical', icon: 'flood', title: 'Flooded road, Eluru Road near Benz Circle', desc: 'Water above knee level, cars stuck near the signal.', meta: '<b>Confirmed by 4 people nearby</b> · 12 min ago · 0.8 km', state: 'confirmed', chip: 'Critical' },
+    { sev: 'medium', icon: 'traffic', title: 'Traffic jam, Eluru Road towards Ramavarappadu', desc: 'Cars moving very slowly, people leaving the flooded lanes.', meta: '<b>Not confirmed yet</b> · 5 min ago · 2.1 km', state: 'new', chip: 'Medium' },
+    { sev: 'low', icon: 'shelter', title: 'Shelter open, ZP High School Patamata', desc: 'Open now, space for about 200 people.', meta: '<b>Confirmed by 6 people nearby</b> · 40 min ago · 1.4 km', state: 'confirmed', chip: 'Low' },
+    { sev: 'medium', icon: 'power', title: 'Power out, Gunadala', desc: 'No power since 6 am on the main road side.', meta: '<b>Confirmed by 2 people nearby</b> · 1 hour ago · 2.6 km', state: 'confirmed', chip: 'Medium' },
+    { sev: 'medium', icon: 'road', title: 'Road blocked, Budameru bridge', desc: 'Police have closed the bridge to traffic.', meta: '<b>Confirmed by 3 people nearby</b> · 2 hours ago · 1.9 km', state: 'confirmed', chip: 'Medium' },
+    { sev: 'disputed', icon: 'flood', title: 'Prakasam Barrage gates broken', desc: 'Forwarded message says the gates have failed.', meta: '<b>Disputed: may not be true</b> · 3 people nearby disputed it', state: 'disputed', chip: 'Disputed' }
+  ];
+  function card(r, tag) {
+    var chipClass = r.sev === 'disputed' ? 'grey' : r.sev;
+    return '<article class="card ' + r.sev + '">' +
+      '<span class="dot"><span class="ico i-' + r.icon + '"></span></span>' +
+      '<div class="body">' + (tag ? '<span class="tag">' + tag + '</span>' : '') +
+      '<div class="top"><span class="title">' + r.title + '</span><span class="chip ' + chipClass + '">' + r.chip + '</span></div>' +
+      '<div class="desc">' + r.desc + '</div><div class="meta">' + r.meta + '</div></div></article>';
+  }
+  var show = 'all';
+  function renderNear() {
+    var list = reports.filter(function (r) {
+      if (show === 'all') return true;
+      if (show === 'confirmed') return r.state === 'confirmed';
+      return r.state === 'disputed';
+    });
+    var holder = document.getElementById('near-cards');
+    holder.innerHTML = list.map(function (r) { return card(r); }).join('');
+    Array.prototype.forEach.call(holder.children, function (c, k) {
+      c.dataset.i = String(reports.indexOf(list[k])); c.tabIndex = 0;
+      c.querySelector('.body').insertAdjacentHTML('beforeend', '<button class="openrep" data-openrep="' + c.dataset.i + '">Open report<span class="ico i-right"></span></button>');
+    });
+    var label = { all: 'All', confirmed: 'Confirmed', disputed: 'Disputed' }[show];
+    var rel = document.getElementById('only-reliable');
+    document.getElementById('show-label').textContent = 'Show: ' + label + (rel && rel.checked ? ', Reliable only' : '');
+    document.getElementById('near-count').textContent = list.length + (list.length === 1 ? ' report' : ' reports') + ', 5 km';
+  }
+
+  var sections = [
+    { title: 'Posted by you', note: 'Reports you posted. Open one to resolve or reopen it.', rows: [
+      { sev: 'critical', icon: 'flood', t: 'Flooded road, Eluru Road near Benz Circle', d: 'Water above knee level, cars stuck near the signal.', st: ['Ongoing', 'critical'], what: '<b>Confirmed by 4 people nearby</b>', when: 'Posted 12 min ago', dist: '0.8 km' },
+      { sev: 'low', icon: 'power', t: 'Power out, Gunadala', d: 'No power since 6 am on the main road side.', st: ['Resolved', 'low'], what: 'You marked it resolved at 11:20 am', when: 'Posted 3 hours ago', dist: '2.6 km' }
+    ] },
+    { title: 'You confirmed', note: 'Reports you said are true.', rows: [
+      { sev: 'low', icon: 'shelter', t: 'Shelter open, ZP High School Patamata', d: 'Open now, space for about 200 people.', st: ['Ongoing', 'low'], what: '<b>Confirmed by 6 people nearby</b>', when: 'You confirmed 35 min ago', dist: '1.4 km' },
+      { sev: 'medium', icon: 'road', t: 'Road blocked, Budameru bridge', d: 'Police have closed the bridge to traffic.', st: ['Resolved', 'low'], what: 'Marked resolved by the reporter', when: 'You confirmed 2 hours ago', dist: '1.9 km' }
+    ] },
+    { title: 'You disputed', note: 'Reports you said are wrong.', rows: [
+      { sev: 'disputed', icon: 'flood', t: 'Prakasam Barrage gates broken', d: 'Forwarded message says the gates have failed.', st: ['Disputed', 'grey'], what: 'Hidden: 3 people nearby disputed it', when: 'You disputed 1 hour ago', dist: '3.2 km' }
+    ] },
+    { title: 'Ended nearby', note: 'Everyone’s reports near you that ended in the last 7 days.', rows: [
+      { sev: 'low', icon: 'road', t: 'Road cleared, MG Road', d: 'Water has gone down, traffic moving.', st: ['Resolved', 'low'], what: 'Resolved by the reporter', when: 'Yesterday, 6 pm', dist: '1.2 km' },
+      { sev: 'low', icon: 'power', t: 'Power back, Patamata', d: 'Power restored in the lanes behind the school.', st: ['Resolved', 'low'], what: 'Resolved by the reporter', when: 'Yesterday, 2 pm', dist: '0.4 km' },
+      { sev: 'disputed', icon: 'flood', t: 'Water entering houses, Ajit Singh Nagar', d: 'Water reached the ground floor on the canal side.', st: ['Expired', 'grey'], what: 'Faded out, nobody re confirmed it', when: '2 days ago', dist: '2.4 km' },
+      { sev: 'disputed', icon: 'shelter', t: 'Shelter full, Benz Circle community hall', d: 'No more space, people sent to Patamata.', st: ['Expired', 'grey'], what: 'Faded out, nobody re confirmed it', when: '3 days ago', dist: '0.9 km' }
+    ] }
+  ];
+  function lrow(r) {
+    return '<article class="lrow ' + r.sev + '">' +
+      '<span class="dot"><span class="ico i-' + r.icon + '"></span></span>' +
+      '<div class="c-main"><div class="t">' + r.t + '</div><div class="d">' + r.d + '</div></div>' +
+      '<span class="c-status"><span class="chip ' + r.st[1] + '">' + r.st[0] + '</span></span>' +
+      '<span class="c-what">' + r.what + '</span>' +
+      '<span class="c-when">' + r.when + '</span>' +
+      '<span class="c-dist">' + r.dist + '</span></article>';
+  }
+  var updates = [
+    { t: 'Your report "Water above knee level, Eluru Road" is now confirmed by people nearby.', when: '5 min ago', unread: true },
+    { t: 'A Reliable reporter posted near you: traffic jam, Eluru Road. Not confirmed yet.', when: '12 min ago', unread: true },
+    { t: '"Budameru bridge closed", which you confirmed, was marked resolved.', when: '30 min ago', unread: true },
+    { t: '"Prakasam Barrage gates broken" is now disputed by people nearby.', when: '1 hour ago' },
+    { t: 'Your report "No power in Gunadala" ends in about 1 hour.', when: '1 hour ago' }
+  ];
+  function updatesSection() {
+    return '<div class="sect" id="updates"><div class="sect-head"><h2>Updates <span class="n">' + updates.length + '</span></h2><p>Changes on reports you posted or voted on, newest first.</p></div>' +
+      '<div class="box">' + updates.map(function (u) {
+        return '<article class="urow' + (u.unread ? ' unread' : '') + '"><span class="u-dot" aria-hidden="true"></span><span class="u-text">' + u.t +
+          '</span><span class="u-when">' + u.when + '</span></article>';
+      }).join('') + '</div></div>';
+  }
+  function sectionHTML(s) {
+    return '<div class="sect"><div class="sect-head"><h2>' + s.title + ' <span class="n">' + s.rows.length + '</span></h2><p>' + s.note + '</p></div>' +
+      '<div class="box"><div class="colhead actcols laptop-only"><span></span><span>Report</span><span>Status</span><span>What happened</span><span>When</span><span>Distance</span></div>' +
+      s.rows.map(lrow).join('') + '</div></div>';
+  }
+  // The phone shows one part at a time under a tab strip; the laptop shows every part stacked. Same content on both.
+  // Phone: My activity opens on one short list (like Instagram's "Your activity" or the phone's own Settings);
+  // each row says what is inside and opens its part on its own screen, with Back. Laptop: every part stacked. Same content.
+  var actTab = null;
+  var ACT_KEYS = ['posted', 'confirmed', 'disputed', 'ended'], ACT_LABELS = ['Posted by you', 'You confirmed', 'You disputed', 'Ended nearby'];
+  var ACT_ICONS = { updates: 'i-bell', posted: 'i-circleplus', confirmed: 'i-checkcircle', disputed: 'i-circlex', ended: 'i-history' };
+  function hubRow(k, title, line, right) {
+    return '<button class="hub-row" data-acttab="' + k + '"><span class="hub-ico"><span class="ico ' + ACT_ICONS[k] + '"></span></span>' +
+      '<span class="hub-text"><b>' + title + '</b><small>' + line + '</small></span>' + right +
+      '<span class="ico i-chev" aria-hidden="true"></span></button>';
+  }
+  function renderAct() {
+    var el = document.getElementById('act-sections');
+    var phone = document.documentElement.classList.contains('is-phone');
+    var back = document.getElementById('settings-back'), title = document.getElementById('phone-title');
+    if (!phone) { el.innerHTML = updatesSection() + sections.map(sectionHTML).join(''); return; }
+    if (app.dataset.screen === 'activity') { back.hidden = !actTab; title.textContent = actTab ? (actTab === 'updates' ? 'Updates' : ACT_LABELS[ACT_KEYS.indexOf(actTab)]) : 'My activity'; }
+    if (actTab) {
+      el.innerHTML = actTab === 'updates' ? updatesSection() : sectionHTML(sections[ACT_KEYS.indexOf(actTab)]);
+      return;
+    }
+    var unread = updates.filter(function (u) { return u.unread; }).length;
+    var posted = sections[0].rows, ongoing = posted.filter(function (r) { return r.st[0] === 'Ongoing'; }).length;
+    el.innerHTML = '<div class="hub">' +
+      hubRow('updates', 'Updates', updates[0].t, unread ? '<span class="hub-new">' + unread + ' new</span>' : '<span class="hub-n">' + updates.length + '</span>') +
+      hubRow('posted', ACT_LABELS[0], ongoing + ' still happening, ' + (posted.length - ongoing) + ' resolved', '<span class="hub-n">' + posted.length + '</span>') +
+      hubRow('confirmed', ACT_LABELS[1], 'Latest: ' + sections[1].rows[0].t, '<span class="hub-n">' + sections[1].rows.length + '</span>') +
+      hubRow('disputed', ACT_LABELS[2], 'Latest: ' + sections[2].rows[0].t, '<span class="hub-n">' + sections[2].rows.length + '</span>') +
+      hubRow('ended', ACT_LABELS[3], 'Last 7 days, near your area', '<span class="hub-n">' + sections[3].rows.length + '</span>') +
+      '</div>';
+  }
+
+
+  var app = document.getElementById('app');
+  var titles = { alerts: 'Official alerts', activity: 'My activity', settings: 'Settings', report: 'Report' };
+  var last = 'nearby';
+  function go(to) {
+    if (to === 'settings-profile') to = 'settings';
+    if (to !== 'settings' && to !== 'report') last = to;
+    app.dataset.screen = to;
+    document.querySelectorAll('nav [data-go]').forEach(function (b) {
+      if (b.dataset.go === (to === 'report' ? 'nearby' : to)) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    var pt = document.getElementById('phone-topbar');
+    pt.hidden = to === 'nearby';
+    document.getElementById('phone-title').textContent = titles[to] || '';
+    document.getElementById('settings-back').hidden = to !== 'settings' && to !== 'report';
+    pt.querySelector('[data-go="settings"]').hidden = to === 'settings';
+    closePops();
+    if (to === 'activity') renderAct();
+  }
+  document.getElementById('settings-back').addEventListener('click', function () {
+    if (app.dataset.screen === 'activity' && actTab) { actTab = null; renderAct(); return; }
+    if (app.dataset.screen === 'report') { backFromReport(); return; }
+    go(last);
+  });
+
+  function closePops() { document.querySelectorAll('.menu').forEach(function (m) { m.hidden = true; }); }
+  function openPop(name, btn) {
+    var pop = document.getElementById('pop-' + name);
+    var was = !pop.hidden;
+    closePops();
+    if (was) return;
+    pop.hidden = false;
+    var a = app.getBoundingClientRect(), b = btn.getBoundingClientRect();
+    var w = pop.offsetWidth;
+    var left = Math.min(Math.max(b.right - a.left - w, 12), a.width - w - 12);
+    pop.style.left = left + 'px';
+    pop.style.top = (b.bottom - a.top + 6) + 'px';
+  }
+  app.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-pop],[data-go],[data-show],[data-pshow],[data-tab],[data-close]');
+    if (!t) { if (!e.target.closest('.menu')) closePops(); return; }
+    if (t.dataset.pop) { e.stopPropagation(); openPop(t.dataset.pop, t); return; }
+    if (t.dataset.go) { e.preventDefault(); go(t.dataset.go); return; }
+    if (t.dataset.show) {
+      show = t.dataset.show;
+      document.querySelectorAll('[data-show]').forEach(function (b) { b.setAttribute('aria-checked', String(b === t)); });
+      closePops(); renderNear(); return;
+    }
+    if (t.dataset.pshow) {
+      pshow = t.dataset.pshow;
+      document.querySelectorAll('[data-pshow]').forEach(function (b) { b.setAttribute('aria-checked', String(b === t)); });
+      closePops(); renderAct(); return;
+    }
+    if (t.dataset.tab) {
+      tab = t.dataset.tab;
+      document.querySelectorAll('[data-tab]').forEach(function (b) { b.setAttribute('aria-selected', String(b === t)); });
+      t.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      renderAct(); return;
+    }
+    if (t.hasAttribute('data-close')) closePops();
+  });
+  document.getElementById('theme-btn').addEventListener('click', function () {
+    var dark = root.dataset.theme === 'dark' || (!root.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+    root.dataset.theme = dark ? 'light' : 'dark';
+    this.querySelector('.ico').className = 'ico ' + (dark ? 'i-moon' : 'i-sun');
+  });
+  renderNear();
+  renderAct();
+  var modal = document.getElementById('report-modal');
+  var cat = 'flood', sev = 'medium';
+  function syncWhats() {
+    var on = sev === 'critical';
+    document.getElementById('whats').hidden = !on;
+    document.getElementById('callfirst').hidden = !on;
+  }
+  app.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-open],[data-close-modal],.tile,.seg button,.picks button');
+    if (!t) { if (e.target === modal) modal.hidden = true; return; }
+    if (t.hasAttribute('data-open')) { closePops(); modal.hidden = false; return; }
+    if (t.hasAttribute('data-close-modal')) { modal.hidden = true; return; }
+    var group = t.parentElement;
+    group.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(b === t)); });
+    if (t.dataset.cat) cat = t.dataset.cat;
+    if (t.dataset.sev) sev = t.dataset.sev;
+    syncWhats();
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { modal.hidden = true; closePops(); } });
+  var onb = document.getElementById('onb'), reader = document.getElementById('reader'), step = 1, STEPS = 5;
+  var termsHTML = document.getElementById('terms-text').innerHTML;
+  function openReader(which) {
+    reader.hidden = false;
+    document.getElementById('reader-title').textContent = which === 'policy' ? 'Policy' : 'Disclaimer';
+    var box = reader.querySelector('.terms-box');
+    var target = which === 'policy' ? box.querySelector('#policy-start') : null;
+    box.scrollTop = target ? target.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - 12 : 0;
+  }
+  document.querySelectorAll('.terms-box').forEach(function (b) { b.innerHTML = termsHTML; });
+  function showStep(n) {
+    step = n;
+    onb.querySelectorAll('.onb-step').forEach(function (s) { s.hidden = Number(s.dataset.step) !== n; });
+    document.getElementById('onb-count').textContent = 'Step ' + n + ' of ' + STEPS;
+    document.getElementById('onb-bar').style.width = (n * 100 / STEPS) + '%';
+    document.getElementById('terms-refuse').hidden = true;
+    document.querySelectorAll('#onb-steps li').forEach(function (li, i) {
+      li.className = i + 1 < n ? 'done' : (i + 1 === n ? 'on' : '');
+    });
+  }
+  onb.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-onb],[data-terms]');
+    if (!b) return;
+    if (b.dataset.terms === 'disagree') { document.getElementById('terms-refuse').hidden = false; return; }
+    if (b.dataset.onb === 'next') showStep(step + 1); else onb.hidden = true;
+  });
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest('a, [data-reader]');
+    if (!a) return;
+    if (a.hasAttribute('data-reader-close')) return;
+    var txt = a.textContent.trim();
+    var isLegal = a.hasAttribute('data-reader') || (a.getAttribute('href') === '#' && /Disclaimer|Policy|disclaimer/.test(txt) && txt.length < 30);
+    if (!isLegal || a.closest('.onb')) return;
+    e.preventDefault(); closePops(); openReader(/Policy/.test(txt) ? 'policy' : 'disclaimer');
+  });
+  reader.addEventListener('click', function (e) {
+    if (e.target === reader || e.target.closest('[data-reader-close]')) reader.hidden = true;
+  });
+  document.getElementById('replay-welcome').addEventListener('click', function (e) {
+    e.preventDefault(); showStep(1); onb.hidden = false;
+  });
+  if (params.get('open') === 'welcome') { showStep(Number(params.get('step') || 1)); onb.hidden = false; }
+  if (params.get('click')) { var ce = document.querySelector(params.get('click')); if (ce) ce.click(); }
+  if (params.get('open') === 'report') modal.hidden = false;
+  if (params.get('sev')) { var sb = document.querySelector('[data-sev="' + params.get('sev') + '"]'); if (sb) sb.click(); }
+  document.getElementById('only-reliable').addEventListener('change', renderNear);
+  // ---- Nearby list as a sheet on the phone: peek, half, full ----
+  var isPhone = root.classList.contains('is-phone');
+  var sheet = document.getElementById('sheet');
+  var nearScreen = document.querySelector('.screen-nearby');
+  var nearMap = nearScreen.querySelector('.map');
+  var grab = document.getElementById('sheet-grab');
+  var handle = document.getElementById('sheet-handle');
+  var sheetState = 'half', drag = null, suppressClick = false;
+  function snapTops() {
+    var H = nearScreen.clientHeight, S = nearMap.offsetTop;
+    return { full: S, half: Math.round(S + (H - S) * 0.45), peek: Math.max(S, H - 210) };
+  }
+  function applyTop(t) {
+    sheet.style.top = t + 'px';
+    nearMap.style.height = Math.max(0, t - nearMap.offsetTop + 16) + 'px';
+  }
+  function setSheet(state) {
+    if (!isPhone) return;
+    sheetState = state;
+    applyTop(snapTops()[state]);
+    handle.setAttribute('aria-expanded', String(state === 'full'));
+    handle.setAttribute('aria-label', state === 'full' ? 'Show the map again' : 'Show more of the list');
+  }
+  function onDown(e) {
+    if (!isPhone || e.button > 0) return;
+    drag = { y: e.clientY, top: sheet.offsetTop, moved: false };
+  }
+  function onMove(e) {
+    if (!drag) return;
+    var dy = e.clientY - drag.y;
+    if (!drag.moved && Math.abs(dy) < 6) return;
+    if (!drag.moved) { drag.moved = true; sheet.classList.add('dragging'); nearMap.classList.add('dragging'); }
+    var tops = snapTops();
+    applyTop(Math.min(Math.max(drag.top + dy, tops.full), tops.peek));
+    e.preventDefault();
+  }
+  function onUp() {
+    if (!drag) return;
+    var moved = drag.moved, startTop = drag.top;
+    drag = null;
+    sheet.classList.remove('dragging'); nearMap.classList.remove('dragging');
+    if (!moved) return;
+    var tops = snapTops(), cur = sheet.offsetTop, best = 'half', bd = Infinity;
+    Object.keys(tops).forEach(function (k) { var d = Math.abs(tops[k] - cur); if (d < bd) { bd = d; best = k; } });
+    // a short flick still moves one step in the direction of the flick
+    if (best === sheetState && Math.abs(cur - startTop) > 30) {
+      var order = ['full', 'half', 'peek'], i = order.indexOf(sheetState);
+      best = order[Math.max(0, Math.min(2, i + (cur > startTop ? 1 : -1)))];
+    }
+    setSheet(best);
+    suppressClick = true; setTimeout(function () { suppressClick = false; }, 60);
+  }
+  [grab, sheet.querySelector('.listhead')].forEach(function (el) { el.addEventListener('pointerdown', onDown); });
+  document.addEventListener('pointermove', onMove, { passive: false });
+  document.addEventListener('pointerup', onUp);
+  document.addEventListener('pointercancel', onUp);
+  sheet.addEventListener('click', function (e) { if (suppressClick) { e.stopPropagation(); e.preventDefault(); } }, true);
+  handle.addEventListener('click', function () { setSheet(sheetState === 'full' ? 'half' : 'full'); });
+  // Scrolling the list up first grows the sheet to full, then the list scrolls; at the top, scrolling down shrinks it again.
+  sheet.addEventListener('wheel', function (e) {
+    if (!isPhone) return;
+    if (sheetState !== 'full' && e.deltaY > 0) { e.preventDefault(); setSheet('full'); }
+    else if (sheetState === 'full' && sheet.scrollTop <= 0 && e.deltaY < -4) { e.preventDefault(); setSheet('half'); }
+  }, { passive: false });
+  var touchY = null, touchDone = false;
+  sheet.addEventListener('touchstart', function (e) { touchY = e.touches[0].clientY; touchDone = false; }, { passive: true });
+  sheet.addEventListener('touchmove', function (e) {
+    if (!isPhone || touchY === null || touchDone || (drag && drag.moved)) return;
+    var dy = e.touches[0].clientY - touchY;
+    if (sheetState !== 'full' && dy < -10) { e.preventDefault(); touchDone = true; setSheet('full'); }
+    else if (sheetState === 'full' && sheet.scrollTop <= 0 && dy > 10) { e.preventDefault(); touchDone = true; setSheet('half'); }
+  }, { passive: false });
+  // Tapping a report shows its pin on the map (phone and laptop); tapping a pin shows its report in the list.
+  var pins = Array.prototype.slice.call(nearScreen.querySelectorAll('.pin'));
+  pins.forEach(function (p, i) { p.dataset.i = String(i); p.setAttribute('role', 'button'); p.tabIndex = 0; });
+  function focusReport(i, from) {
+    pins.forEach(function (p) { p.classList.toggle('pin-focus', Number(p.dataset.i) === i); });
+    var target = null;
+    Array.prototype.forEach.call(document.querySelectorAll('#near-cards .card'), function (c) {
+      var on = Number(c.dataset.i) === i; c.classList.toggle('card-focus', on); if (on) target = c;
+    });
+    if (!isPhone) { if (target && from === 'pin') target.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); return; }
+    setSheet(from === 'pin' ? 'half' : 'peek');
+    if (target) {
+      var head = grab.offsetHeight + sheet.querySelector('.listhead').offsetHeight;
+      setTimeout(function () { sheet.scrollTo({ top: Math.max(0, target.offsetTop - head - 8), behavior: 'smooth' }); }, 0);
+    }
+  }
+  document.getElementById('near-cards').addEventListener('click', function (e) {
+    var c = e.target.closest('.card'); if (c) focusReport(Number(c.dataset.i), 'card');
+  });
+  pins.forEach(function (p) { p.addEventListener('click', function () { focusReport(Number(p.dataset.i), 'pin'); }); });
+  app.addEventListener('click', function (e) {
+    if (e.target.closest('[data-go="nearby"]')) setTimeout(function () { setSheet(sheetState); }, 0);
+    var at = e.target.closest('[data-acttab]');
+    if (at) { actTab = at.dataset.acttab; renderAct(); var pg = document.querySelector('.screen-activity .page'); if (pg) pg.scrollTop = 0; }
+    if (e.target.closest('.menu-all')) { actTab = 'updates'; renderAct(); }
+    if (e.target.closest('nav [data-go="activity"]')) { actTab = null; renderAct(); }
+  });
+  window.addEventListener('resize', function () { setSheet(sheetState); });
+  setSheet('half');
+  window.addEventListener('load', function () { setSheet(sheetState); });
+  window.__mock = { setSheet: setSheet, focusReport: focusReport, state: function () { return sheetState; } };
+  // ---- Sketch 008: the report's own page (Phase 8) ----
+  // Laptop: A opens the report as its own page (map left, report right); B opens it beside the map in place of the list.
+  // Phone: both open the same full screen page, with the map strip on top.
+  var rv = params.get('rp') === 'b' ? 'b' : 'a';
+  root.classList.add('rv-' + rv);
+  document.querySelectorAll('[data-rv]').forEach(function (a) { if (a.dataset.rv === rv) a.setAttribute('aria-current', 'page'); });
+  var details = [
+    { mine: true, cat: 'Flood', place: 'Near Benz Circle, Vijayawada', dist: '0.8 km', posted: 'You posted this 12 min ago, at 2:10 pm', confN: 4, dispN: 0,
+      cur: 'Report up to date. Fades at 8:10 pm.', rep: 'You posted this report.', code: '7KQ2',
+      hist: [['2:10 pm', 'Posted as Critical. Shown to everyone at once because it is critical.', ''], ['2:14 pm', 'Confirmed by a person at a second spot.', 'good'],
+        ['2:17 pm', 'Confirmed from a third spot.', 'good'], ['2:21 pm', 'Confirmed from a fourth spot.', 'good']],
+      cms: [{ who: 'Someone nearby', when: '2:15 pm', t: 'Two buses are stuck at the signal now. Use the service road.' },
+        { who: 'You', tag: 'Reporter', when: '2:19 pm', t: 'Water is still rising near the petrol bunk.' }] },
+    { cat: 'Traffic', place: 'Eluru Road, towards Ramavarappadu', dist: '2.1 km', posted: 'Posted 5 min ago, at 2:57 pm', confN: 0, dispN: 0,
+      cur: 'Report up to date. Fades at 4:57 pm.', rep: '<b>Reliable reporter.</b> 7 of 9 earlier reports were confirmed by people nearby.', code: 'M3TD',
+      hist: [['2:57 pm', 'Posted as Medium. Shown as Not confirmed yet until people at 2 different spots confirm it.', '']],
+      cms: [] },
+    { cat: 'Shelter open', place: 'ZP High School, Patamata', dist: '1.4 km', posted: 'Posted 40 min ago, at 2:22 pm', confN: 6, dispN: 0,
+      cur: 'Report up to date. Fades tomorrow at 2:22 pm.', rep: 'New reporter. Not rated yet.', code: 'P9ZS',
+      hist: [['2:22 pm', 'Posted as Low.', ''], ['2:30 pm', 'Confirmed by people at 2 different spots. Now shown to everyone.', 'good'],
+        ['2:41 pm', 'Confirmed from a fourth spot.', 'good'], ['2:55 pm', 'Confirmed from a sixth spot.', 'good']],
+      cms: [{ who: 'Someone nearby', when: '2:35 pm', t: 'Food packets are being given at the gate.' },
+        { who: 'Someone nearby', when: '2:48 pm', t: 'Ground floor rooms are full, the first floor still has space.' },
+        { who: 'Reporter', tag: 'Reporter', when: '2:52 pm', t: 'Bring your own sheets if you can.' }] },
+    { cat: 'Power out', place: 'Gunadala main road', dist: '2.6 km', posted: 'Posted 1 hour ago, at 2:02 pm', confN: 2, dispN: 0,
+      cur: 'Report getting old. Fades at 5:02 pm.', rep: 'Mixed record. 3 of 6 earlier reports were confirmed by people nearby.', code: 'G4PW',
+      hist: [['2:02 pm', 'Posted as Medium.', ''], ['2:26 pm', 'Confirmed by people at 2 different spots. Now shown to everyone.', 'good']],
+      cms: [{ who: 'Someone nearby', when: '2:40 pm', t: 'The lanes behind the temple have power, only the main road side is out.' }] },
+    { cat: 'Road blocked', place: 'Budameru bridge', dist: '1.9 km', posted: 'Posted 2 hours ago, at 1:05 pm', confN: 3, dispN: 1,
+      cur: 'Report up to date. Fades at 7:05 pm.', rep: 'New reporter. Not rated yet.', code: 'B2RD',
+      hist: [['1:05 pm', 'Posted as Medium.', ''], ['1:18 pm', 'Confirmed by people at 2 different spots. Now shown to everyone.', 'good'],
+        ['1:40 pm', 'Disputed by a person nearby.', 'bad'], ['1:52 pm', 'Confirmed from a third spot.', 'good']],
+      cms: [{ who: 'Someone nearby', when: '1:45 pm', t: 'Bikes are being let through on the left side.' },
+        { who: 'Someone nearby', when: '1:50 pm', t: 'Not any more, police stopped the bikes too.' }] },
+    { cat: 'Flood', place: 'Prakasam Barrage', dist: '3.2 km', posted: 'Posted 1 hour ago, at 1:58 pm', confN: 0, dispN: 3,
+      cur: '<span class="warn">Disputed: may not be true.</span>', rep: 'New reporter. Not rated yet.', code: 'K8BX',
+      hist: [['1:58 pm', 'Posted as Critical.', ''], ['2:03 pm', 'Disputed by a person nearby.', 'bad'], ['2:09 pm', 'Disputed from a second spot.', 'bad'],
+        ['2:12 pm', 'Disputed from a third spot. Moved to the bottom of the list as Disputed.', 'bad']],
+      cms: [{ who: 'Someone nearby', when: '2:06 pm', t: 'The barrage office says the gates are fine. This is an old video.' }] }
+  ];
+  var current = 0;
+  function confText(d) {
+    var n = d.confN + (d.vote === 'confirm' ? 1 : 0);
+    if (n === 0) return 'No one has confirmed this yet.';
+    if (n === 1) return 'Confirmed by 1 person nearby. Needs 1 more person at a different spot to confirm it.';
+    return '<b>Confirmed by ' + n + ' people at different spots.</b>';
+  }
+  function dispText(d) {
+    var m = d.dispN + (d.vote === 'dispute' ? 1 : 0);
+    if (m === 0) return 'No one has disputed this.';
+    if (m === 1) return '1 person nearby disputed this.';
+    return m + ' people at different spots disputed this.';
+  }
+  function trustRow(l, v) { return '<div class="tr-row"><span class="tr-lbl">' + l + '</span><span class="tr-val">' + v + '</span></div>'; }
+  function reportBody(i, back) {
+    var r = reports[i], d = details[i];
+    var chipClass = d.resolved ? 'low' : (r.sev === 'disputed' ? 'grey' : r.sev), chip = d.resolved ? 'Resolved' : r.chip;
+    var h = back ? '<button class="rp-back" data-rp-back><span class="ico i-back"></span>' + back + '</button>' : '';
+    h += '<div class="rp-head ' + r.sev + '"><span class="dot"><span class="ico i-' + r.icon + '"></span></span><div>' +
+      '<h1 class="rp-title">' + r.title + '</h1>' +
+      '<p class="rp-sub"><span class="chip ' + chipClass + '">' + chip + '</span><span>' + d.cat + '</span></p><p class="rp-sub"><span>' + d.place +
+      '</span><span aria-hidden="true">·</span><span>' + d.dist + '</span></p><p class="rp-sub">' + d.posted + '</p></div></div>';
+    h += '<p class="rp-words">' + r.desc + '</p>';
+    h += '<div class="box rp-trust">' + trustRow('Confirmed', confText(d)) + trustRow('Disputed', dispText(d)) +
+      trustRow('How current', d.resolved ? 'Marked resolved by you just now.' : d.cur) + trustRow('Reporter', d.rep) + '</div>';
+    h += '<div class="rp-actions">';
+    if (d.mine) {
+      h += d.resolved ? '<div class="rp-resolved">Marked resolved. <button class="linkbtn" data-unresolve>Undo</button></div>'
+        : '<button class="vote" data-resolve><span class="ico i-check"></span>Mark resolved</button>';
+    } else {
+      h += '<button class="vote" data-vote="confirm" aria-pressed="' + (d.vote === 'confirm') + '"><span class="ico i-check"></span>Confirm</button>' +
+        '<button class="vote" data-vote="dispute" aria-pressed="' + (d.vote === 'dispute') + '"><span class="ico i-x"></span>Dispute</button>';
+    }
+    h += '<button class="vote" data-share><span class="ico i-share"></span>Share</button></div>';
+    h += '<div class="rp-quiet"><button class="linkbtn" data-mute><span class="ico i-belloff"></span>' + (d.muted ? 'Updates stopped. Turn back on' : 'Stop updates on this report') + '</button>' +
+      (d.mine ? '' : '<button class="linkbtn" data-flag' + (d.flagged ? ' disabled' : '') + '><span class="ico i-flag"></span>' + (d.flagged ? 'Sent to moderators' : 'Flag') + '</button>') + '</div>';
+    var hist = d.hist.slice();
+    if (d.vote === 'confirm') hist.push(['Now', 'You confirmed it from your spot.', 'good']);
+    if (d.vote === 'dispute') hist.push(['Now', 'You disputed it from your spot.', 'bad']);
+    if (d.resolved) hist.push(['Now', 'Marked resolved by you.', 'good']);
+    h += '<div class="rp-cols"><section class="rp-sec"><h2>What happened so far</h2><ol class="tl">' + hist.map(function (x) {
+      return '<li><span class="tl-time">' + x[0] + '</span><span class="tl-mark ' + x[2] + '" aria-hidden="true"></span><span>' + x[1] + '</span></li>';
+    }).join('') + '</ol></section>';
+    h += '<section class="rp-sec"><h2>Comments <span class="n">' + d.cms.length + '</span></h2><div class="box">' +
+      (d.cms.length ? '<ul class="cm">' + d.cms.map(function (c) {
+        return '<li><div class="cm-meta"><b>' + c.who + '</b>' + (c.tag && c.tag !== c.who ? '<span class="cm-tag">' + c.tag + '</span>' : '') + '<span>' + c.when + '</span></div><p>' + c.t + '</p></li>';
+      }).join('') + '</ul>' : '<div class="cm-empty">No comments yet.</div>') + '</div>' +
+      '<form class="cm-form" data-cm-form><label for="cm-input-' + i + '">Add a comment</label><textarea id="cm-input-' + i + '" maxlength="280"></textarea>' +
+      '<div class="cm-foot"><span class="cm-count">0 of 280</span><button class="postbtn" type="submit">Post</button></div></form></section></div>';
+    return h;
+  }
+  function mapFor(i) {
+    var m = nearMap.cloneNode(true);
+    m.removeAttribute('style');
+    var pin = m.querySelectorAll('.pin')[i], px = parseFloat(pin.style.left), py = parseFloat(pin.style.top);
+    Array.prototype.forEach.call(m.querySelectorAll('.maplabel'), function (l) {
+      if (Math.abs(parseFloat(l.style.left) + 6 - px) < 16 && Math.abs(parseFloat(l.style.top) - py) < 20) l.remove();
+    });
+    Array.prototype.forEach.call(m.querySelectorAll('.pin'), function (p, k) {
+      if (k !== i) p.remove(); else { p.className = p.className.replace(/\bpin-focus\b/, '') + ' pin-focus'; p.removeAttribute('tabindex'); p.removeAttribute('role'); }
+    });
+    return m;
+  }
+  var rpSide = document.getElementById('rp-side');
+  function renderReport() {
+    if (sheet.classList.contains('showing-report')) { var st = rpSide.scrollTop; rpSide.innerHTML = reportBody(current, 'All reports'); rpSide.scrollTop = st; return; }
+    var sc = document.getElementById('rp-scroll'), top = sc.scrollTop;
+    document.getElementById('rp-page').innerHTML = reportBody(current, isPhone ? '' : 'Nearby');
+    sc.scrollTop = top;
+  }
+  function openReport(i) {
+    current = i;
+    if (!isPhone && rv === 'b') {
+      sheet.classList.add('showing-report');
+      pins.forEach(function (p) { p.classList.toggle('pin-focus', Number(p.dataset.i) === i); });
+      rpSide.innerHTML = reportBody(i, 'All reports'); rpSide.scrollTop = 0;
+      return;
+    }
+    var slot = document.getElementById('rp-map-slot');
+    slot.innerHTML = ''; slot.appendChild(mapFor(i));
+    document.getElementById('rp-page').innerHTML = reportBody(i, isPhone ? '' : 'Nearby');
+    go('report');
+    document.getElementById('rp-scroll').scrollTop = 0;
+  }
+  function backFromReport() {
+    if (sheet.classList.contains('showing-report')) { sheet.classList.remove('showing-report'); rpSide.innerHTML = ''; focusReport(current, 'pin'); return; }
+    go('nearby');
+    setTimeout(function () { setSheet(sheetState); focusReport(current, 'pin'); }, 0);
+  }
+  pins.forEach(function (p) { p.addEventListener('click', function () { if (sheet.classList.contains('showing-report')) openReport(Number(p.dataset.i)); }); });
+  var shareModal = document.getElementById('share-modal');
+  function openShare() {
+    var r = reports[current], d = details[current];
+    document.getElementById('sc-title').textContent = d.cat + ': ' + r.title;
+    document.getElementById('sc-url').textContent = 'pinalert.in/r/' + d.code;
+    document.getElementById('sc-dot').innerHTML = '<span class="ico i-' + r.icon + '"></span>';
+    var cp = shareModal.querySelector('[data-copy]'); cp.innerHTML = '<span class="ico i-link"></span> Copy link';
+    shareModal.hidden = false;
+  }
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-openrep],[data-rp-back],[data-vote],[data-resolve],[data-unresolve],[data-mute],[data-flag],[data-share],[data-close-share],[data-share-wa],[data-copy]');
+    if (!t) { if (e.target === shareModal) shareModal.hidden = true; return; }
+    var d = details[current];
+    if (t.dataset.openrep) { e.stopPropagation(); openReport(Number(t.dataset.openrep)); return; }
+    if (t.hasAttribute('data-rp-back')) { backFromReport(); return; }
+    if (t.dataset.vote) { d.vote = d.vote === t.dataset.vote ? null : t.dataset.vote; renderReport(); return; }
+    if (t.hasAttribute('data-resolve')) { d.resolved = true; renderReport(); return; }
+    if (t.hasAttribute('data-unresolve')) { d.resolved = false; renderReport(); return; }
+    if (t.hasAttribute('data-mute')) { d.muted = !d.muted; renderReport(); return; }
+    if (t.hasAttribute('data-flag')) { d.flagged = true; renderReport(); return; }
+    if (t.hasAttribute('data-share')) { openShare(); return; }
+    if (t.hasAttribute('data-close-share') || t.hasAttribute('data-share-wa')) { shareModal.hidden = true; return; }
+    if (t.hasAttribute('data-copy')) { t.textContent = 'Link copied'; }
+  }, true);
+  document.addEventListener('input', function (e) {
+    var f = e.target.closest('[data-cm-form]'); if (!f) return;
+    f.querySelector('.cm-count').textContent = e.target.value.length + ' of 280';
+  });
+  document.addEventListener('submit', function (e) {
+    var f = e.target.closest('[data-cm-form]'); if (!f) return;
+    e.preventDefault();
+    var v = f.querySelector('textarea').value.trim(); if (!v) return;
+    var d = details[current];
+    d.cms.push({ who: 'You', tag: d.mine ? 'Reporter' : '', when: 'Now', t: v.replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; }) });
+    renderReport();
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') shareModal.hidden = true; });
+  window.__mock.openReport = openReport;
+  if (params.get('open') === 'rep') openReport(Number(params.get('i') || 0));
+  if (params.get('share')) openShare();
+  if (params.get('screen')) go(params.get('screen'));
+  if (params.get('tab')) { var tb = document.querySelector('[data-tab="' + params.get('tab') + '"]'); if (tb) tb.click(); }
+  if (params.get('pop')) { var pb = Array.prototype.find.call(document.querySelectorAll('[data-pop="' + params.get('pop') + '"]'), function (b) { return b.offsetParent; }); if (pb) openPop(params.get('pop'), pb); }
+})();
+</script>
+</body>
+</html>
