@@ -24,7 +24,12 @@ func vsListPane(t *testing.T) string {
 	}
 	// The pane holds nested sections (the Past groups), so it ends where the
 	// report modal begins.
-	end := strings.Index(index[start:], `<div class="modal-backdrop"`)
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-23, D-24,
+	// D-24a): the report window's backdrop carries a second class, post-window,
+	// so the search text names the whole class attribute. The Phase 3.1 and
+	// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+	end := strings.Index(index[start:], `<div class="modal-backdrop post-window"`)
 	if end == -1 {
 		t.Fatal("could not find the end of the list pane")
 	}

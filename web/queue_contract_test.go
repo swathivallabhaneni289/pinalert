@@ -583,12 +583,22 @@ func TestQueuePagesWiring(t *testing.T) {
 			t.Errorf("%s has %d form note slots, want exactly 1", name, n)
 			continue
 		}
-		titleAt := strings.Index(text, `<h2 id="modal-title">`)
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-23,
+		// D-24, D-24a): the Post a report window on the main page has a header
+		// (the title, a line and the X) and the note slot follows the header
+		// directly; the Low data view still has its title with the slot right
+		// after it. The Phase 3.1 and Phase 4 hands-on tests are walked on this
+		// layout after Phase 3.4 is built.
+		titleAt := strings.Index(text, `<h2 id="modal-title"`)
 		if titleAt == -1 {
 			t.Errorf("%s has no form title", name)
 			continue
 		}
-		titleEnd := titleAt + strings.Index(text[titleAt:], "</h2>") + len("</h2>")
+		closing := "</h2>"
+		if name == "index.html.tmpl" {
+			closing = "</header>"
+		}
+		titleEnd := titleAt + strings.Index(text[titleAt:], closing) + len(closing)
 		noteAt := strings.Index(text, note)
 		if noteAt < titleEnd || strings.TrimSpace(text[titleEnd:noteAt]) != "" {
 			t.Errorf("%s: the note slot must follow the form title directly", name)

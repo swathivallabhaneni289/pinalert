@@ -366,3 +366,219 @@
 html[data-modal-open] {
   overflow: hidden;
 }
+
+/* ---- Post a report window (Phase 3.4, plan 09, UI-SPEC Surface 5) ----
+ * Only index.html.tmpl carries .post-window; the Low data view keeps the
+ * .modal-panel it was built with, so every rule below is scoped under it.
+ * Written mobile first: the phone is a full screen sheet on --color-bg with a
+ * header, one scrolling body (the map block, then the form groups) and a
+ * pinned footer. The laptop block at the end of this section makes it a
+ * centred two pane window. The window closes with the X only (D-02).
+ * Muted text is used only on --color-bg; the map block sits on --color-surface
+ * and so uses --color-text. */
+.modal-backdrop.post-window:not([hidden]) {
+  align-items: stretch;
+  justify-content: stretch;
+  background: var(--color-bg);
+}
+
+.post-window .post-window__panel {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  padding: 0;
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.post-window .post-window__panel > * + * {
+  margin-top: 0;
+}
+
+.post-window__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 20px var(--space-md) var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.post-window__titles {
+  min-width: 0;
+}
+
+.post-window__panel .post-window__title {
+  margin: 0;
+}
+
+.post-window__line {
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+.post-window__close {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.post-window__close .app-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.post-window .post-window__panel > #form-note {
+  flex: none;
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+}
+
+.post-window__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.post-window__map {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: 20px var(--space-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.post-window__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  padding: 20px var(--space-md);
+}
+
+.post-window .post-window__form > * + * {
+  margin-top: 0;
+}
+
+.post-window .post-window__map #location-search {
+  border-radius: 8px;
+}
+
+.post-window .post-window__map #location-search-status:not([hidden]) {
+  color: var(--color-text);
+}
+
+.post-window .post-window__map #location-notice {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+#near-line {
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text);
+}
+
+#near-place {
+  font-weight: var(--font-weight-semibold);
+}
+
+/* The footer holds the one Post report button, the form error and the
+ * Send after the wait button. There is no sentence under the button about the
+ * report showing as not confirmed, on either size (owner answer O-1). */
+.post-window__foot {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.post-window__foot #form-error {
+  min-height: 0;
+}
+
+.post-window__foot #submit-report {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 8px;
+}
+
+.post-window__foot #send-after-wait {
+  border-radius: 8px;
+}
+
+@media (min-width: 900px) {
+  .modal-backdrop.post-window:not([hidden]) {
+    top: var(--disclaimer-bar-height);
+    align-items: center;
+    justify-content: center;
+    background: rgb(0 0 0 / 45%);
+  }
+
+  .post-window .post-window__panel {
+    width: min(1180px, 94%);
+    height: min(780px, 92%);
+    border-radius: 12px;
+    box-shadow: var(--shadow-window);
+  }
+
+  .post-window__head {
+    padding: 20px var(--space-lg) var(--space-md);
+  }
+
+  .post-window__body {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    overflow: hidden;
+  }
+
+  .post-window__map {
+    padding: 20px var(--space-lg);
+  }
+
+  .post-window__form {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 20px var(--space-lg);
+  }
+
+  .post-window__foot {
+    align-items: stretch;
+    padding: var(--space-md) var(--space-lg);
+  }
+
+  .post-window__foot #submit-report {
+    align-self: flex-end;
+    width: auto;
+    min-width: 160px;
+    min-height: var(--touch-target-min);
+  }
+}
+
+@media (forced-colors: active) {
+  .post-window .post-window__panel {
+    border: 1px solid CanvasText;
+  }
+}

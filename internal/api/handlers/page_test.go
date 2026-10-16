@@ -72,7 +72,12 @@ func TestPageShellServesDOMContract(t *testing.T) {
 		`id="location-search-status"`, `id="category-grid"`, `id="severity"`,
 		`id="severity-readout"`, `id="description"`, `id="shelter-fields"`,
 		`id="shelter-capacity-status"`, `id="shelter-headcount"`, `id="form-error"`,
-		`id="submit-report"`, `id="cancel-report"`, `id="discard-confirm"`, `id="toast"`,
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-23, D-24,
+		// D-24a): the Post a report window closes with the X (close-report), not
+		// the Cancel report button, so cancel-report left the list. The Phase 3.1
+		// and Phase 4 hands-on tests are walked on this layout after Phase 3.4 is
+		// built.
+		`id="submit-report"`, `id="close-report"`, `id="discard-confirm"`, `id="toast"`,
 		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10):
 		// the two app bars are part of the page contract (the top bar with the
 		// Post a report link, the phone bottom bar with the Report link). The

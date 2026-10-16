@@ -9,7 +9,8 @@
 // Location interface. The page passes a location object to mount. Required
 // methods:
 //   current()                       { latitude, longitude } or null
-//   choose(result)                  result is { lat, lon, displayName }
+//   choose(result)                  result is { lat, lon, displayName, name };
+//                                   name is the place's short name or absent
 //   isSet()                         whether a location is set
 //   missingMessage()                the sentence shown when none is set
 //   searchFailureMessage(message, status)
@@ -112,7 +113,11 @@
   var picker = null;
   var formVariant = 'main';
 
+  // The Low data view closes its form with the Cancel report button; the Post
+  // a report window closes it with the X in its header (Phase 3.4, D-02).
+  // Each page has one of the two, and both run the same close path.
   var cancelButton = null;
+  var closeButton = null;
   var submitButton = null;
   var categoryGrid = null;
   var severityInput = null;
@@ -476,7 +481,7 @@
 
     row.addEventListener('click', function () {
       markTouched();
-      picker.choose({ lat: result.lat, lon: result.lon, displayName: result.display_name });
+      picker.choose({ lat: result.lat, lon: result.lon, displayName: result.display_name, name: result.name });
       clearSearchStatus();
       hideDropdown();
     });
@@ -771,6 +776,7 @@
     formVariant = options.variant || 'main';
 
     cancelButton = document.getElementById('cancel-report');
+    closeButton = document.getElementById('close-report');
     submitButton = document.getElementById('submit-report');
     categoryGrid = document.getElementById('category-grid');
     severityInput = document.getElementById('severity');
@@ -805,7 +811,12 @@
       }
     });
 
-    cancelButton.addEventListener('click', requestClose);
+    if (cancelButton) {
+      cancelButton.addEventListener('click', requestClose);
+    }
+    if (closeButton) {
+      closeButton.addEventListener('click', requestClose);
+    }
     submitButton.addEventListener('click', handleSubmit);
     locationSearchInput.addEventListener('input', onSearchInput);
     severityInput.addEventListener('input', updateSeverityReadout);
@@ -819,11 +830,16 @@
     if (sendAfterWaitBtn) {
       sendAfterWaitBtn.addEventListener('click', saveAfterWait);
     }
-    backdropEl.addEventListener('click', function (e) {
-      if (e.target === backdropEl) {
-        requestClose();
-      }
-    });
+    // The Post a report window closes with its X and Escape only (Phase 3.4,
+    // D-02): a tap beside the window must not lose what was typed. The Low data
+    // view, which has no X, keeps closing on a tap on its backdrop.
+    if (!closeButton) {
+      backdropEl.addEventListener('click', function (e) {
+        if (e.target === backdropEl) {
+          requestClose();
+        }
+      });
+    }
   }
 
   // openForm shows the form. options.opener is the element that gets focus

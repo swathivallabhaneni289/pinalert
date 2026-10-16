@@ -17,6 +17,22 @@
   overflow: hidden;
 }
 
+/* The Post a report window (Phase 3.4, plan 09, UI-SPEC Surface 5b): the map
+ * keeps its 220px on the phone and gets a hairline border; on a laptop it
+ * fills the left pane under the search field and above the line that names
+ * the place. */
+.post-window #modal-map {
+  border: 1px solid var(--color-border);
+}
+
+@media (min-width: 900px) {
+  .post-window #modal-map {
+    flex: 1 1 0;
+    height: auto;
+    min-height: 220px;
+  }
+}
+
 #coord-readout {
   margin: 0;
   font-size: var(--font-size-label);
