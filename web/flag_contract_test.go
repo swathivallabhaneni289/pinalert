@@ -396,8 +396,15 @@ func TestFlagSendOutcomes(t *testing.T) {
 	s := jsFunctionBody(t, flag, "sendFlag(reason)")
 	p424Contains(t, "sendFlag", s,
 		"'/api/reports/' + encodeURIComponent(", "'/flag'", "method: 'POST'", "'Content-Type': 'application/json'",
-		"JSON.stringify({ reason: reason })", "AbortSignal.timeout(FLAG_TIMEOUT_MS)", "new AbortController()",
-		"signal: signal", "handleAnswer(", "setSending(true)")
+		"JSON.stringify({ reason: reason })", "handleAnswer(", "setSending(true)")
+	// The shared time limit of app.js, raced against the post and its body
+	// read, so a post whose aborted request never ends (WebKit) still shows
+	// the offline line at the limit.
+	p424Ordered(t, "sendFlag time limit", s,
+		"var limit = Pinalert.requestTimeout(FLAG_TIMEOUT_MS, ", "Promise.race([fetch(",
+		"signal: limit.signal", "}), limit.expired]).then(function (res) {",
+		"Promise.race([res.json(), limit.expired]).catch(function () {", "limit.clear();", "handleAnswer(",
+		"limit.clear();", "showError(FLAG_OFFLINE_MESSAGE)")
 	h := jsFunctionBody(t, flag, "handleAnswer(status, body, headers)")
 	p424Contains(t, "handleAnswer", h,
 		"setSending(false)", "201", "409", "FLAG_SENT_TOAST", "FLAG_ALREADY_TOAST", "FLAG_ERROR_MESSAGE")
