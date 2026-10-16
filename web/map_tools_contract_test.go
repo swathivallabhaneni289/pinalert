@@ -546,8 +546,15 @@ func TestMapToolsCSS(t *testing.T) {
 		}
 	}
 
-	// A chip at rest and a pressed chip, inverted and semibold. The ring is
-	// inset so the scroller does not clip it.
+	// A chip at rest and a pressed chip. The ring is inset so the scroller does
+	// not clip it.
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-04): the
+	// pressed chip was the inverted dark fill (--color-text with --color-bg
+	// text); it is now the soft grey fill, --color-surface with --color-text
+	// text and weight 600, and TestChosenChipSoftFill pins the rest. The Phase
+	// 3.1 and Phase 4 hands-on tests are walked on this layout after Phase 3.4
+	// is built.
 	chip := p31mRule(t, feed, "", ".map-chip")
 	p16MustDecl(t, ".map-chip", chip, map[string]string{
 		"padding": "0 var(--space-md)", "background": "var(--color-bg)", "color": "var(--color-text)",
@@ -555,7 +562,7 @@ func TestMapToolsCSS(t *testing.T) {
 	})
 	on := p31mRule(t, feed, "", `.map-chip[aria-pressed="true"]`)
 	p16MustDecl(t, "pressed chip", on, map[string]string{
-		"background": "var(--color-text)", "color": "var(--color-bg)", "font-weight": "var(--font-weight-semibold)",
+		"background": "var(--color-surface)", "color": "var(--color-text)", "font-weight": "var(--font-weight-semibold)",
 	})
 	p16MustDecl(t, "chip focus", p31mRule(t, feed, "", ".map-chip:focus-visible"),
 		map[string]string{"outline-offset": "-2px"})
@@ -772,12 +779,20 @@ func TestSearchIconIsMasked(t *testing.T) {
 }
 
 // TestMapChipsContrast computes the text pairs of the tools from the shipped
-// tokens in all four theme sources: a pressed chip (--color-bg on
-// --color-text), a chip, the search box and the map label (--color-text on
-// --color-bg) and the muted second line of a result (--color-text-muted on
-// --color-bg). All reach 4.5 to 1.
+// tokens in all four theme sources: a pressed chip (--color-text on
+// --color-surface), a chip, the search box and the map label (--color-text on
+// --color-bg), the phone search field (--color-text on --color-surface) and
+// the muted second line of a result (--color-text-muted on --color-bg). All
+// reach 4.5 to 1.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11, D-04):
+// the pressed chip pair was --color-bg on --color-text (the inverted dark
+// fill); it is now --color-text on --color-surface, and the phone search field
+// (surface fill, placeholder and magnifier in the text colour) is a new pair.
+// The Phase 3.1 and Phase 4 hands-on tests are walked on this layout after
+// Phase 3.4 is built.
 func TestMapChipsContrast(t *testing.T) {
-	needed := []string{"--color-bg", "--color-text", "--color-text-muted"}
+	needed := []string{"--color-bg", "--color-surface", "--color-text", "--color-text-muted"}
 	light1, light2, dark1, dark2 := extractThemeTokens(parseCSSRules(p13ReadStatic(t, "static/css/main.css")), needed)
 	sources := []struct {
 		name   string
@@ -787,7 +802,8 @@ func TestMapChipsContrast(t *testing.T) {
 		{"prefers dark :root", dark1}, {`:root[data-theme="dark"]`, dark2},
 	}
 	pairs := []struct{ label, fg, bg string }{
-		{"pressed chip", "--color-bg", "--color-text"},
+		{"pressed chip", "--color-text", "--color-surface"},
+		{"phone search field, placeholder and magnifier", "--color-text", "--color-surface"},
 		{"chip, search box, map label", "--color-text", "--color-bg"},
 		{"result second line, place line", "--color-text-muted", "--color-bg"},
 	}
@@ -800,6 +816,49 @@ func TestMapChipsContrast(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestChosenChipSoftFill pins D-04 and UI-SPEC 2g: a chosen chip takes the soft
+// grey fill (--color-surface), weight 600 and a 16px check.svg mask before its
+// word, in the text colour; it never takes the dark inverted fill or a dark
+// border; an unchosen chip keeps --color-bg and its 1px border; and under
+// forced colours a chosen chip keeps a 2px CanvasText border. The check is a
+// pseudo element, so the chip markup stays the word alone.
+func TestChosenChipSoftFill(t *testing.T) {
+	const feed = "static/css/feed.css"
+	rest := p31mRule(t, feed, "", ".map-chip")
+	p16MustDecl(t, "unchosen chip", rest, map[string]string{
+		"background": "var(--color-bg)", "border": "1px solid var(--color-border)",
+	})
+
+	on := p31mRule(t, feed, "", `.map-chip[aria-pressed="true"]`)
+	p16MustDecl(t, "chosen chip", on, map[string]string{
+		"background":  "var(--color-surface)",
+		"color":       "var(--color-text)",
+		"font-weight": "var(--font-weight-semibold)",
+	})
+	for _, prop := range []string{"background", "background-color", "border-color", "border"} {
+		if strings.Contains(on.Decls[prop], "var(--color-text)") {
+			t.Errorf("chosen chip %s is %q; the dark inverted fill and the dark border are gone (D-04)", prop, on.Decls[prop])
+		}
+	}
+
+	check := p31mRule(t, feed, "", `.map-chip[aria-pressed="true"]::before`)
+	p16MustDecl(t, "chosen chip check", check, map[string]string{
+		"width": "16px", "height": "16px", "background-color": "currentColor",
+		"-webkit-mask-image": `url("/static/icons/check.svg")`, "mask-image": `url("/static/icons/check.svg")`,
+	})
+
+	// The word alone is the markup, so the check cannot be a child element.
+	tmpl := p13ReadTemplate(t, "index.html.tmpl")
+	for _, b := range regexp.MustCompile(`<button type="button" class="map-chip"[^>]*>([^<]*)</button>`).FindAllStringSubmatch(tmpl, -1) {
+		if strings.TrimSpace(b[1]) == "" {
+			t.Errorf("a chip button has no word: %s", b[0])
+		}
+	}
+
+	forced := p31mRule(t, feed, "@media (forced-colors: active)", `.map-chip[aria-pressed="true"]`)
+	p16MustDecl(t, "forced colours chosen chip", forced, map[string]string{"border": "2px solid CanvasText"})
 }
 
 // TestPopupClearsTheToolsOnALaptop pins the popup max height term: from 900px

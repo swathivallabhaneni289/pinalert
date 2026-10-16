@@ -596,15 +596,39 @@
   font-weight: var(--font-weight-regular);
   cursor: pointer;
   pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
 }
 
-/* On is the inverted neutral, the same treatment as the selected category
-   tile, never a hue. The ring is inset so the scroller does not clip it. */
+/* A chosen chip (Phase 3.4, D-04, UI-SPEC 2g): the soft grey fill every other
+   chosen card uses, weight 600 and a check before the word, so the state does
+   not rest on colour alone. No dark fill and no dark border. The border keeps
+   its width and goes transparent, so the chip does not change size. The focus
+   ring is inset so the scroller does not clip it. */
 .map-chip[aria-pressed="true"] {
-  border-color: var(--color-text);
-  background: var(--color-text);
-  color: var(--color-bg);
+  border-color: transparent;
+  background: var(--color-surface);
+  color: var(--color-text);
   font-weight: var(--font-weight-semibold);
+}
+
+/* The check is drawn from check.svg as a mask, in the chip's text colour, so
+   the chip's markup stays the word alone. */
+.map-chip[aria-pressed="true"]::before {
+  content: "";
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-image: url("/static/icons/check.svg"); mask-image: url("/static/icons/check.svg");
 }
 
 .map-chip:focus-visible {

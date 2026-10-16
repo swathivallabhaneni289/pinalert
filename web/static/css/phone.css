@@ -273,6 +273,26 @@
     max-height: calc(100dvh - (var(--disclaimer-bar-height, 0px) + var(--app-topbar-height) + var(--space-xs)) - (var(--app-bottombar-height) + env(safe-area-inset-bottom)) - var(--space-sm));
   }
 
+  /* ---- The notice rows inside the sheet (D-03, UI-SPEC 2f) ----
+     The slow, waiting to send and stale rows are the same card as on a laptop
+     (same rows, texts, order, buttons and live region), but on a phone it is
+     the sheet's own strip under the head and the lines above the cards, full
+     width, never floating over the list. It follows the list head in the
+     markup, and order -1 puts it under the head and the alert banner slot,
+     ahead of the lines and cards. The card is hidden while a report or a
+     dialog is open, by the same rule as on a laptop. */
+  .pane--list > .notice-card {
+    position: static;
+    flex: none;
+    order: -1;
+    box-sizing: border-box;
+    max-width: none;
+    max-height: none;
+    margin: 0 0 var(--space-md);
+    box-shadow: none;
+    overflow: visible;
+  }
+
   /* ---- Report rows as rounded cards ---- */
 
   /* The shared row layout lives in feed.css (03.1 D-19, D-20). What stays

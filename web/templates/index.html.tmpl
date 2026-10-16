@@ -30,16 +30,6 @@
   <div class="top-chrome">
     {{template "app_topbar" .}}
   </div>
-  <div class="notice-card" id="notice-card" hidden>
-    <div class="notice-card__row" id="notice-slow" hidden>
-      <p class="notice-card__text">Taking long?</p>
-      <a class="notice-card__link" href="/low">Open the low data view.</a>
-    </div>
-    <div class="notice-card__row" id="notice-queue" hidden><p class="notice-card__text" id="notice-queue-text"></p><button type="button" class="btn" id="notice-queue-show">Show waiting reports</button></div>
-    <div class="notice-card__row" id="notice-stale" hidden>
-      <p class="notice-card__text" id="notice-stale-text"></p>
-    </div>
-  </div>
   <div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>
   <div class="app-shell" id="app-shell"
        data-fallback-lat="{{.FallbackLat}}"
@@ -99,6 +89,16 @@
               <span class="show-menu__word">Disputed</span>
             </button>
           </div>
+        </div>
+      </div>
+      <div class="notice-card" id="notice-card" hidden>
+        <div class="notice-card__row" id="notice-slow" hidden>
+          <p class="notice-card__text">Taking long?</p>
+          <a class="notice-card__link" href="/low">Open the low data view.</a>
+        </div>
+        <div class="notice-card__row" id="notice-queue" hidden><p class="notice-card__text" id="notice-queue-text"></p><button type="button" class="btn" id="notice-queue-show">Show waiting reports</button></div>
+        <div class="notice-card__row" id="notice-stale" hidden>
+          <p class="notice-card__text" id="notice-stale-text"></p>
         </div>
       </div>
       <p class="visually-hidden" id="feed-status" role="status"></p>
