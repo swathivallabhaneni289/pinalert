@@ -125,6 +125,13 @@ type Deps struct {
 	// literal that does not set it gives, runs the same writes without a
 	// transaction.
 	ModerationTx service.ModerationTxFunc
+	// OnboardingGate turns on the first-time flow redirect: an HTML GET from an
+	// account that has not agreed to the current terms version or not finished
+	// the flow goes to /welcome (D-27). Additive, as the fields above were: a
+	// zero value keeps every Deps{} literal compiling and every existing
+	// harness unchanged; cmd/server/main.go turns it on once the /welcome page
+	// exists (plan 10).
+	OnboardingGate bool
 }
 
 // requestLogger returns the access log middleware. It replaces chi's
@@ -431,6 +438,8 @@ func NewRouter(deps Deps) *chi.Mux {
 
 	r.Group(func(r chi.Router) {
 		r.Use(requireVerifiedAccount(deps.Sessions))
+		// Off unless Deps.OnboardingGate is set; /api/ and /welcome always pass.
+		r.Use(requireOnboarded(deps.OnboardingGate))
 		r.Get("/", handlers.Page(deps.Template, page))
 		// D-13, D-14: the Low data view, its own bookmarkable page behind the
 		// gate. It takes the same page copy so the bar numbers and the vote
