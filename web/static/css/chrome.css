@@ -239,8 +239,9 @@ html {
 }
 
 /* The notice card: bottom left, above the view toggle and left of the report
-   button. Its rows are the slow message, the stale line on a phone in map
-   view, and later the waiting to send row. It appears and goes with no fade.
+   button. Its rows are the slow message, and the stale line and the waiting
+   to send row while the list pane is not displayed (feed.js listPaneHidden
+   asks the layout). It appears and goes with no fade.
    The 360px cap is the one literal width. */
 .notice-card {
   position: fixed;
