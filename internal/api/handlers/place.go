@@ -104,9 +104,10 @@ func placeErrorClass(err error) string {
 // @Description lat and lon (both or neither, the map centre) make Photon prefer nearby places. When
 // @Description Photon finds nothing it asks Nominatim with the whole text, preferring places near
 // @Description the map centre, then Photon again without the first part and then without the
-// @Description second; matched_query then holds the shorter text that matched. When Photon fails
-// @Description or takes over 2 seconds, Nominatim alone runs those tries, in a box around the map
-// @Description centre first. At most four upstream requests are sent per search.
+// @Description second; matched_query then holds the shorter text that matched. A first Photon
+// @Description request that takes over 2 seconds is sent once more, with 2.5 seconds. When Photon
+// @Description fails, or is too slow both times, Nominatim alone runs those tries, in a box around
+// @Description the map centre first. At most four upstream requests are sent per search.
 // @Description A 429 or 503 never affects report submission, which has its own search.
 // @Tags geocode
 // @Produce json

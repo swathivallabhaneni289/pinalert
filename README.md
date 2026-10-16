@@ -54,8 +54,8 @@ How confirmations are counted, why a place is a precision 7 geohash cell, the 1 
    links that resolve to the wrong host, so set it explicitly to your real deployed origin outside
    local development. Both place searches (the report form's and the map's) ask Photon
    (photon.komoot.io, OpenStreetMap data, by komoot) first, because it matches close spellings and
-   half typed words, and fall back to OSM Nominatim only when Photon fails, takes over 2 seconds or
-   finds nothing. Nominatim's usage policy requires an identifying contact in the outbound
+   half typed words, and fall back to OSM Nominatim only when Photon fails, takes over 2 seconds
+   and then over 2.5 seconds on one retry, or finds nothing. Nominatim's usage policy requires an identifying contact in the outbound
    User-Agent rather than a stock HTTP library agent string; setting `NOMINATIM_CONTACT_EMAIL` puts
    your address in that header, which both services receive, and in Nominatim's optional `email`
    parameter. There is no signup and no API key for
