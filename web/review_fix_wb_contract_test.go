@@ -53,6 +53,13 @@ func TestReviewFixWBLatePostLeavesNewForm(t *testing.T) {
 		{"EARLIER_NOT_SAVED_TOAST", `"Your earlier report couldn't be saved on this device, so it wasn't sent."`},
 		{"EARLIER_REFUSED_PREFIX", `"Your earlier report wasn't posted. "`},
 		{"EARLIER_REFUSED_FALLBACK", `'Something went wrong.'`},
+		{"EARLIER_WAIT_SAVED_PREFIX", `"Your earlier report has to wait before it can be posted. It's saved on this device and will send by itself in "`},
+		{"EARLIER_WAIT_MEMORY_PREFIX", `"Your earlier report has to wait before it can be posted. It's kept on this page only. Keep the page open and it'll send by itself in "`},
+		{"EARLIER_REFUSED_SAVED", `"It's saved on this device under Waiting to send, so you can edit it and send it again."`},
+		{"EARLIER_REFUSED_MEMORY", `"It's kept on this page only, under Waiting to send. Keep the page open to edit it and send it again."`},
+		{"EARLIER_REFUSED_NOT_SAVED", `"It couldn't be saved on this device."`},
+		{"EARLIER_SIGNED_OUT_SAVED", `"Your earlier report wasn't posted because you're signed out. It's saved on this device. Sign in again to send it."`},
+		{"EARLIER_SIGNED_OUT_MEMORY", `"Your earlier report wasn't posted because you're signed out. It's kept on this page only. Sign in again in another tab, then tap Send now on this page."`},
 	} {
 		if n := strings.Count(form, "var "+c.name+" = "+c.literal+";"); n != 1 {
 			t.Errorf("%s is declared %d times with the exact copy, want 1", c.name, n)
@@ -76,8 +83,9 @@ func TestReviewFixWBLatePostLeavesNewForm(t *testing.T) {
 		"submitButton.disabled = false;", "closeForm();",
 		".catch(function (err) {",
 		"if (sent.session !== formSession) {", "reportEarlierFailure(payload, err, sent);", "return;",
-		"submitButton.disabled = false;",
-		"saveToQueue(payload, err.status >= 502 ? 'no_answer' : 'waiting', sent);")
+		// Post stays off while a report with no answer is being saved (WR-06).
+		"saveToQueue(payload, err.status >= 502 ? 'no_answer' : 'waiting', sent);", "return;",
+		"submitButton.disabled = false;")
 	p424Lacks(t, "handleSubmit", submit, "discard(resendRequestId)")
 
 	queued := jsFunctionBody(t, form, "saveToQueue(payload, status, sent)")
@@ -86,12 +94,30 @@ func TestReviewFixWBLatePostLeavesNewForm(t *testing.T) {
 	p424Lacks(t, "saveToQueue", queued, "currentRequestId", "firstSubmitAt", "resendWrittenAt")
 	p424Ordered(t, "saveToQueue", queued, "if (sent.session !== formSession) {", "return;", "closeForm();")
 
+	// CR-01, WR-01: a refused earlier report is saved on the device with the
+	// status its answer calls for, and the toast says where it is in the
+	// form's own words, never with the server's 429 sentence.
 	earlier := jsFunctionBody(t, form, "reportEarlierFailure(payload, err, sent)")
 	p424Contains(t, "reportEarlierFailure", earlier,
-		"err.queueable === true", "saveToQueue(", "EARLIER_REFUSED_PREFIX", "EARLIER_REFUSED_FALLBACK",
+		"err.queueable === true", "saveToQueue(", "earlierRecord(payload, err, sent)", "window.PinalertQueue.save(record)",
+		"earlierToastText(record, err, persisted)",
 		"err.serious === true", "EMERGENCY_CALL_PREFIX + err.emergencyNumber + EMERGENCY_CALL_SUFFIX",
 		"action = callAction(err.emergencyNumber);", "Pinalert.showToast(text, action, LONG_TOAST_MS)")
 	p424Lacks(t, "reportEarlierFailure", earlier, "formError", "focusField(", "submitButton", "closeForm(", "showLimitMessage(")
+	record := jsFunctionBody(t, form, "earlierRecord(payload, err, sent)")
+	p424Ordered(t, "earlierRecord", record,
+		"payload.written_at = sent.writtenAt;", "request_id: payload.request_id,", "written_at: sent.writtenAt",
+		"err.status === 429", "record.status = 'blocked';", "Math.max(MIN_WAIT_SECONDS, seconds)",
+		"record.serious = err.serious === true;", "record.emergency_number = err.emergencyNumber || '';",
+		"err.status === 401", "record.status = 'signed_out';",
+		"record.status = 'rejected';", "record.last_error = err.fieldMessage || 'Something went wrong. Try again.';")
+	p424Lacks(t, "earlierRecord", record, "currentRequestId", "firstSubmitAt", "resendWrittenAt")
+	toast := jsFunctionBody(t, form, "earlierToastText(record, err, persisted)")
+	p424Contains(t, "earlierToastText", toast, "EARLIER_NOT_SAVED_TOAST", "EARLIER_WAIT_SAVED_PREFIX : EARLIER_WAIT_MEMORY_PREFIX",
+		"Pinalert.formatWait(", "EARLIER_SIGNED_OUT_SAVED : EARLIER_SIGNED_OUT_MEMORY", "EARLIER_REFUSED_NOT_SAVED",
+		"EARLIER_REFUSED_SAVED : EARLIER_REFUSED_MEMORY", "EARLIER_REFUSED_PREFIX", "EARLIER_REFUSED_FALLBACK")
+	// Only the non 429 refusals ever show the server's reason.
+	p424Ordered(t, "earlierToastText", toast, "record.status === 'blocked'", "return (persisted", "err.fieldMessage")
 	// The serious toast's Call button dials the number the way the form's tap to
 	// call link does, under the same accessible name.
 	p424Contains(t, "callAction", jsFunctionBody(t, form, "callAction(number)"),
@@ -124,8 +150,37 @@ func TestReviewFixWBCloseWhilePosting(t *testing.T) {
 	p424Ordered(t, "saveToQueue", jsFunctionBody(t, form, "saveToQueue(payload, status, sent)"),
 		"if (sent.session !== formSession) {", "return;", "postInFlight = false;")
 	p424Ordered(t, "saveAfterWait", jsFunctionBody(t, form, "saveAfterWait()"),
-		"postInFlight = true;", "discardConfirm.hidden = true;", "window.PinalertQueue.save(",
-		"if (session !== formSession) {", "return;", "postInFlight = false;")
+		"postInFlight = true;", "submitButton.disabled = true;", "sendAfterWaitBtn.disabled = true;",
+		"discardConfirm.hidden = true;", "window.PinalertQueue.save(",
+		"if (session !== formSession) {", "return;", "postInFlight = false;",
+		"submitButton.disabled = false;", "sendAfterWaitBtn.disabled = false;")
+	// WR-06: a report on its way or being saved is never posted again, and a
+	// failed save gives Post back.
+	p424Ordered(t, "handleSubmit", jsFunctionBody(t, form, "handleSubmit()"), "if (postInFlight) {", "return;", "validate()")
+	p424Ordered(t, "saveToQueue", jsFunctionBody(t, form, "saveToQueue(payload, status, sent)"),
+		"postInFlight = false;", "submitButton.disabled = false;")
+	p424Contains(t, "resetForm", jsFunctionBody(t, form, "resetForm()"), "sendAfterWaitBtn.disabled = false;")
+}
+
+// TestReviewFixWBResendNamesSavedAccount pins WR-02 of the skeptic check: the
+// form's Edit and resend of a saved row names the account the row was saved
+// under, as a queue send does, and a report typed now names none. The saved
+// payload never keeps it. web/report_form_session_test.mjs runs each case.
+func TestReviewFixWBResendNamesSavedAccount(t *testing.T) {
+	form := p424ReadJS(t, "static/js/report-form.js")
+	p424Ordered(t, "openForm", jsFunctionBody(t, form, "openForm(options)"),
+		"resendRequestId = options.requestId;", "/^[0-9]+$/.test(options.accountId)", "resendAccountId = options.accountId;")
+	p424Ordered(t, "handleSubmit", jsFunctionBody(t, form, "handleSubmit()"),
+		"if (resendAccountId) {", "payload.expected_account_id = resendAccountId;", "Pinalert.submitReport(payload).then(")
+	p424Contains(t, "resetForm", jsFunctionBody(t, form, "resetForm()"), "resendAccountId = null;")
+	p424Contains(t, "saveToQueue", jsFunctionBody(t, form, "saveToQueue(payload, status, sent)"), "delete payload.expected_account_id;")
+	p424Contains(t, "earlierRecord", jsFunctionBody(t, form, "earlierRecord(payload, err, sent)"), "delete payload.expected_account_id;")
+	p424Contains(t, "queue save", jsFunctionBody(t, p424ReadJS(t, "static/js/queue.js"), "save(record)"),
+		"delete payload.expected_account_id;")
+	for _, page := range []string{"static/js/feed.js", "static/js/low.js"} {
+		p424Contains(t, page+" openSavedReport", jsFunctionBody(t, p424ReadJS(t, page), "openSavedReport(record, opener, note)"),
+			"requestId: record.request_id,", "accountId: record.account_id")
+	}
 }
 
 // TestReviewFixWBLowFormLocationRetry pins WR-W08: the Low data form asks for a

@@ -105,9 +105,11 @@ function makeIndexedDB(initial) {
   let created = initial.length > 0;
   const later = (fn) => queueMicrotask(fn);
   // control lets a case break the store: failReads makes that many reads fail,
-  // failOpen makes every open fail, and closeAll closes every open connection
-  // the way a browser does, firing onclose.
-  const control = { failReads: 0, failOpen: false, opens: 0, connections: [] };
+  // failOpen makes every open fail, failDeletes makes that many delete
+  // transactions abort, deadOnWrite makes that many write transactions find
+  // their connection silently dead (it throws on use), and closeAll closes
+  // every open connection the way a browser does, firing onclose.
+  const control = { failReads: 0, failOpen: false, failDeletes: 0, deadOnWrite: 0, opens: 0, connections: [] };
   control.closeAll = (silently = false) => {
     control.connections.forEach((database) => {
       database.closed = true;
@@ -140,7 +142,18 @@ function makeIndexedDB(initial) {
     const t = { oncomplete: null, onerror: null, onabort: null };
     t.objectStore = () => ({
       put(record) { data.set(record.request_id, structuredClone(record)); later(() => t.oncomplete && t.oncomplete()); },
-      delete(id) { data.delete(id); later(() => t.oncomplete && t.oncomplete()); },
+      delete(id) {
+        if (t.failing || control.failDeletes > 0) {
+          if (!t.failing) {
+            control.failDeletes -= 1;
+            t.failing = true;
+            later(() => t.onabort && t.onabort());
+          }
+          return;
+        }
+        data.delete(id);
+        later(() => t.oncomplete && t.oncomplete());
+      },
       index: store.index
     });
     return t;
@@ -162,6 +175,10 @@ function makeIndexedDB(initial) {
           objectStoreNames: { contains: () => created },
           createObjectStore() { created = true; return store; },
           transaction(name, mode) {
+            if (mode === 'readwrite' && control.deadOnWrite > 0) {
+              control.deadOnWrite -= 1;
+              database.closed = true;
+            }
             if (database.closed) { throw new Error('InvalidStateError'); }
             return tx(mode);
           },
@@ -181,11 +198,13 @@ function makeIndexedDB(initial) {
 
 // ----- one sandbox per case -----
 
-function loadQueue({ records = [], answers = [], indexedDBThrows = false }) {
+function loadQueue({ records = [], answers = [], indexedDBThrows = false, lockHeldElsewhere = false }) {
   const doc = makeDocument();
   const idb = makeIndexedDB(records);
   const submitted = [];
   const toasts = [];
+  // Timers never fire on their own; a case fires one by calling its fn.
+  const timers = [];
   const pinalert = {
     CATEGORY_LABELS: { flood: 'Flood', other: 'Other' },
     setText(el, text) { el.textContent = text; },
@@ -200,8 +219,8 @@ function loadQueue({ records = [], answers = [], indexedDBThrows = false }) {
   const win = {
     addEventListener() {},
     setInterval() { return 1; },
-    setTimeout() { return 1; },
-    clearTimeout() {},
+    setTimeout(fn, delay) { timers.push({ fn, delay, cleared: false }); return timers.length; },
+    clearTimeout(handle) { if (timers[handle - 1]) { timers[handle - 1].cleared = true; } },
     location: { href: 'http://127.0.0.1/profile' },
     history: { state: null, replaceState() {} }
   };
@@ -211,7 +230,11 @@ function loadQueue({ records = [], answers = [], indexedDBThrows = false }) {
     Pinalert: pinalert,
     indexedDB: idb.indexedDB,
     IDBKeyRange: { only: (value) => ({ only: value }) },
-    navigator: {},
+    // lockHeldElsewhere stands for another tab holding the flush lock, so no
+    // pass of this page ever runs.
+    navigator: lockHeldElsewhere
+      ? { locks: { request: (name, options, fn) => Promise.resolve().then(() => fn(null)) } }
+      : {},
     CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init && init.detail; } },
     URL,
     URLSearchParams
@@ -230,7 +253,13 @@ function loadQueue({ records = [], answers = [], indexedDBThrows = false }) {
   const strip = doc.createElement('div');
   const live = doc.createElement('div');
   doc.byId['notice-live'] = live;
-  return { queue: win.PinalertQueue, strip, store: idb.data, idb: idb.control, submitted, toasts, doc };
+  return { queue: win.PinalertQueue, strip, store: idb.data, idb: idb.control, submitted, toasts, doc, timers };
+}
+
+// wakeTimers returns the wake timers still set, made from index from on. The
+// announcement timer (50 ms) is left out.
+function wakeTimers(env, from = 0) {
+  return env.timers.slice(from).filter((t) => !t.cleared && t.delay >= 1000);
 }
 
 async function settle() {
@@ -503,7 +532,7 @@ await test('a 429 with a wait of 0 seconds waits at least 5 seconds (IN-W07)', a
   assert.equal(env.submitted.length, 1, 'no resend before the wait is over');
 });
 
-await test('names the saved account on each send and holds every row when the server refuses it (WR-W09)', async () => {
+await test('names the saved account on each send and holds the rows that send by themselves when the server refuses it (WR-W09, WR-05)', async () => {
   const first = 'req-nnnnnnnnnnnnnnnn-14';
   const second = 'req-oooooooooooooooo-15';
   const otherAccount = () => Promise.reject({
@@ -512,17 +541,20 @@ await test('names the saved account on each send and holds every row when the se
     fieldMessage: 'This report was saved under a different account than the one signed in now. Sign in to that account to send it.'
   });
   const notSent = 'req-pppppppppppppppp-16';
+  const later = Date.now() + 10 * 60 * 1000;
   const env = loadQueue({
     records: [
       record(first, '7', 'first saved report', '2026-10-01T00:00:00.000Z'),
-      record(second, '7', 'second saved report', '2026-10-02T00:00:00.000Z'),
+      record(second, '7', 'second saved report', '2026-10-02T00:00:00.000Z', {
+        status: 'blocked', next_try_at: later
+      }),
       record(notSent, '7', 'not sent saved report', '2026-10-03T00:00:00.000Z', {
         status: 'rejected', last_error: 'Say what is happening.'
       })
     ],
     answers: [otherAccount]
   });
-  // onEdit is given, so a Not sent row would draw Edit and resend.
+  // onEdit is given, so a Not sent row draws Edit and resend.
   env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3, onEdit: () => {} });
   await settle();
 
@@ -532,31 +564,259 @@ await test('names the saved account on each send and holds every row when the se
   assert.equal(Object.hasOwn(env.store.get(first).payload, 'expected_account_id'), false,
     'the saved payload never holds it');
 
-  for (const id of [first, second, notSent]) {
+  // Only the rows that would send by themselves are held (WR-05); the Not
+  // sent row keeps its status and its reason.
+  for (const id of [first, second]) {
     assert.ok(env.store.has(id), 'the report stays saved');
     assert.equal(env.store.get(id).status, 'other_account');
   }
+  assert.equal(env.store.get(notSent).status, 'rejected');
+  assert.equal(env.store.get(notSent).last_error, 'Say what is happening.');
   const statusLines = env.strip.descendants().filter((el) => el.className.split(/\s+/).includes('queue-strip__status'));
-  assert.equal(statusLines.length, 3);
-  statusLines.forEach((el) => {
-    assert.equal(el.textContent, 'This report was saved under a different account than the one signed in now. ' +
-      'Sign in to that account to send it. It stays saved on this device.');
-  });
+  assert.deepEqual(statusLines.map((el) => el.textContent), [
+    'This report was saved under a different account than the one signed in now. ' +
+      'Sign in to that account to send it. It stays saved on this device.',
+    'This report was saved under a different account than the one signed in now. ' +
+      'Sign in to that account to send it. It stays saved on this device.',
+    'Not sent. Say what is happening.'
+  ]);
   const discards = env.strip.descendants().filter((el) => el.className.split(/\s+/).includes('queue-strip__discard'));
   assert.equal(discards.length, 3, 'Discard report stays on each row');
   assert.equal(env.strip.descendants().some((el) => el.textContent === 'Edit and resend'), false,
-    'no row offers Edit and resend, which would post under the account signed in now');
+    'while another account is signed in no row offers Edit and resend');
 
   await env.queue.flush();
   await settle();
   assert.equal(env.submitted.length, 1, 'nothing more is sent from this page');
 
-  // A page that mounts for the saved account again proves its session, so the
-  // rows are tried again.
-  const again = loadQueue({ records: [...env.store.values()] });
-  again.queue.mount({ strip: again.strip, accountId: '7', headingLevel: 3 });
+  // A page that mounts for the saved account again proves its session, so
+  // each held row goes back to the status it had: the waiting one is sent,
+  // the blocked one keeps its wait and the Not sent one waits for the person.
+  // A held row saved by older code, with no earlier status, becomes Not sent
+  // rather than sending by itself.
+  const legacy = 'req-yyyyyyyyyyyyyyyy-25';
+  const again = loadQueue({
+    records: [...env.store.values(),
+      record(legacy, '7', 'held by older code', '2026-10-04T00:00:00.000Z', { status: 'other_account' })]
+  });
+  again.queue.mount({ strip: again.strip, accountId: '7', headingLevel: 3, onEdit: () => {} });
   await settle();
-  assert.deepEqual(again.submitted.map((p) => p.description),
-    ['first saved report', 'second saved report', 'not sent saved report']);
-  assert.equal(again.store.size, 0);
+  assert.deepEqual(again.submitted.map((p) => p.description), ['first saved report']);
+  assert.equal(again.store.has(first), false);
+  assert.equal(again.store.get(second).status, 'blocked');
+  assert.equal(again.store.get(second).next_try_at, later);
+  assert.equal(Object.hasOwn(again.store.get(second), 'held_from'), false);
+  assert.equal(again.store.get(notSent).status, 'rejected');
+  assert.equal(again.store.get(legacy).status, 'rejected');
+  assert.equal(again.store.get(legacy).last_error, 'Something went wrong. Try again.');
+  assert.ok(again.strip.descendants().some((el) => el.textContent === 'Edit and resend'),
+    'Edit and resend is back for the right account');
+});
+
+// openDiscardQuestion opens the Discard question on the row and returns a function
+// that presses Yes, discard report.
+function openDiscardQuestion(env) {
+  const rowEl = env.strip.querySelector('.queue-strip__row');
+  rowEl.querySelector('.queue-strip__discard').handlers.click.forEach((fn) => fn());
+  const group = rowEl.querySelector('.queue-strip__confirm');
+  assert.ok(group, 'the question is open');
+  const yes = group.children.find((el) => el.textContent === 'Yes, discard report');
+  return { rowEl, pressYes: () => yes.handlers.click.forEach((fn) => fn()) };
+}
+
+await test('a discard whose delete does not reach the store keeps the row and says so (WR-03)', async () => {
+  const id = 'req-ssssssssssssssss-19';
+  const env = loadQueue({
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z', {
+      status: 'rejected', last_error: 'Say what is happening.'
+    })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  const question = openDiscardQuestion(env);
+  env.idb.failDeletes = 1;
+  question.pressYes();
+  await settle();
+  assert.ok(env.store.has(id), 'the report is still on the device');
+  assert.ok(!env.toasts.includes('Saved report discarded.'), 'a failed delete must not be told as discarded');
+  assert.deepEqual(env.toasts, ["This saved report couldn't be discarded. Try again."]);
+  assert.equal(question.rowEl.querySelector('.queue-strip__confirm'), null, 'the question closes');
+  assert.ok(env.strip.querySelector('.queue-strip__discard'), 'the row is drawn again with its Discard button');
+  assert.equal(env.strip.querySelector('.queue-strip__count').textContent, '1 report saved on this device.');
+
+  // The next try reaches the store.
+  assert.equal(await env.queue.discard(id), true);
+  assert.equal(env.store.has(id), false);
+});
+
+await test('a discard that meets a silently dead connection deletes on a new one (WR-03)', async () => {
+  const id = 'req-tttttttttttttttt-20';
+  const env = loadQueue({
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z', {
+      status: 'rejected', last_error: 'Say what is happening.'
+    })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  env.idb.deadOnWrite = 1;
+  assert.equal(await env.queue.discard(id), true);
+  assert.equal(env.store.has(id), false, 'the delete reached the store on a new connection');
+  assert.equal(env.idb.opens, 2, 'the store was opened again');
+});
+
+await test('a report another tab is sending right now is never discarded (WR-04)', async () => {
+  const id = 'req-uuuuuuuuuuuuuuuu-21';
+  const env = loadQueue({
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z', {
+      status: 'rejected', last_error: 'Say what is happening.'
+    })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  const question = openDiscardQuestion(env);
+  // Another tab takes the row's lease while the question is open.
+  const leased = env.store.get(id);
+  leased.sending_until = Date.now() + 15000;
+  env.store.set(id, leased);
+  question.pressYes();
+  await settle();
+  assert.ok(env.store.has(id), 'the report being sent stays');
+  assert.deepEqual(env.toasts, ["This report is being sent right now, so it can't be discarded."]);
+  assert.equal(question.rowEl.querySelector('.queue-strip__confirm'), null, 'the question closes');
+  assert.equal(env.strip.querySelector('.queue-strip__status').textContent, 'Sending.');
+  assert.equal(await env.queue.discard(id), false);
+});
+
+await test('no wake timer for a due row that is stale, and no reopen on every pass (WR-07)', async () => {
+  const id = 'req-vvvvvvvvvvvvvvvv-22';
+  const env = loadQueue({
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z', {
+      status: 'blocked', next_try_at: Date.now() + 20
+    })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  assert.equal(env.submitted.length, 0, 'not due yet at mount');
+  await new Promise((resolve) => setTimeout(resolve, 40));
+
+  // The store cannot be read now, so the due row is shown from the last good
+  // read and is never sent.
+  env.idb.failOpen = true;
+  env.idb.closeAll();
+  const mark = env.timers.length;
+  await env.queue.flush();
+  await settle();
+  assert.equal(env.submitted.length, 0);
+  assert.deepEqual(wakeTimers(env, mark), [], 'no wake timer for a row that cannot be sent');
+  const opens = env.idb.opens;
+
+  // A pass right after does not open the store again.
+  await env.queue.flush();
+  await env.queue.flush();
+  await settle();
+  assert.equal(env.idb.opens, opens, 'the reopen waits before it is tried again');
+});
+
+await test('no wake timer while the Discard question of the due row is open (WR-07)', async () => {
+  const id = 'req-wwwwwwwwwwwwwwww-23';
+  const env = loadQueue({
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z', {
+      status: 'blocked', next_try_at: Date.now() + 20
+    })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  const rowEl = env.strip.querySelector('.queue-strip__row');
+  rowEl.querySelector('.queue-strip__discard').handlers.click.forEach((fn) => fn());
+  const keep = rowEl.querySelector('.queue-strip__confirm').children.find((el) => el.textContent === 'Keep saved report');
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  const mark = env.timers.length;
+  await env.queue.flush();
+  await settle();
+  assert.equal(env.submitted.length, 0, 'not sent while the question is open');
+  assert.deepEqual(wakeTimers(env, mark), [], 'no wake timer while the question is open');
+
+  // Closing the question sets the wake again.
+  const closeMark = env.timers.length;
+  keep.handlers.click.forEach((fn) => fn());
+  assert.equal(wakeTimers(env, closeMark).length, 1);
+});
+
+await test('a wake that sends nothing waits twice as long each time, up to a minute (WR-07)', async () => {
+  const id = 'req-xxxxxxxxxxxxxxxx-24';
+  const env = loadQueue({
+    lockHeldElsewhere: true,
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z', {
+      status: 'blocked', next_try_at: Date.now() - 1000
+    })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  const delays = [];
+  for (let i = 0; i < 9; i++) {
+    const live = wakeTimers(env);
+    assert.equal(live.length, 1, 'one wake timer at a time');
+    delays.push(live[0].delay);
+    live[0].cleared = true;
+    live[0].fn();
+    await settle();
+  }
+  assert.equal(env.submitted.length, 0);
+  assert.deepEqual(delays, [1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000, 60000]);
+});
+
+await test('a Not sent row sent by hand while signed out waits for a sign in, and the others keep Edit (WR-05)', async () => {
+  const mine = 'req-abababababababab-27';
+  const other = 'req-cdcdcdcdcdcdcdcd-28';
+  const env = loadQueue({
+    records: [
+      record(mine, '7', 'first not sent report', '2026-10-01T00:00:00.000Z', { status: 'rejected', last_error: 'Say what is happening.' }),
+      record(other, '7', 'second not sent report', '2026-10-02T00:00:00.000Z', { status: 'rejected', last_error: 'Say what is happening.' })
+    ],
+    answers: [() => Promise.reject({ status: 401, fieldMessage: 'Sign in first.' })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3, onEdit: () => {} });
+  await settle();
+  const sendBtn = env.strip.descendants().find((el) => el.id === 'queue-send-now');
+  sendBtn.handlers.click.forEach((fn) => fn());
+  await settle();
+  assert.equal(env.submitted.length, 1, 'the pass stops at the 401');
+  assert.equal(env.store.get(mine).status, 'signed_out', 'the row that drew the 401 waits for a sign in');
+  assert.equal(env.store.get(other).status, 'rejected', 'a Not sent row not sent keeps its status');
+  assert.ok(env.strip.descendants().some((el) => el.textContent === 'Sign in again'), 'the Sign in again link is drawn');
+  assert.ok(env.strip.descendants().some((el) => el.textContent === 'Edit and resend'),
+    'a 401 does not take Edit and resend away from the other Not sent row');
+});
+
+await test('a saved payload never keeps the account a resend named (WR-02)', async () => {
+  const id = 'req-zzzzzzzzzzzzzzzz-26';
+  const env = loadQueue({ answers: [() => Promise.reject({ queueable: true, status: 0 })] });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  const saved = record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z');
+  saved.payload.expected_account_id = '8';
+  await env.queue.save(saved);
+  await settle();
+  assert.equal(Object.hasOwn(env.store.get(id).payload, 'expected_account_id'), false);
+  await env.queue.flush();
+  await settle();
+  assert.equal(env.submitted.at(-1).expected_account_id, '7', 'a send names the account the row is bound to');
+});
+
+await test('a sent report never comes back when the read after the send fails (WR-08)', async () => {
+  const id = 'req-rrrrrrrrrrrrrrrr-18';
+  let env = null;
+  env = loadQueue({
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z')],
+    // Both reads after the delete fail: the first one and the one on a new
+    // connection that readStored tries next.
+    answers: [() => { env.idb.failReads = 2; return Promise.resolve({ id: 1 }); }]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  assert.equal(env.submitted.length, 1);
+  assert.equal(env.store.size, 0, 'the delete reached the store');
+  assert.deepEqual(env.toasts, ['Report sent.']);
+  assert.equal(env.strip.hidden, true, 'the sent report must not be drawn again from the last good read');
+  assert.ok(!env.strip.textContent.includes('water over the road'));
 });

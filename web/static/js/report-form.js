@@ -76,6 +76,18 @@
   var EARLIER_NOT_SAVED_TOAST = "Your earlier report couldn't be saved on this device, so it wasn't sent.";
   var EARLIER_REFUSED_PREFIX = "Your earlier report wasn't posted. ";
   var EARLIER_REFUSED_FALLBACK = 'Something went wrong.';
+  // Where a refused earlier report is kept (CR-01, WR-01): it is saved on this
+  // device, kept on this page only when the browser can't keep reports, or
+  // not kept at all. A wait is followed by {WAIT} and a period.
+  var EARLIER_WAIT_SAVED_PREFIX = "Your earlier report has to wait before it can be posted. It's saved on this device and will send by itself in ";
+  var EARLIER_WAIT_MEMORY_PREFIX = "Your earlier report has to wait before it can be posted. It's kept on this page only. Keep the page open and it'll send by itself in ";
+  var EARLIER_REFUSED_SAVED = "It's saved on this device under Waiting to send, so you can edit it and send it again.";
+  var EARLIER_REFUSED_MEMORY = "It's kept on this page only, under Waiting to send. Keep the page open to edit it and send it again.";
+  var EARLIER_REFUSED_NOT_SAVED = "It couldn't be saved on this device.";
+  var EARLIER_SIGNED_OUT_SAVED = "Your earlier report wasn't posted because you're signed out. It's saved on this device. Sign in again to send it.";
+  var EARLIER_SIGNED_OUT_MEMORY = "Your earlier report wasn't posted because you're signed out. It's kept on this page only. Sign in again in another tab, then tap Send now on this page.";
+  // The shortest wait a refused earlier report is saved with, as in queue.js.
+  var MIN_WAIT_SECONDS = 5;
 
   var mounted = false;
   var backdropEl = null;
@@ -113,6 +125,9 @@
   var firstSubmitAt = null;
   var resendRequestId = null;
   var resendWrittenAt = null;
+  // resendAccountId is the digits only id of the account a saved report was
+  // saved under, set only when the form was opened from that report (WR-02).
+  var resendAccountId = null;
   var lastLimit = null;
   // formSession numbers the form's openings: closeForm raises it. A post
   // keeps the number it was sent under, and an answer that arrives under a
@@ -661,6 +676,7 @@
     postInFlight = false;
     if (sendAfterWaitBtn) {
       sendAfterWaitBtn.hidden = true;
+      sendAfterWaitBtn.disabled = false;
     }
     if (noteEl) {
       noteEl.hidden = true;
@@ -670,6 +686,7 @@
     firstSubmitAt = null;
     resendRequestId = null;
     resendWrittenAt = null;
+    resendAccountId = null;
     lastLimit = null;
     if (picker && typeof picker.reset === 'function') {
       picker.reset();
@@ -777,6 +794,12 @@
     if (options && typeof options.requestId === 'string' && REQUEST_ID_PATTERN.test(options.requestId)) {
       currentRequestId = options.requestId;
       resendRequestId = options.requestId;
+      // Its post names the account it was saved under, as a queue send does,
+      // so the server refuses it when another account is signed in now
+      // (WR-02). The id is digits only and nothing more.
+      if (typeof options.accountId === 'string' && /^[0-9]+$/.test(options.accountId)) {
+        resendAccountId = options.accountId;
+      }
     }
     if (options && options.prefill && typeof options.prefill === 'object') {
       applyPrefill(options.prefill);
@@ -911,6 +934,11 @@
   }
 
   function handleSubmit() {
+    // A report already on its way, or being saved, is never posted again from
+    // the same form (WR-06); the button is off then too.
+    if (postInFlight) {
+      return;
+    }
     var validationResult = validate();
     if (validationResult) {
       Pinalert.setText(formError, validationResult.message);
@@ -930,6 +958,11 @@
     // line on a fresh post (R-05, D-19).
     if (resendWrittenAt) {
       payload.written_at = resendWrittenAt;
+    }
+    // A resend of a saved report names the account it was saved under (WR-02).
+    // A report typed now names none. A save after this post drops it again.
+    if (resendAccountId) {
+      payload.expected_account_id = resendAccountId;
     }
 
     submitButton.disabled = true;
@@ -974,15 +1007,18 @@
         reportEarlierFailure(payload, err, sent);
         return;
       }
-      submitButton.disabled = false;
-      Pinalert.setText(submitButton, 'Post report');
       // The visitor's input stays intact: the form does not close and no
       // field is cleared on a failed submission. A report that got no answer
-      // stays in flight until saveToQueue settles; a refused one is back in the
-      // form, so closing asks again.
+      // stays in flight until saveToQueue settles, and Post stays off until
+      // then, so the same report is never posted and saved at once (WR-06); a
+      // refused one is back in the form, so closing asks again.
       if (err && err.queueable === true) {
         saveToQueue(payload, err.status >= 502 ? 'no_answer' : 'waiting', sent);
-      } else if (err && err.status === 429) {
+        return;
+      }
+      submitButton.disabled = false;
+      Pinalert.setText(submitButton, 'Post report');
+      if (err && err.status === 429) {
         postInFlight = false;
         showLimitMessage(err);
       } else {
@@ -1120,6 +1156,8 @@
         return;
       }
       postInFlight = false;
+      submitButton.disabled = false;
+      Pinalert.setText(submitButton, 'Post report');
       Pinalert.setText(formError, 'Something went wrong. Try again.');
     };
     if (!window.PinalertQueue) {
@@ -1128,6 +1166,7 @@
     }
     var writtenAt = sent.writtenAt;
     payload.written_at = writtenAt;
+    delete payload.expected_account_id;
     window.PinalertQueue.save({
       request_id: payload.request_id,
       payload: payload,
@@ -1144,9 +1183,15 @@
   }
 
   // reportEarlierFailure handles a failed post whose form was closed while it
-  // was out (WR-W03). A post that got no answer is saved on this device like
-  // any other; a refused one is told in a toast with the server's reason and,
-  // for a serious wait, the emergency number with a Call button on the toast
+  // was out (WR-W03). The form and its text are gone, so the report is kept on
+  // this device whatever the answer (CR-01, WR-01): a post that got no answer
+  // is saved like any other, a wait (429) becomes a row that sends by itself
+  // when the wait is over, a signed out answer (401) a row that waits for a
+  // sign in, and any other refusal a Not sent row with the server's reason,
+  // whose Edit and resend brings the text back. The toast says where the
+  // report is, in this file's own words: the server's 429 sentence says the
+  // text is still in the form, which is no longer true, so it is never shown.
+  // A serious wait adds the emergency number with a Call button on the toast
   // that dials it, as the form's own tap to call link does. The form open now
   // is never touched. Every failed post carries a numeric status; an error
   // without one was thrown after a successful post by the closing code itself,
@@ -1159,13 +1204,76 @@
       saveToQueue(payload, err.status >= 502 ? 'no_answer' : 'waiting', sent);
       return;
     }
-    var text = EARLIER_REFUSED_PREFIX + ((err && err.fieldMessage) || EARLIER_REFUSED_FALLBACK);
-    var action = null;
-    if (err && err.serious === true && typeof err.emergencyNumber === 'string' && err.emergencyNumber !== '') {
-      text += ' ' + EMERGENCY_CALL_PREFIX + err.emergencyNumber + EMERGENCY_CALL_SUFFIX;
-      action = callAction(err.emergencyNumber);
+    var record = earlierRecord(payload, err, sent);
+    // persisted is true when the report reached the device storage, false when
+    // it is kept on this page only and null when it could not be kept at all.
+    var tell = function (persisted) {
+      var text = earlierToastText(record, err, persisted);
+      var action = null;
+      if (err.serious === true && typeof err.emergencyNumber === 'string' && err.emergencyNumber !== '') {
+        text += ' ' + EMERGENCY_CALL_PREFIX + err.emergencyNumber + EMERGENCY_CALL_SUFFIX;
+        action = callAction(err.emergencyNumber);
+      }
+      Pinalert.showToast(text, action, LONG_TOAST_MS);
+    };
+    if (!window.PinalertQueue) {
+      tell(null);
+      return;
     }
-    Pinalert.showToast(text, action, LONG_TOAST_MS);
+    window.PinalertQueue.save(record).then(function (persisted) {
+      tell(persisted === true);
+    }, function () {
+      tell(null);
+    });
+  }
+
+  // earlierRecord builds the queue row for a refused post whose form has
+  // closed, from what the post carried and what the server answered. A wait
+  // that cannot be read counts as a minute and one under 5 seconds as 5, as
+  // the queue does with its own sends.
+  function earlierRecord(payload, err, sent) {
+    payload.written_at = sent.writtenAt;
+    delete payload.expected_account_id;
+    var record = {
+      request_id: payload.request_id,
+      payload: payload,
+      written_at: sent.writtenAt
+    };
+    if (err.status === 429) {
+      var seconds = typeof err.retryAfterSeconds === 'number' && isFinite(err.retryAfterSeconds) ?
+        err.retryAfterSeconds : 60;
+      record.status = 'blocked';
+      record.next_try_at = Date.now() + 1000 * Math.max(MIN_WAIT_SECONDS, seconds);
+      record.serious = err.serious === true;
+      record.emergency_number = err.emergencyNumber || '';
+    } else if (err.status === 401) {
+      record.status = 'signed_out';
+    } else {
+      record.status = 'rejected';
+      record.last_error = err.fieldMessage || 'Something went wrong. Try again.';
+    }
+    return record;
+  }
+
+  // earlierToastText words where a refused earlier report is now: saved on
+  // this device (persisted true), kept on this page only (false) or not kept
+  // (null).
+  function earlierToastText(record, err, persisted) {
+    if (record.status === 'blocked') {
+      if (persisted === null) {
+        return EARLIER_NOT_SAVED_TOAST;
+      }
+      return (persisted ? EARLIER_WAIT_SAVED_PREFIX : EARLIER_WAIT_MEMORY_PREFIX) +
+        Pinalert.formatWait((record.next_try_at - Date.now()) / 1000) + '.';
+    }
+    if (record.status === 'signed_out' && persisted !== null) {
+      return persisted ? EARLIER_SIGNED_OUT_SAVED : EARLIER_SIGNED_OUT_MEMORY;
+    }
+    var where = EARLIER_REFUSED_NOT_SAVED;
+    if (persisted !== null) {
+      where = persisted ? EARLIER_REFUSED_SAVED : EARLIER_REFUSED_MEMORY;
+    }
+    return EARLIER_REFUSED_PREFIX + (err.fieldMessage || EARLIER_REFUSED_FALLBACK) + ' ' + where;
   }
 
   // callAction is the toast action that dials number: the label and the
@@ -1186,7 +1294,7 @@
   // saveAfterWait saves a report blocked by a 429 as a Blocked row, so it sends
   // by itself when the wait is over (D-12, D-18).
   function saveAfterWait() {
-    if (!lastLimit || !window.PinalertQueue) {
+    if (!lastLimit || !window.PinalertQueue || postInFlight) {
       return;
     }
     var validationResult = validate();
@@ -1203,9 +1311,13 @@
     // The save is out while the form can still be closed; its answer must
     // then leave a form opened later alone (WR-W03). Closing meanwhile asks no
     // Discard question, since the report is being saved, and a question still
-    // open from before the press goes.
+    // open from before the press goes. Post and this button stay off until
+    // the save settles, so the report is never posted and saved at once
+    // (WR-06).
     var session = formSession;
     postInFlight = true;
+    submitButton.disabled = true;
+    sendAfterWaitBtn.disabled = true;
     discardConfirm.hidden = true;
     preDiscardFocusEl = null;
     window.PinalertQueue.save({
@@ -1227,6 +1339,8 @@
         return;
       }
       postInFlight = false;
+      submitButton.disabled = false;
+      sendAfterWaitBtn.disabled = false;
       Pinalert.setText(formError, 'Something went wrong. Try again.');
     });
   }

@@ -93,7 +93,8 @@ class FakeEl {
     (this.handlers[evt.type] || []).slice().forEach((h) => h(evt));
     return true;
   }
-  click() { this.dispatchEvent({ type: 'click', preventDefault() {} }); }
+  // A disabled button fires no click, as in a browser.
+  click() { if (!this.disabled) { this.dispatchEvent({ type: 'click', preventDefault() {} }); } }
   input() { this.dispatchEvent({ type: 'input' }); }
   focus() { this.doc.activeElement = this; }
   closest() { return null; }
@@ -167,6 +168,14 @@ function setup(options) {
     CAPACITY_STATUSES: ['available', 'limited', 'full', 'closed'],
     SEVERITY_LABELS: { low: '1 · Low', medium: '2 · Medium', critical: '3 · Critical' },
     iconClass: (c) => 'icon-glyph icon-glyph--' + c,
+    // The same rounding as app.js: seconds under a minute, then minutes, then hours.
+    formatWait: (seconds) => {
+      const s = Math.max(1, Math.ceil(Number(seconds)));
+      if (s < 60) { return s + (s === 1 ? ' second' : ' seconds'); }
+      if (s < 3600) { const m = Math.ceil(s / 60); return m + (m === 1 ? ' minute' : ' minutes'); }
+      const h = Math.ceil(s / 3600);
+      return h + (h === 1 ? ' hour' : ' hours');
+    },
     setText: (el, v) => { el.textContent = v === null || v === undefined ? '' : String(v); },
     showToast: (message, action) => { toasts.push(message); toastActions.push(action || null); },
     lockPage: () => {},
@@ -319,31 +328,81 @@ test('an earlier post that cannot be saved says it was not sent', async () => {
   assert.deepEqual(page.toasts, [EARLIER_NOT_SAVED]);
 });
 
-test('an earlier post that is refused says why and leaves the new form alone', async () => {
+// The server's 429 sentences end like this one, which is true only while the
+// form is open (CR-01).
+const SERIOUS_LIMIT = "You've posted several serious reports in a short time. You can post again in 5 minutes. Your text is still here.";
+const EARLIER_REFUSED_SAVED = "It's saved on this device under Waiting to send, so you can edit it and send it again.";
+
+function assertNoFormClaim(page) {
+  page.toasts.forEach((t) => {
+    assert.ok(!t.includes('Your text is still here.'), 'the form is gone, so no toast may say the text is still here: ' + t);
+  });
+}
+
+test('an earlier post that is refused is saved as Not sent and says why (WR-01)', async () => {
   const page = setup();
   postThenReopen(page);
   page.el('severity').focus();
-  page.posts[0].reject(Object.assign(new Error('x'), {
+  const first = page.posts[0];
+  first.reject(Object.assign(new Error('x'), {
     queueable: false, status: 422, field: 'description', fieldMessage: 'That text is not allowed.'
   }));
   await settle();
   assertNewDraftUntouched(page);
   assert.equal(page.el('severity').doc.activeElement, page.el('severity'), 'focus must not move in the new form');
-  assert.deepEqual(page.toasts, ["Your earlier report wasn't posted. That text is not allowed."]);
-  assert.equal(page.queueSaves.length, 0);
+  assert.equal(page.queueSaves.length, 1, 'the report is kept on the device');
+  const saved = page.queueSaves[0];
+  assert.equal(saved.request_id, first.payload.request_id);
+  assert.equal(saved.status, 'rejected');
+  assert.equal(saved.last_error, 'That text is not allowed.');
+  assert.equal(saved.payload.description, 'Water over the main road near the bridge');
+  assert.ok(typeof saved.written_at === 'string' && saved.written_at !== '');
+  assert.deepEqual(page.toasts, ["Your earlier report wasn't posted. That text is not allowed. " + EARLIER_REFUSED_SAVED]);
 });
 
-test('a refused earlier post over the serious limit still gives the emergency number', async () => {
+test('an earlier post refused with no reason is saved as Not sent with the plain reason (WR-01)', async () => {
   const page = setup();
   postThenReopen(page);
+  page.posts[0].reject(Object.assign(new Error('x'), { queueable: false, status: 500 }));
+  await settle();
+  assert.equal(page.queueSaves[0].status, 'rejected');
+  assert.equal(page.queueSaves[0].last_error, 'Something went wrong. Try again.');
+  assert.deepEqual(page.toasts, ["Your earlier report wasn't posted. Something went wrong. " + EARLIER_REFUSED_SAVED]);
+});
+
+test('an earlier post refused while signed out waits for a sign in (WR-01)', async () => {
+  const page = setup();
+  postThenReopen(page);
+  page.posts[0].reject(Object.assign(new Error('x'), { queueable: false, status: 401, fieldMessage: 'Sign in first.' }));
+  await settle();
+  assertNewDraftUntouched(page);
+  assert.equal(page.queueSaves[0].status, 'signed_out');
+  assert.deepEqual(page.toasts,
+    ["Your earlier report wasn't posted because you're signed out. It's saved on this device. Sign in again to send it."]);
+});
+
+test('an earlier post over the serious limit is saved to send after the wait, with the emergency number (CR-01)', async () => {
+  const page = setup();
+  postThenReopen(page);
+  const before = Date.now();
   page.posts[0].reject(Object.assign(new Error('x'), {
-    queueable: false, status: 429, fieldMessage: 'Please wait 5 minutes.', retryAfterSeconds: 300,
+    queueable: false, status: 429, fieldMessage: SERIOUS_LIMIT, retryAfterSeconds: 300,
     serious: true, emergencyNumber: '112'
   }));
   await settle();
   assertNewDraftUntouched(page);
   assert.equal(page.el('send-after-wait').hidden, true, 'the new form must not offer Send after the wait');
-  assert.deepEqual(page.toasts, ["Your earlier report wasn't posted. Please wait 5 minutes. In an emergency, call 112 now."]);
+  assert.equal(page.queueSaves.length, 1, 'the report is kept on the device');
+  const saved = page.queueSaves[0];
+  assert.equal(saved.request_id, page.posts[0].payload.request_id);
+  assert.equal(saved.status, 'blocked');
+  assert.ok(saved.next_try_at >= before + 300000 && saved.next_try_at <= Date.now() + 300000);
+  assert.equal(saved.serious, true);
+  assert.equal(saved.emergency_number, '112');
+  assert.equal(saved.payload.description, 'Water over the main road near the bridge');
+  assert.deepEqual(page.toasts, ["Your earlier report has to wait before it can be posted. It's saved on this device and " +
+    'will send by itself in 5 minutes. In an emergency, call 112 now.']);
+  assertNoFormClaim(page);
   const action = page.toastActions[0];
   assert.ok(action, 'the serious toast must carry a Call action');
   assert.equal(action.label, 'Call 112');
@@ -354,16 +413,77 @@ test('a refused earlier post over the serious limit still gives the emergency nu
   assertNewDraftUntouched(page);
 });
 
-test('a refused earlier post that is not a serious wait has no Call action', async () => {
+test('an earlier post over a limit that is not serious has no Call action (CR-01)', async () => {
   const page = setup();
   postThenReopen(page);
   page.posts[0].reject(Object.assign(new Error('x'), {
-    queueable: false, status: 429, fieldMessage: 'Please wait 5 minutes.', retryAfterSeconds: 300,
+    queueable: false, status: 429, fieldMessage: 'Please wait 5 minutes. Your text is still here.', retryAfterSeconds: 300,
     serious: false, emergencyNumber: ''
   }));
   await settle();
-  assert.deepEqual(page.toasts, ["Your earlier report wasn't posted. Please wait 5 minutes."]);
+  assert.equal(page.queueSaves[0].status, 'blocked');
+  assert.equal(page.queueSaves[0].serious, false);
+  assert.deepEqual(page.toasts, ["Your earlier report has to wait before it can be posted. It's saved on this device and " +
+    'will send by itself in 5 minutes.']);
   assert.deepEqual(page.toastActions, [null]);
+});
+
+test('an earlier wait of 0 seconds still waits at least 5 seconds (CR-01)', async () => {
+  const page = setup();
+  postThenReopen(page);
+  const before = Date.now();
+  page.posts[0].reject(Object.assign(new Error('x'), { queueable: false, status: 429, retryAfterSeconds: 0 }));
+  await settle();
+  assert.ok(page.queueSaves[0].next_try_at >= before + 5000);
+});
+
+test('an earlier refusal on a browser that cannot keep reports is kept on the page (CR-01, WR-01)', async () => {
+  const page = setup();
+  page.setQueueSave(() => Promise.resolve(false));
+  postThenReopen(page);
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 429, fieldMessage: SERIOUS_LIMIT, retryAfterSeconds: 60, serious: true, emergencyNumber: '112'
+  }));
+  await settle();
+  assert.deepEqual(page.toasts, ["Your earlier report has to wait before it can be posted. It's kept on this page only. " +
+    "Keep the page open and it'll send by itself in 1 minute. In an emergency, call 112 now."]);
+  assert.ok(page.toastActions[0], 'the serious toast keeps its Call action');
+
+  const other = setup();
+  other.setQueueSave(() => Promise.resolve(false));
+  postThenReopen(other);
+  other.posts[0].reject(Object.assign(new Error('x'), { queueable: false, status: 422, fieldMessage: 'That text is not allowed.' }));
+  await settle();
+  assert.deepEqual(other.toasts, ["Your earlier report wasn't posted. That text is not allowed. It's kept on this page only, " +
+    'under Waiting to send. Keep the page open to edit it and send it again.']);
+
+  const signedOut = setup();
+  signedOut.setQueueSave(() => Promise.resolve(false));
+  postThenReopen(signedOut);
+  signedOut.posts[0].reject(Object.assign(new Error('x'), { queueable: false, status: 401 }));
+  await settle();
+  assert.deepEqual(signedOut.toasts, ["Your earlier report wasn't posted because you're signed out. It's kept on this page only. " +
+    'Sign in again in another tab, then tap Send now on this page.']);
+});
+
+test('an earlier refusal that cannot be saved at all says so, and a serious one keeps the number (CR-01, WR-01)', async () => {
+  const page = setup();
+  page.setQueueSave(() => Promise.reject(new Error('not mounted')));
+  postThenReopen(page);
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 429, fieldMessage: SERIOUS_LIMIT, retryAfterSeconds: 300, serious: true, emergencyNumber: '112'
+  }));
+  await settle();
+  assert.deepEqual(page.toasts, [EARLIER_NOT_SAVED + ' In an emergency, call 112 now.']);
+  assert.equal(page.toastActions[0].label, 'Call 112');
+  assertNoFormClaim(page);
+
+  const other = setup();
+  other.setQueueSave(() => Promise.reject(new Error('not mounted')));
+  postThenReopen(other);
+  other.posts[0].reject(Object.assign(new Error('x'), { queueable: false, status: 422, fieldMessage: 'That text is not allowed.' }));
+  await settle();
+  assert.deepEqual(other.toasts, ["Your earlier report wasn't posted. That text is not allowed. It couldn't be saved on this device."]);
 });
 
 test('an earlier resend that succeeds removes only its own saved report', async () => {
@@ -554,6 +674,135 @@ test('a Discard question open when Send after the wait is pressed goes away', as
   assert.equal(page.queueSaves.length, 1);
   assert.equal(page.el('discard-confirm').hidden, true, 'the question must not stay over a report being saved');
   page.cancelInFlight();
+});
+
+// ----- Edit and resend names the saved account (WR-02) -----
+
+const RESEND = { requestId: 'cccccccccccccccc3333', accountId: '7', prefill: { written_at: '2026-10-16T08:00:00Z' } };
+const OTHER_ACCOUNT_MESSAGE = 'This report was saved under a different account than the one signed in now. ' +
+  'Sign in to that account to send it.';
+
+test('Edit and resend posts the account the report was saved under; a fresh post does not', async () => {
+  const page = setup();
+  page.open(RESEND);
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  assert.equal(page.posts[0].payload.request_id, 'cccccccccccccccc3333');
+  assert.equal(page.posts[0].payload.expected_account_id, '7', 'a resend names the saved account');
+  page.posts[0].resolve({ id: 50 });
+  await settle();
+
+  page.open();
+  page.fill('A second report about the shelter');
+  page.submit();
+  assert.equal(Object.hasOwn(page.posts[1].payload, 'expected_account_id'), false, 'a fresh post names no account');
+
+  // An id that is not digits only is never sent.
+  const odd = setup();
+  odd.open(Object.assign({}, RESEND, { accountId: '7 or 8' }));
+  odd.fill('Water over the main road near the bridge');
+  odd.submit();
+  assert.equal(Object.hasOwn(odd.posts[0].payload, 'expected_account_id'), false);
+});
+
+test('a resend refused for another account keeps the text and the saved report', async () => {
+  const page = setup();
+  page.open(RESEND);
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 409, field: 'expected_account_id', fieldMessage: OTHER_ACCOUNT_MESSAGE
+  }));
+  await settle();
+  assert.equal(page.el('report-backdrop').hidden, false, 'the form stays open');
+  assert.equal(page.el('form-error').textContent, OTHER_ACCOUNT_MESSAGE);
+  assert.equal(page.el('description').value, 'Water over the main road near the bridge');
+  assert.deepEqual(page.queueDiscards, [], 'the saved report stays');
+  assert.deepEqual(page.queueSaves, []);
+  assert.equal(page.el('submit-report').disabled, false);
+});
+
+test('a resend with no answer is saved without the account it names', async () => {
+  const page = setup();
+  page.open(RESEND);
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), { queueable: true, status: 0 }));
+  await settle();
+  assert.equal(page.queueSaves.length, 1);
+  assert.equal(Object.hasOwn(page.queueSaves[0].payload, 'expected_account_id'), false, 'the saved payload never holds it');
+});
+
+// ----- Post stays off while a report is being saved (WR-06) -----
+
+test('Post stays off while a report with no answer is being saved', async () => {
+  const page = setup();
+  page.setQueueSave(() => new Promise(() => {}));
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), { queueable: true, status: 504 }));
+  await settle();
+  assert.equal(page.queueSaves.length, 1);
+  assert.equal(page.el('submit-report').disabled, true, 'Post must stay off while the save is out');
+  page.submit();
+  assert.equal(page.posts.length, 1, 'no second post while the report is being saved');
+});
+
+test('a failed save after no answer gives Post back', async () => {
+  const page = setup();
+  page.setQueueSave(() => Promise.reject(new Error('not valid')));
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), { queueable: true, status: 504 }));
+  await settle();
+  assert.equal(page.el('submit-report').disabled, false);
+  assert.equal(page.el('submit-report').textContent, 'Post report');
+});
+
+test('Post and Send after the wait stay off while Send after the wait saves', async () => {
+  const page = setup();
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 429, fieldMessage: 'Please wait 5 minutes.', retryAfterSeconds: 300
+  }));
+  await settle();
+  page.setQueueSave(() => new Promise(() => {}));
+  page.el('send-after-wait').click();
+  assert.equal(page.queueSaves.length, 1);
+  assert.equal(page.el('submit-report').disabled, true, 'Post must stay off while the save is out');
+  assert.equal(page.el('send-after-wait').disabled, true, 'Send after the wait must stay off while the save is out');
+  page.submit();
+  page.el('send-after-wait').click();
+  assert.equal(page.posts.length, 1, 'no second post while the report is being saved');
+  assert.equal(page.queueSaves.length, 1, 'no second save');
+});
+
+test('a failed Send after the wait gives both buttons back, and a new form starts with them on', async () => {
+  const page = setup();
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 429, fieldMessage: 'Please wait 5 minutes.', retryAfterSeconds: 300
+  }));
+  await settle();
+  page.setQueueSave(() => Promise.reject(new Error('not valid')));
+  page.el('send-after-wait').click();
+  await settle();
+  assert.equal(page.el('submit-report').disabled, false);
+  assert.equal(page.el('send-after-wait').disabled, false);
+
+  page.setQueueSave(() => Promise.resolve(true));
+  page.el('send-after-wait').click();
+  await settle();
+  assert.equal(page.el('report-backdrop').hidden, true, 'the saved report closes the form');
+  page.open();
+  assert.equal(page.el('submit-report').disabled, false);
+  assert.equal(page.el('send-after-wait').disabled, false);
 });
 
 test('a late answer leaves the question working on the form open now', async () => {

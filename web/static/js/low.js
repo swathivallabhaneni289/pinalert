@@ -904,7 +904,8 @@
   }
 
   // openSavedReport opens the shared report form for a saved report (Edit and
-  // resend), prefilled from the saved row, under the Not sent note (D-20).
+  // resend), prefilled from the saved row, under the Not sent note (D-20). Its
+  // post names the account the row was saved under (WR-02).
   function openSavedReport(record, opener, note) {
     if (!window.PinalertReportForm) {
       return;
@@ -913,7 +914,8 @@
       opener: opener || document.getElementById('low-report'),
       prefill: record.payload,
       note: note,
-      requestId: record.request_id
+      requestId: record.request_id,
+      accountId: record.account_id
     });
   }
 

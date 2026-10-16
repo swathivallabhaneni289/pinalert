@@ -63,7 +63,9 @@ func testResendMailer(t *testing.T, status int, contentType, body string, header
 	if err != nil {
 		t.Fatalf("parse test server url: %v", err)
 	}
-	client := resend.NewCustomClient(srv.Client(), "re_test_key")
+	// The same constructor as NewResendMailer, so the status the error names
+	// is read the way production reads it.
+	client := newResendClient(srv.Client(), "re_test_key")
 	client.BaseURL = base
 	return &resendMailer{client: client, from: "Pinalert <noreply@pinalert.example>"}
 }
@@ -98,6 +100,9 @@ func TestResendErrorHoldsNoAddress(t *testing.T) {
 		if !errors.Is(err, errResendRefused) {
 			t.Errorf("error %q is not errResendRefused", err)
 		}
+		if !strings.Contains(err.Error(), "resend refused the request (status 422)") {
+			t.Errorf("error %q does not name the status 422", err)
+		}
 	})
 
 	t.Run("server error", func(t *testing.T) {
@@ -107,6 +112,21 @@ func TestResendErrorHoldsNoAddress(t *testing.T) {
 		assertNoAddress(t, err)
 		if !errors.Is(err, errResendRefused) {
 			t.Errorf("error %q is not errResendRefused", err)
+		}
+		if !strings.Contains(err.Error(), "resend refused the request (status 500)") {
+			t.Errorf("error %q does not name the status 500", err)
+		}
+	})
+
+	t.Run("bad key", func(t *testing.T) {
+		m := testResendMailer(t, http.StatusForbidden, "text/plain", "key for someone.private@example.com is not valid", nil)
+		err := m.SendVerificationLink(ctx, recipient, "https://pinalert.example/auth/verify?token=x")
+		assertNoAddress(t, err)
+		if !errors.Is(err, errResendRefused) {
+			t.Errorf("error %q is not errResendRefused", err)
+		}
+		if !strings.HasSuffix(err.Error(), "resend refused the request (status 403)") {
+			t.Errorf("error %q must end with the status and nothing from the answer", err)
 		}
 	})
 

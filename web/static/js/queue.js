@@ -33,6 +33,9 @@
   var QUEUE_FLUSH_MS = 30000;
   var WAIT_TICK_MS = 60000;
   var SENDING_LEASE_MS = 15000;
+  // The longest wait between two wakes that sent nothing, and between two
+  // tries to open a store that cannot be read (WR-07).
+  var MAX_BACKOFF_MS = 60000;
   var MIN_BLOCKED_WAIT_S = 5;
   var LONG_TOAST_MS = 6000;
   var COUNT_EVENT = 'pinalert-queue-count';
@@ -51,6 +54,14 @@
     STATUS_OTHER_ACCOUNT];
   // The 409 field the server names for that refusal.
   var OTHER_ACCOUNT_FIELD = 'expected_account_id';
+  // The statuses of rows that send by themselves, the only ones held on that
+  // refusal (WR-05).
+  var HELD_FOR_OTHER_ACCOUNT = [STATUS_WAITING, STATUS_NO_ANSWER, STATUS_BLOCKED];
+  // How a discard ended (discardOutcome).
+  var DISCARD_REMOVED = 'removed';
+  var DISCARD_FAILED = 'failed';
+  var DISCARD_SENDING = 'sending';
+  var DISCARD_SKIPPED = 'skipped';
 
   // The copy table. Plain characters only.
   var QUEUE_HEADING = 'Waiting to send';
@@ -79,6 +90,8 @@
   var SENT_TOAST = 'Report sent.';
   var HELD_TOAST_MESSAGE = "Report received. It isn't shown yet. A text check has to finish first.";
   var DISCARDED_TOAST = 'Saved report discarded.';
+  var DISCARD_FAILED_TOAST = "This saved report couldn't be discarded. Try again.";
+  var DISCARD_SENDING_TOAST = "This report is being sent right now, so it can't be discarded.";
   var GENERIC_REASON = 'Something went wrong. Try again.';
   var ANNOUNCE_ONE_SUFFIX = ' report waiting to send.';
   var ANNOUNCE_MANY_SUFFIX = ' reports waiting to send.';
@@ -104,6 +117,8 @@
   // strip then keeps the rows it last read (lastStored) and sends none of them.
   // pendingRemovals holds request ids whose delete has not reached the store
   // yet, so a discarded or sent row never comes back from lastStored (WR-W06).
+  // A delete that reaches the store takes its rows out of lastStored as well
+  // (WR-08).
   var storeOpened = false;
   var storeUnreadable = false;
   var reopenPromise = null;
@@ -115,7 +130,18 @@
   var flushPromise = null;
   var passRunning = false;
   var wakeTimer = null;
+  // wakeBackoffMs is the wait before the next wake for a row that is due but
+  // was not sent (0 while no such row). reopenWaitMs and reopenNotBefore hold
+  // back an automatic pass while the store cannot be read, so the store is not
+  // opened again on every pass; a good read clears both (WR-07).
+  var wakeBackoffMs = 0;
+  var reopenWaitMs = 0;
+  var reopenNotBefore = 0;
   var sessionLapsed = false;
+  // otherAccountSignedIn is true once this page learned that another account
+  // is signed in now (a 409 for another account, or another tab's account).
+  // Edit and resend is then hidden; a 401 alone leaves it (WR-05).
+  var otherAccountSignedIn = false;
   var persistAsked = false;
   var questionSeq = 0;
 
@@ -251,6 +277,8 @@
       } else {
         storeUnreadable = false;
         lastStored = stored;
+        reopenWaitMs = 0;
+        reopenNotBefore = 0;
       }
       var byId = {};
       stored.forEach(function (record) {
@@ -342,23 +370,46 @@
     });
   }
 
-  // removeRow is the only function that deletes a stored row. A delete that
-  // cannot reach the store stays pending: the row is hidden and never sent from
-  // this page, and the next removeRow deletes it together with its own row.
+  // removeRow is the only function that deletes a stored row. It resolves true
+  // when the row is gone: its delete reached the store, or this browser never
+  // had a store and the row lived in memory only. It resolves false when the
+  // delete could not reach the store (WR-03). Such a delete stays pending: the
+  // row is hidden and never sent from this page, and the next removeRow
+  // deletes it together with its own row. Like putRow, a connection that died
+  // without telling the page is dropped and the delete tried once more on a
+  // new one.
   function removeRow(requestId) {
     delete memoryRows[requestId];
-    if (storeOpened) {
-      pendingRemovals[requestId] = true;
+    if (!storeOpened) {
+      return Promise.resolve(true);
     }
-    return ensureStore().then(function () {
+    pendingRemovals[requestId] = true;
+    // attempt resolves true when the delete reached the store, false when it
+    // did not, and 'dead' when the connection threw on use.
+    var attempt = function () {
       return new Promise(function (resolve) {
+        if (!pendingRemovals[requestId]) {
+          // Another removeRow deleted this row meanwhile.
+          resolve(true);
+          return;
+        }
+        if (db === null) {
+          resolve(false);
+          return;
+        }
+        var used = db;
         var ids = Object.keys(pendingRemovals);
-        if (db === null || ids.length === 0) {
-          resolve();
+        var tx;
+        try {
+          tx = used.transaction(STORE_NAME, 'readwrite');
+        } catch (e) {
+          if (db === used) {
+            db = null;
+          }
+          resolve('dead');
           return;
         }
         try {
-          var tx = db.transaction(STORE_NAME, 'readwrite');
           var store = tx.objectStore(STORE_NAME);
           ids.forEach(function (id) {
             store.delete(id);
@@ -367,14 +418,31 @@
             ids.forEach(function (id) {
               delete pendingRemovals[id];
             });
-            resolve();
+            // The deleted rows leave the last good read too, so a read that
+            // fails right after a send never draws a sent report again (WR-08).
+            lastStored = lastStored.filter(function (stored) {
+              return ids.indexOf(stored.request_id) === -1;
+            });
+            resolve(true);
           };
-          tx.onerror = resolve;
-          tx.onabort = resolve;
+          tx.onerror = function () {
+            resolve(false);
+          };
+          tx.onabort = function () {
+            resolve(false);
+          };
         } catch (e) {
-          resolve();
+          resolve(false);
         }
       });
+    };
+    return ensureStore().then(attempt).then(function (result) {
+      if (result !== 'dead') {
+        return result;
+      }
+      return ensureStore().then(attempt);
+    }).then(function (result) {
+      return result === true;
     });
   }
 
@@ -415,12 +483,16 @@
       return loadRows();
     }).then(function (list) {
       // A page that passed the gate proves the session for this account, so a
-      // row that was waiting for a sign in, or refused because another account
-      // was signed in, is tried again.
+      // row that was waiting for a sign in is tried again, and a row held
+      // because another account was signed in goes back to the status it had
+      // (WR-05).
       var writes = [];
       list.forEach(function (record) {
-        if (record.status === STATUS_SIGNED_OUT || record.status === STATUS_OTHER_ACCOUNT) {
+        if (record.status === STATUS_SIGNED_OUT) {
           record.status = STATUS_WAITING;
+          writes.push(putRow(record));
+        } else if (record.status === STATUS_OTHER_ACCOUNT) {
+          releaseRow(record);
           writes.push(putRow(record));
         }
       });
@@ -449,6 +521,7 @@
         channel.onmessage = function (evt) {
           if (evt && evt.data && evt.data.account_id !== accountId) {
             sessionLapsed = true;
+            otherAccountSignedIn = true;
             renderStrip();
           }
         };
@@ -471,6 +544,9 @@
     return storeReady.then(function () {
       var payload = JSON.parse(JSON.stringify(record.payload));
       payload.request_id = requestId;
+      // The account a post names is added to each send from the row's own
+      // account_id, never kept in the saved payload (WR-02).
+      delete payload.expected_account_id;
       var row = {
         request_id: requestId,
         account_id: accountId,
@@ -504,24 +580,48 @@
     return runFlush(false);
   }
 
-  // discard resolves true when the row was removed and false when it was not:
-  // no such row, or a stored row the page cannot read right now, whose delete
-  // could not reach the store and would come back on a reload (WR-W06).
+  // discard resolves true when the row was removed and false when it was not.
   function discard(requestId) {
+    return discardOutcome(requestId).then(function (outcome) {
+      return outcome === DISCARD_REMOVED;
+    });
+  }
+
+  // discardOutcome removes one row and resolves how that went:
+  // DISCARD_REMOVED, DISCARD_FAILED when the delete could not reach the store
+  // (WR-03), DISCARD_SENDING for a row whose lease is live (WR-04), or
+  // DISCARD_SKIPPED for no such row, or a stored row the page
+  // cannot read right now, whose delete would come back on a reload (WR-W06).
+  // A row that is not removed stays on the strip and can still be sent: the
+  // person is told it was kept, so it is neither hidden nor deleted later.
+  function discardOutcome(requestId) {
     return storeReady.then(function () {
       return loadRows();
     }).then(function () {
       var record = findRow(requestId);
       if (!record || !belongsToAccount(record) || isStale(record)) {
         renderStrip();
-        return false;
+        return DISCARD_SKIPPED;
       }
-      return removeRow(requestId).then(function () {
-        return loadRows();
-      }).then(function () {
+      // A row another tab, or a pass of this one, is sending right now may be
+      // posted whatever happens here, so it is never discarded (WR-04).
+      if (isLeased(record)) {
         renderStrip();
-        scheduleWake();
-        return true;
+        return DISCARD_SENDING;
+      }
+      var memoryCopy = Object.prototype.hasOwnProperty.call(memoryRows, requestId) ? memoryRows[requestId] : null;
+      return removeRow(requestId).then(function (removed) {
+        if (!removed) {
+          delete pendingRemovals[requestId];
+          if (memoryCopy !== null) {
+            memoryRows[requestId] = memoryCopy;
+          }
+        }
+        return loadRows().then(function () {
+          renderStrip();
+          scheduleWake();
+          return removed ? DISCARD_REMOVED : DISCARD_FAILED;
+        });
       });
     });
   }
@@ -548,6 +648,13 @@
     }
     if (flushPromise) {
       return flushPromise;
+    }
+    // While the store cannot be read, an automatic pass (the timer, the
+    // interval, the online event) waits before it opens the store again: 1
+    // second after the first failed pass, then 2, 4 and so on, up to a minute.
+    // A save, a discard and Send now still try at once (WR-07).
+    if (manual !== true && storeUnreadable && Date.now() < reopenNotBefore) {
+      return Promise.resolve();
     }
     var pass = function () {
       return storeReady.then(function () {
@@ -602,6 +709,10 @@
     var done = function () {
       flushPromise = null;
       passRunning = false;
+      if (storeUnreadable) {
+        reopenWaitMs = Math.min(MAX_BACKOFF_MS, reopenWaitMs > 0 ? 2 * reopenWaitMs : 1000);
+        reopenNotBefore = Date.now() + reopenWaitMs;
+      }
       renderStrip();
       scheduleWake();
     };
@@ -682,17 +793,28 @@
       // Signed out, or another account is signed in now than the one this
       // page and its saved reports belong to (WR-W09). Every other report of
       // this account would get the same answer, so they all wait, nothing more
-      // is sent from this page and Discard stays on each row. For another
-      // account the Not sent rows are held too: their Edit and resend would
-      // post through the form under the account signed in now.
+      // is sent from this page and Discard stays on each row. Any other Not
+      // sent row keeps its status either way: it is sent only when the person
+      // asks, and while another account is signed in it offers no Edit and
+      // resend.
       held = status === 401 ? STATUS_SIGNED_OUT : STATUS_OTHER_ACCOUNT;
       rows.forEach(function (other) {
-        if (belongsToAccount(other) && (other.status !== STATUS_REJECTED || held === STATUS_OTHER_ACCOUNT)) {
-          other.status = held;
-          other.sending_until = 0;
+        if (other !== record && other.request_id !== record.request_id && belongsToAccount(other)) {
+          holdRow(other, held);
         }
       });
-      record.status = held;
+      if (held === STATUS_SIGNED_OUT) {
+        // The row that drew the 401 waits for a sign in whatever its status,
+        // a Not sent row sent by hand included.
+        record.sending_until = 0;
+        record.status = STATUS_SIGNED_OUT;
+      } else {
+        holdRow(record, held);
+        if (record.status === STATUS_REJECTED && err.fieldMessage) {
+          record.last_error = err.fieldMessage;
+        }
+        otherAccountSignedIn = true;
+      }
       sessionLapsed = true;
       announce(status === 401 ? ANNOUNCE_SIGNED_OUT : ANNOUNCE_OTHER_ACCOUNT);
       outcome = 'stop';
@@ -704,7 +826,7 @@
     var writes = [putRow(record)];
     if (held !== '') {
       rows.forEach(function (other) {
-        if (other !== record && other.status === held) {
+        if (other !== record && other.request_id !== record.request_id && other.status === held) {
           writes.push(putRow(other));
         }
       });
@@ -716,25 +838,80 @@
     });
   }
 
+  // scheduleWake sets one timer for the Blocked row whose wait ends first. A
+  // row a pass would skip (shown from the last good read while the store
+  // cannot be read, or with its Discard question open) sets none; the question
+  // sets it again when it closes. A row whose wait is over but that a wake did
+  // not send (another tab holds the flush lock, say) is tried after 1 second,
+  // then 2, 4 and so on, up to a minute (WR-07). A row being sent wakes the
+  // page when its lease ends.
+  // holdRow puts one row on hold after a 401 or a 409 for another account.
+  // Signed out holds every row but a Not sent one, as before. Another account
+  // holds only the rows that would send by themselves, and keeps the status
+  // each had in held_from, so a page that loads for the right account again
+  // puts it back exactly (WR-05).
+  function holdRow(row, held) {
+    row.sending_until = 0;
+    if (held === STATUS_SIGNED_OUT) {
+      if (row.status !== STATUS_REJECTED) {
+        row.status = held;
+      }
+      return;
+    }
+    if (HELD_FOR_OTHER_ACCOUNT.indexOf(row.status) !== -1) {
+      row.held_from = row.status;
+      row.status = held;
+    }
+  }
+
+  // releaseRow puts a row held for another account back to the status it had.
+  // A row held by older code, which kept no earlier status, becomes Not sent,
+  // so it waits for the person instead of sending by itself.
+  function releaseRow(row) {
+    if (HELD_FOR_OTHER_ACCOUNT.indexOf(row.held_from) !== -1) {
+      row.status = row.held_from;
+    } else {
+      row.status = STATUS_REJECTED;
+      row.last_error = row.last_error || GENERIC_REASON;
+    }
+    delete row.held_from;
+  }
+
   function scheduleWake() {
     if (wakeTimer !== null) {
       window.clearTimeout(wakeTimer);
       wakeTimer = null;
     }
+    if (sessionLapsed) {
+      return;
+    }
     var earliest = null;
     rows.forEach(function (record) {
-      if (record.status === STATUS_BLOCKED && belongsToAccount(record)) {
-        if (earliest === null || record.next_try_at < earliest) {
-          earliest = record.next_try_at;
-        }
+      if (record.status !== STATUS_BLOCKED || !belongsToAccount(record) || isStale(record) ||
+          questionOpen(record.request_id)) {
+        return;
+      }
+      var at = Math.max(record.next_try_at, record.sending_until || 0);
+      if (earliest === null || at < earliest) {
+        earliest = at;
       }
     });
     if (earliest === null) {
+      wakeBackoffMs = 0;
       return;
     }
-    var delay = Math.min(QUEUE_FLUSH_MS, Math.max(1000, earliest - Date.now()));
+    var now = Date.now();
+    var delay;
+    if (earliest > now) {
+      wakeBackoffMs = 0;
+      delay = Math.min(QUEUE_FLUSH_MS, Math.max(1000, earliest - now));
+    } else {
+      delay = wakeBackoffMs > 0 ? wakeBackoffMs : 1000;
+    }
     wakeTimer = window.setTimeout(function () {
       wakeTimer = null;
+      // The next wake for a row still due after this one waits twice as long.
+      wakeBackoffMs = Math.min(MAX_BACKOFF_MS, 2 * (wakeBackoffMs > 0 ? wakeBackoffMs : 1000));
       flush();
     }, delay);
   }
@@ -948,7 +1125,8 @@
     // no buttons: its delete could not reach the store (WR-W06).
     var stale = isStale(record);
     var signature = [leased ? 'sending' : record.status, record.last_error, record.serious === true,
-      record.emergency_number, record.status === STATUS_BLOCKED ? record.next_try_at : '', stale].join('|');
+      record.emergency_number, record.status === STATUS_BLOCKED ? record.next_try_at : '', stale,
+      otherAccountSignedIn].join('|');
     if (rowEl.getAttribute('data-state') === signature) {
       return;
     }
@@ -1041,9 +1219,14 @@
   }
 
   // buildEditControl is the one place an Edit and resend control is made. It
-  // returns null when this page has no form to open and no link to one. A page
-  // that passes a link builder gets a link, and the edit callback is not used.
+  // returns null when this page has no form to open and no link to one, and
+  // while another account is signed in, when a resend could not be posted for
+  // this account (WR-05). A page that passes a link builder gets a link, and
+  // the edit callback is not used.
   function buildEditControl(record) {
+    if (otherAccountSignedIn) {
+      return null;
+    }
     if (typeof resendHref === 'function') {
       var target = safeResendHref(resendHref(record));
       return target === '' ? null : createResendLink(target);
@@ -1118,11 +1301,16 @@
       }
     });
     yes.addEventListener('click', function () {
-      discard(record.request_id).then(function (removed) {
-        if (removed) {
+      discardOutcome(record.request_id).then(function (outcome) {
+        if (outcome === DISCARD_REMOVED) {
           Pinalert.showToast(DISCARDED_TOAST);
-        } else {
-          closeQuestion();
+          return;
+        }
+        closeQuestion();
+        if (outcome === DISCARD_FAILED) {
+          Pinalert.showToast(DISCARD_FAILED_TOAST);
+        } else if (outcome === DISCARD_SENDING) {
+          Pinalert.showToast(DISCARD_SENDING_TOAST);
         }
       });
     });

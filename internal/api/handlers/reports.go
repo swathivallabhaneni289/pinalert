@@ -463,12 +463,15 @@ func SubmitReport(svc *service.ReportService, gate *RateGate) http.HandlerFunc {
 		}
 
 		// Right after decoding: a saved report that names the account it was saved under is
-		// refused when that is not the signed in account (WR-W09), so a page
-		// left open for one account can never post under another's cookie. It
-		// runs before validation, the replay lookup (keyed by the cookie's
-		// account) and the limits, so it stores nothing, costs no allowance and
-		// is never answered with another account's report. The answer names
-		// neither account. A post without the field is not checked.
+		// refused when that is not the signed in account (WR-W09). Both ways a
+		// saved report is posted name it: a send from the device queue, and the
+		// form's Edit and resend of a saved row (WR-02). A report typed in the
+		// form and posted at once names no account and is not checked, so it is
+		// stored under whichever account the cookie holds when it arrives; the
+		// check guards saved reports only. It runs before validation, the
+		// replay lookup (keyed by the cookie's account) and the limits, so it
+		// stores nothing, costs no allowance and is never answered with another
+		// account's report. The answer names neither account.
 		if req.ExpectedAccountID != nil && *req.ExpectedAccountID != strconv.FormatInt(acc.ID, 10) {
 			writeFieldError(w, http.StatusConflict, "expected_account_id", expectedAccountMessage)
 			return
