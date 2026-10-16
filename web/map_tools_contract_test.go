@@ -560,6 +560,14 @@ func TestMapToolsCSS(t *testing.T) {
 		// the phone title bar sits between the notice bar and the map, so the
 		// results start under it as well. The Phase 3.1 and Phase 4 hands-on
 		// tests are walked on this layout after Phase 3.4 is built.
+		//
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+		// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+		// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+		// every page) is retired as worded; Disclaimer and Policy are reached from the
+		// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+		// first-time flow, the login screen and the one reader. The token read here
+		// is 0px on a phone, where the strip is hidden.
 		"top": "calc(var(--disclaimer-bar-height, 0px) + var(--app-topbar-height) + var(--space-sm) + var(--touch-target-min) + var(--space-xs))",
 	})
 	if !strings.Contains(results.Decls["max-height"], "100dvh") {

@@ -183,3 +183,58 @@ func TestStripHiddenOnPhone(t *testing.T) {
 		}
 	}
 }
+
+// TestBarTokenZeroWithoutStrip pins the height token (T-34-24). It is 0px in
+// the :root rule of main.css, no width tier restates it, and theme.js writes
+// 0px when the strip is absent or not displayed, so the shells that subtract
+// the token keep working on every page without a per page edit.
+//
+// Dated 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+// every page) is retired as worded; Disclaimer and Policy are reached from the
+// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+// first-time flow, the login screen and the one reader. The Phase 3.1 and
+// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+func TestBarTokenZeroWithoutStrip(t *testing.T) {
+	const token = "--disclaimer-bar-height"
+	main := p16ReadStatic(t, "static/css/main.css")
+
+	root, ok := ruleBySelector(parseCSSRules(main), ":root")
+	if !ok {
+		t.Fatal("main.css has no exact :root rule")
+	}
+	if got := declsOf(root.declBody)[token]; got != "0px" {
+		t.Errorf(":root %s = %q, want 0px", token, got)
+	}
+
+	// No width tier restates the token.
+	for _, r := range p16ParseCSS("static/css/main.css", main) {
+		if _, has := r.Decls[token]; has && r.Media != "" {
+			t.Errorf("%s is restated in %q; no width tier remains", token, r.Media)
+		}
+	}
+
+	// theme.js writes the strip's height or 0px, and never looks for the old bar.
+	raw, err := StaticFS.ReadFile(themeJSPath)
+	if err != nil {
+		t.Fatalf("reading %s: %v", themeJSPath, err)
+	}
+	code := stripJSComments(string(raw))
+	if !strings.Contains(code, "querySelector('.notice-strip')") {
+		t.Error("theme.js must measure .notice-strip")
+	}
+	if strings.Contains(code, "'.disclaimer-bar'") {
+		t.Error("theme.js still looks for the Phase 4 bar")
+	}
+	measure := jsFunctionBody(t, code, "measureBar()")
+	if !strings.Contains(measure, "setProperty(BAR_PROPERTY, '0px')") {
+		t.Errorf("measureBar must write 0px when the strip is absent or not displayed: %q", measure)
+	}
+	watch := jsFunctionBody(t, code, "watchBar()")
+	measureAt := strings.Index(watch, "measureBar();")
+	returnAt := strings.Index(watch, "if (!barEl)")
+	if measureAt < 0 || returnAt < 0 || measureAt > returnAt {
+		t.Errorf("watchBar must measure before it returns for a page with no strip, so the token is written as 0px there: %q", watch)
+	}
+}

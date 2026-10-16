@@ -2,9 +2,7 @@ package web
 
 import (
 	"io/fs"
-	"math"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -125,40 +123,19 @@ func p408Squash(s string) string {
 	return strings.Join(strings.Fields(s), "")
 }
 
-var p408BarCalc = regexp.MustCompile(
-	`^calc\(var\(--space-xs\)\*2\+var\(--font-size-label\)\*var\(--line-height-label\)(?:\*(\d))?\+1px\)$`)
-
-// p408ResolveBar resolves one bar height value against the label tokens.
-func p408ResolveBar(t *testing.T, value string, space, size, line float64) float64 {
-	t.Helper()
-	m := p408BarCalc.FindStringSubmatch(p408Squash(value))
-	if m == nil {
-		t.Fatalf("bar height value %q does not match the three term calc form", value)
-	}
-	lines := 1.0
-	if m[1] != "" {
-		n, err := strconv.Atoi(m[1])
-		if err != nil {
-			t.Fatalf("bad line multiplier in %q: %v", value, err)
-		}
-		lines = float64(n)
-	}
-	return space*2 + size*line*lines + 1
-}
-
-func p408PxToken(t *testing.T, decls map[string]string, name string) float64 {
-	t.Helper()
-	v, ok := decls[name]
-	if !ok {
-		t.Fatalf("main.css :root does not declare %s", name)
-	}
-	f, err := strconv.ParseFloat(strings.TrimSuffix(v, "px"), 64)
-	if err != nil {
-		t.Fatalf("%s value %q is not a plain number: %v", name, v, err)
-	}
-	return f
-}
-
+// TestDisclaimerBarToken pins where --disclaimer-bar-height is declared: once,
+// in the :root rule of main.css, as 0px, and nowhere else.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+// every page) is retired as worded; Disclaimer and Policy are reached from the
+// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+// first-time flow, the login screen and the one reader. The Phase 3.1 and
+// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+// The three width tiers (67.8px, 48.2px and 28.6px) are gone: the strip's
+// height is content driven, so the token is 0px until theme.js measures a
+// strip on the page.
 func TestDisclaimerBarToken(t *testing.T) {
 	const token = "--disclaimer-bar-height"
 	main := p408ReadStatic(t, "static/css/main.css")
@@ -168,67 +145,15 @@ func TestDisclaimerBarToken(t *testing.T) {
 	if !ok {
 		t.Fatal("main.css has no exact :root rule")
 	}
-	rootDecls := declsOf(root.declBody)
-	base, ok := rootDecls[token]
+	base, ok := declsOf(root.declBody)[token]
 	if !ok {
 		t.Fatalf("main.css :root does not declare %s", token)
 	}
-	wantBase := "calc(var(--space-xs)*2+var(--font-size-label)*var(--line-height-label)*3+1px)"
-	if p408Squash(base) != wantBase {
-		t.Errorf(":root %s = %q, want the three line form", token, base)
+	if p408Squash(base) != "0px" {
+		t.Errorf(":root %s = %q, want 0px", token, base)
 	}
 
-	space := p408PxToken(t, rootDecls, "--space-xs")
-	size := p408PxToken(t, rootDecls, "--font-size-label")
-	line, err := strconv.ParseFloat(rootDecls["--line-height-label"], 64)
-	if err != nil {
-		t.Fatalf("--line-height-label %q: %v", rootDecls["--line-height-label"], err)
-	}
-
-	tiers := []struct {
-		query string
-		want  string
-		px    float64
-	}{
-		{"(min-width: 480px)", "calc(var(--space-xs)*2+var(--font-size-label)*var(--line-height-label)*2+1px)", 48.2},
-		{"(min-width: 900px)", "calc(var(--space-xs)*2+var(--font-size-label)*var(--line-height-label)+1px)", 28.6},
-	}
-	if got := p408ResolveBar(t, base, space, size, line); math.Abs(got-67.8) > 0.01 {
-		t.Errorf("base bar height resolves to %.2fpx, want 67.8", got)
-	}
-	for _, tier := range tiers {
-		blocks := p408MediaBlocks(main, tier.query)
-		var roots []cssRule
-		for _, r := range blocks {
-			if r.selectorHead == ":root" {
-				roots = append(roots, r)
-			}
-		}
-		if len(roots) != 1 {
-			t.Errorf("%s: want exactly one :root rule, got %d (of %d rules)", tier.query, len(roots), len(blocks))
-			continue
-		}
-		decls := declsOf(roots[0].declBody)
-		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10):
-		// the 900px tier also carries the two app bar lengths (the laptop top
-		// bar is 61px, the laptop has no bottom bar), so they are set aside
-		// before the "only the bar token" count. Both are lengths, never a
-		// colour. The Phase 3.1 and Phase 4 hands-on tests are walked on this
-		// layout after Phase 3.4 is built.
-		delete(decls, "--app-topbar-height")
-		delete(decls, "--app-bottombar-height")
-		if len(decls) != 1 {
-			t.Errorf("%s :root must declare only %s, got %v", tier.query, token, decls)
-		}
-		if p408Squash(decls[token]) != tier.want {
-			t.Errorf("%s :root %s = %q, want %q", tier.query, token, decls[token], tier.want)
-		}
-		if got := p408ResolveBar(t, decls[token], space, size, line); math.Abs(got-tier.px) > 0.01 {
-			t.Errorf("%s bar height resolves to %.2fpx, want %.1f", tier.query, got, tier.px)
-		}
-	}
-
-	// Exactly three declarations in main.css, none of them in a theme source.
+	// One declaration in main.css, in no theme source and in no width tier.
 	declaring := 0
 	for _, r := range rules {
 		if _, has := declsOf(r.declBody)[token]; !has {
@@ -239,9 +164,12 @@ func TestDisclaimerBarToken(t *testing.T) {
 		if strings.Contains(head, "data-theme") || strings.Contains(head, "prefers-color-scheme") {
 			t.Errorf("%s is declared in the theme source %q", token, head)
 		}
+		if strings.Contains(head, "@media") {
+			t.Errorf("%s is declared in a width tier %q; the strip's height is content driven", token, head)
+		}
 	}
-	if declaring != 3 {
-		t.Errorf("main.css declares %s in %d rules, want 3 (the :root rule and two width tiers)", token, declaring)
+	if declaring != 1 {
+		t.Errorf("main.css declares %s in %d rules, want 1 (the :root rule)", token, declaring)
 	}
 
 	// No other stylesheet declares it; reading it is fine.

@@ -12,6 +12,16 @@ import (
 // same way main.css does. Otherwise the shell is one bar taller than the
 // viewport and the page scrolls on a phone. Nothing here needs a database or a
 // server; the test reads the embedded stylesheet.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+// every page) is retired as worded; Disclaimer and Policy are reached from the
+// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+// first-time flow, the login screen and the one reader. The Phase 3.1 and
+// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+// The phone shell still subtracts the token, which is now 0px on a phone
+// because the strip is hidden there (D-30); the rule itself is unchanged.
 func TestPhoneShellSubtractsTheBar(t *testing.T) {
 	css := stripCSSComments(p16ReadStatic(t, "static/css/phone.css"))
 

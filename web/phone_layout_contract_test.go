@@ -530,6 +530,16 @@ func TestPhoneDetailSheetStylesheet(t *testing.T) {
 	// Browser finding F-P4-5: on a short landscape phone the sheet starts right
 	// under the unofficial bar. The bar token follows the real bar (theme.js),
 	// so a fixed 64px value started the sheet inside a 68px bar at 320x256.
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
+	// D-31): the bar on every page is replaced by the laptop strip on Nearby and
+	// Post a report only. Phase 4 SC7 (both legal pages linked from the bar on
+	// every page) is retired as worded; Disclaimer and Policy are reached from the
+	// laptop strip's Read the disclaimer link, Settings, About Pinalert, the
+	// first-time flow, the login screen and the one reader. The Phase 3.1 and
+	// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+	// The rule still reads the token; on a phone the token is 0px (the strip is
+	// hidden there), so the sheet starts at the top of its pane.
 	short := byHead("@media (max-width: 899.98px) and (max-height: 359px)", ".leaflet-container .leaflet-detail-pane .leaflet-popup")
 	if len(short) != 1 || short[0].Decls["top"] != "var(--disclaimer-bar-height)" {
 		t.Errorf("short screen block must start the sheet at var(--disclaimer-bar-height), got %v", short)
