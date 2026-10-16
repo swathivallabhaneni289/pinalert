@@ -13,7 +13,6 @@ import (
 	"html"
 	"io"
 	"net/http"
-	"net/url"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -488,13 +487,18 @@ func TestProfileRendersSeverityLabel(t *testing.T) {
 	page := getProfile(t, client, srv.URL)
 	for i, c := range cases {
 		row := p15ProfileRow(t, page, ids[i])
-		start := regexp.MustCompile(`<div class="report-row__body">\s*<span class="activity-card__tag">Your post</span>\s*<p class="report-row__title">`)
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to
+		// D-21): the Report cell starts with the title, and the severity word is
+		// kept as a visually hidden word in the Status cell next to the chip
+		// (the tint alone must not carry the severity). The Phase 3.1 and Phase 4
+		// hands-on tests are walked on this layout after Phase 3.4 is built.
+		start := regexp.MustCompile(`<div class="activity-card__report">\s*<p class="report-row__title">`)
 		if !start.MatchString(row) {
-			t.Errorf("%s row does not start its body with the tag and then the title: %s", c.level, row)
+			t.Errorf("%s row does not start its Report cell with the title: %s", c.level, row)
 		}
-		chip := regexp.MustCompile(`<span class="activity-chip__word activity-chip__word--severity">` + c.word + `</span>`)
-		if !chip.MatchString(row) {
-			t.Errorf("%s row's chip does not hold the severity word %q: %s", c.level, c.word, row)
+		severity := regexp.MustCompile(`<span class="visually-hidden">` + c.word + ` severity\. </span><span class="activity-chip"`)
+		if !severity.MatchString(row) {
+			t.Errorf("%s row's Status cell does not hold the severity word %q: %s", c.level, c.word, row)
 		}
 		hasSev := false
 		for _, tok := range p15ClassTokens(t, row) {
@@ -657,13 +661,29 @@ func TestProfileRendersTheReporterRecord(t *testing.T) {
 		t.Errorf("record card has no accessible name: %s", body)
 	}
 
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to D-21,
+	// T-34-32): the back link and the email line are gone from the page, the
+	// heading is My activity, and the record card sits in the Posted by you
+	// part. The Phase 3.1 and Phase 4 hands-on tests are walked on this layout
+	// after Phase 3.4 is built.
 	for _, want := range []string{
-		`class="profile-back-link"`, "activity-record@example.com", "<h2>Activity</h2>",
+		`<h1 class="activity-heading">My activity</h1>`,
 		`data-report-id="` + strconv.FormatInt(reportID, 10) + `"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/profile lost %q: %s", want, body)
 		}
+	}
+	for _, gone := range []string{`class="profile-back-link"`, "activity-record@example.com", `class="profile-email"`} {
+		if strings.Contains(body, gone) {
+			t.Errorf("/profile still holds %q: %s", gone, body)
+		}
+	}
+	postedAt := strings.Index(body, `<section class="activity-part activity-part--posted"`)
+	confirmedAt := strings.Index(body, `<section class="activity-part activity-part--confirmed"`)
+	recordAt := strings.Index(body, `<section class="profile-record"`)
+	if postedAt == -1 || confirmedAt == -1 || recordAt < postedAt || recordAt > confirmedAt {
+		t.Errorf("the record card is not inside the Posted by you part (posted %d, record %d, confirmed %d)", postedAt, recordAt, confirmedAt)
 	}
 }
 
@@ -682,50 +702,89 @@ func TestProfileWithoutReportsRendersNoRecord(t *testing.T) {
 	if strings.Contains(body, `class="profile-record"`) || strings.Contains(body, "Your reporter record") {
 		t.Errorf("/profile renders a record card for an account with no reports: %s", body)
 	}
-	all := regexp.MustCompile(`<div class="[^"]*"\s+data-tab-empty="all"([^>]*)>`).FindStringSubmatch(body)
-	if all == nil || strings.Contains(all[1], "hidden") {
-		t.Errorf("/profile's All empty state is missing or hidden: %s", body)
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to D-21):
+	// there is no All view now; every part of an empty account shows its own
+	// empty state in its box, with the UI-SPEC 3c words. The Phase 3.1 and Phase
+	// 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+	for _, words := range []string{
+		"No updates yet", "Changes on reports you posted or voted on will show here.",
+		"No reports yet", "Reports you post will appear here.",
+		"No confirmations yet", "Reports you confirm will appear here.",
+		"No disputes yet", "Reports you dispute will appear here.",
+		"No ended reports nearby", "Nothing in this area was resolved or faded out in the last 7 days.",
+	} {
+		if !strings.Contains(body, words) {
+			t.Errorf("/profile lost the empty state words %q: %s", words, body)
+		}
 	}
-	if !strings.Contains(body, "No activity yet") {
-		t.Errorf("/profile lost the All empty state words: %s", body)
+	// The four row parts hold a visible empty state; the Ended nearby one is
+	// the shell's hidden empty state.
+	visibleEmpty := regexp.MustCompile(`<div class="empty-state profile-empty-state activity-empty">`)
+	if n := len(visibleEmpty.FindAllString(body, -1)); n != 4 {
+		t.Errorf("/profile has %d visible empty states, want 4 (Updates, Posted by you, You confirmed, You disputed)", n)
 	}
-	posts := regexp.MustCompile(`<div class="[^"]*"\s+data-tab-empty="posts"([^>]*)>`).FindStringSubmatch(body)
-	if posts == nil || !strings.Contains(posts[1], "hidden") {
-		t.Errorf("/profile's My posts empty state is missing or not hidden: %s", body)
-	}
-	if !strings.Contains(body, "No reports yet") {
-		t.Errorf("/profile lost the My posts empty state words: %s", body)
+	if strings.Contains(body, `class="profile-report-list"`) {
+		t.Errorf("/profile renders a report list for an account with no reports")
 	}
 }
 
-// getProfileTab GETs /profile?tab=<raw> using client and returns the body.
-func getProfileTab(t *testing.T, client *http.Client, baseURL, raw string) string {
+// getProfileQuery GETs /profile with the given raw query string using client and
+// returns the body.
+func getProfileQuery(t *testing.T, client *http.Client, baseURL, rawQuery string) string {
 	t.Helper()
-	resp, err := client.Get(baseURL + "/profile?tab=" + url.QueryEscape(raw))
+	resp, err := client.Get(baseURL + "/profile?" + rawQuery)
 	if err != nil {
-		t.Fatalf("GET /profile?tab=%s: %v", raw, err)
+		t.Fatalf("GET /profile?%s: %v", rawQuery, err)
 	}
 	defer resp.Body.Close()
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		t.Fatalf("reading /profile?tab=%s body: %v", raw, err)
+		t.Fatalf("reading /profile?%s body: %v", rawQuery, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /profile?tab=%s status = %d, want 200: %s", raw, resp.StatusCode, b)
+		t.Fatalf("GET /profile?%s status = %d, want 200: %s", rawQuery, resp.StatusCode, b)
 	}
 	return string(b)
 }
 
-// TestProfileTabsRenderFromTheAddress proves the server renders the tab named
-// in the address (quick task 261013-wm5): the selected link, the hidden flags
-// of the cards and the counts. Account one holds two posts (one resolved) and
-// votes on two of account two's reports (one confirm, one dispute), so the
-// counts are All 4, My posts 2, My votes 2, My disputes 1, Resolved 1 and Not
-// resolved 3.
-func TestProfileTabsRenderFromTheAddress(t *testing.T) {
+// partSection returns the markup of one part's section, cut from its opening tag
+// to the opening tag of the next section (or the end of the main element).
+func partSection(t *testing.T, body, key string) string {
+	t.Helper()
+	marker := `<section class="activity-part activity-part--` + key + `"`
+	start := strings.Index(body, marker)
+	if start == -1 {
+		t.Fatalf("/profile has no section for part %q: %s", key, body)
+	}
+	rest := body[start+len(marker):]
+	end := len(rest)
+	if next := strings.Index(rest, `<section class="activity-part `); next != -1 {
+		end = next
+	}
+	if mainEnd := strings.Index(rest, `</main>`); mainEnd != -1 && mainEnd < end {
+		end = mainEnd
+	}
+	return rest[:end]
+}
+
+// TestActivityPartsRenderFromTheAddress proves the server renders the page the
+// address names (Phase 3.4, D-18 to D-21). Account one holds two posts (one
+// resolved) and votes on two of account two's reports (one confirm, one
+// dispute), so the counts are Posted by you 2, You confirmed 1 and You disputed
+// 1. The list (/profile) has an empty data-part, the hub of five rows whose
+// counts equal the rows in each section, and five sections with the ids
+// part-updates, part-posted, part-confirmed, part-disputed and part-ended in that
+// order. A part address renders that part as the current one, with the part name
+// as the top bar title and the back arrow to /profile.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to D-21):
+// this replaces TestProfileTabsRenderFromTheAddress, which pinned the six tab
+// page. The Phase 3.1 and Phase 4 hands-on tests are walked on this layout after
+// Phase 3.4 is built.
+func TestActivityPartsRenderFromTheAddress(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
-	one := newVerifiedClient(t, srv, mailer, "activity-wm5-tabs-one@example.com")
-	two := newVerifiedClient(t, srv, mailer, "activity-wm5-tabs-two@example.com")
+	one := newVerifiedClient(t, srv, mailer, "activity-parts-one@example.com")
+	two := newVerifiedClient(t, srv, mailer, "activity-parts-two@example.com")
 	loc := map[string]any{"latitude": 12.9716, "longitude": 77.5946}
 
 	livePost := submitReportGetID(t, one, srv.URL, floodReportBody(12.9716, 77.5946))
@@ -736,142 +795,176 @@ func TestProfileTabsRenderFromTheAddress(t *testing.T) {
 	p15VoteTrust(t, postVote(t, one, srv.URL, confirmed, "confirm", loc))
 	p15VoteTrust(t, postVote(t, one, srv.URL, disputed, "dispute", loc))
 
-	type tabWant struct {
-		key   string
-		count int
-		ids   []int64
+	keys := []string{"updates", "posted", "confirmed", "disputed", "ended"}
+	wantIDs := map[string][]int64{
+		"updates":   nil,
+		"posted":    {resolvedPost, livePost},
+		"confirmed": {confirmed},
+		"disputed":  {disputed},
+		"ended":     nil,
 	}
-	tabs := []tabWant{
-		{"all", 4, []int64{livePost, resolvedPost, confirmed, disputed}},
-		{"posts", 2, []int64{livePost, resolvedPost}},
-		{"votes", 2, []int64{confirmed, disputed}},
-		{"disputes", 1, []int64{disputed}},
-		{"resolved", 1, []int64{resolvedPost}},
-		{"not-resolved", 3, []int64{livePost, confirmed, disputed}},
+	names := map[string]string{
+		"updates": "Updates", "posted": "Posted by you", "confirmed": "You confirmed",
+		"disputed": "You disputed", "ended": "Ended nearby",
 	}
-	hrefs := map[string]string{
-		"all": "/profile", "posts": "/profile?tab=posts", "votes": "/profile?tab=votes",
-		"disputes": "/profile?tab=disputes", "resolved": "/profile?tab=resolved",
-		"not-resolved": "/profile?tab=not-resolved",
-	}
-	allIDs := []int64{livePost, resolvedPost, confirmed, disputed}
 
-	check := func(t *testing.T, body, selected string, want tabWant) {
-		t.Helper()
-		links := regexp.MustCompile(`<a class="activity-tab" href="([^"]*)" data-tab="([^"]*)" data-count="(\d+)"([^>]*)>`).FindAllStringSubmatch(body, -1)
-		if len(links) != 6 {
-			t.Fatalf("got %d tab links, want 6: %s", len(links), body)
+	t.Run("the list", func(t *testing.T) {
+		body := getProfile(t, one, srv.URL)
+		if !strings.Contains(body, `data-part=""`) {
+			t.Errorf("/profile does not render an empty data-part: %s", body)
 		}
-		var order []string
-		for _, l := range links {
-			order = append(order, l[2])
-			if l[1] != hrefs[l[2]] {
-				t.Errorf("tab %q href = %q, want %q", l[2], l[1], hrefs[l[2]])
+		if !strings.Contains(body, `<h1 class="app-topbar__title">My activity</h1>`) || strings.Contains(body, `class="app-topbar__back"`) {
+			t.Errorf("/profile top bar must be titled My activity with no back arrow")
+		}
+
+		// The five sections, in order.
+		ids := regexp.MustCompile(`<section class="activity-part [^"]*" id="(part-[a-z]+)"`).FindAllStringSubmatch(body, -1)
+		var gotIDs []string
+		for _, m := range ids {
+			gotIDs = append(gotIDs, m[1])
+		}
+		if got := strings.Join(gotIDs, ","); got != "part-updates,part-posted,part-confirmed,part-disputed,part-ended" {
+			t.Errorf("section ids = %s", got)
+		}
+		if n := strings.Count(body, `id="part-`); n != 10 {
+			// Five sections and five title ids.
+			t.Errorf(`found %d id="part- attributes, want 10 (five sections and five titles)`, n)
+		}
+		if strings.Contains(body, " data-current") {
+			t.Errorf("the list marks a part as current")
+		}
+
+		// The hub: five links, in order, with the counts of the rows in each
+		// section.
+		hub := regexp.MustCompile(`(?s)<nav class="activity-hub" aria-label="My activity">(.*?)</nav>`).FindStringSubmatch(body)
+		if hub == nil {
+			t.Fatalf("/profile has no hub: %s", body)
+		}
+		rows := regexp.MustCompile(`(?s)<a class="activity-hub__row" href="([^"]*)" data-part-link="([^"]*)">(.*?)</a>`).FindAllStringSubmatch(hub[1], -1)
+		if len(rows) != 5 {
+			t.Fatalf("the hub has %d rows, want 5: %s", len(rows), hub[1])
+		}
+		for i, r := range rows {
+			key := keys[i]
+			if r[2] != key || r[1] != "/profile?part="+key {
+				t.Errorf("hub row %d is key %q href %q, want %q and /profile?part=%s", i, r[2], r[1], key, key)
 			}
-			isCurrent := strings.Contains(l[4], `aria-current="page"`)
-			if isCurrent != (l[2] == selected) {
-				t.Errorf("tab %q aria-current = %v, selected tab is %q", l[2], isCurrent, selected)
+			if !strings.Contains(r[3], `activity-hub__name">`+names[key]+`</span>`) {
+				t.Errorf("hub row %q does not carry the name %q: %s", key, names[key], r[3])
 			}
-		}
-		if got := strings.Join(order, ","); got != "all,posts,votes,disputes,resolved,not-resolved" {
-			t.Errorf("tab order = %s", got)
-		}
-		for _, w := range tabs {
-			for _, l := range links {
-				if l[2] == w.key && l[3] != strconv.Itoa(w.count) {
-					t.Errorf("tab %q count = %s, want %d", w.key, l[3], w.count)
+			count := regexp.MustCompile(`activity-hub__count">(\d+)</span>`).FindStringSubmatch(r[3])
+			rowCount := strings.Count(partSection(t, body, key), `<li class="report-row`)
+			if rowCount != len(wantIDs[key]) {
+				t.Errorf("part %q holds %d rows, want %d", key, rowCount, len(wantIDs[key]))
+			}
+			switch key {
+			case "updates", "ended":
+				if count != nil {
+					t.Errorf("hub row %q shows a count %s, the server holds no rows for it", key, count[1])
+				}
+			default:
+				if count == nil || count[1] != strconv.Itoa(rowCount) {
+					t.Errorf("hub row %q count = %v, want the %d rows of its section", key, count, rowCount)
 				}
 			}
 		}
-		visible := 0
-		for _, id := range allIDs {
-			row := p15ProfileRow(t, body, id)
-			opening := row[:strings.Index(row, ">")+1]
-			isHidden := p15HasAttr(opening, "hidden")
-			shouldShow := false
-			for _, w := range want.ids {
-				if w == id {
-					shouldShow = true
+
+		// Each report is in exactly the part its kind belongs to.
+		for key, ids := range wantIDs {
+			section := partSection(t, body, key)
+			for _, id := range ids {
+				if !strings.Contains(section, `data-report-id="`+strconv.FormatInt(id, 10)+`"`) {
+					t.Errorf("part %q lacks report %d", key, id)
 				}
 			}
-			if isHidden == shouldShow {
-				t.Errorf("tab %q: report %d hidden = %v, want %v", selected, id, isHidden, !shouldShow)
-			}
-			if !isHidden {
-				visible++
+		}
+		for _, id := range []int64{livePost, resolvedPost, confirmed, disputed} {
+			if n := strings.Count(body, `data-report-id="`+strconv.FormatInt(id, 10)+`"`); n != 1 {
+				t.Errorf("report %d is on the page %d times, want exactly once", id, n)
 			}
 		}
-		if visible != want.count {
-			t.Errorf("tab %q shows %d cards, want %d", selected, visible, want.count)
+	})
+
+	t.Run("a part screen", func(t *testing.T) {
+		for _, key := range keys {
+			body := getProfileQuery(t, one, srv.URL, "part="+key)
+			if !strings.Contains(body, `data-part="`+key+`"`) {
+				t.Errorf("part %q: data-part is not %q", key, key)
+			}
+			wantTitle := `<h1 class="app-topbar__title">` + names[key] + `</h1>`
+			if !strings.Contains(body, wantTitle) {
+				t.Errorf("part %q: the top bar title %s is missing", key, wantTitle)
+			}
+			if !strings.Contains(body, `<a class="app-topbar__back" href="/profile"`) {
+				t.Errorf("part %q: the back arrow to /profile is missing", key)
+			}
+			if n := strings.Count(body, " data-current"); n != 1 {
+				t.Errorf("part %q: %d sections are marked current, want 1", key, n)
+			}
+			if !strings.Contains(partSection(t, body, key), " data-current") {
+				// The marker sits in the section's own opening tag, which
+				// partSection cuts off, so check the tag itself.
+				if !strings.Contains(body, `data-part-key="`+key+`" data-current`) {
+					t.Errorf("part %q: its own section is not marked current", key)
+				}
+			}
 		}
-	}
-
-	for _, w := range tabs {
-		t.Run(w.key, func(t *testing.T) {
-			check(t, getProfileTab(t, one, srv.URL, w.key), w.key, w)
-		})
-	}
-	t.Run("unknown key renders All", func(t *testing.T) {
-		check(t, getProfileTab(t, one, srv.URL, "nonsense"), "all", tabs[0])
-	})
-	t.Run("upper case key renders All", func(t *testing.T) {
-		check(t, getProfileTab(t, one, srv.URL, "POSTS"), "all", tabs[0])
-	})
-	t.Run("no key renders All", func(t *testing.T) {
-		check(t, getProfile(t, one, srv.URL), "all", tabs[0])
 	})
 
-	// Tags, action phrases and the chip words per kind of card, and each
-	// card's tab tokens.
-	body := getProfile(t, one, srv.URL)
-	cases := []struct {
-		id                   int64
-		tag, action, tabs, v string
-	}{
-		{livePost, "Your post", "You posted this report", "posts not-resolved", "vis-provisional"},
-		{resolvedPost, "Your post", "You posted this report", "posts resolved", "vis-retracted"},
-		{confirmed, "Your vote", "You confirmed this report", "votes not-resolved", "vis-provisional"},
-		{disputed, "Your dispute", "You disputed this report", "votes disputes not-resolved", "vis-provisional"},
+	t.Run("an unknown part renders the list", func(t *testing.T) {
+		for _, raw := range []string{"part=nonsense", "part=POSTED", "part=posted%20", "part="} {
+			body := getProfileQuery(t, one, srv.URL, raw)
+			if !strings.Contains(body, `data-part=""`) {
+				t.Errorf("%s did not render the list", raw)
+			}
+		}
+	})
+}
+
+// TestActivityTabAliases proves the old tab addresses of the six tab page still
+// work as read only aliases (D-18): posts lands on Posted by you, votes on You
+// confirmed, disputes on You disputed, and all, resolved and not-resolved on the
+// list; an unknown or upper case tab lands on the list, and a valid part wins over
+// a tab sent with it.
+//
+// Added 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to D-21). The
+// Phase 3.1 and Phase 4 hands-on tests are walked on this layout after Phase 3.4
+// is built.
+func TestActivityTabAliases(t *testing.T) {
+	srv, mailer, _ := newE2EServer(t)
+	client := newVerifiedClient(t, srv, mailer, "activity-aliases@example.com")
+	submitReportGetID(t, client, srv.URL, floodReportBody(12.9716, 77.5946))
+
+	cases := []struct{ query, wantPart string }{
+		{"tab=posts", "posted"},
+		{"tab=votes", "confirmed"},
+		{"tab=disputes", "disputed"},
+		{"tab=all", ""},
+		{"tab=resolved", ""},
+		{"tab=not-resolved", ""},
+		{"tab=nonsense", ""},
+		{"tab=POSTS", ""},
+		{"tab=", ""},
+		{"part=ended&tab=posts", "ended"},
+		{"part=nonsense&tab=votes", "confirmed"},
 	}
 	for _, c := range cases {
-		row := p15ProfileRow(t, body, c.id)
-		if !strings.Contains(row, `<span class="activity-card__tag">`+c.tag+`</span>`) {
-			t.Errorf("report %d: tag %q missing: %s", c.id, c.tag, row)
-		}
-		if !strings.Contains(row, `<span class="activity-card__action">`+c.action) {
-			t.Errorf("report %d: action %q missing: %s", c.id, c.action, row)
-		}
-		if got := p15Attr(t, row, "data-tabs"); got != c.tabs {
-			t.Errorf("report %d: data-tabs = %q, want %q", c.id, got, c.tabs)
-		}
-		hasClass := false
-		for _, tok := range p15ClassTokens(t, row) {
-			if tok == c.v {
-				hasClass = true
-			}
-		}
-		if !hasClass {
-			t.Errorf("report %d: missing class %s", c.id, c.v)
-		}
-		for _, word := range []string{">Resolved</span>", ">Not resolved</span>"} {
-			if !strings.Contains(row, word) {
-				t.Errorf("report %d: chip word %q missing", c.id, word)
-			}
-		}
-	}
-	if p15HasAttr(p15ProfileRow(t, body, resolvedPost), "data-can-reopen") == false {
-		t.Errorf("the own resolved post lost its Reopen hook")
-	}
-	for _, id := range []int64{confirmed, disputed, livePost} {
-		if p15HasAttr(p15ProfileRow(t, body, id), "data-can-reopen") {
-			t.Errorf("report %d carries a Reopen hook, only the own resolved post may", id)
+		body := getProfileQuery(t, client, srv.URL, c.query)
+		if !strings.Contains(body, `data-part="`+c.wantPart+`"`) {
+			t.Errorf("/profile?%s did not render data-part=%q", c.query, c.wantPart)
 		}
 	}
 }
 
-// TestProfileRendersLogoutAndBottomNav proves the phone page frame: a Log out
-// form that posts to the existing logout route from inside the Activity
-// section, and the bottom bar with Activity the current tab.
+// TestProfileRendersLogoutAndBottomNav proves the page frame: the four item app
+// bar with My activity the current place, and no Log out form on the page.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to D-21): the
+// Log out form is removed from the Activity page. Log out lives in Settings and in
+// the person menu of the laptop top bar (account_header.html.tmpl), which is the
+// only logout form the page carries. The name is kept so the history of the test
+// reads on. The Phase 3.1 and Phase 4 hands-on tests are walked on this layout
+// after Phase 3.4 is built.
 func TestProfileRendersLogoutAndBottomNav(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
 	client := newVerifiedClient(t, srv, mailer, "activity-frame@example.com")
@@ -879,29 +972,17 @@ func TestProfileRendersLogoutAndBottomNav(t *testing.T) {
 	submitReportGetID(t, client, srv.URL, floodReportBody(12.9716, 77.5946))
 	body := getProfile(t, client, srv.URL)
 
-	form := regexp.MustCompile(`(?s)<form class="profile-logout" method="post"\s+action="/auth/logout">(.*?)</form>`).FindStringSubmatch(body)
-	if form == nil {
-		t.Fatalf("/profile has no Log out form posting to /auth/logout: %s", body)
+	if strings.Contains(body, `class="profile-logout"`) {
+		t.Errorf("/profile still carries the page's own Log out form: %s", body)
 	}
-	if !strings.Contains(form[1], `type="submit"`) || !strings.Contains(form[1], "Log out") {
-		t.Errorf("Log out form has no submit button: %s", form[1])
+	// The person menu of the top bar is the one place the page logs out from.
+	if n := strings.Count(body, `action="/auth/logout"`); n != 1 {
+		t.Errorf("/profile has %d logout forms, want exactly the person menu's one", n)
 	}
-	if n := strings.Count(form[1], "<input"); n != 0 {
-		t.Errorf("Log out form carries %d input fields, want none", n)
-	}
-	activity := strings.Index(body, `class="profile-activity"`)
-	logout := strings.Index(body, `class="profile-logout"`)
-	list := strings.Index(body, `class="profile-report-list"`)
-	if activity < 0 || logout < activity || list < logout {
-		t.Errorf("Log out form is not inside the Activity section before the list (section %d, form %d, list %d)", activity, logout, list)
+	if strings.Contains(body, "activity-frame@example.com") {
+		t.Errorf("/profile prints the signed in address (T-34-32): %s", body)
 	}
 
-	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): the
-	// two tab Feed and Activity bar is replaced by the four item app bar. My
-	// activity is the current place, the Report link opens the report window,
-	// and the Log out form above stays until plan 07 rebuilds this page. The
-	// Phase 3.1 and Phase 4 hands-on tests are walked on this layout after
-	// Phase 3.4 is built.
 	if strings.Contains(body, "bottom-nav") {
 		t.Errorf("/profile still carries the old two tab bottom nav")
 	}
