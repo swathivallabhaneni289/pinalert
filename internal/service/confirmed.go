@@ -25,9 +25,10 @@ package service
 // the bypass and follow the same rule.
 //
 // This is the default pending the owner's answer on whether a confirmed
-// Critical report belongs in Confirmed; the whole choice is the confirm cell
-// line and the disputeMajority line below. ConfirmedByPeople is never read by
-// Resolve, ViewOf or BuildTrust.
+// Critical report belongs in Confirmed. If the answer is no, the function takes
+// the report's ReportMeta as well and returns false when meta.Serious(), and the
+// Critical rows of TestConfirmedByPeople flip with it. ConfirmedByPeople is never
+// read by Resolve, ViewOf or BuildTrust.
 func ConfirmedByPeople(v Visibility, view FeedView, tally VoteTally) bool {
 	if view != FeedViewActive || v != VisibilityLive {
 		return false
