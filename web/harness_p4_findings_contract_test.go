@@ -107,6 +107,34 @@ func TestHarnessFindingP4_7OpenCardNeverSitsUnderTheTools(t *testing.T) {
 	}
 }
 
+// TestHarnessFindingP4_10MenuScrollStaysInTheMenu pins F-P4-10: in WebKit a
+// wheel over the open account menu scrolled the page behind it. The menu keeps
+// overscroll-behavior: contain, and account-menu.js adds a wheel and a
+// touchmove guard (not passive) while the menu is open and removes them on
+// close. web/account_menu_scroll_test.mjs runs the guard itself.
+func TestHarnessFindingP4_10MenuScrollStaysInTheMenu(t *testing.T) {
+	p16MustDecl(t, "account menu", p31mRule(t, "static/css/auth.css", "", "#account-menu:not([hidden])"),
+		map[string]string{"overflow-y": "auto", "overscroll-behavior": "contain"})
+
+	code := p19Code(t, "static/js/account-menu.js")
+	set := jsFunctionBody(t, code, "setOpen(open)")
+	p13Ordered(t, set, "setOpen",
+		"if (open) {",
+		"panel.addEventListener('wheel', onPanelWheel, { passive: false });",
+		"panel.addEventListener('touchstart', onPanelTouchStart, { passive: true });",
+		"panel.addEventListener('touchmove', onPanelTouchMove, { passive: false });",
+		"} else if (outsideClickBound) {",
+		"panel.removeEventListener('wheel', onPanelWheel);",
+		"panel.removeEventListener('touchstart', onPanelTouchStart);",
+		"panel.removeEventListener('touchmove', onPanelTouchMove);")
+	p13MustContain(t, "onPanelWheel", jsFunctionBody(t, code, "onPanelWheel(e)"),
+		"e.ctrlKey", "panelCannotScroll(e.deltaY)", "e.preventDefault();")
+	p13MustContain(t, "onPanelTouchMove", jsFunctionBody(t, code, "onPanelTouchMove(e)"),
+		"panelCannotScroll(deltaY)", "e.preventDefault();")
+	p13MustContain(t, "panelCannotScroll", jsFunctionBody(t, code, "panelCannotScroll(deltaY)"),
+		"panel.scrollHeight - panel.clientHeight", "panel.scrollTop")
+}
+
 // TestHarnessFindingP4_9MessageClearsTheOpenedReport pins F-P4-9: at 1280 by
 // 800 the message (921px wide, centred) covered the opened report's Undo. On
 // the map page from 900px the message sits in the list half, between the list

@@ -54,13 +54,72 @@
         document.addEventListener('click', onDocumentClick);
         window.addEventListener('resize', measurePanel);
         window.addEventListener('orientationchange', measurePanel);
+        panel.addEventListener('wheel', onPanelWheel, { passive: false });
+        panel.addEventListener('touchstart', onPanelTouchStart, { passive: true });
+        panel.addEventListener('touchmove', onPanelTouchMove, { passive: false });
         outsideClickBound = true;
       }
     } else if (outsideClickBound) {
       document.removeEventListener('click', onDocumentClick);
       window.removeEventListener('resize', measurePanel);
       window.removeEventListener('orientationchange', measurePanel);
+      panel.removeEventListener('wheel', onPanelWheel);
+      panel.removeEventListener('touchstart', onPanelTouchStart);
+      panel.removeEventListener('touchmove', onPanelTouchMove);
       outsideClickBound = false;
+    }
+  }
+
+  // THE PAGE BEHIND STAYS PUT (browser finding F-P4-10). The panel declares
+  // overscroll-behavior: contain (auth.css), but WebKit still hands a scroll
+  // that starts inside the open panel to the page, most of all when the panel
+  // has nothing to scroll. So while the panel is open, a wheel turn or a
+  // finger move over it that the panel itself cannot take (no overflow, or
+  // already at that end) is stopped here. A move the panel can take scrolls
+  // the panel as before, and a pinch or a ctrl wheel zoom is left alone.
+  var lastTouchY = null;
+
+  // panelCannotScroll says whether the panel has no room left to scroll by
+  // deltaY pixels (positive is down). The one pixel slack covers the
+  // fractional scroll positions of a zoomed page.
+  function panelCannotScroll(deltaY) {
+    if (deltaY === 0) {
+      return false;
+    }
+    var room = panel.scrollHeight - panel.clientHeight;
+    if (room <= 0) {
+      return true;
+    }
+    if (deltaY < 0) {
+      return panel.scrollTop <= 0;
+    }
+    return panel.scrollTop >= room - 1;
+  }
+
+  function onPanelWheel(e) {
+    if (e.ctrlKey) {
+      return;
+    }
+    if (panelCannotScroll(e.deltaY)) {
+      e.preventDefault();
+    }
+  }
+
+  function onPanelTouchStart(e) {
+    lastTouchY = e.touches.length === 1 ? e.touches[0].clientY : null;
+  }
+
+  // A finger moving up scrolls the content down, so the scroll delta is the
+  // last position less the new one.
+  function onPanelTouchMove(e) {
+    if (e.touches.length !== 1 || lastTouchY === null) {
+      return;
+    }
+    var y = e.touches[0].clientY;
+    var deltaY = lastTouchY - y;
+    lastTouchY = y;
+    if (panelCannotScroll(deltaY)) {
+      e.preventDefault();
     }
   }
 
