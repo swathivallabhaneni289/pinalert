@@ -62,6 +62,17 @@
   var CALL_LABEL_PREFIX = 'Call ';
   var REQUEST_ID_PATTERN = /^[A-Za-z0-9-]{16,64}$/;
 
+  // Outcome copy for a post whose form was closed while it was still out
+  // (WR-W03). The form it came from is gone, and a new one may be open, so the
+  // outcome is told in a toast and names the report as the earlier one.
+  var EARLIER_POSTED_TOAST = 'Your earlier report was posted.';
+  var EARLIER_HELD_TOAST = "Your earlier report was received. It isn't shown yet. A text check has to finish first.";
+  var EARLIER_SAVE_TOAST = "No signal. Your earlier report is saved on this device and will send when you're back online.";
+  var EARLIER_SAVE_TOAST_MEMORY = 'No signal. Your earlier report is kept on this page only. Keep the page open until it sends.';
+  var EARLIER_NOT_SAVED_TOAST = 'Your earlier report could not be saved on this device, so it was not sent.';
+  var EARLIER_REFUSED_PREFIX = 'Your earlier report was not posted. ';
+  var EARLIER_REFUSED_FALLBACK = 'Something went wrong.';
+
   var mounted = false;
   var backdropEl = null;
   var formRoot = null;
@@ -99,6 +110,11 @@
   var resendRequestId = null;
   var resendWrittenAt = null;
   var lastLimit = null;
+  // formSession numbers the form's openings: closeForm raises it. A post
+  // keeps the number it was sent under, and an answer that arrives under a
+  // newer number belongs to a form that has since closed, so it must not touch
+  // the open form, its fields, its message or its button (WR-W03).
+  var formSession = 0;
 
   var selectedCategory = null;
   var lastFocusedEl = null;
@@ -570,6 +586,10 @@
     updateSeverityReadout();
     descriptionField.value = '';
     Pinalert.setText(formError, '');
+    // A form closed while its post was out reopens with a working button; the
+    // late answer to that post never touches the button again (WR-W03).
+    submitButton.disabled = false;
+    Pinalert.setText(submitButton, 'Post report');
     if (sendAfterWaitBtn) {
       sendAfterWaitBtn.hidden = true;
     }
@@ -710,6 +730,7 @@
   }
 
   function closeForm() {
+    formSession += 1;
     backdropEl.hidden = true;
     Pinalert.unlockPage();
     resetForm();
@@ -846,12 +867,28 @@
     Pinalert.setText(submitButton, 'Posting…');
     Pinalert.setText(formError, '');
 
+    // What this post needs once its answer arrives, taken now: resetForm
+    // empties the shared values when the form closes, and a form opened later
+    // fills them with its own (WR-W03).
+    var sent = {
+      session: formSession,
+      resendRequestId: resendRequestId,
+      writtenAt: resendWrittenAt || firstSubmitAt
+    };
+
     Pinalert.submitReport(payload).then(function (report) {
+      if (sent.resendRequestId && window.PinalertQueue) {
+        window.PinalertQueue.discard(sent.resendRequestId);
+      }
+      if (sent.session !== formSession) {
+        // The form was closed while the post was out: tell the outcome and
+        // leave any form open now alone.
+        Pinalert.showToast(report && report.held === true ? EARLIER_HELD_TOAST : EARLIER_POSTED_TOAST,
+          null, LONG_TOAST_MS);
+        return;
+      }
       submitButton.disabled = false;
       Pinalert.setText(submitButton, 'Post report');
-      if (resendRequestId && window.PinalertQueue) {
-        window.PinalertQueue.discard(resendRequestId);
-      }
       closeForm();
       if (report && report.held === true) {
         Pinalert.showToast(HELD_TOAST_MESSAGE, null, LONG_TOAST_MS);
@@ -859,12 +896,16 @@
         Pinalert.showToast('Report posted.');
       }
     }).catch(function (err) {
+      if (sent.session !== formSession) {
+        reportEarlierFailure(payload, err, sent);
+        return;
+      }
       submitButton.disabled = false;
       Pinalert.setText(submitButton, 'Post report');
       // The visitor's input stays intact: the form does not close and no
       // field is cleared on a failed submission.
       if (err && err.queueable === true) {
-        saveToQueue(payload, err.status >= 502 ? 'no_answer' : 'waiting');
+        saveToQueue(payload, err.status >= 502 ? 'no_answer' : 'waiting', sent);
       } else if (err && err.status === 429) {
         showLimitMessage(err);
       } else {
@@ -989,26 +1030,55 @@
 
   // saveToQueue keeps a report that got no answer on this device and closes the
   // form (D-18). Without a queue the form stays open with the usual message, so
-  // typed text is never lost.
-  function saveToQueue(payload, status) {
+  // typed text is never lost. sent is what handleSubmit took when the post went
+  // out: the request id comes from the payload and the written time from sent,
+  // never from the shared values, which a later form owns. When the form closed
+  // meanwhile (WR-W03), the report is still saved, the open form is left alone
+  // and the outcome is told in a toast.
+  function saveToQueue(payload, status, sent) {
     var failure = function () {
+      if (sent.session !== formSession) {
+        Pinalert.showToast(EARLIER_NOT_SAVED_TOAST, null, LONG_TOAST_MS);
+        return;
+      }
       Pinalert.setText(formError, 'Something went wrong. Try again.');
     };
     if (!window.PinalertQueue) {
       failure();
       return;
     }
-    var writtenAt = resendWrittenAt || firstSubmitAt;
+    var writtenAt = sent.writtenAt;
     payload.written_at = writtenAt;
     window.PinalertQueue.save({
-      request_id: currentRequestId,
+      request_id: payload.request_id,
       payload: payload,
       written_at: writtenAt,
       status: status
     }).then(function (persisted) {
+      if (sent.session !== formSession) {
+        Pinalert.showToast(persisted ? EARLIER_SAVE_TOAST : EARLIER_SAVE_TOAST_MEMORY, null, LONG_TOAST_MS);
+        return;
+      }
       closeForm();
       Pinalert.showToast(persisted ? SAVE_TOAST : SAVE_TOAST_MEMORY, null, LONG_TOAST_MS);
     }, failure);
+  }
+
+  // reportEarlierFailure handles a failed post whose form was closed while it
+  // was out (WR-W03). A post that got no answer is saved on this device like
+  // any other; a refused one is told in a toast with the server's reason and,
+  // for a serious wait, the emergency number. The form open now is never
+  // touched.
+  function reportEarlierFailure(payload, err, sent) {
+    if (err && err.queueable === true) {
+      saveToQueue(payload, err.status >= 502 ? 'no_answer' : 'waiting', sent);
+      return;
+    }
+    var text = EARLIER_REFUSED_PREFIX + ((err && err.fieldMessage) || EARLIER_REFUSED_FALLBACK);
+    if (err && err.serious === true && typeof err.emergencyNumber === 'string' && err.emergencyNumber !== '') {
+      text += ' ' + EMERGENCY_CALL_PREFIX + err.emergencyNumber + EMERGENCY_CALL_SUFFIX;
+    }
+    Pinalert.showToast(text, null, LONG_TOAST_MS);
   }
 
   // saveAfterWait saves a report blocked by a 429 as a Blocked row, so it sends
@@ -1028,6 +1098,9 @@
     payload.request_id = currentRequestId;
     var writtenAt = resendWrittenAt || firstSubmitAt;
     payload.written_at = writtenAt;
+    // The save is out while the form can still be closed; its answer must
+    // then leave a form opened later alone (WR-W03).
+    var session = formSession;
     window.PinalertQueue.save({
       request_id: currentRequestId,
       payload: payload,
@@ -1037,9 +1110,15 @@
       serious: lastLimit.serious,
       emergency_number: lastLimit.emergencyNumber
     }).then(function () {
-      closeForm();
+      if (session === formSession) {
+        closeForm();
+      }
       Pinalert.showToast(WAIT_SAVE_TOAST);
     }, function () {
+      if (session !== formSession) {
+        Pinalert.showToast(EARLIER_NOT_SAVED_TOAST, null, LONG_TOAST_MS);
+        return;
+      }
       Pinalert.setText(formError, 'Something went wrong. Try again.');
     });
   }
