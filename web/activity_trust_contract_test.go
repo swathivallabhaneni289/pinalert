@@ -61,13 +61,24 @@ func TestProfileTemplateUsesServerSeverityAndTrust(t *testing.T) {
 		t.Errorf(".TrustJSON occurs %d times in the template, want exactly 1", n)
 	}
 
-	tagFirst := regexp.MustCompile(`<div class="report-row__body">\s*<span class="activity-card__tag">\{\{\.Tag\}\}</span>\s*<p class="report-row__title">`)
-	if !tagFirst.MatchString(tmpl) {
-		t.Errorf("the report row body does not start with the tag span and then the title paragraph")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to
+	// D-21): the Report cell starts with the title paragraph (the tag span went
+	// with the six tab card), the Status chip holds the server's {{.StatusWord}}
+	// once, and the severity word is kept for screen readers as a visually
+	// hidden word in the Status cell, because the tint alone must not carry the
+	// severity. The Phase 3.1 and Phase 4 hands-on tests are walked on this
+	// layout after Phase 3.4 is built.
+	reportCell := regexp.MustCompile(`<div class="activity-card__report">\s*<p class="report-row__title">\{\{\.Description\}\}</p>`)
+	if !reportCell.MatchString(tmpl) {
+		t.Errorf("the Report cell does not start with the title paragraph")
 	}
-	chipSeverity := regexp.MustCompile(`<span class="activity-chip__word activity-chip__word--severity">\{\{\.SeverityWord\}\}</span>`)
-	if n := len(chipSeverity.FindAllString(tmpl, -1)); n != 1 {
-		t.Errorf("the chip's severity span holds {{.SeverityWord}} %d times, want exactly 1", n)
+	chipWord := regexp.MustCompile(`<span class="activity-chip"[^>]*>\{\{\.StatusWord\}\}</span>`)
+	if n := len(chipWord.FindAllString(tmpl, -1)); n != 1 {
+		t.Errorf("the status chip holds {{.StatusWord}} %d times, want exactly 1", n)
+	}
+	hiddenSeverity := regexp.MustCompile(`<span class="visually-hidden">\{\{\.SeverityWord\}\} severity\. </span>`)
+	if n := len(hiddenSeverity.FindAllString(tmpl, -1)); n != 1 {
+		t.Errorf("the hidden severity word appears %d times, want exactly 1", n)
 	}
 	if n := strings.Count(tmpl, ".SeverityWord"); n != 1 {
 		t.Errorf(".SeverityWord occurs %d times in the template, want exactly 1", n)

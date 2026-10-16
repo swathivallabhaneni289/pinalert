@@ -402,20 +402,31 @@ type profileReport struct {
 	PolicyPointer  bool
 	WrittenText    string
 
-	// Quick task 261013-wm5's card fields, filled by buildActivityPage. Kind is
-	// post, vote or dispute; Tag, Action and When are the words of the card's
-	// tag and sub line; Detail is the category label with the shelter words;
-	// IconGlyph is the round icon's glyph class; Tabs is the space separated
-	// tab tokens the card belongs to besides All; Hidden is true for a card
-	// outside the selected tab.
+	// The card fields filled by buildActivityPage. Kind is post, vote or dispute
+	// and picks the part the card is listed in; Tag and Action are the words of
+	// the card's kind; When is the relative time and WhenText the When cell's
+	// words ("Posted 12 min ago"); Detail is the category label with the shelter
+	// words; IconGlyph is the round icon's glyph class.
 	Kind      string
 	Tag       string
 	Action    string
 	When      string
+	WhenText  string
 	Detail    string
 	IconGlyph string
-	Tabs      string
-	Hidden    bool
+
+	// StatusWord is the Status chip's words (Phase 3.4, UI-SPEC P34-C12):
+	// Ongoing, Resolved, Disputed, Expired, or one of the two moderation words.
+	// It follows the same precedence as the row class: removed, then held while
+	// unexpired, then resolved, then expired, then disputed.
+	StatusWord string
+	// Lat and Lon are the point the Distance cell is measured from. They are the
+	// row's own point, which is already the coarse cell centre for a finished
+	// Rescue report of someone else (Approximate), so the page never carries an
+	// exact point the card hides (T-34-31).
+	Lat         float64
+	Lon         float64
+	Approximate bool
 }
 
 // profileRecord is the reporter record card of the phone Activity page: the
@@ -445,11 +456,11 @@ func newProfileRecord(sig service.ReporterSignal) *profileRecord {
 // profileViewModel is exactly what profile.html.tmpl reads and nothing more.
 type profileViewModel struct {
 	AssetVersion string
-	Email        string
-	Reports      []profileReport
-	// Tabs are the six Activity tabs with their counts (quick task
-	// 261013-wm5).
-	Tabs []activityTab
+	// Parts are the five parts of My activity with their cards and counts
+	// (Phase 3.4, D-18). CurrentPart is the key the address asked for, empty
+	// for the list.
+	Parts       []activityPart
+	CurrentPart string
 	// Record is the reporter record card. It is nil for an account with no
 	// posts, and the template then renders no card.
 	Record *profileRecord
@@ -460,8 +471,9 @@ type profileViewModel struct {
 	PolicyPointerLink string
 	PolicyPointerTail string
 	// LowDataDefault is true when this device's remembered choice is the Low
-	// data view; the back link then goes to /low, named Back to Low data view
-	// (P4-A21). Plan 04-25 reads the rendered href.
+	// data view. The page has no back link now, but the saved reports strip
+	// still sends a resend to the Low data view for such a device (P4-A21), so
+	// the page writes the address as data-resend-page.
 	LowDataDefault bool
 	// AccountID is the verified account's numeric id. It is rendered only on
 	// the account's own no-store Activity page as data-account-id, so queue.js
@@ -613,15 +625,27 @@ func newProfileReport(ar service.ActivityReport, now time.Time) (profileReport, 
 	moderation := profileModeration(ar)
 	moderationNote := ""
 	visibilityClass := profileVisibilityStateClassPrefix + string(visibility)
+	// The Status chip word follows the same precedence as the row class, so the
+	// word and the class never disagree (UI-SPEC P34-C12).
+	statusWord := statusOngoing
+	switch visibility {
+	case service.VisibilityRetracted:
+		statusWord = statusResolved
+	case service.VisibilityHidden:
+		statusWord = statusDisputed
+	}
 	switch {
 	case moderation == profileModerationRemoved:
 		visibilityClass = profileVisibilityStateClassPrefix + profileModerationRemoved
 		moderationNote = service.RemovedSentence
+		statusWord = statusRemoved
 	case moderation == profileModerationHeld && !expired:
 		visibilityClass = profileVisibilityStateClassPrefix + profileModerationHeld
 		moderationNote = service.HeldSentence
+		statusWord = statusHeld
 	case expired && visibility != service.VisibilityRetracted:
 		visibilityClass = profileVisibilityStateClassPrefix + profileExpiredDisplayState
+		statusWord = statusExpired
 	}
 
 	// A moderated row carries no trust object: the author sees the reason it is
@@ -659,6 +683,10 @@ func newProfileReport(ar service.ActivityReport, now time.Time) (profileReport, 
 		ModerationNote:   moderationNote,
 		PolicyPointer:    moderation == profileModerationRemoved,
 		WrittenText:      writtenText,
+		StatusWord:       statusWord,
+		Lat:              row.Latitude,
+		Lon:              row.Longitude,
+		Approximate:      ar.Approximate,
 	}, nil
 }
 
@@ -698,7 +726,10 @@ func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) 
 			return
 		}
 
-		view, err := buildActivityPage(activityPage, r.URL.Query().Get("tab"), time.Now())
+		// The part and the old tab value only pick which screen renders; both are
+		// matched against constants and never reach a query or a link (T-34-30).
+		part := parseActivityPart(r.URL.Query().Get("part"), r.URL.Query().Get("tab"))
+		view, err := buildActivityPage(activityPage, part, time.Now())
 		if err != nil {
 			log.Printf("handlers: Profile: %v", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -711,9 +742,8 @@ func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) 
 		policyLead, policyLink, policyTail := removedPolicyPointerParts()
 		vm := profileViewModel{
 			AssetVersion:      cfg.AssetVersion,
-			Email:             acc.Email,
-			Reports:           view.Reports,
-			Tabs:              view.Tabs,
+			Parts:             view.Parts,
+			CurrentPart:       view.CurrentPart,
 			Record:            view.Record,
 			Chrome:            cfg.Chrome.withDefaults(),
 			PolicyPointerLead: policyLead,
@@ -723,13 +753,18 @@ func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) 
 			AccountID:         acc.ID,
 			Nav:               navFor(NavActivity),
 		}
+		// On a part screen the phone top bar names the part and its back arrow
+		// returns to the list (D-19). The list keeps the plain My activity title.
+		if name := view.CurrentName(); name != "" {
+			vm.Nav = navFor(NavActivity, navTitle(name), navBack(activityListHref))
+		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		// DEC-T: this page renders the verified address alongside the
-		// account's entire report history — the most sensitive of the
-		// three no-store responses in this phase (the gate's own redirect
-		// and 01.1-06's app shell being the other two), and a shared or
-		// public device is exactly the scenario D-09's logout exists for.
+		// DEC-T: this page renders the account's entire report history, the
+		// most sensitive of the three no-store responses in this phase (the
+		// gate's own redirect and 01.1-06's app shell being the other two), and
+		// a shared or public device is exactly the scenario D-09's logout
+		// exists for. The verified address is no longer printed on it.
 		w.Header().Set("Cache-Control", "no-store")
 		if err := tmpl.ExecuteTemplate(w, profileTemplateName, vm); err != nil {
 			log.Printf("handlers: Profile: %v", err)

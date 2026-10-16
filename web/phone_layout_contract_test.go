@@ -35,8 +35,13 @@ const phoneBlockMedia = "@media (max-width: 899.98px)"
 // .app-bar (the four item bottom bar) and the title bar's title, back arrow and
 // Settings gear. The Phase 3.1 and Phase 4 hands-on tests are walked on this
 // layout after Phase 3.4 is built.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to D-21):
+// .profile-logout left this list, because the Log out form is removed from the
+// Activity page (Log out lives in Settings and the person menu). The Phase 3.1
+// and Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
 var phoneBaseHideHeads = []string{
-	".feed-heading", ".app-bar", ".app-topbar__title", ".app-topbar__back", ".app-topbar__gear", ".profile-logout",
+	".feed-heading", ".app-bar", ".app-topbar__title", ".app-topbar__back", ".app-topbar__gear",
 }
 
 // phoneRules parses phone.css alone.
@@ -166,7 +171,14 @@ func TestPhoneRulesLiveInTheNarrowBlock(t *testing.T) {
 					// joins the allowed corners for the short bar above the
 					// current bottom bar item. It is below the 8px house corner,
 					// so no control becomes a pill.
-					ok := component == "0" || component == "4px" || component == "8px" || component == "50%" || component == "0px"
+					//
+					// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT
+					// D-19 and D-21, UI-SPEC Surface 3): 12px joins the allowed
+					// corners for the My activity hub box and the report cards,
+					// the same corner the trust panel already uses. No control
+					// becomes a pill. The Phase 3.1 and Phase 4 hands-on tests are
+					// walked on this layout after Phase 3.4 is built.
+					ok := component == "0" || component == "4px" || component == "8px" || component == "12px" || component == "50%" || component == "0px"
 					if !ok {
 						t.Errorf("%q border-radius %q is more than the 8px house corner", r.Head, value)
 					}
@@ -329,33 +341,30 @@ func TestPhoneFeedScriptContract(t *testing.T) {
 	p13MustNotContain(t, "activateRow", activate, "revealRowInListPane")
 }
 
-// TestPhoneActivityPageMarkup pins the phone Activity page's markup: phone.css
-// follows auth.css, the Log out form is a copy of the account header's form
-// (same method and action, one submit button, no other field), the record card
-// sits inside the with block that skips it for an account with no signal, the
-// bottom nav has two tabs with Activity current and no Past, and the back link
-// is still there exactly once.
+// TestPhoneActivityPageMarkup pins the phone My activity page's markup: phone.css
+// follows auth.css, the record card sits inside the with block that skips it for
+// an account with no signal and inside the Posted by you part, the page carries
+// the part it shows as data-part, the hub holds one link per part, and the
+// bottom bar is included once.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to D-21):
+// the Log out form, the email line and the back link are gone from the page
+// (Log out lives in Settings and the person menu), and the six tab strip became
+// the hub of five part links. The Phase 3.1 and Phase 4 hands-on tests are
+// walked on this layout after Phase 3.4 is built.
 func TestPhoneActivityPageMarkup(t *testing.T) {
 	profile := p13ReadTemplate(t, "profile.html.tmpl")
-	header := p13ReadTemplate(t, "account_header.html.tmpl")
 
-	headerForm := regexp.MustCompile(`<form method="(\w+)" action="([^"]+)">`).FindStringSubmatch(header)
-	if headerForm == nil {
-		t.Fatal("account_header.html.tmpl has no logout form")
-	}
-	pageForm := regexp.MustCompile(`(?s)<form class="profile-logout" method="(\w+)"\s+action="([^"]+)">(.*?)</form>`).FindStringSubmatch(profile)
-	if pageForm == nil {
-		t.Fatal("profile.html.tmpl has no .profile-logout form")
-	}
-	if pageForm[1] != headerForm[1] || pageForm[2] != headerForm[2] {
-		t.Errorf("Log out form is %s %s, the account header's is %s %s", pageForm[1], pageForm[2], headerForm[1], headerForm[2])
-	}
-	if n := strings.Count(pageForm[3], "<button"); n != 1 || strings.Contains(pageForm[3], "<input") {
-		t.Errorf("Log out form holds %d buttons or an input, want exactly one submit button and no other field", n)
+	for _, gone := range []string{`class="profile-logout"`, `class="profile-email"`, `class="profile-back-link"`, `activity-tabs`} {
+		if strings.Contains(profile, gone) {
+			t.Errorf("profile.html.tmpl still holds %s", gone)
+		}
 	}
 	p13Ordered(t, profile, "profile.html.tmpl",
-		`<section class="profile-activity">`, `<h2>Activity</h2>`, `<form class="profile-logout"`,
-		`{{with .Record}}`, `<section class="profile-record"`, `{{.Label}}`, `{{.Counts}}`, "</section>\n      {{end}}",
+		`<main class="profile-page"`, `data-part="{{.CurrentPart}}"`,
+		`<nav class="activity-hub" aria-label="My activity">`, `{{range .Parts}}`, `class="activity-hub__row"`, `href="{{.Href}}"`,
+		`</nav>`, `<section class="activity-part`, `{{if eq .Key "posted"}}`,
+		`{{with $.Record}}`, `<section class="profile-record"`, `{{.Label}}`, `{{.Counts}}`, `</section>`,
 		`<ol class="profile-report-list">`)
 
 	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): the
@@ -370,17 +379,16 @@ func TestPhoneActivityPageMarkup(t *testing.T) {
 	if strings.Contains(profile, "bottom-nav") {
 		t.Errorf("profile.html.tmpl still holds the old two tab bottom nav")
 	}
-
-	if n := strings.Count(profile, `class="profile-back-link"`); n != 1 {
-		t.Errorf("profile.html.tmpl has the back link %d times, want exactly 1", n)
-	}
-	p13Ordered(t, profile, "profile.html.tmpl", `class="profile-back-link"`, `class="profile-email"`)
 }
 
-// TestPhoneActivityStylesheet pins the Activity rules: the title and Log out
-// share the first grid row, the back link is not drawn, the record card and
-// the cards use the border token hairline on the page colour, and Log out
-// keeps the margin that clears the fixed theme toggle.
+// TestPhoneActivityStylesheet pins the phone My activity rules: the hub shows
+// only on the list, a part shows only when it is the current one, the report
+// card is a grid of disc and chip, text, when, and what happened beside the
+// distance, and the cards use the border token hairline on the page colour.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to D-21):
+// rewritten from the six tab page. The Phase 3.1 and Phase 4 hands-on tests are
+// walked on this layout after Phase 3.4 is built.
 func TestPhoneActivityStylesheet(t *testing.T) {
 	rules := phoneRules(t)
 	find := func(head string) p16CSSRule {
@@ -394,80 +402,59 @@ func TestPhoneActivityStylesheet(t *testing.T) {
 		return p16CSSRule{}
 	}
 
-	page := find("main.profile-page")
-	if page.Decls["display"] != "grid" {
-		t.Errorf("main.profile-page display is %q, want grid", page.Decls["display"])
+	if got := find("main.profile-page").Decls["display"]; got != "block" {
+		t.Errorf("main.profile-page display is %q on phones, want block", got)
 	}
-	areas := strings.Join(strings.Fields(page.Decls["grid-template-areas"]), " ")
-	// Departure (quick task 261013-wm5): the grid gains a tabs row between the
-	// record card and the list, and an empty row after the list for the one
-	// empty state each tab owns. The first three rows are unchanged.
-	if !strings.HasPrefix(areas, `"title logout" "email email" "record record" "tabs tabs" "list list" "empty empty"`) {
-		t.Errorf("grid-template-areas is %q, want title and logout on the first row, then tabs, list and empty", areas)
+	if got := find("main.profile-page[data-part=\"\"] > .activity-hub").Decls["display"]; got != "block" {
+		t.Errorf("the hub display is %q on the list, want block", got)
 	}
-	if got := find("main.profile-page > .profile-back-link").Decls["display"]; got != "none" {
-		t.Errorf("back link display is %q on phones, want none", got)
+	if got := find("main.profile-page > .activity-part").Decls["display"]; got != "none" {
+		t.Errorf("a part display is %q by default on phones, want none", got)
 	}
-	if got := find("main.profile-page > .profile-activity").Decls["display"]; got != "contents" {
-		t.Errorf(".profile-activity display is %q on phones, want contents", got)
+	if got := find("main.profile-page > .activity-part[data-current]").Decls["display"]; got != "block" {
+		t.Errorf("the current part display is %q, want block", got)
 	}
-	logout := find("main.profile-page .profile-logout")
-	if logout.Decls["margin"] != "0 calc(var(--touch-target-min) + var(--space-sm)) 0 0" {
-		t.Errorf("Log out margin is %q, want the touch target plus the small space on the right", logout.Decls["margin"])
+	if got := find("main.profile-page > .activity-part .activity-cols").Decls["display"]; got != "none" {
+		t.Errorf("the column head row display is %q on phones, want none", got)
 	}
-	button := find("main.profile-page .profile-logout .profile-logout__button")
-	if button.Decls["min-height"] != "var(--touch-target-min)" || button.Decls["color"] != "var(--color-text-muted)" {
-		t.Errorf("Log out button must be 44px tall and muted, got %v", button.Decls)
+	if got := find("main.profile-page > .activity-part .activity-part__title").Decls["display"]; got != "none" {
+		t.Errorf("the part title display is %q on phones, want none (the top bar names the screen)", got)
 	}
 
-	for _, head := range []string{"main.profile-page .profile-record", "main.profile-page .profile-report-list .report-row"} {
-		r := find(head)
-		if r.Decls["background"] != "var(--color-bg)" || r.Decls["border"] != "1px solid var(--color-border)" ||
-			r.Decls["border-radius"] != "8px" {
-			t.Errorf("%s must be a white card with the hairline and 8px corners, got %v", head, r.Decls)
-		}
+	row := find("main.profile-page > .activity-hub .activity-hub__row")
+	if row.Decls["min-height"] != "72px" {
+		t.Errorf("a hub row min-height is %q, want 72px", row.Decls["min-height"])
 	}
-	// Departure (quick task 261013-wm5): the chip holds the top right corner of
-	// the card, so the state word sits right after the tag with no auto margin.
-	if got := find("main.profile-page .profile-report-list .report-row .visibility-tag:not([hidden])").Decls["margin"]; got != "0" {
-		t.Errorf("state word margin is %q, want 0 so it sits right after the tag", got)
+	box := find("main.profile-page[data-part=\"\"] > .activity-hub")
+	if box.Decls["border"] != "1px solid var(--color-border)" || box.Decls["background"] != "var(--color-bg)" || box.Decls["overflow"] != "hidden" {
+		t.Errorf("the hub box must be a rounded box with the hairline on the page colour, got %v", box.Decls)
+	}
+	if got := find("main.profile-page > .activity-hub .activity-hub__summary").Decls["text-overflow"]; got != "ellipsis" {
+		t.Errorf("the hub summary text-overflow is %q, want ellipsis", got)
 	}
 
-	// The six tab strip (quick task 261013-wm5): a grey track that clips and
-	// scrolls inside itself, with 44px tabs and a white selected tab.
-	strip := find("main.profile-page > .profile-activity > .activity-tabs")
-	for prop, want := range map[string]string{
-		"grid-area":             "tabs",
-		"min-width":             "0",
-		"overflow-x":            "auto",
-		"overscroll-behavior-x": "contain",
-		"background":            "var(--color-surface)",
-		"display":               "flex",
-		"border-radius":         "8px",
+	card := find("main.profile-page .profile-report-list > .activity-card")
+	if card.Decls["display"] != "grid" || card.Decls["background"] != "var(--color-bg)" || card.Decls["border"] != "1px solid var(--color-border)" {
+		t.Errorf("the report card must be a grid with the hairline on the page colour, got %v", card.Decls)
+	}
+	areas := strings.Join(strings.Fields(card.Decls["grid-template-areas"]), " ")
+	if areas != `"disc status" "report report" "when when" "what distance"` {
+		t.Errorf("card grid-template-areas is %q, want disc and chip, text, when, then what happened and distance", areas)
+	}
+	for _, c := range []struct{ head, area string }{
+		{"main.profile-page .profile-report-list > .activity-card > .icon-badge", "disc"},
+		{"main.profile-page .profile-report-list > .activity-card > .activity-card__status", "status"},
+		{"main.profile-page .profile-report-list > .activity-card > .activity-card__report", "report"},
+		{"main.profile-page .profile-report-list > .activity-card > .activity-card__when", "when"},
+		{"main.profile-page .profile-report-list > .activity-card > .activity-card__what", "what"},
+		{"main.profile-page .profile-report-list > .activity-card > .activity-card__distance", "distance"},
 	} {
-		if got := strip.Decls[prop]; got != want {
-			t.Errorf("tab strip %s is %q, want %q", prop, got, want)
+		if got := find(c.head).Decls["grid-area"]; got != c.area {
+			t.Errorf("%s grid-area is %q, want %q", c.head, got, c.area)
 		}
 	}
-	tab := find("main.profile-page .activity-tabs .activity-tab")
-	if tab.Decls["min-height"] != "var(--touch-target-min)" || tab.Decls["flex"] != "none" || tab.Decls["white-space"] != "nowrap" {
-		t.Errorf("a tab must be 44px tall, never shrink and never wrap, got %v", tab.Decls)
-	}
-	if got := find("main.profile-page .activity-tabs .activity-tab[aria-current=\"page\"]").Decls["background"]; got != "var(--color-bg)" {
-		t.Errorf("selected tab background is %q, want the page colour on the surface track", got)
-	}
-	if got := find("main.profile-page > .profile-activity > .activity-empty").Decls["grid-area"]; got != "empty" {
-		t.Errorf("empty states grid-area is %q, want empty", got)
-	}
-	if got := find("main.profile-page .profile-activity > .activity-subtitle").Decls["display"]; got != "none" {
-		t.Errorf("the help line display is %q on phones, want none", got)
-	}
-	icon := find("main.profile-page .profile-report-list .report-row > .icon-badge")
-	if icon.Decls["width"] != "48px" || icon.Decls["height"] != "48px" || icon.Decls["border-radius"] != "50%" {
-		t.Errorf("the phone event icon must be a 48px circle, got %v", icon.Decls)
-	}
-	if got := find("main.profile-page .profile-report-list .report-row .activity-card__action").Decls["display"]; got != "none" {
-		t.Errorf("the action phrase display is %q on phones, want none (the tag says the same)", got)
+	if got := find("main.profile-page:not([data-part=\"\"]):not([data-part=\"posted\"]) > .queue-strip").Decls["display"]; got != "none" {
+		t.Errorf("the saved reports strip display is %q on the other part screens, want none", got)
 	}
 }
 

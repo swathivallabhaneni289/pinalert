@@ -450,7 +450,11 @@ func TestExistingPagesRenderWithChrome(t *testing.T) {
 		}
 	})
 	t.Run("profile", func(t *testing.T) {
-		check(t, chromeExecute(t, tmpl, profileTemplateName, profileViewModel{Email: "a@example.com", Chrome: chrome}), false, 1)
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to
+		// D-21, T-34-32): the view model no longer carries the signed in address,
+		// because My activity does not print it. The Phase 3.1 and Phase 4
+		// hands-on tests are walked on this layout after Phase 3.4 is built.
+		check(t, chromeExecute(t, tmpl, profileTemplateName, profileViewModel{Chrome: chrome}), false, 1)
 	})
 	t.Run("zero_chrome", func(t *testing.T) {
 		check(t, chromeServeMap(t, tmpl, PageConfig{}), true, 1)

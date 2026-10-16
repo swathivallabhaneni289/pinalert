@@ -1,232 +1,223 @@
 /*
  * Pinalert activity.css
  *
- * The Activity page (/profile) with six tabs, built in quick task 261013-wm5.
- * Loaded only by profile.html.tmpl, after auth.css and before phone.css, so
- * phone.css still has the last word under 900px. The look at 900px and up is
- * the owner's picture (sketch 004 variant B) at 80 percent, with one unit
- * variable, --u, so the whole size moves with one number. Every departure from
- * the house scale, and every fix to the picture, is written in
- * .planning/sketches/004-activity-page/README.md under "Built: quick task
- * 261013-wm5". The phone look lives in phone.css and uses tokens only.
+ * My activity (/profile), rebuilt by Phase 3.4 (D-18 to D-21, UI-SPEC Surface
+ * 3) from the six tab Activity page of quick task 261013-wm5. Loaded only by
+ * profile.html.tmpl, after auth.css and before phone.css, so phone.css still
+ * has the last word under 900px.
  *
- * What the picture has that the page does not: the top bar, the side menu, the
- * address pill, the bell, the avatar and the arrow on each card. Each would be
- * a dead control or needs the app wide shell (backlog 999.10).
+ * Five parts: Updates, Posted by you, You confirmed, You disputed, Ended
+ * nearby. At 900px and up all five are stacked on one full width page; each
+ * part is a title column on the left and a box on the right whose rows line up
+ * in the columns Report, Status, What happened, When and Distance. Under 900px
+ * the markup is the same, and phone.css shows one list of five rows or one part
+ * as cards. Everything here uses the house tokens. No text is faded: a disputed
+ * or expired row keeps full contrast and is marked by a grey disc and a status
+ * chip, never by opacity (D-07).
  */
 
-/* The picture's colours, as variables on the page, light first. The values come
-   from picture.css. Where a text pair measured under 4.5 to 1 the colour was
-   darkened by the smallest step that passes (the critical chip text). The Medium
-   chip text uses the app's caution tone. The event colours and the white icon
-   glyph are the same in both themes. */
+/* The chip tints, as variables on the page, light first. Ongoing takes the
+   report's severity tint and Resolved the Low tint. The grey chip of a disputed,
+   expired, held or removed row uses the surface and text tokens directly. Every
+   text pair is checked at 4.5 to 1 in both themes by TestActivityContrast. The
+   OS preference block comes first and the explicit choice blocks follow with
+   higher specificity, main.css's own pattern. */
 main.profile-page {
-  --u: 0.8px;
-
-  --a-h1: #060F1C;
-  --a-subtitle: #5B6779;
-  --a-title: #0B1120;
-  --a-sub: #6B7385;
-  --a-card-bg: #FCFDFE;
-  --a-line: #E9EDF3;
-  --a-hair: #EDF0F4;
-  --a-shadow: rgb(16 24 40 / 5%);
-  --a-tab: #616D7B;
-  --a-tab-hover-bg: #F1F4F8;
-  --a-tab-sel-bg: #FFFFFF;
-  --a-tab-sel-border: #EAEDF2;
-  --a-tab-sel-text: #0A0D1A;
-  --a-tab-bar: #161C2A;
-  --a-count-bg: #E7ECF2;
-  --a-count-ink: #414A58;
-  --a-tag-bg: #E4EAF4;
-  --a-tag-ink: #4E586B;
   --a-chip-critical-bg: #FAEDEC;
   --a-chip-critical-ink: #BE433A;
   --a-chip-medium-bg: #FAEFDD;
   --a-chip-medium-ink: #946200;
   --a-chip-low-bg: #E4F1EC;
   --a-chip-low-ink: #39775A;
-  --a-chip-resolved-bg: #EDF0F3;
-  --a-chip-resolved-ink: #596579;
-  --a-chip-open-bg: #F9ECEB;
-  --a-chip-open-ink: #BE3F34;
-  --a-ev-post: #D15744;
-  --a-ev-vote: #459471;
-  --a-ev-dispute: #788089;
-  --a-icon-ink: #FFFFFF;
 }
 
-/* The picture is light only. The dark theme maps every colour to the app's own
-   dark tokens, so a card reads as the app's surface. The OS preference block
-   comes first and the explicit choice blocks follow with higher specificity,
-   main.css's own pattern. */
 @media (prefers-color-scheme: dark) {
   main.profile-page {
-    --a-h1: var(--color-text);
-    --a-subtitle: var(--color-text-muted);
-    --a-title: var(--color-text);
-    --a-sub: var(--color-text-muted);
-    --a-card-bg: var(--color-surface);
-    --a-line: var(--color-border);
-    --a-hair: var(--color-border);
-    --a-shadow: rgb(0 0 0 / 30%);
-    --a-tab: var(--color-text-muted);
-    --a-tab-hover-bg: var(--color-surface);
-    --a-tab-sel-bg: var(--color-surface);
-    --a-tab-sel-border: var(--color-border);
-    --a-tab-sel-text: var(--color-text);
-    --a-tab-bar: var(--color-text);
-    --a-count-bg: var(--color-border);
-    --a-count-ink: var(--color-text);
-    --a-tag-bg: var(--color-border);
-    --a-tag-ink: var(--color-text);
     --a-chip-critical-bg: var(--color-severity-critical-bg);
     --a-chip-critical-ink: var(--color-severity-critical);
     --a-chip-medium-bg: var(--color-severity-medium-bg);
     --a-chip-medium-ink: var(--color-severity-medium);
     --a-chip-low-bg: var(--color-severity-low-bg);
     --a-chip-low-ink: var(--color-severity-low);
-    --a-chip-resolved-bg: var(--color-border);
-    --a-chip-resolved-ink: var(--color-text);
-    --a-chip-open-bg: var(--color-severity-critical-bg);
-    --a-chip-open-ink: var(--color-severity-critical);
   }
 }
 
 :root[data-theme="dark"] main.profile-page {
-  --a-h1: var(--color-text);
-  --a-subtitle: var(--color-text-muted);
-  --a-title: var(--color-text);
-  --a-sub: var(--color-text-muted);
-  --a-card-bg: var(--color-surface);
-  --a-line: var(--color-border);
-  --a-hair: var(--color-border);
-  --a-shadow: rgb(0 0 0 / 30%);
-  --a-tab: var(--color-text-muted);
-  --a-tab-hover-bg: var(--color-surface);
-  --a-tab-sel-bg: var(--color-surface);
-  --a-tab-sel-border: var(--color-border);
-  --a-tab-sel-text: var(--color-text);
-  --a-tab-bar: var(--color-text);
-  --a-count-bg: var(--color-border);
-  --a-count-ink: var(--color-text);
-  --a-tag-bg: var(--color-border);
-  --a-tag-ink: var(--color-text);
   --a-chip-critical-bg: var(--color-severity-critical-bg);
   --a-chip-critical-ink: var(--color-severity-critical);
   --a-chip-medium-bg: var(--color-severity-medium-bg);
   --a-chip-medium-ink: var(--color-severity-medium);
   --a-chip-low-bg: var(--color-severity-low-bg);
   --a-chip-low-ink: var(--color-severity-low);
-  --a-chip-resolved-bg: var(--color-border);
-  --a-chip-resolved-ink: var(--color-text);
-  --a-chip-open-bg: var(--color-severity-critical-bg);
-  --a-chip-open-ink: var(--color-severity-critical);
 }
 
 :root[data-theme="light"] main.profile-page {
-  --a-h1: #060F1C;
-  --a-subtitle: #5B6779;
-  --a-title: #0B1120;
-  --a-sub: #6B7385;
-  --a-card-bg: #FCFDFE;
-  --a-line: #E9EDF3;
-  --a-hair: #EDF0F4;
-  --a-shadow: rgb(16 24 40 / 5%);
-  --a-tab: #616D7B;
-  --a-tab-hover-bg: #F1F4F8;
-  --a-tab-sel-bg: #FFFFFF;
-  --a-tab-sel-border: #EAEDF2;
-  --a-tab-sel-text: #0A0D1A;
-  --a-tab-bar: #161C2A;
-  --a-count-bg: #E7ECF2;
-  --a-count-ink: #414A58;
-  --a-tag-bg: #E4EAF4;
-  --a-tag-ink: #4E586B;
   --a-chip-critical-bg: #FAEDEC;
   --a-chip-critical-ink: #BE433A;
   --a-chip-medium-bg: #FAEFDD;
   --a-chip-medium-ink: #946200;
   --a-chip-low-bg: #E4F1EC;
   --a-chip-low-ink: #39775A;
-  --a-chip-resolved-bg: #EDF0F3;
-  --a-chip-resolved-ink: #596579;
-  --a-chip-open-bg: #F9ECEB;
-  --a-chip-open-ink: #BE3F34;
 }
 
 /* ---- All widths: the hidden overrides ------------------------------------
-   main.css gives an empty state display flex and phone.css gives a card
-   display block, and both are author rules that beat the browser's hidden
-   rule. These two heads are more specific than either, so the server and
-   activity-tabs.js can hide a card or an empty state with the hidden
-   attribute. The feed.css block for #report-list is the precedent. */
-main.profile-page .profile-report-list > .report-row[hidden] {
+   main.css gives an empty state display flex and the groups below are author
+   boxes, and both are author rules that beat the browser's hidden rule. These
+   heads are more specific than either, so the Ended nearby script can hide and
+   show its states with the hidden attribute. The feed.css block for
+   #report-list is the precedent. */
+main.profile-page .activity-box [hidden] {
   display: none;
 }
 
-main.profile-page .profile-activity > .activity-empty[hidden] {
+/* The hub icons that app-bar.css does not mask. One literal url per file, the
+   03.1 search.svg precedent, so TestNewIconsAreRegisteredAndUsed can see the
+   file is used. The base .app-icon box comes from app-bar.css. */
+main.profile-page .app-icon--check-circle {
+  -webkit-mask-image: url("/static/icons/check-circle.svg");
+  mask-image: url("/static/icons/check-circle.svg");
+}
+
+main.profile-page .app-icon--circle-x {
+  -webkit-mask-image: url("/static/icons/circle-x.svg");
+  mask-image: url("/static/icons/circle-x.svg");
+}
+
+main.profile-page .app-icon--history {
+  -webkit-mask-image: url("/static/icons/history.svg");
+  mask-image: url("/static/icons/history.svg");
+}
+
+/* The hub and the page heading are drawn by one size each: the hub is the phone
+   list (phone.css shows it), the heading is the laptop page heading. */
+main.profile-page > .activity-hub {
   display: none;
 }
 
-/* ---- All widths: the card rules ------------------------------------------
-   Nothing opens from a card yet, so the pointer feed.css gives every report
-   row is taken back. The event colour follows the kind of card. */
+main.profile-page > .activity-heading {
+  display: none;
+}
+
+/* ---- All widths: the box, the cells and the icon disc ---------------------
+   Nothing opens from a row, so the pointer feed.css gives every report row is
+   taken back. The row sits on the page colour with no tint and no severity bar,
+   so the muted lines keep their contrast. */
+main.profile-page .activity-box {
+  background: var(--color-bg);
+}
+
 main.profile-page .profile-report-list > .activity-card {
   cursor: default;
+  border-left: 0;
+  background: transparent;
 }
 
-main.profile-page .activity-card--post {
-  --a-event: var(--a-ev-post);
+main.profile-page .activity-card__report {
+  min-width: 0;
 }
 
-main.profile-page .activity-card--vote {
-  --a-event: var(--a-ev-vote);
+main.profile-page .activity-card .report-row__title {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
 }
 
-main.profile-page .activity-card--dispute {
-  --a-event: var(--a-ev-dispute);
+main.profile-page .activity-card .activity-card__sub {
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
 }
 
-/* The round icon is filled with the event colour and the glyph is white. The
-   head keeps .icon-badge, so it beats trust.css's state outline and fill. */
+main.profile-page .activity-card .report-row__moderation-note {
+  margin: var(--space-xs) 0 0;
+}
+
+main.profile-page .activity-card__when,
+main.profile-page .activity-card__distance {
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+}
+
+main.profile-page .activity-card__what {
+  min-width: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+/* The trust block is the shared one, as built. In this cell its toggle is the
+   What happened sentence, so it drops the top rule and the extra space the feed
+   row gives it, and Reopen, the take back and the used both undos sentence sit
+   under it as the last lines of the cell. */
+main.profile-page .activity-card__what .trust-block:not([hidden]) {
+  margin-top: 0;
+  border-top: 0;
+}
+
+main.profile-page .activity-card__what .vote-controls:not([hidden]) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* The disc: the category glyph on the report's severity tint. A disputed,
+   expired, held or removed row has a grey disc (the surface token with a hairline
+   and the text colour), a resolved one the Low tint. trust.css draws those
+   states as an outline ring; the heads here are longer, so they win. */
 main.profile-page .activity-card > .icon-badge {
-  background: var(--a-event);
-  color: var(--a-icon-ink);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
   outline: none;
 }
 
-/* The vote tick and the dispute chat bubble are masks like the category
-   glyphs. Their class does not start with the category prefix. */
-main.profile-page .activity-card .activity-glyph--vote {
-  -webkit-mask-image: url("/static/icons/check.svg");
-  mask-image: url("/static/icons/check.svg");
+main.profile-page .activity-card.sev-critical > .icon-badge {
+  background: var(--a-chip-critical-bg);
+  color: var(--a-chip-critical-ink);
 }
 
-main.profile-page .activity-card .activity-glyph--dispute {
-  -webkit-mask-image: url("/static/icons/message-square.svg");
-  mask-image: url("/static/icons/message-square.svg");
+main.profile-page .activity-card.sev-medium > .icon-badge {
+  background: var(--a-chip-medium-bg);
+  color: var(--a-chip-medium-ink);
 }
 
-/* The chip holds three words and shows exactly one, chosen by the card's
-   display state class, so it follows a Reopen with no script. Resolved shows
-   Resolved, a hidden (disputed) report shows Not resolved, and every other
-   state shows the severity word. */
-main.profile-page .activity-card .activity-chip__word {
-  display: none;
+main.profile-page .activity-card.sev-low > .icon-badge,
+main.profile-page .activity-card.vis-retracted > .icon-badge {
+  background: var(--a-chip-low-bg);
+  color: var(--a-chip-low-ink);
 }
 
-main.profile-page .activity-card:not(.vis-retracted):not(.vis-hidden) .activity-chip__word--severity {
-  display: inline;
+main.profile-page .activity-card.vis-hidden > .icon-badge,
+main.profile-page .activity-card.vis-expired > .icon-badge,
+main.profile-page .activity-card.vis-held > .icon-badge,
+main.profile-page .activity-card.vis-removed > .icon-badge {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: inset 0 0 0 1px var(--color-border);
 }
 
-main.profile-page .activity-card.vis-retracted .activity-chip__word--resolved {
-  display: inline;
-}
-
-main.profile-page .activity-card.vis-hidden .activity-chip__word--open {
-  display: inline;
+/* The status chip: Ongoing in the report's severity tint, Resolved in the Low
+   tint, and Disputed, Expired, Waiting for a text check and Removed after
+   review as a grey chip. The word is written by the server, and by the script
+   after a Reopen; the colour follows the row's state class, so it follows a
+   Reopen with no script. */
+main.profile-page .activity-card .activity-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 var(--space-sm);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
 }
 
 main.profile-page .activity-card.sev-critical .activity-chip {
@@ -239,287 +230,240 @@ main.profile-page .activity-card.sev-medium .activity-chip {
   color: var(--a-chip-medium-ink);
 }
 
-main.profile-page .activity-card.sev-low .activity-chip {
+main.profile-page .activity-card.sev-low .activity-chip,
+main.profile-page .activity-card.vis-retracted .activity-chip {
   background: var(--a-chip-low-bg);
   color: var(--a-chip-low-ink);
 }
 
-main.profile-page .activity-card.vis-retracted .activity-chip {
-  background: var(--a-chip-resolved-bg);
-  color: var(--a-chip-resolved-ink);
+main.profile-page .activity-card.vis-hidden .activity-chip,
+main.profile-page .activity-card.vis-expired .activity-chip,
+main.profile-page .activity-card.vis-held .activity-chip,
+main.profile-page .activity-card.vis-removed .activity-chip {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 
-main.profile-page .activity-card.vis-hidden .activity-chip {
-  background: var(--a-chip-open-bg);
-  color: var(--a-chip-open-ink);
-}
-
-/* One fact once: where the chip says Resolved, the state word is not drawn.
-   A Disputed state word and a Not resolved chip are both drawn, as two
-   facts. The guarded head keeps the hidden attribute working. */
-main.profile-page .activity-card.vis-retracted .visibility-tag:not([hidden]) {
+/* One fact once: where the chip says Resolved, Disputed, Expired or the
+   moderation word, the state word is not drawn. It stays for Unconfirmed, which
+   the chip does not say. The guarded heads keep the hidden attribute working. */
+main.profile-page .activity-card.vis-retracted .visibility-tag:not([hidden]),
+main.profile-page .activity-card.vis-hidden .visibility-tag:not([hidden]),
+main.profile-page .activity-card.vis-expired .visibility-tag:not([hidden]),
+main.profile-page .activity-card.vis-held .visibility-tag:not([hidden]),
+main.profile-page .activity-card.vis-removed .visibility-tag:not([hidden]) {
   display: none;
 }
 
-/* The record card above the tabs shows the account's own label once, so the
-   reporter words on the account's own posts are not repeated. A voted card
+/* The record card above Posted by you shows the account's own label once, so
+   the reporter words on the account's own posts are not repeated. A voted card
    keeps them, because that is another person's record. */
 main.profile-page .activity-card--post .trust-reporter:not([hidden]) {
   display: none;
 }
 
+/* The reporter record card, one definition for both sizes. */
+main.profile-page .profile-record {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-md);
+  align-items: center;
+  margin: 0 0 var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg);
+}
+
+main.profile-page .profile-record .profile-record__kicker {
+  grid-column: 1;
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+}
+
+main.profile-page .profile-record .profile-record__label {
+  grid-column: 1;
+  margin: 0;
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+main.profile-page .profile-record .profile-record__counts {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+}
+
+/* Ended nearby: the two groups, the cut line and the states. The rows of the
+   groups are drawn by the browser read in a later plan; the shell is here. */
+main.profile-page .activity-group__label {
+  margin: 0;
+  padding: var(--space-12) var(--space-lg) var(--space-xs);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text);
+}
+
+main.profile-page .activity-group__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+main.profile-page .activity-group__cut {
+  margin: 0;
+  padding: var(--space-sm) var(--space-lg);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+main.profile-page .activity-skeleton {
+  padding: var(--space-md);
+}
+
+main.profile-page .activity-empty h3 {
+  margin: 0;
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+main.profile-page .activity-retry {
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
 @media (forced-colors: active) {
   main.profile-page .activity-chip,
-  main.profile-page .activity-card__tag,
-  main.profile-page .activity-tab__count,
-  main.profile-page .activity-tab[aria-current="page"] {
+  main.profile-page .activity-card > .icon-badge {
     border: 1px solid CanvasText;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  main.profile-page .activity-tab {
-    transition: none;
-  }
-}
-
-/* ---- 900px and up: sketch 004 variant B at 80 percent --------------------
-   Every length is N * --u. 1px lines stay 1px. The tabs keep 44px tall
-   (the picture's are 35px at this size). */
+/* ---- 900px and up: all five parts stacked on one full width page ---------- */
 @media (min-width: 900px) {
   main.profile-page {
-    max-width: calc(1100 * var(--u));
-  }
-
-  main.profile-page .profile-activity h2 {
+    max-width: none;
     margin: 0;
-    font-size: calc(40 * var(--u));
-    line-height: calc(44 * var(--u));
-    font-weight: 700;
-    letter-spacing: -0.01em;
-    color: var(--a-h1);
+    padding: 0;
   }
 
-  main.profile-page .activity-subtitle {
-    margin: calc(8 * var(--u)) 0 0;
-    font-size: calc(19.5 * var(--u));
-    line-height: calc(26 * var(--u));
-    color: var(--a-subtitle);
+  main.profile-page > .activity-heading {
+    display: block;
+    margin: 0;
+    padding: var(--space-lg) var(--space-lg) var(--space-sm);
+    font-size: var(--font-size-display);
+    line-height: var(--line-height-display);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
   }
 
-  /* The reporter record card, drawn in the card language of the list. */
-  main.profile-page .profile-record {
+  main.profile-page > .queue-strip {
+    margin: 0 var(--space-lg);
+  }
+
+  main.profile-page .activity-part {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    column-gap: calc(16 * var(--u));
-    align-items: center;
-    margin: calc(24 * var(--u)) 0 0;
-    padding: calc(14 * var(--u)) calc(20 * var(--u));
-    border: 1px solid var(--a-line);
-    border-radius: calc(14 * var(--u));
-    background: var(--a-card-bg);
-    box-shadow: 0 1px calc(3 * var(--u)) var(--a-shadow);
+    grid-template-columns: 260px minmax(0, 1fr);
+    gap: 40px;
+    padding: var(--space-lg) var(--space-lg) 40px;
+    border-top: 1px solid var(--color-border);
   }
 
-  main.profile-page .profile-record .profile-record__kicker {
-    grid-column: 1;
+  main.profile-page .activity-part__title {
     margin: 0;
-    font-size: calc(14 * var(--u));
-    line-height: calc(20 * var(--u));
-    color: var(--a-sub);
+    font-size: var(--font-size-heading);
+    line-height: var(--line-height-heading);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
   }
 
-  main.profile-page .profile-record .profile-record__label {
-    grid-column: 1;
-    margin: 0;
-    font-size: calc(18 * var(--u));
-    line-height: calc(26 * var(--u));
-    font-weight: 600;
-    color: var(--a-title);
+  main.profile-page .activity-part__count {
+    font-weight: var(--font-weight-regular);
+    color: var(--color-text-muted);
   }
 
-  main.profile-page .profile-record .profile-record__counts {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    margin: 0;
-    font-size: calc(16 * var(--u));
-    line-height: calc(22 * var(--u));
-    color: var(--a-sub);
+  main.profile-page .activity-part__line {
+    margin: var(--space-xs) 0 0;
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+    color: var(--color-text-muted);
   }
 
-  main.profile-page .activity-tabs {
-    display: flex;
-    align-items: center;
-    margin-top: calc(33 * var(--u));
-    padding-bottom: calc(11 * var(--u));
-    border-bottom: 1px solid var(--a-hair);
-    overflow-x: auto;
-    scrollbar-width: none;
+  main.profile-page .activity-part__body {
+    min-width: 0;
   }
 
-  main.profile-page .activity-tabs::-webkit-scrollbar {
-    display: none;
+  main.profile-page .activity-box {
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    overflow: hidden;
   }
 
-  main.profile-page .activity-tab {
-    position: relative;
-    flex: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 44px;
-    padding: 0 calc(15 * var(--u));
-    border: 1px solid transparent;
-    border-radius: calc(16 * var(--u));
-    font-size: calc(16 * var(--u));
-    line-height: calc(22 * var(--u));
-    font-weight: 500;
-    color: var(--a-tab);
-    text-decoration: none;
-    transition: background-color 150ms ease;
-  }
-
-  main.profile-page .activity-tab:hover {
-    background: var(--a-tab-hover-bg);
-  }
-
-  main.profile-page .activity-tab:first-child {
-    min-width: calc(67 * var(--u));
-    margin-right: calc(6 * var(--u));
-  }
-
-  /* A faint divider between neighbours, left out beside the selected tab. */
-  main.profile-page .activity-tab + .activity-tab::before {
-    content: "";
-    position: absolute;
-    left: calc(-3 * var(--u));
-    top: calc(10 * var(--u));
-    bottom: calc(10 * var(--u));
-    width: 1px;
-    background: var(--a-hair);
-  }
-
-  main.profile-page .activity-tab[aria-current="page"]::before,
-  main.profile-page .activity-tab[aria-current="page"] + .activity-tab::before {
-    display: none;
-  }
-
-  /* The count is a chip inside a link, not a button, so its fully round shape
-     is the picture's own and is recorded as a departure. */
-  main.profile-page .activity-tab__count {
+  /* The column head row and the report rows share one grid, so the columns line
+     up from the top row to the last (D-20, D-06). The Report and What happened
+     columns take the spare width in the ratio 2.2 to 1.5. */
+  main.profile-page .activity-cols {
     display: grid;
-    place-items: center;
-    min-width: calc(25 * var(--u));
-    height: calc(26 * var(--u));
-    margin-left: calc(11 * var(--u));
-    padding: 0 calc(7 * var(--u));
-    border-radius: calc(13 * var(--u));
-    background: var(--a-count-bg);
-    font-size: calc(14 * var(--u));
-    line-height: calc(20 * var(--u));
-    font-weight: 600;
-    color: var(--a-count-ink);
+    grid-template-columns: 40px minmax(0, 2.2fr) 112px minmax(0, 1.5fr) 152px 72px;
+    gap: var(--space-md);
+    padding: var(--space-sm) var(--space-lg);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
+    font-size: var(--font-size-caption);
+    line-height: var(--line-height-caption);
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    color: var(--color-text);
   }
 
-  main.profile-page .activity-tab[aria-current="page"] {
-    padding: 0 calc(22 * var(--u));
-    border-color: var(--a-tab-sel-border);
-    background: var(--a-tab-sel-bg);
-    box-shadow: 0 1px calc(2 * var(--u)) var(--a-shadow);
-    font-weight: 600;
-    color: var(--a-tab-sel-text);
-  }
-
-  main.profile-page .activity-tab[aria-current="page"]::after {
-    content: "";
-    position: absolute;
-    left: 18%;
-    right: 18%;
-    bottom: calc(-11 * var(--u));
-    height: calc(3 * var(--u));
-    border-radius: calc(2 * var(--u));
-    background: var(--a-tab-bar);
+  main.profile-page .activity-cols__distance {
+    text-align: right;
   }
 
   main.profile-page .profile-report-list {
-    gap: calc(16 * var(--u));
-    margin: calc(30 * var(--u)) 0 0 calc(5 * var(--u));
-  }
-
-  /* The card grows past the picture's fixed height, because the kept trust
-     facts and Reopen need room. */
-  main.profile-page .profile-report-list > .activity-card {
-    position: relative;
-    display: flex;
-    align-items: flex-start;
     gap: 0;
-    min-height: calc(122 * var(--u));
-    padding: calc(17 * var(--u)) calc(10 * var(--u)) calc(17 * var(--u)) calc(28 * var(--u));
-    border: 1px solid var(--a-line);
-    border-left: calc(2 * var(--u)) solid var(--a-event);
-    border-radius: calc(14 * var(--u));
-    background: var(--a-card-bg);
-    box-shadow: 0 1px calc(3 * var(--u)) var(--a-shadow);
+    margin: 0;
   }
 
-  main.profile-page .activity-card > .icon-badge {
-    width: calc(64 * var(--u));
-    height: calc(64 * var(--u));
-    margin-top: calc(6 * var(--u));
-    border-radius: 50%;
+  main.profile-page .profile-report-list > .activity-card {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 2.2fr) 112px minmax(0, 1.5fr) 152px 72px;
+    gap: var(--space-md);
+    align-items: center;
+    padding: var(--space-md) var(--space-lg);
+    border-top: 1px solid var(--color-border);
   }
 
-  main.profile-page .activity-card > .icon-badge .icon-glyph {
-    width: calc(38 * var(--u));
-    height: calc(38 * var(--u));
+  main.profile-page .profile-report-list > .activity-card:first-child {
+    border-top: 0;
   }
 
-  main.profile-page .activity-card .report-row__body {
-    margin-left: calc(26 * var(--u));
-  }
-
-  main.profile-page .activity-card .activity-card__tag {
-    display: inline-block;
-    height: calc(26 * var(--u));
-    padding: 0 calc(13 * var(--u));
-    border-radius: calc(10 * var(--u));
-    background: var(--a-tag-bg);
-    font-size: calc(14 * var(--u));
-    line-height: calc(26 * var(--u));
-    font-weight: 500;
-    color: var(--a-tag-ink);
-  }
-
-  /* A long word wraps. The title is never clamped (A55). */
-  main.profile-page .activity-card .report-row__title {
-    margin: calc(5 * var(--u)) 0 0;
-    font-size: calc(18 * var(--u));
-    line-height: calc(26 * var(--u));
-    font-weight: 600;
-    color: var(--a-title);
-    overflow-wrap: anywhere;
-  }
-
-  main.profile-page .activity-card .activity-card__sub {
-    margin: calc(4 * var(--u)) 0 0;
-    font-size: calc(16 * var(--u));
-    line-height: calc(22 * var(--u));
-    color: var(--a-sub);
-  }
-
-  main.profile-page .activity-card .activity-chip {
-    flex: none;
-    height: calc(30 * var(--u));
-    margin: calc(7 * var(--u)) calc(13 * var(--u)) 0 calc(16 * var(--u));
-    padding: 0 calc(16 * var(--u));
-    border-radius: calc(10 * var(--u));
-    font-size: calc(15 * var(--u));
-    line-height: calc(30 * var(--u));
-    font-weight: 600;
-    white-space: nowrap;
-  }
-
-  main.profile-page .activity-empty {
-    margin-top: calc(30 * var(--u));
+  main.profile-page .activity-card__distance {
+    text-align: right;
   }
 }

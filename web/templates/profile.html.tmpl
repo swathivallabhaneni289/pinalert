@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pinalert: Activity</title>
+  <title>Pinalert: My activity</title>
   <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/feed.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/trust.css?v={{.AssetVersion}}">
@@ -21,69 +21,112 @@
   <div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>
 
   <div class="app-content">
-  <main class="profile-page" data-account-id="{{.AccountID}}">
-    <a href="{{if .LowDataDefault}}/low{{else}}/{{end}}" class="profile-back-link" aria-label="{{if .LowDataDefault}}Back to Low data view{{else}}Back to map{{end}}" title="{{if .LowDataDefault}}Back to Low data view{{else}}Back to map{{end}}"><span class="auth-icon auth-icon--arrow-left" aria-hidden="true"></span></a>
+  <main class="profile-page" data-account-id="{{.AccountID}}" data-part="{{.CurrentPart}}" data-resend-page="{{if .LowDataDefault}}/low{{else}}/{{end}}">
+    <h1 class="activity-heading">My activity</h1>
 
-    <p class="profile-email">{{.Email}}</p>
+    <div class="queue-strip" id="queue-strip" hidden></div>
 
-    <section class="profile-activity">
-      <h2>Activity</h2>
-      <div class="queue-strip" id="queue-strip" hidden></div>
-      <p class="activity-subtitle">A quick view of what's happening with your reports.</p>
-
-      <form class="profile-logout" method="post" action="/auth/logout">
-        <button type="submit" class="profile-logout__button">Log out</button>
-      </form>
-
-      {{with .Record}}
-      <section class="profile-record" aria-label="Your reporter record">
-        <p class="profile-record__kicker">Your reporter record</p>
-        <p class="profile-record__label">{{.Label}}</p>
-        <p class="profile-record__counts">{{.Counts}}</p>
-      </section>
+    <nav class="activity-hub" aria-label="My activity">
+      {{range .Parts}}
+      <a class="activity-hub__row" href="{{.Href}}" data-part-link="{{.Key}}"><span class="activity-hub__tile" aria-hidden="true"><span class="app-icon app-icon--{{.Icon}}"></span></span><span class="activity-hub__text"><span class="activity-hub__name">{{.Name}}</span><span class="activity-hub__summary">{{.Summary}}</span></span>{{if .ShowCount}}<span class="activity-hub__count">{{.Count}}</span>{{end}}<span class="app-icon app-icon--chevron-right activity-hub__chevron" aria-hidden="true"></span></a>
       {{end}}
+    </nav>
 
-      <nav class="activity-tabs" aria-label="Activity views">
-        {{range .Tabs}}
-        <a class="activity-tab" href="{{.Href}}" data-tab="{{.Key}}" data-count="{{.Count}}"{{if .Selected}} aria-current="page"{{end}}><span class="activity-tab__label">{{.Label}}</span><span class="activity-tab__count">{{.Count}}</span></a>
-        {{end}}
-      </nav>
-
-      {{if .Reports}}
-      <ol class="profile-report-list">
-        {{range .Reports}}
-        <li class="report-row activity-card activity-card--{{.Kind}} {{.SeverityClass}} {{.VisibilityClass}}"
-            data-report-id="{{.ReportID}}"
-            data-visibility="{{.Visibility}}"
-            data-visibility-reason="{{.VisibilityReason}}"
-            data-expired="{{.Expired}}"
-            {{if not .Moderation}}data-trust="{{.TrustJSON}}"{{end}}
-            {{if .Moderation}}data-moderation="{{.Moderation}}"{{end}}
-            data-tabs="{{.Tabs}}"
-            {{if .CanReopen}}data-can-reopen="true"{{end}}
-            {{if .UndosUsed}}data-undos-used="true"{{end}}
-            {{if .Hidden}}hidden{{end}}>
-          <span class="icon-badge activity-card__icon" aria-hidden="true"><span class="icon-glyph {{.IconGlyph}}"></span></span>
-          <div class="report-row__body">
-            <span class="activity-card__tag">{{.Tag}}</span>
-            <p class="report-row__title">{{.Description}}</p>
-            <p class="report-row__meta activity-card__sub"><span class="activity-card__action">{{.Action}} &middot; </span>{{.When}} &middot; {{.Detail}}</p>
-            {{if .WrittenText}}<p class="report-row__meta">{{.WrittenText}}</p>{{end}}
-            {{if .ModerationNote}}<p class="report-row__moderation-note">{{.ModerationNote}}{{if and .PolicyPointer $.Chrome.ContactEmail}} {{$.PolicyPointerLead}}<a href="/policy">{{$.PolicyPointerLink}}</a>{{$.PolicyPointerTail}}{{end}}</p>{{end}}
-          </div>
-          <span class="activity-chip"><span class="activity-chip__word activity-chip__word--severity">{{.SeverityWord}}</span><span class="activity-chip__word activity-chip__word--resolved">Resolved</span><span class="activity-chip__word activity-chip__word--open">Not resolved</span></span>
-        </li>
-        {{end}}
-      </ol>
-      {{end}}
-
-      {{range .Tabs}}
-      <div class="empty-state profile-empty-state activity-empty" data-tab-empty="{{.Key}}"{{if not .ShowEmpty}} hidden{{end}}>
-        <h3>{{.EmptyTitle}}</h3>
-        <p>{{.EmptyText}}</p>
+    {{range .Parts}}
+    <section class="activity-part activity-part--{{.Key}}" id="part-{{.Key}}" data-part-key="{{.Key}}"{{if .Current}} data-current{{end}} aria-labelledby="activity-title-{{.Key}}">
+      <div class="activity-part__head">
+        <h2 class="activity-part__title" id="activity-title-{{.Key}}">{{.Name}}{{if .ShowCount}} <span class="activity-part__count">{{.Count}}</span>{{end}}</h2>
+        <p class="activity-part__line">{{.Line}}</p>
       </div>
-      {{end}}
+      <div class="activity-part__body">
+        {{if eq .Key "posted"}}
+        {{with $.Record}}
+        <section class="profile-record" aria-label="Your reporter record">
+          <p class="profile-record__kicker">Your reporter record</p>
+          <p class="profile-record__label">{{.Label}}</p>
+          <p class="profile-record__counts">{{.Counts}}</p>
+        </section>
+        {{end}}
+        {{end}}
+
+        {{if eq .Key "ended"}}
+        <div class="activity-box" id="ended-nearby">
+          <div class="activity-skeleton" id="ended-skeleton">
+            <div class="skeleton-row"></div>
+            <div class="skeleton-row"></div>
+            <div class="skeleton-row"></div>
+            <div class="skeleton-row"></div>
+          </div>
+          <div class="activity-group" id="ended-resolved" hidden>
+            <p class="activity-group__label">Resolved</p>
+            <ol class="activity-group__list"></ol>
+            <p class="activity-group__cut" hidden></p>
+          </div>
+          <div class="activity-group" id="ended-faded" hidden>
+            <p class="activity-group__label">Faded out</p>
+            <ol class="activity-group__list"></ol>
+            <p class="activity-group__cut" hidden></p>
+          </div>
+          <div class="empty-state profile-empty-state activity-empty" id="ended-empty" hidden>
+            <h3>{{.EmptyTitle}}</h3>
+            <p>{{.EmptyText}}</p>
+          </div>
+          <div class="empty-state profile-empty-state activity-empty" id="ended-location" hidden>
+            <h3>Ended nearby needs your location</h3>
+            <p>Open Nearby and allow location, then come back.</p>
+          </div>
+          <div class="error-state activity-empty" id="ended-error" hidden>
+            <h3>Couldn't load reports</h3>
+            <p>Check your connection and try again.</p>
+            <button type="button" class="activity-retry">Try again</button>
+          </div>
+        </div>
+        {{else}}
+        <div class="activity-box">
+          {{if .Rows}}
+          <div class="activity-cols" aria-hidden="true">
+            <span class="activity-cols__disc"></span>
+            <span>Report</span>
+            <span>Status</span>
+            <span>What happened</span>
+            <span>When</span>
+            <span class="activity-cols__distance">Distance</span>
+          </div>
+          <ol class="profile-report-list">
+            {{range .Rows}}
+            <li class="report-row activity-card activity-card--{{.Kind}} {{.SeverityClass}} {{.VisibilityClass}}"
+                data-report-id="{{.ReportID}}"
+                data-visibility="{{.Visibility}}"
+                data-visibility-reason="{{.VisibilityReason}}"
+                data-expired="{{.Expired}}"
+                {{if not .Moderation}}data-trust="{{.TrustJSON}}"{{end}}
+                {{if .Moderation}}data-moderation="{{.Moderation}}"{{end}}
+                {{if .CanReopen}}data-can-reopen="true"{{end}}
+                {{if .UndosUsed}}data-undos-used="true"{{end}}>
+              <span class="icon-badge activity-card__icon" aria-hidden="true"><span class="icon-glyph {{.IconGlyph}}"></span></span>
+              <div class="activity-card__report">
+                <p class="report-row__title">{{.Description}}</p>
+                <p class="report-row__meta activity-card__sub">{{.Detail}}{{if .WrittenText}} &middot; {{.WrittenText}}{{end}}</p>
+                {{if .ModerationNote}}<p class="report-row__moderation-note">{{.ModerationNote}}{{if and .PolicyPointer $.Chrome.ContactEmail}} {{$.PolicyPointerLead}}<a href="/policy">{{$.PolicyPointerLink}}</a>{{$.PolicyPointerTail}}{{end}}</p>{{end}}
+              </div>
+              <div class="activity-card__status"><span class="visually-hidden">{{.SeverityWord}} severity. </span><span class="activity-chip" data-word-ongoing="Ongoing" data-word-disputed="Disputed">{{.StatusWord}}</span></div>
+              <div class="activity-card__what"></div>
+              <p class="activity-card__when">{{.WhenText}}</p>
+              <p class="activity-card__distance" data-distance-for="{{.ReportID}}" data-lat="{{.Lat}}" data-lon="{{.Lon}}">Unknown</p>
+            </li>
+            {{end}}
+          </ol>
+          {{else}}
+          <div class="empty-state profile-empty-state activity-empty">
+            <h3>{{.EmptyTitle}}</h3>
+            <p>{{.EmptyText}}</p>
+          </div>
+          {{end}}
+        </div>
+        {{end}}
+      </div>
     </section>
+    {{end}}
   </main>
   </div>
 
@@ -97,7 +140,6 @@
   <script src="/static/js/trust.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/queue.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/activity.js?v={{.AssetVersion}}" defer></script>
-  <script src="/static/js/activity-tabs.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/app-bar.js?v={{.AssetVersion}}" defer></script>
 </body>

@@ -767,7 +767,6 @@ func TestProfileRendersSharedHeader(t *testing.T) {
 		`aria-label="Account menu"`,
 		`aria-haspopup="menu"`,
 		`role="menu"`,
-		"profile-header@example.com",
 		`href="/profile"`,
 		`action="/auth/logout"`,
 		"account-menu.js?v=",
@@ -776,6 +775,14 @@ func TestProfileRendersSharedHeader(t *testing.T) {
 		if !strings.Contains(bodyStr, want) {
 			t.Errorf("/profile is missing shared-header contract substring: %s", want)
 		}
+	}
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to D-21,
+	// T-34-32): the signed in address is no longer printed on the page, because
+	// the page's own email line is removed and the person menu does not show it.
+	// The Phase 3.1 and Phase 4 hands-on tests are walked on this layout after
+	// Phase 3.4 is built.
+	if strings.Contains(bodyStr, "profile-header@example.com") {
+		t.Errorf("/profile prints the signed in address")
 	}
 }
 

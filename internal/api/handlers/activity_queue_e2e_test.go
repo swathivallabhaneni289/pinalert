@@ -125,9 +125,12 @@ func TestActivityQueueMarkupInBothBranches(t *testing.T) {
 			t.Errorf("%s: the strip container %q is not hidden", name, tag)
 		}
 		strip := strings.Index(body, `id="queue-strip"`)
-		heading := strings.Index(body, ">Activity</h2>")
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to
+		// D-21): the page heading is the h1 My activity. The Phase 3.1 and Phase 4
+		// hands-on tests are walked on this layout after Phase 3.4 is built.
+		heading := strings.Index(body, `activity-heading">My activity</h1>`)
 		if heading == -1 || heading > strip {
-			t.Errorf("%s: the strip does not come after the Activity heading", name)
+			t.Errorf("%s: the strip does not come after the My activity heading", name)
 		}
 		next := strings.Index(body, after)
 		if next == -1 || strip > next {

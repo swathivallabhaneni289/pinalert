@@ -198,7 +198,11 @@ func TestActivityHeldAndRemovedRows(t *testing.T) {
 		if !ok || p416Text(note) != service.RemovedSentence {
 			t.Errorf("removed critical note = %q (found %v), want %q", p416Text(note), ok, service.RemovedSentence)
 		}
-		if !strings.Contains(row, `activity-chip__word--severity">Critical<`) {
+		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to
+		// D-21): the severity word is a visually hidden word in the Status cell,
+		// and the chip says Removed after review. The Phase 3.1 and Phase 4
+		// hands-on tests are walked on this layout after Phase 3.4 is built.
+		if !strings.Contains(row, `<span class="visually-hidden">Critical severity. </span>`) || !strings.Contains(row, ">Removed after review</span>") {
 			t.Errorf("removed critical row lost its severity word: %s", row)
 		}
 	})
@@ -336,13 +340,18 @@ func TestActivityWrittenLine(t *testing.T) {
 	body := getProfile(t, author, srv.URL)
 
 	lateRow := p15ProfileRow(t, body, late)
-	const line = `<p class="report-row__meta">Written 4 hours ago</p>`
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to D-21,
+	// UI-SPEC 3a): the Written line shares the Report cell's detail line,
+	// "{Category} · {Written line}", instead of a paragraph of its own. The
+	// Phase 3.1 and Phase 4 hands-on tests are walked on this layout after Phase
+	// 3.4 is built.
+	const line = `Flood &middot; Written 4 hours ago</p>`
 	if n := strings.Count(lateRow, line); n != 1 {
 		t.Fatalf("late row has the Written line %d times, want 1: %s", n, lateRow)
 	}
-	directly := regexp.MustCompile(`(?s)<p class="report-row__meta[^"]*">.*?</p>\s*` + regexp.QuoteMeta(line))
+	directly := regexp.MustCompile(`(?s)<p class="report-row__title">.*?</p>\s*<p class="report-row__meta[^"]*">` + regexp.QuoteMeta(line))
 	if !directly.MatchString(lateRow) {
-		t.Errorf("the Written line does not follow the first meta paragraph: %s", lateRow)
+		t.Errorf("the Written line does not follow the title paragraph on the detail line: %s", lateRow)
 	}
 
 	if nearRow := p15ProfileRow(t, body, near); strings.Contains(nearRow, "Written") {

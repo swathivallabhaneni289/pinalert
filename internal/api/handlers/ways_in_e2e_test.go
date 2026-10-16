@@ -312,59 +312,48 @@ func TestLoginLowParamSetsCookie(t *testing.T) {
 	}
 }
 
-// p421BackLink returns the single profile-back-link anchor of an Activity page
-// and fails unless the class appears once and before the email row.
-func p421BackLink(t *testing.T, body string) string {
-	t.Helper()
-	if n := strings.Count(body, "profile-back-link"); n != 1 {
-		t.Fatalf("profile-back-link appears %d times, want 1", n)
-	}
-	at := strings.Index(body, "profile-back-link")
-	if email := strings.Index(body, "profile-email"); email == -1 || at > email {
-		t.Fatalf("the back link is not before the email row")
-	}
-	start := strings.LastIndex(body[:at], "<a ")
-	end := strings.Index(body[at:], "</a>")
-	if start == -1 || end == -1 {
-		t.Fatalf("could not slice the back link anchor")
-	}
-	return body[start : at+end+len("</a>")]
-}
-
-func TestActivityBackLinkFollowsDeviceDefault(t *testing.T) {
+// TestActivityBackLinkFollowsDeviceDefault is retired.
+//
+// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to D-21 and
+// D-02): the icon only back link is removed from My activity; Nearby is one tap
+// away in the app bars. What the link carried for the saved reports strip, the
+// page that has a report form (the Low data view when it is this device's
+// remembered choice), the server now writes as data-resend-page on the page, and
+// TestActivityResendPageFollowsDeviceDefault below proves the cookie drives it.
+// The Phase 3.1 and Phase 4 hands-on tests are walked on this layout after Phase
+// 3.4 is built.
+func TestActivityResendPageFollowsDeviceDefault(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
 	client := newVerifiedClient(t, srv, mailer, "waysin-p421-activity@example.com")
 
-	check := func(label, href, name string) {
+	check := func(label, resendPage string) {
 		t.Helper()
 		body := getProfile(t, client, srv.URL)
-		anchor := p421BackLink(t, body)
-		for _, want := range []string{`href="` + href + `"`, `aria-label="` + name + `"`, `title="` + name + `"`} {
-			if !strings.Contains(anchor, want) {
-				t.Errorf("%s: back link lacks %s: %s", label, want, anchor)
-			}
+		if !strings.Contains(body, `data-resend-page="`+resendPage+`"`) {
+			t.Errorf("%s: the page does not write data-resend-page=%q", label, resendPage)
+		}
+		if strings.Contains(body, "profile-back-link") {
+			t.Errorf("%s: the page still holds the removed back link", label)
 		}
 		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11
 		// and D-02): the Low data view link left the person menu for Settings,
-		// About Pinalert, so the Activity menu must not offer it; only the
-		// back link follows the remembered choice. The Phase 3.1 and Phase 4
-		// hands-on tests are walked on this layout after Phase 3.4 is built.
+		// About Pinalert, so the Activity menu must not offer it.
 		if strings.Contains(p421Region(t, body, `<div id="account-menu"`), `href="/low"`) {
 			t.Errorf("%s: the Activity menu still offers the Low data view", label)
 		}
 	}
 
-	check("no remembered choice", "/", "Back to map")
+	check("no remembered choice", "/")
 
 	// /login?low=1 answers 200 and the jar keeps the cookie it sets.
 	resp, _ := p421Get(t, client, srv.URL+"/login?low=1")
 	if _, ok := p421LowCookie(resp.Cookies()); !ok {
 		t.Fatalf("GET /login?low=1 set no cookie")
 	}
-	check("low=1", "/low", "Back to Low data view")
+	check("low=1", "/low")
 
 	p421Get(t, client, srv.URL+"/login?low=0")
-	check("low=0", "/", "Back to map")
+	check("low=0", "/")
 }
 
 // p421GatedRequest builds a GET request that carries a verified account, the

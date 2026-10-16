@@ -21,8 +21,7 @@
 .app-bar,
 .app-topbar__title,
 .app-topbar__back,
-.app-topbar__gear,
-.profile-logout {
+.app-topbar__gear {
   display: none;
 }
 
@@ -453,398 +452,199 @@
     font-weight: var(--font-weight-semibold);
   }
 
-  /* ---- The Activity page ----
-     The page background stays the page colour, because the picture's grey
-     page would put the muted email and the grey Log out under 4.5 to 1. The
-     white cards get the border token hairline instead and still read as
-     white rounded cards. Everything the laptop page has stays: the email,
-     the six tab strip, the cards with their state word, both counters, trust
-     panel and Reopen. activity.css owns the colours of the chip and the
-     event icon, and the rules that show exactly one chip word. */
+  /* 03.4 my activity
+     The phone shows My activity as one short list of five rows and, behind each
+     row, one part on its own screen (D-19). The same markup serves the laptop
+     stack; data-part on the page says which screen this is: empty for the list,
+     else the key of the part. The top bar carries the part name and the back
+     arrow, so a part screen repeats neither its title nor its count. A part's
+     reports are cards on the page colour, so the muted lines keep their
+     contrast, and no row or text is faded: a disputed or expired card is marked
+     by its grey disc and its status chip. activity.css owns the chip and disc
+     colours, the record card and the Ended nearby states. */
 
   main.profile-page {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      "title logout"
-      "email email"
-      "record record"
-      "tabs tabs"
-      "list list"
-      "empty empty";
-    align-items: center;
-    padding: var(--space-md) var(--space-md) calc(var(--touch-target-min) + var(--space-sm) + var(--space-md));
-  }
-
-  /* The bottom bar replaces the back link. The markup stays for its test. */
-  main.profile-page > .profile-back-link {
-    display: none;
-  }
-
-  main.profile-page > .profile-activity {
-    display: contents;
-  }
-
-  main.profile-page .profile-activity > h2 {
-    grid-area: title;
-    margin: 0;
-    min-height: var(--touch-target-min);
-    display: flex;
-    align-items: center;
-  }
-
-  /* The help line is a laptop line. The page title and the tabs say the same
-     thing on a phone. */
-  main.profile-page .profile-activity > .activity-subtitle {
-    display: none;
-  }
-
-  main.profile-page > .profile-email {
-    grid-area: email;
-    margin: 0 0 var(--space-md);
-  }
-
-  /* The account button hangs at the top right, 16px under the bar, level
-     with this row, so Log out keeps a right margin of the touch target plus
-     the small space. */
-  main.profile-page .profile-logout {
     display: block;
-    grid-area: logout;
-    margin: 0 calc(var(--touch-target-min) + var(--space-sm)) 0 0;
+    padding: 0 0 var(--space-md);
   }
 
-  main.profile-page .profile-logout .profile-logout__button {
-    min-height: var(--touch-target-min);
-    padding: 0 var(--space-sm);
-    border: 0;
-    background: transparent;
-    color: var(--color-text-muted);
-    font-family: var(--font-family);
-    font-size: var(--font-size-body);
-    line-height: var(--line-height-body);
-    font-weight: var(--font-weight-regular);
-    cursor: pointer;
+  /* The saved reports strip shows at the top of the list and of Posted by you.
+     It is one element and is not drawn on the other part screens. */
+  main.profile-page > .queue-strip {
+    margin: var(--space-md) var(--space-md) 0;
   }
 
-  main.profile-page .profile-logout .profile-logout__button:hover {
-    color: var(--color-text);
-  }
-
-  main.profile-page .profile-record {
-    display: grid;
-    grid-area: record;
-    grid-template-columns: minmax(0, 1fr) auto;
-    column-gap: var(--space-md);
-    align-items: center;
-    margin: 0 0 var(--space-md);
-    padding: var(--space-md);
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
-    background: var(--color-bg);
-  }
-
-  main.profile-page .profile-record .profile-record__kicker {
-    grid-column: 1;
-    margin: 0;
-    font-size: var(--font-size-label);
-    line-height: var(--line-height-label);
-    font-weight: var(--font-weight-regular);
-    color: var(--color-text-muted);
-  }
-
-  main.profile-page .profile-record .profile-record__label {
-    grid-column: 1;
-    margin: 0;
-    font-size: var(--font-size-heading);
-    line-height: var(--line-height-heading);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-  }
-
-  main.profile-page .profile-record .profile-record__counts {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    margin: 0;
-    font-size: var(--font-size-label);
-    line-height: var(--line-height-label);
-    font-weight: var(--font-weight-regular);
-    color: var(--color-text);
-  }
-
-  /* The six tab strip: a grey track with a white selected tab, clipped to the
-     page and scrolling sideways inside itself. min-width 0 lets the grid cell
-     shrink below the strip's content, so the page never scrolls sideways. The
-     tab text uses the normal text colour, because the muted colour reads 4.34
-     to 1 on the track. */
-  main.profile-page > .profile-activity > .activity-tabs {
-    grid-area: tabs;
-    min-width: 0;
-    display: flex;
-    gap: var(--space-xs);
-    padding: var(--space-xs);
-    margin: 0 0 var(--space-md);
-    background: var(--color-surface);
-    border-radius: 8px;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scrollbar-width: none;
-  }
-
-  main.profile-page > .profile-activity > .activity-tabs::-webkit-scrollbar {
+  main.profile-page:not([data-part=""]):not([data-part="posted"]) > .queue-strip {
     display: none;
   }
 
-  main.profile-page .activity-tabs .activity-tab {
-    flex: none;
-    display: inline-flex;
+  /* The list: a rounded box of five rows. */
+  main.profile-page[data-part=""] > .activity-hub {
+    display: block;
+    margin: var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    background: var(--color-bg);
+    overflow: hidden;
+  }
+
+  main.profile-page > .activity-hub .activity-hub__row {
+    display: flex;
     align-items: center;
-    gap: var(--space-sm);
-    min-height: var(--touch-target-min);
-    padding: 0 var(--space-md);
-    border-radius: 8px;
+    gap: var(--space-md);
+    min-height: 72px;
+    padding: var(--space-12) var(--space-12) var(--space-12) var(--space-md);
     color: var(--color-text);
-    font-size: var(--font-size-body);
-    line-height: var(--line-height-body);
-    font-weight: var(--font-weight-regular);
-    white-space: nowrap;
     text-decoration: none;
   }
 
-  main.profile-page .activity-tabs .activity-tab[aria-current="page"] {
-    background: var(--color-bg);
-    font-weight: var(--font-weight-semibold);
+  main.profile-page > .activity-hub .activity-hub__row + .activity-hub__row {
+    border-top: 1px solid var(--color-border);
   }
 
-  main.profile-page .activity-tabs .activity-tab .activity-tab__count {
-    display: inline-grid;
-    place-items: center;
-    min-width: 24px;
-    min-height: 24px;
-    padding: 0 var(--space-xs);
-    border-radius: 8px;
-    background: var(--color-bg);
-    color: var(--color-text);
-    font-size: var(--font-size-label);
-    line-height: var(--line-height-label);
-    font-weight: var(--font-weight-regular);
-  }
-
-  main.profile-page .activity-tabs .activity-tab[aria-current="page"] .activity-tab__count {
+  main.profile-page > .activity-hub .activity-hub__row:active {
     background: var(--color-surface);
   }
 
-  main.profile-page > .profile-activity > .profile-report-list {
-    grid-area: list;
-  }
-
-  main.profile-page > .profile-activity > .activity-empty {
-    grid-area: empty;
-  }
-
-  /* White cards with the hairline, 8px corners, no left bar, for every state
-     (picture 05 draws white cards). A card is a wrapping row so a long state
-     word or chip drops to the next line instead of overflowing at 320px: the
-     round icon, the tag, the state word and the chip share the first line, and
-     the title, the sub line, the trust line and Reopen follow from the body
-     column to the card's right edge. The body gives its children to the card,
-     and so does the state line. */
-  main.profile-page .profile-report-list .report-row {
+  main.profile-page > .activity-hub .activity-hub__tile {
     display: flex;
-    flex-wrap: wrap;
+    flex: none;
     align-items: center;
-    column-gap: var(--space-sm);
-    row-gap: var(--space-xs);
-    padding: var(--space-md);
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
-    background: var(--color-bg);
-  }
-
-  main.profile-page .profile-report-list .report-row .report-row__body,
-  main.profile-page .profile-report-list .report-row .report-row__stateline:not([hidden]) {
-    display: contents;
-  }
-
-  /* The round event icon at the picture's phone size. Its negative bottom
-     margin keeps the first line as tall as the tag, so the title sits right
-     under the tag and beside the lower half of the icon. */
-  main.profile-page .profile-report-list .report-row > .icon-badge {
-    order: 0;
-    width: 48px;
-    height: 48px;
-    margin-bottom: -22px;
-    border-radius: 50%;
-  }
-
-  main.profile-page .profile-report-list .report-row > .icon-badge .icon-glyph {
-    width: 24px;
-    height: 24px;
-  }
-
-  main.profile-page .profile-report-list .report-row .activity-card__tag {
-    order: 1;
-    max-width: 100%;
-    min-width: 0;
-    padding: 0 var(--space-sm);
+    justify-content: center;
+    width: 40px;
+    height: 40px;
     border-radius: 8px;
     background: var(--color-surface);
     color: var(--color-text);
+  }
+
+  main.profile-page > .activity-hub .activity-hub__text {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  main.profile-page > .activity-hub .activity-hub__name {
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  main.profile-page > .activity-hub .activity-hub__summary {
+    overflow: hidden;
+    color: var(--color-text-muted);
     font-size: var(--font-size-label);
     line-height: var(--line-height-label);
     font-weight: var(--font-weight-regular);
-    overflow-wrap: anywhere;
-  }
-
-  /* Live shows no word: the app gives Live no word by contract. The state word
-     sits right after the tag, with the gap between them. */
-  main.profile-page .profile-report-list .report-row .visibility-tag:not([hidden]) {
-    order: 2;
-    min-height: 0;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    color: var(--color-text-muted);
-  }
-
-  /* Unconfirmed reads amber and Disputed red, as the picture colours Waiting.
-     Resolved and Expired stay muted. All four clear 4.5 to 1 on the page
-     colour in both themes (amber 5.24 light, 9.33 dark; red 5.44 light, 6.03
-     dark; muted 4.83 light, 7.66 dark). */
-  main.profile-page .profile-report-list .report-row.vis-provisional .visibility-tag:not([hidden]) {
-    color: var(--color-tone-caution);
-  }
-
-  main.profile-page .profile-report-list .report-row.vis-hidden .visibility-tag:not([hidden]) {
-    color: var(--color-tone-bad);
-  }
-
-  /* The chip takes the right edge of the first line. Its words and colours come
-     from activity.css. */
-  main.profile-page .profile-report-list .report-row > .activity-chip {
-    order: 3;
-    margin-left: auto;
-    padding: var(--space-xs) var(--space-sm);
-    border-radius: 8px;
-    font-size: var(--font-size-label);
-    line-height: var(--line-height-label);
-    font-weight: var(--font-weight-semibold);
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  /* The sentence the tag already says is not repeated on a phone. */
-  main.profile-page .profile-report-list .report-row .activity-card__action {
-    display: none;
-  }
-
-  /* Title, sub line, trust line, reporter words and Reopen take their own
-     lines, indented to the body column (the 48px icon and the 8px gap). */
-  main.profile-page .profile-report-list .report-row .report-row__title {
-    order: 4;
+  main.profile-page > .activity-hub .activity-hub__count {
+    flex: none;
+    color: var(--color-text-muted);
     font-size: var(--font-size-body);
     line-height: var(--line-height-body);
-    flex: 0 0 calc(100% - var(--touch-target-min) - var(--space-sm) - var(--space-xs));
-    margin: 0 0 0 calc(var(--touch-target-min) + var(--space-sm) + var(--space-xs));
+    font-weight: var(--font-weight-regular);
+    font-variant-numeric: tabular-nums;
   }
 
-  main.profile-page .profile-report-list .report-row .report-row__meta {
-    order: 5;
-    flex: 0 0 calc(100% - var(--touch-target-min) - var(--space-sm) - var(--space-xs));
-    margin: 0 0 0 calc(var(--touch-target-min) + var(--space-sm) + var(--space-xs));
+  main.profile-page > .activity-hub .activity-hub__chevron {
+    width: 20px;
+    height: 20px;
     color: var(--color-text-muted);
   }
 
-  /* One muted line: both counters and the currency word. The chevron and the
-     clock are not drawn, and the toggle still opens the panel in place. */
-  main.profile-page .profile-report-list .report-row .trust-block:not([hidden]) {
-    order: 6;
-    flex: 0 0 calc(100% - var(--touch-target-min) - var(--space-sm) - var(--space-xs));
-    min-width: 0;
-    margin: 0 0 0 calc(var(--touch-target-min) + var(--space-sm) + var(--space-xs));
-    border-top: 0;
-  }
-
-  main.profile-page .profile-report-list .report-row .trust-block__toggle:not([hidden]) {
-    width: auto;
-    margin-inline: 0;
-    padding: 0;
-    justify-content: flex-start;
-    color: var(--color-text-muted);
-  }
-
-  main.profile-page .profile-report-list .report-row .trust-block__face:not([hidden]) {
-    display: flex;
-    flex: 0 1 auto;
-    flex-wrap: wrap;
-    align-items: baseline;
-    column-gap: var(--space-sm);
-  }
-
-  main.profile-page .profile-report-list .report-row .trust-block__chevron:not([hidden]),
-  main.profile-page .profile-report-list .report-row .trust-icon:not([hidden]) {
+  /* A part screen: only the asked for part is drawn. */
+  main.profile-page > .activity-part {
     display: none;
   }
 
-  /* The reporter words show on a voted card, which is another person's
-     record. activity.css hides them on the account's own posts, where the
-     record card above says the same once. */
-  main.profile-page .profile-report-list .report-row .trust-reporter:not([hidden]) {
-    order: 7;
-    flex: 0 0 calc(100% - var(--touch-target-min) - var(--space-sm) - var(--space-xs));
-    margin: 0 0 0 calc(var(--touch-target-min) + var(--space-sm) + var(--space-xs));
+  main.profile-page > .activity-part[data-current] {
+    display: block;
   }
 
-  main.profile-page .profile-report-list .report-row .trust-block__counts:not([hidden]) {
-    min-height: 0;
-    column-gap: var(--space-sm);
-    font-size: var(--font-size-label);
-    line-height: var(--line-height-label);
+  main.profile-page > .activity-part .activity-part__title {
+    display: none;
   }
 
-  main.profile-page .profile-report-list .report-row .trust-block__count--second::before {
-    content: "\00b7";
-    content: "\00b7" / "";
-    position: static;
-    width: auto;
-    margin-right: var(--space-sm);
-    background-color: transparent;
-  }
-
-  main.profile-page .profile-report-list .report-row .trust-block__signals:not([hidden]) {
-    min-height: 0;
-    column-gap: var(--space-xs);
+  main.profile-page > .activity-part .activity-part__line {
+    margin: 0;
+    padding: var(--space-md) var(--space-md) var(--space-sm);
     color: var(--color-text-muted);
     font-size: var(--font-size-label);
     line-height: var(--line-height-label);
+    font-weight: var(--font-weight-regular);
   }
 
-  main.profile-page .profile-report-list .report-row .trust-block__signals:not([hidden])::before {
-    content: "\00b7";
-    content: "\00b7" / "";
-    margin-right: var(--space-sm);
+  main.profile-page > .activity-part .activity-part__body {
+    padding: 0 var(--space-md);
   }
 
-  main.profile-page .profile-report-list .report-row .trust-signal:not([hidden]) {
-    font-size: var(--font-size-label);
-    line-height: var(--line-height-label);
+  main.profile-page > .activity-part .activity-cols {
+    display: none;
   }
 
-  main.profile-page .profile-report-list .report-row .trust-num {
-    color: inherit;
+  main.profile-page > .activity-part .profile-report-list {
+    gap: var(--space-12);
+    margin: 0;
   }
 
-  /* Reopen keeps its existing control and error under the line. */
-  main.profile-page .profile-report-list .report-row .vote-controls:not([hidden]) {
-    order: 8;
-    flex: 0 0 calc(100% - var(--touch-target-min) - var(--space-sm) - var(--space-xs));
-    margin: 0 0 0 calc(var(--touch-target-min) + var(--space-sm) + var(--space-xs));
+  /* The report card: the disc and the status chip on the first row, the text and
+     its detail, the when line, a hairline, then what happened on the left and
+     the distance on the right. */
+  main.profile-page .profile-report-list > .activity-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "disc status"
+      "report report"
+      "when when"
+      "what distance";
+    align-items: start;
+    column-gap: 0;
+    row-gap: 10px;
+    padding: var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    background: var(--color-bg);
   }
 
-  main.profile-page .profile-report-list .report-row .vote-error:not([hidden]) {
-    order: 9;
-    flex: 0 0 calc(100% - var(--touch-target-min) - var(--space-sm) - var(--space-xs));
-    margin: 0 0 0 calc(var(--touch-target-min) + var(--space-sm) + var(--space-xs));
+  main.profile-page .profile-report-list > .activity-card > .icon-badge {
+    grid-area: disc;
+  }
+
+  main.profile-page .profile-report-list > .activity-card > .activity-card__status {
+    grid-area: status;
+    justify-self: end;
+  }
+
+  main.profile-page .profile-report-list > .activity-card > .activity-card__report {
+    grid-area: report;
+  }
+
+  main.profile-page .profile-report-list > .activity-card > .activity-card__when {
+    grid-area: when;
+  }
+
+  main.profile-page .profile-report-list > .activity-card > .activity-card__what {
+    grid-area: what;
+    padding-top: 10px;
+    border-top: 1px solid var(--color-border);
+  }
+
+  main.profile-page .profile-report-list > .activity-card > .activity-card__distance {
+    grid-area: distance;
+    padding: 10px 0 0 var(--space-md);
+    border-top: 1px solid var(--color-border);
+    text-align: right;
+  }
+
+  /* Reopen and the take back sit under the sentence, full width and 44px. */
+  main.profile-page .activity-card__what .vote-btn:not([hidden]) {
+    width: 100%;
+    min-height: var(--touch-target-min);
   }
 
   /* ---- The report detail: a full screen sheet under a short map strip ----
