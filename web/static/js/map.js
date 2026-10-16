@@ -307,6 +307,7 @@ window.PinalertMap = (function () {
 
     Pinalert.subscribe(render);
     Pinalert.onSelect(function (id, source) {
+      applyChosenPin(id);
       if (source === 'list') {
         flyTo(id);
       }
@@ -432,6 +433,36 @@ window.PinalertMap = (function () {
     return { lat: centre.lat, lon: centre.lng };
   }
 
+  // The marker offset that lifts the chosen pin above its neighbours. Leaflet
+  // writes the stacking order of a marker inline from its position and this
+  // offset, so a z-index on the badge inside it would not lift it.
+  var CHOSEN_Z_OFFSET = 1000;
+
+  // isChosen says whether a report is the one the person last chose, in the
+  // list or on the map. The choice lives in the shared store (Pinalert.select).
+  function isChosen(id) {
+    var chosen = Pinalert.state.selectedId;
+    return chosen !== null && chosen !== undefined && String(chosen) === String(id);
+  }
+
+  // applyChosenPin moves the grown look to the pin of report id and takes it
+  // off every other pin. The class sits on the badge, which the next poll
+  // builds again (buildBadgeElement reads the same selection), and the raise
+  // sits on the marker, which keeps its offset through setIcon.
+  function applyChosenPin(id) {
+    var ids = Object.keys(markers);
+    for (var i = 0; i < ids.length; i++) {
+      var marker = markers[ids[i]];
+      var chosen = id !== null && id !== undefined && String(id) === ids[i];
+      var el = marker.getElement();
+      var badge = el ? el.querySelector('.icon-badge--pin') : null;
+      if (badge) {
+        badge.classList.toggle('map-pin--chosen', chosen);
+      }
+      marker.setZIndexOffset(chosen ? CHOSEN_Z_OFFSET : 0);
+    }
+  }
+
   // buildBadgeElement assembles a white category glyph on a solid
   // severity-coloured circular badge (D-11, D-12), desaturating toward gray
   // as the report ages (D-17). Fixed classes/strings plus the validated
@@ -445,6 +476,18 @@ window.PinalertMap = (function () {
 
     var badge = document.createElement('span');
     badge.className = 'icon-badge icon-badge--pin ' + sevClass + ' ' + ageClass;
+
+    // The chosen pin grows (D-17) and a disputed pin is grey (D-14). Both are
+    // fixed class names, set here from the shared selection and from the
+    // server's own view word, so the next poll's new badge keeps them and no
+    // report-authored value reaches a class name. The disputed test is the one
+    // the list row reads (report.view === 'disputed'), never a count.
+    if (isChosen(report.id)) {
+      badge.classList.add('map-pin--chosen');
+    }
+    if (report.view === 'disputed') {
+      badge.classList.add('icon-badge--disputed');
+    }
 
     // On this surface the state class goes on the badge element itself,
     // because there is no row ancestor — the same split main.css's own
@@ -930,6 +973,12 @@ window.PinalertMap = (function () {
   // Focus on the map container counts as lost only after a close button press,
   // because that is where WebKit puts it on a mouse press.
   function onPopupClose(evt) {
+    // The report detail is closed: the phone list sheet that dropped to short
+    // beneath it returns to the position it had (D-17, orchestrator decision 8).
+    // It does nothing on a laptop or when the sheet was not moved for this report.
+    if (window.PinalertSheet && typeof window.PinalertSheet.restore === 'function') {
+      window.PinalertSheet.restore();
+    }
     var popup = evt.popup;
     var el = popup.getElement();
     var id = reportIdForPopup(popup);
@@ -1306,7 +1355,10 @@ window.PinalertMap = (function () {
       return;
     }
 
-    var marker = L.marker([report.latitude, report.longitude], { icon: icon }).addTo(map);
+    var marker = L.marker([report.latitude, report.longitude], {
+      icon: icon,
+      zIndexOffset: isChosen(report.id) ? CHOSEN_Z_OFFSET : 0
+    }).addTo(map);
     applyPinName(marker, report);
     var card = buildPopupCard(report);
     cards[report.id] = card;
@@ -1539,23 +1591,6 @@ window.PinalertMap = (function () {
     });
   }
 
-  // highlight briefly rings the pin at id — plan 01-06 calls this the other
-  // direction (clicking a pin scrolls/rings the matching list row).
-  function highlight(id) {
-    var marker = markers[id];
-    if (!marker) {
-      return;
-    }
-    var el = marker.getElement();
-    if (!el) {
-      return;
-    }
-    el.classList.add('map-pin--highlight');
-    window.setTimeout(function () {
-      el.classList.remove('map-pin--highlight');
-    }, 1500);
-  }
-
   // focusMarker puts focus on the pin of report id when it is on the page, so a
   // closed dialog can hand focus back to the pin of a popup that has gone. It
   // does not scroll or pan the map. It returns whether a pin took the focus.
@@ -1584,7 +1619,6 @@ window.PinalertMap = (function () {
     recenterOnReader: recenterOnReader,
     cancelRecenter: cancelRecenter,
     getCenter: getCenter,
-    highlight: highlight,
     resizeToSheet: resizeToSheet,
     focusOpenPopup: focusOpenPopup,
     takeRemovedPopupFocus: takeRemovedPopupFocus,

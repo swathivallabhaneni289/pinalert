@@ -210,7 +210,20 @@ func TestCompactRowLiftScopedToList(t *testing.T) {
 			if rest != "" && !strings.HasPrefix(rest, ".vis-") && !strings.HasPrefix(rest, ".sev-") {
 				continue
 			}
+			// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-17,
+			// D-04): a chosen row takes the soft --color-surface fill in place of
+			// its tint, so the heads that end in .report-row--selected may set
+			// background. They may set nothing else of the row's edge: the border
+			// checks below still apply to them. The Phase 3.1 and Phase 4
+			// hands-on tests are walked on this layout after Phase 3.4 is built.
+			chosen := strings.HasSuffix(part, ".report-row--selected")
 			for _, prop := range []string{"border", "border-left", "border-radius", "border-width", "border-color", "background"} {
+				if chosen && prop == "background" {
+					if r.Decls[prop] != "var(--color-surface)" {
+						t.Errorf("feed.css head %q sets background %q, a chosen row takes --color-surface", part, r.Decls[prop])
+					}
+					continue
+				}
 				if _, ok := r.Decls[prop]; ok {
 					t.Errorf("feed.css head %q sets %s on the row: the 4px bar and the tint of main.css must stay", part, prop)
 				}
@@ -392,7 +405,12 @@ func TestCompactRowFitsPhoneWidths(t *testing.T) {
 
 	// 5. The row keeps a 44px minimum height from its padding or min-height.
 	rowRule := p16Rule(t, feed, "", "#report-list .report-row")
-	if rowRule.Decls["padding"] != "var(--space-md)" && rowRule.Decls["min-height"] != "var(--touch-target-min)" {
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-17, UI-SPEC
+	// 2e and 2h): the laptop row's padding is 12px above and below and 16px at
+	// the sides; with a title and a trust line the row is far above 44px. The
+	// Phase 3.1 and Phase 4 hands-on tests are walked on this layout after Phase
+	// 3.4 is built.
+	if rowRule.Decls["padding"] != "var(--space-12) var(--space-md)" && rowRule.Decls["min-height"] != "var(--touch-target-min)" {
 		t.Errorf("at %s px: the row has neither the 16px padding nor a 44px min-height: %v", widths, rowRule.Decls)
 	}
 	if rowRule.Decls["display"] != "block" {

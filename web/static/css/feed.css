@@ -387,6 +387,23 @@
   }
 }
 
+/* A chosen row (Phase 3.4, D-17, D-04). The fill is the soft grey in place of
+   the severity tint, and the head outranks the provisional and hidden card
+   backgrounds of phone.css, so a chosen row looks the same whatever its state.
+   There is no ring, outline or border here. Muted text never sits on
+   --color-surface, so the muted lines of a hidden row take the normal text
+   colour while it is chosen; phone.css does the same for the phone card. Full
+   contrast, no opacity. */
+#report-list .report-row.report-row--selected,
+#report-list .report-row.vis-provisional.report-row--selected,
+#report-list .report-row.vis-hidden.report-row--selected {
+  background: var(--color-surface);
+}
+
+#report-list .report-row.vis-hidden.report-row--selected .report-row__trustline:not([hidden]) {
+  color: var(--color-text);
+}
+
 /*
  * The two context lines of the list pane (03.1 D-14, D-17): "Showing reports
  * near {Place}. Back to my location." and "Filtered by {Flood}. Clear". Each
@@ -770,7 +787,10 @@
 #report-list .report-row {
   position: relative;
   display: block;
-  padding: var(--space-md);
+  /* 12px above and below, 16px at the sides: five whole rows fit under the
+     strip, the top bar and the list head on a 1280 by 800 laptop (UI-SPEC 2e
+     and 2h). The phone card sets its own padding in phone.css. */
+  padding: var(--space-12) var(--space-md);
 }
 
 #report-list .report-row > .icon-badge {

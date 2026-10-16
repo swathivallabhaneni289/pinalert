@@ -98,12 +98,6 @@
   var lastAnnouncedKey = '';
   var statusStarted = false;
 
-  // PHONE_QUERY is the same 899.98px complement of the 900px query that
-  // main.css, trust.css and phone.css use. Below it the list is its own scroll
-  // box under a fixed height map (phone.css), so moving the list never moves
-  // the map.
-  var PHONE_QUERY = '(max-width: 899.98px)';
-
   // rowsById reconciles rendered <li> nodes by report id across polls,
   // rather than clearing and rebuilding the list every 30 seconds, so
   // scroll position and focus survive a background refresh.
@@ -199,11 +193,24 @@
     el.hidden = !line;
   }
 
+  // activateRow chooses a report from the list (D-17): the row takes the soft
+  // fill, its pin grows (map.js, from the same selection), the map brings the
+  // pin into view and the report opens as built (the popup on a laptop, the
+  // detail sheet on a phone). On a phone the list sheet then drops to short
+  // beneath the detail sheet and remembers where it was; map.js hands it back
+  // when the detail closes. The sheet moves last, after the report has opened,
+  // because opening a report closes a previous one and that close restores the
+  // sheet. PinalertSheet does nothing on a laptop.
   function activateRow(id) {
     Pinalert.select(id, 'list');
     applySelectionHighlight(id);
+    var opened = true;
     if (window.PinalertMap && typeof PinalertMap.flyTo === 'function') {
-      PinalertMap.flyTo(id, { opener: 'list' });
+      opened = PinalertMap.flyTo(id, { opener: 'list' }) !== false;
+    }
+    if (opened && window.PinalertSheet) {
+      window.PinalertSheet.remember();
+      window.PinalertSheet.setSnap('short');
     }
   }
 
@@ -1000,29 +1007,37 @@
   }
 
   // revealRowInListPane brings the row of a pin the reader just picked into the
-  // list pane's own box, on a phone only. Below 900px the list is a scroll box
-  // under a fixed height map (phone.css), so moving the list never moves the
-  // map, which was the reason A87 gave for leaving the list alone. It sets the
-  // PANE's scroll position and nothing else: the page is never scrolled, and
-  // applySelectionHighlight above stays free of any scroll.
+  // list's own scroll box (D-17). On a phone that box is the sheet
+  // (#report-sheet, phone.css), so moving the list never moves the map, which
+  // was the reason A87 gave for leaving the list alone; on a laptop the pane is
+  // not a scroll box (the document scrolls), so the check below leaves it and
+  // the page alone. It sets the SHEET's scroll position and nothing else: the
+  // page is never scrolled, and applySelectionHighlight above stays free of any
+  // scroll. "Nearest": a row that is already whole under the sticky handle and
+  // list head stays where it is; any other row is scrolled to sit just under
+  // them. Smooth unless the person asked for reduced motion.
   function revealRowInListPane(id) {
-    if (!window.matchMedia || !window.matchMedia(PHONE_QUERY).matches) {
-      return;
-    }
     var row = rowsById[String(id)];
-    var pane = reportListEl ? reportListEl.closest('.pane--list') : null;
-    if (!row || !pane || pane.scrollHeight <= pane.clientHeight) {
+    var sheet = document.getElementById('report-sheet');
+    if (!row || !sheet || sheet.scrollHeight <= sheet.clientHeight) {
       return;
     }
     var gap = parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue('--space-sm'));
     if (isNaN(gap)) {
       gap = 0;
     }
-    var paneBox = pane.getBoundingClientRect();
+    var sheetBox = sheet.getBoundingClientRect();
+    var head = sheet.querySelector('.list-head');
+    var stuck = head ? head.getBoundingClientRect().bottom - sheetBox.top : 0;
     var rowBox = row.el.getBoundingClientRect();
-    var top = rowBox.top - paneBox.top + pane.scrollTop - gap;
+    var rowTop = rowBox.top - sheetBox.top;
+    var rowBottom = rowBox.bottom - sheetBox.top;
+    if (rowTop >= stuck + gap && rowBottom <= sheet.clientHeight) {
+      return;
+    }
+    var top = rowTop + sheet.scrollTop - stuck - gap;
     var calm = !!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    pane.scrollTo({ top: Math.max(0, top), behavior: calm ? 'auto' : 'smooth' });
+    sheet.scrollTo({ top: Math.max(0, top), behavior: calm ? 'auto' : 'smooth' });
   }
 
   if (retryBtn) {
@@ -1085,12 +1100,18 @@
   Pinalert.setFocusId(new URLSearchParams(window.location.search).get(REPORT_PARAM));
 
   Pinalert.onSelect(function (id, source) {
-    // A selection that starts from the map applies the row highlight only
-    // and never scrolls the page or the list (A87). Guard on source so a
-    // list-originated selection, which activateRow already highlighted, is
-    // not highlighted a second time.
+    // A selection that starts from the map chooses its row the same way (D-17):
+    // the row takes the soft fill, the phone sheet comes up to half so the row
+    // can be seen (it is not remembered: the sheet stays at half when the
+    // report closes), and the sheet's own scroll box brings the row under the
+    // head. It never scrolls the page (A87). Guard on source so a
+    // list-originated selection, which activateRow already handled, is not
+    // handled a second time.
     if (source === 'map') {
       applySelectionHighlight(id);
+      if (window.PinalertSheet && window.PinalertSheet.getSnap() !== 'half') {
+        window.PinalertSheet.setSnap('half');
+      }
       revealRowInListPane(id);
     }
   });

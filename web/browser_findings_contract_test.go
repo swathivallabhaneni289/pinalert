@@ -123,8 +123,14 @@ func TestBrowserFindingF2PhoneCardIsDenser(t *testing.T) {
 	}
 
 	// The laptop row keeps its spacing (T13.4a sits at 124.2px of 125px).
+	//
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-17, UI-SPEC
+	// 2e and 2h): the laptop row's vertical padding is 12px and the sides stay
+	// 16px, so five whole rows fit under the strip, the top bar and the list head
+	// on a 1280 by 800 laptop. The phone card is unchanged. The Phase 3.1 and
+	// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
 	p16MustDecl(t, "laptop row", p31mRule(t, feed, "", "#report-list .report-row"),
-		map[string]string{"padding": "var(--space-md)"})
+		map[string]string{"padding": "var(--space-12) var(--space-md)"})
 	p16MustDecl(t, "laptop row body", p31mRule(t, feed, "", "#report-list .report-row .report-row__body"),
 		map[string]string{"column-gap": "var(--space-sm)", "row-gap": "var(--space-xs)"})
 	p16MustDecl(t, "laptop row title", p31mRule(t, feed, "", "#report-list .report-row .report-row__title"),

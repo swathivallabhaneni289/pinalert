@@ -355,11 +355,17 @@ func TestPhoneFeedScriptContract(t *testing.T) {
 		"Pinalert.distanceText(report)",
 		"Pinalert.setText(row.away, away)", "row.away.hidden = !away")
 
-	p13MustContain(t, "feed.js", code, "var PHONE_QUERY = '(max-width: 899.98px)';")
+	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-16, D-17):
+	// the list is the sheet on a phone, so the reveal scrolls the sheet's own
+	// element (found by its id, sheet.scrollTo) and no longer asks the phone
+	// query: on a laptop the pane is not a scroll box and the scrollHeight check
+	// leaves it alone. PHONE_QUERY left feed.js with the check. The Phase 3.1 and
+	// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+	p13MustNotContain(t, "feed.js", code, "PHONE_QUERY")
 
 	reveal := jsFunctionBody(t, code, "revealRowInListPane(id)")
 	p13MustContain(t, "revealRowInListPane", reveal,
-		"window.matchMedia(PHONE_QUERY).matches", "closest('.pane--list')", "pane.scrollTo(", "rowsById[String(id)]")
+		"getElementById('report-sheet')", "sheet.scrollHeight <= sheet.clientHeight", "sheet.scrollTo(", "rowsById[String(id)]")
 	banned := regexp.MustCompile(`(window|document\.documentElement|document\.body)\.scroll|scrollingElement|scrollIntoView`)
 	if m := banned.FindString(reveal); m != "" {
 		t.Errorf("revealRowInListPane calls %q, it may set only the list pane's own scroll position", m)
