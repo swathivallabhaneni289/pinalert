@@ -29,6 +29,8 @@
 //     typing, Enter, Escape, Close, a press outside and a pick all cancel a
 //     pending try, because it waits on the typing timer. A network error from
 //     typing stays quiet and is not tried again.
+//   - A search with no answer in SEARCH_TIMEOUT_MS fails like a network
+//     error: the failure line after Enter, nothing from typing.
 //   - Dragging or zooming the map never reads the list. Only a pick, a chip,
 //     Back to my location and Clear do (D-14).
 //   - A failed or refused search shows one plain line and blocks nothing. The
@@ -49,6 +51,11 @@ window.PinalertMapTools = (function () {
   var QUIET_RETRIES = 3;
   var RETRY_WAIT_MS = 1000;
   var RETRY_WAIT_MAX_MS = 10000;
+  // A search with no answer in 8 seconds fails like a network error, the
+  // same limit as the report form's search (SEARCH_TIMEOUT_MS there). The
+  // limit is the page's own timer (Pinalert.requestTimeout), so it holds even
+  // when WebKit leaves the aborted request's promise unsettled.
+  var SEARCH_TIMEOUT_MS = 8000;
   var MAX_RESULTS = 5;
   var RESULT_NAME_MAX = 32;
   // The zoom a GPS start uses.
@@ -333,12 +340,16 @@ window.PinalertMapTools = (function () {
       url += '&lon=' + encodeURIComponent(centre.lon.toFixed(5));
     }
 
-    controller = new AbortController();
-    fetch(url, { signal: controller.signal })
+    // The limit's controller is the one a newer search, a pick or a close
+    // ends early (abortSearch). The request and its body read race the limit.
+    var limit = Pinalert.requestTimeout(SEARCH_TIMEOUT_MS, 'place search');
+    controller = limit.controller;
+    Promise.race([fetch(url, { signal: limit.signal }), limit.expired])
       .then(function (res) {
-        return res.json().catch(function () {
+        return Promise.race([res.json(), limit.expired]).catch(function () {
           return {};
         }).then(function (body) {
+          limit.clear();
           if (mySeq !== searchSeq) {
             return;
           }
@@ -376,6 +387,10 @@ window.PinalertMapTools = (function () {
         });
       })
       .catch(function (err) {
+        limit.clear();
+        // A search ended early by a newer one, a pick or a close. A search
+        // that hit its limit fails with a TimeoutError instead, and goes on
+        // to the failure handling below like a network error.
         if (err && err.name === 'AbortError') {
           return;
         }

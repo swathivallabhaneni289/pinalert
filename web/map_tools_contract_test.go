@@ -116,16 +116,27 @@ func p31mSearchScript(t *testing.T) {
 	if n := strings.Count(raw, "/api/geocode/place"); n != 1 {
 		t.Errorf("map-tools.js names /api/geocode/place %d times, want exactly 1", n)
 	}
-	if n := strings.Count(code, "new AbortController("); n != 1 {
-		t.Errorf("map-tools.js has %d AbortController constructions, want 1", n)
+	// The request's controller comes from the shared time limit of app.js,
+	// never from a construction of its own.
+	if n := strings.Count(code, "new AbortController("); n != 0 {
+		t.Errorf("map-tools.js has %d AbortController constructions, want 0 (the limit's controller is used)", n)
+	}
+	if n := strings.Count(code, "var SEARCH_TIMEOUT_MS = 8000;"); n != 1 {
+		t.Errorf("map-tools.js declares SEARCH_TIMEOUT_MS = 8000 %d times, want 1", n)
 	}
 
 	// Since quick 261016-sfu a newer search ends the older one (abortSearch)
-	// instead of being ignored while the older one is out.
+	// instead of being ignored while the older one is out. The request and its
+	// body read race the page's own 8 second limit, so a search whose aborted
+	// request never ends (WebKit) still fails at the limit
+	// (web/place_search_typing_test.mjs runs it).
 	search := jsFunctionBody(t, code, "search(query, typed)")
 	p13MustContain(t, "search", search,
 		"encodeURIComponent(q)", "PinalertMap.getCenter()", "'&lat='", "'&lon='",
-		"Array.from(q).length < MIN_QUERY_RUNES", "controller.signal", "mySeq !== searchSeq")
+		"Array.from(q).length < MIN_QUERY_RUNES", "mySeq !== searchSeq",
+		"var limit = Pinalert.requestTimeout(SEARCH_TIMEOUT_MS, ", "controller = limit.controller;",
+		"Promise.race([fetch(url, { signal: limit.signal }), limit.expired])",
+		"Promise.race([res.json(), limit.expired]).catch(function () {")
 	p13Ordered(t, search, "search",
 		"Array.from(q).length < MIN_QUERY_RUNES", "abortSearch();", "inFlight = true;", "fetch(")
 

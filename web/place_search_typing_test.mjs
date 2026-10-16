@@ -5,12 +5,15 @@
 // typing when a search fails, and Enter still shows every line. Quick
 // 261016-sne adds the quiet retry: a 429 or a 503 from typing tries the latest
 // text again after the answer's Retry-After or 1 second, at most 3 times, and
-// only the failure after the last try shows the line.
+// only the failure after the last try shows the line. A search whose request
+// never settles, as WebKit can leave an aborted one, fails at its 8 second
+// limit like a network error.
 //
 // Run it with: node --test web/place_search_typing_test.mjs
 // CI runs it with the other web/*.mjs files. It is not embedded in the server.
 // The fakes cover only what map-tools.js calls: a minimal element model, fake
 // timers, a fetch the test answers by hand, and fake Pinalert and PinalertMap.
+// The fake Pinalert carries the real time limit of app.js.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,6 +24,12 @@ import vm from 'node:vm';
 
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(here, 'static', 'js', 'map-tools.js'), 'utf8');
+// The real shared time limit of app.js (Pinalert.requestTimeout), cut out of
+// the file so the sandbox runs the page's own limit on its fake timers.
+const appSource = fs.readFileSync(path.join(here, 'static', 'js', 'app.js'), 'utf8');
+const limitAt = appSource.indexOf('  function requestTimeout(ms, what) {');
+assert.notEqual(limitAt, -1, 'app.js defines requestTimeout');
+const limitSource = appSource.slice(limitAt, appSource.indexOf('\n  }\n', limitAt) + 4);
 
 const UNAVAILABLE = 'Search unavailable. Try again in a moment.';
 const TOO_SHORT = 'Type at least 3 letters.';
@@ -82,7 +91,11 @@ class FakeEl {
   querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
 }
 
-function setup() {
+// setup loads map-tools.js. abortRejects says whether an abort ends the
+// request's promise, as Chromium does, or leaves it unsettled, as WebKit
+// sometimes does. nativeTimeout takes AbortController away and gives a native
+// timeout signal that never fires, so only the page's own timer is left.
+function setup({ abortRejects = true, nativeTimeout = false } = {}) {
   const doc = {
     activeElement: null,
     handlers: {},
@@ -138,9 +151,11 @@ function setup() {
     if (req.signal) {
       req.signal.addEventListener('abort', () => {
         req.aborted = true;
-        const err = new Error('aborted');
-        err.name = 'AbortError';
-        reject(err);
+        if (abortRejects) {
+          const err = new Error('aborted');
+          err.name = 'AbortError';
+          reject(err);
+        }
       });
     }
     requests.push(req);
@@ -170,9 +185,15 @@ function setup() {
     cancelRecenter: () => {}
   };
   const sandbox = { window, document: doc, Pinalert, PinalertMap, fetch, AbortController, Array, String, Object, isFinite, encodeURIComponent, parseInt };
+  if (nativeTimeout) {
+    delete sandbox.AbortController;
+    sandbox.AbortSignal = { timeout: () => ({ addEventListener() {} }) };
+  }
   window.Pinalert = Pinalert;
   window.PinalertMap = PinalertMap;
   vm.createContext(sandbox);
+  vm.runInContext(limitSource, sandbox);
+  Pinalert.requestTimeout = sandbox.requestTimeout;
   vm.runInContext(source, sandbox);
 
   const type = (text) => { input.value = text; input.dispatch({ type: 'input' }); };
@@ -515,3 +536,67 @@ test('a network error from typing is not tried again', async () => {
   assert.equal(p.requests.length, 1);
   assert.equal(p.status.hidden, true);
 });
+
+// A search whose request never settles: WebKit can leave an aborted request's
+// promise unsettled, so the 8 second limit is the page's own timer, raced
+// against the request. Each case runs with an abort that leaves the request
+// unsettled, one that rejects it, and a native timeout signal only.
+for (const mode of [
+  { name: 'abort leaves the request unsettled', abortRejects: false },
+  { name: 'abort rejects the request', abortRejects: true },
+  { name: 'native timeout signal only', nativeTimeout: true }
+]) {
+  const how = ' (' + mode.name + ')';
+
+  test('a search from Enter that never settles shows the failure line at 8 seconds' + how, async () => {
+    const p = setup(mode);
+    p.input.value = 'Banjara';
+    p.enter();
+    assert.equal(p.requests.length, 1);
+    assert.equal(p.status.textContent, SEARCHING);
+    p.advance(7999);
+    await settle();
+    assert.equal(p.status.textContent, SEARCHING, 'nothing before the limit');
+    p.advance(1);
+    await settle();
+    assert.equal(p.requests[0].aborted, !mode.nativeTimeout, 'the page aborts its own controller at the limit');
+    assert.equal(p.status.textContent, UNAVAILABLE, 'the failure line, as for a network error');
+    assert.equal(p.status.hidden, false);
+    p.advance(3000);
+    assert.equal(p.requests.length, 1, 'a search that hit its limit is not tried again by itself');
+    p.enter();
+    assert.equal(p.requests.length, 2, 'the search is no longer out, so Enter asks again');
+  });
+
+  test('a typed search that never settles ends quietly at 8 seconds' + how, async () => {
+    const p = setup(mode);
+    p.type('Banjara');
+    p.advance(300);
+    assert.equal(p.requests.length, 1);
+    p.advance(8000);
+    await settle();
+    assert.equal(p.status.hidden, true, 'typing never shows a failure line');
+    p.advance(3000);
+    assert.equal(p.requests.length, 1, 'not tried again, like a network error from typing');
+    p.enter();
+    assert.equal(p.requests.length, 2, 'Enter for the same text asks again');
+    assert.equal(p.status.textContent, SEARCHING);
+  });
+
+  test('an older place search that never settles does not touch the newer one' + how, async () => {
+    const p = setup(mode);
+    p.type('Hyder');
+    p.advance(300);
+    p.type('Hyderabad');
+    p.advance(300);
+    assert.equal(p.requests.length, 2);
+    assert.equal(p.requests[0].aborted, !mode.nativeTimeout, 'the newer search ends the older one');
+    p.answer(p.requests[1], 200, hyderabad);
+    await settle();
+    assert.equal(p.rows().length, 1);
+    p.advance(8000);
+    await settle();
+    assert.equal(p.rows().length, 1, 'the older limit leaves the newer list alone');
+    assert.equal(p.status.textContent, '1 result.');
+  });
+}
