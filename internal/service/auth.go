@@ -54,7 +54,7 @@ type AuthQuerier interface {
 	GetMagicLinkTokenByHash(ctx context.Context, tokenHash string) (sqlcgen.GetMagicLinkTokenByHashRow, error)
 	ConsumeToken(ctx context.Context, tokenHash string) (string, error)
 	InsertAccount(ctx context.Context, email string) error
-	GetAccountByEmail(ctx context.Context, email string) (sqlcgen.Account, error)
+	GetAccountByEmail(ctx context.Context, email string) (sqlcgen.GetAccountByEmailRow, error)
 	GetAccountBySessionID(ctx context.Context, sessionID string) (sqlcgen.GetAccountBySessionIDRow, error)
 	BindSessionAccount(ctx context.Context, arg sqlcgen.BindSessionAccountParams) error
 	ClaimEmailCooldown(ctx context.Context, arg sqlcgen.ClaimEmailCooldownParams) (time.Time, error)

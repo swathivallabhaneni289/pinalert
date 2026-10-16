@@ -84,7 +84,11 @@ func requireVerifiedAccount(q *sqlcgen.Queries) func(http.Handler) http.Handler 
 				row, err := q.GetAccountBySessionID(r.Context(), sessionID)
 				switch {
 				case err == nil:
-					ctx := account.WithAccount(r.Context(), account.Account{ID: row.ID, Email: row.Email})
+					acc := account.Account{ID: row.ID, Email: row.Email, FirstRunDone: row.FirstRunDoneAt.Valid}
+					if row.TermsVersion != nil {
+						acc.TermsVersion = *row.TermsVersion
+					}
+					ctx := account.WithAccount(r.Context(), acc)
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				case errors.Is(err, pgx.ErrNoRows):

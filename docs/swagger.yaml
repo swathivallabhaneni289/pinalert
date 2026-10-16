@@ -447,6 +447,27 @@ definitions:
         example: resolved
         type: string
     type: object
+  handlers.HomeAreaRequest:
+    properties:
+      lat:
+        example: 12.9784
+        type: number
+      lon:
+        example: 77.6408
+        type: number
+      name:
+        example: Indiranagar, Bengaluru
+        type: string
+    type: object
+  handlers.ProfileResponse:
+    properties:
+      display_name:
+        example: Asha
+        type: string
+      home_area_name:
+        example: Indiranagar, Bengaluru
+        type: string
+    type: object
   handlers.RateLimitResponse:
     properties:
       emergency_number:
@@ -777,6 +798,14 @@ definitions:
           nearby confirmed) and a whole number score from 0 to 100, or null while
           there is no rating. The feed and every vote response carry the same object.'
     type: object
+  handlers.UpdateProfileRequest:
+    properties:
+      display_name:
+        example: Asha
+        type: string
+      home_area:
+        $ref: '#/definitions/handlers.HomeAreaRequest'
+    type: object
 info:
   contact:
     name: Pinalert project
@@ -945,6 +974,108 @@ paths:
       summary: Search for a place on the reader lane
       tags:
       - geocode
+  /me/consent:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Records that the signed in account agreed to the current version of the Disclaimer
+        and Policy text. Send no body or an empty object. A repeat call for the same version
+        keeps the first agreed time. A different version is stored with a new time.
+        Requires a session verified by email; an unverified caller receives 401.
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Agreed
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Agree to the current terms
+      tags:
+      - me
+  /me/first-run-done:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Records that the signed in account finished the first-time flow. It needs the current
+        terms to be agreed first: without that it answers 409 with the field terms. Send no
+        body or an empty object. A repeat call keeps the first time.
+        Requires a session verified by email; an unverified caller receives 401.
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Done
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Mark the first-time flow as finished
+      tags:
+      - me
+  /me/profile:
+    patch:
+      consumes:
+      - application/json
+      description: |-
+        Updates the optional name and home area of the signed in account. A key left out
+        changes nothing. An empty display_name clears the name. A home_area object saves the
+        picked place, and home_area null removes it. The home area keeps only the place name
+        and a cell about 5 km across; the coordinates you send are used once to find the cell
+        and are never stored. The answer is the profile as stored, with no coordinates.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: The rows to change
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.UpdateProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ProfileResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Save or clear the optional name and home area
+      tags:
+      - me
   /reports:
     get:
       description: |-
