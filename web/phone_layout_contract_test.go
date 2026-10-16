@@ -479,9 +479,12 @@ func TestPhoneDetailSheetStylesheet(t *testing.T) {
 		t.Errorf("sheet content max-height is %q, want none", got)
 	}
 
+	// Browser finding F-P4-5: on a short landscape phone the sheet starts right
+	// under the unofficial bar. The bar token follows the real bar (theme.js),
+	// so a fixed 64px value started the sheet inside a 68px bar at 320x256.
 	short := byHead("@media (max-width: 899.98px) and (max-height: 359px)", ".leaflet-container .leaflet-detail-pane .leaflet-popup")
-	if len(short) != 1 || short[0].Decls["top"] != "var(--space-3xl)" {
-		t.Errorf("short screen block must set the strip to var(--space-3xl), got %v", short)
+	if len(short) != 1 || short[0].Decls["top"] != "var(--disclaimer-bar-height)" {
+		t.Errorf("short screen block must start the sheet at var(--disclaimer-bar-height), got %v", short)
 	}
 
 	back := must(".leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden])::before")

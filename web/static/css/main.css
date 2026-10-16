@@ -748,6 +748,22 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* On the map page from 900px the message sits over the list half, between
+   the list pane's left edge and the column of the report button and the theme
+   toggle, each with a 16px space. An opened report lives inside the map half,
+   so the message never covers its controls (browser finding F-P4-9: at 1280
+   by 800 a 921px message covered the report's Undo). left is the middle of
+   that band and the max width is the band, so translateX(-50%) and the
+   toast-in animation keep working. The head matches the toast--action head's
+   weight and comes after it, so it caps both looks. Other pages and the phone
+   layout keep their centred message. */
+@media (min-width: 900px) {
+  .app-shell > #toast:not([hidden]) {
+    left: calc(75% + (var(--space-xl) / 2 - var(--space-lg) - var(--touch-target-min)) / 2);
+    max-width: calc(50% - var(--space-xl) / 2 - var(--space-md) * 2 - var(--space-lg) - var(--touch-target-min));
+  }
+}
+
 .toast__action {
   flex: none;
   min-height: var(--touch-target-min);

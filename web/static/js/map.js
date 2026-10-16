@@ -85,6 +85,14 @@ window.PinalertMap = (function () {
   var lastNarrow = false;
   // Autopan paddings in pixels, derived from the spacing tokens (A60).
   var panPad = { topLeft: [0, 0], bottomRight: [0, 0] };
+  // How many tools row corrections ran in a row for one popup, so a pan the
+  // map's bounds undo is not tried for ever (keepCardClearOfTools).
+  var TOOLS_TRIES = 3;
+  var toolsTried = { popup: null, count: 0 };
+  // True only while keepCardClearOfTools pans. A pan with no animation fires
+  // moveend before it returns, and that nested check would see the card clear
+  // and reset the count, so the cap above could never be reached.
+  var clearingTools = false;
 
   // replacePrefixedClass is a deliberate third copy of feed.js's and
   // visibility.js's private helper of the same name and behaviour, not an
@@ -750,6 +758,8 @@ window.PinalertMap = (function () {
     refreshPanPadding();
     applyPanPadding(popup);
     panPopupIntoView(popup);
+    toolsTried = { popup: popup, count: 0 };
+    keepCardClearOfTools(popup);
     if (!openedWhileHidden) {
       card.focus({ preventScroll: true });
     }
@@ -1072,6 +1082,61 @@ window.PinalertMap = (function () {
   function onMapMoveEnd() {
     if (activePopup) {
       panPopupIntoView(activePopup);
+      keepCardClearOfTools(activePopup);
+    }
+  }
+
+  // keepCardClearOfTools moves the map at once when the open card's top edge
+  // sits above the top reserve, which is never less than the bottom of the
+  // tools layer (the place search and the chips) plus one small space, so the
+  // close button is never under the Search button (browser finding F-P4-7).
+  // Leaflet's own autopan runs inside the open, ahead of popupopen, and a list
+  // row press flies the map while that pan runs, so the card could settle
+  // under the tools row with no correction. This runs after every open and
+  // every move, at any motion setting. It refreshes the paddings first, so
+  // Leaflet's keep in view pan reads the same numbers, and it only ever moves
+  // the card down. The phone sheet is fixed in the detail pane and is left
+  // alone, as is a map the reader is still dragging. The map's bounds can undo
+  // a pan (the whole world shown at a low zoom), so at most TOOLS_TRIES
+  // corrections run in a row before the card is seen clear again or another
+  // popup opens, and the two can never pan back and forth for ever. The
+  // moveend of its own pan is skipped (clearingTools), so only a later, separate
+  // move can clear the count.
+  function keepCardClearOfTools(popup) {
+    if (clearingTools || !map || !popup || !popup.isOpen() || phoneDetail()) {
+      return;
+    }
+    if (map.dragging && map.dragging.moving()) {
+      return;
+    }
+    refreshPanPadding();
+    applyPanPadding(popup);
+    var el = popup.getElement();
+    if (!el) {
+      return;
+    }
+    var box = map.getContainer().getBoundingClientRect();
+    var rect = el.getBoundingClientRect();
+    if (box.height === 0 || rect.height === 0) {
+      return;
+    }
+    if (toolsTried.popup !== popup) {
+      toolsTried = { popup: popup, count: 0 };
+    }
+    var dy = Math.round(rect.top - box.top - panPad.topLeft[1]);
+    if (dy >= 0) {
+      toolsTried.count = 0;
+      return;
+    }
+    if (toolsTried.count >= TOOLS_TRIES) {
+      return;
+    }
+    toolsTried.count += 1;
+    clearingTools = true;
+    try {
+      map.panBy([0, dy], { animate: false });
+    } finally {
+      clearingTools = false;
     }
   }
 

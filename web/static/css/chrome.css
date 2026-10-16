@@ -16,6 +16,18 @@ html {
   margin: 0;
 }
 
+/* No theme toggle under 900px on any page (owner decision of 2026-10-15): a
+   phone follows the device's own light or dark setting. The rule lives here
+   because every page that includes the toggle loads chrome.css, while only
+   the map and Activity pages load phone.css (browser finding F-P4-6 found it
+   still showing on Low data and Moderate). display none also takes it out of
+   the tab order. The laptop toggle is untouched. */
+@media (max-width: 899.98px) {
+  body > .theme-toggle {
+    display: none;
+  }
+}
+
 .disclaimer-bar {
   display: flex;
   align-items: center;

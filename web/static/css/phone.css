@@ -978,9 +978,12 @@
   }
 }
 
-/* A landscape phone has little height, so the strip shrinks to one token. */
+/* A landscape phone has little height, so the strip goes and the sheet starts
+   right under the unofficial bar. The bar token follows the real bar (theme.js
+   measures it), so the sheet never covers the bar at any text size (browser
+   finding F-P4-5: a fixed 64px started the sheet 4px inside a 68px bar). */
 @media (max-width: 899.98px) and (max-height: 359px) {
   .leaflet-container .leaflet-detail-pane .leaflet-popup {
-    top: var(--space-3xl);
+    top: var(--disclaimer-bar-height);
   }
 }
