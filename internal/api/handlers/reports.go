@@ -60,7 +60,13 @@ type SubmitReportRequest struct {
 	RequestID *string `json:"request_id,omitempty" minLength:"16" maxLength:"64" example:"5f0c2a9e-8d1b-4c7e-9a33-2b6f1e4d7c10"`
 	// Optional, display only: when the device wrote the report, RFC 3339. A value that cannot be read is ignored, a future one is set to the server time and one older than 14 days is set to 14 days before it. It never changes created_at, expires_at, the order or the fade.
 	WrittenAt *string `json:"written_at,omitempty" format:"date-time" example:"2026-09-05T10:03:00.000Z"`
+	// Optional, sent by the device queue with a saved report: the id, in digits, of the account the report was saved under, the same id the signed in page already shows. When it is present and is not the signed in account the post is refused with 409 on the field expected_account_id and nothing is stored. Leave it out for a fresh post.
+	ExpectedAccountID *string `json:"expected_account_id,omitempty" pattern:"^[0-9]+$" example:"42"`
 }
+
+// expectedAccountMessage is the 409 message for a saved report posted under an
+// account other than the one it was saved under. It names neither account.
+const expectedAccountMessage = "This report was saved under a different account than the one signed in now. Sign in to that account to send it."
 
 // ReportResponse is the public JSON shape of a report returned by POST
 // /api/reports (the GET /api/reports element shape is FeedReportResponse
@@ -388,7 +394,9 @@ type ErrorResponse struct {
 // Reaching this handler at all requires a session verified by email through the
 // magic link flow, and the access gate in internal/api/gate.go (01.1-04)
 // refuses an unverified caller with 401 before this function ever runs. The
-// order is the specification: validation first (a 400 costs nothing), then the
+// order is the specification: an optional expected_account_id that is not the
+// signed in account is refused with 409 straight after decoding, before
+// anything else (WR-W09), then validation (a 400 costs nothing), then the
 // IP backstop, the submit attempt bucket and the serious or other allowance (a
 // 429 stores nothing), then the text check and insert, giving the allowance
 // back on every outcome except a stored report. A ValidationError maps to
@@ -414,6 +422,7 @@ type ErrorResponse struct {
 // @Description A blocked post gets 429 with a Retry-After header and stores nothing, and a rejected or failed post does not use the allowance.
 // @Description An optional request_id makes a retry safe: a repeated key answers 200 with the stored report and is checked before any limit or text check.
 // @Description An optional written_at is display only and never changes created_at or expires_at.
+// @Description An optional expected_account_id, sent by the device queue with a saved report, names the account the report was saved under. When it is not the signed in account the post gets 409 on the field expected_account_id before any other check, stores nothing and uses no allowance; the answer names neither account. A post without it is not checked.
 // @Tags reports
 // @Accept json
 // @Produce json
@@ -422,6 +431,7 @@ type ErrorResponse struct {
 // @Success 200 {object} SubmitReportResponse "This retry key was already used: the stored report, nothing stored again"
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse "expected_account_id is not the signed in account; nothing was stored"
 // @Failure 422 {object} ErrorResponse "The text check refused the description; nothing was stored"
 // @Failure 429 {object} RateLimitResponse "Blocked by a limit, see Retry-After"
 // @Header 429 {integer} Retry-After "Whole seconds to wait before trying again"
@@ -449,6 +459,18 @@ func SubmitReport(svc *service.ReportService, gate *RateGate) http.HandlerFunc {
 		var req SubmitReportRequest
 		if err := dec.Decode(&req); err != nil {
 			writeFieldError(w, http.StatusBadRequest, "body", "Request body is missing or malformed.")
+			return
+		}
+
+		// Right after decoding: a saved report that names the account it was saved under is
+		// refused when that is not the signed in account (WR-W09), so a page
+		// left open for one account can never post under another's cookie. It
+		// runs before validation, the replay lookup (keyed by the cookie's
+		// account) and the limits, so it stores nothing, costs no allowance and
+		// is never answered with another account's report. The answer names
+		// neither account. A post without the field is not checked.
+		if req.ExpectedAccountID != nil && *req.ExpectedAccountID != strconv.FormatInt(acc.ID, 10) {
+			writeFieldError(w, http.StatusConflict, "expected_account_id", expectedAccountMessage)
 			return
 		}
 

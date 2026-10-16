@@ -44,7 +44,13 @@
   var STATUS_REJECTED = 'rejected';
   var STATUS_BLOCKED = 'blocked';
   var STATUS_SIGNED_OUT = 'signed_out';
-  var STATUSES = [STATUS_WAITING, STATUS_NO_ANSWER, STATUS_REJECTED, STATUS_BLOCKED, STATUS_SIGNED_OUT];
+  // The server refused the post because another account is signed in now
+  // than the one the report was saved under (WR-W09).
+  var STATUS_OTHER_ACCOUNT = 'other_account';
+  var STATUSES = [STATUS_WAITING, STATUS_NO_ANSWER, STATUS_REJECTED, STATUS_BLOCKED, STATUS_SIGNED_OUT,
+    STATUS_OTHER_ACCOUNT];
+  // The 409 field the server names for that refusal.
+  var OTHER_ACCOUNT_FIELD = 'expected_account_id';
 
   // The copy table. Plain characters only.
   var QUEUE_HEADING = 'Waiting to send';
@@ -79,6 +85,8 @@
   var ANNOUNCE_NOT_SENT_PREFIX = 'Report not sent. ';
   var ANNOUNCE_BLOCKED_PREFIX = 'Report waiting to send. It will send by itself in ';
   var ANNOUNCE_SIGNED_OUT = 'Report waiting. Sign in again to send it.';
+  var STATUS_TEXT_OTHER_ACCOUNT = 'This report was saved under a different account than the one signed in now. Sign in to that account to send it. It stays saved on this device.';
+  var ANNOUNCE_OTHER_ACCOUNT = 'Report not sent. It was saved under a different account.';
 
   var mounted = false;
   var accountId = '';
@@ -378,10 +386,11 @@
       return loadRows();
     }).then(function (list) {
       // A page that passed the gate proves the session for this account, so a
-      // row that was waiting for a sign in is tried again.
+      // row that was waiting for a sign in, or refused because another account
+      // was signed in, is tried again.
       var writes = [];
       list.forEach(function (record) {
-        if (record.status === STATUS_SIGNED_OUT) {
+        if (record.status === STATUS_SIGNED_OUT || record.status === STATUS_OTHER_ACCOUNT) {
           record.status = STATUS_WAITING;
           writes.push(putRow(record));
         }
@@ -584,9 +593,15 @@
       current.sending_until = Date.now() + SENDING_LEASE_MS;
       current.attempts = (current.attempts || 0) + 1;
       current.payload.request_id = current.request_id;
+      // The post names the account the report was saved under, so the server
+      // refuses it when another account is signed in now (WR-W09). It is the
+      // digits only id the page already carries and nothing more. It is added
+      // to a copy, so the saved payload and the form that edits it never hold it.
+      var body = JSON.parse(JSON.stringify(current.payload));
+      body.expected_account_id = current.account_id;
       return putRow(current).then(function () {
         renderStrip();
-        return Pinalert.submitReport(current.payload).then(function (report) {
+        return Pinalert.submitReport(body).then(function (report) {
           return removeRow(current.request_id).then(function () {
             if (report && report.held === true) {
               Pinalert.showToast(HELD_TOAST_MESSAGE, null, LONG_TOAST_MS);
@@ -612,6 +627,7 @@
     record.sending_until = 0;
     var status = err && err.status;
     var outcome = 'kept';
+    var held = '';
     if (err && err.queueable === true) {
       record.status = (status === 502 || status === 503 || status === 504) ? STATUS_NO_ANSWER : STATUS_WAITING;
       outcome = 'stop';
@@ -627,16 +643,21 @@
       record.serious = err.serious === true;
       record.emergency_number = err.emergencyNumber || '';
       announce(blockedAnnouncement(record));
-    } else if (status === 401) {
+    } else if (status === 401 || (status === 409 && err.field === OTHER_ACCOUNT_FIELD)) {
+      // Signed out, or another account is signed in now than the one this
+      // page and its saved reports belong to (WR-W09). Every other report of
+      // this account would get the same answer, so they all wait, nothing more
+      // is sent from this page and Discard stays on each row.
+      held = status === 401 ? STATUS_SIGNED_OUT : STATUS_OTHER_ACCOUNT;
       rows.forEach(function (other) {
         if (belongsToAccount(other) && other.status !== STATUS_REJECTED) {
-          other.status = STATUS_SIGNED_OUT;
+          other.status = held;
           other.sending_until = 0;
         }
       });
-      record.status = STATUS_SIGNED_OUT;
+      record.status = held;
       sessionLapsed = true;
-      announce(ANNOUNCE_SIGNED_OUT);
+      announce(status === 401 ? ANNOUNCE_SIGNED_OUT : ANNOUNCE_OTHER_ACCOUNT);
       outcome = 'stop';
     } else {
       record.status = STATUS_REJECTED;
@@ -644,9 +665,9 @@
       announce(ANNOUNCE_NOT_SENT_PREFIX + record.last_error);
     }
     var writes = [putRow(record)];
-    if (status === 401) {
+    if (held !== '') {
       rows.forEach(function (other) {
-        if (other !== record && other.status === STATUS_SIGNED_OUT) {
+        if (other !== record && other.status === held) {
           writes.push(putRow(other));
         }
       });
@@ -918,6 +939,8 @@
       Pinalert.setText(statusEl, NOT_SENT_PREFIX + record.last_error);
     } else if (record.status === STATUS_SIGNED_OUT) {
       Pinalert.setText(statusEl, STATUS_TEXT_SIGNED_OUT);
+    } else if (record.status === STATUS_OTHER_ACCOUNT) {
+      Pinalert.setText(statusEl, STATUS_TEXT_OTHER_ACCOUNT);
     } else {
       Pinalert.setText(statusEl, STATUS_TEXT_WAITING);
     }

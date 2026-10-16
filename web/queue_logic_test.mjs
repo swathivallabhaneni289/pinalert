@@ -481,3 +481,53 @@ await test('a 429 with a wait of 0 seconds waits at least 5 seconds (IN-W07)', a
   await settle();
   assert.equal(env.submitted.length, 1, 'no resend before the wait is over');
 });
+
+await test('names the saved account on each send and holds every row when the server refuses it (WR-W09)', async () => {
+  const first = 'req-nnnnnnnnnnnnnnnn-14';
+  const second = 'req-oooooooooooooooo-15';
+  const otherAccount = () => Promise.reject({
+    status: 409,
+    field: 'expected_account_id',
+    fieldMessage: 'This report was saved under a different account than the one signed in now. Sign in to that account to send it.'
+  });
+  const env = loadQueue({
+    records: [
+      record(first, '7', 'first saved report', '2026-10-01T00:00:00.000Z'),
+      record(second, '7', 'second saved report', '2026-10-02T00:00:00.000Z')
+    ],
+    answers: [otherAccount]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+
+  assert.equal(env.submitted.length, 1, 'the pass stops at the refusal');
+  assert.equal(env.submitted[0].expected_account_id, '7', 'the post names the saved account, as digits');
+  assert.equal(env.submitted[0].request_id, first);
+  assert.equal(Object.hasOwn(env.store.get(first).payload, 'expected_account_id'), false,
+    'the saved payload never holds it');
+
+  for (const id of [first, second]) {
+    assert.ok(env.store.has(id), 'the report stays saved');
+    assert.equal(env.store.get(id).status, 'other_account');
+  }
+  const statusLines = env.strip.descendants().filter((el) => el.className.split(/\s+/).includes('queue-strip__status'));
+  assert.equal(statusLines.length, 2);
+  statusLines.forEach((el) => {
+    assert.equal(el.textContent, 'This report was saved under a different account than the one signed in now. ' +
+      'Sign in to that account to send it. It stays saved on this device.');
+  });
+  const discards = env.strip.descendants().filter((el) => el.className.split(/\s+/).includes('queue-strip__discard'));
+  assert.equal(discards.length, 2, 'Discard report stays on each row');
+
+  await env.queue.flush();
+  await settle();
+  assert.equal(env.submitted.length, 1, 'nothing more is sent from this page');
+
+  // A page that mounts for the saved account again proves its session, so the
+  // rows are tried again.
+  const again = loadQueue({ records: [...env.store.values()] });
+  again.queue.mount({ strip: again.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  assert.deepEqual(again.submitted.map((p) => p.description), ['first saved report', 'second saved report']);
+  assert.equal(again.store.size, 0);
+});

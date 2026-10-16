@@ -640,6 +640,14 @@ definitions:
           characters after trimming, counted as characters rather than bytes.
         example: Water rising fast near the market bridge.
         type: string
+      expected_account_id:
+        description: 'Optional, sent by the device queue with a saved report: the
+          id, in digits, of the account the report was saved under, the same id the
+          signed in page already shows. When it is present and is not the signed in
+          account the post is refused with 409 on the field expected_account_id and
+          nothing is stored. Leave it out for a fresh post.'
+        example: "42"
+        type: string
       latitude:
         description: Latitude must be between -90 and 90.
         example: 13.0827
@@ -1018,6 +1026,7 @@ paths:
         A blocked post gets 429 with a Retry-After header and stores nothing, and a rejected or failed post does not use the allowance.
         An optional request_id makes a retry safe: a repeated key answers 200 with the stored report and is checked before any limit or text check.
         An optional written_at is display only and never changes created_at or expires_at.
+        An optional expected_account_id, sent by the device queue with a saved report, names the account the report was saved under. When it is not the signed in account the post gets 409 on the field expected_account_id before any other check, stores nothing and uses no allowance; the answer names neither account. A post without it is not checked.
       parameters:
       - description: Report to submit
         in: body
@@ -1043,6 +1052,11 @@ paths:
             $ref: '#/definitions/handlers.ErrorResponse'
         "401":
           description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: expected_account_id is not the signed in account; nothing was
+            stored
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
         "422":
