@@ -90,6 +90,7 @@ type photonProperties struct {
 	Locality    string `json:"locality"`
 	District    string `json:"district"`
 	City        string `json:"city"`
+	County      string `json:"county"`
 	State       string `json:"state"`
 	CountryCode string `json:"countrycode"`
 	OSMKey      string `json:"osm_key"`
@@ -121,9 +122,17 @@ func cleanPart(s string) string {
 // locality, district, city and state, in that order. Missing parts are
 // skipped and a part already in the label (in any case) is not repeated, so
 // there is never a "null", an empty comma or "Hyderabad, Hyderabad".
+//
+// When there is no city the county takes its place, the next larger place
+// part Photon sends (quick 261016-sfu): live, some Hyderabad rows carry a
+// ward as the district and no city, and the county brings back "Hyderabad".
 func photonLabel(p photonProperties) string {
+	city := p.City
+	if cleanPart(city) == "" {
+		city = p.County
+	}
 	var parts []string
-	for _, raw := range []string{p.Name, p.HouseNumber, p.Street, p.Locality, p.District, p.City, p.State} {
+	for _, raw := range []string{p.Name, p.HouseNumber, p.Street, p.Locality, p.District, city, p.State} {
 		part := cleanPart(raw)
 		if part == "" {
 			continue
