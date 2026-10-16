@@ -250,20 +250,18 @@
 
   // watchBar measures once, then again whenever the bar's text box changes
   // size (text size, wrapping) and on every window resize (a width tier can
-  // lower the floor while the text keeps its lines). The text box is
-  // observed because its height is the text's own, never the floor's.
+  // lower the floor while the text keeps its lines). Only the text box is
+  // observed: its height is the text's own, never the floor's, and the bar
+  // itself is not, because measureBar resizes the bar from inside the
+  // callback and observing it would end in a ResizeObserver loop error.
   function watchBar() {
     barEl = document.querySelector('.disclaimer-bar');
     if (!barEl) {
       return;
     }
     measureBar();
-    if (typeof ResizeObserver === 'function') {
-      var observer = new ResizeObserver(measureBar);
-      observer.observe(barEl);
-      if (barEl.firstElementChild) {
-        observer.observe(barEl.firstElementChild);
-      }
+    if (typeof ResizeObserver === 'function' && barEl.firstElementChild) {
+      new ResizeObserver(measureBar).observe(barEl.firstElementChild);
     }
     window.addEventListener('resize', measureBar);
   }

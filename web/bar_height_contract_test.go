@@ -12,7 +12,7 @@ import (
 // bar loads in its head, writes the bar's measured height into the token:
 //
 //   - once the document is parsed (readystatechange, before deferred scripts),
-//   - again when the bar or its text box changes size (ResizeObserver),
+//   - again when the bar's text box changes size (ResizeObserver),
 //   - and on window resize (a width tier can lower the floor on its own).
 //
 // The bar's min-height reads the same token, so each measurement first
@@ -43,14 +43,17 @@ func TestBarTokenFollowsTheRealBar(t *testing.T) {
 	watch := jsFunctionBody(t, code, "watchBar()")
 	for _, want := range []string{
 		"querySelector('.disclaimer-bar')",
-		"new ResizeObserver(measureBar)",
-		"observer.observe(barEl)",
-		"observer.observe(barEl.firstElementChild)",
+		"new ResizeObserver(measureBar).observe(barEl.firstElementChild)",
 		"window.addEventListener('resize', measureBar)",
 	} {
 		if !strings.Contains(watch, want) {
 			t.Errorf("watchBar lacks %q: %q", want, watch)
 		}
+	}
+	// The bar itself is never observed: measureBar resizes it inside the
+	// callback, which would raise a ResizeObserver loop error.
+	if strings.Contains(watch, ".observe(barEl)") {
+		t.Errorf("watchBar observes the bar it resizes; observe only its text box")
 	}
 	if !strings.Contains(code, "document.addEventListener('readystatechange', onReadyState)") {
 		t.Errorf("theme.js must measure the bar on readystatechange, before the deferred scripts lay out")
