@@ -5,7 +5,8 @@
 // ended: posted, held, saved on the device or refused.
 //
 // Run it with: node --test web/report_form_session_test.mjs
-// It is not part of CI (CI runs Go only) and is not embedded in the server.
+// CI runs it with the other web/*.mjs files (node --test web/*.mjs in
+// .github/workflows/ci.yml). It is not embedded in the server.
 // The fakes cover only what report-form.js calls: a minimal element model, a
 // fake Pinalert whose submitReport answers when the test says so, a fake
 // queue and a location object that is always set.
@@ -154,6 +155,7 @@ function setup(options) {
   const opener = make('button', 'open-report');
 
   const toasts = [];
+  const toastActions = [];
   const posts = [];
   const queueSaves = [];
   const queueDiscards = [];
@@ -166,7 +168,7 @@ function setup(options) {
     SEVERITY_LABELS: { low: '1 · Low', medium: '2 · Medium', critical: '3 · Critical' },
     iconClass: (c) => 'icon-glyph icon-glyph--' + c,
     setText: (el, v) => { el.textContent = v === null || v === undefined ? '' : String(v); },
-    showToast: (message) => { toasts.push(message); },
+    showToast: (message, action) => { toasts.push(message); toastActions.push(action || null); },
     lockPage: () => {},
     unlockPage: () => {},
     submitReport: (payload) => new Promise((resolve, reject) => {
@@ -193,6 +195,7 @@ function setup(options) {
   const window = {
     setTimeout: () => 0,
     clearTimeout: () => {},
+    location: { href: 'https://pinalert.example/' },
     PinalertQueue
   };
   const sandbox = { window, document: doc, CustomEvent, crypto, Map, Date, Math, JSON, Promise, Array, Object, isFinite, encodeURIComponent };
@@ -209,6 +212,8 @@ function setup(options) {
     el,
     opener,
     toasts,
+    toastActions,
+    window,
     posts,
     queueSaves,
     queueDiscards,
@@ -224,22 +229,33 @@ function setup(options) {
       el('cancel-report').click();
       assert.equal(el('discard-confirm').hidden, false, 'a touched form asks before it closes');
       el('discard-confirm-discard').click();
+    },
+    // cancelInFlight closes the form while its post is out: no Discard
+    // question, since that report is already on its way, and focus goes back
+    // to the button that opened the form.
+    cancelInFlight() {
+      el('cancel-report').click();
+      assert.equal(el('discard-confirm').hidden, true, 'a form whose post is out closes without the Discard question');
+      assert.equal(el('report-backdrop').hidden, true, 'the form must close');
+      assert.equal(doc.activeElement, opener, 'focus must go back to the opener');
+    },
+    escape() {
+      (doc.handlers.keydown || []).slice().forEach((h) => h({ key: 'Escape', preventDefault() {} }));
     }
   };
 }
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
-// postThenReopen sends a first report, discards the form while the post is
-// out, opens the form again and types a second draft.
+// postThenReopen sends a first report, closes the form while the post is out
+// (with no Discard question), opens the form again and types a second draft.
 function postThenReopen(page, openOptions) {
   page.open(openOptions);
   page.fill('Water over the main road near the bridge');
   page.submit();
   assert.equal(page.posts.length, 1);
   assert.equal(page.el('submit-report').disabled, true);
-  page.discard();
-  assert.equal(page.el('report-backdrop').hidden, true);
+  page.cancelInFlight();
   page.open();
   page.fill('A second report about the shelter');
 }
@@ -328,6 +344,26 @@ test('a refused earlier post over the serious limit still gives the emergency nu
   assertNewDraftUntouched(page);
   assert.equal(page.el('send-after-wait').hidden, true, 'the new form must not offer Send after the wait');
   assert.deepEqual(page.toasts, ['Your earlier report was not posted. Please wait 5 minutes. In an emergency, call 112 now.']);
+  const action = page.toastActions[0];
+  assert.ok(action, 'the serious toast must carry a Call action');
+  assert.equal(action.label, 'Call 112');
+  assert.equal(action.ariaLabel, 'Call 112');
+  const next = action.onClick();
+  assert.equal(page.window.location.href, 'tel:112', 'a press dials the number');
+  assert.ok(next === null || next === undefined, 'the toast closes after the press');
+  assertNewDraftUntouched(page);
+});
+
+test('a refused earlier post that is not a serious wait has no Call action', async () => {
+  const page = setup();
+  postThenReopen(page);
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 429, fieldMessage: 'Please wait 5 minutes.', retryAfterSeconds: 300,
+    serious: false, emergencyNumber: ''
+  }));
+  await settle();
+  assert.deepEqual(page.toasts, ['Your earlier report was not posted. Please wait 5 minutes.']);
+  assert.deepEqual(page.toastActions, [null]);
 });
 
 test('an earlier resend that succeeds removes only its own saved report', async () => {
@@ -397,4 +433,135 @@ test('a post with no answer while its form is still open saves and closes as bef
   assert.equal(page.queueSaves[0].request_id, first.payload.request_id);
   assert.equal(page.queueSaves[0].status, 'no_answer');
   assert.deepEqual(page.toasts, ["No signal. Your report is saved on this device and will send when you're back online."]);
+});
+
+// ----- closing the form while its post is out -----
+
+test('Escape while the post is out closes the form without the Discard question', () => {
+  const page = setup();
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.escape();
+  assert.equal(page.el('discard-confirm').hidden, true);
+  assert.equal(page.el('report-backdrop').hidden, true);
+  assert.equal(page.el('description').doc.activeElement, page.opener);
+});
+
+test('an edit typed after Post does not bring the question back while the post is out', () => {
+  const page = setup();
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.el('description').value = 'Water over the main road near the old bridge';
+  page.el('description').input();
+  page.cancelInFlight();
+});
+
+test('a Discard question open when Post is pressed goes away', () => {
+  const page = setup();
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.el('cancel-report').click();
+  assert.equal(page.el('discard-confirm').hidden, false);
+  page.submit();
+  assert.equal(page.posts.length, 1);
+  assert.equal(page.el('discard-confirm').hidden, true, 'the question must not stay over a report already sent');
+  page.cancelInFlight();
+});
+
+test('after a refusal the form holds the report again, so closing asks first', async () => {
+  const page = setup();
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 422, field: 'description', fieldMessage: 'That text is not allowed.'
+  }));
+  await settle();
+  page.el('cancel-report').click();
+  assert.equal(page.el('discard-confirm').hidden, false, 'a refused report is only in the form now');
+  assert.equal(page.el('report-backdrop').hidden, false);
+});
+
+test('after a wait refusal the form holds the report again, so closing asks first', async () => {
+  const page = setup();
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 429, fieldMessage: 'Please wait 5 minutes.', retryAfterSeconds: 300
+  }));
+  await settle();
+  page.el('cancel-report').click();
+  assert.equal(page.el('discard-confirm').hidden, false);
+});
+
+test('a report with no answer that cannot be saved is back in the form, so closing asks first', async () => {
+  const page = setup();
+  page.setQueueSave(() => Promise.reject(new Error('not valid')));
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), { queueable: true, status: 504 }));
+  await settle();
+  assert.equal(page.el('report-backdrop').hidden, false);
+  page.el('cancel-report').click();
+  assert.equal(page.el('discard-confirm').hidden, false);
+});
+
+test('a report with no answer still being saved closes without the question', async () => {
+  const page = setup();
+  page.setQueueSave(() => new Promise(() => {}));
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), { queueable: true, status: 504 }));
+  await settle();
+  assert.equal(page.queueSaves.length, 1);
+  page.cancelInFlight();
+});
+
+test('Send after the wait still saving closes without the question', async () => {
+  const page = setup();
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 429, fieldMessage: 'Please wait 5 minutes.', retryAfterSeconds: 300
+  }));
+  await settle();
+  page.setQueueSave(() => new Promise(() => {}));
+  page.el('send-after-wait').click();
+  assert.equal(page.queueSaves.length, 1);
+  assert.equal(page.queueSaves[0].status, 'blocked');
+  page.cancelInFlight();
+});
+
+test('a Discard question open when Send after the wait is pressed goes away', async () => {
+  const page = setup();
+  page.open();
+  page.fill('Water over the main road near the bridge');
+  page.submit();
+  page.posts[0].reject(Object.assign(new Error('x'), {
+    queueable: false, status: 429, fieldMessage: 'Please wait 5 minutes.', retryAfterSeconds: 300
+  }));
+  await settle();
+  page.el('cancel-report').click();
+  assert.equal(page.el('discard-confirm').hidden, false);
+  page.setQueueSave(() => new Promise(() => {}));
+  page.el('send-after-wait').click();
+  assert.equal(page.queueSaves.length, 1);
+  assert.equal(page.el('discard-confirm').hidden, true, 'the question must not stay over a report being saved');
+  page.cancelInFlight();
+});
+
+test('a late answer leaves the question working on the form open now', async () => {
+  const page = setup();
+  postThenReopen(page);
+  page.posts[0].resolve({ id: 46 });
+  await settle();
+  page.el('cancel-report').click();
+  assert.equal(page.el('discard-confirm').hidden, false, 'the new draft has no post out, so closing asks first');
+  assert.equal(page.el('report-backdrop').hidden, false);
 });

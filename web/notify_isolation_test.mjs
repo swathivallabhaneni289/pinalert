@@ -4,7 +4,8 @@
 // after it nor the list request, which must not turn into a failed request.
 //
 // Run it with: node --test web/notify_isolation_test.mjs
-// It is not part of CI (CI runs Go only) and is not embedded in the server.
+// CI runs it with the other web/*.mjs files (node --test web/*.mjs in
+// .github/workflows/ci.yml). It is not embedded in the server.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

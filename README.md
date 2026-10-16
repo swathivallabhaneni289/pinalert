@@ -79,10 +79,12 @@ How confirmations are counted, why a place is a precision 7 geohash cell, the 1 
 - `make test` — the full suite, including store-layer tests against a real Postgres; requires
   `DATABASE_URL`.
 - Point `DATABASE_URL` at a throwaway database created for the run, because the suite truncates every table it touches, and drop it afterwards.
+- `node --test web/*.mjs` runs the browser script tests (the shipped scripts in a Node sandbox); it needs Node only, no npm install.
 
 ### CI
 
-Every push and pull request runs `go build`, `go vet`, and `go test` against a `postgres:16`
+Every push and pull request runs `go build`, `go vet`, the browser script tests
+(`node --test web/*.mjs`, on the runner's own Node), and `go test` against a `postgres:16`
 GitHub Actions service container (see `.github/workflows/ci.yml`) — no local setup needed to see
 CI results on a PR.
 

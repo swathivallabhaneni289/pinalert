@@ -90,12 +90,42 @@ func TestReviewFixWBLatePostLeavesNewForm(t *testing.T) {
 	p424Contains(t, "reportEarlierFailure", earlier,
 		"err.queueable === true", "saveToQueue(", "EARLIER_REFUSED_PREFIX", "EARLIER_REFUSED_FALLBACK",
 		"err.serious === true", "EMERGENCY_CALL_PREFIX + err.emergencyNumber + EMERGENCY_CALL_SUFFIX",
-		"Pinalert.showToast(text, null, LONG_TOAST_MS)")
+		"action = callAction(err.emergencyNumber);", "Pinalert.showToast(text, action, LONG_TOAST_MS)")
 	p424Lacks(t, "reportEarlierFailure", earlier, "formError", "focusField(", "submitButton", "closeForm(", "showLimitMessage(")
+	// The serious toast's Call button dials the number the way the form's tap to
+	// call link does, under the same accessible name.
+	p424Contains(t, "callAction", jsFunctionBody(t, form, "callAction(number)"),
+		"label: CALL_LABEL_PREFIX + number,", "ariaLabel: CALL_LABEL_PREFIX + number,",
+		"window.location.href = 'tel:' + number;")
+	if n := strings.Count(form, "var CALL_LABEL_PREFIX = 'Call ';"); n != 1 {
+		t.Errorf("CALL_LABEL_PREFIX is declared %d times as 'Call ', want 1", n)
+	}
 
 	wait := jsFunctionBody(t, form, "saveAfterWait()")
 	p424Ordered(t, "saveAfterWait", wait, "var session = formSession;", "if (session === formSession) {", "closeForm();",
 		"if (session !== formSession) {", "EARLIER_NOT_SAVED_TOAST")
+}
+
+// TestReviewFixWBCloseWhilePosting pins the honest close: while a post is out
+// the form closes without the Discard question, because that report is already
+// on its way and a toast tells how it ends. A refused report is back in the
+// form, so closing asks again. web/report_form_session_test.mjs runs each case.
+func TestReviewFixWBCloseWhilePosting(t *testing.T) {
+	form := p424ReadJS(t, "static/js/report-form.js")
+	p424Ordered(t, "requestClose", jsFunctionBody(t, form, "requestClose()"),
+		"if (!discardConfirm.hidden) {", "return;", "if (postInFlight) {", "closeForm();", "} else if (formTouched) {",
+		"discardConfirm.hidden = false;")
+	p424Ordered(t, "handleSubmit", jsFunctionBody(t, form, "handleSubmit()"),
+		"submitButton.disabled = true;", "postInFlight = true;", "discardConfirm.hidden = true;",
+		"Pinalert.submitReport(payload).then(",
+		".catch(function (err) {", "if (sent.session !== formSession) {", "return;",
+		"saveToQueue(", "postInFlight = false;", "showLimitMessage(err);", "postInFlight = false;")
+	p424Contains(t, "resetForm", jsFunctionBody(t, form, "resetForm()"), "postInFlight = false;")
+	p424Ordered(t, "saveToQueue", jsFunctionBody(t, form, "saveToQueue(payload, status, sent)"),
+		"if (sent.session !== formSession) {", "return;", "postInFlight = false;")
+	p424Ordered(t, "saveAfterWait", jsFunctionBody(t, form, "saveAfterWait()"),
+		"postInFlight = true;", "discardConfirm.hidden = true;", "window.PinalertQueue.save(",
+		"if (session !== formSession) {", "return;", "postInFlight = false;")
 }
 
 // TestReviewFixWBLowFormLocationRetry pins WR-W08: the Low data form asks for a

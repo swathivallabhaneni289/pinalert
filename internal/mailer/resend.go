@@ -2,8 +2,11 @@ package mailer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
+	"net/url"
+	"strconv"
 
 	"github.com/resend/resend-go/v3"
 )
@@ -39,10 +42,18 @@ func NewResendMailer(apiKey, from string) Mailer {
 	}
 }
 
-// SendVerificationLink sends the verification email through Resend. Any SDK
-// error is wrapped with an operation name only — never the API key or raw
-// response body — so the caller can log a useful message server-side while
-// the visitor still sees only the generic 500 established in 01.1-01
+// The kinds of Resend failure the caller's log can see. None of them holds any
+// text from Resend's answer.
+var (
+	errResendNetwork = errors.New("could not reach resend")
+	errResendRefused = errors.New("resend refused the request")
+)
+
+// SendVerificationLink sends the verification email through Resend. The
+// returned error names the operation and the kind of failure only, never the
+// API key, the raw response body or the SDK's own error text: Resend's error
+// message can repeat the recipient address, and this error reaches the server
+// log. The visitor still sees only the generic 500 established in 01.1-01
 // (mailer.go doc comment, threat T-01-55).
 func (m *resendMailer) SendVerificationLink(ctx context.Context, email, link string) error {
 	_, err := m.client.Emails.SendWithContext(ctx, &resend.SendEmailRequest{
@@ -52,9 +63,34 @@ func (m *resendMailer) SendVerificationLink(ctx context.Context, email, link str
 		Html:    verificationEmailHTML(link),
 	})
 	if err != nil {
-		return fmt.Errorf("mailer: sending verification email via resend: %w", err)
+		return fmt.Errorf("mailer: sending verification email via resend: %w", resendFailureKind(err))
 	}
 	return nil
+}
+
+// resendFailureKind maps an SDK error to an error that keeps its kind and
+// drops its text. A rate limit keeps the Retry-After header value, a number
+// Resend sets. A cancelled or timed out context is returned as the context's
+// own error, so errors.Is still finds it. Anything else is a network failure
+// when the request never got an answer, and a refusal otherwise.
+func resendFailureKind(err error) error {
+	var rate *resend.RateLimitError
+	switch {
+	case errors.As(err, &rate):
+		if _, convErr := strconv.Atoi(rate.RetryAfter); convErr == nil {
+			return fmt.Errorf("%w (retry after %s seconds)", resend.ErrRateLimit, rate.RetryAfter)
+		}
+		return resend.ErrRateLimit
+	case errors.Is(err, context.DeadlineExceeded):
+		return context.DeadlineExceeded
+	case errors.Is(err, context.Canceled):
+		return context.Canceled
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return errResendNetwork
+	}
+	return errResendRefused
 }
 
 // verificationEmailHTML builds the verification email's HTML body. It is a
