@@ -33,9 +33,11 @@ func TestPlaceSearchSuggestsWhileTyping(t *testing.T) {
 	if n := strings.Count(code, "addEventListener('input'"); n != 1 {
 		t.Errorf("map-tools.js has %d input listeners, want 1", n)
 	}
-	// The one timer is the typing pause.
-	if n := strings.Count(code, "setTimeout("); n != 1 {
-		t.Errorf("map-tools.js has %d setTimeout( calls, want 1 (the typing pause)", n)
+	// The two timers are the typing pause and the quiet retry (quick
+	// 261016-sne), and both use typingTimer, so every way of ending a pause
+	// also ends a pending retry.
+	if n := strings.Count(code, "setTimeout("); n != 2 {
+		t.Errorf("map-tools.js has %d setTimeout( calls, want 2 (the typing pause and the quiet retry)", n)
 	}
 
 	onInput := jsFunctionBody(t, code, "onInput()")
@@ -86,4 +88,41 @@ func TestPlaceSearchSuggestsWhileTyping(t *testing.T) {
 	}
 	// Enter and the button keep their path.
 	p13MustContain(t, "map-tools.js", code, "evt.preventDefault();\n      search();")
+}
+
+// TestSearchQuietRetry pins the quiet retry of both searches (quick
+// 261016-sne): at most 3 tries again, after the answer's Retry-After or 1
+// second, only for a 429 or a 503, and the wait held on the timer that newer
+// typing already clears. The behaviour is run for real in
+// report_search_retry_test.mjs and place_search_typing_test.mjs.
+func TestSearchQuietRetry(t *testing.T) {
+	form := p19Code(t, "static/js/report-form.js")
+	p13MustContain(t, "report-form.js", form,
+		"var SEARCH_QUIET_RETRIES = 3;",
+		"var SEARCH_RETRY_MS = 1000;")
+	// One fetch in the file: a retry goes back through runSearch.
+	if n := strings.Count(form, "fetch("); n != 1 {
+		t.Errorf("report-form.js has %d fetch( calls, want 1", n)
+	}
+	run := jsFunctionBody(t, form, "runSearch(query)")
+	p13MustContain(t, "runSearch", run,
+		"err.status === 429 || err.status === 503",
+		"searchRetries < SEARCH_QUIET_RETRIES",
+		"searchDebounceTimer = window.setTimeout(",
+		"runSearch(query);")
+	p13MustContain(t, "onSearchInput", jsFunctionBody(t, form, "onSearchInput()"), "searchRetries = 0;")
+	p13MustContain(t, "resetSearch", jsFunctionBody(t, form, "resetSearch()"), "searchRetries = 0;")
+
+	tools := p31mTools(t)
+	p13MustContain(t, "map-tools.js", tools,
+		"var QUIET_RETRIES = 3;",
+		"var RETRY_WAIT_MS = 1000;")
+	retry := jsFunctionBody(t, tools, "retryLater(q, wait)")
+	p13MustContain(t, "retryLater", retry, "cancelTyping();", "typingTimer = window.setTimeout(", "search(q, true);")
+	search := jsFunctionBody(t, tools, "search(query, typed)")
+	p13MustContain(t, "search", search,
+		"res.status === 429 || res.status === 503",
+		"quietFailures < QUIET_RETRIES",
+		"retryLater(q, retryWait(res));")
+	p13MustContain(t, "onInput", jsFunctionBody(t, tools, "onInput()"), "quietFailures = 0;")
 }
