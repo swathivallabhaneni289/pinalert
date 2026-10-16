@@ -1,5 +1,8 @@
-// Package geocode provides a rate-limited, identified proxy client for
-// Nominatim's public /search geocoding endpoint. It has no dependency on
+// Package geocode provides a rate-limited, identified proxy client for place
+// and address search. Photon (photon.komoot.io, see photon.go) is asked
+// first; Nominatim's public /search endpoint is the fallback when Photon
+// fails, times out or finds nothing. Each provider has its own limiter and
+// its own cache. The package has no dependency on
 // internal/service or internal/api so it stays trivially unit testable and
 // reusable, the same standalone-package precedent internal/ratelimit
 // establishes.
@@ -86,35 +89,54 @@ type nominatimRecord struct {
 // endpoint. Safe for concurrent use.
 type Client struct {
 	httpClient   *http.Client
-	limiter      *rate.Limiter
-	baseURL      string
+	limiter      *rate.Limiter // Nominatim's
+	baseURL      string        // Nominatim's
 	contactEmail string
-	reader       *answerCache
-	reporter     *answerCache
+	reader       *answerCache // Nominatim answers for the place search
+	reporter     *answerCache // Nominatim answers for the report search
+
+	// Photon, asked first. An empty photonURL turns Photon off, which only
+	// the Nominatim tests do.
+	photonURL     string
+	photonLimiter *rate.Limiter
+	photonTimeout time.Duration
+	photon        *answerCache // Photon answers, shared by both searches
 }
 
-// NewClient constructs a Client pointed at the real Nominatim service,
-// enforcing D-02's 1 request/second global ceiling. contactEmail is
-// optional; when non-empty it is sent as Nominatim's suggested "email"
-// identifier param and folded into the User-Agent string.
+// NewClient constructs a Client pointed at the real Photon and Nominatim
+// services, enforcing D-02's 1 request/second global ceiling on Nominatim and
+// two a second on Photon. contactEmail is optional; when non-empty it is sent
+// as Nominatim's suggested "email" identifier param and folded into the
+// User-Agent string both services receive.
 func NewClient(contactEmail string) *Client {
-	return newClientWithBaseURL(nominatimSearchURL, contactEmail, defaultLimiterEvery, defaultLimiterBurst)
+	return newClientWithProviders(photonSearchURL, nominatimSearchURL, contactEmail,
+		defaultLimiterEvery, defaultLimiterBurst, photonLimiterEvery, photonLimiterBurst)
 }
 
-// newClientWithBaseURL is NewClient's unexported implementation, taking an
-// explicit base URL and limiter rate so this package's own tests can drive
-// a fake httptest upstream and a millisecond-scale limiter — mirroring
-// ratelimit.newPerIPWithIdleWindow's unexported-test-seam precedent
-// exactly. The exported two-value NewClient signature is the contract other
+// newClientWithBaseURL is a Nominatim only client for this package's own
+// tests: an explicit base URL and limiter rate so they can drive a fake
+// httptest upstream and a millisecond-scale limiter, mirroring
+// ratelimit.newPerIPWithIdleWindow's unexported-test-seam precedent exactly.
+// Photon is off. The exported NewClient signature is the contract other
 // packages use.
 func newClientWithBaseURL(baseURL, contactEmail string, every time.Duration, burst int) *Client {
+	return newClientWithProviders("", baseURL, contactEmail, every, burst, photonLimiterEvery, photonLimiterBurst)
+}
+
+// newClientWithProviders builds a client with both providers' URLs and
+// limiter rates given. An empty photonURL turns Photon off.
+func newClientWithProviders(photonURL, nominatimURL, contactEmail string, every time.Duration, burst int, photonEvery time.Duration, photonBurst int) *Client {
 	return &Client{
-		httpClient:   &http.Client{Timeout: httpClientTimeout},
-		limiter:      rate.NewLimiter(rate.Every(every), burst),
-		baseURL:      baseURL,
-		contactEmail: contactEmail,
-		reader:       newAnswerCache(),
-		reporter:     newAnswerCache(),
+		httpClient:    &http.Client{Timeout: httpClientTimeout},
+		limiter:       rate.NewLimiter(rate.Every(every), burst),
+		baseURL:       nominatimURL,
+		contactEmail:  contactEmail,
+		reader:        newAnswerCache(),
+		reporter:      newAnswerCache(),
+		photonURL:     photonURL,
+		photonLimiter: rate.NewLimiter(rate.Every(photonEvery), photonBurst),
+		photonTimeout: defaultPhotonTimeout,
+		photon:        newAnswerCache(),
 	}
 }
 
@@ -166,9 +188,11 @@ func (c *Client) buildRequest(ctx context.Context, q string, extra url.Values) (
 	return req, nil
 }
 
-// Search is the report form's address search. It runs the search plan (see
-// searchPlan) and returns the first non empty answer, with MatchedQuery set
-// when a shorter text found it. Before every upstream request the rate
+// Search is the report form's address search. Photon is asked first, with a
+// bounded wait for its limiter and its own time limit (see askPhoton). When
+// Photon fails, times out or finds nothing, the Nominatim search plan runs
+// (see searchPlan) and returns the first non empty answer, with MatchedQuery
+// set when a shorter text found it. Before every Nominatim request the rate
 // limiter is waited on (Wait, never Allow: a one second wait serves two
 // simultaneous typers better than instantly rejecting the second one), and
 // each wait is bounded by limiterWaitTimeout, so contention degrades into an
@@ -176,18 +200,45 @@ func (c *Client) buildRequest(ctx context.Context, q string, extra url.Values) (
 // wait that runs out part way through the plan is that same error, never an
 // empty list, because the texts not yet tried were never sent.
 //
-// near is the report pin, or nil. The final answer, an empty one included,
-// is cached under the original text and area; errors never are.
+// near is the report pin, or nil. Answers are cached under the original text
+// and area; errors never are (see search).
 func (c *Client) Search(ctx context.Context, q string, near *Point) (Answer, error) {
+	return c.search(ctx, q, near, c.reporter, c.waitForPhotonToken, c.waitForToken)
+}
+
+// search is the order both lanes share. The lane decides how a limiter token
+// is taken from each provider and which Nominatim cache it uses.
+//
+//   - A Photon answer with matches, fresh or cached, is the answer.
+//   - Otherwise the Nominatim plan runs, after its own cache, with whatever
+//     is left of the maxUpstreamPerSearch requests once Photon's is counted.
+//   - A Nominatim answer is cached in the lane's cache, except an empty one
+//     after Photon failed: Photon may be back on the next search, and an
+//     empty answer must not hide it for six hours.
+func (c *Client) search(ctx context.Context, q string, near *Point, cache *answerCache,
+	takePhoton func(ctx context.Context) error, takeNominatim func(ctx context.Context, i int) error) (Answer, error) {
 	key := cacheKey(q, near)
-	if cached, ok := c.reporter.get(key); ok {
+	var photon photonOutcome
+	if c.photonURL != "" {
+		var err error
+		photon, err = c.askPhoton(ctx, key, q, near, takePhoton)
+		if err != nil {
+			return Answer{}, err
+		}
+		if photon.found {
+			return photon.answer, nil
+		}
+	}
+	if cached, ok := cache.get(key); ok {
 		return cached, nil
 	}
-	answer, err := c.run(ctx, q, near, c.waitForToken)
+	answer, err := c.run(ctx, q, near, takeNominatim, maxUpstreamPerSearch-photon.sent)
 	if err != nil {
 		return Answer{}, err
 	}
-	c.reporter.put(key, answer)
+	if !photon.failed || len(answer.Results) > 0 {
+		cache.put(key, answer)
+	}
 	return answer, nil
 }
 
@@ -208,6 +259,9 @@ func (c *Client) waitForToken(ctx context.Context, _ int) error {
 type Answer struct {
 	Results      []Result
 	MatchedQuery string
+	// provider is which service gave the answer (providerPhoton or
+	// providerNominatim), for the live check and the tests only.
+	provider string
 }
 
 // Search plan tuning (quick task 261016-adr, backlog 999.7).
@@ -321,11 +375,17 @@ func searchPlan(q string, near *Point) []attempt {
 	return plan
 }
 
-// run sends the search plan in order and stops at the first try that finds
-// something. take is called before every request with the try's index and
-// decides how the lane gets its limiter token; its error ends the search.
-func (c *Client) run(ctx context.Context, q string, near *Point, take func(ctx context.Context, i int) error) (Answer, error) {
-	for i, a := range searchPlan(q, near) {
+// run sends the Nominatim search plan in order and stops at the first try
+// that finds something. take is called before every request with the try's
+// index and decides how the lane gets its limiter token; its error ends the
+// search. maxRequests cuts the plan further when Photon already used one of
+// the search's maxUpstreamPerSearch requests.
+func (c *Client) run(ctx context.Context, q string, near *Point, take func(ctx context.Context, i int) error, maxRequests int) (Answer, error) {
+	plan := searchPlan(q, near)
+	if len(plan) > maxRequests {
+		plan = plan[:max(maxRequests, 0)]
+	}
+	for i, a := range plan {
 		if err := take(ctx, i); err != nil {
 			return Answer{}, err
 		}
@@ -334,14 +394,14 @@ func (c *Client) run(ctx context.Context, q string, near *Point, take func(ctx c
 			return Answer{}, err
 		}
 		if len(results) > 0 {
-			answer := Answer{Results: results}
+			answer := Answer{Results: results, provider: providerNominatim}
 			if a.shortened {
 				answer.MatchedQuery = a.text
 			}
 			return answer, nil
 		}
 	}
-	return Answer{Results: []Result{}}, nil
+	return Answer{Results: []Result{}, provider: providerNominatim}, nil
 }
 
 // UpstreamStatusError is returned when Nominatim answers with a non 2xx
@@ -471,7 +531,7 @@ func newAnswerCache() *answerCache {
 // copyAnswer copies the result list, so a caller can never change a cached
 // answer. An empty list stays a non nil empty list.
 func copyAnswer(a Answer) Answer {
-	return Answer{Results: append([]Result{}, a.Results...), MatchedQuery: a.MatchedQuery}
+	return Answer{Results: append([]Result{}, a.Results...), MatchedQuery: a.MatchedQuery, provider: a.provider}
 }
 
 // get returns a fresh cached answer, dropping an expired one.
@@ -533,15 +593,15 @@ func cacheKey(q string, near *Point) string {
 }
 
 // SearchReader is the reader's place search lane (HIST-05). It runs the same
-// search plan as Search and shares the process wide limiter with it, but it
+// search as Search and shares both process wide limiters with it, but it
 // never holds a place in the limiter's queue, so a reader can never jump
 // ahead of a reporter filing an emergency (D-16, D-28):
 //
 //   - A cached answer costs no token.
-//   - The first try takes a token only if one is free right now, and returns
-//     ErrReaderBusy if not.
-//   - A later try (the widened one or a shorter text) waits for the limiter
-//     without reserving a token: it gives up at once if a reporter is
+//   - The first try on each provider takes a token only if one is free right
+//     now, and returns ErrReaderBusy if not.
+//   - A later Nominatim try (the widened one or a shorter text) waits for
+//     the limiter without reserving a token: it gives up at once if a reporter is
 //     already waiting (the bucket is in debt), otherwise it sleeps until a
 //     token would be free and then takes it only if it still is. A reporter
 //     who started waiting in that gap gets the token and the reader gets
@@ -549,31 +609,35 @@ func cacheKey(q string, near *Point) string {
 //     waited on for every request" without breaking D-16.
 //
 // Running out of limiter time part way through is ErrReaderBusy, never an
-// empty list. Successful answers, an empty one included, are cached; errors
-// never are.
+// empty list. Answers are cached as Search's are; errors never are.
+//
+// Photon comes first here too, on its own limiter and by the same rule: a
+// token only if one is free right now. When none is free the place search is
+// busy at once (ErrReaderBusy) rather than going on to Nominatim, so a busy
+// Photon never moves readers onto the Nominatim budget report searches fall
+// back to.
 func (c *Client) SearchReader(ctx context.Context, q string, near *Point) (Answer, error) {
-	key := cacheKey(q, near)
-	if cached, ok := c.reader.get(key); ok {
-		return cached, nil
-	}
-	answer, err := c.run(ctx, q, near, c.takeReaderToken)
-	if err != nil {
-		return Answer{}, err
-	}
-	c.reader.put(key, answer)
-	return answer, nil
+	return c.search(ctx, q, near, c.reader, c.takeReaderPhotonToken, c.takeReaderToken)
 }
 
-// takeReaderToken is the reader lane's turn at the limiter for try i.
+// takeReaderToken is the reader lane's turn at the Nominatim limiter for
+// try i.
 func (c *Client) takeReaderToken(ctx context.Context, i int) error {
+	return takeReaderTokenFrom(ctx, c.limiter, i)
+}
+
+// takeReaderTokenFrom is the reader rule on any limiter: the first try takes
+// a token only if one is free right now; a later try waits without reserving
+// one and gives up when a reporter is already waiting.
+func takeReaderTokenFrom(ctx context.Context, limiter *rate.Limiter, i int) error {
 	if i > 0 {
-		tokens := c.limiter.Tokens()
+		tokens := limiter.Tokens()
 		if tokens < 0 {
 			// A reporter's Wait already holds the next token.
 			return ErrReaderBusy
 		}
 		if tokens < 1 {
-			wait := time.Duration((1-tokens)/float64(c.limiter.Limit())*float64(time.Second)) + readerWakeSlack
+			wait := time.Duration((1-tokens)/float64(limiter.Limit())*float64(time.Second)) + readerWakeSlack
 			if wait > limiterWaitTimeout {
 				return ErrReaderBusy
 			}
@@ -586,7 +650,7 @@ func (c *Client) takeReaderToken(ctx context.Context, i int) error {
 			}
 		}
 	}
-	if !c.limiter.Allow() {
+	if !limiter.Allow() {
 		return ErrReaderBusy
 	}
 	return nil

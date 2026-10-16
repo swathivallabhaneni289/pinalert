@@ -75,7 +75,7 @@ const docTemplate = `{
         },
         "/geocode": {
             "get": {
-                "description": "Proxies a search query to Nominatim and returns at most five matches, in India\nonly. Requires a session verified by email through the magic-link flow. With the\noptional lat and lon (both or neither, the report pin) it looks in a box around\nthe pin first and widens only when the box finds nothing. When the whole text\nfinds nothing it tries again without the first part, at most twice, and\nmatched_query then holds the shorter text that matched. A 503 means search is\ntemporarily unavailable; report submission remains fully usable regardless.",
+                "description": "Searches Photon first, which matches close spellings and half typed words, and\nreturns at most five matches, in India only. Requires a session verified by email\nthrough the magic-link flow. The optional lat and lon (both or neither, the report\npin) make Photon prefer nearby places. Only when Photon fails, takes over 2 seconds or\nfinds nothing does the search go to Nominatim, which looks in a box around the pin\nfirst and widens only when the box finds nothing; when the whole text finds nothing\nthere it tries again without the first part, and matched_query then holds the\nshorter text that matched. At most four upstream requests are sent per search. A\n503 means search is temporarily unavailable; report submission remains fully\nusable regardless.",
                 "produces": [
                     "application/json"
                 ],
@@ -140,7 +140,7 @@ const docTemplate = `{
         },
         "/geocode/place": {
             "get": {
-                "description": "Place search for the history views. It runs on its own lane of the geocoder: it\nnever queues ahead of a report search, repeated searches are answered from a cache, and each\nverified account has its own small budget. Results are in India only. With the\noptional lat and lon (both or neither) it looks in a box around the map centre\nfirst and widens only when the box finds nothing. When the whole text finds\nnothing it tries again without the first part, at most twice, and\nmatched_query then holds the shorter text that matched.\nA 429 or 503 never affects report submission, which has its own search.",
+                "description": "Place search for the history views. It runs on its own lane of the geocoder: it\nnever queues ahead of a report search, repeated searches are answered from a cache, and each\nverified account has its own small budget. Results are in India only. It asks\nPhoton first, which matches close spellings and half typed words; the optional\nlat and lon (both or neither, the map centre) make Photon prefer nearby places. Only\nwhen Photon fails, takes over 2 seconds or finds nothing does it go to Nominatim,\nwhich looks in a box around the map centre first and widens only when the box finds\nnothing; when the whole text finds nothing there it tries again without the first\npart, and matched_query then holds the shorter text that matched.\nA 429 or 503 never affects report submission, which has its own search.",
                 "produces": [
                     "application/json"
                 ],

@@ -194,6 +194,9 @@ func TestLegalPagesRender(t *testing.T) {
 		"If the text is clearly hateful, harassing or sexual, it is rejected and nothing is stored. If such text is only caught after the report was saved, because the check finished late, the report is removed instead: it stays stored but shows to no one. If the text is borderline, it is posted and a moderator may look at it.",
 		`A removed report shows to no one. Its author sees "Removed after review" both when a moderator removed it and when the automatic check removed it after it was saved.`,
 		"The result and scores of the automatic check, and which model gave them, without the report text: for borderline reports and for any report whose check finished after it was saved.",
+		// Quick 261016-pho: the place search now goes to Photon first, a
+		// second third party, with the text and a position.
+		"A typed place search goes through Pinalert to Photon, a search service run by komoot. Pinalert sends what you typed and the position of your pin or the middle of the map. If Photon can't answer, the search goes to OpenStreetMap's Nominatim service instead. The places in the results come from OpenStreetMap. Those services see the request the way any website does.",
 	} {
 		if !strings.Contains(ptext, want) {
 			t.Errorf("policy text lacks %q", want)
