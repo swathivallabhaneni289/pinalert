@@ -447,7 +447,13 @@ window.PinalertSheet = (function () {
     if (target === handleEl || (target && target.id === 'show-button')) {
       return;
     }
-    if (!keyboardFocus(target)) {
+    // An item of the Show menu always grows the sheet, whoever moved focus to
+    // it: show-menu.js focuses the checked item when the menu opens, a script
+    // focus that is not :focus-visible after a tap, and at short the menu
+    // would be cut off by the sheet's edge (it hangs off the sticky head, so
+    // scrolling the sheet cannot bring it back).
+    var inMenu = !!(target && typeof target.closest === 'function' && target.closest('.show-menu'));
+    if (!inMenu && !keyboardFocus(target)) {
       return;
     }
     setSnap('half');

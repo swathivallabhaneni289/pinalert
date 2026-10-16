@@ -312,6 +312,16 @@ test('a focus a press gave leaves a short sheet alone, so a tap on a row does no
   assert.equal(env.sheet.getAttribute('data-snap'), 'half');
 });
 
+test('an item of the Show menu grows a short sheet even when a script gave the focus', () => {
+  const env = setup();
+  env.api.setSnap('short', { instant: true });
+  const item = new FakeEl('');
+  item.matches = () => false;
+  item.closest = (sel) => (sel === '.show-menu' ? {} : null);
+  env.sheet.fire('focusin', evt({ target: item }));
+  assert.equal(env.sheet.getAttribute('data-snap'), 'half', 'the opened menu is not cut off by a short sheet');
+});
+
 test('the sheet never reads or writes anything of a report', () => {
   const code = source.replace(/\/\/.*$/gm, '');
   assert.equal(/Pinalert\.(state|select|fetch)|\.reports\b|innerHTML|fetch\(/.test(code), false);
