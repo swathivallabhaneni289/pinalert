@@ -198,11 +198,13 @@ function makeIndexedDB(initial) {
 
 // ----- one sandbox per case -----
 
-function loadQueue({ records = [], answers = [], indexedDBThrows = false }) {
+function loadQueue({ records = [], answers = [], indexedDBThrows = false, lockHeldElsewhere = false }) {
   const doc = makeDocument();
   const idb = makeIndexedDB(records);
   const submitted = [];
   const toasts = [];
+  // Timers never fire on their own; a case fires one by calling its fn.
+  const timers = [];
   const pinalert = {
     CATEGORY_LABELS: { flood: 'Flood', other: 'Other' },
     setText(el, text) { el.textContent = text; },
@@ -217,8 +219,8 @@ function loadQueue({ records = [], answers = [], indexedDBThrows = false }) {
   const win = {
     addEventListener() {},
     setInterval() { return 1; },
-    setTimeout() { return 1; },
-    clearTimeout() {},
+    setTimeout(fn, delay) { timers.push({ fn, delay, cleared: false }); return timers.length; },
+    clearTimeout(handle) { if (timers[handle - 1]) { timers[handle - 1].cleared = true; } },
     location: { href: 'http://127.0.0.1/profile' },
     history: { state: null, replaceState() {} }
   };
@@ -228,7 +230,11 @@ function loadQueue({ records = [], answers = [], indexedDBThrows = false }) {
     Pinalert: pinalert,
     indexedDB: idb.indexedDB,
     IDBKeyRange: { only: (value) => ({ only: value }) },
-    navigator: {},
+    // lockHeldElsewhere stands for another tab holding the flush lock, so no
+    // pass of this page ever runs.
+    navigator: lockHeldElsewhere
+      ? { locks: { request: (name, options, fn) => Promise.resolve().then(() => fn(null)) } }
+      : {},
     CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init && init.detail; } },
     URL,
     URLSearchParams
@@ -247,7 +253,13 @@ function loadQueue({ records = [], answers = [], indexedDBThrows = false }) {
   const strip = doc.createElement('div');
   const live = doc.createElement('div');
   doc.byId['notice-live'] = live;
-  return { queue: win.PinalertQueue, strip, store: idb.data, idb: idb.control, submitted, toasts, doc };
+  return { queue: win.PinalertQueue, strip, store: idb.data, idb: idb.control, submitted, toasts, doc, timers };
+}
+
+// wakeTimers returns the wake timers still set, made from index from on. The
+// announcement timer (50 ms) is left out.
+function wakeTimers(env, from = 0) {
+  return env.timers.slice(from).filter((t) => !t.cleared && t.delay >= 1000);
 }
 
 async function settle() {
@@ -650,6 +662,84 @@ await test('a report another tab is sending right now is never discarded (WR-04)
   assert.equal(question.rowEl.querySelector('.queue-strip__confirm'), null, 'the question closes');
   assert.equal(env.strip.querySelector('.queue-strip__status').textContent, 'Sending.');
   assert.equal(await env.queue.discard(id), false);
+});
+
+await test('no wake timer for a due row that is stale, and no reopen on every pass (WR-07)', async () => {
+  const id = 'req-vvvvvvvvvvvvvvvv-22';
+  const env = loadQueue({
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z', {
+      status: 'blocked', next_try_at: Date.now() + 20
+    })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  assert.equal(env.submitted.length, 0, 'not due yet at mount');
+  await new Promise((resolve) => setTimeout(resolve, 40));
+
+  // The store cannot be read now, so the due row is shown from the last good
+  // read and is never sent.
+  env.idb.failOpen = true;
+  env.idb.closeAll();
+  const mark = env.timers.length;
+  await env.queue.flush();
+  await settle();
+  assert.equal(env.submitted.length, 0);
+  assert.deepEqual(wakeTimers(env, mark), [], 'no wake timer for a row that cannot be sent');
+  const opens = env.idb.opens;
+
+  // A pass right after does not open the store again.
+  await env.queue.flush();
+  await env.queue.flush();
+  await settle();
+  assert.equal(env.idb.opens, opens, 'the reopen waits before it is tried again');
+});
+
+await test('no wake timer while the Discard question of the due row is open (WR-07)', async () => {
+  const id = 'req-wwwwwwwwwwwwwwww-23';
+  const env = loadQueue({
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z', {
+      status: 'blocked', next_try_at: Date.now() + 20
+    })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  const rowEl = env.strip.querySelector('.queue-strip__row');
+  rowEl.querySelector('.queue-strip__discard').handlers.click.forEach((fn) => fn());
+  const keep = rowEl.querySelector('.queue-strip__confirm').children.find((el) => el.textContent === 'Keep saved report');
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  const mark = env.timers.length;
+  await env.queue.flush();
+  await settle();
+  assert.equal(env.submitted.length, 0, 'not sent while the question is open');
+  assert.deepEqual(wakeTimers(env, mark), [], 'no wake timer while the question is open');
+
+  // Closing the question sets the wake again.
+  const closeMark = env.timers.length;
+  keep.handlers.click.forEach((fn) => fn());
+  assert.equal(wakeTimers(env, closeMark).length, 1);
+});
+
+await test('a wake that sends nothing waits twice as long each time, up to a minute (WR-07)', async () => {
+  const id = 'req-xxxxxxxxxxxxxxxx-24';
+  const env = loadQueue({
+    lockHeldElsewhere: true,
+    records: [record(id, '7', 'water over the road', '2026-10-01T00:00:00.000Z', {
+      status: 'blocked', next_try_at: Date.now() - 1000
+    })]
+  });
+  env.queue.mount({ strip: env.strip, accountId: '7', headingLevel: 3 });
+  await settle();
+  const delays = [];
+  for (let i = 0; i < 9; i++) {
+    const live = wakeTimers(env);
+    assert.equal(live.length, 1, 'one wake timer at a time');
+    delays.push(live[0].delay);
+    live[0].cleared = true;
+    live[0].fn();
+    await settle();
+  }
+  assert.equal(env.submitted.length, 0);
+  assert.deepEqual(delays, [1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000, 60000]);
 });
 
 await test('a sent report never comes back when the read after the send fails (WR-08)', async () => {

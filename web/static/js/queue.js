@@ -33,6 +33,9 @@
   var QUEUE_FLUSH_MS = 30000;
   var WAIT_TICK_MS = 60000;
   var SENDING_LEASE_MS = 15000;
+  // The longest wait between two wakes that sent nothing, and between two
+  // tries to open a store that cannot be read (WR-07).
+  var MAX_BACKOFF_MS = 60000;
   var MIN_BLOCKED_WAIT_S = 5;
   var LONG_TOAST_MS = 6000;
   var COUNT_EVENT = 'pinalert-queue-count';
@@ -124,6 +127,13 @@
   var flushPromise = null;
   var passRunning = false;
   var wakeTimer = null;
+  // wakeBackoffMs is the wait before the next wake for a row that is due but
+  // was not sent (0 while no such row). reopenWaitMs and reopenNotBefore hold
+  // back an automatic pass while the store cannot be read, so the store is not
+  // opened again on every pass; a good read clears both (WR-07).
+  var wakeBackoffMs = 0;
+  var reopenWaitMs = 0;
+  var reopenNotBefore = 0;
   var sessionLapsed = false;
   var persistAsked = false;
   var questionSeq = 0;
@@ -260,6 +270,8 @@
       } else {
         storeUnreadable = false;
         lastStored = stored;
+        reopenWaitMs = 0;
+        reopenNotBefore = 0;
       }
       var byId = {};
       stored.forEach(function (record) {
@@ -622,6 +634,13 @@
     if (flushPromise) {
       return flushPromise;
     }
+    // While the store cannot be read, an automatic pass (the timer, the
+    // interval, the online event) waits before it opens the store again: 1
+    // second after the first failed pass, then 2, 4 and so on, up to a minute.
+    // A save, a discard and Send now still try at once (WR-07).
+    if (manual !== true && storeUnreadable && Date.now() < reopenNotBefore) {
+      return Promise.resolve();
+    }
     var pass = function () {
       return storeReady.then(function () {
         return loadRows();
@@ -675,6 +694,10 @@
     var done = function () {
       flushPromise = null;
       passRunning = false;
+      if (storeUnreadable) {
+        reopenWaitMs = Math.min(MAX_BACKOFF_MS, reopenWaitMs > 0 ? 2 * reopenWaitMs : 1000);
+        reopenNotBefore = Date.now() + reopenWaitMs;
+      }
       renderStrip();
       scheduleWake();
     };
@@ -789,25 +812,48 @@
     });
   }
 
+  // scheduleWake sets one timer for the Blocked row whose wait ends first. A
+  // row a pass would skip (shown from the last good read while the store
+  // cannot be read, or with its Discard question open) sets none; the question
+  // sets it again when it closes. A row whose wait is over but that a wake did
+  // not send (another tab holds the flush lock, say) is tried after 1 second,
+  // then 2, 4 and so on, up to a minute (WR-07). A row being sent wakes the
+  // page when its lease ends.
   function scheduleWake() {
     if (wakeTimer !== null) {
       window.clearTimeout(wakeTimer);
       wakeTimer = null;
     }
+    if (sessionLapsed) {
+      return;
+    }
     var earliest = null;
     rows.forEach(function (record) {
-      if (record.status === STATUS_BLOCKED && belongsToAccount(record)) {
-        if (earliest === null || record.next_try_at < earliest) {
-          earliest = record.next_try_at;
-        }
+      if (record.status !== STATUS_BLOCKED || !belongsToAccount(record) || isStale(record) ||
+          questionOpen(record.request_id)) {
+        return;
+      }
+      var at = Math.max(record.next_try_at, record.sending_until || 0);
+      if (earliest === null || at < earliest) {
+        earliest = at;
       }
     });
     if (earliest === null) {
+      wakeBackoffMs = 0;
       return;
     }
-    var delay = Math.min(QUEUE_FLUSH_MS, Math.max(1000, earliest - Date.now()));
+    var now = Date.now();
+    var delay;
+    if (earliest > now) {
+      wakeBackoffMs = 0;
+      delay = Math.min(QUEUE_FLUSH_MS, Math.max(1000, earliest - now));
+    } else {
+      delay = wakeBackoffMs > 0 ? wakeBackoffMs : 1000;
+    }
     wakeTimer = window.setTimeout(function () {
       wakeTimer = null;
+      // The next wake for a row still due after this one waits twice as long.
+      wakeBackoffMs = Math.min(MAX_BACKOFF_MS, 2 * (wakeBackoffMs > 0 ? wakeBackoffMs : 1000));
       flush();
     }, delay);
   }
