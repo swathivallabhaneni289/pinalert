@@ -52,11 +52,10 @@ optional, with Skip). Phase 8 turns step 4 into a required sign up: Username wit
 Skip (sketch 008, "Owner decisions"). The globe sits behind the sign in screens only (Sign in, Check your inbox, and in
 this sketch Email verified, see item 18 and question 6); the first time flow at `/welcome` does not share it.
 
-Planned (owner, 2026-10-17, `.planning/ROADMAP.md` Phase 8 scope note 6): the sign in page gets two clear choices,
-Create account and Sign in. Both ask only for an email and send the same one time link, with no passwords, and Create
-account leads into the first time flow. Phase 8 builds it together with step 4 and shows the look in a mockup first.
-This sketch keeps today's single card, because that is what exists; the globe sits behind or beside whichever card the
-page ends up with.
+Planned: Phase 8 changes how people sign up and sign in, and the owner is still settling the details on 2026-10-17. The
+current decision is `.planning/ROADMAP.md` Phase 8 scope note 6; it is not repeated here so it cannot go stale. This
+sketch keeps today's single card, because that is what exists; the globe sits behind or beside whichever card the page
+ends up with.
 
 ## Variants
 
