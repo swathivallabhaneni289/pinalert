@@ -52,6 +52,12 @@ optional, with Skip). Phase 8 turns step 4 into a required sign up: Username wit
 Skip (sketch 008, "Owner decisions"). The globe sits behind the sign in screens only (Sign in, Check your inbox, and in
 this sketch Email verified, see item 18 and question 6); the first time flow at `/welcome` does not share it.
 
+Planned (owner, 2026-10-17, `.planning/ROADMAP.md` Phase 8 scope note 6): the sign in page gets two clear choices,
+Create account and Sign in. Both ask only for an email and send the same one time link, with no passwords, and Create
+account leads into the first time flow. Phase 8 builds it together with step 4 and shows the look in a mockup first.
+This sketch keeps today's single card, because that is what exists; the globe sits behind or beside whichever card the
+page ends up with.
+
 ## Variants
 
 - **A, behind the card (default).** The Phase 1.1 place (D-06). The globe sits behind the centred card, dimmed on its
@@ -366,7 +372,9 @@ nothing changed:
    a 375 by 548 or 320 by 568 screen the email field and Send start below the first screen (the email field at 619px and
    607px) and need a scroll. On a 390 by 844 phone everything down to Send fits.
 2. **Which phase builds it?** Recommendation: **Phase 5**, which already changes the sign in screen with the Demo button
-   and the explainer video link (`.planning/ROADMAP.md:592,616,619`).
+   and the explainer video link (`.planning/ROADMAP.md:592,616,619`). Phase 8 now changes this page too (Create account
+   and Sign in, scope note 6), so whichever of 5 and 8 is planned second builds on the other's `login_gate.html.tmpl`,
+   and Phase 8's mockup should show the globe as Phase 5 built it.
 3. **Country borders?** The globe starts on India, and the map data's borders are not India's official map. Read from the
    tile the globe uses (2026-10-17): in Kashmir the border follows the Line of Control as a plain country border, and the
    line between Ladakh and Aksai Chin, with short stretches further south east, is marked disputed and drawn dotted.
