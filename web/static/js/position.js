@@ -9,13 +9,14 @@
 //
 // A fix belongs to one account (code review part 2, WR-01). The page says which
 // account it is for in its data-account-id attribute, the same attribute the
-// offline report queue keys itself by. read returns a fix only when it was saved
-// by that account; a fix saved by another account, or by a page that could not
-// say whose it was (the first time flow, the Low data view, a browser from before
-// this rule), is not returned and is removed, so the next person on a shared
-// phone never gets the place the last one was at. Only this one key is ever
-// removed: the offline report queue and the theme choice are not touched. No age
-// limit is added.
+// offline report queue keys itself by. read returns a fix saved by that account.
+// A fix saved by another account is not returned and is removed, so the next
+// person on a shared phone never gets the place the last one was at. A fix with
+// no owner (written by the Low data view, by the first time flow, whose page has
+// no account id, or by a browser from before this rule) is taken over by the
+// first account that reads it and belongs to that account from then on. Only
+// this one key is ever removed: the offline report queue and the theme choice
+// are not touched. No age limit is added.
 //
 // Storage can throw (private browsing, a full store, a blocked cookie setting),
 // so every access is guarded: an unreadable store reads as no position, and a
@@ -81,12 +82,29 @@
       // its own. It reads nothing and leaves the value for a page that can.
       return null;
     }
-    if (parsed.account !== account) {
+    var savedAt = typeof parsed.savedAt === 'number' && isFinite(parsed.savedAt) ? parsed.savedAt : null;
+    if (parsed.account === undefined || parsed.account === '') {
+      // No owner: the Low data view, the first time flow (its page has no account
+      // id) or a browser from before this rule wrote it. The first account that
+      // reads it takes it over, so a second account never gets it from the first.
+      store(parsed.lat, parsed.lon, savedAt, account);
+    } else if (parsed.account !== account) {
       forget();
       return null;
     }
-    var savedAt = typeof parsed.savedAt === 'number' && isFinite(parsed.savedAt) ? parsed.savedAt : null;
     return { lat: parsed.lat, lon: parsed.lon, savedAt: savedAt };
+  }
+
+  // store writes the one value under the shared key. It answers whether it was
+  // stored.
+  function store(lat, lon, savedAt, account) {
+    try {
+      window.localStorage.setItem(STORED_POSITION_KEY,
+        JSON.stringify({ lat: lat, lon: lon, savedAt: savedAt, account: account }));
+    } catch (err) {
+      return false;
+    }
+    return true;
   }
 
   // save remembers a fix for the account of this page and returns true when it
@@ -97,13 +115,7 @@
     if (!validPair(lat, lon)) {
       return false;
     }
-    try {
-      window.localStorage.setItem(STORED_POSITION_KEY,
-        JSON.stringify({ lat: lat, lon: lon, savedAt: Date.now(), account: currentAccount() }));
-    } catch (err) {
-      return false;
-    }
-    return true;
+    return store(lat, lon, Date.now(), currentAccount());
   }
 
   window.PinalertPosition = { read: read, save: save };

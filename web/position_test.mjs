@@ -93,15 +93,32 @@ test('WR-01: the same account still reads its own fix after a log out and back i
   assert.equal(load(storage, '7').read().lat, 12.97);
 });
 
-test('WR-01: a value with no account (the Low data view, the first time flow, an old browser) is not read and is removed', () => {
+test('WR-01: a value with no owner (the Low data view, the first time flow, an old browser) is taken over by the first account that reads it', () => {
   const storage = memoryStorage({ [KEY]: JSON.stringify({ lat: 17.4, lon: 78.5, savedAt: 1760000000000 }) });
-  assert.equal(load(storage, '7').read(), null);
+  const first = load(storage, '7').read();
+  assert.deepEqual({ ...first }, { lat: 17.4, lon: 78.5, savedAt: 1760000000000 });
+  const kept = JSON.parse(storage.data.get(KEY));
+  assert.equal(kept.account, '7', 'it now belongs to the account that read it');
+  assert.equal(kept.savedAt, 1760000000000, 'with its own time, not a new one');
+  assert.equal(load(storage, '8').read(), null, 'a second account never gets it from the first');
   assert.equal(storage.data.has(KEY), false);
 
   const flow = memoryStorage();
   assert.equal(load(flow, null).save(12.97, 77.59), true, 'the first time flow can still save');
   assert.equal(JSON.parse(flow.data.get(KEY)).account, '', 'but it cannot say whose fix it is');
-  assert.equal(load(flow, '7').read(), null);
+  assert.equal(load(flow, '7').read().lat, 12.97, 'the account that then reads it takes it over');
+  assert.equal(JSON.parse(flow.data.get(KEY)).account, '7');
+  assert.equal(load(flow, '8').read(), null);
+});
+
+test('WR-01: taking over an ownerless value that has no time keeps it without one, and a blocked store still reads it', () => {
+  const storage = memoryStorage({ [KEY]: JSON.stringify({ lat: 17.4, lon: 78.5 }) });
+  assert.equal(load(storage, '7').read().savedAt, null);
+  assert.equal(JSON.parse(storage.data.get(KEY)).account, '7');
+
+  const blocked = memoryStorage({ [KEY]: JSON.stringify({ lat: 17.4, lon: 78.5, savedAt: 5 }) });
+  blocked.setItem = () => { throw new Error('blocked'); };
+  assert.equal(load(blocked, '7').read().lat, 17.4);
 });
 
 test('WR-01: a page that does not say which account it is for reads nothing and removes nothing', () => {
