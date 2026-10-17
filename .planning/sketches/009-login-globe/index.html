@@ -153,13 +153,11 @@ body {
 @media (prefers-reduced-motion: reduce) { .globe-area.is-ready .globe-bg { animation: none; } }
 /* The credit is in the page from the first paint, so the card never moves when the globe
    arrives. visibility: hidden keeps its space but not its links (no Tab stop, no tap) until
-   the same is-ready class shows it with the globe. 14px text. Each link's tap area is 44px tall
-   through padding on an inline link, so a credit that wraps on a phone keeps normal line spacing
-   instead of two 44px rows with a gap between them. */
+   the same is-ready class shows it with the globe. 14px and 44px links, like .login-ways__links a. */
 .globe-credit { visibility: hidden; pointer-events: auto; margin: 0; font-size: var(--font-size-label);
   line-height: var(--line-height-label); color: var(--color-text); }
 .globe-area.is-ready .globe-credit { visibility: visible; }
-.globe-credit a { display: inline; padding-block: 14px; color: inherit; }
+.globe-credit a { display: inline-flex; align-items: center; min-height: var(--touch-target-min); color: inherit; }
 
 /* A: behind the card (Phase 1.1 D-06). The globe fills the area behind the
    centred card, dimmed on the wrapper; the card stays opaque. */

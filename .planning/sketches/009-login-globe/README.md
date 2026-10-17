@@ -64,7 +64,7 @@ this sketch Email verified, see item 18 and question 6); the first time flow at 
   whole sphere shows.
 - **B, beside the card.** The globe at full strength (90 percent in dark). Laptop: globe on the left (516px on a 1440 by
   900 window), card on the right. Phone: globe at the top (242px on a 390px phone) with its credit under it, then the
-  card; the Low data panel needs a short scroll (the page is 928px tall on a 390 by 844 phone).
+  card; the Low data panel needs a short scroll (the page is 978px tall on a 390 by 844 phone).
 - Both have the same globe, speed, credits and behaviour on the phone and the laptop; only the place and the size differ.
 
 ## What is on the page
@@ -170,11 +170,10 @@ Screenshots stayed in the session scratchpad, never in the repo.
   - The globe turned at 3.00 degrees a second in B on the phone and 3.02 on the laptop (longitude 70.4 to 59.4 in
     3.7 seconds), and the drawn pixels changed between the first and last reads.
   - The card, the Send button and the Low data panel kept the same place from the first paint to "turning", in A and B,
-    on 390 by 844 and 1440 by 900 (phone B: card at 338px throughout, page 928px tall, after the credit change below).
-  - Credit line tidied after the review: the links are inline with 14px padding above and below, so each tap area is
-    45px tall while a credit that wraps on a phone keeps normal line spacing (two lines take 38px, not 88px with a gap
-    between them). Phone B card top, before the globe loads and while it turns: 338px on 390 by 844, 328px on 375 by
-    548, 292px on 320 by 568, the same both times; no sideways scroll.
+    on 390 by 844 and 1440 by 900 (phone B: card at 388px throughout, page 978px tall).
+  - Tried and put back: inline credit links with 14px padding above and below, to close the gap between the two
+    wrapped lines on a phone. Each tap area measured 45px tall, but the second line's padding covered the first line's
+    words: a tap on the middle of "OpenFreeMap" (390 by 844, B) hit the OpenStreetMap link.
   - In A on a phone the credit now sits over the dimmed globe, not on plain page. Its weakest contrast, dark mode over
     land, is about 4.9:1, computed from the colours and the 40 percent dim, not sampled.
   - A map error before load, with an address half typed, moved nothing and kept the focus and the text.
@@ -281,9 +280,10 @@ Everything the real change has to handle. Line numbers are from main on 2026-10-
 9. **Credits.** `attributionControl: false`, and a credit line outside the `aria-hidden`, `pointer-events: none`, faded
    wrapper (`login_gate.html.tmpl:14`, `auth.css:35-44`), with the same three links as `map.js:307-311`, built with
    `createElement` and `textContent` (`web/js_sinks_contract_test.go:195-198`). The credit uses the 14px label size
-   (12px is kept to the closed list, `.planning/phases/03.4-app-layout/03.4-UI-SPEC.md:169`), and each link gets a 44px
-   tall tap area from padding on an inline link. A 44px `min-height`, as on `.login-ways__links a` (`auth.css:280-289`),
-   makes each wrapped line of the credit 44px tall, with a visible gap on phones.
+   (12px is kept to the closed list, `.planning/phases/03.4-app-layout/03.4-UI-SPEC.md:169`) and 44px tall links, like
+   `.login-ways__links a` (`auth.css:280-289`). On a phone the credit wraps to two 44px rows with a gap between them.
+   Do not close the gap with padding on inline links: the rows' tap areas then overlap, and a tap on the first line can
+   open the second line's link (measured, see Checks run).
 10. **The form first, one map.** Create the map only after the page has loaded, and never create it again when the card
     swaps (`01.1-UI-SPEC.md:259-268`, `auth.js:109-114`).
 11. **Size from the sign in area.** Never a bare `100vh` or `100dvh` on a wrapper
@@ -339,13 +339,32 @@ Everything the real change has to handle. Line numbers are from main on 2026-10-
   because `.login-card p` (`auth.css:97`) outranks `.auth-error` (`auth.css:201`). The sketch keeps the grey to match
   today.
 
+More, from reading the code for this sketch (2026-10-17, read only, none of it opened in a browser). Recorded here,
+nothing changed:
+
+- Pressing Enter in the email field does nothing. The field is not inside a form; only the Send button is wired
+  (`web/static/js/auth.js`), so the browser never checks the field either and an empty address comes back from the
+  server as "Enter a valid email address."
+- "Check again" never lets anyone in. It reloads `/login?sent=<email>`, and `/login` never looks at the session, so even
+  after the email link has signed this browser in, it reloads the same waiting panel. The way in is the tab the email
+  link opened, or the main address. For the same reason a signed in person who opens `/login` sees the sign in form.
+- A refused Resend shows nothing. Its error line is inside the sign in card, which is hidden while Check your inbox
+  shows, so "Too many requests. Try again in a minute." never appears there.
+- The 5 minute notice says "This link has expired. Request a new one above.", but Resend link sits below it.
+- After a reload (Check again) no timers run: Resend is ready at once and the 5 minute notice never appears.
+- The waiting panel has no way back to change a mistyped address.
+- "Send new link" on the expired, already used and not valid pages opens `/login` with an empty field; the address is
+  not carried over (`web/templates/verify_outcome.html.tmpl`).
+- "This link was already used" also shows when the same browser was just signed in by that link, for example when the
+  email link is opened twice.
+
 ## Open questions for the owner
 
 1. **A or B?** Recommendation: **B**. On a phone the card covers nearly all of A's globe (only its top and bottom edges
    show, and only because the sketch makes it wider than the phone), while B shows the whole Earth on both sizes, and the
    phone is the main device. One cost of B on small phones: the globe and its two line credit push the card down, so on
-   a 375 by 548 or 320 by 568 screen the email field and Send sit at or below the bottom of the first screen (the email
-   field starts at 569px and 557px) and need a scroll. On a 390 by 844 phone everything down to Send fits.
+   a 375 by 548 or 320 by 568 screen the email field and Send start below the first screen (the email field at 619px and
+   607px) and need a scroll. On a 390 by 844 phone everything down to Send fits.
 2. **Which phase builds it?** Recommendation: **Phase 5**, which already changes the sign in screen with the Demo button
    and the explainer video link (`.planning/ROADMAP.md:592,616,619`).
 3. **Country borders?** The globe starts on India, and the map data's borders are not India's official map. Read from the
