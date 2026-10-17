@@ -563,6 +563,12 @@ Plans:
   4. Care points: alert volume (cap per person per hour and per report), the farmable Reliable tag (the Reliable reporter kind is off by default; TRUSTX-03 burst detection is still a dependency before that rule reaches push, so the plan either records the gap with per reporter caps or holds the kind, see 03.3-CONTEXT), and a notification must be sent from the same decision the feed uses.
   5. Email digests (999.4) and official alerts by push (Phase 5 content) stay out of this phase.
 
+**Owner decisions (2026-10-18), details in 03.3-CONTEXT "Owner amendments, 2026-10-18":**
+
+  - No buzzes anywhere: every phone notification is silent, no sound and no vibration, the critical one included (iPhone's own settings decide the sound; the site can only ask for silence).
+  - The Reliable reporter kind is built, not held: a quiet note at posting, marked "Not confirmed yet" and updated in place once people nearby confirm, on Phase 3.2's single rule (03.2 D-29). This settles scope note 4's hold or build choice.
+  - "Someone I follow posts" is not a Settings switch: Phase 9 puts a per person Notify me bell on the followed person's profile.
+
 **Plans:** 0 plans
 
 Plans:
@@ -615,7 +621,7 @@ Plans:
 **Owner decisions (2026-10-16):**
 
   - Demo: a Demo button on the login screen opens a sandboxed practice copy with no login, so nothing touches real reports or ratings. The sample is the 2024 Vijayawada floods along the Budameru, with real place names on the map and made-up reports, each visibly marked Demo, and no real people or real reports.
-  - Severe or Extreme official alerts (NDMA SACHET, IMD, CWC) covering the person's home area buzz the phone, on by default with a switch in Settings. The push plumbing comes from Phase 3.3; this phase adds the Settings row and turns the alerts on.
+  - Severe or Extreme official alerts (NDMA SACHET, IMD, CWC) covering the person's home area buzz the phone, on by default with a switch in Settings. The push plumbing comes from Phase 3.3; this phase adds the Settings row and turns the alerts on. (Amended 2026-10-18 by the owner: no buzzes anywhere, so this notification is silent, see 05-CONTEXT D-11.)
   - Official alerts is a main place of the app, built by Phase 3.4 and filled by this phase, in place of the Alerts tab in the list panel that scope note 4 describes.
   - The explainer video comes after the project is finished: Claude designs and renders it (60 to 90 seconds, captions, the app's look, the house rules), the owner approves it, and it goes on YouTube as unlisted, linked next to the Demo button on the login screen and in the README.
 
@@ -623,6 +629,14 @@ Plans:
 
   - The sign in page globe is built in this phase ("add that task to phase 5"). From the clickable mockup `.planning/sketches/009-login-globe/`: placement A, the globe behind the card ("i like A"), and the realistic Earth, NASA Blue Marble pictures from NASA GIBS ("yes i like the earth"; free, no key, a credit line, no uptime guarantee), drawn by the maplibre-gl 5.24.0 the map page already loads, one turn every 2 minutes with India in the middle at the start. It overrides the Phase 1.1 UI-SPEC's ban on WebGL and CDN libraries on the sign in page (todo `.planning/todos/pending/2026-09-16-real-3d-webgl-globe-on-login-screen.md`). The sketch README's "For the build" list (21 items: load order, Low data, failure paths, reduce motion, credits, the tests that pin today's globe, CSP, Policy wording) is the starting point for planning.
   - Engineering notes, not the owner's words: NASA's tile server forbids browser caching, so the pictures (measured 100 to 250 KB in the first seconds, about 380 KB for a full turn on a laptop) download on every visit; whether our server may keep a copy is checked against NASA's terms at planning (sketch README item 21). Phase 8 later replaces the sign in card (note 6, Create account and Sign in with a password); the globe sits behind whichever card is there, so whichever of 5 and 8 is planned second builds on the other's `login_gate.html.tmpl`.
+
+**Owner decisions (2026-10-17 and 2026-10-18 discuss round), details in `05-CONTEXT.md`:**
+
+  - In the Demo a visitor can do everything on pretend data, including posting a practice report that pretend neighbours confirm within seconds; nothing is saved.
+  - The Demo is offered as "Try the demo · Disclaimer · Policy" on the sign in screen and as a button beside Continue on step 1 Welcome of the first-time flow.
+  - Only the Demo, Disclaimer, Policy and Phase 8's shared report page open without an account.
+  - The official alert banner stays at the top of the Nearby list as one slim still line (level icon, "Cyclone warning · Krishna district", chevron), not over the map.
+  - Official alert phone notifications are silent.
 
 **Plans**: TBD
 **UI hint**: yes
@@ -887,6 +901,11 @@ Plans:
   5. Owner decisions, 2026-10-17, from the clickable mockup (`.planning/sketches/008-report-page/`, inside the approved 3.4 layout), **locked by the owner the same day** ("yes i like it lets lock this"; changes go back to the owner first): on the laptop the report opens beside the map in place of the Nearby list (B), with every pin still on the map; the phone opens a full screen page. The page uses the popup's trust block as shipped (sketch 003 H). Comments are wanted, shown clearly on the report page in an Instagram like layout, with a thumbs up like after Reply instead of a heart (one per account, comments only, never feeding any trust number): the same list on the phone and the laptop under a "Comments" heading, each with a round picture, username, time, words and Reply, replies folded behind "View N replies" with one level only, and one box where Reply fills in @username; on the laptop the box is pinned to the bottom of the panel, on the phone it sits after the last comment. A phone preview with a separate comments sheet was tried and dropped as clumsy. Tapping a pin on the map opens its report straight away, on the phone and the laptop alike; on the laptop it opens beside the map, and the phone report page's map keeps every pin so another pin opens that report, the same as the laptop. Names: every commenter has a username that everyone sees, as on Instagram; the Username is unique and public, the Name stays optional and profile only (Phase 9). The username is editable in Settings and checks as you type (available, taken, wrong characters, or kept for official use such as police, ndma, imd, govt), and is screened like comments. Sign up requires all three (owner, 2026-10-17): step 4 of the first-time flow, which runs after the first sign in, asks for the Username (live check), the Name and the Home area (a town or area, never a street), with no Skip; sign in is required to view anything since Phase 1.1 (router: GET / and GET /api/reports are gated), so this means everyone fills in all three before seeing any report, and the owner was asked on 2026-10-17 whether that still stands (an earlier note here said reading stays open without an account, which was wrong); earlier accounts fill in the missing ones once at their next sign in. This phase does it all at once (agreed with the 3.4 session on 2026-10-17): 3.4 stays as built with Skip and an optional name and home area (03.4 D-27 step 4, D-24b), and this phase turns step 4 required for all three fields, adds the username and its check, and runs the one-time fill-in for earlier accounts, so step 4 changes once and nobody fills it in twice.
   6. Sign up and sign in with a password, owner decisions 2026-10-17 (this note was first written the same evening with an email link and no passwords, commit 41c904b; the owner then changed it). The owner's words: "i want a clean sign up without complicating anything it should be an easy way to sign up and sign in", then "lets not have any link. lets just have a password", then "lets do what you recommended - check email once at sign uo". So: the sign in page offers two clear choices, Create account and Sign in, replacing today's single "Verify your email to continue" form. Create account asks for an email and a password; the email is checked once, at sign up, with a 6-digit code sent to it that the person types in (no link to click), and then the first-time flow runs (step 4 as in note 5). Sign in asks for the email and the password, nothing else. A forgotten password is reset with the same kind of typed code. No emailed link anywhere. This replaces the clickable link from Phase 1.1 (IDENT-01 in `REQUIREMENTS.md` and the Access model in `PROJECT.md` are updated when this is planned; IDENT-01's original assumption was a typed code). Built with this phase's step 4, and planning may split the sign in change into its own phase because it replaces the whole sign in; how the page looks is shown to the owner in a mockup before building. Engineering notes, not the owner's words: passwords are stored only as a slow hash (argon2id or bcrypt); wrong passwords are rate limited per account and per device, mindful of shared carrier IPs (CGNAT); the sign in error never says whether the email has an account ("Email or password is wrong"), and Create account with a known email shows the same "we sent a code" screen while the email itself says the account exists; codes are short lived, single use, limited tries and stored hashed; accounts made with the old link set a password once at their next sign in through the same code, folded into note 5's one-time fill-in so nobody is stopped twice. The sign in rough edges listed in sketch 009 (`.planning/sketches/009-login-globe/README.md`, "More, from reading the code") mostly belong to the link flow and go away with it; the owner decides on any left when this phase is planned.
 
+**Owner decisions (2026-10-17 and 2026-10-18 discuss round), details in `08-CONTEXT.md`:**
+
+  - A shared link opens a small public page for that one report with no sign in: what it is, the rough area, whether it is still happening, confirmed, disputed or over, how many nearby confirmed it and when; never comments, names or the exact spot; "Sign in to see more" at the bottom.
+  - Step 4 requirement confirmed: Username, Name and Home area are all required with no Skip (the owner kept Name required, Instagram style), and an account stays required to use the site.
+
 **Plans:** 0 plans
 
 Plans:
@@ -920,6 +939,12 @@ Plans:
   - My profile sits in the laptop person menu, and on the phone as View my profile in Settings, About you.
   - Let others follow me, Following, Followers and Blocked people are rows in Settings, People and reports.
   - Owner, 2026-10-17 ("the username"): the username from Phase 8 (unique and public, scope note 5 there) is also how people appear here: on the profile and in the Followers and Following lists. This supersedes "there is no nickname" above; the Name stays a profile only detail. People without their own opted in profile still appear in the lists only as a number.
+
+**Owner decisions (2026-10-17 and 2026-10-18 discuss round), details in `09-CONTEXT.md`:**
+
+  - The Reliable reporter tag starts at 3.5 combined stars (chosen over the advice of 4), which settles success criterion 2's cutoff.
+  - Reports from people you follow are seen on their profile pages, the Instagram way (Followers and Following counts at the top, tap a name to open that person's recent reports with distances), not in a Nearby Show choice; this settles success criterion 3's placement.
+  - A Notify me bell (one on/off, off by default) on a followed person's profile replaces the Settings switch; a quiet note goes out when they post, "Not confirmed yet" until people nearby confirm, on Phase 3.2's single rule, replacing success criterion 4's "other reports only once Live". No buzzes: every phone notification is silent.
 
 **Plans:** 0 plans
 

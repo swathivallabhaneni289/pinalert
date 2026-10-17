@@ -24,3 +24,7 @@ owner: tabs Active, Past and Official alerts, with a choice inside Active of All
 Disputed. Keep All as the default, so a new report that nobody has confirmed yet (a fresh rescue
 request) is never hidden. Until then the Phase 3.1 tabs stay as built. Touches Phase 3.1 decisions
 D-07 to D-13 (tabs, and the map following the tab) and the 3.1 UAT item 3 (D-13).
+
+## Resolved 2026-10-18
+
+Settled by Phase 3.4: Nearby has a Show: All, Confirmed, Disputed menu and Official alerts is a main place. Noted in `.planning/phases/05-official-feed-demo-mode/05-CONTEXT.md` (Folded Todos).

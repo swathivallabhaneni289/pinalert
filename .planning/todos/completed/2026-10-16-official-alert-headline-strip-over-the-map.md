@@ -27,3 +27,7 @@ Settle in the Phase 5 discussion, with the owner looking at a test copy on a pho
   expiry (criterion 2), and never looks current when the feed is stale (criterion 3).
 - It must not look like the unofficial bar; the two say opposite things (official versus unofficial).
 Related: the pending todo on feed tabs and official alerts (2026-10-16).
+
+## Resolved 2026-10-18
+
+Settled in the Phase 5 discuss round: the banner stays at the top of the Nearby list as one slim still line (level icon, "Cyclone warning · Krishna district", chevron), not over the map. See `.planning/phases/05-official-feed-demo-mode/05-CONTEXT.md` D-07.
