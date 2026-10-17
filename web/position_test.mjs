@@ -103,12 +103,28 @@ test('WR-01: a value with no owner (the Low data view, the first time flow, an o
   assert.equal(load(storage, '8').read(), null, 'a second account never gets it from the first');
   assert.equal(storage.data.has(KEY), false);
 
+  // Amended 2026-10-17 by Phase 3.4 plan 27 (skeptic S-2): the first time flow
+  // page now carries data-account-id, so no page writes an ownerless value any
+  // more. The take over branch above stays for values saved before this plan.
   const flow = memoryStorage();
-  assert.equal(load(flow, null).save(12.97, 77.59), true, 'the first time flow can still save');
-  assert.equal(JSON.parse(flow.data.get(KEY)).account, '', 'but it cannot say whose fix it is');
-  assert.equal(load(flow, '7').read().lat, 12.97, 'the account that then reads it takes it over');
-  assert.equal(JSON.parse(flow.data.get(KEY)).account, '7');
+  assert.equal(load(flow, '7').save(12.97, 77.59), true, 'the first time flow saves for its account');
+  assert.equal(JSON.parse(flow.data.get(KEY)).account, '7', 'and says whose fix it is');
+  assert.equal(load(flow, '7').read().lat, 12.97);
   assert.equal(load(flow, '8').read(), null);
+});
+
+test('S-2: a page that carries no account id writes nothing and answers false', () => {
+  const storage = memoryStorage();
+  assert.equal(load(storage, null).save(12.97, 77.59), false);
+  assert.equal(storage.data.size, 0, 'nothing is written without an owner');
+  for (const odd of ['', '0', '-3', 'abc', '1.5', '7 ']) {
+    assert.equal(load(storage, odd).save(12.97, 77.59), false, 'account "' + odd + '" is not an id');
+    assert.equal(storage.data.size, 0);
+  }
+  // A value another page saved is left alone by the refused save.
+  const kept = memoryStorage({ [KEY]: JSON.stringify({ lat: 17.4, lon: 78.5, savedAt: 5, account: '7' }) });
+  assert.equal(load(kept, null).save(12.97, 77.59), false);
+  assert.equal(JSON.parse(kept.data.get(KEY)).lat, 17.4);
 });
 
 test('WR-01: taking over an ownerless value that has no time keeps it without one, and a blocked store still reads it', () => {

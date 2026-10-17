@@ -8,6 +8,7 @@ package handlers_test
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -372,5 +373,38 @@ func TestWelcomeEscapesStoredValues(t *testing.T) {
 	// hidden until script shows it for a step 3 search.
 	if !strings.Contains(body, `id="welcome-home-prefilled" hidden`) {
 		t.Errorf("the prefilled line must start hidden")
+	}
+}
+
+// TestWelcomeRendersOwnAccountID pins skeptic S-2 (Phase 3.4 plan 27): the
+// first time flow page carries the signed in account's own numeric id on its
+// root element, so the position it saves in step 3 has an owner. It is a
+// number, never the address, and differs per account.
+func TestWelcomeRendersOwnAccountID(t *testing.T) {
+	base, newClient, pool := welcomeServer(t)
+	const emailA, emailB = "welcome-id-a@example.com", "welcome-id-b@example.com"
+	_, stillA := newClient(emailA)
+	_, stillB := newClient(emailB)
+	idA := p25AccountID(t, pool, emailA)
+	idB := p25AccountID(t, pool, emailB)
+	if idA == idB {
+		t.Fatalf("two accounts share the id %d", idA)
+	}
+
+	_, bodyA := welcomeGet(t, stillA, base, "/welcome")
+	tagA := p25OpeningTag(t, bodyA, `<div class="welcome" id="welcome"`)
+	wantA := `data-account-id="` + strconv.FormatInt(idA, 10) + `"`
+	if !strings.Contains(tagA, wantA) {
+		t.Errorf("account A's flow root %q does not carry %s", tagA, wantA)
+	}
+	if strings.Contains(tagA, "@") || strings.Count(bodyA, "data-account-id=") != 1 {
+		t.Errorf("the id must appear once and never as an address: %q", tagA)
+	}
+
+	_, bodyB := welcomeGet(t, stillB, base, "/welcome")
+	tagB := p25OpeningTag(t, bodyB, `<div class="welcome" id="welcome"`)
+	wantB := `data-account-id="` + strconv.FormatInt(idB, 10) + `"`
+	if !strings.Contains(tagB, wantB) || strings.Contains(bodyB, wantA) {
+		t.Errorf("account B's flow root %q must carry %s and not account A's id", tagB, wantB)
 	}
 }
