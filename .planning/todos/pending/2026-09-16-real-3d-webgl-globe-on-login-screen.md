@@ -46,7 +46,7 @@ data view or on a device without WebGL2. The CSS range above is now `auth.css:35
 "For the build" list has 20 items (load order, tests to change, Low data, reduce motion, credits,
 referrer, CSP, Policy wording).
 
-Waiting on the owner: A (behind the card) or B (beside it), which phase builds it (recommended: Phase 5,
+Waiting on the owner (A was picked later the same day, see below): which phase builds it (recommended: Phase 5,
 which already changes the sign in screen), and whether to hide country borders on the globe.
 
 Later the same day the owner asked for "a more realistic earth" and approved it ("yes i like the earth"): NASA Blue
@@ -55,3 +55,5 @@ forbids browser caching (`no-store`), so the pictures download on every visit: m
 first seconds and 378 KB for a full turn on a laptop, 746 KB at most (all 85 tiles at zoom 0 to 3). With the library, a
 first visit is about 390 to 540 KB. The 346 KB above was the map colours look. The sketch README (Download weight, and
 For the build item 21) has the details and a server side caching option to check against NASA's terms.
+
+Placement picked 2026-10-17: A, the globe behind the card ("i like A"). Still open: which phase builds it.

@@ -2,7 +2,7 @@
 sketch: 009
 name: login-globe
 question: "Can the sign in page show a real Earth turning on its axis, not a flat picture, calm enough for a page everyone must pass, and does it sit behind the card or beside it?"
-winner: "Look approved: the realistic Earth (NASA pictures), owner 2026-10-17. A or B not picked yet"
+winner: "A, behind the card (owner 2026-10-17: \"i like A\"), with the realistic Earth (NASA pictures, approved the same day)"
 tags: [login, sign-in, globe, maplibre, webgl, phone, laptop, light-dark, low-data, phase-5]
 ---
 
@@ -76,7 +76,7 @@ The measured cost is under Download weight, and item 21 of For the build has an 
 
 ## Variants
 
-- **A, behind the card (default).** The Phase 1.1 place (D-06). The globe sits behind the centred card, dimmed on its
+- **A, behind the card (default; picked by the owner 2026-10-17, "i like A").** The Phase 1.1 place (D-06). The globe sits behind the centred card, dimmed on its
   wrapper (50 percent in light, 40 percent in dark; today's picture uses 35 percent). The card stays solid, so its
   contrast does not change. Laptop: a sphere about 92 percent of the screen height (766px on a 1440 by 900 window) shows
   all round the card. Phone: the same idea scaled to the screen height (776px on a 390 by 844 phone), so it is wider
@@ -458,7 +458,8 @@ it; the owner decides on the rest when Phase 8 is planned.
 
 ## Open questions for the owner
 
-1. **A or B?** Recommendation: **B**. On a phone the card covers nearly all of A's globe (only its top and bottom edges
+1. **A or B?** Answered 2026-10-17: the owner picked **A**, behind the card ("i like A"), after looking at both. The
+   sketch had recommended B, kept here as the record: on a phone the card covers nearly all of A's globe (only its top and bottom edges
    show, and only because the sketch makes it wider than the phone), while B shows the whole Earth on both sizes, and the
    phone is the main device. One cost of B on small phones: the globe and its credit push the card down, so on a 375 by
    548 or 320 by 568 screen the email field and Send start below the first screen (the email field at 575px and 607px;
