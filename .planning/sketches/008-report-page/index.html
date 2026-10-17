@@ -702,16 +702,41 @@ button { font: inherit; color: inherit; }
 .tl li:last-child .tl-mark::after { display: none; }
 .tl-mark.good::before { background: var(--low); }
 .tl-mark.bad::before { background: var(--critical); }
+/* Comments with replies (owner, 2026-10-17: "design the comment section better, allow the replies"). One level of
+   replies: a reply to a reply joins the same thread. The reporter's circle carries the report's icon and colour, and the
+   word Reporter, so it is never colour alone. */
 .cm { list-style: none; margin: 0; padding: 0; }
-.cm li { padding: 12px 0; border-top: 1px solid var(--border); }
-.cm li:first-child { padding-top: 0; border-top: 0; }
-.cm-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
-.cm-meta b { color: var(--text); font-weight: 600; }
+.cm > li { padding: 14px 0 6px; border-top: 1px solid var(--border); }
+.cm > li:first-child { padding-top: 0; border-top: 0; }
+.cmt { display: grid; grid-template-columns: 32px minmax(0, 1fr); column-gap: 10px; }
+.cm-av { grid-row: span 3; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  background: var(--surface); color: var(--muted); }
+.cm-av .ico { width: 18px; height: 18px; }
+.cm-av.critical { background: var(--critical-bg); color: var(--critical); }
+.cm-av.medium { background: var(--medium-bg); color: var(--medium); }
+.cm-av.low { background: var(--low-bg); color: var(--low); }
+.cm-head { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-height: 32px; font-size: 14px; }
+.cm-head b { font-weight: 600; }
 .cm-tag { padding: 1px 6px; border-radius: 4px; background: var(--surface); color: var(--text); font-size: 12px; font-weight: 600; }
-.cm p { margin: 4px 0 0; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
+.cm-when { color: var(--muted); font-size: 13px; }
+.cm-text { margin: 0; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
+/* Reply keeps a 44px tap area but the negative margins stop it from adding a tall gap under every comment. */
+.cm-acts { display: flex; gap: 16px; margin: -8px 0 -6px; }
+.cm-reply, .cm-more, .cm-replying button { min-height: 44px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px;
+  font-weight: 600; cursor: pointer; }
+.cm-reply:hover, .cm-more:hover, .cm-replying button:hover { color: var(--text); }
+.cm-more { display: block; color: var(--text); }
+.cm-replies { grid-column: 2; list-style: none; margin: 0; padding: 0; }
+.cm-replies .cmt { grid-template-columns: 24px minmax(0, 1fr); column-gap: 8px; margin-top: 4px; }
+.cm-replies .cm-av { width: 24px; height: 24px; }
+.cm-replies .cm-av .ico { width: 14px; height: 14px; }
+.cm-replies .cm-head { min-height: 24px; }
+.cm-thread-form { grid-column: 2; }
+.cm-replying { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--muted); }
 .cm-empty { margin: 0; color: var(--muted); font-size: 15px; }
 /* The comment box is one line until it is used; it grows on focus and the letter count shows once typing starts. */
 .cm-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 6px 8px; margin-top: 12px; }
+.cm-thread-form .cm-form { margin: 0 0 8px; }
 .cm-form textarea { width: 100%; height: 44px; resize: none; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
   background: var(--bg); color: var(--text); font: inherit; font-size: 16px; line-height: 1.4; }
 .cm-form textarea:focus, .cm-form.has-text textarea { height: 88px; }
@@ -1552,7 +1577,8 @@ button { font: inherit; color: inherit; }
   // ---- Sketch 008: the report's own page (Phase 8) ----
   // Laptop: A opens the report as its own page (map left, report right); B opens it beside the map in place of the list.
   // Phone: both open the same full screen page, with the map strip on top.
-  var rv = params.get('rp') === 'b' ? 'b' : 'a';
+  // The owner picked B on 2026-10-17 ("i like beside the map"), so B is the default; ?rp=a still shows A.
+  var rv = params.get('rp') === 'a' ? 'a' : 'b';
   root.classList.add('rv-' + rv);
   document.querySelectorAll('[data-rv]').forEach(function (a) { if (a.dataset.rv === rv) a.setAttribute('aria-current', 'page'); });
   var details = [
@@ -1561,8 +1587,9 @@ button { font: inherit; color: inherit; }
       curTag: 'Report up to date', curLine: 'Confirmed from 4 different spots in the last 2 hours. Fades at 8:10 pm.', repTag: 'Your report', repLine: 'You posted this report.', code: '7KQ2',
       hist: [['2:10 pm', 'Posted as Critical.', ''], ['2:14 pm', 'Confirmed from a second spot.', 'good'],
         ['2:17 pm', 'Confirmed from a third spot.', 'good'], ['2:21 pm', 'Confirmed from a fourth spot.', 'good']],
-      cms: [{ who: 'Someone nearby', when: '2:15 pm', t: 'Two buses are stuck at the signal now. Use the service road.' },
-        { who: 'You', tag: 'Reporter', when: '2:19 pm', t: 'Water is still rising near the petrol bunk.' }] },
+      cms: [{ who: 'Someone nearby', when: '2:15 pm', t: 'Two buses are stuck at the signal now. Use the service road.',
+          replies: [{ who: 'Someone nearby', when: '2:18 pm', t: 'The service road is filling up too, near the temple.' }] },
+        { who: 'You', rep: true, when: '2:19 pm', t: 'Water is still rising near the petrol bunk.', replies: [] }] },
     { cat: 'Traffic', place: 'Eluru Road, towards Ramavarappadu', dist: '2.1 km', ago: '5 min ago', confN: 0, dispN: 0,
       curTag: 'Too early to tell', curLine: 'Fewer than 2 people have confirmed this yet. Fades at 4:57 pm.', repTag: 'Reliable reporter', repLine: '7 of 9 earlier reports by this reporter were confirmed by people nearby.', code: 'M3TD',
       hist: [['2:57 pm', 'Posted as Medium.', '']],
@@ -1571,24 +1598,28 @@ button { font: inherit; color: inherit; }
       curTag: 'Report up to date', curLine: 'Confirmed from 6 different spots in the last 2 hours. Fades tomorrow at 2:22 pm.', repTag: 'New reporter', repLine: 'Not rated yet. It needs 5 reports with a clear result.', code: 'P9ZS',
       hist: [['2:22 pm', 'Posted as Low.', ''], ['2:30 pm', 'Confirmed from 2 spots. Shown to everyone.', 'good'],
         ['2:41 pm', 'Confirmed from a fourth spot.', 'good'], ['2:55 pm', 'Confirmed from a sixth spot.', 'good']],
-      cms: [{ who: 'Someone nearby', when: '2:35 pm', t: 'Food packets are being given at the gate.' },
-        { who: 'Someone nearby', when: '2:48 pm', t: 'Ground floor rooms are full, the first floor still has space.' },
-        { who: 'Reporter', tag: 'Reporter', when: '2:52 pm', t: 'Bring your own sheets if you can.' }] },
+      cms: [{ who: 'Someone nearby', when: '2:35 pm', t: 'Food packets are being given at the gate.',
+          replies: [{ who: 'Reporter', rep: true, when: '2:37 pm', t: 'Until 6 pm, the volunteers said.' }] },
+        { who: 'Someone nearby', when: '2:48 pm', t: 'Ground floor rooms are full, the first floor still has space.',
+          replies: [{ who: 'Someone nearby', when: '2:50 pm', t: 'Can older people get a room on the ground floor?' },
+            { who: 'Reporter', rep: true, when: '2:52 pm', t: 'Ask at the desk, they are moving older people down first.' },
+            { who: 'Someone nearby', when: '2:58 pm', t: 'Thank you, we are on our way.' }] }] },
     { cat: 'Power out', place: 'Gunadala main road', dist: '2.6 km', ago: '1 hour ago', confN: 2, dispN: 0,
       curTag: 'Report getting old', curLine: 'Few recent confirmations. It fades at 5:02 pm unless someone confirms it again.', repTag: 'Mixed record', repLine: '3 of 6 earlier reports by this reporter were confirmed by people nearby.', code: 'G4PW',
       hist: [['2:02 pm', 'Posted as Medium.', ''], ['2:26 pm', 'Confirmed from 2 spots. Shown to everyone.', 'good']],
-      cms: [{ who: 'Someone nearby', when: '2:40 pm', t: 'The lanes behind the temple have power, only the main road side is out.' }] },
+      cms: [{ who: 'Someone nearby', when: '2:40 pm', t: 'The lanes behind the temple have power, only the main road side is out.', replies: [] }] },
     { cat: 'Road blocked', place: 'Budameru bridge', dist: '1.9 km', ago: '2 hours ago', confN: 3, dispN: 1,
       curTag: 'Report up to date', curLine: 'Confirmed from 3 different spots in the last 2 hours. Fades at 7:05 pm.', repTag: 'New reporter', repLine: 'Not rated yet. It needs 5 reports with a clear result.', code: 'B2RD',
       hist: [['1:05 pm', 'Posted as Medium.', ''], ['1:18 pm', 'Confirmed from 2 spots. Shown to everyone.', 'good'],
         ['1:40 pm', 'Disputed by someone nearby.', 'bad'], ['1:52 pm', 'Confirmed from a third spot.', 'good']],
-      cms: [{ who: 'Someone nearby', when: '1:45 pm', t: 'Bikes are being let through on the left side.' },
-        { who: 'Someone nearby', when: '1:50 pm', t: 'Not any more, police stopped the bikes too.' }] },
+      cms: [{ who: 'Someone nearby', when: '1:45 pm', t: 'Bikes are being let through on the left side.',
+          replies: [{ who: 'Someone nearby', when: '1:50 pm', t: 'Not any more, police stopped the bikes too.' }] }] },
     { cat: 'Flood', place: 'Prakasam Barrage', dist: '3.2 km', ago: '1 hour ago', confN: 0, dispN: 3,
       curTag: 'Disputed: may not be true', curWarn: true, curLine: 'Disputed nearby, so it needs 2 confirmations in the last 2 hours.', repTag: 'New reporter', repLine: 'Not rated yet. It needs 5 reports with a clear result.', code: 'K8BX',
       hist: [['1:58 pm', 'Posted as Critical.', ''], ['2:03 pm', 'Disputed by someone nearby.', 'bad'], ['2:09 pm', 'Disputed from a second spot.', 'bad'],
         ['2:12 pm', 'Disputed from a third spot. Marked Disputed.', 'bad']],
-      cms: [{ who: 'Someone nearby', when: '2:06 pm', t: 'The barrage office says the gates are fine. This is an old video.' }] }
+      cms: [{ who: 'Someone nearby', when: '2:06 pm', t: 'The barrage office says the gates are fine. This is an old video.',
+          replies: [{ who: 'Someone nearby', when: '2:10 pm', t: 'Yes, the same video went around last year.' }] }] }
   ];
   var current = 0;
   function confN(d) { return d.confN + (d.vote === 'confirm' ? 1 : 0); }
@@ -1604,6 +1635,22 @@ button { font: inherit; color: inherit; }
     if (m === 0) return 'No one has disputed this.';
     if (m === 1) return '1 person nearby disputed this.';
     return m + ' people at different spots disputed this.';
+  }
+  function esc(s) { return s.replace(/[<>&"]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]; }); }
+  // One comment or reply. Reply on a reply answers in the same thread.
+  function commentHtml(r, c, k) {
+    var av = c.rep ? '<span class="cm-av ' + (r.sev === 'disputed' ? '' : r.sev) + '"><span class="ico i-' + r.icon + '"></span></span>'
+      : '<span class="cm-av"><span class="ico i-user"></span></span>';
+    return av + '<div class="cm-head"><b>' + c.who + '</b>' + (c.rep && c.who !== 'Reporter' ? '<span class="cm-tag">Reporter</span>' : '') +
+      '<span class="cm-when">' + c.when + '</span></div><p class="cm-text">' + c.t + '</p>' +
+      '<div class="cm-acts"><button class="cm-reply" data-reply="' + k + '" data-name="' + c.who + '">Reply</button></div>';
+  }
+  function formHtml(d, key, ph, btn, to) {
+    var v = (d.drafts || {})[key] || '';
+    return '<form class="cm-form' + (v ? ' has-text' : '') + '" data-cm-form data-key="' + key + '">' +
+      (to ? '<div class="cm-replying">Replying to ' + to + '<button type="button" data-cancel-reply>Cancel</button></div>' : '') +
+      '<textarea maxlength="280" aria-label="' + ph + '" placeholder="' + ph + '">' + esc(v) + '</textarea>' +
+      '<button class="postbtn" type="submit">' + btn + '</button><span class="cm-count">' + v.length + ' of 280</span></form>';
   }
   function reportBody(i, back) {
     var r = reports[i], d = details[i];
@@ -1639,12 +1686,21 @@ button { font: inherit; color: inherit; }
     h += '<div class="rp-cols"><section class="rp-sec"><h2>What happened so far</h2><ol class="tl">' + hist.map(function (x) {
       return '<li><span class="tl-time">' + x[0] + '</span><span class="tl-mark ' + x[2] + '" aria-hidden="true"></span><span>' + x[1] + '</span></li>';
     }).join('') + '</ol></section>';
-    h += '<section class="rp-sec"><h2>Comments' + (d.cms.length ? ' <span class="n">' + d.cms.length + '</span>' : '') + '</h2>' +
-      (d.cms.length ? '<ul class="cm">' + d.cms.map(function (c) {
-        return '<li><div class="cm-meta"><b>' + c.who + '</b>' + (c.tag && c.tag !== c.who ? '<span class="cm-tag">' + c.tag + '</span>' : '') + '<span>' + c.when + '</span></div><p>' + c.t + '</p></li>';
+    var total = d.cms.reduce(function (n, c) { return n + 1 + c.replies.length; }, 0);
+    h += '<section class="rp-sec"><h2>Comments' + (total ? ' <span class="n">' + total + '</span>' : '') + '</h2>' +
+      (d.cms.length ? '<ul class="cm">' + d.cms.map(function (c, k) {
+        var reps = c.replies, shown = reps.length > 2 && !(d.openThreads || {})[k] ? reps.slice(0, 2) : reps;
+        var t = '<li><div class="cmt">' + commentHtml(r, c, k) + '<ul class="cm-replies">' + shown.map(function (x) {
+          return '<li><div class="cmt">' + commentHtml(r, x, k) + '</div></li>';
+        }).join('') + '</ul>';
+        if (shown.length < reps.length) {
+          var more = reps.length - shown.length;
+          t += '<div class="cm-thread-form"><button class="cm-more" data-more="' + k + '">Show ' + more + ' more ' + (more === 1 ? 'reply' : 'replies') + '</button></div>';
+        }
+        if (d.replyTo === k) t += '<div class="cm-thread-form">' + formHtml(d, 'r' + k, 'Write a reply', 'Reply', d.replyName) + '</div>';
+        return t + '</div></li>';
       }).join('') + '</ul>' : '<p class="cm-empty">No comments yet.</p>') +
-      '<form class="cm-form" data-cm-form><textarea id="cm-input-' + i + '" maxlength="280" aria-label="Add a comment" placeholder="Add a comment"></textarea>' +
-      '<button class="postbtn" type="submit">Post</button><span class="cm-count">0 of 280</span></form></section></div>';
+      formHtml(d, 'main', 'Add a comment', 'Post') + '</section></div>';
     return h;
   }
   // Tapping a pin on Nearby shows a small label over it that opens the report (owner, 2026-10-17), on the phone and the
@@ -1717,9 +1773,16 @@ button { font: inherit; color: inherit; }
     shareModal.hidden = false;
   }
   document.addEventListener('click', function (e) {
-    var t = e.target.closest('[data-openrep],[data-rp-back],[data-trust],[data-vote],[data-resolve],[data-unresolve],[data-mute],[data-flag],[data-share],[data-close-share],[data-share-wa],[data-copy]');
+    var t = e.target.closest('[data-openrep],[data-rp-back],[data-trust],[data-reply],[data-cancel-reply],[data-more],[data-vote],[data-resolve],[data-unresolve],[data-mute],[data-flag],[data-share],[data-close-share],[data-share-wa],[data-copy]');
     if (!t) { if (e.target === shareModal) shareModal.hidden = true; return; }
     var d = details[current];
+    if (t.dataset.reply) {
+      d.replyTo = Number(t.dataset.reply); d.replyName = t.dataset.name; renderReport();
+      var ta = document.querySelector('[data-key="r' + d.replyTo + '"] textarea'); if (ta) { ta.focus(); ta.scrollIntoView({ block: 'nearest' }); }
+      return;
+    }
+    if (t.hasAttribute('data-cancel-reply')) { d.replyTo = null; renderReport(); return; }
+    if (t.dataset.more) { d.openThreads = d.openThreads || {}; d.openThreads[t.dataset.more] = true; renderReport(); return; }
     if (t.dataset.openrep) { e.stopPropagation(); openReport(Number(t.dataset.openrep)); return; }
     if (t.hasAttribute('data-rp-back')) { backFromReport(); return; }
     if (t.hasAttribute('data-trust')) { d.trustOpen = !d.trustOpen; renderReport(); return; }
@@ -1736,13 +1799,16 @@ button { font: inherit; color: inherit; }
     var f = e.target.closest('[data-cm-form]'); if (!f) return;
     f.querySelector('.cm-count').textContent = e.target.value.length + ' of 280';
     f.classList.toggle('has-text', e.target.value.length > 0);
+    var d = details[current]; d.drafts = d.drafts || {}; d.drafts[f.dataset.key] = e.target.value;
   });
   document.addEventListener('submit', function (e) {
     var f = e.target.closest('[data-cm-form]'); if (!f) return;
     e.preventDefault();
     var v = f.querySelector('textarea').value.trim(); if (!v) return;
-    var d = details[current];
-    d.cms.push({ who: 'You', tag: d.mine ? 'Reporter' : '', when: 'Now', t: v.replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; }) });
+    var d = details[current], key = f.dataset.key, c = { who: 'You', rep: !!d.mine, when: 'Now', t: esc(v), replies: [] };
+    if (key === 'main') d.cms.push(c);
+    else { var k = Number(key.slice(1)); d.cms[k].replies.push(c); d.openThreads = d.openThreads || {}; d.openThreads[k] = true; d.replyTo = null; }
+    d.drafts = d.drafts || {}; d.drafts[key] = '';
     renderReport();
   });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') shareModal.hidden = true; });

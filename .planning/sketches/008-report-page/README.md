@@ -2,7 +2,7 @@
 sketch: 008
 name: report-page
 question: "When a reader opens one report, what does its own page look like on the phone and the laptop, with the trust block, the history, comments and Share, inside the approved app layout?"
-winner: null
+winner: "B (laptop, beside the map); the phone keeps its full screen page"
 tags: [report-page, trust-block, history, comments, share, phase-8, phone, laptop, light-dark]
 ---
 
@@ -20,14 +20,14 @@ Nearby list: the card shows **Open report**. Or tap its pin on the map: a small 
 appears over the pin (owner, 2026-10-17: "if we click on the report on the map, it should let me open the report"). Either
 one opens the report's page.
 
-Handy address parameters: `?view=phone|laptop`, `rp=a|b` (the laptop variant), `open=rep&i=0..5` (open report number
+Handy address parameters: `?view=phone|laptop`, `rp=a|b` (the laptop variant, B by default), `open=rep&i=0..5` (open report number
 0 to 5 straight away), `share=1` (with `open=rep`, opens Share).
 
 ## Variants (laptop only; the phone is the same in both)
 
 - **A: its own page.** The map with only this report's pin on the left, the report on the right in one reading column
   (at most 720px wide): the report, its trust block and actions, then "What happened so far", then "Comments".
-- **B: beside the map.** Nearby stays on screen; the list on the left is replaced by the report, and the map keeps every
+- **B: beside the map (the owner's pick, 2026-10-17: "i like beside the map").** Nearby stays on screen; the list on the left is replaced by the report, and the map keeps every
   pin with this one enlarged. "All reports" goes back to the list. Tapping another pin opens that report.
 - **Phone (both):** a full screen page with Back, the title "Report", the bell and the gear, a map strip with the pin,
   then the report, trust block, actions, history and comments stacked.
@@ -45,9 +45,15 @@ Handy address parameters: `?view=phone|laptop`, `rp=a|b` (the laptop variant), `
    sample report is yours, as in sketch 007's My activity), plus Share. Quiet links: Stop updates on this report
    (Phase 3.2 muting) and Flag (Phase 4).
 4. What happened so far: a timeline built from the vote log. It never names a voter or says where they were.
-5. Comments: oldest first, "Reporter" tag on the reporter's own comments, everyone else "Someone nearby". With none, a
-   plain "No comments yet." and no count. The box is one line with Post beside it; it grows when tapped and shows the 280
-   letter count once typing starts. Posting adds the comment to the list in the mockup.
+5. Comments with replies (owner, 2026-10-17: "design the comment section better allow the replies"). Threads oldest
+   first. Each comment has a small round picture, the name, the time, the words and Reply. Replies sit one step in, under
+   the comment they answer, with smaller pictures. There is one level only: Reply on a reply adds to the same thread, with
+   "Replying to Someone nearby" and Cancel above the box. A thread with more than two replies shows two and "Show 1 more
+   reply". The reporter's picture carries the report's icon and colour plus the word Reporter (never colour alone);
+   everyone else is "Someone nearby" with a plain person picture. The count beside Comments includes replies; with none,
+   a plain "No comments yet." and no count. The main box sits at the bottom, one line with Post beside it; it grows when
+   tapped and shows the 280 letter count once typing starts. Replies have the same 280 limit and pass the same screening.
+   Posting adds the comment or reply in the mockup, and a half typed comment survives a vote.
 6. Share: a window (a bottom sheet on the phone) showing what people get in WhatsApp: the title and "Open to see if this
    is still true right now", with a link and no counts, so a forward can never show a stale number. Close with the X.
 
@@ -68,10 +74,15 @@ Nothing was taken away. The trust table became the popup's trust block, the thre
 two, the laptop A page became one reading column instead of two side by side, the timeline lines got shorter, the empty
 comments box and the always open text box went, and the section headings got smaller.
 
+## Owner decisions (2026-10-17)
+
+- Laptop: **B, beside the map.** A stays in the file behind `?rp=a` for comparison only.
+- Comments are wanted, **with replies** (one level, as above). They still need the Phase 4 screening and per account
+  limits, so they ship after the page and the history.
+- Tapping a pin on the map shows **Open report** over the pin.
+
 ## Open questions for the owner's look
 
-- Laptop: A (its own page) or B (beside the map)?
-- Are comments wanted at all, or only the history? Comments are free text and need the Phase 4 screening and limits.
 - Is "Someone nearby" the right name for other commenters?
 
 ## Checks run
@@ -79,3 +90,7 @@ comments box and the always open text box went, and the section headings got sma
 Off screen snapshots at 1440 by 900 (laptop, light and dark) and 390 by 844 (phone), kept in the session scratchpad and
 never in the repo: Nearby with a tapped card, both laptop variants, the phone page, Share on the phone, and a scripted
 Confirm plus a posted comment (the trust line, the pressed state, the timeline and the comment count all updated).
+Second round (2026-10-17): the trust panel stays open after Confirm and shows "1 confirmed" with the one person sentence;
+the pin label shows on the laptop and the phone and opens the report; a scripted reply posts into the right thread,
+"Show 1 more reply" opens the thread, Reply on a reply puts the box in that thread with focus in it, and every Reply tap
+area measures 44px.
