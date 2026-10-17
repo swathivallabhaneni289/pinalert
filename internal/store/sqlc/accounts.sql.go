@@ -108,40 +108,37 @@ func (q *Queries) MarkFirstRunDone(ctx context.Context, id int64) error {
 	return err
 }
 
-const setAccountDisplayName = `-- name: SetAccountDisplayName :exec
+const updateAccountProfile = `-- name: UpdateAccountProfile :exec
 UPDATE accounts
-SET display_name = $1::text
-WHERE id = $2
+SET display_name   = CASE WHEN $1::boolean THEN $2::text ELSE display_name END,
+    home_area_name = CASE WHEN $3::boolean THEN $4::text ELSE home_area_name END,
+    home_area_cell = CASE WHEN $3::boolean THEN $5::text ELSE home_area_cell END
+WHERE id = $6
 `
 
-type SetAccountDisplayNameParams struct {
-	DisplayName *string
-	ID          int64
-}
-
-// Saves the optional name; a NULL argument clears it.
-func (q *Queries) SetAccountDisplayName(ctx context.Context, arg SetAccountDisplayNameParams) error {
-	_, err := q.db.Exec(ctx, setAccountDisplayName, arg.DisplayName, arg.ID)
-	return err
-}
-
-const setAccountHomeArea = `-- name: SetAccountHomeArea :exec
-UPDATE accounts
-SET home_area_name = $1::text,
-    home_area_cell = $2::text
-WHERE id = $3
-`
-
-type SetAccountHomeAreaParams struct {
+type UpdateAccountProfileParams struct {
+	SetName      bool
+	DisplayName  *string
+	SetHomeArea  bool
 	HomeAreaName *string
 	HomeAreaCell *string
 	ID           int64
 }
 
-// Saves or clears the home area. The name and the precision 5 cell are written
-// together (accounts_home_area_pair); both NULL clears it. The raw point is
-// never an argument here.
-func (q *Queries) SetAccountHomeArea(ctx context.Context, arg SetAccountHomeAreaParams) error {
-	_, err := q.db.Exec(ctx, setAccountHomeArea, arg.HomeAreaName, arg.HomeAreaCell, arg.ID)
+// Saves the optional name and the home area in one statement, so a failure
+// leaves neither changed. set_name and set_home_area say which part to write;
+// a part that is not set keeps its stored value. With set_name a NULL
+// display_name clears the name. With set_home_area the name and the precision
+// 5 cell are written together (accounts_home_area_pair); both NULL clears it.
+// The raw point is never an argument here.
+func (q *Queries) UpdateAccountProfile(ctx context.Context, arg UpdateAccountProfileParams) error {
+	_, err := q.db.Exec(ctx, updateAccountProfile,
+		arg.SetName,
+		arg.DisplayName,
+		arg.SetHomeArea,
+		arg.HomeAreaName,
+		arg.HomeAreaCell,
+		arg.ID,
+	)
 	return err
 }

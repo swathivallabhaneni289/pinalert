@@ -2,10 +2,12 @@
 // consent record, the optional name, the home area and the first-time flow
 // flag. Every rule lives here; the handlers only decode and encode.
 //
-// The home area keeps the picked place's display name and a geohash cell of
-// precision 5, computed here from the picked point. The point itself is never
-// stored, so nothing in the database can say where an account lives more
-// precisely than about 5 km.
+// The home area keeps a place name and a geohash cell of precision 5, computed
+// here from the picked point. The point itself is never stored. The cell is
+// coarse (about 5 km). The name is the place name the person picked, kept as
+// sent after the checks below; the home area helper line asks for a town or an
+// area, but nothing here checks the granularity of the name, so a person who
+// picks a building or a street name has that name stored next to the cell.
 
 package service
 
@@ -106,16 +108,35 @@ type AccountProfile struct {
 	FirstRunDone bool
 }
 
-// cleanText trims text and reports whether it holds a control character.
+// cleanText trims text and reports whether it is free of hidden characters:
+// control characters (category Cc) and format characters (category Cf), which
+// cover the zero width space, joiner and non joiner, the bidi embedding,
+// override and isolate characters and the byte order mark. None of them has a
+// place in a name that other people will read.
 func cleanText(s string) (string, bool) {
 	s = strings.TrimSpace(s)
 	for _, r := range s {
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
 			return s, false
 		}
 	}
 	return s, true
 }
+
+// hasLetterOrDigit reports whether s holds at least one letter or digit, so a
+// name made only of spaces, dots and symbols is not a name.
+func hasLetterOrDigit(s string) bool {
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return true
+		}
+	}
+	return false
+}
+
+// DisplayNameRuleMessage is the sentence shown when a name breaks the
+// character rule: it names what the check really does.
+const DisplayNameRuleMessage = "Use at least one letter or number in your name, and no hidden characters."
 
 // ValidateProfileUpdate checks one update and returns the values to store.
 // Nothing is written here; a failure names the field the caller sent.
@@ -124,8 +145,8 @@ func ValidateProfileUpdate(u ProfileUpdate) (ValidatedProfile, error) {
 
 	if u.DisplayName != nil {
 		name, ok := cleanText(*u.DisplayName)
-		if !ok {
-			return v, ValidationError{Field: "display_name", Message: "Use letters, numbers and spaces in your name."}
+		if !ok || (name != "" && !hasLetterOrDigit(name)) {
+			return v, ValidationError{Field: "display_name", Message: DisplayNameRuleMessage}
 		}
 		if utf8.RuneCountInString(name) > DisplayNameMaxRunes {
 			return v, ValidationError{Field: "display_name", Message: fmt.Sprintf("Keep your name to %d characters or fewer.", DisplayNameMaxRunes)}
@@ -171,8 +192,7 @@ func finiteIn(x, lo, hi float64) bool {
 type ProfileQuerier interface {
 	AcceptTerms(ctx context.Context, arg sqlcgen.AcceptTermsParams) error
 	MarkFirstRunDone(ctx context.Context, id int64) error
-	SetAccountDisplayName(ctx context.Context, arg sqlcgen.SetAccountDisplayNameParams) error
-	SetAccountHomeArea(ctx context.Context, arg sqlcgen.SetAccountHomeAreaParams) error
+	UpdateAccountProfile(ctx context.Context, arg sqlcgen.UpdateAccountProfileParams) error
 	GetAccountProfile(ctx context.Context, id int64) (sqlcgen.GetAccountProfileRow, error)
 }
 
@@ -233,21 +253,27 @@ func (s *AccountService) MarkFirstRunDone(ctx context.Context, accountID int64) 
 
 // UpdateProfile validates the update and then writes the rows it names. The
 // whole update is validated before any write, so a refusal changes nothing.
-// The answer is the profile as stored afterwards.
+// The name and the home area are written by one statement, so a database
+// failure changes neither. The answer is the profile as stored afterwards.
 func (s *AccountService) UpdateProfile(ctx context.Context, accountID int64, u ProfileUpdate) (AccountProfile, error) {
 	v, err := ValidateProfileUpdate(u)
 	if err != nil {
 		return AccountProfile{}, err
 	}
-	if v.SetName {
-		if err := s.q.SetAccountDisplayName(ctx, sqlcgen.SetAccountDisplayNameParams{DisplayName: v.Name, ID: accountID}); err != nil {
-			return AccountProfile{}, fmt.Errorf("service: saving display name: %w", err)
-		}
-	}
-	if v.HomeAction != HomeAreaUnchanged {
-		// Clear leaves both nil, which writes NULL to both columns together.
-		if err := s.q.SetAccountHomeArea(ctx, sqlcgen.SetAccountHomeAreaParams{HomeAreaName: v.HomeName, HomeAreaCell: v.HomeCell, ID: accountID}); err != nil {
-			return AccountProfile{}, fmt.Errorf("service: saving home area: %w", err)
+	setHome := v.HomeAction != HomeAreaUnchanged
+	if v.SetName || setHome {
+		// Clear leaves the home name and cell nil, which writes NULL to both
+		// columns together.
+		err := s.q.UpdateAccountProfile(ctx, sqlcgen.UpdateAccountProfileParams{
+			SetName:      v.SetName,
+			DisplayName:  v.Name,
+			SetHomeArea:  setHome,
+			HomeAreaName: v.HomeName,
+			HomeAreaCell: v.HomeCell,
+			ID:           accountID,
+		})
+		if err != nil {
+			return AccountProfile{}, fmt.Errorf("service: saving profile: %w", err)
 		}
 	}
 	return s.Profile(ctx, accountID)
