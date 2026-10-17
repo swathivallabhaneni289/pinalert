@@ -34,3 +34,17 @@ and dependency decision, not a copy tweak:
   precedent) rather than introducing a build step.
 - Route through `/gsd-sketch` or a proper `/gsd-plan-phase` (likely a small Phase 1.1 polish
   phase, e.g. `1.2`) before touching code — this is a real feature addition, not a quick fix.
+
+## Update 2026-10-17: sketch 009
+
+The owner asked again ("I want like the actual globe rotating. Um, not like a some image doing").
+Sketch `.planning/sketches/009-login-globe/` answers the dependency question above: no new library is
+needed. maplibre-gl 5.24.0, which the map page already loads with the same URL and SRI, draws a real
+globe (globe projection) from the OpenFreeMap style, trimmed to land, sea and borders at zoom 0. It adds
+about 346 KB on a first visit, most of it the library the map page downloads anyway, and nothing in Low
+data view or on a device without WebGL2. The CSS range above is now `auth.css:35-74`. The sketch README's
+"For the build" list has 20 items (load order, tests to change, Low data, reduce motion, credits,
+referrer, CSP, Policy wording).
+
+Waiting on the owner: A (behind the card) or B (beside it), which phase builds it (recommended: Phase 5,
+which already changes the sign in screen), and whether to hide country borders on the globe.

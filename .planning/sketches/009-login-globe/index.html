@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pinalert sign in globe</title>
+<script>
+/* Mockup only: the Light and Dark switch, applied before the first paint. */
+(function () {
+  var t = new URLSearchParams(location.search).get('theme');
+  if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+<style>
+/* Tokens copied from web/static/css/main.css (light values, then the two dark sources). */
+:root {
+  color-scheme: light;
+  --space-xs: 4px; --space-sm: 8px; --space-md: 16px; --space-lg: 24px; --space-xl: 32px; --space-2xl: 48px;
+  --touch-target-min: 44px;
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-size-caption: 12px; --line-height-caption: 1.3;
+  --font-size-label: 14px; --line-height-label: 1.4;
+  --font-size-body: 16px; --line-height-body: 1.5;
+  --font-size-display: 24px; --line-height-display: 1.2;
+  --font-weight-regular: 400; --font-weight-semibold: 600;
+  --color-bg: #FFFFFF; --color-surface: #F1F3F4; --color-border: #E1E4E8;
+  --color-text: #1A1D21; --color-text-muted: #6B7280; --color-focus-ring: #1A1D21;
+  --color-severity-low: #2F9E64; --color-severity-critical: #C0392B;
+  /* Sketch 009: how strongly the globe shows. Set on the wrapper only, the way
+     auth.css fades today's picture (TestNoOpacityText allows .globe-bg alone). */
+  --globe-dim-a: 0.5;
+  --globe-dim-b: 1;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --color-bg: #0B0D10; --color-surface: #16181C; --color-border: #2A2D31;
+    --color-text: #F3F4F6; --color-text-muted: #9CA3AF; --color-focus-ring: #F3F4F6;
+    --color-severity-low: #34D399; --color-severity-critical: #E5695C;
+    --globe-dim-a: 0.4;
+    --globe-dim-b: 0.9;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bg: #0B0D10; --color-surface: #16181C; --color-border: #2A2D31;
+  --color-text: #F3F4F6; --color-text-muted: #9CA3AF; --color-focus-ring: #F3F4F6;
+  --color-severity-low: #34D399; --color-severity-critical: #E5695C;
+  --globe-dim-a: 0.4;
+  --globe-dim-b: 0.9;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { background: var(--color-bg); }
+body {
+  margin: 0; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column;
+  font-family: var(--font-family); font-size: var(--font-size-body); line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular); color: var(--color-text); background: var(--color-bg);
+}
+:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
+
+/* ---- Mockup chrome (not part of the app) ---- */
+.mock-note { display: flex; flex-wrap: wrap; gap: var(--space-sm) var(--space-md); align-items: center;
+  padding: var(--space-sm) var(--space-md); font-size: 14px; color: var(--color-text-muted);
+  background: var(--color-surface); border-bottom: 1px solid var(--color-border); }
+.mock-note .grp { display: inline-flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-sm); align-items: baseline; }
+.mock-note a { color: var(--color-text); font-weight: 600; }
+.mock-note a[aria-current="page"] { text-decoration: none; color: var(--color-text-muted); font-weight: 400; }
+.mock-note .status { margin-left: auto; }
+.phone-stage { flex: 1 0 auto; display: flex; justify-content: center; align-items: flex-start;
+  padding: var(--space-md) 0 var(--space-lg); background: var(--color-surface); }
+.phone-stage iframe { box-sizing: content-box; display: block; width: 390px; height: 844px;
+  border: 10px solid #1A1D21; border-radius: 36px; background: var(--color-bg); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .phone-stage iframe { border-color: #3A3E44; } }
+:root[data-theme="dark"] .phone-stage iframe { border-color: #3A3E44; }
+
+/* ---- Buttons: main.css .btn and the chrome.css states ---- */
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: var(--touch-target-min);
+  padding: var(--space-sm) var(--space-lg); border: 1px solid var(--color-border); border-radius: 6px;
+  background: var(--color-bg); color: var(--color-text); font-family: var(--font-family);
+  font-size: var(--font-size-body); font-weight: var(--font-weight-semibold); cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease; }
+.btn--primary { background: var(--color-text); color: var(--color-bg); border-color: var(--color-text); }
+.btn:not(.btn--primary):hover, .btn:not(.btn--primary):active { background: var(--color-border); border-color: var(--color-border); }
+.btn:not(.btn--primary):disabled { background: var(--color-bg); color: var(--color-text-muted); border-color: var(--color-border); cursor: not-allowed; }
+.btn--primary:hover, .btn--primary:active { background: var(--color-text-muted); color: var(--color-bg); border-color: var(--color-text-muted); }
+.btn--primary:disabled { background: var(--color-bg); color: var(--color-text-muted); border-color: var(--color-border); cursor: not-allowed; }
+
+/* ---- The sign in page: web/static/css/auth.css, unchanged look ---- */
+.login-gate { position: relative; flex: 1 0 auto; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; background: var(--color-bg); padding: var(--space-lg); }
+.login-column { position: relative; z-index: 1; display: flex; flex-direction: column; gap: var(--space-sm);
+  width: 100%; max-width: 420px; }
+.login-card, #check-inbox { position: relative; z-index: 1; width: 100%; max-width: 420px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: 8px; padding: var(--space-lg); }
+.login-card h1, #check-inbox h2 { font-size: var(--font-size-display); line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold); color: var(--color-text); margin: 0 0 var(--space-md) 0; }
+.login-card p, #check-inbox p { font-size: var(--font-size-body); line-height: var(--line-height-body);
+  color: var(--color-text-muted); margin: 0 0 var(--space-lg) 0; }
+.login-card label { display: block; font-size: var(--font-size-label); line-height: var(--line-height-label);
+  color: var(--color-text); margin-bottom: var(--space-xs); }
+.login-field { display: flex; align-items: center; gap: var(--space-sm); min-height: var(--touch-target-min);
+  border: 1px solid var(--color-border); border-radius: 6px; padding: 0 var(--space-sm); background: var(--color-bg);
+  margin-bottom: var(--space-md); }
+.login-field input { flex: 1; min-width: 0; min-height: var(--touch-target-min); border: none; background: transparent;
+  font-family: var(--font-family); font-size: var(--font-size-body); color: var(--color-text); }
+.login-field input:focus { outline: none; }
+.login-field:focus-within { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
+.auth-icon { display: inline-block; flex-shrink: 0; width: var(--space-lg); height: var(--space-lg);
+  background-color: currentColor; color: var(--color-text-muted);
+  -webkit-mask-size: contain; mask-size: contain; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center; mask-position: center; }
+.auth-icon--mail {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7'/%3E%3Crect x='2' y='4' width='20' height='16' rx='2'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7'/%3E%3Crect x='2' y='4' width='20' height='16' rx='2'/%3E%3C/svg%3E"); }
+.auth-icon--check-circle {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.801 10A10 10 0 1 1 17 3.335'/%3E%3Cpath d='m9 11 3 3L22 4'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.801 10A10 10 0 1 1 17 3.335'/%3E%3Cpath d='m9 11 3 3L22 4'/%3E%3C/svg%3E"); }
+.verify-outcome-card { text-align: center; }
+.verify-outcome-icon { display: block; width: calc(var(--space-lg) * 2); height: calc(var(--space-lg) * 2);
+  margin: 0 auto var(--space-md) auto; }
+.verify-outcome-icon--success { color: var(--color-severity-low); }
+.verify-outcome-card .btn { text-decoration: none; }
+.auth-error { min-height: var(--font-size-label); color: var(--color-severity-critical); font-size: var(--font-size-label);
+  line-height: var(--line-height-label); margin: 0 0 var(--space-md) 0; }
+#request-link, #check-inbox .btn { width: 100%; }
+#check-inbox .btn + .btn { margin-top: var(--space-sm); }
+#resend-link:disabled { color: var(--color-text-muted); cursor: default; }
+.login-ways { display: flex; flex-direction: column; gap: var(--space-xs); background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: 8px; padding: var(--space-md); color: var(--color-text); }
+.login-ways__low, .login-ways__off { display: inline-flex; align-items: center; align-self: flex-start;
+  min-height: var(--touch-target-min); font-size: var(--font-size-body); line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold); color: var(--color-text); text-decoration: underline; }
+.login-ways__line { margin: 0; font-size: var(--font-size-label); line-height: var(--line-height-label); color: var(--color-text); }
+.login-ways__note { margin: 0; font-size: var(--font-size-body); line-height: var(--line-height-body); color: var(--color-text); }
+.login-ways__links { margin: 0; display: flex; flex-wrap: wrap; column-gap: var(--space-md); }
+.login-ways__links a { display: inline-flex; align-items: center; min-height: var(--touch-target-min);
+  font-size: var(--font-size-body); line-height: var(--line-height-body); color: var(--color-text); text-decoration: underline; }
+@media (max-width: 359.98px) { .login-ways__links { flex-direction: column; align-items: flex-start; } }
+@media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
+
+/* ---- Sketch 009: the real globe ---- */
+/* The box is sized and placed by the script from the sign in area, never from
+   the card, so swapping the card for Check your inbox never moves the globe. */
+.globe-area { pointer-events: none; }
+.globe-bg { visibility: hidden; }
+.globe-box { width: var(--globe-w, 0px); height: var(--globe-h, 0px); }
+.globe-map { width: 100%; height: 100%; }
+.globe-map, .globe-map canvas { background: transparent; }
+.globe-area.is-ready .globe-bg { visibility: visible; animation: globe-in 600ms ease-out both; }
+@keyframes globe-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .globe-area.is-ready .globe-bg { animation: none; } }
+/* The credit is in the page from the first paint, so the card never moves when the globe
+   arrives. visibility: hidden keeps its space but not its links (no Tab stop, no tap) until
+   the same is-ready class shows it with the globe. 14px text. Each link's tap area is 44px tall
+   through padding on an inline link, so a credit that wraps on a phone keeps normal line spacing
+   instead of two 44px rows with a gap between them. */
+.globe-credit { visibility: hidden; pointer-events: auto; margin: 0; font-size: var(--font-size-label);
+  line-height: var(--line-height-label); color: var(--color-text); }
+.globe-area.is-ready .globe-credit { visibility: visible; }
+.globe-credit a { display: inline; padding-block: 14px; color: inherit; }
+
+/* A: behind the card (Phase 1.1 D-06). The globe fills the area behind the
+   centred card, dimmed on the wrapper; the card stays opaque. */
+.login-gate[data-place="a"] .globe-area { position: absolute; inset: 0; z-index: 0; }
+.login-gate[data-place="a"] .globe-bg { position: absolute; inset: 0; opacity: var(--globe-dim-a); }
+.login-gate[data-place="a"] .globe-box { position: absolute; left: var(--globe-x, 0px); top: var(--globe-y, 0px); }
+.login-gate[data-place="a"] .globe-credit { position: absolute; right: var(--space-sm); bottom: var(--space-sm); }
+/* A on a phone, or in a short laptop window under 1200px wide: the corner would sit under the
+   Low data panel, so the credit goes in the page flow under the panel. The globe stays
+   absolute against .login-gate and still fills it. */
+@media (max-width: 899.98px), (max-width: 1199.98px) and (max-height: 799.98px) {
+  .login-gate.has-globe[data-place="a"] { flex-direction: column; gap: var(--space-sm); }
+  .login-gate.has-globe[data-place="a"] .globe-area { position: static; align-self: center; width: 100%; max-width: 420px;
+    display: flex; justify-content: flex-end; }
+  .login-gate.has-globe[data-place="a"] .globe-credit { position: relative; z-index: 1; right: auto; bottom: auto; }
+}
+
+/* B: beside the card. Laptop: globe on the left, card on the right.
+   Phone: globe in the top part, card below. The markup puts the globe after the card,
+   so keyboards and screen readers reach the card first; order: -1 still shows the globe first. */
+.login-gate.has-globe[data-place="b"] .globe-area { position: relative; flex: none; order: -1; display: flex; flex-direction: column;
+  align-items: flex-end; gap: var(--space-xs); }
+.login-gate.has-globe[data-place="b"] .globe-bg { position: relative; opacity: var(--globe-dim-b); }
+@media (min-width: 900px) {
+  .login-gate.has-globe[data-place="b"] { gap: var(--space-2xl); }
+}
+@media (max-width: 899.98px) {
+  .login-gate.has-globe[data-place="b"] { flex-direction: column; justify-content: flex-start; gap: var(--space-md); }
+  .login-gate.has-globe[data-place="b"] .globe-area { align-self: stretch; align-items: center; }
+  .login-gate.has-globe[data-place="b"] .globe-credit { align-self: flex-end; }
+}
+</style>
+</head>
+<body>
+<nav class="mock-note" id="mock-note" aria-label="Mockup switches">
+  <span>Sign in page mockup, sketch 009.</span>
+  <span class="grp">View: <a data-set="view=laptop">Laptop</a> <a data-set="view=phone">Phone</a></span>
+  <span class="grp">Globe: <a data-set="place=a">A, behind the card</a> <a data-set="place=b">B, beside the card</a></span>
+  <span class="grp">Screen: <a data-set="screen=signin">Sign in</a> <a data-set="screen=sent">Check your inbox</a> <a data-set="screen=verified">Email verified</a></span>
+  <span class="grp">Theme: <a data-set="theme=light">Light</a> <a data-set="theme=dark">Dark</a></span>
+  <span class="grp">Low data view: <a data-set="low=0">Off</a> <a data-set="low=1">On</a></span>
+  <span class="grp">WebGL: <a data-set="nowebgl=0">Available</a> <a data-set="nowebgl=1">Missing</a></span>
+  <span class="grp">Country borders: <a data-set="borders=1">Shown</a> <a data-set="borders=0">Hidden</a></span>
+  <span class="status" id="globe-status" role="status">Globe: starting</span>
+</nav>
+
+<div class="phone-stage" id="phone-stage" hidden>
+  <iframe id="phone-frame" title="Phone view of the sign in page" width="390" height="844"></iframe>
+</div>
+
+<div class="login-gate" id="login-gate" data-place="a">
+  <div class="login-column">
+    <div class="login-card" id="login-form-panel">
+      <h1>Verify your email to continue</h1>
+      <p>Pinalert requires a verified email before you can view or report anything nearby. We'll send a one-time link. No password needed.</p>
+
+      <label for="login-email">Email address</label>
+      <div class="login-field">
+        <span class="auth-icon auth-icon--mail" aria-hidden="true"></span>
+        <input type="email" id="login-email" name="email" placeholder="you@example.com" autocomplete="email" required>
+      </div>
+
+      <p id="auth-error" class="auth-error" role="alert"></p>
+
+      <button type="button" id="request-link" class="btn btn--primary">Send verification link</button>
+    </div>
+
+    <div id="check-inbox" hidden>
+      <h2>Check your inbox</h2>
+      <p>We sent a verification link to <span id="inbox-email"></span>. Open it on this device within 5 minutes to continue here. If you open it on a different device or browser, continue there instead; this tab won't detect it automatically.</p>
+      <p id="link-expiry-notice" class="auth-error" role="alert" hidden></p>
+      <button type="button" id="resend-link" class="btn">Resend link</button>
+      <button type="button" id="refresh-inbox" class="btn btn--primary">Check again</button>
+    </div>
+
+    <div class="login-card verify-outcome-card" id="verify-outcome" hidden>
+      <span class="auth-icon auth-icon--check-circle verify-outcome-icon verify-outcome-icon--success" aria-hidden="true"></span>
+      <h1>Email verified</h1>
+      <p>Taking you to Pinalert…</p>
+      <a href="#" class="btn btn--primary" data-inert>Continue</a>
+    </div>
+
+    <div class="login-ways" id="login-ways">
+      <a class="login-ways__low" id="ways-low" href="#">Low data view</a>
+      <p class="login-ways__line" id="ways-line">Text only, no map</p>
+      <p class="login-ways__note" id="ways-note" hidden>Low data view is on for this device. It opens after you sign in.</p>
+      <a class="login-ways__off" id="ways-off" href="#" hidden>Turn off</a>
+      <p class="login-ways__links"><a href="#" data-inert>Disclaimer</a> <a href="#" data-inert>Policy</a></p>
+    </div>
+  </div>
+
+  <!-- After the card in the markup, so Tab and screen readers reach the heading and the email field first. -->
+  <div class="globe-area" id="globe-area" hidden>
+    <div class="globe-bg" aria-hidden="true">
+      <div class="globe-box"><div class="globe-map" id="globe-map"></div></div>
+    </div>
+    <p class="globe-credit" id="globe-credit"></p>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* The exact vendor files the app already loads (web/templates/index.html.tmpl:22-24 and 205-207),
+     so the version, the SRI hash and the browser cache entry are shared with the map page. */
+  var LIB_CSS = 'https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css';
+  var LIB_CSS_SRI = 'sha256-qx5w1Z7EBGW65+cDDaLzzPKBM/1QLmK9WY7vut/XpzI=';
+  var LIB_JS = 'https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js';
+  var LIB_JS_SRI = 'sha256-RamwepGJzlYFTGIKlHzPQeKR5YyV6bYVM7dAqqZe5cs=';
+  /* The same reviewed style the app map uses (web/static/js/map.js:306). */
+  var STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
+
+  var START_LNG = 80;          // India in the middle at the start
+  var LAT = 18;                // held fixed: the globe's size on screen depends on the latitude
+  var DEG_PER_SEC = 3;         // one full turn every 120 seconds
+  var FRAME_MS = 33;           // about 30 frames a second is plenty for 3 degrees a second
+  var BOX = 1.06;              // room around the sphere so its edge is never clipped
+  var GIVE_UP_MS = 10000;      // a download that hangs fires no error, so give up after 10 seconds
+
+  var params = new URLSearchParams(location.search);
+  var root = document.documentElement;
+  var narrow = window.matchMedia('(max-width: 899.98px)').matches;
+  var inFrame = params.get('frame') === '1';
+  var viewParam = params.get('view');
+  var view = viewParam === 'phone' || viewParam === 'laptop' ? viewParam : (narrow ? 'phone' : 'laptop');
+  var framedOuter = !inFrame && view === 'phone' && !narrow;
+  var place = params.get('place') === 'b' ? 'b' : 'a';
+  var screenName = params.get('screen');
+  if (screenName !== 'sent' && screenName !== 'verified') screenName = 'signin';
+  var lowData = params.get('low') === '1';
+  var noWebGL = params.get('nowebgl') === '1';
+  var reloaded = params.get('reloaded') === '1';
+  var tileMax = params.get('tz') === '1' ? 1 : 0;
+  var borders = params.get('borders') !== '0';
+  var shownEmail = params.get('email') || 'priya@example.com';
+
+  var gate = document.getElementById('login-gate');
+  var globeArea = document.getElementById('globe-area');
+  var mapEl = document.getElementById('globe-map');
+  var credit = document.getElementById('globe-credit');
+  var statusEl = document.getElementById('globe-status');
+
+  /* ---- Probe for checks: window.__globe ---- */
+  var map = null;
+  var raf = 0;
+  var loaded = false;
+  var status = 'starting';
+  var errors = [];
+  window.__globe = {
+    get map() { return map; },
+    spinning: function () { return raf !== 0; },
+    centerLng: function () { return map ? map.getCenter().lng : null; },
+    status: function () { return status; },
+    size: function () { return { diameter: Math.round(diameter), boxH: boxH }; },
+    errors: errors
+  };
+  window.addEventListener('error', function (e) { errors.push('error: ' + (e && e.message ? e.message : String(e))); });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e && e.reason;
+    errors.push('promise: ' + (r && r.message ? r.message : String(r)));
+  });
+
+  function setText(el, value) { if (el) el.textContent = value == null ? '' : String(value); }
+  var statusPrefix = 'Globe: ';
+  function setStatus(s) { status = s; setText(statusEl, statusPrefix + s); }
+
+  /* ---- Mockup strip ---- */
+  var DEFAULTS = { place: 'a', screen: 'signin', low: '0', nowebgl: '0', borders: '1' };
+  function hrefWith(changes, keepFrame) {
+    var p = new URLSearchParams(location.search);
+    p.delete('frame');
+    p.delete('reloaded');
+    Object.keys(changes).forEach(function (k) {
+      var v = changes[k];
+      if (v === null || DEFAULTS[k] === v) p.delete(k); else p.set(k, v);
+    });
+    if (keepFrame && inFrame) p.set('frame', '1');
+    var s = p.toString();
+    return location.pathname + (s ? '?' + s : '');
+  }
+  function effectiveTheme() {
+    var t = root.getAttribute('data-theme');
+    if (t === 'light' || t === 'dark') return t;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  var current = { view: view, place: place, screen: screenName, theme: effectiveTheme(),
+    low: lowData ? '1' : '0', nowebgl: noWebGL ? '1' : '0', borders: borders ? '1' : '0' };
+  Array.prototype.forEach.call(document.querySelectorAll('#mock-note a[data-set]'), function (a) {
+    var kv = a.getAttribute('data-set').split('=');
+    var change = {};
+    change[kv[0]] = kv[1];
+    if (kv[0] === 'screen' && kv[1] !== 'sent') change.email = null;
+    a.href = hrefWith(change, false);
+    if (current[kv[0]] === kv[1]) a.setAttribute('aria-current', 'page');
+  });
+  if (inFrame) document.getElementById('mock-note').hidden = true;
+
+  /* ---- Phone view on a wide screen: the same page in a 390 by 844 frame.
+     The outer page builds no globe of its own, so there is one WebGL context. ---- */
+  if (framedOuter) {
+    gate.parentNode.removeChild(gate);
+    var stage = document.getElementById('phone-stage');
+    stage.hidden = false;
+    var frameEl = document.getElementById('phone-frame');
+    var fp = new URLSearchParams(location.search);
+    fp.delete('view');
+    fp.set('frame', '1');
+    // The status line repeats what the framed page's own globe is doing (same origin),
+    // read when the frame loads and then about once a second.
+    statusPrefix = 'Globe in the phone frame: ';
+    var mirror = function () {
+      var s = 'starting';
+      try { s = frameEl.contentWindow.__globe.status(); } catch (e) { /* the framed page is not running yet */ }
+      if (s !== status) setStatus(s);
+    };
+    frameEl.addEventListener('load', mirror);
+    setInterval(mirror, 1000);
+    frameEl.src = location.pathname + '?' + fp.toString();
+    setStatus('starting');
+    return;
+  }
+
+  /* ---- The sign in card (mirrors web/static/js/auth.js; nothing is sent anywhere) ---- */
+  var formPanel = document.getElementById('login-form-panel');
+  var emailInput = document.getElementById('login-email');
+  var requestButton = document.getElementById('request-link');
+  var authError = document.getElementById('auth-error');
+  var inbox = document.getElementById('check-inbox');
+  var inboxEmail = document.getElementById('inbox-email');
+  var resendButton = document.getElementById('resend-link');
+  var refreshButton = document.getElementById('refresh-inbox');
+  var expiryNotice = document.getElementById('link-expiry-notice');
+  var verifyCard = document.getElementById('verify-outcome');
+  var ways = document.getElementById('login-ways');
+
+  function showScreen(name, email) {
+    formPanel.hidden = name !== 'signin';
+    inbox.hidden = name !== 'sent';
+    verifyCard.hidden = name !== 'verified';
+    ways.hidden = name === 'verified';   // the link opened page has no Low data panel
+    if (name === 'sent') setText(inboxEmail, email);
+  }
+
+  var countdown = null;
+  var expiry = null;
+  function startCountdown(seconds) {
+    if (countdown) clearInterval(countdown);
+    var left = seconds;
+    resendButton.disabled = true;
+    setText(resendButton, 'Resend in ' + left + 's');
+    countdown = setInterval(function () {
+      left -= 1;
+      if (left <= 0) {
+        clearInterval(countdown);
+        countdown = null;
+        resendButton.disabled = false;
+        setText(resendButton, 'Resend link');
+        return;
+      }
+      setText(resendButton, 'Resend in ' + left + 's');
+    }, 1000);
+  }
+  function startExpiry(seconds) {
+    if (expiry) clearTimeout(expiry);
+    expiryNotice.hidden = true;
+    expiry = setTimeout(function () {
+      setText(expiryNotice, 'This link has expired. Request a new one above.');
+      expiryNotice.hidden = false;
+    }, seconds * 1000);
+  }
+
+  var lastSent = {};
+  requestButton.addEventListener('click', function () {
+    var email = emailInput.value.trim();
+    setText(authError, '');
+    requestButton.disabled = true;
+    setText(requestButton, 'Sending…');
+    setTimeout(function () {
+      requestButton.disabled = false;
+      setText(requestButton, 'Send verification link');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        setText(authError, 'Enter a valid email address.');
+        return;
+      }
+      var key = email.toLowerCase();
+      if (lastSent[key] && Date.now() - lastSent[key] < 45000) {
+        setText(authError, 'Too many requests. Try again in a minute.');
+        return;
+      }
+      lastSent[key] = Date.now();
+      shownEmail = email;
+      // In place, no page load: the globe keeps turning (01.1-UI-SPEC flow).
+      showScreen('sent', email);
+      history.replaceState(null, '', hrefWith({ screen: 'sent', email: email }, true));
+      startCountdown(45);
+      startExpiry(300);
+    }, 700);
+  });
+  resendButton.addEventListener('click', function () { startCountdown(45); startExpiry(300); });
+  refreshButton.addEventListener('click', function () {
+    location.href = hrefWith({ screen: 'sent', email: shownEmail }, true) + '&reloaded=1';
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-inert]'), function (a) {
+    a.addEventListener('click', function (e) { e.preventDefault(); });
+  });
+
+  // Low data panel: the same words and links as login_gate.html.tmpl:37-46.
+  var lowLink = document.getElementById('ways-low');
+  var offLink = document.getElementById('ways-off');
+  document.getElementById('ways-line').hidden = lowData;
+  lowLink.hidden = lowData;
+  document.getElementById('ways-note').hidden = !lowData;
+  offLink.hidden = !lowData;
+  var topExtra = inFrame ? { view: 'phone' } : {};
+  lowLink.href = hrefWith(Object.assign({ low: '1' }, topExtra), false);
+  offLink.href = hrefWith(Object.assign({ low: '0' }, topExtra), false);
+  if (inFrame) { lowLink.target = '_top'; offLink.target = '_top'; }
+
+  showScreen(screenName, shownEmail);
+  if (screenName === 'sent' && !reloaded) { startCountdown(45); startExpiry(300); }
+
+  /* ---- The globe ---- */
+  gate.setAttribute('data-place', place);
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var lng = START_LNG;
+  var diameter = 0;
+  var boxH = 0;
+  var giveUp = 0;
+  var failed = false;
+
+  function hasWebGL2() {
+    try {
+      var gl = document.createElement('canvas').getContext('webgl2');
+      if (!gl) return false;
+      var lose = gl.getExtension('WEBGL_lose_context');
+      if (lose) lose.loseContext();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // The sphere's radius is 512 * 2^zoom / (2 PI) / cos(lat) pixels, measured at the point under
+  // the middle of the screen. MapLibre's camera sits 1.5 canvas heights from that point (its
+  // default 36.87 degree field of view), so the sphere looks smaller than that radius. Solve for
+  // the radius that looks d pixels across in a canvas canvasH pixels tall, then for the zoom.
+  function zoomFor(d, canvasH) {
+    var ra = d / 2;
+    var cam = 1.5 * canvasH;
+    var r = (ra * ra + ra * Math.sqrt(ra * ra + cam * cam)) / cam;
+    return Math.log2(r * 2 * Math.PI * Math.cos(LAT * Math.PI / 180) / 512);
+  }
+
+  // Sizes come from the sign in area: its width, and the height of the first screen
+  // under the mockup strip. Neither changes when the card swaps, so the globe never moves.
+  function layout() {
+    var w = gate.clientWidth;
+    var h = Math.max(240, window.innerHeight - gate.offsetTop);
+    var laptop = w >= 900;
+    var bw;
+    var bh;
+    if (place === 'a') {
+      diameter = laptop ? Math.min(h * 0.92, 900) : Math.min(w * 2, h * 0.92);
+      bw = Math.min(diameter * BOX, w);
+      bh = Math.min(diameter * BOX, h);
+      gate.style.setProperty('--globe-x', Math.round((w - bw) / 2) + 'px');
+      gate.style.setProperty('--globe-y', Math.round((h - bh) / 2) + 'px');
+    } else {
+      diameter = laptop ? Math.min(h * 0.62, w * 0.36, 560) : Math.min(w * 0.62, 260);
+      bw = bh = diameter * BOX;
+    }
+    boxH = Math.round(bh);
+    gate.style.setProperty('--globe-w', Math.round(bw) + 'px');
+    gate.style.setProperty('--globe-h', boxH + 'px');
+    if (map) map.setZoom(zoomFor(diameter, boxH));
+  }
+
+  // Before the first paint (Low data view, no WebGL2): the globe and its space both go,
+  // so nothing on the page ever moves.
+  function off(reason) {
+    if (globeArea.parentNode) globeArea.parentNode.removeChild(globeArea);
+    gate.classList.remove('has-globe');
+    setStatus(reason);
+  }
+  // After the first paint: the map goes but its space stays, empty, so the card never
+  // moves under someone's finger (README open question 8). The credit stays hidden.
+  function fail(err) {
+    if (failed) return;
+    failed = true;
+    clearTimeout(giveUp);
+    var msg = err && err.message ? err.message : String(err);
+    errors.push('globe: ' + msg);
+    stop();
+    if (map) { try { map.remove(); } catch (e) { /* already gone */ } }
+    map = null;
+    loaded = false;
+    globeArea.classList.remove('is-ready');
+    setStatus('off, it could not start (' + msg + ')');
+  }
+
+  function frame(t) {
+    raf = requestAnimationFrame(frame);
+    if (!frame.last) { frame.last = t; return; }
+    var dt = t - frame.last;
+    if (dt < FRAME_MS) return;
+    frame.last = t;
+    lng -= DEG_PER_SEC * Math.min(dt, 100) / 1000;   // minus: the surface moves west to east, as Earth turns
+    if (lng < -180) lng += 360;
+    map.jumpTo({ center: [lng, LAT] });
+  }
+  function start() { if (raf) return; frame.last = 0; raf = requestAnimationFrame(frame); }
+  function stop() { if (raf) cancelAnimationFrame(raf); raf = 0; }
+  function update() {
+    if (!map || !loaded) return;
+    if (reduce.matches) { stop(); setStatus('still, reduce motion is on'); return; }
+    if (document.hidden) { stop(); setStatus('paused while the tab is hidden'); return; }
+    start();
+    setStatus('turning, one turn every 2 minutes');
+  }
+
+  function buildCredit() {
+    // The same three credits and links as the app map (web/static/js/map.js:307-311).
+    function link(href, text) {
+      var a = document.createElement('a');
+      a.href = href;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = text;
+      return a;
+    }
+    credit.appendChild(link('https://openfreemap.org', 'OpenFreeMap'));
+    credit.appendChild(document.createTextNode(' '));
+    credit.appendChild(link('https://www.openmaptiles.org/', '© OpenMapTiles'));
+    credit.appendChild(document.createTextNode(' Data from '));
+    credit.appendChild(link('https://www.openstreetmap.org/copyright', 'OpenStreetMap'));
+  }
+
+  function addStylesheet(href, sri) {
+    return new Promise(function (resolve, reject) {
+      var l = document.createElement('link');
+      l.rel = 'stylesheet';
+      l.integrity = sri;
+      l.crossOrigin = 'anonymous';
+      l.referrerPolicy = 'no-referrer';
+      l.onload = resolve;
+      l.onerror = function () { reject(new Error('map stylesheet did not load')); };
+      l.href = href;
+      document.head.appendChild(l);
+    });
+  }
+  function addScript(src, sri) {
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.async = true;
+      s.integrity = sri;
+      s.crossOrigin = 'anonymous';
+      s.referrerPolicy = 'no-referrer';
+      s.onload = resolve;
+      s.onerror = function () { reject(new Error('map library did not load')); };
+      s.src = src;
+      document.head.appendChild(s);
+    });
+  }
+
+  // The app style, trimmed for a calm globe: the label and icon layers and the shaded
+  // relief picture are left out, so no sprite, font or relief tile is fetched, and the
+  // vector tiles stop at zoom 0 (one tile for the whole Earth).
+  function trimStyle(src) {
+    var s = JSON.parse(JSON.stringify(src));
+    if (!s.sources || !s.sources.openmaptiles) throw new Error('style has no openmaptiles source');
+    s.projection = { type: 'globe' };
+    delete s.sky;       // no atmosphere glow, even if the upstream style adds a sky block later
+    delete s.sprite;
+    delete s.glyphs;
+    delete s.sources.ne2_shaded;
+    s.sources.openmaptiles.maxzoom = tileMax;
+    s.layers = s.layers.filter(function (l) {
+      if (l.type === 'symbol' || l.type === 'raster') return false;
+      if (!borders && l['source-layer'] === 'boundary') return false;   // the Country borders switch
+      var paint = l.paint || {};
+      for (var k in paint) { if (/-pattern$/.test(k)) return false; }
+      return !!(l.type === 'background' || s.sources[l.source]);
+    });
+    return s;
+  }
+
+  function createMap(style) {
+    layout();
+    map = new maplibregl.Map({
+      container: mapEl,
+      style: style,
+      center: [lng, LAT],
+      zoom: zoomFor(diameter, boxH),
+      interactive: false,
+      attributionControl: false,
+      pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+      canvasContextAttributes: { contextType: 'webgl2', antialias: true, powerPreference: 'low-power' },
+      fadeDuration: 0,
+      refreshExpiredTiles: false
+    });
+    map.on('error', function (e) {
+      var msg = e && e.error && e.error.message ? e.error.message : 'map error';
+      if (!loaded) { fail(new Error(msg)); } else { errors.push('map: ' + msg); }
+    });
+    map.on('load', function () {
+      if (failed) return;
+      loaded = true;
+      clearTimeout(giveUp);
+      globeArea.classList.add('is-ready');   // shows the globe and its credit together
+      update();
+    });
+    map.on('webglcontextlost', function () { stop(); setStatus('paused, the WebGL context was lost'); });
+    map.on('webglcontextrestored', update);
+  }
+
+  // A download that hangs instead of failing fires neither 'load' nor 'error', so the globe
+  // gives up after 10 seconds. A hidden tab draws nothing, so there the count waits and
+  // starts again when the tab is shown.
+  function armGiveUp() {
+    clearTimeout(giveUp);
+    giveUp = setTimeout(function () {
+      giveUp = 0;
+      if (loaded || failed || document.hidden) return;
+      fail(new Error('nothing drew within 10 seconds'));
+    }, GIVE_UP_MS);
+  }
+
+  function loadGlobe() {
+    setStatus('loading');
+    armGiveUp();
+    document.addEventListener('visibilitychange', function () {
+      if (!loaded && !failed && !document.hidden) armGiveUp();
+    });
+    var style = fetch(STYLE_URL, { credentials: 'omit', referrerPolicy: 'no-referrer' }).then(function (r) {
+      if (!r.ok) throw new Error('style answered ' + r.status);
+      return r.json();
+    });
+    Promise.all([addStylesheet(LIB_CSS, LIB_CSS_SRI), addScript(LIB_JS, LIB_JS_SRI), style]).then(function (res) {
+      if (failed) return;   // it gave up already: a library or style that arrives late draws nothing
+      if (typeof maplibregl === 'undefined') throw new Error('maplibregl is missing');
+      createMap(trimStyle(res[2]));
+    }).catch(fail);
+  }
+
+  if (lowData) {
+    off('off, Low data view is on (nothing downloaded)');
+  } else if (noWebGL || !hasWebGL2()) {
+    off('off, no WebGL2' + (noWebGL ? ' (forced by the switch)' : '') + ' (nothing downloaded)');
+  } else {
+    globeArea.hidden = false;
+    gate.classList.add('has-globe');
+    buildCredit();   // static text, written now so its line holds its place from the first paint
+    layout();
+    if (window.ResizeObserver) new ResizeObserver(function () { layout(); }).observe(gate);
+    window.addEventListener('resize', layout);
+    reduce.addEventListener('change', update);
+    document.addEventListener('visibilitychange', update);
+    setStatus('waiting for the page to finish loading');
+    // The card is usable from the first paint: nothing for the globe is downloaded until
+    // the page has loaded and the browser is idle (Safari has no requestIdleCallback).
+    var later = function () {
+      if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(loadGlobe, { timeout: 1500 });
+      else setTimeout(loadGlobe, 200);
+    };
+    if (document.readyState === 'complete') later(); else window.addEventListener('load', later, { once: true });
+  }
+})();
+</script>
+</body>
+</html>
