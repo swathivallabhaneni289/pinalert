@@ -890,3 +890,42 @@ func TestPopupClearsTheToolsOnALaptop(t *testing.T) {
 		t.Errorf("the laptop popup rule (%d) must come before the short screen rule (%d)", laptopIdx, shortIdx)
 	}
 }
+
+// TestMapObserversNeverWriteLayoutInTheCallback pins plan 17 finding 4 (Phase
+// 3.4 plan 21). A ResizeObserver callback that changes the size of something
+// observed at the same or a shallower depth makes the browser raise
+// "ResizeObserver loop completed with undelivered notifications". The two
+// observers in map.js therefore only schedule their work: the map box waits for
+// the layout to settle on a timer and then tells the map its size once, and the
+// popup card waits for the next animation frame. Neither calls Leaflet from
+// inside the callback. (The loop error itself came from theme.js, pinned in
+// TestBarTokenFollowsTheRealBar; this keeps map.js from adding another.)
+func TestMapObserversNeverWriteLayoutInTheCallback(t *testing.T) {
+	code := p19Code(t, "static/js/map.js")
+	if got := strings.Count(code, "new ResizeObserver("); got != 2 {
+		t.Errorf("map.js creates %d ResizeObservers, want 2 (the map box and the popup card); a new one needs its own pin", got)
+	}
+
+	// The map box: the callback holds only the timer; the settle resize is the
+	// one place that calls invalidateSize, and it still does.
+	watch := jsFunctionBody(t, code, "watchMapBox(container)")
+	cb := watch[strings.Index(watch, "new ResizeObserver("):]
+	timerAt := strings.Index(cb, "window.setTimeout(")
+	sizeAt := strings.Index(cb, "map.invalidateSize({ animate: false, pan: false })")
+	if timerAt == -1 || sizeAt == -1 || sizeAt < timerAt {
+		t.Errorf("watchMapBox: invalidateSize must be called from inside the settle timer, after window.setTimeout(")
+	}
+	if i := strings.Index(cb, "invalidateSize"); i != -1 && i < timerAt {
+		t.Errorf("watchMapBox: the observer callback calls invalidateSize before the settle timer")
+	}
+
+	// The popup card: the callback only requests a frame; relayoutOpenPopup
+	// (which moves the popup and pans) runs inside it.
+	card := jsFunctionBody(t, code, "observePopupCard(marker, card)")
+	cb = card[strings.Index(card, "new ResizeObserver("):]
+	frameAt := strings.Index(cb, "window.requestAnimationFrame(")
+	relayoutAt := strings.Index(cb, "relayoutOpenPopup(marker, card)")
+	if frameAt == -1 || relayoutAt == -1 || relayoutAt < frameAt {
+		t.Errorf("observePopupCard: relayoutOpenPopup must run inside window.requestAnimationFrame(")
+	}
+}

@@ -250,10 +250,30 @@
     rootStyle.setProperty(BAR_PROPERTY, barEl.getBoundingClientRect().height + 'px');
   }
 
+  // scheduleMeasure is the strip observer's callback (Phase 3.4 plan 21). It
+  // only asks for a measurement on the next animation frame and touches no
+  // layout itself. The strip and the shell are both direct children of the
+  // body, so they sit at the same depth; writing the token inside the
+  // observer's own delivery resized the shell (which sheet.js observes) in the
+  // same pass, and the browser raised "ResizeObserver loop completed with
+  // undelivered notifications" at enlarged text. One frame later the write is
+  // an ordinary style change. A burst of observations asks only once.
+  var barFrame = 0;
+
+  function scheduleMeasure() {
+    if (barFrame) {
+      return;
+    }
+    barFrame = window.requestAnimationFrame(function () {
+      barFrame = 0;
+      measureBar();
+    });
+  }
+
   // watchBar measures once, then again whenever the strip changes size (text
   // size, wrapping, hidden by the phone rule) and on every window resize. The
-  // strip itself is observed: writing the token resizes the shells and the
-  // map, never the strip, so there is no ResizeObserver loop.
+  // strip itself is observed, and the write waits for the next frame (see
+  // scheduleMeasure), so the token never resizes the shells inside a delivery.
   function watchBar() {
     barEl = document.querySelector('.notice-strip');
     measureBar();
@@ -261,7 +281,7 @@
       return;
     }
     if (typeof ResizeObserver === 'function') {
-      new ResizeObserver(measureBar).observe(barEl);
+      new ResizeObserver(scheduleMeasure).observe(barEl);
     }
     window.addEventListener('resize', measureBar);
   }

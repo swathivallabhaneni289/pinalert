@@ -58,15 +58,35 @@ func TestBarTokenFollowsTheRealBar(t *testing.T) {
 		t.Errorf("measureBar must not drop the written value; the strip does not read the token: %q", measure)
 	}
 
+	// Amended 2026-10-17 by Phase 3.4 plan 21 (plan 17 finding 4): the strip and
+	// the shell are both direct children of the body, so they sit at the same
+	// depth. Writing the token inside the strip's own ResizeObserver callback
+	// resized the shell (which sheet.js observes) in the same delivery; the
+	// browser cannot deliver an observation at the same depth in that pass and
+	// raised "ResizeObserver loop completed with undelivered notifications" at
+	// 150 and 200 percent text. The observer now only schedules the write for the
+	// next animation frame (the old pin was
+	// "new ResizeObserver(measureBar).observe(barEl)"); the first measurement and
+	// the window resize listener still write at once.
 	watch := jsFunctionBody(t, code, "watchBar()")
 	for _, want := range []string{
 		"querySelector('.notice-strip')",
-		"new ResizeObserver(measureBar).observe(barEl)",
+		"new ResizeObserver(scheduleMeasure).observe(barEl)",
 		"window.addEventListener('resize', measureBar)",
 	} {
 		if !strings.Contains(watch, want) {
 			t.Errorf("watchBar lacks %q: %q", want, watch)
 		}
+	}
+	if strings.Contains(watch, "new ResizeObserver(measureBar)") {
+		t.Errorf("watchBar hands measureBar straight to the observer; the write must wait for the next frame (plan 21): %q", watch)
+	}
+	schedule := jsFunctionBody(t, code, "scheduleMeasure()")
+	if !strings.Contains(schedule, "requestAnimationFrame(") || !strings.Contains(schedule, "measureBar()") {
+		t.Errorf("scheduleMeasure must call measureBar from a requestAnimationFrame callback: %q", schedule)
+	}
+	if strings.Contains(schedule, "setProperty") || strings.Contains(schedule, "getBoundingClientRect") {
+		t.Errorf("scheduleMeasure runs inside the observer callback and must not read or write layout itself: %q", schedule)
 	}
 	if strings.Contains(code, "querySelector('.disclaimer-bar')") {
 		t.Errorf("theme.js still looks for the Phase 4 bar")
