@@ -205,6 +205,19 @@ func TestSheetNoPageScroll(t *testing.T) {
 	move := jsFunctionBody(t, script, "onTouchMove(evt)")
 	p13Ordered(t, move, "onTouchMove", "touch.owner === null", "gestureOwner(", "touch.owner !== 'sheet'", "evt.preventDefault();")
 
+	// The wheel is the mouse form of the same rule (UI-SPEC 2b: finger up,
+	// wheel down). Its listener is not passive so the sheet can keep a turn it
+	// owns from the list, and it decides through gestureOwner, the one copy of
+	// the rule, with the wheel turned into the finger's direction.
+	p13MustContain(t, "sheet.js", script,
+		"sheetEl.addEventListener('wheel', onWheel, { passive: false });",
+		"gestureOwner(snap, sheetEl.scrollTop, -evt.deltaY)")
+	wheel := jsFunctionBody(t, script, "onWheel(evt)")
+	p13Ordered(t, wheel, "onWheel", "!active", "gestureOwner(", "evt.preventDefault();", "setSnap(")
+	if strings.Count(script, "gestureOwner(") != 3 {
+		t.Errorf("gestureOwner must be defined once and asked by the touch and the wheel paths only, found %d mentions", strings.Count(script, "gestureOwner("))
+	}
+
 	// The one scroll the list does is on the sheet's own element, found by its
 	// id, and only a row that is not already whole under the head is moved.
 	feed := p19Code(t, "static/js/feed.js")
