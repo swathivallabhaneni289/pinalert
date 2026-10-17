@@ -176,7 +176,7 @@ function loadSettings(options) {
     document: page.doc,
     fetch(target, init) {
       return new Promise((resolve, reject) => {
-        requests.push({ url: String(target), init: init || {}, resolve, reject });
+        requests.push({ url: String(target), init: init || {}, resolve, reject, at: now });
       });
     },
     setTimeout(fn, ms) { const id = nextId++; timers.set(id, { fn, at: now + ms }); return id; },
@@ -321,7 +321,7 @@ test('the Home area search sends only q, shows up to 5 places, and a pick enable
   input.value = 'Indira';
   fire(byId(page, 'settings-home-form'), 'submit');
   assert.equal(page.requests.length, 1);
-  assert.equal(page.requests[0].url, '/api/geocode/place?q=Indira');
+  assert.equal(page.requests[0].url, '/api/geocode/place?kind=area&q=Indira');
   assert.equal(byId(page, 'settings-home-status').textContent, 'Searching…');
 
   const results = [];
@@ -716,5 +716,243 @@ test('S-3: an earlier removal that lands in a reopened window empties the untouc
   assert.equal(byId(page, 'settings-home-input').value, '');
   assert.equal(byId(page, 'settings-home-remove').hidden, true);
   assert.equal(byId(page, 'settings-home-save').disabled, true);
+});
+
+// ---- Plan 28: suggestions while typing in the Home area --------------------
+
+const AREA_URL = '/api/geocode/place?kind=area&q=';
+const AREAS = [
+  { name: 'Indiranagar', display_name: 'Indiranagar, Bengaluru, Karnataka, India', lat: 12.9784, lon: 77.6408 },
+  { name: 'Indira Nagar', display_name: 'Indira Nagar, Lucknow, Uttar Pradesh, India', lat: 26.8806, lon: 80.9946 }
+];
+const openHome = (options) => {
+  const page = loadSettings(options);
+  fire(byId(page, 'settings-home-row'), 'click');
+  return page;
+};
+const typeHome = (page, text) => {
+  const input = byId(page, 'settings-home-input');
+  input.value = text;
+  fire(input, 'input');
+};
+const homeStatus = (page) => byId(page, 'settings-home-status');
+const homeList = (page) => byId(page, 'settings-home-results');
+
+test('typing in the Home area sends nothing under 3 characters and shows no line', () => {
+  const page = openHome();
+  typeHome(page, 'In');
+  page.advance(5000);
+  assert.equal(page.requests.length, 0);
+  assert.equal(homeStatus(page).hidden, true, 'no too short line comes from typing');
+  assert.equal(homeList(page).hidden, true);
+});
+
+test('one request goes out after the typing pause, in areas mode, with no Searching line', async () => {
+  const page = openHome();
+  typeHome(page, 'Indira');
+  page.advance(399);
+  assert.equal(page.requests.length, 0, 'the pause is 400 ms');
+  page.advance(1);
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.requests[0].url, AREA_URL + 'Indira');
+  assert.equal(homeStatus(page).hidden, true, 'a typed search is quiet');
+  answer(page.requests[0], 200, { results: AREAS });
+  await flush();
+  assert.equal(homeList(page).hidden, false);
+  assert.equal(homeList(page).children.length, 2);
+  assert.equal(byId(page, 'settings-home-save').disabled, true, 'a suggestion is not a pick until it is tapped');
+  pick(page, 0);
+  assert.equal(byId(page, 'settings-home-save').disabled, false);
+});
+
+test('at most 5 suggestions show', async () => {
+  const page = openHome();
+  typeHome(page, 'Indira');
+  page.advance(400);
+  const many = [];
+  for (let i = 0; i < 8; i++) { many.push({ name: 'Area ' + i, display_name: 'Area ' + i + ', Karnataka', lat: 12 + i / 100, lon: 77 }); }
+  answer(page.requests[0], 200, { results: many });
+  await flush();
+  assert.equal(homeList(page).children.length, 5);
+});
+
+test('every keystroke restarts the pause', () => {
+  const page = openHome();
+  typeHome(page, 'Ind');
+  page.advance(300);
+  typeHome(page, 'Indi');
+  page.advance(300);
+  assert.equal(page.requests.length, 0);
+  page.advance(100);
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.requests[0].url, AREA_URL + 'Indi');
+});
+
+test('the same text is never sent twice in a row', async () => {
+  const page = openHome();
+  typeHome(page, 'Indira');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: AREAS });
+  await flush();
+  typeHome(page, 'Indira');
+  page.advance(5000);
+  assert.equal(page.requests.length, 1);
+  typeHome(page, 'Indira ');
+  page.advance(5000);
+  assert.equal(page.requests.length, 1, 'a trailing space is the same text');
+});
+
+test('a request still out is cancelled by a newer one and its late answer is ignored', async () => {
+  const page = openHome();
+  typeHome(page, 'Indira');
+  page.advance(400);
+  const first = page.requests[0];
+  assert.equal(first.init.signal.aborted, false);
+  typeHome(page, 'Indiranag');
+  page.advance(800);
+  assert.equal(page.requests.length, 1, 'typed searches go out at least a second apart');
+  page.advance(200);
+  assert.equal(page.requests.length, 2);
+  assert.equal(page.requests[1].at - first.at, 1000);
+  assert.equal(first.init.signal.aborted, true, 'the older request is cancelled');
+  answer(page.requests[1], 200, { results: [AREAS[0]] });
+  await flush();
+  answer(first, 200, { results: AREAS });
+  await flush();
+  assert.equal(homeList(page).children.length, 1, 'the stale answer did not replace the newer list');
+});
+
+test('Enter searches at once, shows Searching, and the pause that was running sends nothing more', () => {
+  const page = openHome();
+  typeHome(page, 'Indira');
+  page.advance(100);
+  fire(byId(page, 'settings-home-form'), 'submit');
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.requests[0].url, AREA_URL + 'Indira');
+  assert.equal(homeStatus(page).textContent, 'Searching…');
+  page.advance(5000);
+  assert.equal(page.requests.length, 1);
+});
+
+test('Enter for the text a typed search already sent takes it over and shows the lines', async () => {
+  const page = openHome();
+  typeHome(page, 'Indira');
+  page.advance(400);
+  assert.equal(homeStatus(page).hidden, true);
+  fire(byId(page, 'settings-home-form'), 'submit');
+  assert.equal(page.requests.length, 1, 'no second request for the same text');
+  assert.equal(homeStatus(page).textContent, 'Searching…');
+  answer(page.requests[0], 503, {});
+  await flush();
+  assert.equal(homeStatus(page).textContent, 'Search unavailable. Try again in a moment.');
+});
+
+test('a busy typed search is retried quietly and only the last failure shows its line', async () => {
+  const page = openHome();
+  const refused = { error: { message: 'Too many searches. Wait a few seconds and try again.' } };
+  typeHome(page, 'Bengal');
+  page.advance(400);
+  answer(page.requests[0], 429, refused);
+  await flush();
+  assert.equal(homeStatus(page).hidden, true, 'the first refusal is quiet');
+  page.advance(999);
+  assert.equal(page.requests.length, 1);
+  page.advance(1);
+  assert.equal(page.requests.length, 2);
+  answer(page.requests[1], 503, {});
+  await flush();
+  page.advance(1000);
+  assert.equal(page.requests.length, 3);
+  answer(page.requests[2], 503, {});
+  await flush();
+  page.advance(1000);
+  assert.equal(page.requests.length, 4);
+  assert.equal(homeStatus(page).hidden, true);
+  answer(page.requests[3], 429, refused);
+  await flush();
+  page.advance(5000);
+  assert.equal(page.requests.length, 4, 'three retries at most');
+  assert.equal(homeStatus(page).textContent, 'Too many searches. Wait a few seconds and try again.');
+  assert.equal(homeList(page).hidden, true);
+});
+
+test('newer typing cancels a quiet retry that was waiting', async () => {
+  const page = openHome();
+  typeHome(page, 'Bengal');
+  page.advance(400);
+  answer(page.requests[0], 503, {});
+  await flush();
+  typeHome(page, 'Bengalu');
+  page.advance(5000);
+  assert.deepEqual(page.requests.map((r) => r.url), [AREA_URL + 'Bengal', AREA_URL + 'Bengalu']);
+});
+
+test('a network failure while typing stays quiet and is not tried again', async () => {
+  const page = openHome();
+  typeHome(page, 'Bengal');
+  page.advance(400);
+  page.requests[0].reject(new Error('offline'));
+  await flush();
+  page.advance(5000);
+  assert.equal(homeStatus(page).hidden, true);
+  assert.equal(page.requests.length, 1);
+});
+
+test('typing under 3 characters again drops the list, and a closed window drops a pending search', async () => {
+  const page = openHome();
+  typeHome(page, 'Indira');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: AREAS });
+  await flush();
+  assert.equal(homeList(page).hidden, false);
+  typeHome(page, 'In');
+  assert.equal(homeList(page).hidden, true);
+  assert.equal(homeStatus(page).hidden, true);
+  typeHome(page, 'Indira');
+  page.advance(1000);
+  assert.equal(page.requests.length, 2, 'the text may be sent again once it was dropped');
+
+  typeHome(page, 'Indiran');
+  fire(page.homeWin, 'keydown', { key: 'Escape' });
+  page.advance(5000);
+  assert.equal(page.requests.length, 2, 'closing the window ends the pending pause');
+});
+
+test('a 12 character name typed in one go sends one request; typed slowly it stays under one a second', () => {
+  const name = 'Banjara Hill';
+  assert.equal(Array.from(name).length, 12);
+  const quick = openHome();
+  for (let i = 1; i <= 12; i++) {
+    typeHome(quick, name.slice(0, i));
+    quick.advance(100);
+  }
+  quick.advance(400);
+  assert.equal(quick.requests.length, 1);
+  assert.equal(quick.requests[0].url, AREA_URL + encodeURIComponent(name));
+
+  const slow = openHome();
+  for (let i = 1; i <= 12; i++) {
+    typeHome(slow, name.slice(0, i));
+    slow.advance(450);
+  }
+  slow.advance(2000);
+  const times = slow.requests.map((r) => r.at);
+  assert.ok(times.length >= 2 && times.length <= 7, 'requests sent: ' + times.length);
+  for (let i = 1; i < times.length; i++) {
+    assert.ok(times[i] - times[i - 1] >= 1000, 'typed searches are at least a second apart: ' + times.join(','));
+  }
+});
+
+test('a pick ends the typing pause and the picked text is not searched again', async () => {
+  const page = openHome();
+  typeHome(page, 'Indira');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: AREAS });
+  await flush();
+  typeHome(page, 'Indiran');
+  pick(page, 0);
+  assert.equal(byId(page, 'settings-home-input').value, 'Indiranagar');
+  page.advance(5000);
+  assert.equal(page.requests.length, 1, 'the pause that was running sent nothing');
 });
 

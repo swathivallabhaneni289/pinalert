@@ -26,11 +26,24 @@
   }
 
   var PROFILE_URL = '/api/me/profile';
-  var PLACE_URL = '/api/geocode/place?q=';
+  // kind=area asks for areas only (neighbourhoods, localities, towns, cities,
+  // districts), never a street or a building: the stored home area is a cell
+  // about 5 km wide.
+  var PLACE_URL = '/api/geocode/place?kind=area&q=';
   var SAVE_TIMEOUT_MS = 10000;
   var SEARCH_TIMEOUT_MS = 10000;
   var MIN_QUERY_RUNES = 3;
   var MAX_RESULTS = 5;
+  // Suggestions while typing. The search runs once the person stops typing for
+  // TYPING_PAUSE_MS, and typed searches go out at least TYPING_GAP_MS apart, so
+  // typing alone spends the per account search budget (a burst of 8, then 1 a
+  // second) no faster than it refills and can never reach Too many searches.
+  // A typed search the server refuses or finds busy (429 or 503) is tried again
+  // quietly, at most QUIET_RETRIES times, RETRY_WAIT_MS apart.
+  var TYPING_PAUSE_MS = 400;
+  var TYPING_GAP_MS = 1000;
+  var QUIET_RETRIES = 3;
+  var RETRY_WAIT_MS = 1000;
   var NOT_SET = 'Not set';
 
   // The search wording is the same as the reader lane search of the map page
@@ -97,6 +110,20 @@
   var searchSeq = 0;
   var searchRequest = null;
   var searchText = '';
+  // Whether the search in flight was started by typing (quiet: no Searching
+  // line, no failure line) and not by Enter.
+  var searchQuiet = false;
+  // The pending typing pause or quiet retry, or null.
+  var typingTimer = null;
+  // Set while the gap after the last search runs; a typed search that comes due
+  // meanwhile waits in waitingText.
+  var coolTimer = null;
+  var waitingText = null;
+  // The text the last request was sent for, so the same text is never sent
+  // twice in a row by typing.
+  var lastSentText = '';
+  // How many quiet retries the text typed last has used.
+  var quietFailures = 0;
 
   // ---- Page lock ------------------------------------------------------------
 
@@ -298,6 +325,29 @@
       searchRequest = null;
     }
     searchText = '';
+    searchQuiet = false;
+  }
+
+  // cancelTyping drops a pending typing pause, quiet retry or search waiting
+  // for the gap. The gap itself keeps running.
+  function cancelTyping() {
+    if (typingTimer !== null) {
+      window.clearTimeout(typingTimer);
+      typingTimer = null;
+    }
+    waitingText = null;
+  }
+
+  // resetTyping forgets everything typing started, for a window opened or
+  // closed.
+  function resetTyping() {
+    cancelTyping();
+    if (coolTimer !== null) {
+      window.clearTimeout(coolTimer);
+      coolTimer = null;
+    }
+    lastSentText = '';
+    quietFailures = 0;
   }
 
   function openWindow(which) {
@@ -321,6 +371,7 @@
       homeResults.textContent = '';
       homeResults.hidden = true;
       cancelSearch();
+      resetTyping();
       picked = null;
       homeSave.disabled = true;
       homeFilled = storedValue(homeRow);
@@ -342,6 +393,7 @@
     }
     if (current === 'home') {
       cancelSearch();
+      resetTyping();
     }
     target.win.hidden = true;
     unlockPage();
@@ -491,6 +543,10 @@
   }
 
   function pickPlace(option, place) {
+    // A pick ends a typing pause or a quiet retry, so a late answer never
+    // reopens the list over the pick.
+    cancelTyping();
+    cancelSearch();
     clearPick();
     picked = place;
     option.setAttribute('aria-selected', 'true');
@@ -502,25 +558,49 @@
   // searchPlaces runs one place search for the text in the field. It sends the
   // text only: this page has no map centre and never sends the device position.
   // A failure shows one plain line and leaves the window as it was.
-  function searchPlaces(query) {
+  //
+  // typed is true when the typing pause started it. A typed search is quiet:
+  // no Searching line, no too short line and no failure line, since the person
+  // did not ask for it and their own typing must never read as Search
+  // unavailable. Enter shows every line, as before, and takes over a typed
+  // search already out for the same text instead of asking again.
+  function searchPlaces(query, typed) {
+    var quiet = typed === true;
     var q = String(query === undefined ? homeInput.value : query).trim();
-    hideLine(homeError);
+    // Enter, or the typed search itself, ends the pending pause.
+    cancelTyping();
+    if (!quiet) {
+      hideLine(homeError);
+    }
     if (runeCount(q) < MIN_QUERY_RUNES) {
       cancelSearch();
-      homeResults.hidden = true;
-      showLine(homeStatus, MESSAGE_TOO_SHORT);
+      if (!quiet) {
+        homeResults.hidden = true;
+        showLine(homeStatus, MESSAGE_TOO_SHORT);
+      }
       return Promise.resolve();
     }
     if (searchRequest !== null && q === searchText) {
+      if (!quiet && searchQuiet) {
+        searchQuiet = false;
+        clearPick();
+        homeResults.hidden = true;
+        showLine(homeStatus, MESSAGE_SEARCHING);
+      }
       return searchRequest.promise.then(function () {}, function () {});
     }
     cancelSearch();
-    clearPick();
-    homeResults.hidden = true;
-    showLine(homeStatus, MESSAGE_SEARCHING);
+    if (!quiet) {
+      clearPick();
+      homeResults.hidden = true;
+      showLine(homeStatus, MESSAGE_SEARCHING);
+    }
     searchSeq += 1;
     var mine = searchSeq;
     searchText = q;
+    searchQuiet = quiet;
+    lastSentText = q;
+    startGap();
     var call = request(PLACE_URL + encodeURIComponent(q), { credentials: 'same-origin' }, SEARCH_TIMEOUT_MS);
     searchRequest = call;
     function finish() {
@@ -535,8 +615,28 @@
       }
       finish();
       if (!answer.ok) {
-        var sent = serverSentence(answer.body);
-        showLine(homeStatus, sent !== '' ? sent : (answer.status === 429 ? MESSAGE_RATE_LIMITED : MESSAGE_UNAVAILABLE));
+        // The same text may be sent again after a failure.
+        lastSentText = '';
+        var busy = answer.status === 429 || answer.status === 503;
+        if (searchQuiet && busy) {
+          // A refusal for text no longer in the box, or one that lands while
+          // newer text waits for its pause, is dropped quietly.
+          if (typingTimer !== null || waitingText !== null || q !== homeInput.value.trim()) {
+            return;
+          }
+          if (quietFailures < QUIET_RETRIES) {
+            quietFailures += 1;
+            retryLater(q);
+            return;
+          }
+        }
+        if (!searchQuiet || busy) {
+          if (searchQuiet) {
+            homeResults.hidden = true;
+          }
+          var sent = serverSentence(answer.body);
+          showLine(homeStatus, sent !== '' ? sent : (answer.status === 429 ? MESSAGE_RATE_LIMITED : MESSAGE_UNAVAILABLE));
+        }
         return;
       }
       renderResults(answer.body && Array.isArray(answer.body.results) ? answer.body.results : []);
@@ -545,8 +645,70 @@
         return;
       }
       finish();
-      showLine(homeStatus, MESSAGE_UNAVAILABLE);
+      lastSentText = '';
+      if (!searchQuiet) {
+        showLine(homeStatus, MESSAGE_UNAVAILABLE);
+      }
     });
+  }
+
+  // startGap starts the wait before the next typed search may go out. A typed
+  // search that comes due meanwhile is held in waitingText and sent when the
+  // gap ends, if it is still the text in the box.
+  function startGap() {
+    if (coolTimer !== null) {
+      window.clearTimeout(coolTimer);
+    }
+    coolTimer = window.setTimeout(function () {
+      coolTimer = null;
+      if (waitingText !== null) {
+        var text = waitingText;
+        waitingText = null;
+        typedSearch(text);
+      }
+    }, TYPING_GAP_MS);
+  }
+
+  function typedSearch(q) {
+    if (coolTimer !== null) {
+      waitingText = q;
+      return;
+    }
+    searchPlaces(q, true);
+  }
+
+  // retryLater asks for q again, quietly. It waits on the typing timer, so
+  // anything that ends a typing pause also ends it.
+  function retryLater(q) {
+    cancelTyping();
+    typingTimer = window.setTimeout(function () {
+      typingTimer = null;
+      searchPlaces(q, true);
+    }, RETRY_WAIT_MS);
+  }
+
+  // onHomeInput is the typing path: every keystroke restarts the pause, and the
+  // search runs once the person stops for TYPING_PAUSE_MS with at least 3
+  // letters in the field and text that was not the last one sent. Under 3
+  // letters it drops any search and its results quietly.
+  function onHomeInput() {
+    cancelTyping();
+    quietFailures = 0;
+    var q = homeInput.value.trim();
+    if (runeCount(q) < MIN_QUERY_RUNES) {
+      cancelSearch();
+      lastSentText = '';
+      homeResults.hidden = true;
+      hideLine(homeStatus);
+      return;
+    }
+    if (q === lastSentText) {
+      return;
+    }
+    typingTimer = window.setTimeout(function () {
+      typingTimer = null;
+      typedSearch(q);
+    }, TYPING_PAUSE_MS);
   }
 
   // afterHomeSave settles a save or a removal of the home area. sameWindow says
@@ -641,6 +803,7 @@
     if (picked !== null && homeInput.value !== picked.name) {
       clearPick();
     }
+    onHomeInput();
   });
   homeSave.addEventListener('click', function () { saveHomeArea(); });
   homeRemove.addEventListener('click', function () { removeHomeArea(); });

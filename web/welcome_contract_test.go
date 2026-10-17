@@ -213,7 +213,7 @@ func TestWelcomeStep3And4Privacy(t *testing.T) {
 
 	// The searches and the calls, each by its own address.
 	p13MustContain(t, "welcome.js", js,
-		"'/api/geocode?q='", "'/api/geocode/place?q='",
+		"'/api/geocode?q='", "'/api/geocode/place?kind=area&q='",
 		"'/api/me/consent'", "'/api/me/profile'", "'/api/me/first-run-done'", "'PATCH'", "'POST'")
 
 	// The home area body is built from a picked place only.
