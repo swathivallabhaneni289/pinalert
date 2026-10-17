@@ -39,19 +39,20 @@
 
   // The form has two modes (Phase 3.4, UI-SPEC Surface 5e). The Post a report
   // window on the main page is window mode: it has #severity-group and builds
-  // eight tiles from WINDOW_TILES and three severity boxes. The Low data view
+  // nine tiles from WINDOW_TILES and three severity boxes. The Low data view
   // is the mode the form was built with: the range slider and the tile list of
   // Pinalert.CATEGORIES. The mode is found once, at mount, by #severity-group.
   //
   // WINDOW_TILES is the only tile list of the window, in the order it shows.
-  // Rescue needed is not a tile any more (D-24a) and Earthquake is not a tile
-  // as drawn (orchestrator decision 3, the default until the owner answers); a
-  // ninth tile is one more line here. The server keeps both postable, and
+  // Rescue needed is not a tile any more (D-24a). Earthquake is the ninth tile
+  // (owner answer of 2026-10-17, plan 03.4-29), second in the order, where the
+  // Low data view lists it too. The server keeps Rescue needed readable, and
   // Pinalert.CATEGORIES stays the server's postable list, so a report queued
-  // before this change still sends as it was stored. Opening it from the queue
-  // with Edit and resend shows no tile chosen in this mode.
+  // before this change still sends as it was stored. A queued Rescue needed
+  // report opened with Edit and resend shows no tile chosen in this mode.
   var WINDOW_TILES = [
     { category: 'flood', word: 'Flood' },
+    { category: 'earthquake', word: 'Earthquake' },
     { category: 'traffic', word: 'Traffic' },
     { category: 'shelter_open', word: 'Shelter open' },
     { category: 'power_outage', word: 'Power out' },
@@ -60,9 +61,9 @@
     { category: 'storm_cyclone', word: 'Storm' },
     { category: 'other', word: 'Other' }
   ];
-  // The window grid has four columns, so Up and Down move by four; the Low
-  // data grid has three.
-  var WINDOW_GRID_COLUMNS = 4;
+  // The window grid has three columns (nine tiles make three even rows), so Up
+  // and Down move by three; the Low data grid has three as well.
+  var WINDOW_GRID_COLUMNS = 3;
   var LOW_GRID_COLUMNS = 3;
   // The three severity boxes of the window, in order. The first is the value
   // the form opens on, as the slider's first position was.
@@ -426,7 +427,7 @@
   }
 
   // buildCategoryGrid renders the grid of the mode the form is in. The window
-  // shows the eight tiles of WINDOW_TILES in four columns; the Low data view
+  // shows the nine tiles of WINDOW_TILES in three columns; the Low data view
   // shows every tile of Pinalert.CATEGORIES in order, laid out 3x3 by
   // modal.css's grid-template-columns. The grid is a proper radio group:
   // role="radio" and aria-checked on every tile, a roving tabindex keeps
@@ -446,8 +447,8 @@
   }
 
   // tileOffered says whether a category has a tile in the mode the form is in.
-  // A saved report whose category has none (Rescue needed, or Earthquake in
-  // the window) opens with no tile chosen.
+  // A saved report whose category has none (Rescue needed in the window)
+  // opens with no tile chosen.
   function tileOffered(category) {
     if (windowMode) {
       return WINDOW_TILES.some(function (entry) {
@@ -458,8 +459,8 @@
   }
 
   // onCategoryTileKeydown implements arrow key navigation across the grid:
-  // Left and Right move by one, Up and Down move by a row (four in the window,
-  // three in the Low data view), wrapping at the edges. Moving focus also
+  // Left and Right move by one, Up and Down move by a row (three in the window
+  // and in the Low data view), wrapping at the edges. Moving focus also
   // selects: this is a single select radio group, not a two step focus then
   // activate control.
   function onCategoryTileKeydown(e) {
@@ -1474,8 +1475,8 @@
   // The last statement marks the form untouched, so closing it without a
   // change asks no question and leaves the saved report as it was.
   function applyPrefill(prefill) {
-    // A category with no tile in this mode (a report queued as Rescue needed,
-    // or as Earthquake and opened in the window) leaves every tile unchosen;
+    // A category with no tile in this mode (a report queued as Rescue needed
+    // and opened in the window) leaves every tile unchosen;
     // choosing one is then the person's step, and Post asks for it.
     if (tileOffered(prefill.category)) {
       selectCategory(prefill.category);

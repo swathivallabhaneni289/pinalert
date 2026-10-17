@@ -15,9 +15,10 @@
 // D-24a): setup({ window: true }) builds the Post a report window form (three
 // severity boxes in #severity-group and the X, #close-report) next to the Low
 // data form the tests above use (the slider and Cancel report). The tests at
-// the end cover the window mode: eight tiles from WINDOW_TILES, the severity
-// boxes, the X, and a report queued before the change (Rescue needed or
-// Earthquake) reopened through Edit and resend. The Phase 3.1 and Phase 4
+// the end cover the window mode: nine tiles from WINDOW_TILES (Earthquake was
+// added second by plan 03.4-29), the severity boxes, the X, and a report queued
+// before the change (Rescue needed or Earthquake) reopened through Edit and
+// resend. The Phase 3.1 and Phase 4
 // hands-on tests are walked on this layout after Phase 3.4 is built.
 
 import test from 'node:test';
@@ -851,8 +852,8 @@ test('a late answer leaves the question working on the form open now', async () 
 
 // ----- The Post a report window (Phase 3.4, D-23, D-24, D-24a) -----
 
-const WINDOW_ORDER = ['flood', 'traffic', 'shelter_open', 'power_outage', 'road_blocked', 'fire', 'storm_cyclone', 'other'];
-const WINDOW_WORDS = ['Flood', 'Traffic', 'Shelter open', 'Power out', 'Road blocked', 'Fire', 'Storm', 'Other'];
+const WINDOW_ORDER = ['flood', 'earthquake', 'traffic', 'shelter_open', 'power_outage', 'road_blocked', 'fire', 'storm_cyclone', 'other'];
+const WINDOW_WORDS = ['Flood', 'Earthquake', 'Traffic', 'Shelter open', 'Power out', 'Road blocked', 'Fire', 'Storm', 'Other'];
 // service.RescueNeededRetiredMessage, the server's answer to a Rescue needed post.
 const RESCUE_RETIRED = 'Rescue needed is no longer a report category. Choose another one.';
 const QUEUED_PREFILL = {
@@ -872,7 +873,7 @@ const press = (el, key) => {
   el.dispatchEvent(evt);
 };
 
-test('window: eight tiles from WINDOW_TILES in order, none chosen on open', () => {
+test('window: nine tiles from WINDOW_TILES in order, Earthquake second, none chosen on open', () => {
   const page = setup({ window: true });
   page.open();
   const tiles = tilesOf(page);
@@ -880,7 +881,10 @@ test('window: eight tiles from WINDOW_TILES in order, none chosen on open', () =
   assert.deepEqual(tiles.map((tile) => tile.textContent), WINDOW_WORDS);
   assert.equal(chosenTiles(page).length, 0, 'no tile is chosen when the window opens');
   assert.equal(tiles.filter((tile) => tile.tabIndex === 0).length, 1, 'one tile is in the tab order');
-  for (const retired of ['rescue_needed', 'earthquake']) {
+  assert.equal(tiles.length, 9);
+  assert.equal(tiles[1].dataset.category, 'earthquake');
+  assert.equal(tiles[1].textContent, 'Earthquake');
+  for (const retired of ['rescue_needed']) {
     assert.equal(WINDOW_ORDER.includes(retired), false);
     assert.equal(tiles.some((tile) => tile.dataset.category === retired), false, retired + ' is not a tile');
   }
@@ -900,25 +904,45 @@ test('low data form: opening still focuses the first tile', () => {
   assert.equal(page.active(), tilesOf(page)[0]);
 });
 
-test('window: Left and Right move by one, Up and Down by four, wrapping', () => {
+test('window: Left and Right move by one, Up and Down by three, wrapping', () => {
   const page = setup({ window: true });
   page.open();
   const at = () => chosenTiles(page)[0].dataset.category;
   tilesOf(page)[0].click();
   assert.equal(at(), 'flood');
   press(tilesOf(page)[0], 'ArrowRight');
-  assert.equal(at(), 'traffic');
+  assert.equal(at(), 'earthquake');
   press(tilesOf(page)[1], 'ArrowDown');
-  assert.equal(at(), 'fire', 'four after index 1 is index 5');
-  press(tilesOf(page)[5], 'ArrowDown');
-  assert.equal(at(), 'traffic', 'four after index 5 wraps to index 1');
+  assert.equal(at(), 'power_outage', 'three after index 1 is index 4');
+  press(tilesOf(page)[4], 'ArrowDown');
+  assert.equal(at(), 'storm_cyclone', 'three after index 4 is index 7');
+  press(tilesOf(page)[7], 'ArrowDown');
+  assert.equal(at(), 'earthquake', 'three after index 7 wraps to index 1, the same column');
   press(tilesOf(page)[1], 'ArrowUp');
-  assert.equal(at(), 'fire', 'four before index 1 wraps to index 5');
-  press(tilesOf(page)[5], 'ArrowLeft');
-  assert.equal(at(), 'road_blocked');
+  assert.equal(at(), 'storm_cyclone', 'three before index 1 wraps to index 7');
+  press(tilesOf(page)[7], 'ArrowLeft');
+  assert.equal(at(), 'fire');
   press(tilesOf(page)[0], 'ArrowLeft');
   assert.equal(at(), 'other', 'Left from the first tile wraps to the last');
   assert.equal(chosenTiles(page).length, 1);
+});
+
+test('window: the nine tiles make three even rows of three', () => {
+  const page = setup({ window: true });
+  page.open();
+  assert.equal(tilesOf(page).length % 3, 0, 'no tile is left alone on a last row');
+});
+
+test('window: an Earthquake report posts as earthquake', () => {
+  const page = setup({ window: true });
+  page.open();
+  tilesOf(page).filter((tile) => tile.dataset.category === 'earthquake')[0].click();
+  assert.deepEqual(chosenTiles(page).map((tile) => tile.dataset.category), ['earthquake']);
+  page.el('description').value = 'The ground shook for ten seconds and a wall cracked';
+  page.el('description').input();
+  page.submit();
+  assert.equal(page.posts.length, 1);
+  assert.equal(page.posts[0].payload.category, 'earthquake');
 });
 
 test('window: the severity boxes start on Low, move and choose with Left and Right, and the payload follows', () => {
@@ -1039,20 +1063,15 @@ test('a server 400 for the category shows its message in the window and keeps th
   assert.equal(page.el('description').value, QUEUED_PREFILL.description);
 });
 
-test('queued earthquake reopens with no tile', () => {
+test('queued earthquake reopens with the Earthquake tile chosen', () => {
   const page = setup({ window: true });
-  assert.doesNotThrow(() => {
-    page.open({
-      requestId: 'ffffffffffffffff6666',
-      prefill: Object.assign({ category: 'earthquake' }, QUEUED_PREFILL)
-    });
+  page.open({
+    requestId: 'ffffffffffffffff6666',
+    prefill: Object.assign({ category: 'earthquake' }, QUEUED_PREFILL)
   });
-  assert.equal(chosenTiles(page).length, 0, 'Earthquake is not a tile in the window, so none is chosen');
+  assert.deepEqual(chosenTiles(page).map((tile) => tile.dataset.category), ['earthquake']);
   assert.deepEqual(chosenBox(page).map((box) => box.dataset.severity), ['medium']);
   assert.equal(page.el('description').value, QUEUED_PREFILL.description);
-  page.submit();
-  assert.equal(page.posts.length, 0);
-  assert.equal(page.el('form-error').textContent, 'Choose a category to continue.');
 
   // The same entry opened in the Low data mode keeps the Earthquake tile.
   const low = setup();
@@ -1062,6 +1081,21 @@ test('queued earthquake reopens with no tile', () => {
   });
   const chosen = low.el('category-grid').children.filter((tile) => tile.classList.contains('category-tile--selected'));
   assert.deepEqual(chosen.map((tile) => tile.dataset.category), ['earthquake']);
+});
+
+test('a queued Rescue needed report reopens in the window with no tile', () => {
+  const page = setup({ window: true });
+  assert.doesNotThrow(() => {
+    page.open({
+      requestId: 'ffffffffffffffff6667',
+      prefill: Object.assign({ category: 'rescue_needed' }, QUEUED_PREFILL)
+    });
+  });
+  assert.equal(chosenTiles(page).length, 0, 'Rescue needed is not a tile, so none is chosen');
+  assert.deepEqual(chosenBox(page).map((box) => box.dataset.severity), ['medium']);
+  page.submit();
+  assert.equal(page.posts.length, 0);
+  assert.equal(page.el('form-error').textContent, 'Choose a category to continue.');
 });
 
 test('a queued shelter report still reopens with its tile and its shelter fields in the window', () => {

@@ -217,3 +217,49 @@ func TestAudit29MapControls(t *testing.T) {
 		t.Errorf(".map-chips padding-right is %q, want var(--space-md)", got)
 	}
 }
+
+// TestAudit29NineTilesInThreeEvenColumns: the window grid has three columns, so
+// nine tiles make three even rows and no tile sits alone on a row, on the
+// phone and the laptop (one rule serves both).
+func TestAudit29NineTilesInThreeEvenColumns(t *testing.T) {
+	grid := p31mRule(t, "static/css/modal.css", "", ".post-window #category-grid")
+	if got := grid.Decls["grid-template-columns"]; got != "repeat(3, minmax(0, 1fr))" {
+		t.Errorf("window tile grid columns are %q, want repeat(3, minmax(0, 1fr))", got)
+	}
+	for _, r := range p16ParseCSS("static/css/modal.css", p16ReadStatic(t, "static/css/modal.css")) {
+		if strings.Contains(r.Head, "#category-grid") && strings.Contains(r.Decls["grid-template-columns"], "repeat(4") {
+			t.Errorf("modal.css still has a four column tile grid: %q (media %q)", r.Head, r.Media)
+		}
+	}
+}
+
+// TestAudit29ChosenSeverityBoxShowsACheck (owner answer 14): the chosen How
+// serious box keeps its soft tint and its border, and gains a small check drawn
+// from check.svg, decorative (a pseudo element with an empty alternative text),
+// with a forced colours rule so it does not vanish.
+func TestAudit29ChosenSeverityBoxShowsACheck(t *testing.T) {
+	const head = `.post-window .severity-box[aria-checked="true"]::after`
+	check := p31mRule(t, "static/css/modal.css", "", head)
+	if !strings.Contains(check.Decls["-webkit-mask-image"], "/static/icons/check.svg") || !strings.Contains(check.Decls["mask-image"], "/static/icons/check.svg") {
+		t.Errorf("the chosen box check must be drawn from check.svg, got %q", check.Decls["mask-image"])
+	}
+	if got := check.Decls["background-color"]; got != "currentColor" {
+		t.Errorf("the check colour is %q, want currentColor", got)
+	}
+	if check.Decls["content"] != `"" / ""` {
+		t.Errorf("the check must be decorative (content: \"\" / \"\"), got %q", check.Decls["content"])
+	}
+	for _, decl := range []string{"border", "border-color", "outline"} {
+		if _, has := check.Decls[decl]; has {
+			t.Errorf("the check rule sets %s; the chosen box must not change its border", decl)
+		}
+	}
+	forced := p31mRule(t, "static/css/modal.css", "@media (forced-colors: active)", head)
+	if forced.Decls["forced-color-adjust"] != "none" || forced.Decls["background-color"] != "ButtonText" {
+		t.Errorf("the forced colours check rule is %v", forced.Decls)
+	}
+	// The template needs no extra markup: the three boxes keep their label only.
+	if strings.Contains(windowBranch(t), "severity-box__check") {
+		t.Errorf("the check is a pseudo element, the boxes carry no check markup")
+	}
+}
