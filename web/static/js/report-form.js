@@ -1200,8 +1200,14 @@
       announce(options.note);
     }
 
+    // The window opens with focus on its title (tabindex -1), not on the first
+    // tile: a ring on Flood read as Flood already chosen (03.4-29 finding 3).
+    // The Low data form has no such title and keeps the first tile.
+    var windowTitle = windowMode ? document.getElementById('modal-title') : null;
     var firstTile = categoryGrid.querySelector('.category-tile');
-    if (firstTile) {
+    if (windowTitle) {
+      windowTitle.focus();
+    } else if (firstTile) {
       firstTile.focus();
     }
 
@@ -1251,7 +1257,9 @@
     var first = focusable[0];
     var last = focusable[focusable.length - 1];
 
-    if (e.shiftKey && document.activeElement === first) {
+    // Shift+Tab from the window title (the first focus on open, not a tab
+    // stop) would leave the dialog, so it wraps to the last control as well.
+    if (e.shiftKey && (document.activeElement === first || focusable.indexOf(document.activeElement) === -1)) {
       e.preventDefault();
       last.focus();
     } else if (!e.shiftKey && document.activeElement === last) {

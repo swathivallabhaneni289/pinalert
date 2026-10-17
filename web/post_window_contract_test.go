@@ -48,7 +48,7 @@ func TestPostWindowClosesWithXOnly(t *testing.T) {
 		t.Errorf("the X must draw x.svg through app-icon--x")
 	}
 	head := block[strings.Index(block, "<header"):strings.Index(block, "</header>")]
-	if !strings.Contains(head, `id="close-report"`) || !strings.Contains(head, `<h2 id="modal-title" class="post-window__title">Post a report</h2>`) ||
+	if !strings.Contains(head, `id="close-report"`) || !strings.Contains(head, `<h2 id="modal-title" class="post-window__title" tabindex="-1">Post a report</h2>`) ||
 		!strings.Contains(head, "Say what is happening and where.") {
 		t.Errorf("the header must hold the title Post a report, the line under it and the X")
 	}

@@ -61,6 +61,13 @@
   font-weight: var(--font-weight-semibold);
 }
 
+/* A title that takes programmatic focus (tabindex -1, for example the reader's
+   title when it opens) draws no box around the words (03.4-29 finding 4). The
+   real controls of the window keep the global ring. */
+.app-window__title:focus {
+  outline: none;
+}
+
 .app-window__close {
   display: flex;
   flex: none;

@@ -1061,6 +1061,14 @@
   body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) #map-search-results {
     display: none;
   }
+
+  /* The round back arrow is fixed over the top bar's left end, where the
+     place search field sits. While the sheet is open the field steps aside
+     (hidden, so it also leaves the tab order); it comes back when the sheet
+     closes (03.4-29 finding 2). */
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) .app-topbar > .map-search {
+    visibility: hidden;
+  }
 }
 
 /* A landscape phone has little height, so the strip goes and the sheet starts

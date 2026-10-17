@@ -417,6 +417,14 @@ html[data-modal-open] {
   margin: 0;
 }
 
+/* The title takes the first focus when the window opens (tabindex -1), so a
+   screen reader starts at its name and no tile looks chosen. A heading that
+   is only a programmatic focus target draws no ring (03.4-29 findings 3 and
+   4); the controls keep theirs. */
+.post-window__panel .post-window__title:focus {
+  outline: none;
+}
+
 .post-window__line {
   margin: 0;
   font-size: var(--font-size-label);

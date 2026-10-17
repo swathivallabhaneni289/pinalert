@@ -157,6 +157,8 @@ function setup(options) {
     // The Critical only part (plan 03.4-12): the Call 112 box and the What is
     // happening? picks, both hidden until Critical is chosen. The picks
     // themselves are built by report-form.js into #happening-group.
+    // The window title takes the first focus on open (03.4-29 finding 3).
+    make('h2', 'modal-title', backdrop);
     make('a', 'call-112-box', form).hidden = true;
     const happening = make('fieldset', 'happening-fields', form);
     happening.hidden = true;
@@ -882,6 +884,20 @@ test('window: eight tiles from WINDOW_TILES in order, none chosen on open', () =
     assert.equal(WINDOW_ORDER.includes(retired), false);
     assert.equal(tiles.some((tile) => tile.dataset.category === retired), false, retired + ' is not a tile');
   }
+});
+
+test('window: opening focuses the title, not the first tile, so no tile looks chosen', () => {
+  const page = setup({ window: true });
+  page.open();
+  assert.equal(page.active(), page.el('modal-title'), 'the title has the first focus');
+  assert.equal(tilesOf(page).includes(page.active()), false, 'no tile has focus on open');
+  assert.equal(chosenTiles(page).length, 0);
+});
+
+test('low data form: opening still focuses the first tile', () => {
+  const page = setup();
+  page.open();
+  assert.equal(page.active(), tilesOf(page)[0]);
 });
 
 test('window: Left and Right move by one, Up and Down by four, wrapping', () => {
