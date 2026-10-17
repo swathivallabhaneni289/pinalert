@@ -634,7 +634,7 @@ button { font: inherit; color: inherit; }
 .rp-map-slot .map { flex: 1; height: auto !important; }
 .rp-scroll { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
 .rp-inner { padding: 16px 16px 32px; }
-.is-laptop .rp-inner { padding: 12px 32px 40px; }
+.is-laptop .rp-inner { padding: 12px 32px 0; }
 .rp-back { display: inline-flex; align-items: center; gap: 6px; height: 44px; margin: 0 0 8px -8px; padding: 0 12px 0 8px; border: 0; border-radius: 6px;
   background: none; color: var(--text); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
 .rp-back:hover { background: var(--surface); }
@@ -702,47 +702,68 @@ button { font: inherit; color: inherit; }
 .tl li:last-child .tl-mark::after { display: none; }
 .tl-mark.good::before { background: var(--low); }
 .tl-mark.bad::before { background: var(--critical); }
-/* Comments with replies (owner, 2026-10-17: "design the comment section better, allow the replies"). One level of
-   replies: a reply to a reply joins the same thread. The reporter's circle carries the report's icon and colour, and the
-   word Reporter, so it is never colour alone. */
+/* Comments that work like Instagram's (owner, 2026-10-17: "i want how instagram comments work"). Each comment is a round
+   picture, then the bold username and the words on one line, then a small grey line with the time and Reply; a heart on
+   the right likes it. Replies sit one step in, folded behind "View N replies". One box at the bottom: Reply fills in
+   @username and shows "Replying to". On the laptop the box is pinned to the bottom of the panel; on the phone the page
+   shows "View all N comments", which opens a comments sheet with the box pinned inside it. Departures from the house
+   rules, copied from Instagram on purpose: the liked heart is red, which is otherwise kept for severity. Left out: the
+   emoji reaction row above Instagram's box (no emoji in this app). */
+.i-heart { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0xOSAxNGMxLjQ5LTEuNDYgMy0zLjIxIDMtNS41QTUuNSA1LjUgMCAwIDAgMTYuNSAzYy0xLjc2IDAtMyAuNS00LjUgMi0xLjUtMS41LTIuNzQtMi00LjUtMkE1LjUgNS41IDAgMCAwIDIgOC41YzAgMi4zIDEuNSA0LjA1IDMgNS41bDcgN1oiLz48L3N2Zz4=); }
+.i-heartfill { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iYmxhY2siIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTkgMTRjMS40OS0xLjQ2IDMtMy4yMSAzLTUuNUE1LjUgNS41IDAgMCAwIDE2LjUgM2MtMS43NiAwLTMgLjUtNC41IDItMS41LTEuNS0yLjc0LTItNC41LTJBNS41IDUuNSAwIDAgMCAyIDguNWMwIDIuMyAxLjUgNC4wNSAzIDUuNWw3IDdaIi8+PC9zdmc+); }
 .cm { list-style: none; margin: 0; padding: 0; }
-.cm > li { padding: 14px 0 6px; border-top: 1px solid var(--border); }
-.cm > li:first-child { padding-top: 0; border-top: 0; }
-.cmt { display: grid; grid-template-columns: 32px minmax(0, 1fr); column-gap: 10px; }
-.cm-av { grid-row: span 3; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  background: var(--surface); color: var(--muted); }
+.cm > li + li { margin-top: 14px; }
+.ig { display: grid; grid-template-columns: 32px minmax(0, 1fr) 32px; column-gap: 12px; align-items: start; }
+.cm-av { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--surface); color: var(--muted); }
 .cm-av .ico { width: 18px; height: 18px; }
 .cm-av.critical { background: var(--critical-bg); color: var(--critical); }
 .cm-av.medium { background: var(--medium-bg); color: var(--medium); }
 .cm-av.low { background: var(--low-bg); color: var(--low); }
-.cm-head { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-height: 32px; font-size: 14px; }
-.cm-head b { font-weight: 600; }
-.cm-tag { padding: 1px 6px; border-radius: 4px; background: var(--surface); color: var(--text); font-size: 12px; font-weight: 600; }
-.cm-when { color: var(--muted); font-size: 13px; }
-.cm-text { margin: 0; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
-/* Reply keeps a 44px tap area but the negative margins stop it from adding a tall gap under every comment. */
-.cm-acts { display: flex; gap: 16px; margin: -8px 0 -6px; }
-.cm-reply, .cm-more, .cm-replying button { min-height: 44px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px;
-  font-weight: 600; cursor: pointer; }
-.cm-reply:hover, .cm-more:hover, .cm-replying button:hover { color: var(--text); }
-.cm-more { display: block; color: var(--text); }
-.cm-replies { grid-column: 2; list-style: none; margin: 0; padding: 0; }
-.cm-replies .cmt { grid-template-columns: 24px minmax(0, 1fr); column-gap: 8px; margin-top: 4px; }
-.cm-replies .cm-av { width: 24px; height: 24px; }
-.cm-replies .cm-av .ico { width: 14px; height: 14px; }
-.cm-replies .cm-head { min-height: 24px; }
-.cm-thread-form { grid-column: 2; }
-.cm-replying { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--muted); }
+.ig-text { margin: 0; padding-top: 5px; font-size: 14px; line-height: 1.45; overflow-wrap: break-word; }
+.ig-name { font-weight: 600; margin-right: 2px; }
+.ig-at { font-weight: 600; }
+.cm-tag { margin-right: 2px; padding: 1px 6px; border-radius: 4px; background: var(--surface); color: var(--text); font-size: 12px; font-weight: 600; }
+/* Reply keeps a 44px tap area; the negative margins stop it from adding a tall gap under every comment. */
+.ig-meta { display: flex; align-items: center; gap: 16px; margin: -10px 0 -12px; font-size: 12px; color: var(--muted); }
+.ig-meta button, .ig-view, .cm-replying button { min-height: 44px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit;
+  font-size: 12px; font-weight: 600; cursor: pointer; }
+.ig-meta button:hover, .ig-view:hover, .cm-replying button:hover { color: var(--text); }
+.ig-like { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; width: 32px; min-height: 44px; padding: 6px 0 0;
+  border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.ig-like .ico { width: 16px; height: 16px; }
+.ig-like[aria-pressed="true"] { color: #ed4956; }
+.ig-like .n { color: var(--muted); }
+.ig-thread { margin: 0 0 0 44px; }
+.ig-view { display: flex; align-items: center; gap: 12px; }
+.ig-view::before { content: ""; width: 24px; height: 1px; background: var(--muted); }
+.ig-replies { list-style: none; margin: 0; padding: 0; }
+.ig-replies > li { margin-top: 10px; }
+.ig-replies .ig { grid-template-columns: 24px minmax(0, 1fr) 32px; column-gap: 10px; }
+.ig-replies .cm-av { width: 24px; height: 24px; }
+.ig-replies .cm-av .ico { width: 14px; height: 14px; }
+.ig-replies .ig-text { padding-top: 2px; }
 .cm-empty { margin: 0; color: var(--muted); font-size: 15px; }
-/* The comment box is one line until it is used; it grows on focus and the letter count shows once typing starts. */
-.cm-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 6px 8px; margin-top: 12px; }
-.cm-thread-form .cm-form { margin: 0 0 8px; }
-.cm-form textarea { width: 100%; height: 44px; resize: none; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
-  background: var(--bg); color: var(--text); font: inherit; font-size: 16px; line-height: 1.4; }
-.cm-form textarea:focus, .cm-form.has-text textarea { height: 88px; }
-.cm-form .postbtn { height: 44px; }
-.cm-count { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
-.cm-form:not(.has-text) .cm-count { display: none; }
+.cm-viewall { min-height: 44px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 15px; cursor: pointer; }
+/* The one box. */
+.cm-compose { background: var(--bg); border-top: 1px solid var(--border); padding: 8px 0; }
+.cm-compose-row { display: flex; align-items: center; gap: 12px; }
+.cm-compose textarea { flex: 1; min-width: 0; height: 40px; max-height: 120px; resize: none; padding: 9px 0; border: 0; background: none; color: var(--text);
+  font: inherit; font-size: 15px; line-height: 1.45; outline: none; }
+.cm-post { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--text); font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; }
+.cm-compose:not(.has-text) .cm-post { opacity: .35; pointer-events: none; }
+.cm-replying { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -8px 0 4px; padding: 0 0 0 2px; font-size: 13px; color: var(--muted); }
+.cm-left:empty { display: none; }
+.cm-left { display: block; text-align: right; font-size: 12px; color: var(--muted); }
+.is-laptop .cm-compose { position: sticky; bottom: 0; margin: 20px -24px 0; padding: 8px 24px; }
+.is-laptop .screen-report .cm-compose { margin: 20px -32px 0; padding: 8px 32px; }
+.is-laptop .cm-compose:focus-within { box-shadow: 0 -6px 12px rgb(0 0 0 / 6%); }
+/* Phone: the comments sheet. */
+.is-phone #cm-modal { align-items: flex-end; }
+.cm-dlg { display: flex; flex-direction: column; width: min(520px, 100%); height: 85%; background: var(--bg); border-radius: 12px 12px 0 0; overflow: hidden; }
+.cm-dlg .dlg-head { align-items: center; padding: 8px 8px 8px 16px; }
+.cm-dlg .dlg-head h2 { font-size: 17px; }
+.cm-sheet-list { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
+.cm-dlg .cm-compose { padding: 8px 16px 12px; }
 .card .openrep { display: none; width: 100%; height: 44px; margin-top: 10px; align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--border);
   border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
 .card .openrep .ico { width: 18px; height: 18px; }
@@ -758,7 +779,7 @@ button { font: inherit; color: inherit; }
 .rp-side { display: none; }
 .is-laptop.rv-b #sheet.showing-report { width: 520px; }
 .is-laptop.rv-b #sheet.showing-report > :not(.rp-side) { display: none; }
-.is-laptop.rv-b #sheet.showing-report > .rp-side { display: block; flex: 1; min-height: 0; overflow-y: auto; padding: 12px 24px 32px; }
+.is-laptop.rv-b #sheet.showing-report > .rp-side { display: block; flex: 1; min-height: 0; overflow-y: auto; padding: 12px 24px 0; }
 .share-dlg { width: min(440px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow-y: auto; background: var(--bg); border-radius: 12px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 20%); }
 .share-body { display: flex; flex-direction: column; gap: 16px; padding: 16px 24px 24px; }
@@ -1159,6 +1180,15 @@ button { font: inherit; color: inherit; }
   </div>
 
   <!-- SHARE, opened from Share on a report -->
+  <div class="modal-back" id="cm-modal" hidden>
+    <div class="cm-dlg" role="dialog" aria-modal="true" aria-labelledby="cm-sheet-title">
+      <header class="dlg-head"><div><h2 id="cm-sheet-title">Comments</h2></div>
+        <button class="iconbtn" data-close-cm aria-label="Close"><span class="ico i-x"></span></button></header>
+      <div class="cm-sheet-list" id="cm-sheet-list"></div>
+      <div id="cm-sheet-compose"></div>
+    </div>
+  </div>
+
   <div class="modal-back" id="share-modal" hidden>
     <div class="share-dlg" role="dialog" aria-modal="true" aria-labelledby="share-title">
       <header class="dlg-head"><div><h2 id="share-title">Share this report</h2></div>
@@ -1587,9 +1617,10 @@ button { font: inherit; color: inherit; }
       curTag: 'Report up to date', curLine: 'Confirmed from 4 different spots in the last 2 hours. Fades at 8:10 pm.', repTag: 'Your report', repLine: 'You posted this report.', code: '7KQ2',
       hist: [['2:10 pm', 'Posted as Critical.', ''], ['2:14 pm', 'Confirmed from a second spot.', 'good'],
         ['2:17 pm', 'Confirmed from a third spot.', 'good'], ['2:21 pm', 'Confirmed from a fourth spot.', 'good']],
-      cms: [{ who: 'Someone nearby', when: '2:15 pm', t: 'Two buses are stuck at the signal now. Use the service road.',
-          replies: [{ who: 'Someone nearby', when: '2:18 pm', t: 'The service road is filling up too, near the temple.' }] },
-        { who: 'You', rep: true, when: '2:19 pm', t: 'Water is still rising near the petrol bunk.', replies: [] }] },
+      // Sample usernames, as on Instagram; who may show a name is still the owner's call (see the README).
+      cms: [{ who: 'ravi.k', ago: '47m', likes: 4, t: 'Two buses are stuck at the signal now. Use the service road.',
+          replies: [{ who: 'lakshmi_vja', ago: '44m', likes: 2, t: '@ravi.k The service road is filling up too, near the temple.' }] },
+        { who: 'You', rep: true, ago: '43m', likes: 3, t: 'Water is still rising near the petrol bunk.', replies: [] }] },
     { cat: 'Traffic', place: 'Eluru Road, towards Ramavarappadu', dist: '2.1 km', ago: '5 min ago', confN: 0, dispN: 0,
       curTag: 'Too early to tell', curLine: 'Fewer than 2 people have confirmed this yet. Fades at 4:57 pm.', repTag: 'Reliable reporter', repLine: '7 of 9 earlier reports by this reporter were confirmed by people nearby.', code: 'M3TD',
       hist: [['2:57 pm', 'Posted as Medium.', '']],
@@ -1598,28 +1629,28 @@ button { font: inherit; color: inherit; }
       curTag: 'Report up to date', curLine: 'Confirmed from 6 different spots in the last 2 hours. Fades tomorrow at 2:22 pm.', repTag: 'New reporter', repLine: 'Not rated yet. It needs 5 reports with a clear result.', code: 'P9ZS',
       hist: [['2:22 pm', 'Posted as Low.', ''], ['2:30 pm', 'Confirmed from 2 spots. Shown to everyone.', 'good'],
         ['2:41 pm', 'Confirmed from a fourth spot.', 'good'], ['2:55 pm', 'Confirmed from a sixth spot.', 'good']],
-      cms: [{ who: 'Someone nearby', when: '2:35 pm', t: 'Food packets are being given at the gate.',
-          replies: [{ who: 'Reporter', rep: true, when: '2:37 pm', t: 'Until 6 pm, the volunteers said.' }] },
-        { who: 'Someone nearby', when: '2:48 pm', t: 'Ground floor rooms are full, the first floor still has space.',
-          replies: [{ who: 'Someone nearby', when: '2:50 pm', t: 'Can older people get a room on the ground floor?' },
-            { who: 'Reporter', rep: true, when: '2:52 pm', t: 'Ask at the desk, they are moving older people down first.' },
-            { who: 'Someone nearby', when: '2:58 pm', t: 'Thank you, we are on our way.' }] }] },
+      cms: [{ who: 'anjali.r', ago: '27m', likes: 6, t: 'Food packets are being given at the gate.',
+          replies: [{ who: 'suresh.patamata', rep: true, ago: '25m', likes: 3, t: '@anjali.r Until 6 pm, the volunteers said.' }] },
+        { who: 'kiran_77', ago: '14m', likes: 2, t: 'Ground floor rooms are full, the first floor still has space.',
+          replies: [{ who: 'padma.n', ago: '12m', likes: 1, t: '@kiran_77 Can older people get a room on the ground floor?' },
+            { who: 'suresh.patamata', rep: true, ago: '10m', likes: 5, t: '@padma.n Ask at the desk, they are moving older people down first.' },
+            { who: 'padma.n', ago: '4m', likes: 0, t: '@suresh.patamata Thank you, we are on our way.' }] }] },
     { cat: 'Power out', place: 'Gunadala main road', dist: '2.6 km', ago: '1 hour ago', confN: 2, dispN: 0,
       curTag: 'Report getting old', curLine: 'Few recent confirmations. It fades at 5:02 pm unless someone confirms it again.', repTag: 'Mixed record', repLine: '3 of 6 earlier reports by this reporter were confirmed by people nearby.', code: 'G4PW',
       hist: [['2:02 pm', 'Posted as Medium.', ''], ['2:26 pm', 'Confirmed from 2 spots. Shown to everyone.', 'good']],
-      cms: [{ who: 'Someone nearby', when: '2:40 pm', t: 'The lanes behind the temple have power, only the main road side is out.', replies: [] }] },
+      cms: [{ who: 'venkat.g', ago: '22m', likes: 1, t: 'The lanes behind the temple have power, only the main road side is out.', replies: [] }] },
     { cat: 'Road blocked', place: 'Budameru bridge', dist: '1.9 km', ago: '2 hours ago', confN: 3, dispN: 1,
       curTag: 'Report up to date', curLine: 'Confirmed from 3 different spots in the last 2 hours. Fades at 7:05 pm.', repTag: 'New reporter', repLine: 'Not rated yet. It needs 5 reports with a clear result.', code: 'B2RD',
       hist: [['1:05 pm', 'Posted as Medium.', ''], ['1:18 pm', 'Confirmed from 2 spots. Shown to everyone.', 'good'],
         ['1:40 pm', 'Disputed by someone nearby.', 'bad'], ['1:52 pm', 'Confirmed from a third spot.', 'good']],
-      cms: [{ who: 'Someone nearby', when: '1:45 pm', t: 'Bikes are being let through on the left side.',
-          replies: [{ who: 'Someone nearby', when: '1:50 pm', t: 'Not any more, police stopped the bikes too.' }] }] },
+      cms: [{ who: 'bhargav_s', ago: '1h', likes: 1, t: 'Bikes are being let through on the left side.',
+          replies: [{ who: 'rani.m', ago: '1h', likes: 5, t: '@bhargav_s Not any more, police stopped the bikes too.' }] }] },
     { cat: 'Flood', place: 'Prakasam Barrage', dist: '3.2 km', ago: '1 hour ago', confN: 0, dispN: 3,
       curTag: 'Disputed: may not be true', curWarn: true, curLine: 'Disputed nearby, so it needs 2 confirmations in the last 2 hours.', repTag: 'New reporter', repLine: 'Not rated yet. It needs 5 reports with a clear result.', code: 'K8BX',
       hist: [['1:58 pm', 'Posted as Critical.', ''], ['2:03 pm', 'Disputed by someone nearby.', 'bad'], ['2:09 pm', 'Disputed from a second spot.', 'bad'],
         ['2:12 pm', 'Disputed from a third spot. Marked Disputed.', 'bad']],
-      cms: [{ who: 'Someone nearby', when: '2:06 pm', t: 'The barrage office says the gates are fine. This is an old video.',
-          replies: [{ who: 'Someone nearby', when: '2:10 pm', t: 'Yes, the same video went around last year.' }] }] }
+      cms: [{ who: 'prasad.k', ago: '56m', likes: 9, t: 'The barrage office says the gates are fine. This is an old video.',
+          replies: [{ who: 'meena_vja', ago: '52m', likes: 4, t: '@prasad.k Yes, the same video went around last year.' }] }] }
   ];
   var current = 0;
   function confN(d) { return d.confN + (d.vote === 'confirm' ? 1 : 0); }
@@ -1637,21 +1668,38 @@ button { font: inherit; color: inherit; }
     return m + ' people at different spots disputed this.';
   }
   function esc(s) { return s.replace(/[<>&"]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]; }); }
-  // One comment or reply. Reply on a reply answers in the same thread.
-  function commentHtml(r, c, k) {
-    var av = c.rep ? '<span class="cm-av ' + (r.sev === 'disputed' ? '' : r.sev) + '"><span class="ico i-' + r.icon + '"></span></span>'
+  // Comments as on Instagram. k is the thread, j the reply inside it; Reply on a reply answers in the same thread.
+  function avHtml(r, rep) {
+    return rep ? '<span class="cm-av ' + (r.sev === 'disputed' ? '' : r.sev) + '"><span class="ico i-' + r.icon + '"></span></span>'
       : '<span class="cm-av"><span class="ico i-user"></span></span>';
-    return av + '<div class="cm-head"><b>' + c.who + '</b>' + (c.rep && c.who !== 'Reporter' ? '<span class="cm-tag">Reporter</span>' : '') +
-      '<span class="cm-when">' + c.when + '</span></div><p class="cm-text">' + c.t + '</p>' +
-      '<div class="cm-acts"><button class="cm-reply" data-reply="' + k + '" data-name="' + c.who + '">Reply</button></div>';
   }
-  function formHtml(d, key, ph, btn, to) {
-    var v = (d.drafts || {})[key] || '';
-    return '<form class="cm-form' + (v ? ' has-text' : '') + '" data-cm-form data-key="' + key + '">' +
-      (to ? '<div class="cm-replying">Replying to ' + to + '<button type="button" data-cancel-reply>Cancel</button></div>' : '') +
-      '<textarea maxlength="280" aria-label="' + ph + '" placeholder="' + ph + '">' + esc(v) + '</textarea>' +
-      '<button class="postbtn" type="submit">' + btn + '</button><span class="cm-count">' + v.length + ' of 280</span></form>';
+  function igComment(r, c, k, j) {
+    var id = j == null ? String(k) : k + '.' + j;
+    return '<div class="ig">' + avHtml(r, c.rep) + '<div><p class="ig-text"><span class="ig-name">' + c.who + '</span> ' +
+      (c.rep ? '<span class="cm-tag">Reporter</span> ' : '') + c.t.replace(/^@(\S+)/, '<span class="ig-at">@$1</span>') + '</p>' +
+      '<div class="ig-meta"><span>' + c.ago + '</span><button data-reply="' + k + '" data-name="' + c.who + '">Reply</button></div></div>' +
+      '<button class="ig-like" data-like="' + id + '" aria-pressed="' + !!c.liked + '" aria-label="Like this comment"><span class="ico ' +
+      (c.liked ? 'i-heartfill' : 'i-heart') + '"></span>' + (c.likes ? '<span class="n">' + c.likes + '</span>' : '') + '</button></div>';
   }
+  function igList(r, d) {
+    if (!d.cms.length) return '<p class="cm-empty">No comments yet.</p>';
+    return '<ul class="cm">' + d.cms.map(function (c, k) {
+      var t = '<li>' + igComment(r, c, k), n = c.replies.length, open = (d.openThreads || {})[k];
+      if (n) {
+        t += '<div class="ig-thread">' + (open ? '<ul class="ig-replies">' + c.replies.map(function (x, j) { return '<li>' + igComment(r, x, k, j) + '</li>'; }).join('') + '</ul>' : '') +
+          '<button class="ig-view" data-thread="' + k + '">' + (open ? 'Hide replies' : 'View ' + n + (n === 1 ? ' reply' : ' replies')) + '</button></div>';
+      }
+      return t + '</li>';
+    }).join('') + '</ul>';
+  }
+  function composerHtml(r, d) {
+    var v = (d.drafts || {}).main || '', left = 280 - v.length;
+    return '<form class="cm-compose' + (v.trim() ? ' has-text' : '') + '" data-cm-form>' +
+      (d.replyTo != null ? '<div class="cm-replying"><span>Replying to <b>' + d.replyName + '</b></span><button type="button" class="iconbtn" data-cancel-reply aria-label="Cancel reply"><span class="ico i-x"></span></button></div>' : '') +
+      '<div class="cm-compose-row">' + avHtml(r, d.mine) + '<textarea rows="1" maxlength="280" aria-label="Add a comment" placeholder="Add a comment…">' + esc(v) + '</textarea>' +
+      '<button class="cm-post" type="submit">Post</button></div><span class="cm-left">' + (left <= 40 ? left + ' left' : '') + '</span></form>';
+  }
+  function commentTotal(d) { return d.cms.reduce(function (n, c) { return n + 1 + c.replies.length; }, 0); }
   function reportBody(i, back) {
     var r = reports[i], d = details[i];
     var chipClass = d.resolved ? 'low' : (r.sev === 'disputed' ? 'grey' : r.sev), chip = d.resolved ? 'Resolved' : r.chip;
@@ -1686,21 +1734,15 @@ button { font: inherit; color: inherit; }
     h += '<div class="rp-cols"><section class="rp-sec"><h2>What happened so far</h2><ol class="tl">' + hist.map(function (x) {
       return '<li><span class="tl-time">' + x[0] + '</span><span class="tl-mark ' + x[2] + '" aria-hidden="true"></span><span>' + x[1] + '</span></li>';
     }).join('') + '</ol></section>';
-    var total = d.cms.reduce(function (n, c) { return n + 1 + c.replies.length; }, 0);
-    h += '<section class="rp-sec"><h2>Comments' + (total ? ' <span class="n">' + total + '</span>' : '') + '</h2>' +
-      (d.cms.length ? '<ul class="cm">' + d.cms.map(function (c, k) {
-        var reps = c.replies, shown = reps.length > 2 && !(d.openThreads || {})[k] ? reps.slice(0, 2) : reps;
-        var t = '<li><div class="cmt">' + commentHtml(r, c, k) + '<ul class="cm-replies">' + shown.map(function (x) {
-          return '<li><div class="cmt">' + commentHtml(r, x, k) + '</div></li>';
-        }).join('') + '</ul>';
-        if (shown.length < reps.length) {
-          var more = reps.length - shown.length;
-          t += '<div class="cm-thread-form"><button class="cm-more" data-more="' + k + '">Show ' + more + ' more ' + (more === 1 ? 'reply' : 'replies') + '</button></div>';
-        }
-        if (d.replyTo === k) t += '<div class="cm-thread-form">' + formHtml(d, 'r' + k, 'Write a reply', 'Reply', d.replyName) + '</div>';
-        return t + '</div></li>';
-      }).join('') + '</ul>' : '<p class="cm-empty">No comments yet.</p>') +
-      formHtml(d, 'main', 'Add a comment', 'Post') + '</section></div>';
+    var total = commentTotal(d);
+    if (isPhone) {
+      // Phone: as on Instagram, the page shows a link and the comments open in their own sheet with the box inside it.
+      h += '<section class="rp-sec"><h2>Comments</h2><button class="cm-viewall" data-cm-open>' +
+        (total ? (total === 1 ? 'View 1 comment' : 'View all ' + total + ' comments') : 'No comments yet. Add one') + '</button></section></div>';
+    } else {
+      h += '<section class="rp-sec"><h2>Comments' + (total ? ' <span class="n">' + total + '</span>' : '') + '</h2>' + igList(r, d) + '</section></div>' +
+        composerHtml(r, d);
+    }
     return h;
   }
   // Tapping a pin on Nearby shows a small label over it that opens the report (owner, 2026-10-17), on the phone and the
@@ -1734,16 +1776,32 @@ button { font: inherit; color: inherit; }
     });
     return m;
   }
-  var rpSide = document.getElementById('rp-side');
-  function renderReport() {
+  var rpSide = document.getElementById('rp-side'), cmModal = document.getElementById('cm-modal');
+  function renderPage() {
     if (sheet.classList.contains('showing-report')) { var st = rpSide.scrollTop; rpSide.innerHTML = reportBody(current, 'All reports'); rpSide.scrollTop = st; return; }
     var sc = document.getElementById('rp-scroll'), top = sc.scrollTop;
     document.getElementById('rp-page').innerHTML = reportBody(current, isPhone ? '' : 'Nearby');
     sc.scrollTop = top;
   }
+  function renderSheet() {
+    if (!isPhone || cmModal.hidden) return;
+    var r = reports[current], d = details[current], list = document.getElementById('cm-sheet-list'), st = list.scrollTop;
+    list.innerHTML = igList(r, d); list.scrollTop = st;
+    document.getElementById('cm-sheet-compose').innerHTML = composerHtml(r, d);
+  }
+  function autosize(ta) { ta.style.height = 'auto'; ta.style.height = Math.min(Math.max(ta.scrollHeight, 40), 120) + 'px'; }
+  function renderReport() {
+    renderPage(); renderSheet();
+    Array.prototype.forEach.call(document.querySelectorAll('.cm-compose textarea'), autosize);
+  }
+  function focusComposer() {
+    var ta = Array.prototype.find.call(document.querySelectorAll('.cm-compose textarea'), function (x) { return x.offsetParent; });
+    if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  }
   function openReport(i) {
     current = i;
     hidePinBub();
+    cmModal.hidden = true;
     if (!isPhone && rv === 'b') {
       sheet.classList.add('showing-report');
       pins.forEach(function (p) { p.classList.toggle('pin-focus', Number(p.dataset.i) === i); });
@@ -1773,16 +1831,26 @@ button { font: inherit; color: inherit; }
     shareModal.hidden = false;
   }
   document.addEventListener('click', function (e) {
-    var t = e.target.closest('[data-openrep],[data-rp-back],[data-trust],[data-reply],[data-cancel-reply],[data-more],[data-vote],[data-resolve],[data-unresolve],[data-mute],[data-flag],[data-share],[data-close-share],[data-share-wa],[data-copy]');
-    if (!t) { if (e.target === shareModal) shareModal.hidden = true; return; }
+    var t = e.target.closest('[data-openrep],[data-rp-back],[data-trust],[data-reply],[data-cancel-reply],[data-thread],[data-like],[data-cm-open],[data-close-cm],[data-vote],[data-resolve],[data-unresolve],[data-mute],[data-flag],[data-share],[data-close-share],[data-share-wa],[data-copy]');
+    if (!t) { if (e.target === shareModal) shareModal.hidden = true; if (e.target === cmModal) cmModal.hidden = true; return; }
     var d = details[current];
+    d.drafts = d.drafts || {};
+    // Reply puts @username in the one box, as on Instagram, and says who you are replying to.
     if (t.dataset.reply) {
-      d.replyTo = Number(t.dataset.reply); d.replyName = t.dataset.name; renderReport();
-      var ta = document.querySelector('[data-key="r' + d.replyTo + '"] textarea'); if (ta) { ta.focus(); ta.scrollIntoView({ block: 'nearest' }); }
-      return;
+      // Replying to your own comment adds no @name, as on Instagram.
+      var self = t.dataset.name === 'You', rest = (d.drafts.main || '').replace(/^@\S+\s*/, '');
+      d.replyTo = Number(t.dataset.reply); d.replyName = self ? 'your comment' : t.dataset.name;
+      d.drafts.main = self ? rest : '@' + t.dataset.name + ' ' + rest;
+      renderReport(); focusComposer(); return;
     }
-    if (t.hasAttribute('data-cancel-reply')) { d.replyTo = null; renderReport(); return; }
-    if (t.dataset.more) { d.openThreads = d.openThreads || {}; d.openThreads[t.dataset.more] = true; renderReport(); return; }
+    if (t.hasAttribute('data-cancel-reply')) { d.replyTo = null; d.drafts.main = (d.drafts.main || '').replace(/^@\S+\s*/, ''); renderReport(); return; }
+    if (t.dataset.thread) { d.openThreads = d.openThreads || {}; d.openThreads[t.dataset.thread] = !d.openThreads[t.dataset.thread]; renderReport(); return; }
+    if (t.dataset.like) {
+      var p = t.dataset.like.split('.'), c = d.cms[Number(p[0])]; if (p.length > 1) c = c.replies[Number(p[1])];
+      c.liked = !c.liked; c.likes = (c.likes || 0) + (c.liked ? 1 : -1); renderReport(); return;
+    }
+    if (t.hasAttribute('data-cm-open')) { cmModal.hidden = false; renderReport(); return; }
+    if (t.hasAttribute('data-close-cm')) { cmModal.hidden = true; return; }
     if (t.dataset.openrep) { e.stopPropagation(); openReport(Number(t.dataset.openrep)); return; }
     if (t.hasAttribute('data-rp-back')) { backFromReport(); return; }
     if (t.hasAttribute('data-trust')) { d.trustOpen = !d.trustOpen; renderReport(); return; }
@@ -1797,24 +1865,31 @@ button { font: inherit; color: inherit; }
   }, true);
   document.addEventListener('input', function (e) {
     var f = e.target.closest('[data-cm-form]'); if (!f) return;
-    f.querySelector('.cm-count').textContent = e.target.value.length + ' of 280';
-    f.classList.toggle('has-text', e.target.value.length > 0);
-    var d = details[current]; d.drafts = d.drafts || {}; d.drafts[f.dataset.key] = e.target.value;
+    var v = e.target.value, left = 280 - v.length;
+    f.classList.toggle('has-text', v.trim().length > 0);
+    f.querySelector('.cm-left').textContent = left <= 40 ? left + ' left' : '';
+    autosize(e.target);
+    var d = details[current]; d.drafts = d.drafts || {}; d.drafts.main = v;
   });
   document.addEventListener('submit', function (e) {
     var f = e.target.closest('[data-cm-form]'); if (!f) return;
     e.preventDefault();
     var v = f.querySelector('textarea').value.trim(); if (!v) return;
-    var d = details[current], key = f.dataset.key, c = { who: 'You', rep: !!d.mine, when: 'Now', t: esc(v), replies: [] };
-    if (key === 'main') d.cms.push(c);
-    else { var k = Number(key.slice(1)); d.cms[k].replies.push(c); d.openThreads = d.openThreads || {}; d.openThreads[k] = true; d.replyTo = null; }
-    d.drafts = d.drafts || {}; d.drafts[key] = '';
+    var d = details[current], c = { who: 'You', rep: !!d.mine, ago: 'now', likes: 0, t: esc(v) };
+    if (d.replyTo != null) { d.cms[d.replyTo].replies.push(c); d.openThreads = d.openThreads || {}; d.openThreads[d.replyTo] = true; d.replyTo = null; }
+    else { c.replies = []; d.cms.push(c); }
+    d.drafts = d.drafts || {}; d.drafts.main = '';
     renderReport();
   });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') shareModal.hidden = true; });
+  document.addEventListener('keydown', function (e) {
+    // Enter posts, Shift and Enter makes a new line, as on Instagram on a computer.
+    if (e.key === 'Enter' && !e.shiftKey && e.target.closest && e.target.closest('[data-cm-form]')) { e.preventDefault(); e.target.closest('form').requestSubmit(); }
+    if (e.key === 'Escape') { shareModal.hidden = true; cmModal.hidden = true; }
+  });
   window.__mock.openReport = openReport;
   if (params.get('open') === 'rep') openReport(Number(params.get('i') || 0));
   if (params.get('share')) openShare();
+  if (params.get('cm') && isPhone) { cmModal.hidden = false; renderReport(); }
   if (params.get('screen')) go(params.get('screen'));
   if (params.get('tab')) { var tb = document.querySelector('[data-tab="' + params.get('tab') + '"]'); if (tb) tb.click(); }
   if (params.get('pop')) { var pb = Array.prototype.find.call(document.querySelectorAll('[data-pop="' + params.get('pop') + '"]'), function (b) { return b.offsetParent; }); if (pb) openPop(params.get('pop'), pb); }

@@ -45,15 +45,29 @@ Handy address parameters: `?view=phone|laptop`, `rp=a|b` (the laptop variant, B 
    sample report is yours, as in sketch 007's My activity), plus Share. Quiet links: Stop updates on this report
    (Phase 3.2 muting) and Flag (Phase 4).
 4. What happened so far: a timeline built from the vote log. It never names a voter or says where they were.
-5. Comments with replies (owner, 2026-10-17: "design the comment section better allow the replies"). Threads oldest
-   first. Each comment has a small round picture, the name, the time, the words and Reply. Replies sit one step in, under
-   the comment they answer, with smaller pictures. There is one level only: Reply on a reply adds to the same thread, with
-   "Replying to Someone nearby" and Cancel above the box. A thread with more than two replies shows two and "Show 1 more
-   reply". The reporter's picture carries the report's icon and colour plus the word Reporter (never colour alone);
-   everyone else is "Someone nearby" with a plain person picture. The count beside Comments includes replies; with none,
-   a plain "No comments yet." and no count. The main box sits at the bottom, one line with Post beside it; it grows when
-   tapped and shows the 280 letter count once typing starts. Replies have the same 280 limit and pass the same screening.
-   Posting adds the comment or reply in the mockup, and a half typed comment survives a vote.
+5. Comments that work like Instagram's (owner, 2026-10-17: "allow the replies", then "i want how instagram comments
+   work"):
+   - Each comment: a round picture, then the **bold username and the words on one line**, then a small grey line with
+     the time ("27m") and **Reply**. A **heart** on the right likes it, with the count under it; liked is a filled red
+     heart. The reporter's picture carries the report's icon and colour plus a small "Reporter" tag (never colour alone).
+   - **Replies are folded** behind "View N replies" (a short line before it), and "Hide replies" folds them again. One
+     level only: Reply on a reply joins the same thread, and posting a reply opens its thread.
+   - **One box for everything.** Reply puts "@username " in the box, moves the cursor there and shows "Replying to
+     username" with an X to cancel. Replying to your own comment adds no @name. A reply starting with @username shows the
+     name in bold. Post is a word that turns solid once there is text; Enter posts and Shift with Enter starts a new line.
+     The box grows as you type, and "N left" shows only in the last 40 of the 280 letters.
+   - **Laptop:** the comments sit in the panel, oldest first, with the box pinned to the bottom of the panel, as on
+     Instagram's post view on a computer.
+   - **Phone:** the page shows "View all N comments" (or "No comments yet. Add one"), which opens a comments sheet from
+     the bottom with the box pinned inside it, as in the Instagram app. Close with the X, a tap outside or Escape.
+   - The count beside Comments includes replies. A like, an open thread and a half typed comment all survive a vote.
+   - Likes are new. The rules to keep when building: one like per account per comment, comments only (never on the
+     report itself), and they never feed Confirmed, the reporter score or any trust number. A heart must never read as
+     Confirm.
+   - Departures from the house rules, copied from Instagram on purpose: the liked heart is red, which the MANIFEST keeps
+     for severity. Left out: Instagram's emoji reaction row above the box (no emoji in this app).
+   - Sample commenters have short usernames (ravi.k, anjali.r and so on) because Instagram shows one on every comment.
+     Who may show a name is the open question below.
 6. Share: a window (a bottom sheet on the phone) showing what people get in WhatsApp: the title and "Open to see if this
    is still true right now", with a link and no counts, so a forward can never show a stale number. Close with the X.
 
@@ -77,13 +91,15 @@ comments box and the always open text box went, and the section headings got sma
 ## Owner decisions (2026-10-17)
 
 - Laptop: **B, beside the map.** A stays in the file behind `?rp=a` for comparison only.
-- Comments are wanted, **with replies** (one level, as above). They still need the Phase 4 screening and per account
-  limits, so they ship after the page and the history.
+- Comments are wanted, **with replies**, and they should **work like Instagram's** (item 5). They still need the Phase 4
+  screening and per account limits, so they ship after the page and the history.
 - Tapping a pin on the map shows **Open report** over the pin.
 
 ## Open questions for the owner's look
 
-- Is "Someone nearby" the right name for other commenters?
+- Names. Instagram shows a username on every comment, so the mockup does too. Phase 9 profiles are opt in, and a
+  nickname needs the same screening as comments (Phase 8 scope note 4). Does every commenter need a username, or do
+  people without one show as "Someone nearby"?
 
 ## Checks run
 
@@ -94,3 +110,9 @@ Second round (2026-10-17): the trust panel stays open after Confirm and shows "1
 the pin label shows on the laptop and the phone and opens the report; a scripted reply posts into the right thread,
 "Show 1 more reply" opens the thread, Reply on a reply puts the box in that thread with focus in it, and every Reply tap
 area measures 44px.
+Third round, Instagram style (2026-10-17): a like survives a vote (7 likes, red heart); Reply on a reply fills
+"@suresh.patamata " with focus in the box and shows "Replying to suresh.patamata"; the posted reply lands as the fourth
+reply in the right thread and the count goes from 6 to 7; Reply on your own comment adds no @name and Enter posts it into
+that thread; View and Hide replies work; the laptop box sits flush with the panel bottom with the last comment above it;
+on the phone "View all 6 comments" opens the sheet, its box sits at the sheet bottom, and a username never breaks across
+lines; the heart is 32 by 44 and Reply 44 tall; light and dark checked.
