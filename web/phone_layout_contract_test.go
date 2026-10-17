@@ -153,7 +153,14 @@ func TestPhoneRulesLiveInTheNarrowBlock(t *testing.T) {
 		default:
 			// The phone block, and the short screen block that adds one
 			// condition to it, both bounded by the 899.98px query.
-			if !strings.HasPrefix(r.Media, phoneBlockMedia) {
+			//
+			// Amended 2026-10-17 by Phase 3.4 plan 22 (plan 17 finding 5): the
+			// parser records a rule inside a container query nested in the
+			// phone block with the container query as its Media, so that one
+			// named query is accepted too. TestPhoneActivityCardReflowsAtLargeText
+			// proves from the raw text that it sits inside the 899.98px block.
+			// Nothing broader is allowed.
+			if !strings.HasPrefix(r.Media, phoneBlockMedia) && r.Media != phoneActivityContainerMedia {
 				t.Errorf("rule %q sits in %q, want only the %s block", r.Head, r.Media, phoneBlockMedia)
 			}
 		}

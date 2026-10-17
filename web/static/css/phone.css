@@ -728,6 +728,8 @@
   main.profile-page > .activity-part .profile-report-list {
     gap: var(--space-12);
     margin: 0;
+    /* The size container of the large text query below the card grid. */
+    container: activity-list / inline-size;
   }
 
   /* The report card: the disc and the status chip on the first row, the text and
@@ -778,6 +780,35 @@
     padding: 10px 0 0 var(--space-md);
     border-top: 1px solid var(--color-border);
     text-align: right;
+  }
+
+  /* At large text the distance drops under What happened (Phase 3.4 plan 22,
+     plan 17 finding 5). The still current label cannot break inside a word,
+     so What happened needs the width of the longest word, "confirming", and
+     the distance column ("under 100 m away" is the widest wording) leaves it
+     less than that once the text is a little larger than normal. The list is
+     the size container, and the query is in em, which a container query reads
+     from the container's own font size, so it follows the type size tokens:
+     17em is 272px at normal text, under the 288px a 320px screen gives the
+     list, so nothing moves at normal text, and it is 1.06 times the type
+     size and up at 320px. The query sits after the rules above, so it wins by
+     order. The distance keeps its right alignment but loses the hairline and
+     the left padding it only needed beside What happened. The container is
+     declared on the list rule above. */
+  @container activity-list (max-width: 17em) {
+    main.profile-page .profile-report-list > .activity-card {
+      grid-template-areas:
+        "disc status"
+        "report report"
+        "when when"
+        "what what"
+        "distance distance";
+    }
+
+    main.profile-page .profile-report-list > .activity-card > .activity-card__distance {
+      padding: 0;
+      border-top: 0;
+    }
   }
 
   /* Reopen and the take back sit under the sentence, full width and 44px. */
