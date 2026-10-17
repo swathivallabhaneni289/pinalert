@@ -6,7 +6,7 @@
 <domain>
 ## Phase Boundary
 
-Everyone has a profile page reached from their username, Instagram style: picture, username, name, stars, the reporter tag, Followers and Following counts that open their lists, and the reports they posted recently. People who opt in and hold the Reliable reporter tag can be followed; a follower can ask, with a bell on that person's profile, to be told quietly when they post. Readers can tap one to five stars to rate a reporter, inside guard rails.
+Everyone has their own My profile, Instagram style: picture, username, name, stars, the reporter tag, Followers and Following counts that open their lists, and the reports they posted recently. Other people's profiles are public only when they opt in (D-01); someone who has not opted in appears in lists only as a number and cannot be opened (D-03). People who opt in and hold the Reliable reporter tag can be followed; a follower can ask, with a bell on that person's profile, to be told quietly when they post. Readers can tap one to five stars to rate a reporter, inside guard rails.
 
 Not in this phase: comments and usernames themselves (Phase 8), the notification plumbing (Phases 3.2 and 3.3).
 
