@@ -216,6 +216,15 @@
   border-radius: 8px;
 }
 
+/* Muted text on the grey box is 4.34 to 1 in the default theme, under the 4.5
+   bar, so the subtitle and the updated date take the normal text colour inside
+   it. The reader window (window.css) and the first-time flow (welcome.css) do
+   the same inside their boxes (code review part 3 WR-06). */
+.legal-box .legal-subtitle,
+.legal-box .legal-updated {
+  color: var(--color-text);
+}
+
 /* ---- Laptop ---------------------------------------------------------------- */
 
 @media (min-width: 900px) {

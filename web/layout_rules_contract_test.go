@@ -328,6 +328,11 @@ var touchControls = []string{
 	".legal-close", ".btn",
 	// My activity
 	".activity-hub__row",
+	// Amended 2026-10-17 by Phase 3.4 plan 26 (code review part 3 IN-02): the
+	// notice strip's Read the disclaimer link is a standalone link of about
+	// 20px, and UI-SPEC Spacing says every link is 44px. It was missing from
+	// this list, so the guard did not see it. Added; no check weakened.
+	".notice-strip__link",
 }
 
 // touchValue reads a height or min-height value as pixels: a px length, a
@@ -519,7 +524,10 @@ var sizeOnlyNamed = map[string]string{
 
 	// Rules that swap one element for another on one screen, or that hide a part of
 	// one phone screen while another part shows. The feature stays on both sizes.
-	".app-topbar:has(> .map-search) > .app-topbar__title":                                           "phone Nearby: Search a place takes the place of the title in the top bar (D-10, app_bar.html.tmpl).",
+	// Amended 2026-10-17 by Phase 3.4 plan 26 (code review part 3 WR-04): this title is no longer
+	// display none on any size. app-bar.css hides it by clipping so Nearby keeps its one h1 for screen
+	// readers; the entry stays so a later display none on it would still be named and explained.
+	".app-topbar:has(> .map-search) > .app-topbar__title":                                           "phone Nearby: Search a place takes the place of the title in the top bar (D-10, app_bar.html.tmpl); the title is clipped, not removed, so the h1 stays.",
 	".app-topbar:has(> .map-search) > .app-topbar__spacer":                                          "phone Nearby: the spacer is not needed when Search a place fills the bar (D-10).",
 	"#map .icon-badge--pin .icon-glyph":                                                             "phone: the pin is a 20px dot without a glyph; the laptop pin is the 44px badge with it (UI-SPEC D16, pins stay the built markers).",
 	"main.profile-page:not([data-part=\"\"]):not([data-part=\"posted\"]) > .queue-strip":            "phone My activity: the waiting reports strip belongs to the Posted part only; the laptop stack shows it with that part (D-21).",

@@ -662,6 +662,36 @@
   .map-chip[aria-pressed="true"] {
     border: 2px solid CanvasText;
   }
+
+  /* The check and the magnifier are masks painted with a background colour,
+     which a forced colours theme replaces with Canvas, so they vanish. They
+     opt out of the adjustment and take the button text colour, the way
+     .notice-strip__icon does (chrome.css). Code review part 3 WR-01. */
+  .map-chip[aria-pressed="true"]::before,
+  .map-search__icon {
+    forced-color-adjust: none;
+    background-color: ButtonText;
+  }
+
+  /* A chosen row shows by its fill, which a forced colours theme drops, so it
+     takes a 1px Highlight border as UI-SPEC Color says. Three heads at
+     (1,3,0) so the phone card's provisional and hidden borders in phone.css,
+     which load later at (1,2,0), do not win. The phone card has no side bar,
+     so its border is 1px all round; the laptop row keeps its 4px severity bar
+     (block below). Code review part 3 WR-02. */
+  #report-list .report-row.report-row--selected,
+  #report-list .report-row.vis-provisional.report-row--selected,
+  #report-list .report-row.vis-hidden.report-row--selected {
+    border: 1px solid Highlight;
+  }
+}
+
+@media (min-width: 900px) and (forced-colors: active) {
+  #report-list .report-row.report-row--selected,
+  #report-list .report-row.vis-provisional.report-row--selected,
+  #report-list .report-row.vis-hidden.report-row--selected {
+    border-left-width: 4px;
+  }
 }
 
 /* List container — reset the <ol>'s default markers/margin, and lay rows

@@ -80,11 +80,20 @@
   display: none;
 }
 
+/* The pane scrolls, so it clips to its padding box, and its children fill its
+   width. A 4px gutter, as wide as the focus ring (2px offset and 2px line),
+   keeps the ring of a button, a field or the legal box inside the clip, and
+   the same amount of negative margin keeps every child exactly where it was.
+   A primary button is filled with the ring colour, so an inset ring would not
+   show on it (code review part 3 WR-03). The laptop pane has its own padding
+   and resets the margin. */
 .welcome__pane {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
+  margin: calc(-1 * var(--space-xs));
+  padding: var(--space-xs);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -181,6 +190,14 @@
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-surface);
+}
+
+/* Muted text on the grey box is 4.34 to 1 in the light theme, so the legal
+   subtitle and updated date take the normal text colour inside it (code review
+   part 3 WR-06). */
+.welcome__scrollbox .legal-subtitle,
+.welcome__scrollbox .legal-updated {
+  color: var(--color-text);
 }
 
 /* Disagree shows this one message and nothing else moves. */
@@ -373,6 +390,7 @@
   }
 
   .welcome__pane {
+    margin: 0;
     padding: var(--space-xl) 40px;
     background: var(--color-bg);
   }
