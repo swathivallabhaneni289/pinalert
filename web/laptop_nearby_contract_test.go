@@ -141,3 +141,56 @@ func TestLaptopMapSizeFollowsTheLayout(t *testing.T) {
 	initBody := jsFunctionBody(t, code, "init()")
 	p13MustContain(t, "init", initBody, "watchMapBox(container);")
 }
+
+// TestLaptopNearbyShellFitsWindow pins the arithmetic behind the laptop shell
+// height (Phase 3.4 plan 21, plan 17 finding 1). The shell, the map and the
+// panes are the window less the notice strip token and the top bar token, so
+// every pixel of the top bar must be inside that token. The token is 61px: a
+// 44px control row, 8px above and below and the 1px hairline. The place search
+// field is a 44px control wrapped in its own 1px border, which makes the
+// bordered box 46px; left alone it stretched the bar to 63px and the shell was
+// 2px taller than the window. The field's border now hangs into the bar's
+// padding with a negative block margin, so the form is 44px and the bar is
+// exactly its token. Both bars are border-box and the strip's floor is its own
+// border-box height, so a future border cannot add height without failing here.
+func TestLaptopNearbyShellFitsWindow(t *testing.T) {
+	const appBar = "static/css/app-bar.css"
+	const main = "static/css/main.css"
+
+	// The token is the control row, the padding and the hairline.
+	tok := p31mRule(t, main, laptopMedia, ":root")
+	if got, want := p19NoSpace(tok.Decls["--app-topbar-height"]), p19NoSpace("calc(var(--touch-target-min) + var(--space-md) + 1px)"); got != want {
+		t.Errorf("laptop --app-topbar-height is %q, want 44 control + 16 padding + 1px hairline %q", tok.Decls["--app-topbar-height"], want)
+	}
+
+	// The bar states its token as a floor, in border-box, with the hairline
+	// and the 8px padding inside it.
+	bar := p31mRule(t, appBar, "", ".app-topbar")
+	p16MustDecl(t, "top bar", bar, map[string]string{
+		"min-height":    "var(--app-topbar-height)",
+		"padding":       "var(--space-sm) var(--space-md)",
+		"border-bottom": "1px solid var(--color-border)",
+	})
+	if !regexp.MustCompile(`(?s)\*,\s*\*::before,\s*\*::after\s*\{\s*box-sizing:\s*border-box;`).MatchString(p16ReadStatic(t, main)) {
+		t.Errorf("main.css no longer sets box-sizing: border-box on everything; the bars' tokens would then exclude their padding and border")
+	}
+
+	// The bordered search field is a 44px control plus its own 1px border on
+	// both sides; the negative margin gives those 2px back to the bar.
+	form := p31mRule(t, appBar, "", ".app-topbar > .map-search")
+	p16MustDecl(t, "search form", form, map[string]string{"flex": "0 1 260px"})
+	field := p31mRule(t, appBar, "", ".map-search__field")
+	p16MustDecl(t, "search field", field, map[string]string{
+		"min-height":   "var(--touch-target-min)",
+		"border":       "1px solid var(--color-border)",
+		"box-sizing":   "border-box",
+	})
+	p16MustDecl(t, "search field on a laptop", p31mRule(t, appBar, laptopMedia, ".map-search__field"), map[string]string{"margin-block": "-1px"})
+	// The phone field has no border, so the margin must stay out of its rules.
+	if _, ok := field.Decls["margin-block"]; ok {
+		t.Errorf("the base .map-search__field rule holds margin-block; it belongs in the 900px block only, the phone field has no border to give back")
+	}
+	if strings.Contains(p16ReadStatic(t, "static/css/phone.css"), "margin-block: -1px") {
+		t.Errorf("phone.css holds the laptop field margin; the phone is not changed by this plan")
+	}
+}

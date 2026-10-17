@@ -414,4 +414,13 @@ html:has(.app-topbar) {
     height: calc(100vh - var(--disclaimer-bar-height) - var(--app-topbar-height));
     height: calc(100dvh - var(--disclaimer-bar-height) - var(--app-topbar-height));
   }
+
+  /* The bordered search field is a 44px control wrapped in its own 1px border,
+     so the box is 46px and, unchecked, it stretches the bar to 63px while the
+     shell below subtracts the 61px token (the page then scrolls by 2px). The
+     border hangs into the bar's 8px padding instead, so the form is 44px and
+     the bar is exactly its token. The phone field has no border (phone.css). */
+  .map-search__field {
+    margin-block: -1px;
+  }
 }
