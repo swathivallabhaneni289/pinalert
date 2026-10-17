@@ -220,7 +220,7 @@ func TestLegalPagesRender(t *testing.T) {
 		// already posted keep.
 		"If the check can't finish in time, a normal report waits, unseen, until it does. A critical report is published at once and checked afterwards. A Rescue needed report posted before that category was retired keeps this rule until it fades.",
 		"For anything serious, such as a crime or a threat to someone's safety, contact the police directly. In an emergency call 112. Pinalert doesn't contact the police for you.",
-		"So a report waiting to send isn't guaranteed to survive. Send it as soon as you have a signal.",
+		"Browsers can clear saved data: when a private window closes, when storage runs low, or in Safari after about a week without a visit. So a report waiting to send isn't guaranteed to survive. Send it as soon as you have a signal.",
 		"Nothing here is deleted on a schedule yet.",
 		// Review finding IN-W01 (Phase 4 web review): the three sentences
 		// that now say what the background check stores and shows. A check
