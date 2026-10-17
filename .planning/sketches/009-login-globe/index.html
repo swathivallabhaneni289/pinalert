@@ -164,7 +164,10 @@ body {
 .login-gate[data-place="a"] .globe-area { position: absolute; inset: 0; z-index: 0; }
 .login-gate[data-place="a"] .globe-bg { position: absolute; inset: 0; opacity: var(--globe-dim-a); }
 .login-gate[data-place="a"] .globe-box { position: absolute; left: var(--globe-x, 0px); top: var(--globe-y, 0px); }
-.login-gate[data-place="a"] .globe-credit { position: absolute; right: var(--space-sm); bottom: var(--space-sm); }
+/* In A the credit can sit over the globe (always on a phone), so it gets a solid page coloured
+   background: over the photo, dark text on the dimmed sea measured 4.2 to 4.4:1 in light mode. */
+.login-gate[data-place="a"] .globe-credit { position: absolute; right: var(--space-sm); bottom: var(--space-sm);
+  background: var(--color-bg); padding: 0 var(--space-sm); border-radius: 6px; }
 /* A on a phone, or in a short laptop window under 1200px wide: the corner would sit under the
    Low data panel, so the credit goes in the page flow under the panel. The globe stays
    absolute against .login-gate and still fills it. */

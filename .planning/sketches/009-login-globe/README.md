@@ -2,7 +2,7 @@
 sketch: 009
 name: login-globe
 question: "Can the sign in page show a real Earth turning on its axis, not a flat picture, calm enough for a page everyone must pass, and does it sit behind the card or beside it?"
-winner: null
+winner: "Look approved: the realistic Earth (NASA pictures), owner 2026-10-17. A or B not picked yet"
 tags: [login, sign-in, globe, maplibre, webgl, phone, laptop, light-dark, low-data, phase-5]
 ---
 
@@ -32,13 +32,15 @@ the card does not.
 - **Theme:** Light or Dark. Without a choice it follows the device.
 - **Low data view:** Off or On.
 - **WebGL:** Available, or Missing (forces the path a device without WebGL2 takes).
-- **Country borders:** Shown (the app map's look) or Hidden.
+- **Earth:** Realistic (NASA satellite pictures, the default) or Map colours (the app map's look).
+- **Country borders** (Map colours only): Shown or Hidden.
 - On the right, a status line says what the globe is doing: turning, still (reduce motion), paused (tab hidden), or off
   and why. In Phone view it repeats the framed page's own status, read about once a second.
 
 Address parameters behind the switches: `view=laptop|phone`, `place=a|b`, `screen=signin|sent|verified`,
-`theme=light|dark`, `low=1`, `nowebgl=1`, `borders=0`. Two more for checks only: `email=` (the address shown on Check
-your inbox) and `tz=1` (zoom 1 tiles instead of zoom 0, to compare detail and weight). Checks can read `window.__globe`:
+`theme=light|dark`, `low=1`, `nowebgl=1`, `earth=map`, `borders=0`. Two more for checks only: `email=` (the address
+shown on Check your inbox) and `tz=1` (Map colours: zoom 1 tiles instead of zoom 0, to compare detail and weight).
+Checks can read `window.__globe`:
 `map`, `spinning()`, `centerLng()`, `status()`, `size()` and `errors`.
 
 ## Sign in today, and where "create account" is
@@ -59,18 +61,18 @@ ends up with.
 
 ## Realistic Earth (owner, 2026-10-17)
 
-The owner asked for "a more realistic earth" turning. The globe now shows NASA Blue Marble satellite pictures by
-default (the mockup strip's Earth switch: Realistic, or Map colours for the earlier OpenFreeMap look). Source: NASA GIBS
-`BlueMarble_NextGeneration` in the web map tiling, `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/...`, free, no
-key, answers with `Access-Control-Allow-Origin: *`. The style is one picture layer, capped at zoom 3, with no labels, no
+The owner asked for "a more realistic earth" turning. They asked whether it was free and were told yes (NASA, no
+account, no key, a credit only) and that NASA gives no uptime guarantee. Then they approved it: "yes i like the earth".
+So the globe shows NASA Blue Marble satellite pictures by default (commit 45dfaa6), and the strip's Earth switch keeps
+Map colours, the earlier OpenFreeMap look, for comparison. Source: NASA GIBS `BlueMarble_NextGeneration` in the web map
+tiling (`https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_NextGeneration/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg`),
+which answers with `Access-Control-Allow-Origin: *`. The style is one picture layer capped at zoom 3, with no labels, no
 borders and no glow (no gradient on the page); the same spin, size, fade in, give up and reduce motion rules apply. The
-credit reads "Earth pictures: NASA Blue Marble via NASA GIBS", with links. Measured 2026-10-17 in Chromium and WebKit,
-9 seconds after load: about 243 KB of pictures (31 tiles) at 1440 by 900, 99 to 227 KB at 390 by 844, on top of the
-MapLibre files; no style or vector tile download. GIBS sends `Cache-Control: no-store`, so pictures are fetched again
-on every visit, and new tiles keep arriving as the globe turns (zoom 3 is 64 tiles for the whole Earth, so a full
-2 minute turn may reach about 1 MB; estimated, not measured). Because the pictures have no borders, open question 3
-(country borders) applies only to Map colours. The other sections below still describe the Map colours globe until
-they are brought up to date.
+sections below describe the realistic Earth, with Map colours noted where it differs.
+
+Every GIBS address tried (`best` and `std`, with and without a date) answers
+`Cache-Control: max-age=0, no-store, no-cache, must-revalidate`, so browsers fetch the pictures again on every visit.
+The measured cost is under Download weight, and item 21 of For the build has an option.
 
 ## Variants
 
@@ -84,7 +86,8 @@ they are brought up to date.
   whole sphere shows.
 - **B, beside the card.** The globe at full strength (90 percent in dark). Laptop: globe on the left (516px on a 1440 by
   900 window), card on the right. Phone: globe at the top (242px on a 390px phone) with its credit under it, then the
-  card; the Low data panel needs a short scroll (the page is 978px tall on a 390 by 844 phone).
+  card; the Low data panel needs a short scroll (the page is 934px tall on a 390 by 844 phone, 978px with the two line
+  Map colours credit).
 - Both have the same globe, speed, credits and behaviour on the phone and the laptop; only the place and the size differ.
 
 ## What is on the page
@@ -102,11 +105,13 @@ they are brought up to date.
    Low data panel.
 4. **The panel under the card:** "Low data view" and "Text only, no map", or, when it is on, "Low data view is on for this
    device. It opens after you sign in." with "Turn off"; then Disclaimer and Policy, which go nowhere in the mockup.
-5. **The globe**, with a credit line: "OpenFreeMap © OpenMapTiles Data from OpenStreetMap", the same three links as the
-   app map. In A it sits in the bottom right corner on a laptop and under the Low data panel on a phone (and in a laptop
-   window narrower than 1200px and shorter than 800px, where the corner would sit under the panel); in B, under the
-   globe. It is one line on a laptop and wraps to two on a phone. It is in the page from the first paint but invisible
-   until the globe shows, so the card never moves when the globe arrives.
+5. **The globe**, with a credit line: "Earth pictures: NASA Blue Marble via NASA GIBS", linking to NASA's Blue Marble and
+   GIBS pages (Map colours: "OpenFreeMap © OpenMapTiles Data from OpenStreetMap", the same three links as the app map).
+   In A it sits in the bottom right corner on a laptop and under the Low data panel on a phone (and in a laptop window
+   narrower than 1200px and shorter than 800px, where the corner would sit under the panel), on a solid page coloured
+   background so the picture under it never matters; in B, under the globe. The realistic credit is one line on a laptop
+   and on most phones and wraps to two on a 320px screen; the Map colours credit wraps to two on any phone. It is in the
+   page from the first paint but invisible until the globe shows, so the card never moves when the globe arrives.
 
 Nothing was added: no logo, wordmark, menu or theme button. The heading is still the first thing on the page, and
 keyboards and screen readers meet the globe credit only after the card.
@@ -116,8 +121,13 @@ keyboards and screen readers meet the globe credit only after the card.
 - **The library the app already loads.** maplibre-gl 5.24.0 from unpkg, with the same URLs and SRI hashes as
   `web/templates/index.html.tmpl:22-24,205-207`, so the browser cache is shared with the map page. A plain
   `new maplibregl.Map` with the globe projection, not Leaflet and not the bridge (the bridge draws MapLibre flat inside
-  Leaflet, `web/static/js/map.js:284-313`). No three.js, no picture of the Earth, no build step.
-- **The app's map style, trimmed for calm.** `https://tiles.openfreemap.org/styles/liberty`, the same style URL as
+  Leaflet, `web/static/js/map.js:284-313`). No three.js and no build step; the Earth pictures are NASA's tiles, drawn by
+  MapLibre onto the sphere.
+- **Realistic Earth (default).** A style written in the page script: one raster source, the GIBS address above, 256px
+  tiles, `maxzoom: 3`, and one raster layer with no fade. Nothing else: no labels, borders, glow, style file, TileJSON,
+  font or sprite. Zoom 3 is sharp enough for a 766px globe and caps the download (85 tiles at zoom 0 to 3).
+- **Map colours (the switch): the app's map style, trimmed for calm.**
+  `https://tiles.openfreemap.org/styles/liberty`, the same style URL as
   `map.js:306`, fetched when the page runs. Left out of the copy: every label and icon layer (left out to keep the globe
   calm; it also means no font or sprite download), the shaded relief picture (`natural_earth`, PNG tiles of about 180 to
   250 KB each), and the two pattern layers that need the sprite. The vector tiles are capped at zoom 0, so the whole
@@ -181,6 +191,7 @@ Screenshots stayed in the session scratchpad, never in the repo.
   centred with no empty gap.
 - **Referrer:** with an email in the address (`?screen=sent&email=test%40example.com`), unpkg and the style request sent no
   Referer, and MapLibre's own TileJSON and tile requests sent only `http://127.0.0.1:8804/`, with no path or query.
+  Measured for Map colours (OpenFreeMap); the NASA GIBS requests were not checked.
 - **Hidden tab:** simulated only, because headless pages stay visible: overriding `document.hidden` and firing
   `visibilitychange` stopped the loop ("paused while the tab is hidden"), and it restarted afterwards.
 - **Country borders Hidden:** no boundary layer left in the style, globe turning, no errors. The border facts in open
@@ -195,7 +206,8 @@ Screenshots stayed in the session scratchpad, never in the repo.
     wrapped lines on a phone. Each tap area measured 45px tall, but the second line's padding covered the first line's
     words: a tap on the middle of "OpenFreeMap" (390 by 844, B) hit the OpenStreetMap link.
   - In A on a phone the credit now sits over the dimmed globe, not on plain page. Its weakest contrast, dark mode over
-    land, is about 4.9:1, computed from the colours and the 40 percent dim, not sampled.
+    land, is about 4.9:1, computed from the colours and the 40 percent dim, not sampled. (Map colours. Superseded: the
+    A credit now has a solid background, see Realistic Earth below.)
   - A map error before load, with an address half typed, moved nothing and kept the focus and the text.
   - With the style held back 12 seconds, the globe gave up at 10.3 seconds, the card did not move, and the style that
     came later created no map. On the hidden page the status still read "loading" after 12.6 seconds.
@@ -209,12 +221,50 @@ Screenshots stayed in the session scratchpad, never in the repo.
     false emoji flag on ©.
   - In Phone view the strip's status matched the framed page's own status with the globe loading, turning, off for Low
     data view, and off for WebGL Missing.
+- **Realistic Earth** (2026-10-17):
+  - In Chromium and WebKit (Playwright, run by the 3.4 session): laptop A and B, phone B, phone A dark; status turning,
+    no errors.
+  - Picture tiles in the first 9 seconds (the visible copy of the snapshot tool; sizes from downloading each tile address
+    once): 31 tiles, 248.7 KB in A and in B at 1440 by 900; 27 tiles, 229.1 KB in A at 390 by 844; 10 tiles, 101.2 KB
+    in B at 390 by 844.
+  - A full 2 minute turn in A at 1440 by 900: 48 different zoom 3 tiles, 377.9 KB. Repeat fetches of the same tile were
+    not counted. All 85 tiles at zoom 0 to 3 come to 746.4 KB, the most a visit downloads unless a tile is fetched twice.
+  - Cache headers: every GIBS address tried (`best` and `std`, with and without a date) answers
+    `Cache-Control: max-age=0, no-store, no-cache, must-revalidate`.
+  - The A credit over the photo, before the fix: in light mode, dark text over the dimmed sea measured 4.24 to 4.41:1,
+    under 4.5:1, at one turn position (about longitude 57; the turning loop overrides a jump to another longitude). Dark
+    mode measured 11 to 18:1. Fixed with a solid page coloured background behind the A credit: 16.9:1 in light and
+    17.7:1 in dark, apart from a few pixels at the rounded corners.
+  - The owner's rules checker on phone A, light and dark, with the photo globe loaded: only the items already known,
+    which are copied from the app as is.
+  - No layout shift: the card, email field and Send stayed in place from before the globe loaded to "turning", in B at
+    390 by 844 (card at 344px), 375 by 548 and 320 by 568, and in A at 390 by 844 and 320 by 568. The A credit sits
+    below the Low data panel (8px gap at 390 by 844), and there is no sideways scroll.
 - **Not checked:** real Mac Safari and the iPhone simulator (the owner's look is the check that counts), a real hidden tab,
   a lost WebGL context, and a slow connection.
 
 ## Download weight (measured, cold cache)
 
 KB here is 1,000 bytes.
+
+**Realistic Earth (default).**
+
+| What | Bytes | Kept by the browser |
+|------|-------|---------------------|
+| maplibre-gl.js and .css 5.24.0, shared with the map page | 285.6 KB compressed | a year |
+| The globe's own code (a login only script and stylesheet) | about 6 KB compressed | an hour, or until a server restart |
+| NASA pictures, first 9 seconds | 248.7 KB laptop A or B (31 tiles), 229.1 KB phone A (27), 101.2 KB phone B (10) | never (`no-store`) |
+| NASA pictures, a full 2 minute turn in A on a laptop | 377.9 KB (48 tiles) | never |
+
+- **First visit**, first 9 seconds: about 540 KB on a laptop, 520 KB on a phone in A and 393 KB on a phone in B, against
+  today's 31.9 KB (about 17, 16 and 12 times). Staying for a full turn on a laptop: about 670 KB.
+- **Every later visit:** the library is cached, but the pictures come again: about 100 to 250 KB in the first seconds,
+  up to about 380 KB for a full turn on a laptop. All 85 tiles at zoom 0 to 3 are 746.4 KB, the most for one visit
+  unless a tile is fetched twice.
+- **Low data view and no WebGL2:** 0 bytes.
+
+**Map colours (the switch).** Everything from here to the end of this section was measured before the realistic Earth,
+for the OpenFreeMap look. The 346 KB first visit the owner was told on 2026-10-17 is this look's figure.
 
 | File | Compressed body | On the wire, headers included |
 |------|-----------------|-------------------------------|
@@ -307,37 +357,47 @@ away with it.
    (12px is kept to the closed list, `.planning/phases/03.4-app-layout/03.4-UI-SPEC.md:169`) and 44px tall links, like
    `.login-ways__links a` (`auth.css:280-289`). On a phone the credit wraps to two 44px rows with a gap between them.
    Do not close the gap with padding on inline links: the rows' tap areas then overlap, and a tap on the first line can
-   open the second line's link (measured, see Checks run).
+   open the second line's link (measured, see Checks run). For the realistic Earth the credit is "Earth pictures: NASA
+   Blue Marble via NASA GIBS", linking to NASA's pages, and in A it gets a solid page coloured background
+   (`background: var(--color-bg)`), because over the photo the plain credit measured under 4.5:1 in light mode.
 10. **The form first, one map.** Create the map only after the page has loaded, and never create it again when the card
     swaps (`01.1-UI-SPEC.md:259-268`, `auth.js:109-114`).
 11. **Size from the sign in area.** Never a bare `100vh` or `100dvh` on a wrapper
     (`web/chrome_css_contract_test.go:187-226`, `auth.css:13-23`); `--disclaimer-bar-height` is 0px on `/login`
     (`web/static/css/main.css:100-109`). Size from the area's width and first screen height, so the card swap never
     moves the globe, and solve the zoom for the size it looks on screen.
-12. **Style and tiles.** Fetch the reviewed liberty URL and trim it as above, with the openmaptiles source capped at
-    `maxzoom: 0` (a source `maxzoom` overrides the TileJSON's), and drop any sky block. No test covers a
+12. **Style and tiles.** Realistic Earth: write the style in the script, with one raster source (the GIBS address,
+    `tileSize: 256`, `maxzoom: 3`) and one raster layer, nothing else. Map colours: fetch the reviewed liberty URL and
+    trim it as above, with the openmaptiles source capped at `maxzoom: 0` (a source `maxzoom` overrides the TileJSON's),
+    and drop any sky block. For either, the tests should pin the tile address or style URL and the zoom cap.
+    No test covers a
     `new maplibregl.Map(` today: `web/js_contract_test.go:21-34,101-200` checks only `L.maplibreGL(` calls, `297-312`
     only `map.js` and `modal.js`, and
     the vendor tag test reads only `index.html.tmpl` (`web/template_contract_test.go:20-33`). New tests should pin the
     globe's style URL and tile cap, its WebGL2 probe, and the login tags' URL, SRI, `crossorigin` and non blocking load.
-13. **Dark mode.** The same light globe in both themes, like the app map (the owner reverted a dark basemap on 2026-09-23,
-    commit 77b9804, `.planning/debug/resolved/map-theme-not-applied.md:4`, `main.css:55-56`); only the dim changes.
+13. **Dark mode.** The realistic Earth is the same photo in both themes; only the dim changes. Map colours: the same light
+    globe in both themes, like the app map (the owner reverted a dark basemap on 2026-09-23, commit 77b9804,
+    `.planning/debug/resolved/map-theme-not-applied.md:4`, `main.css:55-56`); only the dim changes.
 14. **No location.** The whole Earth, India in the middle, no geolocation and no `/api` call (they answer 401 before
     sign in), so no tile request reveals where the visitor is (D-05, `01.1-UI-SPEC.md:255-258`,
     `internal/api/router.go:441-452`).
 15. **Referrer** (link flow; after note 6 it matters only if a new screen, such as the code screen, puts the email in
     its address). After Send the address holds the email (`?sent=`, `auth.go:91-95`, `auth.js:109-114`). MapLibre sets
     each request's referrer to the full page address itself, so a `referrerpolicy` on the tags never reaches its tile
-    requests. Today the browser default trims it to the origin (measured above); pin that with a page policy, for example
-    `Referrer-Policy: same-origin` on `/login`, which still sends the Origin header on the same site POST.
+    requests. Today the browser default trims it to the origin (measured above, for OpenFreeMap only; the realistic
+    Earth's requests go to NASA GIBS); pin that with a page policy, for example `Referrer-Policy: same-origin` on
+    `/login`, which still sends the Origin header on the same site POST.
 16. **Content Security Policy.** None is sent today (`internal/api/router.go:349-372`, `auth.go:108-109`), so nothing
     blocks the globe. If one is added: `script-src` and `style-src` `https://unpkg.com`, `worker-src blob:` (MapLibre
     starts its worker from a blob), and `connect-src https://tiles.openfreemap.org` (style, TileJSON and tile). The
     trimmed style loads no images, so `img-src` needs nothing new (`.planning/phases/01-foundation-report-map/01-11-RESEARCH.md:53,145`).
+    For the realistic Earth, allow `https://gibs.earthdata.nasa.gov` in both `connect-src` and `img-src`; which of the
+    two MapLibre's picture tiles need was not confirmed.
 17. **Policy text.** The Policy says "The map is drawn with files from unpkg.com and map tiles from OpenFreeMap"
     (`web/templates/legal_body.html.tmpl:95`). The globe makes those requests on the sign in page, before anyone has
     agreed to anything (consent is saved inside the gate, `router.go:561`). The sentence should name the sign in page;
-    the owner picks the words.
+    the owner picks the words. The realistic Earth adds NASA GIBS (`gibs.earthdata.nasa.gov`) as another host contacted
+    before consent, in place of OpenFreeMap on this page.
 18. **The pages the email link opens** (link flow; note 6 removes these pages, and its new screens, Create account, the
     code screen and Forgot password, need the same globe or plain choice). `verify_outcome.html.tmpl:10,14-16` shares
     today's globe, and the success page moves on after 2 seconds. The sketch keeps the globe on its Email verified
@@ -354,6 +414,13 @@ away with it.
     `.is-ready` class as the globe, so the card never moves when the globe arrives; `visibility: hidden` also keeps its
     links out of the Tab order until then. In A, put the credit in the page flow under the Low data panel wherever
     the corner would collide with it (phones, and laptop windows narrower than 1200px and shorter than 800px).
+21. **The pictures on every visit.** GIBS forbids browser caching (`no-store` on every address tried), so each visit
+    downloads the pictures again (Download weight), and NASA gives no uptime guarantee. One option to weigh at planning:
+    our server fetches the 85 tiles (746 KB) once, keeps them in memory and serves them with a long cache. Returning
+    visitors would then download nothing, visitors' addresses would never reach NASA, and a NASA outage after the first
+    fetch would not matter. Check it against NASA's terms for GIBS first, since the `no-store` header may be asking
+    clients not to keep copies. Not as files in the repo (no image files in the project). Without it, the realistic
+    Earth costs about 100 to 380 KB on every visit.
 
 ## Found while building (the current app, not changed here)
 
@@ -393,28 +460,31 @@ it; the owner decides on the rest when Phase 8 is planned.
 
 1. **A or B?** Recommendation: **B**. On a phone the card covers nearly all of A's globe (only its top and bottom edges
    show, and only because the sketch makes it wider than the phone), while B shows the whole Earth on both sizes, and the
-   phone is the main device. One cost of B on small phones: the globe and its two line credit push the card down, so on
-   a 375 by 548 or 320 by 568 screen the email field and Send start below the first screen (the email field at 619px and
-   607px) and need a scroll. On a 390 by 844 phone everything down to Send fits.
+   phone is the main device. One cost of B on small phones: the globe and its credit push the card down, so on a 375 by
+   548 or 320 by 568 screen the email field and Send start below the first screen (the email field at 575px and 607px;
+   the credit wraps to two lines at 320) and need a scroll. On a 390 by 844 phone everything down to Send fits.
 2. **Which phase builds it?** Recommendation: **Phase 5**, which already changes the sign in screen with the Demo button
    and the explainer video link (`.planning/ROADMAP.md:592,616,619`). Phase 8 now changes this page too (Create account
    and Sign in, scope note 6), so whichever of 5 and 8 is planned second builds on the other's `login_gate.html.tmpl`,
    and Phase 8's mockup should show the globe as Phase 5 built it.
-3. **Country borders?** The globe starts on India, and the map data's borders are not India's official map. Read from the
+3. **Country borders?** Map colours only: the realistic Earth has no borders, so this matters only if Map colours comes
+   back. The globe starts on India, and the map data's borders are not India's official map. Read from the
    tile the globe uses (2026-10-17): in Kashmir the border follows the Line of Control as a plain country border, and the
    line between Ladakh and Aksai Chin, with short stretches further south east, is marked disputed and drawn dotted.
    India's official map shows all of Jammu and Kashmir and Ladakh inside India. Recommendation: **hide them** on the
    globe; it is calmer and leaves nothing on the first screen to dispute. The Country borders switch shows both. If they
    stay, include them in the legal review CLAUDE.md already asks for.
-4. **Blue sea?** The 1.1 design rules asked for a grey globe with no blue sea; this one uses the app map's colours.
-   Recommendation: **keep the map colours**, so it reads as the Earth and matches the map people see after signing in,
-   and record it as your decision.
-5. **Dark mode.** The globe stays light, like the app map. Recommendation: **keep it**: A dims it to grey land and slate
-   sea, and B shows it almost at full strength. Look with the Theme switch.
+4. **Blue sea?** Answered 2026-10-17: the owner approved the realistic Earth ("yes i like the earth"), so the colours are
+   the satellite pictures' own. This overrides the 1.1 design rules' grey globe with no blue sea; record it with item 1
+   of For the build.
+5. **Dark mode.** The photo looks the same in both themes. A dims it a little more in dark (40 percent) than in light
+   (50 percent), and B shows it at full strength in light and 90 percent in dark. Recommendation: **keep it**. Look
+   with the Theme switch.
 6. **The pages the email link opens** (only if the globe is built before note 6 removes the link). Recommendation:
    **the globe on the sign in page only**. The success page moves on
    after 2 seconds, so its download would be thrown away; those pages would get a plain background.
-7. **Policy words.** The sign in page now contacts unpkg.com and OpenFreeMap before anyone agrees to anything.
+7. **Policy words.** The sign in page now contacts unpkg.com and NASA GIBS (OpenFreeMap for Map colours) before anyone
+   agrees to anything.
    Recommendation: add the sign in page to the existing Policy sentence; you pick the words.
 8. **If the globe fails after the page has shown, keep its empty space or close it?** This happens only when a download
    is refused or nothing has drawn after 10 seconds. Keeping the space means the card never moves, but there is an empty
