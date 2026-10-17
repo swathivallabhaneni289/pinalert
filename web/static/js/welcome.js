@@ -89,6 +89,10 @@
   }
 
   var stepItems = root.querySelectorAll('.welcome__steps-item');
+  // The laptop side panel, which is not drawn on the phone (CSS), and the
+  // buttons in its step list. A button in a panel that is not drawn is not in
+  // the Tab loop.
+  var sideNode = root.querySelectorAll('.welcome__side')[0] || null;
 
   var disagreeMessage = el('welcome-disagree-message');
   var consentError = el('welcome-error-2');
@@ -103,7 +107,22 @@
   var continueButton = el('welcome-continue-4');
   var skipButton = el('welcome-skip');
 
+  // The step a person must agree on, and the highest step an address may name
+  // for an account that has not agreed yet. A person may look at any step in
+  // any order, but finishing needs the agreement (the server holds the same rule).
+  var CONSENT_STEP = 2;
+
   var current = 0;
+  // Whether the current terms are agreed: true when the server started the flow
+  // past the agreement step, or after Agree was saved on this page.
+  var agreed = false;
+  // Whether the person has typed or picked in the home area. Until they have,
+  // the field follows the place picked on step 3.
+  var homeTouched = false;
+  // The text the home area was last prefilled with from step 3, and the text it
+  // was drawn with, so a prefill nobody touched can be taken away again.
+  var lastPrefill = null;
+  var drawnHome = homeInput ? homeInput.value : '';
   var agreeing = false;
   var locating = false;
   var finishing = false;
@@ -149,13 +168,30 @@
     return true;
   }
 
+  // sideShown says whether the laptop side panel is drawn. Without a way to ask
+  // the browser, it counts as drawn.
+  function sideShown() {
+    if (sideNode === null) {
+      return false;
+    }
+    if (typeof window.getComputedStyle !== 'function') {
+      return true;
+    }
+    return window.getComputedStyle(sideNode).display !== 'none';
+  }
+
   function focusables() {
     var all = root.querySelectorAll(FOCUSABLE_SELECTOR);
+    var panel = sideShown();
     var out = [];
     for (var i = 0; i < all.length; i++) {
-      if (!all[i].disabled && isShown(all[i])) {
-        out.push(all[i]);
+      if (all[i].disabled || !isShown(all[i])) {
+        continue;
       }
+      if (!panel && sideNode !== null && sideNode.contains(all[i])) {
+        continue;
+      }
+      out.push(all[i]);
     }
     return out;
   }
@@ -239,10 +275,13 @@
       var item = stepItems[i];
       var n = parseInt(item.getAttribute('data-step'), 10);
       item.setAttribute('data-state', n < step ? 'done' : (n === step ? 'current' : 'waiting'));
+      // The current step is marked on its button, which is what a screen
+      // reader lands on.
+      var mark = item.querySelectorAll('button')[0] || item;
       if (n === step) {
-        item.setAttribute('aria-current', 'step');
+        mark.setAttribute('aria-current', 'step');
       } else {
-        item.removeAttribute('aria-current');
+        mark.removeAttribute('aria-current');
       }
     }
   }
@@ -254,29 +293,80 @@
   // step 3 gave no area, or nothing was searched, the field keeps what the page
   // was drawn with (empty, or the stored home area of a returning account) and
   // no prefilled line shows.
+  //
+  // Step 4 can be shown again after a trip to another step. Then a home area
+  // the person typed or picked is left alone, and one that was only prefilled
+  // from step 3 follows what step 3 holds now (and goes away with it).
   function enterStep4() {
+    if (homeTouched) {
+      return;
+    }
     if (step3Pick !== null && step3Pick.area !== '') {
       // The point stays the picked place's own: the server keeps only a cell
       // about 5 km wide, so the point of a street and the point of the area it
       // lies in give the same cell or the next one, and only the name matters.
       homePick = { name: step3Pick.area, lat: step3Pick.lat, lon: step3Pick.lon, area: step3Pick.area };
       homeInput.value = step3Pick.area;
+      lastPrefill = step3Pick.area;
       homePrefilled.hidden = false;
     } else {
       homePick = null;
       homePrefilled.hidden = true;
+      if (lastPrefill !== null && homeInput.value === lastPrefill) {
+        homeInput.value = drawnHome;
+      }
+      lastPrefill = null;
     }
   }
 
+  // ---- History: the step is in the address ------------------------------------
+
+  var canPush = !!(window.history && typeof window.history.pushState === 'function' &&
+    typeof window.history.replaceState === 'function');
+
+  function stepAddress(n) {
+    return '?step=' + n;
+  }
+
+  // addressStep reads ?step=N from the address, or 0 when there is none.
+  function addressStep() {
+    var search = window.location && typeof window.location.search === 'string' ? window.location.search : '';
+    var found = /[?&]step=(\d+)(?:&|$)/.exec(search);
+    return found ? parseInt(found[1], 10) : 0;
+  }
+
+  // The first step to show. The server names it (data-start-step). An address
+  // step is honoured only when the account may see it: a person who has not
+  // agreed can be sent to step 1 or 2 and never past the agreement, so a reload
+  // never skips it. The server's rule for finishing is unchanged either way.
+  function firstStep(serverStep) {
+    var wanted = addressStep();
+    var most = serverStep > CONSENT_STEP ? stepCount : CONSENT_STEP;
+    if (wanted >= 1 && wanted <= most && wanted <= stepCount) {
+      return wanted;
+    }
+    return serverStep;
+  }
+
   // goTo shows one step. A step that does not exist is refused. Changing step
-  // clears the Disagree message, and focus moves to the new step's title.
-  function goTo(step) {
+  // clears the Disagree message and the agree line, and focus moves to the new
+  // step's title. how says what to do with the browser history: undefined adds
+  // an entry when the step changes, 'replace' rewrites the current entry (the
+  // first load), 'none' leaves it alone (the browser's own back and forward).
+  function goTo(step, how) {
     var n = parseInt(step, 10);
     if (!isFinite(n) || n < 1 || n > stepCount) {
       return;
     }
     var previous = current;
     current = n;
+    if (canPush && how !== 'none') {
+      if (how === 'replace') {
+        window.history.replaceState({ pinalertStep: n }, '', stepAddress(n));
+      } else if (n !== previous) {
+        window.history.pushState({ pinalertStep: n }, '', stepAddress(n));
+      }
+    }
     for (var i = 1; i <= stepCount; i++) {
       el('welcome-step-' + i).hidden = i !== n;
     }
@@ -284,6 +374,7 @@
     root.setAttribute('aria-labelledby', 'welcome-step-' + n + '-title');
     renderStepList(n);
     hideLine(disagreeMessage);
+    hideLine(consentError);
     if (n === 4 && previous !== 4) {
       enterStep4();
     }
@@ -307,6 +398,7 @@
       agreeing = false;
       agreeButton.disabled = false;
       if (answer.status === 204) {
+        agreed = true;
         goTo(3);
         return;
       }
@@ -679,6 +771,7 @@
       typing: true,
       onPick: function (place) {
         homePick = place;
+        homeTouched = true;
         homePrefilled.hidden = true;
       },
       onClear: function () {
@@ -691,6 +784,7 @@
   // Typing in the home area after a step 3 prefill forgets that pick too (the
   // step 4 search only knows picks of its own).
   homeInput.addEventListener('input', function () {
+    homeTouched = true;
     if (homePick !== null && homeInput.value !== homePick.name) {
       homePick = null;
       homePrefilled.hidden = true;
@@ -755,6 +849,14 @@
     if (finishing) {
       return Promise.resolve();
     }
+    // A person can look at step 4 before agreeing, but cannot finish without
+    // it: show the agreement and say why. Nothing is sent. The server refuses
+    // first-run-done without the agreement as well (409, handled in postDone).
+    if (!agreed) {
+      goTo(CONSENT_STEP);
+      showLine(consentError, MESSAGE_AGREE_FIRST);
+      return Promise.resolve();
+    }
     setFinishing(true);
     hideLine(profileError);
     var body = save ? profileBody() : {};
@@ -800,7 +902,11 @@
     var last = items[items.length - 1];
     var active = document.activeElement;
     var title = el('welcome-step-' + current + '-title');
-    if (e.shiftKey && (active === first || active === title || !root.contains(active))) {
+    // Shift+Tab from the title goes back to whatever comes before it (the step
+    // list, the Back control). It wraps only when nothing does.
+    var backButton = el('welcome-back-' + current);
+    var nothingBefore = !sideShown() && !(backButton && isShown(backButton));
+    if (e.shiftKey && (active === first || (active === title && nothingBefore) || !root.contains(active))) {
       e.preventDefault();
       last.focus();
     } else if (!e.shiftKey && (active === last || !root.contains(active))) {
@@ -812,6 +918,34 @@
   // ---- Wiring ---------------------------------------------------------------
 
   el('welcome-continue-1').addEventListener('click', function () { goTo(2); });
+  // Back on steps 2 to 4 shows the previous step; the step list buttons show
+  // the step they name. Looking at a step records nothing.
+  function wireBack(n) {
+    var back = el('welcome-back-' + n);
+    if (back) {
+      back.addEventListener('click', function () { goTo(n - 1); });
+    }
+  }
+  for (var b = 2; b <= stepCount; b++) {
+    wireBack(b);
+  }
+  function wireListButton(button) {
+    button.addEventListener('click', function () { goTo(button.getAttribute('data-step')); });
+  }
+  var listButtons = root.querySelectorAll('.welcome__steps-button');
+  for (var lb = 0; lb < listButtons.length; lb++) {
+    wireListButton(listButtons[lb]);
+  }
+  // The browser's own back and forward (and the phone's swipe back) move
+  // between the steps the person has seen. Nothing is added to the history.
+  if (canPush && typeof window.addEventListener === 'function') {
+    window.addEventListener('popstate', function (e) {
+      var n = e && e.state && e.state.pinalertStep;
+      if (n) {
+        goTo(n, 'none');
+      }
+    });
+  }
   el('welcome-disagree').addEventListener('click', disagree);
   agreeButton.addEventListener('click', function () { agree(); });
   allowButton.addEventListener('click', allowLocation);
@@ -822,7 +956,11 @@
   root.addEventListener('keydown', onKeydown);
 
   var startStep = parseInt(root.getAttribute('data-start-step'), 10);
-  goTo(isFinite(startStep) ? startStep : 1);
+  if (!isFinite(startStep)) {
+    startStep = 1;
+  }
+  agreed = startStep > CONSENT_STEP;
+  goTo(firstStep(startStep), 'replace');
 
   window.PinalertWelcome = {
     goTo: goTo,

@@ -115,6 +115,43 @@
   text-transform: uppercase;
 }
 
+/* Steps 2 to 4: the Back control at the left of the top line and the Step N
+   of 4 label at the right, on both sizes. Back is a 44px high text button with
+   the arrow-left glyph; it keeps the global keyboard focus ring. */
+.welcome__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.welcome__back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: 44px;
+  margin: 0;
+  padding: 0 var(--space-md) 0 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.welcome__back .app-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.welcome__back:hover .welcome__back-label {
+  text-decoration: underline;
+}
+
 .welcome__title {
   margin: 0;
   color: var(--color-text);
@@ -339,6 +376,35 @@
     font-size: var(--font-size-body);
     line-height: var(--line-height-body);
     font-weight: var(--font-weight-regular);
+  }
+
+  /* Each row of the list is a button that shows its step: the whole row is the
+     target, 44px high, and looks as the plain row did. The focus ring is drawn
+     in the panel's own light text colour, since the global ring does not show
+     on the dark panel in the light theme. */
+  .welcome__steps-button {
+    display: flex;
+    align-items: center;
+    gap: var(--space-12);
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .welcome__steps-button:hover .welcome__steps-name {
+    text-decoration: underline;
+  }
+
+  .welcome__steps-button:focus-visible {
+    outline-color: var(--color-notice-text);
   }
 
   /* The circle: a 28px ring with the number, or a tick once the step is done. */

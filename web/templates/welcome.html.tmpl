@@ -29,7 +29,7 @@
       <p class="welcome__wordmark">Pinalert</p>
       <p class="welcome__tagline">Live emergency updates from people nearby, confirmed by others who are there.</p>
       <ol class="welcome__steps" aria-label="Steps">
-        {{range .Steps}}<li class="welcome__steps-item" data-step="{{.Number}}" data-state="{{if lt .Number $.StartStep}}done{{else if eq .Number $.StartStep}}current{{else}}waiting{{end}}"{{if eq .Number $.StartStep}} aria-current="step"{{end}}><span class="welcome__dot"><span class="welcome__dot-num">{{.Number}}</span><span class="app-icon app-icon--check welcome__dot-tick" aria-hidden="true"></span></span><span class="welcome__steps-name">{{.Name}}</span></li>
+        {{range .Steps}}<li class="welcome__steps-item" data-step="{{.Number}}" data-state="{{if lt .Number $.StartStep}}done{{else if eq .Number $.StartStep}}current{{else}}waiting{{end}}"><button type="button" class="welcome__steps-button" data-step="{{.Number}}"{{if eq .Number $.StartStep}} aria-current="step"{{end}}><span class="welcome__dot"><span class="welcome__dot-num">{{.Number}}</span><span class="app-icon app-icon--check welcome__dot-tick" aria-hidden="true"></span></span><span class="welcome__steps-name">{{.Name}}</span></button></li>
         {{end}}
       </ol>
     </aside>
@@ -68,7 +68,10 @@
       </section>
 
       <section class="welcome__step" id="welcome-step-2" aria-labelledby="welcome-step-2-title"{{if ne .StartStep 2}} hidden{{end}}>
-        <p class="welcome__label">Step 2 of 4</p>
+        <div class="welcome__head">
+          <button type="button" class="welcome__back" id="welcome-back-2"><span class="app-icon app-icon--arrow-left" aria-hidden="true"></span><span class="welcome__back-label">Back</span></button>
+          <p class="welcome__label">Step 2 of 4</p>
+        </div>
         <h1 class="welcome__title" id="welcome-step-2-title" tabindex="-1">Disclaimer and policy</h1>
         <p class="welcome__lead">Please read this before you use Pinalert. Tap Agree to continue.</p>
         <div class="welcome__scrollbox legal-text" id="welcome-scrollbox" tabindex="0" role="region" aria-label="Disclaimer and policy text">
@@ -84,7 +87,10 @@
       </section>
 
       <section class="welcome__step" id="welcome-step-3" aria-labelledby="welcome-step-3-title"{{if ne .StartStep 3}} hidden{{end}}>
-        <p class="welcome__label">Step 3 of 4</p>
+        <div class="welcome__head">
+          <button type="button" class="welcome__back" id="welcome-back-3"><span class="app-icon app-icon--arrow-left" aria-hidden="true"></span><span class="welcome__back-label">Back</span></button>
+          <p class="welcome__label">Step 3 of 4</p>
+        </div>
         <h1 class="welcome__title" id="welcome-step-3-title" tabindex="-1">Show what is happening near you</h1>
         <ul class="welcome__cards">
           <li class="welcome__card">
@@ -127,7 +133,10 @@
       </section>
 
       <section class="welcome__step" id="welcome-step-4" aria-labelledby="welcome-step-4-title"{{if ne .StartStep 4}} hidden{{end}}>
-        <p class="welcome__label">Step 4 of 4</p>
+        <div class="welcome__head">
+          <button type="button" class="welcome__back" id="welcome-back-4"><span class="app-icon app-icon--arrow-left" aria-hidden="true"></span><span class="welcome__back-label">Back</span></button>
+          <p class="welcome__label">Step 4 of 4</p>
+        </div>
         <h1 class="welcome__title" id="welcome-step-4-title" tabindex="-1">About you</h1>
         <p class="welcome__lead">Both are optional. They show only if you later let others follow you.</p>
         <div class="welcome__field">

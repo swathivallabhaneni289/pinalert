@@ -109,6 +109,11 @@ func TestOnboardingFlowEndToEnd(t *testing.T) {
 		"Welcome to Pinalert", "Disclaimer and policy", "Show what is happening near you", "About you",
 		"call 112 first.", "Please read this before you use Pinalert. Tap Agree to continue.",
 		"Filled in from your location.", "Search a place instead",
+		// Plan 30: free movement between the steps. Back on steps 2 to 4, and
+		// each name in the step list is a button; the current one is marked.
+		`id="welcome-back-2"`, `id="welcome-back-3"`, `id="welcome-back-4"`,
+		`<button type="button" class="welcome__steps-button" data-step="1" aria-current="step">`,
+		`<button type="button" class="welcome__steps-button" data-step="4">`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/welcome lacks %q", want)
