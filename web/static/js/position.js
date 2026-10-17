@@ -12,9 +12,9 @@
 // offline report queue keys itself by. read returns a fix saved by that account.
 // A fix saved by another account is not returned and is removed, so the next
 // person on a shared phone never gets the place the last one was at. A fix with
-// no owner (written by the Low data view, by the first time flow, whose page has
-// no account id, or by a browser from before this rule) is taken over by the
-// first account that reads it and belongs to that account from then on. Only
+// no owner (written by a browser from before this rule; no page writes one any
+// more, since every page that saves a fix carries its account id) is taken over
+// by the first account that reads it and belongs to that account from then on. Only
 // this one key is ever removed: the offline report queue and the theme choice
 // are not touched. No age limit is added.
 //
@@ -84,8 +84,8 @@
     }
     var savedAt = typeof parsed.savedAt === 'number' && isFinite(parsed.savedAt) ? parsed.savedAt : null;
     if (parsed.account === undefined || parsed.account === '') {
-      // No owner: the Low data view, the first time flow (its page has no account
-      // id) or a browser from before this rule wrote it. The first account that
+      // No owner: a browser from before this rule wrote it (after plan 27 of
+      // Phase 3.4 no page writes an ownerless value). The first account that
       // reads it takes it over, so a second account never gets it from the first.
       store(parsed.lat, parsed.lon, savedAt, account);
     } else if (parsed.account !== account) {
@@ -108,14 +108,18 @@
   }
 
   // save remembers a fix for the account of this page and returns true when it
-  // was stored. A page that carries no account id still saves (the first time
-  // flow has none) with an empty account, which no page reads back. A pair that
-  // is not a real position is refused, and a storage failure returns false.
+  // was stored. A page that carries no account id writes nothing and answers
+  // false: no fix is ever stored without an owner (skeptic S-2). A pair that is
+  // not a real position is refused, and a storage failure returns false.
   function save(lat, lon) {
     if (!validPair(lat, lon)) {
       return false;
     }
-    return store(lat, lon, Date.now(), currentAccount());
+    var account = currentAccount();
+    if (account === '') {
+      return false;
+    }
+    return store(lat, lon, Date.now(), account);
   }
 
   window.PinalertPosition = { read: read, save: save };

@@ -355,12 +355,12 @@ test('S-2: a fresh fix is stored with the account of the page', async () => {
 });
 
 test('S-2: a position another account kept is not used and is removed', async () => {
-  const page = loadLowPage({ stored: { lat: 17.385, lon: 78.4867, savedAt: 5, account: '8' } });
+  const geolocation = { getCurrentPosition() {} };
+  const page = loadLowPage({ stored: { lat: 17.385, lon: 78.4867, savedAt: 5, account: '8' }, geolocation });
   await settle();
   assert.equal(page.storage.data.has(POSITION_KEY), false, 'the other account\'s place is gone');
   assert.deepEqual(page.storage.removed, [POSITION_KEY]);
-  assert.equal(page.requests.length, 1);
-  assert.doesNotMatch(page.requests[0].url, /lat=17\.385/, 'the list does not use the other account\'s place');
+  assert.equal(page.requests.length, 0, 'no list is asked for with the other account\'s place');
   assert.equal(page.el('low-basis').textContent, 'Finding your position.');
 });
 
@@ -392,9 +392,10 @@ test('S-2: a page with no account id neither reads, removes nor writes a positio
   const raw = JSON.stringify({ lat: 17.385, lon: 78.4867, savedAt: 5, account: '8' });
   const page = loadLowPage({ account: null, storedRaw: raw, geolocation });
   await settle();
-  assert.doesNotMatch(page.requests[0].url, /lat=17\.385/);
+  assert.equal(page.requests.length, 0, 'the earlier value is not used, so no list waits on it');
   found({ coords: { latitude: 17.4, longitude: 78.45 } });
   await settle();
+  assert.match(page.requests[0].url, /lat=17\.4&lon=78\.45/);
   assert.equal(page.storage.data.get(POSITION_KEY), raw, 'the earlier value is untouched and nothing new is written');
   assert.deepEqual(page.storage.removed, []);
 });

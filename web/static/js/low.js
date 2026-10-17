@@ -19,6 +19,8 @@
   }
 
   var STORED_POSITION_KEY = 'pinalert.lowLastPosition';
+  // An account id is a plain positive whole number.
+  var ACCOUNT_ID_PATTERN = /^[1-9][0-9]{0,18}$/;
   var LIST_POSITION_TIMEOUT_MS = 8000;
   var TIME_REFRESH_MS = 60000;
 
@@ -99,6 +101,36 @@
   // land after the answer for the fresh position.
   var listChain = Promise.resolve();
 
+  // currentAccount is the id of the account this page is for (its
+  // data-account-id attribute), or '' when the page does not carry a valid one.
+  // It is the same rule position.js applies to the same key (skeptic S-2).
+  function currentAccount() {
+    if (typeof document.querySelector !== 'function') {
+      return '';
+    }
+    var node = document.querySelector('[data-account-id]');
+    var raw = node ? node.getAttribute('data-account-id') : '';
+    return typeof raw === 'string' && ACCOUNT_ID_PATTERN.test(raw) ? raw : '';
+  }
+
+  // writeStoredPosition rewrites a value read from the shared key, with the
+  // account that now owns it and its own time. It is silent when the store
+  // throws.
+  function writeStoredPosition(lat, lon, savedAt, account) {
+    try {
+      window.localStorage.setItem(STORED_POSITION_KEY,
+        JSON.stringify({ lat: lat, lon: lon, savedAt: savedAt, account: account }));
+    } catch (err) {
+      // Nothing to do: the list still works without a remembered position.
+    }
+  }
+
+  // readStoredPosition returns the position this account kept, or null. A
+  // position another account kept is not used and is removed, so the next
+  // person on a shared phone never gets the last one's place. A position with no
+  // owner (saved by a browser from before this rule) is taken over by this
+  // account. A page with no account id reads nothing and removes nothing. Only
+  // this one key is ever removed.
   function readStoredPosition() {
     var raw = null;
     try {
@@ -121,12 +153,35 @@
         Math.abs(parsed.lat) > 90 || Math.abs(parsed.lon) > 180) {
       return null;
     }
+    var account = currentAccount();
+    if (account === '') {
+      return null;
+    }
+    if (parsed.account === undefined || parsed.account === '') {
+      var savedAt = typeof parsed.savedAt === 'number' && isFinite(parsed.savedAt) ? parsed.savedAt : null;
+      writeStoredPosition(parsed.lat, parsed.lon, savedAt, account);
+    } else if (parsed.account !== account) {
+      try {
+        window.localStorage.removeItem(STORED_POSITION_KEY);
+      } catch (err) {
+        // The place is still not used.
+      }
+      return null;
+    }
     return { lat: parsed.lat, lon: parsed.lon };
   }
 
+  // storePosition keeps a fresh fix for the account of this page. A page that
+  // carries no account id writes nothing, so no value is ever kept without an
+  // owner.
   function storePosition(lat, lon) {
+    var account = currentAccount();
+    if (account === '') {
+      return;
+    }
     try {
-      window.localStorage.setItem(STORED_POSITION_KEY, JSON.stringify({ lat: lat, lon: lon, savedAt: Date.now() }));
+      window.localStorage.setItem(STORED_POSITION_KEY,
+        JSON.stringify({ lat: lat, lon: lon, savedAt: Date.now(), account: account }));
     } catch (err) {
       // Nothing to do: the list still works without a remembered position.
     }
