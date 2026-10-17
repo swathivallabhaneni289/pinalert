@@ -228,6 +228,55 @@ func TestWelcomeStep3And4Privacy(t *testing.T) {
 	p13MustNotContain(t, "profileBody", body, "homeInput.value", "PinalertPosition", "geolocation", "step3Pick")
 }
 
+// TestWelcomeStepsAreFreelyNavigable pins plan 30: a person can move back and
+// forth between the four steps. Steps 2 to 4 carry a Back button (the arrow-left
+// glyph and the word Back) beside the Step n of 4 label, each name in the laptop
+// step list is a button that shows its step with the current one marked
+// aria-current, the step goes in the address with history, and finishing still
+// needs the agreement. The consent rule itself lives on the server and is not
+// touched by this plan (internal/api/handlers/welcome_e2e_test.go).
+func TestWelcomeStepsAreFreelyNavigable(t *testing.T) {
+	page := w10Template(t)
+
+	// Back on steps 2 to 4 only, in the head line with the step label.
+	for n := 2; n <= 4; n++ {
+		d := string(rune('0' + n))
+		p13MustContain(t, "step "+d, page,
+			`<button type="button" class="welcome__back" id="welcome-back-`+d+`"><span class="app-icon app-icon--arrow-left" aria-hidden="true"></span><span class="welcome__back-label">Back</span></button>`)
+		p13Ordered(t, page, "step "+d+" head", `id="welcome-back-`+d+`"`, `<p class="welcome__label">Step `+d+` of 4</p>`, `id="welcome-step-`+d+`-title"`)
+	}
+	p13MustNotContain(t, "step 1", page, `id="welcome-back-1"`)
+	w10Count(t, "welcome.html.tmpl", page, `class="welcome__head"`, 3)
+	w10Count(t, "welcome.html.tmpl", page, `class="welcome__back"`, 3)
+
+	// Each name in the step list is a button; the current one is marked on it.
+	p13MustContain(t, "step list", page,
+		`<button type="button" class="welcome__steps-button" data-step="{{.Number}}"{{if eq .Number $.StartStep}} aria-current="step"{{end}}>`,
+		`<span class="welcome__steps-name">{{.Name}}</span></button></li>`)
+	w10Count(t, "welcome.html.tmpl", page, `aria-current="step"`, 1)
+
+	// The script wires them, keeps the step in the address, honours the browser
+	// back, and holds Finish to the agreement.
+	js := stripJSComments(p421ReadStatic(t, "js/welcome.js"))
+	p13MustContain(t, "welcome.js", js,
+		"'.welcome__steps-button'", "el('welcome-back-' + n)", "goTo(n - 1)",
+		"window.history.pushState({ pinalertStep: n }, '', stepAddress(n))",
+		"window.history.replaceState({ pinalertStep: n }, '', stepAddress(n))",
+		"window.addEventListener('popstate'", "goTo(n, 'none')",
+		"var CONSENT_STEP = 2;")
+	finish := jsFunctionBody(t, js, "finish(save)")
+	p13Ordered(t, finish, "finish", "if (!agreed) {", "goTo(CONSENT_STEP);", "showLine(consentError, MESSAGE_AGREE_FIRST);", "setFinishing(true);")
+	// An address step never skips the agreement for an account that has not agreed.
+	first := jsFunctionBody(t, js, "firstStep(serverStep)")
+	p13MustContain(t, "firstStep", first, "serverStep > CONSENT_STEP ? stepCount : CONSENT_STEP", "return serverStep;")
+	// The server rule is still handled: a 409 sends the person back to step 2.
+	post := jsFunctionBody(t, js, "postDone()")
+	p13MustContain(t, "postDone", post, "answer.status === 409", "goTo(2);", "MESSAGE_AGREE_FIRST")
+
+	css := stripCSSComments(p421ReadStatic(t, "css/welcome.css"))
+	p13MustContain(t, "welcome.css", css, ".welcome__head {", ".welcome__back {", ".welcome__steps-button {", "min-height: 44px;", ".welcome__steps-button:focus-visible {")
+}
+
 // TestWelcomeScriptsAndStyles pins the load order, the sinks, the hidden
 // guards, the two sizes and the plain punctuation of every file this plan adds.
 func TestWelcomeScriptsAndStyles(t *testing.T) {

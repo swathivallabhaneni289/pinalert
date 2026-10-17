@@ -127,11 +127,16 @@ function buildPage({ start = 1, name = '', home = '' } = {}) {
   root.setAttribute('data-start-step', String(start));
   root.setAttribute('data-step', String(start));
 
-  const list = make('ol', '', root, 'welcome__steps');
+  const side = make('aside', '', root, 'welcome__side');
+  const list = make('ol', '', side, 'welcome__steps');
   const items = STEP_NAMES.map((label, i) => {
     const li = make('li', '', list, 'welcome__steps-item');
     li.setAttribute('data-step', String(i + 1));
     li.setAttribute('data-state', i + 1 < start ? 'done' : (i + 1 === start ? 'current' : 'waiting'));
+    const btn = make('button', 'welcome-steps-btn-' + (i + 1), li, 'welcome__steps-button');
+    btn.setAttribute('data-step', String(i + 1));
+    if (i + 1 === start) { btn.setAttribute('aria-current', 'step'); }
+    li.button = btn;
     return li;
   });
 
@@ -145,6 +150,7 @@ function buildPage({ start = 1, name = '', home = '' } = {}) {
   });
 
   make('button', 'welcome-continue-1', steps[0]);
+  [2, 3, 4].forEach((n) => make('button', 'welcome-back-' + n, steps[n - 1], 'welcome__back'));
 
   const box = make('div', 'welcome-scrollbox', steps[1], 'welcome__scrollbox');
   box.setAttribute('tabindex', '0');
@@ -175,7 +181,7 @@ function buildPage({ start = 1, name = '', home = '' } = {}) {
   make('button', 'welcome-continue-4', steps[3]);
   make('button', 'welcome-skip', steps[3]);
 
-  return { doc, root, steps, items };
+  return { doc, root, steps, items, side };
 }
 
 // load evaluates welcome.js against a page. fetch keeps every call for the test
@@ -187,6 +193,9 @@ function load(options) {
   const saved = [];
   const replaced = [];
   const session = {};
+  const pushes = [];
+  const stateReplaces = [];
+  const listeners = {};
   let now = 0;
   let nextId = 1;
   const timers = new Map();
@@ -232,12 +241,20 @@ function load(options) {
       setItem(k, v) { session[k] = String(v); },
       getItem(k) { return Object.hasOwn(session, k) ? session[k] : null; }
     },
-    location: { replace(target) { replaced.push(target); } }
+    location: { search: (options && options.search) || '', replace(target) { replaced.push(target); } },
+    history: {
+      pushState(state, title, address) { pushes.push({ state, address }); },
+      replaceState(state, title, address) { stateReplaces.push({ state, address }); }
+    },
+    // The side panel is a laptop part: a test sets side.hiddenByCss to play the phone.
+    getComputedStyle(node) { return { display: node.hiddenByCss ? 'none' : 'block' }; },
+    addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); }
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'welcome.js' });
-  return { ...page, api: sandbox.PinalertWelcome, requests, positionCalls, saved, replaced, session, advance, sandbox };
+  const popTo = (state) => (listeners.popstate || []).forEach((fn) => fn({ type: 'popstate', state }));
+  return { ...page, api: sandbox.PinalertWelcome, requests, positionCalls, saved, replaced, session, advance, sandbox, pushes, stateReplaces, popTo };
 }
 
 const flush = async () => { for (let i = 0; i < 8; i++) { await new Promise((r) => setImmediate(r)); } };
@@ -289,8 +306,8 @@ test('Continue on step 1 shows step 2, focuses its title, and updates the progre
   assert.equal(page.root.getAttribute('aria-labelledby'), 'welcome-step-2-title');
   assert.equal(page.doc.activeElement, byId(page, 'welcome-step-2-title'));
   assert.deepEqual(page.items.map((i) => i.getAttribute('data-state')), ['done', 'current', 'waiting', 'waiting']);
-  assert.equal(page.items[1].getAttribute('aria-current'), 'step');
-  assert.equal(page.items[0].getAttribute('aria-current'), null);
+  assert.equal(page.items[1].button.getAttribute('aria-current'), 'step');
+  assert.equal(page.items[0].button.getAttribute('aria-current'), null);
   assert.equal(page.requests.length, 0, 'moving through step 1 sends nothing');
 });
 
@@ -741,26 +758,53 @@ test('Escape does nothing and Tab stays inside the current step', () => {
   assert.equal(page.root.hidden, false);
   assert.equal(esc.prevented, false, 'Escape is left alone');
 
+  // Laptop: the step list buttons come first in the dialog.
   const box = byId(page, 'welcome-scrollbox');
   const agree = byId(page, 'welcome-agree');
+  const firstListButton = page.items[0].button;
   agree.focus();
   const forward = fire(page.root, 'keydown', { key: 'Tab' });
   assert.equal(forward.prevented, true);
-  assert.equal(page.doc.activeElement, box);
+  assert.equal(page.doc.activeElement, firstListButton);
 
-  box.focus();
+  firstListButton.focus();
   const back = fire(page.root, 'keydown', { key: 'Tab', shiftKey: true });
   assert.equal(back.prevented, true);
   assert.equal(page.doc.activeElement, agree);
 
   byId(page, 'welcome-step-2-title').focus();
   const fromTitle = fire(page.root, 'keydown', { key: 'Tab', shiftKey: true });
-  assert.equal(fromTitle.prevented, true);
-  assert.equal(page.doc.activeElement, agree);
+  assert.equal(fromTitle.prevented, false, 'the list and the Back control come before the title, so the browser moves back to them');
 
   byId(page, 'welcome-disagree').focus();
   const middle = fire(page.root, 'keydown', { key: 'Tab' });
   assert.equal(middle.prevented, false, 'Tab between two controls is left to the browser');
+
+  // Phone: the side panel is not drawn, so its buttons are not in the Tab loop
+  // and Back is the first control of the step.
+  const phone = load();
+  phone.side.hiddenByCss = true;
+  click(phone, 'welcome-continue-1');
+  const phoneBack = byId(phone, 'welcome-back-2');
+  const phoneAgree = byId(phone, 'welcome-agree');
+  phoneAgree.focus();
+  const wrapForward = fire(phone.root, 'keydown', { key: 'Tab' });
+  assert.equal(wrapForward.prevented, true);
+  assert.equal(phone.doc.activeElement, phoneBack, 'Tab from the last control lands on Back, never on a hidden list button');
+  phoneBack.focus();
+  const wrapBack = fire(phone.root, 'keydown', { key: 'Tab', shiftKey: true });
+  assert.equal(wrapBack.prevented, true);
+  assert.equal(phone.doc.activeElement, phoneAgree);
+  box.focus();
+  assert.equal(fire(phone.root, 'keydown', { key: 'Tab', shiftKey: true }).prevented, false);
+
+  // Step 1 on the phone has nothing before the title, so Shift+Tab from it wraps.
+  const first = load();
+  first.side.hiddenByCss = true;
+  byId(first, 'welcome-step-1-title').focus();
+  const fromFirstTitle = fire(first.root, 'keydown', { key: 'Tab', shiftKey: true });
+  assert.equal(fromFirstTitle.prevented, true);
+  assert.equal(first.doc.activeElement, byId(first, 'welcome-continue-1'));
 });
 
 test('the public hooks move the flow the same way the buttons do', async () => {
@@ -1008,4 +1052,233 @@ test('step 3 searches any place and does not search while typing', () => {
   assert.equal(page.requests.length, 0);
   fire(byId(page, 'welcome-search-form'), 'submit');
   assert.equal(page.requests[0].url, '/api/geocode?q=Indira', 'step 3 keeps the report form search, no areas filter');
+});
+
+// ---- Plan 30: moving back and forth between the four steps ------------------
+
+const listButton = (page, n) => page.items[n - 1].button;
+const AGREE_FIRST = 'Please agree to the Disclaimer and policy to continue.';
+const stepStates = (page) => page.items.map((i) => i.getAttribute('data-state'));
+const currentMarks = (page) => page.items.map((i) => i.button.getAttribute('aria-current'));
+
+test('Back on steps 2, 3 and 4 shows the previous step and moves focus to its title', () => {
+  const page = load({ start: 4 });
+  click(page, 'welcome-back-4');
+  assert.equal(visibleStep(page), 3);
+  assert.equal(page.doc.activeElement, byId(page, 'welcome-step-3-title'));
+  click(page, 'welcome-back-3');
+  assert.equal(visibleStep(page), 2);
+  assert.equal(page.doc.activeElement, byId(page, 'welcome-step-2-title'));
+  click(page, 'welcome-back-2');
+  assert.equal(visibleStep(page), 1);
+  assert.equal(page.doc.activeElement, byId(page, 'welcome-step-1-title'));
+  assert.equal(page.root.getAttribute('data-step'), '1');
+  assert.deepEqual(stepStates(page), ['current', 'waiting', 'waiting', 'waiting']);
+  assert.equal(page.requests.length, 0, 'moving back sends nothing');
+});
+
+test('a click on any step list button shows that step, in any order, marked aria-current', () => {
+  const page = load();
+  for (const n of [4, 2, 3, 1, 4, 1]) {
+    fire(listButton(page, n), 'click');
+    assert.equal(visibleStep(page), n, 'step ' + n);
+    assert.equal(page.root.getAttribute('data-step'), String(n));
+    assert.equal(page.doc.activeElement, byId(page, 'welcome-step-' + n + '-title'));
+    assert.deepEqual(currentMarks(page), [1, 2, 3, 4].map((k) => (k === n ? 'step' : null)));
+    assert.deepEqual(stepStates(page), [1, 2, 3, 4].map((k) => (k < n ? 'done' : (k === n ? 'current' : 'waiting'))));
+  }
+  assert.equal(page.requests.length, 0, 'looking at a step records nothing');
+});
+
+test('Finish before Agree shows step 2 with a line asking to agree first, and sends nothing', () => {
+  const page = load();
+  fire(listButton(page, 4), 'click');
+  assert.equal(visibleStep(page), 4);
+  click(page, 'welcome-continue-4');
+  assert.equal(visibleStep(page), 2);
+  assert.equal(page.requests.length, 0, 'no profile and no first-run-done without the agreement');
+  const line = byId(page, 'welcome-error-2');
+  assert.equal(line.hidden, false);
+  assert.equal(line.textContent, AGREE_FIRST);
+  assert.equal(page.replaced.length, 0, 'the person did not leave the flow');
+
+  // The line goes when the person moves on, and Skip is held to the same rule.
+  fire(listButton(page, 4), 'click');
+  assert.equal(line.hidden, true);
+  click(page, 'welcome-skip');
+  assert.equal(visibleStep(page), 2);
+  assert.equal(line.textContent, AGREE_FIRST);
+  assert.equal(page.requests.length, 0);
+
+  // The public hook is held to it too.
+  page.api.goTo(4);
+  page.api.finish(true);
+  assert.equal(visibleStep(page), 2);
+  assert.equal(page.requests.length, 0);
+});
+
+test('after Agree, Finish works from step 4 even when the person came back to step 2 first', async () => {
+  const page = load();
+  click(page, 'welcome-continue-1');
+  click(page, 'welcome-agree');
+  answer(page.requests[0], 204);
+  await flush();
+  click(page, 'welcome-back-3');
+  assert.equal(visibleStep(page), 2);
+  fire(listButton(page, 4), 'click');
+  click(page, 'welcome-skip');
+  assert.equal(page.requests.length, 2);
+  assert.equal(page.requests[1].url, '/api/me/first-run-done');
+  answer(page.requests[1], 204);
+  await flush();
+  assert.deepEqual(page.replaced, ['/']);
+});
+
+test('the server consent rule still holds: a 409 from first-run-done sends the person back to step 2', async () => {
+  const page = load({ start: 4 });
+  click(page, 'welcome-skip');
+  answer(page.requests[0], 409, { error: { message: 'agree first' } });
+  await flush();
+  assert.equal(visibleStep(page), 2);
+  assert.equal(byId(page, 'welcome-error-2').textContent, AGREE_FIRST);
+  assert.equal(page.replaced.length, 0);
+});
+
+test('each move pushes a history entry with the step in the address; the first load only replaces', () => {
+  const page = load();
+  assert.equal(page.pushes.length, 0, 'loading pushes nothing');
+  assert.equal(page.stateReplaces.length, 1);
+  assert.equal(page.stateReplaces[0].address, '?step=1');
+  assert.equal(page.stateReplaces[0].state.pinalertStep, 1);
+
+  click(page, 'welcome-continue-1');
+  fire(listButton(page, 4), 'click');
+  click(page, 'welcome-back-4');
+  assert.deepEqual(page.pushes.map((p) => p.address), ['?step=2', '?step=4', '?step=3']);
+  assert.deepEqual(page.pushes.map((p) => p.state.pinalertStep), [2, 4, 3]);
+
+  // Showing the step already shown adds nothing.
+  fire(listButton(page, 3), 'click');
+  assert.equal(page.pushes.length, 3);
+});
+
+test('the browser back and forward (popstate) show the step in the entry and push nothing', () => {
+  const page = load();
+  click(page, 'welcome-continue-1');
+  fire(listButton(page, 3), 'click');
+  const pushed = page.pushes.length;
+
+  page.popTo({ pinalertStep: 2 });
+  assert.equal(visibleStep(page), 2);
+  assert.equal(page.doc.activeElement, byId(page, 'welcome-step-2-title'));
+  assert.deepEqual(stepStates(page), ['done', 'current', 'waiting', 'waiting']);
+  page.popTo({ pinalertStep: 1 });
+  assert.equal(visibleStep(page), 1);
+  page.popTo({ pinalertStep: 3 });
+  assert.equal(visibleStep(page), 3);
+  assert.equal(page.pushes.length, pushed, 'going through history does not add to it');
+
+  // An entry with no step of ours, or a step that does not exist, changes nothing.
+  page.popTo(null);
+  page.popTo({ pinalertStep: 9 });
+  assert.equal(visibleStep(page), 3);
+});
+
+test('an address step is honoured only when the account may see it', () => {
+  // Has not agreed (the server starts at step 1): steps 1 and 2 only.
+  assert.equal(visibleStep(load({ search: '?step=2' })), 2);
+  assert.equal(visibleStep(load({ search: '?step=1' })), 1);
+  for (const search of ['?step=3', '?step=4', '?step=9', '?step=0', '?step=abc', '?step=', '?x=1', '']) {
+    assert.equal(visibleStep(load({ search })), 1, 'unagreed ' + search);
+  }
+  assert.equal(load({ search: '?step=4' }).requests.length, 0);
+
+  // Has agreed (the server starts at step 3): any of the four, never past them.
+  assert.equal(visibleStep(load({ start: 3, search: '?step=1' })), 1);
+  assert.equal(visibleStep(load({ start: 3, search: '?step=2' })), 2);
+  assert.equal(visibleStep(load({ start: 3, search: '?step=4' })), 4);
+  assert.equal(visibleStep(load({ start: 3, search: '?a=1&step=4' })), 4);
+  assert.equal(visibleStep(load({ start: 3, search: '?step=9' })), 3);
+  assert.equal(visibleStep(load({ start: 3, search: '' })), 3);
+  const loaded = load({ start: 3, search: '?step=4' });
+  assert.equal(loaded.stateReplaces[0].address, '?step=4', 'the entry names the step actually shown');
+});
+
+test('what was typed or picked is kept while moving between steps', async () => {
+  const page = load();
+  fire(listButton(page, 3), 'click');
+  click(page, 'welcome-search-open');
+  const input = byId(page, 'welcome-search-input');
+  input.value = 'MG Road';
+  fire(byId(page, 'welcome-search-form'), 'submit');
+  answer(page.requests[0], 200, { results: [STREET] });
+  await flush();
+  fire(byId(page, 'welcome-search-results').children[0].children[0], 'click');
+
+  fire(listButton(page, 4), 'click');
+  assert.equal(byId(page, 'welcome-home-input').value, 'Shivajinagar', 'the first visit prefills from the step 3 pick');
+  byId(page, 'welcome-name-input').value = 'Asha';
+  fire(byId(page, 'welcome-name-input'), 'input');
+  typeHome(page, 'Indira');
+  page.advance(400);
+  answer(page.requests[1], 200, { results: PLACES });
+  await flush();
+  fire(homeList(page).children[0].children[0], 'click');
+  assert.equal(byId(page, 'welcome-home-input').value, 'Indiranagar');
+
+  // Away to step 3 and step 1 and back: nothing is lost or re-filled.
+  click(page, 'welcome-back-4');
+  assert.equal(byId(page, 'welcome-search-input').value, 'MG Road');
+  assert.equal(byId(page, 'welcome-search-block').hidden, false, 'the step 3 search stays open');
+  fire(listButton(page, 1), 'click');
+  page.popTo({ pinalertStep: 4 });
+  assert.equal(visibleStep(page), 4);
+  assert.equal(byId(page, 'welcome-name-input').value, 'Asha');
+  assert.equal(byId(page, 'welcome-home-input').value, 'Indiranagar', 'the picked home area is not overwritten by the step 3 prefill');
+  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
+
+  // Agreement then finishing sends exactly what was picked.
+  fire(listButton(page, 2), 'click');
+  click(page, 'welcome-agree');
+  const consent = page.requests[page.requests.length - 1];
+  assert.equal(consent.url, '/api/me/consent');
+  answer(consent, 204);
+  await flush();
+  fire(listButton(page, 4), 'click');
+  click(page, 'welcome-continue-4');
+  const patch = page.requests[page.requests.length - 1];
+  assert.equal(patch.init.method, 'PATCH');
+  assert.deepEqual(JSON.parse(patch.init.body), {
+    display_name: 'Asha',
+    home_area: { name: 'Indiranagar', lat: 12.9784, lon: 77.6408 }
+  });
+});
+
+test('an untouched home area follows a changed step 3 pick; a touched one does not', async () => {
+  const page = load({ start: 3 });
+  click(page, 'welcome-search-open');
+  const input = byId(page, 'welcome-search-input');
+  input.value = 'MG Road';
+  fire(byId(page, 'welcome-search-form'), 'submit');
+  answer(page.requests[0], 200, { results: [STREET] });
+  await flush();
+  fire(byId(page, 'welcome-search-results').children[0].children[0], 'click');
+  click(page, 'welcome-continue-3');
+  assert.equal(byId(page, 'welcome-home-input').value, 'Shivajinagar');
+  assert.equal(byId(page, 'welcome-home-prefilled').hidden, false);
+
+  // Back to step 3, forget the pick by changing the text, come forward again:
+  // the prefill that the person never touched is taken away with it.
+  click(page, 'welcome-back-4');
+  input.value = 'MG Roa';
+  fire(input, 'input');
+  click(page, 'welcome-continue-3');
+  assert.equal(byId(page, 'welcome-home-input').value, '', 'the old prefill is gone');
+  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
+
+  // A home area the person typed is theirs and stays.
+  typeHome(page, 'Whitefield');
+  click(page, 'welcome-back-4');
+  click(page, 'welcome-continue-3');
+  assert.equal(byId(page, 'welcome-home-input').value, 'Whitefield');
 });
