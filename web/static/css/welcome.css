@@ -249,6 +249,47 @@
   line-height: var(--line-height-label);
 }
 
+/* The Disagree box (plan 31): one short line and two buttons, in the same tint
+   and corners as the notice above, with no outline. It is a flex column, so the
+   line and the buttons keep one even space. */
+.welcome__notice--box:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: var(--space-md);
+}
+
+.welcome__notice--box:focus-visible {
+  outline-offset: 2px;
+}
+
+.welcome__notice-lead {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.welcome__notice-actions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.welcome__notice-form {
+  display: flex;
+  flex: 1 1 0;
+  margin: 0;
+}
+
+.welcome__notice-actions .btn {
+  flex: 1 1 0;
+  min-height: 48px;
+  padding: 0 var(--space-md);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+}
+
 /* Step 3: the search a person opens instead of the browser question. */
 .welcome__search:not([hidden]) {
   display: flex;

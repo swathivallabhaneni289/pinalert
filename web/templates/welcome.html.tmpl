@@ -82,7 +82,15 @@
           <button type="button" class="btn" id="welcome-disagree">Disagree</button>
           <button type="button" class="btn btn--primary" id="welcome-agree">Agree</button>
         </div>
-        <p class="welcome__notice" id="welcome-disagree-message" role="status" hidden></p>
+        <div class="welcome__notice welcome__notice--box" id="welcome-disagree-message" role="group" aria-labelledby="welcome-disagree-lead" tabindex="-1" hidden>
+          <p class="welcome__notice-lead" id="welcome-disagree-lead">To move forward, you need to agree.</p>
+          <div class="welcome__notice-actions">
+            <button type="button" class="btn" id="welcome-reread">Read again</button>
+            <form class="welcome__notice-form" method="post" action="/auth/logout">
+              <button type="submit" class="btn" id="welcome-logout">Log out</button>
+            </form>
+          </div>
+        </div>
         <p class="inline-error" id="welcome-error-2" role="alert" hidden></p>
       </section>
 
@@ -117,8 +125,8 @@
         </ul>
         <div class="welcome__search" id="welcome-search-block" hidden>
           <form id="welcome-search-form" novalidate>
-            <label class="app-window__label" for="welcome-search-input">Search a place</label>
-            <input class="app-window__field" type="search" id="welcome-search-input" name="q" maxlength="200" autocomplete="off" enterkeyhint="search" aria-describedby="welcome-search-status">
+            <label class="app-window__label" for="welcome-search-input">Type your location</label>
+            <input class="app-window__field" type="search" id="welcome-search-input" name="q" maxlength="200" autocomplete="off" enterkeyhint="search" placeholder="For example: Koramangala, Bengaluru" aria-describedby="welcome-search-status">
           </form>
           <p class="app-window__status" id="welcome-search-status" role="status" aria-live="polite" hidden></p>
           <ul class="app-window__results" id="welcome-search-results" role="listbox" aria-label="Places found" hidden></ul>
@@ -128,7 +136,7 @@
         </div>
         <div class="welcome__actions welcome__actions--under">
           <button type="button" class="btn btn--primary" id="welcome-allow-location">Allow location</button>
-          <button type="button" class="btn" id="welcome-search-open">Search a place instead</button>
+          <button type="button" class="btn" id="welcome-search-open">Type my location instead</button>
         </div>
       </section>
 

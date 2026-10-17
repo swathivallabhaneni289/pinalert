@@ -117,34 +117,36 @@ func TestWelcomeStep2ReadsTheSharedText(t *testing.T) {
 	// Amended 2026-10-17 by Phase 3.4 plan 31 (the owner asked what should happen
 	// on Disagree and the suggestion was built): Disagree shows a calm box, drawn
 	// by the template and hidden until then, so the words have one source and
-	// welcome.js only shows and hides it. Owner amendment the same day: the first
-	// wording was too wordy, so the box is two short lines, You need to agree to
-	// use Pinalert. and In danger? Call 112. (a call link built from the same
-	// settings the Disclaimer uses, never a typed number), and
-	// holds two buttons: Read again and Log out (the app's existing log out,
-	// a real POST form to /auth/logout as in the person menu, ending at the sign
-	// in page). It is a group named by its first sentence, not a status region,
+	// welcome.js only shows and hides it. Owner amendments the same day: the
+	// first wording was too wordy, then the call line was dropped, so the box is
+	// one line, To move forward, you need to agree., with no call link and no
+	// number, and two buttons: Read again and Log out (the app's existing log
+	// out, a real POST form to /auth/logout as in the person menu, ending at the
+	// sign in page). It is a group named by its sentence, not a status region,
 	// because it holds buttons and takes focus.
 	p13MustContain(t, "disagree box", page,
 		`<div class="welcome__notice welcome__notice--box" id="welcome-disagree-message" role="group" aria-labelledby="welcome-disagree-lead" tabindex="-1" hidden>`,
-		`<p class="welcome__notice-lead" id="welcome-disagree-lead">You need to agree to use Pinalert.</p>`,
-		`<p class="welcome__notice-danger">In danger? Call <a class="welcome__notice-call" href="{{.Legal.CallHref}}" aria-label="Call {{.Legal.Numbers.Primary}}">{{.Legal.Numbers.Primary}}</a>.</p>`,
+		`<p class="welcome__notice-lead" id="welcome-disagree-lead">To move forward, you need to agree.</p>`,
 		`<button type="button" class="btn" id="welcome-reread">Read again</button>`,
 		`<form class="welcome__notice-form" method="post" action="/auth/logout">`,
 		`<button type="submit" class="btn" id="welcome-logout">Log out</button>`)
 	w10Count(t, "welcome.html.tmpl", page, `action="/auth/logout"`, 1)
 	w10Count(t, "welcome.html.tmpl", page, `id="welcome-disagree-message"`, 1)
-	w10Count(t, "welcome.html.tmpl", page, "You need to agree to use Pinalert.", 1)
-	p13MustNotContain(t, "disagree box", page, `role="status" hidden>`, "keep everyone safe", "Read it again")
+	w10Count(t, "welcome.html.tmpl", page, "To move forward, you need to agree.", 1)
+	p13MustNotContain(t, "disagree box", page, `role="status" hidden>`, "keep everyone safe", "Read it again", "In danger?", "welcome__notice-call", "welcome__notice-danger")
 	// The box sits under the buttons it answers, and its own buttons come in
 	// the order Read again, Log out.
 	p13Ordered(t, page, "step 2", `id="welcome-agree"`, `id="welcome-disagree-message"`, `id="welcome-reread"`, `id="welcome-logout"`, `id="welcome-error-2"`)
-	if strings.Contains(strings.NewReplacer("{{.Legal.Numbers.Primary}}", "", "{{.Legal.CallHref}}", "").Replace(page[strings.Index(page, `id="welcome-disagree-message"`):strings.Index(page, `id="welcome-error-2"`)]), "112") {
-		t.Errorf("the Disagree box types the emergency number; it comes from the numbers setting")
+	// The box holds no number and no call link, typed or built.
+	boxHTML := page[strings.Index(page, `id="welcome-disagree-message"`):strings.Index(page, `id="welcome-error-2"`)]
+	for _, banned := range []string{"112", "tel:", "CallHref", "Numbers", "<a "} {
+		if strings.Contains(boxHTML, banned) {
+			t.Errorf("the Disagree box holds %q; the owner dropped the call line", banned)
+		}
 	}
 
 	js := stripJSComments(p421ReadStatic(t, "js/welcome.js"))
-	if strings.Contains(js, "You need to agree") || strings.Contains(js, "DISAGREE_MESSAGE") {
+	if strings.Contains(js, "To move forward") || strings.Contains(js, "You need to agree") || strings.Contains(js, "DISAGREE_MESSAGE") {
 		t.Errorf("welcome.js holds the Disagree sentence; the template is its one source")
 	}
 	// Disagree shows the box and moves focus into it, and records nothing.
@@ -167,13 +169,12 @@ func TestWelcomeStep2ReadsTheSharedText(t *testing.T) {
 
 // TestWelcomeDisagreeBoxStyle pins the look of the Disagree box (plan 31): the
 // existing .welcome__notice family, tokens only, square corners like the other
-// buttons (never a pill), no dark outline, the two buttons side by side on a
-// laptop and stacked full width on the phone at 48px, and the call link a
-// 44px target.
+// buttons (never a pill), no dark outline, and the two buttons side by side at
+// 48px high.
 func TestWelcomeDisagreeBoxStyle(t *testing.T) {
 	css := stripCSSComments(p421ReadStatic(t, "css/welcome.css"))
 	rules := parseCSSRules(css)
-	for _, sel := range []string{".welcome__notice--box:not([hidden])", ".welcome__notice-lead", ".welcome__notice-danger", ".welcome__notice-actions", ".welcome__notice-call"} {
+	for _, sel := range []string{".welcome__notice--box:not([hidden])", ".welcome__notice-lead", ".welcome__notice-actions"} {
 		if _, ok := ruleBySelector(rules, sel); !ok {
 			t.Errorf("welcome.css has no %s rule", sel)
 		}
@@ -187,10 +188,10 @@ func TestWelcomeDisagreeBoxStyle(t *testing.T) {
 			t.Errorf("the Disagree box is not a pill: %q", d["border-radius"])
 		}
 	}
-	if r, ok := ruleBySelector(rules, ".welcome__notice-call"); ok {
-		if d := declsOf(r.declBody); d["min-height"] != "44px" && d["min-height"] != "var(--touch-target-min)" {
-			t.Errorf("the call link target is %q, want 44px", d["min-height"])
-		}
+	if r, ok := ruleBySelector(rules, ".welcome__notice-actions .btn"); !ok {
+		t.Errorf("welcome.css has no .welcome__notice-actions .btn rule")
+	} else if d := declsOf(r.declBody); d["min-height"] != "48px" {
+		t.Errorf("the Disagree box buttons are %q high, want 48px like the other step buttons", d["min-height"])
 	}
 	for _, banned := range []string{"999px"} {
 		if strings.Contains(css, banned) {
