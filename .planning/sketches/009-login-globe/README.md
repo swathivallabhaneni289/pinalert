@@ -242,6 +242,10 @@ fourth during a turn, for coastlines that look only slightly finer at this size.
 
 Everything the real change has to handle. Line numbers are from main on 2026-10-17.
 
+Phase 8 note 6 (commit 31bdcd7) replaces today's emailed link with a password and a typed 6 digit code. Items 15 and 18
+belong to the link flow: they apply only if the globe is built before that change (for example in Phase 5), and go
+away with it.
+
 1. **Record the owner's override.** The 1.1 UI-SPEC banned WebGL, three.js and CDN libraries on the sign in page and asked
    for a self hosted SVG under 10 KB
    (`.planning/phases/01.1-identity-login-mandatory-email-verification/01.1-UI-SPEC.md:143-171`). The owner overrode it
@@ -306,7 +310,8 @@ Everything the real change has to handle. Line numbers are from main on 2026-10-
 14. **No location.** The whole Earth, India in the middle, no geolocation and no `/api` call (they answer 401 before
     sign in), so no tile request reveals where the visitor is (D-05, `01.1-UI-SPEC.md:255-258`,
     `internal/api/router.go:441-452`).
-15. **Referrer.** After Send the address holds the email (`?sent=`, `auth.go:91-95`, `auth.js:109-114`). MapLibre sets
+15. **Referrer** (link flow; after note 6 it matters only if a new screen, such as the code screen, puts the email in
+    its address). After Send the address holds the email (`?sent=`, `auth.go:91-95`, `auth.js:109-114`). MapLibre sets
     each request's referrer to the full page address itself, so a `referrerpolicy` on the tags never reaches its tile
     requests. Today the browser default trims it to the origin (measured above); pin that with a page policy, for example
     `Referrer-Policy: same-origin` on `/login`, which still sends the Origin header on the same site POST.
@@ -318,9 +323,10 @@ Everything the real change has to handle. Line numbers are from main on 2026-10-
     (`web/templates/legal_body.html.tmpl:95`). The globe makes those requests on the sign in page, before anyone has
     agreed to anything (consent is saved inside the gate, `router.go:561`). The sentence should name the sign in page;
     the owner picks the words.
-18. **The pages the email link opens.** `verify_outcome.html.tmpl:10,14-16` shares today's globe, and the success page
-    moves on after 2 seconds. The sketch keeps the globe on its Email verified screen so the look can be judged; see the
-    open questions.
+18. **The pages the email link opens** (link flow; note 6 removes these pages, and its new screens, Create account, the
+    code screen and Forgot password, need the same globe or plain choice). `verify_outcome.html.tmpl:10,14-16` shares
+    today's globe, and the success page moves on after 2 seconds. The sketch keeps the globe on its Email verified
+    screen so the look can be judged; see the open questions.
 19. **Template rules.** Keep the ids `login-gate`, `login-form-panel`, `login-email`, `request-link` and `auth-error` once
     each, the column order, and no top bar or theme control (`web/ways_in_contract_test.go:78-112`,
     `web/reader_contract_test.go:215-224`, `web/chrome_contract_test.go:55,91-97`, `web/theme_contract_test.go:386-404`).
@@ -338,30 +344,35 @@ Everything the real change has to handle. Line numbers are from main on 2026-10-
 
 - Right after Send, the Check your inbox sentence reads "We sent a verification link to . Open it", because the hidden
   panel was drawn before there was an address (`web/templates/check_inbox.html.tmpl:3`) and `auth.js` only unhides it.
-  The address appears after a reload. The sketch shows the address; filling it in with `textContent` is a one line fix
-  for whichever phase builds the globe.
+  The address appears after a reload. The sketch shows the address. Link flow: it goes away with Phase 8 note 6, and
+  until then filling it in with `textContent` is a one line fix.
 - The error line under the email field shows in grey 16px body text, not the red 14px that `.auth-error` asks for,
   because `.login-card p` (`auth.css:97`) outranks `.auth-error` (`auth.css:201`). The sketch keeps the grey to match
-  today.
+  today. Not the link: it still applies to any form that keeps this error line.
 
 More, from reading the code for this sketch (2026-10-17, read only, none of it opened in a browser). Recorded here,
-nothing changed:
+nothing changed. Phase 8 note 6 (commit 31bdcd7) removes the emailed link, so the items marked "link flow" go away with
+it; the owner decides on the rest when Phase 8 is planned.
 
 - Pressing Enter in the email field does nothing. The field is not inside a form; only the Send button is wired
   (`web/static/js/auth.js`), so the browser never checks the field either and an empty address comes back from the
-  server as "Enter a valid email address."
+  server as "Enter a valid email address." Today's form, not the link: it lasts until note 6 rebuilds the form.
 - "Check again" never lets anyone in. It reloads `/login?sent=<email>`, and `/login` never looks at the session, so even
   after the email link has signed this browser in, it reloads the same waiting panel. The way in is the tab the email
-  link opened, or the main address. For the same reason a signed in person who opens `/login` sees the sign in form.
+  link opened, or the main address. Link flow.
+- A signed in person who opens `/login` sees the sign in form, because `/login` never looks at the session. Not the
+  link: it still applies.
 - A refused Resend shows nothing. Its error line is inside the sign in card, which is hidden while Check your inbox
-  shows, so "Too many requests. Try again in a minute." never appears there.
-- The 5 minute notice says "This link has expired. Request a new one above.", but Resend link sits below it.
-- After a reload (Check again) no timers run: Resend is ready at once and the 5 minute notice never appears.
-- The waiting panel has no way back to change a mistyped address.
+  shows, so "Too many requests. Try again in a minute." never appears there. Link flow; a Resend on the new code screen
+  could repeat it.
+- The 5 minute notice says "This link has expired. Request a new one above.", but Resend link sits below it. Link flow.
+- After a reload (Check again) no timers run: Resend is ready at once and the 5 minute notice never appears. Link flow.
+- The waiting panel has no way back to change a mistyped address. Link flow; the new code screen faces the same
+  question.
 - "Send new link" on the expired, already used and not valid pages opens `/login` with an empty field; the address is
-  not carried over (`web/templates/verify_outcome.html.tmpl`).
+  not carried over (`web/templates/verify_outcome.html.tmpl`). Link flow.
 - "This link was already used" also shows when the same browser was just signed in by that link, for example when the
-  email link is opened twice.
+  email link is opened twice. Link flow.
 
 ## Open questions for the owner
 
@@ -385,7 +396,8 @@ nothing changed:
    and record it as your decision.
 5. **Dark mode.** The globe stays light, like the app map. Recommendation: **keep it**: A dims it to grey land and slate
    sea, and B shows it almost at full strength. Look with the Theme switch.
-6. **The pages the email link opens.** Recommendation: **the globe on the sign in page only**. The success page moves on
+6. **The pages the email link opens** (only if the globe is built before note 6 removes the link). Recommendation:
+   **the globe on the sign in page only**. The success page moves on
    after 2 seconds, so its download would be thrown away; those pages would get a plain background.
 7. **Policy words.** The sign in page now contacts unpkg.com and OpenFreeMap before anyone agrees to anything.
    Recommendation: add the sign in page to the existing Policy sentence; you pick the words.
