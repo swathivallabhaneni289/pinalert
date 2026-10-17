@@ -937,7 +937,7 @@ test('a 12 character name typed in one go sends one request; typed slowly it sta
   }
   slow.advance(2000);
   const times = slow.requests.map((r) => r.at);
-  assert.ok(times.length >= 2 && times.length <= 7, 'requests sent: ' + times.length);
+  assert.ok(times.length >= 2 && times.length <= 5, 'requests sent: ' + times.length + ' at ' + times.join(','));
   for (let i = 1; i < times.length; i++) {
     assert.ok(times[i] - times[i - 1] >= 1000, 'typed searches are at least a second apart: ' + times.join(','));
   }
