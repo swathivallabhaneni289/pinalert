@@ -31,6 +31,10 @@ window.PinalertSheet = (function () {
   // A press that moves less than this is a tap, not a drag.
   var TAP_PX = 6;
 
+  // A wheel turn of fewer pixels than this is jitter and moves nothing (the
+  // approved mockup's threshold).
+  var WHEEL_JITTER_PX = 4;
+
   var ORDER = ['full', 'half', 'short'];
 
   // ---- The pure part -------------------------------------------------------
@@ -141,6 +145,7 @@ window.PinalertSheet = (function () {
   var drag = null;
   var touch = null;
   var suppressClickUntil = 0;
+  var wheelLockedUntil = 0;
 
   function now() {
     return window.performance && typeof window.performance.now === 'function' ? window.performance.now() : Date.now();
@@ -417,6 +422,41 @@ window.PinalertSheet = (function () {
     }
   }
 
+  // ---- The wheel on the list body -------------------------------------------
+
+  // onWheel is the mouse and trackpad form of the scroll rule (UI-SPEC 2b:
+  // "finger up, wheel down"). A wheel turned down is the finger going up, so
+  // the sheet's rule is asked with the wheel's delta turned round. While the
+  // sheet is not full a turn down grows it to full and the list does not move
+  // on that turn; at full the list scrolls. At full with the list at its top a
+  // turn up shrinks the sheet to half; at half or short a turn up is the
+  // list's. A few pixels of jitter do nothing, and once the wheel has moved the
+  // sheet, the rest of the same turn (a trackpad's momentum) is ignored for the
+  // settle time so the sheet never bounces between two positions. The listener
+  // is not passive, so a turn the sheet owns can be kept from the list.
+  function onWheel(evt) {
+    if (!active || now() < wheelLockedUntil || Math.abs(evt.deltaY) < WHEEL_JITTER_PX) {
+      return;
+    }
+    if (gestureOwner(snap, sheetEl.scrollTop, -evt.deltaY) !== 'sheet') {
+      return;
+    }
+    var next = null;
+    if (evt.deltaY > 0 && snap !== 'full') {
+      next = 'full';
+    } else if (evt.deltaY < 0 && snap === 'full') {
+      next = 'half';
+    }
+    if (next === null) {
+      return;
+    }
+    if (evt.cancelable) {
+      evt.preventDefault();
+    }
+    wheelLockedUntil = now() + SETTLE_MS;
+    setSnap(next);
+  }
+
   // ---- The handle and the keyboard ------------------------------------------
 
   function onHandleClick() {
@@ -534,6 +574,7 @@ window.PinalertSheet = (function () {
     sheetEl.addEventListener('touchmove', onTouchMove, { passive: false });
     sheetEl.addEventListener('touchend', onTouchEnd);
     sheetEl.addEventListener('touchcancel', onTouchEnd);
+    sheetEl.addEventListener('wheel', onWheel, { passive: false });
     sheetEl.addEventListener('focusin', onFocusIn);
     sheetEl.addEventListener('transitionend', function (evt) {
       if (evt.target === sheetEl && evt.propertyName === 'top' && settleTimer !== null) {

@@ -1,7 +1,7 @@
 // sheet_glue_test.mjs - runs the real web/static/js/sheet.js against a small
 // element model and checks the glue that sheet_logic_test.mjs cannot reach
 // (Phase 3.4, D-16): the positions the sheet takes on a box, the handle's words,
-// the keyboard, a drag, a tap, a touch gesture, remember and restore, the
+// the keyboard, a drag, a tap, a touch gesture, a wheel turn, remember and restore, the
 // motion rules and the idle laptop.
 //
 // Run it with: node --test web/sheet_glue_test.mjs
@@ -286,6 +286,105 @@ test('a touch that starts on the handle row or the list head is left to the poin
   env.sheet.fire('touchmove', m);
   assert.equal(m.defaultPrevented, false);
   assert.equal(top(env), '324px');
+});
+
+const wheel = (deltaY) => evt({ deltaY });
+
+test('a wheel turned down at half or short grows the sheet to full and the list does not move on that turn', () => {
+  const env = setup();
+  const w = wheel(160);
+  env.sheet.fire('wheel', w);
+  assert.equal(w.defaultPrevented, true);
+  assert.equal(env.sheet.getAttribute('data-snap'), 'full');
+  assert.equal(top(env), '0px');
+
+  const low = setup();
+  low.api.setSnap('short', { instant: true });
+  const s = wheel(120);
+  low.sheet.fire('wheel', s);
+  assert.equal(s.defaultPrevented, true);
+  assert.equal(low.sheet.getAttribute('data-snap'), 'full');
+});
+
+test('at full a wheel turned down is left to the list', () => {
+  const env = setup();
+  env.api.setSnap('full', { instant: true });
+  const w = wheel(160);
+  env.sheet.fire('wheel', w);
+  assert.equal(w.defaultPrevented, false);
+  assert.equal(env.sheet.getAttribute('data-snap'), 'full');
+});
+
+test('at full with the list at its top a wheel turned up shrinks the sheet to half; scrolled down it does not', () => {
+  const env = setup();
+  env.api.setSnap('full', { instant: true });
+  env.sheet.scrollTop = 0;
+  const w = wheel(-40);
+  env.sheet.fire('wheel', w);
+  assert.equal(w.defaultPrevented, true);
+  assert.equal(env.sheet.getAttribute('data-snap'), 'half');
+
+  const away = setup();
+  away.api.setSnap('full', { instant: true });
+  away.sheet.scrollTop = 30;
+  const u = wheel(-40);
+  away.sheet.fire('wheel', u);
+  assert.equal(u.defaultPrevented, false);
+  assert.equal(away.sheet.getAttribute('data-snap'), 'full');
+});
+
+test('at half or short a wheel turned up does nothing to the sheet', () => {
+  const env = setup();
+  const w = wheel(-80);
+  env.sheet.fire('wheel', w);
+  assert.equal(w.defaultPrevented, false);
+  assert.equal(env.sheet.getAttribute('data-snap'), 'half');
+  env.api.setSnap('short', { instant: true });
+  const s = wheel(-80);
+  env.sheet.fire('wheel', s);
+  assert.equal(s.defaultPrevented, false);
+  assert.equal(env.sheet.getAttribute('data-snap'), 'short');
+});
+
+test('a few pixels of wheel jitter do nothing', () => {
+  const env = setup();
+  const a = wheel(2);
+  env.sheet.fire('wheel', a);
+  assert.equal(a.defaultPrevented, false);
+  assert.equal(env.sheet.getAttribute('data-snap'), 'half');
+  env.api.setSnap('full', { instant: true });
+  const b = wheel(-2);
+  env.sheet.fire('wheel', b);
+  assert.equal(b.defaultPrevented, false);
+  assert.equal(env.sheet.getAttribute('data-snap'), 'full');
+});
+
+test('after a wheel snap the momentum of the same turn is ignored for the settle time, then the wheel works again', () => {
+  const env = setup();
+  env.sheet.fire('wheel', wheel(160));
+  assert.equal(env.sheet.getAttribute('data-snap'), 'full');
+  env.sheet.scrollTop = 0;
+  env.clock.t += 100;
+  const early = wheel(-60);
+  env.sheet.fire('wheel', early);
+  assert.equal(early.defaultPrevented, false, 'inside the settle time nothing moves');
+  assert.equal(env.sheet.getAttribute('data-snap'), 'full');
+  env.clock.t += 300;
+  const late = wheel(-60);
+  env.sheet.fire('wheel', late);
+  assert.equal(late.defaultPrevented, true);
+  assert.equal(env.sheet.getAttribute('data-snap'), 'half');
+});
+
+test('on a laptop a wheel is never touched', () => {
+  const env = setup({ phone: false });
+  const w = wheel(160);
+  env.sheet.fire('wheel', w);
+  assert.equal(w.defaultPrevented, false);
+  assert.equal(top(env), undefined);
+  const u = wheel(-160);
+  env.sheet.fire('wheel', u);
+  assert.equal(u.defaultPrevented, false);
 });
 
 test('focus on a row a short sheet clips grows it to half; the handle and Show button do not', () => {
