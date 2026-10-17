@@ -69,6 +69,13 @@ Handy address parameters: `?view=phone|laptop`, `rp=a|b` (the laptop variant, B 
      "Comments" centred, and no X: drag the handle up for the full screen, drag it down or tap outside to close. Escape,
      and a "Close comments" button that only shows on keyboard focus, close it too. The box is a rounded field with Post
      inside it, pinned to the bottom of the sheet.
+   - **Second look at the phone** (owner, 2026-10-17: "it looks odd why is there some weird spacing ... i want my comment
+     section to look like how the instagram comment section looks"). The block under the report has no "Comments"
+     heading (a thin line above it instead), and every line is 22px with 4px between, as under an Instagram post; the
+     whole block is one tap target and Add a comment keeps a 44px tap area through an invisible strip, so tap areas no
+     longer push the lines apart. In the sheet each comment follows the Instagram app: the username and time on the top
+     line, the words under them, then Reply, with "View N replies" right under it. The laptop keeps the Instagram on a
+     computer layout (username and words on one line), which the owner liked.
    - The count beside Comments includes replies. A like, an open thread and a half typed comment all survive a vote.
    - Likes are new. The rules to keep when building: one like per account per comment, comments only (never on the
      report itself), and they never feed Confirmed, the reporter score or any trust number. A heart must never read as
@@ -128,3 +135,4 @@ that thread; View and Hide replies work; the laptop box sits flush with the pane
 on the phone "View all 6 comments" opens the sheet, its box sits at the sheet bottom, and a username never breaks across
 lines; the heart is 32 by 44 and Reply 44 tall; light and dark checked.
 Fourth round, phone set up as in Instagram (2026-10-17): the page shows View all 6 comments, two one line previews and Add a comment… with no sideways scroll (page 390 of 390); Add a comment… opens the sheet with the cursor in it; the sheet opens at 497 of 731px, a drag up of 100px goes full (731px), a drag down of 150px closes it; light and dark checked. The laptop box has no border (unchanged look).
+Fifth round, phone spacing (2026-10-17): the gaps in the block under the report measure 4px, 4px, then 17px to Add a comment (it has a picture); the page stays 390 of 390 wide; in the sheet Reply to View replies is 25px centre to centre; dark checked; the laptop is unchanged.

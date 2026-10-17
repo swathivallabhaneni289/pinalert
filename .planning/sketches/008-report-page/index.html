@@ -763,13 +763,28 @@ button { font: inherit; color: inherit; }
    with your picture; any of them opens the comments sheet. The sheet rises to about two thirds of the screen with a grab
    handle and "Comments" centred and no X: drag the handle up for the full screen, drag it down or tap outside to close
    (Escape and a close button that shows on keyboard focus do the same). The box is a rounded field with Post inside it. */
-.ig-peek .cm-viewall { display: block; }
-.ig-peekrow { display: block; width: 100%; min-height: 32px; padding: 0; border: 0; background: none; color: var(--text); font: inherit;
-  font-size: 15px; line-height: 32px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-.ig-addrow { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; margin-top: 4px; padding: 0; border: 0; background: none;
-  color: var(--muted); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
-.ig-addrow .cm-av { width: 28px; height: 28px; }
-.ig-addrow .cm-av .ico { width: 16px; height: 16px; }
+/* Second look (owner, 2026-10-17: "it looks odd why is there some weird spacing"): no heading, and every line in the block
+   is the same 22px with the same 4px between, as under an Instagram post. The block is one tap target; Add a comment keeps
+   a 44px tap area through an invisible strip around it, so it does not push the lines apart. */
+.ig-peek { padding-top: 16px; border-top: 1px solid var(--border); }
+.ig-peekbtn { display: block; width: 100%; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.ig-viewall { display: block; color: var(--muted); font-size: 15px; line-height: 22px; }
+.ig-peekrow { display: block; margin-top: 4px; font-size: 15px; line-height: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ig-addrow { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 28px; margin-top: 10px; padding: 0; border: 0;
+  background: none; color: var(--muted); font: inherit; font-size: 15px; line-height: 22px; text-align: left; cursor: pointer; }
+.ig-addrow::after { content: ""; position: absolute; inset: -8px 0; }
+.ig-addrow .cm-av { width: 24px; height: 24px; }
+.ig-addrow .cm-av .ico { width: 14px; height: 14px; }
+/* Phone sheet rows as in the Instagram app: the username and time on the top line, the words under them, then Reply. */
+.ig-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; padding-top: 1px; font-size: 13px; line-height: 18px; }
+.ig-head .ig-name { margin: 0; }
+.ig-head .cm-tag { margin: 0; padding: 0 5px; font-size: 11px; line-height: 16px; }
+.ig-time { color: var(--muted); }
+.ig-say { margin: 2px 0 0; font-size: 15px; line-height: 20px; overflow-wrap: break-word; }
+.is-phone .ig-meta { margin: -9px 0 -13px; }
+.is-phone .cm > li + li { margin-top: 18px; }
+.is-phone .ig-replies > li { margin-top: 12px; }
+.is-phone .ig-view { margin: -6px 0 -12px; }
 .is-phone #cm-modal { align-items: flex-end; }
 .cm-dlg { display: flex; flex-direction: column; width: min(520px, 100%); height: 68%; background: var(--bg); border-radius: 16px 16px 0 0; overflow: hidden;
   transition: height .25s ease, transform .25s ease; }
@@ -1696,10 +1711,16 @@ button { font: inherit; color: inherit; }
       : '<span class="cm-av"><span class="ico i-user"></span></span>';
   }
   function igComment(r, c, k, j) {
-    var id = j == null ? String(k) : k + '.' + j;
-    return '<div class="ig">' + avHtml(r, c.rep) + '<div><p class="ig-text"><span class="ig-name">' + c.who + '</span> ' +
-      (c.rep ? '<span class="cm-tag">Reporter</span> ' : '') + c.t.replace(/^@(\S+)/, '<span class="ig-at">@$1</span>') + '</p>' +
-      '<div class="ig-meta"><span>' + c.ago + '</span><button data-reply="' + k + '" data-name="' + c.who + '">Reply</button></div></div>' +
+    var id = j == null ? String(k) : k + '.' + j, words = c.t.replace(/^@(\S+)/, '<span class="ig-at">@$1</span>');
+    var tag = c.rep ? '<span class="cm-tag">Reporter</span> ' : '', reply = '<button data-reply="' + k + '" data-name="' + c.who + '">Reply</button>';
+    // Laptop: Instagram on a computer, the username and words on one line, then the time and Reply. Phone: the Instagram app,
+    // the username and time on the top line, the words under them, then Reply.
+    var body = isPhone
+      ? '<div><div class="ig-head"><span class="ig-name">' + c.who + '</span>' + tag + '<span class="ig-time">' + c.ago + '</span></div>' +
+        '<p class="ig-say">' + words + '</p><div class="ig-meta">' + reply + '</div></div>'
+      : '<div><p class="ig-text"><span class="ig-name">' + c.who + '</span> ' + tag + words + '</p>' +
+        '<div class="ig-meta"><span>' + c.ago + '</span>' + reply + '</div></div>';
+    return '<div class="ig">' + avHtml(r, c.rep) + body +
       '<button class="ig-like" data-like="' + id + '" aria-pressed="' + !!c.liked + '" aria-label="Like this comment"><span class="ico ' +
       (c.liked ? 'i-heartfill' : 'i-heart') + '"></span>' + (c.likes ? '<span class="n">' + c.likes + '</span>' : '') + '</button></div>';
   }
@@ -1759,11 +1780,12 @@ button { font: inherit; color: inherit; }
     var total = commentTotal(d);
     if (isPhone) {
       // Phone, as under a post in the Instagram app: View all, the two newest comments, then Add a comment. Each opens the sheet.
-      h += '<section class="rp-sec ig-peek"><h2>Comments</h2>' +
-        (total ? '<button class="cm-viewall" data-cm-open>' + (total === 1 ? 'View 1 comment' : 'View all ' + total + ' comments') + '</button>' : '') +
-        d.cms.slice(-2).map(function (c) {
-          return '<button class="ig-peekrow" data-cm-open><span class="ig-name">' + c.who + '</span> ' + c.t.replace(/^@(\S+)/, '<span class="ig-at">@$1</span>') + '</button>';
-        }).join('') +
+      // No heading, as on Instagram; the whole block is one tap target that opens the sheet.
+      h += '<section class="rp-sec ig-peek" aria-label="Comments">' +
+        (total ? '<button class="ig-peekbtn" data-cm-open><span class="ig-viewall">' + (total === 1 ? 'View 1 comment' : 'View all ' + total + ' comments') + '</span>' +
+          d.cms.slice(-2).map(function (c) {
+            return '<span class="ig-peekrow"><span class="ig-name">' + c.who + '</span> ' + c.t.replace(/^@(\S+)/, '<span class="ig-at">@$1</span>') + '</span>';
+          }).join('') + '</button>' : '') +
         '<button class="ig-addrow" data-cm-open data-cm-focus>' + avHtml(r, d.mine) + '<span>Add a comment…</span></button></section></div>';
     } else {
       h += '<section class="rp-sec"><h2>Comments' + (total ? ' <span class="n">' + total + '</span>' : '') + '</h2>' + igList(r, d) + '</section></div>' +
