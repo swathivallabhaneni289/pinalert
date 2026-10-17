@@ -34,6 +34,13 @@
   // finished report leaves Nearby for it with the report id appended.
   var ENDED_NEARBY_PATH = '/profile?part=ended';
 
+  // Ends the address of that redirect (code review part 2, WR-05). location.replace
+  // keeps the page it left as the referrer but removes it from history, so the
+  // phone back arrow (app-bar.js) cannot trust the referrer on the page it opens:
+  // it sees this mark and follows its own address instead of going back, which
+  // could leave the site. The server ignores the parameter.
+  var REDIRECT_MARK = '&from=link';
+
   // The only shape of a report id taken from the store into an address.
   var REPORT_ID_PATTERN = /^[1-9][0-9]{0,17}$/;
 
@@ -947,9 +954,9 @@
         (focus.report.view === 'resolved' || focus.report.view === 'past')) {
       var finishedId = String(focus.report.id);
       if (REPORT_ID_PATTERN.test(finishedId)) {
-        window.location.replace(ENDED_NEARBY_PATH + '&report=' + finishedId);
+        window.location.replace(ENDED_NEARBY_PATH + '&report=' + finishedId + REDIRECT_MARK);
       } else {
-        window.location.replace(ENDED_NEARBY_PATH);
+        window.location.replace(ENDED_NEARBY_PATH + REDIRECT_MARK);
       }
     }
   }
