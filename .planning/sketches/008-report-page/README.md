@@ -109,9 +109,15 @@ back to the owner first.
 - Comments are wanted, **with replies**, shown clearly on the page in an Instagram like layout, with a **thumbs up like, not a heart**, on both sizes (item 5). They still need the Phase 4
   screening and per account limits, so they ship after the page and the history.
 - Tapping a pin on the map opens its report, on the phone the same as on the laptop ("i like the laptop version").
-- Names: the owner answered "yes" to the recommendation, read as: every commenter has a short username, asked for the
-  first time they comment (not at sign up, so posting a report stays quick). It passes the same screening as comments
-  (Phase 8 scope note 4). The full profile page stays opt in (Phase 9). To be confirmed in discuss-phase 8.
+- Names: every commenter has a username and **everyone sees it** (owner: "we can let the username be seen to everyone
+  cause they can see it while your commenting", and commenting and replying "should work exactly like how instagram lets
+  you comment and reply"). As on Instagram there are two fields: the **Username** is unique, public and shows on every
+  comment; the **Name** stays optional and shows only on a public profile (Phase 9). The username is **editable in
+  Settings, About you**, and checks as you type (owner: "it should check if that name is available or taken"): Checking…,
+  then "is available" with Save turned on, "is taken. Try another.", "Use 3 to 20 letters, numbers, dots or underscores.",
+  or "That name is kept for official use." for names like police, ndma, imd, govt, official or pinalert, so nobody can pose
+  as an authority. A saved username shows on your comments at once. It passes the same screening as comments (Phase 8
+  scope note 4). Still open: whether sign up asks for the username or the name (asked 2026-10-17).
 
 ## Open questions for the owner's look
 
@@ -139,3 +145,4 @@ Seventh round, thumbs up likes (2026-10-17): on the phone a like on a comment an
 Eighth round, pins and lock (2026-10-17): on the laptop a pin tap opens its report beside the map (Traffic), a second pin switches it (Road blocked), and after All reports another pin opens again (Shelter); layout A and the phone also open on a pin tap; no pin label is left in the page.
 Ninth round, laptop box (2026-10-17, asked by the owner after the lock): the laptop box is now the same rounded field as the phone, fully visible at the panel bottom (897 of 900px) with Replying to above it; the mockup hint is short again so the top strip stays on one line; light and dark checked.
 Tenth round, your own name (2026-10-17, asked by the owner after the lock): your comment on your own report reads "priya.vja Water is still rising..." with no Reporter tag on the laptop and the phone; a reply to your own comment adds no @name and posts as priya.vja; suresh.patamata still shows Reporter to you on the shelter report.
+Eleventh round, username editor (2026-10-17): kiran_77 shows taken, police.help shows kept for official use, ab shows the rule, Priya.Floods turns into priya.floods and shows available with Save on; saving changes the Settings row and your comment to priya.floods; checked on the laptop and the phone.

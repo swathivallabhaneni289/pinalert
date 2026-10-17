@@ -774,6 +774,19 @@ button { font: inherit; color: inherit; }
 .cm-pill { min-height: 44px; padding: 0 4px 0 14px; border: 1px solid var(--border); border-radius: 22px; }
 .cm-pill:focus-within { border-color: var(--muted); }
 .cm-compose textarea { padding: 10px 0; }
+/* Username (owner, 2026-10-17: "we can let the username be seen to everyone cause they can see it while your commenting.
+   and the name section in the profile [should] be editable and it should check if that name is available or taken").
+   As on Instagram there are two: the Name stays optional and profile only, the Username is unique and shows on every
+   comment. Tapping the row opens an editor that checks the name as you type. */
+.uname-edit { padding: 12px 12px 14px; border-top: 1px solid var(--border); }
+.uname-edit[hidden] { display: none; }
+.uname-edit .field input { text-transform: lowercase; }
+.uname-status { display: flex; align-items: center; gap: 6px; min-height: 22px; margin: 8px 0 0; font-size: 14px; color: var(--muted); }
+.uname-status .ico { width: 16px; height: 16px; }
+.uname-status.ok { color: var(--low); font-weight: 600; }
+.uname-status.bad { color: var(--critical); font-weight: 600; }
+.uname-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.uname-actions .btn-quiet, .uname-actions .postbtn { height: 44px; }
 .card .openrep { display: none; width: 100%; height: 44px; margin-top: 10px; align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--border);
   border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
 .card .openrep .ico { width: 18px; height: 18px; }
@@ -948,8 +961,14 @@ button { font: inherit; color: inherit; }
     <div class="page scroll">
       <div class="pagehead laptop-only"><h1>Settings</h1></div>
       <div class="sect">
-        <div class="sect-head"><h2>About you</h2><p>Your name and home area. Shown only on your public profile.</p></div>
+        <div class="sect-head"><h2>About you</h2><p>Your username, name and home area.</p></div>
         <div class="box">
+          <div class="row link" data-uname-row tabindex="0" role="button"><span class="lbl">Username<small>Shown on your comments, to everyone</small></span><span class="val" id="uname-val">priya.vja</span></div>
+          <div class="uname-edit" id="uname-edit" hidden>
+            <label class="field"><span>Username</span><input id="uname-input" type="text" maxlength="20" autocomplete="off" autocapitalize="none" spellcheck="false"></label>
+            <p class="uname-status" id="uname-status" aria-live="polite"></p>
+            <div class="uname-actions"><button class="btn-quiet" type="button" data-uname-cancel>Cancel</button><button class="postbtn" type="button" data-uname-save disabled>Save</button></div>
+          </div>
           <div class="row link"><span class="lbl">Name<small>Shown only if you let others follow you</small></span><span class="val">Sample Name</span></div>
           <div class="row link"><span class="lbl">Home area<small>Used for alerts, never your exact spot</small></span><span class="val">Patamata</span></div>
           <div class="row link phone-only"><span class="lbl">View my profile<small>What other people see</small></span></div>
@@ -1864,6 +1883,47 @@ button { font: inherit; color: inherit; }
     if (e.key === 'Enter' && !e.shiftKey && e.target.closest && e.target.closest('[data-cm-form]')) { e.preventDefault(); e.target.closest('form').requestSubmit(); }
     if (e.key === 'Escape') shareModal.hidden = true;
   });
+  // Username in Settings, as on Instagram: tap the row, type, and it checks as you go. Taken names here are the sample
+  // commenters; names that look official are kept back so nobody can pose as an authority during an emergency.
+  var TAKEN = ['ravi.k', 'lakshmi_vja', 'anjali.r', 'suresh.patamata', 'kiran_77', 'padma.n', 'venkat.g', 'bhargav_s', 'rani.m', 'prasad.k',
+    'meena_vja', 'priya', 'priya.v', 'priya_vja'];
+  var KEPT = ['pinalert', 'admin', 'moderator', 'support', 'police', 'ndma', 'sdma', 'imd', 'cwc', 'govt', 'government', 'official', 'collector'];
+  var unameRow = document.querySelector('[data-uname-row]'), unameEdit = document.getElementById('uname-edit');
+  var unameInput = document.getElementById('uname-input'), unameStatus = document.getElementById('uname-status');
+  var unameSave = unameEdit.querySelector('[data-uname-save]'), unameTimer = null;
+  function unameSay(cls, icon, text) {
+    unameStatus.className = 'uname-status' + (cls ? ' ' + cls : '');
+    unameStatus.innerHTML = (icon ? '<span class="ico i-' + icon + '" aria-hidden="true"></span>' : '') + '<span></span>';
+    unameStatus.lastChild.textContent = text;
+  }
+  function unameCheck() {
+    var v = unameInput.value.toLowerCase();
+    if (v !== unameInput.value) unameInput.value = v;
+    unameSave.disabled = true; clearTimeout(unameTimer);
+    if (v === ME) return unameSay('', '', 'This is your username now.');
+    if (!/^[a-z0-9._]{3,20}$/.test(v) || /^\.|\.$|\.\./.test(v)) return unameSay(v ? 'bad' : '', v ? 'x' : '', 'Use 3 to 20 letters, numbers, dots or underscores.');
+    var parts = v.split(/[._0-9]+/);
+    if (parts.some(function (p) { return KEPT.indexOf(p) !== -1; }) || /^(pinalert|official|police|govt|ndma)/.test(v)) return unameSay('bad', 'x', 'That name is kept for official use.');
+    unameSay('', '', 'Checking…');
+    unameTimer = setTimeout(function () {
+      if (TAKEN.indexOf(v) !== -1) return unameSay('bad', 'x', v + ' is taken. Try another.');
+      unameSay('ok', 'check', v + ' is available.'); unameSave.disabled = false;
+    }, 450);
+  }
+  function unameOpen() { unameRow.hidden = true; unameEdit.hidden = false; unameInput.value = ME; unameCheck(); unameInput.focus(); unameInput.select(); }
+  function unameClose() { clearTimeout(unameTimer); unameEdit.hidden = true; unameRow.hidden = false; }
+  function unameSaveNow() {
+    if (unameSave.disabled) return;
+    var v = unameInput.value;
+    details.forEach(function (d) { d.cms.forEach(function (c) { if (c.me) c.who = v; c.replies.forEach(function (x) { if (x.me) x.who = v; }); }); });
+    ME = v; document.getElementById('uname-val').textContent = v; unameClose(); renderReport();
+  }
+  unameRow.addEventListener('click', unameOpen);
+  unameRow.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); unameOpen(); } });
+  unameInput.addEventListener('input', unameCheck);
+  unameInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); unameSaveNow(); } if (e.key === 'Escape') unameClose(); });
+  unameEdit.querySelector('[data-uname-cancel]').addEventListener('click', unameClose);
+  unameSave.addEventListener('click', unameSaveNow);
   window.__mock.openReport = openReport;
   if (params.get('open') === 'rep') openReport(Number(params.get('i') || 0));
   if (params.get('share')) openShare();
