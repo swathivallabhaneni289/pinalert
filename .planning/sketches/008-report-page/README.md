@@ -51,9 +51,15 @@ Handy address parameters: `?view=phone|laptop`, `rp=a|b` (the laptop variant, B 
 4. What happened so far: a timeline built from the vote log. It never names a voter or says where they were.
 5. Comments, shown clearly on the page (owner, 2026-10-17: "allow the replies", then "i want how instagram comments
    work", then "i dont need the likes i just want you to display the comment section clearly without making everything
-   too clumsy"):
+   too clumsy", then "it looks good can we also maybe have the like thing? but not heart? and maybe we can add it for the
+   laptop too"):
    - **The same list on the phone and the laptop**, right on the report page under a "Comments" heading with the count
-     (replies included). No likes, no preview, no separate comments screen.
+     (replies included). No preview, no separate comments screen.
+   - **Like is a thumbs up**, not a heart, in the small line under each comment right after Reply, with the count beside
+     it, on both sizes. Grey like Reply; once liked the thumb is filled and in the text colour, so the state is never
+     colour alone and no severity colour is used. Tap again to take it back. Rules to keep when building: one like per
+     account per comment, comments only (never on the report itself), and likes never feed Confirmed, the reporter score
+     or any trust number; a thumbs up on a comment must never read as Confirm.
    - Each comment: a round picture, the username, the time, the words and **Reply**. On the laptop the username and the
      words share one line with the time and Reply under them (as on Instagram on a computer); on the phone the username
      and time sit on the top line with the words under them, then Reply (as in the Instagram app), so a narrow screen
@@ -66,10 +72,10 @@ Handy address parameters: `?view=phone|laptop`, `rp=a|b` (the laptop variant, B 
      turns solid once there is text; Enter posts and Shift with Enter starts a new line. The box grows as you type, and
      "N left" shows only in the last 40 of the 280 letters. On the laptop the box is pinned to the bottom of the panel;
      on the phone it is a rounded field after the last comment.
-   - An open thread and a half typed comment survive a vote.
+   - A like, an open thread and a half typed comment all survive a vote.
    - Sample commenters have short usernames (ravi.k, anjali.r and so on); see "Owner decisions" for names.
-   - Tried and dropped the same day: likes with a heart on each comment, and on the phone a short preview that opened a
-     separate comments sheet. The owner found both clumsy.
+   - Tried and dropped the same day: a red heart in its own column on the right of each comment, and on the phone a
+     short preview that opened a separate comments sheet. The owner found both clumsy.
 6. Share: a window (a bottom sheet on the phone) showing what people get in WhatsApp: the title and "Open to see if this
    is still true right now", with a link and no counts, so a forward can never show a stale number. Close with the X.
 
@@ -94,7 +100,7 @@ comments box and the always open text box went, and the section headings got sma
 ## Owner decisions (2026-10-17)
 
 - Laptop: **B, beside the map.** A stays in the file behind `?rp=a` for comparison only.
-- Comments are wanted, **with replies**, shown clearly on the page in an Instagram like layout, **without likes** (item 5). They still need the Phase 4
+- Comments are wanted, **with replies**, shown clearly on the page in an Instagram like layout, with a **thumbs up like, not a heart**, on both sizes (item 5). They still need the Phase 4
   screening and per account limits, so they ship after the page and the history.
 - Tapping a pin on the map opens its report, on the phone the same as on the laptop ("i like the laptop version").
 - Names: the owner answered "yes" to the recommendation, read as: every commenter has a short username, asked for the
@@ -123,3 +129,4 @@ lines; the heart is 32 by 44 and Reply 44 tall; light and dark checked.
 Fourth round, phone set up as in Instagram (2026-10-17): the page shows View all 6 comments, two one line previews and Add a comment… with no sideways scroll (page 390 of 390); Add a comment… opens the sheet with the cursor in it; the sheet opens at 497 of 731px, a drag up of 100px goes full (731px), a drag down of 150px closes it; light and dark checked. The laptop box has no border (unchanged look).
 Fifth round, phone spacing (2026-10-17): the gaps in the block under the report measure 4px, 4px, then 17px to Add a comment (it has a picture); the page stays 390 of 390 wide; in the sheet Reply to View replies is 25px centre to centre; dark checked; the laptop is unchanged.
 Sixth round, clear list and no likes (2026-10-17): no heart anywhere on the phone or the laptop; the phone shows the full list under "Comments 6" with the box after it, in the phone frame and at 390px wide, with no sideways scroll; a reply posts into the right thread (4 replies, count 7); dark checked; the laptop only lost the hearts.
+Seventh round, thumbs up likes (2026-10-17): on the phone a like on a comment and on a reply both show filled with the count up by one (6 to 7, 5 to 6) and stay after a Confirm; five like buttons with one thread open, each 32 by 44; no sideways scroll; the laptop shows the same thumbs up after Reply, checked in dark.

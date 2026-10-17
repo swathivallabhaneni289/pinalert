@@ -708,6 +708,11 @@ button { font: inherit; color: inherit; }
    and Reply. Replies sit one step in, folded behind "View N replies". One box: Reply fills in @username and shows
    "Replying to". On the laptop the box is pinned to the bottom of the panel; on the phone it sits after the last comment.
    No likes, no sheet. Left out of the Instagram look: hearts and the emoji row. */
+/* A thumbs up to like a comment, in the small line under it (owner, 2026-10-17: "can we also maybe have the like thing? but
+   not heart? and maybe we can add it for the laptop too"). Grey like Reply; a liked one is filled and in the text colour, so
+   the state is never colour alone and no severity colour is borrowed. Likes never feed any trust number. */
+.i-thumb { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik03IDEwdjEyIi8+PHBhdGggZD0iTTE1IDUuODggMTQgMTBoNS44M2EyIDIgMCAwIDEgMS45MiAyLjU2bC0yLjMzIDhBMiAyIDAgMCAxIDE3LjUgMjJINGEyIDIgMCAwIDEtMi0ydi04YTIgMiAwIDAgMSAyLTJoMi43NmEyIDIgMCAwIDAgMS43OS0xLjExTDEyIDJhMy4xMyAzLjEzIDAgMCAxIDMgMy44OFoiLz48L3N2Zz4=); }
+.i-thumbfill { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iYmxhY2siIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNNyAxMHYxMiIvPjxwYXRoIGQ9Ik0xNSA1Ljg4IDE0IDEwaDUuODNhMiAyIDAgMCAxIDEuOTIgMi41NmwtMi4zMyA4QTIgMiAwIDAgMSAxNy41IDIySDRhMiAyIDAgMCAxLTItMnYtOGEyIDIgMCAwIDEgMi0yaDIuNzZhMiAyIDAgMCAwIDEuNzktMS4xMUwxMiAyYTMuMTMgMy4xMyAwIDAgMSAzIDMuODhaIi8+PC9zdmc+); }
 .cm { list-style: none; margin: 0; padding: 0; }
 .cm > li + li { margin-top: 14px; }
 .ig { display: grid; grid-template-columns: 32px minmax(0, 1fr); column-gap: 12px; align-items: start; }
@@ -725,6 +730,9 @@ button { font: inherit; color: inherit; }
 .ig-meta button, .ig-view, .cm-replying button { min-height: 44px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit;
   font-size: 12px; font-weight: 600; cursor: pointer; }
 .ig-meta button:hover, .ig-view:hover, .cm-replying button:hover { color: var(--text); }
+.ig-meta .ig-like { display: inline-flex; align-items: center; gap: 4px; min-width: 32px; }
+.ig-like .ico { width: 14px; height: 14px; }
+.ig-meta .ig-like[aria-pressed="true"] { color: var(--text); }
 .ig-thread { margin: 0 0 0 44px; }
 .ig-view { display: flex; align-items: center; gap: 12px; }
 .ig-view::before { content: ""; width: 24px; height: 1px; background: var(--muted); }
@@ -1609,9 +1617,9 @@ button { font: inherit; color: inherit; }
       hist: [['2:10 pm', 'Posted as Critical.', ''], ['2:14 pm', 'Confirmed from a second spot.', 'good'],
         ['2:17 pm', 'Confirmed from a third spot.', 'good'], ['2:21 pm', 'Confirmed from a fourth spot.', 'good']],
       // Sample usernames, as on Instagram; who may show a name is still the owner's call (see the README).
-      cms: [{ who: 'ravi.k', ago: '47m', t: 'Two buses are stuck at the signal now. Use the service road.',
-          replies: [{ who: 'lakshmi_vja', ago: '44m', t: '@ravi.k The service road is filling up too, near the temple.' }] },
-        { who: 'You', rep: true, ago: '43m', t: 'Water is still rising near the petrol bunk.', replies: [] }] },
+      cms: [{ who: 'ravi.k', ago: '47m', likes: 4, t: 'Two buses are stuck at the signal now. Use the service road.',
+          replies: [{ who: 'lakshmi_vja', ago: '44m', likes: 2, t: '@ravi.k The service road is filling up too, near the temple.' }] },
+        { who: 'You', rep: true, ago: '43m', likes: 3, t: 'Water is still rising near the petrol bunk.', replies: [] }] },
     { cat: 'Traffic', place: 'Eluru Road, towards Ramavarappadu', dist: '2.1 km', ago: '5 min ago', confN: 0, dispN: 0,
       curTag: 'Too early to tell', curLine: 'Fewer than 2 people have confirmed this yet. Fades at 4:57 pm.', repTag: 'Reliable reporter', repLine: '7 of 9 earlier reports by this reporter were confirmed by people nearby.', code: 'M3TD',
       hist: [['2:57 pm', 'Posted as Medium.', '']],
@@ -1620,28 +1628,28 @@ button { font: inherit; color: inherit; }
       curTag: 'Report up to date', curLine: 'Confirmed from 6 different spots in the last 2 hours. Fades tomorrow at 2:22 pm.', repTag: 'New reporter', repLine: 'Not rated yet. It needs 5 reports with a clear result.', code: 'P9ZS',
       hist: [['2:22 pm', 'Posted as Low.', ''], ['2:30 pm', 'Confirmed from 2 spots. Shown to everyone.', 'good'],
         ['2:41 pm', 'Confirmed from a fourth spot.', 'good'], ['2:55 pm', 'Confirmed from a sixth spot.', 'good']],
-      cms: [{ who: 'anjali.r', ago: '27m', t: 'Food packets are being given at the gate.',
-          replies: [{ who: 'suresh.patamata', rep: true, ago: '25m', t: '@anjali.r Until 6 pm, the volunteers said.' }] },
-        { who: 'kiran_77', ago: '14m', t: 'Ground floor rooms are full, the first floor still has space.',
-          replies: [{ who: 'padma.n', ago: '12m', t: '@kiran_77 Can older people get a room on the ground floor?' },
-            { who: 'suresh.patamata', rep: true, ago: '10m', t: '@padma.n Ask at the desk, they are moving older people down first.' },
-            { who: 'padma.n', ago: '4m', t: '@suresh.patamata Thank you, we are on our way.' }] }] },
+      cms: [{ who: 'anjali.r', ago: '27m', likes: 6, t: 'Food packets are being given at the gate.',
+          replies: [{ who: 'suresh.patamata', rep: true, ago: '25m', likes: 3, t: '@anjali.r Until 6 pm, the volunteers said.' }] },
+        { who: 'kiran_77', ago: '14m', likes: 2, t: 'Ground floor rooms are full, the first floor still has space.',
+          replies: [{ who: 'padma.n', ago: '12m', likes: 1, t: '@kiran_77 Can older people get a room on the ground floor?' },
+            { who: 'suresh.patamata', rep: true, ago: '10m', likes: 5, t: '@padma.n Ask at the desk, they are moving older people down first.' },
+            { who: 'padma.n', ago: '4m', likes: 0, t: '@suresh.patamata Thank you, we are on our way.' }] }] },
     { cat: 'Power out', place: 'Gunadala main road', dist: '2.6 km', ago: '1 hour ago', confN: 2, dispN: 0,
       curTag: 'Report getting old', curLine: 'Few recent confirmations. It fades at 5:02 pm unless someone confirms it again.', repTag: 'Mixed record', repLine: '3 of 6 earlier reports by this reporter were confirmed by people nearby.', code: 'G4PW',
       hist: [['2:02 pm', 'Posted as Medium.', ''], ['2:26 pm', 'Confirmed from 2 spots. Shown to everyone.', 'good']],
-      cms: [{ who: 'venkat.g', ago: '22m', t: 'The lanes behind the temple have power, only the main road side is out.', replies: [] }] },
+      cms: [{ who: 'venkat.g', ago: '22m', likes: 1, t: 'The lanes behind the temple have power, only the main road side is out.', replies: [] }] },
     { cat: 'Road blocked', place: 'Budameru bridge', dist: '1.9 km', ago: '2 hours ago', confN: 3, dispN: 1,
       curTag: 'Report up to date', curLine: 'Confirmed from 3 different spots in the last 2 hours. Fades at 7:05 pm.', repTag: 'New reporter', repLine: 'Not rated yet. It needs 5 reports with a clear result.', code: 'B2RD',
       hist: [['1:05 pm', 'Posted as Medium.', ''], ['1:18 pm', 'Confirmed from 2 spots. Shown to everyone.', 'good'],
         ['1:40 pm', 'Disputed by someone nearby.', 'bad'], ['1:52 pm', 'Confirmed from a third spot.', 'good']],
-      cms: [{ who: 'bhargav_s', ago: '1h', t: 'Bikes are being let through on the left side.',
-          replies: [{ who: 'rani.m', ago: '1h', t: '@bhargav_s Not any more, police stopped the bikes too.' }] }] },
+      cms: [{ who: 'bhargav_s', ago: '1h', likes: 1, t: 'Bikes are being let through on the left side.',
+          replies: [{ who: 'rani.m', ago: '1h', likes: 5, t: '@bhargav_s Not any more, police stopped the bikes too.' }] }] },
     { cat: 'Flood', place: 'Prakasam Barrage', dist: '3.2 km', ago: '1 hour ago', confN: 0, dispN: 3,
       curTag: 'Disputed: may not be true', curWarn: true, curLine: 'Disputed nearby, so it needs 2 confirmations in the last 2 hours.', repTag: 'New reporter', repLine: 'Not rated yet. It needs 5 reports with a clear result.', code: 'K8BX',
       hist: [['1:58 pm', 'Posted as Critical.', ''], ['2:03 pm', 'Disputed by someone nearby.', 'bad'], ['2:09 pm', 'Disputed from a second spot.', 'bad'],
         ['2:12 pm', 'Disputed from a third spot. Marked Disputed.', 'bad']],
-      cms: [{ who: 'prasad.k', ago: '56m', t: 'The barrage office says the gates are fine. This is an old video.',
-          replies: [{ who: 'meena_vja', ago: '52m', t: '@prasad.k Yes, the same video went around last year.' }] }] }
+      cms: [{ who: 'prasad.k', ago: '56m', likes: 9, t: 'The barrage office says the gates are fine. This is an old video.',
+          replies: [{ who: 'meena_vja', ago: '52m', likes: 4, t: '@prasad.k Yes, the same video went around last year.' }] }] }
   ];
   var current = 0;
   function confN(d) { return d.confN + (d.vote === 'confirm' ? 1 : 0); }
@@ -1667,13 +1675,17 @@ button { font: inherit; color: inherit; }
   function igComment(r, c, k, j) {
     var words = c.t.replace(/^@(\S+)/, '<span class="ig-at">@$1</span>');
     var tag = c.rep ? '<span class="cm-tag">Reporter</span> ' : '', reply = '<button data-reply="' + k + '" data-name="' + c.who + '">Reply</button>';
+    // The like sits after Reply on the same small line, on both sizes: a thumbs up, filled once you have liked it.
+    var n = c.likes || 0, like = '<button class="ig-like" data-like="' + (j == null ? k : k + '.' + j) + '" aria-pressed="' + !!c.liked + '" aria-label="Like, ' +
+      n + (n === 1 ? ' like' : ' likes') + '"><span class="ico ' + (c.liked ? 'i-thumbfill' : 'i-thumb') + '" aria-hidden="true"></span>' +
+      (n ? '<span>' + n + '</span>' : '') + '</button>';
     // Laptop: Instagram on a computer, the username and words on one line, then the time and Reply. Phone: the Instagram app,
     // the username and time on the top line, the words under them, then Reply.
     var body = isPhone
       ? '<div><div class="ig-head"><span class="ig-name">' + c.who + '</span>' + tag + '<span class="ig-time">' + c.ago + '</span></div>' +
-        '<p class="ig-say">' + words + '</p><div class="ig-meta">' + reply + '</div></div>'
+        '<p class="ig-say">' + words + '</p><div class="ig-meta">' + reply + like + '</div></div>'
       : '<div><p class="ig-text"><span class="ig-name">' + c.who + '</span> ' + tag + words + '</p>' +
-        '<div class="ig-meta"><span>' + c.ago + '</span>' + reply + '</div></div>';
+        '<div class="ig-meta"><span>' + c.ago + '</span>' + reply + like + '</div></div>';
     return '<div class="ig">' + avHtml(r, c.rep) + body + '</div>';
   }
   function igList(r, d) {
@@ -1827,7 +1839,7 @@ button { font: inherit; color: inherit; }
     shareModal.hidden = false;
   }
   document.addEventListener('click', function (e) {
-    var t = e.target.closest('[data-openrep],[data-rp-back],[data-trust],[data-reply],[data-cancel-reply],[data-thread],[data-vote],[data-resolve],[data-unresolve],[data-mute],[data-flag],[data-share],[data-close-share],[data-share-wa],[data-copy]');
+    var t = e.target.closest('[data-openrep],[data-rp-back],[data-trust],[data-reply],[data-cancel-reply],[data-thread],[data-like],[data-vote],[data-resolve],[data-unresolve],[data-mute],[data-flag],[data-share],[data-close-share],[data-share-wa],[data-copy]');
     if (!t) { if (e.target === shareModal) shareModal.hidden = true; return; }
     var d = details[current];
     d.drafts = d.drafts || {};
@@ -1840,6 +1852,10 @@ button { font: inherit; color: inherit; }
       renderReport(); focusComposer(); return;
     }
     if (t.hasAttribute('data-cancel-reply')) { d.replyTo = null; d.drafts.main = (d.drafts.main || '').replace(/^@\S+\s*/, ''); renderReport(); return; }
+    if (t.dataset.like) {
+      var p = t.dataset.like.split('.'), c = d.cms[Number(p[0])]; if (p.length > 1) c = c.replies[Number(p[1])];
+      c.liked = !c.liked; c.likes = (c.likes || 0) + (c.liked ? 1 : -1); renderReport(); return;
+    }
     if (t.dataset.thread) { d.openThreads = d.openThreads || {}; d.openThreads[t.dataset.thread] = !d.openThreads[t.dataset.thread]; renderReport(); return; }
     if (t.dataset.openrep) { e.stopPropagation(); openReport(Number(t.dataset.openrep)); return; }
     if (t.hasAttribute('data-rp-back')) { backFromReport(); return; }
@@ -1865,7 +1881,7 @@ button { font: inherit; color: inherit; }
     var f = e.target.closest('[data-cm-form]'); if (!f) return;
     e.preventDefault();
     var v = f.querySelector('textarea').value.trim(); if (!v) return;
-    var d = details[current], c = { who: 'You', rep: !!d.mine, ago: 'now', t: esc(v) };
+    var d = details[current], c = { who: 'You', rep: !!d.mine, ago: 'now', likes: 0, t: esc(v) };
     if (d.replyTo != null) { d.cms[d.replyTo].replies.push(c); d.openThreads = d.openThreads || {}; d.openThreads[d.replyTo] = true; d.replyTo = null; }
     else { c.replies = []; d.cms.push(c); }
     d.drafts = d.drafts || {}; d.drafts.main = '';
