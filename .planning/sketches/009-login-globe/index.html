@@ -200,7 +200,8 @@ body {
   <span class="grp">Theme: <a data-set="theme=light">Light</a> <a data-set="theme=dark">Dark</a></span>
   <span class="grp">Low data view: <a data-set="low=0">Off</a> <a data-set="low=1">On</a></span>
   <span class="grp">WebGL: <a data-set="nowebgl=0">Available</a> <a data-set="nowebgl=1">Missing</a></span>
-  <span class="grp">Country borders: <a data-set="borders=1">Shown</a> <a data-set="borders=0">Hidden</a></span>
+  <span class="grp">Earth: <a data-set="earth=real">Realistic</a> <a data-set="earth=map">Map colours</a></span>
+  <span class="grp">Country borders (map colours only): <a data-set="borders=1">Shown</a> <a data-set="borders=0">Hidden</a></span>
   <span class="status" id="globe-status" role="status">Globe: starting</span>
 </nav>
 
@@ -270,6 +271,10 @@ body {
   var LIB_JS_SRI = 'sha256-RamwepGJzlYFTGIKlHzPQeKR5YyV6bYVM7dAqqZe5cs=';
   /* The same reviewed style the app map uses (web/static/js/map.js:306). */
   var STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
+  /* The realistic Earth (owner, 2026-10-17: "a more realistic earth"): NASA Blue Marble
+     satellite pictures from NASA GIBS, free, no key, cross origin allowed. No borders, no glow. */
+  var REAL_TILES = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_NextGeneration/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg';
+  var REAL_MAX_ZOOM = 3;       // sharp enough for a 766px globe, and caps the download
 
   var START_LNG = 80;          // India in the middle at the start
   var LAT = 18;                // held fixed: the globe's size on screen depends on the latitude
@@ -293,6 +298,7 @@ body {
   var reloaded = params.get('reloaded') === '1';
   var tileMax = params.get('tz') === '1' ? 1 : 0;
   var borders = params.get('borders') !== '0';
+  var earth = params.get('earth') === 'map' ? 'map' : 'real';
   var shownEmail = params.get('email') || 'priya@example.com';
 
   var gate = document.getElementById('login-gate');
@@ -326,7 +332,7 @@ body {
   function setStatus(s) { status = s; setText(statusEl, statusPrefix + s); }
 
   /* ---- Mockup strip ---- */
-  var DEFAULTS = { place: 'a', screen: 'signin', low: '0', nowebgl: '0', borders: '1' };
+  var DEFAULTS = { place: 'a', screen: 'signin', low: '0', nowebgl: '0', borders: '1', earth: 'real' };
   function hrefWith(changes, keepFrame) {
     var p = new URLSearchParams(location.search);
     p.delete('frame');
@@ -345,7 +351,7 @@ body {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   }
   var current = { view: view, place: place, screen: screenName, theme: effectiveTheme(),
-    low: lowData ? '1' : '0', nowebgl: noWebGL ? '1' : '0', borders: borders ? '1' : '0' };
+    low: lowData ? '1' : '0', nowebgl: noWebGL ? '1' : '0', borders: borders ? '1' : '0', earth: earth };
   Array.prototype.forEach.call(document.querySelectorAll('#mock-note a[data-set]'), function (a) {
     var kv = a.getAttribute('data-set').split('=');
     var change = {};
@@ -589,6 +595,13 @@ body {
       a.textContent = text;
       return a;
     }
+    if (earth === 'real') {
+      credit.appendChild(document.createTextNode('Earth pictures: '));
+      credit.appendChild(link('https://visibleearth.nasa.gov/collection/1484/blue-marble', 'NASA Blue Marble'));
+      credit.appendChild(document.createTextNode(' via '));
+      credit.appendChild(link('https://www.earthdata.nasa.gov/gibs', 'NASA GIBS'));
+      return;
+    }
     credit.appendChild(link('https://openfreemap.org', 'OpenFreeMap'));
     credit.appendChild(document.createTextNode(' '));
     credit.appendChild(link('https://www.openmaptiles.org/', '© OpenMapTiles'));
@@ -645,6 +658,16 @@ body {
     return s;
   }
 
+  // The realistic Earth: one picture layer, nothing else (no labels, borders or glow).
+  function realStyle() {
+    return {
+      version: 8,
+      projection: { type: 'globe' },
+      sources: { earth: { type: 'raster', tiles: [REAL_TILES], tileSize: 256, minzoom: 0, maxzoom: REAL_MAX_ZOOM } },
+      layers: [{ id: 'earth', type: 'raster', source: 'earth', paint: { 'raster-fade-duration': 0 } }]
+    };
+  }
+
   function createMap(style) {
     layout();
     map = new maplibregl.Map({
@@ -692,14 +715,15 @@ body {
     document.addEventListener('visibilitychange', function () {
       if (!loaded && !failed && !document.hidden) armGiveUp();
     });
-    var style = fetch(STYLE_URL, { credentials: 'omit', referrerPolicy: 'no-referrer' }).then(function (r) {
-      if (!r.ok) throw new Error('style answered ' + r.status);
-      return r.json();
-    });
+    var style = earth === 'real' ? Promise.resolve(realStyle()) :
+      fetch(STYLE_URL, { credentials: 'omit', referrerPolicy: 'no-referrer' }).then(function (r) {
+        if (!r.ok) throw new Error('style answered ' + r.status);
+        return r.json();
+      }).then(trimStyle);
     Promise.all([addStylesheet(LIB_CSS, LIB_CSS_SRI), addScript(LIB_JS, LIB_JS_SRI), style]).then(function (res) {
       if (failed) return;   // it gave up already: a library or style that arrives late draws nothing
       if (typeof maplibregl === 'undefined') throw new Error('maplibregl is missing');
-      createMap(trimStyle(res[2]));
+      createMap(res[2]);
     }).catch(fail);
   }
 

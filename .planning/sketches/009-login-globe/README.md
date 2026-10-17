@@ -57,6 +57,21 @@ current decision is `.planning/ROADMAP.md` Phase 8 scope note 6; it is not repea
 sketch keeps today's single card, because that is what exists; the globe sits behind or beside whichever card the page
 ends up with.
 
+## Realistic Earth (owner, 2026-10-17)
+
+The owner asked for "a more realistic earth" turning. The globe now shows NASA Blue Marble satellite pictures by
+default (the mockup strip's Earth switch: Realistic, or Map colours for the earlier OpenFreeMap look). Source: NASA GIBS
+`BlueMarble_NextGeneration` in the web map tiling, `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/...`, free, no
+key, answers with `Access-Control-Allow-Origin: *`. The style is one picture layer, capped at zoom 3, with no labels, no
+borders and no glow (no gradient on the page); the same spin, size, fade in, give up and reduce motion rules apply. The
+credit reads "Earth pictures: NASA Blue Marble via NASA GIBS", with links. Measured 2026-10-17 in Chromium and WebKit,
+9 seconds after load: about 243 KB of pictures (31 tiles) at 1440 by 900, 99 to 227 KB at 390 by 844, on top of the
+MapLibre files; no style or vector tile download. GIBS sends `Cache-Control: no-store`, so pictures are fetched again
+on every visit, and new tiles keep arriving as the globe turns (zoom 3 is 64 tiles for the whole Earth, so a full
+2 minute turn may reach about 1 MB; estimated, not measured). Because the pictures have no borders, open question 3
+(country borders) applies only to Map colours. The other sections below still describe the Map colours globe until
+they are brought up to date.
+
 ## Variants
 
 - **A, behind the card (default).** The Phase 1.1 place (D-06). The globe sits behind the centred card, dimmed on its
