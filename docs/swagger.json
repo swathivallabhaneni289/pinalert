@@ -160,6 +160,15 @@
                         "description": "Map centre longitude, -180 to 180, sent together with lat",
                         "name": "lon",
                         "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "area"
+                        ],
+                        "type": "string",
+                        "description": "Send area to get areas only (neighbourhoods, localities, towns, cities, districts), never a street or a building. Left out, every kind of place is returned",
+                        "name": "kind",
+                        "in": "query"
                     }
                 ],
                 "responses": {

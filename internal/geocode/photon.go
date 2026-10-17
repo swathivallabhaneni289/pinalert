@@ -111,6 +111,7 @@ type photonProperties struct {
 	State       string `json:"state"`
 	CountryCode string `json:"countrycode"`
 	OSMKey      string `json:"osm_key"`
+	OSMValue    string `json:"osm_value"`
 	// Type is Photon's own size of the row: house, street, locality,
 	// district, city, county, state, country or other.
 	Type string `json:"type"`
@@ -310,6 +311,11 @@ func (c *Client) fetchPhoton(parent context.Context, q string, near *Point, limi
 	params.Set("limit", photonFetchLimit)
 	params.Set("lang", photonLang)
 	params.Set("bbox", indiaBBox)
+	if areasOnly(parent) {
+		for _, layer := range photonAreaLayers {
+			params.Add("layer", layer)
+		}
+	}
 	if near != nil {
 		params.Set("lat", strconv.FormatFloat(near.Lat, 'f', 6, 64))
 		params.Set("lon", strconv.FormatFloat(near.Lon, 'f', 6, 64))
@@ -348,6 +354,12 @@ func (c *Client) fetchPhoton(parent context.Context, q string, near *Point, limi
 		lon, lat := f.Geometry.Coordinates[0], f.Geometry.Coordinates[1]
 		if math.IsNaN(lat) || math.IsNaN(lon) || math.Abs(lat) > 90 || math.Abs(lon) > 180 {
 			// Skip, don't clamp: a bad row must never become a wrong pin.
+			continue
+		}
+		if areasOnly(parent) && !photonIsArea(p) {
+			// The layers already ask for areas; this drops what they let
+			// through (a power plant drawn as a locality) and any street or
+			// building, whatever Photon answers.
 			continue
 		}
 		label := photonLabel(p)
@@ -428,7 +440,7 @@ type photonOutcome struct {
 // away. Any other Photon failure is reported as failed, and the search goes
 // on (to the retry after a time out of the first try, else to Nominatim).
 func (c *Client) askPhoton(ctx context.Context, text string, near *Point, take func(ctx context.Context) error, limit time.Duration) (photonOutcome, error) {
-	key := cacheKey(text, near)
+	key := cacheKeyFor(ctx, text, near)
 	if cached, ok := c.photon.get(key); ok {
 		// A cached empty answer means Photon found nothing here before.
 		return photonOutcome{answer: cached, found: len(cached.Results) > 0}, nil

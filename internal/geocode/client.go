@@ -83,6 +83,11 @@ type nominatimRecord struct {
 	DisplayName string `json:"display_name"`
 	Lat         string `json:"lat"`
 	Lon         string `json:"lon"`
+	// Category and AddressType say what kind of place the row is (plan 28).
+	// They are read only to tell areas from streets and buildings, and are
+	// never forwarded.
+	Category    string `json:"category"`
+	AddressType string `json:"addresstype"`
 }
 
 // Client is a rate-limited, identified proxy to Nominatim's /search
@@ -232,7 +237,7 @@ func (c *Client) Search(ctx context.Context, q string, near *Point) (Answer, err
 //     answer must not hide it for six hours.
 func (c *Client) search(ctx context.Context, q string, near *Point, cache *answerCache,
 	takePhoton, takeNominatim func(ctx context.Context, i int) error) (Answer, error) {
-	key := cacheKey(q, near)
+	key := cacheKeyFor(ctx, q, near)
 	if c.photonURL == "" {
 		// Nominatim only, which only this package's tests build.
 		if cached, ok := cache.get(key); ok {
@@ -566,6 +571,16 @@ func scrubURLError(err error) error {
 // the string coordinates. It never touches the limiter; each caller decides
 // how to take a token before calling it.
 func (c *Client) fetch(ctx context.Context, q string, extra url.Values) ([]Result, error) {
+	if areasOnly(ctx) {
+		// The areas only mode restricts every Nominatim request the same way,
+		// whichever step of the search sends it.
+		merged := url.Values{}
+		for key, values := range extra {
+			merged[key] = values
+		}
+		merged.Set("featureType", nominatimAreaFeatureType)
+		extra = merged
+	}
 	req, err := c.buildRequest(ctx, q, extra)
 	if err != nil {
 		return nil, fmt.Errorf("geocode: building request: %w", scrubURLError(err))
@@ -588,6 +603,11 @@ func (c *Client) fetch(ctx context.Context, q string, extra url.Values) ([]Resul
 
 	results := make([]Result, 0, len(records))
 	for _, rec := range records {
+		if areasOnly(ctx) && !nominatimIsArea(rec) {
+			// featureType already asks Nominatim for settlements; this keeps a
+			// street or a building out even if it answers one anyway.
+			continue
+		}
 		lat, err := strconv.ParseFloat(rec.Lat, 64)
 		if err != nil {
 			// Skip, don't zero-fill: a bad row must never become a 0,0 pin.
@@ -752,6 +772,16 @@ func cacheKey(q string, near *Point) string {
 // back to.
 func (c *Client) SearchReader(ctx context.Context, q string, near *Point) (Answer, error) {
 	return c.search(ctx, q, near, c.reader, c.takeReaderPhotonToken, c.takeReaderToken)
+}
+
+// SearchReaderAreas is SearchReader for the home area fields (plan 28): the
+// same lane, the same limiters and the same order, but only areas come back
+// (neighbourhoods, localities, towns, cities and districts), never a street, a
+// building or another point place. The restriction is sent on every upstream
+// request of the search, and its answers are cached under their own key, so an
+// areas answer is never served to a normal search or the other way round.
+func (c *Client) SearchReaderAreas(ctx context.Context, q string, near *Point) (Answer, error) {
+	return c.SearchReader(withAreasOnly(ctx), q, near)
 }
 
 // takeReaderToken is the reader lane's turn at the Nominatim limiter for

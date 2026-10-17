@@ -27,6 +27,27 @@ import (
 // tested here without a live upstream. *geocode.Client satisfies it.
 type PlaceSearcher interface {
 	SearchReader(ctx context.Context, q string, near *geocode.Point) (geocode.Answer, error)
+	// SearchReaderAreas is SearchReader restricted to areas (neighbourhoods,
+	// localities, towns, cities, districts), for kind=area.
+	SearchReaderAreas(ctx context.Context, q string, near *geocode.Point) (geocode.Answer, error)
+}
+
+// placeKindArea is the one value of the optional kind parameter: the home area
+// fields ask for areas only. No kind is the place search as it always was.
+const placeKindArea = "area"
+
+// parsePlaceKind reads the optional kind query parameter. It returns areas=true
+// for kind=area and false when kind is absent or empty. Any other value writes
+// the 400 itself and returns ok=false.
+func parsePlaceKind(w http.ResponseWriter, r *http.Request) (areas, ok bool) {
+	switch r.URL.Query().Get("kind") {
+	case "":
+		return false, true
+	case placeKindArea:
+		return true, true
+	}
+	writeFieldError(w, http.StatusBadRequest, "kind", "Kind must be area, or left out.")
+	return false, false
 }
 
 // PlaceBudget is the per account search budget of both searches, each with
@@ -114,6 +135,7 @@ func placeErrorClass(err error) string {
 // @Param q query string true "Place text, 3 to 200 characters"
 // @Param lat query number false "Map centre latitude, -90 to 90, sent together with lon"
 // @Param lon query number false "Map centre longitude, -180 to 180, sent together with lat"
+// @Param kind query string false "Send area to get areas only (neighbourhoods, localities, towns, cities, districts), never a street or a building. Left out, every kind of place is returned" Enums(area)
 // @Success 200 {object} GeocodeResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
@@ -147,13 +169,22 @@ func GeocodePlace(searcher PlaceSearcher, budget PlaceBudget) http.HandlerFunc {
 			return
 		}
 
+		areas, ok := parsePlaceKind(w, r)
+		if !ok {
+			return
+		}
+
 		if searcher == nil {
 			log.Printf("handlers: GeocodePlace: %v", "nil searcher")
 			writeFieldError(w, http.StatusServiceUnavailable, "q", placeUnavailableMessage)
 			return
 		}
 
-		answer, err := searcher.SearchReader(r.Context(), q, near)
+		search := searcher.SearchReader
+		if areas {
+			search = searcher.SearchReaderAreas
+		}
+		answer, err := search(r.Context(), q, near)
 		if err != nil {
 			// A fixed message and the error class only. The error text can
 			// carry the request URL, and that holds the reader's search

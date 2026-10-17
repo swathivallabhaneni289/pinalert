@@ -975,6 +975,14 @@ paths:
         in: query
         name: lon
         type: number
+      - description: Send area to get areas only (neighbourhoods, localities, towns,
+          cities, districts), never a street or a building. Left out, every kind of
+          place is returned
+        enum:
+        - area
+        in: query
+        name: kind
+        type: string
       produces:
       - application/json
       responses:
