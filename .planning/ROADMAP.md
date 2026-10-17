@@ -444,7 +444,7 @@ Plans:
   2. Builds places and empty states only; the bell and Updates (3.2), phone notifications (3.3), Official alerts content and the Demo button (5) and profiles (9) fill them later. This phase also stores the name, the home area and the What is happening pick (03.4-CONTEXT D-24b, 2026-10-16), which 3.3 then uses.
      (Amended 2026-10-16 by Phase 3.4, owner decision, see 03.4-CONTEXT O-1, O-2 and D-24b: O-1 and O-2 were answered on 2026-10-16, so no owner question is open before planning. O-1: the strip is laptop only, on Nearby and Post a report, and the "Not confirmed yet" line under Post report is built on neither size. O-2: the chosen category tile is the soft grey fill with no dark border. The What is happening picks are placed and stored in 3.4 and used in 3.3. Two small owner questions are still pending and are not decided here: whether Earthquake should be a tile in Post a report, and whether a confirmed Critical report belongs in Show: Confirmed.)
 
-**Plans:** 23/26 plans executed
+**Plans:** 26/26 plans executed (verification and the owner viewing session to come)
 
 Plans:
 **Wave 1**
@@ -505,9 +505,9 @@ Plans:
 
 **Wave 12** *(code review fixes, after Wave 11)*
 
-- [ ] 03.4-24-PLAN.md: Code review part 1: names refuse invisible and format characters, the profile save is all or nothing, the home area comment is true
-- [ ] 03.4-25-PLAN.md: Code review part 2: finished report links work without a saved position, the kept position is per account, reader Tab order, Settings late saves, menus and focus
-- [ ] 03.4-26-PLAN.md: Code review part 3: forced colours glyphs and chosen cue, clipped focus rings, the Nearby h1, one banner, legal text contrast, the strip link touch target
+- [x] 03.4-24-PLAN.md: Code review part 1: names refuse invisible and format characters, the profile save is all or nothing, the home area comment is true
+- [x] 03.4-25-PLAN.md: Code review part 2: finished report links work without a saved position, the kept position is per account, reader Tab order, Settings late saves, menus and focus
+- [x] 03.4-26-PLAN.md: Code review part 3: forced colours glyphs and chosen cue, clipped focus rings, the Nearby h1, one banner, legal text contrast, the strip link touch target
 
 ### Phase 03.2: In-app updates and trusted-reporter alerts (INSERTED)
 
@@ -642,7 +642,7 @@ Phases execute in the owner's build order (2026-10-16): 1 → 1.1 → 2 → 3 �
 | 3.1 Report history views | 16/16 | In Progress|  |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
 | 3.3 Installable app and phone alerts | 0/TBD | Not started | - |
-| 3.4 App layout | 23/26 | In Progress|  |
+| 3.4 App layout | 26/26 | In Progress|  |
 | 4. Robustness — Real-World Resilience | 29/29 | In Progress|  |
 | 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
 | 6. Coordination (removed 2026-10-16, share card moved to Phase 8) | - | Removed | - |
