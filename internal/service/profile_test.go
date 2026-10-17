@@ -340,6 +340,77 @@ func TestDisplayNameFormatCharacters(t *testing.T) {
 	})
 }
 
+// TestNameJoinersFollowTheContextualRule proves skeptic S-1: the zero width
+// joiner (U+200D) and non joiner (U+200C) are accepted where RFC 5892 appendix
+// A.1 and A.2 allow them (after a virama, or a non joiner between Arabic script
+// letters) and refused everywhere else. Every character is built from code
+// points, never pasted.
+func TestNameJoinersFollowTheContextualRule(t *testing.T) {
+	runes := func(points ...rune) string { return string(points) }
+
+	accepted := map[string]string{
+		"Malayalam chillu with a trailing joiner": runes(0x0D05, 0x0D28, 0x0D4D, 0x200D),
+		"Marathi eyelash ra":                      runes(0x0930, 0x094D, 0x200D, 0x092F),
+		"Sinhala Sri":                             runes(0x0DC1, 0x0DCA, 0x200D, 0x0DBB, 0x0DD3),
+		"Bengali ya phala":                        runes(0x09B0, 0x09CD, 0x200D, 0x09AF),
+		"Devanagari non joiner after a virama":    runes(0x0915, 0x094D, 0x200C, 0x0937),
+		"Persian non joiner between letters":      runes(0x0645, 0x06CC, 0x200C, 0x062E, 0x0648, 0x0627, 0x0647, 0x0645),
+		"Persian non joiner with a mark between":  runes(0x0645, 0x06CC, 0x064E, 0x200C, 0x062E),
+	}
+	refused := map[string]string{
+		"joiner in a Latin word":                 "Ra" + runes(0x200D) + "vi",
+		"non joiner in a Latin word":             "Ra" + runes(0x200C) + "vi",
+		"lone joiner":                            runes(0x200D),
+		"lone non joiner":                        runes(0x200C),
+		"name starting with a joiner":            runes(0x200D) + "Ravi",
+		"joiner after a letter, no virama":       runes(0x0915, 0x200D, 0x0937),
+		"non joiner after a letter, no virama":   runes(0x0915, 0x200C, 0x0937),
+		"non joiner between Latin and Arabic":    "a" + runes(0x200C, 0x0645),
+		"non joiner between Arabic and Latin":    runes(0x0645, 0x200C) + "a",
+		"non joiner at the end after Arabic":     runes(0x0645, 0x06CC, 0x200C),
+		"joiner after a virama plus a hidden Cf": runes(0x0915, 0x094D, 0x200D, 0x200B),
+		"zero width space":                       "Ra" + runes(0x200B) + "vi",
+		"right to left override":                 "a" + runes(0x202E) + "b",
+		"isolate":                                runes(0x2066) + "Ravi",
+		"byte order mark":                        runes(0xFEFF) + "Ravi",
+	}
+
+	for label, name := range accepted {
+		t.Run("display name accepted: "+label, func(t *testing.T) {
+			v, err := service.ValidateProfileUpdate(service.ProfileUpdate{DisplayName: strPtr(name)})
+			if err != nil {
+				t.Fatalf("must be accepted: %v", err)
+			}
+			if v.Name == nil || *v.Name != name {
+				t.Fatalf("name = %v, want it kept as sent", v.Name)
+			}
+		})
+		t.Run("home area accepted: "+label, func(t *testing.T) {
+			v, err := service.ValidateProfileUpdate(service.ProfileUpdate{
+				HomeArea: service.HomeAreaChange{Action: service.HomeAreaSet, Input: service.HomeAreaInput{Name: name, Lat: 12.9, Lon: 77.5}},
+			})
+			if err != nil {
+				t.Fatalf("must be accepted: %v", err)
+			}
+			if v.HomeName == nil || *v.HomeName != name {
+				t.Fatalf("home name = %v, want it kept as sent", v.HomeName)
+			}
+		})
+	}
+	for label, name := range refused {
+		t.Run("display name refused: "+label, func(t *testing.T) {
+			_, err := service.ValidateProfileUpdate(service.ProfileUpdate{DisplayName: strPtr(name)})
+			wantField(t, err, "display_name")
+		})
+		t.Run("home area refused: "+label, func(t *testing.T) {
+			_, err := service.ValidateProfileUpdate(service.ProfileUpdate{
+				HomeArea: service.HomeAreaChange{Action: service.HomeAreaSet, Input: service.HomeAreaInput{Name: name, Lat: 12.9, Lon: 77.5}},
+			})
+			wantField(t, err, "home_area")
+		})
+	}
+}
+
 // TestUpdateProfileIsAllOrNothing proves code review part 1 WR-03: an update
 // that changes the name and the home area writes both or neither. A trigger on
 // the disposable test database makes the home area part fail for one marker
