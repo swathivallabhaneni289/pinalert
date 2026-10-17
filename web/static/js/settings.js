@@ -84,6 +84,12 @@
   // reopening the window: a save still out is still out.
   var savingName = false;
   var savingHome = false;
+  // The value each field was filled with when its window was last opened. When
+  // a save from an earlier opening answers while the window is open again, the
+  // field is refilled with the saved value only if it still holds this one, so
+  // a field the person already changed is never overwritten (skeptic S-3).
+  var nameFilled = '';
+  var homeFilled = '';
 
   // The picked place, or null. Only a result of the place search can be picked,
   // so a home area is never anything the person typed or the device reported.
@@ -306,7 +312,8 @@
     session += 1;
     if (which === 'name') {
       hideLine(nameError);
-      nameInput.value = storedValue(nameRow);
+      nameFilled = storedValue(nameRow);
+      nameInput.value = nameFilled;
       nameSave.disabled = savingName;
     } else {
       hideLine(homeError);
@@ -316,7 +323,8 @@
       cancelSearch();
       picked = null;
       homeSave.disabled = true;
-      homeInput.value = storedValue(homeRow);
+      homeFilled = storedValue(homeRow);
+      homeInput.value = homeFilled;
       homeRemove.hidden = storedValue(homeRow) === '';
       homeRemove.disabled = savingHome;
     }
@@ -368,6 +376,33 @@
     }
   }
 
+  // refillAfterEarlierSave is called when a successful answer lands for a save
+  // sent from an earlier opening of a window (sameWindow is false). When that
+  // window is open again and its field still holds the value it was filled with
+  // at this opening, the field takes the newly saved value, and the buttons are
+  // worked out again from the flags. A field the person already changed, and a
+  // home area place already picked, are left alone.
+  function refillAfterEarlierSave(which, sameWindow, value) {
+    if (sameWindow || current !== which) {
+      return;
+    }
+    if (which === 'name') {
+      if (nameInput.value === nameFilled) {
+        nameInput.value = value;
+        nameFilled = value;
+      }
+      nameSave.disabled = savingName;
+      return;
+    }
+    if (picked === null && homeInput.value === homeFilled) {
+      homeInput.value = value;
+      homeFilled = value;
+    }
+    homeRemove.hidden = storedValue(homeRow) === '';
+    homeRemove.disabled = savingHome;
+    homeSave.disabled = picked === null || savingHome;
+  }
+
   // ---- Name -----------------------------------------------------------------
 
   function saveName() {
@@ -391,6 +426,7 @@
       }
       var name = answer.body && typeof answer.body.display_name === 'string' ? answer.body.display_name : '';
       setRow(nameRow, nameValue, name);
+      refillAfterEarlierSave('name', sameWindow, name);
       if (sameWindow) {
         closeWindow('name', true);
       }
@@ -530,6 +566,7 @@
     var name = answer.body && typeof answer.body.home_area_name === 'string' ? answer.body.home_area_name : '';
     setRow(homeRow, homeValue, name);
     homeRemove.hidden = name === '';
+    refillAfterEarlierSave('home', sameWindow, name);
     return true;
   }
 
