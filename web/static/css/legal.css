@@ -2,13 +2,19 @@
  * The Disclaimer and Policy (D-23, D-24, R-07, and Phase 3.4 D-06, D-31).
  *
  * Two things live here. The legal text itself (.legal-text: headings, copy,
- * lists, the numbers block and the label glossary) is styled once and is used
- * by the standalone /disclaimer and /policy pages and by the in app reader
- * window, so the same words look the same everywhere. The standalone page
- * (.legal-reader) is a full width reader, not a centred column: on the phone it
- * is the full screen with the X at the top; from 900px it is a 260px column
- * (title, X, the two part links) beside the text. Tokens only, no custom
- * property of its own. Every rule that sets display carries :not([hidden]).
+ * lists, the numbers card and the label glossary) is styled once and is used
+ * by the standalone /disclaimer and /policy pages, by the in app reader
+ * window and by the first time flow, so the same words look the same
+ * everywhere. The standalone page (.legal-reader) is a full width reader, not a
+ * centred column: on the phone it is the full screen with the X at the top;
+ * from 900px it is a 260px column (title, X, the two part links) beside the
+ * text. Tokens only, no custom property of its own. Every rule that sets
+ * display carries :not([hidden]).
+ *
+ * The structure of the text (plan 31): two part titles (h2, the large ones),
+ * and inside each part a run of sections. Each section is a section element
+ * with an h3 heading, one size smaller, the same size and weight everywhere,
+ * set off by a hairline and an even space above it.
  */
 
 /* ---- The legal text -------------------------------------------------------- */
@@ -19,45 +25,69 @@
   line-height: var(--line-height-body);
 }
 
+/* The part titles, Disclaimer and Policy: the only large headings. */
 .legal-text h2 {
-  margin: var(--space-xl) 0 var(--space-sm);
+  margin: 0 0 var(--space-12);
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* The Policy opens its part with a rule and a wide space, so the two parts read
+   as two separate documents inside the one box. */
+.legal-text h2[id="policy"] {
+  margin-top: var(--space-2xl);
+  padding-top: var(--space-lg);
+  border-top: 2px solid var(--color-border);
+}
+
+/* Section headings: one level under the part titles, all the same. */
+.legal-text h3 {
+  margin: 0 0 var(--space-sm);
   font-size: var(--font-size-heading);
   line-height: var(--line-height-heading);
   font-weight: var(--font-weight-semibold);
 }
 
-/* The two part headings, Disclaimer and Policy, open their part. */
-.legal-text h2[id="disclaimer"],
-.legal-text h2[id="policy"] {
-  font-size: var(--font-size-display);
-  line-height: var(--line-height-display);
+/* Every section is its own block: even space above, then a hairline. A line of
+   text never runs longer than 72 characters and stays left aligned. */
+.legal-section {
+  max-width: 72ch;
+  margin-top: var(--space-lg);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-border);
 }
 
-.legal-text > h2:first-child {
-  margin-top: 0;
-}
-
-/* Text size comes down from .legal-text. Only margins are set here, on direct
-   children, so the numbers block rules below keep their own sizes. A line never
-   runs longer than 72 characters; it stays left aligned in its column. */
-.legal-text > p,
-.legal-text > ul,
-.legal-text > dl,
-.legal-text > h2 {
+.legal-text > h2,
+.legal-text > p {
   max-width: 72ch;
 }
 
-.legal-text > p {
-  margin: 0 0 var(--space-sm);
+/* Text size comes down from .legal-text. Only margins are set here. Paragraphs,
+   lists and the glossary keep one even space between them; the last block of a
+   section carries no space of its own, so a section's space is all above it. */
+.legal-text > p,
+.legal-section > p,
+.legal-section > ul,
+.legal-section > dl,
+.legal-section > .legal-numbers {
+  margin: 0 0 var(--space-12);
 }
 
-.legal-text > ul {
-  margin: 0 0 var(--space-sm);
+.legal-section > :last-child {
+  margin-bottom: 0;
+}
+
+.legal-section > ul {
   padding: 0 0 0 var(--space-lg);
 }
 
-.legal-text > ul > li {
-  margin: 0 0 var(--space-xs);
+.legal-section > ul > li {
+  margin: 0 0 var(--space-sm);
+}
+
+.legal-section > ul > li:last-child {
+  margin-bottom: 0;
 }
 
 .legal-text a {
@@ -78,6 +108,11 @@
   line-height: var(--line-height-label);
 }
 
+/* ---- The numbers card ------------------------------------------------------ */
+
+/* One row per number, set apart by a hairline. On the phone a row stacks (the
+   number, its description, a note, the Call button); from 560px the number sits
+   in a fixed column and the rest beside it. */
 .legal-numbers {
   max-width: 72ch;
   box-sizing: border-box;
@@ -89,29 +124,29 @@
 }
 
 .legal-numbers p {
-  margin: 0 0 var(--space-xs);
+  margin: 0;
 }
 
-.legal-numbers__row {
-  margin: 0 0 var(--space-md);
+.legal-numbers__row:not([hidden]) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-xs);
+  padding: var(--space-md) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.legal-numbers__row:first-child {
+  padding-top: 0;
+  border-top: 0;
 }
 
 .legal-numbers__row:last-child {
-  margin-bottom: 0;
+  padding-bottom: 0;
 }
 
 .legal-numbers__number {
-  font-size: var(--font-size-display);
-  line-height: var(--line-height-display);
-  font-weight: var(--font-weight-semibold);
-}
-
-.legal-numbers__call:not([hidden]) {
-  display: flex;
-  align-items: center;
-  min-height: var(--touch-target-min);
-  font-size: var(--font-size-display);
-  line-height: var(--line-height-display);
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
   font-weight: var(--font-weight-semibold);
 }
 
@@ -120,14 +155,59 @@
   line-height: var(--line-height-body);
 }
 
-.legal-numbers__note,
+/* The note under a description: normal weight, normal text colour, a size down. */
+.legal-numbers__note {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+/* The Call button is the .btn of the other buttons (6px corners, not a pill), 48px
+   high. .legal-text a would underline it and colour it as a link, so it is set
+   again here at a higher weight of selector. */
+.legal-text a.legal-numbers__call:not([hidden]) {
+  box-sizing: border-box;
+  min-height: 48px;
+  margin-top: var(--space-sm);
+  color: var(--color-bg);
+  text-decoration: none;
+}
+
+@media (min-width: 560px) {
+  .legal-numbers__row:not([hidden]) {
+    grid-template-columns: 10rem minmax(0, 1fr);
+    column-gap: var(--space-md);
+  }
+
+  .legal-numbers__label,
+  .legal-numbers__note,
+  .legal-text a.legal-numbers__call:not([hidden]) {
+    grid-column: 2;
+  }
+
+  .legal-text a.legal-numbers__call:not([hidden]) {
+    justify-self: start;
+  }
+}
+
+/* ---- The glossary ---------------------------------------------------------- */
+
+/* Each term bold on its own line, its explanation under it, and the same space
+   between one entry and the next. Terms that share an explanation sit close. */
 .legal-glossary dt {
-  margin: var(--space-md) 0 0;
+  margin: 0;
   font-weight: var(--font-weight-semibold);
+}
+
+.legal-glossary dt + dt {
+  margin-top: var(--space-xs);
 }
 
 .legal-glossary dd {
   margin: var(--space-xs) 0 0;
+}
+
+.legal-glossary dd + dt {
+  margin-top: var(--space-md);
 }
 
 /* ---- The standalone reader page (phone first) ------------------------------ */

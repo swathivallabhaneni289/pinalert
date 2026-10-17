@@ -21,6 +21,7 @@ var (
 	legalTagPattern   = regexp.MustCompile(`(?s)<[^>]*>`)
 	legalSpacePattern = regexp.MustCompile(`\s+`)
 	legalH2Pattern    = regexp.MustCompile(`(?s)<h2[^>]*>(.*?)</h2>`)
+	legalH3Pattern    = regexp.MustCompile(`(?s)<h3[^>]*>(.*?)</h3>`)
 )
 
 // legalText removes tags, unescapes entities (html/template writes an
@@ -57,6 +58,40 @@ func legalH2s(t *testing.T, body string) []string {
 	return out
 }
 
+// legalH3s returns the visible h3 texts in order.
+//
+// Amended 2026-10-17 by Phase 3.4 plan 31: only the two part titles (Disclaimer,
+// Policy) are h2. Every section heading inside a part is one smaller level, h3,
+// each inside its own section element, and the words of every heading are
+// unchanged.
+func legalH3s(t *testing.T, body string) []string {
+	t.Helper()
+	var out []string
+	for _, m := range legalH3Pattern.FindAllStringSubmatch(body, -1) {
+		out = append(out, legalText(t, m[1]))
+	}
+	return out
+}
+
+// legalStructure pins the plan 31 structure of a rendered page: exactly two h2
+// (the part titles), one section element per h3, and no heading skipped.
+func legalStructure(t *testing.T, name, body string, withContact bool) {
+	t.Helper()
+	if got := legalH2s(t, body); !legalEqual(got, legalPartTitles) {
+		t.Errorf("%s h2 sequence = %q, want only the part titles %q", name, got, legalPartTitles)
+	}
+	want := legalAllH3s(withContact)
+	if got := legalH3s(t, body); !legalEqual(got, want) {
+		t.Errorf("%s h3 sequence = %q, want %q", name, got, want)
+	}
+	if n := strings.Count(body, `<section class="legal-section"`); n != len(want) {
+		t.Errorf("%s holds %d legal-section elements, want one per h3 (%d)", name, n, len(want))
+	}
+	if strings.Contains(body, `<h2 id="disclaimer" `) || strings.Contains(body, `<h2 class=`) {
+		t.Errorf("%s: the part title h2 elements carry only their id", name)
+	}
+}
+
 func legalEqual(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
@@ -75,8 +110,13 @@ func legalEqual(a, b []string) bool {
 // Disclaimer and Policy open each part (the Policy one carries id policy so a
 // link can land on it). The two pages differ only in the h1 and in which part
 // link is the current one.
-var legalDisclaimerH2s = []string{
-	"Disclaimer",
+//
+// Amended 2026-10-17 by Phase 3.4 plan 31: the part titles are the only h2.
+// The old h2 sequence below is now the h3 sequence of the sections, with the
+// same words in the same order.
+var legalPartTitles = []string{"Disclaimer", "Policy"}
+
+var legalDisclaimerH3s = []string{
 	"In an emergency, call for help first",
 	"Emergency numbers",
 	"Reports can be wrong",
@@ -100,9 +140,7 @@ func TestLegalPagesRender(t *testing.T) {
 	if n := strings.Count(body, `<h1 class="legal-reader__title">Disclaimer</h1>`); n != 1 {
 		t.Errorf("h1 Disclaimer appears %d times, want 1", n)
 	}
-	if got := legalH2s(t, body); !legalEqual(got, legalAllH2s(false)) {
-		t.Errorf("h2 sequence = %q, want %q", got, legalAllH2s(false))
-	}
+	legalStructure(t, "disclaimer page", body, false)
 	for _, href := range []string{"/static/css/main.css?v=test", "/static/css/chrome.css?v=test", "/static/css/app-bar.css?v=test", "/static/js/theme.js?v=test"} {
 		if n := strings.Count(body, href); n != 1 {
 			t.Errorf("%s appears %d times, want 1", href, n)
@@ -167,9 +205,7 @@ func TestLegalPagesRender(t *testing.T) {
 	if n := strings.Count(pb, `<h1 class="legal-reader__title">Policy</h1>`); n != 1 {
 		t.Errorf("h1 Policy appears %d times, want 1", n)
 	}
-	if got := legalH2s(t, pb); !legalEqual(got, legalAllH2s(false)) {
-		t.Errorf("policy h2 sequence = %q, want %q", got, legalAllH2s(false))
-	}
+	legalStructure(t, "policy page", pb, false)
 	ptext := legalText(t, pb)
 	if !strings.Contains(ptext, "Rules, privacy and terms") {
 		t.Errorf("policy subtitle missing")
@@ -201,7 +237,7 @@ func TestLegalPagesRender(t *testing.T) {
 	if got := legalText(t, updated[1]); !lastUpdated.MatchString(got) {
 		t.Errorf("Last updated line = %q", got)
 	}
-	cookies := regexp.MustCompile(`(?s)Cookies and storage on your device</h2>.*?</ul>`).FindString(pb)
+	cookies := regexp.MustCompile(`(?s)Cookies and storage on your device</h3>.*?</ul>`).FindString(pb)
 	if !strings.Contains(legalText(t, cookies), "before you sign in") {
 		t.Errorf("the cookie list must say the session cookie is set before you sign in")
 	}
@@ -262,22 +298,22 @@ func TestLegalPagesRender(t *testing.T) {
 	}
 }
 
-// legalAllH2s is the h2 sequence of both legal pages: the Disclaimer part, then
-// the Policy part. withContact adds the two contact headings.
-func legalAllH2s(withContact bool) []string {
-	out := append([]string{}, legalDisclaimerH2s...)
+// legalAllH3s is the h3 sequence of both legal pages: the sections of the
+// Disclaimer part, then the sections of the Policy part. withContact adds the
+// two contact headings.
+func legalAllH3s(withContact bool) []string {
+	out := append([]string{}, legalDisclaimerH3s...)
 	if withContact {
 		out = append(out, "Contact")
 	}
-	out = append(out, "Policy")
-	policy := legalPolicyH2sWithoutContact
+	policy := legalPolicyH3sWithoutContact
 	if withContact {
 		policy = append(append([]string{}, policy[:8]...), "Complaints and removal requests", "Terms", "Changes to this page")
 	}
 	return append(out, policy...)
 }
 
-var legalPolicyH2sWithoutContact = []string{
+var legalPolicyH3sWithoutContact = []string{
 	"Rules for posting",
 	"How reports are checked",
 	"What moderators can do",
@@ -296,10 +332,7 @@ func TestLegalPagesContactBlockOnlyWhenSet(t *testing.T) {
 	// Amended 2026-10-17 by Phase 3.4 plan 08 (D-31): both pages hold both parts,
 	// so the Contact heading closes the Disclaimer part and the Complaints
 	// heading sits inside the Policy part.
-	dh := legalH2s(t, d)
-	if !legalEqual(dh, legalAllH2s(true)) {
-		t.Errorf("disclaimer page h2 with contact = %q, want %q", dh, legalAllH2s(true))
-	}
+	legalStructure(t, "disclaimer page with contact", d, true)
 	if !strings.Contains(legalText(t, d), "To report abuse or ask for something to be removed, write to moderation@example.org.") {
 		t.Errorf("disclaimer contact sentence missing")
 	}
@@ -307,9 +340,7 @@ func TestLegalPagesContactBlockOnlyWhenSet(t *testing.T) {
 		t.Errorf("disclaimer mailto link missing")
 	}
 	p := legalRender(t, set, handlers.LegalPolicyPage, nil).Body.String()
-	if got := legalH2s(t, p); !legalEqual(got, legalAllH2s(true)) {
-		t.Errorf("policy page h2 with contact = %q, want %q", got, legalAllH2s(true))
-	}
+	legalStructure(t, "policy page with contact", p, true)
 	if !strings.Contains(legalText(t, p), "To report abuse or ask for a report to be removed, write to moderation@example.org.") {
 		t.Errorf("policy contact sentence missing")
 	}
@@ -323,7 +354,7 @@ func TestLegalPagesContactBlockOnlyWhenSet(t *testing.T) {
 	unset := handlers.AuthConfig{AssetVersion: "test"}
 	for _, page := range []string{handlers.LegalDisclaimerPage, handlers.LegalPolicyPage} {
 		b := legalRender(t, unset, page, nil).Body.String()
-		for _, banned := range []string{"Contact</h2>", "Complaints and removal requests", "To report abuse", "@", "mailto:"} {
+		for _, banned := range []string{"Contact</h2>", "Contact</h3>", "Complaints and removal requests", "To report abuse", "@", "mailto:"} {
 			if strings.Contains(b, banned) {
 				t.Errorf("%s page without an address holds %q", page, banned)
 			}
@@ -358,6 +389,26 @@ func TestLegalPagesNumbersBlock(t *testing.T) {
 	}
 	if strings.Contains(def, "ZgotmplZ") {
 		t.Errorf("page holds ZgotmplZ")
+	}
+	// Amended 2026-10-17 by Phase 3.4 plan 31: the numbers are a tidy card, one
+	// row per number. Each row is a number cell (one element, so the number
+	// reads as one thing) and its description; the first row ends in the Call
+	// button, the one tel link, named by the same words as its aria-label.
+	if n := strings.Count(def, `class="legal-numbers__row"`); n != 3 {
+		t.Errorf("numbers card rows = %d, want 3", n)
+	}
+	if n := strings.Count(def, `<p class="legal-numbers__number">`); n != 3 {
+		t.Errorf("numbers card number cells = %d, want one per row (3)", n)
+	}
+	for _, want := range []string{
+		`<p class="legal-numbers__number">112</p>`,
+		`<p class="legal-numbers__number">100, 101, 108</p>`,
+		`<p class="legal-numbers__number">1070 and 1077</p>`,
+		`<a class="btn btn--primary legal-numbers__call" href="tel:112" aria-label="Call 112">Call 112</a>`,
+	} {
+		if !strings.Contains(def, want) {
+			t.Errorf("numbers card lacks %q", want)
+		}
 	}
 	text := legalText(t, def)
 	for _, want := range []string{

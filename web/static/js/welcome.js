@@ -9,7 +9,10 @@
 //
 // What it records, and when:
 //   - Agree (step 2) sends POST /api/me/consent and moves on only on a 204.
-//     Disagree records nothing and shows one message.
+//     Disagree records nothing and shows a small box the page already holds
+//     (its words are in welcome.html.tmpl): Read again scrolls the text box to
+//     the top and focuses it, and Log out is a plain form posting to the app's
+//     own /auth/logout, which this script never touches.
 //   - Continue on step 4 sends PATCH /api/me/profile with only the fields the
 //     person filled, and then POST /api/me/first-run-done. Skip sends only the
 //     second call. Nothing is saved before that.
@@ -62,7 +65,6 @@
   var QUIET_RETRIES = 3;
   var RETRY_WAIT_MS = 1000;
 
-  var DISAGREE_MESSAGE = 'You need to agree to use Pinalert.';
   var MESSAGE_AGREE_FAILED = 'Could not save your agreement. Try again in a moment.';
   var MESSAGE_AGREE_FIRST = 'Please agree to the Disclaimer and policy to continue.';
   var MESSAGE_SAVE_FAILED = 'Could not save. Try again in a moment.';
@@ -94,7 +96,8 @@
   // the Tab loop.
   var sideNode = root.querySelectorAll('.welcome__side')[0] || null;
 
-  var disagreeMessage = el('welcome-disagree-message');
+  var disagreeBox = el('welcome-disagree-message');
+  var scrollbox = el('welcome-scrollbox');
   var consentError = el('welcome-error-2');
   var agreeButton = el('welcome-agree');
   var allowButton = el('welcome-allow-location');
@@ -349,7 +352,7 @@
   }
 
   // goTo shows one step. A step that does not exist is refused. Changing step
-  // clears the Disagree message and the agree line, and focus moves to the new
+  // puts the Disagree box away and clears the agree line, and focus moves to the new
   // step's title. how says what to do with the browser history: undefined adds
   // an entry when the step changes, 'replace' rewrites the current entry (the
   // first load), 'none' leaves it alone (the browser's own back and forward).
@@ -373,7 +376,7 @@
     root.setAttribute('data-step', String(n));
     root.setAttribute('aria-labelledby', 'welcome-step-' + n + '-title');
     renderStepList(n);
-    hideLine(disagreeMessage);
+    hideDisagreeBox();
     hideLine(consentError);
     if (n === 4 && previous !== 4) {
       enterStep4();
@@ -383,14 +386,35 @@
 
   // ---- Step 2: Agree and Disagree -------------------------------------------
 
+  // The Disagree box is markup the template draws, with its own buttons, so it is
+  // only shown and hidden here. It is never passed to showLine or hideLine, which
+  // would replace everything inside it with text.
+  function hideDisagreeBox() {
+    disagreeBox.hidden = true;
+  }
+
+  // Disagree records nothing. It shows the box and moves focus into it, so a
+  // screen reader reads it out, and brings it into view on a short screen.
   function disagree() {
-    showLine(disagreeMessage, DISAGREE_MESSAGE);
+    disagreeBox.hidden = false;
+    disagreeBox.focus();
+    if (typeof disagreeBox.scrollIntoView === 'function') {
+      disagreeBox.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  // Read again takes the person back to the start of the text, with focus in the
+  // text box so the arrow keys scroll it. It sends nothing.
+  function readAgain() {
+    scrollbox.scrollTop = 0;
+    scrollbox.focus();
   }
 
   function agree() {
     if (agreeing) {
       return Promise.resolve();
     }
+    hideDisagreeBox();
     agreeing = true;
     agreeButton.disabled = true;
     hideLine(consentError);
@@ -947,6 +971,7 @@
     });
   }
   el('welcome-disagree').addEventListener('click', disagree);
+  el('welcome-reread').addEventListener('click', readAgain);
   agreeButton.addEventListener('click', function () { agree(); });
   allowButton.addEventListener('click', allowLocation);
   searchOpenButton.addEventListener('click', openSearch);

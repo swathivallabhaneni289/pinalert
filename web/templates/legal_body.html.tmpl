@@ -8,55 +8,73 @@
   (numbers, contact address, expiry hours, glossary) and nothing about an account
   (R-07). Wording changes here only when the owner agrees the new text; when it
   does, policyLastUpdated and service.CurrentTermsVersion change with it.
+
+  Structure (plan 31): the two part titles, Disclaimer and Policy, are the only
+  h2 and each is the first element of its part, with no class. Every section
+  heading inside a part is an h3 inside its own section element
+  (.legal-section), so the sections read as separate blocks.
 */}}
 {{define "legal_disclaimer_body"}}
     <h2 id="disclaimer">Disclaimer</h2>
     <p>Pinalert is a free, unofficial app where people near an emergency share what they see. It isn't a government service, and it isn't connected to any government agency or emergency service.</p>
 
-    <h2>In an emergency, call for help first</h2>
-    <p>Pinalert can't send help. If anyone is in danger, call the emergency number first. You can post on Pinalert afterwards.</p>
-
-    <h2 id="emergency-numbers">Emergency numbers</h2>
-    <p>Numbers can change, so check them on your state government's website.</p>
-    <section class="legal-numbers" aria-labelledby="emergency-numbers">
-      <div class="legal-numbers__row">
-        <a class="legal-numbers__call" href="{{.CallHref}}" aria-label="Call {{.Numbers.Primary}}">{{.Numbers.Primary}}</a>
-        <p class="legal-numbers__label">India's national emergency number for police, fire and ambulance.</p>
-      </div>
-      {{if .Numbers.HasOlder}}
-      <div class="legal-numbers__row">
-        <p class="legal-numbers__number">{{.Numbers.OlderList}}</p>
-        <p class="legal-numbers__label">{{.OlderLabel}}</p>
-        <p class="legal-numbers__note">Many states still list these and they may still work where you are, but some states have retired them. Try {{.Numbers.Primary}} first.</p>
-      </div>
-      {{end}}
-      {{if .Numbers.HasStateLines}}
-      <div class="legal-numbers__row">
-        <p class="legal-numbers__number">{{.Numbers.StateHelpline}} and {{.Numbers.DistrictHelpline}}</p>
-        <p class="legal-numbers__label">For floods and cyclones, many states use {{.Numbers.StateHelpline}} for the state disaster helpline and {{.Numbers.DistrictHelpline}} for the district control room.</p>
-        <p class="legal-numbers__note">These vary by state. Check your state disaster management authority's website.</p>
-      </div>
-      {{end}}
+    <section class="legal-section">
+      <h3>In an emergency, call for help first</h3>
+      <p>Pinalert can't send help. If anyone is in danger, call the emergency number first. You can post on Pinalert afterwards.</p>
     </section>
 
-    <h2>Reports can be wrong</h2>
-    <p>A report is what one person nearby says they saw. When people in other places nearby confirm it, it is more likely to be right, but never certain.</p>
-    <p>Serious reports show at once, before anyone has confirmed them. Always check how many places have confirmed a report, and never make a decision about your safety from Pinalert alone.</p>
+    <section class="legal-section">
+      <h3 id="emergency-numbers">Emergency numbers</h3>
+      <p>Numbers can change, so check them on your state government's website.</p>
+      <section class="legal-numbers" aria-labelledby="emergency-numbers">
+        <div class="legal-numbers__row">
+          <p class="legal-numbers__number">{{.Numbers.Primary}}</p>
+          <p class="legal-numbers__label">India's national emergency number for police, fire and ambulance.</p>
+          <a class="btn btn--primary legal-numbers__call" href="{{.CallHref}}" aria-label="Call {{.Numbers.Primary}}">Call {{.Numbers.Primary}}</a>
+        </div>
+        {{if .Numbers.HasOlder}}
+        <div class="legal-numbers__row">
+          <p class="legal-numbers__number">{{.Numbers.OlderList}}</p>
+          <p class="legal-numbers__label">{{.OlderLabel}}</p>
+          <p class="legal-numbers__note">Many states still list these and they may still work where you are, but some states have retired them. Try {{.Numbers.Primary}} first.</p>
+        </div>
+        {{end}}
+        {{if .Numbers.HasStateLines}}
+        <div class="legal-numbers__row">
+          <p class="legal-numbers__number">{{.Numbers.StateHelpline}} and {{.Numbers.DistrictHelpline}}</p>
+          <p class="legal-numbers__label">For floods and cyclones, many states use {{.Numbers.StateHelpline}} for the state disaster helpline and {{.Numbers.DistrictHelpline}} for the district control room.</p>
+          <p class="legal-numbers__note">These vary by state. Check your state disaster management authority's website.</p>
+        </div>
+        {{end}}
+      </section>
+    </section>
 
-    <h2>Reports don't last forever</h2>
-    <p>Most reports last {{.ExpiryHours}} hours and critical reports last {{.CriticalExpiryHours}} hours. Confirmations don't make them last longer. When the time is up, a report is marked Expired and leaves the Nearby list. Ended reports stay under My activity, Ended nearby, for 7 days.</p>
+    <section class="legal-section">
+      <h3>Reports can be wrong</h3>
+      <p>A report is what one person nearby says they saw. When people in other places nearby confirm it, it is more likely to be right, but never certain.</p>
+      <p>Serious reports show at once, before anyone has confirmed them. Always check how many places have confirmed a report, and never make a decision about your safety from Pinalert alone.</p>
+    </section>
 
-    <h2>How to read what Pinalert shows</h2>
-    <dl class="legal-glossary">
-      {{range .Glossary}}
-      {{range .Terms}}<dt>{{.}}</dt>
-      {{end}}<dd>{{.Text}}</dd>
-      {{end}}
-    </dl>
+    <section class="legal-section">
+      <h3>Reports don't last forever</h3>
+      <p>Most reports last {{.ExpiryHours}} hours and critical reports last {{.CriticalExpiryHours}} hours. Confirmations don't make them last longer. When the time is up, a report is marked Expired and leaves the Nearby list. Ended reports stay under My activity, Ended nearby, for 7 days.</p>
+    </section>
+
+    <section class="legal-section">
+      <h3>How to read what Pinalert shows</h3>
+      <dl class="legal-glossary">
+        {{range .Glossary}}
+        {{range .Terms}}<dt>{{.}}</dt>
+        {{end}}<dd>{{.Text}}</dd>
+        {{end}}
+      </dl>
+    </section>
 
     {{if .ContactEmail}}
-    <h2>Contact</h2>
-    <p class="legal-contact">To report abuse or ask for something to be removed, write to <a href="{{.ContactHref}}">{{.ContactEmail}}</a>.</p>
+    <section class="legal-section">
+      <h3>Contact</h3>
+      <p class="legal-contact">To report abuse or ask for something to be removed, write to <a href="{{.ContactHref}}">{{.ContactEmail}}</a>.</p>
+    </section>
     {{end}}
 {{end}}
 
@@ -64,76 +82,98 @@
     <h2 id="policy">Policy</h2>
     <p class="legal-subtitle">Rules, privacy and terms</p>
 
-    <h2>Rules for posting</h2>
-    <p>Post only about emergencies and conditions you can see near you.</p>
-    <ul>
-      <li>Not allowed: hateful, harassing or sexual text, and reports made on purpose to mislead.</li>
-      <li>Allowed in a genuine report: violent or frightening words that describe a real emergency, urgent wording, capital letters, addresses and phone numbers.</li>
-    </ul>
+    <section class="legal-section">
+      <h3>Rules for posting</h3>
+      <p>Post only about emergencies and conditions you can see near you.</p>
+      <ul>
+        <li>Not allowed: hateful, harassing or sexual text, and reports made on purpose to mislead.</li>
+        <li>Allowed in a genuine report: violent or frightening words that describe a real emergency, urgent wording, capital letters, addresses and phone numbers.</li>
+      </ul>
+    </section>
 
-    <h2>How reports are checked</h2>
-    <p>Every report's description is checked automatically by OpenAI's moderation service. Only the description is sent, never your account, your sign in, your network address or your location. OpenAI documents no retention and no training use for moderation requests.</p>
-    <ul>
-      <li>Clearly hateful, harassing or sexual text is rejected, and nothing is stored.</li>
-      <li>Text made of random characters with no real words is always rejected.</li>
-      <li>Borderline text is posted, and a moderator may look at it.</li>
-      <li>If the check finishes late, after the report was saved, and finds clearly hateful, harassing or sexual text, the report is removed. It stays stored but shows to no one.</li>
-      <li>If the check can't finish in time, a normal report waits, unseen, until it does. A critical report is published at once and checked afterwards. A Rescue needed report posted before that category was retired keeps this rule until it fades.</li>
-    </ul>
-    <p>The check doesn't catch everything that breaks the rules, so such text can still be posted and a moderator may remove it later. The check can also be wrong, which is why moderators exist. Photos are not accepted.</p>
+    <section class="legal-section">
+      <h3>How reports are checked</h3>
+      <p>Every report's description is checked automatically by OpenAI's moderation service. Only the description is sent, never your account, your sign in, your network address or your location. OpenAI documents no retention and no training use for moderation requests.</p>
+      <ul>
+        <li>Clearly hateful, harassing or sexual text is rejected, and nothing is stored.</li>
+        <li>Text made of random characters with no real words is always rejected.</li>
+        <li>Borderline text is posted, and a moderator may look at it.</li>
+        <li>If the check finishes late, after the report was saved, and finds clearly hateful, harassing or sexual text, the report is removed. It stays stored but shows to no one.</li>
+        <li>If the check can't finish in time, a normal report waits, unseen, until it does. A critical report is published at once and checked afterwards. A Rescue needed report posted before that category was retired keeps this rule until it fades.</li>
+      </ul>
+      <p>The check doesn't catch everything that breaks the rules, so such text can still be posted and a moderator may remove it later. The check can also be wrong, which is why moderators exist. Photos are not accepted.</p>
+    </section>
 
-    <h2>What moderators can do</h2>
-    <p>Moderators can read reports and keep or remove them. A removed report shows to no one. Its author sees "Removed after review", whether a moderator removed it or the late automatic check did.</p>
-    <p>A flag on a report never hides it by itself. It only asks a moderator to look, and the author is never told who flagged it.</p>
+    <section class="legal-section">
+      <h3>What moderators can do</h3>
+      <p>Moderators can read reports and keep or remove them. A removed report shows to no one. Its author sees "Removed after review", whether a moderator removed it or the late automatic check did.</p>
+      <p>A flag on a report never hides it by itself. It only asks a moderator to look, and the author is never told who flagged it.</p>
+    </section>
 
-    <h2>Limits</h2>
-    <p>To stop spam, each account can post, vote and flag only so often. If you reach a limit, Pinalert tells you how long to wait and keeps what you typed.</p>
+    <section class="legal-section">
+      <h3>Limits</h3>
+      <p>To stop spam, each account can post, vote and flag only so often. If you reach a limit, Pinalert tells you how long to wait and keeps what you typed.</p>
+    </section>
 
-    <h2>What Pinalert keeps</h2>
-    <ul>
-      <li>Your email address, to sign you in. It is never shown to other people.</li>
-      <li>Your reports, each with its place, its time and your account.</li>
-      <li>Your votes, kept as a rough square about 150 metres wide, never as your exact spot.</li>
-      <li>Flags you send, and their reasons.</li>
-      <li>For borderline reports, and for reports whose check finished after they were saved: the check's result, its scores and which model gave them, without the report text.</li>
-    </ul>
-    <p>Nothing here is deleted on a schedule yet. Reports, votes, flags and sign in records all stay stored, and an expired report only stops showing in the lists.</p>
+    <section class="legal-section">
+      <h3>What Pinalert keeps</h3>
+      <ul>
+        <li>Your email address, to sign you in. It is never shown to other people.</li>
+        <li>Your reports, each with its place, its time and your account.</li>
+        <li>Your votes, kept as a rough square about 150 metres wide, never as your exact spot.</li>
+        <li>Flags you send, and their reasons.</li>
+        <li>For borderline reports, and for reports whose check finished after they were saved: the check's result, its scores and which model gave them, without the report text.</li>
+      </ul>
+      <p>Nothing here is deleted on a schedule yet. Reports, votes, flags and sign in records all stay stored, and an expired report only stops showing in the lists.</p>
+      {{if .ContactEmail}}
+      <p>To have a report or your data removed, write to the address under Complaints and removal requests.</p>
+      {{end}}
+    </section>
+
+    <section class="legal-section">
+      <h3>Other services Pinalert uses</h3>
+      <ul>
+        <li>The map: its files come from unpkg.com and its map tiles from OpenFreeMap, or from OpenStreetMap on devices that can't draw the newer map.</li>
+        <li>Place search: what you type, and the position of your pin or the middle of the map, go through Pinalert to Photon, a search service run by komoot. If Photon can't answer, the search goes to OpenStreetMap's Nominatim service instead. The places found come from OpenStreetMap.</li>
+        <li>Report checks: OpenAI, as described above.</li>
+      </ul>
+      <p>These services see each request the way any website does.</p>
+    </section>
+
+    <section class="legal-section">
+      <h3>Cookies and storage on your device</h3>
+      <ul>
+        <li>A session cookie, set the first time you open any Pinalert page, even this one before you sign in. It lasts up to a year, or until you log out.</li>
+        <li>A cookie that remembers you chose the Low data view.</li>
+        <li>Your Light or Dark choice.</li>
+        <li>Reports waiting to send, kept on this device until they are sent or discarded.</li>
+        <li>Your last known position for the Low data view, on this device only.</li>
+        <li>Your position for a short time during a visit, so voting doesn't ask again.</li>
+      </ul>
+      <p>There are no advertising or tracking cookies.</p>
+      <p>Browsers can clear saved data: when a private window closes, when storage runs low, or in Safari after about a week without a visit. So a report waiting to send isn't guaranteed to survive. Send it as soon as you have a signal.</p>
+    </section>
+
+    <section class="legal-section">
+      <h3>Crimes and threats</h3>
+      <p>For anything serious, such as a crime or a threat to someone's safety, contact the police directly. In an emergency call {{.Numbers.Primary}}. Pinalert doesn't contact the police for you.</p>
+    </section>
+
     {{if .ContactEmail}}
-    <p>To have a report or your data removed, write to the address under Complaints and removal requests.</p>
+    <section class="legal-section">
+      <h3>Complaints and removal requests</h3>
+      <p class="legal-contact">To report abuse or ask for a report to be removed, write to <a href="{{.ContactHref}}">{{.ContactEmail}}</a>.</p>
+    </section>
     {{end}}
 
-    <h2>Other services Pinalert uses</h2>
-    <ul>
-      <li>The map: its files come from unpkg.com and its map tiles from OpenFreeMap, or from OpenStreetMap on devices that can't draw the newer map.</li>
-      <li>Place search: what you type, and the position of your pin or the middle of the map, go through Pinalert to Photon, a search service run by komoot. If Photon can't answer, the search goes to OpenStreetMap's Nominatim service instead. The places found come from OpenStreetMap.</li>
-      <li>Report checks: OpenAI, as described above.</li>
-    </ul>
-    <p>These services see each request the way any website does.</p>
+    <section class="legal-section">
+      <h3>Terms</h3>
+      <p>By using Pinalert you accept these rules. Pinalert may remove reports that break them, and the limits apply to every account. Pinalert is unofficial and is provided as it is, with no promise that it is accurate or always available.</p>
+    </section>
 
-    <h2>Cookies and storage on your device</h2>
-    <ul>
-      <li>A session cookie, set the first time you open any Pinalert page, even this one before you sign in. It lasts up to a year, or until you log out.</li>
-      <li>A cookie that remembers you chose the Low data view.</li>
-      <li>Your Light or Dark choice.</li>
-      <li>Reports waiting to send, kept on this device until they are sent or discarded.</li>
-      <li>Your last known position for the Low data view, on this device only.</li>
-      <li>Your position for a short time during a visit, so voting doesn't ask again.</li>
-    </ul>
-    <p>There are no advertising or tracking cookies.</p>
-    <p>Browsers can clear saved data: when a private window closes, when storage runs low, or in Safari after about a week without a visit. So a report waiting to send isn't guaranteed to survive. Send it as soon as you have a signal.</p>
-
-    <h2>Crimes and threats</h2>
-    <p>For anything serious, such as a crime or a threat to someone's safety, contact the police directly. In an emergency call {{.Numbers.Primary}}. Pinalert doesn't contact the police for you.</p>
-
-    {{if .ContactEmail}}
-    <h2>Complaints and removal requests</h2>
-    <p class="legal-contact">To report abuse or ask for a report to be removed, write to <a href="{{.ContactHref}}">{{.ContactEmail}}</a>.</p>
-    {{end}}
-
-    <h2>Terms</h2>
-    <p>By using Pinalert you accept these rules. Pinalert may remove reports that break them, and the limits apply to every account. Pinalert is unofficial and is provided as it is, with no promise that it is accurate or always available.</p>
-
-    <h2>Changes to this page</h2>
-    <p>When this text changes, everyone is asked to read it and agree again.</p>
-    <p class="legal-updated">Last updated {{.PolicyLastUpdated}}</p>
+    <section class="legal-section">
+      <h3>Changes to this page</h3>
+      <p>When this text changes, everyone is asked to read it and agree again.</p>
+      <p class="legal-updated">Last updated {{.PolicyLastUpdated}}</p>
+    </section>
 {{end}}

@@ -3,11 +3,13 @@
 //
 //   - four steps, one at a time, the title takes focus on each, Tab stays
 //     inside, and Escape does nothing because the flow is completed, not closed;
-//   - Disagree shows one message and stays on step 2; only Agree records the
-//     agreement (POST /api/me/consent) and moves on, and only on a 204;
+//   - Disagree shows the calm box (plan 31) and stays on step 2; Read again
+//     scrolls the text box to the top and focuses it; Log out is a plain form;
+//     only Agree records the agreement (POST /api/me/consent) and moves on, and
+//     only on a 204;
 //   - step 3 asks the browser for the position only when Allow location is
 //     pressed, keeps the fix in this browser through PinalertPosition and sends
-//     it nowhere; Search a place instead shows a place search whose
+//     it nowhere; Type my location instead shows a place search whose
 //     picked result is kept in memory for step 4 only;
 //   - step 4's home area comes only from a picked search result, never from the
 //     device fix; nothing is saved until Continue; Skip saves nothing;
@@ -156,7 +158,13 @@ function buildPage({ start = 1, name = '', home = '' } = {}) {
   box.setAttribute('tabindex', '0');
   make('button', 'welcome-disagree', steps[1]);
   make('button', 'welcome-agree', steps[1]);
-  make('p', 'welcome-disagree-message', steps[1]).hidden = true;
+  // Amended 2026-10-17 by Phase 3.4 plan 31: Disagree shows a box (its words
+  // live in the template) with Read again and Log out inside it.
+  const disagreeBox = make('div', 'welcome-disagree-message', steps[1]);
+  disagreeBox.setAttribute('tabindex', '-1');
+  disagreeBox.hidden = true;
+  make('button', 'welcome-reread', disagreeBox);
+  make('button', 'welcome-logout', disagreeBox);
   make('p', 'welcome-error-2', steps[1]).hidden = true;
 
   make('button', 'welcome-allow-location', steps[2]);
@@ -274,8 +282,6 @@ const fire = (el, type, extra) => {
 const click = (page, id) => fire(byId(page, id), 'click');
 const visibleStep = (page) => page.steps.findIndex((s) => !s.hidden) + 1;
 
-const DISAGREE = 'You need to agree to use Pinalert.';
-
 // The places a search answers with, short name first.
 const PLACES = [
   { name: 'Indiranagar', display_name: 'Indiranagar, Bengaluru, Karnataka, India', lat: 12.9784, lon: 77.6408, area: 'Indiranagar' },
@@ -318,23 +324,76 @@ test('the flow starts at the step the server names', () => {
   assert.deepEqual(page.items.map((i) => i.getAttribute('data-state')), ['done', 'done', 'current', 'waiting']);
 });
 
-test('Disagree shows exactly the one message, stays on step 2, and a step change clears it', async () => {
+// Amended 2026-10-17 by Phase 3.4 plan 31: Disagree no longer shows one line
+// that welcome.js writes. It shows the calm box the template draws (the words
+// are in welcome.html.tmpl; the owner then cut them to two short lines and the
+// buttons Read again and Log out), takes focus into it, records nothing, and
+// stays on step 2. Agree is still the only way on, and a step change puts the box away.
+test('Disagree shows the box, takes focus into it, sends nothing, and stays on step 2', async () => {
   const page = load();
   click(page, 'welcome-continue-1');
+  const box = byId(page, 'welcome-disagree-message');
+  assert.equal(box.hidden, true, 'the box starts hidden');
   click(page, 'welcome-disagree');
 
-  const message = byId(page, 'welcome-disagree-message');
-  assert.equal(message.hidden, false);
-  assert.equal(message.textContent, DISAGREE);
+  assert.equal(box.hidden, false);
+  // assert.ok, not equal: a failed equal on two elements prints the whole fake page.
+  assert.ok(page.doc.activeElement === box, 'focus moves into the box so it is read out');
   assert.equal(visibleStep(page), 2);
   assert.equal(page.requests.length, 0, 'Disagree records nothing');
+  assert.equal(byId(page, 'welcome-reread').hidden, false);
+  assert.equal(byId(page, 'welcome-logout').hidden, false);
+  assert.equal(box.children.length, 2, 'the script left the box markup alone');
+});
+
+test('Agree hides the Disagree box, and a step change puts it away', async () => {
+  const page = load();
+  click(page, 'welcome-continue-1');
+  const box = byId(page, 'welcome-disagree-message');
+  click(page, 'welcome-disagree');
+  assert.equal(box.hidden, false);
 
   click(page, 'welcome-agree');
+  assert.equal(box.hidden, true, 'Agree hides the box at once');
   answer(page.requests[0], 204);
   await flush();
   assert.equal(visibleStep(page), 3);
-  assert.equal(message.hidden, true);
-  assert.equal(message.textContent, '');
+  assert.equal(box.hidden, true);
+
+  // Back to step 2 and Disagree again, then leave by the Back button.
+  page.api.goTo(2);
+  click(page, 'welcome-disagree');
+  assert.equal(box.hidden, false);
+  click(page, 'welcome-back-2');
+  assert.equal(visibleStep(page), 1);
+  assert.equal(box.hidden, true, 'moving to another step puts the box away');
+});
+
+test('Read again scrolls the text box back to the top, focuses it, and sends nothing', () => {
+  const page = load();
+  click(page, 'welcome-continue-1');
+  const scrollbox = byId(page, 'welcome-scrollbox');
+  scrollbox.scrollTop = 900;
+  click(page, 'welcome-disagree');
+  click(page, 'welcome-reread');
+
+  assert.equal(scrollbox.scrollTop, 0);
+  assert.ok(page.doc.activeElement === scrollbox, 'focus returns to the text box');
+  assert.equal(page.requests.length, 0);
+  assert.equal(visibleStep(page), 2);
+  assert.equal(byId(page, 'welcome-disagree-message').hidden, false, 'the box stays until the person agrees or leaves');
+});
+
+test('Log out is the existing log out form: the script puts no handler on it and sends nothing', () => {
+  const page = load();
+  click(page, 'welcome-continue-1');
+  click(page, 'welcome-disagree');
+  const logout = byId(page, 'welcome-logout');
+  assert.equal(logout.handlers.click, undefined, 'a plain submit button of the POST /auth/logout form (pinned in welcome_contract_test.go)');
+  const event = fire(logout, 'click');
+  assert.equal(event.prevented, false, 'nothing stops the form from posting');
+  assert.equal(page.requests.length, 0, 'the script sends no request of its own');
+  assert.equal(page.sandbox.window.location.search, '');
 });
 
 test('Agree sends POST /api/me/consent once, and moves to step 3 only on a 204', async () => {
@@ -409,7 +468,9 @@ test('a refused Allow location moves on and saves nothing', async () => {
   assert.equal(page.requests.length, 0);
 });
 
-test('Search a place instead shows the search without asking for the position', () => {
+// Amended 2026-10-17 by Phase 3.4 plan 31: the button is now Type my location
+// instead (the behaviour is unchanged).
+test('Type my location instead shows the search without asking for the position', () => {
   const page = load({ start: 3 });
   assert.equal(byId(page, 'welcome-search-block').hidden, true);
   click(page, 'welcome-search-open');
@@ -812,7 +873,7 @@ test('the public hooks move the flow the same way the buttons do', async () => {
   page.api.goTo(2);
   assert.equal(visibleStep(page), 2);
   page.api.disagree();
-  assert.equal(byId(page, 'welcome-disagree-message').textContent, DISAGREE);
+  assert.equal(byId(page, 'welcome-disagree-message').hidden, false);
   page.api.goTo(9);
   assert.equal(visibleStep(page), 2, 'a step that does not exist is refused');
   assert.equal(typeof page.api.agree, 'function');

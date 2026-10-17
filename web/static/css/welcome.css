@@ -249,6 +249,48 @@
   line-height: var(--line-height-label);
 }
 
+/* The Disagree box (plan 31): one short line and two buttons, in the same tint
+   and corners as the notice above, with no outline. It is a flex column, so the
+   line and the buttons keep one even space. */
+.welcome__notice--box:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: var(--space-md);
+}
+
+.welcome__notice--box:focus-visible {
+  outline-offset: 2px;
+}
+
+.welcome__notice-lead {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.welcome__notice-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-sm);
+}
+
+.welcome__notice-form {
+  display: flex;
+  margin: 0;
+}
+
+.welcome__notice-actions .btn {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 var(--space-md);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+}
+
 /* Step 3: the search a person opens instead of the browser question. */
 .welcome__search:not([hidden]) {
   display: flex;
@@ -457,6 +499,16 @@
 
   .welcome__actions--pair .btn {
     flex: 0 0 auto;
+  }
+
+  /* The Disagree box buttons keep their natural width on a laptop, like the pair. */
+  .welcome__notice-actions {
+    grid-template-columns: repeat(2, max-content);
+  }
+
+  .welcome__notice-actions .btn {
+    width: auto;
+    padding: 0 var(--space-lg);
   }
 
   /* Step 3: the two choices sit in the middle of the space under the cards,
