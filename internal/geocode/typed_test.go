@@ -594,4 +594,3 @@ func TestDistanceKm(t *testing.T) {
 		t.Errorf("Vijayawada to Hyderabad = %.1f km, want about 250", d)
 	}
 }
-

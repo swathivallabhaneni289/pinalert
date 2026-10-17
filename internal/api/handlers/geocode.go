@@ -69,6 +69,13 @@ type GeocodeResult struct {
 	// its locality, district or city. Left out when none is known. The first
 	// time flow uses it to prefill the home area from a picked street.
 	Area string `json:"area,omitempty" example:"Indiranagar"`
+	// Typed is true on the one row of a kind=area place search that is the
+	// person's own typed text, offered when OpenStreetMap holds no area by that
+	// name in the town they typed. Its name is the text to save, display_name
+	// and town are the town it was placed in, and lat and lon are a point in
+	// that town. Left out on every other row.
+	Typed bool   `json:"typed,omitempty" example:"true"`
+	Town  string `json:"town,omitempty" example:"Vijayawada"`
 }
 
 // GeocodeResponse is the JSON body of a successful GET /api/geocode
@@ -93,6 +100,8 @@ func geocodeAnswer(answer geocode.Answer) GeocodeResponse {
 			Lat:         res.Lat,
 			Lon:         res.Lon,
 			Area:        res.Area,
+			Typed:       res.Typed,
+			Town:        res.Town,
 		})
 	}
 	return GeocodeResponse{Results: results, MatchedQuery: answer.MatchedQuery}

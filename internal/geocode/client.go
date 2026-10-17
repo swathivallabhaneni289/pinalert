@@ -73,6 +73,11 @@ type Result struct {
 	// an area itself (a neighbourhood, locality, town, city or district), else
 	// its locality, district or city. Empty when none is known (plan 28).
 	Area string `json:"area,omitempty"`
+	// Typed marks the one row of the home area search that is the person's own
+	// text, placed in the town they typed; Town is that town (plan 32). Name is
+	// the cleaned text to save and DisplayName is the town.
+	Typed bool   `json:"typed,omitempty"`
+	Town  string `json:"town,omitempty"`
 }
 
 // nominatimRecord is the shape actually returned by Nominatim's jsonv2
@@ -590,6 +595,7 @@ func (c *Client) fetch(ctx context.Context, q string, extra url.Values) ([]Resul
 		return nil, fmt.Errorf("geocode: building request: %w", scrubURLError(err))
 	}
 
+	noteUpstream(ctx)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("geocode: executing request: %w", scrubURLError(err))
@@ -785,8 +791,21 @@ func (c *Client) SearchReader(ctx context.Context, q string, near *Point) (Answe
 // building or another point place. The restriction is sent on every upstream
 // request of the search, and its answers are cached under their own key, so an
 // areas answer is never served to a normal search or the other way round.
+//
+// Plan 32 adds two things to it, both for a person typing an address as it is
+// pasted. The search is sent without a trailing PIN code, state name or
+// country. And when no area in the typed town closely matches the first part of
+// what was typed, the answer starts with one typed row, the person's own text
+// placed in that town (see typed.go). The lookups for it count inside the same
+// maxUpstreamPerSearch cap as the search itself.
 func (c *Client) SearchReaderAreas(ctx context.Context, q string, near *Point) (Answer, error) {
-	return c.SearchReader(withAreasOnly(ctx), q, near)
+	home := parseTypedHome(q)
+	ctx = withAreasOnly(withUpstreamCount(ctx))
+	answer, err := c.SearchReader(ctx, home.search, near)
+	if err != nil || !home.ok || c.photonURL == "" {
+		return answer, err
+	}
+	return c.withTypedRow(ctx, home, near, answer), nil
 }
 
 // takeReaderToken is the reader lane's turn at the Nominatim limiter for

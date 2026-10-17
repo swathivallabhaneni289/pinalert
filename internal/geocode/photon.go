@@ -327,6 +327,7 @@ func (c *Client) fetchPhoton(parent context.Context, q string, near *Point, limi
 	}
 	req.Header.Set("User-Agent", c.userAgent())
 
+	noteUpstream(parent)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, timedOut(fmt.Errorf("geocode: executing photon request: %w", scrubURLError(err)))
