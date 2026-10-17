@@ -232,3 +232,105 @@ func TestLegalPagesCSS(t *testing.T) {
 		t.Errorf("legal.css lacks the forced-colors CanvasText border on .legal-numbers")
 	}
 }
+
+// TestLegalPagesStructure pins plan 31 (2026-10-17, the owner said the text
+// "doesn't look visually right" and is "a bunch of text mixed up together").
+// The words did not change; the structure and the look did:
+//   - the two part titles are the only h2, and every section heading inside a
+//     part is an h3, each heading inside a section element;
+//   - the part titles are the large headings, the h3 are all one smaller size
+//     and weight, and each section has even space above it;
+//   - the numbers are a card of rows with a bold number cell, a description,
+//     a note in normal weight and colour, and a Call button of at least 44px;
+//   - each glossary term is bold on its own line with its explanation under it.
+func TestLegalPagesStructure(t *testing.T) {
+	src := stripReadTemplate(t, "legal_body.html.tmpl")
+	if n := strings.Count(src, "<h2"); n != 2 {
+		t.Errorf("legal_body.html.tmpl holds %d h2 elements, want 2 (the part titles)", n)
+	}
+	if !strings.Contains(src, `<h2 id="disclaimer">Disclaimer</h2>`) || !strings.Contains(src, `<h2 id="policy">Policy</h2>`) {
+		t.Errorf("the two part titles keep their ids")
+	}
+	h3 := strings.Count(src, "<h3")
+	if h3 < 15 || strings.Count(src, `<section class="legal-section"`) != h3 {
+		t.Errorf("legal_body.html.tmpl holds %d h3 and %d legal-section elements, want one section per heading", h3, strings.Count(src, `<section class="legal-section"`))
+	}
+	if strings.Contains(src, "<h4") || strings.Contains(src, "<h1") {
+		t.Errorf("the legal text uses h2 for the parts and h3 for the sections only")
+	}
+
+	raw := p408ReadStatic(t, "static/css/legal.css")
+	rules := parseCSSRules(raw)
+	decl := func(selector, prop string) string {
+		r, ok := ruleBySelector(rules, selector)
+		if !ok {
+			t.Errorf("legal.css has no %s rule", selector)
+			return ""
+		}
+		return declsOf(r.declBody)[prop]
+	}
+
+	if got := decl(".legal-text h2", "font-size"); got != "var(--font-size-display)" {
+		t.Errorf(".legal-text h2 font-size = %q, want the display size for the part titles", got)
+	}
+	if got := decl(".legal-text h2", "font-weight"); got != "var(--font-weight-semibold)" {
+		t.Errorf(".legal-text h2 font-weight = %q", got)
+	}
+	if r, ok := ruleBySelector(rules, `.legal-text h2[id="policy"]`); !ok {
+		t.Errorf("the Policy part title needs its own divider rule")
+	} else if d := declsOf(r.declBody); d["font-size"] != "" || d["border-top"] == "" {
+		t.Errorf("the Policy rule is a divider only, not a second heading size: %v", d)
+	}
+	if strings.Contains(raw, `h2[id="disclaimer"]`) {
+		t.Errorf("legal.css still sizes the part titles by id; every h2 is a part title now")
+	}
+	if got := decl(".legal-text h3", "font-size"); got != "var(--font-size-heading)" {
+		t.Errorf(".legal-text h3 font-size = %q, want the heading size, one level under the part title", got)
+	}
+	if got := decl(".legal-text h3", "font-weight"); got != "var(--font-weight-semibold)" {
+		t.Errorf(".legal-text h3 font-weight = %q", got)
+	}
+	if mt, pt := decl(".legal-section", "margin-top"), decl(".legal-section", "padding-top"); mt == "" || mt != pt {
+		t.Errorf(".legal-section margin-top %q and padding-top %q must be one even value", mt, pt)
+	}
+	if got := decl(".legal-section", "border-top"); !strings.Contains(got, "var(--color-border)") {
+		t.Errorf(".legal-section needs a hairline divider in the border colour, got %q", got)
+	}
+
+	// The numbers card.
+	if got := decl(".legal-numbers__number", "font-weight"); got != "var(--font-weight-semibold)" {
+		t.Errorf("the number cell must be bold (semibold), got %q", got)
+	}
+	if r, ok := ruleBySelector(rules, ".legal-numbers__note"); !ok {
+		t.Errorf("legal.css needs its own .legal-numbers__note rule")
+	} else if d := declsOf(r.declBody); d["font-weight"] != "" || d["color"] != "" {
+		t.Errorf("the note keeps the normal weight and text colour, got %v", d)
+	}
+	call := ""
+	for _, r := range rules {
+		if strings.HasPrefix(r.selectorHead, ".legal-text a.legal-numbers__call") {
+			call = r.declBody
+		}
+	}
+	if call == "" {
+		t.Fatalf("legal.css has no .legal-text a.legal-numbers__call rule")
+	}
+	cd := declsOf(call)
+	if cd["min-height"] != "48px" && cd["min-height"] != "var(--touch-target-min)" {
+		t.Errorf("the Call button min-height = %q, want at least 44px", cd["min-height"])
+	}
+	if cd["text-decoration"] != "none" {
+		t.Errorf("the Call button is not underlined, got %q", cd["text-decoration"])
+	}
+	if strings.Contains(call, "border-radius") {
+		t.Errorf("the Call button takes the radius of the other buttons from .btn, not its own")
+	}
+
+	// The glossary: term bold on its own line, explanation under it, even space.
+	if got := decl(".legal-glossary dt", "font-weight"); got != "var(--font-weight-semibold)" {
+		t.Errorf("glossary term weight = %q", got)
+	}
+	if got := decl(".legal-glossary dd + dt", "margin-top"); got == "" {
+		t.Errorf("glossary entries need even space between them (dd + dt margin-top)")
+	}
+}
