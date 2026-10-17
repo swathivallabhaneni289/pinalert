@@ -444,7 +444,7 @@ Plans:
   2. Builds places and empty states only; the bell and Updates (3.2), phone notifications (3.3), Official alerts content and the Demo button (5) and profiles (9) fill them later. This phase also stores the name, the home area and the What is happening pick (03.4-CONTEXT D-24b, 2026-10-16), which 3.3 then uses.
      (Amended 2026-10-16 by Phase 3.4, owner decision, see 03.4-CONTEXT O-1, O-2 and D-24b: O-1 and O-2 were answered on 2026-10-16, so no owner question is open before planning. O-1: the strip is laptop only, on Nearby and Post a report, and the "Not confirmed yet" line under Post report is built on neither size. O-2: the chosen category tile is the soft grey fill with no dark border. The What is happening picks are placed and stored in 3.4 and used in 3.3. Two small owner questions are still pending and are not decided here: whether Earthquake should be a tile in Post a report, and whether a confirmed Critical report belongs in Show: Confirmed.)
 
-**Plans:** 19/20 plans executed
+**Plans:** 19/21 plans executed
 
 Plans:
 **Wave 1**
@@ -499,6 +499,7 @@ Plans:
 **Wave 11** *(blocked on Wave 10 completion)*
 
 - [ ] 03.4-18-PLAN.md: Harness layout walk in Chromium and WebKit at 320, 360, 390 and 1280, light and dark
+- [ ] 03.4-21-PLAN.md: Gap closure: laptop Nearby 2px taller than the window, the ResizeObserver loop error at large text, My activity labels breaking inside a word at 320px (plan 17 findings 1, 4 and 5)
 
 ### Phase 03.2: In-app updates and trusted-reporter alerts (INSERTED)
 
@@ -633,7 +634,7 @@ Phases execute in the owner's build order (2026-10-16): 1 → 1.1 → 2 → 3 �
 | 3.1 Report history views | 16/16 | In Progress|  |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
 | 3.3 Installable app and phone alerts | 0/TBD | Not started | - |
-| 3.4 App layout | 19/20 | In Progress|  |
+| 3.4 App layout | 19/21 | In Progress|  |
 | 4. Robustness — Real-World Resilience | 29/29 | In Progress|  |
 | 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
 | 6. Coordination (removed 2026-10-16, share card moved to Phase 8) | - | Removed | - |
