@@ -49,41 +49,27 @@ Handy address parameters: `?view=phone|laptop`, `rp=a|b` (the laptop variant, B 
    sample report is yours, as in sketch 007's My activity), plus Share. Quiet links: Stop updates on this report
    (Phase 3.2 muting) and Flag (Phase 4).
 4. What happened so far: a timeline built from the vote log. It never names a voter or says where they were.
-5. Comments that work like Instagram's (owner, 2026-10-17: "allow the replies", then "i want how instagram comments
-   work"):
-   - Each comment: a round picture, then the **bold username and the words on one line**, then a small grey line with
-     the time ("27m") and **Reply**. A **heart** on the right likes it, with the count under it; liked is a filled red
-     heart. The reporter's picture carries the report's icon and colour plus a small "Reporter" tag (never colour alone).
-   - **Replies are folded** behind "View N replies" (a short line before it), and "Hide replies" folds them again. One
-     level only: Reply on a reply joins the same thread, and posting a reply opens its thread.
-   - **One box for everything.** Reply puts "@username " in the box, moves the cursor there and shows "Replying to
-     username" with an X to cancel. Replying to your own comment adds no @name. A reply starting with @username shows the
-     name in bold. Post is a word that turns solid once there is text; Enter posts and Shift with Enter starts a new line.
-     The box grows as you type, and "N left" shows only in the last 40 of the 280 letters.
-   - **Laptop:** the comments sit in the panel, oldest first, with the box pinned to the bottom of the panel, as on
-     Instagram's post view on a computer.
-   - **Phone, set up as in the Instagram app** (owner, 2026-10-17: "even the comment section should act like instagram
-     set up on the phone"). Under the report, as under a post: "View all N comments", the two newest comments on one line
-     each ("username words…"), and "Add a comment…" with your picture. Any of them opens the comments sheet; "Add a
-     comment…" also puts the cursor in the box. The sheet rises to about two thirds of the screen with a grab handle and
-     "Comments" centred, and no X: drag the handle up for the full screen, drag it down or tap outside to close. Escape,
-     and a "Close comments" button that only shows on keyboard focus, close it too. The box is a rounded field with Post
-     inside it, pinned to the bottom of the sheet.
-   - **Second look at the phone** (owner, 2026-10-17: "it looks odd why is there some weird spacing ... i want my comment
-     section to look like how the instagram comment section looks"). The block under the report has no "Comments"
-     heading (a thin line above it instead), and every line is 22px with 4px between, as under an Instagram post; the
-     whole block is one tap target and Add a comment keeps a 44px tap area through an invisible strip, so tap areas no
-     longer push the lines apart. In the sheet each comment follows the Instagram app: the username and time on the top
-     line, the words under them, then Reply, with "View N replies" right under it. The laptop keeps the Instagram on a
-     computer layout (username and words on one line), which the owner liked.
-   - The count beside Comments includes replies. A like, an open thread and a half typed comment all survive a vote.
-   - Likes are new. The rules to keep when building: one like per account per comment, comments only (never on the
-     report itself), and they never feed Confirmed, the reporter score or any trust number. A heart must never read as
-     Confirm.
-   - Departures from the house rules, copied from Instagram on purpose: the liked heart is red, which the MANIFEST keeps
-     for severity. Left out: Instagram's emoji reaction row above the box (no emoji in this app).
-   - Sample commenters have short usernames (ravi.k, anjali.r and so on) because Instagram shows one on every comment.
-     Who may show a name is the open question below.
+5. Comments, shown clearly on the page (owner, 2026-10-17: "allow the replies", then "i want how instagram comments
+   work", then "i dont need the likes i just want you to display the comment section clearly without making everything
+   too clumsy"):
+   - **The same list on the phone and the laptop**, right on the report page under a "Comments" heading with the count
+     (replies included). No likes, no preview, no separate comments screen.
+   - Each comment: a round picture, the username, the time, the words and **Reply**. On the laptop the username and the
+     words share one line with the time and Reply under them (as on Instagram on a computer); on the phone the username
+     and time sit on the top line with the words under them, then Reply (as in the Instagram app), so a narrow screen
+     reads cleanly. The reporter's picture carries the report's icon and colour plus a small "Reporter" tag (never colour
+     alone).
+   - **Replies are folded** behind "View N replies", and "Hide replies" folds them again. One level only: Reply on a
+     reply joins the same thread, and posting a reply opens its thread.
+   - **One box.** Reply puts "@username " in the box, moves the cursor there and shows "Replying to username" with an X
+     to cancel. Replying to your own comment adds no @name. A reply starting with @username shows the name in bold. Post
+     turns solid once there is text; Enter posts and Shift with Enter starts a new line. The box grows as you type, and
+     "N left" shows only in the last 40 of the 280 letters. On the laptop the box is pinned to the bottom of the panel;
+     on the phone it is a rounded field after the last comment.
+   - An open thread and a half typed comment survive a vote.
+   - Sample commenters have short usernames (ravi.k, anjali.r and so on); see "Owner decisions" for names.
+   - Tried and dropped the same day: likes with a heart on each comment, and on the phone a short preview that opened a
+     separate comments sheet. The owner found both clumsy.
 6. Share: a window (a bottom sheet on the phone) showing what people get in WhatsApp: the title and "Open to see if this
    is still true right now", with a link and no counts, so a forward can never show a stale number. Close with the X.
 
@@ -108,7 +94,7 @@ comments box and the always open text box went, and the section headings got sma
 ## Owner decisions (2026-10-17)
 
 - Laptop: **B, beside the map.** A stays in the file behind `?rp=a` for comparison only.
-- Comments are wanted, **with replies**, and they should **work like Instagram's** (item 5). They still need the Phase 4
+- Comments are wanted, **with replies**, shown clearly on the page in an Instagram like layout, **without likes** (item 5). They still need the Phase 4
   screening and per account limits, so they ship after the page and the history.
 - Tapping a pin on the map opens its report, on the phone the same as on the laptop ("i like the laptop version").
 - Names: the owner answered "yes" to the recommendation, read as: every commenter has a short username, asked for the
@@ -136,3 +122,4 @@ on the phone "View all 6 comments" opens the sheet, its box sits at the sheet bo
 lines; the heart is 32 by 44 and Reply 44 tall; light and dark checked.
 Fourth round, phone set up as in Instagram (2026-10-17): the page shows View all 6 comments, two one line previews and Add a comment… with no sideways scroll (page 390 of 390); Add a comment… opens the sheet with the cursor in it; the sheet opens at 497 of 731px, a drag up of 100px goes full (731px), a drag down of 150px closes it; light and dark checked. The laptop box has no border (unchanged look).
 Fifth round, phone spacing (2026-10-17): the gaps in the block under the report measure 4px, 4px, then 17px to Add a comment (it has a picture); the page stays 390 of 390 wide; in the sheet Reply to View replies is 25px centre to centre; dark checked; the laptop is unchanged.
+Sixth round, clear list and no likes (2026-10-17): no heart anywhere on the phone or the laptop; the phone shows the full list under "Comments 6" with the box after it, in the phone frame and at 390px wide, with no sideways scroll; a reply posts into the right thread (4 replies, count 7); dark checked; the laptop only lost the hearts.

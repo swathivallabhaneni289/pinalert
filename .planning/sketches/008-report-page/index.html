@@ -702,18 +702,15 @@ button { font: inherit; color: inherit; }
 .tl li:last-child .tl-mark::after { display: none; }
 .tl-mark.good::before { background: var(--low); }
 .tl-mark.bad::before { background: var(--critical); }
-/* Comments that work like Instagram's (owner, 2026-10-17: "i want how instagram comments work"). Each comment is a round
-   picture, then the bold username and the words on one line, then a small grey line with the time and Reply; a heart on
-   the right likes it. Replies sit one step in, folded behind "View N replies". One box at the bottom: Reply fills in
-   @username and shows "Replying to". On the laptop the box is pinned to the bottom of the panel; on the phone the page
-   shows "View all N comments", which opens a comments sheet with the box pinned inside it. Departures from the house
-   rules, copied from Instagram on purpose: the liked heart is red, which is otherwise kept for severity. Left out: the
-   emoji reaction row above Instagram's box (no emoji in this app). */
-.i-heart { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0xOSAxNGMxLjQ5LTEuNDYgMy0zLjIxIDMtNS41QTUuNSA1LjUgMCAwIDAgMTYuNSAzYy0xLjc2IDAtMyAuNS00LjUgMi0xLjUtMS41LTIuNzQtMi00LjUtMkE1LjUgNS41IDAgMCAwIDIgOC41YzAgMi4zIDEuNSA0LjA1IDMgNS41bDcgN1oiLz48L3N2Zz4=); }
-.i-heartfill { --i: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iYmxhY2siIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTkgMTRjMS40OS0xLjQ2IDMtMy4yMSAzLTUuNUE1LjUgNS41IDAgMCAwIDE2LjUgM2MtMS43NiAwLTMgLjUtNC41IDItMS41LTEuNS0yLjc0LTItNC41LTJBNS41IDUuNSAwIDAgMCAyIDguNWMwIDIuMyAxLjUgNC4wNSAzIDUuNWw3IDdaIi8+PC9zdmc+); }
+/* Comments (owner, 2026-10-17: "allow the replies", "i want how instagram comments work", then "i dont need the likes i
+   just want you to display the comment section clearly without making everything too clumsy"). The same list on the phone
+   and the laptop, right on the report page under a "Comments" heading: a round picture, the username, the words, the time
+   and Reply. Replies sit one step in, folded behind "View N replies". One box: Reply fills in @username and shows
+   "Replying to". On the laptop the box is pinned to the bottom of the panel; on the phone it sits after the last comment.
+   No likes, no sheet. Left out of the Instagram look: hearts and the emoji row. */
 .cm { list-style: none; margin: 0; padding: 0; }
 .cm > li + li { margin-top: 14px; }
-.ig { display: grid; grid-template-columns: 32px minmax(0, 1fr) 32px; column-gap: 12px; align-items: start; }
+.ig { display: grid; grid-template-columns: 32px minmax(0, 1fr); column-gap: 12px; align-items: start; }
 .cm-av { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--surface); color: var(--muted); }
 .cm-av .ico { width: 18px; height: 18px; }
 .cm-av.critical { background: var(--critical-bg); color: var(--critical); }
@@ -728,25 +725,20 @@ button { font: inherit; color: inherit; }
 .ig-meta button, .ig-view, .cm-replying button { min-height: 44px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit;
   font-size: 12px; font-weight: 600; cursor: pointer; }
 .ig-meta button:hover, .ig-view:hover, .cm-replying button:hover { color: var(--text); }
-.ig-like { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; width: 32px; min-height: 44px; padding: 6px 0 0;
-  border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
-.ig-like .ico { width: 16px; height: 16px; }
-.ig-like[aria-pressed="true"] { color: #ed4956; }
-.ig-like .n { color: var(--muted); }
 .ig-thread { margin: 0 0 0 44px; }
 .ig-view { display: flex; align-items: center; gap: 12px; }
 .ig-view::before { content: ""; width: 24px; height: 1px; background: var(--muted); }
 .ig-replies { list-style: none; margin: 0; padding: 0; }
 .ig-replies > li { margin-top: 10px; }
-.ig-replies .ig { grid-template-columns: 24px minmax(0, 1fr) 32px; column-gap: 10px; }
+.ig-replies .ig { grid-template-columns: 24px minmax(0, 1fr); column-gap: 10px; }
 .ig-replies .cm-av { width: 24px; height: 24px; }
 .ig-replies .cm-av .ico { width: 14px; height: 14px; }
 .ig-replies .ig-text { padding-top: 2px; }
 .cm-empty { margin: 0; color: var(--muted); font-size: 15px; }
-.cm-viewall { min-height: 44px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 15px; cursor: pointer; }
 /* The one box. */
 .cm-compose { background: var(--bg); border-top: 1px solid var(--border); padding: 8px 0; }
 .cm-compose-row { display: flex; align-items: center; gap: 12px; }
+.cm-pill { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; }
 .cm-compose textarea { flex: 1; min-width: 0; height: 40px; max-height: 120px; resize: none; padding: 9px 0; border: 0; background: none; color: var(--text);
   font: inherit; font-size: 15px; line-height: 1.45; outline: none; }
 .cm-post { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--text); font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; }
@@ -757,25 +749,8 @@ button { font: inherit; color: inherit; }
 .is-laptop .cm-compose { position: sticky; bottom: 0; margin: 20px -24px 0; padding: 8px 24px; }
 .is-laptop .screen-report .cm-compose { margin: 20px -32px 0; padding: 8px 32px; }
 .is-laptop .cm-compose:focus-within { box-shadow: 0 -6px 12px rgb(0 0 0 / 6%); }
-.cm-pill { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; }
-/* Phone, set up as in the Instagram app (owner, 2026-10-17: "even the comment section should act like instagram set up on
-   the phone"). Under the report: "View all N comments", the two newest comments on one line each, and "Add a comment…"
-   with your picture; any of them opens the comments sheet. The sheet rises to about two thirds of the screen with a grab
-   handle and "Comments" centred and no X: drag the handle up for the full screen, drag it down or tap outside to close
-   (Escape and a close button that shows on keyboard focus do the same). The box is a rounded field with Post inside it. */
-/* Second look (owner, 2026-10-17: "it looks odd why is there some weird spacing"): no heading, and every line in the block
-   is the same 22px with the same 4px between, as under an Instagram post. The block is one tap target; Add a comment keeps
-   a 44px tap area through an invisible strip around it, so it does not push the lines apart. */
-.ig-peek { padding-top: 16px; border-top: 1px solid var(--border); }
-.ig-peekbtn { display: block; width: 100%; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
-.ig-viewall { display: block; color: var(--muted); font-size: 15px; line-height: 22px; }
-.ig-peekrow { display: block; margin-top: 4px; font-size: 15px; line-height: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ig-addrow { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 28px; margin-top: 10px; padding: 0; border: 0;
-  background: none; color: var(--muted); font: inherit; font-size: 15px; line-height: 22px; text-align: left; cursor: pointer; }
-.ig-addrow::after { content: ""; position: absolute; inset: -8px 0; }
-.ig-addrow .cm-av { width: 24px; height: 24px; }
-.ig-addrow .cm-av .ico { width: 14px; height: 14px; }
-/* Phone sheet rows as in the Instagram app: the username and time on the top line, the words under them, then Reply. */
+/* Phone: the username and time on the top line, the words under them, then Reply, so a narrow screen reads cleanly. The box
+   after the last comment is a rounded field with Post inside it. */
 .ig-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; padding-top: 1px; font-size: 13px; line-height: 18px; }
 .ig-head .ig-name { margin: 0; }
 .ig-head .cm-tag { margin: 0; padding: 0 5px; font-size: 11px; line-height: 16px; }
@@ -785,22 +760,10 @@ button { font: inherit; color: inherit; }
 .is-phone .cm > li + li { margin-top: 18px; }
 .is-phone .ig-replies > li { margin-top: 12px; }
 .is-phone .ig-view { margin: -6px 0 -12px; }
-.is-phone #cm-modal { align-items: flex-end; }
-.cm-dlg { display: flex; flex-direction: column; width: min(520px, 100%); height: 68%; background: var(--bg); border-radius: 16px 16px 0 0; overflow: hidden;
-  transition: height .25s ease, transform .25s ease; }
-.cm-dlg.full { height: 100%; border-radius: 0; }
-.cm-dlg.dragging { transition: none; }
-.cm-grab { position: relative; flex: none; padding: 8px 16px 12px; border-bottom: 1px solid var(--border); text-align: center; cursor: grab; touch-action: none; }
-.cm-handle { display: block; width: 40px; height: 4px; margin: 0 auto 10px; border-radius: 2px; background: color-mix(in srgb, var(--muted) 55%, transparent); }
-.cm-grab h2 { margin: 0; font-size: 16px; font-weight: 600; }
-.cm-close { position: absolute; top: 4px; right: 8px; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
-  border: 0; background: var(--bg); color: var(--text); font: inherit; font-size: 14px; font-weight: 600; }
-.cm-close:focus-visible { width: auto; height: 44px; padding: 0 12px; clip-path: none; outline: 2px solid var(--text); border-radius: 6px; }
-.cm-sheet-list { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
-.cm-dlg .cm-compose { padding: 8px 16px 12px; }
-.cm-dlg .cm-compose-row { gap: 10px; }
-.cm-dlg .cm-pill { min-height: 44px; padding: 0 4px 0 14px; border: 1px solid var(--border); border-radius: 22px; }
-.cm-dlg .cm-compose textarea { padding: 10px 0; }
+.is-phone .cm-compose { margin-top: 16px; padding: 12px 0 0; }
+.is-phone .cm-compose-row { gap: 10px; }
+.is-phone .cm-pill { min-height: 44px; padding: 0 4px 0 14px; border: 1px solid var(--border); border-radius: 22px; }
+.is-phone .cm-compose textarea { padding: 10px 0; }
 .card .openrep { display: none; width: 100%; height: 44px; margin-top: 10px; align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--border);
   border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
 .card .openrep .ico { width: 18px; height: 18px; }
@@ -1217,15 +1180,6 @@ button { font: inherit; color: inherit; }
   </div>
 
   <!-- SHARE, opened from Share on a report -->
-  <div class="modal-back" id="cm-modal" hidden>
-    <div class="cm-dlg" role="dialog" aria-modal="true" aria-labelledby="cm-sheet-title">
-      <div class="cm-grab" data-cm-drag><span class="cm-handle" aria-hidden="true"></span><h2 id="cm-sheet-title">Comments</h2>
-        <button class="cm-close" data-close-cm>Close comments</button></div>
-      <div class="cm-sheet-list" id="cm-sheet-list"></div>
-      <div id="cm-sheet-compose"></div>
-    </div>
-  </div>
-
   <div class="modal-back" id="share-modal" hidden>
     <div class="share-dlg" role="dialog" aria-modal="true" aria-labelledby="share-title">
       <header class="dlg-head"><div><h2 id="share-title">Share this report</h2></div>
@@ -1655,9 +1609,9 @@ button { font: inherit; color: inherit; }
       hist: [['2:10 pm', 'Posted as Critical.', ''], ['2:14 pm', 'Confirmed from a second spot.', 'good'],
         ['2:17 pm', 'Confirmed from a third spot.', 'good'], ['2:21 pm', 'Confirmed from a fourth spot.', 'good']],
       // Sample usernames, as on Instagram; who may show a name is still the owner's call (see the README).
-      cms: [{ who: 'ravi.k', ago: '47m', likes: 4, t: 'Two buses are stuck at the signal now. Use the service road.',
-          replies: [{ who: 'lakshmi_vja', ago: '44m', likes: 2, t: '@ravi.k The service road is filling up too, near the temple.' }] },
-        { who: 'You', rep: true, ago: '43m', likes: 3, t: 'Water is still rising near the petrol bunk.', replies: [] }] },
+      cms: [{ who: 'ravi.k', ago: '47m', t: 'Two buses are stuck at the signal now. Use the service road.',
+          replies: [{ who: 'lakshmi_vja', ago: '44m', t: '@ravi.k The service road is filling up too, near the temple.' }] },
+        { who: 'You', rep: true, ago: '43m', t: 'Water is still rising near the petrol bunk.', replies: [] }] },
     { cat: 'Traffic', place: 'Eluru Road, towards Ramavarappadu', dist: '2.1 km', ago: '5 min ago', confN: 0, dispN: 0,
       curTag: 'Too early to tell', curLine: 'Fewer than 2 people have confirmed this yet. Fades at 4:57 pm.', repTag: 'Reliable reporter', repLine: '7 of 9 earlier reports by this reporter were confirmed by people nearby.', code: 'M3TD',
       hist: [['2:57 pm', 'Posted as Medium.', '']],
@@ -1666,28 +1620,28 @@ button { font: inherit; color: inherit; }
       curTag: 'Report up to date', curLine: 'Confirmed from 6 different spots in the last 2 hours. Fades tomorrow at 2:22 pm.', repTag: 'New reporter', repLine: 'Not rated yet. It needs 5 reports with a clear result.', code: 'P9ZS',
       hist: [['2:22 pm', 'Posted as Low.', ''], ['2:30 pm', 'Confirmed from 2 spots. Shown to everyone.', 'good'],
         ['2:41 pm', 'Confirmed from a fourth spot.', 'good'], ['2:55 pm', 'Confirmed from a sixth spot.', 'good']],
-      cms: [{ who: 'anjali.r', ago: '27m', likes: 6, t: 'Food packets are being given at the gate.',
-          replies: [{ who: 'suresh.patamata', rep: true, ago: '25m', likes: 3, t: '@anjali.r Until 6 pm, the volunteers said.' }] },
-        { who: 'kiran_77', ago: '14m', likes: 2, t: 'Ground floor rooms are full, the first floor still has space.',
-          replies: [{ who: 'padma.n', ago: '12m', likes: 1, t: '@kiran_77 Can older people get a room on the ground floor?' },
-            { who: 'suresh.patamata', rep: true, ago: '10m', likes: 5, t: '@padma.n Ask at the desk, they are moving older people down first.' },
-            { who: 'padma.n', ago: '4m', likes: 0, t: '@suresh.patamata Thank you, we are on our way.' }] }] },
+      cms: [{ who: 'anjali.r', ago: '27m', t: 'Food packets are being given at the gate.',
+          replies: [{ who: 'suresh.patamata', rep: true, ago: '25m', t: '@anjali.r Until 6 pm, the volunteers said.' }] },
+        { who: 'kiran_77', ago: '14m', t: 'Ground floor rooms are full, the first floor still has space.',
+          replies: [{ who: 'padma.n', ago: '12m', t: '@kiran_77 Can older people get a room on the ground floor?' },
+            { who: 'suresh.patamata', rep: true, ago: '10m', t: '@padma.n Ask at the desk, they are moving older people down first.' },
+            { who: 'padma.n', ago: '4m', t: '@suresh.patamata Thank you, we are on our way.' }] }] },
     { cat: 'Power out', place: 'Gunadala main road', dist: '2.6 km', ago: '1 hour ago', confN: 2, dispN: 0,
       curTag: 'Report getting old', curLine: 'Few recent confirmations. It fades at 5:02 pm unless someone confirms it again.', repTag: 'Mixed record', repLine: '3 of 6 earlier reports by this reporter were confirmed by people nearby.', code: 'G4PW',
       hist: [['2:02 pm', 'Posted as Medium.', ''], ['2:26 pm', 'Confirmed from 2 spots. Shown to everyone.', 'good']],
-      cms: [{ who: 'venkat.g', ago: '22m', likes: 1, t: 'The lanes behind the temple have power, only the main road side is out.', replies: [] }] },
+      cms: [{ who: 'venkat.g', ago: '22m', t: 'The lanes behind the temple have power, only the main road side is out.', replies: [] }] },
     { cat: 'Road blocked', place: 'Budameru bridge', dist: '1.9 km', ago: '2 hours ago', confN: 3, dispN: 1,
       curTag: 'Report up to date', curLine: 'Confirmed from 3 different spots in the last 2 hours. Fades at 7:05 pm.', repTag: 'New reporter', repLine: 'Not rated yet. It needs 5 reports with a clear result.', code: 'B2RD',
       hist: [['1:05 pm', 'Posted as Medium.', ''], ['1:18 pm', 'Confirmed from 2 spots. Shown to everyone.', 'good'],
         ['1:40 pm', 'Disputed by someone nearby.', 'bad'], ['1:52 pm', 'Confirmed from a third spot.', 'good']],
-      cms: [{ who: 'bhargav_s', ago: '1h', likes: 1, t: 'Bikes are being let through on the left side.',
-          replies: [{ who: 'rani.m', ago: '1h', likes: 5, t: '@bhargav_s Not any more, police stopped the bikes too.' }] }] },
+      cms: [{ who: 'bhargav_s', ago: '1h', t: 'Bikes are being let through on the left side.',
+          replies: [{ who: 'rani.m', ago: '1h', t: '@bhargav_s Not any more, police stopped the bikes too.' }] }] },
     { cat: 'Flood', place: 'Prakasam Barrage', dist: '3.2 km', ago: '1 hour ago', confN: 0, dispN: 3,
       curTag: 'Disputed: may not be true', curWarn: true, curLine: 'Disputed nearby, so it needs 2 confirmations in the last 2 hours.', repTag: 'New reporter', repLine: 'Not rated yet. It needs 5 reports with a clear result.', code: 'K8BX',
       hist: [['1:58 pm', 'Posted as Critical.', ''], ['2:03 pm', 'Disputed by someone nearby.', 'bad'], ['2:09 pm', 'Disputed from a second spot.', 'bad'],
         ['2:12 pm', 'Disputed from a third spot. Marked Disputed.', 'bad']],
-      cms: [{ who: 'prasad.k', ago: '56m', likes: 9, t: 'The barrage office says the gates are fine. This is an old video.',
-          replies: [{ who: 'meena_vja', ago: '52m', likes: 4, t: '@prasad.k Yes, the same video went around last year.' }] }] }
+      cms: [{ who: 'prasad.k', ago: '56m', t: 'The barrage office says the gates are fine. This is an old video.',
+          replies: [{ who: 'meena_vja', ago: '52m', t: '@prasad.k Yes, the same video went around last year.' }] }] }
   ];
   var current = 0;
   function confN(d) { return d.confN + (d.vote === 'confirm' ? 1 : 0); }
@@ -1711,7 +1665,7 @@ button { font: inherit; color: inherit; }
       : '<span class="cm-av"><span class="ico i-user"></span></span>';
   }
   function igComment(r, c, k, j) {
-    var id = j == null ? String(k) : k + '.' + j, words = c.t.replace(/^@(\S+)/, '<span class="ig-at">@$1</span>');
+    var words = c.t.replace(/^@(\S+)/, '<span class="ig-at">@$1</span>');
     var tag = c.rep ? '<span class="cm-tag">Reporter</span> ' : '', reply = '<button data-reply="' + k + '" data-name="' + c.who + '">Reply</button>';
     // Laptop: Instagram on a computer, the username and words on one line, then the time and Reply. Phone: the Instagram app,
     // the username and time on the top line, the words under them, then Reply.
@@ -1720,9 +1674,7 @@ button { font: inherit; color: inherit; }
         '<p class="ig-say">' + words + '</p><div class="ig-meta">' + reply + '</div></div>'
       : '<div><p class="ig-text"><span class="ig-name">' + c.who + '</span> ' + tag + words + '</p>' +
         '<div class="ig-meta"><span>' + c.ago + '</span>' + reply + '</div></div>';
-    return '<div class="ig">' + avHtml(r, c.rep) + body +
-      '<button class="ig-like" data-like="' + id + '" aria-pressed="' + !!c.liked + '" aria-label="Like this comment"><span class="ico ' +
-      (c.liked ? 'i-heartfill' : 'i-heart') + '"></span>' + (c.likes ? '<span class="n">' + c.likes + '</span>' : '') + '</button></div>';
+    return '<div class="ig">' + avHtml(r, c.rep) + body + '</div>';
   }
   function igList(r, d) {
     if (!d.cms.length) return '<p class="cm-empty">No comments yet.</p>';
@@ -1778,19 +1730,10 @@ button { font: inherit; color: inherit; }
       return '<li><span class="tl-time">' + x[0] + '</span><span class="tl-mark ' + x[2] + '" aria-hidden="true"></span><span>' + x[1] + '</span></li>';
     }).join('') + '</ol></section>';
     var total = commentTotal(d);
-    if (isPhone) {
-      // Phone, as under a post in the Instagram app: View all, the two newest comments, then Add a comment. Each opens the sheet.
-      // No heading, as on Instagram; the whole block is one tap target that opens the sheet.
-      h += '<section class="rp-sec ig-peek" aria-label="Comments">' +
-        (total ? '<button class="ig-peekbtn" data-cm-open><span class="ig-viewall">' + (total === 1 ? 'View 1 comment' : 'View all ' + total + ' comments') + '</span>' +
-          d.cms.slice(-2).map(function (c) {
-            return '<span class="ig-peekrow"><span class="ig-name">' + c.who + '</span> ' + c.t.replace(/^@(\S+)/, '<span class="ig-at">@$1</span>') + '</span>';
-          }).join('') + '</button>' : '') +
-        '<button class="ig-addrow" data-cm-open data-cm-focus>' + avHtml(r, d.mine) + '<span>Add a comment…</span></button></section></div>';
-    } else {
-      h += '<section class="rp-sec"><h2>Comments' + (total ? ' <span class="n">' + total + '</span>' : '') + '</h2>' + igList(r, d) + '</section></div>' +
-        composerHtml(r, d);
-    }
+    // The same comment list on the phone and the laptop, right on the page (owner, 2026-10-17: "display the comment section
+    // clearly without making everything too clumsy").
+    h += '<section class="rp-sec"><h2>Comments' + (total ? ' <span class="n">' + total + '</span>' : '') + '</h2>' + igList(r, d) + '</section></div>' +
+      composerHtml(r, d);
     return h;
   }
   // Tapping a pin on Nearby shows a small label over it that opens the report (owner, 2026-10-17), on the phone and the
@@ -1829,32 +1772,25 @@ button { font: inherit; color: inherit; }
     });
     return m;
   }
-  var rpSide = document.getElementById('rp-side'), cmModal = document.getElementById('cm-modal');
+  var rpSide = document.getElementById('rp-side');
   function renderPage() {
     if (sheet.classList.contains('showing-report')) { var st = rpSide.scrollTop; rpSide.innerHTML = reportBody(current, 'All reports'); rpSide.scrollTop = st; return; }
     var sc = document.getElementById('rp-scroll'), top = sc.scrollTop;
     document.getElementById('rp-page').innerHTML = reportBody(current, isPhone ? '' : 'Nearby');
     sc.scrollTop = top;
   }
-  function renderSheet() {
-    if (!isPhone || cmModal.hidden) return;
-    var r = reports[current], d = details[current], list = document.getElementById('cm-sheet-list'), st = list.scrollTop;
-    list.innerHTML = igList(r, d); list.scrollTop = st;
-    document.getElementById('cm-sheet-compose').innerHTML = composerHtml(r, d);
-  }
   function autosize(ta) { ta.style.height = 'auto'; ta.style.height = Math.min(Math.max(ta.scrollHeight, 40), 120) + 'px'; }
   function renderReport() {
-    renderPage(); renderSheet();
+    renderPage();
     Array.prototype.forEach.call(document.querySelectorAll('.cm-compose textarea'), autosize);
   }
   function focusComposer() {
     var ta = Array.prototype.find.call(document.querySelectorAll('.cm-compose textarea'), function (x) { return x.offsetParent; });
-    if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); ta.scrollIntoView({ block: 'nearest' }); }
   }
   function openReport(i) {
     current = i;
     hidePinBub();
-    cmModal.hidden = true;
     if (!isPhone && rv === 'b') {
       sheet.classList.add('showing-report');
       pins.forEach(function (p) { p.classList.toggle('pin-focus', Number(p.dataset.i) === i); });
@@ -1891,8 +1827,8 @@ button { font: inherit; color: inherit; }
     shareModal.hidden = false;
   }
   document.addEventListener('click', function (e) {
-    var t = e.target.closest('[data-openrep],[data-rp-back],[data-trust],[data-reply],[data-cancel-reply],[data-thread],[data-like],[data-cm-open],[data-close-cm],[data-vote],[data-resolve],[data-unresolve],[data-mute],[data-flag],[data-share],[data-close-share],[data-share-wa],[data-copy]');
-    if (!t) { if (e.target === shareModal) shareModal.hidden = true; if (e.target === cmModal) closeCm(); return; }
+    var t = e.target.closest('[data-openrep],[data-rp-back],[data-trust],[data-reply],[data-cancel-reply],[data-thread],[data-vote],[data-resolve],[data-unresolve],[data-mute],[data-flag],[data-share],[data-close-share],[data-share-wa],[data-copy]');
+    if (!t) { if (e.target === shareModal) shareModal.hidden = true; return; }
     var d = details[current];
     d.drafts = d.drafts || {};
     // Reply puts @username in the one box, as on Instagram, and says who you are replying to.
@@ -1905,12 +1841,6 @@ button { font: inherit; color: inherit; }
     }
     if (t.hasAttribute('data-cancel-reply')) { d.replyTo = null; d.drafts.main = (d.drafts.main || '').replace(/^@\S+\s*/, ''); renderReport(); return; }
     if (t.dataset.thread) { d.openThreads = d.openThreads || {}; d.openThreads[t.dataset.thread] = !d.openThreads[t.dataset.thread]; renderReport(); return; }
-    if (t.dataset.like) {
-      var p = t.dataset.like.split('.'), c = d.cms[Number(p[0])]; if (p.length > 1) c = c.replies[Number(p[1])];
-      c.liked = !c.liked; c.likes = (c.likes || 0) + (c.liked ? 1 : -1); renderReport(); return;
-    }
-    if (t.hasAttribute('data-cm-open')) { cmModal.hidden = false; renderReport(); if (t.hasAttribute('data-cm-focus')) focusComposer(); return; }
-    if (t.hasAttribute('data-close-cm')) { closeCm(); return; }
     if (t.dataset.openrep) { e.stopPropagation(); openReport(Number(t.dataset.openrep)); return; }
     if (t.hasAttribute('data-rp-back')) { backFromReport(); return; }
     if (t.hasAttribute('data-trust')) { d.trustOpen = !d.trustOpen; renderReport(); return; }
@@ -1935,7 +1865,7 @@ button { font: inherit; color: inherit; }
     var f = e.target.closest('[data-cm-form]'); if (!f) return;
     e.preventDefault();
     var v = f.querySelector('textarea').value.trim(); if (!v) return;
-    var d = details[current], c = { who: 'You', rep: !!d.mine, ago: 'now', likes: 0, t: esc(v) };
+    var d = details[current], c = { who: 'You', rep: !!d.mine, ago: 'now', t: esc(v) };
     if (d.replyTo != null) { d.cms[d.replyTo].replies.push(c); d.openThreads = d.openThreads || {}; d.openThreads[d.replyTo] = true; d.replyTo = null; }
     else { c.replies = []; d.cms.push(c); }
     d.drafts = d.drafts || {}; d.drafts.main = '';
@@ -1944,32 +1874,11 @@ button { font: inherit; color: inherit; }
   document.addEventListener('keydown', function (e) {
     // Enter posts, Shift and Enter makes a new line, as on Instagram on a computer.
     if (e.key === 'Enter' && !e.shiftKey && e.target.closest && e.target.closest('[data-cm-form]')) { e.preventDefault(); e.target.closest('form').requestSubmit(); }
-    if (e.key === 'Escape') { shareModal.hidden = true; closeCm(); }
+    if (e.key === 'Escape') shareModal.hidden = true;
   });
-  // The comments sheet on the phone: drag the handle up for the full screen, down to close, as in the Instagram app.
-  var cmDlg = cmModal.querySelector('.cm-dlg'), cmGrab = cmModal.querySelector('[data-cm-drag]'), cmY = null, cmH = 0;
-  function closeCm() { cmModal.hidden = true; cmDlg.classList.remove('full'); }
-  function endCmDrag(dy) {
-    cmY = null; cmDlg.classList.remove('dragging'); cmDlg.style.transform = ''; cmDlg.style.height = '';
-    if (dy > 90) closeCm(); else if (dy < -40) cmDlg.classList.add('full'); else if (dy > 30) cmDlg.classList.remove('full');
-  }
-  cmGrab.addEventListener('pointerdown', function (e) {
-    if (e.target.closest('button')) return;
-    cmY = e.clientY; cmH = cmDlg.offsetHeight; cmDlg.classList.add('dragging');
-    if (cmGrab.setPointerCapture && e.pointerId != null) try { cmGrab.setPointerCapture(e.pointerId); } catch (err) {}
-  });
-  cmGrab.addEventListener('pointermove', function (e) {
-    if (cmY == null) return;
-    var dy = e.clientY - cmY;
-    if (dy > 0) { cmDlg.style.height = cmH + 'px'; cmDlg.style.transform = 'translateY(' + dy + 'px)'; }
-    else { cmDlg.style.transform = ''; cmDlg.style.height = Math.min(cmH - dy, cmModal.clientHeight) + 'px'; }
-  });
-  cmGrab.addEventListener('pointerup', function (e) { if (cmY != null) endCmDrag(e.clientY - cmY); });
-  cmGrab.addEventListener('pointercancel', function () { if (cmY != null) endCmDrag(0); });
   window.__mock.openReport = openReport;
   if (params.get('open') === 'rep') openReport(Number(params.get('i') || 0));
   if (params.get('share')) openShare();
-  if (params.get('cm') && isPhone) { cmModal.hidden = false; renderReport(); }
   if (params.get('screen')) go(params.get('screen'));
   if (params.get('tab')) { var tb = document.querySelector('[data-tab="' + params.get('tab') + '"]'); if (tb) tb.click(); }
   if (params.get('pop')) { var pb = Array.prototype.find.call(document.querySelectorAll('[data-pop="' + params.get('pop') + '"]'), function (b) { return b.offsetParent; }); if (pb) openPop(params.get('pop'), pb); }
