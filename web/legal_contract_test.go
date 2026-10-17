@@ -310,6 +310,7 @@ func TestLegalPagesStructure(t *testing.T) {
 	for _, r := range rules {
 		if strings.HasPrefix(r.selectorHead, ".legal-text a.legal-numbers__call") {
 			call = r.declBody
+			break // the first rule is the base look; a later one in the 560px block only places it
 		}
 	}
 	if call == "" {
