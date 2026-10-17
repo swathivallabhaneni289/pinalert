@@ -117,7 +117,17 @@ back to the owner first.
   then "is available" with Save turned on, "is taken. Try another.", "Use 3 to 20 letters, numbers, dots or underscores.",
   or "That name is kept for official use." for names like police, ndma, imd, govt, official or pinalert, so nobody can pose
   as an authority. A saved username shows on your comments at once. It passes the same screening as comments (Phase 8
-  scope note 4). Still open: whether sign up asks for the username or the name (asked 2026-10-17).
+  scope note 4).
+- **Sign up asks for all three, and they are required** (owner, 2026-10-17: "i think we should make the username, name
+  and address set up mandatory", "and that should be where their trying to sign up to use this website"). Step 4 of the
+  first-time flow, About you, which runs right after the first sign in (03.4 D-27), now asks for the Username (with the
+  same live check), the Name and the Home area. There is no Skip: Continue stays off until the username is available and
+  the name and home area are filled in. "Address" is kept as the home area, a town or area and never a street, as the
+  app already promises; it is filled in from the location step. Reading stays open without an account; the requirement
+  is only for signing up. People who signed up before this ships are asked to fill in the missing ones once, at their
+  next sign in. Building it: the username needs Phase 8 (unique storage and the check); 03.4 D-27 and D-24b had name
+  and home area optional, so the 3.4 session was told on 2026-10-17 and decides whether name and home area turn
+  required now or with Phase 8.
 
 ## Open questions for the owner's look
 
@@ -146,3 +156,4 @@ Eighth round, pins and lock (2026-10-17): on the laptop a pin tap opens its repo
 Ninth round, laptop box (2026-10-17, asked by the owner after the lock): the laptop box is now the same rounded field as the phone, fully visible at the panel bottom (897 of 900px) with Replying to above it; the mockup hint is short again so the top strip stays on one line; light and dark checked.
 Tenth round, your own name (2026-10-17, asked by the owner after the lock): your comment on your own report reads "priya.vja Water is still rising..." with no Reporter tag on the laptop and the phone; a reply to your own comment adds no @name and posts as priya.vja; suresh.patamata still shows Reporter to you on the shelter report.
 Eleventh round, username editor (2026-10-17): kiran_77 shows taken, police.help shows kept for official use, ab shows the rule, Priya.Floods turns into priya.floods and shows available with Save on; saving changes the Settings row and your comment to priya.floods; checked on the laptop and the phone.
+Twelfth round, sign up (2026-10-17): step 4 with nothing typed keeps Continue off and shows the username rule; ravi.k shows taken; ravi.patamata available but no name keeps Continue off; all three filled turns it on; clearing the home area turns it off again on the laptop; no Skip button on the phone or the laptop.
