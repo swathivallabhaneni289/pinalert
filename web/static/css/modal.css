@@ -37,7 +37,10 @@
   font-size: var(--font-size-body);
   color: var(--color-text);
   background: var(--color-bg);
-  border: 1px solid var(--color-border);
+  /* A text field's edge is the muted text colour: the hairline colour is 1.27
+     to 1 on the page and WCAG 1.4.11 wants 3 to 1 where a person types
+     (03.4-29 finding 10). */
+  border: 1px solid var(--color-text-muted);
   border-radius: 6px;
 }
 
@@ -260,7 +263,7 @@
   line-height: var(--line-height-body);
   color: var(--color-text);
   background: var(--color-bg);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-text-muted);
   border-radius: 6px;
   padding: var(--space-sm);
 }
@@ -303,7 +306,7 @@
   font-size: var(--font-size-body);
   color: var(--color-text);
   background: var(--color-bg);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-text-muted);
   border-radius: 6px;
   padding: var(--space-sm);
 }
@@ -415,6 +418,14 @@ html[data-modal-open] {
 
 .post-window__panel .post-window__title {
   margin: 0;
+}
+
+/* The title takes the first focus when the window opens (tabindex -1), so a
+   screen reader starts at its name and no tile looks chosen. A heading that
+   is only a programmatic focus target draws no ring (03.4-29 findings 3 and
+   4); the controls keep theirs. */
+.post-window__panel .post-window__title:focus {
+  outline: none;
 }
 
 .post-window__line {
@@ -587,7 +598,7 @@ html[data-modal-open] {
 }
 
 /* ---- The window's form groups (Phase 3.4, UI-SPEC Surface 5d) ----
- * What is it? (eight tiles), How serious? (three boxes), the shelter fieldset
+ * What is it? (nine tiles), How serious? (three boxes), the shelter fieldset
  * as built, Describe it. The groups are plain blocks with a legend or label of
  * Body 16/600 and 8px below it; the gap between groups is the 24px of
  * .post-window__form. */
@@ -609,7 +620,8 @@ html[data-modal-open] {
   color: var(--color-text);
 }
 
-/* Eight tiles in four columns. A tile is a radio button on --color-bg with a
+/* Nine tiles in three even columns (03.4-29: Earthquake is the ninth, so three
+ * rows of three leave no tile alone on a row). A tile is a radio button on --color-bg with a
  * 24px glyph in the muted colour and a label of 14px; the label wraps at word
  * boundaries inside the tile and never breaks a word. The chosen tile is the
  * soft grey fill every other chosen card uses, with the label at 600, the glyph
@@ -618,7 +630,7 @@ html[data-modal-open] {
  * view does not carry .post-window, so it keeps the dark chosen tile of
  * main.css. */
 .post-window #category-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-sm);
 }
 
@@ -703,6 +715,33 @@ html[data-modal-open] {
 
 .post-window .severity-box--critical[aria-checked="true"] {
   background: var(--color-severity-critical-bg);
+}
+
+/* A small check at the bottom right of the chosen box, so the choice does not
+ * rest on a soft tint alone (03.4-29, owner answer 14). It is drawn from
+ * check.svg as a mask in the text colour, decorative with an empty alternative
+ * text: the radio state already carries the choice for a screen reader. The box
+ * border is unchanged, so there is no dark border (D-04). */
+.post-window .severity-box {
+  position: relative;
+}
+
+.post-window .severity-box[aria-checked="true"]::after {
+  content: "";
+  content: "" / "";
+  position: absolute;
+  right: var(--space-sm);
+  bottom: var(--space-sm);
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-image: url("/static/icons/check.svg"); mask-image: url("/static/icons/check.svg");
 }
 
 /* Describe it: four rows, 16px, 8px by 12px inside, the line under it in the
@@ -847,5 +886,13 @@ html[data-modal-open] {
 
   .post-window .happening-pick[aria-checked="true"] {
     border-color: Highlight;
+  }
+
+  /* The check is a mask painted with a background colour, which a forced
+     colours theme replaces with Canvas, so it would vanish. It opts out of
+     the adjustment and takes the button text colour. */
+  .post-window .severity-box[aria-checked="true"]::after {
+    forced-color-adjust: none;
+    background-color: ButtonText;
   }
 }

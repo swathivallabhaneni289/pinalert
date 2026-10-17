@@ -179,10 +179,13 @@ func TestCompactRowLiftScopedToList(t *testing.T) {
 		}
 	}
 
+	// Amended 2026-10-17 by Phase 3.4 plan 29 (visual audit finding 14): the
+	// title clamps at three lines, not two, because two cut every title at 200
+	// percent text.
 	title := p16Rule(t, feed, "", "#report-list .report-row .report-row__title")
 	p16MustDecl(t, "feed.css row title", title, map[string]string{
-		"-webkit-line-clamp": "2",
-		"line-clamp":         "2",
+		"-webkit-line-clamp": "3",
+		"line-clamp":         "3",
 		"overflow-wrap":      "anywhere",
 		"overflow":           "hidden",
 	})
@@ -404,12 +407,13 @@ func TestCompactRowFitsPhoneWidths(t *testing.T) {
 		}
 	}
 
-	// 3. The body wraps, the title wraps long words and clamps at two lines.
+	// 3. The body wraps, the title wraps long words and clamps at three lines
+	// (amended 2026-10-17 by plan 29, finding 14; it was two).
 	body := p16Rule(t, feed, "", "#report-list .report-row .report-row__body")
 	p16MustDecl(t, "feed.css row body (at "+widths+" px)", body, map[string]string{"display": "flex", "flex-wrap": "wrap"})
 	title := p16Rule(t, feed, "", "#report-list .report-row .report-row__title")
 	p16MustDecl(t, "feed.css row title (at "+widths+" px)", title, map[string]string{
-		"overflow-wrap": "anywhere", "-webkit-line-clamp": "2",
+		"overflow-wrap": "anywhere", "-webkit-line-clamp": "3",
 	})
 
 	// 4. The trust line is plain text that may wrap between whole facts.

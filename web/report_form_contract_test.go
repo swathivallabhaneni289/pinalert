@@ -279,7 +279,7 @@ func TestModalMapRulesMoved(t *testing.T) {
 			"margin":      "0",
 			"font-size":   "var(--font-size-label)",
 			"line-height": "var(--line-height-label)",
-			"color":       "var(--color-text-muted)",
+			"color":       "var(--color-text)", // plan 29 finding 7: muted is 4.34 to 1 on the grey surface
 		},
 		"#location-notice": {
 			"margin":        "0",
@@ -288,7 +288,7 @@ func TestModalMapRulesMoved(t *testing.T) {
 			"background":    "var(--color-surface)",
 			"font-size":     "var(--font-size-label)",
 			"line-height":   "var(--line-height-label)",
-			"color":         "var(--color-text-muted)",
+			"color":         "var(--color-text)", // plan 29 finding 7
 		},
 	}
 	if len(mapRules) != len(want) {

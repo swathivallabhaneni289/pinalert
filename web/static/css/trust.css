@@ -1507,6 +1507,15 @@
   margin-top: 0;
 }
 
+/* The Flag this report button is the last control of the block. Its own
+   margin (chrome.css) is 4px, which put a destructive style button 4px under
+   Mark resolved; in the opened report it takes one medium space (03.4-29
+   finding 6). The Low data rows keep the chrome.css margin. Three classes
+   outrank chrome.css's two. */
+.leaflet-container .popup-card__actions .flag-control:not([hidden]) {
+  margin-top: var(--space-md);
+}
+
 .leaflet-container .popup-card .vote-note {
   margin-top: var(--space-sm);
 }
@@ -1580,11 +1589,14 @@
 /* From 900px the tools layer (the place search and the category chips) sits
    over the top of the map, so the card scrolls inside a box that is one tools
    layer shorter. The token is set on the map pane (main.css), the same value
-   the autopan top reserve measures (map.js). It comes before the short screen
-   rule below on purpose, so a very short laptop window still takes that one. */
+   the autopan top reserve measures (map.js). The map starts below the top bar,
+   so the top bar height comes off as well (03.4-29 finding 1: at 1280x800 the
+   card was 640px in a 691px map and ran 315px above its top). It comes before
+   the short screen rule below on purpose, so a very short laptop window still
+   takes that one. */
 @media (min-width: 900px) {
   .leaflet-container .leaflet-popup-content {
-    max-height: max(120px, calc(100dvh - var(--space-md) - var(--space-md) - var(--map-tools-height) - 20px - var(--disclaimer-bar-height)));
+    max-height: max(120px, calc(100dvh - var(--space-md) - var(--space-md) - var(--map-tools-height) - 20px - var(--disclaimer-bar-height) - var(--app-topbar-height)));
   }
 }
 

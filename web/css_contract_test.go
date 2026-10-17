@@ -875,7 +875,14 @@ func TestPhase34DesignTokensDeclaredOnce(t *testing.T) {
 		// 12px joins the spacing scale for card padding and the phone bar edge.
 		"--space-12": "12px",
 		// The 12px caption is limited to the closed list in UI-SPEC Typography.
-		"--font-size-caption":   "12px",
+		// Amended 2026-10-17 by Phase 3.4 plan 29 (visual audit finding 14): the
+		// five sizes are rem, the same 12, 14, 16, 18 and 24px at the default
+		// 16px, so the browser's text size setting scales the app.
+		"--font-size-caption":   "0.75rem",
+		"--font-size-label":     "0.875rem",
+		"--font-size-body":      "1rem",
+		"--font-size-heading":   "1.125rem",
+		"--font-size-display":   "1.5rem",
 		"--line-height-caption": "1.3",
 		// The alert fill: bell badge, N new tag, unread dot, Call 112 buttons.
 		"--color-alert-fill":    "#C0392B",

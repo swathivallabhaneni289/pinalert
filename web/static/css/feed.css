@@ -446,7 +446,7 @@
   position: absolute;
   top: 0;
   right: var(--space-md);
-  left: calc(var(--space-2xl) + var(--space-sm));
+  left: calc(var(--space-2xl) + var(--space-md));
   height: var(--map-tools-height);
   pointer-events: none;
 }
@@ -570,6 +570,7 @@
   z-index: 1000;
   display: flex;
   gap: var(--space-sm);
+  padding-right: var(--space-md);
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
@@ -850,15 +851,16 @@
   overflow-wrap: anywhere;
 }
 
-/* The title takes its own line and clamps at two lines at every width. The
+/* The title takes its own line and clamps at three lines at every width (it
+   was two, which cut every title at 200 percent text: 03.4-29 finding 14). The
    opened report shows the whole text. */
 #report-list .report-row .report-row__title {
   order: 5;
   flex: 0 0 100%;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
   overflow: hidden;
   overflow-wrap: anywhere;
   min-width: 0;
@@ -886,8 +888,13 @@
   color: inherit;
 }
 
+/* The reporter words take their own line on every row. A confirmed row
+   already wrapped them there; an unconfirmed row put them on the trust line
+   with no separator, so "0 disputed New reporter" read as one phrase
+   (03.4-29 finding 13). */
 #report-list .report-row .trust-reporter:not([hidden]) {
   order: 7;
+  flex: 0 0 100%;
 }
 
 /* Visually hidden text, the last thing a screen reader hears in the row. */
@@ -897,19 +904,29 @@
 
 /* The dot between the parts of a line. The alternative text is empty, so a
    screen reader does not read it. The first declaration is the fallback for an
-   engine that does not know the alternative form. */
-#report-list .report-row .visibility-tag:not([hidden])::before,
-#report-list .report-row .report-row__meta::before,
-#report-list .report-row .report-row__away:not([hidden])::before,
-#report-list .report-row .report-row__far:not([hidden])::before {
+   engine that does not know the alternative form.
+
+   The dot ends the part before it, never starts the part after it
+   (03.4-29 finding 5). A dot drawn before a part travelled with that part when
+   the line wrapped and started the next line, so the dot is drawn after every
+   part that has another visible part behind it on the same line, and the last
+   part has none. The :has() tests look at the later siblings that are not
+   hidden. */
+#report-list .report-row .severity-label:not([hidden])::after,
+#report-list .report-row .visibility-tag:not([hidden])::after,
+#report-list .report-row .report-row__meta:has(~ .report-row__meta:not([hidden]))::after,
+#report-list .report-row .report-row__meta:has(~ .report-row__away:not([hidden]))::after,
+#report-list .report-row .report-row__meta:has(~ .report-row__far:not([hidden]))::after,
+#report-list .report-row .report-row__away:not([hidden]):has(~ .report-row__far:not([hidden]))::after,
+#report-list .report-row .report-row__trustline-count:not(.report-row__trustline-count--second)::after,
+#report-list .report-row .report-row__trustline-count--second:has(~ .report-row__trustline-word:not([hidden]))::after {
   content: "\00b7";
   content: "\00b7" / "";
-  margin-right: var(--space-xs);
+  margin-left: var(--space-sm);
 }
 
-#report-list .report-row .report-row__trustline-count--second::before,
-#report-list .report-row .report-row__trustline-word:not([hidden])::before {
-  content: "\00b7";
-  content: "\00b7" / "";
-  margin-right: var(--space-sm);
+/* The severity label already puts its own 4px gap before an added dot, so the
+   dot's margin is the space step less that gap (phone.css sets it to 0). */
+#report-list .report-row .severity-label:not([hidden])::after {
+  margin-left: calc(var(--space-sm) - var(--space-xs));
 }

@@ -99,8 +99,11 @@
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
   font-weight: var(--font-weight-regular);
-  color: var(--color-text-muted);
-  margin: 0 0 var(--space-lg) 0;
+  /* Normal text colour: muted grey on this --color-surface card is 4.34 to 1
+     in the light theme, under 4.5 (03.4-29 finding 7). One 16px step between
+     the heading, the lead and the form (finding 15). */
+  color: var(--color-text);
+  margin: 0 0 var(--space-md) 0;
 }
 
 .login-card label {
@@ -117,7 +120,7 @@
   align-items: center;
   gap: var(--space-sm);
   min-height: var(--touch-target-min);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-text-muted);
   border-radius: 6px;
   padding: 0 var(--space-sm);
   background: var(--color-bg);
@@ -206,6 +209,14 @@
   margin: 0 0 var(--space-md) 0;
 }
 
+/* An empty error line takes no room, so the field and the button keep the one
+   16px step instead of 54px (03.4-29 finding 15). The element stays in the
+   page, so its alert role still announces a message when one is written. */
+.auth-error:empty {
+  min-height: 0;
+  margin: 0;
+}
+
 #request-link,
 #check-inbox .btn {
   width: 100%;
@@ -225,9 +236,13 @@
   z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: var(--space-md);
   width: 100%;
   max-width: 420px;
+  /* Opaque behind the cards, so the background drawing never shows in the
+     gap between them (03.4-29 finding 15). */
+  background: var(--color-bg);
+  border-radius: 8px;
 }
 
 .login-ways {

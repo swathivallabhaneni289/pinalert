@@ -33,11 +33,14 @@
   }
 }
 
+/* Both lines sit on the grey --color-surface of the map column in the Post a
+   report window, where muted grey is 4.34 to 1 in the default theme. They take
+   the normal text colour (03.4-29 finding 7). */
 #coord-readout {
   margin: 0;
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
-  color: var(--color-text-muted);
+  color: var(--color-text);
 }
 
 #location-notice {
@@ -47,5 +50,5 @@
   background: var(--color-surface);
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
-  color: var(--color-text-muted);
+  color: var(--color-text);
 }

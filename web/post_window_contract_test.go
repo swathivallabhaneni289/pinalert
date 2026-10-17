@@ -2,7 +2,8 @@ package web
 
 // Phase 3.4 plan 09 contract tests (LAYOUT-05, D-02, D-23, D-24, D-24a, D-29):
 // Post a report is a full screen sheet on the phone and a wide two pane window
-// on the laptop, closed with the X only, with eight category tiles from one
+// on the laptop, closed with the X only, with nine category tiles (eight until
+// plan 03.4-29 added Earthquake) from one
 // constant, three severity boxes in their own soft colours and one button in
 // the footer. The Low data view keeps the form it was built with.
 //
@@ -48,7 +49,7 @@ func TestPostWindowClosesWithXOnly(t *testing.T) {
 		t.Errorf("the X must draw x.svg through app-icon--x")
 	}
 	head := block[strings.Index(block, "<header"):strings.Index(block, "</header>")]
-	if !strings.Contains(head, `id="close-report"`) || !strings.Contains(head, `<h2 id="modal-title" class="post-window__title">Post a report</h2>`) ||
+	if !strings.Contains(head, `id="close-report"`) || !strings.Contains(head, `<h2 id="modal-title" class="post-window__title" tabindex="-1">Post a report</h2>`) ||
 		!strings.Contains(head, "Say what is happening and where.") {
 		t.Errorf("the header must hold the title Post a report, the line under it and the X")
 	}
@@ -177,32 +178,42 @@ func windowBranch(t *testing.T) string {
 	return window
 }
 
-// TestPostWindowEightTiles (D-24, D-24a): What is it? shows eight tiles from one
-// constant, in order, with no Rescue needed and no Earthquake tile.
-func TestPostWindowEightTiles(t *testing.T) {
+// TestPostWindowNineTiles (D-24, D-24a, amended 2026-10-17 by plan 03.4-29):
+// What is it? shows nine tiles from one constant, in order, Earthquake second
+// as the Low data view lists it, with no Rescue needed tile. It was eight tiles
+// without Earthquake until the owner answered yes on 2026-10-17.
+func TestPostWindowNineTiles(t *testing.T) {
 	categories, words := windowTilesFromScript(t)
-	wantCategories := []string{"flood", "traffic", "shelter_open", "power_outage", "road_blocked", "fire", "storm_cyclone", "other"}
-	wantWords := []string{"Flood", "Traffic", "Shelter open", "Power out", "Road blocked", "Fire", "Storm", "Other"}
+	wantCategories := []string{"flood", "earthquake", "traffic", "shelter_open", "power_outage", "road_blocked", "fire", "storm_cyclone", "other"}
+	wantWords := []string{"Flood", "Earthquake", "Traffic", "Shelter open", "Power out", "Road blocked", "Fire", "Storm", "Other"}
 	if !reflect.DeepEqual(categories, wantCategories) {
 		t.Errorf("WINDOW_TILES categories = %v, want %v", categories, wantCategories)
 	}
 	if !reflect.DeepEqual(words, wantWords) {
 		t.Errorf("WINDOW_TILES words = %v, want %v", words, wantWords)
 	}
-	for _, retired := range []string{"rescue_needed", "earthquake"} {
+	for _, retired := range []string{"rescue_needed"} {
 		for _, c := range categories {
 			if c == retired {
 				t.Errorf("WINDOW_TILES holds %s, which is not a tile", retired)
 			}
 		}
 	}
+	// Every postable category the server accepts has a tile in the window.
+	posted := p410ReadStatic(t, "static/js/app.js")
+	for _, c := range categories {
+		if !strings.Contains(posted, "'"+c+"'") {
+			t.Errorf("app.js CATEGORIES does not list the tile category %s", c)
+		}
+	}
 
 	form := p410CodeText(p410ReadStatic(t, "static/js/report-form.js"))
-	// One constant: the window grid is built from it and nothing else, four
-	// columns wide, and Up and Down move by a row of four.
+	// One constant: the window grid is built from it and nothing else, three
+	// columns wide (nine tiles, three even rows), and Up and Down move by a row
+	// of three.
 	for _, want := range []string{
 		"WINDOW_TILES.forEach(function (entry, index) {",
-		"var WINDOW_GRID_COLUMNS = 4;",
+		"var WINDOW_GRID_COLUMNS = 3;",
 		"var LOW_GRID_COLUMNS = 3;",
 		"windowMode = !!severityGroup;",
 	} {
