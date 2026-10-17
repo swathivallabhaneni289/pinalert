@@ -54,7 +54,7 @@
   margin: 0;
 }
 
-/* Tags in this view are 4px cornered boxes, not pills (03.4-29 finding 10). */
+/* Tags in this view are 4px cornered boxes, not pills (03.4-29 finding 12). */
 .low-list .severity-label:not([hidden]),
 .low-list .visibility-tag:not([hidden]) {
   border-radius: 4px;

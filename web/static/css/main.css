@@ -298,7 +298,7 @@ body {
 
 /* Placeholder text is real guidance ("For example: Ravi Kumar"), so it takes
    the muted text colour at full opacity: 4.8 to 1 on --color-bg in the light
-   theme. The browser default grey is 2.35 to 1 (03.4-29 finding 12). A field
+   theme. The browser default grey is 2.35 to 1 (03.4-29 finding 11). A field
    on a different surface sets its own colour. */
 ::placeholder {
   color: var(--color-text-muted);

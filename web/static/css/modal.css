@@ -39,7 +39,7 @@
   background: var(--color-bg);
   /* A text field's edge is the muted text colour: the hairline colour is 1.27
      to 1 on the page and WCAG 1.4.11 wants 3 to 1 where a person types
-     (03.4-29 finding 11). */
+     (03.4-29 finding 10). */
   border: 1px solid var(--color-text-muted);
   border-radius: 6px;
 }

@@ -100,7 +100,7 @@ func TestBrowserFindingF2PhoneCardIsDenser(t *testing.T) {
 	const feed = "static/css/feed.css"
 	m := browserFindingsPhoneMedia
 
-	// Amended 2026-10-17 by Phase 3.4 plan 29 (visual audit finding 13, 03.4-UI-REVIEW.md):
+	// Amended 2026-10-17 by Phase 3.4 plan 29 (visual audit finding 9, 03.4-UI-REVIEW.md):
 	// the card takes the declared 12px above and below (UI-SPEC Spacing, card padding),
 	// 8px made the list read as packed. The white card keeps its 1px border inside the
 	// same box, so both cards share one text position.

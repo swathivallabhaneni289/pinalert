@@ -99,7 +99,7 @@
 .place-row__value {
   /* Never shrinks below its own text, up to half the row: "Not set" stays on
      one line, while a long place name still wraps at the 50 percent cap
-     (03.4-29 finding 9; with anywhere wrapping the shrinkable box collapsed
+     (03.4-29 finding 8; with anywhere wrapping the shrinkable box collapsed
      to one word). */
   flex: 0 0 auto;
   max-width: 50%;

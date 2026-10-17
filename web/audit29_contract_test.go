@@ -122,7 +122,7 @@ func TestAudit29ReporterLineHasItsOwnLine(t *testing.T) {
 	}
 }
 
-// TestAudit29TextFieldsAndPlaceholdersReadAtThreeToOne (findings 11 and 12):
+// TestAudit29TextFieldsAndPlaceholdersReadAtThreeToOne (findings 10 and 11):
 // the edge of every text field of these pages reads at 3 to 1 or more, and the
 // placeholder takes the muted text colour at full opacity.
 func TestAudit29TextFieldsAndPlaceholdersReadAtThreeToOne(t *testing.T) {
@@ -170,14 +170,14 @@ func TestAudit29SignInHasOneRhythm(t *testing.T) {
 		map[string]string{"min-height": "0", "margin": "0"})
 }
 
-// TestAudit29SettingsValueDoesNotShrink (finding 9): "Not set" never breaks
+// TestAudit29SettingsValueDoesNotShrink (finding 8): "Not set" never breaks
 // onto two lines.
 func TestAudit29SettingsValueDoesNotShrink(t *testing.T) {
 	r := p31mRule(t, "static/css/places.css", "", ".place-row__value")
 	p16MustDecl(t, ".place-row__value", r, map[string]string{"flex": "0 0 auto", "max-width": "50%"})
 }
 
-// TestAudit29LowDataTagsAndButtons (findings 10 and 16): the tags are 4px
+// TestAudit29LowDataTagsAndButtons (findings 12 and 16): the tags are 4px
 // cornered and the two buttons sit 8px apart.
 func TestAudit29LowDataTagsAndButtons(t *testing.T) {
 	for _, head := range []string{".low-list .severity-label:not([hidden])", ".low-list .visibility-tag:not([hidden])"} {
