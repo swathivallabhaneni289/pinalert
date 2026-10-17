@@ -27,7 +27,7 @@
 
     <aside class="welcome__side">
       <p class="welcome__wordmark">Pinalert</p>
-      <p class="welcome__tagline">What people near you are seeing, checked by people near you.</p>
+      <p class="welcome__tagline">Live emergency updates from people nearby, confirmed by others who are there.</p>
       <ol class="welcome__steps" aria-label="Steps">
         {{range .Steps}}<li class="welcome__steps-item" data-step="{{.Number}}" data-state="{{if lt .Number $.StartStep}}done{{else if eq .Number $.StartStep}}current{{else}}waiting{{end}}"{{if eq .Number $.StartStep}} aria-current="step"{{end}}><span class="welcome__dot"><span class="welcome__dot-num">{{.Number}}</span><span class="app-icon app-icon--check welcome__dot-tick" aria-hidden="true"></span></span><span class="welcome__steps-name">{{.Name}}</span></li>
         {{end}}

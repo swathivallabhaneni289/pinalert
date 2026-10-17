@@ -86,7 +86,7 @@ func TestWelcomeFourStepsInOrder(t *testing.T) {
 		"Pinalert cannot send help.",
 		"It tells you a situation is happening near you. If someone is in danger, call {{.Chrome.Numbers.Primary}} first.",
 		`class="welcome__card welcome__card--warning"`,
-		"What people near you are seeing, checked by people near you.")
+		"Live emergency updates from people nearby, confirmed by others who are there.")
 	// Amended 2026-10-17 by Phase 3.4 plan 28: step 3 shows three cards of its
 	// own (the viewing session), so the page holds six in all.
 	w10Count(t, "welcome.html.tmpl", page, `<li class="welcome__card`, 6)
