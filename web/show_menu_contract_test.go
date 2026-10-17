@@ -55,7 +55,10 @@ func TestShowMenuRadioSemantics(t *testing.T) {
 		"key === 'ArrowDown'", "key === 'ArrowUp'", "key === 'Home'", "key === 'End'", "key === 'Escape'",
 		"key === 'Enter'", "'[role=\"menuitemradio\"]'", "setAttribute('aria-checked'",
 		"setAttribute('aria-expanded', 'true')", "setAttribute('aria-expanded', 'false')",
-		"document.addEventListener('click', onDocumentClick)", "document.removeEventListener('click', onDocumentClick)",
+		// Amended 2026-10-17 by Phase 3.4 plan 25 (code review part 2 WR-04): the outside click
+		// listener is added and removed in the capture phase (the third argument true), so the
+		// person menu's trigger, which stops its click from bubbling, still closes this menu.
+		"document.addEventListener('click', onDocumentClick, true)", "document.removeEventListener('click', onDocumentClick, true)",
 		"window.PinalertShowMenu = (function () {")
 	// aria-expanded is written in open and close only, so the announced state
 	// cannot disagree with the visible one.
