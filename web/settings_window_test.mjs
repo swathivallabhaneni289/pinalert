@@ -956,3 +956,72 @@ test('a pick ends the typing pause and the picked text is not searched again', a
   assert.equal(page.requests.length, 1, 'the pause that was running sent nothing');
 });
 
+
+// ---- Plan 32: the typed row of the Home area -------------------------------
+
+const TYPED_ROW = { name: 'Gayathri Nagar, Vijayawada', display_name: 'Vijayawada', town: 'Vijayawada', typed: true, lat: 16.5115306, lon: 80.6160469 };
+const OWNER_TEXT = 'Gayathri Nagar, Vijayawada, Andhra Pradesh, 520008';
+
+test('the typed row shows first as Use "name" with the town on the second line', async () => {
+  const page = openHome();
+  typeHome(page, OWNER_TEXT);
+  page.advance(400);
+  assert.equal(page.requests[0].url, AREA_URL + encodeURIComponent(OWNER_TEXT), 'the browser sends the text as typed; the server cleans it');
+  answer(page.requests[0], 200, { results: [TYPED_ROW, ...AREAS] });
+  await flush();
+  const list = homeList(page);
+  assert.equal(list.hidden, false);
+  assert.equal(list.children.length, 3);
+  const first = list.children[0].children[0];
+  assert.equal(first.getAttribute('role'), 'option');
+  assert.equal(first.children[0].textContent, 'Use "Gayathri Nagar, Vijayawada"');
+  assert.equal(first.children[1].textContent, 'Vijayawada', 'the second line names the town it was placed in');
+  assert.equal(list.children[1].children[0].children[0].textContent, 'Indiranagar', 'other rows are unchanged');
+});
+
+test('picking the typed row puts the cleaned name in the field and Save sends it with the row position', async () => {
+  const page = openHome();
+  typeHome(page, OWNER_TEXT);
+  page.advance(400);
+  answer(page.requests[0], 200, { results: [TYPED_ROW, ...AREAS] });
+  await flush();
+  pick(page, 0);
+  assert.equal(byId(page, 'settings-home-input').value, 'Gayathri Nagar, Vijayawada', 'the field takes the cleaned name, not the Use wording');
+  assert.equal(byId(page, 'settings-home-save').disabled, false);
+  fire(byId(page, 'settings-home-save'), 'click');
+  assert.equal(page.requests[1].url, '/api/me/profile');
+  assert.deepEqual(JSON.parse(page.requests[1].init.body), { home_area: { name: 'Gayathri Nagar, Vijayawada', lat: 16.5115306, lon: 80.6160469 } });
+});
+
+test('the typed row counts as one of the five rows shown', async () => {
+  const page = openHome();
+  typeHome(page, OWNER_TEXT);
+  page.advance(400);
+  const many = [];
+  for (let i = 0; i < 5; i++) { many.push({ name: 'Area ' + i, display_name: 'Area ' + i + ', Vijayawada', lat: 16.5 + i / 100, lon: 80.6 }); }
+  answer(page.requests[0], 200, { results: [TYPED_ROW, ...many] });
+  await flush();
+  assert.equal(homeList(page).children.length, 5);
+  assert.equal(homeList(page).children[0].children[0].children[0].textContent, 'Use "Gayathri Nagar, Vijayawada"');
+});
+
+test('only a row marked typed gets the Use wording, and the typed text reaches the page as text', async () => {
+  const page = openHome();
+  typeHome(page, 'Indira');
+  page.advance(400);
+  const hostile = { name: 'Use <b>x</b>', display_name: 'Use <b>x</b>, Pune', lat: 18.5, lon: 73.8 };
+  answer(page.requests[0], 200, { results: [hostile, { name: '<i>Typed</i>, Pune', display_name: 'Pune', town: 'Pune', typed: true, lat: 18.5, lon: 73.8 }] });
+  await flush();
+  const rows = homeList(page).children;
+  assert.equal(rows[0].children[0].children[0].textContent, 'Use <b>x</b>', 'a row not marked typed has no Use wording');
+  assert.equal(rows[1].children[0].children[0].textContent, 'Use "<i>Typed</i>, Pune"');
+});
+
+test('a typed row with no town falls back to the display name for its second line', async () => {
+  const page = openHome();
+  typeHome(page, OWNER_TEXT);
+  page.advance(400);
+  answer(page.requests[0], 200, { results: [{ name: 'Gayathri Nagar, Vijayawada', display_name: 'Vijayawada', typed: true, lat: 16.5, lon: 80.6 }] });
+  await flush();
+  assert.equal(homeList(page).children[0].children[0].children[1].textContent, 'Vijayawada');
+});

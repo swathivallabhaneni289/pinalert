@@ -129,6 +129,10 @@ func placeErrorClass(err error) string {
 // @Description request that takes over 2 seconds is sent once more, with 2.5 seconds. When Photon
 // @Description fails, or is too slow both times, Nominatim alone runs those tries, in a box around
 // @Description the map centre first. At most four upstream requests are sent per search.
+// @Description With kind=area the text is sent without a trailing PIN code, state name or country, and when no area in the
+// @Description town the person typed (the second comma separated part) closely matches the first part, the answer starts with
+// @Description one extra row marked typed true, the typed text placed in that town; its lookups count inside the same cap of
+// @Description four upstream requests. A first part with a digit or a street word never gets that row.
 // @Description A 429 or 503 never affects report submission, which has its own search.
 // @Tags geocode
 // @Produce json
