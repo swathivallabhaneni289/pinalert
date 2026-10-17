@@ -123,8 +123,11 @@ back to the owner first.
   first-time flow, About you, which runs right after the first sign in (03.4 D-27), now asks for the Username (with the
   same live check), the Name and the Home area. There is no Skip: Continue stays off until the username is available and
   the name and home area are filled in. "Address" is kept as the home area, a town or area and never a street, as the
-  app already promises; it is filled in from the location step. Reading stays open without an account; the requirement
-  is only for signing up. People who signed up before this ships are asked to fill in the missing ones once, at their
+  app already promises; it is filled in from the location step. **Correction (2026-10-17):** I first wrote that reading
+  stays open without an account. That was wrong: Phase 1.1 made sign in required to view anything (internal/api/router.go:
+  `GET /` and `GET /api/reports` sit behind requireVerifiedAccount and requireOnboarded; only the Phase 5 Demo will be
+  reachable without it), so a required step 4 means everyone fills in all three before seeing a single report. The owner
+  was asked on 2026-10-17 whether the requirement still stands. People who signed up before this ships are asked to fill in the missing ones once, at their
   next sign in. Building it: **all of it ships with Phase 8**, decided with the 3.4 session on 2026-10-17. Phase 3.4
   stays as built (step 4 keeps Skip; name and home area optional and stored, D-24b), and Phase 8 flips step 4 to
   required for all three fields at once, adds the username with its check, and asks earlier accounts to fill in the
