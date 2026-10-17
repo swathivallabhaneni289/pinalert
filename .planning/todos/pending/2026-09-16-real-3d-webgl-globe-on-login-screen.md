@@ -56,4 +56,4 @@ first seconds and 378 KB for a full turn on a laptop, 746 KB at most (all 85 til
 first visit is about 390 to 540 KB. The 346 KB above was the map colours look. The sketch README (Download weight, and
 For the build item 21) has the details and a server side caching option to check against NASA's terms.
 
-Placement picked 2026-10-17: A, the globe behind the card ("i like A"). Still open: which phase builds it.
+Placement picked 2026-10-17: A, the globe behind the card ("i like A"). Built in Phase 5 (owner, 2026-10-17: "add that task to phase 5"), ROADMAP Phase 5 success criterion 5.

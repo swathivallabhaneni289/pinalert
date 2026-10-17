@@ -601,6 +601,7 @@ Plans:
   2. Official items carry a visibly distinct authority badge, so they're never confused with crowd reports or demo-mode reports, and each shows its issuer, when it was issued and when it expires. Expired alerts disappear.
   3. A banner appears at the top of the list only when a Severe or Extreme official alert covers the reader's area, and the app shows when each official feed was last checked and says plainly when one is unavailable, so a stale alert never looks current.
   4. A first-time visitor sees a seeded past-event timeline populating the feed and map immediately, and can press "simulate a report" to try the confirm/dispute flow themselves.
+  5. The sign in page shows a real 3D Earth (NASA satellite pictures) turning slowly behind the sign in card, in place of today's flat spinning picture. The form works before the globe arrives and never moves because of it, the globe stands still under reduce motion, and Low data view or a device that cannot draw it downloads nothing for it and shows no globe.
 
 **Scope notes** (added 2026-10-03 after a feasibility check, starting points for discuss-phase):
 
@@ -617,6 +618,11 @@ Plans:
   - Severe or Extreme official alerts (NDMA SACHET, IMD, CWC) covering the person's home area buzz the phone, on by default with a switch in Settings. The push plumbing comes from Phase 3.3; this phase adds the Settings row and turns the alerts on.
   - Official alerts is a main place of the app, built by Phase 3.4 and filled by this phase, in place of the Alerts tab in the list panel that scope note 4 describes.
   - The explainer video comes after the project is finished: Claude designs and renders it (60 to 90 seconds, captions, the app's look, the house rules), the owner approves it, and it goes on YouTube as unlisted, linked next to the Demo button on the login screen and in the README.
+
+**Owner decisions (2026-10-17):**
+
+  - The sign in page globe is built in this phase ("add that task to phase 5"). From the clickable mockup `.planning/sketches/009-login-globe/`: placement A, the globe behind the card ("i like A"), and the realistic Earth, NASA Blue Marble pictures from NASA GIBS ("yes i like the earth"; free, no key, a credit line, no uptime guarantee), drawn by the maplibre-gl 5.24.0 the map page already loads, one turn every 2 minutes with India in the middle at the start. It overrides the Phase 1.1 UI-SPEC's ban on WebGL and CDN libraries on the sign in page (todo `.planning/todos/pending/2026-09-16-real-3d-webgl-globe-on-login-screen.md`). The sketch README's "For the build" list (21 items: load order, Low data, failure paths, reduce motion, credits, the tests that pin today's globe, CSP, Policy wording) is the starting point for planning.
+  - Engineering notes, not the owner's words: NASA's tile server forbids browser caching, so the pictures (measured 100 to 250 KB in the first seconds, about 380 KB for a full turn on a laptop) download on every visit; whether our server may keep a copy is checked against NASA's terms at planning (sketch README item 21). Phase 8 later replaces the sign in card (note 6, Create account and Sign in with a password); the globe sits behind whichever card is there, so whichever of 5 and 8 is planned second builds on the other's `login_gate.html.tmpl`.
 
 **Plans**: TBD
 **UI hint**: yes

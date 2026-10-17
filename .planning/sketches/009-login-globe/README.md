@@ -464,7 +464,8 @@ it; the owner decides on the rest when Phase 8 is planned.
    phone is the main device. One cost of B on small phones: the globe and its credit push the card down, so on a 375 by
    548 or 320 by 568 screen the email field and Send start below the first screen (the email field at 575px and 607px;
    the credit wraps to two lines at 320) and need a scroll. On a 390 by 844 phone everything down to Send fits.
-2. **Which phase builds it?** Recommendation: **Phase 5**, which already changes the sign in screen with the Demo button
+2. **Which phase builds it?** Answered 2026-10-17: **Phase 5** ("add that task to phase 5"; ROADMAP Phase 5 success
+   criterion 5 and its 2026-10-17 owner decisions). The recommendation was Phase 5, which already changes the sign in screen with the Demo button
    and the explainer video link (`.planning/ROADMAP.md:592,616,619`). Phase 8 now changes this page too (Create account
    and Sign in, scope note 6), so whichever of 5 and 8 is planned second builds on the other's `login_gate.html.tmpl`,
    and Phase 8's mockup should show the globe as Phase 5 built it.
