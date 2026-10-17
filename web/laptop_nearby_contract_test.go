@@ -179,11 +179,12 @@ func TestLaptopNearbyShellFitsWindow(t *testing.T) {
 	// both sides; the negative margin gives those 2px back to the bar.
 	form := p31mRule(t, appBar, "", ".app-topbar > .map-search")
 	p16MustDecl(t, "search form", form, map[string]string{"flex": "0 1 260px"})
+	// Amended 2026-10-17 (visual audit): the field edge is the muted text colour, 4.8 to 1.
 	field := p31mRule(t, appBar, "", ".map-search__field")
 	p16MustDecl(t, "search field", field, map[string]string{
-		"min-height":   "var(--touch-target-min)",
-		"border":       "1px solid var(--color-border)",
-		"box-sizing":   "border-box",
+		"min-height": "var(--touch-target-min)",
+		"border":     "1px solid var(--color-text-muted)",
+		"box-sizing": "border-box",
 	})
 	p16MustDecl(t, "search field on a laptop", p31mRule(t, appBar, laptopMedia, ".map-search__field"), map[string]string{"margin-block": "-1px"})
 	// The phone field has no border, so the margin must stay out of its rules.

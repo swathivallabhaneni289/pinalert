@@ -514,9 +514,10 @@ func TestMapToolsCSS(t *testing.T) {
 	p16MustDecl(t, "top bar search form", p31mRule(t, appBar, "", ".app-topbar > .map-search"), map[string]string{
 		"position": "relative", "flex": "0 1 260px", "min-width": "0",
 	})
+	// Amended 2026-10-17 (visual audit): the field edge is the muted text colour, 4.8 to 1.
 	p16MustDecl(t, ".map-search__field", p31mRule(t, appBar, "", ".map-search__field"), map[string]string{
 		"min-height":    "var(--touch-target-min)",
-		"border":        "1px solid var(--color-border)",
+		"border":        "1px solid var(--color-text-muted)",
 		"border-radius": "8px",
 		"background":    "var(--color-bg)",
 	})
