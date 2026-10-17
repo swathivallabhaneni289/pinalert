@@ -193,7 +193,8 @@ html:has(.app-topbar) {
   align-items: center;
   box-sizing: border-box;
   min-height: var(--touch-target-min);
-  border: 1px solid var(--color-border);
+  /* A text field edge is the muted text colour, 4.8 to 1, like the other fields (visual audit). */
+  border: 1px solid var(--color-text-muted);
   border-radius: 8px;
   background: var(--color-bg);
 }
