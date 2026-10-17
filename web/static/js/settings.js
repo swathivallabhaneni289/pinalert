@@ -520,13 +520,19 @@
       option.setAttribute('role', 'option');
       option.setAttribute('aria-selected', 'false');
       option.className = 'app-window__option';
+      // typed marks the one row that is the person's own text, placed in the
+      // town they typed (plan 32). It reads Use "<name>" with the town on the
+      // second line, and picks like any other row: the name is the cleaned text
+      // to save, the point is a place in that town.
+      var typed = res.typed === true;
       var label = document.createElement('span');
-      setText(label, name);
+      setText(label, typed ? 'Use "' + name + '"' : name);
       option.appendChild(label);
-      if (typeof res.display_name === 'string' && res.display_name !== '' && res.display_name !== name) {
+      var second = typed && typeof res.town === 'string' && res.town.trim() !== '' ? res.town.trim() : res.display_name;
+      if (typeof second === 'string' && second !== '' && second !== name) {
         var sub = document.createElement('span');
         sub.className = 'app-window__option-sub';
-        setText(sub, res.display_name);
+        setText(sub, second);
         option.appendChild(sub);
       }
       option.addEventListener('click', pickPlace.bind(null, option, { name: name, lat: res.lat, lon: res.lon }));
