@@ -127,7 +127,7 @@ const IDS = {
 // load evaluates the scripts against a My activity page. position is what the
 // browser has kept ('none' for nothing). answers is a list of functions or
 // objects, one per read: an object is the JSON answer, an Error rejects.
-function load({ search = '', position = null, radius = '12', answers = [], cells = [] } = {}) {
+function load({ search = '', position = null, radius = '12', answers = [], cells = [], pageAccount = '7', savedBy = '7' } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -135,7 +135,7 @@ function load({ search = '', position = null, radius = '12', answers = [], cells
     createElementNS(ns, tag) { return new FakeEl(doc, tag); },
     createTextNode(text) { return { nodeType: 3, textContent: String(text), parentNode: null }; },
     getElementById(id) { return doc.byId[id] || null; },
-    querySelector(sel) { return sel === '.profile-page' ? doc.page : null; },
+    querySelector(sel) { return sel === '.profile-page' || sel === '[data-account-id]' ? doc.page : null; },
     querySelectorAll(sel) { return sel === '.activity-card__distance' ? cells : []; },
     addEventListener() {},
     removeEventListener() {},
@@ -145,6 +145,7 @@ function load({ search = '', position = null, radius = '12', answers = [], cells
   doc.body = new FakeEl(doc, 'body');
   doc.page = new FakeEl(doc, 'main');
   doc.page.setAttribute('data-default-radius-km', radius);
+  if (pageAccount !== null) { doc.page.setAttribute('data-account-id', pageAccount); }
   const region = new FakeEl(doc, 'div');
   region.overflowY = 'auto';
   region.scrollHeight = 2000;
@@ -165,7 +166,7 @@ function load({ search = '', position = null, radius = '12', answers = [], cells
 
   const stored = new Map();
   if (position && position !== 'none') {
-    stored.set('pinalert.lowLastPosition', JSON.stringify({ lat: position[0], lon: position[1], savedAt: 1 }));
+    stored.set('pinalert.lowLastPosition', JSON.stringify({ lat: position[0], lon: position[1], savedAt: 1, account: savedBy }));
   }
   const writes = [];
   const fetches = [];
@@ -853,6 +854,26 @@ test('CR-01: a take back on the linked row with no kept position reads the part 
   assert.equal(shown(m.by('ended-location')), true);
   assert.equal(shown(m.by('ended-error')), false);
   assert.equal(shown(m.by('ended-skeleton')), false);
+});
+
+test('WR-01: a position another account kept on this browser is not used; the part asks for the location', async () => {
+  const cells = [new FakeEl(null, 'p')];
+  cells[0].setAttribute('data-lat', '12.9');
+  cells[0].setAttribute('data-lon', '77.5');
+  const m = load({ position: [12.97, 77.59], savedBy: '8', cells });
+  m.start();
+  await settle();
+  assert.equal(m.fetches.length, 0, 'the earlier account\'s place is never sent');
+  assert.equal(shown(m.by('ended-location')), true);
+  assert.equal(cells[0].textContent, 'Unknown');
+
+  // The same link with that stale position behaves as a link with no position.
+  const linked = load({
+    search: '?part=ended&report=9', position: [12.97, 77.59], savedBy: '8',
+    answers: [answer([], { focus: { status: 'ok', report: resolvedReport(9) } })]
+  });
+  linked.start();
+  assert.equal(new URL(linked.fetches[0].url, 'http://x').searchParams.get('lat'), FALLBACK.lat);
 });
 
 // ---- Phase 3.4 plan 25 (code review part 2, WR-06): Try again hides the
