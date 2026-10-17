@@ -217,6 +217,22 @@ func TestCompactRowLiftScopedToList(t *testing.T) {
 			// checks below still apply to them. The Phase 3.1 and Phase 4
 			// hands-on tests are walked on this layout after Phase 3.4 is built.
 			chosen := strings.HasSuffix(part, ".report-row--selected")
+			// Amended 2026-10-17 by Phase 3.4 plan 26 (code review part 3 WR-02):
+			// inside a forced colours block a chosen head sets the 1px
+			// Highlight border UI-SPEC Color asks for (the fill is dropped there)
+			// and nothing else; the laptop block keeps the 4px severity bar.
+			// Outside forced colours every check below still applies.
+			if chosen && strings.Contains(r.Media, "forced-colors") {
+				for prop, value := range r.Decls {
+					switch {
+					case prop == "border" && value == "1px solid Highlight":
+					case prop == "border-left-width" && value == "4px":
+					default:
+						t.Errorf("feed.css head %q in forced colours sets %s: %s; a chosen row may set only a 1px solid Highlight border (and the laptop 4px bar)", part, prop, value)
+					}
+				}
+				continue
+			}
 			for _, prop := range []string{"border", "border-left", "border-radius", "border-width", "border-color", "background"} {
 				if chosen && prop == "background" {
 					if r.Decls[prop] != "var(--color-surface)" {

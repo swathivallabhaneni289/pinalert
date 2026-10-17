@@ -69,6 +69,13 @@
   cursor: pointer;
 }
 
+/* The rows fill a box that clips (overflow hidden), so the global ring, drawn
+   2px outside, lost its sides, and all four on a box of one row. The ring is
+   inset, as on the chips and the Show menu (code review part 3 WR-03). */
+.place-row:focus-visible {
+  outline-offset: -2px;
+}
+
 .place-row__text {
   display: flex;
   flex: 1 1 auto;

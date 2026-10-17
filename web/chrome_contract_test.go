@@ -9,7 +9,10 @@ import (
 
 const (
 	chromeHeaderCall = `{{template "account_header.html.tmpl" .}}`
-	chromeToggleCall = `{{template "theme_toggle.html.tmpl" .}}`
+	// chromeHeaderMenuCall is the shared menu markup of the account header; the
+	// top bar calls it inside a div (plan 26, code review part 3 WR-05).
+	chromeHeaderMenuCall = `{{template "account_header_menu" .}}`
+	chromeToggleCall     = `{{template "theme_toggle.html.tmpl" .}}`
 	// chromeTopbarCall is the shared top bar of the main places (Phase 3.4);
 	// its block in app_bar.html.tmpl calls the account header.
 	chromeTopbarCall = `{{template "app_topbar" .}}`
@@ -107,7 +110,12 @@ func TestDisclaimerBarOnEveryFullPage(t *testing.T) {
 					t.Fatalf("reading the app bar partial: %v", err)
 				}
 				topbar, _, _ := strings.Cut(string(bar), `{{define "app_bottombar"}}`)
-				if !strings.Contains(topbar, chromeHeaderCall) {
+				// Amended 2026-10-17 by Phase 3.4 plan 26 (code review part 3
+				// WR-05): the top bar already sits inside its own header, so it
+				// calls the shared menu markup (account_header_menu, defined in
+				// account_header.html.tmpl) inside a div, not the partial whose
+				// root is a header. The same markup is still drawn once.
+				if !strings.Contains(topbar, chromeHeaderMenuCall) {
 					t.Errorf("%s: the app_topbar block must call the account header", path)
 				}
 				if strings.Contains(text, chromeHeaderCall) {

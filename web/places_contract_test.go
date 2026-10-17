@@ -65,7 +65,10 @@ func TestBellListContract(t *testing.T) {
 		}
 	}
 	// The bell sits left of the gear and before the person menu.
-	p421InOrder(t, "bell before gear before person", bar, `id="bell-trigger"`, "app-topbar__gear", "account_header.html.tmpl")
+	// Amended 2026-10-17 by Phase 3.4 plan 26 (code review part 3 WR-05): the
+	// person menu is drawn by account_header_menu inside a div, so the order is
+	// pinned on that call and the div that wraps it.
+	p421InOrder(t, "bell before gear before person", bar, `id="bell-trigger"`, "app-topbar__gear", `<div class="app-header">{{template "account_header_menu" .}}</div>`)
 
 	js := stripJSComments(p421ReadStatic(t, "js/app-bar.js"))
 	for _, want := range []string{"aria-expanded", "'Escape'", "bell-trigger", "bell-list", "history.back()", "document.referrer"} {

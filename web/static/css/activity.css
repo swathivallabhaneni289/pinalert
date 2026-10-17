@@ -546,3 +546,13 @@ main.profile-page .activity-retry {
     border-top: 1px solid var(--color-border);
   }
 }
+
+/* A chosen card shows by its fill, which a forced colours theme drops, so it takes
+   a 1px Highlight border as UI-SPEC Color says (code review part 3 WR-02). It is
+   the last rule of the file, so it follows the laptop first row rule that has the
+   same weight. */
+@media (forced-colors: active) {
+  main.profile-page .profile-report-list > .activity-card.activity-card--chosen {
+    border: 1px solid Highlight;
+  }
+}

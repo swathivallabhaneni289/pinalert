@@ -1,4 +1,4 @@
-<header class="app-header">
+{{define "account_header_menu"}}
   <button type="button" id="account-menu-trigger" class="account-trigger"
           aria-label="Account menu" aria-haspopup="menu" aria-expanded="false"
           aria-controls="account-menu">
@@ -17,4 +17,19 @@
       </button>
     </form>
   </div>
-</header>
+{{end}}
+{{/*
+  The person button and its menu. The markup is written once, as
+  account_header_menu, and has two callers (Phase 3.4 plan 26, code review
+  part 3 WR-05):
+
+    - this file's own root below, a header element, for the pages that have no
+      app top bar (the Low data view and the Moderator screen). There it is the
+      page's one banner landmark.
+    - app_topbar (app_bar.html.tmpl), which wraps the same markup in a div,
+      because it already sits inside the top bar's own header and a header may
+      not hold another header (two nested banners on a laptop).
+
+  Keep the markup in account_header_menu so the two cannot drift.
+*/}}
+<header class="app-header">{{template "account_header_menu" .}}</header>

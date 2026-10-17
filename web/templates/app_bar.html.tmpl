@@ -46,7 +46,7 @@
   {{if .Nav.ShowGear}}
   <a class="app-topbar__gear" href="/settings" aria-label="Settings"><span class="app-icon app-icon--settings" aria-hidden="true"></span></a>
   {{end}}
-  {{template "account_header.html.tmpl" .}}
+  <div class="app-header">{{template "account_header_menu" .}}</div>
 </header>
 {{end}}
 

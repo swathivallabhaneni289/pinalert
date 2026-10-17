@@ -78,8 +78,20 @@ html {
   font-weight: var(--font-weight-semibold);
 }
 
+/* A standalone link, so it has the 44px touch floor (UI-SPEC Spacing, code
+   review part 3 IN-02). The floor is the link's own box, drawn from the top of
+   the strip down, with the words kept where they were by the top padding. The
+   negative block margins give back the strip's own 8px padding above and the
+   rest of the floor below the text line, so the margin box is still one text
+   line: the strip keeps its height and the words keep their place. */
 .notice-strip__link {
+  display: inline-flex;
   flex: none;
+  align-items: flex-start;
+  box-sizing: border-box;
+  min-height: var(--touch-target-min);
+  padding-top: var(--space-sm);
+  margin-block: calc(-1 * var(--space-sm)) calc(var(--font-size-label) * var(--line-height-label) + var(--space-sm) - var(--touch-target-min));
   color: var(--color-notice-text);
   font-weight: var(--font-weight-semibold);
   text-decoration: underline;

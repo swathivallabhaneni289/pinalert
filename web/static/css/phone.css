@@ -229,11 +229,11 @@
   }
 
   /* ---- Search a place in the Nearby top bar (D-11, UI-SPEC 1b, 2g) ----
-     On Nearby the field takes the place of the title and the spacer, ahead of
+     On Nearby the field takes the place of the title (hidden by clipping in
+     app-bar.css, so the h1 stays for screen readers) and the spacer, ahead of
      the bell and the gear, and fills the width they leave. Fill --color-surface,
      no border, 8px corner, 44px high. The placeholder and the magnifier use
      --color-text, since muted text never sits on --color-surface. */
-  .app-topbar:has(> .map-search) > .app-topbar__title,
   .app-topbar:has(> .map-search) > .app-topbar__spacer {
     display: none;
   }
@@ -270,6 +270,7 @@
   }
 
   .app-topbar > .map-search .map-search__results {
+    max-height: calc(100vh - (var(--disclaimer-bar-height, 0px) + var(--app-topbar-height) + var(--space-xs)) - (var(--app-bottombar-height) + env(safe-area-inset-bottom)) - var(--space-sm));
     max-height: calc(100dvh - (var(--disclaimer-bar-height, 0px) + var(--app-topbar-height) + var(--space-xs)) - (var(--app-bottombar-height) + env(safe-area-inset-bottom)) - var(--space-sm));
   }
 
@@ -639,6 +640,13 @@
 
   main.profile-page > .activity-hub .activity-hub__row + .activity-hub__row {
     border-top: 1px solid var(--color-border);
+  }
+
+  /* The rows fill a box that clips (overflow hidden), so the global ring, drawn
+     2px outside, lost its sides. The ring is inset, as on the chips (code
+     review part 3 WR-03). */
+  main.profile-page > .activity-hub .activity-hub__row:focus-visible {
+    outline-offset: -2px;
   }
 
   main.profile-page > .activity-hub .activity-hub__row:active {
@@ -1081,6 +1089,13 @@
 @media (max-width: 899.98px) and (forced-colors: active) {
   body > .app-bar > .app-bar__item[aria-current="page"]::before {
     background-color: CanvasText;
+  }
+
+  /* The sheet's grabber bar is a plain background too, so it would paint
+     Canvas on Canvas. It opts out of the adjustment (code review part 3 WR-01). */
+  .sheet__handle > .sheet__grabber {
+    forced-color-adjust: none;
+    background-color: ButtonText;
   }
 }
 

@@ -67,6 +67,26 @@ func phoneExpandTemplate(t *testing.T, name string) string {
 		text = phoneIncludeRE.ReplaceAllStringFunc(text, func(m string) string {
 			inc := phoneIncludeRE.FindStringSubmatch(m)[1]
 			switch inc {
+			// Amended 2026-10-17 by Phase 3.4 plan 26 (code review part 3 WR-05):
+			// account_header.html.tmpl now defines account_header_menu, the menu
+			// markup, and its own root is a header around one call to it. A
+			// call to the menu expands to the defined block, and an include of
+			// the file expands to its root only, so the markup appears once.
+			case "account_header_menu":
+				whole := p13ReadTemplate(t, "account_header.html.tmpl")
+				_, rest, ok := strings.Cut(whole, `{{define "account_header_menu"}}`)
+				if !ok {
+					t.Fatalf("account_header.html.tmpl defines no account_header_menu")
+				}
+				body, _, _ := strings.Cut(rest, "{{end}}")
+				return body
+			case "account_header.html.tmpl":
+				whole := p13ReadTemplate(t, "account_header.html.tmpl")
+				_, root, ok := strings.Cut(whole, "{{end}}")
+				if !ok {
+					t.Fatalf("account_header.html.tmpl has no root after its menu block")
+				}
+				return root
 			case "app_topbar", "app_bottombar":
 				bar := p13ReadTemplate(t, "app_bar.html.tmpl")
 				top, bottom, ok := strings.Cut(bar, `{{define "app_bottombar"}}`)
