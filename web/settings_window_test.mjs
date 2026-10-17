@@ -487,3 +487,132 @@ test('the script leaves quietly on a page without the windows', () => {
   vm.runInContext(source, sandbox, { filename: 'settings.js' });
   assert.equal(sandbox.PinalertSettings, undefined);
 });
+
+// ---- Phase 3.4 plan 25 (code review part 2, WR-03): an answer belongs to the
+// window session that sent it, and each window has its own save flag.
+
+const HOME_PLACE = { name: 'Indiranagar', display_name: 'Indiranagar, Bengaluru, Karnataka, India', lat: 12.9784, lon: 77.6408 };
+
+// startHomeSave opens the Home area window, searches, picks the one place and
+// presses Save. It returns the request of the save (the last one sent).
+async function startHomeSave(page) {
+  fire(byId(page, 'settings-home-row'), 'click');
+  byId(page, 'settings-home-input').value = 'Indira';
+  fire(byId(page, 'settings-home-form'), 'submit');
+  answer(page.requests[page.requests.length - 1], 200, { results: [HOME_PLACE] });
+  await flush();
+  pick(page, 0);
+  fire(byId(page, 'settings-home-save'), 'click');
+  return page.requests[page.requests.length - 1];
+}
+
+test('WR-03: a name save that answers after the window was closed and opened again does not close it or touch what was typed', async () => {
+  const page = loadSettings({ name: 'Old' });
+  fire(byId(page, 'settings-name-row'), 'click');
+  byId(page, 'settings-name-input').value = 'Ravi';
+  fire(byId(page, 'settings-name-form'), 'submit');
+  assert.equal(page.requests.length, 1);
+
+  fire(page.nameWin, 'keydown', { key: 'Escape' });
+  fire(byId(page, 'settings-name-row'), 'click');
+  assert.equal(byId(page, 'settings-name-input').value, 'Old', 'the row is not updated yet, so the field shows the old name');
+  byId(page, 'settings-name-input').value = 'Typing a new one';
+
+  answer(page.requests[0], 200, { display_name: 'Ravi', home_area_name: null });
+  await flush();
+
+  assert.equal(page.nameWin.hidden, false, 'the window the person is typing in stays open');
+  assert.equal(byId(page, 'settings-name-input').value, 'Typing a new one');
+  assert.equal(byId(page, 'settings-name-value').textContent, 'Ravi', 'the row still takes the saved name');
+  assert.equal(byId(page, 'settings-name-row').getAttribute('data-value'), 'Ravi');
+  assert.equal(byId(page, 'settings-name-save').disabled, false, 'and its Save works again');
+  assert.equal(page.main.inert, true, 'the page behind stays locked');
+});
+
+test('WR-03: pressing Save again in a reopened Name window while the first save is out sends nothing', async () => {
+  const page = loadSettings({ name: 'Old' });
+  fire(byId(page, 'settings-name-row'), 'click');
+  byId(page, 'settings-name-input').value = 'Ravi';
+  fire(byId(page, 'settings-name-form'), 'submit');
+  fire(page.nameWin, 'keydown', { key: 'Escape' });
+  fire(byId(page, 'settings-name-row'), 'click');
+  assert.equal(byId(page, 'settings-name-save').disabled, true, 'a save is still out');
+  fire(byId(page, 'settings-name-form'), 'submit');
+  assert.equal(page.requests.length, 1, 'one PATCH only');
+
+  answer(page.requests[0], 200, { display_name: 'Ravi', home_area_name: null });
+  await flush();
+  fire(byId(page, 'settings-name-form'), 'submit');
+  assert.equal(page.requests.length, 2, 'once it answered, a save goes out');
+});
+
+test('WR-03: a late refusal of an older name save shows nothing in the reopened window', async () => {
+  const page = loadSettings({ name: 'Old' });
+  fire(byId(page, 'settings-name-row'), 'click');
+  byId(page, 'settings-name-input').value = 'Ravi';
+  fire(byId(page, 'settings-name-form'), 'submit');
+  fire(page.nameWin, 'keydown', { key: 'Escape' });
+  fire(byId(page, 'settings-name-row'), 'click');
+  answer(page.requests[0], 400, { error: { field: 'display_name', message: 'Use letters, numbers and spaces in your name.' } });
+  await flush();
+  assert.equal(page.nameWin.hidden, false);
+  assert.equal(byId(page, 'settings-name-error').hidden, true);
+  assert.equal(byId(page, 'settings-name-save').disabled, false);
+});
+
+test('WR-03: a home save that answers after its window was reopened does not close it', async () => {
+  const page = loadSettings();
+  const save = await startHomeSave(page);
+  fire(page.homeWin, 'keydown', { key: 'Escape' });
+  fire(byId(page, 'settings-home-row'), 'click');
+  byId(page, 'settings-home-input').value = 'Something else';
+
+  answer(save, 200, { display_name: null, home_area_name: 'Indiranagar' });
+  await flush();
+
+  assert.equal(page.homeWin.hidden, false, 'the reopened window stays open');
+  assert.equal(byId(page, 'settings-home-input').value, 'Something else');
+  assert.equal(byId(page, 'settings-home-value').textContent, 'Indiranagar', 'the row takes the saved place');
+  assert.equal(byId(page, 'settings-home-remove').hidden, false);
+  assert.equal(byId(page, 'settings-home-save').disabled, true, 'nothing is picked in the reopened window');
+});
+
+test('WR-03: the two windows do not share one save flag', async () => {
+  const page = loadSettings({ name: 'Old' });
+  fire(byId(page, 'settings-name-row'), 'click');
+  byId(page, 'settings-name-input').value = 'Ravi';
+  fire(byId(page, 'settings-name-form'), 'submit');
+  const nameSave = page.requests[0];
+
+  // The Name window is closed with its save still out, and the Home area
+  // window saves a place and gets its answer first.
+  fire(page.nameWin, 'keydown', { key: 'Escape' });
+  const homeSave = await startHomeSave(page);
+  answer(homeSave, 200, { display_name: null, home_area_name: 'Indiranagar' });
+  await flush();
+  assert.equal(page.homeWin.hidden, true);
+
+  // The name save has not answered yet: the Name window must still refuse a second save.
+  const before = page.requests.length;
+  fire(byId(page, 'settings-name-row'), 'click');
+  fire(byId(page, 'settings-name-form'), 'submit');
+  assert.equal(page.requests.length, before, 'the home answer must not clear the name save flag');
+
+  answer(nameSave, 200, { display_name: 'Ravi', home_area_name: 'Indiranagar' });
+  await flush();
+  fire(byId(page, 'settings-name-form'), 'submit');
+  assert.equal(page.requests.length, before + 1);
+});
+
+test('WR-03: a name save in flight does not stop a home save, and the other way round', async () => {
+  const page = loadSettings({ name: 'Old' });
+  fire(byId(page, 'settings-name-row'), 'click');
+  byId(page, 'settings-name-input').value = 'Ravi';
+  fire(byId(page, 'settings-name-form'), 'submit');
+  fire(page.nameWin, 'keydown', { key: 'Escape' });
+  const save = await startHomeSave(page);
+  assert.equal(save.url, '/api/me/profile');
+  assert.equal(save.init.method, 'PATCH');
+  assert.deepEqual(JSON.parse(save.init.body).home_area.name, 'Indiranagar');
+});
+

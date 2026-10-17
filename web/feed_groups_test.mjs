@@ -332,10 +332,14 @@ test('the empty state follows the Show choice, one block at a time', () => {
   assert.deepEqual(shownBlocks(), ['filter-empty'], 'a chip that emptied the list says so');
 });
 
+// Amended 2026-10-17 by Phase 3.4 plan 25 (code review part 2 WR-05): the
+// replaced address ends with &from=link, so the phone back arrow on the page it
+// opens knows its same origin referrer is no longer the previous history entry
+// and follows its own address (app-bar.js, app_bar_back_test.mjs).
 test('a link to a finished report leaves Nearby once, for My activity', () => {
   const m = load();
   show(m, SAMPLE, { focus: { status: 'ok', report: report(55, 'resolved') } });
-  assert.deepEqual(m.replaced, ['/profile?part=ended&report=55']);
+  assert.deepEqual(m.replaced, ['/profile?part=ended&report=55&from=link']);
   m.Pinalert.redraw();
   assert.equal(m.replaced.length, 1, 'later answers for the same link do not leave again');
 });
@@ -343,11 +347,11 @@ test('a link to a finished report leaves Nearby once, for My activity', () => {
 test('a faded report and a hostile id also leave, with no id carried when it is not plain digits', () => {
   const faded = load();
   show(faded, SAMPLE, { focus: { status: 'ok', report: report(8, 'past') } });
-  assert.deepEqual(faded.replaced, ['/profile?part=ended&report=8']);
+  assert.deepEqual(faded.replaced, ['/profile?part=ended&report=8&from=link']);
 
   const hostile = load();
   show(hostile, SAMPLE, { focus: { status: 'ok', report: report('7&next=https://evil.example', 'resolved') } });
-  assert.deepEqual(hostile.replaced, ['/profile?part=ended']);
+  assert.deepEqual(hostile.replaced, ['/profile?part=ended&from=link']);
 });
 
 test('a link to an active or disputed report stays on Nearby', () => {

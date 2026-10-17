@@ -95,6 +95,11 @@ window.PinalertShowMenu = (function () {
     close(false);
   }
 
+  // The outside click listener is bound only while the menu is open, in the
+  // capture phase: the person menu stops its own trigger click from bubbling, so
+  // a bubble phase listener never saw it and the Show menu stayed open under the
+  // person menu (code review part 2, WR-04). app-bar.js does the same for the
+  // bell list.
   var outsideBound = false;
 
   function open() {
@@ -104,7 +109,7 @@ window.PinalertShowMenu = (function () {
     menuEl.hidden = false;
     buttonEl.setAttribute('aria-expanded', 'true');
     if (!outsideBound) {
-      document.addEventListener('click', onDocumentClick);
+      document.addEventListener('click', onDocumentClick, true);
       outsideBound = true;
     }
     var chosen = checkedItem();
@@ -120,7 +125,7 @@ window.PinalertShowMenu = (function () {
     menuEl.hidden = true;
     buttonEl.setAttribute('aria-expanded', 'false');
     if (outsideBound) {
-      document.removeEventListener('click', onDocumentClick);
+      document.removeEventListener('click', onDocumentClick, true);
       outsideBound = false;
     }
     if (restoreFocus) {

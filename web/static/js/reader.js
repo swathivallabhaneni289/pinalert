@@ -23,7 +23,9 @@
   'use strict';
 
   var TITLES = { disclaimer: 'Disclaimer', policy: 'Policy' };
-  var FOCUSABLE = ['reader-close', 'reader-box'];
+  // The same selector modal.js, account-menu.js and settings.js use for their
+  // Tab traps.
+  var FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
   function el(id) {
     return document.getElementById(id);
@@ -147,15 +149,26 @@
       }
     }
 
-    // Tab stays inside the window: the X, then the text box, then round again.
-    function keepFocusInside(event) {
+    // tabStops lists what Tab can reach in the open window, in page order: the
+    // X, the text box, and every link inside the text (the Call 112 phone link
+    // and the contact email links). It is read from the live window each time,
+    // so a link in the text is never left out (code review part 2, WR-02). The
+    // title (tabindex -1) is not a stop, and nothing inside a hidden part is.
+    function tabStops() {
+      var found = win.querySelectorAll(FOCUSABLE_SELECTOR);
       var list = [];
-      for (var i = 0; i < FOCUSABLE.length; i++) {
-        var node = el(FOCUSABLE[i]);
-        if (node) {
-          list.push(node);
+      for (var i = 0; i < found.length; i++) {
+        if (!found[i].closest('[hidden]')) {
+          list.push(found[i]);
         }
       }
+      return list;
+    }
+
+    // Tab stays inside the window: the X, the text box, the links in the text,
+    // then round again.
+    function keepFocusInside(event) {
+      var list = tabStops();
       if (list.length === 0) {
         return;
       }

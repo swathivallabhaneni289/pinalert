@@ -32,6 +32,20 @@
     }
   }
 
+  // arrivedByRedirect says whether this page was reached through feed.js's
+  // location.replace (a link to a finished report), which marks its address
+  // from=link. That redirect keeps the page it left as the referrer but removes
+  // it from history, so a same origin referrer does not mean the previous history
+  // entry is a page of this site: going back could leave it (code review part 2,
+  // WR-05). The arrow then follows its own address.
+  function arrivedByRedirect() {
+    try {
+      return new URLSearchParams(window.location.search).get('from') === 'link';
+    } catch (err) {
+      return false;
+    }
+  }
+
   var back = document.querySelector('a.app-topbar__back');
   if (back) {
     back.addEventListener('click', function (e) {
@@ -39,7 +53,7 @@
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
         return;
       }
-      if (sameOriginReferrer() && window.history.length > 1) {
+      if (!arrivedByRedirect() && sameOriginReferrer() && window.history.length > 1) {
         e.preventDefault();
         window.history.back();
       }

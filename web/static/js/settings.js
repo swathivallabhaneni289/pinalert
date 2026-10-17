@@ -74,7 +74,16 @@
   };
 
   var current = null;
-  var saving = false;
+  // session numbers the openings of a window. A save remembers the number it was
+  // sent under, and an answer that comes back under another number belongs to a
+  // window that was closed since: it may update the row, but it never closes,
+  // clears or writes into the window open now (code review part 2, WR-03).
+  var session = 0;
+  // One flag for each window, so the answer of one never clears the other's. A
+  // flag is cleared only by the answer of its own save, never by closing or
+  // reopening the window: a save still out is still out.
+  var savingName = false;
+  var savingHome = false;
 
   // The picked place, or null. Only a result of the place search can be picked,
   // so a home area is never anything the person typed or the device reported.
@@ -294,11 +303,11 @@
       closeWindow(current, false);
     }
     current = which;
-    saving = false;
+    session += 1;
     if (which === 'name') {
       hideLine(nameError);
       nameInput.value = storedValue(nameRow);
-      nameSave.disabled = false;
+      nameSave.disabled = savingName;
     } else {
       hideLine(homeError);
       hideLine(homeStatus);
@@ -309,6 +318,7 @@
       homeSave.disabled = true;
       homeInput.value = storedValue(homeRow);
       homeRemove.hidden = storedValue(homeRow) === '';
+      homeRemove.disabled = savingHome;
     }
     target.win.hidden = false;
     lockPage(target.win);
@@ -328,7 +338,6 @@
     target.win.hidden = true;
     unlockPage();
     current = null;
-    saving = false;
     if (restoreFocus !== false) {
       target.row.focus();
     }
@@ -362,27 +371,35 @@
   // ---- Name -----------------------------------------------------------------
 
   function saveName() {
-    if (saving) {
+    if (savingName) {
       return Promise.resolve();
     }
-    saving = true;
+    savingName = true;
     nameSave.disabled = true;
     hideLine(nameError);
+    var mine = session;
     // An emptied name is sent as an empty string, which removes the stored one.
     return patchProfile({ display_name: nameInput.value.trim() }).then(function (answer) {
-      saving = false;
+      savingName = false;
       nameSave.disabled = false;
+      var sameWindow = mine === session;
       if (!answer.ok) {
-        showLine(nameError, saveMessage(answer));
+        if (sameWindow) {
+          showLine(nameError, saveMessage(answer));
+        }
         return;
       }
       var name = answer.body && typeof answer.body.display_name === 'string' ? answer.body.display_name : '';
       setRow(nameRow, nameValue, name);
-      closeWindow('name', true);
+      if (sameWindow) {
+        closeWindow('name', true);
+      }
     }, function () {
-      saving = false;
+      savingName = false;
       nameSave.disabled = false;
-      showLine(nameError, MESSAGE_SAVE_FAILED);
+      if (mine === session) {
+        showLine(nameError, MESSAGE_SAVE_FAILED);
+      }
     });
   }
 
@@ -442,7 +459,7 @@
     picked = place;
     option.setAttribute('aria-selected', 'true');
     homeInput.value = place.name;
-    homeSave.disabled = false;
+    homeSave.disabled = savingHome;
     hideLine(homeError);
   }
 
@@ -496,11 +513,18 @@
     });
   }
 
-  function afterHomeSave(answer) {
-    saving = false;
+  // afterHomeSave settles a save or a removal of the home area. sameWindow says
+  // whether the window that sent it is still the one open: only then does the
+  // answer write a refusal into the window. The row always takes what the
+  // server stored, and the buttons always follow the flag and the pick.
+  function afterHomeSave(answer, sameWindow) {
+    savingHome = false;
     homeSave.disabled = picked === null;
+    homeRemove.disabled = false;
     if (!answer.ok) {
-      showLine(homeError, saveMessage(answer));
+      if (sameWindow) {
+        showLine(homeError, saveMessage(answer));
+      }
       return false;
     }
     var name = answer.body && typeof answer.body.home_area_name === 'string' ? answer.body.home_area_name : '';
@@ -510,35 +534,39 @@
   }
 
   function saveHomeArea() {
-    if (saving || picked === null) {
+    if (savingHome || picked === null) {
       return Promise.resolve();
     }
-    saving = true;
+    savingHome = true;
     homeSave.disabled = true;
     hideLine(homeError);
+    var mine = session;
     return patchProfile({ home_area: { name: picked.name, lat: picked.lat, lon: picked.lon } }).then(function (answer) {
-      if (afterHomeSave(answer)) {
+      if (afterHomeSave(answer, mine === session) && mine === session) {
         closeWindow('home', true);
       }
     }, function () {
-      saving = false;
+      savingHome = false;
       homeSave.disabled = picked === null;
-      showLine(homeError, MESSAGE_SAVE_FAILED);
+      if (mine === session) {
+        showLine(homeError, MESSAGE_SAVE_FAILED);
+      }
     });
   }
 
   // removeHomeArea deletes the stored home area at once. The window stays open
   // with an empty field, so the person can pick another place or close it.
   function removeHomeArea() {
-    if (saving) {
+    if (savingHome) {
       return Promise.resolve();
     }
-    saving = true;
+    savingHome = true;
     homeRemove.disabled = true;
     hideLine(homeError);
+    var mine = session;
     return patchProfile({ home_area: null }).then(function (answer) {
-      homeRemove.disabled = false;
-      if (afterHomeSave(answer)) {
+      var sameWindow = mine === session;
+      if (afterHomeSave(answer, sameWindow) && sameWindow) {
         homeInput.value = '';
         hideLine(homeStatus);
         homeResults.textContent = '';
@@ -547,9 +575,11 @@
         homeInput.focus();
       }
     }, function () {
-      saving = false;
+      savingHome = false;
       homeRemove.disabled = false;
-      showLine(homeError, MESSAGE_SAVE_FAILED);
+      if (mine === session) {
+        showLine(homeError, MESSAGE_SAVE_FAILED);
+      }
     });
   }
 

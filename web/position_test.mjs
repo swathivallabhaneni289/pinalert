@@ -17,10 +17,19 @@ const source = fs.readFileSync(path.join(here, 'static', 'js', 'position.js'), '
 
 const KEY = 'pinalert.lowLastPosition';
 
-function load(storage) {
+// load runs position.js on a page. account is the id the page carries in its
+// data-account-id attribute ('7' by default); null is a page with no such
+// attribute (the first time flow).
+function load(storage, account = '7') {
   const sandbox = { window: null, Date, JSON, isFinite, Math };
   sandbox.window = sandbox;
   sandbox.localStorage = storage;
+  sandbox.document = {
+    querySelector(selector) {
+      if (selector !== '[data-account-id]' || account === null) { return null; }
+      return { getAttribute: (name) => (name === 'data-account-id' ? account : null) };
+    }
+  };
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'position.js' });
   return sandbox.PinalertPosition;
@@ -57,9 +66,93 @@ test('save then read returns the same numbers with a savedAt, under the shared k
   assert.equal(typeof read.savedAt, 'number');
 });
 
-test('a stored value the Low data view wrote reads back', () => {
-  const position = load(memoryStorage({ [KEY]: JSON.stringify({ lat: 17.4, lon: 78.5, savedAt: 1760000000000 }) }));
+// Amended 2026-10-17 by Phase 3.4 plan 25 (code review part 2 WR-01): a stored
+// value belongs to the account that saved it. The shape under the shared key
+// is the same ({lat, lon, savedAt}) with one more field, account.
+test('a stored value in the shared shape that this account saved reads back', () => {
+  const position = load(memoryStorage({ [KEY]: JSON.stringify({ lat: 17.4, lon: 78.5, savedAt: 1760000000000, account: '7' }) }));
   assert.deepEqual({ ...position.read() }, { lat: 17.4, lon: 78.5, savedAt: 1760000000000 });
+});
+
+test('WR-01: save keeps the account of the page next to the fix', () => {
+  const storage = memoryStorage();
+  load(storage, '7').save(12.97, 77.59);
+  assert.equal(JSON.parse(storage.data.get(KEY)).account, '7');
+});
+
+test('WR-01: a fix another account saved is not read, and it is removed', () => {
+  const storage = memoryStorage();
+  load(storage, '7').save(12.97, 77.59);
+  assert.equal(load(storage, '8').read(), null, 'the next account on this browser does not get it');
+  assert.equal(storage.data.has(KEY), false, 'and the earlier account\'s place is gone from the browser');
+});
+
+test('WR-01: the same account still reads its own fix after a log out and back in', () => {
+  const storage = memoryStorage();
+  load(storage, '7').save(12.97, 77.59);
+  assert.equal(load(storage, '7').read().lat, 12.97);
+});
+
+test('WR-01: a value with no owner (the Low data view, the first time flow, an old browser) is taken over by the first account that reads it', () => {
+  const storage = memoryStorage({ [KEY]: JSON.stringify({ lat: 17.4, lon: 78.5, savedAt: 1760000000000 }) });
+  const first = load(storage, '7').read();
+  assert.deepEqual({ ...first }, { lat: 17.4, lon: 78.5, savedAt: 1760000000000 });
+  const kept = JSON.parse(storage.data.get(KEY));
+  assert.equal(kept.account, '7', 'it now belongs to the account that read it');
+  assert.equal(kept.savedAt, 1760000000000, 'with its own time, not a new one');
+  assert.equal(load(storage, '8').read(), null, 'a second account never gets it from the first');
+  assert.equal(storage.data.has(KEY), false);
+
+  const flow = memoryStorage();
+  assert.equal(load(flow, null).save(12.97, 77.59), true, 'the first time flow can still save');
+  assert.equal(JSON.parse(flow.data.get(KEY)).account, '', 'but it cannot say whose fix it is');
+  assert.equal(load(flow, '7').read().lat, 12.97, 'the account that then reads it takes it over');
+  assert.equal(JSON.parse(flow.data.get(KEY)).account, '7');
+  assert.equal(load(flow, '8').read(), null);
+});
+
+test('WR-01: taking over an ownerless value that has no time keeps it without one, and a blocked store still reads it', () => {
+  const storage = memoryStorage({ [KEY]: JSON.stringify({ lat: 17.4, lon: 78.5 }) });
+  assert.equal(load(storage, '7').read().savedAt, null);
+  assert.equal(JSON.parse(storage.data.get(KEY)).account, '7');
+
+  const blocked = memoryStorage({ [KEY]: JSON.stringify({ lat: 17.4, lon: 78.5, savedAt: 5 }) });
+  blocked.setItem = () => { throw new Error('blocked'); };
+  assert.equal(load(blocked, '7').read().lat, 17.4);
+});
+
+test('WR-01: a page that does not say which account it is for reads nothing and removes nothing', () => {
+  const storage = memoryStorage();
+  load(storage, '7').save(12.97, 77.59);
+  assert.equal(load(storage, null).read(), null);
+  assert.equal(storage.data.has(KEY), true);
+  for (const odd of ['', '0', '-3', 'abc', '1.5', '7 ']) {
+    assert.equal(load(storage, odd).read(), null, 'account "' + odd + '" is not an id');
+    assert.equal(storage.data.has(KEY), true);
+  }
+});
+
+test('WR-01: only the position key is ever removed; the queue and the theme choice stay', () => {
+  const storage = memoryStorage({ 'pinalert.theme': 'dark', 'pinalert.queue.7': '[{"x":1}]' });
+  const removed = [];
+  const original = storage.removeItem;
+  storage.removeItem = (k) => { removed.push(k); original(k); };
+  load(storage, '7').save(12.97, 77.59);
+  load(storage, '8').read();
+  assert.deepEqual(removed, [KEY]);
+  assert.equal(storage.data.get('pinalert.theme'), 'dark');
+  assert.equal(storage.data.get('pinalert.queue.7'), '[{"x":1}]');
+});
+
+test('WR-01: no age limit is invented, an old fix of this account still reads', () => {
+  const storage = memoryStorage({ [KEY]: JSON.stringify({ lat: 17.4, lon: 78.5, savedAt: 1, account: '7' }) });
+  assert.equal(load(storage, '7').read().lat, 17.4);
+});
+
+test('WR-01: a storage that throws on removal still reads null', () => {
+  const storage = memoryStorage({ [KEY]: JSON.stringify({ lat: 17.4, lon: 78.5, savedAt: 1, account: '7' }) });
+  storage.removeItem = () => { throw new Error('blocked'); };
+  assert.equal(load(storage, '8').read(), null);
 });
 
 test('nothing stored reads as null', () => {
