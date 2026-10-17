@@ -64,7 +64,9 @@ Handy address parameters: `?view=phone|laptop`, `rp=a|b` (the laptop variant, B 
      words share one line with the time and Reply under them (as on Instagram on a computer); on the phone the username
      and time sit on the top line with the words under them, then Reply (as in the Instagram app), so a narrow screen
      reads cleanly. The reporter's picture carries the report's icon and colour plus a small "Reporter" tag (never colour
-     alone).
+     alone), as other people see it. **Your own comments show only your username**: never "You", and no Reporter tag even
+     on your own report (owner, after the lock: "having both you and reporter doesnt make sense. if the person you reporter
+     commented it should just be just the username"). The mockup's sample username for you is priya.vja.
    - **Replies are folded** behind "View N replies", and "Hide replies" folds them again. One level only: Reply on a
      reply joins the same thread, and posting a reply opens its thread.
    - **One box.** Reply puts "@username " in the box, moves the cursor there and shows "Replying to username" with an X
@@ -136,3 +138,4 @@ Sixth round, clear list and no likes (2026-10-17): no heart anywhere on the phon
 Seventh round, thumbs up likes (2026-10-17): on the phone a like on a comment and on a reply both show filled with the count up by one (6 to 7, 5 to 6) and stay after a Confirm; five like buttons with one thread open, each 32 by 44; no sideways scroll; the laptop shows the same thumbs up after Reply, checked in dark.
 Eighth round, pins and lock (2026-10-17): on the laptop a pin tap opens its report beside the map (Traffic), a second pin switches it (Road blocked), and after All reports another pin opens again (Shelter); layout A and the phone also open on a pin tap; no pin label is left in the page.
 Ninth round, laptop box (2026-10-17, asked by the owner after the lock): the laptop box is now the same rounded field as the phone, fully visible at the panel bottom (897 of 900px) with Replying to above it; the mockup hint is short again so the top strip stays on one line; light and dark checked.
+Tenth round, your own name (2026-10-17, asked by the owner after the lock): your comment on your own report reads "priya.vja Water is still rising..." with no Reporter tag on the laptop and the phone; a reply to your own comment adds no @name and posts as priya.vja; suresh.patamata still shows Reporter to you on the shelter report.

@@ -1604,6 +1604,9 @@ button { font: inherit; color: inherit; }
   var rv = params.get('rp') === 'a' ? 'a' : 'b';
   root.classList.add('rv-' + rv);
   document.querySelectorAll('[data-rv]').forEach(function (a) { if (a.dataset.rv === rv) a.setAttribute('aria-current', 'page'); });
+  // The person looking at the mockup. Your own comments show only your username, never "You" and never the Reporter tag
+  // (owner, 2026-10-17: "having both you and reporter doesnt make sense"); others see Reporter beside the reporter's name.
+  var ME = 'priya.vja';
   var details = [
     // repTag sits beside the label (sketch 003 H); curTag is row two of the trust button; curLine and repLine are panel sentences.
     { mine: true, cat: 'Flood', place: 'Near Benz Circle, Vijayawada', dist: '0.8 km', ago: '12 min ago', confN: 4, dispN: 0,
@@ -1613,7 +1616,7 @@ button { font: inherit; color: inherit; }
       // Sample usernames, as on Instagram; who may show a name is still the owner's call (see the README).
       cms: [{ who: 'ravi.k', ago: '47m', likes: 4, t: 'Two buses are stuck at the signal now. Use the service road.',
           replies: [{ who: 'lakshmi_vja', ago: '44m', likes: 2, t: '@ravi.k The service road is filling up too, near the temple.' }] },
-        { who: 'You', rep: true, ago: '43m', likes: 3, t: 'Water is still rising near the petrol bunk.', replies: [] }] },
+        { who: ME, me: true, rep: true, ago: '43m', likes: 3, t: 'Water is still rising near the petrol bunk.', replies: [] }] },
     { cat: 'Traffic', place: 'Eluru Road, towards Ramavarappadu', dist: '2.1 km', ago: '5 min ago', confN: 0, dispN: 0,
       curTag: 'Too early to tell', curLine: 'Fewer than 2 people have confirmed this yet. Fades at 4:57 pm.', repTag: 'Reliable reporter', repLine: '7 of 9 earlier reports by this reporter were confirmed by people nearby.', code: 'M3TD',
       hist: [['2:57 pm', 'Posted as Medium.', '']],
@@ -1668,7 +1671,8 @@ button { font: inherit; color: inherit; }
   }
   function igComment(r, c, k, j) {
     var words = c.t.replace(/^@(\S+)/, '<span class="ig-at">@$1</span>');
-    var tag = c.rep ? '<span class="cm-tag">Reporter</span> ' : '', reply = '<button data-reply="' + k + '" data-name="' + c.who + '">Reply</button>';
+    var tag = c.rep && !c.me ? '<span class="cm-tag">Reporter</span> ' : '';
+    var reply = '<button data-reply="' + k + '" data-name="' + c.who + '"' + (c.me ? ' data-self' : '') + '>Reply</button>';
     // The like sits after Reply on the same small line, on both sizes: a thumbs up, filled once you have liked it.
     var n = c.likes || 0, like = '<button class="ig-like" data-like="' + (j == null ? k : k + '.' + j) + '" aria-pressed="' + !!c.liked + '" aria-label="Like, ' +
       n + (n === 1 ? ' like' : ' likes') + '"><span class="ico ' + (c.liked ? 'i-thumbfill' : 'i-thumb') + '" aria-hidden="true"></span>' +
@@ -1814,7 +1818,7 @@ button { font: inherit; color: inherit; }
     // Reply puts @username in the one box, as on Instagram, and says who you are replying to.
     if (t.dataset.reply) {
       // Replying to your own comment adds no @name, as on Instagram.
-      var self = t.dataset.name === 'You', rest = (d.drafts.main || '').replace(/^@\S+\s*/, '');
+      var self = t.hasAttribute('data-self'), rest = (d.drafts.main || '').replace(/^@\S+\s*/, '');
       d.replyTo = Number(t.dataset.reply); d.replyName = self ? 'your comment' : t.dataset.name;
       d.drafts.main = self ? rest : '@' + t.dataset.name + ' ' + rest;
       renderReport(); focusComposer(); return;
@@ -1849,7 +1853,7 @@ button { font: inherit; color: inherit; }
     var f = e.target.closest('[data-cm-form]'); if (!f) return;
     e.preventDefault();
     var v = f.querySelector('textarea').value.trim(); if (!v) return;
-    var d = details[current], c = { who: 'You', rep: !!d.mine, ago: 'now', likes: 0, t: esc(v) };
+    var d = details[current], c = { who: ME, me: true, rep: !!d.mine, ago: 'now', likes: 0, t: esc(v) };
     if (d.replyTo != null) { d.cms[d.replyTo].replies.push(c); d.openThreads = d.openThreads || {}; d.openThreads[d.replyTo] = true; d.replyTo = null; }
     else { c.replies = []; d.cms.push(c); }
     d.drafts = d.drafts || {}; d.drafts.main = '';
