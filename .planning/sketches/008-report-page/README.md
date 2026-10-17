@@ -2,7 +2,7 @@
 sketch: 008
 name: report-page
 question: "When a reader opens one report, what does its own page look like on the phone and the laptop, with the trust block, the history, comments and Share, inside the approved app layout?"
-winner: "B (laptop, beside the map); the phone keeps its full screen page"
+winner: "B (laptop, beside the map); the phone keeps its full screen page. Locked by the owner 2026-10-17"
 tags: [report-page, trust-block, history, comments, share, phase-8, phone, laptop, light-dark]
 ---
 
@@ -18,10 +18,10 @@ the owner can click from Nearby into a report the same way the real app will wor
 Open `index.html` in a browser, or serve this folder and open `/?view=laptop` or `/?view=phone`. Tap a report in the
 Nearby list: the card shows **Open report**. Or tap its pin on the map (owner, 2026-10-17: "if we click on the report on
 the map, it should let me open the report", then "makes sure the phone ver also should work the same if anyone clicks on
-the map and that report should open"):
-- **Phone:** the pin opens its report straight away.
-- **Laptop:** while the list shows, a small label with the title and **Open report** appears over the pin; once a report
-  is open beside the map, tapping any pin opens that report.
+the map and that report should open", then "the laptop ver is not letting me click the report on the map and it should
+open"): the pin opens its report straight away, on the phone and the laptop alike. On the laptop it opens beside the
+map, and tapping another pin switches to that report. (A small "Open report" label over the pin was tried first on the
+laptop and dropped: it needed a second click.)
 
 Handy address parameters: `?view=phone|laptop`, `rp=a|b` (the laptop variant, B by default), `open=rep&i=0..5` (open report number
 0 to 5 straight away), `share=1` (with `open=rep`, opens Share).
@@ -86,10 +86,9 @@ Handy address parameters: `?view=phone|laptop`, `rp=a|b` (the laptop variant, B 
   "rescue and critical". The What is happening picks show for Critical only.
 - The laptop notice strip shows only on Nearby and the report page (03.4 D-29: Nearby and Post a report only; the report
   page belongs to Nearby).
-- Tapping a pin on Nearby opens its report: straight away on the phone, through a small label with Open report on the
-  laptop while the list shows (owner, 2026-10-17). On the phone a label could sit under the half open list, so the pin
-  opens the report itself. The highlighted card keeps its own Open report button. Phase 8 adds this; 3.4 builds the pin
-  tap as sketch 007 has it.
+- Tapping a pin on Nearby opens its report straight away, on the phone and the laptop (owner, 2026-10-17). The
+  highlighted card in the list keeps its own Open report button. Phase 8 adds this; 3.4 builds the pin tap as sketch 007
+  has it. The hint in the mockup's top strip now says to tap a pin or a report.
 
 ## Quieter pass (owner, 2026-10-17: "make sure it doesn't look too busy")
 
@@ -97,7 +96,11 @@ Nothing was taken away. The trust table became the popup's trust block, the thre
 two, the laptop A page became one reading column instead of two side by side, the timeline lines got shorter, the empty
 comments box and the always open text box went, and the section headings got smaller.
 
-## Owner decisions (2026-10-17)
+## Owner decisions (2026-10-17), locked
+
+The owner locked this design on 2026-10-17 ("yes i like it lets lock this"): the report page, the trust block, the
+history, the comments with replies and thumbs up likes, and Share, as they stand in this sketch. Changes from here go
+back to the owner first.
 
 - Laptop: **B, beside the map.** A stays in the file behind `?rp=a` for comparison only.
 - Comments are wanted, **with replies**, shown clearly on the page in an Instagram like layout, with a **thumbs up like, not a heart**, on both sizes (item 5). They still need the Phase 4
@@ -130,3 +133,4 @@ Fourth round, phone set up as in Instagram (2026-10-17): the page shows View all
 Fifth round, phone spacing (2026-10-17): the gaps in the block under the report measure 4px, 4px, then 17px to Add a comment (it has a picture); the page stays 390 of 390 wide; in the sheet Reply to View replies is 25px centre to centre; dark checked; the laptop is unchanged.
 Sixth round, clear list and no likes (2026-10-17): no heart anywhere on the phone or the laptop; the phone shows the full list under "Comments 6" with the box after it, in the phone frame and at 390px wide, with no sideways scroll; a reply posts into the right thread (4 replies, count 7); dark checked; the laptop only lost the hearts.
 Seventh round, thumbs up likes (2026-10-17): on the phone a like on a comment and on a reply both show filled with the count up by one (6 to 7, 5 to 6) and stay after a Confirm; five like buttons with one thread open, each 32 by 44; no sideways scroll; the laptop shows the same thumbs up after Reply, checked in dark.
+Eighth round, pins and lock (2026-10-17): on the laptop a pin tap opens its report beside the map (Traffic), a second pin switches it (Road blocked), and after All reports another pin opens again (Shelter); layout A and the phone also open on a pin tap; no pin label is left in the page.

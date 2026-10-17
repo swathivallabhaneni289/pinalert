@@ -776,14 +776,6 @@ button { font: inherit; color: inherit; }
   border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
 .card .openrep .ico { width: 18px; height: 18px; }
 .card.card-focus .openrep { display: flex; }
-.pinbub { position: absolute; z-index: 7; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 220px; min-height: 44px;
-  padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; text-align: left;
-  cursor: pointer; box-shadow: 0 4px 14px rgb(0 0 0 / 18%); transform: translate(-50%, calc(-100% - 30px)); }
-.pinbub[hidden] { display: none; }
-.pinbub-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; line-height: 1.35; }
-.pinbub-go { display: inline-flex; align-items: center; gap: 2px; font-size: 14px; font-weight: 600; color: var(--muted); }
-.pinbub-go .ico { width: 16px; height: 16px; }
-.pinbub:hover .pinbub-go { color: var(--text); }
 .rp-side { display: none; }
 .is-laptop.rv-b #sheet.showing-report { width: 520px; }
 .is-laptop.rv-b #sheet.showing-report > :not(.rp-side) { display: none; }
@@ -817,7 +809,7 @@ button { font: inherit; color: inherit; }
 </head>
 <body>
 <div class="mock-note" id="mock-note">
-  <span>Mockup with sample reports (Vijayawada floods). Tap a report, then Open report.</span>
+  <span>Mockup with sample reports (Vijayawada floods). Tap a pin on the map, or a report and then Open report.</span>
   <a href="?view=laptop" data-view="laptop">Laptop view</a>
   <a href="?view=phone" data-view="phone">Phone view</a>
   <span class="rv-pick laptop-only">Report page on the laptop: <a href="?view=laptop&rp=a" data-rv="a">A, its own page</a> <a href="?view=laptop&rp=b" data-rv="b">B, beside the map</a></span>
@@ -1748,28 +1740,9 @@ button { font: inherit; color: inherit; }
       composerHtml(r, d);
     return h;
   }
-  // Tapping a pin on Nearby shows a small label over it that opens the report (owner, 2026-10-17), on the phone and the
-  // laptop. The highlighted card in the list keeps its own Open report button.
-  var pinBub = document.createElement('button');
-  pinBub.className = 'pinbub'; pinBub.type = 'button'; pinBub.hidden = true;
-  nearMap.appendChild(pinBub);
-  function showPinBub(i) {
-    var p = Array.prototype.find.call(pins, function (x) { return Number(x.dataset.i) === i; }); if (!p) return;
-    pinBub.dataset.openrep = String(i);
-    pinBub.innerHTML = '<span class="pinbub-title">' + reports[i].title + '</span><span class="pinbub-go">Open report<span class="ico i-right"></span></span>';
-    pinBub.hidden = false;
-    var W = nearMap.clientWidth, x = parseFloat(p.style.left) / 100 * W, half = pinBub.offsetWidth / 2;
-    pinBub.style.left = Math.min(Math.max(x, half + 8), W - half - 8) + 'px';
-    pinBub.style.top = p.style.top;
-  }
-  function hidePinBub() { pinBub.hidden = true; }
-  nearMap.addEventListener('click', function (e) { if (!e.target.closest('.pin, .pinbub')) hidePinBub(); });
-  document.getElementById('near-cards').addEventListener('click', hidePinBub);
-  window.addEventListener('resize', hidePinBub);
   function mapFor(i) {
     var m = nearMap.cloneNode(true);
     m.removeAttribute('style');
-    Array.prototype.forEach.call(m.querySelectorAll('.pinbub'), function (b) { b.remove(); });
     var pin = m.querySelectorAll('.pin')[i], px = parseFloat(pin.style.left), py = parseFloat(pin.style.top);
     Array.prototype.forEach.call(m.querySelectorAll('.maplabel'), function (l) {
       if (Math.abs(parseFloat(l.style.left) + 6 - px) < 16 && Math.abs(parseFloat(l.style.top) - py) < 20) l.remove();
@@ -1802,7 +1775,6 @@ button { font: inherit; color: inherit; }
   }
   function openReport(i) {
     current = i;
-    hidePinBub();
     if (!isPhone && rv === 'b') {
       sheet.classList.add('showing-report');
       pins.forEach(function (p) { p.classList.toggle('pin-focus', Number(p.dataset.i) === i); });
@@ -1820,15 +1792,9 @@ button { font: inherit; color: inherit; }
     go('nearby');
     setTimeout(function () { setSheet(sheetState); focusReport(current, 'pin'); }, 0);
   }
-  pins.forEach(function (p) { p.addEventListener('click', function () { if (sheet.classList.contains('showing-report')) openReport(Number(p.dataset.i)); }); });
-  // Phone: tapping a pin opens its report straight away (owner, 2026-10-17); the half sheet could hide a label under it.
-  // Laptop: the label with Open report while the list shows; with a report showing, a pin opens its report (line above).
-  pins.forEach(function (p) {
-    p.addEventListener('click', function () {
-      if (isPhone) openReport(Number(p.dataset.i));
-      else if (!sheet.classList.contains('showing-report')) showPinBub(Number(p.dataset.i));
-    });
-  });
+  // Tapping a pin on the map opens its report straight away, on the phone and the laptop alike (owner, 2026-10-17: "the
+  // laptop ver is not letting me click the report on the map and it should open"). On the laptop it opens beside the map.
+  pins.forEach(function (p) { p.addEventListener('click', function () { openReport(Number(p.dataset.i)); }); });
   var shareModal = document.getElementById('share-modal');
   function openShare() {
     var r = reports[current], d = details[current];
