@@ -108,7 +108,18 @@ func TestOnboardingFlowEndToEnd(t *testing.T) {
 		`data-start-step="1"`, "Step 1 of 4", "Step 2 of 4", "Step 3 of 4", "Step 4 of 4",
 		"Welcome to Pinalert", "Disclaimer and policy", "Show what is happening near you", "About you",
 		"call 112 first.", "Please read this before you use Pinalert. Tap Agree to continue.",
-		"Filled in from your location.", "Search a place instead",
+		// Amended 2026-10-17 by Phase 3.4 plan 31: the step 3 button is Type my
+		// location instead, and the Disagree box is drawn with its call link
+		// (from the numbers setting) and the existing log out form.
+		"Filled in from your location.", "Type my location instead", "Type your location",
+		"For example: Koramangala, Bengaluru",
+		// Owner amendment the same day: the box is two short lines and two buttons.
+		"You need to agree to use Pinalert.",
+		"In danger? Call ",
+		`<a class="welcome__notice-call" href="tel:112" aria-label="Call 112">112</a>`,
+		`id="welcome-reread">Read again</button>`,
+		`<form class="welcome__notice-form" method="post" action="/auth/logout">`,
+		`id="welcome-logout">Log out</button>`,
 		// Plan 30: free movement between the steps. Back on steps 2 to 4, and
 		// each name in the step list is a button; the current one is marked.
 		`id="welcome-back-2"`, `id="welcome-back-3"`, `id="welcome-back-4"`,

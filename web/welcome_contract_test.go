@@ -114,15 +114,88 @@ func TestWelcomeStep2ReadsTheSharedText(t *testing.T) {
 		`<button type="button" class="btn" id="welcome-disagree">Disagree</button>`,
 		`<button type="button" class="btn btn--primary" id="welcome-agree">Agree</button>`)
 
-	// The message is a hidden status box that welcome.js fills, so the sentence
-	// has one source.
-	p13MustContain(t, "message box", page, `id="welcome-disagree-message" role="status" hidden`)
+	// Amended 2026-10-17 by Phase 3.4 plan 31 (the owner asked what should happen
+	// on Disagree and the suggestion was built): Disagree shows a calm box, drawn
+	// by the template and hidden until then, so the words have one source and
+	// welcome.js only shows and hides it. Owner amendment the same day: the first
+	// wording was too wordy, so the box is two short lines, You need to agree to
+	// use Pinalert. and In danger? Call 112. (a call link built from the same
+	// settings the Disclaimer uses, never a typed number), and
+	// holds two buttons: Read again and Log out (the app's existing log out,
+	// a real POST form to /auth/logout as in the person menu, ending at the sign
+	// in page). It is a group named by its first sentence, not a status region,
+	// because it holds buttons and takes focus.
+	p13MustContain(t, "disagree box", page,
+		`<div class="welcome__notice welcome__notice--box" id="welcome-disagree-message" role="group" aria-labelledby="welcome-disagree-lead" tabindex="-1" hidden>`,
+		`<p class="welcome__notice-lead" id="welcome-disagree-lead">You need to agree to use Pinalert.</p>`,
+		`<p class="welcome__notice-danger">In danger? Call <a class="welcome__notice-call" href="{{.Legal.CallHref}}" aria-label="Call {{.Legal.Numbers.Primary}}">{{.Legal.Numbers.Primary}}</a>.</p>`,
+		`<button type="button" class="btn" id="welcome-reread">Read again</button>`,
+		`<form class="welcome__notice-form" method="post" action="/auth/logout">`,
+		`<button type="submit" class="btn" id="welcome-logout">Log out</button>`)
+	w10Count(t, "welcome.html.tmpl", page, `action="/auth/logout"`, 1)
+	w10Count(t, "welcome.html.tmpl", page, `id="welcome-disagree-message"`, 1)
+	w10Count(t, "welcome.html.tmpl", page, "You need to agree to use Pinalert.", 1)
+	p13MustNotContain(t, "disagree box", page, `role="status" hidden>`, "keep everyone safe", "Read it again")
+	// The box sits under the buttons it answers, and its own buttons come in
+	// the order Read again, Log out.
+	p13Ordered(t, page, "step 2", `id="welcome-agree"`, `id="welcome-disagree-message"`, `id="welcome-reread"`, `id="welcome-logout"`, `id="welcome-error-2"`)
+	if strings.Contains(strings.NewReplacer("{{.Legal.Numbers.Primary}}", "", "{{.Legal.CallHref}}", "").Replace(page[strings.Index(page, `id="welcome-disagree-message"`):strings.Index(page, `id="welcome-error-2"`)]), "112") {
+		t.Errorf("the Disagree box types the emergency number; it comes from the numbers setting")
+	}
 
 	js := stripJSComments(p421ReadStatic(t, "js/welcome.js"))
-	w10Count(t, "welcome.js", js, "'You need to agree to use Pinalert.'", 1)
-	w10Count(t, "welcome.js", js, "You need to agree to use Pinalert.", 1)
-	if strings.Contains(js, "You need to agree to use Pinalert. ") {
-		t.Errorf("the Disagree message is one sentence until the Demo exists")
+	if strings.Contains(js, "You need to agree") || strings.Contains(js, "DISAGREE_MESSAGE") {
+		t.Errorf("welcome.js holds the Disagree sentence; the template is its one source")
+	}
+	// Disagree shows the box and moves focus into it, and records nothing.
+	dis := jsFunctionBody(t, js, "disagree()")
+	p13MustContain(t, "disagree", dis, "disagreeBox.hidden = false;", "disagreeBox.focus();")
+	p13MustNotContain(t, "disagree", dis, "request(", "fetch(", "CONSENT_URL")
+	// Read again scrolls the text box to the top and moves focus to it.
+	reread := jsFunctionBody(t, js, "readAgain()")
+	p13MustContain(t, "readAgain", reread, "scrollbox.scrollTop = 0;", "scrollbox.focus();")
+	p13MustNotContain(t, "readAgain", reread, "request(", "fetch(")
+	p13MustContain(t, "welcome.js", js, "el('welcome-reread').addEventListener('click', readAgain);")
+	// Log out is the form's own submit: no handler, no request of the script's own.
+	p13MustNotContain(t, "welcome.js", js, "welcome-logout", "/auth/logout")
+	// Agree hides the box at once; the box is never passed to hideLine, which
+	// would empty its text.
+	agree := jsFunctionBody(t, js, "agree()")
+	p13MustContain(t, "agree", agree, "hideDisagreeBox();")
+	p13MustNotContain(t, "welcome.js", js, "hideLine(disagreeMessage)", "showLine(disagreeMessage")
+}
+
+// TestWelcomeDisagreeBoxStyle pins the look of the Disagree box (plan 31): the
+// existing .welcome__notice family, tokens only, square corners like the other
+// buttons (never a pill), no dark outline, the two buttons side by side on a
+// laptop and stacked full width on the phone at 48px, and the call link a
+// 44px target.
+func TestWelcomeDisagreeBoxStyle(t *testing.T) {
+	css := stripCSSComments(p421ReadStatic(t, "css/welcome.css"))
+	rules := parseCSSRules(css)
+	for _, sel := range []string{".welcome__notice--box:not([hidden])", ".welcome__notice-lead", ".welcome__notice-danger", ".welcome__notice-actions", ".welcome__notice-call"} {
+		if _, ok := ruleBySelector(rules, sel); !ok {
+			t.Errorf("welcome.css has no %s rule", sel)
+		}
+	}
+	if r, ok := ruleBySelector(rules, ".welcome__notice--box:not([hidden])"); ok {
+		d := declsOf(r.declBody)
+		if d["border"] != "" && strings.Contains(d["border"], "var(--color-text)") {
+			t.Errorf("the Disagree box has a dark outline: %q", d["border"])
+		}
+		if strings.Contains(d["border-radius"], "999") || strings.Contains(d["border-radius"], "50%") {
+			t.Errorf("the Disagree box is not a pill: %q", d["border-radius"])
+		}
+	}
+	if r, ok := ruleBySelector(rules, ".welcome__notice-call"); ok {
+		if d := declsOf(r.declBody); d["min-height"] != "44px" && d["min-height"] != "var(--touch-target-min)" {
+			t.Errorf("the call link target is %q, want 44px", d["min-height"])
+		}
+	}
+	for _, banned := range []string{"999px"} {
+		if strings.Contains(css, banned) {
+			t.Errorf("welcome.css holds %q", banned)
+		}
 	}
 }
 
@@ -179,11 +252,17 @@ func TestWelcomeStep3And4Privacy(t *testing.T) {
 		"Your exact location stays private.", "It is never shown to anyone and never stored.",
 		`<div class="welcome__actions welcome__actions--under">`,
 		`<button type="button" class="btn btn--primary" id="welcome-allow-location">Allow location</button>`,
-		`<button type="button" class="btn" id="welcome-search-open">Search a place instead</button>`,
+		`<button type="button" class="btn" id="welcome-search-open">Type my location instead</button>`,
 		`<div class="welcome__search" id="welcome-search-block" hidden>`,
-		`Search a place`,
 		`id="welcome-continue-3"`)
-	p13MustNotContain(t, "step 3", page, "welcome__tile", "Not now, I will search a place")
+	// Amended 2026-10-17 by Phase 3.4 plan 31 (the owner said "Search a place
+	// instead" does not make sense): the second button reads Type my location
+	// instead; the search it opens is labelled Type your location and shows the
+	// example For example: Koramangala, Bengaluru, as step 4's field does.
+	p13MustContain(t, "step 3 search", page,
+		`<label class="app-window__label" for="welcome-search-input">Type your location</label>`,
+		`placeholder="For example: Koramangala, Bengaluru"`)
+	p13MustNotContain(t, "step 3", page, "welcome__tile", "Not now, I will search a place", "Search a place")
 	p13MustContain(t, "step 4", page,
 		"Both are optional. They show only if you later let others follow you.",
 		`placeholder="For example: Ravi Kumar"`,
