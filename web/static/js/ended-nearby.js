@@ -11,7 +11,11 @@
 //     the one read below and is never stored, written or posted anywhere: the
 //     server keeps no reader location (T-34-60);
 //   - with no kept position nothing is requested, and the part says it needs the
-//     location;
+//     location, with one exception: a link to a finished report (part=ended and
+//     report=ID) is still answered, because the server answers a report link from
+//     any centre. The one read then goes out from the page's fallback centre
+//     (nobody's position), only the linked row is drawn, with no distance, and
+//     the location line stays on screen under it (code review part 2, CR-01);
 //   - the answer is drawn in two groups, Resolved then Faded out, each in the
 //     server's order (newest first) and with the server's own cut and partial
 //     flags; the rows are built by ended-cards.js;
@@ -116,6 +120,24 @@ window.PinalertEndedNearby = (function () {
 
   function readPosition() {
     return typeof PinalertPosition !== 'undefined' ? PinalertPosition.read() : null;
+  }
+
+  // fallbackCentre is the page's fallback centre, the same one Nearby starts
+  // from. It is nobody's position: it only gives a report link a centre to be
+  // asked from, and nothing is shown that was measured from it.
+  function fallbackCentre() {
+    return { lat: Pinalert.config.fallbackLat, lon: Pinalert.config.fallbackLon };
+  }
+
+  // withoutDistance copies a report with its distance taken out, so its Distance
+  // cell reads Unknown rather than a number measured from the fallback centre.
+  function withoutDistance(report) {
+    var copy = {};
+    Object.keys(report).forEach(function (key) {
+      copy[key] = report[key];
+    });
+    copy.distance_km = null;
+    return copy;
   }
 
   // greatCircleKm is the haversine distance between two points, for the
@@ -254,16 +276,43 @@ window.PinalertEndedNearby = (function () {
     });
   }
 
+  // finishLinkOnly shows the part after the read of a link with no kept
+  // position (CR-01): the linked row under its column heads with the location
+  // state still on screen below it, or, with no row to show, the location state
+  // alone. It answers the number of rows drawn.
+  function finishLinkOnly(shown, told, quiet) {
+    if (shown === 0) {
+      showState('location');
+      return shown;
+    }
+    showState('groups');
+    setHidden(colsEl, false);
+    setHidden(locationEl, false);
+    if (!told) {
+      highlight(chosenId, quiet);
+    }
+    return shown;
+  }
+
   // render draws an answer of the Past read. Zero reports and no partial flag is
   // the empty state; a partial flag always keeps its group on screen, so an
   // empty block is never claimed while the server says some are missing.
-  function render(answer, quiet) {
-    var reports = answer && Array.isArray(answer.reports) ? answer.reports : [];
-    var cut = answer && answer.cut ? answer.cut : {};
+  //
+  // linkOnly is the read of a link to a finished report with no kept position
+  // (CR-01). The reports around the fallback centre are nobody's, so none of
+  // them is drawn, only the linked row, without a distance. The hub count stays
+  // empty (one row is not a count) and the location state stays on screen under
+  // the row; when there is no row to show the part is just the location state.
+  function render(answer, quiet, linkOnly) {
+    var reports = answer && Array.isArray(answer.reports) && linkOnly !== true ? answer.reports : [];
+    var cut = answer && answer.cut && linkOnly !== true ? answer.cut : {};
     var resolvedPartial = cut.resolved_partial === true;
     var expiredPartial = cut.expired_partial === true;
     var split = splitByState(reports);
     var linked = linkedReport(answer, split, quiet === true);
+    if (linkOnly === true && linked.report) {
+      linked = { report: withoutDistance(linked.report), told: linked.told };
+    }
     var linkedState = linked.report ? stateOf(linked.report) : '';
 
     rowsById = {};
@@ -271,6 +320,10 @@ window.PinalertEndedNearby = (function () {
       cut.resolved === true, resolvedPartial);
     shown += drawGroup(groups.expired, split.expired, linkedState === 'expired' ? linked.report : null,
       cut.expired === true, expiredPartial);
+
+    if (linkOnly === true) {
+      return finishLinkOnly(shown, linked.told, quiet === true);
+    }
 
     writeCount(shown);
     if (shown === 0 && !resolvedPartial && !expiredPartial) {
@@ -332,7 +385,9 @@ window.PinalertEndedNearby = (function () {
   }
 
   // load reads the Past answer once for the kept position and draws it. With no
-  // position it sends nothing and shows the location state. It answers a
+  // position it sends nothing and shows the location state, except for a link to
+  // a finished report (CR-01): that is still asked, once, from the fallback
+  // centre, and only the linked row is drawn (see render). It answers a
   // promise that settles when the part is drawn, whatever the result.
   //
   // The quiet form (used by refresh, after a take back) shows no skeleton, still
@@ -340,19 +395,23 @@ window.PinalertEndedNearby = (function () {
   // nothing in words a second time, moves nothing and leaves the rows as they are
   // when the read fails: the caller learns of the failure from the null answer.
   function load(quiet) {
-    var position = readPosition();
-    if (quiet === true && !position) {
+    var kept = readPosition();
+    var linkOnly = !kept && chosenId !== null;
+    if (quiet === true && !kept && !linkOnly) {
       return Promise.resolve(null);
     }
     var seq = ++readSeq;
-    fillDistances(position);
-    if (!position) {
+    // The Distance cells of the other parts are measured from the kept position
+    // only, never from the fallback centre.
+    fillDistances(kept);
+    if (!kept && !linkOnly) {
       showState('location');
       return Promise.resolve(null);
     }
     if (quiet !== true) {
       showState('loading');
     }
+    var position = kept || fallbackCentre();
 
     var url = '/api/reports' +
       '?lat=' + encodeURIComponent(position.lat) +
@@ -375,7 +434,7 @@ window.PinalertEndedNearby = (function () {
       if (seq !== readSeq) {
         return null;
       }
-      render(body, quiet === true);
+      render(body, quiet === true, linkOnly);
       return body;
     }).catch(function () {
       limit.clear();
@@ -446,9 +505,58 @@ window.PinalertEndedNearby = (function () {
     });
   }
 
+  // holdFocus puts focus on the skeleton while a Try again read is out. The
+  // button the person pressed is hidden by then, and the part title is not drawn
+  // on a phone part screen, so the skeleton is the one thing on screen that is
+  // the part itself (code review part 2, WR-06).
+  function holdFocus() {
+    if (skeletonEl && skeletonEl.hidden === false) {
+      skeletonEl.setAttribute('tabindex', '-1');
+      skeletonEl.focus();
+    }
+  }
+
+  // needsFocus says whether focus is still where holdFocus left it, or was lost
+  // with the hidden button. Focus the person moved elsewhere meanwhile is theirs.
+  function needsFocus() {
+    var active = document.activeElement;
+    if (focusLost() || active === skeletonEl) {
+      return true;
+    }
+    return active === retryEl && errorEl !== null && errorEl.hidden === true;
+  }
+
+  // landFocus moves focus to what the settled read shows: Try again again after
+  // a second failure, else the first row, else the empty block or the location
+  // line (each takes focus without being a tab stop).
+  function landFocus() {
+    if (!needsFocus()) {
+      return;
+    }
+    var target = null;
+    if (errorEl && errorEl.hidden === false) {
+      target = retryEl;
+    } else if (groups.resolved.list.firstChild || groups.expired.list.firstChild) {
+      target = groups.resolved.list.firstChild || groups.expired.list.firstChild;
+    } else if (emptyEl && emptyEl.hidden === false) {
+      target = emptyEl;
+    } else if (locationEl && locationEl.hidden === false) {
+      target = locationEl;
+    }
+    if (target === null) {
+      return;
+    }
+    if (target !== retryEl) {
+      target.setAttribute('tabindex', '-1');
+    }
+    target.focus();
+  }
+
   if (retryEl) {
     retryEl.addEventListener('click', function () {
-      load();
+      var settled = load();
+      holdFocus();
+      settled.then(landFocus);
     });
   }
 

@@ -166,7 +166,12 @@ func TestEndedNearbyNeverEmptyBlockWhilePartial(t *testing.T) {
 	// Amended 2026-10-17 by Phase 3.4 plan 19: render takes a second argument, quiet,
 	// for the redraw after a take back (nothing scrolls or takes focus). The guards below
 	// are unchanged.
-	render := jsFunctionBody(t, nearby, "render(answer, quiet)")
+	//
+	// Amended 2026-10-17 by Phase 3.4 plan 25 (code review part 2 CR-01): render takes a
+	// third argument, linkOnly, for the read of a link to a finished report with no kept
+	// position; that branch leaves render through finishLinkOnly before any of the guards
+	// below, so the guards are unchanged.
+	render := jsFunctionBody(t, nearby, "render(answer, quiet, linkOnly)")
 	p13MustContain(t, "render", render,
 		"var resolvedPartial = cut.resolved_partial === true;", "var expiredPartial = cut.expired_partial === true;",
 		"if (shown === 0 && !resolvedPartial && !expiredPartial) {", "showState('empty');")
