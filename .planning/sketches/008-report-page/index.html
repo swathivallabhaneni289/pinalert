@@ -689,7 +689,7 @@ button { font: inherit; color: inherit; }
 .rp-resolved .linkbtn { color: var(--text); text-decoration: underline; }
 /* One reading column everywhere: history, then comments, the same order on the phone, A and B. */
 .is-laptop .rp-inner { max-width: 720px; }
-.rp-cols { display: grid; gap: 28px; margin-top: 28px; }
+.rp-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; margin-top: 28px; }
 .rp-sec h2 { margin: 0 0 12px; font-size: 16px; line-height: 1.3; }
 .rp-sec h2 .n { margin-left: 4px; color: var(--muted); font-weight: 400; }
 .tl { list-style: none; margin: 0; padding: 0; }
@@ -757,13 +757,35 @@ button { font: inherit; color: inherit; }
 .is-laptop .cm-compose { position: sticky; bottom: 0; margin: 20px -24px 0; padding: 8px 24px; }
 .is-laptop .screen-report .cm-compose { margin: 20px -32px 0; padding: 8px 32px; }
 .is-laptop .cm-compose:focus-within { box-shadow: 0 -6px 12px rgb(0 0 0 / 6%); }
-/* Phone: the comments sheet. */
+.cm-pill { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; }
+/* Phone, set up as in the Instagram app (owner, 2026-10-17: "even the comment section should act like instagram set up on
+   the phone"). Under the report: "View all N comments", the two newest comments on one line each, and "Add a comment…"
+   with your picture; any of them opens the comments sheet. The sheet rises to about two thirds of the screen with a grab
+   handle and "Comments" centred and no X: drag the handle up for the full screen, drag it down or tap outside to close
+   (Escape and a close button that shows on keyboard focus do the same). The box is a rounded field with Post inside it. */
+.ig-peek .cm-viewall { display: block; }
+.ig-peekrow { display: block; width: 100%; min-height: 32px; padding: 0; border: 0; background: none; color: var(--text); font: inherit;
+  font-size: 15px; line-height: 32px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.ig-addrow { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; margin-top: 4px; padding: 0; border: 0; background: none;
+  color: var(--muted); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
+.ig-addrow .cm-av { width: 28px; height: 28px; }
+.ig-addrow .cm-av .ico { width: 16px; height: 16px; }
 .is-phone #cm-modal { align-items: flex-end; }
-.cm-dlg { display: flex; flex-direction: column; width: min(520px, 100%); height: 85%; background: var(--bg); border-radius: 12px 12px 0 0; overflow: hidden; }
-.cm-dlg .dlg-head { align-items: center; padding: 8px 8px 8px 16px; }
-.cm-dlg .dlg-head h2 { font-size: 17px; }
+.cm-dlg { display: flex; flex-direction: column; width: min(520px, 100%); height: 68%; background: var(--bg); border-radius: 16px 16px 0 0; overflow: hidden;
+  transition: height .25s ease, transform .25s ease; }
+.cm-dlg.full { height: 100%; border-radius: 0; }
+.cm-dlg.dragging { transition: none; }
+.cm-grab { position: relative; flex: none; padding: 8px 16px 12px; border-bottom: 1px solid var(--border); text-align: center; cursor: grab; touch-action: none; }
+.cm-handle { display: block; width: 40px; height: 4px; margin: 0 auto 10px; border-radius: 2px; background: color-mix(in srgb, var(--muted) 55%, transparent); }
+.cm-grab h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.cm-close { position: absolute; top: 4px; right: 8px; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  border: 0; background: var(--bg); color: var(--text); font: inherit; font-size: 14px; font-weight: 600; }
+.cm-close:focus-visible { width: auto; height: 44px; padding: 0 12px; clip-path: none; outline: 2px solid var(--text); border-radius: 6px; }
 .cm-sheet-list { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
 .cm-dlg .cm-compose { padding: 8px 16px 12px; }
+.cm-dlg .cm-compose-row { gap: 10px; }
+.cm-dlg .cm-pill { min-height: 44px; padding: 0 4px 0 14px; border: 1px solid var(--border); border-radius: 22px; }
+.cm-dlg .cm-compose textarea { padding: 10px 0; }
 .card .openrep { display: none; width: 100%; height: 44px; margin-top: 10px; align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--border);
   border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
 .card .openrep .ico { width: 18px; height: 18px; }
@@ -1182,8 +1204,8 @@ button { font: inherit; color: inherit; }
   <!-- SHARE, opened from Share on a report -->
   <div class="modal-back" id="cm-modal" hidden>
     <div class="cm-dlg" role="dialog" aria-modal="true" aria-labelledby="cm-sheet-title">
-      <header class="dlg-head"><div><h2 id="cm-sheet-title">Comments</h2></div>
-        <button class="iconbtn" data-close-cm aria-label="Close"><span class="ico i-x"></span></button></header>
+      <div class="cm-grab" data-cm-drag><span class="cm-handle" aria-hidden="true"></span><h2 id="cm-sheet-title">Comments</h2>
+        <button class="cm-close" data-close-cm>Close comments</button></div>
       <div class="cm-sheet-list" id="cm-sheet-list"></div>
       <div id="cm-sheet-compose"></div>
     </div>
@@ -1696,8 +1718,8 @@ button { font: inherit; color: inherit; }
     var v = (d.drafts || {}).main || '', left = 280 - v.length;
     return '<form class="cm-compose' + (v.trim() ? ' has-text' : '') + '" data-cm-form>' +
       (d.replyTo != null ? '<div class="cm-replying"><span>Replying to <b>' + d.replyName + '</b></span><button type="button" class="iconbtn" data-cancel-reply aria-label="Cancel reply"><span class="ico i-x"></span></button></div>' : '') +
-      '<div class="cm-compose-row">' + avHtml(r, d.mine) + '<textarea rows="1" maxlength="280" aria-label="Add a comment" placeholder="Add a comment…">' + esc(v) + '</textarea>' +
-      '<button class="cm-post" type="submit">Post</button></div><span class="cm-left">' + (left <= 40 ? left + ' left' : '') + '</span></form>';
+      '<div class="cm-compose-row">' + avHtml(r, d.mine) + '<div class="cm-pill"><textarea rows="1" maxlength="280" aria-label="Add a comment" placeholder="Add a comment…">' + esc(v) + '</textarea>' +
+      '<button class="cm-post" type="submit">Post</button></div></div><span class="cm-left">' + (left <= 40 ? left + ' left' : '') + '</span></form>';
   }
   function commentTotal(d) { return d.cms.reduce(function (n, c) { return n + 1 + c.replies.length; }, 0); }
   function reportBody(i, back) {
@@ -1736,9 +1758,13 @@ button { font: inherit; color: inherit; }
     }).join('') + '</ol></section>';
     var total = commentTotal(d);
     if (isPhone) {
-      // Phone: as on Instagram, the page shows a link and the comments open in their own sheet with the box inside it.
-      h += '<section class="rp-sec"><h2>Comments</h2><button class="cm-viewall" data-cm-open>' +
-        (total ? (total === 1 ? 'View 1 comment' : 'View all ' + total + ' comments') : 'No comments yet. Add one') + '</button></section></div>';
+      // Phone, as under a post in the Instagram app: View all, the two newest comments, then Add a comment. Each opens the sheet.
+      h += '<section class="rp-sec ig-peek"><h2>Comments</h2>' +
+        (total ? '<button class="cm-viewall" data-cm-open>' + (total === 1 ? 'View 1 comment' : 'View all ' + total + ' comments') + '</button>' : '') +
+        d.cms.slice(-2).map(function (c) {
+          return '<button class="ig-peekrow" data-cm-open><span class="ig-name">' + c.who + '</span> ' + c.t.replace(/^@(\S+)/, '<span class="ig-at">@$1</span>') + '</button>';
+        }).join('') +
+        '<button class="ig-addrow" data-cm-open data-cm-focus>' + avHtml(r, d.mine) + '<span>Add a comment…</span></button></section></div>';
     } else {
       h += '<section class="rp-sec"><h2>Comments' + (total ? ' <span class="n">' + total + '</span>' : '') + '</h2>' + igList(r, d) + '</section></div>' +
         composerHtml(r, d);
@@ -1844,7 +1870,7 @@ button { font: inherit; color: inherit; }
   }
   document.addEventListener('click', function (e) {
     var t = e.target.closest('[data-openrep],[data-rp-back],[data-trust],[data-reply],[data-cancel-reply],[data-thread],[data-like],[data-cm-open],[data-close-cm],[data-vote],[data-resolve],[data-unresolve],[data-mute],[data-flag],[data-share],[data-close-share],[data-share-wa],[data-copy]');
-    if (!t) { if (e.target === shareModal) shareModal.hidden = true; if (e.target === cmModal) cmModal.hidden = true; return; }
+    if (!t) { if (e.target === shareModal) shareModal.hidden = true; if (e.target === cmModal) closeCm(); return; }
     var d = details[current];
     d.drafts = d.drafts || {};
     // Reply puts @username in the one box, as on Instagram, and says who you are replying to.
@@ -1861,8 +1887,8 @@ button { font: inherit; color: inherit; }
       var p = t.dataset.like.split('.'), c = d.cms[Number(p[0])]; if (p.length > 1) c = c.replies[Number(p[1])];
       c.liked = !c.liked; c.likes = (c.likes || 0) + (c.liked ? 1 : -1); renderReport(); return;
     }
-    if (t.hasAttribute('data-cm-open')) { cmModal.hidden = false; renderReport(); return; }
-    if (t.hasAttribute('data-close-cm')) { cmModal.hidden = true; return; }
+    if (t.hasAttribute('data-cm-open')) { cmModal.hidden = false; renderReport(); if (t.hasAttribute('data-cm-focus')) focusComposer(); return; }
+    if (t.hasAttribute('data-close-cm')) { closeCm(); return; }
     if (t.dataset.openrep) { e.stopPropagation(); openReport(Number(t.dataset.openrep)); return; }
     if (t.hasAttribute('data-rp-back')) { backFromReport(); return; }
     if (t.hasAttribute('data-trust')) { d.trustOpen = !d.trustOpen; renderReport(); return; }
@@ -1896,8 +1922,28 @@ button { font: inherit; color: inherit; }
   document.addEventListener('keydown', function (e) {
     // Enter posts, Shift and Enter makes a new line, as on Instagram on a computer.
     if (e.key === 'Enter' && !e.shiftKey && e.target.closest && e.target.closest('[data-cm-form]')) { e.preventDefault(); e.target.closest('form').requestSubmit(); }
-    if (e.key === 'Escape') { shareModal.hidden = true; cmModal.hidden = true; }
+    if (e.key === 'Escape') { shareModal.hidden = true; closeCm(); }
   });
+  // The comments sheet on the phone: drag the handle up for the full screen, down to close, as in the Instagram app.
+  var cmDlg = cmModal.querySelector('.cm-dlg'), cmGrab = cmModal.querySelector('[data-cm-drag]'), cmY = null, cmH = 0;
+  function closeCm() { cmModal.hidden = true; cmDlg.classList.remove('full'); }
+  function endCmDrag(dy) {
+    cmY = null; cmDlg.classList.remove('dragging'); cmDlg.style.transform = ''; cmDlg.style.height = '';
+    if (dy > 90) closeCm(); else if (dy < -40) cmDlg.classList.add('full'); else if (dy > 30) cmDlg.classList.remove('full');
+  }
+  cmGrab.addEventListener('pointerdown', function (e) {
+    if (e.target.closest('button')) return;
+    cmY = e.clientY; cmH = cmDlg.offsetHeight; cmDlg.classList.add('dragging');
+    if (cmGrab.setPointerCapture && e.pointerId != null) try { cmGrab.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  cmGrab.addEventListener('pointermove', function (e) {
+    if (cmY == null) return;
+    var dy = e.clientY - cmY;
+    if (dy > 0) { cmDlg.style.height = cmH + 'px'; cmDlg.style.transform = 'translateY(' + dy + 'px)'; }
+    else { cmDlg.style.transform = ''; cmDlg.style.height = Math.min(cmH - dy, cmModal.clientHeight) + 'px'; }
+  });
+  cmGrab.addEventListener('pointerup', function (e) { if (cmY != null) endCmDrag(e.clientY - cmY); });
+  cmGrab.addEventListener('pointercancel', function () { if (cmY != null) endCmDrag(0); });
   window.__mock.openReport = openReport;
   if (params.get('open') === 'rep') openReport(Number(params.get('i') || 0));
   if (params.get('share')) openShare();

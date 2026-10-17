@@ -62,8 +62,13 @@ Handy address parameters: `?view=phone|laptop`, `rp=a|b` (the laptop variant, B 
      The box grows as you type, and "N left" shows only in the last 40 of the 280 letters.
    - **Laptop:** the comments sit in the panel, oldest first, with the box pinned to the bottom of the panel, as on
      Instagram's post view on a computer.
-   - **Phone:** the page shows "View all N comments" (or "No comments yet. Add one"), which opens a comments sheet from
-     the bottom with the box pinned inside it, as in the Instagram app. Close with the X, a tap outside or Escape.
+   - **Phone, set up as in the Instagram app** (owner, 2026-10-17: "even the comment section should act like instagram
+     set up on the phone"). Under the report, as under a post: "View all N comments", the two newest comments on one line
+     each ("username words…"), and "Add a comment…" with your picture. Any of them opens the comments sheet; "Add a
+     comment…" also puts the cursor in the box. The sheet rises to about two thirds of the screen with a grab handle and
+     "Comments" centred, and no X: drag the handle up for the full screen, drag it down or tap outside to close. Escape,
+     and a "Close comments" button that only shows on keyboard focus, close it too. The box is a rounded field with Post
+     inside it, pinned to the bottom of the sheet.
    - The count beside Comments includes replies. A like, an open thread and a half typed comment all survive a vote.
    - Likes are new. The rules to keep when building: one like per account per comment, comments only (never on the
      report itself), and they never feed Confirmed, the reporter score or any trust number. A heart must never read as
@@ -122,3 +127,4 @@ reply in the right thread and the count goes from 6 to 7; Reply on your own comm
 that thread; View and Hide replies work; the laptop box sits flush with the panel bottom with the last comment above it;
 on the phone "View all 6 comments" opens the sheet, its box sits at the sheet bottom, and a username never breaks across
 lines; the heart is 32 by 44 and Reply 44 tall; light and dark checked.
+Fourth round, phone set up as in Instagram (2026-10-17): the page shows View all 6 comments, two one line previews and Add a comment… with no sideways scroll (page 390 of 390); Add a comment… opens the sheet with the cursor in it; the sheet opens at 497 of 731px, a drag up of 100px goes full (731px), a drag down of 150px closes it; light and dark checked. The laptop box has no border (unchanged look).
