@@ -646,14 +646,33 @@ button { font: inherit; color: inherit; }
 .rp-head.low .dot { background: var(--low-bg); color: var(--low); }
 .rp-head.disputed .dot { background: var(--surface); color: var(--muted); }
 .rp-title { margin: 0; font-size: 20px; line-height: 1.3; font-weight: 600; }
-.rp-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 6px 0 0; font-size: 14px; color: var(--muted); }
+/* Quieter pass (owner, 2026-10-17: "make sure it doesn't look too busy"). The top is two short lines: the label with the
+   reporter words beside it (sketch 003 H), then one meta line whose dots travel with the part after them. */
+.rp-state { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 8px 0 0; font-size: 14px; }
+.rp-meta { margin: 4px 0 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
+.rp-meta .rm { white-space: nowrap; }
+.rp-meta .rm.place { white-space: normal; }
+.rp-meta .rm + .rm::before { content: "·"; margin-right: 6px; }
 .rp-words { margin: 16px 0 0; font-size: 16px; line-height: 1.5; }
-.rp-trust { margin-top: 16px; }
-.tr-row { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; padding: 12px 14px; border-top: 1px solid var(--border); font-size: 15px; line-height: 1.45; }
-.tr-row:first-child { border-top: 0; }
-.tr-lbl { color: var(--muted); font-size: 14px; }
-.tr-val b { font-weight: 600; }
-.tr-val .warn { color: var(--critical); font-weight: 600; }
+/* The trust block is the popup's (sketch 003 H, as shipped): counts on row one, how current on row two, a chevron, and the
+   sentences one tap away. */
+.rp-trust { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 4px; }
+.tb-btn { display: flex; align-items: center; gap: 8px; width: calc(100% + 16px); min-height: 44px; margin: 0 -8px; padding: 6px 8px; border: 0;
+  border-radius: 8px; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.tb-btn:hover { background: color-mix(in srgb, var(--border) 50%, transparent); }
+.tb-btn:active { background: var(--border); }
+.tb-face { flex: 1; min-width: 0; }
+.tb-counts { display: flex; flex-wrap: wrap; column-gap: 24px; font-size: 16px; line-height: 30px; }
+.tb-counts b { font-weight: 600; }
+.tb-counts .second { position: relative; }
+.tb-counts .second::before { content: ""; position: absolute; top: 8px; bottom: 8px; left: -12px; width: 1px; background: var(--border); }
+.tb-cur { font-size: 14px; line-height: 22px; color: var(--muted); }
+.tb-cur.warn { color: var(--critical); font-weight: 600; }
+.tb-btn .i-down { transition: transform 150ms ease; }
+.tb-btn[aria-expanded="true"] .i-down { transform: rotate(180deg); }
+.tb-panel { margin: 4px 0 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; }
+.tb-panel p { margin: 0; font-size: 14px; line-height: 1.45; }
+.tb-panel p + p { margin-top: 6px; }
 .rp-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .vote { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 18px; border: 1px solid var(--border); border-radius: 6px;
   background: var(--bg); color: var(--text); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
@@ -668,10 +687,10 @@ button { font: inherit; color: inherit; }
 .linkbtn .ico { width: 16px; height: 16px; }
 .linkbtn[disabled] { cursor: default; }
 .rp-resolved .linkbtn { color: var(--text); text-decoration: underline; }
+/* One reading column everywhere: history, then comments, the same order on the phone, A and B. */
+.is-laptop .rp-inner { max-width: 720px; }
 .rp-cols { display: grid; gap: 28px; margin-top: 28px; }
-.is-laptop .rp-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; align-items: start; }
-.rv-b .rp-side .rp-cols { grid-template-columns: minmax(0, 1fr); gap: 28px; }
-.rp-sec h2 { margin: 0 0 12px; font-size: 18px; line-height: 1.3; }
+.rp-sec h2 { margin: 0 0 12px; font-size: 16px; line-height: 1.3; }
 .rp-sec h2 .n { margin-left: 4px; color: var(--muted); font-weight: 400; }
 .tl { list-style: none; margin: 0; padding: 0; }
 .tl li { display: grid; grid-template-columns: 64px 16px minmax(0, 1fr); gap: 10px; padding-bottom: 16px; font-size: 15px; line-height: 1.45; }
@@ -684,23 +703,33 @@ button { font: inherit; color: inherit; }
 .tl-mark.good::before { background: var(--low); }
 .tl-mark.bad::before { background: var(--critical); }
 .cm { list-style: none; margin: 0; padding: 0; }
-.cm li { padding: 12px 14px; border-top: 1px solid var(--border); }
-.cm li:first-child { border-top: 0; }
+.cm li { padding: 12px 0; border-top: 1px solid var(--border); }
+.cm li:first-child { padding-top: 0; border-top: 0; }
 .cm-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
 .cm-meta b { color: var(--text); font-weight: 600; }
 .cm-tag { padding: 1px 6px; border-radius: 4px; background: var(--surface); color: var(--text); font-size: 12px; font-weight: 600; }
 .cm p { margin: 4px 0 0; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
-.cm-empty { padding: 14px; color: var(--muted); font-size: 15px; }
-.cm-form { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
-.cm-form label { font-size: 14px; font-weight: 600; }
-.cm-form textarea { width: 100%; min-height: 76px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+.cm-empty { margin: 0; color: var(--muted); font-size: 15px; }
+/* The comment box is one line until it is used; it grows on focus and the letter count shows once typing starts. */
+.cm-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 6px 8px; margin-top: 12px; }
+.cm-form textarea { width: 100%; height: 44px; resize: none; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
   background: var(--bg); color: var(--text); font: inherit; font-size: 16px; line-height: 1.4; }
-.cm-foot { display: flex; align-items: center; gap: 12px; }
-.cm-count { flex: 1; font-size: 13px; color: var(--muted); }
+.cm-form textarea:focus, .cm-form.has-text textarea { height: 88px; }
+.cm-form .postbtn { height: 44px; }
+.cm-count { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
+.cm-form:not(.has-text) .cm-count { display: none; }
 .card .openrep { display: none; width: 100%; height: 44px; margin-top: 10px; align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--border);
   border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
 .card .openrep .ico { width: 18px; height: 18px; }
 .card.card-focus .openrep { display: flex; }
+.pinbub { position: absolute; z-index: 7; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 220px; min-height: 44px;
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; text-align: left;
+  cursor: pointer; box-shadow: 0 4px 14px rgb(0 0 0 / 18%); transform: translate(-50%, calc(-100% - 30px)); }
+.pinbub[hidden] { display: none; }
+.pinbub-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; line-height: 1.35; }
+.pinbub-go { display: inline-flex; align-items: center; gap: 2px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.pinbub-go .ico { width: 16px; height: 16px; }
+.pinbub:hover .pinbub-go { color: var(--text); }
 .rp-side { display: none; }
 .is-laptop.rv-b #sheet.showing-report { width: 520px; }
 .is-laptop.rv-b #sheet.showing-report > :not(.rp-side) { display: none; }
@@ -1527,64 +1556,71 @@ button { font: inherit; color: inherit; }
   root.classList.add('rv-' + rv);
   document.querySelectorAll('[data-rv]').forEach(function (a) { if (a.dataset.rv === rv) a.setAttribute('aria-current', 'page'); });
   var details = [
-    { mine: true, cat: 'Flood', place: 'Near Benz Circle, Vijayawada', dist: '0.8 km', posted: 'You posted this 12 min ago, at 2:10 pm', confN: 4, dispN: 0,
-      cur: 'Report up to date. Fades at 8:10 pm.', rep: 'You posted this report.', code: '7KQ2',
-      hist: [['2:10 pm', 'Posted as Critical. Shown to everyone at once because it is critical.', ''], ['2:14 pm', 'Confirmed by a person at a second spot.', 'good'],
+    // repTag sits beside the label (sketch 003 H); curTag is row two of the trust button; curLine and repLine are panel sentences.
+    { mine: true, cat: 'Flood', place: 'Near Benz Circle, Vijayawada', dist: '0.8 km', ago: '12 min ago', confN: 4, dispN: 0,
+      curTag: 'Report up to date', curLine: 'Confirmed from 4 different spots in the last 2 hours. Fades at 8:10 pm.', repTag: 'Your report', repLine: 'You posted this report.', code: '7KQ2',
+      hist: [['2:10 pm', 'Posted as Critical.', ''], ['2:14 pm', 'Confirmed from a second spot.', 'good'],
         ['2:17 pm', 'Confirmed from a third spot.', 'good'], ['2:21 pm', 'Confirmed from a fourth spot.', 'good']],
       cms: [{ who: 'Someone nearby', when: '2:15 pm', t: 'Two buses are stuck at the signal now. Use the service road.' },
         { who: 'You', tag: 'Reporter', when: '2:19 pm', t: 'Water is still rising near the petrol bunk.' }] },
-    { cat: 'Traffic', place: 'Eluru Road, towards Ramavarappadu', dist: '2.1 km', posted: 'Posted 5 min ago, at 2:57 pm', confN: 0, dispN: 0,
-      cur: 'Report up to date. Fades at 4:57 pm.', rep: '<b>Reliable reporter.</b> 7 of 9 earlier reports were confirmed by people nearby.', code: 'M3TD',
-      hist: [['2:57 pm', 'Posted as Medium. Shown as Not confirmed yet until people at 2 different spots confirm it.', '']],
+    { cat: 'Traffic', place: 'Eluru Road, towards Ramavarappadu', dist: '2.1 km', ago: '5 min ago', confN: 0, dispN: 0,
+      curTag: 'Too early to tell', curLine: 'Fewer than 2 people have confirmed this yet. Fades at 4:57 pm.', repTag: 'Reliable reporter', repLine: '7 of 9 earlier reports by this reporter were confirmed by people nearby.', code: 'M3TD',
+      hist: [['2:57 pm', 'Posted as Medium.', '']],
       cms: [] },
-    { cat: 'Shelter open', place: 'ZP High School, Patamata', dist: '1.4 km', posted: 'Posted 40 min ago, at 2:22 pm', confN: 6, dispN: 0,
-      cur: 'Report up to date. Fades tomorrow at 2:22 pm.', rep: 'New reporter. Not rated yet.', code: 'P9ZS',
-      hist: [['2:22 pm', 'Posted as Low.', ''], ['2:30 pm', 'Confirmed by people at 2 different spots. Now shown to everyone.', 'good'],
+    { cat: 'Shelter open', place: 'ZP High School, Patamata', dist: '1.4 km', ago: '40 min ago', confN: 6, dispN: 0,
+      curTag: 'Report up to date', curLine: 'Confirmed from 6 different spots in the last 2 hours. Fades tomorrow at 2:22 pm.', repTag: 'New reporter', repLine: 'Not rated yet. It needs 5 reports with a clear result.', code: 'P9ZS',
+      hist: [['2:22 pm', 'Posted as Low.', ''], ['2:30 pm', 'Confirmed from 2 spots. Shown to everyone.', 'good'],
         ['2:41 pm', 'Confirmed from a fourth spot.', 'good'], ['2:55 pm', 'Confirmed from a sixth spot.', 'good']],
       cms: [{ who: 'Someone nearby', when: '2:35 pm', t: 'Food packets are being given at the gate.' },
         { who: 'Someone nearby', when: '2:48 pm', t: 'Ground floor rooms are full, the first floor still has space.' },
         { who: 'Reporter', tag: 'Reporter', when: '2:52 pm', t: 'Bring your own sheets if you can.' }] },
-    { cat: 'Power out', place: 'Gunadala main road', dist: '2.6 km', posted: 'Posted 1 hour ago, at 2:02 pm', confN: 2, dispN: 0,
-      cur: 'Report getting old. Fades at 5:02 pm.', rep: 'Mixed record. 3 of 6 earlier reports were confirmed by people nearby.', code: 'G4PW',
-      hist: [['2:02 pm', 'Posted as Medium.', ''], ['2:26 pm', 'Confirmed by people at 2 different spots. Now shown to everyone.', 'good']],
+    { cat: 'Power out', place: 'Gunadala main road', dist: '2.6 km', ago: '1 hour ago', confN: 2, dispN: 0,
+      curTag: 'Report getting old', curLine: 'Few recent confirmations. It fades at 5:02 pm unless someone confirms it again.', repTag: 'Mixed record', repLine: '3 of 6 earlier reports by this reporter were confirmed by people nearby.', code: 'G4PW',
+      hist: [['2:02 pm', 'Posted as Medium.', ''], ['2:26 pm', 'Confirmed from 2 spots. Shown to everyone.', 'good']],
       cms: [{ who: 'Someone nearby', when: '2:40 pm', t: 'The lanes behind the temple have power, only the main road side is out.' }] },
-    { cat: 'Road blocked', place: 'Budameru bridge', dist: '1.9 km', posted: 'Posted 2 hours ago, at 1:05 pm', confN: 3, dispN: 1,
-      cur: 'Report up to date. Fades at 7:05 pm.', rep: 'New reporter. Not rated yet.', code: 'B2RD',
-      hist: [['1:05 pm', 'Posted as Medium.', ''], ['1:18 pm', 'Confirmed by people at 2 different spots. Now shown to everyone.', 'good'],
-        ['1:40 pm', 'Disputed by a person nearby.', 'bad'], ['1:52 pm', 'Confirmed from a third spot.', 'good']],
+    { cat: 'Road blocked', place: 'Budameru bridge', dist: '1.9 km', ago: '2 hours ago', confN: 3, dispN: 1,
+      curTag: 'Report up to date', curLine: 'Confirmed from 3 different spots in the last 2 hours. Fades at 7:05 pm.', repTag: 'New reporter', repLine: 'Not rated yet. It needs 5 reports with a clear result.', code: 'B2RD',
+      hist: [['1:05 pm', 'Posted as Medium.', ''], ['1:18 pm', 'Confirmed from 2 spots. Shown to everyone.', 'good'],
+        ['1:40 pm', 'Disputed by someone nearby.', 'bad'], ['1:52 pm', 'Confirmed from a third spot.', 'good']],
       cms: [{ who: 'Someone nearby', when: '1:45 pm', t: 'Bikes are being let through on the left side.' },
         { who: 'Someone nearby', when: '1:50 pm', t: 'Not any more, police stopped the bikes too.' }] },
-    { cat: 'Flood', place: 'Prakasam Barrage', dist: '3.2 km', posted: 'Posted 1 hour ago, at 1:58 pm', confN: 0, dispN: 3,
-      cur: '<span class="warn">Disputed: may not be true.</span>', rep: 'New reporter. Not rated yet.', code: 'K8BX',
-      hist: [['1:58 pm', 'Posted as Critical.', ''], ['2:03 pm', 'Disputed by a person nearby.', 'bad'], ['2:09 pm', 'Disputed from a second spot.', 'bad'],
-        ['2:12 pm', 'Disputed from a third spot. Moved to the bottom of the list as Disputed.', 'bad']],
+    { cat: 'Flood', place: 'Prakasam Barrage', dist: '3.2 km', ago: '1 hour ago', confN: 0, dispN: 3,
+      curTag: 'Disputed: may not be true', curWarn: true, curLine: 'Disputed nearby, so it needs 2 confirmations in the last 2 hours.', repTag: 'New reporter', repLine: 'Not rated yet. It needs 5 reports with a clear result.', code: 'K8BX',
+      hist: [['1:58 pm', 'Posted as Critical.', ''], ['2:03 pm', 'Disputed by someone nearby.', 'bad'], ['2:09 pm', 'Disputed from a second spot.', 'bad'],
+        ['2:12 pm', 'Disputed from a third spot. Marked Disputed.', 'bad']],
       cms: [{ who: 'Someone nearby', when: '2:06 pm', t: 'The barrage office says the gates are fine. This is an old video.' }] }
   ];
   var current = 0;
+  function confN(d) { return d.confN + (d.vote === 'confirm' ? 1 : 0); }
+  function dispN(d) { return d.dispN + (d.vote === 'dispute' ? 1 : 0); }
   function confText(d) {
-    var n = d.confN + (d.vote === 'confirm' ? 1 : 0);
+    var n = confN(d);
     if (n === 0) return 'No one has confirmed this yet.';
-    if (n === 1) return 'Confirmed by 1 person nearby. Needs 1 more person at a different spot to confirm it.';
-    return '<b>Confirmed by ' + n + ' people at different spots.</b>';
+    if (n === 1) return '1 person confirmed this. Needs 1 more person at a different spot to confirm it.';
+    return 'Confirmed by ' + n + ' people at different spots.';
   }
   function dispText(d) {
-    var m = d.dispN + (d.vote === 'dispute' ? 1 : 0);
+    var m = dispN(d);
     if (m === 0) return 'No one has disputed this.';
     if (m === 1) return '1 person nearby disputed this.';
     return m + ' people at different spots disputed this.';
   }
-  function trustRow(l, v) { return '<div class="tr-row"><span class="tr-lbl">' + l + '</span><span class="tr-val">' + v + '</span></div>'; }
   function reportBody(i, back) {
     var r = reports[i], d = details[i];
     var chipClass = d.resolved ? 'low' : (r.sev === 'disputed' ? 'grey' : r.sev), chip = d.resolved ? 'Resolved' : r.chip;
     var h = back ? '<button class="rp-back" data-rp-back><span class="ico i-back"></span>' + back + '</button>' : '';
     h += '<div class="rp-head ' + r.sev + '"><span class="dot"><span class="ico i-' + r.icon + '"></span></span><div>' +
       '<h1 class="rp-title">' + r.title + '</h1>' +
-      '<p class="rp-sub"><span class="chip ' + chipClass + '">' + chip + '</span><span>' + d.cat + '</span></p><p class="rp-sub"><span>' + d.place +
-      '</span><span aria-hidden="true">·</span><span>' + d.dist + '</span></p><p class="rp-sub">' + d.posted + '</p></div></div>';
+      '<p class="rp-state"><span class="chip ' + chipClass + '">' + chip + '</span><span>' + d.repTag + '</span></p>' +
+      '<p class="rp-meta"><span class="rm">' + d.cat + '</span> <span class="rm place">' + d.place + '</span> <span class="rm">' + d.dist +
+      '</span> <span class="rm">' + d.ago + '</span></p></div></div>';
     h += '<p class="rp-words">' + r.desc + '</p>';
-    h += '<div class="box rp-trust">' + trustRow('Confirmed', confText(d)) + trustRow('Disputed', dispText(d)) +
-      trustRow('How current', d.resolved ? 'Marked resolved by you just now.' : d.cur) + trustRow('Reporter', d.rep) + '</div>';
+    var cur = d.resolved ? 'Resolved' : d.curTag;
+    h += '<div class="rp-trust"><button class="tb-btn" data-trust aria-expanded="' + !!d.trustOpen + '"><span class="tb-face">' +
+      '<span class="tb-counts"><span><b>' + confN(d) + '</b> confirmed</span><span class="second"><b>' + dispN(d) + '</b> disputed</span></span>' +
+      '<span class="tb-cur' + (d.curWarn && !d.resolved ? ' warn' : '') + '">' + cur + '</span></span><span class="ico i-down" aria-hidden="true"></span></button>' +
+      (d.trustOpen ? '<div class="tb-panel"><p>' + confText(d) + '</p><p>' + dispText(d) + '</p><p>' +
+        (d.resolved ? 'Marked resolved by you just now.' : d.curLine) + '</p><p>' + d.repLine + '</p></div>' : '') + '</div>';
     h += '<div class="rp-actions">';
     if (d.mine) {
       h += d.resolved ? '<div class="rp-resolved">Marked resolved. <button class="linkbtn" data-unresolve>Undo</button></div>'
@@ -1597,23 +1633,42 @@ button { font: inherit; color: inherit; }
     h += '<div class="rp-quiet"><button class="linkbtn" data-mute><span class="ico i-belloff"></span>' + (d.muted ? 'Updates stopped. Turn back on' : 'Stop updates on this report') + '</button>' +
       (d.mine ? '' : '<button class="linkbtn" data-flag' + (d.flagged ? ' disabled' : '') + '><span class="ico i-flag"></span>' + (d.flagged ? 'Sent to moderators' : 'Flag') + '</button>') + '</div>';
     var hist = d.hist.slice();
-    if (d.vote === 'confirm') hist.push(['Now', 'You confirmed it from your spot.', 'good']);
-    if (d.vote === 'dispute') hist.push(['Now', 'You disputed it from your spot.', 'bad']);
-    if (d.resolved) hist.push(['Now', 'Marked resolved by you.', 'good']);
+    if (d.vote === 'confirm') hist.push(['Now', 'You confirmed it.', 'good']);
+    if (d.vote === 'dispute') hist.push(['Now', 'You disputed it.', 'bad']);
+    if (d.resolved) hist.push(['Now', 'You marked it resolved.', 'good']);
     h += '<div class="rp-cols"><section class="rp-sec"><h2>What happened so far</h2><ol class="tl">' + hist.map(function (x) {
       return '<li><span class="tl-time">' + x[0] + '</span><span class="tl-mark ' + x[2] + '" aria-hidden="true"></span><span>' + x[1] + '</span></li>';
     }).join('') + '</ol></section>';
-    h += '<section class="rp-sec"><h2>Comments <span class="n">' + d.cms.length + '</span></h2><div class="box">' +
+    h += '<section class="rp-sec"><h2>Comments' + (d.cms.length ? ' <span class="n">' + d.cms.length + '</span>' : '') + '</h2>' +
       (d.cms.length ? '<ul class="cm">' + d.cms.map(function (c) {
         return '<li><div class="cm-meta"><b>' + c.who + '</b>' + (c.tag && c.tag !== c.who ? '<span class="cm-tag">' + c.tag + '</span>' : '') + '<span>' + c.when + '</span></div><p>' + c.t + '</p></li>';
-      }).join('') + '</ul>' : '<div class="cm-empty">No comments yet.</div>') + '</div>' +
-      '<form class="cm-form" data-cm-form><label for="cm-input-' + i + '">Add a comment</label><textarea id="cm-input-' + i + '" maxlength="280"></textarea>' +
-      '<div class="cm-foot"><span class="cm-count">0 of 280</span><button class="postbtn" type="submit">Post</button></div></form></section></div>';
+      }).join('') + '</ul>' : '<p class="cm-empty">No comments yet.</p>') +
+      '<form class="cm-form" data-cm-form><textarea id="cm-input-' + i + '" maxlength="280" aria-label="Add a comment" placeholder="Add a comment"></textarea>' +
+      '<button class="postbtn" type="submit">Post</button><span class="cm-count">0 of 280</span></form></section></div>';
     return h;
   }
+  // Tapping a pin on Nearby shows a small label over it that opens the report (owner, 2026-10-17), on the phone and the
+  // laptop. The highlighted card in the list keeps its own Open report button.
+  var pinBub = document.createElement('button');
+  pinBub.className = 'pinbub'; pinBub.type = 'button'; pinBub.hidden = true;
+  nearMap.appendChild(pinBub);
+  function showPinBub(i) {
+    var p = Array.prototype.find.call(pins, function (x) { return Number(x.dataset.i) === i; }); if (!p) return;
+    pinBub.dataset.openrep = String(i);
+    pinBub.innerHTML = '<span class="pinbub-title">' + reports[i].title + '</span><span class="pinbub-go">Open report<span class="ico i-right"></span></span>';
+    pinBub.hidden = false;
+    var W = nearMap.clientWidth, x = parseFloat(p.style.left) / 100 * W, half = pinBub.offsetWidth / 2;
+    pinBub.style.left = Math.min(Math.max(x, half + 8), W - half - 8) + 'px';
+    pinBub.style.top = p.style.top;
+  }
+  function hidePinBub() { pinBub.hidden = true; }
+  nearMap.addEventListener('click', function (e) { if (!e.target.closest('.pin, .pinbub')) hidePinBub(); });
+  document.getElementById('near-cards').addEventListener('click', hidePinBub);
+  window.addEventListener('resize', hidePinBub);
   function mapFor(i) {
     var m = nearMap.cloneNode(true);
     m.removeAttribute('style');
+    Array.prototype.forEach.call(m.querySelectorAll('.pinbub'), function (b) { b.remove(); });
     var pin = m.querySelectorAll('.pin')[i], px = parseFloat(pin.style.left), py = parseFloat(pin.style.top);
     Array.prototype.forEach.call(m.querySelectorAll('.maplabel'), function (l) {
       if (Math.abs(parseFloat(l.style.left) + 6 - px) < 16 && Math.abs(parseFloat(l.style.top) - py) < 20) l.remove();
@@ -1632,6 +1687,7 @@ button { font: inherit; color: inherit; }
   }
   function openReport(i) {
     current = i;
+    hidePinBub();
     if (!isPhone && rv === 'b') {
       sheet.classList.add('showing-report');
       pins.forEach(function (p) { p.classList.toggle('pin-focus', Number(p.dataset.i) === i); });
@@ -1650,6 +1706,7 @@ button { font: inherit; color: inherit; }
     setTimeout(function () { setSheet(sheetState); focusReport(current, 'pin'); }, 0);
   }
   pins.forEach(function (p) { p.addEventListener('click', function () { if (sheet.classList.contains('showing-report')) openReport(Number(p.dataset.i)); }); });
+  pins.forEach(function (p) { p.addEventListener('click', function () { if (!sheet.classList.contains('showing-report')) showPinBub(Number(p.dataset.i)); }); });
   var shareModal = document.getElementById('share-modal');
   function openShare() {
     var r = reports[current], d = details[current];
@@ -1660,11 +1717,12 @@ button { font: inherit; color: inherit; }
     shareModal.hidden = false;
   }
   document.addEventListener('click', function (e) {
-    var t = e.target.closest('[data-openrep],[data-rp-back],[data-vote],[data-resolve],[data-unresolve],[data-mute],[data-flag],[data-share],[data-close-share],[data-share-wa],[data-copy]');
+    var t = e.target.closest('[data-openrep],[data-rp-back],[data-trust],[data-vote],[data-resolve],[data-unresolve],[data-mute],[data-flag],[data-share],[data-close-share],[data-share-wa],[data-copy]');
     if (!t) { if (e.target === shareModal) shareModal.hidden = true; return; }
     var d = details[current];
     if (t.dataset.openrep) { e.stopPropagation(); openReport(Number(t.dataset.openrep)); return; }
     if (t.hasAttribute('data-rp-back')) { backFromReport(); return; }
+    if (t.hasAttribute('data-trust')) { d.trustOpen = !d.trustOpen; renderReport(); return; }
     if (t.dataset.vote) { d.vote = d.vote === t.dataset.vote ? null : t.dataset.vote; renderReport(); return; }
     if (t.hasAttribute('data-resolve')) { d.resolved = true; renderReport(); return; }
     if (t.hasAttribute('data-unresolve')) { d.resolved = false; renderReport(); return; }
@@ -1677,6 +1735,7 @@ button { font: inherit; color: inherit; }
   document.addEventListener('input', function (e) {
     var f = e.target.closest('[data-cm-form]'); if (!f) return;
     f.querySelector('.cm-count').textContent = e.target.value.length + ' of 280';
+    f.classList.toggle('has-text', e.target.value.length > 0);
   });
   document.addEventListener('submit', function (e) {
     var f = e.target.closest('[data-cm-form]'); if (!f) return;
