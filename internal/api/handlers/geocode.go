@@ -65,6 +65,10 @@ type GeocodeResult struct {
 	DisplayName string  `json:"display_name" example:"Bengaluru, Bangalore North, Bengaluru Urban, Karnataka, India"`
 	Lat         float64 `json:"lat" example:"12.9767936"`
 	Lon         float64 `json:"lon" example:"77.5900820"`
+	// Area is the area the place lies in: its own name when it is an area, else
+	// its locality, district or city. Left out when none is known. The first
+	// time flow uses it to prefill the home area from a picked street.
+	Area string `json:"area,omitempty" example:"Indiranagar"`
 }
 
 // GeocodeResponse is the JSON body of a successful GET /api/geocode
@@ -88,6 +92,7 @@ func geocodeAnswer(answer geocode.Answer) GeocodeResponse {
 			DisplayName: res.DisplayName,
 			Lat:         res.Lat,
 			Lon:         res.Lon,
+			Area:        res.Area,
 		})
 	}
 	return GeocodeResponse{Results: results, MatchedQuery: answer.MatchedQuery}

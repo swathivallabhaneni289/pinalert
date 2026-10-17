@@ -11,13 +11,13 @@
 */}}
 {{define "legal_disclaimer_body"}}
     <h2 id="disclaimer">Disclaimer</h2>
-    <p>Pinalert is unofficial. It isn't a government service, and it isn't connected to any government agency or emergency service.</p>
+    <p>Pinalert is a free, unofficial app where people near an emergency share what they see. It isn't a government service, and it isn't connected to any government agency or emergency service.</p>
 
-    <h2>Pinalert is not a substitute for emergency services</h2>
-    <p>Pinalert can't send help. If someone is in danger, call the emergency number first. Post here afterwards if you want to.</p>
+    <h2>In an emergency, call for help first</h2>
+    <p>Pinalert can't send help. If anyone is in danger, call the emergency number first. You can post on Pinalert afterwards.</p>
 
     <h2 id="emergency-numbers">Emergency numbers</h2>
-    <p>Check these numbers on your own state government's website. They can change.</p>
+    <p>Numbers can change, so check them on your state government's website.</p>
     <section class="legal-numbers" aria-labelledby="emergency-numbers">
       <div class="legal-numbers__row">
         <a class="legal-numbers__call" href="{{.CallHref}}" aria-label="Call {{.Numbers.Primary}}">{{.Numbers.Primary}}</a>
@@ -27,7 +27,7 @@
       <div class="legal-numbers__row">
         <p class="legal-numbers__number">{{.Numbers.OlderList}}</p>
         <p class="legal-numbers__label">{{.OlderLabel}}</p>
-        <p class="legal-numbers__note">Many state governments still list these and they may still work in your state, but some states have retired them. Try {{.Numbers.Primary}} first.</p>
+        <p class="legal-numbers__note">Many states still list these and they may still work where you are, but some states have retired them. Try {{.Numbers.Primary}} first.</p>
       </div>
       {{end}}
       {{if .Numbers.HasStateLines}}
@@ -39,6 +39,13 @@
       {{end}}
     </section>
 
+    <h2>Reports can be wrong</h2>
+    <p>A report is what one person nearby says they saw. When people in other places nearby confirm it, it is more likely to be right, but never certain.</p>
+    <p>Serious reports show at once, before anyone has confirmed them. Always check how many places have confirmed a report, and never make a decision about your safety from Pinalert alone.</p>
+
+    <h2>Reports don't last forever</h2>
+    <p>Most reports last {{.ExpiryHours}} hours and critical reports last {{.CriticalExpiryHours}} hours. Confirmations don't make them last longer. When the time is up, a report is marked Expired and leaves the Nearby list. Ended reports stay under My activity, Ended nearby, for 7 days.</p>
+
     <h2>How to read what Pinalert shows</h2>
     <dl class="legal-glossary">
       {{range .Glossary}}
@@ -46,12 +53,6 @@
       {{end}}<dd>{{.Text}}</dd>
       {{end}}
     </dl>
-
-    <h2>Reports can be wrong</h2>
-    <p>A report is what someone near the place says they saw. Confirmations from people nearby make it more likely to be right. They don't make it certain. Serious reports show at once, before anyone confirms them, so check how many places have confirmed a report before you rely on it. Don't make decisions about your safety from Pinalert alone.</p>
-
-    <h2>Reports expire</h2>
-    <p>After a fixed time a report is marked Expired and leaves the Nearby list, whether or not anyone confirms it. Ended reports stay under My activity, Ended nearby, for 7 days. Most reports last {{.ExpiryHours}} hours and critical reports last {{.CriticalExpiryHours}} hours. Confirmations don't extend that time.</p>
 
     {{if .ContactEmail}}
     <h2>Contact</h2>
@@ -63,50 +64,65 @@
     <h2 id="policy">Policy</h2>
     <p class="legal-subtitle">Rules, privacy and terms</p>
 
-    <h2>What you can post</h2>
-    <p>Post reports about emergencies and conditions you can see near you. Hateful, harassing or sexual text isn't allowed, and neither are reports made on purpose to mislead.</p>
-    <p>What the automatic check rejects is narrower than what isn't allowed. Text that is clearly hateful, harassing or sexual is rejected before it is posted, or removed afterwards when the check finishes late. Text made of random characters with no real words is always rejected before it is posted. Other text that breaks these rules can still be posted, and a moderator may remove it later.</p>
-    <p>Violent or frightening words are fine when they describe a real emergency. Urgent wording, capital letters, addresses and phone numbers are fine in a genuine report.</p>
+    <h2>Rules for posting</h2>
+    <p>Post only about emergencies and conditions you can see near you.</p>
+    <ul>
+      <li>Not allowed: hateful, harassing or sexual text, and reports made on purpose to mislead.</li>
+      <li>Allowed in a genuine report: violent or frightening words that describe a real emergency, urgent wording, capital letters, addresses and phone numbers.</li>
+    </ul>
 
-    <h2>How the automatic check works</h2>
-    <p>The text of a report is sent to OpenAI's moderation service. Only the description is sent, never your account, your sign in, your network address or your location. OpenAI documents no retention and no training use for moderation requests.</p>
-    <p>If the text is clearly hateful, harassing or sexual, it is rejected and nothing is stored. If such text is only caught after the report was saved, because the check finished late, the report is removed instead: it stays stored but shows to no one. If the text is borderline, it is posted and a moderator may look at it.</p>
-    <p>If the check can't finish in time, a normal report waits and doesn't show to anyone until it does. A critical report is published at once and checked afterwards. A Rescue needed report posted before that category was retired keeps this rule until it fades.</p>
-    <p>The check can be wrong, which is why moderators exist. No photos are accepted.</p>
+    <h2>How reports are checked</h2>
+    <p>Every report's description is checked automatically by OpenAI's moderation service. Only the description is sent, never your account, your sign in, your network address or your location. OpenAI documents no retention and no training use for moderation requests.</p>
+    <ul>
+      <li>Clearly hateful, harassing or sexual text is rejected, and nothing is stored.</li>
+      <li>Text made of random characters with no real words is always rejected.</li>
+      <li>Borderline text is posted, and a moderator may look at it.</li>
+      <li>If the check finishes late, after the report was saved, and finds clearly hateful, harassing or sexual text, the report is removed. It stays stored but shows to no one.</li>
+      <li>If the check can't finish in time, a normal report waits, unseen, until it does. A critical report is published at once and checked afterwards. A Rescue needed report posted before that category was retired keeps this rule until it fades.</li>
+    </ul>
+    <p>The check doesn't catch everything that breaks the rules, so such text can still be posted and a moderator may remove it later. The check can also be wrong, which is why moderators exist. Photos are not accepted.</p>
 
     <h2>What moderators can do</h2>
-    <p>Moderators can read reports, keep them or remove them. A removed report shows to no one. Its author sees "Removed after review" both when a moderator removed it and when the automatic check removed it after it was saved. A flag on a report never hides it by itself. It only asks a moderator to look. The person who flagged is never shown to the author.</p>
+    <p>Moderators can read reports and keep or remove them. A removed report shows to no one. Its author sees "Removed after review", whether a moderator removed it or the late automatic check did.</p>
+    <p>A flag on a report never hides it by itself. It only asks a moderator to look, and the author is never told who flagged it.</p>
 
     <h2>Limits</h2>
-    <p>Each account can post, vote and flag reports only so fast, to stop spam. When you reach a limit, Pinalert says how long to wait and keeps what you typed.</p>
+    <p>To stop spam, each account can post, vote and flag only so often. If you reach a limit, Pinalert tells you how long to wait and keeps what you typed.</p>
 
     <h2>What Pinalert keeps</h2>
     <ul>
       <li>Your email address, to sign you in. It is never shown to other people.</li>
-      <li>Each report, with its location, its time and your account.</li>
-      <li>Your votes, kept as a rough square about 150 metres wide and not as an exact point.</li>
-      <li>The result and scores of the automatic check, and which model gave them, without the report text: for borderline reports and for any report whose check finished after it was saved.</li>
+      <li>Your reports, each with its place, its time and your account.</li>
+      <li>Your votes, kept as a rough square about 150 metres wide, never as your exact spot.</li>
       <li>Flags you send, and their reasons.</li>
+      <li>For borderline reports, and for reports whose check finished after they were saved: the check's result, its scores and which model gave them, without the report text.</li>
     </ul>
-    <p>Nothing listed here is deleted on a schedule today: reports, votes, flags and sign in records stay stored, and an expired report only stops showing in the lists.</p>
+    <p>Nothing here is deleted on a schedule yet. Reports, votes, flags and sign in records all stay stored, and an expired report only stops showing in the lists.</p>
     {{if .ContactEmail}}
-    <p>You can ask for a report or your data to be removed by writing to the address under Complaints and removal requests.</p>
+    <p>To have a report or your data removed, write to the address under Complaints and removal requests.</p>
     {{end}}
-    <p>The map is drawn with files from unpkg.com and map tiles from OpenFreeMap, or from OpenStreetMap on devices that can't draw the vector map. A typed place search goes through Pinalert to Photon, a search service run by komoot. Pinalert sends what you typed and the position of your pin or the middle of the map. If Photon can't answer, the search goes to OpenStreetMap's Nominatim service instead. The places in the results come from OpenStreetMap. Those services see the request the way any website does.</p>
+
+    <h2>Other services Pinalert uses</h2>
+    <ul>
+      <li>The map: its files come from unpkg.com and its map tiles from OpenFreeMap, or from OpenStreetMap on devices that can't draw the newer map.</li>
+      <li>Place search: what you type, and the position of your pin or the middle of the map, go through Pinalert to Photon, a search service run by komoot. If Photon can't answer, the search goes to OpenStreetMap's Nominatim service instead. The places found come from OpenStreetMap.</li>
+      <li>Report checks: OpenAI, as described above.</li>
+    </ul>
+    <p>These services see each request the way any website does.</p>
 
     <h2>Cookies and storage on your device</h2>
     <ul>
-      <li>A session cookie, set the first time you open any Pinalert page, including this one, before you sign in. It is kept up to a year, until you log out.</li>
+      <li>A session cookie, set the first time you open any Pinalert page, even this one before you sign in. It lasts up to a year, or until you log out.</li>
       <li>A cookie that remembers you chose the Low data view.</li>
       <li>Your Light or Dark choice.</li>
-      <li>Reports waiting to send, saved on this device until they are sent or discarded.</li>
-      <li>Your last known position on the Low data view, on this device only.</li>
-      <li>A short lived position kept during a visit, so voting doesn't ask again.</li>
+      <li>Reports waiting to send, kept on this device until they are sent or discarded.</li>
+      <li>Your last known position for the Low data view, on this device only.</li>
+      <li>Your position for a short time during a visit, so voting doesn't ask again.</li>
     </ul>
     <p>There are no advertising or tracking cookies.</p>
-    <p>Browsers can delete saved data, so a report waiting to send isn't guaranteed to survive. Send it as soon as you have a signal. A private window closing, low storage, or a site left unused for about a week in Safari can all clear it.</p>
+    <p>Browsers can clear saved data: when a private window closes, when storage runs low, or in Safari after about a week without a visit. So a report waiting to send isn't guaranteed to survive. Send it as soon as you have a signal.</p>
 
-    <h2>Emergencies and the police</h2>
+    <h2>Crimes and threats</h2>
     <p>For anything serious, such as a crime or a threat to someone's safety, contact the police directly. In an emergency call {{.Numbers.Primary}}. Pinalert doesn't contact the police for you.</p>
 
     {{if .ContactEmail}}
@@ -115,8 +131,9 @@
     {{end}}
 
     <h2>Terms</h2>
-    <p>Using Pinalert means you accept these rules. Pinalert may remove reports that break them, and the limits apply to every account. Pinalert is provided as it is, with no promise of accuracy or availability. It is unofficial.</p>
+    <p>By using Pinalert you accept these rules. Pinalert may remove reports that break them, and the limits apply to every account. Pinalert is unofficial and is provided as it is, with no promise that it is accurate or always available.</p>
 
     <h2>Changes to this page</h2>
+    <p>When this text changes, everyone is asked to read it and agree again.</p>
     <p class="legal-updated">Last updated {{.PolicyLastUpdated}}</p>
 {{end}}

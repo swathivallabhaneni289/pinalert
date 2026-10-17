@@ -37,9 +37,12 @@
   var PROFILE_URL = '/api/me/profile';
   var DONE_URL = '/api/me/first-run-done';
   // Step 3 uses the same forward search as the report form; step 4 uses the
-  // place search of Settings. Each has its own budget on the server.
+  // place search of Settings, asking for areas only (kind=area: neighbourhoods,
+  // localities, towns, cities, districts, never a street or a building, since
+  // the stored home area is a cell about 5 km wide). Each has its own budget on
+  // the server.
   var STEP3_SEARCH_URL = '/api/geocode?q=';
-  var STEP4_SEARCH_URL = '/api/geocode/place?q=';
+  var STEP4_SEARCH_URL = '/api/geocode/place?kind=area&q=';
   var FOCUS_SEARCH_KEY = 'pinalert.focusSearch';
   var LAND_ON = '/';
   var SAVE_TIMEOUT_MS = 10000;
@@ -47,6 +50,17 @@
   var LOCATION_TIMEOUT_MS = 8000;
   var MIN_QUERY_RUNES = 3;
   var MAX_RESULTS = 5;
+  // Suggestions while typing in the home area (step 4 only). The search runs
+  // once the person stops typing for TYPING_PAUSE_MS, and typed searches go out
+  // at least TYPING_GAP_MS apart, so typing alone spends the per account search
+  // budget (a burst of 8, then 1 a second) no faster than it refills and can
+  // never reach Too many searches. A typed search the server refuses or finds
+  // busy (429 or 503) is tried again quietly, at most QUIET_RETRIES times,
+  // RETRY_WAIT_MS apart.
+  var TYPING_PAUSE_MS = 400;
+  var TYPING_GAP_MS = 1000;
+  var QUIET_RETRIES = 3;
+  var RETRY_WAIT_MS = 1000;
 
   var DISAGREE_MESSAGE = 'You need to agree to use Pinalert.';
   var MESSAGE_AGREE_FAILED = 'Could not save your agreement. Try again in a moment.';
@@ -234,13 +248,19 @@
   }
 
   // enterStep4 draws the home area field for the first time. The field is
-  // prefilled only from a place searched in step 3; otherwise it keeps what the
-  // page was drawn with (empty, or the stored home area of a returning account)
-  // and no prefilled line shows.
+  // prefilled only from a place searched in step 3, and only with the area that
+  // place lies in (step3Pick.area: the place itself when it is an area, else its
+  // locality, district or city), never with a street or a building name. When
+  // step 3 gave no area, or nothing was searched, the field keeps what the page
+  // was drawn with (empty, or the stored home area of a returning account) and
+  // no prefilled line shows.
   function enterStep4() {
-    if (step3Pick !== null) {
-      homePick = step3Pick;
-      homeInput.value = step3Pick.name;
+    if (step3Pick !== null && step3Pick.area !== '') {
+      // The point stays the picked place's own: the server keeps only a cell
+      // about 5 km wide, so the point of a street and the point of the area it
+      // lies in give the same cell or the next one, and only the name matters.
+      homePick = { name: step3Pick.area, lat: step3Pick.lat, lon: step3Pick.lon, area: step3Pick.area };
+      homeInput.value = step3Pick.area;
       homePrefilled.hidden = false;
     } else {
       homePick = null;
@@ -352,15 +372,35 @@
   }
 
   // makeSearch builds one place search over a field, a status line and a list.
-  // cfg: {input, form, status, results, url, onPick(place), onClear()}. A pick
-  // is only ever a result of the search, so a place is never anything the
+  // cfg: {input, form, status, results, url, typing, onPick(place), onClear()}.
+  // A pick is only ever a result of the search, so a place is never anything the
   // person typed or the device reported. A failure shows one plain line and
   // never blocks the step.
+  //
+  // With cfg.typing the search also runs by itself while the person types (see
+  // TYPING_PAUSE_MS above). A typed search is quiet: no Searching line, no too
+  // short line and no failure line, since the person did not ask for it and
+  // their own typing must never read as Search unavailable. Enter shows every
+  // line, as before, and takes over a typed search already out for the same
+  // text instead of asking again.
   function makeSearch(cfg) {
     var picked = null;
     var seq = 0;
     var inFlight = null;
     var inFlightText = '';
+    // Whether the search in flight was started by typing and not by Enter.
+    var inFlightQuiet = false;
+    // The pending typing pause or quiet retry, or null.
+    var typingTimer = null;
+    // Set while the gap after the last search runs; a typed search that comes
+    // due meanwhile waits in waitingText.
+    var coolTimer = null;
+    var waitingText = null;
+    // The text the last request was sent for, so the same text is never sent
+    // twice in a row by typing.
+    var lastSentText = '';
+    // How many quiet retries the text typed last has used.
+    var quietFailures = 0;
 
     function clearPick() {
       if (picked === null) {
@@ -381,9 +421,24 @@
         inFlight = null;
       }
       inFlightText = '';
+      inFlightQuiet = false;
+    }
+
+    // cancelTyping drops a pending typing pause, quiet retry or search waiting
+    // for the gap. The gap itself keeps running.
+    function cancelTyping() {
+      if (typingTimer !== null) {
+        window.clearTimeout(typingTimer);
+        typingTimer = null;
+      }
+      waitingText = null;
     }
 
     function pick(option, place) {
+      // A pick ends a typing pause or a quiet retry, so a late answer never
+      // reopens the list over the pick.
+      cancelTyping();
+      cancel();
       var options = cfg.results.querySelectorAll('button');
       for (var i = 0; i < options.length; i++) {
         options[i].setAttribute('aria-selected', 'false');
@@ -422,7 +477,9 @@
           setText(sub, res.display_name);
           option.appendChild(sub);
         }
-        option.addEventListener('click', pick.bind(null, option, { name: name, lat: res.lat, lon: res.lon }));
+        // area is the server's name for the area the place lies in, or ''.
+        var area = typeof res.area === 'string' ? res.area.trim() : '';
+        option.addEventListener('click', pick.bind(null, option, { name: name, lat: res.lat, lon: res.lon, area: area }));
         item.appendChild(option);
         cfg.results.appendChild(item);
       }
@@ -436,24 +493,43 @@
     }
 
     // search runs one search for the text in the field. It sends the text only.
-    function search() {
-      var q = String(cfg.input.value).trim();
+    // typed is true when the typing pause started it (see the quiet rules above).
+    function search(query, typed) {
+      var quiet = typed === true;
+      var q = String(query === undefined ? cfg.input.value : query).trim();
+      // Enter, or the typed search itself, ends the pending pause.
+      cancelTyping();
       if (runeCount(q) < MIN_QUERY_RUNES) {
         cancel();
-        cfg.results.hidden = true;
-        showLine(cfg.status, MESSAGE_TOO_SHORT);
+        if (!quiet) {
+          cfg.results.hidden = true;
+          showLine(cfg.status, MESSAGE_TOO_SHORT);
+        }
         return Promise.resolve();
       }
       if (inFlight !== null && q === inFlightText) {
+        if (!quiet && inFlightQuiet) {
+          inFlightQuiet = false;
+          clearPick();
+          cfg.results.hidden = true;
+          showLine(cfg.status, MESSAGE_SEARCHING);
+        }
         return inFlight.promise.then(function () {}, function () {});
       }
       cancel();
-      clearPick();
-      cfg.results.hidden = true;
-      showLine(cfg.status, MESSAGE_SEARCHING);
+      if (!quiet) {
+        clearPick();
+        cfg.results.hidden = true;
+        showLine(cfg.status, MESSAGE_SEARCHING);
+      }
       seq += 1;
       var mine = seq;
       inFlightText = q;
+      inFlightQuiet = quiet;
+      lastSentText = q;
+      if (cfg.typing) {
+        startGap();
+      }
       var call = request(cfg.url + encodeURIComponent(q), { credentials: 'same-origin' }, SEARCH_TIMEOUT_MS);
       inFlight = call;
       function finish() {
@@ -468,8 +544,28 @@
         }
         finish();
         if (!answer.ok) {
-          var sent = serverSentence(answer.body);
-          showLine(cfg.status, sent !== '' ? sent : (answer.status === 429 ? MESSAGE_RATE_LIMITED : MESSAGE_UNAVAILABLE));
+          // The same text may be sent again after a failure.
+          lastSentText = '';
+          var busy = answer.status === 429 || answer.status === 503;
+          if (inFlightQuiet && busy) {
+            // A refusal for text no longer in the box, or one that lands while
+            // newer text waits for its pause, is dropped quietly.
+            if (typingTimer !== null || waitingText !== null || q !== String(cfg.input.value).trim()) {
+              return;
+            }
+            if (quietFailures < QUIET_RETRIES) {
+              quietFailures += 1;
+              retryLater(q);
+              return;
+            }
+          }
+          if (!inFlightQuiet || busy) {
+            if (inFlightQuiet) {
+              cfg.results.hidden = true;
+            }
+            var sent = serverSentence(answer.body);
+            showLine(cfg.status, sent !== '' ? sent : (answer.status === 429 ? MESSAGE_RATE_LIMITED : MESSAGE_UNAVAILABLE));
+          }
           return;
         }
         render(answer.body && Array.isArray(answer.body.results) ? answer.body.results : []);
@@ -478,8 +574,70 @@
           return;
         }
         finish();
-        showLine(cfg.status, MESSAGE_UNAVAILABLE);
+        lastSentText = '';
+        if (!inFlightQuiet) {
+          showLine(cfg.status, MESSAGE_UNAVAILABLE);
+        }
       });
+    }
+
+    // startGap starts the wait before the next typed search may go out. A typed
+    // search that comes due meanwhile is held in waitingText and sent when the
+    // gap ends.
+    function startGap() {
+      if (coolTimer !== null) {
+        window.clearTimeout(coolTimer);
+      }
+      coolTimer = window.setTimeout(function () {
+        coolTimer = null;
+        if (waitingText !== null) {
+          var text = waitingText;
+          waitingText = null;
+          typedSearch(text);
+        }
+      }, TYPING_GAP_MS);
+    }
+
+    function typedSearch(q) {
+      if (coolTimer !== null) {
+        waitingText = q;
+        return;
+      }
+      search(q, true);
+    }
+
+    // retryLater asks for q again, quietly. It waits on the typing timer, so
+    // anything that ends a typing pause also ends it.
+    function retryLater(q) {
+      cancelTyping();
+      typingTimer = window.setTimeout(function () {
+        typingTimer = null;
+        search(q, true);
+      }, RETRY_WAIT_MS);
+    }
+
+    // onTyping is the typing path: every keystroke restarts the pause, and the
+    // search runs once the person stops for TYPING_PAUSE_MS with at least 3
+    // letters in the field and text that was not the last one sent. Under 3
+    // letters it drops any search and its results quietly.
+    function onTyping() {
+      cancelTyping();
+      quietFailures = 0;
+      var q = String(cfg.input.value).trim();
+      if (runeCount(q) < MIN_QUERY_RUNES) {
+        cancel();
+        lastSentText = '';
+        cfg.results.hidden = true;
+        hideLine(cfg.status);
+        return;
+      }
+      if (q === lastSentText) {
+        return;
+      }
+      typingTimer = window.setTimeout(function () {
+        typingTimer = null;
+        typedSearch(q);
+      }, TYPING_PAUSE_MS);
     }
 
     cfg.form.addEventListener('submit', function (e) {
@@ -491,6 +649,9 @@
     cfg.input.addEventListener('input', function () {
       if (picked !== null && cfg.input.value !== picked.name) {
         clearPick();
+      }
+      if (cfg.typing) {
+        onTyping();
       }
     });
 
@@ -515,6 +676,7 @@
       status: el('welcome-home-status'),
       results: el('welcome-home-results'),
       url: STEP4_SEARCH_URL,
+      typing: true,
       onPick: function (place) {
         homePick = place;
         homePrefilled.hidden = true;

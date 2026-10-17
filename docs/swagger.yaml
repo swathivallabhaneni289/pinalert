@@ -406,6 +406,13 @@ definitions:
     type: object
   handlers.GeocodeResult:
     properties:
+      area:
+        description: |-
+          Area is the area the place lies in: its own name when it is an area, else
+          its locality, district or city. Left out when none is known. The first
+          time flow uses it to prefill the home area from a picked street.
+        example: Indiranagar
+        type: string
       display_name:
         example: Bengaluru, Bangalore North, Bengaluru Urban, Karnataka, India
         type: string
@@ -975,6 +982,14 @@ paths:
         in: query
         name: lon
         type: number
+      - description: Send area to get areas only (neighbourhoods, localities, towns,
+          cities, districts), never a street or a building. Left out, every kind of
+          place is returned
+        enum:
+        - area
+        in: query
+        name: kind
+        type: string
       produces:
       - application/json
       responses:

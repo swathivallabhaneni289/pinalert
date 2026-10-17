@@ -15,12 +15,12 @@ import (
 // readerSentences are sentences of the legal text. Each must exist only in the
 // shared body partials, so no second copy can drift from what is published.
 var readerSentences = []string{
-	"Pinalert is unofficial.",
+	"Pinalert is a free, unofficial app where people near an emergency share what they see.",
 	"Pinalert can't send help.",
-	"Using Pinalert means you accept these rules.",
+	"By using Pinalert you accept these rules.",
 	"A critical report is published at once and checked afterwards.",
 	"Ended reports stay under My activity, Ended nearby, for 7 days.",
-	"Nothing listed here is deleted on a schedule today",
+	"Nothing here is deleted on a schedule yet.",
 	"There are no advertising or tracking cookies.",
 }
 

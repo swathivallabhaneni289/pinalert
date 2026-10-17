@@ -27,7 +27,10 @@ type stubPlaceSearcher struct {
 	matched string
 	err     error
 	calls   int
-	gotQ    string
+	// areaCalls counts the calls that came through SearchReaderAreas (they
+	// also count in calls).
+	areaCalls int
+	gotQ      string
 	gotNear *geocode.Point
 }
 
@@ -39,6 +42,14 @@ func (s *stubPlaceSearcher) SearchReader(ctx context.Context, q string, near *ge
 		return geocode.Answer{}, s.err
 	}
 	return geocode.Answer{Results: s.results, MatchedQuery: s.matched}, nil
+}
+
+// SearchReaderAreas is the areas only search (plan 28). It records the same
+// things as SearchReader and counts itself in areaCalls too, so a test can tell
+// which of the two the handler chose.
+func (s *stubPlaceSearcher) SearchReaderAreas(ctx context.Context, q string, near *geocode.Point) (geocode.Answer, error) {
+	s.areaCalls++
+	return s.SearchReader(ctx, q, near)
 }
 
 // stubPlaceBudget is a PlaceBudget test double recording every key it saw.

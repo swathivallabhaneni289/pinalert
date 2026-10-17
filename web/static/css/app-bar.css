@@ -53,6 +53,11 @@
   mask-image: url("/static/icons/circle-plus.svg");
 }
 
+.app-icon--shield-check {
+  -webkit-mask-image: url("/static/icons/shield-check.svg");
+  mask-image: url("/static/icons/shield-check.svg");
+}
+
 .app-icon--settings {
   -webkit-mask-image: url("/static/icons/settings.svg");
   mask-image: url("/static/icons/settings.svg");

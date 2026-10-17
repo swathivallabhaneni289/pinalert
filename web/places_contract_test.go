@@ -316,7 +316,7 @@ func TestSettingsScriptContract(t *testing.T) {
 	raw := p421ReadStatic(t, "js/settings.js")
 	js := stripJSComments(raw)
 	for _, want := range []string{
-		"'PATCH'", "/api/me/profile", "/api/geocode/place?q=", "textContent", "'Escape'", "display_name", "home_area",
+		"'PATCH'", "/api/me/profile", "/api/geocode/place?kind=area&q=", "textContent", "'Escape'", "display_name", "home_area",
 	} {
 		if !strings.Contains(js, want) {
 			t.Errorf("settings.js lacks %q", want)

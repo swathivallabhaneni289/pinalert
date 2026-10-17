@@ -77,11 +77,11 @@ func legalEqual(a, b []string) bool {
 // link is the current one.
 var legalDisclaimerH2s = []string{
 	"Disclaimer",
-	"Pinalert is not a substitute for emergency services",
+	"In an emergency, call for help first",
 	"Emergency numbers",
-	"How to read what Pinalert shows",
 	"Reports can be wrong",
-	"Reports expire",
+	"Reports don't last forever",
+	"How to read what Pinalert shows",
 }
 
 func TestLegalPagesRender(t *testing.T) {
@@ -218,21 +218,24 @@ func TestLegalPagesRender(t *testing.T) {
 		// D-24a, D-18: the Rescue needed category is retired, so the serious
 		// report sentence names critical only and says what rescue reports
 		// already posted keep.
-		"If the check can't finish in time, a normal report waits and doesn't show to anyone until it does. A critical report is published at once and checked afterwards. A Rescue needed report posted before that category was retired keeps this rule until it fades.",
+		"If the check can't finish in time, a normal report waits, unseen, until it does. A critical report is published at once and checked afterwards. A Rescue needed report posted before that category was retired keeps this rule until it fades.",
 		"For anything serious, such as a crime or a threat to someone's safety, contact the police directly. In an emergency call 112. Pinalert doesn't contact the police for you.",
-		"Browsers can delete saved data, so a report waiting to send isn't guaranteed to survive. Send it as soon as you have a signal.",
-		"Nothing listed here is deleted on a schedule today",
+		"Browsers can clear saved data: when a private window closes, when storage runs low, or in Safari after about a week without a visit. So a report waiting to send isn't guaranteed to survive. Send it as soon as you have a signal.",
+		"Nothing here is deleted on a schedule yet.",
 		// Review finding IN-W01 (Phase 4 web review): the three sentences
 		// that now say what the background check stores and shows. A check
 		// that finishes late removes the report instead of rejecting it, the
 		// author then sees the same label a moderator removal shows, and the
 		// worker stores verdict, scores and model for every late check.
-		"If the text is clearly hateful, harassing or sexual, it is rejected and nothing is stored. If such text is only caught after the report was saved, because the check finished late, the report is removed instead: it stays stored but shows to no one. If the text is borderline, it is posted and a moderator may look at it.",
-		`A removed report shows to no one. Its author sees "Removed after review" both when a moderator removed it and when the automatic check removed it after it was saved.`,
-		"The result and scores of the automatic check, and which model gave them, without the report text: for borderline reports and for any report whose check finished after it was saved.",
+		"Clearly hateful, harassing or sexual text is rejected, and nothing is stored.",
+		"If the check finishes late, after the report was saved, and finds clearly hateful, harassing or sexual text, the report is removed. It stays stored but shows to no one.",
+		"Borderline text is posted, and a moderator may look at it.",
+		"A removed report shows to no one. Its author sees \"Removed after review\", whether a moderator removed it or the late automatic check did.",
+		"For borderline reports, and for reports whose check finished after they were saved: the check's result, its scores and which model gave them, without the report text.",
 		// Quick 261016-pho: the place search now goes to Photon first, a
 		// second third party, with the text and a position.
-		"A typed place search goes through Pinalert to Photon, a search service run by komoot. Pinalert sends what you typed and the position of your pin or the middle of the map. If Photon can't answer, the search goes to OpenStreetMap's Nominatim service instead. The places in the results come from OpenStreetMap. Those services see the request the way any website does.",
+		"what you type, and the position of your pin or the middle of the map, go through Pinalert to Photon, a search service run by komoot. If Photon can't answer, the search goes to OpenStreetMap's Nominatim service instead. The places found come from OpenStreetMap.",
+		"These services see each request the way any website does.",
 	} {
 		if !strings.Contains(ptext, want) {
 			t.Errorf("policy text lacks %q", want)
@@ -245,7 +248,8 @@ func TestLegalPagesRender(t *testing.T) {
 	}
 	// D-18, D-24a: the Disclaimer's expiry sentence names the places that exist.
 	for _, want := range []string{
-		"After a fixed time a report is marked Expired and leaves the Nearby list, whether or not anyone confirms it. Ended reports stay under My activity, Ended nearby, for 7 days. Most reports last",
+		"Most reports last",
+		"Confirmations don't make them last longer. When the time is up, a report is marked Expired and leaves the Nearby list. Ended reports stay under My activity, Ended nearby, for 7 days.",
 	} {
 		if !strings.Contains(ptext, want) {
 			t.Errorf("page text lacks %q", want)
@@ -268,19 +272,20 @@ func legalAllH2s(withContact bool) []string {
 	out = append(out, "Policy")
 	policy := legalPolicyH2sWithoutContact
 	if withContact {
-		policy = append(append([]string{}, policy[:7]...), "Complaints and removal requests", "Terms", "Changes to this page")
+		policy = append(append([]string{}, policy[:8]...), "Complaints and removal requests", "Terms", "Changes to this page")
 	}
 	return append(out, policy...)
 }
 
 var legalPolicyH2sWithoutContact = []string{
-	"What you can post",
-	"How the automatic check works",
+	"Rules for posting",
+	"How reports are checked",
 	"What moderators can do",
 	"Limits",
 	"What Pinalert keeps",
+	"Other services Pinalert uses",
 	"Cookies and storage on your device",
-	"Emergencies and the police",
+	"Crimes and threats",
 	"Terms",
 	"Changes to this page",
 }

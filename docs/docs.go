@@ -167,6 +167,15 @@ const docTemplate = `{
                         "description": "Map centre longitude, -180 to 180, sent together with lat",
                         "name": "lon",
                         "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "area"
+                        ],
+                        "type": "string",
+                        "description": "Send area to get areas only (neighbourhoods, localities, towns, cities, districts), never a street or a building. Left out, every kind of place is returned",
+                        "name": "kind",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -1493,6 +1502,11 @@ const docTemplate = `{
         "handlers.GeocodeResult": {
             "type": "object",
             "properties": {
+                "area": {
+                    "description": "Area is the area the place lies in: its own name when it is an area, else\nits locality, district or city. Left out when none is known. The first\ntime flow uses it to prefill the home area from a picked street.",
+                    "type": "string",
+                    "example": "Indiranagar"
+                },
                 "display_name": {
                     "type": "string",
                     "example": "Bengaluru, Bangalore North, Bengaluru Urban, Karnataka, India"

@@ -7,7 +7,7 @@
 //     agreement (POST /api/me/consent) and moves on, and only on a 204;
 //   - step 3 asks the browser for the position only when Allow location is
 //     pressed, keeps the fix in this browser through PinalertPosition and sends
-//     it nowhere; Not now, I will search a place shows a place search whose
+//     it nowhere; Search a place instead shows a place search whose
 //     picked result is kept in memory for step 4 only;
 //   - step 4's home area comes only from a picked search result, never from the
 //     device fix; nothing is saved until Continue; Skip saves nothing;
@@ -213,7 +213,7 @@ function load(options) {
     document: page.doc,
     fetch(target, init) {
       return new Promise((resolve, reject) => {
-        requests.push({ url: String(target), init: init || {}, resolve, reject });
+        requests.push({ url: String(target), init: init || {}, resolve, reject, at: now });
       });
     },
     setTimeout(fn, ms) { const id = nextId++; timers.set(id, { fn, at: now + ms }); return id; },
@@ -261,9 +261,13 @@ const DISAGREE = 'You need to agree to use Pinalert.';
 
 // The places a search answers with, short name first.
 const PLACES = [
-  { name: 'Indiranagar', display_name: 'Indiranagar, Bengaluru, Karnataka, India', lat: 12.9784, lon: 77.6408 },
-  { name: 'Indira Nagar', display_name: 'Indira Nagar, Lucknow, Uttar Pradesh, India', lat: 26.8806, lon: 80.9946 }
+  { name: 'Indiranagar', display_name: 'Indiranagar, Bengaluru, Karnataka, India', lat: 12.9784, lon: 77.6408, area: 'Indiranagar' },
+  { name: 'Indira Nagar', display_name: 'Indira Nagar, Lucknow, Uttar Pradesh, India', lat: 26.8806, lon: 80.9946, area: 'Indira Nagar' }
 ];
+// Places the way the server sends them for a step 3 search that found a street
+// or a building: the area is the place it lies in, or missing when unknown.
+const STREET = { name: 'MG Road', display_name: 'MG Road, Shivajinagar, Bengaluru, Karnataka, India', lat: 12.9756, lon: 77.6066, area: 'Shivajinagar' };
+const STREET_NO_AREA = { name: 'Lonely Road', display_name: 'Lonely Road, Karnataka, India', lat: 15.1, lon: 76.2 };
 
 // Walk to step 4 through the buttons, the way a person does.
 async function walkToStep4(page) {
@@ -388,7 +392,7 @@ test('a refused Allow location moves on and saves nothing', async () => {
   assert.equal(page.requests.length, 0);
 });
 
-test('Not now, I will search a place shows the search without asking for the position', () => {
+test('Search a place instead shows the search without asking for the position', () => {
   const page = load({ start: 3 });
   assert.equal(byId(page, 'welcome-search-block').hidden, true);
   click(page, 'welcome-search-open');
@@ -572,7 +576,7 @@ test('the home area sent is the picked place with its own point, never the devic
   const home = byId(page, 'welcome-home-input');
   home.value = 'Whitefield';
   fire(byId(page, 'welcome-home-form'), 'submit');
-  assert.equal(page.requests[0].url, '/api/geocode/place?q=Whitefield');
+  assert.equal(page.requests[0].url, '/api/geocode/place?kind=area&q=Whitefield');
   answer(page.requests[0], 200, { results: [{ name: 'Whitefield', display_name: 'Whitefield, Bengaluru', lat: 12.9698, lon: 77.7499 }] });
   await flush();
   fire(byId(page, 'welcome-home-results').children[0].children[0], 'click');
@@ -623,6 +627,74 @@ test('a prefilled home area from step 3 is saved with the picked place point on 
   click(page, 'welcome-continue-3');
   click(page, 'welcome-continue-4');
   assert.deepEqual(JSON.parse(page.requests[1].init.body), { home_area: { name: 'Indiranagar', lat: 12.9784, lon: 77.6408 } });
+});
+
+// Pick the first result of a step 3 search for `place` and go to step 4.
+async function pickOnStep3(page, place) {
+  click(page, 'welcome-search-open');
+  byId(page, 'welcome-search-input').value = 'anything';
+  fire(byId(page, 'welcome-search-form'), 'submit');
+  answer(page.requests[0], 200, { results: [place] });
+  await flush();
+  fire(byId(page, 'welcome-search-results').children[0].children[0], 'click');
+  click(page, 'welcome-continue-3');
+}
+
+test('a street picked on step 3 prefills step 4 with the area around it, never the street name', async () => {
+  const page = load({ start: 3 });
+  await pickOnStep3(page, STREET);
+  const home = byId(page, 'welcome-home-input');
+  assert.equal(home.value, 'Shivajinagar');
+  assert.equal(home.value.includes('MG Road'), false);
+  assert.equal(byId(page, 'welcome-home-prefilled').hidden, false, 'the Filled in line shows');
+
+  click(page, 'welcome-continue-4');
+  const body = JSON.parse(page.requests[1].init.body);
+  assert.equal(body.home_area.name, 'Shivajinagar', 'the area is what is saved, not the street');
+  assert.equal(JSON.stringify(body).includes('MG Road'), false);
+  assert.deepEqual(Object.keys(body.home_area).sort(), ['lat', 'lon', 'name']);
+  // The point stays the picked place's own; the server keeps a 5 km cell.
+  assert.equal(body.home_area.lat, STREET.lat);
+  assert.equal(body.home_area.lon, STREET.lon);
+});
+
+test('a street with no known area leaves step 4 empty and the line hidden', async () => {
+  const page = load({ start: 3 });
+  await pickOnStep3(page, STREET_NO_AREA);
+  assert.equal(byId(page, 'welcome-home-input').value, '');
+  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
+  click(page, 'welcome-continue-4');
+  assert.equal(page.requests.length, 2);
+  assert.equal(page.requests[1].url, '/api/me/first-run-done', 'no home area is saved');
+});
+
+test('a street with no known area keeps the stored home area of a returning account', async () => {
+  const page = load({ start: 3, home: 'Whitefield' });
+  await pickOnStep3(page, STREET_NO_AREA);
+  assert.equal(byId(page, 'welcome-home-input').value, 'Whitefield');
+  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
+  click(page, 'welcome-continue-4');
+  assert.equal(page.requests[1].url, '/api/me/first-run-done', 'a stored home area is not sent again');
+});
+
+test('a place that is already an area prefills as it did', async () => {
+  const page = load({ start: 3 });
+  await pickOnStep3(page, PLACES[0]);
+  assert.equal(byId(page, 'welcome-home-input').value, 'Indiranagar');
+  assert.equal(byId(page, 'welcome-home-prefilled').hidden, false);
+  click(page, 'welcome-continue-4');
+  assert.deepEqual(JSON.parse(page.requests[1].init.body), { home_area: { name: 'Indiranagar', lat: 12.9784, lon: 77.6408 } });
+});
+
+test('editing the area filled in from a street forgets it, as any prefill', async () => {
+  const page = load({ start: 3 });
+  await pickOnStep3(page, STREET);
+  const home = byId(page, 'welcome-home-input');
+  home.value = 'Shivajinagar West';
+  fire(home, 'input');
+  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
+  click(page, 'welcome-continue-4');
+  assert.equal(page.requests[1].url, '/api/me/first-run-done', 'edited text was never picked');
 });
 
 test('a refused profile keeps step 4 with the server sentence and does not finish', async () => {
@@ -702,4 +774,238 @@ test('the public hooks move the flow the same way the buttons do', async () => {
   assert.equal(typeof page.api.agree, 'function');
   assert.equal(typeof page.api.allowLocation, 'function');
   assert.equal(typeof page.api.finish, 'function');
+});
+
+// ---- Plan 28: suggestions while typing in the home area (step 4) -----------
+
+const typeHome = (page, text) => {
+  const input = byId(page, 'welcome-home-input');
+  input.value = text;
+  fire(input, 'input');
+};
+const homeStatus = (page) => byId(page, 'welcome-home-status');
+const homeList = (page) => byId(page, 'welcome-home-results');
+const AREA_URL = '/api/geocode/place?kind=area&q=';
+
+test('typing in the home area sends nothing under 3 characters and shows no line', () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'In');
+  page.advance(5000);
+  assert.equal(page.requests.length, 0);
+  assert.equal(homeStatus(page).hidden, true, 'no too short line comes from typing');
+  assert.equal(homeList(page).hidden, true);
+});
+
+test('one request goes out after the typing pause, in areas mode, with no Searching line', async () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Indira');
+  page.advance(399);
+  assert.equal(page.requests.length, 0, 'the pause is 400 ms');
+  page.advance(1);
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.requests[0].url, AREA_URL + 'Indira');
+  assert.equal(homeStatus(page).hidden, true, 'a typed search is quiet');
+  answer(page.requests[0], 200, { results: PLACES });
+  await flush();
+  assert.equal(homeList(page).hidden, false);
+  assert.equal(homeList(page).children.length, 2);
+  assert.equal(homeList(page).children[0].children[0].getAttribute('role'), 'option');
+});
+
+test('at most 5 suggestions show', async () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Indira');
+  page.advance(400);
+  const many = [];
+  for (let i = 0; i < 8; i++) { many.push({ name: 'Area ' + i, display_name: 'Area ' + i + ', Karnataka', lat: 12 + i / 100, lon: 77 }); }
+  answer(page.requests[0], 200, { results: many });
+  await flush();
+  assert.equal(homeList(page).children.length, 5);
+});
+
+test('every keystroke restarts the pause', () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Ind');
+  page.advance(300);
+  typeHome(page, 'Indi');
+  page.advance(300);
+  assert.equal(page.requests.length, 0);
+  page.advance(100);
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.requests[0].url, AREA_URL + 'Indi');
+});
+
+test('the same text is never sent twice in a row', async () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Indira');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: PLACES });
+  await flush();
+  typeHome(page, 'Indira');
+  page.advance(5000);
+  assert.equal(page.requests.length, 1);
+  typeHome(page, 'Indira ');
+  page.advance(5000);
+  assert.equal(page.requests.length, 1, 'a trailing space is the same text');
+});
+
+test('a request still out is cancelled by a newer one and its late answer is ignored', async () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Indira');
+  page.advance(400);
+  const first = page.requests[0];
+  assert.equal(first.init.signal.aborted, false);
+  typeHome(page, 'Indiranag');
+  page.advance(800);
+  assert.equal(page.requests.length, 1, 'typed searches go out at least a second apart');
+  page.advance(200);
+  assert.equal(page.requests.length, 2);
+  assert.equal(page.requests[1].at - first.at, 1000);
+  assert.equal(first.init.signal.aborted, true, 'the older request is cancelled');
+  answer(page.requests[1], 200, { results: [PLACES[0]] });
+  await flush();
+  answer(first, 200, { results: PLACES });
+  await flush();
+  assert.equal(homeList(page).children.length, 1, 'the stale answer did not replace the newer list');
+});
+
+test('Enter searches at once, shows Searching, and the pause that was running sends nothing more', () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Indira');
+  page.advance(100);
+  fire(byId(page, 'welcome-home-form'), 'submit');
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.requests[0].url, AREA_URL + 'Indira');
+  assert.equal(homeStatus(page).textContent, 'Searching…');
+  page.advance(5000);
+  assert.equal(page.requests.length, 1);
+});
+
+test('Enter for the text a typed search already sent takes it over and shows the lines', async () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Indira');
+  page.advance(400);
+  assert.equal(homeStatus(page).hidden, true);
+  fire(byId(page, 'welcome-home-form'), 'submit');
+  assert.equal(page.requests.length, 1, 'no second request for the same text');
+  assert.equal(homeStatus(page).textContent, 'Searching…');
+  answer(page.requests[0], 503, {});
+  await flush();
+  assert.equal(homeStatus(page).textContent, 'Search unavailable. Try again in a moment.');
+});
+
+test('a busy typed search is retried quietly and only the last failure shows its line', async () => {
+  const page = load({ start: 4 });
+  const refused = { error: { message: 'Too many searches. Wait a few seconds and try again.' } };
+  typeHome(page, 'Bengal');
+  page.advance(400);
+  answer(page.requests[0], 429, refused);
+  await flush();
+  assert.equal(homeStatus(page).hidden, true, 'the first refusal is quiet');
+  page.advance(999);
+  assert.equal(page.requests.length, 1);
+  page.advance(1);
+  assert.equal(page.requests.length, 2);
+  answer(page.requests[1], 503, {});
+  await flush();
+  page.advance(1000);
+  assert.equal(page.requests.length, 3);
+  answer(page.requests[2], 503, {});
+  await flush();
+  page.advance(1000);
+  assert.equal(page.requests.length, 4);
+  assert.equal(homeStatus(page).hidden, true);
+  answer(page.requests[3], 429, refused);
+  await flush();
+  page.advance(5000);
+  assert.equal(page.requests.length, 4, 'three retries at most');
+  assert.equal(homeStatus(page).textContent, 'Too many searches. Wait a few seconds and try again.');
+  assert.equal(homeList(page).hidden, true);
+});
+
+test('newer typing cancels a quiet retry that was waiting', async () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Bengal');
+  page.advance(400);
+  answer(page.requests[0], 503, {});
+  await flush();
+  typeHome(page, 'Bengalu');
+  page.advance(5000);
+  assert.deepEqual(page.requests.map((r) => r.url), [AREA_URL + 'Bengal', AREA_URL + 'Bengalu']);
+});
+
+test('a network failure while typing stays quiet and is not tried again', async () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Bengal');
+  page.advance(400);
+  page.requests[0].reject(new Error('offline'));
+  await flush();
+  page.advance(5000);
+  assert.equal(homeStatus(page).hidden, true);
+  assert.equal(page.requests.length, 1);
+});
+
+test('typing under 3 characters again drops the list and any search out', async () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Indira');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: PLACES });
+  await flush();
+  assert.equal(homeList(page).hidden, false);
+  typeHome(page, 'In');
+  assert.equal(homeList(page).hidden, true);
+  assert.equal(homeStatus(page).hidden, true);
+  typeHome(page, 'Indira');
+  page.advance(1000);
+  assert.equal(page.requests.length, 2, 'the text may be sent again once it was dropped');
+});
+
+test('a 12 character name typed in one go sends one request; typed slowly it stays under one a second', () => {
+  const name = 'Banjara Hill';
+  assert.equal(Array.from(name).length, 12);
+  const quick = load({ start: 4 });
+  for (let i = 1; i <= 12; i++) {
+    typeHome(quick, name.slice(0, i));
+    quick.advance(100);
+  }
+  quick.advance(400);
+  assert.equal(quick.requests.length, 1);
+  assert.equal(quick.requests[0].url, AREA_URL + encodeURIComponent(name));
+
+  const slow = load({ start: 4 });
+  for (let i = 1; i <= 12; i++) {
+    typeHome(slow, name.slice(0, i));
+    slow.advance(450);
+  }
+  slow.advance(2000);
+  const times = slow.requests.map((r) => r.at);
+  assert.ok(times.length >= 2 && times.length <= 7, 'requests sent: ' + times.length);
+  for (let i = 1; i < times.length; i++) {
+    assert.ok(times[i] - times[i - 1] >= 1000, 'typed searches are at least a second apart: ' + times.join(','));
+  }
+});
+
+test('a pick ends the typing pause and a late answer does not reopen the list', async () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Indira');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: PLACES });
+  await flush();
+  typeHome(page, 'Indiran');
+  fire(homeList(page).children[0].children[0], 'click');
+  assert.equal(byId(page, 'welcome-home-input').value, 'Indiranagar');
+  page.advance(5000);
+  assert.equal(page.requests.length, 1, 'the pause that was running sent nothing');
+});
+
+test('step 3 searches any place and does not search while typing', () => {
+  const page = load({ start: 3 });
+  click(page, 'welcome-search-open');
+  const input = byId(page, 'welcome-search-input');
+  input.value = 'Indira';
+  fire(input, 'input');
+  page.advance(5000);
+  assert.equal(page.requests.length, 0);
+  fire(byId(page, 'welcome-search-form'), 'submit');
+  assert.equal(page.requests[0].url, '/api/geocode?q=Indira', 'step 3 keeps the report form search, no areas filter');
 });

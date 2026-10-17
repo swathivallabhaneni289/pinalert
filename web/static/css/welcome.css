@@ -410,6 +410,17 @@
   .welcome__actions--pair .btn {
     flex: 0 0 auto;
   }
+
+  /* Step 3: the two choices sit in the middle of the space under the cards,
+     as wide as the cards together, instead of at the bottom of the pane. */
+  .welcome__actions--under {
+    margin-top: auto;
+    margin-bottom: auto;
+  }
+
+  .welcome__actions--under .btn {
+    flex: 1 1 0;
+  }
 }
 
 @media (forced-colors: active) {
