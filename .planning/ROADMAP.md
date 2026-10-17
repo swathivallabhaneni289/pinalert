@@ -913,6 +913,7 @@ Plans:
   - A reporter's profile opens from their name in the report's trust block (the "See this reporter" link of scope note 2), shown only for opted in reporters.
   - My profile sits in the laptop person menu, and on the phone as View my profile in Settings, About you.
   - Let others follow me, Following, Followers and Blocked people are rows in Settings, People and reports.
+  - Owner, 2026-10-17 ("the username"): the username from Phase 8 (unique and public, scope note 5 there) is also how people appear here: on the profile and in the Followers and Following lists. This supersedes "there is no nickname" above; the Name stays a profile only detail. People without their own opted in profile still appear in the lists only as a number.
 
 **Plans:** 0 plans
 
