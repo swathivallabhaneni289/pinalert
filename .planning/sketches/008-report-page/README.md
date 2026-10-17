@@ -125,9 +125,11 @@ back to the owner first.
   the name and home area are filled in. "Address" is kept as the home area, a town or area and never a street, as the
   app already promises; it is filled in from the location step. Reading stays open without an account; the requirement
   is only for signing up. People who signed up before this ships are asked to fill in the missing ones once, at their
-  next sign in. Building it: the username needs Phase 8 (unique storage and the check); 03.4 D-27 and D-24b had name
-  and home area optional, so the 3.4 session was told on 2026-10-17 and decides whether name and home area turn
-  required now or with Phase 8.
+  next sign in. Building it: **all of it ships with Phase 8**, decided with the 3.4 session on 2026-10-17. Phase 3.4
+  stays as built (step 4 keeps Skip; name and home area optional and stored, D-24b), and Phase 8 flips step 4 to
+  required for all three fields at once, adds the username with its check, and asks earlier accounts to fill in the
+  missing ones once. Doing name and home area in 3.4 would change step 4 twice and make existing accounts fill it in
+  twice. So the Skip seen in the 3.4 build is expected until Phase 8.
 
 ## Open questions for the owner's look
 
