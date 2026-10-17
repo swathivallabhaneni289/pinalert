@@ -70,8 +70,9 @@ Handy address parameters: `?view=phone|laptop`, `rp=a|b` (the laptop variant, B 
    - **One box.** Reply puts "@username " in the box, moves the cursor there and shows "Replying to username" with an X
      to cancel. Replying to your own comment adds no @name. A reply starting with @username shows the name in bold. Post
      turns solid once there is text; Enter posts and Shift with Enter starts a new line. The box grows as you type, and
-     "N left" shows only in the last 40 of the 280 letters. On the laptop the box is pinned to the bottom of the panel;
-     on the phone it is a rounded field after the last comment.
+     "N left" shows only in the last 40 of the 280 letters. The box is a rounded field with Post inside it on both
+     sizes (owner, after the lock, of the plain laptop box: "i dont like this part"); on the laptop it is pinned to the
+     bottom of the panel, on the phone it sits after the last comment.
    - A like, an open thread and a half typed comment all survive a vote.
    - Sample commenters have short usernames (ravi.k, anjali.r and so on); see "Owner decisions" for names.
    - Tried and dropped the same day: a red heart in its own column on the right of each comment, and on the phone a
@@ -134,3 +135,4 @@ Fifth round, phone spacing (2026-10-17): the gaps in the block under the report 
 Sixth round, clear list and no likes (2026-10-17): no heart anywhere on the phone or the laptop; the phone shows the full list under "Comments 6" with the box after it, in the phone frame and at 390px wide, with no sideways scroll; a reply posts into the right thread (4 replies, count 7); dark checked; the laptop only lost the hearts.
 Seventh round, thumbs up likes (2026-10-17): on the phone a like on a comment and on a reply both show filled with the count up by one (6 to 7, 5 to 6) and stay after a Confirm; five like buttons with one thread open, each 32 by 44; no sideways scroll; the laptop shows the same thumbs up after Reply, checked in dark.
 Eighth round, pins and lock (2026-10-17): on the laptop a pin tap opens its report beside the map (Traffic), a second pin switches it (Road blocked), and after All reports another pin opens again (Shelter); layout A and the phone also open on a pin tap; no pin label is left in the page.
+Ninth round, laptop box (2026-10-17, asked by the owner after the lock): the laptop box is now the same rounded field as the phone, fully visible at the panel bottom (897 of 900px) with Replying to above it; the mockup hint is short again so the top strip stays on one line; light and dark checked.
