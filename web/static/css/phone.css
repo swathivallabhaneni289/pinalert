@@ -224,8 +224,13 @@
     --map-tools-height: calc(var(--space-sm) + var(--touch-target-min) + var(--space-sm));
   }
 
+  /* The chip row runs to the screen edge, so a chip that does not fit is cut
+     by the screen, which reads as "scroll for more". Before, the layer stopped
+     68px short and cut the fourth chip in the middle of the map (03.4-29
+     finding 17). The chip row's own right padding (feed.css) lets the last
+     chip clear the edge when the row is scrolled to its end. */
   .pane--map > .map-tools {
-    right: calc(var(--space-md) + var(--touch-target-min) + var(--space-sm));
+    right: 0;
   }
 
   /* ---- Search a place in the Nearby top bar (D-11, UI-SPEC 1b, 2g) ----
@@ -301,14 +306,14 @@
      corner, and a provisional or hidden card is white with a hairline, as
      drawn. The tint comes from the existing severity token. */
   #report-list .report-row {
-    padding: var(--space-sm) var(--space-md);
+    padding: var(--space-12) var(--space-md);
     border: 0;
     border-radius: 8px;
   }
 
   #report-list .report-row.vis-provisional,
   #report-list .report-row.vis-hidden {
-    padding: calc(var(--space-sm) - 1px) calc(var(--space-md) - 1px);
+    padding: calc(var(--space-12) - 1px) calc(var(--space-md) - 1px);
     border: 1px solid var(--color-border);
     background: var(--color-bg);
   }
@@ -330,9 +335,20 @@
     column-gap: var(--space-xs);
   }
 
-  #report-list .report-row .report-row__trustline-count--second::before,
-  #report-list .report-row .report-row__trustline-word:not([hidden])::before {
-    margin-right: var(--space-xs);
+  /* The dot that ends a part is 4px from the part, as the parts are 4px
+     apart (feed.css draws it; the label's own 4px gap is its distance). */
+  #report-list .report-row .visibility-tag:not([hidden])::after,
+  #report-list .report-row .report-row__meta:has(~ .report-row__meta:not([hidden]))::after,
+  #report-list .report-row .report-row__meta:has(~ .report-row__away:not([hidden]))::after,
+  #report-list .report-row .report-row__meta:has(~ .report-row__far:not([hidden]))::after,
+  #report-list .report-row .report-row__away:not([hidden]):has(~ .report-row__far:not([hidden]))::after,
+  #report-list .report-row .report-row__trustline-count:not(.report-row__trustline-count--second)::after,
+  #report-list .report-row .report-row__trustline-count--second:has(~ .report-row__trustline-word:not([hidden]))::after {
+    margin-left: var(--space-xs);
+  }
+
+  #report-list .report-row .severity-label:not([hidden])::after {
+    margin-left: 0;
   }
 
   /* White cards: the muted colour clears 4.5 to 1 on the page colour in both

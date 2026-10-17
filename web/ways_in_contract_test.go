@@ -121,7 +121,7 @@ func TestLoginLowDataPanelStyles(t *testing.T) {
 	rules := parseCSSRules(p421ReadStatic(t, "css/auth.css"))
 	p421WantDecls(t, rules, ".login-column", map[string]string{
 		"position": "relative", "z-index": "1", "display": "flex", "flex-direction": "column",
-		"gap": "var(--space-sm)", "width": "100%", "max-width": "420px",
+		"gap": "var(--space-md)", "width": "100%", "max-width": "420px", // plan 29 finding 15: 16px between the cards
 	})
 	p421WantDecls(t, rules, ".login-ways", map[string]string{
 		"background": "var(--color-surface)", "border": "1px solid var(--color-border)",

@@ -75,23 +75,26 @@
      trade for an emergency tool). Four size roles for the app and one 12px caption
      (Phase 3.4, UI-SPEC departure D4) limited to a closed list: the bottom bar labels,
      the column heads of My activity and Official alerts, the bell count digits, the
-     first time step digits and the bell list time line. Exactly two weights. */
+     first time step digits and the bell list time line. Exactly two weights.
+     The five sizes are rem, with the same sizes as before at the default 16px
+     (12, 14, 16, 18, 24), so the browser's own text size setting scales the
+     app (03.4-29 finding 14); pixels ignore it. */
   --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     sans-serif;
 
-  --font-size-caption: 12px;
+  --font-size-caption: 0.75rem;
   --line-height-caption: 1.3;
 
-  --font-size-label: 14px;
+  --font-size-label: 0.875rem;
   --line-height-label: 1.4;
 
-  --font-size-body: 16px;
+  --font-size-body: 1rem;
   --line-height-body: 1.5;
 
-  --font-size-heading: 18px;
+  --font-size-heading: 1.125rem;
   --line-height-heading: 1.3;
 
-  --font-size-display: 24px;
+  --font-size-display: 1.5rem;
   --line-height-display: 1.2;
 
   --font-weight-regular: 400;
@@ -282,6 +285,24 @@ body {
 :focus-visible {
   outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
+}
+
+/* Leaflet's zoom buttons are 30px by default. Everything pressed in the app is
+   at least 44px (03.4-29 finding 20). Four classes and a type beat Leaflet's
+   own touch rule whatever the link order. */
+.leaflet-container .leaflet-bar.leaflet-control-zoom a {
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  line-height: var(--touch-target-min);
+}
+
+/* Placeholder text is real guidance ("For example: Ravi Kumar"), so it takes
+   the muted text colour at full opacity: 4.8 to 1 on --color-bg in the light
+   theme. The browser default grey is 2.35 to 1 (03.4-29 finding 12). A field
+   on a different surface sets its own colour. */
+::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
 }
 
 /* -------------------------------------------------------------------------

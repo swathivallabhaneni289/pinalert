@@ -30,8 +30,10 @@
       <h1>Low data view</h1>
       <p class="low-page__line">Text only, no map</p>
       <p class="low-page__note">This device opens the Low data view by default.</p>
-      <a class="btn" id="low-full" href="/?full=1">Open full version</a>
-      <button type="button" class="btn btn--primary low-page__report" id="low-report">Report an emergency</button>
+      <div class="low-page__actions">
+        <a class="btn" id="low-full" href="/?full=1">Open full version</a>
+        <button type="button" class="btn btn--primary low-page__report" id="low-report">Report an emergency</button>
+      </div>
       <p class="low-basis" id="low-basis" aria-live="polite"></p>
       <button type="button" class="btn" id="low-retry-position" hidden>Retry position</button>
       <div class="queue-strip" id="queue-strip" hidden></div>

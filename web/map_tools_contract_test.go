@@ -482,9 +482,12 @@ func TestMapToolsCSS(t *testing.T) {
 	// Each control carries 1000 and the results list 1005 (UI-SPEC).
 	layer := p31mRule(t, feed, "", ".map-tools")
 	p16MustDecl(t, ".map-tools", layer, map[string]string{
-		"position":       "absolute",
-		"top":            "0",
-		"left":           "calc(var(--space-2xl) + var(--space-sm))",
+		"position": "absolute",
+		"top":      "0",
+		// Amended 2026-10-17 by Phase 3.4 plan 29 (visual audit finding 20): the
+		// zoom buttons are 44px wide now, so the chips start 64px in, which
+		// keeps 8px between the zoom control and the first chip.
+		"left":           "calc(var(--space-2xl) + var(--space-md))",
 		"right":          "var(--space-md)",
 		"height":         "var(--map-tools-height)",
 		"pointer-events": "none",
@@ -621,8 +624,12 @@ func TestMapToolsCSS(t *testing.T) {
 	// no phone rule for the open state moves its right edge
 	// (TestPhoneKeepsTheAccountTriggerAndDropsTheThemeToggle pins that).
 	layerNarrow := p31mRule(t, phone, phoneMedia, ".pane--map > .map-tools")
+	// Amended 2026-10-17 by Phase 3.4 plan 29 (visual audit finding 17): the
+	// theme toggle that needed this inset left the phone long ago and the
+	// account button lives in the top bar, so the chip row runs to the screen
+	// edge and a chip that does not fit is cut by the screen, not mid map.
 	p16MustDecl(t, "phone layer", layerNarrow, map[string]string{
-		"right": "calc(var(--space-md) + var(--touch-target-min) + var(--space-sm))",
+		"right": "0",
 	})
 	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-11, D-04):
 	// the chips sit at the left of the layer with no open button before them (the

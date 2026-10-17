@@ -100,22 +100,29 @@ func TestBrowserFindingF2PhoneCardIsDenser(t *testing.T) {
 	const feed = "static/css/feed.css"
 	m := browserFindingsPhoneMedia
 
+	// Amended 2026-10-17 by Phase 3.4 plan 29 (visual audit finding 13, 03.4-UI-REVIEW.md):
+	// the card takes the declared 12px above and below (UI-SPEC Spacing, card padding),
+	// 8px made the list read as packed. The white card keeps its 1px border inside the
+	// same box, so both cards share one text position.
 	p16MustDecl(t, "phone card", p31mRule(t, phone, m, "#report-list .report-row"),
-		map[string]string{"padding": "var(--space-sm) var(--space-md)"})
+		map[string]string{"padding": "var(--space-12) var(--space-md)"})
 	p16MustDecl(t, "phone white card", p31mRule(t, phone, m, "#report-list .report-row.vis-provisional"),
-		map[string]string{"padding": "calc(var(--space-sm) - 1px) calc(var(--space-md) - 1px)"})
+		map[string]string{"padding": "calc(var(--space-12) - 1px) calc(var(--space-md) - 1px)"})
 	p16MustDecl(t, "phone row body", p31mRule(t, phone, m, "#report-list .report-row .report-row__body"),
 		map[string]string{"column-gap": "var(--space-xs)"})
 	p16MustDecl(t, "phone row title", p31mRule(t, phone, m, "#report-list .report-row .report-row__title"),
 		map[string]string{"margin": "0"})
 	p16MustDecl(t, "phone trust line", p31mRule(t, phone, m, "#report-list .report-row .report-row__trustline:not([hidden])"),
 		map[string]string{"column-gap": "var(--space-xs)"})
+	// Amended 2026-10-17 by Phase 3.4 plan 29 (finding 5): the dot ends the part
+	// before it instead of starting the part after it, so a wrapped line never
+	// starts with a lone dot. It is 4px from its part on a phone.
 	for _, head := range []string{
-		"#report-list .report-row .report-row__trustline-count--second::before",
-		"#report-list .report-row .report-row__trustline-word:not([hidden])::before",
+		"#report-list .report-row .report-row__trustline-count:not(.report-row__trustline-count--second)::after",
+		"#report-list .report-row .report-row__trustline-count--second:has(~ .report-row__trustline-word:not([hidden]))::after",
 	} {
 		p16MustDecl(t, "phone trust line dot", p31mRule(t, phone, m, head),
-			map[string]string{"margin-right": "var(--space-xs)"})
+			map[string]string{"margin-left": "var(--space-xs)"})
 	}
 
 	// Nothing on a phone hides a part of the row.

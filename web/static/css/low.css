@@ -40,6 +40,26 @@
   margin: var(--space-sm) 0 0;
 }
 
+/* The two buttons under the intro sit 8px apart side by side on a laptop and
+   stacked on a phone; before, only the whitespace between two inline buttons
+   separated them (4px) (03.4-29 finding 16). */
+.low-page__actions:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin: var(--space-sm) 0 0;
+}
+
+.low-page__head .low-page__actions .btn {
+  margin: 0;
+}
+
+/* Tags in this view are 4px cornered boxes, not pills (03.4-29 finding 10). */
+.low-list .severity-label:not([hidden]),
+.low-list .visibility-tag:not([hidden]) {
+  border-radius: 4px;
+}
+
 .low-basis {
   margin: var(--space-md) 0 0;
   font-size: var(--font-size-label);

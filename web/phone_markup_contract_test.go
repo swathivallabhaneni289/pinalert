@@ -401,8 +401,11 @@ func TestPhoneKeepsTheAccountTriggerAndDropsTheThemeToggle(t *testing.T) {
 	if toggle == nil || toggle.Decls["display"] != "none" {
 		t.Errorf("phone.css needs .app-topbar > .theme-toggle { display: none } (Phase 3.4, D-08), got %v", toggle)
 	}
-	if layer == nil || p19NoSpace(layer.Decls["right"]) != p19NoSpace("calc(var(--space-md) + var(--touch-target-min) + var(--space-sm))") {
-		t.Errorf("phone.css .pane--map > .map-tools right must keep its inset, got %v", layer)
+	// Amended 2026-10-17 by Phase 3.4 plan 29 (visual audit finding 17): the
+	// chip row runs to the screen edge (right 0), so the inset is gone on
+	// purpose; the one thing still pinned is that the rule exists.
+	if layer == nil || p19NoSpace(layer.Decls["right"]) != "0" {
+		t.Errorf("phone.css .pane--map > .map-tools right must run to the screen edge, got %v", layer)
 	}
 }
 

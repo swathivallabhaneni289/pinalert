@@ -82,3 +82,138 @@ func TestAudit29TitlesTakeFocusWithoutARing(t *testing.T) {
 		}
 	}
 }
+
+// TestAudit29RowDotsEndAPartNeverStartOne (finding 5): in the report rows the
+// separator dot is drawn after the part before it, so a wrapped line never
+// starts with a lone dot. No row rule draws the dot with ::before.
+func TestAudit29RowDotsEndAPartNeverStartOne(t *testing.T) {
+	for _, file := range []string{"static/css/feed.css", "static/css/phone.css"} {
+		after := 0
+		for _, r := range p16ParseCSS(file, p16ReadStatic(t, file)) {
+			if !strings.Contains(r.Head, "#report-list") {
+				continue
+			}
+			for _, part := range p16HeadParts(r.Head) {
+				if strings.HasSuffix(part, "::before") && strings.Contains(r.Decls["content"], "00b7") {
+					t.Errorf("%s: %q draws the row dot before a part", file, part)
+				}
+				if strings.HasSuffix(part, "::after") && strings.Contains(r.Decls["content"], "00b7") {
+					after++
+				}
+			}
+		}
+		if file == "static/css/feed.css" && after < 8 {
+			t.Errorf("feed.css draws %d dot heads after a part, want the label, the state, three meta, the distance and the two trust line parts", after)
+		}
+	}
+	second := p31mRule(t, "static/css/feed.css", "", "#report-list .report-row .report-row__trustline-count--second:has(~ .report-row__trustline-word:not([hidden]))::after")
+	if !strings.Contains(second.Decls["content"], "00b7") {
+		t.Errorf("the second count must draw its dot only when the word is shown")
+	}
+}
+
+// TestAudit29ReporterLineHasItsOwnLine (finding 13): the reporter words take a
+// whole line on every row, so an unconfirmed row never reads "0 disputed New
+// reporter".
+func TestAudit29ReporterLineHasItsOwnLine(t *testing.T) {
+	r := p31mRule(t, "static/css/feed.css", "", "#report-list .report-row .trust-reporter:not([hidden])")
+	if got := r.Decls["flex"]; got != "0 0 100%" {
+		t.Errorf("reporter line flex is %q, want 0 0 100%%", got)
+	}
+}
+
+// TestAudit29TextFieldsAndPlaceholdersReadAtThreeToOne (findings 11 and 12):
+// the edge of every text field of these pages reads at 3 to 1 or more, and the
+// placeholder takes the muted text colour at full opacity.
+func TestAudit29TextFieldsAndPlaceholdersReadAtThreeToOne(t *testing.T) {
+	for _, c := range []struct{ file, head string }{
+		{"static/css/modal.css", "#location-search"},
+		{"static/css/modal.css", "#description"},
+		{"static/css/modal.css", "#shelter-capacity-status"},
+		{"static/css/window.css", ".app-window__field"},
+		{"static/css/auth.css", ".login-field"},
+	} {
+		r := p31mRule(t, c.file, "", c.head)
+		if got := r.Decls["border"]; got != "1px solid var(--color-text-muted)" {
+			t.Errorf("%s %s border is %q, want the muted text colour", c.file, c.head, got)
+		}
+	}
+	ph := p31mRule(t, "static/css/main.css", "", "::placeholder")
+	p16MustDecl(t, "placeholder", ph, map[string]string{"color": "var(--color-text-muted)", "opacity": "1"})
+}
+
+// TestAudit29MutedTextLeavesTheGreySurface (finding 7): the sign in card, the
+// verify page and the two Post a report map column lines use the normal text
+// colour, since muted grey on --color-surface is 4.34 to 1.
+func TestAudit29MutedTextLeavesTheGreySurface(t *testing.T) {
+	lead := p31mRule(t, "static/css/auth.css", "", ".login-card p")
+	if got := lead.Decls["color"]; got != "var(--color-text)" {
+		t.Errorf(".login-card p color is %q, want var(--color-text)", got)
+	}
+	for _, head := range []string{"#coord-readout", "#location-notice"} {
+		r := p31mRule(t, "static/css/modal-map.css", "", head)
+		if got := r.Decls["color"]; got != "var(--color-text)" {
+			t.Errorf("%s color is %q, want var(--color-text)", head, got)
+		}
+	}
+}
+
+// TestAudit29SignInHasOneRhythm (finding 15): 16px between the cards, an opaque
+// backing so the drawing never shows in the gap, and an empty error line that
+// takes no room.
+func TestAudit29SignInHasOneRhythm(t *testing.T) {
+	col := p31mRule(t, "static/css/auth.css", "", ".login-column")
+	p16MustDecl(t, ".login-column", col, map[string]string{"gap": "var(--space-md)", "background": "var(--color-bg)"})
+	p16MustDecl(t, ".login-card p", p31mRule(t, "static/css/auth.css", "", ".login-card p"),
+		map[string]string{"margin": "0 0 var(--space-md) 0"})
+	p16MustDecl(t, ".auth-error:empty", p31mRule(t, "static/css/auth.css", "", ".auth-error:empty"),
+		map[string]string{"min-height": "0", "margin": "0"})
+}
+
+// TestAudit29SettingsValueDoesNotShrink (finding 9): "Not set" never breaks
+// onto two lines.
+func TestAudit29SettingsValueDoesNotShrink(t *testing.T) {
+	r := p31mRule(t, "static/css/places.css", "", ".place-row__value")
+	p16MustDecl(t, ".place-row__value", r, map[string]string{"flex": "0 0 auto", "max-width": "50%"})
+}
+
+// TestAudit29LowDataTagsAndButtons (findings 10 and 16): the tags are 4px
+// cornered and the two buttons sit 8px apart.
+func TestAudit29LowDataTagsAndButtons(t *testing.T) {
+	for _, head := range []string{".low-list .severity-label:not([hidden])", ".low-list .visibility-tag:not([hidden])"} {
+		p16MustDecl(t, head, p31mRule(t, "static/css/low.css", "", head), map[string]string{"border-radius": "4px"})
+	}
+	p16MustDecl(t, ".low-page__actions", p31mRule(t, "static/css/low.css", "", ".low-page__actions:not([hidden])"),
+		map[string]string{"display": "flex", "gap": "var(--space-sm)"})
+	tmpl := p410ReadTemplate(t, "low.html.tmpl")
+	if !strings.Contains(tmpl, `<div class="low-page__actions">`) {
+		t.Errorf("low.html.tmpl must wrap the two buttons in .low-page__actions")
+	}
+}
+
+// TestAudit29TypeSizesAreRem (finding 14): the five text sizes are rem, so the
+// browser's text size setting scales the app.
+func TestAudit29TypeSizesAreRem(t *testing.T) {
+	root := p31mRule(t, "static/css/main.css", "", ":root")
+	for name, want := range map[string]string{
+		"--font-size-caption": "0.75rem", "--font-size-label": "0.875rem", "--font-size-body": "1rem",
+		"--font-size-heading": "1.125rem", "--font-size-display": "1.5rem",
+	} {
+		if got := root.Decls[name]; got != want {
+			t.Errorf("%s is %q, want %q", name, got, want)
+		}
+	}
+}
+
+// TestAudit29MapControls (findings 17 and 20): the zoom buttons are 44px and
+// the chip row has room for its last chip at the screen edge.
+func TestAudit29MapControls(t *testing.T) {
+	zoom := p31mRule(t, "static/css/main.css", "", ".leaflet-container .leaflet-bar.leaflet-control-zoom a")
+	p16MustDecl(t, "zoom button", zoom, map[string]string{
+		"width": "var(--touch-target-min)", "height": "var(--touch-target-min)", "line-height": "var(--touch-target-min)",
+	})
+	chips := p31mRule(t, "static/css/feed.css", "", ".map-chips")
+	if got := chips.Decls["padding-right"]; got != "var(--space-md)" {
+		t.Errorf(".map-chips padding-right is %q, want var(--space-md)", got)
+	}
+}
