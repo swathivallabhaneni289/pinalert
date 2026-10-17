@@ -524,21 +524,56 @@ Plans:
   1. A bell at the top right on the phone and beside the person menu on the laptop (owner decision 2026-10-16) shows an unread count that rides on the existing 30 second refresh, and opens a short list of the latest 10 updates with See all updates, which opens My activity, Updates; tapping an update opens that report in the view it now belongs to (a deep link such as /?report=ID that opens the report on Nearby, or under My activity, Ended nearby once it has ended; amended 2026-10-16 for the Phase 3.4 layout).
   2. A user follows a report automatically when they posted it or voted on it, and can mute any report.
   3. Updates about a followed report are sent for state changes only (the report reaches Live, is hidden by disputes, is resolved, or is within 1 hour of expiring), at most one per report per hour, in anonymous wording built from the same server trust object as the popup, never naming a voter, an account or a location. Every decision calls the single visibility resolver.
-  4. A reader can filter the feed to Reliable reporters only (critical reports always stay visible, as do Rescue needed reports stored before that category was retired for new reports on 2026-10-16), and can opt in to an update when a Reliable reporter posts within the distance chosen in Settings (1, 2, 5 or 10 km) from the person's home area. Non-critical reports notify only once they are Live, and critical reports notify immediately.
+  4. A reader can filter the feed to Reliable reporters only (critical reports always stay visible, as do Rescue needed reports stored before that category was retired for new reports on 2026-10-16), and can opt in to an update when a Reliable reporter posts within the distance chosen in Settings (1, 2, 5 or 10 km) from the person's home area. The note comes as soon as the report is posted, critical or not, while it shows in the feed (Live or Provisional, never Hidden or Withheld), marked "Not confirmed yet" until people nearby confirm it, and the same note then reads as confirmed (owner amendment 2026-10-18, top of 03.2-CONTEXT.md; this replaces "non-critical reports notify only once they are Live").
 
 **Scope notes** (starting points for discuss-phase, not decisions):
 
   1. Comment events plug in when Phase 8 ships (commenting will make the user follow the report). Email digests are separate later work (see the backlog); Web Push is Phase 3.3, which turns these updates into phone notifications.
-  2. Care points: notification volume can be used to harass a reporter (dispute spam), so batch and cap per recipient. A notification must never bypass the provisional gate, which is why non-critical reports notify only once Live. The Reliable tag now grants reach and is farmable (Phase 3 D-03 prices gaming at extra verified accounts plus a claimed location), so cap how many alerts one reporter can trigger per recipient per hour, and treat burst detection (TRUSTX-03) as a dependency before the alert rule is widened beyond the in-app bell.
+  2. Care points: notification volume can be used to harass a reporter (dispute spam), so batch and cap per recipient. A notification must never show more than the feed does: report changes still wait for Live, and the Reliable reporter note comes at posting only because Provisional reports already show in the feed, dimmed and labelled "Not confirmed yet" (owner amendment 2026-10-18). The Reliable tag now grants reach and is farmable (Phase 3 D-03 prices gaming at extra verified accounts plus a claimed location), so cap how many alerts one reporter can trigger per recipient per hour, and treat burst detection (TRUSTX-03) as a dependency before the alert rule is widened beyond the in-app bell.
   3. Anchors and clocks: the server stores no user location except the home area the person chooses (a town or area, never a street, never taken from GPS silently; owner decision 2026-10-16, 03.2-CONTEXT D-20), and the Reliable reporter alert distance is measured from that home area (How far from my home area in Settings: 1, 2, 5 or 10 km); in this phase alerts arrive only while the app is open. The host sleeps, so time based events ("within 1 hour of expiring") are evaluated lazily on the bell refresh, not by a scheduler. Events come from the append-only vote log and report timestamps, so nothing latches (Phase 2 D-08).
   4. Data: an updates table with read state, a mutes table, and hourly cap bookkeeping. Implicit followers are derived from existing tables (the reporter through sessions, voters through votes). On a small deployment most reporters show New reporter (D-13), so the Reliable-only filter and alerts may run on an empty set until Phase 5's demo accounts exist. If the phase runs long, split NOTIF-04 and NOTIF-05 into a later phase.
   5. Settings live on a Settings page of their own, opened from the gear on the phone and from Settings in the laptop person menu (owner decision 2026-10-16, 03.4 D-25), not in the account menu: in-app always on, email and push optional later. The Reliable-reporter alerts use the public tag only and expose no identity. Phase 3 D-14 keeps the tag display only inside Phase 3; here the filter and the alert rule are opt-in user choices and must never hide or reorder a report by default.
 
-**Plans:** 0 plans
+**Plans:** 17 plans in 7 waves (planned 2026-10-18; plan check passed)
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 03.2 to break down)
+- [ ] 03.2-01-PLAN.md: Storage: migration 00009 with every table and column, the queries, sqlc and store tests
+- [ ] 03.2-02-PLAN.md: The decision core (TDD): DecideUpdate, MayNotifyAboutReport with a kind, the update words
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 03.2-03-PLAN.md: UpdatesService: Refresh, List and MarkRead
+- [ ] 03.2-04-PLAN.md: MuteService
+- [ ] 03.2-05-PLAN.md: viewer_follows and viewer_muted on the feed
+- [ ] 03.2-06-PLAN.md: Session revocation and the sign in rotation for Log out of all devices
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 03.2-07-PLAN.md: HTTP for updates, mutes and the muted list; My activity Updates data; the Settings muted count
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 03.2-08-PLAN.md: The bell count and list, updates.js, updates.css and the Updates part
+- [ ] 03.2-09-PLAN.md: Delete my account on the server (default Option A, pending owner confirmation)
+- [ ] 03.2-10-PLAN.md: kept_by_reliable_filter on the server and the Reliable reporter test seed
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 03.2-11-PLAN.md: The Mute control in the opened report
+- [ ] 03.2-16-PLAN.md: The Log out of all devices route and the sign in status line
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 03.2-12-PLAN.md: Settings: People and reports, and the Account rows and windows
+- [ ] 03.2-13-PLAN.md: Reliable reporter alerts on the server: the alert step, alert settings and PATCH /api/me/alerts
+- [ ] 03.2-14-PLAN.md: The Only Reliable reporters tick in the Show menu
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 03.2-15-PLAN.md: Settings Phone notifications rows
+- [ ] 03.2-17-PLAN.md: Reliable reporter alert end to end test and the trust model note
 
 ### Phase 03.3: Installable app and phone alerts (INSERTED)
 

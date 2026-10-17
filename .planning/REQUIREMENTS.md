@@ -249,6 +249,10 @@ Requirements for initial release. Each maps to roadmap phases.
       recipient per hour
       (Amended 2026-10-16, owner decision: the distance is measured from the person's home area,
       1, 2, 5 or 10 km, set in Settings as How far from my home area)
+      (Amended 2026-10-18, owner decision: the note comes as soon as the report is posted, critical
+      or not, while it shows in the feed, marked "Not confirmed yet" until people nearby confirm it,
+      then the same note reads as confirmed; this replaces "non-critical reports notify only once
+      Live"; see the owner amendment at the top of 03.2-CONTEXT.md)
 
 - [ ] **PROF-01**: A user can opt in to a public reporter profile with a nickname (never the
       email); it is off by default and available only to Reliable reporters, and nicknames are unique,
