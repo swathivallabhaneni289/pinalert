@@ -108,7 +108,7 @@ func TestOnboardingFlowEndToEnd(t *testing.T) {
 		`data-start-step="1"`, "Step 1 of 4", "Step 2 of 4", "Step 3 of 4", "Step 4 of 4",
 		"Welcome to Pinalert", "Disclaimer and policy", "Show what is happening near you", "About you",
 		"call 112 first.", "Please read this before you use Pinalert. Tap Agree to continue.",
-		"Filled in from your location.", "Not now, I will search a place",
+		"Filled in from your location.", "Search a place instead",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/welcome lacks %q", want)

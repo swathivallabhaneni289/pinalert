@@ -7,7 +7,7 @@
 //     agreement (POST /api/me/consent) and moves on, and only on a 204;
 //   - step 3 asks the browser for the position only when Allow location is
 //     pressed, keeps the fix in this browser through PinalertPosition and sends
-//     it nowhere; Not now, I will search a place shows a place search whose
+//     it nowhere; Search a place instead shows a place search whose
 //     picked result is kept in memory for step 4 only;
 //   - step 4's home area comes only from a picked search result, never from the
 //     device fix; nothing is saved until Continue; Skip saves nothing;
@@ -388,7 +388,7 @@ test('a refused Allow location moves on and saves nothing', async () => {
   assert.equal(page.requests.length, 0);
 });
 
-test('Not now, I will search a place shows the search without asking for the position', () => {
+test('Search a place instead shows the search without asking for the position', () => {
   const page = load({ start: 3 });
   assert.equal(byId(page, 'welcome-search-block').hidden, true);
   click(page, 'welcome-search-open');

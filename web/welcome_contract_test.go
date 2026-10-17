@@ -87,7 +87,9 @@ func TestWelcomeFourStepsInOrder(t *testing.T) {
 		"It tells you a situation is happening near you. If someone is in danger, call {{.Chrome.Numbers.Primary}} first.",
 		`class="welcome__card welcome__card--warning"`,
 		"What people near you are seeing, checked by people near you.")
-	w10Count(t, "welcome.html.tmpl", page, `<li class="welcome__card`, 3)
+	// Amended 2026-10-17 by Phase 3.4 plan 28: step 3 shows three cards of its
+	// own (the viewing session), so the page holds six in all.
+	w10Count(t, "welcome.html.tmpl", page, `<li class="welcome__card`, 6)
 }
 
 // TestWelcomeStep2ReadsTheSharedText pins step 2: the scroll box holds the two
@@ -164,15 +166,24 @@ func TestWelcomeStep3And4Privacy(t *testing.T) {
 	w10Count(t, "welcome.html.tmpl", page, "Filled in from your location.", 1)
 	w10Count(t, "welcome.html.tmpl", page, `id="welcome-home-prefilled"`, 1)
 	p13MustMatch(t, "prefilled line", page, `<p class="app-window__help" id="welcome-home-prefilled" hidden>Filled in from your location\.</p>`)
-	p13Ordered(t, page, "home area field", `id="welcome-home-prefilled"`, "A town or area, never your street. Used for alerts.")
+	// Amended 2026-10-17 by Phase 3.4 plan 28: the help line says what the home
+	// area is for in the owner's words.
+	p13Ordered(t, page, "home area field", `id="welcome-home-prefilled"`, "Used to send you alerts about this area.")
 
+	// Amended 2026-10-17 by Phase 3.4 plan 28: the lone pin tile and the lead
+	// sentence became three cards; the privacy fact (never shown, never stored)
+	// is the third card.
 	p13MustContain(t, "step 3", page,
-		"Pinalert uses your location to show reports around you and to place the pin when you post. Your exact location is never shown to anyone and never stored.",
+		"See the reports around you.", "The map and the Nearby list start where you are.",
+		"Post from where you are.", "When you post a report, the pin is placed for you.",
+		"Your exact location stays private.", "It is never shown to anyone and never stored.",
+		`<div class="welcome__actions welcome__actions--under">`,
 		`<button type="button" class="btn btn--primary" id="welcome-allow-location">Allow location</button>`,
-		`<button type="button" class="btn" id="welcome-search-open">Not now, I will search a place</button>`,
+		`<button type="button" class="btn" id="welcome-search-open">Search a place instead</button>`,
 		`<div class="welcome__search" id="welcome-search-block" hidden>`,
 		`Search a place`,
 		`id="welcome-continue-3"`)
+	p13MustNotContain(t, "step 3", page, "welcome__tile", "Not now, I will search a place")
 	p13MustContain(t, "step 4", page,
 		"Both are optional. They show only if you later let others follow you.",
 		`placeholder="For example: Ravi Kumar"`,
