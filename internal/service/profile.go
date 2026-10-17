@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/mmcloughlin/geohash"
+	"golang.org/x/text/unicode/norm"
 
 	sqlcgen "pinalert/internal/store/sqlc"
 )
@@ -108,19 +109,75 @@ type AccountProfile struct {
 	FirstRunDone bool
 }
 
+// Zero width joiner and non joiner, the two format characters that real text
+// in Indic and Arabic scripts needs.
+const (
+	zeroWidthNonJoiner = 0x200C
+	zeroWidthJoiner    = 0x200D
+	viramaCombiningCls = 9
+)
+
 // cleanText trims text and reports whether it is free of hidden characters:
 // control characters (category Cc) and format characters (category Cf), which
-// cover the zero width space, joiner and non joiner, the bidi embedding,
-// override and isolate characters and the byte order mark. None of them has a
-// place in a name that other people will read.
+// cover the zero width space, the bidi embedding, override and isolate
+// characters and the byte order mark. None of them has a place in a name that
+// other people will read.
+//
+// The two joiners are the one exception, and only in the places where the
+// script needs them (the contextual rule of RFC 5892 appendix A.1 and A.2).
+// U+200D is allowed only right after a virama (canonical combining class 9),
+// as in Malayalam chillu letters and the Marathi eyelash ra. U+200C is allowed
+// after a virama, or between two Arabic script letters with any combining
+// marks between (Persian and Urdu). A joiner anywhere else, such as inside a
+// Latin word where it would make a look alike of another name, is refused.
 func cleanText(s string) (string, bool) {
 	s = strings.TrimSpace(s)
-	for _, r := range s {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+	runes := []rune(s)
+	for i, r := range runes {
+		switch {
+		case r == zeroWidthJoiner:
+			if i == 0 || !isVirama(runes[i-1]) {
+				return s, false
+			}
+		case r == zeroWidthNonJoiner:
+			if i == 0 || !(isVirama(runes[i-1]) || betweenArabicLetters(runes, i)) {
+				return s, false
+			}
+		case unicode.IsControl(r) || unicode.Is(unicode.Cf, r):
 			return s, false
 		}
 	}
 	return s, true
+}
+
+// isVirama reports whether r is a virama, which Unicode marks with canonical
+// combining class 9.
+func isVirama(r rune) bool {
+	return norm.NFC.PropertiesString(string(r)).CCC() == viramaCombiningCls
+}
+
+// betweenArabicLetters reports whether the nearest rune before position i that
+// is not a combining mark and the nearest one after it are both letters in the
+// Arabic script.
+func betweenArabicLetters(runes []rune, i int) bool {
+	isArabicLetter := func(r rune) bool {
+		return unicode.IsLetter(r) && unicode.Is(unicode.Arabic, r)
+	}
+	before := -1
+	for j := i - 1; j >= 0; j-- {
+		if !unicode.IsMark(runes[j]) {
+			before = j
+			break
+		}
+	}
+	after := -1
+	for j := i + 1; j < len(runes); j++ {
+		if !unicode.IsMark(runes[j]) {
+			after = j
+			break
+		}
+	}
+	return before >= 0 && after >= 0 && isArabicLetter(runes[before]) && isArabicLetter(runes[after])
 }
 
 // hasLetterOrDigit reports whether s holds at least one letter or digit, so a

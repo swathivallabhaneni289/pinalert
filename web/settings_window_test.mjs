@@ -616,3 +616,105 @@ test('WR-03: a name save in flight does not stop a home save, and the other way 
   assert.deepEqual(JSON.parse(save.init.body).home_area.name, 'Indiranagar');
 });
 
+// ---- Phase 3.4 plan 27 (skeptic S-3): when a save from an earlier opening of a
+// window answers after the window was closed and opened again, a reopened field
+// that still holds the value it was filled with takes the newly saved value.
+
+test('S-3: an earlier name save that lands in a reopened window refills the untouched field', async () => {
+  const page = loadSettings({ name: 'Old' });
+  fire(byId(page, 'settings-name-row'), 'click');
+  byId(page, 'settings-name-input').value = 'Ravi';
+  fire(byId(page, 'settings-name-form'), 'submit');
+  fire(page.nameWin, 'keydown', { key: 'Escape' });
+  fire(byId(page, 'settings-name-row'), 'click');
+  assert.equal(byId(page, 'settings-name-input').value, 'Old');
+  assert.equal(byId(page, 'settings-name-save').disabled, true, 'a save is still out');
+
+  answer(page.requests[0], 200, { display_name: 'Ravi', home_area_name: null });
+  await flush();
+
+  assert.equal(page.nameWin.hidden, false, 'the reopened window stays open');
+  assert.equal(byId(page, 'settings-name-input').value, 'Ravi', 'the field shows the saved name, not the old one');
+  assert.equal(byId(page, 'settings-name-save').disabled, false, 'nothing is out, so Save is worked out as available');
+  // Pressing Save now sends the new name, never the old one back.
+  fire(byId(page, 'settings-name-form'), 'submit');
+  assert.equal(JSON.parse(page.requests[1].init.body).display_name, 'Ravi');
+});
+
+test('S-3: a name field the person already changed is left alone', async () => {
+  const page = loadSettings({ name: 'Old' });
+  fire(byId(page, 'settings-name-row'), 'click');
+  byId(page, 'settings-name-input').value = 'Ravi';
+  fire(byId(page, 'settings-name-form'), 'submit');
+  fire(page.nameWin, 'keydown', { key: 'Escape' });
+  fire(byId(page, 'settings-name-row'), 'click');
+  byId(page, 'settings-name-input').value = 'Typing a new one';
+
+  answer(page.requests[0], 200, { display_name: 'Ravi', home_area_name: null });
+  await flush();
+
+  assert.equal(byId(page, 'settings-name-input').value, 'Typing a new one');
+  assert.equal(byId(page, 'settings-name-save').disabled, false);
+});
+
+test('S-3: a refused earlier name save does not refill the field', async () => {
+  const page = loadSettings({ name: 'Old' });
+  fire(byId(page, 'settings-name-row'), 'click');
+  byId(page, 'settings-name-input').value = 'Ravi';
+  fire(byId(page, 'settings-name-form'), 'submit');
+  fire(page.nameWin, 'keydown', { key: 'Escape' });
+  fire(byId(page, 'settings-name-row'), 'click');
+  answer(page.requests[0], 400, { error: { field: 'display_name', message: 'Use letters, numbers and spaces in your name.' } });
+  await flush();
+  assert.equal(byId(page, 'settings-name-input').value, 'Old');
+});
+
+test('S-3: an earlier home save that lands in a reopened window refills the untouched field and works out the buttons', async () => {
+  const page = loadSettings({ home: 'Old place' });
+  const save = await startHomeSave(page);
+  fire(page.homeWin, 'keydown', { key: 'Escape' });
+  fire(byId(page, 'settings-home-row'), 'click');
+  assert.equal(byId(page, 'settings-home-input').value, 'Old place');
+
+  answer(save, 200, { display_name: null, home_area_name: 'Indiranagar' });
+  await flush();
+
+  assert.equal(page.homeWin.hidden, false);
+  assert.equal(byId(page, 'settings-home-input').value, 'Indiranagar');
+  assert.equal(byId(page, 'settings-home-save').disabled, true, 'nothing is picked in the reopened window');
+  assert.equal(byId(page, 'settings-home-remove').hidden, false);
+  assert.equal(byId(page, 'settings-home-remove').disabled, false);
+});
+
+test('S-3: a home field the person already changed is left alone', async () => {
+  const page = loadSettings({ home: 'Old place' });
+  const save = await startHomeSave(page);
+  fire(page.homeWin, 'keydown', { key: 'Escape' });
+  fire(byId(page, 'settings-home-row'), 'click');
+  byId(page, 'settings-home-input').value = 'Something else';
+
+  answer(save, 200, { display_name: null, home_area_name: 'Indiranagar' });
+  await flush();
+
+  assert.equal(byId(page, 'settings-home-input').value, 'Something else');
+  assert.equal(byId(page, 'settings-home-remove').hidden, false);
+});
+
+test('S-3: an earlier removal that lands in a reopened window empties the untouched field and hides Remove', async () => {
+  const page = loadSettings({ home: 'Old place' });
+  fire(byId(page, 'settings-home-row'), 'click');
+  fire(byId(page, 'settings-home-remove'), 'click');
+  const removal = page.requests[page.requests.length - 1];
+  fire(page.homeWin, 'keydown', { key: 'Escape' });
+  fire(byId(page, 'settings-home-row'), 'click');
+  assert.equal(byId(page, 'settings-home-input').value, 'Old place');
+  assert.equal(byId(page, 'settings-home-remove').disabled, true, 'a removal is still out');
+
+  answer(removal, 200, { display_name: null, home_area_name: null });
+  await flush();
+
+  assert.equal(byId(page, 'settings-home-input').value, '');
+  assert.equal(byId(page, 'settings-home-remove').hidden, true);
+  assert.equal(byId(page, 'settings-home-save').disabled, true);
+});
+

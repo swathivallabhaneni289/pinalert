@@ -49,6 +49,10 @@ type welcomeViewModel struct {
 	// coarse cell is never read into the page.
 	DisplayName  string
 	HomeAreaName string
+	// AccountID is the signed in account's numeric id, rendered as
+	// data-account-id on the flow root so the position saved in step 3 has an
+	// owner (skeptic S-2). It is a number, never the address.
+	AccountID int64
 }
 
 // welcomeStartStep is the step a person lands on. Agreement is to a text, so
@@ -99,6 +103,7 @@ func WelcomePage(tmpl *template.Template, accounts *service.AccountService, cfg 
 			Chrome:       chrome,
 			Legal:        legalTextFor(chrome),
 			StartStep:    welcomeStartStep(acc),
+			AccountID:    acc.ID,
 		}
 		for i, name := range welcomeSteps {
 			vm.Steps = append(vm.Steps, welcomeStepView{Number: i + 1, Name: name})

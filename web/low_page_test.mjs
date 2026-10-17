@@ -90,13 +90,20 @@ const PAGE_IDS = [
 // WebKit sometimes does. nativeTimeout swaps AbortController for a native
 // AbortSignal.timeout that never fires. stored is the remembered position and
 // geolocation the fake position service, both absent unless given.
-function loadLowPage({ abortRejects = true, nativeTimeout = false, stored = null, geolocation = null } = {}) {
+const POSITION_KEY = 'pinalert.lowLastPosition';
+
+function loadLowPage({ abortRejects = true, nativeTimeout = false, stored = null, geolocation = null, account = '7', storedRaw = null, extraStorage = {} } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
     createElement(tag) { return new FakeEl(doc, tag); },
     getElementById(id) { return doc.byId[id] || null; },
-    querySelector() { return null; },
+    // Amended 2026-10-17 by Phase 3.4 plan 27 (skeptic S-2): the page carries
+    // data-account-id, as low.html.tmpl does, and low.js reads it from there.
+    querySelector(selector) {
+      if (selector !== '[data-account-id]' || account === null) { return null; }
+      return { getAttribute: (name) => (name === 'data-account-id' ? account : null) };
+    },
     querySelectorAll() { return []; },
     addEventListener() {},
     removeEventListener() {}
@@ -159,6 +166,19 @@ function loadLowPage({ abortRejects = true, nativeTimeout = false, stored = null
     abort() { this.signal.fire(); }
   }
 
+  // A small memory store that keeps every removal for the test to read.
+  const data = new Map(Object.entries(extraStorage));
+  if (storedRaw !== null) { data.set(POSITION_KEY, storedRaw); }
+  if (stored) { data.set(POSITION_KEY, JSON.stringify(stored)); }
+  const removed = [];
+  const storage = {
+    data,
+    removed,
+    getItem: (k) => (data.has(k) ? data.get(k) : null),
+    setItem: (k, v) => { data.set(k, String(v)); },
+    removeItem: (k) => { removed.push(k); data.delete(k); }
+  };
+
   const mounted = [];
   const window = {
     setTimeout(fn, ms) { const id = nextId++; timers.set(id, { at: now + (ms || 0), fn }); return id; },
@@ -166,7 +186,7 @@ function loadLowPage({ abortRejects = true, nativeTimeout = false, stored = null
     setInterval(fn, ms) { const id = nextId++; timers.set(id, { at: now + ms, fn, every: ms }); return id; },
     clearInterval(id) { timers.delete(id); },
     addEventListener() {},
-    localStorage: { getItem: () => (stored ? JSON.stringify(stored) : null), setItem: () => {} },
+    localStorage: storage,
     PinalertReportForm: { mount(options) { mounted.push(options); }, open() {} }
   };
   const sandbox = {
@@ -201,7 +221,7 @@ function loadLowPage({ abortRejects = true, nativeTimeout = false, stored = null
   vm.runInContext(appSource, sandbox);
   sandbox.Pinalert = window.Pinalert;
   vm.runInContext(lowSource, sandbox);
-  return { Pinalert: window.Pinalert, el: (id) => doc.byId[id], requests, answer, advance, mounted };
+  return { Pinalert: window.Pinalert, el: (id) => doc.byId[id], requests, answer, advance, mounted, storage };
 }
 
 const settle = async () => {
@@ -316,4 +336,75 @@ test('a refused search on the Low data page shows the main form words, any other
   // The server's text is never shown, whatever it says.
   assert.equal(location.searchFailureMessage('Search unavailable, try tapping the map instead.', 503), unavailable);
   assert.equal(location.searchFailureMessage('Anything at all', 429), tooMany);
+});
+
+// Skeptic S-2 (Phase 3.4 plan 27): a kept position has an owner on this page
+// too, the same rule position.js applies.
+test('S-2: a fresh fix is stored with the account of the page', async () => {
+  let found = null;
+  const geolocation = { getCurrentPosition(onFound) { found = onFound; } };
+  const page = loadLowPage({ geolocation });
+  await settle();
+  found({ coords: { latitude: 17.4, longitude: 78.45 } });
+  await settle();
+  const kept = JSON.parse(page.storage.data.get(POSITION_KEY));
+  assert.equal(kept.lat, 17.4);
+  assert.equal(kept.lon, 78.45);
+  assert.equal(typeof kept.savedAt, 'number');
+  assert.equal(kept.account, '7');
+});
+
+test('S-2: a position another account kept is not used and is removed', async () => {
+  const geolocation = { getCurrentPosition() {} };
+  const page = loadLowPage({ stored: { lat: 17.385, lon: 78.4867, savedAt: 5, account: '8' }, geolocation });
+  await settle();
+  assert.equal(page.storage.data.has(POSITION_KEY), false, 'the other account\'s place is gone');
+  assert.deepEqual(page.storage.removed, [POSITION_KEY]);
+  assert.equal(page.requests.length, 0, 'no list is asked for with the other account\'s place');
+  assert.equal(page.el('low-basis').textContent, 'Finding your position.');
+});
+
+test('S-2: a position this account kept is used and stays', async () => {
+  const page = loadLowPage({ stored: { lat: 17.385, lon: 78.4867, savedAt: 5, account: '7' } });
+  await settle();
+  assert.match(page.requests[0].url, /lat=17\.385&lon=78\.4867/);
+  assert.deepEqual(page.storage.removed, []);
+  assert.equal(JSON.parse(page.storage.data.get(POSITION_KEY)).account, '7');
+});
+
+test('S-2: a position with no owner is taken over by this account and used', async () => {
+  for (const owner of [undefined, '']) {
+    const stored = { lat: 17.385, lon: 78.4867, savedAt: 1760000000000 };
+    if (owner !== undefined) { stored.account = owner; }
+    const page = loadLowPage({ stored });
+    await settle();
+    assert.match(page.requests[0].url, /lat=17\.385&lon=78\.4867/, 'the ownerless place is used');
+    const kept = JSON.parse(page.storage.data.get(POSITION_KEY));
+    assert.equal(kept.account, '7', 'and now belongs to this account');
+    assert.equal(kept.savedAt, 1760000000000, 'with its own time');
+    assert.equal(kept.lat, 17.385);
+  }
+});
+
+test('S-2: a page with no account id neither reads, removes nor writes a position', async () => {
+  let found = null;
+  const geolocation = { getCurrentPosition(onFound) { found = onFound; } };
+  const raw = JSON.stringify({ lat: 17.385, lon: 78.4867, savedAt: 5, account: '8' });
+  const page = loadLowPage({ account: null, storedRaw: raw, geolocation });
+  await settle();
+  assert.equal(page.requests.length, 0, 'the earlier value is not used, so no list waits on it');
+  found({ coords: { latitude: 17.4, longitude: 78.45 } });
+  await settle();
+  assert.match(page.requests[0].url, /lat=17\.4&lon=78\.45/);
+  assert.equal(page.storage.data.get(POSITION_KEY), raw, 'the earlier value is untouched and nothing new is written');
+  assert.deepEqual(page.storage.removed, []);
+});
+
+test('S-2: only the position key is ever removed; the queue and the theme choice stay', async () => {
+  const extraStorage = { 'pinalert.theme': 'dark', 'pinalert.queue.7': '[{"x":1}]' };
+  const page = loadLowPage({ stored: { lat: 17.385, lon: 78.4867, savedAt: 5, account: '8' }, extraStorage });
+  await settle();
+  assert.deepEqual(page.storage.removed, [POSITION_KEY]);
+  assert.equal(page.storage.data.get('pinalert.theme'), 'dark');
+  assert.equal(page.storage.data.get('pinalert.queue.7'), '[{"x":1}]');
 });
