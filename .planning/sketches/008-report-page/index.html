@@ -1771,8 +1771,13 @@ button { font: inherit; color: inherit; }
     Array.prototype.forEach.call(m.querySelectorAll('.maplabel'), function (l) {
       if (Math.abs(parseFloat(l.style.left) + 6 - px) < 16 && Math.abs(parseFloat(l.style.top) - py) < 20) l.remove();
     });
+    // Phone: the map keeps every pin, as the laptop does beside the map (owner, 2026-10-17: "makes sure the phone ver also
+    // should work the same"), and tapping another pin opens that report. Laptop A keeps only this report's pin.
     Array.prototype.forEach.call(m.querySelectorAll('.pin'), function (p, k) {
-      if (k !== i) p.remove(); else { p.className = p.className.replace(/\bpin-focus\b/, '') + ' pin-focus'; p.removeAttribute('tabindex'); p.removeAttribute('role'); }
+      p.className = p.className.replace(/\s*\bpin-focus\b/, '');
+      if (k === i) { p.className += ' pin-focus'; p.removeAttribute('tabindex'); p.removeAttribute('role'); }
+      else if (!isPhone) p.remove();
+      else p.addEventListener('click', function () { openReport(k); });
     });
     return m;
   }
@@ -1820,7 +1825,14 @@ button { font: inherit; color: inherit; }
     setTimeout(function () { setSheet(sheetState); focusReport(current, 'pin'); }, 0);
   }
   pins.forEach(function (p) { p.addEventListener('click', function () { if (sheet.classList.contains('showing-report')) openReport(Number(p.dataset.i)); }); });
-  pins.forEach(function (p) { p.addEventListener('click', function () { if (!sheet.classList.contains('showing-report')) showPinBub(Number(p.dataset.i)); }); });
+  // Phone: tapping a pin opens its report straight away (owner, 2026-10-17); the half sheet could hide a label under it.
+  // Laptop: the label with Open report while the list shows; with a report showing, a pin opens its report (line above).
+  pins.forEach(function (p) {
+    p.addEventListener('click', function () {
+      if (isPhone) openReport(Number(p.dataset.i));
+      else if (!sheet.classList.contains('showing-report')) showPinBub(Number(p.dataset.i));
+    });
+  });
   var shareModal = document.getElementById('share-modal');
   function openShare() {
     var r = reports[current], d = details[current];
