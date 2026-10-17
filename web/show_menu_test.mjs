@@ -86,12 +86,23 @@ function load({ search = '' } = {}) {
     activeElement: null,
     byId: {},
     handlers: {},
+    // captured says which listeners were added for the capture phase. A
+    // listener is told apart by its function and its capture flag, as in a
+    // browser: removeEventListener with the other flag removes nothing.
+    captured: new Map(),
     createElement(tag) { return new FakeEl(doc, tag); },
     getElementById(id) { return doc.byId[id] || null; },
     querySelector() { return null; },
     querySelectorAll() { return []; },
-    addEventListener(type, fn) { (doc.handlers[type] = doc.handlers[type] || []).push(fn); },
-    removeEventListener(type, fn) { doc.handlers[type] = (doc.handlers[type] || []).filter((h) => h !== fn); }
+    addEventListener(type, fn, options) {
+      (doc.handlers[type] = doc.handlers[type] || []).push(fn);
+      doc.captured.set(fn, options === true || (!!options && options.capture === true));
+    },
+    removeEventListener(type, fn, options) {
+      const capture = options === true || (!!options && options.capture === true);
+      if (doc.captured.get(fn) !== capture) { return; }
+      doc.handlers[type] = (doc.handlers[type] || []).filter((h) => h !== fn);
+    }
   };
   doc.documentElement = new FakeEl(doc, 'html');
 
@@ -223,6 +234,40 @@ test('a click outside closes the menu, a click inside does not', () => {
   (m.doc.handlers.click || []).slice().forEach((fn) => fn({ target: outside }));
   assert.equal(m.menu.hidden, true);
   assert.equal((m.doc.handlers.click || []).length, 0, 'the outside listener is removed on close');
+});
+
+// clickReachingDocument sends a click to the document the way a browser does:
+// the capture listeners first, then the bubble listeners unless something on
+// the way stopped the event. stopAtTarget stands for a trigger that calls
+// stopPropagation, like the person menu's (account-menu.js).
+function clickReachingDocument(m, target, { stopAtTarget = false } = {}) {
+  const run = (capture) => (m.doc.handlers.click || []).slice()
+    .filter((fn) => m.doc.captured.get(fn) === capture).forEach((fn) => fn({ target }));
+  run(true);
+  if (!stopAtTarget) { run(false); }
+}
+
+// Amended 2026-10-17 by Phase 3.4 plan 25 (code review part 2 WR-04): the
+// outside click listener is added in the capture phase, so the person menu's
+// trigger, which stops its own click from bubbling, still closes the Show menu.
+test('WR-04: a click on a trigger that stops propagation, like the person menu, closes the Show menu', () => {
+  const m = load();
+  m.button.fire('click');
+  assert.equal(m.menu.hidden, false);
+  const personTrigger = new FakeEl(m.doc, 'button');
+  clickReachingDocument(m, personTrigger, { stopAtTarget: true });
+  assert.equal(m.menu.hidden, true, 'the Show menu must close when the person menu opens');
+  assert.equal(m.button.getAttribute('aria-expanded'), 'false');
+  assert.equal((m.doc.handlers.click || []).length, 0, 'and the outside listener is removed with the same capture flag');
+});
+
+test('WR-04: a click inside the Show menu or on its button still leaves it alone', () => {
+  const m = load();
+  m.button.fire('click');
+  clickReachingDocument(m, m.menu);
+  assert.equal(m.menu.hidden, false);
+  clickReachingDocument(m, m.items.all);
+  assert.equal(m.menu.hidden, false);
 });
 
 test('the old /?view=disputed link opens Show Disputed, any other address opens Show All', () => {

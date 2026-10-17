@@ -724,3 +724,189 @@ test('take back when the part cannot be read again keeps the row and says it was
   assert.ok(line.textContent.length > 0);
   assert.equal(undoButton(before).disabled, false, 'the block is released');
 });
+
+// ---- Phase 3.4 plan 25 (code review part 2, CR-01): a link to a finished report
+// with no kept position. The server answers a report link from any centre, so
+// the one read goes out from the existing fallback centre and only the linked
+// row is drawn. The rest of the part keeps its location state, no distance is
+// written from a centre that is nobody's position (A94), and the hub count
+// stays empty because one row is not a count of what is ended nearby.
+
+const FALLBACK = { lat: '12.9716', lon: '77.5946' };
+
+test('CR-01: a link to a finished report with no kept position reads once from the fallback centre and draws that row', async () => {
+  const m = load({
+    search: '?part=ended&report=9',
+    answers: [answer([resolvedReport(1), expiredReport(2)], { focus: { status: 'ok', report: resolvedReport(9) } })]
+  });
+  m.start();
+  assert.equal(m.fetches.length, 1, 'one read goes out');
+  const sent = new URL(m.fetches[0].url, 'http://x');
+  assert.equal(sent.searchParams.get('lat'), FALLBACK.lat);
+  assert.equal(sent.searchParams.get('lon'), FALLBACK.lon);
+  assert.equal(sent.searchParams.get('report'), '9');
+  assert.equal(sent.searchParams.get('view'), 'past');
+  assert.equal(m.fetches[0].init.method, undefined, 'a plain read');
+  await settle();
+
+  assert.deepEqual(rowsOf(m, 'ended-resolved-list').map((r) => r.dataset.reportId), ['9'],
+    'only the linked row, never the reports around the fallback centre');
+  assert.equal(rowsOf(m, 'ended-faded-list').length, 0);
+  assert.ok(rowsOf(m, 'ended-resolved-list')[0].classList.contains('activity-card--chosen'));
+  assert.equal(shown(m.by('ended-resolved')), true);
+  assert.equal(shown(m.by('ended-location')), true, 'the rest of the part keeps its location state');
+  assert.equal(shown(m.by('ended-empty')), false);
+  assert.equal(shown(m.by('ended-error')), false);
+  assert.equal(shown(m.by('ended-skeleton')), false);
+  assert.equal(m.by('ended-hub-count').hidden, true, 'one linked row is not a count');
+  assert.equal(m.writes.length, 0, 'the fallback centre is never saved as a position');
+});
+
+test('CR-01: the linked row shows no distance measured from the fallback centre', async () => {
+  const m = load({
+    search: '?part=ended&report=9',
+    answers: [answer([], { focus: { status: 'ok', report: resolvedReport(9, { distance_km: 8.4 }) } })]
+  });
+  m.start();
+  await settle();
+  const row = rowsOf(m, 'ended-resolved-list')[0];
+  assert.equal(cell(m, row, 'activity-card__distance').textContent, 'Unknown');
+
+  const rescue = load({
+    search: '?part=ended&report=5',
+    answers: [answer([], { focus: { status: 'ok', report: expiredReport(5, { approximate: true, distance_km: 7.2 }) } })]
+  });
+  rescue.start();
+  await settle();
+  const rescueRow = rowsOf(rescue, 'ended-faded-list')[0];
+  assert.equal(cell(rescue, rescueRow, 'activity-card__distance').textContent, 'Unknown', 'no "about N km" either');
+});
+
+test('CR-01: a link that cannot be shown, with no kept position, tells it once and keeps the location state alone', async () => {
+  for (const status of ['too_old', 'unavailable']) {
+    const m = load({
+      search: '?part=ended&report=9',
+      answers: [answer([resolvedReport(1)], { focus: { status, report: null } })]
+    });
+    m.start();
+    await settle();
+    assert.equal(m.toasts.length, 1, status);
+    assert.equal(shown(m.by('ended-location')), true, status);
+    assert.equal(shown(m.by('ended-resolved')), false, status);
+    assert.equal(shown(m.by('ended-empty')), false, status);
+  }
+  const live = load({
+    search: '?part=ended&report=9',
+    answers: [answer([], { focus: { status: 'ok', report: { id: 9, history: null } } })]
+  });
+  live.start();
+  await settle();
+  assert.equal(shown(live.by('ended-location')), true, 'a report that is not finished draws nothing');
+  assert.equal(shown(live.by('ended-empty')), false);
+});
+
+test('CR-01: a failed read of the link with no kept position shows the error state, and Try again asks the same way', async () => {
+  const m = load({
+    search: '?part=ended&report=9',
+    answers: [new Error('down'), answer([], { focus: { status: 'ok', report: resolvedReport(9) } })]
+  });
+  m.start();
+  await settle();
+  assert.equal(shown(m.by('ended-error')), true);
+  assert.equal(shown(m.by('ended-location')), false);
+  m.by('ended-retry').click();
+  await settle();
+  assert.equal(m.fetches.length, 2);
+  assert.equal(new URL(m.fetches[1].url, 'http://x').searchParams.get('report'), '9');
+  assert.equal(rowsOf(m, 'ended-resolved-list').length, 1);
+  assert.equal(shown(m.by('ended-error')), false);
+});
+
+test('CR-01: without a link and without a kept position nothing is asked, as before; the distance cells stay Unknown', async () => {
+  const cells = [new FakeEl(null, 'p')];
+  cells[0].setAttribute('data-lat', '12.9');
+  cells[0].setAttribute('data-lon', '77.5');
+  const m = load({ search: '?part=ended', cells });
+  m.start();
+  await settle();
+  assert.equal(m.fetches.length, 0);
+  assert.equal(shown(m.by('ended-location')), true);
+  assert.equal(cells[0].textContent, 'Unknown');
+});
+
+test('CR-01: a take back on the linked row with no kept position reads the part again and the row leaves', async () => {
+  const m = load({
+    search: '?part=ended&report=9',
+    answers: [
+      answer([], { focus: { status: 'ok', report: resolvedReport(9, MARKED(2)) } }),
+      { visibility: 'live', undos_left: 1 },
+      answer([], { focus: { status: 'ok', report: { id: 9, view: 'active', history: null } } })
+    ]
+  });
+  m.start();
+  await settle();
+  undoButton(rowsOf(m, 'ended-resolved-list')[0]).click();
+  await settle();
+  assert.equal(m.fetches.length, 3, 'the part is read again');
+  assert.equal(new URL(m.fetches[2].url, 'http://x').searchParams.get('lat'), FALLBACK.lat);
+  assert.equal(rowsOf(m, 'ended-resolved-list').length, 0, 'the report is open again, so the row leaves');
+  assert.equal(shown(m.by('ended-location')), true);
+  assert.equal(shown(m.by('ended-error')), false);
+  assert.equal(shown(m.by('ended-skeleton')), false);
+});
+
+// ---- Phase 3.4 plan 25 (code review part 2, WR-06): Try again hides the
+// button it was pressed on, so focus must be put on something that is on screen
+// meanwhile (the title is not drawn on a phone part screen) and, once the read
+// settles, on the result.
+
+test('WR-06: Try again moves focus onto something shown while it reads, then onto the first row', async () => {
+  const m = load({
+    position: [12.97, 77.59],
+    answers: [new Error('down'), answer([resolvedReport(7), resolvedReport(8)])]
+  });
+  m.start();
+  await settle();
+  m.by('ended-retry').focus();
+  m.by('ended-retry').click();
+
+  const active = m.doc.activeElement;
+  assert.ok(active, 'focus is on an element');
+  assert.notEqual(active, m.by('ended-retry'), 'not on the button that is now hidden');
+  assert.equal(active.hidden, false, 'and the element is on screen while the read is out');
+  assert.equal(active.getAttribute('tabindex'), '-1');
+
+  await settle();
+  const rows = rowsOf(m, 'ended-resolved-list');
+  assert.equal(m.doc.activeElement, rows[0], 'once the part is drawn, focus lands on the first row');
+});
+
+test('WR-06: a second failure puts focus back on Try again, and an empty answer on the empty block', async () => {
+  const m = load({
+    position: [12.97, 77.59],
+    answers: [new Error('down'), new Error('down again'), answer([])]
+  });
+  m.start();
+  await settle();
+  m.by('ended-retry').click();
+  await settle();
+  assert.equal(shown(m.by('ended-error')), true);
+  assert.equal(m.doc.activeElement, m.by('ended-retry'));
+
+  m.by('ended-retry').click();
+  await settle();
+  assert.equal(shown(m.by('ended-empty')), true);
+  assert.equal(m.doc.activeElement, m.by('ended-empty'));
+  assert.equal(m.by('ended-empty').getAttribute('tabindex'), '-1');
+});
+
+test('WR-06: focus the person moved elsewhere while the read was out is left alone', async () => {
+  const m = load({ position: [12.97, 77.59], answers: [new Error('down'), answer([resolvedReport(7)])] });
+  m.start();
+  await settle();
+  m.by('ended-retry').click();
+  const elsewhere = new FakeEl(m.doc, 'a');
+  elsewhere.focus();
+  await settle();
+  assert.equal(m.doc.activeElement, elsewhere);
+});

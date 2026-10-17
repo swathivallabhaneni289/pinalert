@@ -71,6 +71,30 @@ class FakeEl {
     for (let n = node; n; n = n.parentNode) { if (n === this) { return true; } }
     return false;
   }
+  // The tab order selector reader.js asks for: buttons, inputs, selects,
+  // textareas, anything with an href and anything with a tabindex other than -1.
+  matchesTabStop() {
+    const tag = this.tagName;
+    if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') { return true; }
+    if (this.hasAttribute('href')) { return true; }
+    return this.hasAttribute('tabindex') && this.getAttribute('tabindex') !== '-1';
+  }
+  querySelectorAll() {
+    const found = [];
+    const walk = (node) => {
+      node.children.forEach((c) => {
+        if (c.matchesTabStop()) { found.push(c); }
+        walk(c);
+      });
+    };
+    walk(this);
+    return found;
+  }
+  // Only the [hidden] selector is asked for.
+  closest() {
+    for (let n = this; n; n = n.parentNode) { if (n.hasAttribute && n.hasAttribute('hidden')) { return n; } }
+    return null;
+  }
   addEventListener(type, fn) { (this.handlers[type] = this.handlers[type] || []).push(fn); }
   removeEventListener(type, fn) { this.handlers[type] = (this.handlers[type] || []).filter((h) => h !== fn); }
   // The box sits at the top of its window; a heading's top is its offset inside
@@ -115,13 +139,22 @@ function buildApp() {
   make('h2', 'reader-title', panel).textContent = 'Disclaimer';
   const close = make('button', 'reader-close', panel);
   const box = make('div', 'reader-box', panel);
+  box.setAttribute('tabindex', '0');
   const disclaimerHead = make('h2', 'disclaimer', box);
   disclaimerHead.top = 0;
   const policyHead = make('h2', 'policy', box);
   policyHead.top = 900;
   policyHead.scrollsWith = box;
+  // The legal text inside the box holds the Call 112 link and two contact
+  // links (legal_body.html.tmpl); they come after the box in tab order.
+  const call = make('a', 'call-112', box);
+  call.setAttribute('href', 'tel:112');
+  const mailOne = make('a', 'mail-one', box);
+  mailOne.setAttribute('href', 'mailto:help@example.org');
+  const mailTwo = make('a', 'mail-two', box);
+  mailTwo.setAttribute('href', 'mailto:help@example.org');
   const bottom = make('nav', 'bottom-bar', doc.body);
-  return { doc, bar, main, bottom, opener, policyOpener, inner, win, close, box, policyHead };
+  return { doc, bar, main, bottom, opener, policyOpener, inner, win, close, box, policyHead, call, mailOne, mailTwo };
 }
 
 function loadReader(options = {}) {
@@ -224,11 +257,15 @@ test('Escape and a click on the backdrop close it; a click inside the panel does
   assert.equal(page.doc.activeElement, page.opener);
 });
 
+// Amended 2026-10-17 by Phase 3.4 plan 25 (code review part 2 WR-02): the trap is
+// built from the live window, so the last stop is now the last link inside the
+// text, not the text box, and Tab from the box is left to the browser, which
+// moves to the first link.
 test('Tab stays inside the window', () => {
   const page = loadReader();
   click(page, page.opener);
 
-  page.box.focus();
+  page.mailTwo.focus();
   const forward = fire(page.win, 'keydown', { key: 'Tab' });
   assert.equal(forward.prevented, true);
   assert.equal(page.doc.activeElement, page.close);
@@ -236,12 +273,46 @@ test('Tab stays inside the window', () => {
   page.close.focus();
   const back = fire(page.win, 'keydown', { key: 'Tab', shiftKey: true });
   assert.equal(back.prevented, true);
-  assert.equal(page.doc.activeElement, page.box);
+  assert.equal(page.doc.activeElement, page.mailTwo);
 
   page.doc.byId['reader-title'].focus();
   const fromTitle = fire(page.win, 'keydown', { key: 'Tab', shiftKey: true });
   assert.equal(fromTitle.prevented, true);
-  assert.equal(page.doc.activeElement, page.box);
+  assert.equal(page.doc.activeElement, page.mailTwo);
+});
+
+test('WR-02: Tab reaches the Call 112 link and the contact links inside the text, in order', () => {
+  const page = loadReader();
+  click(page, page.opener);
+
+  // From the box, Tab is left to the browser, whose next stop is the first link.
+  page.box.focus();
+  const fromBox = fire(page.win, 'keydown', { key: 'Tab' });
+  assert.equal(fromBox.prevented, false, 'Tab from the text box must not be sent back to the X');
+
+  page.call.focus();
+  assert.equal(fire(page.win, 'keydown', { key: 'Tab' }).prevented, false);
+  page.mailOne.focus();
+  assert.equal(fire(page.win, 'keydown', { key: 'Tab' }).prevented, false);
+
+  // Shift Tab from the first link goes back to the box, again left to the browser.
+  page.call.focus();
+  assert.equal(fire(page.win, 'keydown', { key: 'Tab', shiftKey: true }).prevented, false);
+
+  // The last link wraps to the X, and the X wraps back to the last link.
+  page.mailTwo.focus();
+  assert.equal(fire(page.win, 'keydown', { key: 'Tab' }).prevented, true);
+  assert.equal(page.doc.activeElement, page.close);
+});
+
+test('WR-02: a link inside a hidden part of the text is not a stop, and the title never is', () => {
+  const page = loadReader();
+  click(page, page.opener);
+  page.mailTwo.setAttribute('hidden', '');
+  page.mailOne.focus();
+  const forward = fire(page.win, 'keydown', { key: 'Tab' });
+  assert.equal(forward.prevented, true, 'the last shown link is now mailOne');
+  assert.equal(page.doc.activeElement, page.close);
 });
 
 test('a modified click is left to the browser so the plain link still opens in a new tab', () => {
