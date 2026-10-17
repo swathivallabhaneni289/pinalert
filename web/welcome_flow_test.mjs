@@ -261,9 +261,13 @@ const DISAGREE = 'You need to agree to use Pinalert.';
 
 // The places a search answers with, short name first.
 const PLACES = [
-  { name: 'Indiranagar', display_name: 'Indiranagar, Bengaluru, Karnataka, India', lat: 12.9784, lon: 77.6408 },
-  { name: 'Indira Nagar', display_name: 'Indira Nagar, Lucknow, Uttar Pradesh, India', lat: 26.8806, lon: 80.9946 }
+  { name: 'Indiranagar', display_name: 'Indiranagar, Bengaluru, Karnataka, India', lat: 12.9784, lon: 77.6408, area: 'Indiranagar' },
+  { name: 'Indira Nagar', display_name: 'Indira Nagar, Lucknow, Uttar Pradesh, India', lat: 26.8806, lon: 80.9946, area: 'Indira Nagar' }
 ];
+// Places the way the server sends them for a step 3 search that found a street
+// or a building: the area is the place it lies in, or missing when unknown.
+const STREET = { name: 'MG Road', display_name: 'MG Road, Shivajinagar, Bengaluru, Karnataka, India', lat: 12.9756, lon: 77.6066, area: 'Shivajinagar' };
+const STREET_NO_AREA = { name: 'Lonely Road', display_name: 'Lonely Road, Karnataka, India', lat: 15.1, lon: 76.2 };
 
 // Walk to step 4 through the buttons, the way a person does.
 async function walkToStep4(page) {
@@ -623,6 +627,74 @@ test('a prefilled home area from step 3 is saved with the picked place point on 
   click(page, 'welcome-continue-3');
   click(page, 'welcome-continue-4');
   assert.deepEqual(JSON.parse(page.requests[1].init.body), { home_area: { name: 'Indiranagar', lat: 12.9784, lon: 77.6408 } });
+});
+
+// Pick the first result of a step 3 search for `place` and go to step 4.
+async function pickOnStep3(page, place) {
+  click(page, 'welcome-search-open');
+  byId(page, 'welcome-search-input').value = 'anything';
+  fire(byId(page, 'welcome-search-form'), 'submit');
+  answer(page.requests[0], 200, { results: [place] });
+  await flush();
+  fire(byId(page, 'welcome-search-results').children[0].children[0], 'click');
+  click(page, 'welcome-continue-3');
+}
+
+test('a street picked on step 3 prefills step 4 with the area around it, never the street name', async () => {
+  const page = load({ start: 3 });
+  await pickOnStep3(page, STREET);
+  const home = byId(page, 'welcome-home-input');
+  assert.equal(home.value, 'Shivajinagar');
+  assert.equal(home.value.includes('MG Road'), false);
+  assert.equal(byId(page, 'welcome-home-prefilled').hidden, false, 'the Filled in line shows');
+
+  click(page, 'welcome-continue-4');
+  const body = JSON.parse(page.requests[1].init.body);
+  assert.equal(body.home_area.name, 'Shivajinagar', 'the area is what is saved, not the street');
+  assert.equal(JSON.stringify(body).includes('MG Road'), false);
+  assert.deepEqual(Object.keys(body.home_area).sort(), ['lat', 'lon', 'name']);
+  // The point stays the picked place's own; the server keeps a 5 km cell.
+  assert.equal(body.home_area.lat, STREET.lat);
+  assert.equal(body.home_area.lon, STREET.lon);
+});
+
+test('a street with no known area leaves step 4 empty and the line hidden', async () => {
+  const page = load({ start: 3 });
+  await pickOnStep3(page, STREET_NO_AREA);
+  assert.equal(byId(page, 'welcome-home-input').value, '');
+  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
+  click(page, 'welcome-continue-4');
+  assert.equal(page.requests.length, 2);
+  assert.equal(page.requests[1].url, '/api/me/first-run-done', 'no home area is saved');
+});
+
+test('a street with no known area keeps the stored home area of a returning account', async () => {
+  const page = load({ start: 3, home: 'Whitefield' });
+  await pickOnStep3(page, STREET_NO_AREA);
+  assert.equal(byId(page, 'welcome-home-input').value, 'Whitefield');
+  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
+  click(page, 'welcome-continue-4');
+  assert.equal(page.requests[1].url, '/api/me/first-run-done', 'a stored home area is not sent again');
+});
+
+test('a place that is already an area prefills as it did', async () => {
+  const page = load({ start: 3 });
+  await pickOnStep3(page, PLACES[0]);
+  assert.equal(byId(page, 'welcome-home-input').value, 'Indiranagar');
+  assert.equal(byId(page, 'welcome-home-prefilled').hidden, false);
+  click(page, 'welcome-continue-4');
+  assert.deepEqual(JSON.parse(page.requests[1].init.body), { home_area: { name: 'Indiranagar', lat: 12.9784, lon: 77.6408 } });
+});
+
+test('editing the area filled in from a street forgets it, as any prefill', async () => {
+  const page = load({ start: 3 });
+  await pickOnStep3(page, STREET);
+  const home = byId(page, 'welcome-home-input');
+  home.value = 'Shivajinagar West';
+  fire(home, 'input');
+  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
+  click(page, 'welcome-continue-4');
+  assert.equal(page.requests[1].url, '/api/me/first-run-done', 'edited text was never picked');
 });
 
 test('a refused profile keeps step 4 with the server sentence and does not finish', async () => {

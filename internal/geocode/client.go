@@ -69,6 +69,10 @@ type Result struct {
 	DisplayName string  `json:"display_name"`
 	Lat         float64 `json:"lat"`
 	Lon         float64 `json:"lon"`
+	// Area is the name of the area the place lies in: its own name when it is
+	// an area itself (a neighbourhood, locality, town, city or district), else
+	// its locality, district or city. Empty when none is known (plan 28).
+	Area string `json:"area,omitempty"`
 }
 
 // nominatimRecord is the shape actually returned by Nominatim's jsonv2
@@ -622,6 +626,7 @@ func (c *Client) fetch(ctx context.Context, q string, extra url.Values) ([]Resul
 			DisplayName: rec.DisplayName,
 			Lat:         lat,
 			Lon:         lon,
+			Area:        nominatimArea(rec),
 		})
 	}
 	return results, nil

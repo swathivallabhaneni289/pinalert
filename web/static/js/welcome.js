@@ -248,13 +248,19 @@
   }
 
   // enterStep4 draws the home area field for the first time. The field is
-  // prefilled only from a place searched in step 3; otherwise it keeps what the
-  // page was drawn with (empty, or the stored home area of a returning account)
-  // and no prefilled line shows.
+  // prefilled only from a place searched in step 3, and only with the area that
+  // place lies in (step3Pick.area: the place itself when it is an area, else its
+  // locality, district or city), never with a street or a building name. When
+  // step 3 gave no area, or nothing was searched, the field keeps what the page
+  // was drawn with (empty, or the stored home area of a returning account) and
+  // no prefilled line shows.
   function enterStep4() {
-    if (step3Pick !== null) {
-      homePick = step3Pick;
-      homeInput.value = step3Pick.name;
+    if (step3Pick !== null && step3Pick.area !== '') {
+      // The point stays the picked place's own: the server keeps only a cell
+      // about 5 km wide, so the point of a street and the point of the area it
+      // lies in give the same cell or the next one, and only the name matters.
+      homePick = { name: step3Pick.area, lat: step3Pick.lat, lon: step3Pick.lon, area: step3Pick.area };
+      homeInput.value = step3Pick.area;
       homePrefilled.hidden = false;
     } else {
       homePick = null;
@@ -471,7 +477,9 @@
           setText(sub, res.display_name);
           option.appendChild(sub);
         }
-        option.addEventListener('click', pick.bind(null, option, { name: name, lat: res.lat, lon: res.lon }));
+        // area is the server's name for the area the place lies in, or ''.
+        var area = typeof res.area === 'string' ? res.area.trim() : '';
+        option.addEventListener('click', pick.bind(null, option, { name: name, lat: res.lat, lon: res.lon, area: area }));
         item.appendChild(option);
         cfg.results.appendChild(item);
       }

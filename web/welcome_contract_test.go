@@ -216,6 +216,12 @@ func TestWelcomeStep3And4Privacy(t *testing.T) {
 		"'/api/geocode?q='", "'/api/geocode/place?kind=area&q='",
 		"'/api/me/consent'", "'/api/me/profile'", "'/api/me/first-run-done'", "'PATCH'", "'POST'")
 
+	// Plan 28: step 4 is prefilled with the area around the step 3 pick, never
+	// with the pick's own name (a street or a building).
+	enter := jsFunctionBody(t, js, "enterStep4()")
+	p13MustContain(t, "enterStep4", enter, "step3Pick.area", "homeInput.value = step3Pick.area;")
+	p13MustNotContain(t, "enterStep4", enter, "step3Pick.name")
+
 	// The home area body is built from a picked place only.
 	body := jsFunctionBody(t, js, "profileBody()")
 	p13MustContain(t, "profileBody", body, "if (homePick !== null) {", "home_area", "homePick.name", "homePick.lat", "homePick.lon", "display_name")

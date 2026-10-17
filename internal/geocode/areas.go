@@ -94,6 +94,39 @@ func photonIsArea(p photonProperties) bool {
 	return false
 }
 
+// photonArea is the name of the area a Photon row lies in: the row's own name
+// when it is an area (photonIsArea), else its locality, district or city, in
+// that order. Empty when Photon sent none of them. The first time flow uses it
+// to prefill the home area from a street or a building picked on step 3.
+func photonArea(p photonProperties) string {
+	if photonIsArea(p) {
+		return cleanPart(p.Name)
+	}
+	for _, raw := range []string{p.Locality, p.District, p.City} {
+		if part := cleanPart(raw); part != "" {
+			return part
+		}
+	}
+	return ""
+}
+
+// nominatimArea is the area a Nominatim row lies in, but only when the row is
+// an area itself: its own name, or the first part of its display name when it
+// has no name. Nominatim sends the address parts only when asked
+// (addressdetails=1), and asking would change every outbound request, so a
+// street or building from the Nominatim fallback has no area and the field
+// stays empty. Photon answers first, so this is the rare case.
+func nominatimArea(rec nominatimRecord) string {
+	if !nominatimIsArea(rec) {
+		return ""
+	}
+	if name := cleanPart(rec.Name); name != "" {
+		return name
+	}
+	first, _, _ := strings.Cut(rec.DisplayName, ",")
+	return cleanPart(first)
+}
+
 // nominatimAreaTypes are the addresstype values of a Nominatim row that is an
 // area. A street is "road", a building "building" or "house".
 var nominatimAreaTypes = map[string]bool{
