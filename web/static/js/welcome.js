@@ -783,6 +783,7 @@
       status: el('welcome-search-status'),
       results: el('welcome-search-results'),
       url: STEP3_SEARCH_URL,
+      typing: true,
       onPick: function (place) { step3Pick = place; },
       onClear: function () { step3Pick = null; }
     });

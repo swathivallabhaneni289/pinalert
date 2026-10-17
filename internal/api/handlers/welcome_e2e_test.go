@@ -115,7 +115,7 @@ func TestOnboardingFlowEndToEnd(t *testing.T) {
 		"For example: Koramangala, Bengaluru",
 		// Owner amendments the same day: the box is one short line and two
 		// buttons, with no call line and no number.
-		"To move forward, you need to agree.",
+		"Sorry, you need to agree before you can continue.",
 		`id="welcome-reread">Read again</button>`,
 		`<form class="welcome__notice-form" method="post" action="/auth/logout">`,
 		`id="welcome-logout">Log out</button>`,

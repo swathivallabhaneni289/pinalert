@@ -1103,16 +1103,35 @@ test('a pick ends the typing pause and a late answer does not reopen the list', 
   assert.equal(page.requests.length, 1, 'the pause that was running sent nothing');
 });
 
-test('step 3 searches any place and does not search while typing', () => {
+// Amended 2026-10-17 (owner, viewing session): step 3's typed location also
+// suggests places while typing, like the home area, but searches any place.
+test('step 3 suggests any place while typing, with no areas filter', async () => {
   const page = load({ start: 3 });
   click(page, 'welcome-search-open');
   const input = byId(page, 'welcome-search-input');
-  input.value = 'Indira';
+  input.value = 'In';
   fire(input, 'input');
   page.advance(5000);
-  assert.equal(page.requests.length, 0);
-  fire(byId(page, 'welcome-search-form'), 'submit');
+  assert.equal(page.requests.length, 0, 'nothing under 3 characters');
+  input.value = 'Indira';
+  fire(input, 'input');
+  page.advance(399);
+  assert.equal(page.requests.length, 0, 'the pause is 400 ms');
+  page.advance(1);
+  assert.equal(page.requests.length, 1);
   assert.equal(page.requests[0].url, '/api/geocode?q=Indira', 'step 3 keeps the report form search, no areas filter');
+  answer(page.requests[0], 200, { results: PLACES });
+  await flush();
+  assert.equal(byId(page, 'welcome-search-results').hidden, false);
+});
+
+test('Enter in step 3 still searches at once', () => {
+  const page = load({ start: 3 });
+  click(page, 'welcome-search-open');
+  byId(page, 'welcome-search-input').value = 'Indira';
+  fire(byId(page, 'welcome-search-form'), 'submit');
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.requests[0].url, '/api/geocode?q=Indira');
 });
 
 // ---- Plan 30: moving back and forth between the four steps ------------------

@@ -119,20 +119,20 @@ func TestWelcomeStep2ReadsTheSharedText(t *testing.T) {
 	// by the template and hidden until then, so the words have one source and
 	// welcome.js only shows and hides it. Owner amendments the same day: the
 	// first wording was too wordy, then the call line was dropped, so the box is
-	// one line, To move forward, you need to agree., with no call link and no
+	// one line, Sorry, you need to agree before you can continue., with no call link and no
 	// number, and two buttons: Read again and Log out (the app's existing log
 	// out, a real POST form to /auth/logout as in the person menu, ending at the
 	// sign in page). It is a group named by its sentence, not a status region,
 	// because it holds buttons and takes focus.
 	p13MustContain(t, "disagree box", page,
 		`<div class="welcome__notice welcome__notice--box" id="welcome-disagree-message" role="group" aria-labelledby="welcome-disagree-lead" tabindex="-1" hidden>`,
-		`<p class="welcome__notice-lead" id="welcome-disagree-lead">To move forward, you need to agree.</p>`,
+		`<p class="welcome__notice-lead" id="welcome-disagree-lead">Sorry, you need to agree before you can continue.</p>`,
 		`<button type="button" class="btn" id="welcome-reread">Read again</button>`,
 		`<form class="welcome__notice-form" method="post" action="/auth/logout">`,
 		`<button type="submit" class="btn" id="welcome-logout">Log out</button>`)
 	w10Count(t, "welcome.html.tmpl", page, `action="/auth/logout"`, 1)
 	w10Count(t, "welcome.html.tmpl", page, `id="welcome-disagree-message"`, 1)
-	w10Count(t, "welcome.html.tmpl", page, "To move forward, you need to agree.", 1)
+	w10Count(t, "welcome.html.tmpl", page, "Sorry, you need to agree before you can continue.", 1)
 	p13MustNotContain(t, "disagree box", page, `role="status" hidden>`, "keep everyone safe", "Read it again", "In danger?", "welcome__notice-call", "welcome__notice-danger")
 	// The box sits under the buttons it answers, and its own buttons come in
 	// the order Read again, Log out.
@@ -146,7 +146,7 @@ func TestWelcomeStep2ReadsTheSharedText(t *testing.T) {
 	}
 
 	js := stripJSComments(p421ReadStatic(t, "js/welcome.js"))
-	if strings.Contains(js, "To move forward") || strings.Contains(js, "You need to agree") || strings.Contains(js, "DISAGREE_MESSAGE") {
+	if strings.Contains(js, "Sorry, you need to agree") || strings.Contains(js, "You need to agree") || strings.Contains(js, "DISAGREE_MESSAGE") {
 		t.Errorf("welcome.js holds the Disagree sentence; the template is its one source")
 	}
 	// Disagree shows the box and moves focus into it, and records nothing.
