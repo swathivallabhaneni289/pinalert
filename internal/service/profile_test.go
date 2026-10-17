@@ -274,3 +274,135 @@ func TestAccountServiceProfileRoundTrip(t *testing.T) {
 		t.Fatal("a 61 character name must be refused")
 	}
 }
+
+// TestDisplayNameFormatCharacters proves code review part 1 WR-02: a name that
+// is invisible, or holds a Unicode format character (category Cf), is refused,
+// and a name needs at least one letter or digit. The characters are written as
+// code points, never as raw invisible characters.
+func TestDisplayNameFormatCharacters(t *testing.T) {
+	hidden := func(points ...rune) string { return string(points) }
+	refused := map[string]string{
+		"lone zero width space":            hidden(0x200b),
+		"zero width joiner and non joiner": hidden(0x200d, 0x200c),
+		"right to left override inside":    "a" + hidden(0x202e) + "b",
+		"byte order mark before a name":    hidden(0xfeff) + "Ravi",
+		"isolates between spaces":          " " + hidden(0x2066) + " ",
+		"isolate pair around a name":       hidden(0x2066) + "Ravi" + hidden(0x2069),
+		"zero width space inside a name":   "Ra" + hidden(0x200b) + "vi",
+		"only dots":                        "...",
+		"only punctuation and spaces":      " - . , ",
+		"only an emoji":                    "\U0001F600",
+	}
+	for label, name := range refused {
+		t.Run("refused: "+label, func(t *testing.T) {
+			_, err := service.ValidateProfileUpdate(service.ProfileUpdate{DisplayName: strPtr(name)})
+			wantField(t, err, "display_name")
+			var ve service.ValidationError
+			if !errors.As(err, &ve) {
+				t.Fatalf("want a ValidationError, got %v", err)
+			}
+			if !strings.Contains(ve.Message, "letter") || !strings.Contains(ve.Message, "hidden") {
+				t.Fatalf("the message must say what the rule is (a letter or number, no hidden characters): %q", ve.Message)
+			}
+		})
+	}
+
+	accepted := []string{"Ravi Kumar", string([]rune{0x0930, 0x0935, 0x093f}), "Ravi 2", "42", "A.", "Anne-Marie O'Neil"}
+	for _, name := range accepted {
+		t.Run("accepted: "+name, func(t *testing.T) {
+			v, err := service.ValidateProfileUpdate(service.ProfileUpdate{DisplayName: strPtr(name)})
+			if err != nil {
+				t.Fatalf("%q must be accepted: %v", name, err)
+			}
+			if v.Name == nil || *v.Name != name {
+				t.Fatalf("name = %v, want %q", v.Name, name)
+			}
+		})
+	}
+
+	// The format character refusal applies to the home area name too, but the
+	// letter or digit rule does not: its other rules stay as they were.
+	t.Run("home area name with a format character is refused", func(t *testing.T) {
+		for _, name := range []string{hidden(0x200b), "Indira" + hidden(0x202e) + "nagar", hidden(0xfeff) + "Indiranagar"} {
+			_, err := service.ValidateProfileUpdate(service.ProfileUpdate{
+				HomeArea: service.HomeAreaChange{Action: service.HomeAreaSet, Input: service.HomeAreaInput{Name: name, Lat: 12.9, Lon: 77.5}},
+			})
+			wantField(t, err, "home_area")
+		}
+	})
+	t.Run("home area name keeps its rules apart from format characters", func(t *testing.T) {
+		v, err := service.ValidateProfileUpdate(service.ProfileUpdate{
+			HomeArea: service.HomeAreaChange{Action: service.HomeAreaSet, Input: service.HomeAreaInput{Name: "...", Lat: 12.9, Lon: 77.5}},
+		})
+		if err != nil || v.HomeName == nil || *v.HomeName != "..." {
+			t.Fatalf("the home area name has no letter rule: %+v %v", v, err)
+		}
+	})
+}
+
+// TestUpdateProfileIsAllOrNothing proves code review part 1 WR-03: an update
+// that changes the name and the home area writes both or neither. A trigger on
+// the disposable test database makes the home area part fail for one marker
+// place name, the way a dropped connection or a timeout would.
+func TestUpdateProfileIsAllOrNothing(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	svc := service.NewAccountService(sqlcgen.New(pool))
+	id := testutil.SeedReporterAccount(t, pool, "profile-atomic@example.com")
+
+	if _, err := svc.UpdateProfile(ctx, id, service.ProfileUpdate{
+		DisplayName: strPtr("Before"),
+		HomeArea:    service.HomeAreaChange{Action: service.HomeAreaSet, Input: service.HomeAreaInput{Name: "Old place", Lat: 12.9784, Lon: 77.6408}},
+	}); err != nil {
+		t.Fatalf("setting the starting profile: %v", err)
+	}
+
+	const marker = "Forced failure place"
+	if _, err := pool.Exec(ctx, `
+		CREATE FUNCTION test_fail_home_area() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			IF NEW.home_area_name = '`+marker+`' THEN
+				RAISE EXCEPTION 'forced home area failure';
+			END IF;
+			RETURN NEW;
+		END $$;
+		CREATE TRIGGER test_fail_home_area BEFORE UPDATE ON accounts
+			FOR EACH ROW EXECUTE FUNCTION test_fail_home_area();`); err != nil {
+		t.Fatalf("installing the failure trigger: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DROP TRIGGER IF EXISTS test_fail_home_area ON accounts; DROP FUNCTION IF EXISTS test_fail_home_area()`)
+	})
+
+	_, err := svc.UpdateProfile(ctx, id, service.ProfileUpdate{
+		DisplayName: strPtr("After"),
+		HomeArea:    service.HomeAreaChange{Action: service.HomeAreaSet, Input: service.HomeAreaInput{Name: marker, Lat: 13.0827, Lon: 80.2707}},
+	})
+	if err == nil {
+		t.Fatal("the forced home area failure must surface as an error")
+	}
+	var ve service.ValidationError
+	if errors.As(err, &ve) {
+		t.Fatalf("a database failure is not a validation error: %v", err)
+	}
+
+	var name, area string
+	if err := pool.QueryRow(ctx, `SELECT display_name, home_area_name FROM accounts WHERE id = $1`, id).Scan(&name, &area); err != nil {
+		t.Fatalf("reading the stored profile: %v", err)
+	}
+	if name != "Before" || area != "Old place" {
+		t.Fatalf("a failed save must change neither part: name %q, home area %q", name, area)
+	}
+
+	// With the failure gone the same kind of update lands whole.
+	p, err := svc.UpdateProfile(ctx, id, service.ProfileUpdate{
+		DisplayName: strPtr("After"),
+		HomeArea:    service.HomeAreaChange{Action: service.HomeAreaSet, Input: service.HomeAreaInput{Name: "New place", Lat: 13.0827, Lon: 80.2707}},
+	})
+	if err != nil {
+		t.Fatalf("a working save: %v", err)
+	}
+	if p.DisplayName == nil || *p.DisplayName != "After" || p.HomeAreaName == nil || *p.HomeAreaName != "New place" {
+		t.Fatalf("both parts must be stored: %+v", p)
+	}
+}

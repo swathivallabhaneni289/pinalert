@@ -31,19 +31,17 @@ UPDATE accounts
 SET first_run_done_at = COALESCE(first_run_done_at, now())
 WHERE id = sqlc.arg(id);
 
--- name: SetAccountDisplayName :exec
--- Saves the optional name; a NULL argument clears it.
+-- name: UpdateAccountProfile :exec
+-- Saves the optional name and the home area in one statement, so a failure
+-- leaves neither changed. set_name and set_home_area say which part to write;
+-- a part that is not set keeps its stored value. With set_name a NULL
+-- display_name clears the name. With set_home_area the name and the precision
+-- 5 cell are written together (accounts_home_area_pair); both NULL clears it.
+-- The raw point is never an argument here.
 UPDATE accounts
-SET display_name = sqlc.narg(display_name)::text
-WHERE id = sqlc.arg(id);
-
--- name: SetAccountHomeArea :exec
--- Saves or clears the home area. The name and the precision 5 cell are written
--- together (accounts_home_area_pair); both NULL clears it. The raw point is
--- never an argument here.
-UPDATE accounts
-SET home_area_name = sqlc.narg(home_area_name)::text,
-    home_area_cell = sqlc.narg(home_area_cell)::text
+SET display_name   = CASE WHEN sqlc.arg(set_name)::boolean THEN sqlc.narg(display_name)::text ELSE display_name END,
+    home_area_name = CASE WHEN sqlc.arg(set_home_area)::boolean THEN sqlc.narg(home_area_name)::text ELSE home_area_name END,
+    home_area_cell = CASE WHEN sqlc.arg(set_home_area)::boolean THEN sqlc.narg(home_area_cell)::text ELSE home_area_cell END
 WHERE id = sqlc.arg(id);
 
 -- name: GetAccountProfile :one
