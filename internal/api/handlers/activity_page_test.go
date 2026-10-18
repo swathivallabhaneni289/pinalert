@@ -3,6 +3,7 @@ package handlers
 import (
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -633,4 +634,161 @@ func TestCategoryLabelsCoverEveryKnownCategory(t *testing.T) {
 	if got := categoryLabels[service.CategoryRescueNeeded]; got != "Rescue needed" {
 		t.Errorf("rescue_needed label = %q, want %q", got, "Rescue needed")
 	}
+}
+
+// p32Item builds one update item for the Updates part tests. The report id is
+// the item id plus 100, so the link is easy to read.
+func p32Item(id int64, kind service.UpdateKind, unread bool, ageMinutes int) service.UpdateItem {
+	rid := id + 100
+	return service.UpdateItem{
+		ID: id, Kind: kind, ReportID: &rid, Available: true, Unread: unread,
+		CreatedAt: wm5Now.Add(-time.Duration(ageMinutes) * time.Minute),
+		Event:     service.EventLine(kind),
+		Category:  service.CategoryFlood, Severity: service.SeverityCritical,
+		Trust: "Confirmed by 3 people at different spots.",
+	}
+}
+
+// TestFillUpdatesPart: the Updates part gets its rows, counts, summary and cut
+// flag from the same List the bell reads (D-05), and nothing else on the page
+// changes.
+func TestFillUpdatesPart(t *testing.T) {
+	base := func(t *testing.T) activityPageView {
+		t.Helper()
+		page := service.ActivityPage{Posts: []service.ActivityReport{wm5Post(1, service.VisibilityLive, false)}}
+		return wm5Cards(t, page, "")
+	}
+	otherParts := func(v activityPageView) []activityPart {
+		var out []activityPart
+		for _, p := range v.Parts {
+			if p.Key != activityPartUpdates {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+
+	t.Run("no items keeps the empty hub", func(t *testing.T) {
+		view := base(t)
+		fillUpdatesPart(&view, service.UpdatesPage{}, false, wm5Now)
+		p := wm5Part(t, view, "updates")
+		if p.Count != 0 || p.NewCount != 0 || len(p.Updates) != 0 || p.Summary != "No updates yet" || p.UpdatesCut || p.UpdatesFailed {
+			t.Errorf("empty part = %+v", p)
+		}
+	})
+
+	t.Run("three items, two unread", func(t *testing.T) {
+		view := base(t)
+		before := otherParts(view)
+		page := service.UpdatesPage{
+			Items: []service.UpdateItem{
+				p32Item(30, service.UpdateReachedLive, true, 12),
+				p32Item(20, service.UpdateHidden, true, 90),
+				p32Item(10, service.UpdateFading, false, 300),
+			},
+			Unread: 2, Total: 3,
+		}
+		fillUpdatesPart(&view, page, false, wm5Now)
+		p := wm5Part(t, view, "updates")
+		if p.Count != 3 || p.NewCount != 2 || p.UpdatesCut || p.UpdatesFailed {
+			t.Errorf("counts = %d / %d / cut %v / failed %v", p.Count, p.NewCount, p.UpdatesCut, p.UpdatesFailed)
+		}
+		if p.Summary != "Now confirmed · Flood" {
+			t.Errorf("summary = %q", p.Summary)
+		}
+		if len(p.Updates) != 3 {
+			t.Fatalf("rows = %d, want 3", len(p.Updates))
+		}
+		for i, wantID := range []int64{30, 20, 10} {
+			row := p.Updates[i]
+			if row.ID != wantID {
+				t.Errorf("row %d id = %d, want %d", i, row.ID, wantID)
+			}
+			if want := "/?report=" + strconv.FormatInt(wantID+100, 10); row.Href != want {
+				t.Errorf("row %d href = %q, want %q", i, row.Href, want)
+			}
+			if row.SeverityClass != "sev-critical" || row.Category != "Flood" || row.Severity != "Critical" {
+				t.Errorf("row %d words = %+v", i, row)
+			}
+			if row.Label == "" || row.When == "" {
+				t.Errorf("row %d has no label or time: %+v", i, row)
+			}
+		}
+		if !strings.HasPrefix(p.Updates[0].Label, "New. Now confirmed.") || strings.HasPrefix(p.Updates[2].Label, "New.") {
+			t.Errorf("labels = %q / %q", p.Updates[0].Label, p.Updates[2].Label)
+		}
+		if !p.Updates[0].Unread || p.Updates[2].Unread {
+			t.Errorf("unread flags = %v / %v", p.Updates[0].Unread, p.Updates[2].Unread)
+		}
+		if !reflect.DeepEqual(before, otherParts(view)) {
+			t.Errorf("another part changed")
+		}
+	})
+
+	t.Run("a Reliable note reads its first sentence", func(t *testing.T) {
+		view := base(t)
+		it := p32Item(5, service.UpdateReliableNearby, false, 1)
+		it.Trust = service.UnconfirmedLine
+		fillUpdatesPart(&view, service.UpdatesPage{Items: []service.UpdateItem{it}, Total: 1}, false, wm5Now)
+		if got, want := wm5Part(t, view, "updates").Summary, "Reported nearby by a Reliable reporter."; got != want {
+			t.Errorf("summary = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("an unavailable or rolled up newest row reads its own line", func(t *testing.T) {
+		view := base(t)
+		gone := service.UpdateItem{ID: 9, Kind: service.UpdateHidden, CreatedAt: wm5Now.Add(-time.Hour), Event: service.UnavailableLine}
+		fillUpdatesPart(&view, service.UpdatesPage{Items: []service.UpdateItem{gone}, Total: 1}, false, wm5Now)
+		p := wm5Part(t, view, "updates")
+		if p.Summary != service.UnavailableLine {
+			t.Errorf("summary = %q", p.Summary)
+		}
+		if p.Updates[0].Href != "" || p.Updates[0].IsMore {
+			t.Errorf("an unavailable row must not link: %+v", p.Updates[0])
+		}
+
+		view = base(t)
+		more := service.UpdateItem{ID: 8, Kind: service.UpdateMore, Available: true, MoreCount: 4, CreatedAt: wm5Now.Add(-time.Hour), Event: service.MoreLine(4)}
+		fillUpdatesPart(&view, service.UpdatesPage{Items: []service.UpdateItem{more}, Total: 1}, false, wm5Now)
+		p = wm5Part(t, view, "updates")
+		if p.Summary != "And 4 more changes" || !p.Updates[0].IsMore || p.Updates[0].Href != "" {
+			t.Errorf("more row = %+v / summary %q", p.Updates[0], p.Summary)
+		}
+	})
+
+	t.Run("a list cut at 50 says so", func(t *testing.T) {
+		view := base(t)
+		items := make([]service.UpdateItem, 0, 50)
+		for i := 0; i < 50; i++ {
+			items = append(items, p32Item(int64(1000-i), service.UpdateHidden, false, i+1))
+		}
+		fillUpdatesPart(&view, service.UpdatesPage{Items: items, Total: 73}, false, wm5Now)
+		p := wm5Part(t, view, "updates")
+		if p.Count != 50 || !p.UpdatesCut {
+			t.Errorf("count %d cut %v, want 50 and cut", p.Count, p.UpdatesCut)
+		}
+	})
+
+	t.Run("a failed read flags the part and leaves the others alone", func(t *testing.T) {
+		view := base(t)
+		before := otherParts(view)
+		fillUpdatesPart(&view, service.UpdatesPage{Items: []service.UpdateItem{p32Item(1, service.UpdateHidden, true, 1)}}, true, wm5Now)
+		p := wm5Part(t, view, "updates")
+		if !p.UpdatesFailed || len(p.Updates) != 0 || p.Count != 0 || p.NewCount != 0 {
+			t.Errorf("failed part = %+v", p)
+		}
+		if !reflect.DeepEqual(before, otherParts(view)) {
+			t.Errorf("another part changed")
+		}
+	})
+
+	t.Run("the severity class comes from a closed lookup", func(t *testing.T) {
+		for sev, want := range map[service.Severity]string{
+			service.SeverityLow: "sev-low", service.SeverityMedium: "sev-medium", service.SeverityCritical: "sev-critical", "": "", "weird": "",
+		} {
+			if got := updateSeverityClass(sev); got != want {
+				t.Errorf("updateSeverityClass(%q) = %q, want %q", sev, got, want)
+			}
+		}
+	})
 }
