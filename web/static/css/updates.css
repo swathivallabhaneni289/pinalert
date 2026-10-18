@@ -1,0 +1,490 @@
+/*
+ * Pinalert: updates.css
+ *
+ * The one stylesheet of Phase 3.2 (03.2-UI-SPEC.md, Design System). It holds
+ * every new style of the phase: the red count on the bell, the rows of the bell
+ * list and of My activity's Updates part, the "N new" tag on the hub row, the
+ * mute control on an opened report, and the Settings switch, select, danger
+ * label and muted report rows. Plans 11, 12 and 15 use these classes and add
+ * none, so their work is markup and script only.
+ *
+ * Rules of this file: tokens only (no hex, no rgb, no !important, no pill
+ * radius), font sizes and weights from the tokens, every display rule on an
+ * element that can carry the hidden attribute has :not([hidden]) in its head
+ * (the browser's own hidden rule loses to an author display rule), muted text
+ * only on --color-bg, no opacity, and system colours only inside the forced
+ * colours block at the end. The phone arrangement is the base; one
+ * min-width: 900px block lays the Updates row out for a laptop.
+ */
+
+/* ---- The count on the bell (UI-SPEC A1, 03.4 Surface 9) ---------------- */
+
+/* The badge is placed against the bell button, so the button is the
+   positioning parent. app-bar.css gives the button no position. */
+.app-topbar__bell {
+  position: relative;
+}
+
+.app-topbar__count:not([hidden]) {
+  position: absolute;
+  top: var(--space-xs);
+  right: var(--space-xs);
+  box-sizing: border-box;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--space-xs);
+  border-radius: 4px;
+  background: var(--color-alert-fill);
+  color: var(--color-on-alert-fill);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  line-height: 20px;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* ---- The bell list: head, scrolling body, footer (UI-SPEC A2) ------------ */
+
+/* The head and the footer never scroll away and are 48px high (UI-SPEC D12). */
+.bell-list__head {
+  min-height: 48px;
+}
+
+.bell-list__all {
+  min-height: 48px;
+}
+
+/* The body scrolls so the list never runs past the screen. The first max
+   height is for a browser without dynamic viewport units; the second is the
+   whole list less the bar, 24px of air and the head and footer (48px each). */
+.bell-list__body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  max-height: 100vh;
+  max-height: calc(100dvh - var(--app-topbar-height) - 24px - 96px);
+}
+
+.bell-list__rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bell-list__rows > li + li {
+  border-top: 1px solid var(--color-border);
+}
+
+/* One row. A link or, for the "and N more" and "no longer available" shapes, a
+   plain block. The whole row is pressable and at least 44px. No hover fill, so
+   no muted line ever sits on grey. */
+.bell-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-xs);
+  box-sizing: border-box;
+  min-height: var(--touch-target-min);
+  padding: var(--space-12);
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  text-decoration: none;
+}
+
+/* A new row has a 4px inset left edge in the text colour, drawn inside the
+   padding so text does not shift between new and read rows. */
+.bell-row--new {
+  box-shadow: inset 4px 0 0 var(--color-text);
+}
+
+.bell-row__event {
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+}
+
+.bell-row--new .bell-row__event {
+  font-weight: var(--font-weight-semibold);
+}
+
+/* The "and N more changes" row reads as a quiet line. */
+.bell-row--more .bell-row__event {
+  color: var(--color-text-muted);
+}
+
+.bell-row__line {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+}
+
+.bell-row__what {
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+/* The 8px severity dot, drawn on the .sev-* element the script gives it. It is
+   clipped to a circle instead of rounded with border-radius: the round look is
+   a drawing that cannot be pressed, and the shape rule that forbids a fully
+   rounded border-radius is about controls (owner Q2). */
+.bell-row__sev,
+.urow__sev {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: var(--space-sm);
+  clip-path: circle(50%);
+  background: var(--severity-base);
+}
+
+.bell-row__trust {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.bell-row__when {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+}
+
+/* ---- The states of the bell list (UI-SPEC A4) ---------------------------- */
+
+.bell-list__loading {
+  padding: var(--space-12);
+}
+
+.bell-list__state {
+  padding: var(--space-md) var(--space-12);
+}
+
+.bell-list__state p {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.bell-list__state .bell-list__state-title {
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.bell-list__stale:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-sm);
+  margin: 0;
+  padding: 0 var(--space-12);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+/* A quiet underlined text button, 44px high. */
+.bell-list__retry {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-xs);
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ---- My activity, Updates part (UI-SPEC B1 to B3) ------------------------ */
+
+/* On the phone the rows sit in their own rounded box under the part's one line
+   (UI-SPEC B2). On a laptop the part's box (activity.css) is the border, so the
+   list gives its own back in the laptop block below. */
+.urow-list {
+  margin: 0 0 var(--space-md);
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow: hidden;
+  list-style: none;
+}
+
+.urow + .urow {
+  border-top: 1px solid var(--color-border);
+}
+
+/* The phone arrangement: the dot and the text on one line, the time under the
+   text. A row that is not a link is a div with the same grid. */
+.urow__link {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  grid-template-areas:
+    "dot text"
+    ". when";
+  gap: var(--space-xs) var(--space-md);
+  box-sizing: border-box;
+  min-height: var(--touch-target-min);
+  padding: var(--space-md);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  text-decoration: none;
+}
+
+/* The unread dot is an empty 8px slot on a read row, so text stays aligned. It
+   sits level with the middle of the first line of text. */
+.urow__dot {
+  grid-area: dot;
+  align-self: start;
+  width: 8px;
+  height: 8px;
+  margin-top: var(--space-sm);
+  clip-path: circle(50%);
+}
+
+.urow--new .urow__dot {
+  background: var(--color-alert-fill);
+}
+
+.urow__text {
+  display: grid;
+  grid-area: text;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.urow__event {
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+}
+
+.urow--new .urow__event {
+  font-weight: var(--font-weight-semibold);
+}
+
+.urow--more .urow__event {
+  color: var(--color-text-muted);
+}
+
+.urow__line {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.urow__what {
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.urow__trust {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.urow__when {
+  grid-area: when;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  white-space: nowrap;
+}
+
+/* The closing line when the list is cut at 50. */
+.urow-cut {
+  margin: 0;
+  padding: var(--space-12) var(--space-md);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+/* The error block of the Updates part draws its Try again as a link (it reloads
+   the part), in the look activity.css gives the Ended nearby button. */
+main.profile-page a.activity-retry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+/* The laptop: three columns with the time in the right one (UI-SPEC D11). */
+@media (min-width: 900px) {
+  .urow-list {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .urow__link {
+    grid-template-columns: 8px minmax(0, 1fr) auto;
+    grid-template-areas: "dot text when";
+  }
+}
+
+/* The red "N new" tag on the Updates hub row, in place of the count. */
+.activity-hub__new:not([hidden]) {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 24px;
+  padding: 0 var(--space-sm);
+  border-radius: 4px;
+  background: var(--color-alert-fill);
+  color: var(--color-on-alert-fill);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+/* ---- Mute control on an opened report (UI-SPEC Surface C) ---------------- */
+
+/* Exactly the Flag control's look (chrome.css .flag-control), with a small gap
+   to the Flag control that follows it. */
+.mute-control:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-xs);
+  margin-top: var(--space-xs);
+  margin-right: var(--space-xs);
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* In the opened report the Flag control takes one medium space above it
+   (trust.css); the mute control takes the same, so the two sit level. */
+.leaflet-container .popup-card__actions .mute-control:not([hidden]) {
+  margin-top: var(--space-md);
+}
+
+/* ---- Settings: switch, select, danger label, muted reports (UI-SPEC E) --- */
+
+/* A switch row is a label, so the whole row is the target. */
+.place-row--switch {
+  cursor: pointer;
+}
+
+.place-switch {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--color-text);
+  cursor: pointer;
+}
+
+/* 16px text so iOS Safari does not zoom on focus. */
+.place-select {
+  box-sizing: border-box;
+  min-height: var(--touch-target-min);
+  min-width: 96px;
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+}
+
+/* The Delete my account label: the one use of the destructive colour. */
+.place-row__label--danger {
+  color: var(--color-severity-critical);
+  font-weight: var(--font-weight-semibold);
+}
+
+.muted-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.muted-list > li + li {
+  border-top: 1px solid var(--color-border);
+}
+
+.muted-row:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-12) 0;
+}
+
+.muted-row__text {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.muted-row__title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.muted-row__what {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+/* ---- Forced colours ------------------------------------------------------ */
+
+/* A shadow and a background colour disappear in forced colours, so the unread
+   edge, the unread dot and the count badge are drawn with system colours. */
+@media (forced-colors: active) {
+  .bell-row--new {
+    border-inline-start: 4px solid CanvasText;
+  }
+
+  .urow--new .urow__dot {
+    background: Highlight;
+  }
+
+  .app-topbar__count {
+    border: 1px solid CanvasText;
+  }
+}

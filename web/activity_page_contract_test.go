@@ -170,11 +170,22 @@ func TestActivityPageTemplateMarkup(t *testing.T) {
 			t.Errorf("the Ended nearby shell lacks %s", id)
 		}
 	}
+	// Amended 2026-10-17 by Phase 3.2 plan 08 (UI-SPEC B3, the Updates part has
+	// its own error block with the same two lines): the two shared lines are
+	// counted inside the Ended nearby shell, from id="ended-nearby" to the else
+	// that follows it, and no longer across the whole template. Nothing else is
+	// loosened: each line is still written once in the shell.
+	shellStart := strings.Index(tmpl, `id="ended-nearby"`)
+	shellEnd := shellStart + strings.Index(tmpl[shellStart:], "{{else}}")
+	if shellStart == -1 || shellEnd < shellStart {
+		t.Fatal("could not isolate the Ended nearby shell")
+	}
+	shell := tmpl[shellStart:shellEnd]
 	for _, words := range []string{
 		"Ended nearby needs your location", "Open Nearby and allow location, then come back.",
 		"Couldn't load reports", "Check your connection and try again.", "Try again",
 	} {
-		if n := strings.Count(tmpl, words); n != 1 {
+		if n := strings.Count(shell, words); n != 1 {
 			t.Errorf("the Ended nearby shell holds %q %d times, want 1", words, n)
 		}
 	}

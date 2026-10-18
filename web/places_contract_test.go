@@ -33,9 +33,9 @@ func TestPersonMenuItems(t *testing.T) {
 }
 
 // TestBellListContract pins D-32 and UI-SPEC Surface 9: the bell is a button
-// named Updates with no count, it opens a dialog list that says there are no
-// updates yet and links to the Updates part of My activity, and the script that
-// runs it builds no markup and makes no request.
+// named Updates with a hidden count span that Phase 3.2 fills, it opens a dialog
+// list that says there are no updates yet and links to the Updates part of My
+// activity, and the script that runs it builds no markup and makes no request.
 func TestBellListContract(t *testing.T) {
 	bar := p421ReadTemplate(t, "app_bar.html.tmpl")
 	trigger := bellTagWith(t, bar, `id="bell-trigger"`)
@@ -58,10 +58,23 @@ func TestBellListContract(t *testing.T) {
 	if strings.Count(bar, "No updates yet") != 1 || strings.Count(bar, "See all updates") != 1 {
 		t.Errorf("the bell list words must each appear once")
 	}
-	// No count: the bell draws no badge while no updates exist.
+	// Amended 2026-10-17 by Phase 3.2 plan 08 (late amendment, red count;
+	// orchestrator decision 3): Phase 3.2 adds the count. The bell holds one
+	// hidden count span the script fills, and its poll interval as a literal.
+	if !strings.Contains(trigger, `data-poll-interval-ms="30000"`) {
+		t.Errorf("the bell button %s lacks data-poll-interval-ms=\"30000\"", trigger)
+	}
+	countTag := bellTagWith(t, bar, `id="bell-count"`)
+	for _, want := range []string{`id="bell-count"`, `aria-hidden="true"`, ` hidden>`} {
+		if !strings.Contains(countTag, want) {
+			t.Errorf("the bell count %s lacks %s", countTag, want)
+		}
+	}
+	p421InOrder(t, "the count sits inside the bell button", bar, `id="bell-trigger"`, `id="bell-count"`, `</button>`, `id="bell-list"`)
+	// The old class names stay banned: the count is app-topbar__count.
 	for _, banned := range []string{"bell-badge", "app-topbar__badge", "data-count"} {
 		if strings.Contains(bar, banned) {
-			t.Errorf("the bell carries %q, but no count exists before Phase 3.2", banned)
+			t.Errorf("the bell carries %q; the count is app-topbar__count", banned)
 		}
 	}
 	// The bell sits left of the gear and before the person menu.
