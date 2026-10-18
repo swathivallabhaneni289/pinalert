@@ -122,5 +122,7 @@ func TestReliableFilterIsASibling(t *testing.T) {
 	if n := strings.Count(app, "kept_by_reliable_filter"); n != 1 {
 		t.Errorf("app.js names kept_by_reliable_filter %d times, want 1 (the one rule)", n)
 	}
-	p424NoDashes(t, "app.js", p424ReadRaw(t, "static/js/app.js"))
+	// The tick's own functions carry no em dash, en dash or ellipsis character.
+	p424NoDashes(t, "reportKeptByReliable", kept)
+	p424NoDashes(t, "setReliable", set)
 }
