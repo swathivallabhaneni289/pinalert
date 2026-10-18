@@ -47,6 +47,15 @@ import (
 // is the normal answer pgx.ErrNoRows from the insert, not an error; the report
 // stays eligible for a later poll while it lasts.
 //
+// The note counts toward the one update per report per hour (D-12, W3).
+// InsertReliableAlert therefore also seeds the reader's cursor for the report in
+// the same statement, and only when the note row is actually written: the
+// report's current visibility as the state, and adopted_at and last_update_at
+// set to now. A reader who votes on the report later is then adopted silently
+// and the hour gap sees the note, so "Now confirmed" cannot follow it inside the
+// hour. An existing cursor is left alone. Phase 3.3 kind 3 reuses this step, so
+// the seed belongs here and not in the bell's own read.
+//
 // TRUSTX-03 burst detection is not built, and it is a hard dependency before
 // this rule reaches push (ROADMAP 3.2 scope note 2). The per reporter cap and
 // the Not confirmed yet wording soften it for the in app bell only; since the
@@ -162,6 +171,7 @@ func (s *UpdatesService) refreshReliableAlerts(ctx context.Context, accountID in
 			Now:       now,
 			HourEdge:  windowStart,
 			Ceiling:   UpdatesHourlyCeiling,
+			State:     string(v.Visibility),
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
