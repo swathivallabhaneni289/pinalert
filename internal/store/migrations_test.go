@@ -567,3 +567,176 @@ func TestMigration00008(t *testing.T) {
 		t.Errorf("after Down: reports.happening still present")
 	}
 }
+
+// TestMigration00009 covers the Phase 3.2 migration: the file carries both
+// goose markers, is embedded, builds nothing concurrently, and on a database
+// adds the four tables and the two lifecycle columns with CHECK constraints
+// that refuse an unknown cursor state, a malformed rolled up row and an
+// unlisted alert radius. Down removes everything again and Up applies again.
+func TestMigration00009(t *testing.T) {
+	const file = "migrations/00009_add_updates_and_alerts.sql"
+	contents, err := MigrationsFS.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", file, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", file)
+	}
+	var code []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		code = append(code, line)
+	}
+	if strings.Contains(strings.ToUpper(strings.Join(code, "\n")), "CONCURRENTLY") {
+		t.Error("migration 00009 must not use CONCURRENTLY: goose runs it inside a transaction")
+	}
+	for _, name := range []string{"updates_kind_valid", "updates_more_shape", "update_cursors_state_valid", "account_alert_settings_radius_valid"} {
+		if !strings.Contains(text[:down], name) {
+			t.Errorf("migration 00009 Up must add %s", name)
+		}
+	}
+	for _, table := range []string{"updates", "update_cursors", "report_mutes", "account_alert_settings"} {
+		if !strings.Contains(text[down:], "DROP TABLE "+table+";") {
+			t.Errorf("migration 00009 Down must drop table %s", table)
+		}
+	}
+	for _, col := range []string{"revoked_at", "deleted_at"} {
+		if !strings.Contains(text[down:], "DROP COLUMN "+col) {
+			t.Errorf("migration 00009 Down must drop column %s", col)
+		}
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00009 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	defer db.Close()
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+
+	var accountID, reportID int64
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		if accountID != 0 {
+			_, _ = db.Exec("DELETE FROM account_alert_settings WHERE account_id = $1", accountID)
+			_, _ = db.Exec("DELETE FROM update_cursors WHERE account_id = $1", accountID)
+			_, _ = db.Exec("DELETE FROM updates WHERE account_id = $1", accountID)
+		}
+		if reportID != 0 {
+			_, _ = db.Exec("DELETE FROM reports WHERE id = $1", reportID)
+		}
+		if accountID != 0 {
+			_, _ = db.Exec("DELETE FROM accounts WHERE id = $1", accountID)
+		}
+	})
+
+	tableCount := func() int {
+		var n int
+		err := db.QueryRow(`SELECT count(*) FROM information_schema.tables
+			WHERE table_schema = 'public'
+			  AND table_name IN ('updates', 'update_cursors', 'report_mutes', 'account_alert_settings')`).Scan(&n)
+		if err != nil {
+			t.Fatalf("counting tables: %v", err)
+		}
+		return n
+	}
+	columnCount := func() int {
+		var n int
+		err := db.QueryRow(`SELECT count(*) FROM information_schema.columns
+			WHERE table_schema = 'public'
+			  AND ((table_name = 'sessions' AND column_name = 'revoked_at')
+			    OR (table_name = 'accounts' AND column_name = 'deleted_at'))`).Scan(&n)
+		if err != nil {
+			t.Fatalf("counting columns: %v", err)
+		}
+		return n
+	}
+	if got := tableCount(); got != 4 {
+		t.Errorf("after Up: %d of 4 new tables present", got)
+	}
+	if got := columnCount(); got != 2 {
+		t.Errorf("after Up: %d of 2 new columns present", got)
+	}
+
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00009@example.com') RETURNING id`).Scan(&accountID); err != nil {
+		t.Fatalf("inserting account: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO reports (session_id, category, severity, description, latitude, longitude, geohash, expires_at)
+		VALUES ('migration-00009', 'road', 'info', 'for the 00009 test', 12.97, 77.59, 'tdr1w', now() + interval '1 hour')
+		RETURNING id`).Scan(&reportID); err != nil {
+		t.Fatalf("inserting report: %v", err)
+	}
+
+	wantCheck := func(label, query string, args ...any) {
+		t.Helper()
+		_, err := db.Exec(query, args...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
+			t.Errorf("%s: want SQLSTATE 23514, got %v", label, err)
+		}
+	}
+	wantCheck("a cursor state of withheld",
+		`INSERT INTO update_cursors (account_id, report_id, last_state, adopted_at) VALUES ($1, $2, 'withheld', now())`,
+		accountID, reportID)
+	wantCheck("a more row that names a report",
+		`INSERT INTO updates (account_id, report_id, kind, bucket_start, more_count) VALUES ($1, $2, 'more', now(), 1)`,
+		accountID, reportID)
+	wantCheck("a more row with a zero count",
+		`INSERT INTO updates (account_id, kind, bucket_start, more_count) VALUES ($1, 'more', now(), 0)`,
+		accountID)
+	wantCheck("a normal row without a report",
+		`INSERT INTO updates (account_id, kind) VALUES ($1, 'hidden')`, accountID)
+	wantCheck("an unknown kind",
+		`INSERT INTO updates (account_id, report_id, kind) VALUES ($1, $2, 'shouted')`, accountID, reportID)
+	wantCheck("a radius of 3 km",
+		`INSERT INTO account_alert_settings (account_id, alert_radius_km) VALUES ($1, 3)`, accountID)
+
+	if _, err := db.Exec(`INSERT INTO account_alert_settings (account_id) VALUES ($1)`, accountID); err != nil {
+		t.Fatalf("inserting default alert settings: %v", err)
+	}
+	var on bool
+	var radius int
+	if err := db.QueryRow(`SELECT reliable_alerts_on, alert_radius_km FROM account_alert_settings WHERE account_id = $1`,
+		accountID).Scan(&on, &radius); err != nil {
+		t.Fatalf("reading alert settings: %v", err)
+	}
+	if on || radius != 5 {
+		t.Errorf("defaults = on %v radius %d, want false and 5", on, radius)
+	}
+
+	name := "00009_add_updates_and_alerts.sql"
+	version, err := goose.NumericComponent(name)
+	if err != nil {
+		t.Fatalf("parsing version of %s: %v", name, err)
+	}
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down to %d: %v", version-1, err)
+	}
+	if got := tableCount(); got != 0 {
+		t.Errorf("after Down: %d new tables still present", got)
+	}
+	if got := columnCount(); got != 0 {
+		t.Errorf("after Down: %d new columns still present", got)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+	if got := tableCount(); got != 4 {
+		t.Errorf("after Up again: %d of 4 new tables present", got)
+	}
+}

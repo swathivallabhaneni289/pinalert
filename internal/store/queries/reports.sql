@@ -150,11 +150,15 @@ WHERE request_account_id = sqlc.arg(account_id)::bigint
 -- viewer's own flag, and report_flags_one_per_account allows at most one such
 -- row, so a report is never duplicated. A dismissed flag still counts as
 -- flagged because the same account can never flag that report again
--- (R-01, D-09).
+-- (R-01, D-09). The same holds for the viewer's own mute (D-11):
+-- report_mutes has its primary key on (account_id, report_id), so it allows at
+-- most one such row and a report is never duplicated.
 SELECT r.id AS report_id, r.moderation_state, r.client_written_at,
-       (f.id IS NOT NULL)::bool AS viewer_flagged
+       (f.id IS NOT NULL)::bool AS viewer_flagged,
+       (m.account_id IS NOT NULL)::bool AS viewer_muted
 FROM reports r
 LEFT JOIN report_flags f ON f.report_id = r.id AND f.account_id = sqlc.arg(viewer_account_id)::bigint
+LEFT JOIN report_mutes m ON m.report_id = r.id AND m.account_id = sqlc.arg(viewer_account_id)::bigint
 WHERE r.id = ANY(sqlc.arg(report_ids)::bigint[]);
 
 -- name: ReportForModeration :one

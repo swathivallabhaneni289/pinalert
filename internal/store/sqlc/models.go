@@ -20,6 +20,15 @@ type Account struct {
 	DisplayName    *string
 	HomeAreaName   *string
 	HomeAreaCell   *string
+	DeletedAt      pgtype.Timestamptz
+}
+
+type AccountAlertSetting struct {
+	AccountID        int64
+	ReliableAlertsOn bool
+	AlertRadiusKm    int16
+	EnabledAt        pgtype.Timestamptz
+	UpdatedAt        time.Time
 }
 
 type EmailCooldown struct {
@@ -88,10 +97,37 @@ type ReportFlag struct {
 	DismissedAt pgtype.Timestamptz
 }
 
+type ReportMute struct {
+	AccountID int64
+	ReportID  int64
+	CreatedAt time.Time
+}
+
 type Session struct {
 	SessionID string
 	CreatedAt time.Time
 	AccountID *int64
+	RevokedAt pgtype.Timestamptz
+}
+
+type Update struct {
+	ID          int64
+	AccountID   int64
+	ReportID    *int64
+	Kind        string
+	CreatedAt   time.Time
+	ReadAt      pgtype.Timestamptz
+	BucketStart pgtype.Timestamptz
+	MoreCount   int32
+}
+
+type UpdateCursor struct {
+	AccountID    int64
+	ReportID     int64
+	LastState    string
+	LastUpdateAt pgtype.Timestamptz
+	AdoptedAt    time.Time
+	FadingFor    pgtype.Timestamptz
 }
 
 type Vote struct {

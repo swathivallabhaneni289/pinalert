@@ -44,6 +44,14 @@ SET display_name   = CASE WHEN sqlc.arg(set_name)::boolean THEN sqlc.narg(displa
     home_area_cell = CASE WHEN sqlc.arg(set_home_area)::boolean THEN sqlc.narg(home_area_cell)::text ELSE home_area_cell END
 WHERE id = sqlc.arg(id);
 
+-- name: GetAccountHomeCell :one
+-- The stored home area cell (precision 5, about 5 km), the anchor for the
+-- trusted reporter alerts. Read only by server code; it is never written into a
+-- page or a response. NULL when no home area is set.
+SELECT home_area_cell
+FROM accounts
+WHERE id = sqlc.arg(id);
+
 -- name: GetAccountProfile :one
 -- The caller's own profile rows and onboarding state.
 SELECT display_name, home_area_name, home_area_cell, terms_version, first_run_done_at
