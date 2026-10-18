@@ -346,3 +346,41 @@ func TestPhoneNotificationsRowsNeedAHomeArea(t *testing.T) {
 		t.Errorf("the alerts note must come before the actions of the Home area window")
 	}
 }
+
+// TestSettingsAlertsSavesAtOnce pins UI-SPEC E1 and P32-C22 and C23 on
+// settings-alerts.js: each change goes to PATCH /api/me/alerts with the two
+// field names the route takes, a failure puts the old value back with the fixed
+// sentences, the section follows the Home area row through a MutationObserver
+// (settings.js is not edited), and every string is written as text.
+func TestSettingsAlertsSavesAtOnce(t *testing.T) {
+	raw := p421ReadStatic(t, "js/settings-alerts.js")
+	js := stripJSComments(raw)
+	for _, want := range []string{
+		"/api/me/alerts", "'PATCH'", "reliable_alerts", "alert_radius_km", "MutationObserver",
+		"'data-value'", "attributeFilter",
+		// P32-C22
+		`Couldn\'t save that. Try again.`,
+		`You\'re offline, so this wasn\'t saved. Try again when you have a signal.`,
+		// P32-C23
+		"Home area removed. Reliable reporter alerts are off.",
+		"navigator.onLine === false",
+		"saveAlerts: saveAlerts", "redrawAlerts: redrawAlerts",
+		"openWindow('home')",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("settings-alerts.js lacks %q", want)
+		}
+	}
+	// Nothing is stored in the browser and no coordinate is read or sent; the
+	// markup sinks are banned for the whole file by TestSettingsAlertsScriptContract.
+	for _, banned := range []string{"home_area_cell", "geohash", "lat", "lon"} {
+		if regexp.MustCompile(`\b` + banned + `\b`).MatchString(js) {
+			t.Errorf("settings-alerts.js names %q: the home cell and coordinates never reach the browser (T-03.2-14)", banned)
+		}
+	}
+	// settings.js is not edited by this plan: it does not know the alerts route.
+	settings := stripJSComments(p421ReadStatic(t, "js/settings.js"))
+	if strings.Contains(settings, "/api/me/alerts") || strings.Contains(settings, "settings-reliable") {
+		t.Errorf("settings.js names the alert route or rows; plan 15 leaves settings.js as built")
+	}
+}

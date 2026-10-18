@@ -1,5 +1,7 @@
 // settings-alerts.js: the Muted reports window and the two account confirm
-// windows of the Settings page (Phase 3.2 plan 12, D-11, D-23, UI-SPEC E2, E3).
+// windows of the Settings page (Phase 3.2 plan 12, D-11, D-23, UI-SPEC E2, E3),
+// and the Notifications rows: the Reliable reporter switch and the distance
+// select, saved at once (Phase 3.2 plan 15, NOTIF-05, UI-SPEC E1).
 //
 // A separate file from settings.js on purpose, so settings.js and its contract
 // stay as built. It is self contained like settings.js: it needs no other
@@ -523,6 +525,185 @@
     }, fail);
   }
 
+  // ---- Notifications (Phase 3.2 plan 15, NOTIF-05, UI-SPEC E1) ---------------
+  //
+  // The switch "A Reliable reporter posts near me" and the select "How far from
+  // my home area" save at once through PATCH /api/me/alerts, with no Save
+  // button. A change that fails puts the old value back and says so in one
+  // line. The section follows the home area: settings.js writes the Home area
+  // row's data-value when a home area is saved or removed, and a
+  // MutationObserver on that attribute redraws the section, so settings.js
+  // stays as it was built. The server already turns the alert off when the home
+  // area goes (plan 13), so the redraw sends nothing.
+
+  var ALERTS_URL = '/api/me/alerts';
+  var MESSAGE_ALERTS_FAILED = 'Couldn\'t save that. Try again.';
+  var MESSAGE_ALERTS_OFFLINE = 'You\'re offline, so this wasn\'t saved. Try again when you have a signal.';
+  var MESSAGE_HOME_REMOVED = 'Home area removed. Reliable reporter alerts are off.';
+  var RADIUS_PATTERN = /^[1-9][0-9]{0,2}$/;
+
+  var alertsOnBox = el('settings-alerts-on');
+  var alertsOffBox = el('settings-alerts-off');
+  var reliableSwitch = el('settings-reliable-switch');
+  var radiusSelect = el('settings-radius-select');
+  var noHomeRow = el('settings-reliable-nohome');
+  var alertsError = el('settings-alerts-error');
+  var homeRowNode = el('settings-home-row');
+  var homeWindow = el('settings-home-window');
+  var homeNote = el('settings-home-alerts-note');
+  var alertsReady = !!(alertsOnBox && alertsOffBox && reliableSwitch && radiusSelect && noHomeRow &&
+    alertsError && homeRowNode && homeWindow && homeNote);
+
+  // savedOn and savedRadius are the last values the server confirmed, which is
+  // what a failed save puts back.
+  var savedOn = alertsReady ? reliableSwitch.checked === true : false;
+  var savedRadius = alertsReady ? String(radiusSelect.value) : '';
+  var homeIsSet = alertsReady ? (homeRowNode.getAttribute('data-value') || '') !== '' : false;
+  var openedFromAlerts = false;
+
+  // The Home area window says the alert goes with the home area only while the
+  // alert is on.
+  function syncNote() {
+    homeNote.hidden = reliableSwitch.checked !== true;
+  }
+
+  function putBack(field) {
+    if (field === 'reliable_alerts') {
+      reliableSwitch.checked = savedOn;
+    } else {
+      radiusSelect.value = savedRadius;
+    }
+  }
+
+  // saveAlerts sends one change ({reliable_alerts} or {alert_radius_km}) and
+  // resolves to true when the server kept it. The control that sent it is
+  // disabled until the answer. Offline, nothing is sent.
+  function saveAlerts(body) {
+    if (!alertsReady || !body || typeof body !== 'object') {
+      return Promise.resolve(false);
+    }
+    var fields = [];
+    if (Object.prototype.hasOwnProperty.call(body, 'reliable_alerts')) {
+      fields.push('reliable_alerts');
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'alert_radius_km')) {
+      fields.push('alert_radius_km');
+    }
+    if (fields.length === 0) {
+      return Promise.resolve(false);
+    }
+    function senders(disabled) {
+      for (var i = 0; i < fields.length; i++) {
+        (fields[i] === 'reliable_alerts' ? reliableSwitch : radiusSelect).disabled = disabled;
+      }
+    }
+    function fail(message) {
+      senders(false);
+      for (var i = 0; i < fields.length; i++) {
+        putBack(fields[i]);
+      }
+      syncNote();
+      showLine(alertsError, message);
+      return false;
+    }
+    hideLine(alertsError);
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return Promise.resolve(fail(MESSAGE_ALERTS_OFFLINE));
+    }
+    senders(true);
+    var init = {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body)
+    };
+    return request(ALERTS_URL, init, REQUEST_TIMEOUT_MS).promise.then(function (answer) {
+      if (!answer.ok || !answer.body || typeof answer.body !== 'object') {
+        return fail(MESSAGE_ALERTS_FAILED);
+      }
+      senders(false);
+      if (fields.indexOf('reliable_alerts') !== -1) {
+        savedOn = answer.body.reliable_alerts === true;
+        reliableSwitch.checked = savedOn;
+      }
+      if (fields.indexOf('alert_radius_km') !== -1 && typeof answer.body.alert_radius_km === 'number') {
+        savedRadius = String(answer.body.alert_radius_km);
+        radiusSelect.value = savedRadius;
+      }
+      syncNote();
+      return true;
+    }, function () {
+      return fail(MESSAGE_ALERTS_FAILED);
+    });
+  }
+
+  // redrawAlerts draws the section for a person with or without a home area.
+  // Without one the switch is off (the server turned it off) and, if it was on,
+  // the polite status says so.
+  function redrawAlerts(hasHome) {
+    if (!alertsReady) {
+      return;
+    }
+    homeIsSet = hasHome === true;
+    alertsOnBox.hidden = !homeIsSet;
+    alertsOffBox.hidden = homeIsSet;
+    if (!homeIsSet) {
+      var wasOn = reliableSwitch.checked === true || savedOn;
+      reliableSwitch.checked = false;
+      savedOn = false;
+      if (wasOn) {
+        say(MESSAGE_HOME_REMOVED);
+      }
+    }
+    syncNote();
+  }
+
+  // syncHome follows the Home area row: it redraws only when the home area
+  // went from none to some or from some to none, never when it changed place.
+  function syncHome() {
+    var now = (homeRowNode.getAttribute('data-value') || '') !== '';
+    if (now !== homeIsSet) {
+      redrawAlerts(now);
+    }
+  }
+
+  function wireAlerts() {
+    syncNote();
+    reliableSwitch.addEventListener('change', function () {
+      syncNote();
+      saveAlerts({ reliable_alerts: reliableSwitch.checked === true });
+    });
+    radiusSelect.addEventListener('change', function () {
+      if (!RADIUS_PATTERN.test(String(radiusSelect.value))) {
+        radiusSelect.value = savedRadius;
+        return;
+      }
+      saveAlerts({ alert_radius_km: parseInt(radiusSelect.value, 10) });
+    });
+    noHomeRow.addEventListener('click', function () {
+      if (window.PinalertSettings && typeof window.PinalertSettings.openWindow === 'function') {
+        openedFromAlerts = true;
+        window.PinalertSettings.openWindow('home');
+      }
+    });
+    if (typeof MutationObserver === 'function') {
+      new MutationObserver(syncHome).observe(homeRowNode, { attributes: true, attributeFilter: ['data-value'] });
+      // When the Home area window opened from the no home row closes, focus
+      // goes to the switch if a home area now exists, or back to that row.
+      new MutationObserver(function () {
+        syncHome();
+        if (homeWindow.hidden && openedFromAlerts) {
+          openedFromAlerts = false;
+          (homeIsSet ? reliableSwitch : noHomeRow).focus();
+        }
+      }).observe(homeWindow, { attributes: true, attributeFilter: ['hidden'] });
+    }
+  }
+
+  if (alertsReady) {
+    wireAlerts();
+  }
+
   // ---- Wiring ---------------------------------------------------------------
 
   mutedRow.addEventListener('click', function () { openWindow('muted'); });
@@ -544,6 +725,8 @@
     loadMuted: loadMuted,
     unmute: unmute,
     logOutAll: logOutAll,
-    deleteAccount: deleteAccount
+    deleteAccount: deleteAccount,
+    saveAlerts: saveAlerts,
+    redrawAlerts: redrawAlerts
   };
 }());
