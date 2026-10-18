@@ -250,6 +250,61 @@ const docTemplate = `{
                 }
             }
         },
+        "/me/delete": {
+            "post": {
+                "description": "Deletes the signed in account. The sign in address is replaced by one that can never\nreceive mail, the name, home area and consent are cleared, and every session of the\naccount ends, this one included. The updates, muted reports, alert settings and\nsign in links of the account are deleted. The reports and votes the person made stay,\nwith no name or link to the person, so every count other people see is unchanged. The\nsame address can sign up again as a brand new account with no history. The body must\nsay confirm true; anything else deletes nothing.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Delete my account",
+                "parameters": [
+                    {
+                        "description": "Must carry confirm true",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.DeleteAccountRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Deleted"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/me/first-run-done": {
             "post": {
                 "description": "Records that the signed in account finished the first-time flow. It needs the current\nterms to be agreed first: without that it answers 409 with the field terms. Send no\nbody or an empty object. A repeat call keeps the first time.\nRequires a session verified by email; an unverified caller receives 401.",
@@ -1413,6 +1468,15 @@ const docTemplate = `{
                 "resolved_partial": {
                     "type": "boolean",
                     "example": false
+                }
+            }
+        },
+        "handlers.DeleteAccountRequest": {
+            "type": "object",
+            "properties": {
+                "confirm": {
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },

@@ -125,6 +125,12 @@ type Deps struct {
 	// literal that does not set it gives, runs the same writes without a
 	// transaction.
 	ModerationTx service.ModerationTxFunc
+	// AccountTx runs Delete my account (POST /api/me/delete) inside one
+	// transaction, so the scrub, the deletes and the session revocation commit
+	// together or not at all. cmd/server/main.go sets it from the pool through
+	// service.PgxAccountTx. Additive: nil, which every Deps{} literal that does
+	// not set it gives, runs the same writes without a transaction.
+	AccountTx service.AccountTxFunc
 	// OnboardingGate turns on the first-time flow redirect: an HTML GET from an
 	// account that has not agreed to the current terms version or not finished
 	// the flow goes to /welcome (D-27). Additive, as the fields above were: a
@@ -403,6 +409,9 @@ func NewRouter(deps Deps) *chi.Mux {
 	}
 	updates := service.NewUpdatesService(deps.Sessions, nearbyReader)
 	mutes := service.NewMuteService(deps.Sessions)
+	// Delete my account (plan 03.2-09): built from the sessions store and the
+	// optional transaction seam.
+	deletions := service.NewAccountDeletionService(deps.Sessions, deps.AccountTx)
 	// Nearby and the Low data view start at the account's home area cell centre
 	// when the device location is not available (plan 03.4-33).
 	page.HomeCentre = accounts
@@ -591,6 +600,11 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.Patch("/api/me/profile", handlers.UpdateProfile(accounts))
 		// POST /api/me/first-run-done marks the first-time flow finished.
 		r.Post("/api/me/first-run-done", handlers.FirstRunDone(accounts))
+		// POST /api/me/delete deletes the caller's account by anonymising it
+		// (Phase 3.2, D-23). Gated; the strict JSON body must say confirm true
+		// and the session cookie is SameSite Lax, so a cross site form cannot
+		// send it.
+		r.Post("/api/me/delete", handlers.DeleteAccount(deletions, deps.Session))
 	})
 
 	// --- Moderator group (D-08): outside the access gate, so an unverified

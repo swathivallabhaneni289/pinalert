@@ -729,6 +729,7 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		{"/reports/{id}/mute", "post"},
 		{"/reports/{id}/unmute", "post"},
 		{"/me/muted-reports", "get"},
+		{"/me/delete", "post"},
 	} {
 		op, ok := spec.Paths[want.path][want.method]
 		if !ok {

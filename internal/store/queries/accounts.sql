@@ -57,3 +57,61 @@ WHERE id = sqlc.arg(id);
 SELECT display_name, home_area_name, home_area_cell, terms_version, first_run_done_at
 FROM accounts
 WHERE id = sqlc.arg(id);
+
+-- name: AccountEmailForDelete :one
+-- Delete my account step 1: reads the real address and the deleted stamp
+-- before anything is scrubbed, because the magic link tokens and the resend
+-- cooldown of that address are removed by it, and a repeat call must find the
+-- account already deleted. Option A, anonymise (owner confirmed 2026-10-18).
+SELECT email, deleted_at
+FROM accounts
+WHERE id = sqlc.arg(id);
+
+-- name: DeleteMagicLinkTokensForEmail :exec
+-- Delete my account: the sign in links ever sent to the real address are the
+-- person's own rows. Nothing else reads this table for another account.
+DELETE FROM magic_link_tokens WHERE email = sqlc.arg(email);
+
+-- name: DeleteEmailCooldownForEmail :exec
+-- Delete my account: the resend cooldown of the real address, so the same
+-- address can sign up again at once as a brand new account.
+DELETE FROM email_cooldowns WHERE email = sqlc.arg(email);
+
+-- name: DeleteAccountUpdates :exec
+-- Delete my account: the person's bell rows. They hold only a kind and a report
+-- id and are read by nobody else.
+DELETE FROM updates WHERE account_id = sqlc.arg(account_id);
+
+-- name: DeleteAccountCursors :exec
+-- Delete my account: the bookkeeping behind the person's bell.
+DELETE FROM update_cursors WHERE account_id = sqlc.arg(account_id);
+
+-- name: DeleteAccountMutes :exec
+-- Delete my account: the person's muted reports.
+DELETE FROM report_mutes WHERE account_id = sqlc.arg(account_id);
+
+-- name: DeleteAccountAlertSettings :exec
+-- Delete my account: the person's alert switch and distance.
+DELETE FROM account_alert_settings WHERE account_id = sqlc.arg(account_id);
+
+-- name: ScrubDeletedAccount :execrows
+-- Delete my account, the last step: scrubs the accounts row in place. The row
+-- keeps its id, so every foreign key from votes, sessions, report flags and
+-- moderation actions stays valid and nobody else's counts move. The email
+-- becomes a non deliverable address that keeps the UNIQUE column satisfied, the
+-- personal columns are cleared (both pairs together, so the accounts_terms_pair
+-- and accounts_home_area_pair checks hold) and deleted_at is stamped. The
+-- deleted_at IS NULL guard makes a second call change nothing. Nothing here
+-- touches votes, reports or sessions.account_id (Option A, owner confirmed
+-- 2026-10-18).
+UPDATE accounts
+SET email             = sqlc.arg(scrubbed_email),
+    display_name      = NULL,
+    home_area_name    = NULL,
+    home_area_cell    = NULL,
+    terms_agreed_at   = NULL,
+    terms_version     = NULL,
+    first_run_done_at = NULL,
+    deleted_at        = sqlc.arg(now)
+WHERE id = sqlc.arg(id)
+  AND deleted_at IS NULL;
