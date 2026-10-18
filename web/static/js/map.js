@@ -357,6 +357,7 @@ window.PinalertMap = (function () {
   function centerOnVisitor() {
     var fallbackLat = Pinalert.config.fallbackLat;
     var fallbackLon = Pinalert.config.fallbackLon;
+    var fallbackZoom = Pinalert.config.fallbackZoom;
 
     function boot(lat, lon, zoom, own) {
       map.setView([lat, lon], zoom);
@@ -371,7 +372,7 @@ window.PinalertMap = (function () {
         boot(pos.coords.latitude, pos.coords.longitude, 13, true);
       },
       function () {
-        boot(fallbackLat, fallbackLon, 11, false);
+        boot(fallbackLat, fallbackLon, fallbackZoom, false);
       }
     );
   }
@@ -443,7 +444,7 @@ window.PinalertMap = (function () {
           done(pos.coords.latitude, pos.coords.longitude, 13, true);
         },
         function () {
-          done(Pinalert.config.fallbackLat, Pinalert.config.fallbackLon, 11, false);
+          done(Pinalert.config.fallbackLat, Pinalert.config.fallbackLon, Pinalert.config.fallbackZoom, false);
         }
       );
     });

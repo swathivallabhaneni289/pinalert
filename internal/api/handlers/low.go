@@ -94,9 +94,11 @@ func LowPage(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 		}
 		chrome := cfg.Chrome.withDefaults()
 		chrome.LowDataPage = true
+		// The Low data view has no map, so only the centre matters, not the zoom.
+		startLat, startLon, _ := startCentre(r.Context(), cfg, acc.ID)
 		vm := lowViewModel{
-			FallbackLat:     cfg.FallbackLat,
-			FallbackLon:     cfg.FallbackLon,
+			FallbackLat:     startLat,
+			FallbackLon:     startLon,
 			DefaultRadiusKm: cfg.DefaultRadiusKm,
 			VoteRadiusKm:    cfg.VoteRadiusKm,
 			AssetVersion:    cfg.AssetVersion,

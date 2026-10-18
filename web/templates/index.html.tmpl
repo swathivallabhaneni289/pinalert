@@ -33,7 +33,7 @@
   <div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>
   <div class="app-shell" id="app-shell"
        data-fallback-lat="{{.FallbackLat}}"
-       data-fallback-lon="{{.FallbackLon}}"
+       data-fallback-lon="{{.FallbackLon}}"{{if .FallbackZoom}} data-fallback-zoom="{{.FallbackZoom}}"{{end}}
        data-default-radius-km="{{.DefaultRadiusKm}}"
        data-vote-radius-km="{{.VoteRadiusKm}}"
        data-poll-interval-ms="30000"

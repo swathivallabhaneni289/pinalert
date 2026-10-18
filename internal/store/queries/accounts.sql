@@ -46,6 +46,6 @@ WHERE id = sqlc.arg(id);
 
 -- name: GetAccountProfile :one
 -- The caller's own profile rows and onboarding state.
-SELECT display_name, home_area_name, terms_version, first_run_done_at
+SELECT display_name, home_area_name, home_area_cell, terms_version, first_run_done_at
 FROM accounts
 WHERE id = sqlc.arg(id);

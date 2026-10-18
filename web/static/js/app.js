@@ -106,6 +106,7 @@ window.Pinalert = (function () {
   var config = {
     fallbackLat: readNumberAttr('data-fallback-lat', 12.9716),
     fallbackLon: readNumberAttr('data-fallback-lon', 77.5946),
+    fallbackZoom: readNumberAttr('data-fallback-zoom', 11),
     defaultRadiusKm: readNumberAttr('data-default-radius-km', 10),
     pollIntervalMs: readNumberAttr('data-poll-interval-ms', 30000)
   };

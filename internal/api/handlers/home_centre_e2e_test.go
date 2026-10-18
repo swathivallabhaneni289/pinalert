@@ -40,7 +40,7 @@ func TestPagesStartAtTheStoredHomeAreaCentreEndToEnd(t *testing.T) {
 	verifySession(t, client, srv, mailer, "home-centre-e2e@example.com")
 
 	// No home area yet: the configured centre, no zoom attribute.
-	for _, path := range []string{"/", "/low"} {
+	for _, path := range []string{"/?centre=1", "/low"} {
 		resp, body := welcomeGet(t, client, srv.URL, path)
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("GET %s: %d", path, resp.StatusCode)
@@ -60,7 +60,7 @@ func TestPagesStartAtTheStoredHomeAreaCentreEndToEnd(t *testing.T) {
 	meWant(t, "PATCH home area", resp, http.StatusOK)
 	wantLat, wantLon := geohash.DecodeCenter(geohash.EncodeWithPrecision(pickedLat, pickedLon, 5))
 
-	for _, path := range []string{"/", "/low"} {
+	for _, path := range []string{"/?centre=1", "/low"} {
 		resp, body := welcomeGet(t, client, srv.URL, path)
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("GET %s: %d", path, resp.StatusCode)
@@ -80,7 +80,7 @@ func TestPagesStartAtTheStoredHomeAreaCentreEndToEnd(t *testing.T) {
 				t.Errorf("GET %s holds %q, a position finer than the home area cell centre", path, finer)
 			}
 		}
-		if path == "/" && !strings.Contains(body, `data-fallback-zoom="13"`) {
+		if path == "/?centre=1" && !strings.Contains(body, `data-fallback-zoom="13"`) {
 			t.Errorf("GET / with a home area must start at zoom 13")
 		}
 		if path == "/low" && strings.Contains(body, "data-fallback-zoom") {
@@ -91,7 +91,7 @@ func TestPagesStartAtTheStoredHomeAreaCentreEndToEnd(t *testing.T) {
 	// Clearing the home area puts the configured centre back.
 	resp = meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile", `{"home_area":null}`)
 	meWant(t, "PATCH clear home area", resp, http.StatusOK)
-	_, body := welcomeGet(t, client, srv.URL, "/")
+	_, body := welcomeGet(t, client, srv.URL, "/?centre=1")
 	if got := homeCentreAttr(t, body, "data-fallback-lat"); got != 12.9716 {
 		t.Errorf("after clearing the home area data-fallback-lat = %v, want 12.9716", got)
 	}
