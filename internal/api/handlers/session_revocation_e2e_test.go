@@ -282,8 +282,14 @@ func TestRevocationKeepsAuthorship(t *testing.T) {
 }
 
 // TestRevokedBrowserSignsInAgainAsSameEmail: A has two browsers, both revoked.
-// One signs in again as A: it keeps its session id, revoked_at clears, and the
-// pages work. The other stays refused.
+// One signs in again as A: it gets a NEW session id and cookie, the pages work,
+// and a client holding a copy of the OLD cookie stays refused. The other
+// browser stays refused, and A's report is still A's.
+//
+// Note 2026-10-19 (W1): this test used to expect the old id to be revived with
+// revoked_at cleared. A revived id brings back every copy of the old cookie,
+// which defeats Log out of all devices, so the sign in now always draws a
+// fresh id. Votes, reports and history follow the account, not the id.
 func TestRevokedBrowserSignsInAgainAsSameEmail(t *testing.T) {
 	srv, mailer, pool := newRevServer(t)
 	first := newVerifiedClient(t, srv, mailer, "same-a@example.com")
@@ -295,31 +301,91 @@ func TestRevokedBrowserSignsInAgainAsSameEmail(t *testing.T) {
 	if firstID == secondID {
 		t.Fatalf("the two browsers share session id %q", firstID)
 	}
+	aID := revAccountID(t, pool, "same-a@example.com")
+	revPost(t, second, srv)
+	secondOldCopy := revCookieCopy(t, second, srv)
 
-	revRevoke(t, pool, revAccountID(t, pool, "same-a@example.com"))
+	revRevoke(t, pool, aID)
 	revExpect(t, "second revoked", second, srv, http.StatusUnauthorized, http.StatusFound)
 
 	status, body, cookies := revSignIn(t, second, srv, mailer, pool, "same-a@example.com")
 	if status != http.StatusOK || !strings.Contains(body, "Email verified") {
 		t.Fatalf("revoked browser signing in as the same address: status %d: %s", status, body)
 	}
+	var issued []string
 	for _, c := range cookies {
 		if c.Name == "pinalert_session" {
-			t.Errorf("sign in as the same address set a new session cookie, want the old session kept")
+			issued = append(issued, c.Value)
 		}
 	}
-	if got := sessionIDFromJar(t, second, srv.URL); got != secondID {
-		t.Errorf("session id changed from %q to %q", secondID, got)
+	if len(issued) != 1 {
+		t.Fatalf("sign in set %d pinalert_session cookies, want exactly 1 (a fresh one)", len(issued))
 	}
-	if _, revoked := revSession(t, pool, secondID); revoked {
-		t.Errorf("revoked_at was not cleared on the revived session")
+	newID := sessionIDFromJar(t, second, srv.URL)
+	if newID == secondID || strings.SplitN(issued[0], ".", 2)[0] != newID {
+		t.Fatalf("session id %q after sign in, old %q, cookie set %q: want a fresh id carried by the cookie", newID, secondID, issued[0])
 	}
-	revExpect(t, "second revived", second, srv, http.StatusOK, http.StatusOK)
+
+	// The old row is untouched: still revoked, still naming A.
+	oldAccount, oldRevoked := revSession(t, pool, secondID)
+	if oldAccount == nil || *oldAccount != aID || !oldRevoked {
+		t.Errorf("old session row: account %v, revoked %v, want account %d and revoked", oldAccount, oldRevoked, aID)
+	}
+	newAccount, newRevoked := revSession(t, pool, newID)
+	if newAccount == nil || *newAccount != aID || newRevoked {
+		t.Errorf("new session row: account %v, revoked %v, want account %d and live", newAccount, newRevoked, aID)
+	}
+
+	revExpect(t, "second signed in again", second, srv, http.StatusOK, http.StatusOK)
+	revExpect(t, "copy of the old cookie", secondOldCopy, srv, http.StatusUnauthorized, http.StatusFound)
+	if !strings.Contains(revProfile(t, second, srv), revMarker) {
+		t.Errorf("A's report is missing from My activity after A signed in again on the same browser")
+	}
 
 	if _, revoked := revSession(t, pool, firstID); !revoked {
 		t.Errorf("the other browser's session was revived too")
 	}
 	revExpect(t, "first still refused", first, srv, http.StatusUnauthorized, http.StatusFound)
+}
+
+// TestCopiedCookieStaysDeadAfterLogoutAllAndSignInAgain is the exact attack
+// behind W1 (2026-10-19). A signs in on browser 1 and a copy of browser 1's
+// cookie is taken. A logs out of all devices from browser 2, then signs in
+// again on browser 1. The copy must stay refused: browser 1 holds a fresh
+// session id and the copied id is still revoked.
+func TestCopiedCookieStaysDeadAfterLogoutAllAndSignInAgain(t *testing.T) {
+	srv, mailer, pool := newRevServer(t)
+	const email = "copy-a@example.com"
+	browser1 := newVerifiedClient(t, srv, mailer, email)
+	stolen := revCookieCopy(t, browser1, srv)
+	browser2 := newJarClient(t)
+	if status, body, _ := revSignIn(t, browser2, srv, mailer, pool, email); status != http.StatusOK || !strings.Contains(body, "Email verified") {
+		t.Fatalf("browser 2 sign in: status %d: %s", status, body)
+	}
+	revPost(t, browser1, srv)
+	oldID := sessionIDFromJar(t, browser1, srv.URL)
+	revExpect(t, "stolen copy before", stolen, srv, http.StatusOK, http.StatusOK)
+
+	if status, _, _, body := logoutAllPost(t, browser2, srv.URL, `{}`); status != http.StatusNoContent {
+		t.Fatalf("POST /api/me/logout-all = %d, want 204: %s", status, body)
+	}
+	revExpect(t, "stolen copy after logout all", stolen, srv, http.StatusUnauthorized, http.StatusFound)
+	revExpect(t, "browser 1 after logout all", browser1, srv, http.StatusUnauthorized, http.StatusFound)
+
+	if status, body, _ := revSignIn(t, browser1, srv, mailer, pool, email); status != http.StatusOK || !strings.Contains(body, "Email verified") {
+		t.Fatalf("browser 1 signing in again: status %d: %s", status, body)
+	}
+	if got := sessionIDFromJar(t, browser1, srv.URL); got == oldID {
+		t.Fatalf("browser 1 kept the revoked session id %q", oldID)
+	}
+	revExpect(t, "browser 1 signed in again", browser1, srv, http.StatusOK, http.StatusOK)
+	revExpect(t, "stolen copy after the sign in again", stolen, srv, http.StatusUnauthorized, http.StatusFound)
+	if _, revoked := revSession(t, pool, oldID); !revoked {
+		t.Errorf("the copied session id %q was revived by the sign in", oldID)
+	}
+	if !strings.Contains(revProfile(t, browser1, srv), revMarker) {
+		t.Errorf("A's report is missing from My activity after A signed in again")
+	}
 }
 
 // TestRevokedBrowserSignsInAsDifferentEmailGetsFreshSession is the rule that

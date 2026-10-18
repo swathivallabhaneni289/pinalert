@@ -906,9 +906,13 @@ func TestVerifyRotatesDeletedAccountSession(t *testing.T) {
 	}
 }
 
-// TestVerifyRevivesRevokedSessionForSameAccount: a device that was logged out
-// of all devices signs in again as the same address and keeps its session id.
-func TestVerifyRevivesRevokedSessionForSameAccount(t *testing.T) {
+// TestVerifyRotatesRevokedSessionForSameAccount: a device that was logged out
+// of all devices and signs in again as the same address gets a fresh session
+// id. Note 2026-10-19 (W1): this test used to expect the old id to be revived
+// (TestVerifyRevivesRevokedSessionForSameAccount). A revived id brings back
+// every copy of the old cookie, which defeats Log out of all devices, so a
+// revoked row is never reused, whoever signs in.
+func TestVerifyRotatesRevokedSessionForSameAccount(t *testing.T) {
 	svc, q, _ := bindTestSetup(t, "a@example.com", 1, &sqlcgen.GetSessionBindingRow{
 		AccountID: ptrInt64(1), Revoked: true, AccountEmail: ptrString("a@example.com"),
 	})
@@ -916,11 +920,11 @@ func TestVerifyRevivesRevokedSessionForSameAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VerifyTokenAndBind: %v", err)
 	}
-	if outcome != service.OutcomeVerified || boundID != "session-1" {
-		t.Fatalf("outcome = %v, boundID = %q, want verified on session-1", outcome, boundID)
+	if outcome != service.OutcomeVerified || boundID != "fresh-id" {
+		t.Fatalf("outcome = %v, boundID = %q, want verified on fresh-id", outcome, boundID)
 	}
-	if len(q.bindArgs) != 1 || q.bindArgs[0].SessionID != "session-1" {
-		t.Fatalf("bind calls = %+v, want exactly one on session-1", q.bindArgs)
+	if len(q.bindArgs) != 1 || q.bindArgs[0].SessionID != "fresh-id" || q.bindArgs[0].AccountID == nil || *q.bindArgs[0].AccountID != 1 {
+		t.Fatalf("bind calls = %+v, want exactly one binding fresh-id to account 1 and none touching session-1", q.bindArgs)
 	}
 }
 
