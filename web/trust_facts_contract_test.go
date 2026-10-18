@@ -251,8 +251,8 @@ func TestSharedDistanceAndFadeFormatters(t *testing.T) {
 		"function boot(lat, lon, zoom, own)", "Pinalert.setCenter(lat, lon, own)",
 		"locateReader(",
 		"boot(pos.coords.latitude, pos.coords.longitude, 13, true)",
-		"boot(fallbackLat, fallbackLon, 11, false)")
-	if n := strings.Count(centre, "boot(fallbackLat, fallbackLon, 11, false)"); n != 1 {
+		"boot(fallbackLat, fallbackLon, fallbackZoom, false)")
+	if n := strings.Count(centre, "boot(fallbackLat, fallbackLon, fallbackZoom, false)"); n != 1 {
 		t.Errorf("centerOnVisitor boots the fallback centre %d times, want 1 (locateReader's failure callback)", n)
 	}
 	locate := jsFunctionBody(t, mapJS, "locateReader(onFix, onFail)")
