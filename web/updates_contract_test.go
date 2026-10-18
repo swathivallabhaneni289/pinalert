@@ -251,3 +251,55 @@ func TestUpdatesLoadedOnTheFourBellPages(t *testing.T) {
 			`/static/js/app-bar.js?v={{.AssetVersion}}" defer`, `/static/js/updates.js?v={{.AssetVersion}}" defer`)
 	}
 }
+
+// TestUpdatesScriptContract pins D-04 and the boundary rules of the bell
+// script on its comment stripped code: one request call here, two in app.js and
+// none in app-bar.js; the two addresses, the refresh event and the page events;
+// text written only with textContent; no markup parsing sink; no use of the
+// Pinalert global; no live region; no dash anywhere.
+func TestUpdatesScriptContract(t *testing.T) {
+	raw := p421ReadStatic(t, "js/updates.js")
+	code, bad := scanJSComments(raw)
+	if bad {
+		t.Fatal("updates.js holds an unterminated string, template or comment, or a regular expression with a quote")
+	}
+	if n := strings.Count(code, "fetch("); n != 1 {
+		t.Errorf("updates.js holds %d request calls, want exactly 1 (one helper, both addresses)", n)
+	}
+	if n := strings.Count(stripJSComments(p421ReadStatic(t, "js/app.js")), "fetch("); n != 2 {
+		t.Errorf("app.js holds %d fetch( calls, want exactly 2 (D-04: the bell does not touch it)", n)
+	}
+	if n := strings.Count(stripJSComments(p421ReadStatic(t, "js/app-bar.js")), "fetch("); n != 0 {
+		t.Errorf("app-bar.js holds %d fetch( calls, want none", n)
+	}
+	for _, want := range []string{
+		"/api/updates", "/api/updates/read", "pinalert:updates-refresh", "textContent",
+		"visibilitychange", "pageshow", "data-poll-interval-ms", "setAttribute", "createElement",
+	} {
+		if !strings.Contains(code, want) {
+			t.Errorf("updates.js lacks %q", want)
+		}
+	}
+	for _, banned := range []string{
+		"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "DOMParser", "createContextualFragment",
+		"eval(", "new Function",
+		"aria-live", "aria-atomic", `role="status"`, `role="alert"`,
+		"location.href", "location.assign", "location.replace", "window.open",
+	} {
+		if strings.Contains(code, banned) {
+			t.Errorf("updates.js uses %q", banned)
+		}
+	}
+	if regexp.MustCompile(`\bPinalert\b`).MatchString(code) {
+		t.Errorf("updates.js uses the Pinalert global; it must work on pages where app.js does not run")
+	}
+	for _, dash := range []string{"–", "—"} {
+		if strings.Contains(raw, dash) {
+			t.Errorf("updates.js holds the dash %q", dash)
+		}
+	}
+	// A row address is the fixed path plus a checked id and nothing else.
+	if !strings.Contains(code, `'/?report='`) || !strings.Contains(code, "ID_PATTERN") {
+		t.Errorf("updates.js must build the row address from '/?report=' and the checked id")
+	}
+}

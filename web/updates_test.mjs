@@ -348,8 +348,10 @@ test('the page coming back polls once: visibilitychange and pageshow', async () 
   assert.equal(env.pending().length, 1);
   env.answer({ unread: 0, updates: [] });
   await flush();
-  (env.window.handlers.pageshow || []).forEach((fn) => fn({ type: 'pageshow' }));
-  assert.equal(env.pending().length, 1, 'pageshow polls');
+  (env.window.handlers.pageshow || []).forEach((fn) => fn({ type: 'pageshow', persisted: false }));
+  assert.equal(env.pending().length, 0, 'a first load pageshow does not poll a second time');
+  (env.window.handlers.pageshow || []).forEach((fn) => fn({ type: 'pageshow', persisted: true }));
+  assert.equal(env.pending().length, 1, 'a page restored from the cache polls');
 });
 
 test('pinalert:updates-refresh polls once, and a second event queues one more poll only', async () => {
