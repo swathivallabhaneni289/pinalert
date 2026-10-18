@@ -53,6 +53,22 @@ func (q *Queries) GetAccountByEmail(ctx context.Context, email string) (GetAccou
 	return i, err
 }
 
+const getAccountHomeCell = `-- name: GetAccountHomeCell :one
+SELECT home_area_cell
+FROM accounts
+WHERE id = $1
+`
+
+// The stored home area cell (precision 5, about 5 km), the anchor for the
+// trusted reporter alerts. Read only by server code; it is never written into a
+// page or a response. NULL when no home area is set.
+func (q *Queries) GetAccountHomeCell(ctx context.Context, id int64) (*string, error) {
+	row := q.db.QueryRow(ctx, getAccountHomeCell, id)
+	var home_area_cell *string
+	err := row.Scan(&home_area_cell)
+	return home_area_cell, err
+}
+
 const getAccountProfile = `-- name: GetAccountProfile :one
 SELECT display_name, home_area_name, terms_version, first_run_done_at
 FROM accounts
