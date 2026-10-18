@@ -393,6 +393,16 @@ func NewRouter(deps Deps) *chi.Mux {
 	flags := service.NewFlagService(deps.Sessions)
 	// Same for the account service behind the /api/me routes (plan 03.4-01).
 	accounts := service.NewAccountService(deps.Sessions)
+	// Phase 3.2 (plan 07): the updates and mute services, built from the same
+	// sessions store. The nearby reader is an untyped nil when there is no
+	// ReportService, because a typed nil pointer in the interface is not a nil
+	// interface (the PlaceSearch comment below says the same).
+	var nearbyReader service.NearbyReader
+	if deps.Reports != nil {
+		nearbyReader = deps.Reports
+	}
+	updates := service.NewUpdatesService(deps.Sessions, nearbyReader)
+	mutes := service.NewMuteService(deps.Sessions)
 	// Nearby and the Low data view start at the account's home area cell centre
 	// when the device location is not available (plan 03.4-33).
 	page.HomeCentre = accounts
@@ -502,6 +512,21 @@ func NewRouter(deps Deps) *chi.Mux {
 		// FlagMiddleware, scoped to this one route with r.With. A cross site
 		// POST carries no session cookie (DEC-L), so no CSRF token is needed.
 		r.With(rateGate.FlagMiddleware()).Post("/api/reports/{id}/flag", handlers.FlagReport(flags))
+		// The five Phase 3.2 routes (plan 07). Flat literal paths like the
+		// others, gated because they act only for the account the gate
+		// resolved. The bell polls every 30 seconds from its own script, so
+		// there is no rate gate here; the per account limiter in
+		// internal/ratelimit can be added later if load shows it is needed.
+		// GET /api/updates refreshes the caller's updates and answers the bell.
+		r.Get("/api/updates", handlers.GetUpdates(updates))
+		// POST /api/updates/read marks the caller's own rows read up to an id.
+		r.Post("/api/updates/read", handlers.MarkUpdatesRead(updates))
+		// POST /api/reports/{id}/mute turns updates off for the caller only.
+		r.Post("/api/reports/{id}/mute", handlers.MuteReport(mutes))
+		// POST /api/reports/{id}/unmute turns them back on, whatever the report is now.
+		r.Post("/api/reports/{id}/unmute", handlers.UnmuteReport(mutes))
+		// GET /api/me/muted-reports lists the caller's mutes for Settings.
+		r.Get("/api/me/muted-reports", handlers.GetMutedReports(mutes))
 		// GET /api/geocode (plan 07-03). Registered as a flat literal path,
 		// not under an r.Route mount — see this router's own doc comments
 		// above for why every /api/* path here is flat, gated or not.
