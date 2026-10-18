@@ -131,7 +131,7 @@ func TestSettingsRows(t *testing.T) {
 	for _, m := range buttons {
 		buttonIDs = append(buttonIDs, m[1])
 	}
-	// Amended 2026-10-17 by Phase 3.2 plan 12 (D-23, LAYOUT-06): the Muted reports
+	// Amended 2026-10-19 by Phase 3.2 plan 12 (D-23, LAYOUT-06): the Muted reports
 	// row (People and reports) and the Log out of all devices and Delete my
 	// account rows (Account) are buttons that open windows too, so the button
 	// rows are those five in page order.
@@ -142,7 +142,7 @@ func TestSettingsRows(t *testing.T) {
 		"About you", "Your name and home area. Shown only on your public profile.",
 		"Shown only if you let others follow you", "Used for alerts, never your exact spot", "Not set",
 		"About Pinalert", "Disclaimer", "Policy", "Low data view", "Text only, no map",
-		// Amended 2026-10-17 by Phase 3.2 plan 12 (D-23, UI-SPEC D3): the Account
+		// Amended 2026-10-19 by Phase 3.2 plan 12 (D-23, UI-SPEC D3): the Account
 		// line is the new sentence and the phone only class sits on the Log out
 		// form, not on the section.
 		"Account", "Log out everywhere, or delete your account.",

@@ -167,7 +167,7 @@ func TestAlertsNeverSaysNoAlerts(t *testing.T) {
 // control renders only when its feature exists (D-26). About you arrives in
 // plan 06 and is not listed here.
 //
-// Amended 2026-10-17 by Phase 3.2 plan 12 (D-23, LAYOUT-06): People and reports,
+// Amended 2026-10-19 by Phase 3.2 plan 12 (D-23, LAYOUT-06): People and reports,
 // Muted reports, Log out of all devices and Delete my account left this list,
 // because their features now exist and Settings draws them. The Notifications
 // labels stay until plan 15.
@@ -207,7 +207,7 @@ func TestSettingsShowsOnlyExistingRows(t *testing.T) {
 			t.Errorf("settings.html.tmpl lacks %q", want)
 		}
 	}
-	// Amended 2026-10-17 by Phase 3.2 plan 12 (D-23, LAYOUT-06, UI-SPEC D3 and D4):
+	// Amended 2026-10-19 by Phase 3.2 plan 12 (D-23, LAYOUT-06, UI-SPEC D3 and D4):
 	// the Account line is the new sentence, the section order is About you,
 	// People and reports, About Pinalert, Account, and eight rows draw a chevron
 	// (Name, Home area, Muted reports, Disclaimer, Policy, Low data view, Log out

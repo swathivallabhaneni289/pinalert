@@ -504,7 +504,7 @@ var sizeOnlyNamed = map[string]string{
 	".app-topbar__back":  "phone only: the back arrow of a sub screen; the laptop uses the nav links (UI-SPEC 1b).",
 	".app-topbar__gear":  "phone only: the Settings gear; the laptop reaches Settings from the person menu (D-11, UI-SPEC 1b).",
 	".sheet__handle-row": "phone only: the phone list sheet and its handle; the laptop shows the list beside the map (D-16, D-17).",
-	// Amended 2026-10-17 by Phase 3.2 plan 12 (D-23, UI-SPEC D3): the phone only class moved from the
+	// Amended 2026-10-19 by Phase 3.2 plan 12 (D-23, UI-SPEC D3): the phone only class moved from the
 	// Account section to its Log out row, because the section now draws on both sizes.
 	".place-row-form--phone": "phone only: the Log out row of Settings; the laptop has Log out in the person menu (D-25, R2 once per size); the Account section draws on both sizes since Phase 3.2 (UI-SPEC D3).",
 	".welcome__progress":     "phone only: the progress line of the first-time flow; the laptop shows the same steps in the side panel (D-06 whole screen on a laptop, UI-SPEC Surface 7).",
