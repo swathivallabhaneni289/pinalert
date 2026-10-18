@@ -94,7 +94,7 @@ func TestViewStripMarkup(t *testing.T) {
 		}
 	}
 	p13Ordered(t, menu, "#show-menu", ">All<", ">Confirmed<", ">Disputed<")
-	// Amended 2026-10-17 by Phase 3.2 plan 14 (D-26, 03.4 D-13): the Only Reliable
+	// Amended 2026-10-19 by Phase 3.2 plan 14 (D-26, 03.4 D-13): the Only Reliable
 	// reporters tick is drawn now, as a fourth role="menuitemcheckbox" item under a
 	// hairline (pinned in TestShowMenuRadioSemantics and TestReliableTickMarkup).
 	// The ban on a native checkbox input and on a line of explanation stays.
@@ -130,7 +130,7 @@ func TestViewStripMarkup(t *testing.T) {
 // show-menu.js never touch the history or navigate (the one navigation is the
 // replace of a finished report's link, pinned in TestFocusLeavesNearby...).
 //
-// Note added 2026-10-17 by Phase 3.2 plan 14 (D-26, orchestrator decision 1):
+// Note added 2026-10-19 by Phase 3.2 plan 14 (D-26, orchestrator decision 1):
 // the Only Reliable reporters tick keeps its own word reliable=1 in the address,
 // written by reliable.js, which this test does not scan. The Show choice is
 // still written nowhere, and feed.js and show-menu.js still write nothing; no

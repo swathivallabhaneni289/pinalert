@@ -53,7 +53,7 @@ func TestShowMenuRadioSemantics(t *testing.T) {
 	menu := p19Code(t, "static/js/show-menu.js")
 	p13MustContain(t, "show-menu.js", menu,
 		"key === 'ArrowDown'", "key === 'ArrowUp'", "key === 'Home'", "key === 'End'", "key === 'Escape'",
-		// Amended 2026-10-17 by Phase 3.2 plan 14 (D-26, 03.4 D-13): items() selects the
+		// Amended 2026-10-19 by Phase 3.2 plan 14 (D-26, 03.4 D-13): items() selects the
 		// three radios and the Only Reliable reporters checkbox in document order, so the
 		// arrow keys, Home and End reach the tick as the fourth item.
 		"key === 'Enter'", "'[role=\"menuitemradio\"], [role=\"menuitemcheckbox\"]'", "setAttribute('aria-checked'",
@@ -75,7 +75,7 @@ func TestShowMenuRadioSemantics(t *testing.T) {
 	chooseBody := jsFunctionBody(t, menu, "choose(show)")
 	p13MustContain(t, "choose", chooseBody, "SHOW_WORDS.indexOf(show) === -1", "close(true);", "Pinalert.setShow(show);")
 
-	// Amended 2026-10-17 by Phase 3.2 plan 14 (D-26, 03.4 D-13): the Only Reliable
+	// Amended 2026-10-19 by Phase 3.2 plan 14 (D-26, 03.4 D-13): the Only Reliable
 	// reporters tick is drawn now. The menu holds the three radios, then a
 	// hairline, then exactly one checkbox item with the exact words and no
 	// second line. The old ban on the words in index.html.tmpl is gone.

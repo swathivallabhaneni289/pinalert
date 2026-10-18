@@ -64,7 +64,7 @@ class FakeEl {
   addEventListener(type, fn) { (this.handlers[type] = this.handlers[type] || []).push(fn); }
   removeEventListener(type, fn) { this.handlers[type] = (this.handlers[type] || []).filter((h) => h !== fn); }
   querySelector() { return null; }
-  // Amended 2026-10-17 by Phase 3.2 plan 14 (D-26): the menu query is now the
+  // Amended 2026-10-19 by Phase 3.2 plan 14 (D-26): the menu query is now the
   // three radios and the Only Reliable reporters checkbox in one selector, and
   // the fake answers them in document order, like a browser.
   querySelectorAll(selector) {
@@ -201,7 +201,7 @@ test('ArrowDown and ArrowUp move between the items and wrap', () => {
   assert.equal(m.doc.activeElement, m.items.confirmed);
   m.items.confirmed.fire('keydown', { key: 'ArrowDown' });
   assert.equal(m.doc.activeElement, m.items.disputed);
-  // Amended 2026-10-17 by Phase 3.2 plan 14 (D-26): the Only Reliable reporters
+  // Amended 2026-10-19 by Phase 3.2 plan 14 (D-26): the Only Reliable reporters
   // tick is the fourth item, so the wrap is at the tick, not at Disputed.
   m.items.disputed.fire('keydown', { key: 'ArrowDown' });
   assert.equal(m.doc.activeElement, m.items.reliable, 'ArrowDown reaches the tick as the fourth item');
