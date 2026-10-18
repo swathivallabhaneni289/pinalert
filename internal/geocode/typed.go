@@ -18,6 +18,15 @@ package geocode
 // A street address is never offered as a home area: a first part with a digit
 // (a house or plot number) or a street word gets no typed row.
 //
+// Plan 34 adds three things. Text typed with no comma ("Gayathri Nagar
+// Vijayawada") is split: the last two words, then the last one, are tried as
+// the town (resolveWithoutComma). A six digit PIN code in the text can place the
+// row when no town is found (resolveByPin), using the town its postcode row
+// names. And the answer says when no row closely matches what was typed and no
+// typed row could be placed (Answer.NoCloseMatch), so the page can ask for the
+// town. The home area search never sends the person a made up centre: with no
+// near point from the page, Photon is sent none.
+//
 // Cost: the lookups send nothing the per search cap of maxUpstreamPerSearch has
 // no room for. The cap is counted over the whole search, the areas search
 // included (see withUpstreamCount), so the worst case stays four upstream
@@ -116,6 +125,18 @@ type typedHome struct {
 	name string
 	// first is the part before the first comma, town the second part.
 	first, town string
+	// lead is the first part of the cleaned text, whatever it is: what the
+	// not found check compares the answer with when no row can be offered.
+	lead string
+	// streetLike says the lead is a house, a plot, a flat or a street.
+	streetLike bool
+	// bare is the whole cleaned text when it is one part that may be a
+	// neighbourhood followed by a town without a comma ("Gayathri Nagar
+	// Vijayawada") or by a PIN code only. Empty for a street address, a bare
+	// state, or text with a comma.
+	bare string
+	// pin is the six digit PIN code dropped from the end of the text, or "".
+	pin string
 }
 
 // typedParts splits text into trimmed, space collapsed, non empty parts.
@@ -133,7 +154,11 @@ func typedParts(text string) []string {
 // order, as a pasted address writes them ("..., Andhra Pradesh 520008, India").
 // A bare PIN or state is kept when it is all that was typed, and a state is
 // kept when dropping it would leave one part: then it is the town.
-func stripTrailing(parts []string) []string {
+//
+// It also returns the PIN code it dropped, "" when there was none (plan 34): the
+// PIN can place a typed row when no town is typed.
+func stripTrailing(parts []string) ([]string, string) {
+	pin := ""
 	for len(parts) > 0 {
 		last := parts[len(parts)-1]
 		key := normalizeSpelling(last)
@@ -142,13 +167,16 @@ func stripTrailing(parts []string) []string {
 			parts = parts[:len(parts)-1]
 			continue
 		case pinSuffix.MatchString(last):
+			found := strings.Trim(pinSuffix.FindString(last), " -")
 			rest := strings.Trim(pinSuffix.ReplaceAllString(last, ""), " -")
 			if rest != "" {
 				parts[len(parts)-1] = rest
+				pin = found
 				continue
 			}
 			if len(parts) > 1 {
 				parts = parts[:len(parts)-1]
+				pin = found
 				continue
 			}
 		case len(parts) > 2 && indianStates[key]:
@@ -157,14 +185,21 @@ func stripTrailing(parts []string) []string {
 		}
 		break
 	}
-	return parts
+	return parts, pin
 }
 
 // parseTypedHome cleans the text of a home area search and says whether a typed
 // row may be made from it.
 func parseTypedHome(q string) typedHome {
-	parts := stripTrailing(typedParts(q))
-	home := typedHome{search: strings.Join(parts, ", ")}
+	parts, pin := stripTrailing(typedParts(q))
+	home := typedHome{search: strings.Join(parts, ", "), pin: pin}
+	if len(parts) > 0 {
+		home.lead = parts[0]
+		home.streetLike = looksLikeStreetAddress(parts[0])
+	}
+	if len(parts) == 1 && !home.streetLike && !indianStates[normalizeSpelling(parts[0])] {
+		home.bare = parts[0]
+	}
 	if len(parts) < 2 {
 		return home
 	}
@@ -235,23 +270,194 @@ type typedLookup struct {
 }
 
 // withTypedRow returns answer with the typed row first, or answer itself when
-// the typed text needs none or no position is found.
-func (c *Client) withTypedRow(ctx context.Context, home typedHome, near *Point, answer Answer) Answer {
+// the typed text needs none or no position is found. It also returns the home
+// it worked with, whose first part is the neighbourhood once a text typed
+// without a comma has been split (plan 34).
+func (c *Client) withTypedRow(ctx context.Context, home typedHome, near *Point, answer Answer) (Answer, typedHome) {
 	lk := &typedLookup{c: c, ctx: ctx, near: near, home: home, areas: answer.Results}
+	if !lk.home.ok && !lk.resolveWithoutComma() {
+		return answer, lk.home
+	}
 	if lk.areaInTown() {
-		return answer
+		return answer, lk.home
 	}
 	lat, lon, ok := lk.position()
 	if !ok {
-		return answer
+		return answer, lk.home
 	}
-	row := Result{Name: home.name, DisplayName: home.town, Lat: lat, Lon: lon, Typed: true, Town: home.town}
+	row := Result{Name: lk.home.name, DisplayName: lk.home.town, Lat: lat, Lon: lon, Typed: true, Town: lk.home.town}
 	results := append([]Result{row}, answer.Results...)
 	if len(results) > maxResults {
 		results = results[:maxResults]
 	}
 	answer.Results = results
-	return answer
+	return answer, lk.home
+}
+
+// localityWords are words that end a neighbourhood name far more often than
+// they name a town. A text typed without a comma never takes one of them as the
+// town: Nagar is also a real town in Himachal Pradesh, and "Benz Circle" would
+// otherwise be looked up as Benz in the town of Circle.
+var localityWords = map[string]bool{
+	"nagar": true, "nagara": true, "colony": true, "layout": true, "extension": true,
+	"enclave": true, "puram": true, "pur": true, "pet": true, "peta": true, "palem": true,
+	"gudem": true, "wadi": true, "guda": true, "halli": true, "palli": true, "bagh": true,
+	"ganj": true, "vihar": true, "circle": true, "cross": true, "main": true, "sector": true,
+	"block": true, "phase": true, "stage": true, "hills": true, "park": true, "garden": true,
+	"gardens": true, "town": true, "city": true, "area": true, "market": true, "junction": true,
+	"centre": true, "center": true, "square": true, "chowk": true, "bazaar": true, "ward": true,
+	"estate": true, "estates": true, "heights": true, "towers": true, "residency": true,
+}
+
+// townCandidate says words typed after a neighbourhood may be tried as the
+// town: at least three letters, no digit, no locality word, and a
+// neighbourhood before them of at least three letters.
+func townCandidate(first, town string) bool {
+	if utf8.RuneCountInString(first) < minTypedPartRunes || utf8.RuneCountInString(town) < minTypedPartRunes {
+		return false
+	}
+	if strings.IndexFunc(town, unicode.IsDigit) >= 0 || looksLikeStreetAddress(first) {
+		return false
+	}
+	for _, word := range strings.Fields(normalizeSpelling(town)) {
+		if localityWords[word] || streetWords[word] {
+			return false
+		}
+	}
+	return true
+}
+
+// labelInHand says a row of the areas answer already in hand names the town in
+// its label, so the town is known to exist without a request.
+func (lk *typedLookup) labelInHand(town string) bool {
+	for _, r := range lk.areas {
+		for _, part := range strings.Split(r.DisplayName, ",") {
+			if closeSpelling(town, part) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// cityRow looks the town up as an areas search and returns the first city level
+// row whose name is a close spelling of it, or nil. It goes through photon, so
+// it counts against the cap and is answered from the cache on a repeat.
+func (lk *typedLookup) cityRow(town string) *Result {
+	rows := lk.photon(town, false)
+	for i := range rows {
+		if rows[i].cityLevel && closeSpelling(town, rows[i].Name) {
+			return &rows[i]
+		}
+	}
+	return nil
+}
+
+// accept makes first and town the home's neighbourhood and town, when the saved
+// name fits.
+func (lk *typedLookup) accept(first, town string, row *Result) bool {
+	name := first + ", " + town
+	if utf8.RuneCountInString(name) > homeAreaNameMaxRunes {
+		return false
+	}
+	lk.home.ok, lk.home.first, lk.home.town, lk.home.name = true, first, town, name
+	if row != nil {
+		lk.town, lk.townTry = row, true
+	}
+	return true
+}
+
+// resolveWithoutComma finds the neighbourhood and the town in text typed as one
+// part (plan 34), in this order:
+//
+//  1. the last two words, then the last one, as the town. Each candidate is
+//     accepted when the areas answer in hand names it in a label (no request),
+//     else when a lookup finds a city or town by that name (one request each,
+//     inside the cap);
+//  2. a PIN code the person typed, looked up once, whose row names the town.
+//
+// A candidate is dropped when it holds a locality word (townCandidate). A PIN
+// is looked up only when no town was found, and never for a street address
+// (home.bare is empty for one).
+func (lk *typedLookup) resolveWithoutComma() bool {
+	bare := lk.home.bare
+	if bare == "" {
+		return false
+	}
+	words := strings.Fields(bare)
+	type split struct{ first, town string }
+	var splits []split
+	for _, k := range []int{2, 1} {
+		if len(words) <= k {
+			continue
+		}
+		first, town := strings.Join(words[:len(words)-k], " "), strings.Join(words[len(words)-k:], " ")
+		if townCandidate(first, town) {
+			splits = append(splits, split{first, town})
+		}
+	}
+	// The two word town goes first, and is looked up even when the one word
+	// town is named in the answer in hand: "Kharghar Navi Mumbai" has Mumbai in
+	// hand, and the town meant is Navi Mumbai.
+	for _, s := range splits {
+		if lk.labelInHand(s.town) && lk.accept(s.first, s.town, nil) {
+			return true
+		}
+		if row := lk.cityRow(s.town); row != nil && lk.accept(s.first, s.town, row) {
+			return true
+		}
+	}
+	return lk.resolveByPin()
+}
+
+// resolveByPin looks the PIN code up as an any place search, which returns the
+// postcode row (the areas layers do not). The town is the one the row names; the
+// row's point stands for the town.
+func (lk *typedLookup) resolveByPin() bool {
+	pin := lk.home.pin
+	if pin == "" || utf8.RuneCountInString(lk.home.bare) < minTypedPartRunes {
+		return false
+	}
+	for _, r := range lk.photon(pin, true) {
+		if cleanPart(r.Name) != pin || r.region == "" {
+			continue
+		}
+		return lk.accept(lk.home.bare, r.region, &Result{Name: r.region, Lat: r.Lat, Lon: r.Lon})
+	}
+	return false
+}
+
+// matchesTyped says a row's name is what the person typed: a close spelling, a
+// name that starts with one, or a name the half typed text is a start of (and
+// the other way round).
+func matchesTyped(text, name string) bool {
+	if closeSpelling(text, name) || leadingNameMatches(text, name) {
+		return true
+	}
+	nt, nn := normalizeSpelling(text), normalizeSpelling(name)
+	return nt != "" && nn != "" && (strings.HasPrefix(nn, nt) || strings.HasPrefix(nt, nn))
+}
+
+// noCloseMatch says the answer holds no typed row and no row that closely
+// matches text, so the page should ask the person to add their town. A street
+// address never asks for one.
+func noCloseMatch(answer Answer, home typedHome) bool {
+	if home.streetLike {
+		return false
+	}
+	text := home.first
+	if text == "" {
+		text = home.lead
+	}
+	if text == "" {
+		text = home.search
+	}
+	for _, r := range answer.Results {
+		if r.Typed || matchesTyped(text, r.Name) {
+			return false
+		}
+	}
+	return true
 }
 
 // photon asks Photon for text through askPhoton: its cache first, then a token

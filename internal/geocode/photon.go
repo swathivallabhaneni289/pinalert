@@ -369,7 +369,10 @@ func (c *Client) fetchPhoton(parent context.Context, q string, near *Point, limi
 		}
 		name := cleanPart(p.Name)
 		candidates = append(candidates, photonCandidate{
-			result: Result{Name: name, DisplayName: label, Lat: lat, Lon: lon, Area: photonArea(p)},
+			result: Result{
+				Name: name, DisplayName: label, Lat: lat, Lon: lon, Area: photonArea(p),
+				cityLevel: photonIsCityLevel(p), region: photonRegion(p),
+			},
 			place:  placeOSMKeys[strings.TrimSpace(p.OSMKey)],
 			name:   name,
 		})

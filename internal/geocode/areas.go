@@ -20,6 +20,8 @@ package geocode
 import (
 	"context"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 type areasOnlyKey struct{}
@@ -152,4 +154,52 @@ func nominatimIsArea(rec nominatimRecord) bool {
 		return false
 	}
 	return nominatimAreaTypes[strings.ToLower(strings.TrimSpace(rec.AddressType))]
+}
+
+// photonIsCityLevel says a Photon row is a city or a town, drawn as a place or
+// as the administrative boundary of a city. A village, a suburb or a locality
+// is not (plan 34): a town word typed without a comma is placed only by a row
+// of this kind, so a hamlet that happens to share a name never places it.
+func photonIsCityLevel(p photonProperties) bool {
+	key := strings.ToLower(strings.TrimSpace(p.OSMKey))
+	value := strings.ToLower(strings.TrimSpace(p.OSMValue))
+	switch key {
+	case "place":
+		return value == "city" || value == "town"
+	case "boundary":
+		return strings.ToLower(strings.TrimSpace(p.Type)) == "city"
+	}
+	return false
+}
+
+// photonRegion is the town a PIN code row names, for a row drawn as a postcode
+// and empty for every other row (see regionName).
+func photonRegion(p photonProperties) string {
+	if !strings.EqualFold(strings.TrimSpace(p.OSMKey), "place") || !strings.EqualFold(strings.TrimSpace(p.OSMValue), "postcode") {
+		return ""
+	}
+	return regionName(p.City, p.County)
+}
+
+// regionName is the town a postcode row names: its city when it has one, else
+// its county with a trailing "(Urban)" or "District" dropped (live, 520008 is
+// in the county "Vijayawada (Urban)"). The district part of a postcode row is a
+// locality and is never used. Empty when no name of at least three letters
+// without a digit is left.
+func regionName(city, county string) string {
+	name := cleanPart(city)
+	if name == "" {
+		name = cleanPart(county)
+	}
+	if i := strings.Index(name, "("); i >= 0 {
+		name = name[:i]
+	}
+	name = strings.TrimSpace(name)
+	if strings.HasSuffix(strings.ToLower(name), " district") {
+		name = strings.TrimSpace(name[:len(name)-len(" district")])
+	}
+	if utf8.RuneCountInString(name) < minTypedPartRunes || strings.IndexFunc(name, unicode.IsDigit) >= 0 {
+		return ""
+	}
+	return name
 }
