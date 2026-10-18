@@ -109,21 +109,31 @@ func (m *Manager) Middleware(persist func(ctx context.Context, id string) error)
 					// the cookie rather than failing the request.
 					log.Printf("session: failed to persist new session %s: %v", id, err)
 				}
-				http.SetCookie(w, &http.Cookie{
-					Name:     cookieName,
-					Value:    m.Sign(id),
-					Path:     "/",
-					MaxAge:   int(oneYear.Seconds()),
-					HttpOnly: true,
-					Secure:   m.secure,
-					SameSite: http.SameSiteLaxMode,
-				})
+				m.SetCookie(w, id)
 			}
 
 			ctx := context.WithValue(r.Context(), ctxKey{}, id)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// SetCookie writes the pinalert_session cookie for id: the signed value, Path
+// /, one year MaxAge, HttpOnly, Secure from the manager and SameSite Lax.
+// Middleware calls it for a new session, and Verify calls it when sign in
+// rotates a revoked or deleted session to a fresh id (Phase 3.2), so the two
+// can never write different attributes (threat T-01-85: a browser treats a
+// cookie that differs in Path or Secure as a different cookie).
+func (m *Manager) SetCookie(w http.ResponseWriter, id string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieName,
+		Value:    m.Sign(id),
+		Path:     "/",
+		MaxAge:   int(oneYear.Seconds()),
+		HttpOnly: true,
+		Secure:   m.secure,
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 // resolveID returns the session id to use for this request and whether a
