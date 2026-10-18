@@ -404,6 +404,15 @@
     }
     locating = true;
     allowButton.disabled = true;
+    // The question is about to be asked, so Nearby and the Low data view will
+    // not ask it again on their own (plan 36).
+    if (window.PinalertPosition && typeof window.PinalertPosition.markAsked === 'function') {
+      try {
+        window.PinalertPosition.markAsked();
+      } catch (err) {
+        // The flow does not depend on the marker.
+      }
+    }
     function done() {
       locating = false;
       allowButton.disabled = false;

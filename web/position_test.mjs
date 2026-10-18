@@ -20,8 +20,9 @@ const KEY = 'pinalert.lowLastPosition';
 // load runs position.js on a page. account is the id the page carries in its
 // data-account-id attribute ('7' by default); null is a page with no such
 // attribute (the first time flow).
-function load(storage, account = '7') {
+function load(storage, account = '7', navigator = undefined) {
   const sandbox = { window: null, Date, JSON, isFinite, Math };
+  if (navigator) { sandbox.navigator = navigator; }
   sandbox.window = sandbox;
   sandbox.localStorage = storage;
   sandbox.document = {
@@ -206,4 +207,60 @@ test('a storage that throws reads null and save does not throw', () => {
   assert.equal(position.read(), null);
   assert.doesNotThrow(() => position.save(12.9, 77.5));
   assert.equal(position.save(12.9, 77.5), false);
+});
+
+// ---- Plan 36: the asked once marker and the start mode ----------------------
+
+const ASKED = 'pinalert.locationAsked.7';
+const permissionsOf = (state) => ({ permissions: { query: () => Promise.resolve({ state }) } });
+const modeOf = (position) => new Promise((resolve) => position.startMode(resolve));
+
+test('plan 36: the marker is per account and starts unset', () => {
+  const storage = memoryStorage();
+  assert.equal(load(storage).askedBefore(), false);
+  assert.equal(load(storage).markAsked(), true);
+  assert.equal(storage.data.get(ASKED), '1');
+  assert.equal(load(storage, '7').askedBefore(), true);
+  assert.equal(load(storage, '8').askedBefore(), false, 'another account has not been asked');
+});
+
+test('plan 36: a page with no account id sets and reads no marker', () => {
+  const storage = memoryStorage({ [ASKED]: '1' });
+  const position = load(storage, null);
+  assert.equal(position.askedBefore(), false);
+  assert.equal(position.markAsked(), false);
+  assert.equal(storage.data.size, 1);
+});
+
+test('plan 36: a storage that throws reads as not asked and markAsked does not throw', () => {
+  const position = load(throwing);
+  assert.equal(position.askedBefore(), false);
+  assert.doesNotThrow(() => position.markAsked());
+  assert.equal(position.markAsked(), false);
+});
+
+test('plan 36: startMode asks the first time and marks it, then reuses', async () => {
+  const storage = memoryStorage();
+  assert.equal(await modeOf(load(storage, '7', permissionsOf('prompt'))), 'ask');
+  assert.equal(storage.data.get(ASKED), '1', 'marked before the question is shown');
+  assert.equal(await modeOf(load(storage, '7', permissionsOf('prompt'))), 'reuse');
+  assert.equal(await modeOf(load(storage, '7', permissionsOf('denied'))), 'reuse');
+  assert.equal(await modeOf(load(storage, '7', {})), 'reuse', 'no Permissions API (Safari) also reuses');
+});
+
+test('plan 36: a granted browser is read silently, marker or not', async () => {
+  assert.equal(await modeOf(load(memoryStorage(), '7', permissionsOf('granted'))), 'silent');
+  assert.equal(await modeOf(load(memoryStorage({ [ASKED]: '1' }), '7', permissionsOf('granted'))), 'silent');
+});
+
+test('plan 36: a failing permissions query counts as unknown', async () => {
+  const broken = { permissions: { query: () => Promise.reject(new Error('no')) } };
+  assert.equal(await modeOf(load(memoryStorage(), '7', broken)), 'ask');
+  const throwsNow = { permissions: { query: () => { throw new Error('no'); } } };
+  assert.equal(await modeOf(load(memoryStorage({ [ASKED]: '1' }), '7', throwsNow)), 'reuse');
+});
+
+test('plan 36: with a storage that throws, startMode asks every time (today behaviour)', async () => {
+  assert.equal(await modeOf(load(throwing, '7', permissionsOf('prompt'))), 'ask');
+  assert.equal(await modeOf(load(throwing, '7', permissionsOf('prompt'))), 'ask');
 });
