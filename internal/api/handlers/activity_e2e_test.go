@@ -855,7 +855,15 @@ func TestActivityPartsRenderFromTheAddress(t *testing.T) {
 				t.Errorf("hub row %q does not carry the name %q: %s", key, names[key], r[3])
 			}
 			count := regexp.MustCompile(`activity-hub__count">(\d+)</span>`).FindStringSubmatch(r[3])
-			rowCount := strings.Count(partSection(t, body, key), `<li class="report-row`)
+			// Amended 2026-10-17 by Phase 3.2 plan 08 (UI-SPEC B1, D-05): the Updates
+			// part draws urow items, not report rows, so its rows are counted by
+			// li.urow. Every other part still counts report rows. This account has
+			// no updates, so the hub shows the count and not the N new tag.
+			rowMarker := `<li class="report-row`
+			if key == "updates" {
+				rowMarker = `<li class="urow`
+			}
+			rowCount := strings.Count(partSection(t, body, key), rowMarker)
 			if rowCount != len(wantIDs[key]) {
 				t.Errorf("part %q holds %d rows, want %d", key, rowCount, len(wantIDs[key]))
 			}
