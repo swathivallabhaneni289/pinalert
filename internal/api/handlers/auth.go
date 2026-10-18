@@ -56,7 +56,21 @@ type loginGateViewModel struct {
 	// data view; the login panel then shows the "is on" note instead of the
 	// link that turns it on (D-17, P4-A18).
 	LowDataDefault bool
+	// DoneLine is the one status line above the heading after an account action
+	// (Phase 3.2, UI-SPEC E3). It is set only from the closed list of two done
+	// words and is never built from the address value.
+	DoneLine string
 }
+
+// The done words of GET /login?done= and the lines they show (Phase 3.2,
+// P32-C27 and P32-C28). Settings lands on all-devices after Log out of all
+// devices and on deleted after Delete my account.
+const (
+	loginDoneAllDevices     = "all-devices"
+	loginDoneDeleted        = "deleted"
+	loginDoneAllDevicesLine = "You are logged out of all devices."
+	loginDoneDeletedLine    = "Your account has been deleted."
+)
 
 // lowDataChosen reports whether the request carries the remembered choice of
 // the Low data view: the cookie LowDataCookie with the value 1 and nothing else
@@ -93,6 +107,15 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 				vm.Sent = true
 				vm.Email = addr.Address
 			}
+		}
+
+		// The done word is compared exactly with the two fixed words; any other
+		// value sets nothing and is never written into the page (T-03.2-15).
+		switch r.URL.Query().Get("done") {
+		case loginDoneAllDevices:
+			vm.DoneLine = loginDoneAllDevicesLine
+		case loginDoneDeleted:
+			vm.DoneLine = loginDoneDeletedLine
 		}
 
 		vm.LowDataDefault = lowDataChosen(r)
