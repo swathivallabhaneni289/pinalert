@@ -46,6 +46,9 @@ type UpdatesQuerier interface {
 	GetAccountHomeCell(ctx context.Context, id int64) (*string, error)
 	GetAlertSettings(ctx context.Context, accountID int64) (sqlcgen.GetAlertSettingsRow, error)
 	AlertsFromReporterInWindow(ctx context.Context, arg sqlcgen.AlertsFromReporterInWindowParams) (int64, error)
+	// InsertReliableAlert writes the note and, in the same statement and only when
+	// the note row is written, seeds the reader's cursor so the note counts toward
+	// the one update per report per hour (D-12, W3).
 	InsertReliableAlert(ctx context.Context, arg sqlcgen.InsertReliableAlertParams) (int64, error)
 }
 

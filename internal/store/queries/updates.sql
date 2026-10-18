@@ -156,17 +156,36 @@ SELECT id FROM more;
 -- partial unique index uq_updates_reliable_once turns a repeat into a no-op.
 -- Written only while the account is under the hourly ceiling; over it nothing is
 -- written and the next poll tries again while the report is still unexpired.
-INSERT INTO updates (account_id, report_id, kind, created_at)
-SELECT sqlc.arg(account_id)::bigint, sqlc.arg(report_id)::bigint, 'reliable_nearby', sqlc.arg(now)::timestamptz
-WHERE (
-    SELECT COUNT(*)
-    FROM updates u
-    WHERE u.account_id = sqlc.arg(account_id)::bigint
-      AND u.kind <> 'more'
-      AND u.created_at > sqlc.arg(hour_edge)::timestamptz
-) < sqlc.arg(ceiling)::bigint
-ON CONFLICT (account_id, report_id) WHERE kind = 'reliable_nearby' DO NOTHING
-RETURNING id;
+--
+-- The note counts toward the one update per report per hour (D-12, W3). In the
+-- same statement, and only when the note row is actually inserted, the reader's
+-- cursor for the report is seeded: last_state is the report's current
+-- visibility (state, the string Refresh stores; the note is only written for a
+-- Live or Provisional report, both valid cursor states), adopted_at and
+-- last_update_at are now, fading_for stays NULL. An existing cursor is left
+-- alone. A cursor on a report the reader does not follow is read by nothing, so
+-- it has no other effect; when the reader votes later the vote is after
+-- adopted_at, Refresh adopts silently and the hour gap holds. Phase 3.3 kind 3
+-- reuses this step.
+WITH ins AS (
+    INSERT INTO updates (account_id, report_id, kind, created_at)
+    SELECT sqlc.arg(account_id)::bigint, sqlc.arg(report_id)::bigint, 'reliable_nearby', sqlc.arg(now)::timestamptz
+    WHERE (
+        SELECT COUNT(*)
+        FROM updates u
+        WHERE u.account_id = sqlc.arg(account_id)::bigint
+          AND u.kind <> 'more'
+          AND u.created_at > sqlc.arg(hour_edge)::timestamptz
+    ) < sqlc.arg(ceiling)::bigint
+    ON CONFLICT (account_id, report_id) WHERE kind = 'reliable_nearby' DO NOTHING
+    RETURNING id, account_id, report_id
+), seed AS (
+    INSERT INTO update_cursors (account_id, report_id, last_state, adopted_at, last_update_at)
+    SELECT i.account_id, i.report_id, sqlc.arg(state)::text, sqlc.arg(now)::timestamptz, sqlc.arg(now)::timestamptz
+    FROM ins i
+    ON CONFLICT (account_id, report_id) DO NOTHING
+)
+SELECT id FROM ins;
 
 -- name: AlertsFromReporterInWindow :one
 -- The per reporter cap (D-26) without storing the recipient to reporter link:
@@ -225,7 +244,7 @@ WHERE account_id = sqlc.arg(account_id)::bigint
   AND read_at IS NULL;
 
 -- name: PruneUpdates :exec
--- Deletes the account's updates created at or before edge (the 30 day window).
+-- Deletes the account's updates created at or before edge (the 7 day window).
 DELETE FROM updates
 WHERE account_id = sqlc.arg(account_id)::bigint
   AND created_at <= sqlc.arg(edge)::timestamptz;

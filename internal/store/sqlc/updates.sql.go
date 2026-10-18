@@ -337,17 +337,25 @@ func (q *Queries) InsertBaselineCursor(ctx context.Context, arg InsertBaselineCu
 }
 
 const insertReliableAlert = `-- name: InsertReliableAlert :one
-INSERT INTO updates (account_id, report_id, kind, created_at)
-SELECT $1::bigint, $2::bigint, 'reliable_nearby', $3::timestamptz
-WHERE (
-    SELECT COUNT(*)
-    FROM updates u
-    WHERE u.account_id = $1::bigint
-      AND u.kind <> 'more'
-      AND u.created_at > $4::timestamptz
-) < $5::bigint
-ON CONFLICT (account_id, report_id) WHERE kind = 'reliable_nearby' DO NOTHING
-RETURNING id
+WITH ins AS (
+    INSERT INTO updates (account_id, report_id, kind, created_at)
+    SELECT $1::bigint, $2::bigint, 'reliable_nearby', $3::timestamptz
+    WHERE (
+        SELECT COUNT(*)
+        FROM updates u
+        WHERE u.account_id = $1::bigint
+          AND u.kind <> 'more'
+          AND u.created_at > $4::timestamptz
+    ) < $5::bigint
+    ON CONFLICT (account_id, report_id) WHERE kind = 'reliable_nearby' DO NOTHING
+    RETURNING id, account_id, report_id
+), seed AS (
+    INSERT INTO update_cursors (account_id, report_id, last_state, adopted_at, last_update_at)
+    SELECT i.account_id, i.report_id, $6::text, $3::timestamptz, $3::timestamptz
+    FROM ins i
+    ON CONFLICT (account_id, report_id) DO NOTHING
+)
+SELECT id FROM ins
 `
 
 type InsertReliableAlertParams struct {
@@ -356,12 +364,24 @@ type InsertReliableAlertParams struct {
 	Now       time.Time
 	HourEdge  time.Time
 	Ceiling   int64
+	State     string
 }
 
 // A trusted reporter alert (NOTIF-05, D-26), once per account per report: the
 // partial unique index uq_updates_reliable_once turns a repeat into a no-op.
 // Written only while the account is under the hourly ceiling; over it nothing is
 // written and the next poll tries again while the report is still unexpired.
+//
+// The note counts toward the one update per report per hour (D-12, W3). In the
+// same statement, and only when the note row is actually inserted, the reader's
+// cursor for the report is seeded: last_state is the report's current
+// visibility (state, the string Refresh stores; the note is only written for a
+// Live or Provisional report, both valid cursor states), adopted_at and
+// last_update_at are now, fading_for stays NULL. An existing cursor is left
+// alone. A cursor on a report the reader does not follow is read by nothing, so
+// it has no other effect; when the reader votes later the vote is after
+// adopted_at, Refresh adopts silently and the hour gap holds. Phase 3.3 kind 3
+// reuses this step.
 func (q *Queries) InsertReliableAlert(ctx context.Context, arg InsertReliableAlertParams) (int64, error) {
 	row := q.db.QueryRow(ctx, insertReliableAlert,
 		arg.AccountID,
@@ -369,6 +389,7 @@ func (q *Queries) InsertReliableAlert(ctx context.Context, arg InsertReliableAle
 		arg.Now,
 		arg.HourEdge,
 		arg.Ceiling,
+		arg.State,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -581,7 +602,7 @@ type PruneUpdatesParams struct {
 	Edge      time.Time
 }
 
-// Deletes the account's updates created at or before edge (the 30 day window).
+// Deletes the account's updates created at or before edge (the 7 day window).
 func (q *Queries) PruneUpdates(ctx context.Context, arg PruneUpdatesParams) error {
 	_, err := q.db.Exec(ctx, pruneUpdates, arg.AccountID, arg.Edge)
 	return err
