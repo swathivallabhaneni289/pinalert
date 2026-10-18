@@ -530,10 +530,12 @@
 
     // noMatch is the server's no_match flag: no row closely matches what was
     // typed, no typed row could be placed, and every lookup that was needed
-    // answered. quiet says the typing pause started the search. With no rows and
-    // no_match not true, the search did not finish (plan 35): Enter says Search
-    // unavailable, a typed search says nothing.
-    function render(results, noMatch, quiet) {
+    // answered. unfinished is the server's unfinished flag: nothing matches
+    // closely but a lookup that was needed failed (plan 35). quiet says the
+    // typing pause started the search. An unfinished search, or no rows with
+    // no_match not true, never says Not found: Enter says Search unavailable
+    // (rows stay listed), a typed search says nothing.
+    function render(results, noMatch, unfinished, quiet) {
       cfg.results.textContent = '';
       var shown = 0;
       var typedShown = false;
@@ -591,6 +593,8 @@
       // A typed row is a match, so the line never goes with one.
       if (noMatch && !typedShown) {
         showLine(cfg.status, MESSAGE_NOT_FOUND);
+      } else if (unfinished && !quiet && !typedShown) {
+        showLine(cfg.status, MESSAGE_UNAVAILABLE);
       } else {
         hideLine(cfg.status);
       }
@@ -674,7 +678,8 @@
           return;
         }
         render(answer.body && Array.isArray(answer.body.results) ? answer.body.results : [],
-          !!answer.body && answer.body.no_match === true, inFlightQuiet);
+          !!answer.body && answer.body.no_match === true,
+          !!answer.body && answer.body.unfinished === true, inFlightQuiet);
       }, function () {
         if (mine !== seq) {
           return;

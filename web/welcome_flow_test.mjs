@@ -1259,6 +1259,35 @@ test('a typed search that did not finish clears a Not found line an earlier sear
   assert.equal(homeStatus(page).hidden, true, 'the old Not found line does not outlive the new, unfinished search');
 });
 
+test('rows with unfinished true show Search unavailable for Enter and keep the rows', async () => {
+  const page = load({ start: 4 });
+  byId(page, 'welcome-home-input').value = 'Benz Circle';
+  fire(byId(page, 'welcome-home-form'), 'submit');
+  answer(page.requests[0], 200, { results: PLACES, unfinished: true });
+  await flush();
+  assert.equal(homeStatus(page).hidden, false);
+  assert.equal(homeStatus(page).textContent, 'Search unavailable. Try again in a moment.');
+  assert.equal(homeList(page).hidden, false, 'the rows stay listed');
+});
+
+test('rows with unfinished true show no line for a typed search, and unfinished is read only when true', async () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Benz Circle');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: PLACES, unfinished: true });
+  await flush();
+  assert.equal(homeStatus(page).hidden, true, 'a typed search stays quiet');
+  assert.equal(homeList(page).hidden, false);
+  for (const flag of ['true', 1, 'yes', null]) {
+    const other = load({ start: 4 });
+    byId(other, 'welcome-home-input').value = 'Benz Circle';
+    fire(byId(other, 'welcome-home-form'), 'submit');
+    answer(other.requests[0], 200, { results: PLACES, unfinished: flag });
+    await flush();
+    assert.equal(homeStatus(other).hidden, true, 'unfinished ' + JSON.stringify(flag) + ' is not true');
+  }
+});
+
 test('picking a suggestion hides the status line as well as the list', async () => {
   const page = load({ start: 4 });
   typeHome(page, 'Benz Circle');
