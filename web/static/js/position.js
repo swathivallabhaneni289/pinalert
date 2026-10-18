@@ -18,6 +18,14 @@
 // this one key is ever removed: the offline report queue and the theme choice
 // are not touched. No age limit is added.
 //
+// The same module keeps the "asked once" marker (plan 36). The browser's own
+// location question is asked on its own only once per account in a browser; after
+// that a page starts from the kept fix and the person refreshes with Back to my
+// location. The marker is a small flag under a key that names the account, so a
+// second account on a shared phone is asked for itself. A page with no account id
+// sets and reads no marker, and a failing store reads as "not asked", which is
+// the old behaviour (ask each time), never a broken map.
+//
 // Storage can throw (private browsing, a full store, a blocked cookie setting),
 // so every access is guarded: an unreadable store reads as no position, and a
 // failed save or removal is silent because the page still works without a
@@ -122,5 +130,99 @@
     return store(lat, lon, Date.now(), account);
   }
 
-  window.PinalertPosition = { read: read, save: save };
+  var ASKED_KEY_PREFIX = 'pinalert.locationAsked.';
+
+  // askedKey is the marker key of this page's account, or '' with no account.
+  function askedKey() {
+    var account = currentAccount();
+    return account === '' ? '' : ASKED_KEY_PREFIX + account;
+  }
+
+  // askedBefore answers whether this account has already had the browser's
+  // location question asked on its behalf in this browser.
+  function askedBefore() {
+    var key = askedKey();
+    if (key === '') {
+      return false;
+    }
+    try {
+      return window.localStorage.getItem(key) === '1';
+    } catch (err) {
+      return false;
+    }
+  }
+
+  // markAsked records that the question was asked. It answers whether it was
+  // stored; a failure is silent.
+  function markAsked() {
+    var key = askedKey();
+    if (key === '') {
+      return false;
+    }
+    try {
+      window.localStorage.setItem(key, '1');
+    } catch (err) {
+      return false;
+    }
+    return true;
+  }
+
+  // permissionState calls back once with 'granted', 'denied', 'prompt' or
+  // 'unknown' (no Permissions API, as in much of Safari, or any failure).
+  function permissionState(callback) {
+    var finished = false;
+    function finish(state) {
+      if (!finished) {
+        finished = true;
+        callback(state);
+      }
+    }
+    try {
+      if (typeof navigator === 'undefined' || !navigator || !navigator.permissions ||
+          typeof navigator.permissions.query !== 'function') {
+        finish('unknown');
+        return;
+      }
+      navigator.permissions.query({ name: 'geolocation' }).then(function (status) {
+        var state = status && status.state;
+        finish(state === 'granted' || state === 'denied' || state === 'prompt' ? state : 'unknown');
+      }, function () {
+        finish('unknown');
+      });
+    } catch (err) {
+      finish('unknown');
+    }
+  }
+
+  // startMode decides, for a page that wants the device position at load, what
+  // it may do. It calls back once with:
+  //   'silent' when the browser has already said yes: a fresh fix is read and no
+  //            question is shown;
+  //   'reuse'  when the question was asked before and the answer is not yes: the
+  //            page starts from the kept fix and does not ask again;
+  //   'ask'    the first time: the question is asked now, and the marker is set
+  //            before it is, so a dismissed question still counts as asked.
+  function startMode(callback) {
+    permissionState(function (state) {
+      if (state === 'granted') {
+        callback('silent');
+        return;
+      }
+      if (askedBefore()) {
+        callback('reuse');
+        return;
+      }
+      markAsked();
+      callback('ask');
+    });
+  }
+
+  window.PinalertPosition = {
+    read: read,
+    save: save,
+    askedBefore: askedBefore,
+    markAsked: markAsked,
+    permissionState: permissionState,
+    startMode: startMode
+  };
 }());

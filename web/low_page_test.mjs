@@ -92,7 +92,7 @@ const PAGE_IDS = [
 // geolocation the fake position service, both absent unless given.
 const POSITION_KEY = 'pinalert.lowLastPosition';
 
-function loadLowPage({ abortRejects = true, nativeTimeout = false, stored = null, geolocation = null, account = '7', storedRaw = null, extraStorage = {} } = {}) {
+function loadLowPage({ abortRejects = true, nativeTimeout = false, stored = null, geolocation = null, account = '7', storedRaw = null, extraStorage = {}, permissions = null, throwingStorage = false } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -179,6 +179,10 @@ function loadLowPage({ abortRejects = true, nativeTimeout = false, stored = null
     removeItem: (k) => { removed.push(k); data.delete(k); }
   };
 
+  if (throwingStorage) {
+    storage.getItem = () => { throw new Error('blocked'); };
+    storage.setItem = () => { throw new Error('blocked'); };
+  }
   const mounted = [];
   const window = {
     setTimeout(fn, ms) { const id = nextId++; timers.set(id, { at: now + (ms || 0), fn }); return id; },
@@ -192,7 +196,7 @@ function loadLowPage({ abortRejects = true, nativeTimeout = false, stored = null
   const sandbox = {
     window,
     document: doc,
-    navigator: geolocation ? { geolocation } : {},
+    navigator: Object.assign({}, geolocation ? { geolocation } : {}, permissions ? { permissions } : {}),
     fetch,
     Request: function Request(target, init) { this.url = target; this.signal = init && init.signal; },
     AbortController,
@@ -221,7 +225,7 @@ function loadLowPage({ abortRejects = true, nativeTimeout = false, stored = null
   vm.runInContext(appSource, sandbox);
   sandbox.Pinalert = window.Pinalert;
   vm.runInContext(lowSource, sandbox);
-  return { Pinalert: window.Pinalert, el: (id) => doc.byId[id], requests, answer, advance, mounted, storage };
+  return { Pinalert: window.Pinalert, el: (id) => doc.byId[id], requests, answer, advance, mounted, storage, retryClick: () => (doc.byId['low-retry-position'].handlers.click || []).forEach((fn) => fn({})) };
 }
 
 const settle = async () => {
@@ -407,4 +411,77 @@ test('S-2: only the position key is ever removed; the queue and the theme choice
   assert.deepEqual(page.storage.removed, [POSITION_KEY]);
   assert.equal(page.storage.data.get('pinalert.theme'), 'dark');
   assert.equal(page.storage.data.get('pinalert.queue.7'), '[{"x":1}]');
+});
+
+// ---- Plan 36: the browser's location question is asked once per account ------
+
+const ASKED_KEY = 'pinalert.locationAsked.7';
+const permissionsOf = (state) => ({ query: () => Promise.resolve({ state }) });
+
+function countingGeolocation() {
+  const calls = [];
+  return { calls, getCurrentPosition(ok, fail, opts) { calls.push({ ok, fail, opts }); } };
+}
+
+test('plan 36: the first load asks once and sets the marker for the account', async () => {
+  const geo = countingGeolocation();
+  const page = loadLowPage({ geolocation: geo, permissions: permissionsOf('prompt') });
+  await settle();
+  assert.equal(geo.calls.length, 1, 'the first load asks');
+  assert.equal(page.storage.data.get(ASKED_KEY), '1');
+});
+
+test('plan 36: a later load with the marker and a prompt state does not ask and stays on the kept position', async () => {
+  const geo = countingGeolocation();
+  const page = loadLowPage({
+    geolocation: geo,
+    permissions: permissionsOf('prompt'),
+    stored: { lat: 17.385, lon: 78.4867, account: '7' },
+    extraStorage: { [ASKED_KEY]: '1' }
+  });
+  await settle();
+  assert.equal(geo.calls.length, 0, 'the browser is not asked again');
+  assert.equal(page.requests.length, 1, 'the list for the kept position is out');
+  assert.match(page.requests[0].url, /lat=17\.385&lon=78\.4867/);
+  assert.match(page.el('low-basis').textContent, /^Near your last known position\./);
+  assert.equal(page.el('low-retry-position').hidden, false, 'Retry position stays the way to refresh');
+});
+
+test('plan 36: with the marker, no kept position and the API missing, the list starts at the default area and does not ask', async () => {
+  const geo = countingGeolocation();
+  const page = loadLowPage({ geolocation: geo, extraStorage: { [ASKED_KEY]: '1' } });
+  await settle();
+  assert.equal(geo.calls.length, 0);
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.el('low-retry-position').hidden, false);
+});
+
+test('plan 36: a granted browser is read silently even with the marker', async () => {
+  const geo = countingGeolocation();
+  loadLowPage({ geolocation: geo, permissions: permissionsOf('granted'), extraStorage: { [ASKED_KEY]: '1' } });
+  await settle();
+  assert.equal(geo.calls.length, 1);
+});
+
+test('plan 36: Retry position always asks', async () => {
+  const geo = countingGeolocation();
+  const page = loadLowPage({ geolocation: geo, permissions: permissionsOf('prompt'), extraStorage: { [ASKED_KEY]: '1' } });
+  await settle();
+  assert.equal(geo.calls.length, 0);
+  page.retryClick();
+  assert.equal(geo.calls.length, 1, 'the person tapped, so it asks');
+});
+
+test('plan 36: another account is asked for itself', async () => {
+  const geo = countingGeolocation();
+  loadLowPage({ geolocation: geo, account: '8', permissions: permissionsOf('prompt'), extraStorage: { [ASKED_KEY]: '1' } });
+  await settle();
+  assert.equal(geo.calls.length, 1, 'the marker of account 7 does not count for account 8');
+});
+
+test('plan 36: a storage that throws keeps today behaviour (asks on every load)', async () => {
+  const geo = countingGeolocation();
+  loadLowPage({ geolocation: geo, permissions: permissionsOf('prompt'), throwingStorage: true });
+  await settle();
+  assert.equal(geo.calls.length, 1);
 });

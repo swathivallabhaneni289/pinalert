@@ -358,23 +358,81 @@ window.PinalertMap = (function () {
     var fallbackLat = Pinalert.config.fallbackLat;
     var fallbackLon = Pinalert.config.fallbackLon;
     var fallbackZoom = Pinalert.config.fallbackZoom;
+    // reusing is true while the map starts from the kept fix: that fix is not a
+    // new reading, so it is not saved again (its time stays honest).
+    var reusing = false;
 
     function boot(lat, lon, zoom, own) {
       map.setView([lat, lon], zoom);
       Pinalert.setCenter(lat, lon, own);
-      saveReaderFix(lat, lon, own);
+      if (!reusing) {
+        saveReaderFix(lat, lon, own);
+      }
       Pinalert.fetchReports();
       Pinalert.startPolling();
     }
 
-    locateReader(
-      function (pos) {
-        boot(pos.coords.latitude, pos.coords.longitude, 13, true);
-      },
-      function () {
-        boot(fallbackLat, fallbackLon, fallbackZoom, false);
+    function useFix() {
+      locateReader(
+        function (pos) {
+          boot(pos.coords.latitude, pos.coords.longitude, 13, true);
+        },
+        function () {
+          boot(fallbackLat, fallbackLon, fallbackZoom, false);
+        }
+      );
+    }
+
+    // The browser's own question is asked on its own only once per account in
+    // a browser (plan 36). After that the map starts from the kept fix, else
+    // the home area centre or the configured fallback, and Back to my location
+    // is how the person refreshes. A browser that already allows location is
+    // read silently, because nothing is shown for that.
+    askMode(function (mode) {
+      if (mode !== 'reuse') {
+        useFix();
+        return;
       }
-    );
+      var kept = keptReaderFix();
+      if (kept) {
+        reusing = true;
+        boot(kept.lat, kept.lon, 13, true);
+        return;
+      }
+      // Not a call to the browser: the fallback centre, as when location is off.
+      boot(fallbackLat, fallbackLon, fallbackZoom, false);
+    });
+  }
+
+  // askMode calls back once with 'silent', 'reuse' or 'ask' (see
+  // PinalertPosition.startMode). A page without that module, or a browser with
+  // no location API to ask, behaves as before: 'ask' (the failure branch of the
+  // location step then answers the fallback).
+  function askMode(callback) {
+    var position = window.PinalertPosition;
+    if (!position || typeof position.startMode !== 'function') {
+      callback('ask');
+      return;
+    }
+    position.startMode(callback);
+  }
+
+  // keptReaderFix is the device fix this account kept in this browser, or null.
+  function keptReaderFix() {
+    var position = window.PinalertPosition;
+    if (!position || typeof position.read !== 'function') {
+      return null;
+    }
+    return position.read();
+  }
+
+  // markReaderAsked notes that the person has been asked on this browser, so a
+  // tap on Back to my location also counts as the one question.
+  function markReaderAsked() {
+    var position = window.PinalertPosition;
+    if (position && typeof position.markAsked === 'function') {
+      position.markAsked();
+    }
   }
 
   // saveReaderFix keeps a device fix in this browser through PinalertPosition
@@ -426,6 +484,8 @@ window.PinalertMap = (function () {
   function recenterOnReader() {
     recenterSeq += 1;
     var mine = recenterSeq;
+    // The person tapped, so the browser may ask; it counts as the one question.
+    markReaderAsked();
     return new Promise(function (resolve) {
       function done(lat, lon, zoom, own) {
         if (mine !== recenterSeq) {

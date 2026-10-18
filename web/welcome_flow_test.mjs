@@ -192,6 +192,7 @@ function load(options) {
   const requests = [];
   const positionCalls = [];
   const saved = [];
+  const asked = [];
   const replaced = [];
   const session = {};
   const pushes = [];
@@ -235,6 +236,7 @@ function load(options) {
       }
     },
     PinalertPosition: {
+      markAsked() { asked.push(true); return true; },
       save(lat, lon) { saved.push([lat, lon]); return true; },
       read() { return null; }
     },
@@ -255,7 +257,7 @@ function load(options) {
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'welcome.js' });
   const popTo = (state) => (listeners.popstate || []).forEach((fn) => fn({ type: 'popstate', state }));
-  return { ...page, api: sandbox.PinalertWelcome, requests, positionCalls, saved, replaced, session, advance, sandbox, pushes, stateReplaces, popTo };
+  return { ...page, api: sandbox.PinalertWelcome, requests, positionCalls, saved, asked, replaced, session, advance, sandbox, pushes, stateReplaces, popTo };
 }
 
 const flush = async () => { for (let i = 0; i < 8; i++) { await new Promise((r) => setImmediate(r)); } };
@@ -444,6 +446,30 @@ test('Allow location asks the browser once, keeps the fix only through PinalertP
   assert.equal(visibleStep(page), 4);
   assert.equal(page.requests.length, 0, 'the fix is sent nowhere');
   assert.equal(byId(page, 'welcome-home-input').value, '', 'the device fix never fills the home area');
+});
+
+test('plan 36: Allow location marks the browser question as asked, Not now does not', async () => {
+  const allow = load({ start: 3 });
+  assert.equal(allow.asked.length, 0);
+  click(allow, 'welcome-allow-location');
+  assert.equal(allow.asked.length, 1, 'marked when the question is asked');
+  allow.positionCalls[0].fail({ code: 1 });
+  await flush();
+  assert.equal(allow.asked.length, 1, 'a refusal is still one question asked');
+
+  const notNow = load({ start: 3 });
+  click(notNow, 'welcome-not-now');
+  assert.equal(notNow.asked.length, 0, 'nothing was asked, so nothing is marked');
+});
+
+test('plan 36: a failing marker does not stop Allow location', async () => {
+  const page = load({ start: 3 });
+  page.sandbox.PinalertPosition.markAsked = () => { throw new Error('blocked'); };
+  click(page, 'welcome-allow-location');
+  assert.equal(page.positionCalls.length, 1);
+  page.positionCalls[0].ok({ coords: { latitude: 12.97, longitude: 77.59 } });
+  await flush();
+  assert.equal(visibleStep(page), 4);
 });
 
 test('a refused Allow location moves on and saves nothing', async () => {

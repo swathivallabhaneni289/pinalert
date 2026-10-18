@@ -26,6 +26,7 @@
 
   var BASIS_FRESH = 'Near your position.';
   var BASIS_STORED_PENDING = 'Near your last known position. Finding your position.';
+  var BASIS_STORED_KEPT = 'Near your last known position. Use Retry position to find where you are now.';
   var BASIS_STORED_OFF = 'Near your last known position. Location is off, so it may be out of date.';
   var BASIS_PENDING = 'Finding your position.';
   var BASIS_DEFAULT_AREA = 'Location is off, so this list shows reports near the default area. Turn on location access to see reports near you.';
@@ -214,6 +215,8 @@
       text = BASIS_STORED_PENDING;
     } else if (kind === 'stored-off') {
       text = BASIS_STORED_OFF;
+    } else if (kind === 'stored-kept') {
+      text = BASIS_STORED_KEPT;
     } else if (kind === 'pending') {
       text = BASIS_PENDING;
     } else if (kind === 'default') {
@@ -223,7 +226,7 @@
     if (basisEl && basisEl.textContent !== text) {
       Pinalert.setText(basisEl, text);
     }
-    setHidden(retryPositionBtn, kind !== 'default');
+    setHidden(retryPositionBtn, kind !== 'default' && kind !== 'stored-kept');
   }
 
   function showListFor(lat, lon, own) {
@@ -258,6 +261,92 @@
     }
     setBasis('default');
     showListFor(Pinalert.config.fallbackLat, Pinalert.config.fallbackLon, false);
+  }
+
+  // The "asked once" marker (plan 36). This page does not load position.js, so
+  // it keeps the same flag under the same key the shared module uses. The
+  // browser's own question is asked on its own only once per account in a
+  // browser; Retry position is the person's tap and always asks. A page with no
+  // account id sets and reads no marker, and a failing store reads as "not
+  // asked", which is the old behaviour (ask on every load).
+  var ASKED_KEY_PREFIX = 'pinalert.locationAsked.';
+
+  function askedKey() {
+    var account = currentAccount();
+    return account === '' ? '' : ASKED_KEY_PREFIX + account;
+  }
+
+  function askedBefore() {
+    var key = askedKey();
+    if (key === '') {
+      return false;
+    }
+    try {
+      return window.localStorage.getItem(key) === '1';
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function markAsked() {
+    var key = askedKey();
+    if (key === '') {
+      return;
+    }
+    try {
+      window.localStorage.setItem(key, '1');
+    } catch (err) {
+      // Nothing to do: the next load simply asks again.
+    }
+  }
+
+  // permissionState calls back once with 'granted', 'denied', 'prompt' or
+  // 'unknown' (no Permissions API, or any failure).
+  function permissionState(callback) {
+    var finished = false;
+    function finish(state) {
+      if (!finished) {
+        finished = true;
+        callback(state);
+      }
+    }
+    try {
+      if (!navigator.permissions || typeof navigator.permissions.query !== 'function') {
+        finish('unknown');
+        return;
+      }
+      navigator.permissions.query({ name: 'geolocation' }).then(function (status) {
+        var state = status && status.state;
+        finish(state === 'granted' || state === 'denied' || state === 'prompt' ? state : 'unknown');
+      }, function () {
+        finish('unknown');
+      });
+    } catch (err) {
+      finish('unknown');
+    }
+  }
+
+  // requestPositionOnLoad is the page's own start. A browser that already allows
+  // location is read silently. Otherwise the question is asked only the first
+  // time; after that the list stays on the kept position (else the default
+  // area) and Retry position is how the person refreshes.
+  function requestPositionOnLoad() {
+    permissionState(function (state) {
+      if (state === 'granted') {
+        requestPosition();
+        return;
+      }
+      if (askedBefore()) {
+        if (haveStored) {
+          setBasis('stored-kept');
+        } else {
+          onPositionFailed();
+        }
+        return;
+      }
+      markAsked();
+      requestPosition();
+    });
   }
 
   function requestPosition() {
@@ -1011,11 +1100,12 @@
     } else {
       setBasis('pending');
     }
-    requestPosition();
+    requestPositionOnLoad();
 
     if (retryPositionBtn) {
       retryPositionBtn.addEventListener('click', function () {
         retryPositionBtn.disabled = true;
+        markAsked();
         requestPosition();
       });
     }

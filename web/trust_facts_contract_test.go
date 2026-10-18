@@ -245,16 +245,19 @@ func TestSharedDistanceAndFadeFormatters(t *testing.T) {
 	// Plan 03.1-11 factored the geolocation step into locateReader, shared with
 	// the return to the reader. The old pin counted two fallback boots (denied
 	// and unsupported); locateReader answers both through its one failure
-	// callback, so centerOnVisitor boots the fallback centre once.
+	// callback. Plan 36 adds the second: a page that was already asked once and
+	// has no kept fix starts at the fallback centre without calling the browser.
+	// So centerOnVisitor boots the fallback centre twice.
 	centre := jsFunctionBody(t, mapJS, "centerOnVisitor()")
 	p13MustContain(t, "centerOnVisitor", centre,
 		"function boot(lat, lon, zoom, own)", "Pinalert.setCenter(lat, lon, own)",
 		"locateReader(",
 		"boot(pos.coords.latitude, pos.coords.longitude, 13, true)",
 		"boot(fallbackLat, fallbackLon, fallbackZoom, false)")
-	if n := strings.Count(centre, "boot(fallbackLat, fallbackLon, fallbackZoom, false)"); n != 1 {
-		t.Errorf("centerOnVisitor boots the fallback centre %d times, want 1 (locateReader's failure callback)", n)
+	if n := strings.Count(centre, "boot(fallbackLat, fallbackLon, fallbackZoom, false)"); n != 2 {
+		t.Errorf("centerOnVisitor boots the fallback centre %d times, want 2 (locateReader's failure callback and the asked once, no kept fix start)", n)
 	}
+	p13MustContain(t, "centerOnVisitor", centre, "askMode(", "keptReaderFix()", "mode !== 'reuse'")
 	locate := jsFunctionBody(t, mapJS, "locateReader(onFix, onFail)")
 	p13MustContain(t, "locateReader", locate,
 		"if (!navigator.geolocation)", "onFail();", "{ timeout: 8000 }")
