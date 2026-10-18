@@ -229,20 +229,20 @@ func TestWelcomeHasNoCloseControl(t *testing.T) {
 	}
 }
 
-// TestWelcomeStep3And4Privacy pins the location and home area rules: the line
-// is hidden by default and present once, the step 3 search block is hidden by
-// default, there is no reverse lookup, the device position is asked in one
-// place and sent nowhere, and the home area is only ever a picked result
-// (D-24b, research open question 3).
+// TestWelcomeStep3And4Privacy pins the location and home area rules: step 3 has
+// two buttons only (plan 33), there is no reverse lookup, the device position is
+// asked in one place and sent nowhere, step 3 sends no place search, and the
+// home area is only ever a picked result of step 4's own search (D-24b,
+// research open question 3).
 func TestWelcomeStep3And4Privacy(t *testing.T) {
 	page := w10Template(t)
 
-	w10Count(t, "welcome.html.tmpl", page, "Filled in from your location.", 1)
-	w10Count(t, "welcome.html.tmpl", page, `id="welcome-home-prefilled"`, 1)
-	p13MustMatch(t, "prefilled line", page, `<p class="app-window__help" id="welcome-home-prefilled" hidden>Filled in from your location\.</p>`)
-	// Amended 2026-10-17 by Phase 3.4 plan 28: the help line says what the home
-	// area is for in the owner's words.
-	p13Ordered(t, page, "home area field", `id="welcome-home-prefilled"`, "Used to send you alerts about this area.")
+	// Plan 33: nothing fills the home area from step 3 any more, so the
+	// Filled in from your location line is gone with it. The help line says what
+	// the home area is for in the owner's words.
+	p13MustNotContain(t, "step 4", page, "Filled in from your location.", "welcome-home-prefilled")
+	w10Count(t, "welcome.html.tmpl", page, `id="welcome-home-help"`, 1)
+	p13Ordered(t, page, "home area field", `id="welcome-home-input"`, "Used to send you alerts about this area.")
 
 	// Amended 2026-10-17 by Phase 3.4 plan 28: the lone pin tile and the lead
 	// sentence became three cards; the privacy fact (never shown, never stored)
@@ -253,17 +253,21 @@ func TestWelcomeStep3And4Privacy(t *testing.T) {
 		"Your exact location stays private.", "It is never shown to anyone and never stored.",
 		`<div class="welcome__actions welcome__actions--under">`,
 		`<button type="button" class="btn btn--primary" id="welcome-allow-location">Allow location</button>`,
-		`<button type="button" class="btn" id="welcome-search-open">Type my location instead</button>`,
-		`<div class="welcome__search" id="welcome-search-block" hidden>`,
-		`id="welcome-continue-3"`)
-	// Amended 2026-10-17 by Phase 3.4 plan 31 (the owner said "Search a place
-	// instead" does not make sense): the second button reads Type my location
-	// instead; the search it opens is labelled Type your location and shows the
-	// example For example: Koramangala, Bengaluru, as step 4's field does.
-	p13MustContain(t, "step 3 search", page,
-		`<label class="app-window__label" for="welcome-search-input">Type your location</label>`,
-		`placeholder="For example: Koramangala, Bengaluru"`)
-	p13MustNotContain(t, "step 3", page, "welcome__tile", "Not now, I will search a place", "Search a place")
+		`<button type="button" class="btn" id="welcome-not-now">Not now</button>`)
+	// Plan 33 (the owner, 2026-10-18): step 3 is only Allow location or Not now.
+	// The typed location search, its box, its results and its Continue are gone,
+	// so nothing in step 3 can send a place search.
+	step3 := regexp.MustCompile(`(?s)<section class="welcome__step" id="welcome-step-3".*?</section>`).FindString(page)
+	if step3 == "" {
+		t.Fatalf("no step 3 section in welcome.html.tmpl")
+	}
+	w10Count(t, "step 3", step3, `class="btn`, 2)
+	w10Count(t, "step 3", step3, "<input", 0)
+	w10Count(t, "step 3", step3, "<form", 0)
+	p13Ordered(t, step3, "step 3 buttons", `id="welcome-allow-location">Allow location</button>`, `id="welcome-not-now">Not now</button>`)
+	p13MustNotContain(t, "welcome.html.tmpl", page,
+		"welcome-search", "welcome__search", "welcome-continue-3", "Type my location instead", "Type your location",
+		"Koramangala", "welcome__tile", "Search a place")
 	p13MustContain(t, "step 4", page,
 		"Both are optional. They show only if you later let others follow you.",
 		`placeholder="For example: Ravi Kumar"`,
@@ -293,14 +297,18 @@ func TestWelcomeStep3And4Privacy(t *testing.T) {
 
 	// The searches and the calls, each by its own address.
 	p13MustContain(t, "welcome.js", js,
-		"'/api/geocode?q='", "'/api/geocode/place?kind=area&q='",
+		"'/api/geocode/place?kind=area&q='",
 		"'/api/me/consent'", "'/api/me/profile'", "'/api/me/first-run-done'", "'PATCH'", "'POST'")
 
-	// Plan 28: step 4 is prefilled with the area around the step 3 pick, never
-	// with the pick's own name (a street or a building).
-	enter := jsFunctionBody(t, js, "enterStep4()")
-	p13MustContain(t, "enterStep4", enter, "step3Pick.area", "homeInput.value = step3Pick.area;")
-	p13MustNotContain(t, "enterStep4", enter, "step3Pick.name")
+	// Plan 33: step 3 has no place search and step 4 is not prefilled from it.
+	// The only place search left is step 4's own, in areas mode; the report
+	// form's address search is a different script.
+	p13MustNotContain(t, "welcome.js", js,
+		"'/api/geocode?q='", "/api/geocode?", "step3", "Step3", "STEP3", "welcome-search", "enterStep4", "homePrefilled", "lastPrefill", "homeTouched")
+	w10Count(t, "welcome.js", js, "makeSearch({", 1)
+	notNow := jsFunctionBody(t, js, "notNow()")
+	p13MustContain(t, "notNow", notNow, "goTo(4)")
+	p13MustNotContain(t, "notNow", notNow, "geolocation", "PinalertPosition", "request(", "fetch(", "homeInput", "homePick")
 
 	// The home area body is built from a picked place only.
 	body := jsFunctionBody(t, js, "profileBody()")
@@ -379,7 +387,7 @@ func TestWelcomeScriptsAndStyles(t *testing.T) {
 	w10Count(t, "position.js", p421ReadStatic(t, "js/position.js"), "pinalert.lowLastPosition", 1)
 
 	css := stripCSSComments(p421ReadStatic(t, "css/welcome.css"))
-	for _, head := range []string{".welcome__step:not([hidden])", ".welcome__search:not([hidden])", ".welcome__notice:not([hidden])"} {
+	for _, head := range []string{".welcome__step:not([hidden])", ".welcome__notice:not([hidden])"} {
 		p13MustContain(t, "welcome.css", css, head+" {")
 	}
 	// Mobile first with one laptop block, no phone.css rule needed.

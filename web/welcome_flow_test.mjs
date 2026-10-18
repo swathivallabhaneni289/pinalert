@@ -7,12 +7,13 @@
 //     scrolls the text box to the top and focuses it; Log out is a plain form;
 //     only Agree records the agreement (POST /api/me/consent) and moves on, and
 //     only on a 204;
-//   - step 3 asks the browser for the position only when Allow location is
-//     pressed, keeps the fix in this browser through PinalertPosition and sends
-//     it nowhere; Type my location instead shows a place search whose
-//     picked result is kept in memory for step 4 only;
-//   - step 4's home area comes only from a picked search result, never from the
-//     device fix; nothing is saved until Continue; Skip saves nothing;
+//   - step 3 has two buttons only (plan 33): Allow location asks the browser for
+//     the position, keeps the fix in this browser through PinalertPosition and
+//     sends it nowhere; Not now moves on without asking; neither sends a place
+//     search, and both go to step 4 whatever the browser answers;
+//   - step 4's home area comes only from a picked search result of its own,
+//     never from step 3 and never from the device fix; nothing is saved until
+//     Continue; Skip saves nothing;
 //   - finishing sends the profile (only what the person filled), then
 //     first-run-done, then lands on / with the search focus flag set;
 //   - every string reaches the page through textContent.
@@ -168,21 +169,13 @@ function buildPage({ start = 1, name = '', home = '' } = {}) {
   make('p', 'welcome-error-2', steps[1]).hidden = true;
 
   make('button', 'welcome-allow-location', steps[2]);
-  make('button', 'welcome-search-open', steps[2]);
-  const block = make('div', 'welcome-search-block', steps[2]);
-  block.hidden = true;
-  const form3 = make('form', 'welcome-search-form', block);
-  make('input', 'welcome-search-input', form3);
-  make('p', 'welcome-search-status', block).hidden = true;
-  make('ul', 'welcome-search-results', block).hidden = true;
-  make('button', 'welcome-continue-3', block);
+  make('button', 'welcome-not-now', steps[2]);
 
   const nameInput = make('input', 'welcome-name-input', steps[3]);
   nameInput.value = name;
   const form4 = make('form', 'welcome-home-form', steps[3]);
   const homeInput = make('input', 'welcome-home-input', form4);
   homeInput.value = home;
-  make('p', 'welcome-home-prefilled', steps[3]).hidden = true;
   make('p', 'welcome-home-status', steps[3]).hidden = true;
   make('ul', 'welcome-home-results', steps[3]).hidden = true;
   make('p', 'welcome-error-4', steps[3]).hidden = true;
@@ -287,10 +280,6 @@ const PLACES = [
   { name: 'Indiranagar', display_name: 'Indiranagar, Bengaluru, Karnataka, India', lat: 12.9784, lon: 77.6408, area: 'Indiranagar' },
   { name: 'Indira Nagar', display_name: 'Indira Nagar, Lucknow, Uttar Pradesh, India', lat: 26.8806, lon: 80.9946, area: 'Indira Nagar' }
 ];
-// Places the way the server sends them for a step 3 search that found a street
-// or a building: the area is the place it lies in, or missing when unknown.
-const STREET = { name: 'MG Road', display_name: 'MG Road, Shivajinagar, Bengaluru, Karnataka, India', lat: 12.9756, lon: 77.6066, area: 'Shivajinagar' };
-const STREET_NO_AREA = { name: 'Lonely Road', display_name: 'Lonely Road, Karnataka, India', lat: 15.1, lon: 76.2 };
 
 // Walk to step 4 through the buttons, the way a person does.
 async function walkToStep4(page) {
@@ -455,7 +444,6 @@ test('Allow location asks the browser once, keeps the fix only through PinalertP
   assert.equal(visibleStep(page), 4);
   assert.equal(page.requests.length, 0, 'the fix is sent nowhere');
   assert.equal(byId(page, 'welcome-home-input').value, '', 'the device fix never fills the home area');
-  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
 });
 
 test('a refused Allow location moves on and saves nothing', async () => {
@@ -468,128 +456,68 @@ test('a refused Allow location moves on and saves nothing', async () => {
   assert.equal(page.requests.length, 0);
 });
 
-// Amended 2026-10-17 by Phase 3.4 plan 31: the button is now Type my location
-// instead (the behaviour is unchanged).
-test('Type my location instead shows the search without asking for the position', () => {
-  const page = load({ start: 3 });
-  assert.equal(byId(page, 'welcome-search-block').hidden, true);
-  click(page, 'welcome-search-open');
-  assert.equal(byId(page, 'welcome-search-block').hidden, false);
-  assert.equal(page.doc.activeElement, byId(page, 'welcome-search-input'));
-  assert.equal(page.positionCalls.length, 0);
-  assert.equal(visibleStep(page), 3, 'it reveals the search and does not move on');
-});
+// ---- Plan 33: step 3 is only Allow location or Not now ---------------------
 
-test('prefill from a step 3 search shows the line', async () => {
+test('Not now goes to step 4 without asking the browser, sending or saving anything', async () => {
   const page = load({ start: 3 });
-  click(page, 'welcome-search-open');
-  byId(page, 'welcome-search-input').value = 'Indira';
-  fire(byId(page, 'welcome-search-form'), 'submit');
-
-  assert.equal(page.requests.length, 1);
-  assert.equal(page.requests[0].url, '/api/geocode?q=Indira');
-  assert.equal(page.requests[0].init.method === undefined || page.requests[0].init.method === 'GET', true);
-  answer(page.requests[0], 200, { results: PLACES });
+  click(page, 'welcome-not-now');
   await flush();
-
-  const list = byId(page, 'welcome-search-results');
-  assert.equal(list.hidden, false);
-  assert.equal(list.children.length, 2);
-  fire(list.children[0].children[0], 'click');
-  click(page, 'welcome-continue-3');
-
   assert.equal(visibleStep(page), 4);
-  assert.equal(byId(page, 'welcome-home-input').value, 'Indiranagar');
-  assert.equal(byId(page, 'welcome-home-prefilled').hidden, false);
-  assert.equal(page.requests.length, 1, 'neither path stores anything on the server');
-  assert.deepEqual(page.saved, []);
+  assert.equal(page.positionCalls.length, 0, 'the browser is not asked');
+  assert.equal(page.requests.length, 0, 'nothing is sent, and no place search');
+  assert.deepEqual(page.saved, [], 'no position is kept');
+  assert.equal(page.doc.activeElement, byId(page, 'welcome-step-4-title'), 'focus moves to the step title');
 });
 
-test('no step 3 search shows no line', async () => {
-  const page = load({ start: 3 });
-  click(page, 'welcome-search-open');
-  click(page, 'welcome-continue-3');
-  assert.equal(visibleStep(page), 4);
-  assert.equal(byId(page, 'welcome-home-input').value, '');
-  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
+test('step 3 never fills or empties step 4: the home area is left as the page drew it', async () => {
+  const empty = load({ start: 3 });
+  click(empty, 'welcome-not-now');
+  assert.equal(byId(empty, 'welcome-home-input').value, '');
+
+  const stored = load({ start: 3, home: 'Whitefield' });
+  click(stored, 'welcome-not-now');
+  assert.equal(byId(stored, 'welcome-home-input').value, 'Whitefield', 'a stored home area stays');
+  click(stored, 'welcome-continue-4');
+  assert.equal(stored.requests.length, 1);
+  assert.equal(stored.requests[0].url, '/api/me/first-run-done', 'a stored home area is not sent again');
 
   const viaAllow = load({ start: 3 });
   click(viaAllow, 'welcome-allow-location');
   viaAllow.positionCalls[0].ok({ coords: { latitude: 12.97, longitude: 77.59 } });
   await flush();
   assert.equal(byId(viaAllow, 'welcome-home-input').value, '');
-  assert.equal(byId(viaAllow, 'welcome-home-prefilled').hidden, true);
 });
 
-test('stored home area shows no line', () => {
-  const page = load({ start: 3, home: 'Whitefield' });
-  click(page, 'welcome-search-open');
-  click(page, 'welcome-continue-3');
+test('Allow location goes to step 4 when the browser has no location API', () => {
+  const page = load({ start: 3 });
+  delete page.sandbox.navigator.geolocation;
+  click(page, 'welcome-allow-location');
   assert.equal(visibleStep(page), 4);
-  assert.equal(byId(page, 'welcome-home-input').value, 'Whitefield');
-  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
-});
-
-test('typing in step 3 after a pick forgets the pick, so step 4 is not prefilled', async () => {
-  const page = load({ start: 3 });
-  click(page, 'welcome-search-open');
-  const input = byId(page, 'welcome-search-input');
-  input.value = 'Indira';
-  fire(byId(page, 'welcome-search-form'), 'submit');
-  answer(page.requests[0], 200, { results: PLACES });
-  await flush();
-  fire(byId(page, 'welcome-search-results').children[0].children[0], 'click');
-  input.value = 'Something else';
-  fire(input, 'input');
-  click(page, 'welcome-continue-3');
-  assert.equal(byId(page, 'welcome-home-input').value, '');
-  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
-});
-
-test('a failed or rate limited step 3 search shows a plain line and Continue still works', async () => {
-  const page = load({ start: 3 });
-  click(page, 'welcome-search-open');
-  const input = byId(page, 'welcome-search-input');
-  const status = byId(page, 'welcome-search-status');
-
-  input.value = 'ab';
-  fire(byId(page, 'welcome-search-form'), 'submit');
-  assert.equal(status.textContent, 'Type at least 3 letters.');
   assert.equal(page.requests.length, 0);
-
-  input.value = 'Indira';
-  fire(byId(page, 'welcome-search-form'), 'submit');
-  answer(page.requests[0], 429, {});
-  await flush();
-  assert.equal(status.textContent, 'Too many searches. Wait a few seconds and try again.');
-
-  input.value = 'Indiranagar';
-  fire(byId(page, 'welcome-search-form'), 'submit');
-  page.requests[1].reject(new Error('offline'));
-  await flush();
-  assert.equal(status.textContent, 'Search unavailable. Try again in a moment.');
-
-  input.value = 'Nowhere at all';
-  fire(byId(page, 'welcome-search-form'), 'submit');
-  answer(page.requests[2], 200, { results: [] });
-  await flush();
-  assert.equal(status.textContent, 'No matches found. Try a nearby town or landmark.');
-
-  click(page, 'welcome-continue-3');
-  assert.equal(visibleStep(page), 4);
-  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
+  assert.deepEqual(page.saved, []);
 });
 
-test('a search that never answers still ends, and Continue still works', async () => {
-  const page = load({ start: 3 });
-  click(page, 'welcome-search-open');
-  byId(page, 'welcome-search-input').value = 'Indira';
-  fire(byId(page, 'welcome-search-form'), 'submit');
-  page.advance(11000);
-  await flush();
-  assert.equal(byId(page, 'welcome-search-status').textContent, 'Search unavailable. Try again in a moment.');
-  click(page, 'welcome-continue-3');
-  assert.equal(visibleStep(page), 4);
+test('Allow location goes to step 4 when the browser times out or gives a bad answer', async () => {
+  const timedOut = load({ start: 3 });
+  click(timedOut, 'welcome-allow-location');
+  timedOut.positionCalls[0].fail({ code: 3 });
+  assert.equal(visibleStep(timedOut), 4);
+
+  const odd = load({ start: 3 });
+  click(odd, 'welcome-allow-location');
+  odd.positionCalls[0].ok({});
+  assert.equal(visibleStep(odd), 4);
+  assert.deepEqual(odd.saved, []);
+  assert.equal(odd.requests.length, 0);
+});
+
+test('Not now is not a way past the agreement: finishing still needs Agree', async () => {
+  const page = load({ start: 1 });
+  fire(listButton(page, 3), 'click');
+  click(page, 'welcome-not-now');
+  click(page, 'welcome-skip');
+  assert.equal(visibleStep(page), 2, 'Skip before Agree shows step 2');
+  assert.equal(page.requests.length, 0);
 });
 
 test('step 4 Continue sends only the filled fields, then first-run-done, then lands on / with the search flag', async () => {
@@ -659,7 +587,6 @@ test('the home area sent is the picked place with its own point, never the devic
   await flush();
   fire(byId(page, 'welcome-home-results').children[0].children[0], 'click');
   assert.equal(home.value, 'Whitefield');
-  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true, 'a step 4 pick is not a step 3 prefill');
 
   click(page, 'welcome-continue-4');
   assert.equal(page.requests[1].url, '/api/me/profile');
@@ -672,107 +599,6 @@ test('the home area sent is the picked place with its own point, never the devic
   click(typed, 'welcome-continue-4');
   assert.equal(typed.requests.length, 1, 'text that was never picked from a search is not a home area');
   assert.equal(typed.requests[0].url, '/api/me/first-run-done');
-});
-
-test('typing after a step 3 prefill forgets the pick and hides the line', async () => {
-  const page = load({ start: 3 });
-  click(page, 'welcome-search-open');
-  byId(page, 'welcome-search-input').value = 'Indira';
-  fire(byId(page, 'welcome-search-form'), 'submit');
-  answer(page.requests[0], 200, { results: PLACES });
-  await flush();
-  fire(byId(page, 'welcome-search-results').children[0].children[0], 'click');
-  click(page, 'welcome-continue-3');
-  assert.equal(byId(page, 'welcome-home-prefilled').hidden, false);
-
-  const home = byId(page, 'welcome-home-input');
-  home.value = 'Indiranagar East';
-  fire(home, 'input');
-  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
-  click(page, 'welcome-continue-4');
-  assert.equal(page.requests.length, 2, 'only first-run-done follows: the edited text was never picked');
-  assert.equal(page.requests[1].url, '/api/me/first-run-done');
-});
-
-test('a prefilled home area from step 3 is saved with the picked place point on Continue', async () => {
-  const page = load({ start: 3 });
-  click(page, 'welcome-search-open');
-  byId(page, 'welcome-search-input').value = 'Indira';
-  fire(byId(page, 'welcome-search-form'), 'submit');
-  answer(page.requests[0], 200, { results: PLACES });
-  await flush();
-  fire(byId(page, 'welcome-search-results').children[0].children[0], 'click');
-  click(page, 'welcome-continue-3');
-  click(page, 'welcome-continue-4');
-  assert.deepEqual(JSON.parse(page.requests[1].init.body), { home_area: { name: 'Indiranagar', lat: 12.9784, lon: 77.6408 } });
-});
-
-// Pick the first result of a step 3 search for `place` and go to step 4.
-async function pickOnStep3(page, place) {
-  click(page, 'welcome-search-open');
-  byId(page, 'welcome-search-input').value = 'anything';
-  fire(byId(page, 'welcome-search-form'), 'submit');
-  answer(page.requests[0], 200, { results: [place] });
-  await flush();
-  fire(byId(page, 'welcome-search-results').children[0].children[0], 'click');
-  click(page, 'welcome-continue-3');
-}
-
-test('a street picked on step 3 prefills step 4 with the area around it, never the street name', async () => {
-  const page = load({ start: 3 });
-  await pickOnStep3(page, STREET);
-  const home = byId(page, 'welcome-home-input');
-  assert.equal(home.value, 'Shivajinagar');
-  assert.equal(home.value.includes('MG Road'), false);
-  assert.equal(byId(page, 'welcome-home-prefilled').hidden, false, 'the Filled in line shows');
-
-  click(page, 'welcome-continue-4');
-  const body = JSON.parse(page.requests[1].init.body);
-  assert.equal(body.home_area.name, 'Shivajinagar', 'the area is what is saved, not the street');
-  assert.equal(JSON.stringify(body).includes('MG Road'), false);
-  assert.deepEqual(Object.keys(body.home_area).sort(), ['lat', 'lon', 'name']);
-  // The point stays the picked place's own; the server keeps a 5 km cell.
-  assert.equal(body.home_area.lat, STREET.lat);
-  assert.equal(body.home_area.lon, STREET.lon);
-});
-
-test('a street with no known area leaves step 4 empty and the line hidden', async () => {
-  const page = load({ start: 3 });
-  await pickOnStep3(page, STREET_NO_AREA);
-  assert.equal(byId(page, 'welcome-home-input').value, '');
-  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
-  click(page, 'welcome-continue-4');
-  assert.equal(page.requests.length, 2);
-  assert.equal(page.requests[1].url, '/api/me/first-run-done', 'no home area is saved');
-});
-
-test('a street with no known area keeps the stored home area of a returning account', async () => {
-  const page = load({ start: 3, home: 'Whitefield' });
-  await pickOnStep3(page, STREET_NO_AREA);
-  assert.equal(byId(page, 'welcome-home-input').value, 'Whitefield');
-  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
-  click(page, 'welcome-continue-4');
-  assert.equal(page.requests[1].url, '/api/me/first-run-done', 'a stored home area is not sent again');
-});
-
-test('a place that is already an area prefills as it did', async () => {
-  const page = load({ start: 3 });
-  await pickOnStep3(page, PLACES[0]);
-  assert.equal(byId(page, 'welcome-home-input').value, 'Indiranagar');
-  assert.equal(byId(page, 'welcome-home-prefilled').hidden, false);
-  click(page, 'welcome-continue-4');
-  assert.deepEqual(JSON.parse(page.requests[1].init.body), { home_area: { name: 'Indiranagar', lat: 12.9784, lon: 77.6408 } });
-});
-
-test('editing the area filled in from a street forgets it, as any prefill', async () => {
-  const page = load({ start: 3 });
-  await pickOnStep3(page, STREET);
-  const home = byId(page, 'welcome-home-input');
-  home.value = 'Shivajinagar West';
-  fire(home, 'input');
-  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
-  click(page, 'welcome-continue-4');
-  assert.equal(page.requests[1].url, '/api/me/first-run-done', 'edited text was never picked');
 });
 
 test('a refused profile keeps step 4 with the server sentence and does not finish', async () => {
@@ -1103,37 +929,6 @@ test('a pick ends the typing pause and a late answer does not reopen the list', 
   assert.equal(page.requests.length, 1, 'the pause that was running sent nothing');
 });
 
-// Amended 2026-10-17 (owner, viewing session): step 3's typed location also
-// suggests places while typing, like the home area, but searches any place.
-test('step 3 suggests any place while typing, with no areas filter', async () => {
-  const page = load({ start: 3 });
-  click(page, 'welcome-search-open');
-  const input = byId(page, 'welcome-search-input');
-  input.value = 'In';
-  fire(input, 'input');
-  page.advance(5000);
-  assert.equal(page.requests.length, 0, 'nothing under 3 characters');
-  input.value = 'Indira';
-  fire(input, 'input');
-  page.advance(399);
-  assert.equal(page.requests.length, 0, 'the pause is 400 ms');
-  page.advance(1);
-  assert.equal(page.requests.length, 1);
-  assert.equal(page.requests[0].url, '/api/geocode?q=Indira', 'step 3 keeps the report form search, no areas filter');
-  answer(page.requests[0], 200, { results: PLACES });
-  await flush();
-  assert.equal(byId(page, 'welcome-search-results').hidden, false);
-});
-
-test('Enter in step 3 still searches at once', () => {
-  const page = load({ start: 3 });
-  click(page, 'welcome-search-open');
-  byId(page, 'welcome-search-input').value = 'Indira';
-  fire(byId(page, 'welcome-search-form'), 'submit');
-  assert.equal(page.requests.length, 1);
-  assert.equal(page.requests[0].url, '/api/geocode?q=Indira');
-});
-
 // ---- Plan 30: moving back and forth between the four steps ------------------
 
 const listButton = (page, n) => page.items[n - 1].button;
@@ -1287,35 +1082,25 @@ test('an address step is honoured only when the account may see it', () => {
 test('what was typed or picked is kept while moving between steps', async () => {
   const page = load();
   fire(listButton(page, 3), 'click');
-  click(page, 'welcome-search-open');
-  const input = byId(page, 'welcome-search-input');
-  input.value = 'MG Road';
-  fire(byId(page, 'welcome-search-form'), 'submit');
-  answer(page.requests[0], 200, { results: [STREET] });
-  await flush();
-  fire(byId(page, 'welcome-search-results').children[0].children[0], 'click');
-
   fire(listButton(page, 4), 'click');
-  assert.equal(byId(page, 'welcome-home-input').value, 'Shivajinagar', 'the first visit prefills from the step 3 pick');
+  assert.equal(byId(page, 'welcome-home-input').value, '', 'step 3 leaves nothing in the home area');
   byId(page, 'welcome-name-input').value = 'Asha';
   fire(byId(page, 'welcome-name-input'), 'input');
   typeHome(page, 'Indira');
   page.advance(400);
-  answer(page.requests[1], 200, { results: PLACES });
+  answer(page.requests[0], 200, { results: PLACES });
   await flush();
   fire(homeList(page).children[0].children[0], 'click');
   assert.equal(byId(page, 'welcome-home-input').value, 'Indiranagar');
 
   // Away to step 3 and step 1 and back: nothing is lost or re-filled.
   click(page, 'welcome-back-4');
-  assert.equal(byId(page, 'welcome-search-input').value, 'MG Road');
-  assert.equal(byId(page, 'welcome-search-block').hidden, false, 'the step 3 search stays open');
+  assert.equal(visibleStep(page), 3);
   fire(listButton(page, 1), 'click');
   page.popTo({ pinalertStep: 4 });
   assert.equal(visibleStep(page), 4);
   assert.equal(byId(page, 'welcome-name-input').value, 'Asha');
-  assert.equal(byId(page, 'welcome-home-input').value, 'Indiranagar', 'the picked home area is not overwritten by the step 3 prefill');
-  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
+  assert.equal(byId(page, 'welcome-home-input').value, 'Indiranagar', 'the picked home area is still there');
 
   // Agreement then finishing sends exactly what was picked.
   fire(listButton(page, 2), 'click');
@@ -1332,35 +1117,6 @@ test('what was typed or picked is kept while moving between steps', async () => 
     display_name: 'Asha',
     home_area: { name: 'Indiranagar', lat: 12.9784, lon: 77.6408 }
   });
-});
-
-test('an untouched home area follows a changed step 3 pick; a touched one does not', async () => {
-  const page = load({ start: 3 });
-  click(page, 'welcome-search-open');
-  const input = byId(page, 'welcome-search-input');
-  input.value = 'MG Road';
-  fire(byId(page, 'welcome-search-form'), 'submit');
-  answer(page.requests[0], 200, { results: [STREET] });
-  await flush();
-  fire(byId(page, 'welcome-search-results').children[0].children[0], 'click');
-  click(page, 'welcome-continue-3');
-  assert.equal(byId(page, 'welcome-home-input').value, 'Shivajinagar');
-  assert.equal(byId(page, 'welcome-home-prefilled').hidden, false);
-
-  // Back to step 3, forget the pick by changing the text, come forward again:
-  // the prefill that the person never touched is taken away with it.
-  click(page, 'welcome-back-4');
-  input.value = 'MG Roa';
-  fire(input, 'input');
-  click(page, 'welcome-continue-3');
-  assert.equal(byId(page, 'welcome-home-input').value, '', 'the old prefill is gone');
-  assert.equal(byId(page, 'welcome-home-prefilled').hidden, true);
-
-  // A home area the person typed is theirs and stays.
-  typeHome(page, 'Whitefield');
-  click(page, 'welcome-back-4');
-  click(page, 'welcome-continue-3');
-  assert.equal(byId(page, 'welcome-home-input').value, 'Whitefield');
 });
 
 // ---- Plan 32: the typed row of the home area (step 4) ----------------------

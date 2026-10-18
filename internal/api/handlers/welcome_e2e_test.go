@@ -108,11 +108,9 @@ func TestOnboardingFlowEndToEnd(t *testing.T) {
 		`data-start-step="1"`, "Step 1 of 4", "Step 2 of 4", "Step 3 of 4", "Step 4 of 4",
 		"Welcome to Pinalert", "Disclaimer and policy", "Show what is happening near you", "About you",
 		"call 112 first.", "Please read this before you use Pinalert. Tap Agree to continue.",
-		// Amended 2026-10-17 by Phase 3.4 plan 31: the step 3 button is Type my
-		// location instead, and the Disagree box is drawn with the existing log
-		// out form.
-		"Filled in from your location.", "Type my location instead", "Type your location",
-		"For example: Koramangala, Bengaluru",
+		// Plan 33: step 3 holds only Allow location and Not now, and the Disagree
+		// box is drawn with the existing log out form.
+		`id="welcome-allow-location">Allow location</button>`, `id="welcome-not-now">Not now</button>`,
 		// Owner amendments the same day: the box is one short line and two
 		// buttons, with no call line and no number.
 		"Sorry, you need to agree before you can continue.",
@@ -384,10 +382,12 @@ func TestWelcomeEscapesStoredValues(t *testing.T) {
 			t.Errorf("/welcome lacks the escaped value %q", want)
 		}
 	}
-	// A stored home area is a value in the field and the prefilled line stays
-	// hidden until script shows it for a step 3 search.
-	if !strings.Contains(body, `id="welcome-home-prefilled" hidden`) {
-		t.Errorf("the prefilled line must start hidden")
+	// Plan 33: a stored home area is a value in the field, and no line says it
+	// was filled in from the person's location any more.
+	for _, banned := range []string{"welcome-home-prefilled", "Filled in from your location."} {
+		if strings.Contains(body, banned) {
+			t.Errorf("/welcome still holds %q: step 3 no longer fills the home area", banned)
+		}
 	}
 }
 
