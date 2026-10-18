@@ -1117,14 +1117,17 @@
   Pinalert.onSelect(function (id, source) {
     // A selection that starts from the map chooses its row the same way (D-17):
     // the row takes the soft fill, the phone sheet comes up to half so the row
-    // can be seen (it is not remembered: the sheet stays at half when the
-    // report closes), and the sheet's own scroll box brings the row under the
-    // head. It never scrolls the page (A87). Guard on source so a
+    // can be seen when no detail is open over it, and the sheet's own scroll
+    // box brings the row under the head. It never scrolls the page (A87). Guard on source so a
     // list-originated selection, which activateRow already handled, is not
     // handled a second time.
     if (source === 'map') {
       applySelectionHighlight(id);
-      if (window.PinalertSheet && window.PinalertSheet.getSnap() !== 'half') {
+      // A report detail that is open has put the sheet aside (sheet.js), so a
+      // pin tap does not bring it up under the detail: it comes back, with the
+      // row already chosen, where it was when the detail closes.
+      if (window.PinalertSheet && window.PinalertSheet.getSnap() !== 'half' &&
+          !document.documentElement.hasAttribute('data-popup-open')) {
         window.PinalertSheet.setSnap('half');
       }
       revealRowInListPane(id);

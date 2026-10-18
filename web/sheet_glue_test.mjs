@@ -48,7 +48,7 @@ class FakeEl {
   fire(type, evt) { (this.listeners[type] || []).slice().forEach((fn) => fn(evt)); }
 }
 
-function setup({ phone = true, reduced = false, height = 719 } = {}) {
+function setup({ phone = true, reduced = false, height = 719, detailOpen = false } = {}) {
   const box = new FakeEl('app-shell');
   box.clientHeight = height;
   const sheet = new FakeEl('report-sheet');
@@ -67,7 +67,17 @@ function setup({ phone = true, reduced = false, height = 719 } = {}) {
   const clock = { t: 1000 };
   const docListeners = new FakeEl('document');
   const queries = { phone, reduced };
+  // The root element carries data-popup-open while a report detail is open
+  // (map.js), and a MutationObserver stand-in lets the test fire the change.
+  const html = new FakeEl('html');
+  const observers = [];
+  if (detailOpen) { html.setAttribute('data-popup-open', 'true'); }
+  class FakeObserver {
+    constructor(fn) { this.fn = fn; observers.push(this); }
+    observe(target, opts) { this.target = target; this.opts = opts; }
+  }
   const document = {
+    documentElement: html,
     readyState: 'complete',
     getElementById: (id) => byId[id] || null,
     addEventListener: (t, f) => docListeners.addEventListener(t, f),
@@ -81,6 +91,7 @@ function setup({ phone = true, reduced = false, height = 719 } = {}) {
     setTimeout: (fn) => { timers.push(fn); return timers.length; },
     clearTimeout: (id) => { if (id > 0) { timers[id - 1] = null; } },
     addEventListener() {},
+    MutationObserver: FakeObserver,
     PinalertMap: { resizeToSheet: (sheetTop) => resized.push(sheetTop) }
   };
   const context = vm.createContext({ window, document, Date });
@@ -89,7 +100,9 @@ function setup({ phone = true, reduced = false, height = 719 } = {}) {
     const pending = timers.splice(0).filter(Boolean);
     pending.forEach((fn) => fn());
   };
-  return { box, sheet, handle, row, head, showButton, api: window.PinalertSheet, resized, fireTimers, docListeners, clock };
+  const openDetail = () => { html.setAttribute('data-popup-open', 'true'); observers.forEach((o) => o.fn([])); };
+  const closeDetail = () => { html.removeAttribute('data-popup-open'); observers.forEach((o) => o.fn([])); };
+  return { box, sheet, handle, row, head, showButton, html, observers, openDetail, closeDetail, api: window.PinalertSheet, resized, fireTimers, docListeners, clock };
 }
 
 const top = (env) => env.box.props['--sheet-top'];
@@ -174,6 +187,51 @@ test('remember and restore bring the sheet back after the detail closes, keeping
   assert.equal(env.api.getSnap(), 'full');
 });
 
+test('an open report detail puts the sheet at its lowest position by itself, whoever opened it', () => {
+  const env = setup();
+  assert.equal(env.observers.length, 1, 'one observer');
+  assert.equal(env.observers[0].target, env.html, 'it watches the root element');
+  assert.equal(JSON.stringify(env.observers[0].opts), JSON.stringify({ attributes: true, attributeFilter: ['data-popup-open'] }));
+  env.openDetail();
+  assert.equal(env.api.getSnap(), 'short');
+  assert.equal(top(env), '511px');
+  env.closeDetail();
+  assert.equal(env.api.getSnap(), 'half', 'back where it was');
+  assert.equal(top(env), '324px');
+});
+
+test('closing the detail brings back the position the person had, not always half', () => {
+  const env = setup();
+  env.api.setSnap('full');
+  env.openDetail();
+  assert.equal(env.api.getSnap(), 'short');
+  env.closeDetail();
+  assert.equal(env.api.getSnap(), 'full');
+});
+
+test('opening one report after another keeps the sheet aside and restores the first position once', () => {
+  const env = setup();
+  env.openDetail();
+  // map.js closes the first popup (restore) and opens the second in the same task
+  env.api.restore();
+  env.openDetail();
+  assert.equal(env.api.getSnap(), 'short', 'aside again, nothing left half open under the detail');
+  env.api.remember();
+  env.openDetail();
+  assert.equal(env.api.getSnap(), 'short');
+  env.closeDetail();
+  assert.equal(env.api.getSnap(), 'half');
+  env.closeDetail();
+  assert.equal(env.api.getSnap(), 'half', 'a second close does nothing');
+});
+
+test('a detail already open when the sheet starts puts the sheet aside, and close restores half', () => {
+  const env = setup({ detailOpen: true });
+  assert.equal(env.api.getSnap(), 'short');
+  env.closeDetail();
+  assert.equal(env.api.getSnap(), 'half');
+});
+
 test('on a laptop the sheet is idle: no top is written and nothing moves', () => {
   const env = setup({ phone: false });
   assert.equal(top(env), undefined);
@@ -185,6 +243,10 @@ test('on a laptop the sheet is idle: no top is written and nothing moves', () =>
   assert.deepEqual(env.resized, []);
   env.handle.fire('click', evt());
   assert.equal(top(env), undefined);
+  env.openDetail();
+  env.closeDetail();
+  assert.equal(top(env), undefined, 'an open detail moves nothing on a laptop');
+  assert.deepEqual(env.resized, []);
 });
 
 test('a drag on the handle row follows the finger and lets go on the nearest position', () => {

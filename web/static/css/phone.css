@@ -108,6 +108,19 @@
     transition: none;
   }
 
+  /* While a report detail is open (map.js keeps data-popup-open on the root for
+     as long as a popup is open, a row, a pin or an address opened it) the list
+     sheet steps aside: sheet.js has dropped it to short, and here it slides off
+     the bottom and is hidden, so no part of the list lies over the report and
+     nothing in it takes a press or a focus under the detail. It is shown again
+     at once when the detail closes, and sheet.js puts it back where it was. */
+  html[data-popup-open] .app-shell > .pane--list {
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(100%);
+    transition: top 0.3s cubic-bezier(.2, .8, .2, 1), transform 0.3s cubic-bezier(.2, .8, .2, 1), visibility 0s linear 0.3s;
+  }
+
   /* The map label (Show Disputed names the set the pins are) sits above the
      sheet's edge and follows it, instead of the bottom of the box where the
      sheet would cover it. 48px above the sheet top clears the attribution. */
@@ -1129,6 +1142,11 @@
   .app-shell > .pane--list,
   .pane--map #map,
   .pane--map > .map-label {
+    transition: none;
+  }
+
+  /* The sheet that steps aside for a report detail goes at once too. */
+  html[data-popup-open] .app-shell > .pane--list {
     transition: none;
   }
 }
