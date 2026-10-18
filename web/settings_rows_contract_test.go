@@ -171,13 +171,64 @@ func TestDeleteRuleSentenceIsOneString(t *testing.T) {
 		t.Fatalf("the Option A sentence appears %d times in settings.html.tmpl, want exactly 1", got)
 	}
 	want := `<p id="settings-delete-rule">` + sentence + `</p>`
-	if !strings.Contains(page, want) {
-		t.Errorf("the Option A sentence is not alone in one p element with id settings-delete-rule")
-	}
 	at := strings.Index(page, want)
+	if at == -1 {
+		t.Fatalf("the Option A sentence is not alone in one p element with id settings-delete-rule")
+	}
 	before := page[:at]
 	comment := `{{/* Q2 owner confirmed 2026-10-18: Option A. Option B is the one sentence "Reports you posted and votes you made are removed, and reports other people confirmed with you may change." */}}`
 	if !strings.HasSuffix(strings.TrimRight(before, " \t\n"), comment) {
 		t.Errorf("the Q2 template comment does not come just before the Option A sentence")
+	}
+}
+
+// TestSettingsAlertsScriptContract pins T-03.2-08, T-03.2-22 and D-02 on
+// settings-alerts.js: it reaches the routes it needs, writes text only through
+// textContent, never parses markup or asks for the device position, navigates
+// only to the two fixed sign in addresses, and binds no click handler on a
+// window element, so a click on the backdrop closes nothing. settings.js is not
+// edited by this plan, so TestSettingsScriptContract stays as it is.
+func TestSettingsAlertsScriptContract(t *testing.T) {
+	raw := p421ReadStatic(t, "js/settings-alerts.js")
+	js := stripJSComments(raw)
+	for _, want := range []string{
+		"/api/me/muted-reports", "/unmute", "/api/me/logout-all", "/api/me/delete",
+		"JSON.stringify({ confirm: true })", "/login?done=all-devices", "/login?done=deleted",
+		"textContent", "'Escape'", "encodeURIComponent", "window.PinalertSettingsAlerts = ",
+		"createElement",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("settings-alerts.js lacks %q", want)
+		}
+	}
+	for _, banned := range []string{
+		"geolocation", "watchPosition", "getCurrentPosition",
+		"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "DOMParser", "createContextualFragment", "eval(", "new Function",
+		"localStorage", "sessionStorage",
+	} {
+		if strings.Contains(js, banned) {
+			t.Errorf("settings-alerts.js uses %q: a markup parsing sink or the device position has no place here", banned)
+		}
+	}
+	// Navigation goes to the two fixed addresses and nowhere else.
+	for _, m := range regexp.MustCompile(`location\.(assign|replace|href)[^;]*;`).FindAllString(js, -1) {
+		if !strings.Contains(m, "LOGGED_OUT_PAGE") && !strings.Contains(m, "DELETED_PAGE") {
+			t.Errorf("settings-alerts.js navigates with %q, want only the two fixed sign in addresses", m)
+		}
+	}
+	// A window is never given a click handler of its own (D-02).
+	for _, banned := range []string{"mutedWin.addEventListener('click'", "logoutWin.addEventListener('click'", "deleteWin.addEventListener('click'", "win.addEventListener('click'"} {
+		if strings.Contains(js, banned) {
+			t.Errorf("settings-alerts.js binds %q: a window closes with the X and Escape only", banned)
+		}
+	}
+	// The Delete rule sentence lives in the template only.
+	if strings.Contains(js, "no name or link to you") {
+		t.Errorf("settings-alerts.js holds the Delete rule sentence; it lives in the template only")
+	}
+	for _, dash := range []rune{0x2013, 0x2014} {
+		if strings.ContainsRune(raw, dash) {
+			t.Errorf("settings-alerts.js holds the dash character U+%04X", dash)
+		}
 	}
 }
