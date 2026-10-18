@@ -59,7 +59,7 @@ func TestMuteControlShape(t *testing.T) {
 	p424Contains(t, "createMuteControl", create,
 		"createElement('button')", "'mute-control'", "dataset.muteReportId", "el.hidden = true",
 		"'inline-error'", "setAttribute('role', 'alert')", "'click'", "'keydown'", "'Enter'", "' '", "'Spacebar'",
-		"return { el: el, error: error }")
+		"var control = { el: el, error: error }", "return control;")
 	if n := strings.Count(create, "stopPropagation"); n < 2 {
 		t.Errorf("createMuteControl stops propagation %d times, want at least 2", n)
 	}
