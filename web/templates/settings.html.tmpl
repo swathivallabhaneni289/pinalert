@@ -56,6 +56,8 @@
         {{/* Owner 2026-10-18 (Q4): the section is called Notifications, with no extra line about the app being open; Phase 3.3 adds its phone rows to this same section. */}}
         <p class="place-section__line">Hear about Reliable reporters near your home area.</p>
       </div>
+      {{/* One classless wrapper, so on the laptop grid the boxes and the error line are one item beside the title, not three. */}}
+      <div>
       <div class="place-box" id="settings-alerts-on"{{if not .HasHomeArea}} hidden{{end}}>
         <label class="place-row place-row--switch" id="settings-reliable-row" for="settings-reliable-switch">
           <span class="place-row__text">
@@ -84,6 +86,7 @@
         </button>
       </div>
       <p class="inline-error" id="settings-alerts-error" role="alert" hidden></p>
+      </div>
     </section>
 
     <section class="place-section" aria-labelledby="settings-people-title">

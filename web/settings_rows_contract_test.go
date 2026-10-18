@@ -260,6 +260,13 @@ func TestPhoneNotificationsSection(t *testing.T) {
 			t.Errorf("the Notifications section lacks %q", want)
 		}
 	}
+	// On the laptop .place-section is a two column grid (title, then the rows),
+	// so the boxes and the error line sit in one classless wrapper: a third
+	// grid item would land under the title instead of under the box.
+	wrapped := regexp.MustCompile(`</div>\s*(?:\{\{/\*[^}]*\*/\}\})?\s*<div>\s*<div class="place-box" id="settings-alerts-on"[\s\S]*id="settings-alerts-error"[^>]*></p>\s*</div>\s*</section>`)
+	if !wrapped.MatchString(page) {
+		t.Errorf("the Notifications boxes and error line are not inside one classless wrapper div")
+	}
 	if !strings.Contains(page, `<section class="place-section" id="settings-alerts-section" aria-labelledby="settings-phone-title">`) {
 		t.Errorf("the Notifications section lacks id settings-alerts-section")
 	}
