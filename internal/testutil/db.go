@@ -73,7 +73,7 @@ func NewTestDB(t *testing.T) *pgxpool.Pool {
 func Truncate(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	// votes and the Phase 3.2 tables are named explicitly for clarity, not
-	// correctness — CASCADE already reaches them today through their foreign
+	// correctness: CASCADE already reaches them today through their foreign
 	// keys on reports and accounts. Naming them keeps this list an honest
 	// inventory of what it clears.
 	MustExec(t, pool, "TRUNCATE accounts, magic_link_tokens, email_cooldowns, reports, sessions, votes, moderation_checks, report_flags, moderation_actions, updates, update_cursors, report_mutes, account_alert_settings RESTART IDENTITY CASCADE")
