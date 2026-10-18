@@ -106,3 +106,69 @@ func (s *MuteService) Unmute(ctx context.Context, accountID, reportID int64) err
 	}
 	return nil
 }
+
+// MutedReport is one row of the Muted reports window. It carries no
+// coordinate, session, voter cell or account. An unavailable row carries the
+// report id and the mute time only: no text, category or severity (D-11, D-15),
+// so the list never shows what the feed now withholds.
+type MutedReport struct {
+	ReportID int64
+	MutedAt  time.Time
+	// Available is true while the report link still opens the report: it is not
+	// withheld and it ended no more than HistoryWindow ago.
+	Available bool
+	Text      string
+	Category  string
+	Severity  string
+}
+
+// MutedReports lists the account's muted reports, newest mute first, at most
+// MutedListCap of them. A row is available when its report is not withheld and
+// its expiry is after now minus HistoryWindow. The text is the report's first
+// line through the one Rescue rule.
+func (s *MuteService) MutedReports(ctx context.Context, accountID int64) ([]MutedReport, error) {
+	rows, err := s.q.MutedReportsForAccount(ctx, sqlcgen.MutedReportsForAccountParams{
+		AccountID: accountID,
+		RowLimit:  MutedListCap,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("service: MutedReports: listing mutes: %w", err)
+	}
+
+	now := s.now()
+	windowStart := now.Add(-HistoryWindow)
+	out := make([]MutedReport, 0, len(rows))
+	for _, row := range rows {
+		item := MutedReport{ReportID: row.ReportID, MutedAt: row.MutedAt}
+		meta := ReportMeta{
+			Severity:   Severity(row.Severity),
+			Category:   Category(row.Category),
+			Moderation: ModerationState(row.ModerationState),
+		}
+		if !meta.Withheld() && row.ExpiresAt.After(windowStart) {
+			item.Available = true
+			item.Category = row.Category
+			item.Severity = row.Severity
+			// This read builds no vote tally, so it cannot tell whether a Rescue
+			// report is finished. It applies the finished Rescue rule to every
+			// Rescue report, the conservative use of the one rule.
+			finished := !row.ExpiresAt.After(now) || meta.Category == CategoryRescueNeeded
+			item.Text = ReportFirstLine(Report{
+				Category:    meta.Category,
+				Severity:    meta.Severity,
+				Description: row.Description,
+			}, finished)
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+// MutedCount is how many reports the account has muted, for the Settings row.
+func (s *MuteService) MutedCount(ctx context.Context, accountID int64) (int, error) {
+	n, err := s.q.CountMutedReports(ctx, accountID)
+	if err != nil {
+		return 0, fmt.Errorf("service: MutedCount: counting mutes: %w", err)
+	}
+	return int(n), nil
+}
