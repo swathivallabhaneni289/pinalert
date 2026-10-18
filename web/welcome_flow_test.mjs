@@ -1262,6 +1262,10 @@ test('the not found line also shows for Enter, and the old no matches line is go
 
 test('the home area search sends only the text: no lat or lon, even with the page centre and a stored fix', () => {
   const page = load({ start: 4 });
+  // A stored device fix and the configured fallback centre (Bengaluru) are both
+  // there for the page to find; neither may reach the search.
+  page.sandbox.PinalertPosition.read = () => ({ lat: 12.9716, lon: 77.5946, savedAt: 1 });
+  page.sandbox.Pinalert = { config: { fallbackLat: 12.9716, fallbackLon: 77.5946 } };
   typeHome(page, 'Benz Circle Vijayawada');
   page.advance(400);
   assert.equal(page.requests[0].url, AREA_URL + encodeURIComponent('Benz Circle Vijayawada'));
