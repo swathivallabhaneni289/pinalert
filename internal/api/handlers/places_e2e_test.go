@@ -131,24 +131,31 @@ func TestSettingsRows(t *testing.T) {
 	for _, m := range buttons {
 		buttonIDs = append(buttonIDs, m[1])
 	}
-	if strings.Join(buttonIDs, ",") != "settings-name-row,settings-home-row" {
-		t.Errorf("About you rows are %v, want the Name row then the Home area row and nothing else", buttonIDs)
+	// Amended 2026-10-17 by Phase 3.2 plan 12 (D-23, LAYOUT-06): the Muted reports
+	// row (People and reports) and the Log out of all devices and Delete my
+	// account rows (Account) are buttons that open windows too, so the button
+	// rows are those five in page order.
+	if strings.Join(buttonIDs, ",") != "settings-name-row,settings-home-row,settings-muted-row,settings-logout-all-row,settings-delete-row" {
+		t.Errorf("Settings button rows are %v, want Name, Home area, Muted reports, Log out of all devices, Delete my account", buttonIDs)
 	}
 	for _, want := range []string{
 		"About you", "Your name and home area. Shown only on your public profile.",
 		"Shown only if you let others follow you", "Used for alerts, never your exact spot", "Not set",
 		"About Pinalert", "Disclaimer", "Policy", "Low data view", "Text only, no map",
-		"Account", "Sign out, or remove your account and its data.",
-		`<form class="place-row-form" method="post" action="/auth/logout">`,
-		"place-section--phone",
+		// Amended 2026-10-17 by Phase 3.2 plan 12 (D-23, UI-SPEC D3): the Account
+		// line is the new sentence and the phone only class sits on the Log out
+		// form, not on the section.
+		"Account", "Log out everywhere, or delete your account.",
+		`<form class="place-row-form place-row-form--phone" method="post" action="/auth/logout">`,
+		"People and reports", "Muted reports", "Log out of all devices", "Delete my account",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/settings lacks %q", want)
 		}
 	}
 	for _, banned := range []string{
-		"View my profile", "My profile", "Phone notifications", "People and reports",
-		"Log out of all devices", "Delete my account", "Let others follow me", email, "disclaimer-bar",
+		"View my profile", "My profile", "Phone notifications",
+		"Let others follow me", "place-section--phone", email, "disclaimer-bar",
 	} {
 		if strings.Contains(body, banned) {
 			t.Errorf("/settings holds %q", banned)
