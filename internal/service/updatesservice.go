@@ -269,3 +269,206 @@ func timePtr(t pgtype.Timestamptz) *time.Time {
 	v := t.Time
 	return &v
 }
+
+// UpToMessage is the API message for a mark read call whose up_to is not a
+// positive id. It is for the API only and is never shown on a screen.
+const UpToMessage = "Send the id of the newest update shown."
+
+// UpdateItem is one row of an updates list. It has no field for a description
+// beyond ReportLine, a coordinate, a session id, a voter cell or an account id,
+// so a row cannot leak what the feed withholds (T-03.2-01). Every word is built
+// when the list is read and none is stored.
+type UpdateItem struct {
+	ID   int64
+	Kind UpdateKind
+	// ReportID is nil for the rolled up row and for an unavailable report, so a
+	// row never links to a report the reader may not open.
+	ReportID  *int64
+	Available bool
+	Unread    bool
+	CreatedAt time.Time
+	// Event is line 1: the event words, the unavailable line or the rolled up
+	// line.
+	Event string
+	// ReportLine is the first line of the report's description, empty for a
+	// finished Rescue report, an unavailable report and the rolled up row.
+	ReportLine string
+	Category   Category
+	Severity   Severity
+	// Trust is the trust sentence chosen from the live trust object.
+	Trust     string
+	MoreCount int
+}
+
+// UpdatesPage is one list read: the newest rows, the unread count capped at
+// UnreadCountCap and the number of rows kept.
+type UpdatesPage struct {
+	Items  []UpdateItem
+	Unread int
+	Total  int
+}
+
+// List returns the account's newest updates, newest first, with the unread
+// count and the kept total. The words are built here from the report's current
+// facts (D-15): the rows hold a kind and a report id only. A report that is
+// held, removed or missing reads as unavailable with no detail (D-05), decided
+// by the same Resolve the feed uses, with the moderation state set in this
+// function body.
+func (s *UpdatesService) List(ctx context.Context, accountID int64, limit int) (UpdatesPage, error) {
+	now := s.now().UTC()
+	since := now.Add(-UpdatesRetention)
+	if limit <= 0 {
+		limit = BellListSize
+	}
+	if limit > ActivityUpdatesListSize {
+		limit = ActivityUpdatesListSize
+	}
+
+	rows, err := s.q.UpdatesForAccount(ctx, sqlcgen.UpdatesForAccountParams{AccountID: accountID, Since: since, RowLimit: int32(limit)})
+	if err != nil {
+		return UpdatesPage{}, fmt.Errorf("service: List: reading updates: %w", err)
+	}
+	unread, err := s.q.UnreadUpdateCount(ctx, sqlcgen.UnreadUpdateCountParams{AccountID: accountID, Since: since, Cap: UnreadCountCap})
+	if err != nil {
+		return UpdatesPage{}, fmt.Errorf("service: List: counting unread: %w", err)
+	}
+	total, err := s.q.CountUpdatesForAccount(ctx, sqlcgen.CountUpdatesForAccountParams{AccountID: accountID, Since: since})
+	if err != nil {
+		return UpdatesPage{}, fmt.Errorf("service: List: counting updates: %w", err)
+	}
+	page := UpdatesPage{Items: make([]UpdateItem, 0, len(rows)), Unread: int(unread), Total: int(total)}
+
+	var ids []int64
+	seen := make(map[int64]struct{}, len(rows))
+	for _, row := range rows {
+		if row.ReportID == nil || UpdateKind(row.Kind) == UpdateMore {
+			continue
+		}
+		if _, dup := seen[*row.ReportID]; !dup {
+			seen[*row.ReportID] = struct{}{}
+			ids = append(ids, *row.ReportID)
+		}
+	}
+
+	reportByID := make(map[int64]sqlcgen.ReportsForUpdatesRow, len(ids))
+	var votesByReport map[int64][]sqlcgen.CurrentVotesForReportsRow
+	reporterByReport := make(map[int64]*int64, len(ids))
+	if len(ids) > 0 {
+		reportRows, err := s.q.ReportsForUpdates(ctx, ids)
+		if err != nil {
+			return UpdatesPage{}, fmt.Errorf("service: List: reading reports: %w", err)
+		}
+		for _, r := range reportRows {
+			reportByID[r.ID] = r
+		}
+		voteRows, err := s.q.CurrentVotesForReports(ctx, ids)
+		if err != nil {
+			return UpdatesPage{}, fmt.Errorf("service: List: reading votes: %w", err)
+		}
+		votesByReport = voteRowsByReport(voteRows)
+		reporterRows, err := s.q.ReporterAccountsForReports(ctx, ids)
+		if err != nil {
+			return UpdatesPage{}, fmt.Errorf("service: List: reading reporters: %w", err)
+		}
+		for _, rr := range reporterRows {
+			reporterByReport[rr.ReportID] = rr.ReporterAccountID
+		}
+	}
+
+	for _, row := range rows {
+		kind := UpdateKind(row.Kind)
+		item := UpdateItem{
+			ID:        row.ID,
+			Kind:      kind,
+			Unread:    !row.ReadAt.Valid,
+			CreatedAt: row.CreatedAt,
+		}
+
+		if kind == UpdateMore {
+			item.Available = true
+			item.MoreCount = int(row.MoreCount)
+			item.Event = MoreLine(int(row.MoreCount))
+			page.Items = append(page.Items, item)
+			continue
+		}
+		if row.ReportID == nil {
+			// An event row always names a report; one that does not reads as gone.
+			item.Event = UnavailableLine
+			page.Items = append(page.Items, item)
+			continue
+		}
+
+		rep, ok := reportByID[*row.ReportID]
+		unavailable := !ok
+		var (
+			vis     Visibility
+			view    FeedView
+			tally   VoteTally
+			reportV []sqlcgen.CurrentVotesForReportsRow
+			meta    ReportMeta
+		)
+		if ok {
+			reportV = votesByReport[rep.ID]
+			meta = ReportMeta{Severity: Severity(rep.Severity), Category: Category(rep.Category), Moderation: ModerationState(rep.ModerationState)}
+			tally = BuildVoteTally(reportV, rep.ID, reporterByReport[rep.ID])
+			vis, _ = Resolve(meta, tally, now)
+			view = ViewOf(vis, rep.ExpiresAt, now)
+			unavailable = vis == VisibilityWithheld
+		}
+		if unavailable {
+			// Held, removed or gone: no report id, no category, no trust line, no
+			// text. The row still says something happened and is no longer there.
+			item.Event = UnavailableLine
+			page.Items = append(page.Items, item)
+			continue
+		}
+
+		trust := BuildTrust(TrustInput{
+			Rows:              reportV,
+			ReportID:          rep.ID,
+			ReporterAccountID: reporterByReport[rep.ID],
+			Meta:              meta,
+			Visibility:        vis,
+			CreatedAt:         rep.CreatedAt,
+			ExpiresAt:         rep.ExpiresAt,
+			Now:               now,
+			Reporter:          nil,
+		})
+		confirmed := ConfirmedByPeople(vis, view, tally)
+
+		finished := view == FeedViewResolved || view == FeedViewPast
+		item.Available = true
+		item.ReportID = row.ReportID
+		item.Category = meta.Category
+		item.Severity = meta.Severity
+		item.Event = EventLine(kind)
+		item.Trust = UpdateTrustLine(kind, trust, view, confirmed)
+		// Q1 owner confirmed 2026-10-18: rows show the report's first line. If the
+		// owner says no, delete this one assignment.
+		item.ReportLine = ReportFirstLine(Report{
+			ID:          rep.ID,
+			Category:    meta.Category,
+			Severity:    meta.Severity,
+			Description: rep.Description,
+			CreatedAt:   rep.CreatedAt,
+			ExpiresAt:   rep.ExpiresAt,
+		}, finished)
+		page.Items = append(page.Items, item)
+	}
+	return page, nil
+}
+
+// MarkRead marks the account's own unread updates up to and including upTo as
+// read and returns how many it changed. The id comes from the newest update the
+// reader was shown, so an update that arrived after the list was drawn stays
+// unread.
+func (s *UpdatesService) MarkRead(ctx context.Context, accountID, upTo int64) (int64, error) {
+	if upTo <= 0 {
+		return 0, ValidationError{Field: "up_to", Message: UpToMessage}
+	}
+	n, err := s.q.MarkUpdatesRead(ctx, sqlcgen.MarkUpdatesReadParams{Now: s.now().UTC(), AccountID: accountID, UpTo: upTo})
+	if err != nil {
+		return 0, fmt.Errorf("service: MarkRead: %w", err)
+	}
+	return n, nil
+}
