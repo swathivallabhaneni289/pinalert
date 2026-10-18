@@ -83,7 +83,7 @@ D-05 (how the Demo works), D-08 (several alerts, stale feed), D-09 (which area),
 - `.planning/ROADMAP.md` Phase 5 section: goal, success criteria 1 to 5, scope notes 1 to 6, owner decisions 2026-10-16 and 2026-10-17.
 - `.planning/REQUIREMENTS.md`: ROBUST-05, ROBUST-06, ROBUST-07, ALERT-01 to ALERT-04.
 - `.planning/phases/03.4-app-layout/03.4-CONTEXT.md`: D-10 (main places), D-15 (banner placement), D-22 (Official alerts layout), D-25 (Settings), D-27 (first-time flow, Disagree points to the Demo), D-29 and D-30 (notice strip).
-- `.planning/phases/03.3-installable-app-and-phone-alerts/03.3-CONTEXT.md`: the push plumbing, the Settings Phone notifications rows, and the 2026-10-18 amendment (silent notifications).
+- `.planning/phases/03.3-installable-app-and-phone-alerts/03.3-CONTEXT.md`: the push plumbing, the rows in the Settings section Notifications (named "Phone notifications" before 2026-10-18), and the 2026-10-18 amendment (silent notifications).
 - `.planning/phases/01.1-identity-login-mandatory-email-verification/01.1-CONTEXT.md`: D-05, login required to view anything (amended by D-04 here).
 - `.planning/phases/03-trust-model-hardening-diversity-weighted-trust/03-CONTEXT.md`: D-10 (official pins carry no rating).
 
@@ -113,7 +113,7 @@ D-05 (how the Demo works), D-08 (several alerts, stale feed), D-09 (which area),
 - Every page is server rendered with `html/template` and vanilla JS, no build step; CDN scripts are pinned with SRI.
 
 ### Integration Points
-- Settings, Phone notifications: this phase adds the "Severe official alerts for my area" row and turns it on (03.3).
+- Settings, Notifications (the section's name since 2026-10-18): this phase adds the "Severe official alerts for my area" row and turns it on (03.3).
 - Phase 8 replaces the sign in card; coordinate `login_gate.html.tmpl` (D-14).
 
 </code_context>
