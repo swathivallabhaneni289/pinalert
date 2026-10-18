@@ -50,6 +50,22 @@
       </div>
     </section>
 
+    <section class="place-section" aria-labelledby="settings-people-title">
+      <div class="place-section__intro">
+        <h2 class="place-section__title" id="settings-people-title">People and reports</h2>
+        <p class="place-section__line">Reports you have turned updates off for.</p>
+      </div>
+      <div class="place-box">
+        <button type="button" class="place-row" id="settings-muted-row" aria-haspopup="dialog">
+          <span class="place-row__text">
+            <span class="place-row__label">Muted reports</span>
+          </span>
+          <span class="place-row__value" id="settings-muted-value">{{.MutedCount}}</span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </button>
+      </div>
+    </section>
+
     <section class="place-section" aria-labelledby="settings-about-title">
       <div class="place-section__intro">
         <h2 class="place-section__title" id="settings-about-title">About Pinalert</h2>
@@ -80,19 +96,31 @@
       </div>
     </section>
 
-    <section class="place-section place-section--phone" aria-labelledby="settings-account-title">
+    <section class="place-section" aria-labelledby="settings-account-title">
       <div class="place-section__intro">
         <h2 class="place-section__title" id="settings-account-title">Account</h2>
-        <p class="place-section__line">Sign out, or remove your account and its data.</p>
+        <p class="place-section__line">Log out everywhere, or delete your account.</p>
       </div>
       <div class="place-box">
-        <form class="place-row-form" method="post" action="/auth/logout">
+        <form class="place-row-form place-row-form--phone" method="post" action="/auth/logout">
           <button type="submit" class="place-row place-row--button">
             <span class="place-row__text">
               <span class="place-row__label">Log out</span>
             </span>
           </button>
         </form>
+        <button type="button" class="place-row" id="settings-logout-all-row" aria-haspopup="dialog">
+          <span class="place-row__text">
+            <span class="place-row__label">Log out of all devices</span>
+          </span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="place-row" id="settings-delete-row" aria-haspopup="dialog">
+          <span class="place-row__text">
+            <span class="place-row__label place-row__label--danger">Delete my account</span>
+          </span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </button>
       </div>
     </section>
   </main>
@@ -138,6 +166,72 @@
     </div>
   </div>
 
+  <div class="app-window app-window--edit" id="settings-muted-window" hidden>
+    <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-muted-title">
+      <div class="app-window__head">
+        <h2 class="app-window__title" id="settings-muted-title" tabindex="-1">Muted reports</h2>
+        <button type="button" class="app-window__close" id="settings-muted-close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
+      </div>
+      <div class="app-window__body">
+        <div id="settings-muted-loading" aria-hidden="true" hidden>
+          <div class="skeleton-row"></div>
+          <div class="skeleton-row"></div>
+          <div class="skeleton-row"></div>
+          <div class="skeleton-row"></div>
+        </div>
+        <ul class="muted-list" id="settings-muted-list" hidden></ul>
+        <div id="settings-muted-empty" hidden>
+          <div class="empty-state profile-empty-state">
+            <h3 id="settings-muted-empty-title" tabindex="-1">No muted reports</h3>
+            <p>Reports you mute show here, with a way to turn them back on.</p>
+          </div>
+        </div>
+        <div id="settings-muted-error" hidden>
+          <div class="error-state profile-empty-state">
+            <h3>Couldn't load muted reports</h3>
+            <p>Check your connection and try again.</p>
+            <button type="button" class="btn" id="settings-muted-retry">Try again</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-window app-window--edit" id="settings-logout-all-window" hidden>
+    <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-logout-all-title">
+      <div class="app-window__head">
+        <h2 class="app-window__title" id="settings-logout-all-title" tabindex="-1">Log out of all devices</h2>
+        <button type="button" class="app-window__close" id="settings-logout-all-close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
+      </div>
+      <div class="app-window__body">
+        <p>This logs you out of Pinalert on every phone and computer, including this one. You can sign in again any time with your email.</p>
+        <p class="inline-error" id="settings-logout-all-error" role="alert" hidden></p>
+        <div class="app-window__actions">
+          <button type="button" class="btn btn--primary" id="settings-logout-all-go">Log out of all devices</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-window app-window--edit" id="settings-delete-window" hidden>
+    <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-delete-title">
+      <div class="app-window__head">
+        <h2 class="app-window__title" id="settings-delete-title" tabindex="-1">Delete my account</h2>
+        <button type="button" class="app-window__close" id="settings-delete-close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
+      </div>
+      <div class="app-window__body">
+        <p>This cannot be undone.</p>
+        <p>Your email, name, home area, updates, muted reports and settings are deleted, and you are logged out on every device.</p>
+        {{/* Q2 owner confirmed 2026-10-18: Option A. Option B is the one sentence "Reports you posted and votes you made are removed, and reports other people confirmed with you may change." */}}
+        <p id="settings-delete-rule">Reports you posted and votes you made stay, with no name or link to you, so nobody else's report changes.</p>
+        <p class="inline-error" id="settings-delete-error" role="alert" hidden></p>
+        <div class="app-window__actions">
+          <button type="button" class="btn btn--primary" id="settings-delete-go">Delete my account</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   {{template "reader_dialog.html.tmpl" .}}
 
   {{template "app_bottombar" .}}
@@ -146,6 +240,7 @@
   <script src="/static/js/app-bar.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/updates.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/settings.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/settings-alerts.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/reader.js?v={{.AssetVersion}}" defer></script>
 </body>
 </html>

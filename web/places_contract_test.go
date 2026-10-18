@@ -166,13 +166,17 @@ func TestAlertsNeverSaysNoAlerts(t *testing.T) {
 // later phase (UI-SPEC Surface 6, Rows that wait, and Surface 1c). A row or a
 // control renders only when its feature exists (D-26). About you arrives in
 // plan 06 and is not listed here.
+//
+// Amended 2026-10-17 by Phase 3.2 plan 12 (D-23, LAYOUT-06): People and reports,
+// Muted reports, Log out of all devices and Delete my account left this list,
+// because their features now exist and Settings draws them. The Notifications
+// labels stay until plan 15.
 var waitingSettingsLabels = []string{
 	"View my profile", "My profile",
 	"Phone notifications", "Critical reports near my home area", "Severe official alerts for my area",
 	"Changes to reports I posted or voted on", "A Reliable reporter posts near me", "Someone I follow posts",
 	"How far from my home area",
-	"People and reports", "Let others follow me", "Following", "Followers", "Muted reports", "Blocked people",
-	"Log out of all devices", "Delete my account",
+	"Let others follow me", "Following", "Followers", "Blocked people",
 }
 
 // TestSettingsShowsOnlyExistingRows pins D-25 and D-26: Settings holds the
@@ -185,7 +189,7 @@ func TestSettingsShowsOnlyExistingRows(t *testing.T) {
 		"Disclaimer", "Unofficial service, what it can and cannot promise", `href="/disclaimer"`,
 		"Policy", "Privacy, data kept, reporting rules", `href="/policy#policy"`,
 		"Low data view", "Text only, no map", `href="/low"`,
-		"Account", "Sign out, or remove your account and its data.", `action="/auth/logout"`, "Log out",
+		"Account", "Log out everywhere, or delete your account.", `action="/auth/logout"`, "Log out",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("settings.html.tmpl lacks %q", want)
@@ -203,9 +207,14 @@ func TestSettingsShowsOnlyExistingRows(t *testing.T) {
 			t.Errorf("settings.html.tmpl lacks %q", want)
 		}
 	}
-	p421InOrder(t, "section order", page, `id="settings-you-title"`, "About Pinalert", `id="settings-account-title"`)
-	if got := strings.Count(page, "app-icon--chevron-right"); got != 5 {
-		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the five rows that open something", got)
+	// Amended 2026-10-17 by Phase 3.2 plan 12 (D-23, LAYOUT-06, UI-SPEC D3 and D4):
+	// the Account line is the new sentence, the section order is About you,
+	// People and reports, About Pinalert, Account, and eight rows draw a chevron
+	// (Name, Home area, Muted reports, Disclaimer, Policy, Low data view, Log out
+	// of all devices, Delete my account).
+	p421InOrder(t, "section order", page, `id="settings-you-title"`, `id="settings-people-title"`, "About Pinalert", `id="settings-account-title"`)
+	if got := strings.Count(page, "app-icon--chevron-right"); got != 8 {
+		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the eight rows that open something", got)
 	}
 	header := p421ReadTemplate(t, "account_header.html.tmpl")
 	for _, label := range waitingSettingsLabels {

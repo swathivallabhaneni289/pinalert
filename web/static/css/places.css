@@ -162,10 +162,17 @@
     grid-column: 2;
   }
 
-  /* The Account section is a phone section: the laptop has Log out in the
-     person menu, so the section is not drawn at all. */
-  .place-section--phone {
+  /* Log out is phone only: the laptop has it in the person menu. The Account
+     section itself draws on both sizes since Phase 3.2, because it also holds
+     Log out of all devices and Delete my account (D-23, UI-SPEC D3). */
+  .place-row-form--phone {
     display: none;
+  }
+
+  /* With the Log out form hidden, the row after it is the first one drawn, so
+     it takes no hairline above it. */
+  .place-row-form--phone + .place-row {
+    border-top: 0;
   }
 }
 
