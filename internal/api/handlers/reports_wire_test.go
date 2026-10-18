@@ -312,3 +312,56 @@ func TestFeedReportWireShapeKeys(t *testing.T) {
 		}
 	}
 }
+
+// TestFeedReportWireViewerStateKeys pins viewer_follows and viewer_muted: both
+// are always present as JSON booleans, false by default and true when the view
+// says so, and they travel through the one mapper like every other field.
+func TestFeedReportWireViewerStateKeys(t *testing.T) {
+	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
+	v := service.ReportView{
+		Report: service.Report{
+			ID: 9, Category: service.CategoryFlood, Severity: service.SeverityLow,
+			Description: "Water on the road", CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+		},
+		View:       service.FeedViewActive,
+		Visibility: service.VisibilityLive,
+	}
+
+	cases := []struct {
+		name           string
+		follows, muted bool
+	}{
+		{"default is false and false", false, false},
+		{"follows only", true, false},
+		{"muted only", false, true},
+		{"both", true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			view := v
+			view.ViewerFollows = tc.follows
+			view.ViewerMuted = tc.muted
+			raw, err := json.Marshal(reportViewToResponse(view))
+			if err != nil {
+				t.Fatalf("marshalling: %v", err)
+			}
+			var m map[string]any
+			if err := json.Unmarshal(raw, &m); err != nil {
+				t.Fatalf("decoding: %v", err)
+			}
+			for key, want := range map[string]bool{"viewer_follows": tc.follows, "viewer_muted": tc.muted} {
+				got, ok := m[key]
+				if !ok {
+					t.Fatalf("key %q missing from %s", key, raw)
+				}
+				b, isBool := got.(bool)
+				if !isBool {
+					t.Fatalf("key %q = %v (%T), want a JSON boolean", key, got, got)
+				}
+				if b != want {
+					t.Errorf("key %q = %v, want %v", key, b, want)
+				}
+			}
+		})
+	}
+}
