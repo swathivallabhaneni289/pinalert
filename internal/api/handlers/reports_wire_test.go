@@ -365,3 +365,41 @@ func TestFeedReportWireViewerStateKeys(t *testing.T) {
 		})
 	}
 }
+
+// TestFeedReportWireReliableKey pins kept_by_reliable_filter: always present as
+// a JSON boolean, false by default and true when the view says so. The server
+// authors it; the handler only maps it.
+func TestFeedReportWireReliableKey(t *testing.T) {
+	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
+	v := service.ReportView{
+		Report: service.Report{
+			ID: 9, Category: service.CategoryFlood, Severity: service.SeverityLow,
+			Description: "Water on the road", CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+		},
+		View:       service.FeedViewActive,
+		Visibility: service.VisibilityLive,
+	}
+	for _, want := range []bool{false, true} {
+		view := v
+		view.KeptByReliableFilter = want
+		raw, err := json.Marshal(reportViewToResponse(view))
+		if err != nil {
+			t.Fatalf("marshalling: %v", err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatalf("decoding: %v", err)
+		}
+		got, ok := m["kept_by_reliable_filter"]
+		if !ok {
+			t.Fatalf("key kept_by_reliable_filter missing from %s", raw)
+		}
+		b, isBool := got.(bool)
+		if !isBool {
+			t.Fatalf("kept_by_reliable_filter = %v (%T), want a JSON boolean", got, got)
+		}
+		if b != want {
+			t.Errorf("kept_by_reliable_filter = %v, want %v", b, want)
+		}
+	}
+}

@@ -286,6 +286,19 @@ func baseView(in viewInput) ReportView {
 	c := in.Class
 	meta := ReportMeta{Severity: r.Severity, Category: r.Category}
 	isOwn := in.ViewerAccountID != 0 && c.reporterID != nil && *c.reporterID == in.ViewerAccountID
+	// Built first so the reliable tick reads the tag from the same trust object
+	// the report carries.
+	trust := BuildTrust(TrustInput{
+		Rows:              c.votes,
+		ReportID:          r.ID,
+		ReporterAccountID: c.reporterID,
+		Meta:              meta,
+		Visibility:        c.visibility,
+		CreatedAt:         r.CreatedAt,
+		ExpiresAt:         r.ExpiresAt,
+		Now:               in.Now,
+		Reporter:          reporterSignalRef(in.Signals, c.reporterID),
+	})
 	return ReportView{
 		Report:           r,
 		Visibility:       c.visibility,
@@ -301,17 +314,10 @@ func baseView(in viewInput) ReportView {
 		// Server authored Show Confirmed membership, as Nearby fills it. A finished
 		// report is never active, so it is false; a linked active report is exact.
 		ConfirmedByPeople: ConfirmedByPeople(c.visibility, c.view, c.tally),
-		Trust: BuildTrust(TrustInput{
-			Rows:              c.votes,
-			ReportID:          r.ID,
-			ReporterAccountID: c.reporterID,
-			Meta:              meta,
-			Visibility:        c.visibility,
-			CreatedAt:         r.CreatedAt,
-			ExpiresAt:         r.ExpiresAt,
-			Now:               in.Now,
-			Reporter:          reporterSignalRef(in.Signals, c.reporterID),
-		}),
+		Trust:             trust,
+		// Server authored Only Reliable reporters membership, as Nearby fills it
+		// (NOTIF-04, D-26).
+		KeptByReliableFilter: KeptByReliableFilter(trust.Reporter.Tag, meta),
 	}
 }
 

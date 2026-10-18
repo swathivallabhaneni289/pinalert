@@ -202,6 +202,12 @@ type FeedReportResponse struct {
 	// confirm it. The client renders it and never recomputes it (TRUST-02). Always
 	// present.
 	ConfirmedByPeople bool `json:"confirmed_by_people" example:"true"`
+	// KeptByReliableFilter is the server authored membership of the opt in Only
+	// Reliable reporters tick: true when the reporter's tag is Reliable reporter
+	// or the report is serious (critical, or Rescue needed stored before that
+	// category was retired). Only the reader's own tick reads it. It never
+	// filters, hides or reorders anything by default. Always present.
+	KeptByReliableFilter bool `json:"kept_by_reliable_filter" example:"false"`
 }
 
 // HistoryResponse is how a finished report ended. State is resolved or
@@ -362,6 +368,7 @@ func reportViewToResponse(v service.ReportView) FeedReportResponse {
 		ViewerFollows:         v.ViewerFollows,
 		ViewerMuted:           v.ViewerMuted,
 		ConfirmedByPeople:     v.ConfirmedByPeople,
+		KeptByReliableFilter:  v.KeptByReliableFilter,
 	}
 }
 
