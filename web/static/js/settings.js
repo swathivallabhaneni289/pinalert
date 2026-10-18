@@ -506,8 +506,11 @@
   }
 
   // noMatch is the server's no_match flag: no row closely matches what was
-  // typed and no typed row could be placed.
-  function renderResults(results, noMatch) {
+  // typed, no typed row could be placed, and every lookup that was needed
+  // answered. quiet says the typing pause started the search. With no rows and
+  // no_match not true, the search did not finish (plan 35): Enter says Search
+  // unavailable, a typed search says nothing.
+  function renderResults(results, noMatch, quiet) {
     homeResults.textContent = '';
     var shown = 0;
     var typedShown = false;
@@ -547,7 +550,15 @@
     }
     if (shown === 0) {
       homeResults.hidden = true;
-      showLine(homeStatus, MESSAGE_NOT_FOUND);
+      if (noMatch) {
+        showLine(homeStatus, MESSAGE_NOT_FOUND);
+      } else if (quiet) {
+        // An empty list the server did not call not found means a lookup did
+        // not finish (plan 35): a typed search says nothing about it.
+        hideLine(homeStatus);
+      } else {
+        showLine(homeStatus, MESSAGE_UNAVAILABLE);
+      }
       return;
     }
     // A typed row is a match, so the line never goes with one.
@@ -571,6 +582,9 @@
     // A pick closes the suggestions (owner, 2026-10-18) and gives focus back
     // to the field.
     homeResults.hidden = true;
+    // The status line goes with the list: a Not found line left over from the
+    // search that offered this pick no longer applies (plan 35).
+    hideLine(homeStatus);
     homeInput.focus();
     homeSave.disabled = savingHome;
     hideLine(homeError);
@@ -661,7 +675,7 @@
         return;
       }
       renderResults(answer.body && Array.isArray(answer.body.results) ? answer.body.results : [],
-        !!answer.body && answer.body.no_match === true);
+        !!answer.body && answer.body.no_match === true, searchQuiet);
     }, function () {
       if (mine !== searchSeq) {
         return;
