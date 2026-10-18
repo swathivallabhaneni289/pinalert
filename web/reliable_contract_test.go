@@ -126,3 +126,129 @@ func TestReliableFilterIsASibling(t *testing.T) {
 	p424NoDashes(t, "reportKeptByReliable", kept)
 	p424NoDashes(t, "setReliable", set)
 }
+
+// TestReliableTickMarkup pins the page words of the tick (UI-SPEC Surface D,
+// P32-C17, C18, C19): the separator and the checkbox item in the Show menu, the
+// filter line slot after the chip's line, and the empty block after the chip's
+// empty block, each hidden at first.
+func TestReliableTickMarkup(t *testing.T) {
+	index := p13ReadTemplate(t, "index.html.tmpl")
+
+	p13MustContain(t, "index.html.tmpl", index,
+		`<div class="show-menu__sep" role="separator"></div>`,
+		`role="menuitemcheckbox" aria-checked="false" data-reliable>`,
+		`<span class="show-menu__word">Only Reliable reporters</span>`,
+		`<p class="filter-line" id="reliable-line" hidden></p>`)
+	// The tick holds the check icon and the words and nothing else: no second line.
+	item := regexp.MustCompile(`(?s)<button[^>]*role="menuitemcheckbox"[^>]*>.*?</button>`).FindString(index)
+	if item == "" {
+		t.Fatalf("could not read the tick item")
+	}
+	p13MustContain(t, "the tick", item, `class="app-icon app-icon--check show-menu__check" aria-hidden="true"`)
+	p13MustNotContain(t, "the tick", item, "<p", "<small", "<br", "type=\"checkbox\"")
+	if n := strings.Count(item, "<span"); n != 2 {
+		t.Errorf("the tick holds %d spans, want 2 (the check and the words)", n)
+	}
+
+	// The empty block: hidden, an empty-state, the heading, the body and the button.
+	empty := regexp.MustCompile(`(?s)<div class="empty-state" id="reliable-empty" hidden>.*?</div>`).FindString(index)
+	if empty == "" {
+		t.Fatalf("could not read the reliable-empty block")
+	}
+	p13MustContain(t, "#reliable-empty", empty,
+		"<h2>No reports from Reliable reporters nearby</h2>",
+		"<p>Critical reports still show. Reports from other people are left out.</p>",
+		`<button type="button" class="btn" id="reliable-empty-clear">Show everyone</button>`)
+
+	// Order inside the list pane: the chip's line, then the tick's line, before
+	// the cards; the chip's empty block, then the tick's, before the error.
+	pane := vsListPane(t)
+	p13Ordered(t, pane, "list pane",
+		`id="feed-status"`, `id="place-line"`, `id="filter-line"`, `id="reliable-line"`, `id="queue-strip"`,
+		`id="report-list"`, `id="filter-empty"`, `id="reliable-empty"`, `id="feed-error"`)
+	for _, id := range []string{"reliable-line", "reliable-empty", "reliable-empty-clear"} {
+		if n := strings.Count(pane, `id="`+id+`"`); n != 1 {
+			t.Errorf("the list pane holds id %q %d times, want exactly once", id, n)
+		}
+	}
+
+	// Stylesheet: the hairline is 1px of the border token with the small space
+	// above and below, tokens only; the hidden guards keep both blocks closed.
+	css := p424ReadCSS(t, "static/css/feed.css")
+	rules := p13ParseCSS(p13ReadStatic(t, "static/css/feed.css"))
+	sep := vsRule(t, rules, "", ".show-menu__sep")
+	for prop, want := range map[string]string{
+		"height":     "1px",
+		"margin":     "var(--space-xs) 0",
+		"background": "var(--color-border)",
+	} {
+		if got := sep.Decls[prop]; got != want {
+			t.Errorf(".show-menu__sep %s is %q, want %q", prop, got, want)
+		}
+	}
+	p424Contains(t, "feed.css", css, "#reliable-line[hidden],", "#reliable-empty[hidden],",
+		".pane--list[data-loading] #reliable-empty:not([hidden]),")
+}
+
+// TestReliableFeedWords pins what feed.js and map.js do with the tick: the
+// status words, the empty precedence (chip first, then the tick, then the Show
+// choice's own), and the linked report check. None of them writes an address.
+func TestReliableFeedWords(t *testing.T) {
+	feed := p19Code(t, "static/js/feed.js")
+
+	p13MustContain(t, "feed.js", feed,
+		"var RELIABLE_STATUS_WORDS = ' Reliable reporters only.';",
+		"var reliableEmptyEl = document.getElementById('reliable-empty');",
+		"setHidden(reliableEmptyEl, kind !== 'reliable');")
+	if n := strings.Count(feed, "setHidden(reliableEmptyEl,"); n != 1 {
+		t.Errorf("feed.js hides the reliable empty block in %d places, want 1 (setEmptyState)", n)
+	}
+	status := jsFunctionBody(t, feed, "updateFeedStatus(state)")
+	p13Ordered(t, status, "updateFeedStatus",
+		"var key = store.show + '|' + placeName + '|' + store.category;", "store.reliable",
+		"if (key === lastAnnouncedKey) {", "text += '.';", "text += RELIABLE_STATUS_WORDS;",
+		"text += ' Near ' + placeName + '.';", "text += ' Filtered by '")
+
+	render := jsFunctionBody(t, feed, "render(state)")
+	p13Ordered(t, render, "render",
+		"kind = 'filter';", "Pinalert.state.reliable", "kind = 'reliable';",
+		"Pinalert.state.show === 'disputed'", "kind = 'disputed';",
+		"Pinalert.state.show === 'confirmed'", "kind = 'confirmed';", "kind = 'history';")
+
+	p13MustNotContain(t, "feed.js", feed, "kept_by_reliable_filter", "PinalertReliable")
+
+	mapJS := p19Code(t, "static/js/map.js")
+	focus := jsFunctionBody(t, mapJS, "focusPinReport(state)")
+	p13Ordered(t, focus, "focusPinReport",
+		"belongsToShow(report, state.show)", "Pinalert.reportKeptByReliable(report, state.reliable)", "state.category !== ''")
+	p13MustNotContain(t, "map.js", mapJS, "kept_by_reliable_filter", "fetch(")
+}
+
+// TestReliableLoadOrder pins the script order of the page: app.js, then
+// reliable.js (it needs the store and runs before the first draw), then
+// show-menu.js (it calls reliable.js), then feed.js. Only Nearby loads
+// reliable.js; the Low data view and the profile pages do not carry the tick.
+func TestReliableLoadOrder(t *testing.T) {
+	index := p13ReadTemplate(t, "index.html.tmpl")
+	p13Ordered(t, index, "index.html.tmpl scripts",
+		"/static/js/app.js", "/static/js/reliable.js", "/static/js/show-menu.js", "/static/js/feed.js")
+	if n := strings.Count(index, "/static/js/reliable.js"); n != 1 {
+		t.Errorf("index.html.tmpl loads reliable.js %d times, want once", n)
+	}
+	if !strings.Contains(index, `<script src="/static/js/reliable.js?v={{.AssetVersion}}" defer></script>`) {
+		t.Errorf("reliable.js must load deferred with the asset version, like its neighbours")
+	}
+	entries, err := TemplatesFS.ReadDir("templates")
+	if err != nil {
+		t.Fatalf("reading templates: %v", err)
+	}
+	for _, e := range entries {
+		if e.Name() == "index.html.tmpl" {
+			continue
+		}
+		raw := p13ReadTemplate(t, e.Name())
+		if strings.Contains(raw, "reliable.js") {
+			t.Errorf("%s loads reliable.js: the tick lives on Nearby only", e.Name())
+		}
+	}
+}
