@@ -199,7 +199,7 @@ func TestReliableAlerts(t *testing.T) {
 	follows.ViewerFollows = true
 	muted := alertView(8, VisibilityLive, ReporterReliable, young)
 	muted.ViewerMuted = true
-	before := alertView(9, VisibilityLive, ReporterReliable, 4*time.Hour) // before the switch went on
+	before := alertView(9, VisibilityLive, ReporterReliable, 4*time.Hour)        // before the switch went on
 	noAccount := alertView(13, VisibilityLive, ReporterReliable, 10*time.Minute) // no rated account, so it cannot be capped
 
 	n := &fakeNearby{views: []ReportView{
