@@ -83,6 +83,12 @@ type ReportView struct {
 	// ConfirmedByPeople is the server authored Show Confirmed membership
 	// (ConfirmedByPeople in confirmed.go). Resolve never reads it.
 	ConfirmedByPeople bool
+	// KeptByReliableFilter is the server authored membership of the opt in Only
+	// Reliable reporters tick (KeptByReliableFilter in reliablefilter.go): true
+	// when the reporter's tag is Reliable reporter or the report is serious.
+	// Only the reader's own tick reads it; nothing is hidden by default and
+	// Resolve never reads it.
+	KeptByReliableFilter bool
 }
 
 // ListableInAll reports whether a report with visibility v belongs in the Show
