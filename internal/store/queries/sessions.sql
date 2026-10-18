@@ -11,16 +11,19 @@ ON CONFLICT (session_id) DO NOTHING;
 -- consumed: a dead end the visitor cannot recover from without requesting
 -- a new link.
 -- The upsert never moves a bound row to a different account (Phase 3.2,
--- Pattern 10): the WHERE lets it run only when the row is unbound or already
--- bound to this same account, and then it also clears revoked_at, so a device
--- that signs in again as its own account works. Zero rows affected means the
--- row is bound to a different account and the caller must use a fresh session
--- id; a sign in must never rewrite whose history a session carries.
+-- Pattern 10): the WHERE lets it run only when the row is live (never revoked)
+-- and is unbound or already bound to this same account. It never clears
+-- revoked_at and never binds a revoked row (W1, 2026-10-19): reviving a revoked
+-- id would bring back every copy of the old cookie, which Log out of all
+-- devices exists to end. Zero rows affected means the row is bound to a
+-- different account or is revoked, and the caller must use a fresh session id;
+-- a sign in must never rewrite whose history a session carries.
 INSERT INTO sessions (session_id, account_id)
 VALUES (sqlc.arg(session_id), sqlc.arg(account_id))
 ON CONFLICT (session_id) DO UPDATE
-   SET account_id = EXCLUDED.account_id, revoked_at = NULL
- WHERE sessions.account_id IS NULL OR sessions.account_id = EXCLUDED.account_id;
+   SET account_id = EXCLUDED.account_id
+ WHERE sessions.revoked_at IS NULL
+   AND (sessions.account_id IS NULL OR sessions.account_id = EXCLUDED.account_id);
 
 -- name: GetAccountBySessionID :one
 -- A session with a NULL account_id yields no row (pgx.ErrNoRows), which

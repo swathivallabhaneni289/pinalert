@@ -242,8 +242,12 @@ func (s *AuthService) VerifyToken(ctx context.Context, sessionID, rawToken strin
 // account keeps its sessions.account_id on purpose: that binding is how
 // reports reach their author. Sign in must therefore never rebind such a
 // session to a different account, or it would move the first account's
-// history to the second. So it rotates to a fresh id instead (Phase 3.2,
-// Pattern 10).
+// history to the second. It also never revives such a row for the same
+// account (W1, 2026-10-19): a revived id would bring back every copy of the
+// old cookie, which is exactly what Log out of all devices exists to end. So
+// it always rotates to a fresh id instead (Phase 3.2, Pattern 10). The fresh
+// id bound to the same account carries the same votes, reports and settings,
+// since all of them are keyed by account.
 //
 // Sequence, in this exact order (DEC-D, DEC-E, RESEARCH.md Pattern 1 and
 // Pitfall 2):
@@ -259,8 +263,8 @@ func (s *AuthService) VerifyToken(ctx context.Context, sessionID, rawToken strin
 //     owner's single-use link survives being opened in the wrong browser.
 //     4b. Read the session's raw binding (GetSessionBinding, which does not
 //     filter on revoked or deleted) and decide whether to rotate: the
-//     session is bound, is revoked or belongs to a deleted account, and the
-//     link is for a different account (or the account is deleted). If a
+//     session is bound and is revoked or belongs to a deleted account, for
+//     any account the link is for, the same one included. If a
 //     rotation is needed and newID is nil, return ErrSessionNeedsFreshID
 //     now, with the token still unconsumed. This read must come before the
 //     token is consumed in step 5.
@@ -320,8 +324,11 @@ func (s *AuthService) VerifyTokenAndBind(ctx context.Context, sessionID, rawToke
 	case err == nil:
 		bound := binding.AccountID != nil
 		gone := binding.Revoked || binding.AccountDeleted
-		sameAccount := binding.AccountEmail != nil && *binding.AccountEmail == row.Email
-		rotate = bound && gone && (binding.AccountDeleted || !sameAccount)
+		// Rotate whenever the bound row is revoked or its account is
+		// deleted, whichever account the link is for. Reusing the id for
+		// the same account would clear the revocation and bring back every
+		// copy of the old cookie (W1).
+		rotate = bound && gone
 	case errors.Is(err, pgx.ErrNoRows):
 		// The session row is not stored yet: unbound.
 	default:
@@ -364,9 +371,10 @@ func (s *AuthService) VerifyTokenAndBind(ctx context.Context, sessionID, rawToke
 		return "", "", "", fmt.Errorf("service: binding session to account: %w", err)
 	}
 	if n == 0 {
-		// The guarded upsert found the row bound to a different account,
-		// which the read above did not predict. Never move that row: use a
-		// fresh id. The link is already consumed, so there is no way back.
+		// The guarded upsert found the row bound to a different account or
+		// revoked, which the read above did not predict. Never move or
+		// revive that row: use a fresh id. The link is already consumed, so
+		// there is no way back.
 		if rotate || newID == nil {
 			return "", "", "", ErrSessionNeedsFreshID
 		}
