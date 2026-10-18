@@ -923,6 +923,98 @@ func TestActivityPartsRenderFromTheAddress(t *testing.T) {
 	})
 }
 
+// TestActivityUpdatesPartRenders proves the Updates part of My activity draws
+// the same rows the bell reads (Phase 3.2 plan 08, D-05, UI-SPEC B1 to B3). An
+// account that voted on two reports gets three rows seeded straight into the
+// updates table: an unread Now confirmed, a read Now disputed and a read rolled
+// up row of two more changes. The part then holds three li.urow, two of them
+// links to /?report=ID and the rolled up one plain text, exactly one marked new,
+// no report row markup, the hub row's "1 new" tag and the kept count of 3. Another
+// account sees the empty state. TestActivityPartsRenderFromTheAddress is the
+// check that a part with no rows still counts zero report rows.
+func TestActivityUpdatesPartRenders(t *testing.T) {
+	srv, mailer, pool := newE2EServer(t)
+	viewer := newVerifiedClient(t, srv, mailer, "p32-updates-view@example.com")
+	other := newVerifiedClient(t, srv, mailer, "p32-updates-other@example.com")
+	poster := newVerifiedClient(t, srv, mailer, "p32-updates-poster@example.com")
+	loc := map[string]any{"latitude": 12.9716, "longitude": 77.5946}
+
+	first := submitReportGetID(t, poster, srv.URL, floodReportBody(12.9716, 77.5946))
+	second := submitReportGetID(t, poster, srv.URL, floodReportBody(12.9716, 77.5946))
+	p15VoteTrust(t, postVote(t, viewer, srv.URL, first, "confirm", loc))
+	p15VoteTrust(t, postVote(t, viewer, srv.URL, second, "confirm", loc))
+	viewerID := p25AccountID(t, pool, "p32-updates-view@example.com")
+
+	seed := []struct {
+		sql  string
+		args []any
+	}{
+		{`INSERT INTO updates (account_id, report_id, kind, created_at, read_at)
+		  VALUES ($1, $2, 'reached_live', now() - interval '3 minutes', NULL)`, []any{viewerID, first}},
+		{`INSERT INTO updates (account_id, report_id, kind, created_at, read_at)
+		  VALUES ($1, $2, 'hidden', now() - interval '20 minutes', now() - interval '10 minutes')`, []any{viewerID, second}},
+		{`INSERT INTO updates (account_id, kind, created_at, read_at, bucket_start, more_count)
+		  VALUES ($1, 'more', now() - interval '50 minutes', now() - interval '10 minutes',
+		          date_trunc('hour', now() - interval '50 minutes'), 2)`, []any{viewerID}},
+	}
+	for _, s := range seed {
+		if _, err := pool.Exec(context.Background(), s.sql, s.args...); err != nil {
+			t.Fatalf("seeding an update row: %v", err)
+		}
+	}
+
+	body := getProfileQuery(t, viewer, srv.URL, "part=updates")
+	section := partSection(t, body, "updates")
+
+	if n := strings.Count(section, `<li class="urow`); n != 3 {
+		t.Fatalf("the Updates part holds %d urow items, want 3: %s", n, section)
+	}
+	if strings.Contains(section, `<li class="report-row`) || strings.Contains(section, "profile-report-list") {
+		t.Errorf("the Updates part holds report row markup, which activity.js would upgrade")
+	}
+	links := regexp.MustCompile(`<a class="urow__link" href="/\?report=(\d+)"`).FindAllStringSubmatch(section, -1)
+	var got []string
+	for _, m := range links {
+		got = append(got, m[1])
+	}
+	want := []string{strconv.FormatInt(first, 10), strconv.FormatInt(second, 10)}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("the link rows open reports %v, want %v in newest first order", got, want)
+	}
+	if n := strings.Count(section, `<li class="urow urow--new`); n != 1 {
+		t.Errorf("%d rows are marked new, want 1", n)
+	}
+	if !strings.Contains(section, `aria-label="New. Now confirmed.`) {
+		t.Errorf("the new row's accessible name does not begin with New. and the event line: %s", section)
+	}
+	more := regexp.MustCompile(`(?s)<li class="urow urow--plain urow--more"[^>]*>(.*?)</li>`).FindStringSubmatch(section)
+	if more == nil {
+		t.Fatalf("the rolled up row is not drawn as a plain row: %s", section)
+	}
+	if !strings.Contains(more[1], "And 2 more changes") || strings.Contains(more[1], "<a ") {
+		t.Errorf("the rolled up row must read And 2 more changes and not be a link: %s", more[1])
+	}
+	if strings.Contains(section, "urow-cut") {
+		t.Errorf("the closing line shows although the list is not cut")
+	}
+	if !strings.Contains(section, `<span class="activity-part__count">3</span>`) {
+		t.Errorf("the part title does not carry the kept count 3")
+	}
+	if !strings.Contains(body, `<span class="activity-hub__new">1 new</span>`) {
+		t.Errorf("the hub row does not show the red 1 new tag")
+	}
+
+	// Another account has no updates: the shared empty state, no tag.
+	empty := getProfileQuery(t, other, srv.URL, "part=updates")
+	emptySection := partSection(t, empty, "updates")
+	if !strings.Contains(emptySection, "<h3>No updates yet</h3>") || strings.Contains(emptySection, "urow-list") {
+		t.Errorf("an account without updates does not see the empty state: %s", emptySection)
+	}
+	if strings.Contains(empty, "activity-hub__new") {
+		t.Errorf("an account without updates sees the new tag")
+	}
+}
+
 // TestActivityTabAliases proves the old tab addresses of the six tab page still
 // work as read only aliases (D-18): posts lands on Posted by you, votes on You
 // confirmed, disputes on You disputed, and all, resolved and not-resolved on the

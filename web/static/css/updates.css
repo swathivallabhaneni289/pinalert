@@ -212,9 +212,15 @@
 
 /* ---- My activity, Updates part (UI-SPEC B1 to B3) ------------------------ */
 
+/* On the phone the rows sit in their own rounded box under the part's one line
+   (UI-SPEC B2). On a laptop the part's box (activity.css) is the border, so the
+   list gives its own back in the laptop block below. */
 .urow-list {
-  margin: 0;
+  margin: 0 0 var(--space-md);
   padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow: hidden;
   list-style: none;
 }
 
@@ -317,8 +323,23 @@
   line-height: var(--line-height-label);
 }
 
+/* The error block of the Updates part draws its Try again as a link (it reloads
+   the part), in the look activity.css gives the Ended nearby button. */
+main.profile-page a.activity-retry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
 /* The laptop: three columns with the time in the right one (UI-SPEC D11). */
 @media (min-width: 900px) {
+  .urow-list {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+
   .urow__link {
     grid-template-columns: 8px minmax(0, 1fr) auto;
     grid-template-areas: "dot text when";

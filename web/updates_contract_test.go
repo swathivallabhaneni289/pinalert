@@ -252,6 +252,59 @@ func TestUpdatesLoadedOnTheFourBellPages(t *testing.T) {
 	}
 }
 
+// TestUpdatesPartMarkup pins UI-SPEC B1 to B3 on the My activity template: the
+// Updates branch of the part body draws urow rows (never report rows, which
+// activity.js would upgrade), the error block, the cut line and the hub row's
+// red tag, with every word written once.
+func TestUpdatesPartMarkup(t *testing.T) {
+	tmpl := p421ReadTemplate(t, "profile.html.tmpl")
+
+	start := strings.Index(tmpl, `{{else if and (eq .Key "updates") .UpdatesFailed}}`)
+	end := strings.Index(tmpl, `<div class="empty-state profile-empty-state activity-empty">`)
+	if start == -1 || end == -1 || end < start {
+		t.Fatal("profile.html.tmpl has no Updates branch between the report rows and the shared empty state")
+	}
+	branch := tmpl[start:end]
+
+	p421InOrder(t, "the Updates branch", branch,
+		`id="updates-error"`, `Couldn't load updates`, `>Check your connection and try again.`, `class="activity-retry" href="/profile?part=updates"`, `Try again`,
+		`{{else if and (eq .Key "updates") .Updates}}`,
+		`<ul class="urow-list" id="updates-rows">`, `{{range .Updates}}`, `<li class="urow`, `data-update-id="{{.ID}}"`,
+		`class="urow__link"`, `class="urow__dot"`, `class="urow__text"`, `class="urow__event">{{.Event}}`,
+		`{{if .ReportLine}}`, `class="urow__line"`, `{{if .Category}}`, `class="urow__what"`, `urow__sev {{.SeverityClass}}`,
+		`{{if .Trust}}`, `class="urow__trust"`, `class="urow__when">{{.When}}`,
+		`</ul>`, `{{if .UpdatesCut}}`, `class="urow-cut">Showing the newest 50.`)
+	for _, want := range []string{`urow--new`, `urow--plain`, `{{if .Href}}<a class="urow__link" href="{{.Href}}" aria-label="{{.Label}}">`} {
+		if !strings.Contains(branch, want) {
+			t.Errorf("the Updates branch lacks %q", want)
+		}
+	}
+	for _, banned := range []string{`report-row`, `profile-report-list`, `activity-card`, `data-report-id`, `data-trust`} {
+		if strings.Contains(branch, banned) {
+			t.Errorf("the Updates branch holds %q; update rows are not report rows (activity.js upgrades those)", banned)
+		}
+	}
+	if n := strings.Count(tmpl, `id="updates-rows"`); n != 1 {
+		t.Errorf("the template writes id=\"updates-rows\" %d times, want 1", n)
+	}
+	// The hub row: the red tag stands in for the count while anything is unread.
+	if n := strings.Count(tmpl, "activity-hub__new"); n != 1 {
+		t.Errorf("the template writes activity-hub__new %d times, want 1 (the hub row)", n)
+	}
+	p421InOrder(t, "the hub row tag", tmpl,
+		`{{if .ShowCount}}{{if and (eq .Key "updates") .NewCount}}`, `<span class="activity-hub__new">{{.NewCount}} new</span>`,
+		`{{else}}<span class="activity-hub__count">{{.Count}}</span>{{end}}`)
+	// The shared empty state is still written once for the row parts.
+	if n := strings.Count(tmpl, `<h3>{{.EmptyTitle}}</h3>`); n != 2 {
+		t.Errorf("the empty title is written %d times, want 2 (row parts and Ended nearby)", n)
+	}
+	for _, dash := range []string{"\u2013", "\u2014"} {
+		if strings.Contains(tmpl, dash) {
+			t.Errorf("profile.html.tmpl holds the dash %q", dash)
+		}
+	}
+}
+
 // TestUpdatesScriptContract pins D-04 and the boundary rules of the bell
 // script on its comment stripped code: one request call here, two in app.js and
 // none in app-bar.js; the two addresses, the refresh event and the page events;
@@ -293,7 +346,7 @@ func TestUpdatesScriptContract(t *testing.T) {
 	if regexp.MustCompile(`\bPinalert\b`).MatchString(code) {
 		t.Errorf("updates.js uses the Pinalert global; it must work on pages where app.js does not run")
 	}
-	for _, dash := range []string{"–", "—"} {
+	for _, dash := range []string{"\u2013", "\u2014"} {
 		if strings.Contains(raw, dash) {
 			t.Errorf("updates.js holds the dash %q", dash)
 		}
