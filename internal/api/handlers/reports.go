@@ -185,6 +185,16 @@ type FeedReportResponse struct {
 	// flagged it, which the server refuses. It is filled from the one batched
 	// extras read, so the feed's round trips stay constant.
 	ViewerFlagged bool `json:"viewer_flagged" example:"false"`
+	// ViewerFollows is true when the calling account posted this report or voted
+	// on it in any way (confirm, dispute, resolve, reopen or unresolve). It is
+	// viewer specific like your_vote, so it never says who else follows or how
+	// many do. It is computed from the vote rows the read already holds, so the
+	// feed's round trips stay constant. Always present.
+	ViewerFollows bool `json:"viewer_follows" example:"true"`
+	// ViewerMuted is true when the calling account turned updates off for this
+	// report. It is viewer specific, never says who else muted, and is filled
+	// from the one batched extras read. Always present.
+	ViewerMuted bool `json:"viewer_muted" example:"false"`
 	// ConfirmedByPeople is the server authored Show Confirmed membership: true only
 	// for an active report that people at different nearby spots have confirmed
 	// (and whose disputes are not a majority). It is not the same as visibility
@@ -349,6 +359,8 @@ func reportViewToResponse(v service.ReportView) FeedReportResponse {
 		UndosLeft:             v.UndosLeft,
 		WrittenAt:             writtenAt,
 		ViewerFlagged:         v.ViewerFlagged,
+		ViewerFollows:         v.ViewerFollows,
+		ViewerMuted:           v.ViewerMuted,
 		ConfirmedByPeople:     v.ConfirmedByPeople,
 	}
 }
