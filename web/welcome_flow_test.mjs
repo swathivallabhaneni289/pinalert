@@ -1188,3 +1188,82 @@ test('a typed row with no town falls back to the display name for its second lin
   await flush();
   assert.equal(homeList(page).children[0].children[0].children[1].textContent, 'Vijayawada');
 });
+
+// ---- Plan 34: the not found line and the search URL (step 4) ---------------
+// When no area matches closely and no typed row could be placed, the server
+// answers no_match true (or no rows at all) and the status line asks for the
+// town. The list stays where it is.
+
+const NOT_FOUND = 'Not found. Add your town, for example: Gayathri Nagar, Vijayawada';
+
+test('no_match shows the not found line and keeps the rows', async () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Benz Circle');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: PLACES, no_match: true });
+  await flush();
+  assert.equal(homeStatus(page).hidden, false);
+  assert.equal(homeStatus(page).textContent, NOT_FOUND);
+  assert.equal(homeList(page).hidden, false, 'the rows stay next to the line');
+  assert.equal(homeList(page).children.length, 2);
+});
+
+test('an empty answer shows the same not found line', async () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Zzqqxx');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: [] });
+  await flush();
+  assert.equal(homeStatus(page).textContent, NOT_FOUND);
+  assert.equal(homeList(page).hidden, true);
+});
+
+test('rows without no_match show no line, and the line goes when a later search matches', async () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Benz Circle');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: PLACES, no_match: true });
+  await flush();
+  assert.equal(homeStatus(page).hidden, false);
+  typeHome(page, 'Koramangala');
+  page.advance(1000);
+  assert.equal(page.requests.length, 2);
+  answer(page.requests[1], 200, { results: PLACES });
+  await flush();
+  assert.equal(homeStatus(page).hidden, true, 'a matching search shows no line');
+});
+
+test('no_match is read only when it is true, and a typed row never goes with the line', async () => {
+  for (const flag of ['true', 1, 'yes', null]) {
+    const page = load({ start: 4 });
+    typeHome(page, 'Benz Circle');
+    page.advance(400);
+    answer(page.requests[0], 200, { results: PLACES, no_match: flag });
+    await flush();
+    assert.equal(homeStatus(page).hidden, true, 'no_match ' + JSON.stringify(flag) + ' is not true');
+  }
+  const page = load({ start: 4 });
+  typeHome(page, 'Benz Circle Vijayawada');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: [TYPED_ROW, ...PLACES], no_match: true });
+  await flush();
+  assert.equal(homeStatus(page).hidden, true, 'a typed row is a match');
+});
+
+test('the not found line also shows for Enter, and the old no matches line is gone', async () => {
+  const page = load({ start: 4 });
+  byId(page, 'welcome-home-input').value = 'Zzqqxx';
+  fire(byId(page, 'welcome-home-form'), 'submit');
+  answer(page.requests[0], 200, { results: [] });
+  await flush();
+  assert.equal(homeStatus(page).textContent, NOT_FOUND);
+  assert.ok(!/No matches found/.test(homeStatus(page).textContent));
+});
+
+test('the home area search sends only the text: no lat or lon, even with the page centre and a stored fix', () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Benz Circle Vijayawada');
+  page.advance(400);
+  assert.equal(page.requests[0].url, AREA_URL + encodeURIComponent('Benz Circle Vijayawada'));
+  assert.ok(!/[?&](lat|lon)=/.test(page.requests[0].url), 'no near point: the fallback centre is never sent');
+});

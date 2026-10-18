@@ -419,7 +419,7 @@ test('a failed, refused or slow search shows a plain line and never blocks the w
   fire(byId(page, 'settings-home-form'), 'submit');
   answer(page.requests[4], 200, { results: [] });
   await flush();
-  assert.equal(status.textContent, 'No matches found. Try a nearby town or landmark.');
+  assert.equal(status.textContent, 'Not found. Add your town, for example: Gayathri Nagar, Vijayawada');
 
   assert.equal(page.homeWin.hidden, false);
   assert.equal(input.disabled, false);
@@ -1024,4 +1024,70 @@ test('a typed row with no town falls back to the display name for its second lin
   answer(page.requests[0], 200, { results: [{ name: 'Gayathri Nagar, Vijayawada', display_name: 'Vijayawada', typed: true, lat: 16.5, lon: 80.6 }] });
   await flush();
   assert.equal(homeList(page).children[0].children[0].children[1].textContent, 'Vijayawada');
+});
+
+// ---- Plan 34: the not found line and the search URL (Settings) -------------
+
+const NOT_FOUND = 'Not found. Add your town, for example: Gayathri Nagar, Vijayawada';
+
+test('no_match shows the not found line and keeps the rows', async () => {
+  const page = openHome();
+  typeHome(page, 'Benz Circle');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: AREAS, no_match: true });
+  await flush();
+  assert.equal(homeStatus(page).hidden, false);
+  assert.equal(homeStatus(page).textContent, NOT_FOUND);
+  assert.equal(homeList(page).hidden, false, 'the rows stay next to the line');
+  assert.equal(homeList(page).children.length, 2);
+});
+
+test('an empty answer shows the same not found line', async () => {
+  const page = openHome();
+  typeHome(page, 'Zzqqxx');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: [] });
+  await flush();
+  assert.equal(homeStatus(page).textContent, NOT_FOUND);
+  assert.equal(homeList(page).hidden, true);
+});
+
+test('rows without no_match show no line, and the line goes when a later search matches', async () => {
+  const page = openHome();
+  typeHome(page, 'Benz Circle');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: AREAS, no_match: true });
+  await flush();
+  assert.equal(homeStatus(page).hidden, false);
+  typeHome(page, 'Koramangala');
+  page.advance(1000);
+  assert.equal(page.requests.length, 2);
+  answer(page.requests[1], 200, { results: AREAS });
+  await flush();
+  assert.equal(homeStatus(page).hidden, true, 'a matching search shows no line');
+});
+
+test('no_match is read only when it is true, and a typed row never goes with the line', async () => {
+  for (const flag of ['true', 1, 'yes', null]) {
+    const page = openHome();
+    typeHome(page, 'Benz Circle');
+    page.advance(400);
+    answer(page.requests[0], 200, { results: AREAS, no_match: flag });
+    await flush();
+    assert.equal(homeStatus(page).hidden, true, 'no_match ' + JSON.stringify(flag) + ' is not true');
+  }
+  const page = openHome();
+  typeHome(page, 'Benz Circle Vijayawada');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: [TYPED_ROW, ...AREAS], no_match: true });
+  await flush();
+  assert.equal(homeStatus(page).hidden, true, 'a typed row is a match');
+});
+
+test('the Home area search sends only the text: no lat or lon', () => {
+  const page = openHome();
+  typeHome(page, 'Benz Circle Vijayawada');
+  page.advance(400);
+  assert.equal(page.requests[0].url, AREA_URL + encodeURIComponent('Benz Circle Vijayawada'));
+  assert.ok(!/[?&](lat|lon)=/.test(page.requests[0].url), 'no near point: the fallback centre is never sent');
 });
