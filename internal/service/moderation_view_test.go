@@ -213,6 +213,23 @@ func TestWithheldInNoView(t *testing.T) {
 		}
 	})
 
+	// Added 2026-10-18 by Phase 3.2 plan 02: UpdateTrustLine names FeedView, so
+	// the source guard below requires a call here. It only chooses a sentence
+	// from the trust object, and it never invents a count.
+	t.Run("UpdateTrustLine", func(t *testing.T) {
+		trust := Trust{LeadSentence: "lead", ConfirmedSentence: "confirmed", DisputedSentence: "disputed"}
+		for _, k := range UpdateEventKinds {
+			for _, view := range append([]FeedView{FeedViewNone}, FeedViews...) {
+				if UpdateTrustLine(k, trust, view, false) == "" {
+					t.Errorf("kind %q view %q gives an empty line", k, view)
+				}
+			}
+		}
+		if UpdateTrustLine(UpdateReliableNearby, trust, FeedViewActive, false) != UnconfirmedLine {
+			t.Error("an unconfirmed active Reliable note must read Not confirmed yet.")
+		}
+	})
+
 	t.Run("source guard", func(t *testing.T) {
 		src, err := os.ReadFile("moderation_view_test.go")
 		if err != nil {
