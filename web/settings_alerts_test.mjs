@@ -41,6 +41,8 @@ class FakeEl {
     this.handlers = {};
     this.disabled = false;
     this.inert = false;
+    this.checked = false;
+    this.value = '';
   }
   get textContent() { return this.own + this.children.map((c) => c.textContent).join(''); }
   set textContent(v) {
@@ -51,14 +53,18 @@ class FakeEl {
   set innerHTML(v) { throw new Error('innerHTML must never be used: ' + v); }
   set outerHTML(v) { throw new Error('outerHTML must never be used: ' + v); }
   get hidden() { return Object.hasOwn(this.attrs, 'hidden'); }
-  set hidden(v) { if (v) { this.attrs.hidden = ''; } else { delete this.attrs.hidden; } }
+  set hidden(v) {
+    if (v) { this.attrs.hidden = ''; } else { delete this.attrs.hidden; }
+    this.doc.changed(this, 'hidden');
+  }
   setAttribute(n, v) {
     this.attrs[n] = String(v);
     if (n === 'id') { this.id = String(v); this.doc.byId[this.id] = this; }
+    this.doc.changed(this, n);
   }
   getAttribute(n) { return Object.hasOwn(this.attrs, n) ? this.attrs[n] : null; }
   hasAttribute(n) { return Object.hasOwn(this.attrs, n); }
-  removeAttribute(n) { delete this.attrs[n]; }
+  removeAttribute(n) { delete this.attrs[n]; this.doc.changed(this, n); }
   appendChild(node) {
     if (node.parentNode) { node.parentNode.removeChild(node); }
     this.children.push(node);
@@ -95,10 +101,20 @@ class FakeEl {
 
 // The markup of settings.html.tmpl, as the ids and nesting settings-alerts.js
 // reads. withMarkup false builds a page that has none of the new rows.
-function buildPage({ count = 0, withMarkup = true } = {}) {
+function buildPage({ count = 0, withMarkup = true, home = true, on = false, radius = 5 } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
+    observers: [],
+    // changed tells every fake MutationObserver watching el that an attribute
+    // moved, as a microtask, the way a browser delivers the records.
+    changed(el, name) {
+      for (const o of doc.observers) {
+        if (o.target === el && (!o.filter || o.filter.includes(name))) {
+          Promise.resolve().then(() => o.cb([{ type: 'attributes', target: el, attributeName: name }], o));
+        }
+      }
+    },
     createElement(tag) { return new FakeEl(doc, tag); },
     getElementById(id) { return doc.byId[id] || null; },
     querySelectorAll() { return []; },
@@ -158,7 +174,24 @@ function buildPage({ count = 0, withMarkup = true } = {}) {
   make('p', 'settings-delete-error', delPanel).hidden = true;
   make('button', 'settings-delete-go', delPanel).textContent = 'Delete my account';
 
-  return { doc, bar, main, bottom, muted, logout, del };
+  // Plan 15: the Notifications section, the Home area row and window.
+  const alertsOn = make('div', 'settings-alerts-on', main);
+  alertsOn.hidden = !home;
+  const sw = make('input', 'settings-reliable-switch', alertsOn);
+  sw.checked = on;
+  const select = make('select', 'settings-radius-select', alertsOn);
+  select.value = String(radius);
+  const alertsOff = make('div', 'settings-alerts-off', main);
+  alertsOff.hidden = home;
+  make('button', 'settings-reliable-nohome', alertsOff);
+  make('p', 'settings-alerts-error', main).hidden = true;
+  const homeRow = make('button', 'settings-home-row', main);
+  homeRow.setAttribute('data-value', home ? 'Kochi' : '');
+  const homeWin = make('div', 'settings-home-window', doc.body);
+  homeWin.hidden = true;
+  make('p', 'settings-home-alerts-note', homeWin).hidden = !on;
+
+  return { doc, bar, main, bottom, muted, logout, del, alertsOn, alertsOff, sw, select, homeRow, homeWin };
 }
 
 // loadAlerts evaluates settings-alerts.js against a page. fetch keeps every
@@ -188,9 +221,18 @@ function loadAlerts(options) {
     abort() { this.signal.aborted = true; }
   }
 
+  class FakeMutationObserver {
+    constructor(cb) { this.cb = cb; }
+    observe(target, opts) { page.doc.observers.push({ target, cb: this.cb, filter: (opts && opts.attributeFilter) || null }); }
+    disconnect() {}
+  }
+  const opened = [];
+
   const sandbox = {
     console,
     document: page.doc,
+    MutationObserver: FakeMutationObserver,
+    PinalertSettings: { openWindow(which) { opened.push(which); } },
     fetch(target, init) {
       return new Promise((resolve, reject) => {
         requests.push({ url: String(target), init: init || {}, resolve, reject, at: now });
@@ -200,6 +242,7 @@ function loadAlerts(options) {
     clearTimeout(id) { timers.delete(id); },
     AbortController: FakeAbortController,
     navigator: {
+      onLine: true,
       get geolocation() { throw new Error('settings-alerts.js asked for the device position'); }
     },
     location: { assign(target) { assigned.push(String(target)); } }
@@ -207,7 +250,7 @@ function loadAlerts(options) {
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'settings-alerts.js' });
-  return { ...page, api: sandbox.PinalertSettingsAlerts, requests, assigned, advance, sandbox };
+  return { ...page, api: sandbox.PinalertSettingsAlerts, requests, assigned, advance, sandbox, opened };
 }
 
 const flush = async () => { for (let i = 0; i < 8; i++) { await new Promise((r) => setImmediate(r)); } };
@@ -543,7 +586,309 @@ test('Tab stays inside an open window', async () => {
 
 test('the script never asks for the device position and exposes its handles', () => {
   const page = loadAlerts();
-  for (const name of ['openWindow', 'closeWindow', 'loadMuted', 'unmute', 'logOutAll', 'deleteAccount']) {
+  for (const name of ['openWindow', 'closeWindow', 'loadMuted', 'unmute', 'logOutAll', 'deleteAccount', 'saveAlerts', 'redrawAlerts']) {
     assert.equal(typeof page.api[name], 'function', name);
   }
+});
+
+// ---- Plan 15: the Notifications section (NOTIF-05, UI-SPEC E1) --------------
+
+const SAVE_FAILED = 'Couldn\'t save that. Try again.';
+const OFFLINE = 'You\'re offline, so this wasn\'t saved. Try again when you have a signal.';
+const HOME_REMOVED = 'Home area removed. Reliable reporter alerts are off.';
+
+const ok = (reliable, km) => ({ reliable_alerts: reliable, alert_radius_km: km, has_home_area: true });
+const errorLine = (page) => byId(page, 'settings-alerts-error');
+const note = (page) => byId(page, 'settings-home-alerts-note');
+const live = (page) => byId(page, 'notice-live');
+
+// turnOn flips the switch the way a tap does: the checkbox changes, then the
+// change event fires.
+const turnSwitch = (page, state) => {
+  page.sw.checked = state;
+  fire(page.sw, 'change');
+};
+
+test('turning the switch on sends PATCH reliable_alerts, locks the switch and keeps the answer', async () => {
+  const page = loadAlerts();
+  turnSwitch(page, true);
+  await flush();
+
+  assert.equal(page.requests.length, 1);
+  const req = page.requests[0];
+  assert.match(req.url, /\/api\/me\/alerts$/);
+  assert.equal(req.init.method, 'PATCH');
+  assert.equal(req.init.credentials, 'same-origin');
+  assert.equal(req.init.headers['Content-Type'], 'application/json');
+  assert.equal(req.init.body, '{"reliable_alerts":true}');
+  assert.equal(page.sw.disabled, true, 'the sender is disabled while the save is in flight');
+  assert.equal(page.select.disabled, false);
+  assert.equal(note(page).hidden, false, 'the Home area note shows while the switch is on');
+
+  answer(req, 200, ok(true, 5));
+  await flush();
+  assert.equal(page.sw.checked, true);
+  assert.equal(page.sw.disabled, false);
+  assert.equal(errorLine(page).hidden, true);
+  assert.equal(note(page).hidden, false);
+});
+
+test('turning the switch off sends reliable_alerts false and hides the Home area note', async () => {
+  const page = loadAlerts({ on: true });
+  assert.equal(note(page).hidden, false);
+  turnSwitch(page, false);
+  await flush();
+  assert.equal(page.requests[0].init.body, '{"reliable_alerts":false}');
+  assert.equal(note(page).hidden, true);
+  answer(page.requests[0], 200, ok(false, 5));
+  await flush();
+  assert.equal(page.sw.checked, false);
+  assert.equal(note(page).hidden, true);
+});
+
+test('a failed save puts the switch back and says so in one error line', async () => {
+  const page = loadAlerts();
+  turnSwitch(page, true);
+  await flush();
+  answer(page.requests[0], 500, { error: 'boom' });
+  await flush();
+  assert.equal(page.sw.checked, false);
+  assert.equal(page.sw.disabled, false);
+  assert.equal(errorLine(page).hidden, false);
+  assert.equal(errorLine(page).textContent, SAVE_FAILED);
+  assert.equal(note(page).hidden, true);
+});
+
+test('a 400 puts the switch back with the same sentence', async () => {
+  const page = loadAlerts();
+  turnSwitch(page, true);
+  await flush();
+  answer(page.requests[0], 400, { field: 'reliable_alerts', error: 'Add a home area first.' });
+  await flush();
+  assert.equal(page.sw.checked, false);
+  assert.equal(errorLine(page).textContent, SAVE_FAILED);
+});
+
+test('a network failure puts the switch back with the same sentence', async () => {
+  const page = loadAlerts({ on: true });
+  turnSwitch(page, false);
+  await flush();
+  page.requests[0].reject(new Error('network down'));
+  await flush();
+  assert.equal(page.sw.checked, true);
+  assert.equal(errorLine(page).textContent, SAVE_FAILED);
+  assert.equal(note(page).hidden, false);
+});
+
+test('a save that never answers ends in the same sentence', async () => {
+  const page = loadAlerts();
+  turnSwitch(page, true);
+  await flush();
+  page.advance(10001);
+  await flush();
+  assert.equal(page.sw.checked, false);
+  assert.equal(page.sw.disabled, false);
+  assert.equal(errorLine(page).textContent, SAVE_FAILED);
+});
+
+test('offline, nothing is sent and the offline sentence shows', async () => {
+  const page = loadAlerts();
+  page.sandbox.navigator.onLine = false;
+  turnSwitch(page, true);
+  await flush();
+  assert.equal(page.requests.length, 0);
+  assert.equal(page.sw.checked, false);
+  assert.equal(errorLine(page).hidden, false);
+  assert.equal(errorLine(page).textContent, OFFLINE);
+});
+
+test('the next save clears the earlier error line', async () => {
+  const page = loadAlerts();
+  turnSwitch(page, true);
+  await flush();
+  answer(page.requests[0], 500, {});
+  await flush();
+  assert.equal(errorLine(page).hidden, false);
+  turnSwitch(page, true);
+  await flush();
+  assert.equal(errorLine(page).hidden, true);
+  answer(page.requests[1], 200, ok(true, 5));
+  await flush();
+  assert.equal(errorLine(page).hidden, true);
+});
+
+test('picking a distance sends alert_radius_km as a number and keeps the answer', async () => {
+  const page = loadAlerts({ radius: 5 });
+  page.select.value = '10';
+  fire(page.select, 'change');
+  await flush();
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.requests[0].init.method, 'PATCH');
+  assert.equal(page.requests[0].init.body, '{"alert_radius_km":10}');
+  assert.equal(page.select.disabled, true);
+  assert.equal(page.sw.disabled, false);
+  answer(page.requests[0], 200, ok(false, 10));
+  await flush();
+  assert.equal(page.select.value, '10');
+  assert.equal(page.select.disabled, false);
+  assert.equal(errorLine(page).hidden, true);
+});
+
+test('a failed distance save puts the previous option back, and a second pick goes back to the last saved one', async () => {
+  const page = loadAlerts({ radius: 5 });
+  page.select.value = '2';
+  fire(page.select, 'change');
+  await flush();
+  answer(page.requests[0], 500, {});
+  await flush();
+  assert.equal(page.select.value, '5');
+  assert.equal(errorLine(page).textContent, SAVE_FAILED);
+
+  page.select.value = '1';
+  fire(page.select, 'change');
+  await flush();
+  answer(page.requests[1], 200, ok(false, 1));
+  await flush();
+  page.select.value = '10';
+  fire(page.select, 'change');
+  await flush();
+  page.requests[2].reject(new Error('down'));
+  await flush();
+  assert.equal(page.select.value, '1');
+});
+
+test('a distance that is not a whole number is never sent', async () => {
+  const page = loadAlerts({ radius: 5 });
+  page.select.value = '';
+  fire(page.select, 'change');
+  await flush();
+  assert.equal(page.requests.length, 0);
+  assert.equal(page.select.value, '5');
+});
+
+test('the Add a home area first row opens the Home area window', async () => {
+  const page = loadAlerts({ home: false });
+  fire(byId(page, 'settings-reliable-nohome'), 'click');
+  assert.deepEqual(page.opened, ['home']);
+});
+
+test('closing the Home area window after saving one shows the switch and focuses it', async () => {
+  const page = loadAlerts({ home: false });
+  assert.equal(page.alertsOn.hidden, true);
+  assert.equal(page.alertsOff.hidden, false);
+  fire(byId(page, 'settings-reliable-nohome'), 'click');
+  page.homeWin.hidden = false;
+  await flush();
+
+  // What settings.js does after a save: the row takes the stored name, the
+  // window closes, focus goes to the Home area row.
+  page.homeRow.setAttribute('data-value', 'Kochi');
+  page.homeWin.hidden = true;
+  page.homeRow.focus();
+  await flush();
+
+  assert.equal(page.alertsOn.hidden, false);
+  assert.equal(page.alertsOff.hidden, true);
+  assert.equal(page.sw.checked, false, 'a new home area does not switch the alert on');
+  assert.equal(page.doc.activeElement, page.sw);
+  assert.equal(page.requests.length, 0);
+});
+
+test('closing the Home area window with no home area puts focus back on the row that opened it', async () => {
+  const page = loadAlerts({ home: false });
+  const nohome = byId(page, 'settings-reliable-nohome');
+  fire(nohome, 'click');
+  page.homeWin.hidden = false;
+  await flush();
+  page.homeWin.hidden = true;
+  page.homeRow.focus();
+  await flush();
+  assert.equal(page.alertsOn.hidden, true);
+  assert.equal(page.alertsOff.hidden, false);
+  assert.equal(page.doc.activeElement, nohome);
+});
+
+test('a Home area window opened from the Home area row keeps focus where settings.js put it', async () => {
+  const page = loadAlerts({ home: false });
+  page.homeWin.hidden = false;
+  await flush();
+  page.homeRow.setAttribute('data-value', 'Kochi');
+  page.homeWin.hidden = true;
+  page.homeRow.focus();
+  await flush();
+  assert.equal(page.alertsOn.hidden, false);
+  assert.equal(page.doc.activeElement, page.homeRow);
+});
+
+test('removing the home area while the alert is on turns the switch off, says so and sends nothing', async () => {
+  const page = loadAlerts({ home: true, on: true });
+  page.homeRow.setAttribute('data-value', '');
+  await flush();
+
+  assert.equal(page.alertsOn.hidden, true);
+  assert.equal(page.alertsOff.hidden, false);
+  assert.equal(page.sw.checked, false);
+  assert.equal(note(page).hidden, true);
+  assert.equal(live(page).textContent, HOME_REMOVED);
+  assert.equal(page.requests.length, 0);
+});
+
+test('removing the home area while the alert is off redraws without a status line', async () => {
+  const page = loadAlerts({ home: true, on: false });
+  page.homeRow.setAttribute('data-value', '');
+  await flush();
+  assert.equal(page.alertsOn.hidden, true);
+  assert.equal(page.alertsOff.hidden, false);
+  assert.equal(live(page).textContent, '');
+});
+
+test('changing the home area to another place changes nothing in the section', async () => {
+  const page = loadAlerts({ home: true, on: true, radius: 10 });
+  page.homeRow.setAttribute('data-value', 'Thrissur');
+  await flush();
+  assert.equal(page.alertsOn.hidden, false);
+  assert.equal(page.alertsOff.hidden, true);
+  assert.equal(page.sw.checked, true);
+  assert.equal(page.select.value, '10');
+  assert.equal(live(page).textContent, '');
+  assert.equal(note(page).hidden, false);
+});
+
+test('a failed switch save after the home area was removed leaves the switch off', async () => {
+  const page = loadAlerts({ home: true, on: true });
+  turnSwitch(page, false);
+  await flush();
+  page.homeRow.setAttribute('data-value', '');
+  await flush();
+  page.requests[0].reject(new Error('down'));
+  await flush();
+  assert.equal(page.sw.checked, false);
+  assert.equal(note(page).hidden, true);
+});
+
+test('saveAlerts and redrawAlerts are the same paths the controls use', async () => {
+  const page = loadAlerts({ home: false });
+  page.api.redrawAlerts(true);
+  assert.equal(page.alertsOn.hidden, false);
+  assert.equal(page.alertsOff.hidden, true);
+  page.api.redrawAlerts(false);
+  assert.equal(page.alertsOn.hidden, true);
+  assert.equal(page.alertsOff.hidden, false);
+
+  const pending = page.api.saveAlerts({ alert_radius_km: 2 });
+  await flush();
+  assert.equal(page.requests[0].init.body, '{"alert_radius_km":2}');
+  answer(page.requests[0], 200, ok(false, 2));
+  assert.equal(await pending, true);
+  assert.equal(page.select.value, '2');
+});
+
+test('every alert string reaches the page as text', async () => {
+  const page = loadAlerts();
+  // innerHTML and outerHTML throw in the fake element, so a markup sink would fail here.
+  turnSwitch(page, true);
+  await flush();
+  answer(page.requests[0], 500, { error: '<b>bad</b>' });
+  await flush();
+  assert.equal(errorLine(page).textContent, SAVE_FAILED);
 });
