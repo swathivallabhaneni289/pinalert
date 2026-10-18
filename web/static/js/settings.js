@@ -50,7 +50,9 @@
   // (map-tools.js), so one sentence means one thing across the app.
   var MESSAGE_SEARCHING = 'Searching…';
   var MESSAGE_TOO_SHORT = 'Type at least 3 letters.';
-  var MESSAGE_NO_MATCH = 'No matches found. Try a nearby town or landmark.';
+  // Shown when no area matches closely and no typed row could be placed (plan
+  // 34), with the rows still listed when there are any.
+  var MESSAGE_NOT_FOUND = 'Not found. Add your town, for example: Gayathri Nagar, Vijayawada';
   var MESSAGE_UNAVAILABLE = 'Search unavailable. Try again in a moment.';
   var MESSAGE_RATE_LIMITED = 'Too many searches. Wait a few seconds and try again.';
   var MESSAGE_SAVE_FAILED = 'Could not save. Try again in a moment.';
@@ -503,9 +505,12 @@
     return '';
   }
 
-  function renderResults(results) {
+  // noMatch is the server's no_match flag: no row closely matches what was
+  // typed and no typed row could be placed.
+  function renderResults(results, noMatch) {
     homeResults.textContent = '';
     var shown = 0;
+    var typedShown = false;
     for (var i = 0; i < results.length && shown < MAX_RESULTS; i++) {
       var res = results[i];
       var name = res ? placeShortName(res) : '';
@@ -525,6 +530,7 @@
       // second line, and picks like any other row: the name is the cleaned text
       // to save, the point is a place in that town.
       var typed = res.typed === true;
+      typedShown = typedShown || typed;
       var label = document.createElement('span');
       setText(label, typed ? 'Use "' + name + '"' : name);
       option.appendChild(label);
@@ -541,10 +547,15 @@
     }
     if (shown === 0) {
       homeResults.hidden = true;
-      showLine(homeStatus, MESSAGE_NO_MATCH);
+      showLine(homeStatus, MESSAGE_NOT_FOUND);
       return;
     }
-    hideLine(homeStatus);
+    // A typed row is a match, so the line never goes with one.
+    if (noMatch && !typedShown) {
+      showLine(homeStatus, MESSAGE_NOT_FOUND);
+    } else {
+      hideLine(homeStatus);
+    }
     homeResults.hidden = false;
   }
 
@@ -645,7 +656,8 @@
         }
         return;
       }
-      renderResults(answer.body && Array.isArray(answer.body.results) ? answer.body.results : []);
+      renderResults(answer.body && Array.isArray(answer.body.results) ? answer.body.results : [],
+        !!answer.body && answer.body.no_match === true);
     }, function () {
       if (mine !== searchSeq) {
         return;

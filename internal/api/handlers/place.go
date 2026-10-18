@@ -36,6 +36,16 @@ type PlaceSearcher interface {
 // fields ask for areas only. No kind is the place search as it always was.
 const placeKindArea = "area"
 
+// PlaceResponse is the JSON body of a successful GET /api/geocode/place. It is
+// GeocodeResponse and one more field, set only for kind=area (plan 34).
+type PlaceResponse struct {
+	GeocodeResponse
+	// NoMatch is true when no row closely matches what was typed and no typed
+	// row could be placed, so the page asks the person to add their town. Left
+	// out otherwise, and always left out without kind=area.
+	NoMatch bool `json:"no_match,omitempty" example:"true"`
+}
+
 // parsePlaceKind reads the optional kind query parameter. It returns areas=true
 // for kind=area and false when kind is absent or empty. Any other value writes
 // the 400 itself and returns ok=false.
@@ -133,6 +143,9 @@ func placeErrorClass(err error) string {
 // @Description town the person typed (the second comma separated part) closely matches the first part, the answer starts with
 // @Description one extra row marked typed true, the typed text placed in that town; its lookups count inside the same cap of
 // @Description four upstream requests. A first part with a digit or a street word never gets that row.
+// @Description With kind=area the town may also follow the neighbourhood without a comma (the last one or two words are tried as the
+// @Description town), or be named by a six digit PIN code in the text when no town is found; those lookups count inside the same cap.
+// @Description no_match is true when no row closely matches what was typed and no typed row could be placed, and the page asks for the town.
 // @Description A 429 or 503 never affects report submission, which has its own search.
 // @Tags geocode
 // @Produce json
@@ -140,7 +153,7 @@ func placeErrorClass(err error) string {
 // @Param lat query number false "Map centre latitude, -90 to 90, sent together with lon"
 // @Param lon query number false "Map centre longitude, -180 to 180, sent together with lat"
 // @Param kind query string false "Send area to get areas only (neighbourhoods, localities, towns, cities, districts), never a street or a building. Left out, every kind of place is returned" Enums(area)
-// @Success 200 {object} GeocodeResponse
+// @Success 200 {object} PlaceResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
 // @Failure 429 {object} ErrorResponse
@@ -200,6 +213,9 @@ func GeocodePlace(searcher PlaceSearcher, budget PlaceBudget) http.HandlerFunc {
 
 		// Set before writeJSON, since writeJSON calls WriteHeader.
 		w.Header().Set("Cache-Control", geocodeCacheControl)
-		writeJSON(w, http.StatusOK, geocodeAnswer(answer))
+		writeJSON(w, http.StatusOK, PlaceResponse{
+			GeocodeResponse: geocodeAnswer(answer),
+			NoMatch:         areas && answer.NoCloseMatch,
+		})
 	}
 }

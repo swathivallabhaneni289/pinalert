@@ -140,7 +140,7 @@ const docTemplate = `{
         },
         "/geocode/place": {
             "get": {
-                "description": "Place search for the history views. It runs on its own lane of the geocoder: it\nnever queues ahead of a report search, repeated searches are answered from a cache, and each\nverified account has its own budget of 8 searches at once, then 1 a second. Results are in India only. It asks\nPhoton first, which matches close spellings and half typed words; the optional\nlat and lon (both or neither, the map centre) make Photon prefer nearby places. When\nPhoton finds nothing it asks Nominatim with the whole text, preferring places near\nthe map centre, then Photon again without the first part and then without the\nsecond; matched_query then holds the shorter text that matched. A first Photon\nrequest that takes over 2 seconds is sent once more, with 2.5 seconds. When Photon\nfails, or is too slow both times, Nominatim alone runs those tries, in a box around\nthe map centre first. At most four upstream requests are sent per search.\nWith kind=area the text is sent without a trailing PIN code, state name or country, and when no area in the\ntown the person typed (the second comma separated part) closely matches the first part, the answer starts with\none extra row marked typed true, the typed text placed in that town; its lookups count inside the same cap of\nfour upstream requests. A first part with a digit or a street word never gets that row.\nA 429 or 503 never affects report submission, which has its own search.",
+                "description": "Place search for the history views. It runs on its own lane of the geocoder: it\nnever queues ahead of a report search, repeated searches are answered from a cache, and each\nverified account has its own budget of 8 searches at once, then 1 a second. Results are in India only. It asks\nPhoton first, which matches close spellings and half typed words; the optional\nlat and lon (both or neither, the map centre) make Photon prefer nearby places. When\nPhoton finds nothing it asks Nominatim with the whole text, preferring places near\nthe map centre, then Photon again without the first part and then without the\nsecond; matched_query then holds the shorter text that matched. A first Photon\nrequest that takes over 2 seconds is sent once more, with 2.5 seconds. When Photon\nfails, or is too slow both times, Nominatim alone runs those tries, in a box around\nthe map centre first. At most four upstream requests are sent per search.\nWith kind=area the text is sent without a trailing PIN code, state name or country, and when no area in the\ntown the person typed (the second comma separated part) closely matches the first part, the answer starts with\none extra row marked typed true, the typed text placed in that town; its lookups count inside the same cap of\nfour upstream requests. A first part with a digit or a street word never gets that row.\nWith kind=area the town may also follow the neighbourhood without a comma (the last one or two words are tried as the\ntown), or be named by a six digit PIN code in the text when no town is found; those lookups count inside the same cap.\nno_match is true when no row closely matches what was typed and no typed row could be placed, and the page asks for the town.\nA 429 or 503 never affects report submission, which has its own search.",
                 "produces": [
                     "application/json"
                 ],
@@ -182,7 +182,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.GeocodeResponse"
+                            "$ref": "#/definitions/handlers.PlaceResponse"
                         }
                     },
                     "400": {
@@ -1598,6 +1598,27 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "Indiranagar, Bengaluru"
+                }
+            }
+        },
+        "handlers.PlaceResponse": {
+            "type": "object",
+            "properties": {
+                "matched_query": {
+                    "description": "MatchedQuery is the shorter text that found these results when the\nwhole text found nothing. It is left out when the text as typed\nmatched, and when nothing matched.",
+                    "type": "string",
+                    "example": "Banjara Hills, Hyderabad"
+                },
+                "no_match": {
+                    "description": "NoMatch is true when no row closely matches what was typed and no typed\nrow could be placed, so the page asks the person to add their town. Left\nout otherwise, and always left out without kind=area.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.GeocodeResult"
+                    }
                 }
             }
         },

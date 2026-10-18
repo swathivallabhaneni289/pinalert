@@ -488,6 +488,27 @@ definitions:
         example: Indiranagar, Bengaluru
         type: string
     type: object
+  handlers.PlaceResponse:
+    properties:
+      matched_query:
+        description: |-
+          MatchedQuery is the shorter text that found these results when the
+          whole text found nothing. It is left out when the text as typed
+          matched, and when nothing matched.
+        example: Banjara Hills, Hyderabad
+        type: string
+      no_match:
+        description: |-
+          NoMatch is true when no row closely matches what was typed and no typed
+          row could be placed, so the page asks the person to add their town. Left
+          out otherwise, and always left out without kind=area.
+        example: true
+        type: boolean
+      results:
+        items:
+          $ref: '#/definitions/handlers.GeocodeResult'
+        type: array
+    type: object
   handlers.ProfileResponse:
     properties:
       display_name:
@@ -983,6 +1004,9 @@ paths:
         town the person typed (the second comma separated part) closely matches the first part, the answer starts with
         one extra row marked typed true, the typed text placed in that town; its lookups count inside the same cap of
         four upstream requests. A first part with a digit or a street word never gets that row.
+        With kind=area the town may also follow the neighbourhood without a comma (the last one or two words are tried as the
+        town), or be named by a six digit PIN code in the text when no town is found; those lookups count inside the same cap.
+        no_match is true when no row closely matches what was typed and no typed row could be placed, and the page asks for the town.
         A 429 or 503 never affects report submission, which has its own search.
       parameters:
       - description: Place text, 3 to 200 characters
@@ -1012,7 +1036,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handlers.GeocodeResponse'
+            $ref: '#/definitions/handlers.PlaceResponse'
         "400":
           description: Bad Request
           schema:

@@ -78,6 +78,14 @@ type Result struct {
 	// the cleaned text to save and DisplayName is the town.
 	Typed bool   `json:"typed,omitempty"`
 	Town  string `json:"town,omitempty"`
+
+	// cityLevel says the row is a city or a town (plan 34), the only kind of
+	// row a town word typed without a comma may be placed by. region is the
+	// town a PIN code row names (its city, else its county without a trailing
+	// (Urban) or District). Both are set by the Photon reader only and never
+	// leave this package.
+	cityLevel bool
+	region    string
 }
 
 // nominatimRecord is the shape actually returned by Nominatim's jsonv2
@@ -395,6 +403,10 @@ func (c *Client) waitForToken(ctx context.Context, _ int) error {
 type Answer struct {
 	Results      []Result
 	MatchedQuery string
+	// NoCloseMatch is set by the areas only search (plan 34) when no row closely
+	// matches what the person typed and no typed row could be placed, so the page
+	// can ask for the town. Never set by the normal place search.
+	NoCloseMatch bool
 	// provider is which service gave the answer (providerPhoton or
 	// providerNominatim), for the live check and the tests only.
 	provider string
@@ -802,10 +814,14 @@ func (c *Client) SearchReaderAreas(ctx context.Context, q string, near *Point) (
 	home := parseTypedHome(q)
 	ctx = withAreasOnly(withUpstreamCount(ctx))
 	answer, err := c.SearchReader(ctx, home.search, near)
-	if err != nil || !home.ok || c.photonURL == "" {
+	if err != nil {
 		return answer, err
 	}
-	return c.withTypedRow(ctx, home, near, answer), nil
+	if c.photonURL != "" && (home.ok || home.bare != "") {
+		answer, home = c.withTypedRow(ctx, home, near, answer)
+	}
+	answer.NoCloseMatch = noCloseMatch(answer, home)
+	return answer, nil
 }
 
 // takeReaderToken is the reader lane's turn at the Nominatim limiter for
