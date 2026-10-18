@@ -494,6 +494,24 @@ For a report the bypass does not touch, Confirmed is the same thing as the resol
 
 The All choice is a separate read, `view=all`, which returns the active and the disputed reports together, each with its own view word, so the list can put disputed ones last. It never returns a retracted, expired, held or removed report (`TestWithheldReportsInNoFeed` and `TestFeedViewAll`).
 
+## Show menu: Only Reliable reporters
+
+The Show menu also has an Only Reliable reporters tick, for a reader who wants the Nearby list and the alerts to come only from people with a good record. Which reports the tick keeps is decided by the server and sent as the field `kept_by_reliable_filter` on every report in the feed and on a report opened from a link. `KeptByReliableFilter` writes it. The browser reads that field and never holds a tag rule or a threshold.
+
+A report is kept when either of these is true:
+
+- Its reporter's tag is Reliable reporter. The tag is the one on the report's own trust object, so the tick and the reporter line on the card cannot disagree.
+- The report is serious. That is `ReportMeta.Serious`, the one critical rule: a Critical severity, or a report stored with the older rescue needed category. There is no second critical rule in this field, so a Critical report from a brand new reporter stays when the tick is on, and an old rescue needed report stays too.
+
+What the field is not. The tick belongs to the reader's own choice, is not remembered between visits, and nothing reads the field by default. No default view hides, reorders or changes a report because of a reporter tag, so the display only rule for the tag (Phase 3, D-14) holds for every default view. A reader who turns the tick on is choosing to let the tag shape their own list, and only their own. `Resolve` never reads the field and the server still lists every report; the field filters nothing on the server.
+
+Limits worth stating:
+
+- The tag is read for at most `MaxReporterAccountsPerRead` reporter accounts in one read, 200. In a very dense read a far reporter past that count reads none, so a non serious report from a Reliable reporter may be left out of the tick. It errs toward showing fewer reports, never toward calling an unrated reporter reliable.
+- The tag has a price, the same one "Honest limits" gives: extra verified accounts that confirm each other, plus a claimed location for each. A reader who turns the tick on takes that risk with it, which is why the tick is opt in and why Critical reports are kept whatever the tag says.
+
+`TestKeptByReliableFilterGrid` pins the rule over every tag, severity and category. `TestNearbyCarriesKeptByReliableFilter` checks the field on a read, and `TestReliableFilterOnTheWire` checks it on the wire with a seeded Reliable reporter, a new reporter and an old rescue needed report, and that all of them are still listed.
+
 ## Where the roadmap words are met
 
 | Roadmap words | What ships | Where in code | Test |
