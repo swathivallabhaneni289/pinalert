@@ -117,6 +117,12 @@ definitions:
         example: false
         type: boolean
     type: object
+  handlers.DeleteAccountRequest:
+    properties:
+      confirm:
+        example: true
+        type: boolean
+    type: object
   handlers.ErrorDetail:
     properties:
       field:
@@ -1246,6 +1252,50 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Agree to the current terms
+      tags:
+      - me
+  /me/delete:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Deletes the signed in account. The sign in address is replaced by one that can never
+        receive mail, the name, home area and consent are cleared, and every session of the
+        account ends, this one included. The updates, muted reports, alert settings and
+        sign in links of the account are deleted. The reports and votes the person made stay,
+        with no name or link to the person, so every count other people see is unchanged. The
+        same address can sign up again as a brand new account with no history. The body must
+        say confirm true; anything else deletes nothing.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Must carry confirm true
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.DeleteAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Delete my account
       tags:
       - me
   /me/first-run-done:

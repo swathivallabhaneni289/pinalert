@@ -17,6 +17,7 @@ import (
 
 	"pinalert/internal/account"
 	"pinalert/internal/service"
+	"pinalert/internal/session"
 )
 
 // maxMeBodyBytes caps the bodies of the /api/me routes. A profile body is a
@@ -214,6 +215,71 @@ func FirstRunDone(svc *service.AccountService) http.HandlerFunc {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// DeleteAccountRequest is the body of POST /me/delete. confirm must be true;
+// a missing key, false or any other value deletes nothing.
+type DeleteAccountRequest struct {
+	Confirm *bool `json:"confirm" example:"true"`
+}
+
+// DeleteAccount produces the handler of POST /me/delete.
+//
+// @Summary Delete my account
+// @Description Deletes the signed in account. The sign in address is replaced by one that can never
+// @Description receive mail, the name, home area and consent are cleared, and every session of the
+// @Description account ends, this one included. The updates, muted reports, alert settings and
+// @Description sign in links of the account are deleted. The reports and votes the person made stay,
+// @Description with no name or link to the person, so every count other people see is unchanged. The
+// @Description same address can sign up again as a brand new account with no history. The body must
+// @Description say confirm true; anything else deletes nothing.
+// @Description Requires a session verified by email; an unverified caller receives 401.
+// @Tags me
+// @Accept json
+// @Produce json
+// @Param body body DeleteAccountRequest true "Must carry confirm true"
+// @Success 204 "Deleted"
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /me/delete [post]
+func DeleteAccount(deletions *service.AccountDeletionService, mgr *session.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		acc, ok := account.FromContext(r.Context())
+		if !ok {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		r.Body = http.MaxBytesReader(w, r.Body, maxMeBodyBytes)
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		var req DeleteAccountRequest
+		if err := dec.Decode(&req); err != nil {
+			writeFieldError(w, http.StatusBadRequest, "body", "Request body is missing or malformed.")
+			return
+		}
+		if req.Confirm == nil || !*req.Confirm {
+			writeFieldError(w, http.StatusBadRequest, "confirm", service.DeleteConfirmMessage)
+			return
+		}
+
+		if err := deletions.DeleteAccount(r.Context(), acc.ID); err != nil {
+			if errors.Is(err, service.ErrAccountAlreadyDeleted) {
+				writeFieldError(w, http.StatusNotFound, "account", "This account is already deleted.")
+				return
+			}
+			// The account id only: the address never reaches the log.
+			log.Printf("handlers: DeleteAccount: account %d: %v", acc.ID, err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		mgr.ClearCookie(w)
+		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
