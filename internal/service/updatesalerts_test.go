@@ -331,6 +331,81 @@ func TestReliableAlertsCapPerReporter(t *testing.T) {
 	})
 }
 
+// TestReliableAlertSeedsTheCursor: the one insert that writes the note also
+// seeds the reader's cursor (W3), so it carries the report's visibility as the
+// state to seed and the same now as the note. There is no separate seed call:
+// when the cap skips a report the insert is never called, and when the insert
+// writes nothing (a duplicate or the ceiling) the same statement seeds nothing.
+func TestReliableAlertSeedsTheCursor(t *testing.T) {
+	const acct = 7
+	young := 30 * time.Minute
+
+	t.Run("the insert carries the visibility of each report and now", func(t *testing.T) {
+		f := &alertFake{fakeUpdatesQuerier: &fakeUpdatesQuerier{}, settings: alertOn(5), homeCell: cellPtr("tdr1v")}
+		f.reporters = reporterRows(1, 101, 2, 102)
+		n := &fakeNearby{views: []ReportView{
+			alertView(1, VisibilityProvisional, ReporterReliable, 40*time.Minute),
+			alertView(2, VisibilityLive, ReporterReliable, 20*time.Minute),
+		}}
+		if err := newAlertService(f, n).Refresh(context.Background(), acct); err != nil {
+			t.Fatalf("Refresh: %v", err)
+		}
+		if len(f.inserted) != 2 {
+			t.Fatalf("inserts = %d, want 2", len(f.inserted))
+		}
+		wantState := map[int64]string{1: string(VisibilityProvisional), 2: string(VisibilityLive)}
+		for _, p := range f.inserted {
+			if p.State != wantState[p.ReportID] {
+				t.Errorf("report %d seeded with state %q, want %q", p.ReportID, p.State, wantState[p.ReportID])
+			}
+			if !p.Now.Equal(updatesNow) {
+				t.Errorf("report %d seeded at %v, want %v", p.ReportID, p.Now, updatesNow)
+			}
+		}
+		for _, name := range []string{"InsertBaselineCursor", "AdoptCursorState", "AdvanceCursorAndInsertUpdate", "MarkFadingAndInsertUpdate"} {
+			if got := len(f.named(name)); got != 0 {
+				t.Errorf("%s was called %d times by the alert step", name, got)
+			}
+		}
+	})
+
+	t.Run("a report the cap skips is not inserted and so not seeded", func(t *testing.T) {
+		f := &alertFake{
+			fakeUpdatesQuerier: &fakeUpdatesQuerier{},
+			settings:           alertOn(5),
+			homeCell:           cellPtr("tdr1v"),
+			inWindow:           map[int64]int64{101: ReliableAlertsPerReporterPerHour},
+		}
+		f.reporters = reporterRows(1, 101)
+		n := &fakeNearby{views: []ReportView{alertView(1, VisibilityLive, ReporterReliable, young)}}
+		if err := newAlertService(f, n).Refresh(context.Background(), acct); err != nil {
+			t.Fatalf("Refresh: %v", err)
+		}
+		if len(f.inserted) != 0 {
+			t.Errorf("inserts = %v, want none", insertedReportIDs(f))
+		}
+	})
+
+	t.Run("a refused insert leaves no other cursor write behind", func(t *testing.T) {
+		f := &alertFake{
+			fakeUpdatesQuerier: &fakeUpdatesQuerier{},
+			settings:           alertOn(5),
+			homeCell:           cellPtr("tdr1v"),
+			insertErr:          pgx.ErrNoRows,
+		}
+		f.reporters = reporterRows(1, 101)
+		n := &fakeNearby{views: []ReportView{alertView(1, VisibilityLive, ReporterReliable, young)}}
+		if err := newAlertService(f, n).Refresh(context.Background(), acct); err != nil {
+			t.Fatalf("Refresh: %v", err)
+		}
+		for _, name := range []string{"InsertBaselineCursor", "AdoptCursorState"} {
+			if got := len(f.named(name)); got != 0 {
+				t.Errorf("%s was called %d times after a refused insert", name, got)
+			}
+		}
+	})
+}
+
 // TestAlertAnchorIsHomeCell: the read is anchored at the middle of the stored
 // home cell with the chosen distance, for the reading account.
 func TestAlertAnchorIsHomeCell(t *testing.T) {
@@ -554,3 +629,131 @@ func TestReliableAlertsOnRealHistory(t *testing.T) {
 }
 
 func boolPtrForAlerts(b bool) *bool { return &b }
+
+// TestReliableNoteCountsTowardTheHourGap is the W3 sequence on a real database
+// (D-12, one update per report per hour): a Reliable reporter posts, the
+// reader's Refresh writes the note, the reader votes on that report, two other
+// people confirm it inside the hour, and the reader's next Refresh writes no
+// second row. Once the hour has passed the normal one per report per hour rule
+// applies again.
+func TestReliableNoteCountsTowardTheHourGap(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+
+	base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
+	cur := base
+	clock := func() time.Time { return cur }
+
+	reports := NewReportService(q, WithReportClock(clock))
+	updates := NewUpdatesService(q, reports, WithUpdatesClock(clock))
+	accounts := NewAccountService(q, WithAccountClock(clock))
+
+	const reporterSession = "p32-19-reliable-session"
+	testutil.SeedReliableReporter(t, pool, "p32-19-reliable@example.com", reporterSession, base)
+	reader := testutil.SeedReporterAccount(t, pool, "p32-19-reader@example.com")
+
+	const homeLat, homeLon = 12.9716, 77.5946
+	if _, err := accounts.UpdateProfile(ctx, reader, ProfileUpdate{HomeArea: HomeAreaChange{
+		Action: HomeAreaSet,
+		Input:  HomeAreaInput{Name: "Bengaluru", Lat: homeLat, Lon: homeLon},
+	}}); err != nil {
+		t.Fatalf("setting the home area: %v", err)
+	}
+	cell, ok, err := accounts.HomeAreaCell(ctx, reader)
+	if err != nil || !ok {
+		t.Fatalf("HomeAreaCell = %q, %v, %v", cell, ok, err)
+	}
+	spotLat, spotLon, _ := HomeAreaAnchor(cell)
+
+	cur = base
+	if _, err := accounts.UpdateAlertSettings(ctx, reader, AlertSettingsUpdate{ReliableAlerts: boolPtrForAlerts(true)}); err != nil {
+		t.Fatalf("turning the alert on: %v", err)
+	}
+
+	// A low report is Provisional until two people at different spots confirm it.
+	var report int64
+	postedAt := base.Add(5 * time.Minute)
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO reports
+			(session_id, category, severity, description, latitude, longitude, geohash, created_at, expires_at)
+		 VALUES ($1, 'flood', 'low', 'p32-19 report', $2, $3, $4, $5, $6)
+		 RETURNING id`,
+		reporterSession, spotLat, spotLon,
+		geohash.EncodeWithPrecision(spotLat, spotLon, 8), postedAt, postedAt.Add(ExpiryDuration(SeverityLow)),
+	).Scan(&report); err != nil {
+		t.Fatalf("inserting the report: %v", err)
+	}
+
+	count := func(kind string) int {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM updates WHERE account_id = $1 AND report_id = $2 AND kind = $3`, reader, report, kind).Scan(&n); err != nil {
+			t.Fatalf("counting %s rows: %v", kind, err)
+		}
+		return n
+	}
+	rowsAboutReport := func() int {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM updates WHERE account_id = $1 AND report_id = $2`, reader, report).Scan(&n); err != nil {
+			t.Fatalf("counting rows: %v", err)
+		}
+		return n
+	}
+	refresh := func(at time.Time) {
+		t.Helper()
+		cur = at
+		if err := updates.Refresh(ctx, reader); err != nil {
+			t.Fatalf("Refresh at %s: %v", at.Format(time.RFC3339), err)
+		}
+	}
+	vote := func(account int64, cellHash string, at time.Time) {
+		t.Helper()
+		if _, err := pool.Exec(ctx,
+			`INSERT INTO votes (report_id, account_id, kind, value, geohash_cell, created_at)
+			 VALUES ($1, $2, 'content', 'confirm', $3, $4)`,
+			report, account, cellHash, at); err != nil {
+			t.Fatalf("seeding a confirming vote: %v", err)
+		}
+	}
+
+	// 1. The reader's Refresh writes the Reliable reporter note.
+	noteAt := base.Add(10 * time.Minute)
+	refresh(noteAt)
+	if got := count(string(UpdateReliableNearby)); got != 1 {
+		t.Fatalf("Reliable note rows = %d, want 1", got)
+	}
+
+	// 2. The reader votes on that report, which makes them follow it. One
+	// confirmation alone does not reach the threshold, so it stays Provisional.
+	vote(reader, "tdr1v8y", base.Add(12*time.Minute))
+	refresh(base.Add(13 * time.Minute))
+
+	// 3. Two other people confirm it inside the hour. It reaches Live, which on
+	// its own would be news, but the note was the last thing the reader heard
+	// about this report and that was a few minutes ago.
+	voterA := testutil.SeedReporterAccount(t, pool, "p32-19-voter-a@example.com")
+	voterB := testutil.SeedReporterAccount(t, pool, "p32-19-voter-b@example.com")
+	vote(voterA, "tdr1vc3", base.Add(15*time.Minute))
+	vote(voterB, "tdr1vcb", base.Add(16*time.Minute))
+	refresh(base.Add(20 * time.Minute))
+	refresh(base.Add(21 * time.Minute))
+	if got := rowsAboutReport(); got != 1 {
+		t.Fatalf("rows about the report inside the hour = %d, want only the note (D-12)", got)
+	}
+
+	// 4. After the hour has passed since the note the one per hour rule allows a
+	// row again. The report went Provisional to Live while the reader followed
+	// it, and DecideUpdate announces that as reached_live. Pinned here so a
+	// later change to the rule shows up in this test.
+	refresh(noteAt.Add(UpdateReportGap + time.Minute))
+	if got := count(string(UpdateReachedLive)); got != 1 {
+		t.Errorf("reached_live rows after the hour = %d, want 1", got)
+	}
+	if got := rowsAboutReport(); got != 2 {
+		t.Errorf("rows about the report after the hour = %d, want the note and one reached_live row", got)
+	}
+}

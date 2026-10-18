@@ -348,6 +348,7 @@ func TestReliableAlertOncePerReport(t *testing.T) {
 	arg := func(report int64, now time.Time) sqlcgen.InsertReliableAlertParams {
 		return sqlcgen.InsertReliableAlertParams{
 			AccountID: recipient, ReportID: report, Now: now, HourEdge: now.Add(-time.Hour), Ceiling: updCeiling,
+			State: "provisional",
 		}
 	}
 	if _, err := q.InsertReliableAlert(ctx, arg(rx1, updNow)); err != nil {
@@ -396,6 +397,101 @@ func TestReliableAlertOncePerReport(t *testing.T) {
 	}
 	if n := updCount(t, pool, `SELECT count(*) FROM updates WHERE account_id = $1 AND kind = 'reliable_nearby'`, full); n != 0 {
 		t.Errorf("%d alert rows over the ceiling, want 0", n)
+	}
+}
+
+// cursorOf reads one cursor row straight from the table, or reports that there
+// is none.
+func cursorOf(t *testing.T, pool *pgxpool.Pool, accountID, reportID int64) (state string, adoptedAt time.Time, lastUpdateAt, fadingFor *time.Time, found bool) {
+	t.Helper()
+	rows, err := pool.Query(context.Background(),
+		`SELECT last_state, adopted_at, last_update_at, fading_for FROM update_cursors WHERE account_id = $1 AND report_id = $2`,
+		accountID, reportID)
+	if err != nil {
+		t.Fatalf("reading the cursor: %v", err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return "", time.Time{}, nil, nil, false
+	}
+	if err := rows.Scan(&state, &adoptedAt, &lastUpdateAt, &fadingFor); err != nil {
+		t.Fatalf("scanning the cursor: %v", err)
+	}
+	return state, adoptedAt, lastUpdateAt, fadingFor, true
+}
+
+// TestReliableAlertSeedsTheCursor: the note counts toward the one update per
+// report per hour (D-12, W3). The insert that writes the note seeds the
+// reader's cursor in the same statement, and only when the note row is written.
+func TestReliableAlertSeedsTheCursor(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+
+	recipient := testutil.SeedReporterAccount(t, pool, "seed-recipient@example.com")
+	testutil.SeedReporterAccount(t, pool, "seed-x@example.com", "sess-seed-x")
+	r1 := updReport(t, pool, "sess-seed-x", updNow.Add(5*time.Hour))
+	r2 := updReport(t, pool, "sess-seed-x", updNow.Add(5*time.Hour))
+
+	arg := func(account, report int64, state string, now time.Time) sqlcgen.InsertReliableAlertParams {
+		return sqlcgen.InsertReliableAlertParams{
+			AccountID: account, ReportID: report, Now: now, HourEdge: now.Add(-time.Hour), Ceiling: updCeiling, State: state,
+		}
+	}
+
+	// Written: the cursor appears with the state, adopted_at and last_update_at
+	// at now, and no fading expiry.
+	if _, err := q.InsertReliableAlert(ctx, arg(recipient, r1, "provisional", updNow)); err != nil {
+		t.Fatalf("first alert: %v", err)
+	}
+	state, adopted, lastUpdate, fading, found := cursorOf(t, pool, recipient, r1)
+	if !found {
+		t.Fatal("no cursor after the note was written")
+	}
+	if state != "provisional" || !adopted.Equal(updNow) || lastUpdate == nil || !lastUpdate.Equal(updNow) || fading != nil {
+		t.Errorf("cursor = state %q adopted %v last_update %v fading %v, want provisional at %v with no fading", state, adopted, lastUpdate, fading, updNow)
+	}
+
+	// A repeat for the same report is refused and leaves the cursor as it was.
+	if _, err := q.InsertReliableAlert(ctx, arg(recipient, r1, "live", updNow.Add(time.Minute))); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("same report again: want pgx.ErrNoRows, got %v", err)
+	}
+	state, adopted, lastUpdate, _, _ = cursorOf(t, pool, recipient, r1)
+	if state != "provisional" || !adopted.Equal(updNow) || lastUpdate == nil || !lastUpdate.Equal(updNow) {
+		t.Errorf("a refused repeat moved the cursor: state %q adopted %v last_update %v", state, adopted, lastUpdate)
+	}
+
+	// An existing cursor is left alone when the note is written: ON CONFLICT DO
+	// NOTHING keeps its state and its times (a fresh silent baseline, here).
+	if err := q.InsertBaselineCursor(ctx, sqlcgen.InsertBaselineCursorParams{AccountID: recipient, ReportID: r2, State: "live", Now: updNow.Add(-2 * time.Hour)}); err != nil {
+		t.Fatalf("InsertBaselineCursor: %v", err)
+	}
+	if _, err := q.InsertReliableAlert(ctx, arg(recipient, r2, "provisional", updNow)); err != nil {
+		t.Fatalf("alert with an existing cursor: %v", err)
+	}
+	if n := updCount(t, pool, `SELECT count(*) FROM updates WHERE account_id = $1 AND report_id = $2 AND kind = 'reliable_nearby'`, recipient, r2); n != 1 {
+		t.Errorf("%d note rows for the report with an existing cursor, want 1", n)
+	}
+	state, adopted, lastUpdate, _, _ = cursorOf(t, pool, recipient, r2)
+	if state != "live" || !adopted.Equal(updNow.Add(-2*time.Hour)) || lastUpdate != nil {
+		t.Errorf("existing cursor changed: state %q adopted %v last_update %v, want live at %v with no last update", state, adopted, lastUpdate, updNow.Add(-2*time.Hour))
+	}
+	if n := updCount(t, pool, `SELECT count(*) FROM update_cursors WHERE account_id = $1 AND report_id = $2`, recipient, r2); n != 1 {
+		t.Errorf("%d cursors for the report, want 1", n)
+	}
+
+	// Over the hourly ceiling nothing is written, and no cursor is seeded.
+	full := testutil.SeedReporterAccount(t, pool, "seed-full@example.com")
+	rf := updReport(t, pool, "sess-seed-x", updNow.Add(5*time.Hour))
+	r3 := updReport(t, pool, "sess-seed-x", updNow.Add(5*time.Hour))
+	for i := 0; i < updCeiling; i++ {
+		updRow(t, pool, full, rf, "hidden", updNow.Add(-time.Duration(i+1)*time.Minute))
+	}
+	if _, err := q.InsertReliableAlert(ctx, arg(full, r3, "live", updNow)); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("alert over the ceiling: want pgx.ErrNoRows, got %v", err)
+	}
+	if _, _, _, _, found := cursorOf(t, pool, full, r3); found {
+		t.Error("a cursor was seeded although the note was not written")
 	}
 }
 
