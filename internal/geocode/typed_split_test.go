@@ -340,6 +340,54 @@ func TestAPinIsNotLookedUpWhenATownIsTypedOrForAStreetAddress(t *testing.T) {
 	}
 }
 
+// A typed town that cannot be placed (a state typed as the town: the areas
+// layers never return a state) falls back to the PIN, when there is one.
+func TestPinPlacesATypedTownThatCannotBePlaced(t *testing.T) {
+	route := func(q url.Values) []map[string]any {
+		switch {
+		case q.Get("q") == "520008":
+			return []map[string]any{postcodeRow(80.667, 16.510, "520008", "", "Vijayawada (Urban)", "Andhra Pradesh")}
+		case isAreasQuery(q):
+			return []map[string]any{ayodhyaNagar()}
+		}
+		return nil
+	}
+	t.Run("with a PIN the row is placed in the town the PIN names", func(t *testing.T) {
+		ps := routedPhoton(t, route)
+		rs := newRecordingServer(t, nil)
+		c := newDualClient(ps.server.URL, rs.server.URL)
+		answer, err := c.SearchReaderAreas(context.Background(), "Gayathri Nagar, Andhra Pradesh, 520008", nil)
+		if err != nil {
+			t.Fatalf("SearchReaderAreas returned error: %v", err)
+		}
+		row, ok := typedRowOf(t, answer)
+		if !ok {
+			t.Fatalf("no typed row in %+v", answer.Results)
+		}
+		if row.Name != "Gayathri Nagar, Vijayawada" || row.Town != "Vijayawada" || row.Lat != 16.510 {
+			t.Errorf("typed row = %+v, want Gayathri Nagar in Vijayawada at the PIN's point", row)
+		}
+		if n := totalSent(ps, rs); n > maxUpstreamPerSearch {
+			t.Errorf("%d upstream requests, the cap is %d", n, maxUpstreamPerSearch)
+		}
+	})
+	t.Run("without a PIN nothing is placed and the line is asked for", func(t *testing.T) {
+		ps := routedPhoton(t, route)
+		rs := newRecordingServer(t, nil)
+		c := newDualClient(ps.server.URL, rs.server.URL)
+		answer, err := c.SearchReaderAreas(context.Background(), "Gayathri Nagar, Andhra Pradesh", nil)
+		if err != nil {
+			t.Fatalf("SearchReaderAreas returned error: %v", err)
+		}
+		if _, ok := typedRowOf(t, answer); ok {
+			t.Fatalf("a typed row was placed in a state: %+v", answer.Results)
+		}
+		if !answer.NoCloseMatch {
+			t.Error("NoCloseMatch is not set")
+		}
+	})
+}
+
 // A PIN row that names no town places nothing.
 func TestAPinRowWithoutATownPlacesNothing(t *testing.T) {
 	ps := routedPhoton(t, func(q url.Values) []map[string]any {

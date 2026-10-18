@@ -282,6 +282,14 @@ func (c *Client) withTypedRow(ctx context.Context, home typedHome, near *Point, 
 		return answer, lk.home
 	}
 	lat, lon, ok := lk.position()
+	if !ok && lk.home.pin != "" && lk.resolveByPin(lk.home.first) {
+		// The typed town could not be placed (a state typed as the town, or a
+		// town the search does not know): the PIN names a town that can be.
+		if lk.areaInTown() {
+			return answer, lk.home
+		}
+		lat, lon, ok = lk.position()
+	}
 	if !ok {
 		return answer, lk.home
 	}
@@ -407,22 +415,22 @@ func (lk *typedLookup) resolveWithoutComma() bool {
 			return true
 		}
 	}
-	return lk.resolveByPin()
+	return lk.resolveByPin(lk.home.bare)
 }
 
 // resolveByPin looks the PIN code up as an any place search, which returns the
 // postcode row (the areas layers do not). The town is the one the row names; the
 // row's point stands for the town.
-func (lk *typedLookup) resolveByPin() bool {
+func (lk *typedLookup) resolveByPin(first string) bool {
 	pin := lk.home.pin
-	if pin == "" || utf8.RuneCountInString(lk.home.bare) < minTypedPartRunes {
+	if pin == "" || utf8.RuneCountInString(first) < minTypedPartRunes {
 		return false
 	}
 	for _, r := range lk.photon(pin, true) {
 		if cleanPart(r.Name) != pin || r.region == "" {
 			continue
 		}
-		return lk.accept(lk.home.bare, r.region, &Result{Name: r.region, Lat: r.Lat, Lon: r.Lon})
+		return lk.accept(first, r.region, &Result{Name: r.region, Lat: r.Lat, Lon: r.Lon})
 	}
 	return false
 }
