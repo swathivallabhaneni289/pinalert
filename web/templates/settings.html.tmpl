@@ -50,6 +50,45 @@
       </div>
     </section>
 
+    <section class="place-section" id="settings-alerts-section" aria-labelledby="settings-phone-title">
+      <div class="place-section__intro">
+        <h2 class="place-section__title" id="settings-phone-title">Notifications</h2>
+        {{/* Owner 2026-10-18 (Q4): the section is called Notifications, with no extra line about the app being open; Phase 3.3 adds its phone rows to this same section. */}}
+        <p class="place-section__line">Hear about Reliable reporters near your home area.</p>
+      </div>
+      {{/* One classless wrapper, so on the laptop grid the boxes and the error line are one item beside the title, not three. */}}
+      <div>
+      <div class="place-box" id="settings-alerts-on"{{if not .HasHomeArea}} hidden{{end}}>
+        <label class="place-row place-row--switch" id="settings-reliable-row" for="settings-reliable-switch">
+          <span class="place-row__text">
+            <span class="place-row__label">A Reliable reporter posts near me</span>
+          </span>
+          <input class="place-switch" type="checkbox" role="switch" id="settings-reliable-switch" name="reliable_alerts"{{if .AlertsOn}} checked{{end}}>
+        </label>
+        <div class="place-row" id="settings-radius-row">
+          <label class="place-row__text" for="settings-radius-select">
+            <span class="place-row__label">How far from my home area</span>
+          </label>
+          <select class="place-select" id="settings-radius-select" name="alert_radius_km">
+            {{- range .AlertRadii}}
+            <option value="{{.}}"{{if eq . $.AlertRadiusKm}} selected{{end}}>{{.}} km</option>
+            {{- end}}
+          </select>
+        </div>
+      </div>
+      <div class="place-box" id="settings-alerts-off"{{if .HasHomeArea}} hidden{{end}}>
+        <button type="button" class="place-row" id="settings-reliable-nohome" aria-haspopup="dialog">
+          <span class="place-row__text">
+            <span class="place-row__label">A Reliable reporter posts near me</span>
+            <span class="place-row__sub">Add a home area first</span>
+          </span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </button>
+      </div>
+      <p class="inline-error" id="settings-alerts-error" role="alert" hidden></p>
+      </div>
+    </section>
+
     <section class="place-section" aria-labelledby="settings-people-title">
       <div class="place-section__intro">
         <h2 class="place-section__title" id="settings-people-title">People and reports</h2>
@@ -158,6 +197,7 @@
         <p class="app-window__status" id="settings-home-status" role="status" aria-live="polite" hidden></p>
         <ul class="app-window__results" id="settings-home-results" role="listbox" aria-label="Places found" hidden></ul>
         <p class="inline-error" id="settings-home-error" role="alert" hidden></p>
+        <p class="app-window__help" id="settings-home-alerts-note"{{if not .AlertsOn}} hidden{{end}}>Removing it also turns off Reliable reporter alerts.</p>
         <div class="app-window__actions">
           <button type="button" class="btn btn--primary" id="settings-home-save" disabled>Save home area</button>
           <button type="button" class="app-window__quiet" id="settings-home-remove"{{if not .HomeAreaName}} hidden{{end}}>Remove home area</button>
