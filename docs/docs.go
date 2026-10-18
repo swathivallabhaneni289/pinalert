@@ -349,6 +349,54 @@ const docTemplate = `{
                 }
             }
         },
+        "/me/logout-all": {
+            "post": {
+                "description": "Ends the signed in account's sessions on every device, including this one. Reports and\nvotes keep their author, so nothing other people see changes. Send no body or an empty\nobject. Requires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Log out of all devices",
+                "parameters": [
+                    {
+                        "description": "No fields",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.emptyBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Logged out everywhere"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/me/muted-reports": {
             "get": {
                 "description": "Lists the signed in account's muted reports, newest mute first, for the Muted reports\nwindow of Settings. A report that is held, removed or has gone shows available false\nwith no text, category or severity, and still carries report_id so the mute can be\nundone. A finished Rescue report shows no text. The answer is never cached.\nRequires a session verified by email; an unverified caller receives 401.",
@@ -2510,6 +2558,9 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "handlers.emptyBody": {
+            "type": "object"
         }
     }
 }`

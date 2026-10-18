@@ -412,6 +412,8 @@ func NewRouter(deps Deps) *chi.Mux {
 	// Delete my account (plan 03.2-09): built from the sessions store and the
 	// optional transaction seam.
 	deletions := service.NewAccountDeletionService(deps.Sessions, deps.AccountTx)
+	// Log out of all devices (plan 03.2-16): built from the sessions store.
+	sessionsSvc := service.NewSessionService(deps.Sessions)
 	// Nearby and the Low data view start at the account's home area cell centre
 	// when the device location is not available (plan 03.4-33).
 	page.HomeCentre = accounts
@@ -605,6 +607,11 @@ func NewRouter(deps Deps) *chi.Mux {
 		// and the session cookie is SameSite Lax, so a cross site form cannot
 		// send it.
 		r.Post("/api/me/delete", handlers.DeleteAccount(deletions, deps.Session))
+		// POST /api/me/logout-all ends every session of the caller's account
+		// on every device, this one included (Phase 3.2, D-23). Gated, JSON
+		// body plus a SameSite Lax cookie as DEC-L. Plain /auth/logout above is
+		// unchanged (orchestrator decision 6).
+		r.Post("/api/me/logout-all", handlers.LogOutAllDevices(sessionsSvc, deps.Session))
 	})
 
 	// --- Moderator group (D-08): outside the access gate, so an unverified

@@ -1050,6 +1050,8 @@ definitions:
           $ref: '#/definitions/handlers.UpdateWire'
         type: array
     type: object
+  handlers.emptyBody:
+    type: object
 info:
   contact:
     name: Pinalert project
@@ -1338,6 +1340,40 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Mark the first-time flow as finished
+      tags:
+      - me
+  /me/logout-all:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Ends the signed in account's sessions on every device, including this one. Reports and
+        votes keep their author, so nothing other people see changes. Send no body or an empty
+        object. Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: No fields
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/handlers.emptyBody'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Logged out everywhere
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Log out of all devices
       tags:
       - me
   /me/muted-reports:

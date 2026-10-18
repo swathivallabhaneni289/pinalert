@@ -17,6 +17,7 @@
 
     <div class="login-column">
     <div class="login-card" id="login-form-panel"{{if .Sent}} hidden{{end}}>
+      {{if .DoneLine}}<p class="login-done" role="status">{{.DoneLine}}</p>{{end}}
       <h1>Verify your email to continue</h1>
       <p>Pinalert requires a verified email before you can view or report anything nearby. We'll send a one-time link. No password needed.</p>
 
