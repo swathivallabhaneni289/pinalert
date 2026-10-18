@@ -406,7 +406,7 @@ func NewRouter(deps Deps) *chi.Mux {
 	// consuming a visitor's single-use link before they click it
 	// (threat T-01-62). Left outside the gate — it is how a session becomes
 	// verified in the first place.
-	r.Get("/auth/verify", handlers.Verify(deps.AuthService, deps.Template, auth))
+	r.Get("/auth/verify", handlers.Verify(deps.AuthService, deps.Session, deps.Template, auth))
 	// The public legal pages (D-23, P4-A18): no account data (R-07), cacheable only in the browser.
 	r.Get("/disclaimer", handlers.Legal(deps.Template, auth, handlers.LegalDisclaimerPage))
 	r.Get("/policy", handlers.Legal(deps.Template, auth, handlers.LegalPolicyPage))

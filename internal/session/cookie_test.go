@@ -361,6 +361,57 @@ func TestClearCookieMatchesIssuedAttributes(t *testing.T) {
 	}
 }
 
+// TestSetCookieMatchesMiddleware proves SetCookie writes exactly the cookie
+// Middleware issues for a new session: same name, signed value, Path, MaxAge,
+// HttpOnly, Secure and SameSite. Sign in uses SetCookie when it rotates a
+// session to a fresh id (plan 03.2-06), and a browser treats a cookie that
+// differs in Path or Secure as a different cookie, so the two may never differ.
+func TestSetCookieMatchesMiddleware(t *testing.T) {
+	for _, secure := range []bool{true, false} {
+		mgr := testManager(t, "test-secret-setcookie", secure)
+		persist := &fakePersist{}
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+
+		rec := httptest.NewRecorder()
+		mgr.Middleware(persist.persist)(handler).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+		var issued *http.Cookie
+		for _, c := range rec.Result().Cookies() {
+			if c.Name == "pinalert_session" {
+				issued = c
+			}
+		}
+		if issued == nil {
+			t.Fatalf("secure=%v: Middleware issued no cookie", secure)
+		}
+		id, ok := mgr.Verify(issued.Value)
+		if !ok {
+			t.Fatalf("secure=%v: issued cookie %q does not verify", secure, issued.Value)
+		}
+
+		set := httptest.NewRecorder()
+		mgr.SetCookie(set, id)
+		var got *http.Cookie
+		for _, c := range set.Result().Cookies() {
+			if c.Name == "pinalert_session" {
+				got = c
+			}
+		}
+		if got == nil {
+			t.Fatalf("secure=%v: SetCookie wrote no pinalert_session cookie", secure)
+		}
+		if got.Value != issued.Value {
+			t.Errorf("secure=%v: Value = %q, want %q", secure, got.Value, issued.Value)
+		}
+		if got.Path != issued.Path || got.MaxAge != issued.MaxAge || got.HttpOnly != issued.HttpOnly ||
+			got.Secure != issued.Secure || got.SameSite != issued.SameSite {
+			t.Errorf("secure=%v: attributes differ: got %+v, want %+v", secure, got, issued)
+		}
+		if got.String() != issued.String() {
+			t.Errorf("secure=%v: Set-Cookie = %q, want %q", secure, got.String(), issued.String())
+		}
+	}
+}
+
 func tamperLastChar(s string) string {
 	if s == "" {
 		return "x"

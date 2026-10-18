@@ -11,10 +11,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const bindSessionAccount = `-- name: BindSessionAccount :exec
+const bindSessionAccount = `-- name: BindSessionAccount :execrows
 INSERT INTO sessions (session_id, account_id)
 VALUES ($1, $2)
-ON CONFLICT (session_id) DO UPDATE SET account_id = EXCLUDED.account_id
+ON CONFLICT (session_id) DO UPDATE
+   SET account_id = EXCLUDED.account_id, revoked_at = NULL
+ WHERE sessions.account_id IS NULL OR sessions.account_id = EXCLUDED.account_id
 `
 
 type BindSessionAccountParams struct {
@@ -26,11 +28,20 @@ type BindSessionAccountParams struct {
 // and continues when its persist callback fails, so a browser can hold a
 // valid signed cookie with no sessions row at all (RESEARCH.md Pitfall 2). A
 // bare UPDATE would silently affect zero rows while the token was already
-// consumed — a dead end the visitor cannot recover from without requesting
+// consumed: a dead end the visitor cannot recover from without requesting
 // a new link.
-func (q *Queries) BindSessionAccount(ctx context.Context, arg BindSessionAccountParams) error {
-	_, err := q.db.Exec(ctx, bindSessionAccount, arg.SessionID, arg.AccountID)
-	return err
+// The upsert never moves a bound row to a different account (Phase 3.2,
+// Pattern 10): the WHERE lets it run only when the row is unbound or already
+// bound to this same account, and then it also clears revoked_at, so a device
+// that signs in again as its own account works. Zero rows affected means the
+// row is bound to a different account and the caller must use a fresh session
+// id; a sign in must never rewrite whose history a session carries.
+func (q *Queries) BindSessionAccount(ctx context.Context, arg BindSessionAccountParams) (int64, error) {
+	result, err := q.db.Exec(ctx, bindSessionAccount, arg.SessionID, arg.AccountID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getAccountBySessionID = `-- name: GetAccountBySessionID :one
@@ -38,6 +49,7 @@ SELECT accounts.id, accounts.email, accounts.terms_version, accounts.first_run_d
 FROM sessions
 JOIN accounts ON sessions.account_id = accounts.id
 WHERE sessions.session_id = $1
+  AND sessions.revoked_at IS NULL AND accounts.deleted_at IS NULL
 `
 
 type GetAccountBySessionIDRow struct {
@@ -48,7 +60,12 @@ type GetAccountBySessionIDRow struct {
 }
 
 // A session with a NULL account_id yields no row (pgx.ErrNoRows), which
-// callers must treat as "unverified", never as an error.
+// callers must treat as "unverified", never as an error. A revoked session
+// (Log out of all devices) and a session of a deleted account (Delete my
+// account) also yield no row and read as unverified: requireVerifiedAccount
+// and requireModerator both read this one query, so one filter covers both
+// gates. Neither filter touches sessions.account_id, so authorship joins are
+// unchanged.
 func (q *Queries) GetAccountBySessionID(ctx context.Context, sessionID string) (GetAccountBySessionIDRow, error) {
 	row := q.db.QueryRow(ctx, getAccountBySessionID, sessionID)
 	var i GetAccountBySessionIDRow
@@ -59,6 +76,65 @@ func (q *Queries) GetAccountBySessionID(ctx context.Context, sessionID string) (
 		&i.FirstRunDoneAt,
 	)
 	return i, err
+}
+
+const getSessionBinding = `-- name: GetSessionBinding :one
+SELECT s.account_id,
+       (s.revoked_at IS NOT NULL)::bool AS revoked,
+       COALESCE(a.deleted_at IS NOT NULL, false)::bool AS account_deleted,
+       a.email AS account_email
+FROM sessions s
+LEFT JOIN accounts a ON a.id = s.account_id
+WHERE s.session_id = $1
+`
+
+type GetSessionBindingRow struct {
+	AccountID      *int64
+	Revoked        bool
+	AccountDeleted bool
+	AccountEmail   *string
+}
+
+// The sign in path's raw read of a session row. It does NOT filter on
+// revoked_at or deleted_at, so a revoked session or a deleted account still
+// shows the account the row is bound to. No row means the session is not
+// stored yet; a NULL account_id means it is stored but unbound. The sign in
+// path reads this before it consumes the link, to decide whether to bind this
+// session id or draw a fresh one.
+func (q *Queries) GetSessionBinding(ctx context.Context, sessionID string) (GetSessionBindingRow, error) {
+	row := q.db.QueryRow(ctx, getSessionBinding, sessionID)
+	var i GetSessionBindingRow
+	err := row.Scan(
+		&i.AccountID,
+		&i.Revoked,
+		&i.AccountDeleted,
+		&i.AccountEmail,
+	)
+	return i, err
+}
+
+const revokeAccountSessions = `-- name: RevokeAccountSessions :execrows
+UPDATE sessions
+SET revoked_at = $1
+WHERE account_id = $2
+  AND revoked_at IS NULL
+`
+
+type RevokeAccountSessionsParams struct {
+	Now       pgtype.Timestamptz
+	AccountID *int64
+}
+
+// Log out of all devices and Delete my account: marks every live session of
+// one account revoked in one statement, so a stolen or copied cookie stops
+// working at the gate. It never clears sessions.account_id: the binding is how
+// posts reach their author, and ending a session must not move authorship.
+func (q *Queries) RevokeAccountSessions(ctx context.Context, arg RevokeAccountSessionsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeAccountSessions, arg.Now, arg.AccountID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const upsertSession = `-- name: UpsertSession :exec

@@ -209,7 +209,8 @@ type verifyOutcomeViewModel struct {
 // Verify handles GET /auth/verify: reads the current session id from
 // context (never from a query parameter — the token names the account, the
 // signed cookie names the browser being bound), delegates the whole
-// decision to svc.VerifyToken, and renders the one shared outcome template.
+// decision to svc.VerifyTokenAndBind (setting a rotated session cookie when
+// sign in drew a fresh id), and renders the one shared outcome template.
 // Only GET is ever registered for this route (see router.go) — chi does
 // not auto-map HEAD onto a GET-only handler the way net/http.ServeMux
 // does, which cheaply sidesteps one class of mail-security-scanner
@@ -223,7 +224,7 @@ type verifyOutcomeViewModel struct {
 // by adding an annotation; TestSwaggerSpecCoversRoutes does not assert its
 // presence, and doing so would misrepresent the operation's shape (it
 // returns text/html, not any of this package's JSON response types).
-func Verify(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
+func Verify(svc *service.AuthService, mgr *session.Manager, tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID, ok := session.FromContext(r.Context())
 		if !ok {
@@ -232,11 +233,17 @@ func Verify(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) h
 		}
 
 		token := r.URL.Query().Get("token")
-		outcome, email, err := svc.VerifyToken(r.Context(), sessionID, token)
+		outcome, email, boundID, err := svc.VerifyTokenAndBind(r.Context(), sessionID, token, mgr.NewID)
 		if err != nil {
 			log.Printf("handlers: Verify: %v", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
+		}
+		// A revoked or deleted session is never rebound to another account
+		// (Phase 3.2): sign in drew a fresh id, so this browser must carry it.
+		// The cookie is the one Middleware writes, set before any body write.
+		if outcome == service.OutcomeVerified && boundID != sessionID {
+			mgr.SetCookie(w, boundID)
 		}
 
 		vm := verifyOutcomeViewModel{

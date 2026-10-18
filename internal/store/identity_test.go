@@ -122,7 +122,7 @@ func TestBindSessionAccountUpsertsWhenSessionRowAbsent(t *testing.T) {
 		t.Fatalf("expected no sessions row before BindSessionAccount, found %d", sessionRowCount)
 	}
 
-	if err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{
+	if _, err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{
 		SessionID: "absent-session",
 		AccountID: &accountID,
 	}); err != nil {
@@ -153,7 +153,7 @@ func TestBindSessionAccountIsIdempotent(t *testing.T) {
 	}
 
 	for i := 0; i < 2; i++ {
-		if err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{
+		if _, err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{
 			SessionID: "repeat-session",
 			AccountID: &accountID,
 		}); err != nil {
@@ -352,13 +352,13 @@ func TestReportsByAccountSpansMultipleSessions(t *testing.T) {
 		t.Fatalf("reading back other account id: %v", err)
 	}
 
-	if err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{SessionID: "device-a", AccountID: &accountID}); err != nil {
+	if _, err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{SessionID: "device-a", AccountID: &accountID}); err != nil {
 		t.Fatalf("binding device-a: %v", err)
 	}
-	if err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{SessionID: "device-b", AccountID: &accountID}); err != nil {
+	if _, err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{SessionID: "device-b", AccountID: &accountID}); err != nil {
 		t.Fatalf("binding device-b: %v", err)
 	}
-	if err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{SessionID: "device-c-other-account", AccountID: &otherAccountID}); err != nil {
+	if _, err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{SessionID: "device-c-other-account", AccountID: &otherAccountID}); err != nil {
 		t.Fatalf("binding device-c-other-account: %v", err)
 	}
 	if err := q.UpsertSession(ctx, "device-d-unbound"); err != nil {
@@ -407,7 +407,7 @@ func TestReportsByAccountReturnsNothingForAccountWithNoReports(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT id FROM accounts WHERE email = $1`, "no-reports@example.com").Scan(&accountID); err != nil {
 		t.Fatalf("reading back account id: %v", err)
 	}
-	if err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{SessionID: "empty-device", AccountID: &accountID}); err != nil {
+	if _, err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{SessionID: "empty-device", AccountID: &accountID}); err != nil {
 		t.Fatalf("binding empty-device: %v", err)
 	}
 
@@ -435,7 +435,7 @@ func TestReportsByAccountIncludesExpired(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT id FROM accounts WHERE email = $1`, "expired-owner@example.com").Scan(&accountID); err != nil {
 		t.Fatalf("reading back account id: %v", err)
 	}
-	if err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{SessionID: "expired-device", AccountID: &accountID}); err != nil {
+	if _, err := q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{SessionID: "expired-device", AccountID: &accountID}); err != nil {
 		t.Fatalf("binding expired-device: %v", err)
 	}
 

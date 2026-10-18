@@ -647,7 +647,7 @@ func TestProfileListsOwnReportsAcrossSessions(t *testing.T) {
 	}
 	sessionB := sessionIDFromJar(t, clientB, srv.URL)
 	q := sqlcgen.New(pool)
-	if err := q.BindSessionAccount(context.Background(), sqlcgen.BindSessionAccountParams{SessionID: sessionB, AccountID: &accountID}); err != nil {
+	if _, err := q.BindSessionAccount(context.Background(), sqlcgen.BindSessionAccountParams{SessionID: sessionB, AccountID: &accountID}); err != nil {
 		t.Fatalf("binding device B to the same account: %v", err)
 	}
 	submitReport(t, clientB, srv, "fire", "report from device B")
