@@ -873,9 +873,18 @@ Plans:
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)
 
-### Phase 999.12: Should a fresh confirmation keep a report alive longer (BACKLOG, owner decision)
+### Phase 999.12: A fresh confirmation keeps a report alive longer (DECIDED 2026-10-18, build after Phase 3.2)
 
 **Goal:** [Captured for future planning] A report fades at the `expires_at` it was given when it was created, and confirming it again does not move that time, so the popup says only "Fades in 7 hrs." The picture the owner chose said "unless confirmed again", which is not true today. Decide whether a confirmation from a new spot should extend a report's life, by how much, and under what cap so a crowd cannot keep a false report alive, or whether the line stays as it is. This changes the trust model (`docs/TRUST-MODEL.md`) and the expiry sweep, so it needs the owner's decision before it is planned. Raised by the plan 03-31 build on 2026-10-13.
+
+**Owner decision (2026-10-18, "do it like how you suggested"):** yes, re-confirming keeps a report alive, as the product description promises ("Reports auto-fade unless re-confirmed"). The rule:
+
+  - Each confirmation from a new spot (a confirm cell that has not confirmed this report before, the same independence rule as "confirmed by N nearby") pushes the fade time back.
+  - There is a hard limit, so a group cannot keep a false report alive forever. A dispute never extends a report.
+  - Details (Claude's call, not asked): the new fade time is that confirmation's time plus the report's normal lifetime (8 hours, or 24 for a Critical report, `defaultExpiry` and `criticalExpiry` in `internal/service/report.go`), never earlier than the current fade time, and never later than 24 hours after posting (48 hours for a Critical report). Taking a confirmation back does not shorten the life again. Mark resolved still ends a report at once.
+  - Show the promise in the popup's fade line ("unless confirmed again"), update `docs/TRUST-MODEL.md`, and check what moves with `expires_at`: the read-time expiry, the sweep, Past and Ended nearby (Phase 3.1), and the reliability judging, which waits for expiry (Phase 3 D-11).
+  - Build as its own small task after Phase 3.2 is built, because both change the vote path.
+
 **Requirements:** TBD
 **Plans:** 0 plans
 
