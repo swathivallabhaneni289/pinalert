@@ -1043,6 +1043,7 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 			continue
 		}
 
+		isOwn := reporterID != nil && *reporterID == q.ViewerAccountID
 		views = append(views, ReportView{
 			Report:           r,
 			Visibility:       vis,
@@ -1050,7 +1051,11 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 			View:             view,
 			ViewerVote:       ViewerContentVote(reportVotes, r.ID, q.ViewerAccountID),
 			ViewerResolution: ViewerResolution(reportVotes, r.ID, q.ViewerAccountID),
-			IsOwnReport:      reporterID != nil && *reporterID == q.ViewerAccountID,
+			IsOwnReport:      isOwn,
+			// The reader's own follow and mute state, from rows already read
+			// (D-09, D-10, D-11). Never says who else follows or muted.
+			ViewerFollows: ViewerFollows(reportVotes, r.ID, q.ViewerAccountID, isOwn),
+			ViewerMuted:   ex.ViewerMuted,
 			Trust: BuildTrust(TrustInput{
 				Rows:              reportVotes,
 				ReportID:          r.ID,
