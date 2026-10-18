@@ -135,8 +135,14 @@ func TestSettingsRows(t *testing.T) {
 	// row (People and reports) and the Log out of all devices and Delete my
 	// account rows (Account) are buttons that open windows too, so the button
 	// rows are those five in page order.
-	if strings.Join(buttonIDs, ",") != "settings-name-row,settings-home-row,settings-muted-row,settings-logout-all-row,settings-delete-row" {
-		t.Errorf("Settings button rows are %v, want Name, Home area, Muted reports, Log out of all devices, Delete my account", buttonIDs)
+	//
+	// Amended 2026-10-19 by Phase 3.2 plan 15 (D-23, D-26, UI-SPEC E1): an
+	// account with no home area gets the Notifications row "A Reliable reporter
+	// posts near me / Add a home area first", a button that opens the Home area
+	// window, so it sits between Home area and Muted reports. The switch and the
+	// distance rows are not buttons and are hidden for this account.
+	if strings.Join(buttonIDs, ",") != "settings-name-row,settings-home-row,settings-reliable-nohome,settings-muted-row,settings-logout-all-row,settings-delete-row" {
+		t.Errorf("Settings button rows are %v, want Name, Home area, the Add a home area first row, Muted reports, Log out of all devices, Delete my account", buttonIDs)
 	}
 	for _, want := range []string{
 		"About you", "Your name and home area. Shown only on your public profile.",
@@ -148,6 +154,8 @@ func TestSettingsRows(t *testing.T) {
 		"Account", "Log out everywhere, or delete your account.",
 		`<form class="place-row-form place-row-form--phone" method="post" action="/auth/logout">`,
 		"People and reports", "Muted reports", "Log out of all devices", "Delete my account",
+		// Amended 2026-10-19 by Phase 3.2 plan 15: the Notifications section.
+		`id="settings-phone-title">Notifications</h2>`, "A Reliable reporter posts near me", "Add a home area first",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/settings lacks %q", want)

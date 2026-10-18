@@ -232,3 +232,117 @@ func TestSettingsAlertsScriptContract(t *testing.T) {
 		}
 	}
 }
+
+// Phase 3.2 plan 15: the Notifications section of Settings (NOTIF-05, D-23,
+// D-26, LAYOUT-06, UI-SPEC Surface E1, owner decision Q4 of 2026-10-18).
+
+// TestPhoneNotificationsSection pins the section's title and line, the two
+// rows' exact words (no second line under the switch), the four distances
+// built from the view model, the native switch and the Q4 template comment.
+func TestPhoneNotificationsSection(t *testing.T) {
+	page := p421ReadTemplate(t, "settings.html.tmpl")
+	region := settingsSectionRegion(t, page, "settings-phone-title")
+	for _, want := range []string{
+		`id="settings-phone-title">Notifications</h2>`,
+		`<p class="place-section__line">Hear about Reliable reporters near your home area.</p>`,
+		`<span class="place-row__label">A Reliable reporter posts near me</span>`,
+		`<span class="place-row__label">How far from my home area</span>`,
+		`<input class="place-switch" type="checkbox" role="switch" id="settings-reliable-switch"`,
+		`{{if .AlertsOn}} checked{{end}}`,
+		`<label class="place-row place-row--switch" id="settings-reliable-row" for="settings-reliable-switch">`,
+		`<label class="place-row__text" for="settings-radius-select">`,
+		`<select class="place-select" id="settings-radius-select"`,
+		`{{- range .AlertRadii}}`,
+		`{{if eq . $.AlertRadiusKm}} selected{{end}}>{{.}} km</option>`,
+		`<p class="inline-error" id="settings-alerts-error" role="alert" hidden></p>`,
+	} {
+		if !strings.Contains(region, want) {
+			t.Errorf("the Notifications section lacks %q", want)
+		}
+	}
+	if !strings.Contains(page, `<section class="place-section" id="settings-alerts-section" aria-labelledby="settings-phone-title">`) {
+		t.Errorf("the Notifications section lacks id settings-alerts-section")
+	}
+	// The distances come from the closed list the server sends, never typed
+	// into the template, so the page and PATCH /api/me/alerts agree.
+	for _, banned := range []string{">1 km<", ">2 km<", ">5 km<", ">10 km<"} {
+		if strings.Contains(region, banned) {
+			t.Errorf("the Notifications section types %q into the template; the options come from .AlertRadii", banned)
+		}
+	}
+	// The switch row has no second line: a simple option carries no hint text.
+	switchRow := region[strings.Index(region, `id="settings-reliable-row"`):strings.Index(region, `id="settings-radius-row"`)]
+	if strings.Contains(switchRow, "place-row__sub") {
+		t.Errorf("the switch row carries a second line")
+	}
+	// Owner decision Q4 (2026-10-18): the name, and no line about the app being open.
+	const comment = `{{/* Owner 2026-10-18 (Q4): the section is called Notifications, with no extra line about the app being open; Phase 3.3 adds its phone rows to this same section. */}}`
+	if !strings.Contains(page, comment) {
+		t.Errorf("settings.html.tmpl lacks the Q4 template comment")
+	}
+	// The comment text itself is allowed; the rendered words are not.
+	rendered := strings.Replace(page, comment, "", 1)
+	for _, banned := range []string{"Phone notifications", "Shows in Updates while Pinalert is open", "buzz", "vibrat"} {
+		if strings.Contains(strings.ToLower(rendered), strings.ToLower(banned)) {
+			t.Errorf("settings.html.tmpl holds %q", banned)
+		}
+	}
+	// The section sits after About you and before People and reports.
+	p421InOrder(t, "section order", page, `id="settings-you-title"`, `id="settings-phone-title"`, `id="settings-people-title"`)
+	for _, dash := range []rune{0x2013, 0x2014} {
+		if strings.ContainsRune(page, dash) {
+			t.Errorf("settings.html.tmpl holds the dash character U+%04X", dash)
+		}
+	}
+}
+
+// TestPhoneNotificationsRowsNeedAHomeArea pins UI-SPEC E1 and orchestrator
+// decision 2: without a home area the alert row reads Add a home area first and
+// opens the Home area window, and the distance row is not drawn. The hidden
+// attribute sits on the boxes, never on a .place-row (which declares display).
+func TestPhoneNotificationsRowsNeedAHomeArea(t *testing.T) {
+	page := p421ReadTemplate(t, "settings.html.tmpl")
+	region := settingsSectionRegion(t, page, "settings-phone-title")
+	if !strings.Contains(region, `<div class="place-box" id="settings-alerts-on"{{if not .HasHomeArea}} hidden{{end}}>`) {
+		t.Errorf("the with home box is not hidden exactly when there is no home area")
+	}
+	if !strings.Contains(region, `<div class="place-box" id="settings-alerts-off"{{if .HasHomeArea}} hidden{{end}}>`) {
+		t.Errorf("the no home box is not hidden exactly when there is a home area")
+	}
+	on := region[strings.Index(region, `id="settings-alerts-on"`):strings.Index(region, `id="settings-alerts-off"`)]
+	off := region[strings.Index(region, `id="settings-alerts-off"`):]
+	if !strings.Contains(on, `id="settings-radius-row"`) || strings.Contains(off, `id="settings-radius-row"`) {
+		t.Errorf("the distance row must sit only inside the with home box")
+	}
+	if !strings.Contains(on, `id="settings-reliable-row"`) || strings.Contains(off, `id="settings-reliable-row"`) {
+		t.Errorf("the switch row must sit only inside the with home box")
+	}
+	for _, want := range []string{
+		`<button type="button" class="place-row" id="settings-reliable-nohome" aria-haspopup="dialog">`,
+		`<span class="place-row__label">A Reliable reporter posts near me</span>`,
+		`<span class="place-row__sub">Add a home area first</span>`,
+		"app-icon--chevron-right",
+	} {
+		if !strings.Contains(off, want) {
+			t.Errorf("the no home box lacks %q", want)
+		}
+	}
+	if got := strings.Count(page, "Add a home area first"); got != 1 {
+		t.Errorf("Add a home area first appears %d times, want 1", got)
+	}
+	// No .place-row carries the hidden attribute itself.
+	if regexp.MustCompile(`class="place-row[^"]*"[^>]*\shidden`).MatchString(region) {
+		t.Errorf("a .place-row carries the hidden attribute; .place-row declares display flex, so hide the box")
+	}
+	// The alerts note sits in the Home area window, before its actions, and
+	// is hidden unless the alert is on.
+	win := settingsWindowRegion(t, page, "settings-home-window")
+	note := `<p class="app-window__help" id="settings-home-alerts-note"{{if not .AlertsOn}} hidden{{end}}>Removing it also turns off Reliable reporter alerts.</p>`
+	at := strings.Index(win, note)
+	if at == -1 {
+		t.Fatalf("the Home area window lacks the alerts note")
+	}
+	if at > strings.Index(win, `class="app-window__actions"`) {
+		t.Errorf("the alerts note must come before the actions of the Home area window")
+	}
+}

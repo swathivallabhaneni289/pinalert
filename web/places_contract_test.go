@@ -169,13 +169,18 @@ func TestAlertsNeverSaysNoAlerts(t *testing.T) {
 //
 // Amended 2026-10-19 by Phase 3.2 plan 12 (D-23, LAYOUT-06): People and reports,
 // Muted reports, Log out of all devices and Delete my account left this list,
-// because their features now exist and Settings draws them. The Notifications
-// labels stay until plan 15.
+// because their features now exist and Settings draws them.
+//
+// Amended 2026-10-19 by Phase 3.2 plan 15 (D-23, D-26, late amendment rows,
+// UI-SPEC E1): "Phone notifications" (the section is now called Notifications),
+// "A Reliable reporter posts near me" and "How far from my home area" left this
+// list, because Settings draws them now. "Critical reports near my home area",
+// "Severe official alerts for my area", "Changes to reports I posted or voted
+// on" and "Someone I follow posts" stay for Phase 3.3 and Phase 9.
 var waitingSettingsLabels = []string{
 	"View my profile", "My profile",
-	"Phone notifications", "Critical reports near my home area", "Severe official alerts for my area",
-	"Changes to reports I posted or voted on", "A Reliable reporter posts near me", "Someone I follow posts",
-	"How far from my home area",
+	"Critical reports near my home area", "Severe official alerts for my area",
+	"Changes to reports I posted or voted on", "Someone I follow posts",
 	"Let others follow me", "Following", "Followers", "Blocked people",
 }
 
@@ -212,9 +217,15 @@ func TestSettingsShowsOnlyExistingRows(t *testing.T) {
 	// People and reports, About Pinalert, Account, and eight rows draw a chevron
 	// (Name, Home area, Muted reports, Disclaimer, Policy, Low data view, Log out
 	// of all devices, Delete my account).
-	p421InOrder(t, "section order", page, `id="settings-you-title"`, `id="settings-people-title"`, "About Pinalert", `id="settings-account-title"`)
-	if got := strings.Count(page, "app-icon--chevron-right"); got != 8 {
-		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the eight rows that open something", got)
+	//
+	// Amended 2026-10-19 by Phase 3.2 plan 15 (D-23, D-26, LAYOUT-06, UI-SPEC E1):
+	// the Notifications section sits after About you, so the order is you,
+	// settings-phone-title, people, About Pinalert, account; and a ninth row
+	// draws a chevron, the "Add a home area first" row that opens the Home area
+	// window.
+	p421InOrder(t, "section order", page, `id="settings-you-title"`, `id="settings-phone-title"`, `id="settings-people-title"`, "About Pinalert", `id="settings-account-title"`)
+	if got := strings.Count(page, "app-icon--chevron-right"); got != 9 {
+		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the nine rows that open something", got)
 	}
 	header := p421ReadTemplate(t, "account_header.html.tmpl")
 	for _, label := range waitingSettingsLabels {
