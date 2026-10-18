@@ -600,6 +600,10 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.Post("/api/me/consent", handlers.AcceptTerms(accounts))
 		// PATCH /api/me/profile saves or clears the optional name and home area.
 		r.Patch("/api/me/profile", handlers.UpdateProfile(accounts))
+		// PATCH /api/me/alerts saves the Reliable reporter alert switch and its
+		// distance from the home area (Phase 3.2, NOTIF-05, D-26). Gated; the
+		// account comes from the gate and the body names nothing else.
+		r.Patch("/api/me/alerts", handlers.UpdateAlertSettings(accounts))
 		// POST /api/me/first-run-done marks the first-time flow finished.
 		r.Post("/api/me/first-run-done", handlers.FirstRunDone(accounts))
 		// POST /api/me/delete deletes the caller's account by anonymising it
