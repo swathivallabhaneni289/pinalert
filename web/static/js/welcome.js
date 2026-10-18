@@ -518,6 +518,10 @@
       picked = place;
       option.setAttribute('aria-selected', 'true');
       cfg.input.value = place.name;
+      // A pick closes the suggestions (owner, 2026-10-18: they must go away
+      // once one is chosen) and gives focus back to the field.
+      cfg.results.hidden = true;
+      cfg.input.focus();
       cfg.onPick(place);
     }
 

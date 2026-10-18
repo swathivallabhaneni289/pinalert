@@ -340,6 +340,9 @@ test('the Home area search sends only q, shows up to 5 places, and a pick enable
   pick(page, 2);
   assert.equal(save.disabled, false);
   assert.equal(input.value, 'Place 2');
+  // Owner, 2026-10-18: the suggestions go away once one is chosen.
+  assert.equal(list.hidden, true, 'a pick closes the list');
+  assert.equal(page.doc.activeElement, input, 'focus goes back to the field');
 });
 
 test('Save home area sends only the picked place, the row takes the stored name, and Remove appears', async () => {

@@ -568,6 +568,10 @@
     picked = place;
     option.setAttribute('aria-selected', 'true');
     homeInput.value = place.name;
+    // A pick closes the suggestions (owner, 2026-10-18) and gives focus back
+    // to the field.
+    homeResults.hidden = true;
+    homeInput.focus();
     homeSave.disabled = savingHome;
     hideLine(homeError);
   }

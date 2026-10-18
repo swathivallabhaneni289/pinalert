@@ -1092,6 +1092,9 @@ test('what was typed or picked is kept while moving between steps', async () => 
   await flush();
   fire(homeList(page).children[0].children[0], 'click');
   assert.equal(byId(page, 'welcome-home-input').value, 'Indiranagar');
+  // Owner, 2026-10-18: the suggestions go away once one is chosen.
+  assert.equal(homeList(page).hidden, true, 'a pick closes the list');
+  assert.equal(page.doc.activeElement, byId(page, 'welcome-home-input'), 'focus goes back to the field');
 
   // Away to step 3 and step 1 and back: nothing is lost or re-filled.
   click(page, 'welcome-back-4');
