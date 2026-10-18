@@ -12,7 +12,7 @@
  * Tokens only. The glyph base (.app-icon) comes from app-bar.css; the field,
  * label and place list looks come from window.css; the legal text looks come
  * from legal.css. Display rules carry :not([hidden]) so the hidden attribute
- * still hides a step, the search block and the messages.
+ * still hides a step and the messages.
  */
 
 /* ---- Glyphs this page draws that app-bar.css does not mask ---------------- */
@@ -296,13 +296,6 @@
   padding: 0 var(--space-md);
   font-size: var(--font-size-body);
   font-weight: var(--font-weight-semibold);
-}
-
-/* Step 3: the search a person opens instead of the browser question. */
-.welcome__search:not([hidden]) {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
 }
 
 /* Step 4. */

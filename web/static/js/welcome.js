@@ -20,11 +20,13 @@
 // What it never does:
 //   - It asks the browser where the device is in one place only, Allow location
 //     on step 3. The fix is saved only through PinalertPosition, in this browser,
-//     and is sent nowhere. The server stores no reader location.
-//   - It never fills the home area from the device fix. The home area is a place
-//     the person picked from a search: on step 3 (kept in memory for step 4 only)
-//     or on step 4. There is no reverse lookup. Text that was typed but never
-//     picked is not a home area and is not sent.
+//     and is sent nowhere. The server stores no reader location. Not now, the
+//     other button of step 3, asks nothing and sends nothing.
+//   - It sends no place search from step 3 (plan 33: step 3 is only Allow
+//     location or Not now) and never fills the home area from the device fix or
+//     from step 3. The home area is a place the person picked from the step 4
+//     search. There is no reverse lookup. Text that was typed but never picked
+//     is not a home area and is not sent.
 //   - It never parses markup. Every string, the person's own name and place
 //     names from the geocoder included, reaches the page through textContent or
 //     an input value.
@@ -39,12 +41,10 @@
   var CONSENT_URL = '/api/me/consent';
   var PROFILE_URL = '/api/me/profile';
   var DONE_URL = '/api/me/first-run-done';
-  // Step 3 uses the same forward search as the report form; step 4 uses the
-  // place search of Settings, asking for areas only (kind=area: neighbourhoods,
-  // localities, towns, cities, districts, never a street or a building, since
-  // the stored home area is a cell about 5 km wide). Each has its own budget on
-  // the server.
-  var STEP3_SEARCH_URL = '/api/geocode?q=';
+  // Step 4 uses the place search of Settings, asking for areas only (kind=area:
+  // neighbourhoods, localities, towns, cities, districts, never a street or a
+  // building, since the stored home area is a cell about 5 km wide). It has its
+  // own budget on the server.
   var STEP4_SEARCH_URL = '/api/geocode/place?kind=area&q=';
   var FOCUS_SEARCH_KEY = 'pinalert.focusSearch';
   var LAND_ON = '/';
@@ -101,11 +101,9 @@
   var consentError = el('welcome-error-2');
   var agreeButton = el('welcome-agree');
   var allowButton = el('welcome-allow-location');
-  var searchOpenButton = el('welcome-search-open');
-  var searchBlock = el('welcome-search-block');
+  var notNowButton = el('welcome-not-now');
   var nameInput = el('welcome-name-input');
   var homeInput = el('welcome-home-input');
-  var homePrefilled = el('welcome-home-prefilled');
   var profileError = el('welcome-error-4');
   var continueButton = el('welcome-continue-4');
   var skipButton = el('welcome-skip');
@@ -119,13 +117,6 @@
   // Whether the current terms are agreed: true when the server started the flow
   // past the agreement step, or after Agree was saved on this page.
   var agreed = false;
-  // Whether the person has typed or picked in the home area. Until they have,
-  // the field follows the place picked on step 3.
-  var homeTouched = false;
-  // The text the home area was last prefilled with from step 3, and the text it
-  // was drawn with, so a prefill nobody touched can be taken away again.
-  var lastPrefill = null;
-  var drawnHome = homeInput ? homeInput.value : '';
   var agreeing = false;
   var locating = false;
   var finishing = false;
@@ -133,11 +124,8 @@
   // The values the page was drawn with, so only what the person changed is sent.
   var storedName = nameInput ? nameInput.value.trim() : '';
 
-  // The place picked on step 3, kept in memory for step 4 only. It is never
-  // stored anywhere and never sent from step 3.
-  var step3Pick = null;
-  // The place picked for the home area, from step 3's prefill or step 4's own
-  // search. Only a picked place is ever sent as a home area.
+  // The place picked for the home area from step 4's own search. Only a picked
+  // place is ever sent as a home area.
   var homePick = null;
 
   // ---- Small helpers --------------------------------------------------------
@@ -289,39 +277,6 @@
     }
   }
 
-  // enterStep4 draws the home area field for the first time. The field is
-  // prefilled only from a place searched in step 3, and only with the area that
-  // place lies in (step3Pick.area: the place itself when it is an area, else its
-  // locality, district or city), never with a street or a building name. When
-  // step 3 gave no area, or nothing was searched, the field keeps what the page
-  // was drawn with (empty, or the stored home area of a returning account) and
-  // no prefilled line shows.
-  //
-  // Step 4 can be shown again after a trip to another step. Then a home area
-  // the person typed or picked is left alone, and one that was only prefilled
-  // from step 3 follows what step 3 holds now (and goes away with it).
-  function enterStep4() {
-    if (homeTouched) {
-      return;
-    }
-    if (step3Pick !== null && step3Pick.area !== '') {
-      // The point stays the picked place's own: the server keeps only a cell
-      // about 5 km wide, so the point of a street and the point of the area it
-      // lies in give the same cell or the next one, and only the name matters.
-      homePick = { name: step3Pick.area, lat: step3Pick.lat, lon: step3Pick.lon, area: step3Pick.area };
-      homeInput.value = step3Pick.area;
-      lastPrefill = step3Pick.area;
-      homePrefilled.hidden = false;
-    } else {
-      homePick = null;
-      homePrefilled.hidden = true;
-      if (lastPrefill !== null && homeInput.value === lastPrefill) {
-        homeInput.value = drawnHome;
-      }
-      lastPrefill = null;
-    }
-  }
-
   // ---- History: the step is in the address ------------------------------------
 
   var canPush = !!(window.history && typeof window.history.pushState === 'function' &&
@@ -378,9 +333,6 @@
     renderStepList(n);
     hideDisagreeBox();
     hideLine(consentError);
-    if (n === 4 && previous !== 4) {
-      enterStep4();
-    }
     el('welcome-step-' + n + '-title').focus();
   }
 
@@ -470,12 +422,13 @@
     }, { timeout: LOCATION_TIMEOUT_MS });
   }
 
-  function openSearch() {
-    searchBlock.hidden = false;
-    el('welcome-search-input').focus();
+  // notNow is the other choice of step 3: nothing is asked of the browser,
+  // nothing is saved and nothing is sent, and the flow goes on to step 4.
+  function notNow() {
+    goTo(4);
   }
 
-  // ---- Place searches (step 3 and step 4) -----------------------------------
+  // ---- Place search (step 4) ------------------------------------------------
 
   function placeShortName(result) {
     if (typeof result.name === 'string' && result.name.trim() !== '') {
@@ -780,19 +733,11 @@
     return { search: search, getPick: function () { return picked; } };
   }
 
-  var step3Search = null;
+  // The home area search of step 4, the only place search of this page. Typing
+  // after a pick forgets the pick (makeSearch calls onClear), so text that was
+  // changed is never sent as a place.
   var homeSearch = null;
-  if (el('welcome-search-form') && el('welcome-home-form')) {
-    step3Search = makeSearch({
-      input: el('welcome-search-input'),
-      form: el('welcome-search-form'),
-      status: el('welcome-search-status'),
-      results: el('welcome-search-results'),
-      url: STEP3_SEARCH_URL,
-      typing: true,
-      onPick: function (place) { step3Pick = place; },
-      onClear: function () { step3Pick = null; }
-    });
+  if (el('welcome-home-form')) {
     homeSearch = makeSearch({
       input: homeInput,
       form: el('welcome-home-form'),
@@ -800,27 +745,10 @@
       results: el('welcome-home-results'),
       url: STEP4_SEARCH_URL,
       typing: true,
-      onPick: function (place) {
-        homePick = place;
-        homeTouched = true;
-        homePrefilled.hidden = true;
-      },
-      onClear: function () {
-        homePick = null;
-        homePrefilled.hidden = true;
-      }
+      onPick: function (place) { homePick = place; },
+      onClear: function () { homePick = null; }
     });
   }
-
-  // Typing in the home area after a step 3 prefill forgets that pick too (the
-  // step 4 search only knows picks of its own).
-  homeInput.addEventListener('input', function () {
-    homeTouched = true;
-    if (homePick !== null && homeInput.value !== homePick.name) {
-      homePick = null;
-      homePrefilled.hidden = true;
-    }
-  });
 
   // ---- Step 4: finishing ----------------------------------------------------
 
@@ -981,8 +909,7 @@
   el('welcome-reread').addEventListener('click', readAgain);
   agreeButton.addEventListener('click', function () { agree(); });
   allowButton.addEventListener('click', allowLocation);
-  searchOpenButton.addEventListener('click', openSearch);
-  el('welcome-continue-3').addEventListener('click', function () { goTo(4); });
+  notNowButton.addEventListener('click', notNow);
   continueButton.addEventListener('click', function () { finish(true); });
   skipButton.addEventListener('click', function () { finish(false); });
   root.addEventListener('keydown', onKeydown);
