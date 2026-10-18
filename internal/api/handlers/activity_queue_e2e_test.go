@@ -56,7 +56,7 @@ func p25SecondDevice(t *testing.T, srv *httptest.Server, pool *pgxpool.Pool, id 
 	}
 	resp.Body.Close()
 	sessionID := sessionIDFromJar(t, device, srv.URL)
-	err = sqlcgen.New(pool).BindSessionAccount(context.Background(), sqlcgen.BindSessionAccountParams{SessionID: sessionID, AccountID: &id})
+	_, err = sqlcgen.New(pool).BindSessionAccount(context.Background(), sqlcgen.BindSessionAccountParams{SessionID: sessionID, AccountID: &id})
 	if err != nil {
 		t.Fatalf("binding the second device to the account: %v", err)
 	}
