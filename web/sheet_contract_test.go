@@ -405,3 +405,35 @@ func TestDisputedPinGrey(t *testing.T) {
 		t.Errorf("the shared hidden badge head background is %q, it must stay transparent", got)
 	}
 }
+
+// TestSheetStepsAsideForOpenDetail pins plan 03.4-37: while a report detail is
+// open the phone list sheet is hidden under, never over, the detail, and it
+// comes back with the detail closed. The root element's data-popup-open mark
+// (map.js) is the one signal, so a row, a pin and an address all behave alike.
+func TestSheetStepsAsideForOpenDetail(t *testing.T) {
+	rules := sh13Rules(t)
+
+	aside, _ := p13Rule(t, rules, sh13Phone, "html[data-popup-open] .app-shell > .pane--list")
+	if aside.Decls["visibility"] != "hidden" || aside.Decls["pointer-events"] != "none" || aside.Decls["transform"] != "translateY(100%)" {
+		t.Errorf("an open detail must slide the sheet away and hide it: %v", aside.Decls)
+	}
+	// Shown again at once on close: the visibility delay is only on the way out.
+	if !strings.Contains(aside.Decls["transition"], "visibility 0s linear 0.3s") {
+		t.Errorf("the sheet hides after it has slid away, got %q", aside.Decls["transition"])
+	}
+	calm, _ := p13Rule(t, rules, "(prefers-reduced-motion: reduce)", "html[data-popup-open] .app-shell > .pane--list")
+	if calm.Decls["transition"] != "none" {
+		t.Errorf("reduced motion hides the sheet at once, got %q", calm.Decls["transition"])
+	}
+
+	sheet := p13ReadStatic(t, "static/js/sheet.js")
+	p13MustContain(t, "sheet.js", sheet,
+		"document.documentElement.hasAttribute('data-popup-open')",
+		"attributeFilter: ['data-popup-open']",
+		"new window.MutationObserver(syncDetail)")
+	sync := jsFunctionBody(t, sheet, "syncDetail()")
+	p13Ordered(t, sync, "syncDetail", "if (!active) {", "remember();", "setSnap('short')", "restore();")
+
+	feed := p13ReadStatic(t, "static/js/feed.js")
+	p13MustContain(t, "feed.js", feed, "!document.documentElement.hasAttribute('data-popup-open')")
+}

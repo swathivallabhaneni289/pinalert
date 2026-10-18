@@ -256,6 +256,34 @@ window.PinalertSheet = (function () {
     setSnap(back);
   }
 
+  // detailOpen is true while a report detail is open on the page: map.js puts
+  // data-popup-open on the root element for as long as a popup is open, whoever
+  // opened it (a row, a pin, an address with a report in it).
+  function detailOpen() {
+    return !!(document.documentElement && document.documentElement.hasAttribute('data-popup-open'));
+  }
+
+  // syncDetail keeps the sheet out of the way of an open report detail: it
+  // remembers the position the sheet is in and drops it to short, the lowest
+  // position, and phone.css hides it while the detail is open, so nothing of the
+  // list lies over the report. When the detail closes the sheet goes back to
+  // the remembered position. remember keeps the first position, so one report
+  // opened after another never records the short position as the earlier one.
+  // It does nothing on a laptop.
+  function syncDetail() {
+    if (!active) {
+      return;
+    }
+    if (detailOpen()) {
+      remember();
+      if (snap !== 'short') {
+        setSnap('short');
+      }
+    } else {
+      restore();
+    }
+  }
+
   // relayout recomputes the tops when the box changed size (a rotation, the
   // address bar of the browser, the keyboard) and puts the sheet on its
   // position again at once. It never runs while a finger holds the sheet.
@@ -524,6 +552,7 @@ window.PinalertSheet = (function () {
     if (active) {
       measure();
       setSnap('half', { instant: true });
+      syncDetail();
     } else {
       remembered = null;
       boxEl.style.removeProperty('--sheet-top');
@@ -587,6 +616,12 @@ window.PinalertSheet = (function () {
     // without a classic resize.
     if (typeof window.ResizeObserver === 'function') {
       new window.ResizeObserver(scheduleRelayout).observe(boxEl);
+    }
+    if (typeof window.MutationObserver === 'function' && document.documentElement) {
+      new window.MutationObserver(syncDetail).observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['data-popup-open']
+      });
     }
     window.addEventListener('resize', scheduleRelayout);
     window.addEventListener('orientationchange', scheduleRelayout);
