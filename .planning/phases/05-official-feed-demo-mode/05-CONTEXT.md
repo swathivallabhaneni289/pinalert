@@ -134,6 +134,6 @@ D-05 (how the Demo works), D-08 (several alerts, stale feed), D-09 (which area),
 - Open-Meteo rain outlook line (ROADMAP scope note 5, optional, not in this phase).
 - Replay the last 24 hours (backlog 999.5), which would extend the Demo.
 - The explainer video, after the project is finished (ROADMAP owner decisions 2026-10-16).
-- A sound exception for serious danger warnings: offered on 2026-10-18 and not taken; only if the owner asks.
+- A sound exception for serious danger warnings: offered on 2026-10-18 and declined outright by the owner the same day ("we are not gonna have any errors or buzz buttons for this. It's only gonna be a notification thing"). No buzz, alarm or sound option anywhere, not even a switch. Do not offer it again.
 
 </deferred>
