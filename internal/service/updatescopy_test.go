@@ -64,7 +64,7 @@ func TestUpdatesCopy(t *testing.T) {
 			t.Fatalf("read %s: %v", name, err)
 		}
 		for _, r := range string(src) {
-			if r == '–' || r == '—' {
+			if r == rune(0x2013) || r == rune(0x2014) {
 				t.Errorf("%s holds a dash rune %U", name, r)
 			}
 		}
