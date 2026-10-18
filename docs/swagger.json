@@ -205,6 +205,58 @@
                 }
             }
         },
+        "/me/alerts": {
+            "patch": {
+                "description": "Saves whether the signed in account wants an update when a Reliable reporter posts\nnear its home area, and how far away that may be: 1, 2, 5 or 10 km. A key left out\nkeeps what is stored. The alert is off until turned on and the distance is 5 km until\nchanged. The distance is measured from the middle of the saved home area, which is a\ncell about 5 km across; no position is ever sent or stored for this. Turning the\nalert on without a home area is refused with the field reliable_alerts, and removing\nthe home area turns the alert off. Only reports posted after the alert was turned on\ncan raise it. The answer is the settings as stored.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Turn the Reliable reporter alert on or off and choose its distance",
+                "parameters": [
+                    {
+                        "description": "The settings to change",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.AlertSettingsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.AlertSettingsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/me/consent": {
             "post": {
                 "description": "Records that the signed in account agreed to the current version of the Disclaimer\nand Policy text. Send no body or an empty object. A repeat call for the same version\nkeeps the first agreed time. A different version is stored with a new time.\nRequires a session verified by email; an unverified caller receives 401.",
@@ -1378,6 +1430,36 @@
         }
     },
     "definitions": {
+        "handlers.AlertSettingsRequest": {
+            "type": "object",
+            "properties": {
+                "alert_radius_km": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "reliable_alerts": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "handlers.AlertSettingsResponse": {
+            "type": "object",
+            "properties": {
+                "alert_radius_km": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "has_home_area": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "reliable_alerts": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "handlers.CastVoteRequest": {
             "type": "object",
             "properties": {

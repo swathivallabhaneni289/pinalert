@@ -95,15 +95,18 @@ func NewUpdatesService(q UpdatesQuerier, reports NearbyReader, opts ...UpdatesOp
 //
 //  1. Prune the account's updates older than the retention window and its
 //     cursors of reports that expired before that edge (D-16).
+//
 //  2. Read the followed open reports once (derived, never stored).
+//
 //  3. Read the votes, the reporters and the account's cursors once each over
 //     those ids.
+//
 //  4. Per report resolve it exactly as the feed does (BuildVoteTally, Resolve
 //     with the moderation state, ViewOf) and write only what DecideUpdate says:
 //     a silent baseline, a silent adoption, one state event or one fading event.
 //
-// An empty followed set ends the pass early; the Reliable alert step that plan
-// 13 adds does not depend on it.
+//  5. Run the Reliable reporter alert step (refreshReliableAlerts). An empty
+//     followed set ends step 2 to 4 early; the alert step does not depend on it.
 func (s *UpdatesService) Refresh(ctx context.Context, accountID int64) error {
 	now := s.now().UTC()
 
@@ -119,9 +122,14 @@ func (s *UpdatesService) Refresh(ctx context.Context, accountID int64) error {
 		return err
 	}
 
-	// Next step (plan 13, NOTIF-05): the Reliable reporter alert step goes here,
-	// measured from the account's home area and written through
-	// MayNotifyAboutReport and InsertReliableAlert.
+	// The Reliable reporter alert step (NOTIF-05, D-26) comes last, with the same
+	// now. It measures from the account's home area and writes only through
+	// MayNotifyAboutReport and InsertReliableAlert, and it ends quietly when the
+	// reader has not switched it on, so every update above works without it
+	// (D-28).
+	if err := s.refreshReliableAlerts(ctx, accountID, now); err != nil {
+		return fmt.Errorf("service: Refresh: reliable alerts: %w", err)
+	}
 	return nil
 }
 

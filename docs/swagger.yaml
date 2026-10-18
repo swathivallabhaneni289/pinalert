@@ -1,5 +1,26 @@
 basePath: /api
 definitions:
+  handlers.AlertSettingsRequest:
+    properties:
+      alert_radius_km:
+        example: 5
+        type: integer
+      reliable_alerts:
+        example: true
+        type: boolean
+    type: object
+  handlers.AlertSettingsResponse:
+    properties:
+      alert_radius_km:
+        example: 5
+        type: integer
+      has_home_area:
+        example: true
+        type: boolean
+      reliable_alerts:
+        example: true
+        type: boolean
+    type: object
   handlers.CastVoteRequest:
     properties:
       latitude:
@@ -1236,6 +1257,49 @@ paths:
       summary: Search for a place on the reader lane
       tags:
       - geocode
+  /me/alerts:
+    patch:
+      consumes:
+      - application/json
+      description: |-
+        Saves whether the signed in account wants an update when a Reliable reporter posts
+        near its home area, and how far away that may be: 1, 2, 5 or 10 km. A key left out
+        keeps what is stored. The alert is off until turned on and the distance is 5 km until
+        changed. The distance is measured from the middle of the saved home area, which is a
+        cell about 5 km across; no position is ever sent or stored for this. Turning the
+        alert on without a home area is refused with the field reliable_alerts, and removing
+        the home area turns the alert off. Only reports posted after the alert was turned on
+        can raise it. The answer is the settings as stored.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: The settings to change
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.AlertSettingsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.AlertSettingsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Turn the Reliable reporter alert on or off and choose its distance
+      tags:
+      - me
   /me/consent:
     post:
       consumes:
