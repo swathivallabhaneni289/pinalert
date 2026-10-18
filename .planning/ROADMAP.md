@@ -572,7 +572,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 03.2-15-PLAN.md: Settings Phone notifications rows
+- [ ] 03.2-15-PLAN.md: Settings Notifications rows
 - [ ] 03.2-17-PLAN.md: Reliable reporter alert end to end test and the trust model note
 
 ### Phase 03.3: Installable app and phone alerts (INSERTED)
