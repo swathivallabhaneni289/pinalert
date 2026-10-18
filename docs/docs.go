@@ -1611,6 +1611,11 @@ const docTemplate = `{
                     "type": "boolean",
                     "example": false
                 },
+                "kept_by_reliable_filter": {
+                    "description": "KeptByReliableFilter is the server authored membership of the opt in Only\nReliable reporters tick: true when the reporter's tag is Reliable reporter\nor the report is serious (critical, or Rescue needed stored before that\ncategory was retired). Only the reader's own tick reads it. It never\nfilters, hides or reorders anything by default. Always present.",
+                    "type": "boolean",
+                    "example": false
+                },
                 "latitude": {
                     "type": "number",
                     "example": 13.0827

@@ -245,6 +245,15 @@ definitions:
           boolean, never an account id or an email (T-01-02).
         example: false
         type: boolean
+      kept_by_reliable_filter:
+        description: |-
+          KeptByReliableFilter is the server authored membership of the opt in Only
+          Reliable reporters tick: true when the reporter's tag is Reliable reporter
+          or the report is serious (critical, or Rescue needed stored before that
+          category was retired). Only the reader's own tick reads it. It never
+          filters, hides or reorders anything by default. Always present.
+        example: false
+        type: boolean
       latitude:
         example: 13.0827
         type: number
