@@ -200,6 +200,36 @@ func TestWithheldInNoView(t *testing.T) {
 		}
 	})
 
+	// Added 2026-10-17 by Phase 3.2 plan 02 (D-29): the update predicate is a
+	// free function, so the declaration guards do not reach it; this row does.
+	t.Run("MayNotifyAboutReport", func(t *testing.T) {
+		for _, k := range UpdateKinds {
+			if MayNotifyAboutReport(k, VisibilityWithheld, withheldViewNow.Add(time.Hour), withheldViewNow) {
+				t.Errorf("a withheld report may notify under kind %q", k)
+			}
+		}
+		if !MayNotifyAboutReport(UpdateReachedLive, VisibilityLive, withheldViewNow.Add(time.Hour), withheldViewNow) {
+			t.Error("a live unexpired report may not notify, so the predicate looks constant false")
+		}
+	})
+
+	// Added 2026-10-18 by Phase 3.2 plan 02: UpdateTrustLine names FeedView, so
+	// the source guard below requires a call here. It only chooses a sentence
+	// from the trust object, and it never invents a count.
+	t.Run("UpdateTrustLine", func(t *testing.T) {
+		trust := Trust{LeadSentence: "lead", ConfirmedSentence: "confirmed", DisputedSentence: "disputed"}
+		for _, k := range UpdateEventKinds {
+			for _, view := range append([]FeedView{FeedViewNone}, FeedViews...) {
+				if UpdateTrustLine(k, trust, view, false) == "" {
+					t.Errorf("kind %q view %q gives an empty line", k, view)
+				}
+			}
+		}
+		if UpdateTrustLine(UpdateReliableNearby, trust, FeedViewActive, false) != UnconfirmedLine {
+			t.Error("an unconfirmed active Reliable note must read Not confirmed yet.")
+		}
+	})
+
 	t.Run("source guard", func(t *testing.T) {
 		src, err := os.ReadFile("moderation_view_test.go")
 		if err != nil {
