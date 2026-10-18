@@ -393,6 +393,9 @@ func NewRouter(deps Deps) *chi.Mux {
 	flags := service.NewFlagService(deps.Sessions)
 	// Same for the account service behind the /api/me routes (plan 03.4-01).
 	accounts := service.NewAccountService(deps.Sessions)
+	// Nearby and the Low data view start at the account's home area cell centre
+	// when the device location is not available (plan 03.4-33).
+	page.HomeCentre = accounts
 
 	// --- Exempt: reachable without a verified account. ---
 

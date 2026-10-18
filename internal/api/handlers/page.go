@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"html/template"
 	"log"
 	"net/http"
@@ -41,12 +42,53 @@ type PageConfig struct {
 	// Chrome is filled by api.NewRouter from Deps.Chrome. A zero value renders
 	// the default numbers through withDefaults.
 	Chrome Chrome
+	// HomeCentre is filled by api.NewRouter. When it is nil, or the account has
+	// no home area, the page starts at the configured fallback centre as always.
+	HomeCentre HomeCentreLookup
+}
+
+// HomeCentreLookup answers the centre of an account's stored home area cell
+// (service.AccountService.HomeAreaCentre). ok is false when the account has no
+// home area. The centre is the middle of a cell about 5 km wide, never a finer
+// position.
+type HomeCentreLookup interface {
+	HomeAreaCentre(ctx context.Context, accountID int64) (lat, lon float64, ok bool, err error)
+}
+
+// HomeAreaStartZoom is the map zoom a page starts at when its centre is the
+// home area cell centre. The cell is about 5 km wide; at zoom 13 a phone map
+// 390 px across shows about 7 km at 17 degrees north, so the whole cell fits
+// with a margin. It is also the zoom of a device fix, so the two starts look
+// alike. The city fallback keeps the page's default zoom 11.
+const HomeAreaStartZoom = 13
+
+// startCentre decides where a page starts when the device location is not
+// available: the account's home area cell centre when it has one, else the
+// configured fallback. The zoom is HomeAreaStartZoom for a home area centre and
+// 0 for the configured fallback, which means "the page default". A failed
+// lookup is logged and answered with the configured fallback, never an error
+// page, and the log line holds no position. A device fix still wins in the
+// page's script; this only sets the fallback.
+func startCentre(ctx context.Context, cfg PageConfig, accountID int64) (lat, lon float64, zoom int) {
+	if cfg.HomeCentre != nil {
+		hLat, hLon, ok, err := cfg.HomeCentre.HomeAreaCentre(ctx, accountID)
+		if err != nil {
+			log.Printf("handlers: start centre: reading the home area failed, using the configured centre: %v", err)
+		} else if ok {
+			return hLat, hLon, HomeAreaStartZoom
+		}
+	}
+	return cfg.FallbackLat, cfg.FallbackLon, 0
 }
 
 // pageViewModel is exactly what index.html.tmpl reads and nothing more.
 type pageViewModel struct {
-	FallbackLat     float64
-	FallbackLon     float64
+	FallbackLat float64
+	FallbackLon float64
+	// FallbackZoom is 0 for the configured fallback centre (the page keeps its
+	// default zoom, so the attribute is not drawn) and HomeAreaStartZoom when
+	// the centre is the account's home area cell centre.
+	FallbackZoom    int
 	DefaultRadiusKm float64
 	VoteRadiusKm    float64
 	AssetVersion    string
@@ -177,9 +219,13 @@ func Page(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 			}
 		}
 		chrome := cfg.Chrome.withDefaults()
+		// Where the map starts when the device location is not available: the
+		// home area cell centre, else the configured fallback (plan 03.4-33).
+		startLat, startLon, startZoom := startCentre(r.Context(), cfg, acc.ID)
 		vm := pageViewModel{
-			FallbackLat:     cfg.FallbackLat,
-			FallbackLon:     cfg.FallbackLon,
+			FallbackLat:     startLat,
+			FallbackLon:     startLon,
+			FallbackZoom:    startZoom,
 			DefaultRadiusKm: cfg.DefaultRadiusKm,
 			VoteRadiusKm:    cfg.VoteRadiusKm,
 			AssetVersion:    cfg.AssetVersion,

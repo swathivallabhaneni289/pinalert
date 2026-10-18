@@ -54,7 +54,7 @@ func (q *Queries) GetAccountByEmail(ctx context.Context, email string) (GetAccou
 }
 
 const getAccountProfile = `-- name: GetAccountProfile :one
-SELECT display_name, home_area_name, terms_version, first_run_done_at
+SELECT display_name, home_area_name, home_area_cell, terms_version, first_run_done_at
 FROM accounts
 WHERE id = $1
 `
@@ -62,6 +62,7 @@ WHERE id = $1
 type GetAccountProfileRow struct {
 	DisplayName    *string
 	HomeAreaName   *string
+	HomeAreaCell   *string
 	TermsVersion   *string
 	FirstRunDoneAt pgtype.Timestamptz
 }
@@ -73,6 +74,7 @@ func (q *Queries) GetAccountProfile(ctx context.Context, id int64) (GetAccountPr
 	err := row.Scan(
 		&i.DisplayName,
 		&i.HomeAreaName,
+		&i.HomeAreaCell,
 		&i.TermsVersion,
 		&i.FirstRunDoneAt,
 	)

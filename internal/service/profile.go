@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -280,6 +281,28 @@ func (s *AccountService) Profile(ctx context.Context, accountID int64) (AccountP
 		p.TermsVersion = *row.TermsVersion
 	}
 	return p, nil
+}
+
+// homeAreaCellShape is the shape the accounts table enforces for a stored home
+// area cell: five characters of the geohash alphabet.
+var homeAreaCellShape = regexp.MustCompile(`^[0-9b-hjkmnp-z]{5}$`)
+
+// HomeAreaCentre answers the centre of the account's stored home area cell, the
+// place a page starts its map when the device location is not available. It
+// returns ok false, with no error, when the account has no home area (or the
+// stored cell is not a valid cell), and an error only when the row cannot be
+// read. The answer is the centre of the precision 5 cell, about 5 km wide, and
+// never a finer position: the exact point the person picked is not stored.
+func (s *AccountService) HomeAreaCentre(ctx context.Context, accountID int64) (lat, lon float64, ok bool, err error) {
+	row, err := s.q.GetAccountProfile(ctx, accountID)
+	if err != nil {
+		return 0, 0, false, fmt.Errorf("service: reading home area cell: %w", err)
+	}
+	if row.HomeAreaCell == nil || !homeAreaCellShape.MatchString(*row.HomeAreaCell) {
+		return 0, 0, false, nil
+	}
+	lat, lon = geohash.DecodeCenter(*row.HomeAreaCell)
+	return lat, lon, true, nil
 }
 
 // AcceptTerms records agreement to CurrentTermsVersion. A repeat call for the
