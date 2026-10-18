@@ -645,6 +645,8 @@ func (c *Client) fetch(ctx context.Context, q string, extra url.Values) ([]Resul
 			Lat:         lat,
 			Lon:         lon,
 			Area:        nominatimArea(rec),
+			cityLevel:   nominatimIsCityLevel(rec),
+			region:      nominatimRegion(rec),
 		})
 	}
 	return results, nil
@@ -817,10 +819,14 @@ func (c *Client) SearchReaderAreas(ctx context.Context, q string, near *Point) (
 	if err != nil {
 		return answer, err
 	}
+	incomplete := false
 	if c.photonURL != "" && (home.ok || home.bare != "") {
-		answer, home = c.withTypedRow(ctx, home, near, answer)
+		answer, home, incomplete = c.withTypedRow(ctx, home, near, answer)
 	}
-	answer.NoCloseMatch = noCloseMatch(answer, home)
+	// Not found is claimed only when every lookup that was needed answered
+	// (plan 35): a lookup that failed, timed out or found the cap full leaves it
+	// false, so the page shows no Not found line for a search that did not finish.
+	answer.NoCloseMatch = !incomplete && noCloseMatch(answer, home)
 	return answer, nil
 }
 
