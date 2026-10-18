@@ -63,7 +63,29 @@ const minTypedPartRunes = 3
 // upstreamCountKey carries a search's request counter in its context.
 type upstreamCountKey struct{}
 
-type upstreamCount struct{ n atomic.Int32 }
+type upstreamCount struct {
+	n atomic.Int32
+	// photonDown is the outcome of the latest Photon request of this search:
+	// true when it failed or ran out of time (plan 35). The typed lookups then go
+	// straight to Nominatim instead of spending one of the four requests on a
+	// Photon that is not answering.
+	photonDown atomic.Bool
+}
+
+// notePhoton records whether the latest Photon request of the search worked.
+func notePhoton(ctx context.Context, down bool) {
+	if counter, ok := ctx.Value(upstreamCountKey{}).(*upstreamCount); ok {
+		counter.photonDown.Store(down)
+	}
+}
+
+// photonKnownDown says the latest Photon request of this search failed.
+func photonKnownDown(ctx context.Context) bool {
+	if counter, ok := ctx.Value(upstreamCountKey{}).(*upstreamCount); ok {
+		return counter.photonDown.Load()
+	}
+	return false
+}
 
 // withUpstreamCount starts counting the upstream requests sent under ctx.
 func withUpstreamCount(ctx context.Context) context.Context {
@@ -267,31 +289,41 @@ type typedLookup struct {
 	areas   []Result // the areas answer already in hand
 	town    *Result  // the town's own row, once looked for
 	townTry bool
+	// incomplete says a lookup this search needed could not be answered (plan
+	// 35): not found must not be claimed.
+	incomplete bool
 }
 
 // withTypedRow returns answer with the typed row first, or answer itself when
 // the typed text needs none or no position is found. It also returns the home
 // it worked with, whose first part is the neighbourhood once a text typed
-// without a comma has been split (plan 34).
-func (c *Client) withTypedRow(ctx context.Context, home typedHome, near *Point, answer Answer) (Answer, typedHome) {
+// without a comma has been split (plan 34), and whether a lookup the search
+// needed could not be answered (plan 35).
+func (c *Client) withTypedRow(ctx context.Context, home typedHome, near *Point, answer Answer) (Answer, typedHome, bool) {
 	lk := &typedLookup{c: c, ctx: ctx, near: near, home: home, areas: answer.Results}
+	answer = lk.apply(answer)
+	return answer, lk.home, lk.incomplete
+}
+
+// apply is withTypedRow on the lookup it holds.
+func (lk *typedLookup) apply(answer Answer) Answer {
 	if !lk.home.ok && !lk.resolveWithoutComma() {
-		return answer, lk.home
+		return answer
 	}
 	if lk.areaInTown() {
-		return answer, lk.home
+		return answer
 	}
 	lat, lon, ok := lk.position()
 	if !ok && lk.home.pin != "" && lk.resolveByPin(lk.home.first) {
 		// The typed town could not be placed (a state typed as the town, or a
 		// town the search does not know): the PIN names a town that can be.
 		if lk.areaInTown() {
-			return answer, lk.home
+			return answer
 		}
 		lat, lon, ok = lk.position()
 	}
 	if !ok {
-		return answer, lk.home
+		return answer
 	}
 	row := Result{Name: lk.home.name, DisplayName: lk.home.town, Lat: lat, Lon: lon, Typed: true, Town: lk.home.town}
 	results := append([]Result{row}, answer.Results...)
@@ -299,7 +331,7 @@ func (c *Client) withTypedRow(ctx context.Context, home typedHome, near *Point, 
 		results = results[:maxResults]
 	}
 	answer.Results = results
-	return answer, lk.home
+	return answer
 }
 
 // localityWords are words that end a neighbourhood name far more often than
@@ -450,6 +482,11 @@ func matchesTyped(text, name string) bool {
 // matches text, so the page should ask the person to add their town. A street
 // address never asks for one.
 func noCloseMatch(answer Answer, home typedHome) bool {
+	if len(answer.Results) == 0 {
+		// Nothing at all: the page says so, for a street address too (plan 35;
+		// before it, the page took an empty list for not found by itself).
+		return true
+	}
 	if home.streetLike {
 		return false
 	}
@@ -471,25 +508,78 @@ func noCloseMatch(answer Answer, home typedHome) bool {
 // photon asks Photon for text through askPhoton: its cache first, then a token
 // by the reader rule, and only while the search's request cap has room. It
 // returns nothing on any failure. anyPlace lifts the areas only restriction.
+//
+// Plan 35: when Photon fails, runs out of time or answers an error status, the
+// same lookup goes to Nominatim (see nominatim), inside the same cap and behind
+// Nominatim's own limiter. A lookup that could not be answered at all (both
+// failed, the cap was full, a limiter was busy) marks the lookup incomplete, so
+// the answer never claims "not found" for a search that did not finish.
 func (lk *typedLookup) photon(text string, anyPlace bool) []Result {
+	rows, answered := lk.lookup(text, anyPlace)
+	if !answered {
+		lk.incomplete = true
+	}
+	return rows
+}
+
+// lookup is one typed lookup. answered is false when nothing answered it.
+func (lk *typedLookup) lookup(text string, anyPlace bool) (rows []Result, answered bool) {
 	if lk.ctx.Err() != nil {
-		return nil
+		return nil, false
 	}
 	ctx := lk.ctx
 	if anyPlace {
 		ctx = context.WithValue(ctx, areasOnlyKey{}, false)
 	}
-	take := func(ctx context.Context) error {
-		if upstreamUsed(ctx) >= maxUpstreamPerSearch {
-			return errTypedBudget
+	key := cacheKeyFor(ctx, text, lk.near)
+	if cached, ok := lk.c.photon.get(key); ok {
+		return cached.Results, true
+	}
+	if !photonKnownDown(ctx) {
+		take := func(ctx context.Context) error {
+			if upstreamUsed(ctx) >= maxUpstreamPerSearch {
+				return errTypedBudget
+			}
+			return lk.c.takeReaderPhotonToken(ctx, 1)
 		}
-		return lk.c.takeReaderPhotonToken(ctx, 1)
+		out, err := lk.c.askPhoton(ctx, text, lk.near, take, lk.c.photonTimeout)
+		if err != nil {
+			// No free Photon token for a reader (a report search is waiting), a
+			// full cap, or the caller going away: a reader is never moved onto
+			// Nominatim because Photon is busy locally (D-16).
+			return nil, false
+		}
+		if !out.failed {
+			return out.answer.Results, true
+		}
 	}
-	out, err := lk.c.askPhoton(ctx, text, lk.near, take, lk.c.photonTimeout)
-	if err != nil || out.failed {
-		return nil
+	return lk.nominatim(ctx, key, text)
+}
+
+// nominatim is the fallback of a typed lookup: the reader cache first, then one
+// request while the search's cap has room, taking its Nominatim token by the
+// reader rule (a wait of at most limiterWaitTimeout that never queues ahead of
+// a report search). Answers are cached in the reader cache like the search's.
+func (lk *typedLookup) nominatim(ctx context.Context, key, text string) ([]Result, bool) {
+	if cached, ok := lk.c.reader.get(key); ok {
+		return cached.Results, true
 	}
-	return out.answer.Results
+	if upstreamUsed(ctx) >= maxUpstreamPerSearch {
+		return nil, false
+	}
+	if err := lk.c.takeReaderToken(ctx, 1); err != nil {
+		return nil, false
+	}
+	rows, err := lk.c.fetch(ctx, text, nearParams(lk.near))
+	if err != nil {
+		return nil, false
+	}
+	if len(rows) > 0 {
+		// An empty answer is not cached after Photon failed: Photon may be back
+		// on the next search, and an empty answer must not hide it (see search).
+		lk.c.reader.put(key, Answer{Results: rows, provider: providerNominatim})
+	}
+	return rows, true
 }
 
 // labelNamesTown says one comma separated part of the row's label is a close
@@ -549,6 +639,12 @@ func (lk *typedLookup) areaInTown() bool {
 // position is the typed row's point: a match in the same town from an any place
 // search, else the town's own point.
 func (lk *typedLookup) position() (lat, lon float64, ok bool) {
+	if !lk.townTry && maxUpstreamPerSearch-upstreamUsed(lk.ctx) < 2 {
+		// Only one request is left (a slow Photon spends two of the four before
+		// Nominatim answers the search): spend it on the town, which always
+		// places the row, and not on the any place match, which may not.
+		lk.townRow()
+	}
 	var elsewhere []Result
 	for _, r := range lk.photon(lk.home.name, true) {
 		if !leadingNameMatches(lk.home.first, r.Name) {

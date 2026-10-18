@@ -1211,14 +1211,93 @@ test('no_match shows the not found line and keeps the rows', async () => {
   assert.equal(homeList(page).children.length, 2);
 });
 
-test('an empty answer shows the same not found line', async () => {
+test('an empty answer the server calls not found shows the not found line', async () => {
   const page = load({ start: 4 });
   typeHome(page, 'Zzqqxx');
   page.advance(400);
-  answer(page.requests[0], 200, { results: [] });
+  answer(page.requests[0], 200, { results: [], no_match: true });
   await flush();
   assert.equal(homeStatus(page).textContent, NOT_FOUND);
   assert.equal(homeList(page).hidden, true);
+});
+
+// ---- Plan 35: an unfinished search never says not found, a pick hides the line
+
+test('an empty answer without no_match shows no line for a typed search', async () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Gayathri Nagar Vijayawada');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: [] });
+  await flush();
+  assert.equal(homeStatus(page).hidden, true, 'a lookup did not finish, so no Not found');
+  assert.equal(homeList(page).hidden, true);
+});
+
+test('an empty answer without no_match shows Search unavailable for Enter, never Not found', async () => {
+  const page = load({ start: 4 });
+  byId(page, 'welcome-home-input').value = 'Gayathri Nagar Vijayawada';
+  fire(byId(page, 'welcome-home-form'), 'submit');
+  answer(page.requests[0], 200, { results: [] });
+  await flush();
+  assert.equal(homeStatus(page).hidden, false);
+  assert.equal(homeStatus(page).textContent, 'Search unavailable. Try again in a moment.');
+  assert.notEqual(homeStatus(page).textContent, NOT_FOUND);
+});
+
+test('a typed search that did not finish clears a Not found line an earlier search left', async () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Zzqqxx');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: [], no_match: true });
+  await flush();
+  assert.equal(homeStatus(page).textContent, NOT_FOUND);
+  typeHome(page, 'Gayathri Nagar Vijayawada');
+  page.advance(1000);
+  assert.equal(page.requests.length, 2);
+  answer(page.requests[1], 200, { results: [] });
+  await flush();
+  assert.equal(homeStatus(page).hidden, true, 'the old Not found line does not outlive the new, unfinished search');
+});
+
+test('rows with unfinished true show Search unavailable for Enter and keep the rows', async () => {
+  const page = load({ start: 4 });
+  byId(page, 'welcome-home-input').value = 'Benz Circle';
+  fire(byId(page, 'welcome-home-form'), 'submit');
+  answer(page.requests[0], 200, { results: PLACES, unfinished: true });
+  await flush();
+  assert.equal(homeStatus(page).hidden, false);
+  assert.equal(homeStatus(page).textContent, 'Search unavailable. Try again in a moment.');
+  assert.equal(homeList(page).hidden, false, 'the rows stay listed');
+});
+
+test('rows with unfinished true show no line for a typed search, and unfinished is read only when true', async () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Benz Circle');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: PLACES, unfinished: true });
+  await flush();
+  assert.equal(homeStatus(page).hidden, true, 'a typed search stays quiet');
+  assert.equal(homeList(page).hidden, false);
+  for (const flag of ['true', 1, 'yes', null]) {
+    const other = load({ start: 4 });
+    byId(other, 'welcome-home-input').value = 'Benz Circle';
+    fire(byId(other, 'welcome-home-form'), 'submit');
+    answer(other.requests[0], 200, { results: PLACES, unfinished: flag });
+    await flush();
+    assert.equal(homeStatus(other).hidden, true, 'unfinished ' + JSON.stringify(flag) + ' is not true');
+  }
+});
+
+test('picking a suggestion hides the status line as well as the list', async () => {
+  const page = load({ start: 4 });
+  typeHome(page, 'Benz Circle');
+  page.advance(400);
+  answer(page.requests[0], 200, { results: PLACES, no_match: true });
+  await flush();
+  assert.equal(homeStatus(page).hidden, false, 'the Not found line is up beside the rows');
+  fire(homeList(page).children[0].children[0], 'click');
+  assert.equal(homeList(page).hidden, true, 'the list closes');
+  assert.equal(homeStatus(page).hidden, true, 'the status line goes with it');
 });
 
 test('rows without no_match show no line, and the line goes when a later search matches', async () => {
@@ -1257,7 +1336,7 @@ test('the not found line also shows for Enter, and the old no matches line is go
   const page = load({ start: 4 });
   byId(page, 'welcome-home-input').value = 'Zzqqxx';
   fire(byId(page, 'welcome-home-form'), 'submit');
-  answer(page.requests[0], 200, { results: [] });
+  answer(page.requests[0], 200, { results: [], no_match: true });
   await flush();
   assert.equal(homeStatus(page).textContent, NOT_FOUND);
   assert.ok(!/No matches found/.test(homeStatus(page).textContent));

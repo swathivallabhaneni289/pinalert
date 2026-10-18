@@ -44,6 +44,11 @@ type PlaceResponse struct {
 	// row could be placed, so the page asks the person to add their town. Left
 	// out otherwise, and always left out without kind=area.
 	NoMatch bool `json:"no_match,omitempty" example:"true"`
+	// Unfinished is true when no row closely matches what was typed but a
+	// lookup the search needed failed or timed out (plan 35), so Not found
+	// cannot be claimed. Never true together with no_match. Left out otherwise,
+	// and always left out without kind=area.
+	Unfinished bool `json:"unfinished,omitempty" example:"true"`
 }
 
 // parsePlaceKind reads the optional kind query parameter. It returns areas=true
@@ -145,7 +150,8 @@ func placeErrorClass(err error) string {
 // @Description four upstream requests. A first part with a digit or a street word never gets that row.
 // @Description With kind=area the town may also follow the neighbourhood without a comma (the last one or two words are tried as the
 // @Description town), or be named by a six digit PIN code in the text when no town is found; those lookups count inside the same cap.
-// @Description no_match is true when no row closely matches what was typed and no typed row could be placed, and the page asks for the town.
+// @Description no_match is true when no row closely matches what was typed, no typed row could be placed, and every lookup the search needed answered; the page asks for the town.
+// @Description unfinished is true instead when a lookup that was needed failed or timed out, so Not found is not claimed; the lookups fall back to Nominatim inside the same cap.
 // @Description A 429 or 503 never affects report submission, which has its own search.
 // @Tags geocode
 // @Produce json
@@ -216,6 +222,7 @@ func GeocodePlace(searcher PlaceSearcher, budget PlaceBudget) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, PlaceResponse{
 			GeocodeResponse: geocodeAnswer(answer),
 			NoMatch:         areas && answer.NoCloseMatch,
+			Unfinished:      areas && answer.Unfinished,
 		})
 	}
 }

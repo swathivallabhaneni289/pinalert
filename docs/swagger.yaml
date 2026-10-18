@@ -508,6 +508,14 @@ definitions:
         items:
           $ref: '#/definitions/handlers.GeocodeResult'
         type: array
+      unfinished:
+        description: |-
+          Unfinished is true when no row closely matches what was typed but a
+          lookup the search needed failed or timed out (plan 35), so Not found
+          cannot be claimed. Never true together with no_match. Left out otherwise,
+          and always left out without kind=area.
+        example: true
+        type: boolean
     type: object
   handlers.ProfileResponse:
     properties:
@@ -1006,7 +1014,8 @@ paths:
         four upstream requests. A first part with a digit or a street word never gets that row.
         With kind=area the town may also follow the neighbourhood without a comma (the last one or two words are tried as the
         town), or be named by a six digit PIN code in the text when no town is found; those lookups count inside the same cap.
-        no_match is true when no row closely matches what was typed and no typed row could be placed, and the page asks for the town.
+        no_match is true when no row closely matches what was typed, no typed row could be placed, and every lookup the search needed answered; the page asks for the town.
+        unfinished is true instead when a lookup that was needed failed or timed out, so Not found is not claimed; the lookups fall back to Nominatim inside the same cap.
         A 429 or 503 never affects report submission, which has its own search.
       parameters:
       - description: Place text, 3 to 200 characters

@@ -464,8 +464,10 @@ func (c *Client) askPhoton(ctx context.Context, text string, near *Point, take f
 			// fallback request for an answer nobody will read.
 			return photonOutcome{}, err
 		}
+		notePhoton(ctx, true)
 		return photonOutcome{sent: 1, failed: true, timedOut: errors.Is(err, errPhotonTimedOut)}, nil
 	}
+	notePhoton(ctx, false)
 	answer := Answer{Results: results, provider: providerPhoton}
 	c.photon.put(key, answer)
 	return photonOutcome{answer: answer, found: len(results) > 0, sent: 1}, nil

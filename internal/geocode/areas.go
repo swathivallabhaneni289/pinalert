@@ -172,6 +172,63 @@ func photonIsCityLevel(p photonProperties) bool {
 	return false
 }
 
+// nominatimIsCityLevel is photonIsCityLevel for a Nominatim row (plan 35): a
+// city or a town, drawn as a place or as an administrative boundary.
+func nominatimIsCityLevel(rec nominatimRecord) bool {
+	category := strings.ToLower(strings.TrimSpace(rec.Category))
+	if category != "place" && category != "boundary" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(rec.AddressType)) {
+	case "city", "town":
+		return true
+	}
+	return false
+}
+
+// nominatimRegionSuffixes are the words dropped from the end of the town a
+// Nominatim postcode row names ("Vijayawada Urban Mandal" is Vijayawada).
+var nominatimRegionSuffixes = map[string]bool{
+	"mandal": true, "urban": true, "rural": true, "district": true,
+	"taluka": true, "taluk": true, "tehsil": true, "tahsil": true, "division": true,
+}
+
+// nominatimRegion is the town a Nominatim postcode row names, "" for every other
+// row. Nominatim sends no address parts unless asked (and asking would change
+// every outbound request), so the town is read from the label, which for a
+// postcode reads "520008, Vijayawada Urban Mandal, NTR District, Andhra Pradesh,
+// India" (live, 2026-10-18): the part after the code, without a trailing
+// (Urban), Urban, Mandal or District.
+func nominatimRegion(rec nominatimRecord) string {
+	if !strings.EqualFold(strings.TrimSpace(rec.AddressType), "postcode") {
+		return ""
+	}
+	return regionFromPostcodeLabel(cleanPart(rec.Name), rec.DisplayName)
+}
+
+// regionFromPostcodeLabel is nominatimRegion on the code and the label.
+func regionFromPostcodeLabel(pin, display string) string {
+	parts := strings.Split(display, ",")
+	if len(parts) < 3 || cleanPart(parts[0]) != pin {
+		// With fewer than three parts the second one is the country or the
+		// state, not a town.
+		return ""
+	}
+	name := cleanPart(parts[1])
+	if i := strings.Index(name, "("); i >= 0 {
+		name = strings.TrimSpace(name[:i])
+	}
+	words := strings.Fields(name)
+	for len(words) > 1 && nominatimRegionSuffixes[strings.ToLower(words[len(words)-1])] {
+		words = words[:len(words)-1]
+	}
+	name = strings.Join(words, " ")
+	if indianStates[normalizeSpelling(name)] || utf8.RuneCountInString(name) < minTypedPartRunes || strings.IndexFunc(name, unicode.IsDigit) >= 0 {
+		return ""
+	}
+	return name
+}
+
 // photonRegion is the town a PIN code row names, for a row drawn as a postcode
 // and empty for every other row (see regionName).
 func photonRegion(p photonProperties) string {
