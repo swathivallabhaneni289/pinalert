@@ -33,7 +33,7 @@ type fakeProfileQ struct {
 }
 
 func (f *fakeProfileQ) AcceptTerms(context.Context, sqlcgen.AcceptTermsParams) error { return nil }
-func (f *fakeProfileQ) MarkFirstRunDone(context.Context, int64) error                  { return nil }
+func (f *fakeProfileQ) MarkFirstRunDone(context.Context, int64) error                { return nil }
 
 func (f *fakeProfileQ) UpdateAccountProfile(_ context.Context, a sqlcgen.UpdateAccountProfileParams) error {
 	f.profiles = append(f.profiles, a)

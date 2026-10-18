@@ -18,6 +18,7 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -84,8 +85,10 @@ type HomeAreaChange struct {
 // ProfileUpdate is one edit of the optional rows. A nil DisplayName leaves the
 // name alone; an empty one after trimming clears it.
 //
-// Reserved word screening of names is Phase 3.2's work (03.2 D-19). Until then
-// the name is shown to its owner only, and html/template escapes it.
+// Names are not screened against a reserved word list yet; that waits for Phase 9,
+// when a name is first shown to anyone else (decided 2026-10-17 in Phase 3.2
+// planning, orchestrator decision 5). Until then the name is shown to its owner
+// only, and html/template escapes it.
 type ProfileUpdate struct {
 	DisplayName *string
 	HomeArea    HomeAreaChange
@@ -252,18 +255,40 @@ type ProfileQuerier interface {
 	MarkFirstRunDone(ctx context.Context, id int64) error
 	UpdateAccountProfile(ctx context.Context, arg sqlcgen.UpdateAccountProfileParams) error
 	GetAccountProfile(ctx context.Context, id int64) (sqlcgen.GetAccountProfileRow, error)
+	// The four methods below belong to the Reliable reporter alert settings of
+	// plan 03.2-13 (NOTIF-05, D-26).
+	GetAlertSettings(ctx context.Context, accountID int64) (sqlcgen.GetAlertSettingsRow, error)
+	UpsertAlertSettings(ctx context.Context, arg sqlcgen.UpsertAlertSettingsParams) (sqlcgen.UpsertAlertSettingsRow, error)
+	DisableReliableAlerts(ctx context.Context, arg sqlcgen.DisableReliableAlertsParams) error
+	GetAccountHomeCell(ctx context.Context, id int64) (*string, error)
 }
 
 // AccountService reads and writes the caller's own profile rows. Every method
 // takes the account id the gate resolved, never an id from a request body.
 type AccountService struct {
-	q ProfileQuerier
+	q   ProfileQuerier
+	now func() time.Time
+}
+
+// AccountOption configures an AccountService at construction time.
+type AccountOption func(*AccountService)
+
+// WithAccountClock overrides the clock. Tests use it to pin the time stamped on
+// the alert settings; production code never needs it.
+func WithAccountClock(fn func() time.Time) AccountOption {
+	return func(s *AccountService) {
+		s.now = fn
+	}
 }
 
 // NewAccountService stores the querier. It never dereferences it, so a router
 // built with a nil sessions store still constructs.
-func NewAccountService(q ProfileQuerier) *AccountService {
-	return &AccountService{q: q}
+func NewAccountService(q ProfileQuerier, opts ...AccountOption) *AccountService {
+	s := &AccountService{q: q, now: time.Now}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // Profile reads one account's profile rows and onboarding state.
@@ -298,11 +323,13 @@ func (s *AccountService) HomeAreaCentre(ctx context.Context, accountID int64) (l
 	if err != nil {
 		return 0, 0, false, fmt.Errorf("service: reading home area cell: %w", err)
 	}
-	if row.HomeAreaCell == nil || !homeAreaCellShape.MatchString(*row.HomeAreaCell) {
+	if row.HomeAreaCell == nil {
 		return 0, 0, false, nil
 	}
-	lat, lon = geohash.DecodeCenter(*row.HomeAreaCell)
-	return lat, lon, true, nil
+	// HomeAreaAnchor is the one decoder of a stored home area cell
+	// (alertsettings.go); the Reliable reporter alert uses it too.
+	lat, lon, ok = HomeAreaAnchor(*row.HomeAreaCell)
+	return lat, lon, ok, nil
 }
 
 // AcceptTerms records agreement to CurrentTermsVersion. A repeat call for the
@@ -354,6 +381,15 @@ func (s *AccountService) UpdateProfile(ctx context.Context, accountID int64, u P
 		})
 		if err != nil {
 			return AccountProfile{}, fmt.Errorf("service: saving profile: %w", err)
+		}
+		if v.HomeAction == HomeAreaClear {
+			// With no home area there is no place to measure the Reliable
+			// reporter alert from, so it goes off with it (NOTIF-05, UI-SPEC E1).
+			// It stays off until the person turns it on again.
+			err := s.q.DisableReliableAlerts(ctx, sqlcgen.DisableReliableAlertsParams{AccountID: accountID, Now: s.now().UTC()})
+			if err != nil {
+				return AccountProfile{}, fmt.Errorf("service: turning the alert off with the home area: %w", err)
+			}
 		}
 	}
 	return s.Profile(ctx, accountID)
