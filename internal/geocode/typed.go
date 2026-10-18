@@ -574,7 +574,11 @@ func (lk *typedLookup) nominatim(ctx context.Context, key, text string) ([]Resul
 	if err != nil {
 		return nil, false
 	}
-	lk.c.reader.put(key, Answer{Results: rows, provider: providerNominatim})
+	if len(rows) > 0 {
+		// An empty answer is not cached after Photon failed: Photon may be back
+		// on the next search, and an empty answer must not hide it (see search).
+		lk.c.reader.put(key, Answer{Results: rows, provider: providerNominatim})
+	}
 	return rows, true
 }
 

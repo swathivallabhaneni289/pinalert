@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -151,6 +152,32 @@ func TestTownProbeFallsBackToNominatimWhenPhotonFails(t *testing.T) {
 				t.Errorf("%d upstream requests, the cap is %d", n, maxUpstreamPerSearch)
 			}
 		})
+	}
+}
+
+// The recorded live answers of 2026-10-18 for the owner's text, replayed with
+// Photon down: Nominatim answers the whole text and "Nagar Vijayawada" with
+// nothing and "Vijayawada" with the city (place, city), so the search spends all
+// four requests and the typed row is placed from the answer in hand, with no
+// request left over.
+func TestOwnersTextWithPhotonDownUsesTheRecordedNominatimAnswers(t *testing.T) {
+	ps := photonDownStub(t)
+	ns := newNominatimStub(t, func(q url.Values) []map[string]any {
+		if q.Get("q") == "Vijayawada" {
+			return []map[string]any{nomRow(16.5115306, 80.6160469, "Vijayawada",
+				"Vijayawada, Vijayawada Urban Mandal, NTR District, Andhra Pradesh, 520001, India", "place", "city")}
+		}
+		return nil
+	})
+	c := newDualClient(ps.server.URL, ns.server.URL)
+
+	answer, err := c.SearchReaderAreas(context.Background(), "Gayathri Nagar Vijayawada", nil)
+	if err != nil {
+		t.Fatalf("SearchReaderAreas returned error: %v", err)
+	}
+	requireTypedRowAt(t, answer, "Gayathri Nagar, Vijayawada", "Vijayawada", 16.5115306, 80.6160469)
+	if n := nomTotal(ps, ns); n != maxUpstreamPerSearch {
+		t.Errorf("%d upstream requests, want exactly %d (the Photon try and three Nominatim texts)", n, maxUpstreamPerSearch)
 	}
 }
 
@@ -297,8 +324,60 @@ func TestNoMatchIsTrueOnlyWhenEveryNeededLookupAnswered(t *testing.T) {
 		if err != nil {
 			t.Fatalf("SearchReaderAreas returned error: %v", err)
 		}
-		if !answer.NoCloseMatch {
-			t.Errorf("NoCloseMatch = false, want true: the lookups answered and nothing was placed (%+v)", answer.Results)
+		if !answer.NoCloseMatch || answer.Unfinished {
+			t.Errorf("NoCloseMatch = %v, Unfinished = %v, want true and false: the lookups answered and nothing was placed (%+v)", answer.NoCloseMatch, answer.Unfinished, answer.Results)
+		}
+	})
+	t.Run("the search itself was answered by nominatim after photon failed, with no row that matches", func(t *testing.T) {
+		// "Benz Circle" has no lookup at all: only the search can be unfinished.
+		ps := photonDownStub(t)
+		ns := newNominatimStub(t, func(q url.Values) []map[string]any {
+			return []map[string]any{nomRow(13.036, 77.562, "Nethaji Circle", "Nethaji Circle, Bengaluru, Karnataka, India", "place", "locality")}
+		})
+		c := newDualClient(ps.server.URL, ns.server.URL)
+		answer, err := c.SearchReaderAreas(context.Background(), "Benz Circle", nil)
+		if err != nil {
+			t.Fatalf("SearchReaderAreas returned error: %v", err)
+		}
+		if answer.NoCloseMatch || !answer.Unfinished {
+			t.Errorf("NoCloseMatch = %v, Unfinished = %v, want false and true", answer.NoCloseMatch, answer.Unfinished)
+		}
+		if len(answer.Results) != 1 {
+			t.Errorf("results = %+v, want the one row kept", answer.Results)
+		}
+	})
+	t.Run("photon failed but nominatim found a row that matches", func(t *testing.T) {
+		ps := photonDownStub(t)
+		ns := newNominatimStub(t, func(q url.Values) []map[string]any {
+			return []map[string]any{nomRow(12.936, 77.624, "Koramangala", "Koramangala, Bengaluru, Karnataka, India", "place", "suburb")}
+		})
+		c := newDualClient(ps.server.URL, ns.server.URL)
+		answer, err := c.SearchReaderAreas(context.Background(), "Koramangala", nil)
+		if err != nil {
+			t.Fatalf("SearchReaderAreas returned error: %v", err)
+		}
+		if answer.NoCloseMatch || answer.Unfinished {
+			t.Errorf("NoCloseMatch = %v, Unfinished = %v, want both false for a match", answer.NoCloseMatch, answer.Unfinished)
+		}
+	})
+	t.Run("photon timed out once and the retry answered", func(t *testing.T) {
+		var calls atomic.Int32
+		ps := newPhotonStub(t, func(w http.ResponseWriter, r *http.Request) {
+			n := calls.Add(1)
+			if n == 1 {
+				time.Sleep(300 * time.Millisecond)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(photonBody(t, benguluruCircle()))
+		})
+		ns := newNominatimStub(t, func(url.Values) []map[string]any { return nil })
+		c := fastTimeouts(newDualClient(ps.server.URL, ns.server.URL))
+		answer, err := c.SearchReaderAreas(context.Background(), "Benz Circle", nil)
+		if err != nil {
+			t.Fatalf("SearchReaderAreas returned error: %v", err)
+		}
+		if !answer.NoCloseMatch || answer.Unfinished {
+			t.Errorf("NoCloseMatch = %v, Unfinished = %v, want true and false: the retry answered", answer.NoCloseMatch, answer.Unfinished)
 		}
 	})
 	t.Run("photon and nominatim both fail the lookups", func(t *testing.T) {
@@ -317,8 +396,8 @@ func TestNoMatchIsTrueOnlyWhenEveryNeededLookupAnswered(t *testing.T) {
 		if err != nil {
 			t.Fatalf("SearchReaderAreas returned error: %v", err)
 		}
-		if answer.NoCloseMatch {
-			t.Errorf("NoCloseMatch = true although the lookups failed (%+v)", answer.Results)
+		if answer.NoCloseMatch || !answer.Unfinished {
+			t.Errorf("NoCloseMatch = %v, Unfinished = %v although the lookups failed, want false and true (%+v)", answer.NoCloseMatch, answer.Unfinished, answer.Results)
 		}
 		if _, ok := typedRowOf(t, answer); ok {
 			t.Errorf("a typed row was placed from failed lookups: %+v", answer.Results)
@@ -332,8 +411,8 @@ func TestNoMatchIsTrueOnlyWhenEveryNeededLookupAnswered(t *testing.T) {
 		if err != nil {
 			t.Fatalf("SearchReaderAreas returned error: %v", err)
 		}
-		if answer.NoCloseMatch {
-			t.Errorf("NoCloseMatch = true although the lookups were never sent")
+		if answer.NoCloseMatch || !answer.Unfinished {
+			t.Errorf("NoCloseMatch = %v, Unfinished = %v although the lookups were never sent, want false and true", answer.NoCloseMatch, answer.Unfinished)
 		}
 	})
 	t.Run("nothing needed a lookup", func(t *testing.T) {

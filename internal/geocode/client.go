@@ -407,6 +407,11 @@ type Answer struct {
 	// matches what the person typed and no typed row could be placed, so the page
 	// can ask for the town. Never set by the normal place search.
 	NoCloseMatch bool
+	// Unfinished is set by the areas only search (plan 35) when no row closely
+	// matches what the person typed but a request the search needed failed or
+	// timed out (or the cap left no room for it), so Not found cannot be claimed.
+	// Never set together with NoCloseMatch.
+	Unfinished bool
 	// provider is which service gave the answer (providerPhoton or
 	// providerNominatim), for the live check and the tests only.
 	provider string
@@ -819,14 +824,21 @@ func (c *Client) SearchReaderAreas(ctx context.Context, q string, near *Point) (
 	if err != nil {
 		return answer, err
 	}
-	incomplete := false
+	// The latest Photon request of the search failed or timed out, and no later
+	// one recovered: the search was answered by Nominatim alone (plan 35).
+	incomplete := c.photonURL != "" && photonKnownDown(ctx)
 	if c.photonURL != "" && (home.ok || home.bare != "") {
-		answer, home, incomplete = c.withTypedRow(ctx, home, near, answer)
+		var lookupsIncomplete bool
+		answer, home, lookupsIncomplete = c.withTypedRow(ctx, home, near, answer)
+		incomplete = incomplete || lookupsIncomplete
 	}
-	// Not found is claimed only when every lookup that was needed answered
-	// (plan 35): a lookup that failed, timed out or found the cap full leaves it
-	// false, so the page shows no Not found line for a search that did not finish.
-	answer.NoCloseMatch = !incomplete && noCloseMatch(answer, home)
+	// Not found is claimed only when every request that was needed answered
+	// (plan 35): a search or lookup that failed, timed out or found the cap full
+	// says Unfinished instead, so the page never shows Not found for a search that
+	// did not finish.
+	notFound := noCloseMatch(answer, home)
+	answer.NoCloseMatch = notFound && !incomplete
+	answer.Unfinished = notFound && incomplete
 	return answer, nil
 }
 
