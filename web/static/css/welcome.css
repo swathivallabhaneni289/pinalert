@@ -160,6 +160,13 @@
   font-weight: var(--font-weight-semibold);
 }
 
+/* Each step's title takes programmatic focus (tabindex -1) so a screen reader
+   reads the new step; it draws no box around the words (owner, 2026-10-18).
+   The step's real controls keep the global ring. */
+.welcome__title:focus {
+  outline: none;
+}
+
 .welcome__lead {
   margin: 0;
   color: var(--color-text);

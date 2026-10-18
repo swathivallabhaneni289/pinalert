@@ -75,6 +75,7 @@ func TestAudit29TitlesTakeFocusWithoutARing(t *testing.T) {
 	for _, c := range []struct{ file, head string }{
 		{"static/css/window.css", ".app-window__title:focus"},
 		{"static/css/modal.css", ".post-window__panel .post-window__title:focus"},
+		{"static/css/welcome.css", ".welcome__title:focus"},
 	} {
 		r := p31mRule(t, c.file, "", c.head)
 		if got := r.Decls["outline"]; got != "none" {
