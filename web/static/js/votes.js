@@ -557,6 +557,12 @@
             }
             throw err;
           }
+          // Phase 3.2, UI-SPEC A1: the bell refreshes once after a saved vote.
+          // The voter's own action is never announced to them (D-13), so this
+          // only keeps the bell's cursor and the Mute control current.
+          if (typeof CustomEvent === 'function') {
+            document.dispatchEvent(new CustomEvent('pinalert:updates-refresh'));
+          }
           return body;
         });
       });
