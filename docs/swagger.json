@@ -287,6 +287,38 @@
                 }
             }
         },
+        "/me/muted-reports": {
+            "get": {
+                "description": "Lists the signed in account's muted reports, newest mute first, for the Muted reports\nwindow of Settings. A report that is held, removed or has gone shows available false\nwith no text, category or severity, and still carries report_id so the mute can be\nundone. A finished Rescue report shows no text. The answer is never cached.\nRequires a session verified by email; an unverified caller receives 401.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "List the reports you muted",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.MutedReportsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/me/profile": {
             "patch": {
                 "description": "Updates the optional name and home area of the signed in account. A key left out\nchanges nothing. An empty display_name clears the name. A home_area object saves the\npicked place, and home_area null removes it. The home area keeps only the place name\nand a cell about 5 km across; the coordinates you send are used once to find the cell\nand are never stored. The answer is the profile as stored, with no coordinates.\nRequires a session verified by email; an unverified caller receives 401.",
@@ -787,6 +819,59 @@
                 }
             }
         },
+        "/reports/{id}/mute": {
+            "post": {
+                "description": "Stops updates about one report for the signed in account only. Nobody else is told,\nand the report itself does not change. Send no body or an empty object. A repeat\ncall changes nothing. A report that does not exist, or that is not shown in any\nfeed, gets 404.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Turn updates off for a report",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Report id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Updates are off for this report"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/reports/{id}/reopen": {
             "post": {
                 "description": "Casts one of five votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen/unresolve are resolution votes (is this\nresolved). Unresolve is the take back of the caller's own earlier resolve: it needs\nno location, it never counts as a reopen, and it is refused with 409 when the caller\nhas no standing resolve on the report. The poster's reopen and every take back share\none limit of two per report; past it the answer is 409. A non poster's reopen is an\nordinary claim and is never limited.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on confirm, dispute, resolve and reopen, with one fixed\nsentence that never carries the distance. The reporter's own resolve and reopen\nare exempt, and so is the take back.\nThe response also carries the same trust object GET /reports returns for this report.\nResolve, reopen and unresolve responses also carry undos_left, the number of take\nbacks the caller has left on this report; confirm and dispute responses do not.\nA location is required on every vote except the reporter's own resolve and reopen\nand the take back.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.\nA vote that comes too fast gets 429 with a Retry-After header.",
@@ -965,6 +1050,59 @@
                 }
             }
         },
+        "/reports/{id}/unmute": {
+            "post": {
+                "description": "Undoes a mute for the signed in account only. Send no body or an empty object. A\nrepeat call changes nothing. It works for a report that has since been held, removed\nor gone, so a mute can always be cleared.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Turn updates back on for a report",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Report id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Updates are on again for this report"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/reports/{id}/unresolve": {
             "post": {
                 "description": "Casts one of five votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen/unresolve are resolution votes (is this\nresolved). Unresolve is the take back of the caller's own earlier resolve: it needs\nno location, it never counts as a reopen, and it is refused with 409 when the caller\nhas no standing resolve on the report. The poster's reopen and every take back share\none limit of two per report; past it the answer is 409. A non poster's reopen is an\nordinary claim and is never limited.\nRequires a session verified by email through the magic-link flow; an unverified\ncaller receives 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on confirm, dispute, resolve and reopen, with one fixed\nsentence that never carries the distance. The reporter's own resolve and reopen\nare exempt, and so is the take back.\nThe response also carries the same trust object GET /reports returns for this report.\nResolve, reopen and unresolve responses also carry undos_left, the number of take\nbacks the caller has left on this report; confirm and dispute responses do not.\nA location is required on every vote except the reporter's own resolve and reopen\nand the take back.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.\nA vote that comes too fast gets 429 with a Retry-After header.",
@@ -1043,6 +1181,87 @@
                                 "type": "integer",
                                 "description": "Whole seconds to wait before trying again"
                             }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/updates": {
+            "get": {
+                "description": "Brings the signed in account's updates up to date and answers the unread count,\ncapped at 99, and the latest 10 updates, newest first. The poll itself is what\nchecks the reports you posted or voted on, so the bell polls this route. It takes\nno parameter and no location. Every sentence is written by the server. A report\nthat was held, removed or has gone reads as an update that is no longer available,\nwith no detail. The answer is never cached.\nRequires a session verified by email; an unverified caller receives 401.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "updates"
+                ],
+                "summary": "Read the bell: the unread count and the latest updates",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.UpdatesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/updates/read": {
+            "post": {
+                "description": "Marks the signed in account's own unread updates up to and including up_to as read.\nSend the id of the newest update shown, so an update that arrived after the list\nwas drawn stays unread. It changes only your own rows. An up_to below 1 gets 400.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "updates"
+                ],
+                "summary": "Mark your updates read up to an id",
+                "parameters": [
+                    {
+                        "description": "The id of the newest update shown",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.MarkReadRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Marked read"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
                         }
                     },
                     "500": {
@@ -1384,6 +1603,16 @@
                     "type": "boolean",
                     "example": false
                 },
+                "viewer_follows": {
+                    "description": "ViewerFollows is true when the calling account posted this report or voted\non it in any way (confirm, dispute, resolve, reopen or unresolve). It is\nviewer specific like your_vote, so it never says who else follows or how\nmany do. It is computed from the vote rows the read already holds, so the\nfeed's round trips stay constant. Always present.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "viewer_muted": {
+                    "description": "ViewerMuted is true when the calling account turned updates off for this\nreport. It is viewer specific, never says who else muted, and is filled\nfrom the one batched extras read. Always present.",
+                    "type": "boolean",
+                    "example": false
+                },
                 "visibility": {
                     "description": "Visibility is the resolver's own answer, serialised verbatim from\nservice.ReportView.Visibility; the client renders it and never\nrecomputes it (TRUST-02, T-02-04). \"retracted\" is one of the four\nvalues of the shared type. It never appears in the active or the\ndisputed view (D-12) and appears only in the past view, where the\nreport is listed as resolved (D-25).",
                     "type": "string",
@@ -1591,6 +1820,64 @@
                 "name": {
                     "type": "string",
                     "example": "Indiranagar, Bengaluru"
+                }
+            }
+        },
+        "handlers.MarkReadRequest": {
+            "type": "object",
+            "properties": {
+                "up_to": {
+                    "type": "integer",
+                    "example": 41
+                }
+            }
+        },
+        "handlers.MutedReportWire": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "category": {
+                    "type": "string",
+                    "example": "Flood"
+                },
+                "muted_at": {
+                    "type": "string"
+                },
+                "report_id": {
+                    "type": "integer",
+                    "example": 17
+                },
+                "severity": {
+                    "type": "string",
+                    "example": "Critical"
+                },
+                "severity_level": {
+                    "type": "string",
+                    "enum": [
+                        "low",
+                        "medium",
+                        "critical",
+                        "''"
+                    ],
+                    "example": "critical"
+                },
+                "text": {
+                    "type": "string",
+                    "example": "Water over the bridge"
+                }
+            }
+        },
+        "handlers.MutedReportsResponse": {
+            "type": "object",
+            "properties": {
+                "reports": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.MutedReportWire"
+                    }
                 }
             }
         },
@@ -2037,6 +2324,114 @@
                 },
                 "home_area": {
                     "$ref": "#/definitions/handlers.HomeAreaRequest"
+                }
+            }
+        },
+        "handlers.UpdateWire": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "description": "Available is false when the report was held, removed or has gone since the\nupdate was made.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "category": {
+                    "description": "Category is the page's own category word, empty when unavailable.",
+                    "type": "string",
+                    "example": "Flood"
+                },
+                "created_at": {
+                    "description": "CreatedAt is when the update was written.",
+                    "type": "string"
+                },
+                "event": {
+                    "description": "Event is line 1: the event words, built on the server.",
+                    "type": "string",
+                    "example": "Now confirmed"
+                },
+                "id": {
+                    "description": "ID orders the list and is what the read mark sends back as up_to.",
+                    "type": "integer",
+                    "example": 41
+                },
+                "kind": {
+                    "description": "Kind is the closed kind of the row.",
+                    "type": "string",
+                    "enum": [
+                        "reached_live",
+                        "hidden",
+                        "resolved",
+                        "fading",
+                        "reliable_nearby",
+                        "more"
+                    ],
+                    "example": "reached_live"
+                },
+                "label": {
+                    "description": "Label is the row's accessible name, built whole on the server (UI-SPEC P32-C8).",
+                    "type": "string",
+                    "example": "New. Now confirmed. Flood, Critical. Confirmed by 3 people at different spots. 12 minutes ago"
+                },
+                "more_count": {
+                    "description": "MoreCount is how many changes the rolled up row stands for. Only that row\ncarries it.",
+                    "type": "integer",
+                    "example": 4
+                },
+                "report_id": {
+                    "description": "ReportID is the report the row opens. It is absent for the rolled up row\nand for a report that is no longer available, so a row never links to a\nreport the reader may not open.",
+                    "type": "integer",
+                    "example": 17
+                },
+                "report_line": {
+                    "description": "ReportLine is the first line of the report's text (Q1 owner confirmed\n2026-10-18). It is absent for a finished Rescue report, an unavailable\nreport and the rolled up row. It is never the whole description.",
+                    "type": "string",
+                    "example": "Water over the bridge"
+                },
+                "severity": {
+                    "description": "Severity is the severity word, empty when unavailable.",
+                    "type": "string",
+                    "example": "Critical"
+                },
+                "severity_level": {
+                    "description": "SeverityLevel is the raw closed value for the severity dot colour.",
+                    "type": "string",
+                    "enum": [
+                        "low",
+                        "medium",
+                        "critical",
+                        "''"
+                    ],
+                    "example": "critical"
+                },
+                "trust": {
+                    "description": "Trust is the trust sentence for the report now, chosen when the list is read.",
+                    "type": "string",
+                    "example": "Confirmed by 3 people at different spots."
+                },
+                "unread": {
+                    "description": "Unread is true until the reader marks the row read.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "when": {
+                    "description": "When is how long ago, in the app's short words.",
+                    "type": "string",
+                    "example": "12 min ago"
+                }
+            }
+        },
+        "handlers.UpdatesResponse": {
+            "type": "object",
+            "properties": {
+                "unread": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "updates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.UpdateWire"
+                    }
                 }
             }
         }

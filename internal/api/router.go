@@ -563,13 +563,13 @@ func NewRouter(deps Deps) *chi.Mux {
 		// profile.html.tmpl includes 01.1-06's account_header.html.tmpl
 		// partial via {{template}}, which html/template only resolves
 		// within the template set it was parsed into (01.1-07-PLAN.md).
-		r.Get("/profile", handlers.Profile(deps.AuthService, deps.Template, auth))
+		r.Get("/profile", handlers.Profile(deps.AuthService, updates, deps.Template, auth))
 		// Phase 3.4 (D-22, D-25): the Official alerts place and the one
 		// Settings page. Both are gated because they belong to the signed in
 		// app, and both pass the onboarding middleware like every page above.
 		// They serve text/html, so they carry no swag annotation.
 		r.Get("/alerts", handlers.AlertsPage(deps.Template, page))
-		r.Get("/settings", handlers.SettingsPage(deps.Template, accounts, page))
+		r.Get("/settings", handlers.SettingsPage(deps.Template, accounts, mutes, page))
 		// Phase 3.4 (D-27, plan 10): the first-time flow. It sits in this gated
 		// group because it belongs to the signed in account, and the onboarding
 		// middleware above lets this exact path through so the redirect to it

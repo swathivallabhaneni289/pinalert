@@ -721,6 +721,25 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		}
 	}
 
+	// 03.2-07: the five update and mute routes are documented, each with its
+	// method and the 401 an unverified caller receives.
+	for _, want := range []struct{ path, method string }{
+		{"/updates", "get"},
+		{"/updates/read", "post"},
+		{"/reports/{id}/mute", "post"},
+		{"/reports/{id}/unmute", "post"},
+		{"/me/muted-reports", "get"},
+	} {
+		op, ok := spec.Paths[want.path][want.method]
+		if !ok {
+			t.Errorf("docs/swagger.json is missing the %s %s operation", want.path, want.method)
+			continue
+		}
+		if !strings.Contains(string(op), `"401"`) {
+			t.Errorf("docs/swagger.json %s %s operation is missing a 401 response", want.path, want.method)
+		}
+	}
+
 	// The published-schema counterpart to the runtime information-disclosure
 	// control (T-01-02): a session identifier must never be advertised as
 	// part of the contract, because a documented field is an invitation for

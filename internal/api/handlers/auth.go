@@ -723,7 +723,7 @@ func newProfileReport(ar service.ActivityReport, now time.Time) (profileReport, 
 // docs/swagger.json, the same reasoning Verify's doc comment above records:
 // this route serves text/html, not a JSON API operation, and lives outside
 // @BasePath /api (see router.go's package-level swag block).
-func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
+func Profile(svc *service.AuthService, updates *service.UpdatesService, tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acc, ok := account.FromContext(r.Context())
 		if !ok {
@@ -745,11 +745,25 @@ func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) 
 		// The part and the old tab value only pick which screen renders; both are
 		// matched against constants and never reach a query or a link (T-34-30).
 		part := parseActivityPart(r.URL.Query().Get("part"), r.URL.Query().Get("tab"))
-		view, err := buildActivityPage(activityPage, part, time.Now())
+		now := time.Now()
+		view, err := buildActivityPage(activityPage, part, now)
 		if err != nil {
 			log.Printf("handlers: Profile: %v", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
+		}
+
+		// The Updates part reads the same List the bell reads (Phase 3.2, D-05),
+		// keyed by the gate's account id. There is no Refresh here: the bell poll
+		// is the producer (research Pattern 8). A failed read renders the page
+		// with the part's error state instead of a 500. The read mark stays with
+		// the browser (plan 08).
+		if updates != nil {
+			updatesPage, uerr := updates.List(r.Context(), acc.ID, service.ActivityUpdatesListSize)
+			if uerr != nil {
+				log.Printf("handlers: Profile: updates: %v", uerr)
+			}
+			fillUpdatesPart(&view, updatesPage, uerr != nil, now)
 		}
 
 		// The record card reads the account's own reporter signal from its
