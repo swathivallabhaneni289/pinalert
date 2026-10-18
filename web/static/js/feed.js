@@ -53,6 +53,9 @@
 
   // The words of the Show choices in the polite status line (P34-C7).
   var SHOW_STATUS_WORDS = { confirmed: 'Show Confirmed', disputed: 'Show Disputed' };
+  // What the status sentence adds while the Only Reliable reporters tick is on
+  // (P32-C20), straight after the Show part's full stop.
+  var RELIABLE_STATUS_WORDS = ' Reliable reporters only.';
 
   var reportListEl = document.getElementById('report-list');
   var skeletonEl = document.getElementById('feed-skeleton');
@@ -69,6 +72,7 @@
   var historyEmptyEl = document.getElementById('feed-empty-history');
   var filterEmptyEl = document.getElementById('filter-empty');
   var filterClearBtn = document.getElementById('filter-empty-clear');
+  var reliableEmptyEl = document.getElementById('reliable-empty');
   var historyEmptyBodyEl = document.getElementById('feed-empty-history-body');
   var staleEl = document.getElementById('feed-stale');
   var staleTextEl = document.getElementById('feed-stale-text');
@@ -147,7 +151,7 @@
     }
   }
 
-  // setEmptyState is the sole owner of the five empty-state elements. render
+  // setEmptyState is the sole owner of the six empty-state elements. render
   // is documented as the one place that decides which of the list, skeleton,
   // empty state and error state is showing, and more elements would
   // otherwise turn four explicit branches into many. Every setHidden call
@@ -156,14 +160,16 @@
   // 'general' (the Phase 1 empty state), 'history' (nothing active but
   // recent history, with the See ended reports link), 'confirmed' (Show
   // Confirmed has nothing to show), 'disputed' (Show Disputed has nothing to
-  // show) or 'filter' (a chip emptied the list, with the Clear filter
-  // button).
+  // show), 'filter' (a chip emptied the list, with the Clear filter button) or
+  // 'reliable' (the Only Reliable reporters tick emptied the list, with the
+  // Show everyone button; Phase 3.2).
   function setEmptyState(kind) {
     setHidden(emptyEl, kind !== 'general');
     setHidden(historyEmptyEl, kind !== 'history');
     setHidden(confirmedEmptyEl, kind !== 'confirmed');
     setHidden(disputedEmptyEl, kind !== 'disputed');
     setHidden(filterEmptyEl, kind !== 'filter');
+    setHidden(reliableEmptyEl, kind !== 'reliable');
   }
 
   function replacePrefixedClass(el, prefix, newClass) {
@@ -495,7 +501,7 @@
       handle.focus();
       return;
     }
-    var empties = [emptyEl, historyEmptyEl, confirmedEmptyEl, disputedEmptyEl, filterEmptyEl];
+    var empties = [emptyEl, historyEmptyEl, confirmedEmptyEl, disputedEmptyEl, filterEmptyEl, reliableEmptyEl];
     for (var k = 0; k < empties.length; k++) {
       if (elementIsShown(empties[k])) {
         empties[k].setAttribute('tabindex', '-1');
@@ -676,6 +682,9 @@
     var store = Pinalert.state;
     var placeName = store.place ? store.place.name : '';
     var key = store.show + '|' + placeName + '|' + store.category;
+    if (store.reliable) {
+      key += '|reliable';
+    }
     if (key === lastAnnouncedKey) {
       return;
     }
@@ -690,6 +699,9 @@
       text += ', ' + SHOW_STATUS_WORDS[store.show];
     }
     text += '.';
+    if (store.reliable) {
+      text += RELIABLE_STATUS_WORDS;
+    }
     if (placeName !== '') {
       text += ' Near ' + placeName + '.';
     }
@@ -906,6 +918,8 @@
       var kind = 'general';
       if (Pinalert.state.category !== '') {
         kind = 'filter';
+      } else if (Pinalert.state.reliable) {
+        kind = 'reliable';
       } else if (Pinalert.state.show === 'disputed') {
         kind = 'disputed';
       } else if (Pinalert.state.show === 'confirmed') {

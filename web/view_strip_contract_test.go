@@ -79,8 +79,8 @@ func TestViewStripMarkup(t *testing.T) {
 		`type="button"`, `aria-haspopup="menu"`, `aria-expanded="false"`, `aria-controls="show-menu"`, ">Show: All<")
 
 	// The menu: three radio items in the order All, Confirmed, Disputed, the
-	// first checked, with no line of explanation under any of them (D-05) and
-	// no Only Reliable reporters tick until Phase 3.2.
+	// first checked, with no line of explanation under any of them (D-05). The
+	// Only Reliable reporters tick under them is Phase 3.2's, see below.
 	menu := vsBlock(t, pane, `id="show-menu"`)
 	p13MustContain(t, "#show-menu", menu, `role="menu"`, " hidden")
 	items := regexp.MustCompile(`<button type="button" class="show-menu__item" role="menuitemradio" aria-checked="(true|false)" data-show="([a-z]+)">`).FindAllStringSubmatch(menu, -1)
@@ -94,7 +94,11 @@ func TestViewStripMarkup(t *testing.T) {
 		}
 	}
 	p13Ordered(t, menu, "#show-menu", ">All<", ">Confirmed<", ">Disputed<")
-	p13MustNotContain(t, "#show-menu", menu, `type="checkbox"`, "Only Reliable reporters", "<p", "<small")
+	// Amended 2026-10-17 by Phase 3.2 plan 14 (D-26, 03.4 D-13): the Only Reliable
+	// reporters tick is drawn now, as a fourth role="menuitemcheckbox" item under a
+	// hairline (pinned in TestShowMenuRadioSemantics and TestReliableTickMarkup).
+	// The ban on a native checkbox input and on a line of explanation stays.
+	p13MustNotContain(t, "#show-menu", menu, `type="checkbox"`, "<p", "<small")
 
 	index := p13ReadTemplate(t, "index.html.tmpl")
 	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10):
@@ -125,6 +129,12 @@ func TestViewStripMarkup(t *testing.T) {
 // never sent, the only words sent are all and disputed, and feed.js and
 // show-menu.js never touch the history or navigate (the one navigation is the
 // replace of a finished report's link, pinned in TestFocusLeavesNearby...).
+//
+// Note added 2026-10-17 by Phase 3.2 plan 14 (D-26, orchestrator decision 1):
+// the Only Reliable reporters tick keeps its own word reliable=1 in the address,
+// written by reliable.js, which this test does not scan. The Show choice is
+// still written nowhere, and feed.js and show-menu.js still write nothing; no
+// assertion below changed.
 func TestViewStripWritesNoAddress(t *testing.T) {
 	feed := p19Code(t, "static/js/feed.js")
 	menu := p19Code(t, "static/js/show-menu.js")

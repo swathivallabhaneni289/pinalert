@@ -32,6 +32,7 @@ import vm from 'node:vm';
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const appSource = fs.readFileSync(path.join(here, 'static', 'js', 'app.js'), 'utf8');
 const menuSource = fs.readFileSync(path.join(here, 'static', 'js', 'show-menu.js'), 'utf8');
+const reliableSource = fs.readFileSync(path.join(here, 'static', 'js', 'reliable.js'), 'utf8');
 
 class FakeEl {
   constructor(doc, tag, id) {
@@ -63,8 +64,13 @@ class FakeEl {
   addEventListener(type, fn) { (this.handlers[type] = this.handlers[type] || []).push(fn); }
   removeEventListener(type, fn) { this.handlers[type] = (this.handlers[type] || []).filter((h) => h !== fn); }
   querySelector() { return null; }
+  // Amended 2026-10-17 by Phase 3.2 plan 14 (D-26): the menu query is now the
+  // three radios and the Only Reliable reporters checkbox in one selector, and
+  // the fake answers them in document order, like a browser.
   querySelectorAll(selector) {
-    return selector === '[role="menuitemradio"]' ? this.children.filter((c) => c.getAttribute('role') === 'menuitemradio') : [];
+    return selector === '[role="menuitemradio"], [role="menuitemcheckbox"]'
+      ? this.children.filter((c) => ['menuitemradio', 'menuitemcheckbox'].includes(c.getAttribute('role')))
+      : [];
   }
   focus() { this.doc.activeElement = this; }
   // fire runs the handlers of one event type on this element, then bubbles it
@@ -122,16 +128,29 @@ function load({ search = '' } = {}) {
     menu.appendChild(item);
     items[show] = item;
   });
+  // The hairline and the Only Reliable reporters checkbox item (Phase 3.2 plan
+  // 14). The separator is not an item, so the arrow keys skip it.
+  const sep = new FakeEl(doc, 'div');
+  sep.setAttribute('role', 'separator');
+  menu.appendChild(sep);
+  const tick = new FakeEl(doc, 'button');
+  tick.setAttribute('role', 'menuitemcheckbox');
+  tick.setAttribute('aria-checked', 'false');
+  tick.setAttribute('data-reliable', '');
+  menu.appendChild(tick);
+  items.reliable = tick;
   doc.byId = { 'show-button': button, 'show-button-label': label, 'show-menu': menu };
 
   const fetches = [];
+  const replaced = [];
   const window = {
     setTimeout() { return 1; },
     clearTimeout() {},
     setInterval() { return 1; },
     clearInterval() {},
     addEventListener() {},
-    location: { search }
+    location: { search, pathname: '/', hash: '' },
+    history: { state: null, replaceState(state, title, target) { replaced.push(target); }, pushState() { throw new Error('pushState must not be used'); } }
   };
   const sandbox = {
     window,
@@ -145,8 +164,11 @@ function load({ search = '' } = {}) {
   vm.createContext(sandbox);
   vm.runInContext(appSource, sandbox);
   sandbox.Pinalert = window.Pinalert;
+  // reliable.js loads between app.js and show-menu.js, as in the page, so the
+  // tick item has its real owner to call.
+  vm.runInContext(reliableSource, sandbox);
   vm.runInContext(menuSource, sandbox);
-  return { Pinalert: window.Pinalert, Menu: window.PinalertShowMenu, doc, button, label, menu, items, fetches };
+  return { Pinalert: window.Pinalert, Menu: window.PinalertShowMenu, doc, button, label, menu, items, fetches, replaced };
 }
 
 // plain copies a value made in the sandbox into this realm, so deepEqual does
@@ -179,10 +201,103 @@ test('ArrowDown and ArrowUp move between the items and wrap', () => {
   assert.equal(m.doc.activeElement, m.items.confirmed);
   m.items.confirmed.fire('keydown', { key: 'ArrowDown' });
   assert.equal(m.doc.activeElement, m.items.disputed);
+  // Amended 2026-10-17 by Phase 3.2 plan 14 (D-26): the Only Reliable reporters
+  // tick is the fourth item, so the wrap is at the tick, not at Disputed.
   m.items.disputed.fire('keydown', { key: 'ArrowDown' });
+  assert.equal(m.doc.activeElement, m.items.reliable, 'ArrowDown reaches the tick as the fourth item');
+  m.items.reliable.fire('keydown', { key: 'ArrowDown' });
   assert.equal(m.doc.activeElement, m.items.all, 'ArrowDown wraps to the first item');
   m.items.all.fire('keydown', { key: 'ArrowUp' });
-  assert.equal(m.doc.activeElement, m.items.disputed, 'ArrowUp wraps to the last item');
+  assert.equal(m.doc.activeElement, m.items.reliable, 'ArrowUp wraps to the last item');
+});
+
+test('Home reaches the first item and End reaches the Only Reliable reporters tick', () => {
+  const m = load();
+  m.button.fire('click');
+  m.items.all.fire('keydown', { key: 'End' });
+  assert.equal(m.doc.activeElement, m.items.reliable);
+  m.items.reliable.fire('keydown', { key: 'Home' });
+  assert.equal(m.doc.activeElement, m.items.all);
+});
+
+test('the separator is not an item: the arrow keys step over it', () => {
+  const m = load();
+  m.button.fire('click');
+  m.items.disputed.focus();
+  m.items.disputed.fire('keydown', { key: 'ArrowDown' });
+  assert.equal(m.doc.activeElement.getAttribute('role'), 'menuitemcheckbox');
+});
+
+test('Enter on the tick toggles it, closes the menu and puts focus back on the Show button', () => {
+  const m = load();
+  m.button.fire('click');
+  m.items.reliable.focus();
+  const evt = m.items.reliable.fire('keydown', { key: 'Enter' });
+  assert.equal(evt.defaultPrevented, true, 'the browser click is stopped so the toggle happens once');
+  assert.equal(m.Pinalert.state.reliable, true);
+  assert.equal(m.items.reliable.getAttribute('aria-checked'), 'true');
+  assert.equal(m.menu.hidden, true);
+  assert.equal(m.button.getAttribute('aria-expanded'), 'false');
+  assert.equal(m.doc.activeElement, m.button);
+  assert.deepEqual(plain(m.replaced), ['/?reliable=1']);
+  assert.equal(m.fetches.length, 0, 'the tick sends no request');
+  assert.equal(m.label.textContent, 'Show: All', 'the button words do not change');
+  // A second Enter turns it off again.
+  m.button.fire('click');
+  m.items.reliable.fire('keydown', { key: 'Enter' });
+  assert.equal(m.Pinalert.state.reliable, false);
+  assert.equal(m.items.reliable.getAttribute('aria-checked'), 'false');
+  assert.deepEqual(plain(m.replaced), ['/?reliable=1', '/']);
+});
+
+test('a click on the tick toggles it the same way (Space and touch)', () => {
+  const m = load();
+  m.button.fire('click');
+  const inner = new FakeEl(m.doc, 'span');
+  m.items.reliable.appendChild(inner);
+  inner.fire('click');
+  assert.equal(m.Pinalert.state.reliable, true);
+  assert.equal(m.menu.hidden, true);
+  assert.equal(m.doc.activeElement, m.button);
+});
+
+test('the tick leaves the radio choice alone: Show Confirmed stays chosen and checked', () => {
+  const m = load();
+  m.button.fire('click');
+  m.items.confirmed.fire('click');
+  m.button.fire('click');
+  m.items.reliable.fire('click');
+  assert.equal(m.Pinalert.state.show, 'confirmed');
+  assert.equal(m.items.confirmed.getAttribute('aria-checked'), 'true');
+  assert.equal(m.items.all.getAttribute('aria-checked'), 'false');
+  assert.equal(m.items.reliable.getAttribute('aria-checked'), 'true');
+});
+
+test('opening the menu lands on the chosen radio, never on the tick, and shows the tick in step with the store', () => {
+  const m = load({ search: '?reliable=1' });
+  assert.equal(m.items.reliable.getAttribute('aria-checked'), 'true', 'a page opened on reliable=1 draws the tick on');
+  m.button.fire('click');
+  assert.equal(m.doc.activeElement, m.items.all);
+  m.button.fire('click');
+  // Turned off elsewhere (the Show everyone buttons), the item follows on open.
+  m.Pinalert.setReliable(false);
+  m.button.fire('click');
+  assert.equal(m.items.reliable.getAttribute('aria-checked'), 'false');
+});
+
+test('Confirmed plus the tick draws only confirmed reports the server keeps', () => {
+  const m = load();
+  m.Pinalert.state.reports = [
+    report(40, 'active', { confirmed_by_people: true, kept_by_reliable_filter: true }),
+    report(41, 'active', { confirmed_by_people: true, kept_by_reliable_filter: false }),
+    report(42, 'active', { confirmed_by_people: false, kept_by_reliable_filter: true }),
+    report(43, 'disputed', { confirmed_by_people: true, kept_by_reliable_filter: true })
+  ];
+  m.button.fire('click');
+  m.items.confirmed.fire('click');
+  m.button.fire('click');
+  m.items.reliable.fire('click');
+  assert.deepEqual(plain(m.Pinalert.visibleReports().map((r) => r.id)), [40]);
 });
 
 test('Enter on Confirmed chooses it, closes the menu, returns focus and calls setShow', () => {

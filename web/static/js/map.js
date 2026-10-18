@@ -1571,7 +1571,8 @@ window.PinalertMap = (function () {
   // category. The focus object is the newest answer's (CR-01), so the pin and
   // its popup always show the server's current state, and the store drops it
   // when the link ends. The Show rule keeps the pin off a set the report does
-  // not belong to (D-13).
+  // not belong to (D-13), and the Only Reliable reporters tick keeps it off
+  // when the server's word says the tick leaves the report out (3.2 D-26).
   function focusPinReport(state) {
     var focus = state.focus;
     if (!focus || focus.status !== 'ok' || !focus.report) {
@@ -1588,6 +1589,9 @@ window.PinalertMap = (function () {
       }
     }
     if (!belongsToShow(report, state.show)) {
+      return null;
+    }
+    if (!Pinalert.reportKeptByReliable(report, state.reliable)) {
       return null;
     }
     if (state.category !== '' && report.category !== state.category) {

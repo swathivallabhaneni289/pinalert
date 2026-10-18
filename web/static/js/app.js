@@ -132,6 +132,11 @@ window.Pinalert = (function () {
     // all answer, disputed reads the disputed answer. Confirmed is a filter
     // over the all answer, see visibleReports.
     show: 'all',
+    // The Only Reliable reporters tick of the Show menu (Phase 3.2, NOTIF-04,
+    // D-26). Not remembered: a fresh open starts off, and reliable.js reads
+    // the page address once at boot. It is a filter over rows already in the
+    // store, so turning it on or off sends no request.
+    reliable: false,
     // '' (All) or one category slug. Nothing is hidden until a chip is
     // tapped (03.1 D-17), and a fresh open starts with no filter (D-18).
     category: '',
@@ -311,6 +316,16 @@ window.Pinalert = (function () {
     return state.view !== before;
   }
 
+  // setReliable keeps the Only Reliable reporters tick. Like the setters around
+  // it it only assigns: no notify, no fetch. Only a true boolean turns it on.
+  // It answers true when the value changed, so the caller knows to redraw.
+  function setReliable(on) {
+    var next = on === true;
+    var changed = state.reliable !== next;
+    state.reliable = next;
+    return changed;
+  }
+
   // reportInShow says whether one report belongs to a Show choice. It reads
   // two server authored words and nothing else: view (active or disputed) and
   // confirmed_by_people (the server's own answer to "confirmed by people
@@ -329,13 +344,28 @@ window.Pinalert = (function () {
     return true;
   }
 
+  // reportKeptByReliable says whether the Only Reliable reporters tick lets
+  // one report stay. With the tick off every report stays. With it on a report
+  // stays only when the server's own word kept_by_reliable_filter is true (a
+  // Reliable reporter's report, any critical report, or an old Rescue report).
+  // It reads that one word and nothing else: the browser holds no tag, no
+  // severity and no count of its own (TRUST-02).
+  function reportKeptByReliable(report, on) {
+    if (!on) {
+      return true;
+    }
+    return !!report && report.kept_by_reliable_filter === true;
+  }
+
   // visibleReports is the one set of reports the list rows and the map pins
-  // both draw (03.4 D-13). It is state.reports under the Show choice, as a
-  // new array, so the store's own array is never changed.
+  // both draw (03.4 D-13, 3.2 D-26). It is state.reports under the Show
+  // choice and the Only Reliable reporters tick, as a new array, so the
+  // store's own array is never changed.
   function visibleReports() {
     var out = [];
     for (var i = 0; i < state.reports.length; i++) {
-      if (reportInShow(state.reports[i], state.show)) {
+      if (reportInShow(state.reports[i], state.show) &&
+          reportKeptByReliable(state.reports[i], state.reliable)) {
         out.push(state.reports[i]);
       }
     }
@@ -1251,7 +1281,9 @@ window.Pinalert = (function () {
     feedIsAroundReader: feedIsAroundReader,
     setView: setView,
     setShow: setShow,
+    setReliable: setReliable,
     reportInShow: reportInShow,
+    reportKeptByReliable: reportKeptByReliable,
     visibleReports: visibleReports,
     disputedLast: disputedLast,
     redraw: redraw,
