@@ -463,3 +463,247 @@ func mustReadFile(t *testing.T, name string) string {
 	}
 	return string(b)
 }
+
+// ---- List and MarkRead ----
+
+func updateRow(id int64, reportID *int64, kind UpdateKind, read bool, more int32) sqlcgen.UpdatesForAccountRow {
+	row := sqlcgen.UpdatesForAccountRow{
+		ID: id, ReportID: reportID, Kind: string(kind),
+		CreatedAt: updatesNow.Add(-time.Duration(id) * time.Minute), MoreCount: more,
+	}
+	if read {
+		row.ReadAt = pgTS(updatesNow.Add(-time.Second))
+	}
+	return row
+}
+
+func i64(v int64) *int64 { return &v }
+
+func reportRow(id int64, sev Severity, cat Category, desc string, expires time.Time, mod ModerationState) sqlcgen.ReportsForUpdatesRow {
+	return sqlcgen.ReportsForUpdatesRow{
+		ID: id, Severity: string(sev), Category: string(cat), Description: desc,
+		CreatedAt: updatesNow.Add(-3 * time.Hour), ExpiresAt: expires, ModerationState: string(mod),
+	}
+}
+
+func TestUpdatesForAccount(t *testing.T) {
+	exp := updatesNow.Add(5 * time.Hour)
+	f := &fakeUpdatesQuerier{
+		updates: []sqlcgen.UpdatesForAccountRow{
+			updateRow(30, i64(1), UpdateReachedLive, false, 0),
+			updateRow(29, i64(2), UpdateReliableNearby, true, 0), // critical, nobody confirmed
+			updateRow(28, i64(3), UpdateReliableNearby, true, 0), // low, confirmed by two cells
+			updateRow(27, i64(4), UpdateReliableNearby, true, 0), // low, unconfirmed
+			updateRow(26, nil, UpdateMore, false, 4),
+		},
+		unread: 99, total: 120,
+		reports: []sqlcgen.ReportsForUpdatesRow{
+			reportRow(1, SeverityLow, CategoryFlood, "Water over the road", exp, ModerationClear),
+			reportRow(2, SeverityCritical, CategoryFire, "Smoke near the market", exp, ModerationClear),
+			reportRow(3, SeverityLow, CategoryRoadBlocked, "Bridge closed", exp, ModerationClear),
+			reportRow(4, SeverityLow, CategoryPowerOutage, "No power", exp, ModerationClear),
+		},
+		votes: []sqlcgen.CurrentVotesForReportsRow{
+			confirmVote(1, 20, "c1", updatesNow.Add(-time.Hour)),
+			confirmVote(1, 21, "c2", updatesNow.Add(-time.Hour)),
+			confirmVote(1, 22, "c3", updatesNow.Add(-time.Hour)),
+			confirmVote(3, 20, "c1", updatesNow.Add(-time.Hour)),
+			confirmVote(3, 21, "c2", updatesNow.Add(-time.Hour)),
+		},
+		reporters: []sqlcgen.ReporterAccountsForReportsRow{{ReportID: 1}, {ReportID: 2}, {ReportID: 3}, {ReportID: 4}},
+	}
+	page, err := newTestUpdatesService(f).List(context.Background(), 7, 10)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if page.Unread != 99 || page.Total != 120 || len(page.Items) != 5 {
+		t.Fatalf("page = unread %d total %d items %d", page.Unread, page.Total, len(page.Items))
+	}
+
+	list := f.named("UpdatesForAccount")[0].Params.(sqlcgen.UpdatesForAccountParams)
+	if list.RowLimit != 10 || !list.Since.Equal(updatesNow.Add(-UpdatesRetention)) || list.AccountID != 7 {
+		t.Errorf("list params = %+v", list)
+	}
+	un := f.named("UnreadUpdateCount")[0].Params.(sqlcgen.UnreadUpdateCountParams)
+	if un.Cap != UnreadCountCap || !un.Since.Equal(updatesNow.Add(-UpdatesRetention)) {
+		t.Errorf("unread params = %+v", un)
+	}
+	for _, n := range []string{"ReportsForUpdates", "CurrentVotesForReports", "ReporterAccountsForReports"} {
+		if got := f.named(n); len(got) != 1 {
+			t.Errorf("%s ran %d times, want once", n, len(got))
+		}
+	}
+
+	it := page.Items[0]
+	if it.ID != 30 || it.Kind != UpdateReachedLive || !it.Available || it.ReportID == nil || *it.ReportID != 1 || !it.Unread {
+		t.Errorf("reached live item = %+v", it)
+	}
+	if it.Event != "Now confirmed" || it.Trust != "Confirmed by 3 people at different spots." {
+		t.Errorf("reached live words = %q / %q", it.Event, it.Trust)
+	}
+	if it.Category != CategoryFlood || it.Severity != SeverityLow || it.ReportLine != "Water over the road" {
+		t.Errorf("reached live facts = %q %q %q", it.Category, it.Severity, it.ReportLine)
+	}
+
+	crit := page.Items[1]
+	if crit.Event != "Reported nearby by a Reliable reporter." || crit.Trust != "Not confirmed yet." || crit.Unread {
+		t.Errorf("critical reliable row = %+v", crit)
+	}
+	confirmed := page.Items[2]
+	if confirmed.Trust != "Confirmed by 2 people at different spots." {
+		t.Errorf("low reliable row after two confirms trust = %q", confirmed.Trust)
+	}
+	unconfirmed := page.Items[3]
+	if unconfirmed.Trust != "Not confirmed yet." {
+		t.Errorf("low reliable row before confirms trust = %q", unconfirmed.Trust)
+	}
+
+	more := page.Items[4]
+	if more.Kind != UpdateMore || more.Event != "And 4 more changes" || more.MoreCount != 4 || more.ReportID != nil {
+		t.Errorf("more item = %+v", more)
+	}
+}
+
+func TestReliableRowReadsLiveWordsAndAfterRemoval(t *testing.T) {
+	// The words are never stored: the same low report row read before and after
+	// the report is removed gives different words (owner amendment 2026-10-18).
+	exp := updatesNow.Add(5 * time.Hour)
+	base := func(mod ModerationState) *fakeUpdatesQuerier {
+		return &fakeUpdatesQuerier{
+			updates:   []sqlcgen.UpdatesForAccountRow{updateRow(1, i64(4), UpdateReliableNearby, false, 0)},
+			reports:   []sqlcgen.ReportsForUpdatesRow{reportRow(4, SeverityLow, CategoryFlood, "Water rising", exp, mod)},
+			reporters: []sqlcgen.ReporterAccountsForReportsRow{{ReportID: 4}},
+		}
+	}
+	page, err := newTestUpdatesService(base(ModerationClear)).List(context.Background(), 7, 10)
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("List: %v %v", page, err)
+	}
+	if page.Items[0].Trust != "Not confirmed yet." {
+		t.Errorf("before removal trust = %q", page.Items[0].Trust)
+	}
+	page, err = newTestUpdatesService(base(ModerationRemoved)).List(context.Background(), 7, 10)
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("List: %v %v", page, err)
+	}
+	if page.Items[0].Event != UnavailableLine || page.Items[0].Available {
+		t.Errorf("after removal = %+v", page.Items[0])
+	}
+}
+
+func TestListUnavailableRows(t *testing.T) {
+	exp := updatesNow.Add(5 * time.Hour)
+	f := &fakeUpdatesQuerier{
+		updates: []sqlcgen.UpdatesForAccountRow{
+			updateRow(5, i64(1), UpdateReachedLive, false, 0), // removed
+			updateRow(4, i64(2), UpdateReachedLive, false, 0), // pending, not serious
+			updateRow(3, i64(3), UpdateReachedLive, false, 0), // missing from ReportsForUpdates
+			updateRow(2, i64(4), UpdateReachedLive, false, 0), // pending but serious: still shown
+		},
+		reports: []sqlcgen.ReportsForUpdatesRow{
+			reportRow(1, SeverityCritical, CategoryFlood, "secret removed text", exp, ModerationRemoved),
+			reportRow(2, SeverityLow, CategoryFlood, "secret held text", exp, ModerationPending),
+			reportRow(4, SeverityCritical, CategoryFlood, "Serious and pending", exp, ModerationPending),
+		},
+		reporters: []sqlcgen.ReporterAccountsForReportsRow{{ReportID: 1}, {ReportID: 2}, {ReportID: 4}},
+	}
+	page, err := newTestUpdatesService(f).List(context.Background(), 7, 10)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for i := 0; i < 3; i++ {
+		it := page.Items[i]
+		if it.Available || it.ReportID != nil || it.Event != "This report is no longer available" {
+			t.Errorf("row %d not unavailable: %+v", i, it)
+		}
+		if it.Category != "" || it.Severity != "" || it.Trust != "" || it.ReportLine != "" {
+			t.Errorf("row %d leaks detail: %+v", i, it)
+		}
+	}
+	if !page.Items[3].Available || page.Items[3].ReportID == nil {
+		t.Errorf("serious pending report should still be available: %+v", page.Items[3])
+	}
+}
+
+func TestListReportLineRule(t *testing.T) {
+	exp := updatesNow.Add(5 * time.Hour)
+	past := updatesNow.Add(-time.Hour)
+	f := &fakeUpdatesQuerier{
+		updates: []sqlcgen.UpdatesForAccountRow{
+			updateRow(5, i64(1), UpdateReachedLive, false, 0), // active flood
+			updateRow(4, i64(2), UpdateReachedLive, false, 0), // active rescue
+			updateRow(3, i64(3), UpdateResolved, false, 0),    // expired rescue
+			updateRow(2, i64(4), UpdateResolved, false, 0),    // multi line description
+		},
+		reports: []sqlcgen.ReportsForUpdatesRow{
+			reportRow(1, SeverityLow, CategoryFlood, "Water over the road", exp, ModerationClear),
+			reportRow(2, SeverityCritical, CategoryRescueNeeded, "Two people on a roof", exp, ModerationClear),
+			reportRow(3, SeverityCritical, CategoryRescueNeeded, "Family at 12 Lake Road", past, ModerationClear),
+			reportRow(4, SeverityLow, CategoryFlood, "First line\nSecond line", exp, ModerationClear),
+		},
+		reporters: []sqlcgen.ReporterAccountsForReportsRow{{ReportID: 1}, {ReportID: 2}, {ReportID: 3}, {ReportID: 4}},
+	}
+	page, err := newTestUpdatesService(f).List(context.Background(), 7, 10)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	want := []string{"Water over the road", "Two people on a roof", "", "First line"}
+	for i, w := range want {
+		if page.Items[i].ReportLine != w {
+			t.Errorf("row %d ReportLine = %q, want %q", i, page.Items[i].ReportLine, w)
+		}
+	}
+	if !page.Items[2].Available {
+		t.Error("an expired report is still a real report, only its text is blurred")
+	}
+}
+
+func TestListBatchesReadsAndSkipsThemForOnlyMoreRows(t *testing.T) {
+	f := &fakeUpdatesQuerier{
+		updates: []sqlcgen.UpdatesForAccountRow{updateRow(1, nil, UpdateMore, false, 1)},
+	}
+	page, err := newTestUpdatesService(f).List(context.Background(), 7, 0)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Event != "And 1 more change" {
+		t.Errorf("items = %+v", page.Items)
+	}
+	for _, n := range []string{"ReportsForUpdates", "CurrentVotesForReports", "ReporterAccountsForReports"} {
+		if got := f.named(n); len(got) != 0 {
+			t.Errorf("%s ran for a list with only a rolled up row", n)
+		}
+	}
+	list := f.named("UpdatesForAccount")[0].Params.(sqlcgen.UpdatesForAccountParams)
+	if list.RowLimit != BellListSize {
+		t.Errorf("a zero limit should default to the bell size, got %d", list.RowLimit)
+	}
+}
+
+func TestMarkReadValidates(t *testing.T) {
+	f := &fakeUpdatesQuerier{markedRows: 3}
+	s := newTestUpdatesService(f)
+
+	for _, bad := range []int64{0, -5} {
+		_, err := s.MarkRead(context.Background(), 7, bad)
+		var ve ValidationError
+		if !errors.As(err, &ve) || ve.Field != "up_to" || ve.Message != UpToMessage {
+			t.Errorf("MarkRead(%d) error = %v, want a ValidationError on up_to", bad, err)
+		}
+	}
+	if len(f.calls) != 0 {
+		t.Fatalf("an invalid up_to reached the store: %v", f.names())
+	}
+
+	n, err := s.MarkRead(context.Background(), 7, 42)
+	if err != nil || n != 3 {
+		t.Fatalf("MarkRead = %d, %v", n, err)
+	}
+	p := f.named("MarkUpdatesRead")[0].Params.(sqlcgen.MarkUpdatesReadParams)
+	if p.AccountID != 7 || p.UpTo != 42 || !p.Now.Equal(updatesNow) {
+		t.Errorf("mark params = %+v", p)
+	}
+	if UpToMessage != "Send the id of the newest update shown." {
+		t.Errorf("UpToMessage = %q", UpToMessage)
+	}
+}
