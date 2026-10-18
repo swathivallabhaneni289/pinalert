@@ -727,6 +727,15 @@ window.PinalertMap = (function () {
     // owned by votes.js.
     actions.appendChild(block.note);
     actions.appendChild(block.error);
+    // The Mute control (Phase 3.2, D-11) comes first, then the Flag control, so
+    // the two sit on one wrapping line with Mute before Flag. It is hidden for
+    // a reader who neither follows the report nor muted it. A failed mute.js
+    // load leaves the card without it.
+    var muteControl = window.PinalertMute ? PinalertMute.createMuteControl(report) : null;
+    if (muteControl) {
+      actions.appendChild(muteControl.el);
+      actions.appendChild(muteControl.error);
+    }
     // The Flag control is the last element of the actions block, outside the
     // vote controls. Phase 3.1 moved it off the list row into the opened report.
     // A failed flag.js load leaves the card without it rather than stopping
@@ -758,6 +767,7 @@ window.PinalertMap = (function () {
       trust: trust,
       fade: fade,
       votes: block,
+      mute: muteControl,
       flag: flagControl,
       approximate: false,
       observer: null,
@@ -829,6 +839,9 @@ window.PinalertMap = (function () {
 
     PinalertTrust.updateTrustCard(card.trust, report.trust);
     PinalertVotes.updateVoteBlock(card.votes, report);
+    if (card.mute && window.PinalertMute) {
+      PinalertMute.updateMuteControl(card.mute, report);
+    }
     if (card.flag && window.PinalertFlag) {
       PinalertFlag.updateFlagControl(card.flag, report);
     }

@@ -119,3 +119,85 @@ func TestMuteControlShape(t *testing.T) {
 		t.Errorf(".mute-control: the largest height declared is %.0fpx, want 44px or more", best)
 	}
 }
+
+// TestMuteMountedBeforeFlag pins where the control joins the opened report
+// (UI-SPEC Surface C): built once after the vote error and before the Flag
+// control, kept as the card's mute part, and refreshed in place after the vote
+// block and before the Flag control.
+func TestMuteMountedBeforeFlag(t *testing.T) {
+	mapjs := p424ReadJS(t, "static/js/map.js")
+	build := jsFunctionBody(t, mapjs, "buildPopupCard(report)")
+	p424Ordered(t, "buildPopupCard", build,
+		"block.error", "PinalertMute.createMuteControl(report)", ".appendChild(muteControl.el)",
+		".appendChild(muteControl.error)", "PinalertFlag.createFlagControl(report)",
+		".appendChild(flagControl.el)", "mute: muteControl", "flag: flagControl", "updatePopupCard(card, report)")
+	if n := strings.Count(mapjs, "PinalertMute.createMuteControl("); n != 1 {
+		t.Errorf("map.js builds the Mute control %d times, want 1", n)
+	}
+
+	upd := jsFunctionBody(t, mapjs, "updatePopupCard(card, report)")
+	voteAt := strings.Index(upd, "PinalertVotes.updateVoteBlock(card.votes, report)")
+	muteAt := strings.Index(upd, "PinalertMute.updateMuteControl(card.mute, report)")
+	flagAt := strings.Index(upd, "PinalertFlag.updateFlagControl(card.flag, report)")
+	if voteAt == -1 || muteAt == -1 || flagAt == -1 || !(voteAt < muteAt && muteAt < flagAt) {
+		t.Errorf("updatePopupCard must refresh Mute after the vote block and before Flag (vote %d, mute %d, flag %d)",
+			voteAt, muteAt, flagAt)
+	}
+	p424Lacks(t, "updatePopupCard", upd, "createMuteControl(")
+
+	// The list rows and the Past cards never build the control: it lives in the
+	// opened report only, as Flag does.
+	for _, name := range []string{"feed.js", "ended-cards.js", "activity.js"} {
+		p424Lacks(t, name, p424ReadJS(t, "static/js/"+name), "PinalertMute")
+	}
+}
+
+// TestMuteScriptLoadOrder pins the one script tag: on Nearby only, after flag.js
+// and before map.js, deferred and versioned like its neighbours.
+func TestMuteScriptLoadOrder(t *testing.T) {
+	const tag = `<script src="/static/js/mute.js?v={{.AssetVersion}}" defer></script>`
+	index := p424ReadTemplate(t, "index.html.tmpl")
+	if n := strings.Count(index, tag); n != 1 {
+		t.Errorf("index.html.tmpl loads mute.js %d times, want 1", n)
+	}
+	if n := strings.Count(index, "static/js/mute.js"); n != 1 {
+		t.Errorf("index.html.tmpl names static/js/mute.js %d times, want 1", n)
+	}
+	p424Ordered(t, "index.html.tmpl", index, "/static/js/flag.js", "/static/js/mute.js", "/static/js/map.js")
+
+	for name, text := range findFullPageTemplates(t) {
+		page := strings.TrimPrefix(name, "templates/")
+		if got := strings.Contains(text, "/static/js/mute.js"); got != (page == "index.html.tmpl") {
+			t.Errorf("%s: loads mute.js = %v, want %v", page, got, page == "index.html.tmpl")
+		}
+	}
+}
+
+// TestVotesNudgeTheBell pins D-04 and UI-SPEC A1: a saved vote asks the bell to
+// refresh once, on the success path only, with no loop and nothing else
+// changed in the vote request.
+func TestVotesNudgeTheBell(t *testing.T) {
+	votes := p424ReadJS(t, "static/js/votes.js")
+	cast := jsFunctionBody(t, votes, "castVote(reportId, action, opts)")
+	if n := strings.Count(cast, "'pinalert:updates-refresh'"); n != 1 {
+		t.Errorf("castVote holds the refresh event name %d times, want 1", n)
+	}
+	if n := strings.Count(votes, "pinalert:updates-refresh"); n != 1 {
+		t.Errorf("votes.js holds the refresh event name %d times, want 1", n)
+	}
+	p424Ordered(t, "castVote", cast,
+		"if (!res.ok) {", "throw err;", "typeof CustomEvent", "'pinalert:updates-refresh'", "return body;")
+	for _, banned := range []string{"while (", "for (", "setInterval", "setTimeout"} {
+		if strings.Contains(cast, banned) {
+			t.Errorf("castVote must not contain %q", banned)
+		}
+	}
+	p424Lacks(t, "votes.js", votes, "PinalertMute")
+}
+
+// TestMuteNotOnLowData pins UI-SPEC Scope: the Low data view has no bell, no
+// mute and no tick.
+func TestMuteNotOnLowData(t *testing.T) {
+	p424Lacks(t, "low.js", p424ReadJS(t, "static/js/low.js"), "PinalertMute", "mute.js")
+	p424Lacks(t, "low.html.tmpl", p424ReadTemplate(t, "low.html.tmpl"), "PinalertMute", "mute.js")
+}
