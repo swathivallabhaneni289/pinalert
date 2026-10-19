@@ -181,8 +181,11 @@ func TestViewStripPageRestore(t *testing.T) {
 		t.Errorf("feed.js removes the report parameter from the address, a report link stays as it was sent")
 	}
 	p13MustContain(t, "feed.js", feed, "var REPORT_PARAM = 'report';")
+	// Amended 2026-10-19 by Phase 3.4 plan 39: the address on load goes through
+	// the one public way in, Pinalert.openReport, which before the first answer
+	// does exactly what setFocusId did here (report_view_test.mjs proves it).
 	p13Ordered(t, feed, "feed.js load",
-		"Pinalert.setShow(Pinalert.state.show);", "Pinalert.setFocusId(new URLSearchParams(window.location.search).get(REPORT_PARAM));",
+		"Pinalert.setShow(Pinalert.state.show);", "Pinalert.openReport(new URLSearchParams(window.location.search).get(REPORT_PARAM));",
 		"Pinalert.subscribe(render);")
 }
 

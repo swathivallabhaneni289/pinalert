@@ -337,11 +337,18 @@ window.PinalertMap = (function () {
     container.addEventListener('pointerdown', onMapPointerDown);
     container.addEventListener('keydown', onMapKeydown);
     watchMapBox(container);
+    // The browser's back and forward close and open a report (plan 39).
+    window.addEventListener('popstate', onReportPopState);
+    wireReportGone();
 
     Pinalert.subscribe(render);
     Pinalert.onSelect(function (id, source) {
       applyChosenPin(id);
       if (source === 'list') {
+        // The phone map view to come back to, before the fly moves it (plan 39).
+        if (!activePopup) {
+          rememberNearbyView();
+        }
         flyTo(id);
       }
     });
@@ -896,6 +903,12 @@ window.PinalertMap = (function () {
     if (close && close !== container.firstChild) {
       container.insertBefore(close, container.firstChild);
     }
+    // On a phone the anchor is Back in the report view's top row, beside the
+    // heading Report (plan 39). The laptop popup keeps Leaflet's own name.
+    if (close) {
+      close.setAttribute('aria-label', phoneDetail() ? BACK_LABEL : CLOSE_LABEL);
+    }
+    ensureReportHeading(container, close);
 
     var popup = evt.popup;
     activePopup = popup;
@@ -918,16 +931,30 @@ window.PinalertMap = (function () {
 
     var card = popupCardOf(popup);
     openedWhileHidden = !card || card.offsetParent === null;
+    // The address and, on a phone, the map view to come back to (plan 39).
+    // It runs before the strip centring below moves the map.
+    noteReportOpened(id);
     refreshPanPadding();
     applyPanPadding(popup);
     panPopupIntoView(popup);
     toolsTried = { popup: popup, count: 0 };
     keepCardClearOfTools(popup);
-    if (!openedWhileHidden) {
+    // The laptop card takes focus as before. On a phone focus goes to the
+    // heading of the report view, Report, in the top row (plan 39).
+    if (!openedWhileHidden && !phoneDetail()) {
       card.focus({ preventScroll: true });
     }
     if (phoneDetail()) {
-      centerPinInStrip(popup, container);
+      // A list row flies the map to the pin again right after this open
+      // (feed.js activateRow), which left the pin at the bottom edge of the
+      // strip, under the report. The centring therefore runs one turn later:
+      // its setView stops that fly (plan 39).
+      window.setTimeout(function () {
+        if (activePopup === popup) {
+          centerPinInStrip(popup, container);
+        }
+      }, 0);
+      focusReportHeading(container);
     }
   }
 
@@ -1128,6 +1155,10 @@ window.PinalertMap = (function () {
     if (id !== null && String(id) === openedFocusId && !resizeClosing) {
       endLinkOnClose();
     }
+
+    // The report's address ends, or moves to the next report when one opens in
+    // the same turn (plan 39).
+    noteReportClosed();
   }
 
   // endLinkOnClose ends a report link when its popup closes (CR-01): the
@@ -1548,6 +1579,7 @@ window.PinalertMap = (function () {
     }
 
     openFocusOnce(state);
+    noteFocusAnswer(state);
   }
 
   // belongsToShow says whether a linked report is a member of the Show choice
@@ -1620,6 +1652,9 @@ window.PinalertMap = (function () {
       return;
     }
     openedFocusId = id;
+    if (!activePopup) {
+      rememberNearbyView();
+    }
     Pinalert.select(id, 'map');
     flyTo(id);
   }
@@ -1718,6 +1753,328 @@ window.PinalertMap = (function () {
     return true;
   }
 
+  // ---- The report view and its address (plan 39) ----
+  // On a phone an opened report fills the screen inside Nearby: the top row
+  // reads Back, the title Report, the bell and the gear, a short map strip
+  // keeps every pin with this one grown and centred, and the report scrolls
+  // under it to its last control (phone.css). It is still the report's own
+  // popup in the detail pane, so the card, the trust block, the votes, Mark
+  // resolved, Undo and Flag are the same nodes and behave as before. The laptop
+  // keeps its popup over the map exactly as it was (owner, 2026-10-19).
+  // On both sizes an open report has its own address, ?report=ID: opening one
+  // from Nearby adds one history entry, another pin switches the report in that
+  // entry, and Back, Escape or the browser's back close it. A page that arrived
+  // with the address adds no entry, and closing strips the id. Pinalert.openReport
+  // (app.js) hands its id to openReport here, as does an address on load.
+
+  var REPORT_PARAM = 'report';
+  var HISTORY_KEY = 'pinalertReport';
+  var REPORT_ID_TEXT = /^[1-9][0-9]{0,17}$/;
+  // The phone's Back is Leaflet's own close anchor in the top row, so its name
+  // is Back there. The laptop keeps Leaflet's own name.
+  var BACK_LABEL = 'Back';
+  var CLOSE_LABEL = 'Close popup';
+  var REPORT_TITLE = 'Report';
+  // 'pushed' when this script added the address entry of the open report,
+  // 'url' when the page arrived with it, null when none is open.
+  var historyMode = null;
+  // The timer every close starts. An open in the same turn clears it: Leaflet
+  // closes the open report first when another one opens, which is a switch.
+  var closeSettle = 0;
+  // True while the browser's back or forward closes the open report, so that
+  // close does not move the history again.
+  var closeFromHistory = false;
+  // The id the browser's back or forward asked to open, so its open adds no entry.
+  var historyOpenId = null;
+  // Phone: where the map was before the first report opened, put back on close.
+  var nearbyView = null;
+  // The last focus answer the not available line was shown for, and what had
+  // focus before it showed.
+  var goneFocus = null;
+  var goneOpener = null;
+
+  // currentReportParam is the report id in the address, or null.
+  function currentReportParam() {
+    var value = new URLSearchParams(window.location.search).get(REPORT_PARAM);
+    return value !== null && REPORT_ID_TEXT.test(value) ? value : null;
+  }
+
+  // writeReportAddress puts id in the address (or takes it out for null),
+  // keeping every other parameter. how is 'push' for a new entry; anything else
+  // replaces the current one. An entry this script made carries HISTORY_KEY.
+  function writeReportAddress(id, how) {
+    var history = window.history;
+    if (!history || typeof history.replaceState !== 'function' || typeof history.pushState !== 'function') {
+      return;
+    }
+    var params = new URLSearchParams(window.location.search);
+    if (id === null) {
+      params.delete(REPORT_PARAM);
+    } else {
+      params.set(REPORT_PARAM, id);
+    }
+    var query = params.toString();
+    var address = window.location.pathname + (query ? '?' + query : '') + window.location.hash;
+    var entry = null;
+    if (id !== null && (how === 'push' || historyMode === 'pushed')) {
+      entry = {};
+      entry[HISTORY_KEY] = id;
+    }
+    if (how === 'push') {
+      history.pushState(entry, '', address);
+    } else {
+      history.replaceState(entry, '', address);
+    }
+  }
+
+  // rememberNearbyView keeps where the phone map is before the first report
+  // opens: the place at its top left corner and the zoom. The corner, not the
+  // centre, because the map's height follows the list sheet and every resize
+  // keeps the top left corner where it is (sheet.js, resizeToSheet), so the
+  // corner is what still matches once the sheet is back. A switch keeps the
+  // first answer; the laptop keeps nothing, so its map stays where the report
+  // left it, as before.
+  function rememberNearbyView() {
+    if (nearbyView !== null || !map || !phoneDetail()) {
+      return;
+    }
+    nearbyView = { corner: map.containerPointToLatLng([0, 0]), zoom: map.getZoom() };
+  }
+
+  // restoreNearbyView puts the phone map back where it was, with no animation:
+  // the remembered place in the top left corner again at the remembered zoom.
+  function restoreNearbyView() {
+    var view = nearbyView;
+    nearbyView = null;
+    if (view === null || !map) {
+      return;
+    }
+    var corner = map.project(view.corner, view.zoom);
+    var size = map.getSize();
+    map.setView(map.unproject([corner.x + size.x / 2, corner.y + size.y / 2], view.zoom), view.zoom, { animate: false });
+  }
+
+  // noteReportOpened runs on every open (onPopupOpen). An open right after a
+  // close in the same turn is a switch and keeps the one entry. Otherwise the
+  // first open from Nearby adds the entry, unless the address already names
+  // this report (a page loaded from it, or the browser's back or forward).
+  function noteReportOpened(id) {
+    var key = String(id);
+    var fromHistory = historyOpenId === key;
+    historyOpenId = null;
+    hideReportGone(false);
+    if (closeSettle) {
+      window.clearTimeout(closeSettle);
+      closeSettle = 0;
+      if (!fromHistory && currentReportParam() !== key) {
+        writeReportAddress(key, 'replace');
+      }
+      return;
+    }
+    rememberNearbyView();
+    if (fromHistory) {
+      var state = window.history ? window.history.state : null;
+      historyMode = state && state[HISTORY_KEY] ? 'pushed' : 'url';
+      return;
+    }
+    // The address already names this report: a page loaded from it. An entry
+    // this script pushed before a reload keeps its mark, so closing still goes
+    // back to Nearby instead of leaving a second Nearby entry behind it.
+    if (currentReportParam() === key) {
+      var current = window.history ? window.history.state : null;
+      historyMode = current && current[HISTORY_KEY] === key ? 'pushed' : 'url';
+      return;
+    }
+    historyMode = 'pushed';
+    writeReportAddress(key, 'push');
+  }
+
+  // noteReportClosed runs on every close (onPopupClose). What the close means
+  // for the address and the phone map is settled a turn later, so an open that
+  // follows at once (a switch) can cancel it.
+  function noteReportClosed() {
+    var fromHistory = closeFromHistory;
+    closeFromHistory = false;
+    if (closeSettle) {
+      window.clearTimeout(closeSettle);
+    }
+    closeSettle = window.setTimeout(function () {
+      closeSettle = 0;
+      settleReportClosed(fromHistory);
+    }, 0);
+  }
+
+  // settleReportClosed ends the address of a closed report: back one entry
+  // when this script added it (the browser lands on Nearby), else the id is
+  // taken out of the address. A close the browser made moves nothing. The
+  // phone map goes back to where it was before the report opened.
+  function settleReportClosed(fromHistory) {
+    var mode = historyMode;
+    historyMode = null;
+    if (!fromHistory) {
+      var state = window.history ? window.history.state : null;
+      if (mode === 'pushed' && state && state[HISTORY_KEY]) {
+        window.history.back();
+      } else if (currentReportParam() !== null) {
+        writeReportAddress(null, 'replace');
+      }
+    }
+    restoreNearbyView();
+  }
+
+  // onReportPopState follows the browser's back and forward. An address with
+  // no report closes the open one (or the not available line); an address with
+  // a report opens it.
+  function onReportPopState() {
+    var key = currentReportParam();
+    hideReportGone(false);
+    if (key === null) {
+      historyMode = null;
+      if (activePopup && map) {
+        closeFromHistory = true;
+        map.closePopup();
+        closeFromHistory = false;
+      }
+      return;
+    }
+    if (activePopup && reportIdForPopup(activePopup) === key) {
+      return;
+    }
+    historyOpenId = key;
+    Pinalert.openReport(key);
+  }
+
+  // openReport opens one report that has a pin, by id, and says whether it
+  // did. It is the map half of the one public way in, Pinalert.openReport
+  // (app.js), which an address on load uses too. The report opens as a tap on
+  // its pin opens it: the report first, then the selection, so the phone sheet
+  // is not raised under it. For any other id it answers false and app.js asks
+  // the server for it as a report link, the same path an address on load
+  // takes: focusPinReport decides whether it gets a pin, openFocusOnce opens
+  // it, and noteFocusAnswer shows the not available line on a phone when the
+  // server cannot show it. map.js itself never writes the link or reads the list.
+  function openReport(id) {
+    var key = id === null || id === undefined ? '' : String(id);
+    if (!REPORT_ID_TEXT.test(key) || !map || !markers[key]) {
+      return false;
+    }
+    if (activePopup && reportIdForPopup(activePopup) === key) {
+      return true;
+    }
+    if (!activePopup) {
+      rememberNearbyView();
+    }
+    flyTo(key);
+    Pinalert.select(key, 'map');
+    return true;
+  }
+
+  // noteFocusAnswer shows the not available line on a phone once per answer
+  // that says a linked report cannot be shown. The laptop keeps the toast
+  // feed.js shows, as before.
+  function noteFocusAnswer(state) {
+    var focus = state ? state.focus : null;
+    if (!focus || focus.status === 'ok' || focus === goneFocus) {
+      return;
+    }
+    goneFocus = focus;
+    if (phoneDetail()) {
+      showReportGone();
+    }
+  }
+
+  // showReportGone opens the not available view and moves focus to its heading.
+  function showReportGone() {
+    var panel = document.getElementById('report-gone');
+    if (!panel) {
+      return;
+    }
+    goneOpener = document.activeElement;
+    panel.hidden = false;
+    document.documentElement.setAttribute('data-report-gone', 'true');
+    var title = document.getElementById('report-gone-title');
+    if (title) {
+      title.focus({ preventScroll: true });
+    }
+  }
+
+  // hideReportGone closes the not available view. With returnFocus it hands
+  // focus back to what had it, else to the map, never to the page body.
+  function hideReportGone(returnFocus) {
+    var panel = document.getElementById('report-gone');
+    if (!panel || panel.hidden) {
+      return;
+    }
+    panel.hidden = true;
+    document.documentElement.removeAttribute('data-report-gone');
+    var opener = goneOpener;
+    goneOpener = null;
+    if (!returnFocus) {
+      return;
+    }
+    if (opener && opener !== document.body && opener.isConnected && typeof opener.focus === 'function') {
+      opener.focus({ preventScroll: true });
+      if (document.activeElement === opener) {
+        return;
+      }
+    }
+    if (map) {
+      map.getContainer().focus({ preventScroll: true });
+    }
+  }
+
+  // closeReportGone is Back and Escape on the not available view: it closes
+  // and takes the id out of the address.
+  function closeReportGone() {
+    hideReportGone(true);
+    if (currentReportParam() !== null) {
+      writeReportAddress(null, 'replace');
+    }
+  }
+
+  // wireReportGone connects Back and Escape on the not available view.
+  function wireReportGone() {
+    var panel = document.getElementById('report-gone');
+    var back = document.getElementById('report-gone-back');
+    if (back) {
+      back.addEventListener('click', closeReportGone);
+    }
+    if (panel) {
+      panel.addEventListener('keydown', function (evt) {
+        if (evt.key === 'Escape') {
+          evt.preventDefault();
+          evt.stopPropagation();
+          closeReportGone();
+        }
+      });
+    }
+  }
+
+  // ensureReportHeading gives a popup container its heading, Report, once,
+  // right after the close anchor. phone.css shows it in the top row beside
+  // Back; everywhere else it is not drawn, so the laptop popup is unchanged.
+  function ensureReportHeading(container, close) {
+    var heading = container.querySelector('.report-view__title');
+    if (heading) {
+      return heading;
+    }
+    heading = document.createElement('h2');
+    heading.className = 'report-view__title';
+    heading.setAttribute('tabindex', '-1');
+    Pinalert.setText(heading, REPORT_TITLE);
+    container.insertBefore(heading, close ? close.nextSibling : container.firstChild);
+    return heading;
+  }
+
+  // focusReportHeading moves focus to the heading of the phone report view.
+  function focusReportHeading(container) {
+    var heading = container.querySelector('.report-view__title');
+    if (heading && heading.getClientRects().length > 0) {
+      heading.focus({ preventScroll: true });
+    }
+  }
+  // ---- End of the report view (plan 39) ----
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
@@ -1733,6 +2090,7 @@ window.PinalertMap = (function () {
     resizeToSheet: resizeToSheet,
     focusOpenPopup: focusOpenPopup,
     takeRemovedPopupFocus: takeRemovedPopupFocus,
-    focusMarker: focusMarker
+    focusMarker: focusMarker,
+    openReport: openReport
   };
 }());

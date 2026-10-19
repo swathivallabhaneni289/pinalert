@@ -498,12 +498,14 @@ func TestNewScriptsUsePlainPunctuation(t *testing.T) {
 // arrangement differs). A new size only element without an entry fails.
 var sizeOnlyNamed = map[string]string{
 	// Phone only, hidden at 900px and up (phoneBaseHideHeads and min-width rules).
-	".feed-heading":      "phone only: the phone Nearby heading above the sheet list; the laptop draws its own list head (UI-SPEC 2a, D-06 laptop headings).",
-	".app-bar":           "phone only: the four item bottom bar needs a phone's thumb reach; the laptop has the same places in its top bar (D-10, D-11, UI-SPEC 1b).",
-	".app-topbar__title": "phone only: the title in the phone top bar; the laptop shows the same place name in the nav and the page heading (UI-SPEC 1b).",
-	".app-topbar__back":  "phone only: the back arrow of a sub screen; the laptop uses the nav links (UI-SPEC 1b).",
-	".app-topbar__gear":  "phone only: the Settings gear; the laptop reaches Settings from the person menu (D-11, UI-SPEC 1b).",
-	".sheet__handle-row": "phone only: the phone list sheet and its handle; the laptop shows the list beside the map (D-16, D-17).",
+	".feed-heading":       "phone only: the phone Nearby heading above the sheet list; the laptop draws its own list head (UI-SPEC 2a, D-06 laptop headings).",
+	".app-bar":            "phone only: the four item bottom bar needs a phone's thumb reach; the laptop has the same places in its top bar (D-10, D-11, UI-SPEC 1b).",
+	".app-topbar__title":  "phone only: the title in the phone top bar; the laptop shows the same place name in the nav and the page heading (UI-SPEC 1b).",
+	".app-topbar__back":   "phone only: the back arrow of a sub screen; the laptop uses the nav links (UI-SPEC 1b).",
+	".app-topbar__gear":   "phone only: the Settings gear; the laptop reaches Settings from the person menu (D-11, UI-SPEC 1b).",
+	".sheet__handle-row":  "phone only: the phone list sheet and its handle; the laptop shows the list beside the map (D-16, D-17).",
+	".report-view__title": "phone only: the heading Report in the top row of the phone report view; the laptop keeps its popup over the map unchanged (owner, 2026-10-19: \"the laptop ver looks good i dont want you to disturb that\").",
+	".report-gone":        "phone only: the not available view in place of a report the server cannot show; the laptop keeps its toast unchanged (owner, 2026-10-19, as for the report view).",
 	// Amended 2026-10-19 by Phase 3.2 plan 12 (D-23, UI-SPEC D3): the phone only class moved from the
 	// Account section to its Log out row, because the section now draws on both sizes.
 	".place-row-form--phone": "phone only: the Log out row of Settings; the laptop has Log out in the person menu (D-25, R2 once per size); the Account section draws on both sizes since Phase 3.2 (UI-SPEC D3).",

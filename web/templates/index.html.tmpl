@@ -157,6 +157,15 @@
       </div>
     </section>
 
+    {{/* Plan 39: a phone that opens a report the server cannot show (an old or
+         removed ?report=ID address) gets this view in place of the report, with
+         the same Back. map.js shows it; the laptop keeps its toast. */}}
+    <section class="report-gone" id="report-gone" aria-labelledby="report-gone-title" hidden>
+      <button type="button" class="report-gone__back" id="report-gone-back" aria-label="Back"><span class="app-icon app-icon--arrow-left" aria-hidden="true"></span></button>
+      <h2 class="report-gone__title" id="report-gone-title" tabindex="-1">Report</h2>
+      <p class="report-gone__line">This report is no longer available</p>
+    </section>
+
     <div class="modal-backdrop post-window" id="report-modal" hidden>
       <div class="modal-panel post-window__panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <header class="post-window__head">

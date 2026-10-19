@@ -441,6 +441,30 @@ window.Pinalert = (function () {
     }
   }
 
+  // openReport opens one report on Nearby by its id (Phase 3.4 plan 39): the
+  // one public way in, used by an address with ?report=ID on load, by the
+  // browser's back and forward, and by any later caller. A report with a pin
+  // opens at once (PinalertMap.openReport). Any other id is kept as a report
+  // link and the list is read again, so the server's answer opens it, or says
+  // it cannot be shown; before the first answer the first list request
+  // carries it, as an address on load always did. It returns false for an id
+  // that is not a report id.
+  function openReport(id) {
+    var text = id === null || id === undefined ? '' : String(id);
+    if (!/^[1-9][0-9]{0,17}$/.test(text)) {
+      return false;
+    }
+    if (window.PinalertMap && typeof window.PinalertMap.openReport === 'function' &&
+        window.PinalertMap.openReport(text)) {
+      return true;
+    }
+    setFocusId(text);
+    if (state.hasLoaded) {
+      fetchReports();
+    }
+    return true;
+  }
+
   // markListLoading marks the list pane while the rows in the store belong to
   // another tab, chip or centre than the one just asked for (WR-03). The
   // heading and the note change at once on a tab press, so without the mark
@@ -1291,6 +1315,7 @@ window.Pinalert = (function () {
     setPlace: setPlace,
     clearPlace: clearPlace,
     setFocusId: setFocusId,
+    openReport: openReport,
     dropFocus: dropFocus,
     fetchReports: fetchReports,
     startPolling: startPolling,

@@ -16,12 +16,17 @@
  */
 
 /* Phone only elements. They are built into the markup and shown only below
-   900px, so the layout at 900px and up has nothing new in it. */
+   900px, so the layout at 900px and up has nothing new in it. The heading
+   Report of the report view (map.js adds it to the popup) and the not
+   available view joined them in plan 39; the laptop popup is drawn as it was
+   (owner, 2026-10-19). */
 .app-bar,
 .app-topbar__title,
 .app-topbar__back,
 .app-topbar__gear,
-.sheet__handle-row {
+.sheet__handle-row,
+.report-view__title,
+.report-gone {
   display: none;
 }
 
@@ -563,8 +568,8 @@
   /* The bottom bar: four equal items. 4px of padding at the top and sides and
      4px plus the home indicator inset at the bottom, so the bar is 65px high
      at 390px with the 1px border. It sits under the content in the flow, above
-     the list sheet in the stack order and below the detail sheet (1080), which
-     covers it as built. */
+     the list sheet in the stack order and below the report view (1080), which
+     ends at its top edge so the bar stays shown (plan 39). */
   body > .app-bar {
     display: flex;
     flex: none;
@@ -854,13 +859,18 @@
     min-height: var(--touch-target-min);
   }
 
-  /* ---- The report detail: a full screen sheet under a short map strip ----
-     map.js opens the popup in the detail pane, a child of the map container
-     that sits outside the map pane's transform, so a fixed position popup
-     inside it is laid out against the screen. Nothing in the card's markup,
-     focus handling or Escape handling changes. Every head starts with
-     .leaflet-container .leaflet-detail-pane, so it never equals a trust.css
-     head. The strip is three times the 64px token, 192px. */
+  /* ---- The report detail: a full screen page inside Nearby (plan 39) ----
+     Laid out like the locked sketch 008 phone page: the top row reads Back,
+     the title Report, the bell and the gear; under it a map strip keeps every
+     pin, with this report's pin grown and centred (map.js centerPinInStrip),
+     and tapping another pin there opens that report; the report fills the
+     rest down to the bottom bar and scrolls to its last control. map.js opens
+     the popup in the detail pane, a child of the map container that sits
+     outside the map pane's transform, so a fixed position popup inside it is
+     laid out against the screen. Nothing in the card's markup, focus handling
+     or Escape handling changes. Every head starts with .leaflet-container
+     .leaflet-detail-pane, so it never equals a trust.css head. The strip is
+     two and a half times the 64px token, 160px, under the 60px top row. */
 
   .leaflet-container .leaflet-detail-pane {
     z-index: 1080;
@@ -868,7 +878,7 @@
 
   .leaflet-container .leaflet-detail-pane .leaflet-popup {
     position: fixed;
-    top: calc(var(--space-3xl) * 3);
+    top: calc(var(--app-topbar-height) + var(--space-3xl) * 2.5);
     right: 0;
     margin: 0;
     overflow-y: auto;
@@ -878,11 +888,28 @@
 
   /* Leaflet writes bottom, left and the transform as inline styles on every
      update, zoom and view reset, so these three need the important flag to
-     keep the sheet full width and glued to the bottom. */
+     keep the view full width and ending on the bottom bar, which stays shown
+     as in the sketch. */
   .leaflet-container .leaflet-detail-pane .leaflet-popup {
     left: 0 !important;
-    bottom: 0 !important;
+    bottom: calc(var(--app-bottombar-height) + env(safe-area-inset-bottom)) !important;
     transform: none !important;
+  }
+
+  /* The heading Report sits in the top row beside Back. It takes focus when
+     the view opens, as a heading, so it draws no ring. */
+  .leaflet-container .leaflet-detail-pane .leaflet-popup .report-view__title {
+    display: block;
+    position: fixed;
+    top: var(--space-sm);
+    left: calc(var(--space-xs) + var(--touch-target-min) + var(--space-xs));
+    height: var(--touch-target-min);
+    margin: 0;
+    color: var(--color-text);
+    font-size: var(--font-size-heading);
+    line-height: var(--touch-target-min);
+    font-weight: var(--font-weight-semibold);
+    outline: none;
   }
 
   /* The 200ms fade after a close keeps the old popup attached. It must not
@@ -1050,19 +1077,20 @@
     text-align: center;
   }
 
-  /* ---- The close anchor becomes the round back arrow on the strip ----
-     Leaflet's accessible name Close popup stays on the anchor. The head adds
-     the sheet's own class, so it outranks trust.css's (0,4,1) close rule. */
+  /* ---- The close anchor becomes Back at the left of the top row ----
+     map.js names it Back on a phone (plan 39). It is a plain touch target like
+     the bell and the gear at the other end of the row. The head adds the
+     view's own class, so it outranks trust.css's (0,4,1) close rule. */
 
   .leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden]) {
     position: fixed;
-    top: var(--space-md);
+    top: var(--space-sm);
     right: auto;
-    left: var(--space-md);
-    border-radius: 50%;
-    background: var(--color-bg);
+    left: var(--space-xs);
+    border-radius: 8px;
+    background: transparent;
     color: var(--color-text);
-    box-shadow: var(--shadow-popup);
+    box-shadow: none;
   }
 
   .leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden])::before {
@@ -1091,22 +1119,117 @@
     display: none;
   }
 
-  /* The round back arrow is fixed over the top bar's left end, where the
-     place search field sits. While the sheet is open the field steps aside
-     (hidden, so it also leaves the tab order); it comes back when the sheet
-     closes (03.4-29 finding 2). */
+  /* Back and the heading Report are fixed over the top bar's left end, where
+     the place search field sits. While the view is open the field steps aside
+     (hidden, so it also leaves the tab order); it comes back when the view
+     closes (03.4-29 finding 2). The top row then reads Back, Report, the bell
+     and the gear (plan 39). */
   body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) .app-topbar > .map-search {
+    visibility: hidden;
+  }
+
+  /* The bell's list hangs from the top row over the report, so while the view
+     is open the top chrome stacks above the view (1080) and below the dialogs
+     (1100). Its bar is then see through and lets presses pass, so Back and
+     Report, which the view draws in the same row, still show and still take a
+     tap; the bell, the gear and the list take their own (plan 39). */
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) > .top-chrome,
+  html[data-report-gone] body > .top-chrome {
+    z-index: 1090;
+    pointer-events: none;
+  }
+
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) > .top-chrome > .app-topbar,
+  html[data-report-gone] body > .top-chrome > .app-topbar {
+    background: transparent;
+  }
+
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) > .top-chrome .app-topbar__bell,
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) > .top-chrome .app-topbar__gear,
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) > .top-chrome .bell-list,
+  html[data-report-gone] body > .top-chrome .app-topbar__bell,
+  html[data-report-gone] body > .top-chrome .app-topbar__gear,
+  html[data-report-gone] body > .top-chrome .bell-list {
+    pointer-events: auto;
+  }
+
+  /* ---- The not available view (plan 39) ----
+     A report the server cannot show gets the same page with its own Back and
+     the heading Report in the top row and one short line, over the map and
+     the list, down to the bottom bar. map.js shows it and writes
+     data-report-gone on the root while it is open. */
+  .app-shell > .report-gone:not([hidden]) {
+    display: block;
+    position: fixed;
+    top: var(--app-topbar-height);
+    right: 0;
+    bottom: calc(var(--app-bottombar-height) + env(safe-area-inset-bottom));
+    left: 0;
+    z-index: 1080;
+    padding: var(--space-md);
+    overflow-y: auto;
+    background: var(--color-bg);
+  }
+
+  .app-shell > .report-gone > .report-gone__back {
+    display: flex;
+    position: fixed;
+    top: var(--space-sm);
+    left: var(--space-xs);
+    align-items: center;
+    justify-content: center;
+    width: var(--touch-target-min);
+    height: var(--touch-target-min);
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--color-text);
+    cursor: pointer;
+  }
+
+  .app-shell > .report-gone > .report-gone__back:hover,
+  .app-shell > .report-gone > .report-gone__back:focus-visible {
+    background: var(--color-surface);
+  }
+
+  .app-shell > .report-gone > .report-gone__title {
+    position: fixed;
+    top: var(--space-sm);
+    left: calc(var(--space-xs) + var(--touch-target-min) + var(--space-xs));
+    height: var(--touch-target-min);
+    margin: 0;
+    color: var(--color-text);
+    font-size: var(--font-size-heading);
+    line-height: var(--touch-target-min);
+    font-weight: var(--font-weight-semibold);
+    outline: none;
+  }
+
+  .app-shell > .report-gone > .report-gone__line {
+    margin: 0;
+    color: var(--color-text);
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+  }
+
+  /* Under the not available view the search steps aside, as under a report,
+     and the map and the list leave the tab order. */
+  html[data-report-gone] .app-topbar > .map-search,
+  html[data-report-gone] .app-shell > .pane--map,
+  html[data-report-gone] .app-shell > .pane--list {
     visibility: hidden;
   }
 }
 
-/* A landscape phone has little height, so the strip goes and the sheet starts
-   right under the unofficial bar. The bar token follows the real bar (theme.js
-   measures it), so the sheet never covers the bar at any text size (browser
-   finding F-P4-5: a fixed 64px started the sheet 4px inside a 68px bar). */
+/* A landscape phone has little height, so the strip goes and the report
+   starts right under the top row, which stays (plan 39). The bar token
+   follows the real bar (theme.js measures it), so the view never covers the
+   bar at any text size (browser finding F-P4-5: a fixed 64px started the
+   sheet 4px inside a 68px bar). */
 @media (max-width: 899.98px) and (max-height: 359px) {
   .leaflet-container .leaflet-detail-pane .leaflet-popup {
-    top: var(--disclaimer-bar-height);
+    top: calc(var(--disclaimer-bar-height) + var(--app-topbar-height));
   }
 }
 

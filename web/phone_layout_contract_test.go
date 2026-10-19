@@ -45,9 +45,11 @@ const phoneBlockMedia = "@media (max-width: 899.98px)"
 // sheet handle row joins this list, because the phone list sheet and its handle
 // are not drawn at 900px and up. The Phase 3.1 and Phase 4 hands-on tests are
 // walked on this layout after Phase 3.4 is built.
+// Amended 2026-10-19 by Phase 3.4 plan 39: the heading Report of the phone
+// report view and the not available view are phone only elements too.
 var phoneBaseHideHeads = []string{
 	".feed-heading", ".app-bar", ".app-topbar__title", ".app-topbar__back", ".app-topbar__gear",
-	".sheet__handle-row",
+	".sheet__handle-row", ".report-view__title", ".report-gone",
 }
 
 // phoneRules parses phone.css alone.
@@ -546,11 +548,16 @@ func TestPhoneDetailSheetStylesheet(t *testing.T) {
 		t.Errorf("detail pane z-index is %q, want 1080 (above the bar at 1010, below the modal at 1100)", v)
 	}
 
+	// Amended 2026-10-19 by Phase 3.4 plan 39 (the report view of the locked
+	// sketch 008): the report starts under the 60px top row and a 160px map
+	// strip, was 192px from the top with no top row of its own, and ends on the
+	// bottom bar, which stays shown as in the sketch, where it ran to the
+	// screen bottom over the bar. TestReportViewPhoneStylesheet pins the rest.
 	popup := must(".leaflet-container .leaflet-detail-pane .leaflet-popup")
 	for prop, want := range map[string]string{
-		"position": "fixed", "top": "calc(var(--space-3xl) * 3)", "right": "0",
+		"position": "fixed", "top": "calc(var(--app-topbar-height) + var(--space-3xl) * 2.5)", "right": "0",
 		"overflow-y": "auto", "overscroll-behavior": "contain", "touch-action": "pan-y",
-		"left": "0 !important", "bottom": "0 !important", "transform": "none !important",
+		"left": "0 !important", "bottom": "calc(var(--app-bottombar-height) + env(safe-area-inset-bottom)) !important", "transform": "none !important",
 	} {
 		if got := declared(popup, prop); got != want {
 			t.Errorf("sheet %s is %q, want %q", prop, got, want)
@@ -578,9 +585,11 @@ func TestPhoneDetailSheetStylesheet(t *testing.T) {
 	// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
 	// The rule still reads the token; on a phone the token is 0px (the strip is
 	// hidden there), so the sheet starts at the top of its pane.
+	// Amended 2026-10-19 by Phase 3.4 plan 39: the top row with Back and the
+	// heading stays on a short screen too, so the report starts under it.
 	short := byHead("@media (max-width: 899.98px) and (max-height: 359px)", ".leaflet-container .leaflet-detail-pane .leaflet-popup")
-	if len(short) != 1 || short[0].Decls["top"] != "var(--disclaimer-bar-height)" {
-		t.Errorf("short screen block must start the sheet at var(--disclaimer-bar-height), got %v", short)
+	if len(short) != 1 || short[0].Decls["top"] != "calc(var(--disclaimer-bar-height) + var(--app-topbar-height))" {
+		t.Errorf("short screen block must start the view under the bar and the top row, got %v", short)
 	}
 
 	back := must(".leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden])::before")
