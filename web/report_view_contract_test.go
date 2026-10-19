@@ -55,8 +55,7 @@ func TestReportViewTemplate(t *testing.T) {
 		`<section class="report-gone" id="report-gone" aria-labelledby="report-gone-title" hidden>`,
 		`<button type="button" class="report-gone__back" id="report-gone-back" aria-label="Back">`,
 		`<h2 class="report-gone__title" id="report-gone-title" tabindex="-1">Report</h2>`,
-		`<p class="report-gone__line">This report is no longer available</p>`,
-		`</section>`)
+		`<p class="report-gone__line">This report is no longer available</p>`)
 	shell := strings.Index(page, `<div class="app-shell" id="app-shell"`)
 	gone := strings.Index(page, `id="report-gone"`)
 	bottom := strings.Index(page, `{{template "app_bottombar" .}}`)
@@ -193,8 +192,10 @@ func TestReportViewMapScript(t *testing.T) {
 		"wireReportGone();")
 
 	opener := jsFunctionBody(t, code, "openReport(id)")
-	p13Ordered(t, opener, "openReport", "REPORT_ID_TEXT.test(key)", "markers[key]", "flyTo(key);", "Pinalert.select(key, 'map');",
-		"Pinalert.setFocusId(key);")
+	p13Ordered(t, opener, "openReport", "REPORT_ID_TEXT.test(key)", "markers[key]", "return false;", "flyTo(key);",
+		"Pinalert.select(key, 'map');")
+	pop := jsFunctionBody(t, code, "onReportPopState()")
+	p13MustContain(t, "onReportPopState", pop, "Pinalert.openReport(key);", "closeFromHistory = true;", "map.closePopup();")
 	p13MustContain(t, "map.js", code, "openReport: openReport", "var BACK_LABEL = 'Back';", "var REPORT_TITLE = 'Report';")
 
 	// The laptop paths that must stay as they were.
@@ -208,7 +209,8 @@ func TestReportViewMapScript(t *testing.T) {
 func TestReportViewStoreEntry(t *testing.T) {
 	app := p19Code(t, "static/js/app.js")
 	body := jsFunctionBody(t, app, "openReport(id)")
-	p13MustContain(t, "Pinalert.openReport", body, "window.PinalertMap.openReport(id)", "setFocusId(")
+	p13Ordered(t, body, "Pinalert.openReport", "window.PinalertMap.openReport(text)", "setFocusId(text);",
+		"if (state.hasLoaded) {", "fetchReports();")
 	p13MustContain(t, "app.js", app, "openReport: openReport")
 
 	feed := p19Code(t, "static/js/feed.js")

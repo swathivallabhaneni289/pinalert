@@ -504,6 +504,8 @@ var sizeOnlyNamed = map[string]string{
 	".app-topbar__back":     "phone only: the back arrow of a sub screen; the laptop uses the nav links (UI-SPEC 1b).",
 	".app-topbar__gear":     "phone only: the Settings gear; the laptop reaches Settings from the person menu (D-11, UI-SPEC 1b).",
 	".sheet__handle-row":    "phone only: the phone list sheet and its handle; the laptop shows the list beside the map (D-16, D-17).",
+	".report-view__title":   "phone only: the heading Report in the top row of the phone report view; the laptop keeps its popup over the map unchanged (owner, 2026-10-19: \"the laptop ver looks good i dont want you to disturb that\").",
+	".report-gone":          "phone only: the not available view in place of a report the server cannot show; the laptop keeps its toast unchanged (owner, 2026-10-19, as for the report view).",
 	".place-section--phone": "phone only: the Settings Account section with Log out; the laptop has Log out in the person menu (D-25, R2 once per size).",
 	".welcome__progress":    "phone only: the progress line of the first-time flow; the laptop shows the same steps in the side panel (D-06 whole screen on a laptop, UI-SPEC Surface 7).",
 	".welcome__steps-item[data-state=\"done\"] .welcome__dot-num": "laptop side panel detail: a finished step shows a tick in place of its number; the phone shows the same progress in its progress line.",

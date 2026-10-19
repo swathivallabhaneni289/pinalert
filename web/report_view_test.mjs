@@ -32,6 +32,8 @@ function between(source, from, to) {
 }
 
 const section = between(mapSource, '  // ---- The report view and its address (plan 39)', '  // ---- End of the report view (plan 39)');
+// The store's half of the public way in, Pinalert.openReport, cut from app.js.
+const appOpenReport = between(appSource, '  function openReport(id)', '\n  }\n') + '\n  }\n';
 
 // fakeHistory keeps a list of entries and an index. back() does not move at
 // once: the browser answers with popstate from its own task, so the test
@@ -66,7 +68,9 @@ function fakeHistory(start) {
         if (index < entries.length - 1) { index += 1; pendingPop = true; }
       }
     },
-    takePop() { const had = pendingPop; pendingPop = false; return had; }
+    takePop() { const had = pendingPop; pendingPop = false; return had; },
+    // userBack is the browser's own back button, which the page did not call.
+    userBack() { if (index > 0) { index -= 1; pendingPop = true; } }
   };
 }
 
@@ -99,6 +103,7 @@ function run({ phone = true, start = '/', ids = ['5', '6', '7'], hasLoaded = tru
   const goneTitle = el('report-gone-title');
   const mapBox = el('map');
   let view = { lat: 12, lng: 77, zoom: 13 };
+  const size = { x: 390, y: 340 };
   env = { active: null };
   const markers = {};
   ids.forEach((id) => { markers[id] = { id }; });
@@ -106,6 +111,15 @@ function run({ phone = true, start = '/', ids = ['5', '6', '7'], hasLoaded = tru
   const map = {
     getCenter() { return { lat: view.lat, lng: view.lng }; },
     getZoom() { return view.zoom; },
+    // A flat projection, 2 to the zoom pixels per degree, enough to check that
+    // the top left corner comes back. The map box is size, which a test may change.
+    project(ll, z) { return { x: ll.lng * 2 ** z, y: -ll.lat * 2 ** z }; },
+    unproject(p, z) { const x = Array.isArray(p) ? p[0] : p.x; const y = Array.isArray(p) ? p[1] : p.y; return { lat: -y / 2 ** z, lng: x / 2 ** z }; },
+    getSize() { return { x: size.x, y: size.y }; },
+    containerPointToLatLng(p) {
+      const c = map.project({ lat: view.lat, lng: view.lng }, view.zoom);
+      return map.unproject([c.x - size.x / 2 + p[0], c.y - size.y / 2 + p[1]], view.zoom);
+    },
     setView(c, z) { log.push('setView ' + (Array.isArray(c) ? c.join(',') : c.lat + ',' + c.lng) + ' z' + z); view = { lat: Array.isArray(c) ? c[0] : c.lat, lng: Array.isArray(c) ? c[1] : c.lng, zoom: z }; },
     closePopup() { log.push('closePopup'); closeOpen(); },
     getContainer() { return mapBox; }
@@ -152,7 +166,14 @@ function run({ phone = true, start = '/', ids = ['5', '6', '7'], hasLoaded = tru
     '  onReportPopState: onReportPopState, noteFocusAnswer: noteFocusAnswer, closeReportGone: closeReportGone,\n' +
     '  hideReportGone: hideReportGone,\n' +
     '  setActive: function (p) { activePopup = p; }, getActive: function () { return activePopup; },\n' +
-    '  setOpenedFocusId: function (v) { openedFocusId = v; }, getOpenedFocusId: function () { return openedFocusId; } };\n';
+    '  setOpenedFocusId: function (v) { openedFocusId = v; }, getOpenedFocusId: function () { return openedFocusId; } };\n' +
+    // The real app.js openReport, with the store's own setFocusId and fetchReports.
+    '(function () { var state = Pinalert.state;\n' +
+    '  function setFocusId(id) { Pinalert.setFocusId(id); }\n' +
+    '  function fetchReports() { Pinalert.fetchReports(); }\n' +
+    appOpenReport +
+    '  window.PinalertMap = { openReport: api.openReport };\n' +
+    '  Pinalert.openReport = openReport; }());\n';
 
   // Leaflet's order: opening a report while another is open closes that one
   // first, then the new one opens, all in one turn.
@@ -182,6 +203,8 @@ function run({ phone = true, start = '/', ids = ['5', '6', '7'], hasLoaded = tru
     store,
     view: () => view,
     setView(v) { view = v; },
+    setSize(x, y) { size.x = x; size.y = y; },
+    corner() { return map.containerPointToLatLng([0, 0]); },
     tap(id) { sandbox.env.open(String(id)); },
     close() { closeOpen(); },
     // flush runs the timers a close started, as the next turn would.
@@ -194,7 +217,7 @@ function run({ phone = true, start = '/', ids = ['5', '6', '7'], hasLoaded = tru
       }
     },
     // browserBack is the browser's back button: the entry moves and popstate fires.
-    browserBack() { hist.api.back(); hist.takePop(); api.onReportPopState(); },
+    browserBack() { hist.userBack(); hist.takePop(); api.onReportPopState(); },
     deliverPop() { if (hist.takePop()) { api.onReportPopState(); } }
   };
 }
@@ -264,33 +287,36 @@ test('a page that arrived with ?report=ID adds no entry, and closing strips the 
 
 test('Pinalert.openReport opens a report that has a pin, and refuses an id that is not a number', () => {
   const t = run();
-  assert.equal(t.api.openReport('6'), true);
+  assert.equal(t.store.openReport('6'), true);
   assert.equal(t.api.getActive().id, '6');
   assert.ok(t.log.includes('flyTo 6'));
   assert.ok(t.log.includes('select 6 map'));
   assert.ok(t.log.indexOf('flyTo 6') < t.log.indexOf('select 6 map'), 'the report opens before the selection, so the phone sheet is not raised under it');
+  assert.ok(!t.log.some((l) => l.indexOf('setFocusId') === 0), 'a report with a pin needs no report link');
+  for (const bad of ['abc', '0', null, undefined, '12a', '-3']) {
+    assert.equal(t.store.openReport(bad), false);
+  }
   assert.equal(t.api.openReport('abc'), false);
-  assert.equal(t.api.openReport('0'), false);
-  assert.equal(t.api.openReport(null), false);
 });
 
 test('Pinalert.openReport on the report already open changes nothing', () => {
   const t = run();
-  t.api.openReport('6');
+  t.store.openReport('6');
   const before = t.log.length;
-  assert.equal(t.api.openReport('6'), true);
+  assert.equal(t.store.openReport('6'), true);
   assert.equal(t.log.length, before);
+  assert.equal(t.hist.length, 2);
 });
 
 test('Pinalert.openReport asks the server for a report without a pin, as an address on load does', () => {
   const early = run({ hasLoaded: false, ids: [] });
-  early.api.openReport('42');
+  assert.equal(early.store.openReport('42'), true);
   assert.deepEqual(early.log, ['setFocusId 42'], 'before the first answer the first list request carries it');
   const later = run({ ids: [] });
-  later.api.setOpenedFocusId('42');
-  later.api.openReport('42');
+  assert.equal(later.api.openReport('42'), false, 'the map opens only a report it has a pin for');
+  assert.deepEqual(later.log, [], 'the map never writes the link or reads the list itself');
+  later.store.openReport('42');
   assert.deepEqual(later.log, ['setFocusId 42', 'fetchReports']);
-  assert.equal(later.api.getOpenedFocusId(), null, 'the same link may open again');
 });
 
 test('a report the server cannot show puts the not available line on the phone, once per answer', () => {
@@ -343,6 +369,20 @@ test('the phone map goes back to where it was before the first report opened', (
   assert.deepEqual(t.view(), { lat: 1, lng: 2, zoom: 11 });
 });
 
+test('the phone map puts back its top left corner even when the sheet resized it meanwhile', () => {
+  const t = run();
+  t.setView({ lat: 1, lng: 2, zoom: 11 });
+  t.setSize(390, 340);
+  const before = t.corner();
+  t.tap(5);
+  t.setSize(390, 527);
+  t.setView({ lat: 3, lng: 4, zoom: 16 });
+  t.close();
+  t.flush();
+  assert.equal(t.view().zoom, 11);
+  assert.deepEqual(t.corner(), before, 'every later resize keeps this corner, so the sheet coming back leaves the map as it was');
+});
+
 test('the laptop map stays where the report left it, as before', () => {
   const t = run({ phone: false });
   t.setView({ lat: 1, lng: 2, zoom: 11 });
@@ -356,7 +396,9 @@ test('the laptop map stays where the report left it, as before', () => {
 
 test('app.js exposes Pinalert.openReport and hands it to the map', () => {
   const fn = between(appSource, '  function openReport(id)', '\n  }\n');
-  assert.match(fn, /PinalertMap\.openReport\(id\)/);
+  assert.match(fn, /PinalertMap\.openReport\(text\)/);
+  assert.match(fn, /setFocusId\(text\);/);
+  assert.match(fn, /fetchReports\(\);/);
   assert.match(appSource, /openReport: openReport/);
 });
 

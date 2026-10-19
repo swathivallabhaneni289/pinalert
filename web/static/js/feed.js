@@ -1097,9 +1097,11 @@
   // reads the page address once (the old /?view=disputed link opens Show
   // Disputed) and writes nothing back. Here the store is asked to hold that
   // choice, so its read word is all or disputed even when the menu script is
-  // missing, and the report id of a ?report=ID link is kept for the list
-  // requests (app.js sends it until the link ends). The report parameter is
-  // never touched, so a link sent by a moderator stays as it was sent (D-05).
+  // missing, and the report id of a ?report=ID link goes through the one
+  // public way in, Pinalert.openReport (plan 39). Before the first answer that
+  // only keeps the id for the list requests (app.js sends it until the link
+  // ends). This file never touches the report parameter, so a link sent by a
+  // moderator stays as it was sent (D-05) until the reader closes the report.
   //
   // No fetch is issued here because it does not need to be: the first
   // report fetch fires from map.js's centerOnVisitor, inside an async
@@ -1112,7 +1114,7 @@
   // this step would need its own fetch. Adding a fetch unconditionally would
   // issue a duplicate request on every single page load.
   Pinalert.setShow(Pinalert.state.show);
-  Pinalert.setFocusId(new URLSearchParams(window.location.search).get(REPORT_PARAM));
+  Pinalert.openReport(new URLSearchParams(window.location.search).get(REPORT_PARAM));
 
   Pinalert.onSelect(function (id, source) {
     // A selection that starts from the map chooses its row the same way (D-17):
