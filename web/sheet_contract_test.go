@@ -79,7 +79,9 @@ func TestSheetHandleIsAButton(t *testing.T) {
 		t.Errorf("the handle row display is %q on a phone, want block (the base rule hides it)", got)
 	}
 	// The row is drawn on a phone only.
-	base, _ := p13Rule(t, rules, "", ".app-bar, .app-topbar__title, .app-topbar__back, .app-topbar__gear, .sheet__handle-row")
+	// Amended 2026-10-19 by Phase 3.4 plan 39: the grouped hide rule also
+	// names the two phone only parts of the report view.
+	base, _ := p13Rule(t, rules, "", ".app-bar, .app-topbar__title, .app-topbar__back, .app-topbar__gear, .sheet__handle-row, .report-view__title, .report-gone")
 	if base.Decls["display"] != "none" {
 		t.Errorf("the handle row must be hidden outside the phone block")
 	}
