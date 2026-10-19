@@ -1860,8 +1860,12 @@ window.PinalertMap = (function () {
       historyMode = state && state[HISTORY_KEY] ? 'pushed' : 'url';
       return;
     }
+    // The address already names this report: a page loaded from it. An entry
+    // this script pushed before a reload keeps its mark, so closing still goes
+    // back to Nearby instead of leaving a second Nearby entry behind it.
     if (currentReportParam() === key) {
-      historyMode = 'url';
+      var current = window.history ? window.history.state : null;
+      historyMode = current && current[HISTORY_KEY] === key ? 'pushed' : 'url';
       return;
     }
     historyMode = 'pushed';

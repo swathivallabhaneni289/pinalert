@@ -1128,6 +1128,31 @@
     visibility: hidden;
   }
 
+  /* The bell's list hangs from the top row over the report, so while the view
+     is open the top chrome stacks above the view (1080) and below the dialogs
+     (1100). Its bar is then see through and lets presses pass, so Back and
+     Report, which the view draws in the same row, still show and still take a
+     tap; the bell, the gear and the list take their own (plan 39). */
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) > .top-chrome,
+  html[data-report-gone] body > .top-chrome {
+    z-index: 1090;
+    pointer-events: none;
+  }
+
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) > .top-chrome > .app-topbar,
+  html[data-report-gone] body > .top-chrome > .app-topbar {
+    background: transparent;
+  }
+
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) > .top-chrome .app-topbar__bell,
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) > .top-chrome .app-topbar__gear,
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) > .top-chrome .bell-list,
+  html[data-report-gone] body > .top-chrome .app-topbar__bell,
+  html[data-report-gone] body > .top-chrome .app-topbar__gear,
+  html[data-report-gone] body > .top-chrome .bell-list {
+    pointer-events: auto;
+  }
+
   /* ---- The not available view (plan 39) ----
      A report the server cannot show gets the same page with its own Back and
      the heading Report in the top row and one short line, over the map and

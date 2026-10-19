@@ -162,6 +162,28 @@ func TestReportViewPhoneStylesheet(t *testing.T) {
 	if !searchAside || !goneSearchAside {
 		t.Errorf("the search must step aside under the report view (%v) and the not available view (%v)", searchAside, goneSearchAside)
 	}
+
+	// The bell's list hangs over the view, so the top chrome stacks above the
+	// view (1080) and below the dialogs (1100) while either view is open, and
+	// lets presses through to Back and Report, which share its row.
+	chrome := `body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) > .top-chrome, html[data-report-gone] body > .top-chrome`
+	if got := p39Decl(t, phoneBlockMedia, chrome, "z-index"); got != "1090" {
+		t.Errorf("the top chrome over an open view has z-index %q, want 1090", got)
+	}
+	if got := p39Decl(t, phoneBlockMedia, chrome, "pointer-events"); got != "none" {
+		t.Errorf("the top chrome over an open view has pointer-events %q, want none", got)
+	}
+	var bellTakesPresses bool
+	for _, r := range phoneRules(t) {
+		if r.Media == phoneBlockMedia && r.Decls["pointer-events"] == "auto" &&
+			strings.Contains(r.Head, "> .top-chrome .app-topbar__bell") && strings.Contains(r.Head, "> .top-chrome .bell-list") &&
+			strings.Contains(r.Head, "> .top-chrome .app-topbar__gear") {
+			bellTakesPresses = true
+		}
+	}
+	if !bellTakesPresses {
+		t.Errorf("the bell, the gear and the bell list must take presses over an open view")
+	}
 }
 
 // TestReportViewMapScript pins map.js: the address helpers live in one

@@ -285,6 +285,22 @@ test('a page that arrived with ?report=ID adds no entry, and closing strips the 
   assert.equal(t.hist.url, '/?post=1');
 });
 
+test('a reload of an entry this script pushed still goes back to Nearby on close', () => {
+  const t = run();
+  t.tap(5);
+  assert.equal(t.hist.length, 2);
+  // A reload keeps the address and the entry's state; the page starts with nothing open.
+  t.api.setActive(null);
+  t.tap(5);
+  assert.equal(t.hist.length, 2, 'the reload adds no entry');
+  t.close();
+  t.flush();
+  assert.ok(t.hist.calls.includes('back'), 'the close goes back to the Nearby entry rather than leaving a second one');
+  t.deliverPop();
+  assert.equal(t.hist.url, '/');
+  assert.equal(t.hist.index, 0);
+});
+
 test('Pinalert.openReport opens a report that has a pin, and refuses an id that is not a number', () => {
   const t = run();
   assert.equal(t.store.openReport('6'), true);
