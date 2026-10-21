@@ -76,16 +76,16 @@
   var LOW_SEARCH_RATE_LIMITED_MESSAGE = 'Too many searches. Wait a few seconds and try again.';
 
   var basisEl = document.getElementById('low-basis');
-  var retryPositionBtn = document.getElementById('low-retry-position');
+  // The one Reload control of the top row (plan 44, owner). It stands in for
+  // the old Retry position, Retry now and Retry buttons.
+  var reloadBtn = document.getElementById('low-reload');
   var staleEl = document.getElementById('low-stale');
   var staleTextEl = document.getElementById('low-stale-text');
-  var staleRetryBtn = document.getElementById('low-stale-retry');
   var skeletonEl = document.getElementById('low-skeleton');
   var emptyEl = document.getElementById('low-empty');
   var emptyTitleEl = document.getElementById('low-empty-title');
   var emptyTextEl = document.getElementById('low-empty-text');
   var errorEl = document.getElementById('low-error');
-  var retryBtn = document.getElementById('low-retry');
   var fullLink = document.getElementById('low-full');
   var noticeLiveEl = document.getElementById('notice-live');
 
@@ -226,7 +226,6 @@
     if (basisEl && basisEl.textContent !== text) {
       Pinalert.setText(basisEl, text);
     }
-    setHidden(retryPositionBtn, kind !== 'default' && kind !== 'stored-kept');
   }
 
   function showListFor(lat, lon, own) {
@@ -238,8 +237,8 @@
   }
 
   function onPositionFound(pos) {
-    if (retryPositionBtn) {
-      retryPositionBtn.disabled = false;
+    if (reloadBtn) {
+      reloadBtn.disabled = false;
     }
     var coords = pos && pos.coords;
     if (!coords || !isFinite(coords.latitude) || !isFinite(coords.longitude)) {
@@ -252,8 +251,8 @@
   }
 
   function onPositionFailed() {
-    if (retryPositionBtn) {
-      retryPositionBtn.disabled = false;
+    if (reloadBtn) {
+      reloadBtn.disabled = false;
     }
     if (haveStored) {
       setBasis('stored-off');
@@ -624,25 +623,11 @@
     if (stale) {
       Pinalert.setText(staleTextEl, staleLineText(state));
       setHidden(staleEl, false);
-      if (staleRetryBtn) {
-        staleRetryBtn.disabled = false;
-      }
       if (!staleShown) {
         announce(STALE_ENTER_PREFIX + Pinalert.updatedAgo(state.lastUpdatedAt) + '.');
       }
     } else if (staleShown && state.status === 'ok') {
-      if (staleRetryBtn && document.activeElement === staleRetryBtn) {
-        var firstRow = listEl.querySelector('.report-row');
-        if (!firstRow || !PinalertTrust.focusToggle(firstRow)) {
-          if (fullLink) {
-            fullLink.focus();
-          }
-        }
-      }
       setHidden(staleEl, true);
-      if (staleRetryBtn) {
-        staleRetryBtn.disabled = false;
-      }
       announce(STALE_LEAVE_MESSAGE);
     } else {
       setHidden(staleEl, true);
@@ -1102,21 +1087,19 @@
     }
     requestPositionOnLoad();
 
-    if (retryPositionBtn) {
-      retryPositionBtn.addEventListener('click', function () {
-        retryPositionBtn.disabled = true;
-        markAsked();
-        requestPosition();
-      });
-    }
-    if (staleRetryBtn) {
-      staleRetryBtn.addEventListener('click', function () {
-        staleRetryBtn.disabled = true;
-        Pinalert.fetchReports();
-      });
-    }
-    if (retryBtn) {
-      retryBtn.addEventListener('click', function () {
+    // Reload does what the three old retry buttons did. While the list shows
+    // the default area or a kept position (the cases that offered Retry
+    // position) it asks for the position again, which refetches the list when
+    // it answers. Otherwise it asks the store for a fresh list, which is what
+    // Retry now and Retry did.
+    if (reloadBtn) {
+      reloadBtn.addEventListener('click', function () {
+        if (basisKind === 'default' || basisKind === 'stored-kept') {
+          reloadBtn.disabled = true;
+          markAsked();
+          requestPosition();
+          return;
+        }
         Pinalert.fetchReports();
       });
     }

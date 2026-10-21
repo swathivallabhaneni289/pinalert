@@ -148,6 +148,8 @@ func TestLowPageRenders(t *testing.T) {
 			`This device opens the Low data view by default.`,
 			`href="/?full=1"`,
 			`Open full version`,
+			`id="low-full" href="/?full=1" aria-label="Back to the full version"`,
+			`id="low-reload" aria-label="Reload"`,
 			`<h2 id="low-list-heading">Active reports</h2>`,
 		} {
 			if !strings.Contains(body, want) {
