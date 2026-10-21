@@ -1121,19 +1121,46 @@
     margin-top: 0;
   }
 
-  .leaflet-container .leaflet-detail-pane .popup-card__actions .flag-control:not([hidden]) {
-    margin-top: 0;
+  /* Flag sits last, under the trust details (map.js arrangeCard), as a calm
+     full width row with a small alert glyph: a hairline above, no box, no
+     underline (owner, 2026-10-21). */
+  .leaflet-container .leaflet-detail-pane .popup-card__body > .flag-control:not([hidden]) {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    width: 100%;
+    min-height: 48px;
+    margin-top: var(--space-lg);
+    padding: 0;
+    border: 0;
+    border-top: 1px solid var(--color-border);
+    border-radius: 0;
+    background: transparent;
+    color: var(--color-text);
+    font-weight: var(--font-weight-semibold);
+    text-align: left;
+    text-decoration: none;
   }
 
-  /* Mark resolved spans both columns as a centred text link. The good tone is
-     used where it clears 4.5 to 1 on the sheet tint in both themes: Low,
-     Medium and the provisional surface. A Critical sheet keeps the normal
-     text colour (4.35 to 1 light). It is still a 44px tall button for touch. */
+  .leaflet-container .leaflet-detail-pane .popup-card__body > .flag-control:not([hidden])::before {
+    content: "";
+    flex: none;
+    width: 20px;
+    height: 20px;
+    background-color: currentColor;
+    -webkit-mask: url("/static/icons/circle-alert.svg") center / contain no-repeat;
+    mask: url("/static/icons/circle-alert.svg") center / contain no-repeat;
+  }
+
+  /* Mark resolved spans both columns as an outlined button on the page colour,
+     never an underlined link (owner, 2026-10-21: no underlined text). The good
+     tone clears 4.5 to 1 on the page colour; a Critical report keeps the
+     normal text colour. */
   .leaflet-container .leaflet-detail-pane .vote-btn--resolve:not([hidden]):not([aria-disabled="true"]):not(:disabled) {
-    background: transparent;
-    border-color: transparent;
+    background: var(--color-bg);
+    border-color: var(--color-border);
     color: var(--color-tone-good);
-    text-decoration: underline;
+    text-decoration: none;
   }
 
   .leaflet-container .leaflet-detail-pane .leaflet-popup.sev-critical .vote-btn--resolve:not([hidden]):not([aria-disabled="true"]):not(:disabled) {
@@ -1142,7 +1169,7 @@
 
   .leaflet-container .leaflet-detail-pane .vote-btn--resolve:not([hidden]):not([aria-disabled="true"]):not(:disabled):hover,
   .leaflet-container .leaflet-detail-pane .vote-btn--resolve:not([hidden]):not([aria-disabled="true"]):not(:disabled):active {
-    background: transparent;
+    background: var(--color-bg);
     border-color: currentColor;
   }
 
