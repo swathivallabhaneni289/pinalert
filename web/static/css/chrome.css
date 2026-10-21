@@ -92,10 +92,20 @@ html {
   min-height: var(--touch-target-min);
   padding-top: var(--space-sm);
   margin-block: calc(-1 * var(--space-sm)) calc(var(--font-size-label) * var(--line-height-label) + var(--space-sm) - var(--touch-target-min));
+  /* Plan 42 (owner, 2026-10-21: no underlined text): an outlined button on
+     the dark strip, in the strip's own outline colour. The side padding and
+     the hairline widen the link only; its height and margins are unchanged. */
+  padding-inline: var(--space-sm);
+  border: 1px solid var(--color-notice-outline);
+  border-radius: 8px;
   color: var(--color-notice-text);
   font-weight: var(--font-weight-semibold);
-  text-decoration: underline;
+  text-decoration: none;
   white-space: nowrap;
+}
+
+.notice-strip__link:hover {
+  border-color: var(--color-notice-text);
 }
 
 @media (forced-colors: active) {
@@ -334,15 +344,25 @@ html {
   margin: 0;
 }
 
+/* A standalone link drawn as the outlined secondary button (plan 42, owner
+   2026-10-21: no underlined text): page colour, hairline, 8px corners. */
 .notice-card__link:not([hidden]) {
   display: flex;
   align-items: center;
   min-height: var(--touch-target-min);
+  padding: 0 var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
   font-weight: var(--font-weight-semibold);
-  text-decoration: underline;
+  text-decoration: none;
   color: var(--color-text);
+}
+
+.notice-card__link:not([hidden]):hover {
+  background: var(--color-border);
 }
 
 /* Hidden while a toast, a map popup or a locked dialog is open. */
@@ -459,9 +479,25 @@ html[data-modal-open] .notice-card {
   line-height: var(--line-height-body);
 }
 
+/* A number inside a sentence stays a link (plan 42, owner 2026-10-21: no
+   underlined text at rest): semibold, the link grey, and the underline only
+   on hover and keyboard focus. Inside the red error sentence the link takes
+   --color-link-in-error, which keeps 3:1 against the red. */
 .queue-strip__call,
 .form-error__call {
-  color: var(--color-text);
+  color: var(--color-link);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+}
+
+.form-error__call {
+  color: var(--color-link-in-error);
+}
+
+.queue-strip__call:hover,
+.queue-strip__call:focus-visible,
+.form-error__call:hover,
+.form-error__call:focus-visible {
   text-decoration: underline;
 }
 
@@ -485,25 +521,27 @@ html[data-modal-open] .notice-card {
   }
 }
 
-/* Flag control (04-24, P4-A6, P4-A7). One quiet underlined text button, the
-   last element of the opened report's actions block and of a Low data row. It
-   is hidden on the reader's own report, and the Flagged state keeps its height
-   but loses the underline and the pointer. */
+/* Flag control (04-24, P4-A6, P4-A7). The last element of the opened report's
+   actions block and of a Low data row. It is hidden on the reader's own
+   report. Plan 42 (owner, 2026-10-21: no underlined text): an outlined button
+   on the page colour, as the phone's Mark resolved (e5229aa), no underline.
+   The Flagged state keeps its height but loses the outline and the pointer.
+   The phone's Flag row (phone.css) sets its own border and padding. */
 .flag-control:not([hidden]) {
   display: inline-flex;
   align-items: center;
   min-height: var(--touch-target-min);
-  padding: 0 var(--space-xs);
+  padding: 0 var(--space-md);
   margin-top: var(--space-xs);
-  border: 0;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: none;
+  background: var(--color-bg);
   font-family: var(--font-family);
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
-  font-weight: var(--font-weight-regular);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text);
-  text-decoration: underline;
+  text-decoration: none;
   cursor: pointer;
   transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
 }
@@ -518,6 +556,8 @@ html[data-modal-open] .notice-card {
 }
 
 .flag-control[aria-disabled="true"] {
+  border-color: transparent;
+  background: transparent;
   text-decoration: none;
   cursor: default;
   color: var(--color-text);
@@ -574,12 +614,17 @@ html[data-modal-open] .notice-card {
   }
 }
 
+/* Forced colours: the outline is drawn in the system button text colour, so
+   Flag still reads as a button without an underline (plan 42); Flagged has
+   no visible outline. */
 @media (forced-colors: active) {
   .flag-control:not([hidden]) {
-    text-decoration: underline;
+    border-color: ButtonText;
+    text-decoration: none;
   }
 
   .flag-control[aria-disabled="true"] {
+    border-color: Canvas;
     text-decoration: none;
   }
 

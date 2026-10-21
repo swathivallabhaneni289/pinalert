@@ -226,10 +226,15 @@ func TestNoticeCardGeometry(t *testing.T) {
 		".notice-card:not([hidden])":      {"display": "flex", "flex-direction": "column", "gap": "var(--space-sm)"},
 		".notice-card__row:not([hidden])": {"display": "flex", "flex-direction": "column"},
 		".notice-card__text":              {"margin": "0"},
+		// Amended 2026-10-21 by plan 42 (owner: no underlined text): "Open the
+		// low data view." was an underlined link; it is now the outlined
+		// secondary button (page colour, hairline, 8px corners), no underline.
 		".notice-card__link:not([hidden])": {
 			"display": "flex", "align-items": "center", "min-height": "var(--touch-target-min)",
 			"font-size": "var(--font-size-body)", "font-weight": "var(--font-weight-semibold)",
-			"text-decoration": "underline", "color": "var(--color-text)",
+			"text-decoration": "none", "color": "var(--color-text)",
+			"padding": "0 var(--space-md)", "border": "1px solid var(--color-border)",
+			"border-radius": "8px", "background": "var(--color-bg)",
 		},
 	} {
 		rule, found := ruleBySelector(rules, sel)

@@ -127,15 +127,22 @@ func TestLoginLowDataPanelStyles(t *testing.T) {
 		"background": "var(--color-surface)", "border": "1px solid var(--color-border)",
 		"border-radius": "8px", "padding": "var(--space-md)", "color": "var(--color-text)",
 	})
+	// Amended 2026-10-21 by plan 42 (owner: no underlined text): Low data view,
+	// Turn off, Disclaimer and Policy were underlined links; they are now the
+	// outlined secondary button (page colour, hairline, 8px corners), with no
+	// underline.
 	for _, sel := range []string{".login-ways__low", ".login-ways__off"} {
 		p421WantDecls(t, rules, sel, map[string]string{
 			"min-height": "var(--touch-target-min)", "font-size": "var(--font-size-body)",
 			"font-weight": "var(--font-weight-semibold)", "color": "var(--color-text)",
-			"text-decoration": "underline",
+			"text-decoration": "none", "padding": "0 var(--space-md)",
+			"border": "1px solid var(--color-border)", "border-radius": "8px", "background": "var(--color-bg)",
 		})
 	}
 	p421WantDecls(t, rules, ".login-ways__links a", map[string]string{
-		"min-height": "var(--touch-target-min)", "color": "var(--color-text)", "text-decoration": "underline",
+		"min-height": "var(--touch-target-min)", "color": "var(--color-text)", "text-decoration": "none",
+		"padding": "0 var(--space-md)", "border": "1px solid var(--color-border)",
+		"border-radius": "8px", "background": "var(--color-bg)",
 	})
 	p421WantDecls(t, rules, ".login-ways__line", map[string]string{
 		"margin": "0", "font-size": "var(--font-size-label)",

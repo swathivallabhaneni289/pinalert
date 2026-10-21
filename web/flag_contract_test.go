@@ -474,13 +474,18 @@ func p424WantDecls(t *testing.T, label string, rules []cssRule, selector string,
 func TestFlagControlGeometry(t *testing.T) {
 	css := p424ReadCSS(t, "static/css/chrome.css")
 	rules := parseCSSRules(css)
+	// Amended 2026-10-21 by plan 42 (owner: no underlined text): Flag was a
+	// quiet underlined text button (padding 0 var(--space-xs), border 0,
+	// background none, regular weight, underline). It is now the outlined
+	// button of the phone's Mark resolved: page colour, hairline, 8px corners,
+	// semibold, no underline. Height, margin, font size and colour are kept.
 	p424WantDecls(t, "chrome.css", rules, ".flag-control:not([hidden])", map[string]string{
 		"display": "inline-flex", "align-items": "center", "min-height": "var(--touch-target-min)",
-		"padding": "0 var(--space-xs)", "margin-top": "var(--space-xs)", "border": "0",
-		"border-radius": "8px", "background": "none", "font-family": "var(--font-family)",
+		"padding": "0 var(--space-md)", "margin-top": "var(--space-xs)", "border": "1px solid var(--color-border)",
+		"border-radius": "8px", "background": "var(--color-bg)", "font-family": "var(--font-family)",
 		"font-size": "var(--font-size-label)", "line-height": "var(--line-height-label)",
-		"font-weight": "var(--font-weight-regular)", "color": "var(--color-text)",
-		"text-decoration": "underline", "cursor": "pointer",
+		"font-weight": "var(--font-weight-semibold)", "color": "var(--color-text)",
+		"text-decoration": "none", "cursor": "pointer",
 	})
 	rule, _ := ruleBySelector(rules, ".flag-control:not([hidden])")
 	transition := declsOf(rule.declBody)["transition"]
@@ -489,8 +494,11 @@ func TestFlagControlGeometry(t *testing.T) {
 		map[string]string{"background": "var(--color-border)"})
 	p424WantDecls(t, "chrome.css", rules, `.flag-control:not([aria-disabled="true"]):active`,
 		map[string]string{"background": "var(--color-border)", "box-shadow": "inset 0 0 0 1px var(--color-text-muted)"})
+	// Amended 2026-10-21 by plan 42: the Flagged state also drops the outline
+	// and the fill, so it still reads as done next to the outlined Flag.
 	p424WantDecls(t, "chrome.css", rules, `.flag-control[aria-disabled="true"]`,
-		map[string]string{"text-decoration": "none", "cursor": "default", "color": "var(--color-text)"})
+		map[string]string{"text-decoration": "none", "cursor": "default", "color": "var(--color-text)",
+			"border-color": "transparent", "background": "transparent"})
 
 	for _, r := range rules {
 		for _, sel := range p408Selectors(r.selectorHead) {
@@ -510,8 +518,11 @@ func TestFlagControlGeometry(t *testing.T) {
 	p424WantDecls(t, "reduced motion", p424MediaRules(t, css, "(prefers-reduced-motion: reduce)"),
 		".flag-control:not([hidden])", map[string]string{"transition": "none"})
 	forced := p424MediaRules(t, css, "(forced-colors: active)")
-	p424WantDecls(t, "forced colors", forced, ".flag-control:not([hidden])", map[string]string{"text-decoration": "underline"})
-	p424WantDecls(t, "forced colors", forced, `.flag-control[aria-disabled="true"]`, map[string]string{"text-decoration": "none"})
+	// Amended 2026-10-21 by plan 42 (owner: no underlined text): forced colours
+	// drew Flag with an underline. It now draws the outline in ButtonText, and
+	// Flagged hides its outline in Canvas.
+	p424WantDecls(t, "forced colors", forced, ".flag-control:not([hidden])", map[string]string{"text-decoration": "none", "border-color": "ButtonText"})
+	p424WantDecls(t, "forced colors", forced, `.flag-control[aria-disabled="true"]`, map[string]string{"text-decoration": "none", "border-color": "Canvas"})
 }
 
 // TestFlagDialogGeometry pins the dialog look (Element table Flag dialog,

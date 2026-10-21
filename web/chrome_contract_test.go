@@ -234,11 +234,17 @@ func TestDisclaimerBarStylesheet(t *testing.T) {
 		"margin": "0",
 		"color":  "var(--color-notice-sub)",
 	})
+	// Amended 2026-10-21 by plan 42 (owner: no underlined text): the link was
+	// underlined; it is now an outlined button on the dark strip, in the
+	// strip's own outline colour, with no underline.
 	want(".notice-strip__link", map[string]string{
 		"font-weight":     "var(--font-weight-semibold)",
 		"white-space":     "nowrap",
-		"text-decoration": "underline",
+		"text-decoration": "none",
 		"color":           "var(--color-notice-text)",
+		"padding-inline":  "var(--space-sm)",
+		"border":          "1px solid var(--color-notice-outline)",
+		"border-radius":   "8px",
 	})
 	want(".notice-strip__icon", map[string]string{
 		"width":            "20px",

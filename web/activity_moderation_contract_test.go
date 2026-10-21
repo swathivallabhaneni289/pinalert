@@ -246,8 +246,19 @@ func TestActivityModerationNoteStyle(t *testing.T) {
 		t.Fatal("trust.css has no .report-row__moderation-note a rule")
 	}
 	linkDecls := declsOf(link.declBody)
-	if linkDecls["color"] != "var(--color-text)" || linkDecls["text-decoration"] != "underline" {
-		t.Errorf(".report-row__moderation-note a declares %v, want the text colour and underline", linkDecls)
+	// Amended 2026-10-21 by plan 42 (owner: no underlined text): the Policy
+	// link inside the sentence was the text colour and underlined. It is now
+	// the link grey and semibold with no underline at rest, and the underline
+	// comes back on hover and keyboard focus (pinned below).
+	if linkDecls["color"] != "var(--color-link)" || linkDecls["text-decoration"] != "none" || linkDecls["font-weight"] != "var(--font-weight-semibold)" {
+		t.Errorf(".report-row__moderation-note a declares %v, want the link colour, semibold and no underline at rest", linkDecls)
+	}
+	linkHover, ok := ruleBySelector(rules, ".report-row__moderation-note a:hover,\n.report-row__moderation-note a:focus-visible")
+	if !ok {
+		t.Fatal("trust.css has no hover and focus rule for .report-row__moderation-note a")
+	}
+	if got := declsOf(linkHover.declBody)["text-decoration"]; got != "underline" {
+		t.Errorf(".report-row__moderation-note a on hover and focus: text-decoration = %q, want underline", got)
 	}
 
 	for _, r := range []cssRule{note, link} {
