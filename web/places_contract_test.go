@@ -390,9 +390,18 @@ func TestSettingsIsAGroupedList(t *testing.T) {
 	p16MustDecl(t, "settings laptop column", p31mRule(t, css, "@media (min-width: 900px)", ".place-page--settings"), map[string]string{
 		"max-width": "640px", "margin": "0 auto",
 	})
-	p16MustDecl(t, "settings laptop Account", p31mRule(t, css, "@media (min-width: 900px)", ".place-page--settings .place-section--phone"), map[string]string{
-		"display": "none",
-	})
+	// The owner asked for Log out on the laptop Settings page too (2026-10-21,
+	// "I don't see a logout option on my laptop version, so I think we should
+	// add that"): the Account section is drawn on both sizes, as the last
+	// group, through the same POST /auth/logout form the phone uses, and the
+	// person menu keeps its own Log out (TestPersonMenuItems).
+	if strings.Contains(page, "place-section--phone") || strings.Contains(stripCSSComments(p421ReadStatic(t, "css/places.css")), "place-section--phone") {
+		t.Errorf("the Settings Account section is still phone only; Log out must be a row on the laptop too")
+	}
+	if strings.Count(page, `action="/auth/logout"`) != 1 || strings.Count(page, "place-row--button") != 1 {
+		t.Errorf("settings.html.tmpl must hold exactly one Log out row posting to /auth/logout")
+	}
+	p421InOrder(t, "Account is the last group", page, `id="settings-about-title"`, `id="settings-account-title"`, `action="/auth/logout"`, "</main>")
 	for _, banned := range []string{"opacity", "gradient", "999px", "text-decoration: underline", "!important"} {
 		if strings.Contains(stripCSSComments(p421ReadStatic(t, "css/places.css")), banned) {
 			t.Errorf("places.css holds %q", banned)

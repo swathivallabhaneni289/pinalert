@@ -254,11 +254,11 @@
     grid-column: 2;
   }
 
-  /* The Account section is a phone section: the laptop has Log out in the
-     person menu, so the section is not drawn at all. */
-  .place-section--phone {
-    display: none;
-  }
+  /* Plan 03.4-43 (owner, 2026-10-21: "I don't see a logout option on my
+     laptop version, so I think we should add that"): the Settings Account
+     section with Log out is drawn on the laptop too, so the phone only hide
+     that stood here (.place-section--phone) is gone with its class. The
+     person menu keeps its own Log out. */
 
   /* Settings (plan 03.4-43, owner 2026-10-21): the same grouped list as the
      phone in a centred column of at most 640px, the page heading above the
@@ -282,12 +282,6 @@
 
   .place-page--settings .place-section__line {
     margin: var(--space-xs) 0 var(--space-sm);
-  }
-
-  /* The rule above outweighs .place-section--phone, so the Account section is
-     hidden again here: the laptop has Log out in the person menu (D-25). */
-  .place-page--settings .place-section--phone {
-    display: none;
   }
 }
 

@@ -140,11 +140,19 @@ func TestSettingsRows(t *testing.T) {
 		"About Pinalert", "Disclaimer", "Policy", "Low data view", "Text only, no map",
 		"Account", "Sign out, or remove your account and its data.",
 		`<form class="place-row-form" method="post" action="/auth/logout">`,
-		"place-section--phone",
+		// Amended 2026-10-21 by plan 43 (owner, "I don't see a logout option
+		// on my laptop version, so I think we should add that"): the Account
+		// section was pinned as phone only (place-section--phone). It is now
+		// drawn on both sizes, so the pin moves to the plain section tag, and
+		// the phone only class is checked absent just below.
+		`<section class="place-section" aria-labelledby="settings-account-title">`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/settings lacks %q", want)
 		}
+	}
+	if strings.Contains(body, "place-section--phone") {
+		t.Errorf("/settings still marks a section phone only; the Account section with Log out is drawn on both sizes (plan 43)")
 	}
 	for _, banned := range []string{
 		"View my profile", "My profile", "Phone notifications", "People and reports",
