@@ -54,8 +54,12 @@ func TestPeopleAndReportsSection(t *testing.T) {
 }
 
 // TestAccountSectionOnBothSizes pins UI-SPEC E3 and D3: the Account section is
-// drawn on the phone and the laptop, the Log out row alone is phone only, and
-// both new rows exist.
+// drawn on the phone and the laptop, and both new rows exist.
+//
+// Amended 2026-10-21 when Phase 3.4 plan 43 met Phase 3.2: the owner put the
+// Log out row on the laptop too ("I don't see a logout option on my laptop
+// version, so I think we should add that"), so Log out is no longer phone
+// only: no place-row-form--phone class in the page, no hide rule in the CSS.
 func TestAccountSectionOnBothSizes(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
 	if strings.Contains(page, "place-section--phone") {
@@ -64,7 +68,7 @@ func TestAccountSectionOnBothSizes(t *testing.T) {
 	region := settingsSectionRegion(t, page, "settings-account-title")
 	for _, want := range []string{
 		"Log out everywhere, or delete your account.",
-		`<form class="place-row-form place-row-form--phone" method="post" action="/auth/logout">`,
+		`<form class="place-row-form" method="post" action="/auth/logout">`,
 		`<span class="place-row__label">Log out</span>`,
 		`<button type="button" class="place-row" id="settings-logout-all-row" aria-haspopup="dialog">`,
 		`<span class="place-row__label">Log out of all devices</span>`,
@@ -75,12 +79,12 @@ func TestAccountSectionOnBothSizes(t *testing.T) {
 			t.Errorf("the Account section lacks %q", want)
 		}
 	}
-	if got := strings.Count(page, "place-row-form--phone"); got != 1 {
-		t.Errorf("place-row-form--phone appears %d times in settings.html.tmpl, want 1 (the Log out form only)", got)
+	if strings.Contains(page, "place-row-form--phone") {
+		t.Errorf("settings.html.tmpl still marks the Log out form phone only; Log out shows on both sizes (owner, 2026-10-21)")
 	}
 	css := stripCSSComments(p421ReadStatic(t, "css/places.css"))
-	if !regexp.MustCompile(`@media \(min-width: 900px\)[\s\S]*\.place-row-form--phone \{\s*display: none;`).MatchString(css) {
-		t.Errorf("places.css does not hide .place-row-form--phone at 900px and up")
+	if strings.Contains(css, "place-row-form--phone") {
+		t.Errorf("places.css still names place-row-form--phone; Log out shows on both sizes (owner, 2026-10-21)")
 	}
 	if strings.Contains(css, "place-section--phone") {
 		t.Errorf("places.css still names place-section--phone")

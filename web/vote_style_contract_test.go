@@ -790,8 +790,16 @@ func TestPressedVoteStatesWinEveryCombination(t *testing.T) {
 	for _, b := range buttons {
 		name := b.name
 		mk := func(states ...string) p11Element { return p11Btn(b.modifier, b.pressed, states...) }
+		// Amended 2026-10-21 by plan 42 (owner): Confirm and Dispute at rest
+		// were the surface grey fill; they are now the outlined secondary
+		// button on the page colour, so only a pressed vote is filled. Mark
+		// resolved, Reopen and Cancel keep the surface fill.
+		restFill := "--color-surface"
+		if name == "Confirm" || name == "Dispute" {
+			restFill = "--color-bg"
+		}
 		p11Expect(t, rules, name+" at rest", mk(), false, map[string]string{
-			"fill": "--color-surface", "text": "--color-text", "stroke": "--color-border"})
+			"fill": restFill, "text": "--color-text", "stroke": "--color-border"})
 		p11Expect(t, rules, name+" hover", mk("hover"), false, map[string]string{"fill": "--color-border"})
 		p11Expect(t, rules, name+" hover+active", mk("hover", "active"), false, map[string]string{
 			"fill": "--color-border", "stroke": "--color-text-muted"})

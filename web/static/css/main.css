@@ -129,6 +129,16 @@
   /* Focus ring deliberately neutral — matches --color-text, not a fourth hue, because D-10
      reserves color for severity signalling. */
   --color-focus-ring: #1A1D21;
+  /* Plan 42 (owner, 2026-10-21: no underlined text): a link inside running
+     text is semibold in this neutral grey, never underlined at rest. Grey,
+     not a hue, because D-10 keeps colour for severity. It clears 3:1 against
+     --color-text and 4.5:1 on --color-bg and --color-surface; hover and
+     keyboard focus add the underline. */
+  --color-link: #686C72;
+  /* The same, inside the red error sentence (#form-error): the grey would sit
+     at 1:1 against the red, so the link there is the text colour in light
+     (3.1:1 against the red) and white in dark (3.2:1 against the dark red). */
+  --color-link-in-error: #1A1D21;
 
   /* Severity palette — light values, traffic-light mapping (D-11) */
   --color-severity-low: #2F9E64;
@@ -163,6 +173,8 @@
     --color-text: #F3F4F6;
     --color-text-muted: #9CA3AF;
     --color-focus-ring: #F3F4F6;
+    --color-link: #84888E;
+    --color-link-in-error: #FFFFFF;
 
     /* Severity palette — dark values. Per D-13 these are NOT the light hexes viewed on a dark
        background: dots get brighter/more saturated, tint backgrounds get darker. Transcribed
@@ -198,6 +210,8 @@
   --color-text: #F3F4F6;
   --color-text-muted: #9CA3AF;
   --color-focus-ring: #F3F4F6;
+  --color-link: #84888E;
+  --color-link-in-error: #FFFFFF;
 
   --color-severity-low: #34D399;
   --color-severity-medium: #E5A93B;
@@ -224,6 +238,8 @@
   --color-text: #1A1D21;
   --color-text-muted: #6B7280;
   --color-focus-ring: #1A1D21;
+  --color-link: #686C72;
+  --color-link-in-error: #1A1D21;
 
   --color-severity-low: #2F9E64;
   --color-severity-medium: #C48419;
@@ -571,6 +587,9 @@ body {
   font-family: var(--font-family);
   font-size: var(--font-size-body);
   font-weight: var(--font-weight-semibold);
+  /* An a.btn is a button to look at, so the browser's link underline goes
+     (plan 42, owner 2026-10-21: no underlined text). */
+  text-decoration: none;
   cursor: pointer;
 }
 

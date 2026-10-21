@@ -1,0 +1,35 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-10-21T18:08:20Z",
+  "phase": "03.4",
+  "phase_name": "app-layout",
+  "phase_dir": ".planning/phases/03.4-app-layout",
+  "plan": 44,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 33, "name": "step 3 Allow or Not now, map starts at home area", "status": "done", "commit": "d68604a"},
+    {"id": 36, "name": "ask for location once", "status": "done", "commit": "032dd88"},
+    {"id": 39, "name": "phone report view", "status": "done", "commit": "c0fe4bb"},
+    {"id": 40, "name": "phone top controls float", "status": "done", "commit": "4ea3e9e"},
+    {"id": 41, "name": "report address opens on fresh load", "status": "done", "commit": "109b73a"},
+    {"id": 44, "name": "Low data view blocks, Back and Reload", "status": "done", "commit": "24ad022"}
+  ],
+  "remaining_tasks": [
+    {"id": 42, "name": "no underlines, Confirm and Dispute alike until pressed", "status": "in_progress", "progress": "executor worktree agent-a705b64f9acb8624a"},
+    {"id": 43, "name": "Settings grouped list, Log out on both sizes", "status": "in_progress", "progress": "executor worktree agent-a64486c71f0d7e28e"},
+    {"id": 45, "name": "owner final look and plain yes, then close 3.4 by hand", "status": "not_started"}
+  ],
+  "blockers": [],
+  "async_jobs": [],
+  "human_actions_pending": [
+    {"action": "owner looks at Settings, Low data view, sign in page, an opened report on each size, then answers yes or no to 3.4 done", "context": "second test pass", "blocking": true},
+    {"action": "make migrate on the owner's dev database", "context": "migration 00008", "blocking": false}
+  ],
+  "decisions": [
+    {"decision": "laptop Nearby is frozen", "rationale": "owner: the laptop version looks good, do not disturb it", "phase": "03.4"},
+    {"decision": "phone changes verified in the simulator's own Safari", "rationale": "desktop WebKit passed layouts iPhone Safari clipped", "phase": "03.4"}
+  ],
+  "uncommitted_files": [".planning/STATE.md (another session's edit, never commit)"],
+  "next_action": "check plans 42 and 43 finished, merge, gate, rebuild 8776 test copy, simulator check",
+  "context_notes": "pinalert-c8 holds Phase 3.2 merges until 3.4 is really closed; see .continue-here.md"
+}

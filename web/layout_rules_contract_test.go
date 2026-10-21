@@ -506,12 +506,16 @@ var sizeOnlyNamed = map[string]string{
 	".sheet__handle-row":  "phone only: the phone list sheet and its handle; the laptop shows the list beside the map (D-16, D-17).",
 	".report-view__title": "phone only: the heading Report in the top row of the phone report view; the laptop keeps its popup over the map unchanged (owner, 2026-10-19: \"the laptop ver looks good i dont want you to disturb that\").",
 	".report-gone":        "phone only: the not available view in place of a report the server cannot show; the laptop keeps its toast unchanged (owner, 2026-10-19, as for the report view).",
-	// Amended 2026-10-19 by Phase 3.2 plan 12 (D-23, UI-SPEC D3): the phone only class moved from the
-	// Account section to its Log out row, because the section now draws on both sizes.
-	".place-row-form--phone": "phone only: the Log out row of Settings; the laptop has Log out in the person menu (D-25, R2 once per size); the Account section draws on both sizes since Phase 3.2 (UI-SPEC D3).",
-	".welcome__progress":     "phone only: the progress line of the first-time flow; the laptop shows the same steps in the side panel (D-06 whole screen on a laptop, UI-SPEC Surface 7).",
+	".welcome__progress":  "phone only: the progress line of the first-time flow; the laptop shows the same steps in the side panel (D-06 whole screen on a laptop, UI-SPEC Surface 7).",
 	".welcome__steps-item[data-state=\"done\"] .welcome__dot-num": "laptop side panel detail: a finished step shows a tick in place of its number; the phone shows the same progress in its progress line.",
 	".welcome__dot-tick": "the tick on a finished step of the laptop side panel, hidden until the step is done and on the phone, which draws the progress line.",
+
+	// Amended 2026-10-21 by plan 43 (owner, "I don't see a logout option on my
+	// laptop version, so I think we should add that"): the Settings Account
+	// section with Log out is drawn on both sizes now, so the entry that named
+	// .place-section--phone as phone only is removed with the class and its
+	// laptop hide. No check changed: any part hidden on one size must still be
+	// named here.
 
 	// Laptop only, hidden under 900px.
 	"main.profile-page > .activity-heading": "laptop only: the My activity page heading in the left column; the phone has the top bar title and the hub (D-06, D-19).",

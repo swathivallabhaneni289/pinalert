@@ -426,7 +426,8 @@ func TestLowDataHiddenOverrides(t *testing.T) {
 		t.Errorf("low.css has no rule headed %q", overrideHead)
 	}
 
-	hiddenCapable := []string{"#low-list", "#low-skeleton", "#low-empty", "#low-error", "#low-stale", "#low-retry-position"}
+	// Amended 2026-10-21 by plan 44 (owner): the Retry position button is gone and Reload is always shown, so #low-retry-position left the hidden lists; see web/low_toprow_contract_test.go.
+	hiddenCapable := []string{"#low-list", "#low-skeleton", "#low-empty", "#low-error", "#low-stale"}
 	for _, r := range rules {
 		display, has := declsOf(r.declBody)["display"]
 		if !has || display == "none" || p418Squash(r.selectorHead) == overrideHead {
@@ -444,7 +445,7 @@ func TestLowDataHiddenOverrides(t *testing.T) {
 	}
 
 	html := p418Template(t)
-	for _, id := range []string{"low-skeleton", "low-empty", "low-error", "low-stale", "low-retry-position"} {
+	for _, id := range []string{"low-skeleton", "low-empty", "low-error", "low-stale"} {
 		tag := findTagWindow(t, html, `id="`+id+`"`)
 		if !regexp.MustCompile(`\shidden[\s>]`).MatchString(tag) {
 			t.Errorf("#%s does not start hidden: %s", id, tag)
@@ -503,8 +504,9 @@ func TestLowDataCopy(t *testing.T) {
 	html := p418Template(t)
 	for _, want := range []string{
 		"Low data view", "Text only, no map", "This device opens the Low data view by default.",
-		"Open full version", "Retry position", "Retry now", "Active reports",
-		"Couldn't load reports", "Check your connection and try again.", ">Retry<",
+		// Amended 2026-10-21 by plan 44 (owner): Retry now and Retry are gone; Back and Reload are new; Open full version and Retry position remain in the report dialog.
+		"Open full version", "Retry position", "Back to the full version", "Reload", "Active reports",
+		"Couldn't load reports", "Check your connection, then use Reload at the top.",
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("the template is missing %q", want)

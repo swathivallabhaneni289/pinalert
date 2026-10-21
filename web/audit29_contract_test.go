@@ -188,7 +188,7 @@ func TestAudit29LowDataTagsAndButtons(t *testing.T) {
 		map[string]string{"display": "flex", "gap": "var(--space-sm)"})
 	tmpl := p410ReadTemplate(t, "low.html.tmpl")
 	if !strings.Contains(tmpl, `<div class="low-page__actions">`) {
-		t.Errorf("low.html.tmpl must wrap the two buttons in .low-page__actions")
+		t.Errorf("low.html.tmpl must wrap the Report an emergency button in .low-page__actions (Amended 2026-10-21 by plan 44 (owner): Open full version moved to the top row as Back)")
 	}
 }
 

@@ -192,18 +192,26 @@
   width: 100%;
 }
 
-/* The quiet text button under the filled one: no box, an underline, 44px high. */
+/* The second button under the filled one, 44px high. Plan 42 (owner,
+   2026-10-21: no underlined text): the outlined secondary button, page colour,
+   hairline, 8px corners, never an underline. */
 .app-window__quiet {
   min-height: var(--touch-target-min);
   padding: var(--space-sm) var(--space-md);
-  border: 0;
-  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-family);
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
-  text-decoration: underline;
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
   cursor: pointer;
+}
+
+.app-window__quiet:hover {
+  background: var(--color-border);
 }
 
 /* The reader (D-31). The title and the "Last updated" line sit together at the

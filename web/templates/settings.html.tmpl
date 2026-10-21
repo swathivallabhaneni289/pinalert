@@ -22,7 +22,7 @@
   <div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>
 
   <div class="app-content">
-  <main class="place-page" data-account-id="{{.AccountID}}">
+  <main class="place-page place-page--settings" data-account-id="{{.AccountID}}">
     <h1 class="place-head">Settings</h1>
 
     <section class="place-section" aria-labelledby="settings-you-title">
@@ -141,7 +141,7 @@
         <p class="place-section__line">Log out everywhere, or delete your account.</p>
       </div>
       <div class="place-box">
-        <form class="place-row-form place-row-form--phone" method="post" action="/auth/logout">
+        <form class="place-row-form" method="post" action="/auth/logout">
           <button type="submit" class="place-row place-row--button">
             <span class="place-row__text">
               <span class="place-row__label">Log out</span>

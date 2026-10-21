@@ -148,8 +148,10 @@
   height: 20px;
 }
 
-.welcome__back:hover .welcome__back-label {
-  text-decoration: underline;
+/* Hover is the soft surface fill, never an underline (plan 42, owner
+   2026-10-21: no underlined text). */
+.welcome__back:hover {
+  background: var(--color-surface);
 }
 
 .welcome__title {
@@ -423,8 +425,10 @@
     cursor: pointer;
   }
 
-  .welcome__steps-button:hover .welcome__steps-name {
-    text-decoration: underline;
+  /* Hover fills the row in the dark panel's outline grey, never an underline
+     (plan 42, owner 2026-10-21: no underlined text). */
+  .welcome__steps-button:hover {
+    background: var(--color-notice-outline);
   }
 
   .welcome__steps-button:focus-visible {

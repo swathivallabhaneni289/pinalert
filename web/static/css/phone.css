@@ -1085,33 +1085,37 @@
   }
 
   /* A pressed button keeps trust.css's filled look and adds its mark and an
-     inset ring in the page colour, so a pressed Confirm differs from the
-     filled Confirm at rest in both themes. */
+     inset ring in the page colour. Only a pressed button is filled (owner,
+     2026-10-21, plan 42: nothing looks chosen before the reader chooses it). */
   .leaflet-container .leaflet-detail-pane .vote-btn[aria-pressed="true"]:not([hidden]) {
     box-shadow: inset 0 0 0 2px var(--color-bg);
   }
 
-  /* Confirm at rest is the filled look. Disabled, busy and too far Confirm
-     keep trust.css's outlined muted look, because this head excludes them. */
+  /* Confirm and Dispute at rest look the same: the page colour with the
+     hairline, the outlined secondary button (owner, 2026-10-21, plan 42).
+     Disabled, busy and too far buttons keep trust.css's outlined muted look,
+     because these heads exclude them. */
   .leaflet-container .leaflet-detail-pane .vote-btn--confirm:not([hidden]):not([aria-pressed="true"]):not([aria-disabled="true"]):not(:disabled) {
-    background: var(--color-text);
-    color: var(--color-bg);
-    border-color: var(--color-text);
+    background: var(--color-bg);
+    color: var(--color-text);
+    border-color: var(--color-border);
   }
 
-  .leaflet-container .leaflet-detail-pane .vote-btn--confirm:not([hidden]):not([aria-pressed="true"]):not([aria-disabled="true"]):not(:disabled):hover,
-  .leaflet-container .leaflet-detail-pane .vote-btn--confirm:not([hidden]):not([aria-pressed="true"]):not([aria-disabled="true"]):not(:disabled):active {
-    background: color-mix(in srgb, var(--color-text) 85%, var(--color-bg) 15%);
-    color: var(--color-bg);
-    border-color: var(--color-text);
-  }
-
-  /* Dispute at rest stays the page colour with the hairline, so it reads as
-     the second choice next to the filled Confirm. */
   .leaflet-container .leaflet-detail-pane .vote-btn--dispute:not([hidden]):not([aria-pressed="true"]):not([aria-disabled="true"]):not(:disabled) {
     background: var(--color-bg);
     color: var(--color-text);
     border-color: var(--color-border);
+  }
+
+  /* Hover and press at rest: the hairline turns to the text colour, as on
+     Mark resolved; no fill, so nothing looks chosen. */
+  .leaflet-container .leaflet-detail-pane .vote-btn--confirm:not([hidden]):not([aria-pressed="true"]):not([aria-disabled="true"]):not(:disabled):hover,
+  .leaflet-container .leaflet-detail-pane .vote-btn--confirm:not([hidden]):not([aria-pressed="true"]):not([aria-disabled="true"]):not(:disabled):active,
+  .leaflet-container .leaflet-detail-pane .vote-btn--dispute:not([hidden]):not([aria-pressed="true"]):not([aria-disabled="true"]):not(:disabled):hover,
+  .leaflet-container .leaflet-detail-pane .vote-btn--dispute:not([hidden]):not([aria-pressed="true"]):not([aria-disabled="true"]):not(:disabled):active {
+    background: var(--color-bg);
+    color: var(--color-text);
+    border-color: currentColor;
   }
 
   /* Tighter actions on the phone (owner, 2026-10-21: too much space between

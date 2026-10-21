@@ -79,8 +79,8 @@ class FakeEl {
 
 // The ids low.js and app.js look up on the Low data page.
 const PAGE_IDS = [
-  'low-list', 'low-basis', 'low-retry-position', 'low-stale', 'low-stale-text', 'low-stale-retry',
-  'low-skeleton', 'low-empty', 'low-empty-title', 'low-empty-text', 'low-error', 'low-retry', 'low-full',
+  'low-list', 'low-basis', 'low-reload', 'low-stale', 'low-stale-text',
+  'low-skeleton', 'low-empty', 'low-empty-title', 'low-empty-text', 'low-error', 'low-full',
   'notice-live', 'report-modal', 'low-report', 'low-location-status'
 ];
 
@@ -225,7 +225,7 @@ function loadLowPage({ abortRejects = true, nativeTimeout = false, stored = null
   vm.runInContext(appSource, sandbox);
   sandbox.Pinalert = window.Pinalert;
   vm.runInContext(lowSource, sandbox);
-  return { Pinalert: window.Pinalert, el: (id) => doc.byId[id], requests, answer, advance, mounted, storage, retryClick: () => (doc.byId['low-retry-position'].handlers.click || []).forEach((fn) => fn({})) };
+  return { Pinalert: window.Pinalert, el: (id) => doc.byId[id], requests, answer, advance, mounted, storage, retryClick: () => (doc.byId['low-reload'].handlers.click || []).forEach((fn) => fn({})) };
 }
 
 const settle = async () => {
@@ -444,7 +444,7 @@ test('plan 36: a later load with the marker and a prompt state does not ask and 
   assert.equal(page.requests.length, 1, 'the list for the kept position is out');
   assert.match(page.requests[0].url, /lat=17\.385&lon=78\.4867/);
   assert.match(page.el('low-basis').textContent, /^Near your last known position\./);
-  assert.equal(page.el('low-retry-position').hidden, false, 'Retry position stays the way to refresh');
+  assert.equal(page.el('low-reload').hidden, false, 'Reload stays the way to refresh (Amended 2026-10-21 by plan 44 (owner): the Retry position button is the Reload control now)');
 });
 
 test('plan 36: with the marker, no kept position and the API missing, the list starts at the default area and does not ask', async () => {
@@ -453,7 +453,7 @@ test('plan 36: with the marker, no kept position and the API missing, the list s
   await settle();
   assert.equal(geo.calls.length, 0);
   assert.equal(page.requests.length, 1);
-  assert.equal(page.el('low-retry-position').hidden, false);
+  assert.equal(page.el('low-reload').hidden, false);
 });
 
 test('plan 36: a granted browser is read silently even with the marker', async () => {
@@ -463,13 +463,28 @@ test('plan 36: a granted browser is read silently even with the marker', async (
   assert.equal(geo.calls.length, 1);
 });
 
-test('plan 36: Retry position always asks', async () => {
+test('plan 36: Reload on a default or kept position always asks', async () => {
   const geo = countingGeolocation();
   const page = loadLowPage({ geolocation: geo, permissions: permissionsOf('prompt'), extraStorage: { [ASKED_KEY]: '1' } });
   await settle();
   assert.equal(geo.calls.length, 0);
   page.retryClick();
   assert.equal(geo.calls.length, 1, 'the person tapped, so it asks');
+});
+
+// Amended 2026-10-21 by plan 44 (owner): the Retry now and Retry buttons are
+// gone; Reload asks the store for a fresh list when the position needs no retry.
+test('plan 44: Reload refreshes the list when the position needs no retry', async () => {
+  const geo = countingGeolocation();
+  const page = loadLowPage({ geolocation: geo, permissions: permissionsOf('granted'), stored: { lat: 17.385, lon: 78.4867, account: '7' } });
+  await settle();
+  const first = page.requests.length;
+  page.answer(page.requests[first - 1], { reports: [] });
+  await settle();
+  const before = page.requests.length;
+  page.retryClick();
+  await settle();
+  assert.ok(page.requests.length > before, 'Reload sent a fresh list request');
 });
 
 test('plan 36: another account is asked for itself', async () => {
