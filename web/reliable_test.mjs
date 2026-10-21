@@ -68,7 +68,7 @@ class FakeEl {
 // button, the Show menu, the filter line and the empty state's button. href is
 // the page address; the fake history rewrites it on replaceState and records
 // every call.
-function load({ href = '/' } = {}) {
+function load({ href = '/', beforeReliable = null } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -124,6 +124,9 @@ function load({ href = '/' } = {}) {
   vm.createContext(sandbox);
   vm.runInContext(appSource, sandbox);
   sandbox.Pinalert = window.Pinalert;
+  if (beforeReliable) {
+    beforeReliable(window.Pinalert);
+  }
   vm.runInContext(reliableSource, sandbox);
   return { Pinalert: window.Pinalert, Reliable: window.PinalertReliable, doc, button, menu, line, emptyClear, fetches, calls, location, history };
 }
@@ -205,6 +208,35 @@ test('readFromAddress: only the exact word 1 turns the tick on', () => {
   for (const search of ['?reliable=true', '?reliable=0', '?reliable=', '?reliable=11', '?reliable=%31x', '?Reliable=1', '?reliable', '', '?report=12', undefined, null, 5]) {
     assert.equal(m.Reliable.readFromAddress(search), false, `address ${String(search)} leaves the tick off`);
   }
+});
+
+// Added 2026-10-21 after Phase 3.4 plan 41: with a kept fix map.js asks for
+// the list before this module runs, so on a slow script load the first answer
+// can be drawn first. The mount must then draw the store again under the tick,
+// or the list shows everyone until the next poll.
+test('reliable=1 read at mount redraws once when the first answer was already drawn', () => {
+  let redraws = 0;
+  const m = load({
+    href: '/?reliable=1',
+    beforeReliable(P) {
+      P.state.hasLoaded = true;
+      P.subscribe(() => { redraws += 1; });
+    }
+  });
+  assert.equal(m.Pinalert.state.reliable, true);
+  assert.equal(redraws, 1, 'one redraw under the tick');
+  assert.equal(m.fetches.length, 0, 'no request');
+  assert.equal(m.calls.replace.length, 0, 'the address already says reliable=1');
+});
+
+test('reliable=1 read at mount before any answer sets the tick with no redraw', () => {
+  let redraws = 0;
+  const m = load({
+    href: '/?reliable=1',
+    beforeReliable(P) { P.subscribe(() => { redraws += 1; }); }
+  });
+  assert.equal(m.Pinalert.state.reliable, true);
+  assert.equal(redraws, 0, 'the first answer draws under the tick by itself');
 });
 
 test('set(true) replaces the address, keeping the other parameters, the hash and history.state', () => {
