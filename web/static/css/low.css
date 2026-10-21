@@ -1,8 +1,7 @@
-/* The Low data view (plan 04-18). One centred text column for the Active list,
-   the position line and the stale line. It uses the shared tokens only and adds
-   no token of its own. It loads after chrome.css so its margin on the stale
-   text wins over the inline note rule. The rows are not interactive, so they
-   override the pointer the feed stylesheet gives every row. */
+/* The Low data view (plan 04-18): one column on a phone, the whole width on a
+   laptop (plan 45). Shared tokens only. It loads after chrome.css so its stale
+   text margin wins over the inline note rule. Rows are not interactive, so
+   they override the feed's row pointer. */
 
 .low-page {
   max-width: 640px;
@@ -27,7 +26,7 @@
 /* From 900px the account trigger is outside the column. */
 @media (min-width: 900px) {
   .low-topbar:not([hidden]) {
-    padding-right: var(--space-md);
+    padding: var(--space-sm) 0 0;
   }
 }
 
@@ -102,9 +101,7 @@
   margin: var(--space-sm) 0 0;
 }
 
-/* The two buttons under the intro sit 8px apart side by side on a laptop and
-   stacked on a phone; before, only the whitespace between two inline buttons
-   separated them (4px) (03.4-29 finding 16). */
+/* The intro's actions row (03.4-29 finding 16). */
 .low-page__actions:not([hidden]) {
   display: flex;
   flex-wrap: wrap;
@@ -114,6 +111,25 @@
 
 .low-page__head .low-page__actions .btn {
   margin: 0;
+}
+
+/* Plan 45 (owner): the filled button of Post a report, full width, 52px. */
+.low-page__actions .low-page__report {
+  flex: 1 1 100%;
+  gap: var(--space-sm);
+  min-height: 52px;
+  padding: 0 var(--space-md);
+  border-radius: 8px;
+}
+
+.low-page__report::before {
+  content: "";
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask: url("/static/icons/plus.svg") center / contain no-repeat;
+  mask: url("/static/icons/plus.svg") center / contain no-repeat;
 }
 
 /* Tags in this view are 4px cornered boxes, not pills (03.4-29 finding 12). */
@@ -141,8 +157,8 @@
   margin: 0;
 }
 
-.low-page__head h2 {
-  margin: var(--space-lg) 0 var(--space-sm);
+.low-reports > h2 {
+  margin: var(--space-lg) var(--space-md) var(--space-sm);
   padding-top: var(--space-md);
   border-top: 1px solid var(--color-text-muted);
   font-size: var(--font-size-heading);
@@ -162,6 +178,108 @@
   border-left: 4px solid var(--severity-current, var(--severity-base));
   border-radius: 8px;
   cursor: default;
+}
+
+/* Plan 45 (owner): Flag ends each card as the phone report view's calm full
+   width row; the hairline is the muted token (3 to 1). */
+.report-row--low .flag-control:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  min-height: 48px;
+  margin-top: var(--space-lg);
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--color-text-muted);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  text-align: left;
+  text-decoration: none;
+}
+
+.report-row--low .flag-control:not([hidden])::before {
+  content: "";
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask: url("/static/icons/circle-alert.svg") center / contain no-repeat;
+  mask: url("/static/icons/circle-alert.svg") center / contain no-repeat;
+}
+
+.report-row--low .flag-control:not([hidden]):not([aria-disabled="true"]):hover {
+  background: var(--color-border);
+}
+
+@media (forced-colors: active) {
+  .low-page__report::before,
+  .report-row--low .flag-control:not([hidden])::before {
+    forced-color-adjust: none;
+    background-color: ButtonText;
+  }
+}
+
+/* Laptop (plan 45, owner: use the whole screen): a sticky left column, then
+   a grid of equal height cards; the right inset clears the fixed buttons. */
+@media (min-width: 900px) {
+  .low-page:not([hidden]) {
+    display: grid;
+    grid-template-columns: 360px minmax(0, 1fr);
+    column-gap: var(--space-xl);
+    align-items: start;
+    max-width: none;
+    margin: 0;
+    padding: 0 calc(var(--touch-target-min) + var(--space-lg) + var(--space-md)) var(--space-xl) var(--space-xl);
+  }
+
+  .low-side {
+    position: sticky;
+    top: 0;
+    max-height: 100vh;
+    overflow-y: auto;
+    margin: 0 calc(-1 * var(--space-xs));
+    padding: 0 var(--space-xs) var(--space-md);
+  }
+
+  .low-page__head {
+    padding: var(--space-md) 0 0;
+  }
+
+  .low-reports > h2:not([hidden]) {
+    display: flex;
+    align-items: center;
+    min-height: calc(var(--touch-target-min) + var(--space-sm));
+    margin: 0 0 var(--space-md);
+    padding: var(--space-sm) 0 0;
+    border-top: 0;
+  }
+
+  .low-list:not([hidden]),
+  .low-skeleton:not([hidden]) {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 22.5rem), 1fr));
+    /* Rows: this 8px plus each item's own 8px bottom margin. */
+    gap: var(--space-sm) var(--space-md);
+    padding: 0;
+  }
+
+  .report-row--low > .report-row__body:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+  }
+
+  .report-row--low .report-row__body > .severity-label {
+    align-self: flex-start;
+  }
+
+  /* Free height goes above the votes: action rows line up. */
+  .report-row--low .report-row__body > .trust-block {
+    margin-bottom: auto;
+  }
 }
 
 #low-list[hidden], #low-skeleton[hidden], #low-empty[hidden], #low-error[hidden] {
