@@ -169,6 +169,9 @@ function run({ phone = true, start = '/', ids = ['5', '6', '7'], hasLoaded = tru
     '  setOpenedFocusId: function (v) { openedFocusId = v; }, getOpenedFocusId: function () { return openedFocusId; } };\n' +
     // The real app.js openReport, with the store's own setFocusId and fetchReports.
     '(function () { var state = Pinalert.state;\n' +
+    // app.js counts the list requests it has sent (fetchSeq). sentFirstRequest stands for one that has left.
+    '  var fetchSeq = 0;\n' +
+    '  Pinalert.sentFirstRequest = function () { fetchSeq = 1; };\n' +
     '  function setFocusId(id) { Pinalert.setFocusId(id); }\n' +
     '  function fetchReports() { Pinalert.fetchReports(); }\n' +
     appOpenReport +
@@ -333,6 +336,25 @@ test('Pinalert.openReport asks the server for a report without a pin, as an addr
   assert.deepEqual(later.log, [], 'the map never writes the link or reads the list itself');
   later.store.openReport('42');
   assert.deepEqual(later.log, ['setFocusId 42', 'fetchReports']);
+});
+
+// Plan 41. Every script is deferred, and the map's start (an async permission
+// answer) can send the first list request before feed.js has run. feed.js then
+// asks for the report while that request is out and has not answered. The
+// request left without the id, so keeping the id for "the first request" is not
+// enough: the answer carries no report and nothing ever opens it until the next
+// poll. Reproduced in the iPhone simulator's own Safari with a held back feed.js.
+test('Pinalert.openReport asks again when the first list request left before the id was known', () => {
+  const t = run({ hasLoaded: false, ids: [] });
+  t.store.sentFirstRequest();
+  assert.equal(t.store.openReport('42'), true);
+  assert.deepEqual(t.log, ['setFocusId 42', 'fetchReports'], 'the request already out had no id, so the list is asked for again');
+});
+
+test('Pinalert.openReport before any list request has left only keeps the id (the first request carries it)', () => {
+  const t = run({ hasLoaded: false, ids: [] });
+  assert.equal(t.store.openReport('42'), true);
+  assert.deepEqual(t.log, ['setFocusId 42']);
 });
 
 test('a report the server cannot show puts the not available line on the phone, once per answer', () => {
