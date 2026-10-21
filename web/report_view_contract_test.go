@@ -69,9 +69,12 @@ func TestReportViewTemplate(t *testing.T) {
 // and the title Report sit in the top row, and the not available view fills
 // the same room. Nothing new is drawn at 900px and up.
 func TestReportViewPhoneStylesheet(t *testing.T) {
+	// Amended 2026-10-21 by plan 40: the strip starts at the top of the page
+	// under the floating controls; top was
+	// calc(var(--app-topbar-height) + var(--space-3xl) * 2.5).
 	want := map[string]string{
 		"position":  "fixed",
-		"top":       "calc(var(--app-topbar-height) + var(--space-3xl) * 2.5)",
+		"top":       "calc(var(--space-3xl) * 2.5)",
 		"right":     "0",
 		"overflow":  "visible",
 		"left":      "0 !important",
@@ -96,25 +99,35 @@ func TestReportViewPhoneStylesheet(t *testing.T) {
 		t.Errorf("a short landscape phone drops the strip and starts the report under the top row, got %v", short)
 	}
 
+	// Amended 2026-10-21 by plan 40: Back floats over the strip as a round
+	// control with the page colour and the menu shadow, 12px in from the left,
+	// where it was a see through square at 4px (left var(--space-xs),
+	// background transparent, box-shadow none) in a white top row.
 	back := p39PopupHead + " a.leaflet-popup-close-button:not([hidden])"
 	for prop, value := range map[string]string{
-		"position": "fixed", "top": "var(--space-sm)", "left": "var(--space-xs)",
-		"background": "transparent", "box-shadow": "none",
+		"position": "fixed", "top": "var(--space-sm)", "left": "var(--space-12)",
+		"border-radius": "50%", "background": "var(--color-bg)", "box-shadow": "var(--shadow-menu)",
 	} {
 		if got := p39Decl(t, phoneBlockMedia, back, prop); got != value {
 			t.Errorf("phone Back %s is %q, want %q", prop, got, value)
 		}
 	}
 
+	// Amended 2026-10-21 by plan 40: the title Report is no longer drawn as a
+	// row beside Back; it stays in the popup for screen readers, clipped like
+	// .visually-hidden, and still takes focus on open (display block, outline
+	// none). It was drawn fixed at the top row: top var(--space-sm), left
+	// calc(var(--space-xs) + var(--touch-target-min) + var(--space-xs)),
+	// height and line-height var(--touch-target-min), the heading font size
+	// and weight.
 	title := p39PopupHead + " .report-view__title"
 	for prop, value := range map[string]string{
-		"display": "block", "position": "fixed", "top": "var(--space-sm)",
-		"left":        "calc(var(--space-xs) + var(--touch-target-min) + var(--space-xs))",
-		"height":      "var(--touch-target-min)",
-		"line-height": "var(--touch-target-min)",
-		"font-size":   "var(--font-size-heading)",
-		"font-weight": "var(--font-weight-semibold)",
-		"outline":     "none",
+		"display": "block", "position": "absolute",
+		"width":    "1px",
+		"height":   "1px",
+		"overflow": "hidden",
+		"clip":     "rect(0, 0, 0, 0)",
+		"outline":  "none",
 	} {
 		if got := p39Decl(t, phoneBlockMedia, title, prop); got != value {
 			t.Errorf("phone title %s is %q, want %q", prop, got, value)
@@ -242,4 +255,62 @@ func TestReportViewStoreEntry(t *testing.T) {
 
 	feed := p19Code(t, "static/js/feed.js")
 	p13MustContain(t, "feed.js", feed, "Pinalert.openReport(new URLSearchParams(window.location.search).get(REPORT_PARAM));")
+}
+
+// TestNearbyTopControlsFloat pins plan 40 (owner, 2026-10-21, iPhone 17 Pro
+// simulator: "there's huge white spaces on the top ... redesign it better").
+// On the phone Nearby page the top chrome leaves the flow and floats over the
+// map: the bar is see through and lets presses pass, the search field, the
+// bell and the gear carry the page colour and the menu shadow and take their
+// own presses, the chips row and the zoom control sit under them, and the
+// list sheet at full stops under them. Only Nearby (the page with the app
+// shell) floats; the bell button's own position is never set here (Phase 3.2
+// anchors its count to it), and nothing of this is in the laptop rules.
+func TestNearbyTopControlsFloat(t *testing.T) {
+	const nearby = "body.has-app-bar:has(> .app-shell) > .top-chrome"
+	for prop, value := range map[string]string{
+		"position": "fixed", "top": "0", "right": "0", "left": "0", "pointer-events": "none",
+	} {
+		if got := p39Decl(t, phoneBlockMedia, nearby, prop); got != value {
+			t.Errorf("Nearby top chrome %s is %q, want %q", prop, got, value)
+		}
+	}
+	for prop, value := range map[string]string{
+		"gap": "var(--space-sm)", "padding": "var(--space-sm) var(--space-12)", "background": "transparent",
+	} {
+		if got := p39Decl(t, phoneBlockMedia, nearby+" > .app-topbar", prop); got != value {
+			t.Errorf("Nearby top bar %s is %q, want %q", prop, got, value)
+		}
+	}
+	presses := nearby + " .map-search, " + nearby + " .app-topbar__bell, " + nearby + " .app-topbar__gear, " + nearby + " .bell-list"
+	if got := p39Decl(t, phoneBlockMedia, presses, "pointer-events"); got != "auto" {
+		t.Errorf("the search, the bell, the gear and the bell list must take their own presses, got %q", got)
+	}
+	look := nearby + " .map-search__field, " + nearby + " .app-topbar__bell, " + nearby + " .app-topbar__gear"
+	for prop, value := range map[string]string{"background": "var(--color-bg)", "box-shadow": "var(--shadow-menu)"} {
+		if got := p39Decl(t, phoneBlockMedia, look, prop); got != value {
+			t.Errorf("floating controls %s is %q, want %q", prop, got, value)
+		}
+	}
+	if got := p39Decl(t, phoneBlockMedia, ".pane--map > .map-tools", "top"); got != "var(--app-topbar-height)" {
+		t.Errorf("the chips row must sit under the floating controls, top is %q", got)
+	}
+	if got := p39Decl(t, phoneBlockMedia, ".pane--map .leaflet-top", "top"); got != "var(--app-topbar-height)" {
+		t.Errorf("the zoom control must sit under the floating controls, top is %q", got)
+	}
+	if got := p39Decl(t, phoneBlockMedia, ".app-shell > .pane--list[data-snap]", "top"); got != "max(var(--sheet-top, 45%), var(--app-topbar-height))" {
+		t.Errorf("the list sheet at full must stop under the floating controls, top is %q", got)
+	}
+	for _, r := range phoneRules(t) {
+		for _, part := range strings.Split(r.Head, ",") {
+			if strings.HasSuffix(strings.TrimSpace(part), ".app-topbar__bell") {
+				if _, ok := r.Decls["position"]; ok {
+					t.Errorf("phone.css rule %q sets position on the bell button; Phase 3.2 anchors its count to it", r.Head)
+				}
+			}
+		}
+		if strings.Contains(r.Head, "body.has-app-bar:has(> .app-shell) > .top-chrome") && r.Media != phoneBlockMedia {
+			t.Errorf("the floating top controls must live in the phone block only, found %q in %q", r.Head, r.Media)
+		}
+	}
 }

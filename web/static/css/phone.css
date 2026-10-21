@@ -246,8 +246,10 @@
      by the screen, which reads as "scroll for more". Before, the layer stopped
      68px short and cut the fourth chip in the middle of the map (03.4-29
      finding 17). The chip row's own right padding (feed.css) lets the last
-     chip clear the edge when the row is scrolled to its end. */
+     chip clear the edge when the row is scrolled to its end. The row sits
+     under the top controls, which float over the map since plan 40. */
   .pane--map > .map-tools {
+    top: var(--app-topbar-height);
     right: 0;
   }
 
@@ -565,6 +567,59 @@
     background: none;
   }
 
+  /* ---- Nearby: the top controls float over the map (plan 40) ----
+     Owner, 2026-10-21, iPhone 17 Pro simulator: "there's huge white spaces on
+     the top ... redesign it better". On Nearby the top chrome leaves the page
+     flow and lies over the map, so the map, and the report view's strip under
+     it, run to the top of the page. The bar is see through and lets presses
+     pass to the map; the search field, the bell, the gear and the bell list
+     take their own. The three controls carry a solid page coloured background
+     and the soft menu shadow, so they keep their contrast over any map, with
+     12px at each side and 8px between them. The bar stays positioned, so the
+     bell list and the search results still hang from it, and the bell
+     button's own position is left alone (Phase 3.2 anchors its count to it).
+     Every other page keeps its title bar in the flow. */
+  body.has-app-bar:has(> .app-shell) > .top-chrome {
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: 0;
+    pointer-events: none;
+  }
+
+  body.has-app-bar:has(> .app-shell) > .top-chrome > .app-topbar {
+    gap: var(--space-sm);
+    padding: var(--space-sm) var(--space-12);
+    background: transparent;
+  }
+
+  body.has-app-bar:has(> .app-shell) > .top-chrome .map-search,
+  body.has-app-bar:has(> .app-shell) > .top-chrome .app-topbar__bell,
+  body.has-app-bar:has(> .app-shell) > .top-chrome .app-topbar__gear,
+  body.has-app-bar:has(> .app-shell) > .top-chrome .bell-list {
+    pointer-events: auto;
+  }
+
+  body.has-app-bar:has(> .app-shell) > .top-chrome .map-search__field,
+  body.has-app-bar:has(> .app-shell) > .top-chrome .app-topbar__bell,
+  body.has-app-bar:has(> .app-shell) > .top-chrome .app-topbar__gear {
+    background: var(--color-bg);
+    box-shadow: var(--shadow-menu);
+  }
+
+  /* The zoom control sits under the floating controls, where the map began
+     before, beside the chips row (its top is set with the row's own rule). */
+  .pane--map .leaflet-top {
+    top: var(--app-topbar-height);
+  }
+
+  /* At full the list sheet stops under the floating controls instead of
+     sliding under them (sheet.js puts full at the top of the box, which is
+     now the top of the page). */
+  .app-shell > .pane--list[data-snap] {
+    top: max(var(--sheet-top, 45%), var(--app-topbar-height));
+  }
+
   /* The bottom bar: four equal items. 4px of padding at the top and sides and
      4px plus the home indicator inset at the bottom, so the bar is 65px high
      at 390px with the 1px border. It sits under the content in the flow, above
@@ -870,7 +925,10 @@
      laid out against the screen. Nothing in the card's markup, focus handling
      or Escape handling changes. Every head starts with .leaflet-container
      .leaflet-detail-pane, so it never equals a trust.css head. The strip is
-     two and a half times the 64px token, 160px, under the 60px top row. */
+     two and a half times the 64px token, 160px, from the top of the page:
+     Back floats at its top left and the bell and the gear at its top right,
+     and the title Report is kept for screen readers only (plan 40, owner
+     2026-10-21: no white band at the top). */
 
   .leaflet-container .leaflet-detail-pane {
     z-index: 1080;
@@ -878,7 +936,7 @@
 
   .leaflet-container .leaflet-detail-pane .leaflet-popup {
     position: fixed;
-    top: calc(var(--app-topbar-height) + var(--space-3xl) * 2.5);
+    top: calc(var(--space-3xl) * 2.5);
     right: 0;
     margin: 0;
     /* Not a scroller: Safari on the iPhone clips fixed children (Back and
@@ -897,19 +955,23 @@
     transform: none !important;
   }
 
-  /* The heading Report sits in the top row beside Back. It takes focus when
-     the view opens, as a heading, so it draws no ring. */
+  /* The heading Report is not drawn (plan 40: no top row band); it is kept
+     for screen readers, clipped like .visually-hidden, so it still names the
+     view and still takes focus when the view opens. As a heading it draws no
+     ring. */
   .leaflet-container .leaflet-detail-pane .leaflet-popup .report-view__title {
     display: block;
-    position: fixed;
-    top: var(--space-sm);
-    left: calc(var(--space-xs) + var(--touch-target-min) + var(--space-xs));
-    height: var(--touch-target-min);
-    margin: 0;
-    color: var(--color-text);
-    font-size: var(--font-size-heading);
-    line-height: var(--touch-target-min);
-    font-weight: var(--font-weight-semibold);
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
     outline: none;
   }
 
@@ -1083,19 +1145,21 @@
   }
 
   /* ---- The close anchor becomes Back at the left of the top row ----
-     map.js names it Back on a phone (plan 39). It is a plain touch target like
-     the bell and the gear at the other end of the row. The head adds the
+     map.js names it Back on a phone (plan 39). Since plan 40 it is a round
+     touch target floating over the strip, 12px in from the left, with the
+     page colour and the soft menu shadow of the bell and the gear at the
+     other end of the row. The head adds the
      view's own class, so it outranks trust.css's (0,4,1) close rule. */
 
   .leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden]) {
     position: fixed;
     top: var(--space-sm);
     right: auto;
-    left: var(--space-xs);
-    border-radius: 8px;
-    background: transparent;
+    left: var(--space-12);
+    border-radius: 50%;
+    background: var(--color-bg);
     color: var(--color-text);
-    box-shadow: none;
+    box-shadow: var(--shadow-menu);
   }
 
   .leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden])::before {
@@ -1124,11 +1188,11 @@
     display: none;
   }
 
-  /* Back and the heading Report are fixed over the top bar's left end, where
-     the place search field sits. While the view is open the field steps aside
-     (hidden, so it also leaves the tab order); it comes back when the view
-     closes (03.4-29 finding 2). The top row then reads Back, Report, the bell
-     and the gear (plan 39). */
+  /* Back is fixed over the top bar's left end, where the place search field
+     sits. While the view is open the field steps aside (hidden, so it also
+     leaves the tab order); it comes back when the view closes (03.4-29
+     finding 2). The top row then reads Back, the bell and the gear, floating
+     over the strip (plan 40; the heading Report is for screen readers only). */
   body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) .app-topbar > .map-search {
     visibility: hidden;
   }
