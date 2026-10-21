@@ -265,12 +265,19 @@ window.PinalertShowMenu = (function () {
     }
   }
 
-  // Mount. The alias is read here, once, and handed to the store before the
-  // first request goes out (the first request comes from map.js after a
-  // position answer, so this module body runs first). A page without the
-  // button mounts nothing.
+  // Mount. The alias is read here, once, and handed to the store, usually
+  // before the first request goes out (the first request comes from map.js
+  // after a position answer). With a kept fix that answer can come before this
+  // module runs (Phase 3.4 plan 41), so the first request can leave with the
+  // store's default read: its answer is then dropped as another read, and the
+  // list would wait for the next poll. When the read changes after a request
+  // has left (the store flags the first one on the root element), the list is
+  // asked for again. A page without the button mounts nothing.
   if (buttonEl && menuEl && window.Pinalert) {
-    Pinalert.setShow(readAlias(window.location ? window.location.search : ''));
+    var readChanged = Pinalert.setShow(readAlias(window.location ? window.location.search : ''));
+    if (readChanged && document.documentElement.hasAttribute('data-feed-requested')) {
+      Pinalert.fetchReports();
+    }
     sync();
     buttonEl.addEventListener('click', onButtonClick);
     buttonEl.addEventListener('keydown', onButtonKeydown);

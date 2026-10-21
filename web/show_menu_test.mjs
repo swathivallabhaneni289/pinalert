@@ -86,8 +86,9 @@ class FakeEl {
 
 // load evaluates app.js and then show-menu.js against a list head with the
 // button, its label and the three item menu. search is the page address'
-// query string. fetches keeps every list request.
-function load({ search = '' } = {}) {
+// query string. beforeMenu runs with the store between the two scripts, the
+// way map.js can ask for the list first. fetches keeps every list request.
+function load({ search = '', beforeMenu = null } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -167,6 +168,9 @@ function load({ search = '' } = {}) {
   // reliable.js loads between app.js and show-menu.js, as in the page, so the
   // tick item has its real owner to call.
   vm.runInContext(reliableSource, sandbox);
+  if (beforeMenu) {
+    beforeMenu(window.Pinalert);
+  }
   vm.runInContext(menuSource, sandbox);
   return { Pinalert: window.Pinalert, Menu: window.PinalertShowMenu, doc, button, label, menu, items, fetches, replaced };
 }
@@ -402,6 +406,30 @@ test('the old /?view=disputed link opens Show Disputed, any other address opens 
     assert.equal(m.Pinalert.state.show, 'all', `address ${search || '(none)'} opens Show All`);
     assert.equal(m.Pinalert.state.view, 'all');
     assert.equal(m.label.textContent, 'Show: All');
+  }
+});
+
+test('a list request that left before the menu mounted is asked again under the menu read', () => {
+  // map.js with a kept fix can send the first request before this module runs
+  // (plan 41). It leaves with the store's default read, so the mount asks again.
+  for (const [search, view] of [['', 'all'], ['?view=disputed', 'disputed']]) {
+    const m = load({
+      search,
+      beforeMenu: (P) => {
+        P.setCenter(12.9, 77.5, true);
+        P.fetchReports();
+      }
+    });
+    assert.equal(m.fetches.length, 2, `address ${search || '(none)'} asks again`);
+    assert.doesNotMatch(String(m.fetches[0].url), /[?&]view=/, 'the early request carried the default read');
+    assert.match(String(m.fetches[1].url), new RegExp(`[?&]view=${view}(&|$)`));
+  }
+});
+
+test('before any list request has left, the mount sends none (the first request carries the read)', () => {
+  for (const search of ['', '?view=disputed']) {
+    const m = load({ search });
+    assert.equal(m.fetches.length, 0, `address ${search || '(none)'} sends nothing at mount`);
   }
 });
 
