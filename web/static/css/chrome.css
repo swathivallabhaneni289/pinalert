@@ -90,12 +90,17 @@ html {
   align-items: flex-start;
   box-sizing: border-box;
   min-height: var(--touch-target-min);
-  padding-top: var(--space-sm);
-  margin-block: calc(-1 * var(--space-sm)) calc(var(--font-size-label) * var(--line-height-label) + var(--space-sm) - var(--touch-target-min));
   /* Plan 42 (owner, 2026-10-21: no underlined text): an outlined button on
-     the dark strip, in the strip's own outline colour. The side padding and
-     the hairline widen the link only; its height and margins are unchanged. */
-  padding-inline: var(--space-sm);
+     the dark strip, in the strip's own outline colour. The box sits 2px lower
+     (2px from the top of the strip, centred in it) and the top padding loses
+     those 2px and the hairline, so the words stay at the strip's 8px. The
+     bottom margin gives the 2px back, so the margin box is still one text
+     line. The end margin gives back the side padding and the hairlines, so
+     the margin box keeps its old width: the strip text never wraps sooner. */
+  padding-top: calc(var(--space-sm) - 3px);
+  margin-block: calc(-1 * var(--space-sm) + 2px) calc(var(--font-size-label) * var(--line-height-label) + var(--space-sm) - var(--touch-target-min) - 2px);
+  padding-inline: var(--space-xs);
+  margin-inline-end: calc(-2 * (var(--space-xs) + 1px));
   border: 1px solid var(--color-notice-outline);
   border-radius: 8px;
   color: var(--color-notice-text);
