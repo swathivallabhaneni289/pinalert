@@ -8,7 +8,8 @@
  * min-width 900px block at the end, so this file adds nothing to phone.css.
  *
  * Tokens only; muted text appears on --color-bg only, where it clears 4.5 to 1
- * in both themes. Loads after app-bar.css and before phone.css.
+ * in both themes (the Settings group fill takes a token mix instead, see the
+ * Settings block). Loads after app-bar.css and before phone.css.
  */
 
 /* ---- Phone (the base) ----------------------------------------------------- */
@@ -126,6 +127,97 @@
   padding: var(--space-lg) var(--space-md);
 }
 
+/* ---- Settings: a grouped list ---------------------------------------------- */
+
+/* Plan 03.4-43 (owner, 2026-10-21: "they're divided into box, but I still feel
+   like we could do a much better job while showing them"). Settings reads as a
+   settings screen: a short heading over each group, its one line under the
+   heading, then one rounded filled surface whose rows are divided by inset
+   hairlines. Scoped to the Settings page (main.place-page--settings), so the
+   Official alerts page, which shares this file, keeps its look.
+
+   Contrast, computed against the group fill (--color-surface):
+   - the second line and the chevron are the muted colour pulled 15 percent
+     toward the text colour: about 5.2 to 1 in light, about 8 to 1 in dark
+     (plain muted on the fill is 4.3 to 1 in light, under 4.5);
+   - the hairline is the muted colour mixed 15 percent toward the fill: about
+     3.3 to 1 in light and about 5.4 to 1 in dark (the old --color-border was
+     about 1.1 to 1 on the fill, under the 3 to 1 the plan asks);
+   - the value is the text colour, the Log out label the critical colour
+     (about 4.9 to 1 in light, 5.5 to 1 in dark).
+   Both mixes are of tokens, so they follow the theme with no extra block. */
+.place-page--settings {
+  --settings-sub: color-mix(in srgb, var(--color-text-muted) 85%, var(--color-text));
+  --settings-line: color-mix(in srgb, var(--color-text-muted) 85%, var(--color-surface));
+  padding-bottom: var(--space-lg);
+}
+
+.place-page--settings .place-section {
+  padding: var(--space-lg) var(--space-md) 0;
+}
+
+/* A short heading: Body size, semibold, the text colour. */
+.place-page--settings .place-section__title {
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+/* The line under the heading sits on --color-bg, where muted clears 4.5 to 1. */
+.place-page--settings .place-section__line {
+  margin: var(--space-xs) 0 var(--space-sm);
+}
+
+/* One rounded surface per group: a fill and no outline. */
+.place-page--settings .place-box {
+  border: 0;
+  border-radius: 12px;
+  background: var(--color-surface);
+}
+
+/* The hairline between rows. The shared rule above lost to .place-row's own
+   border: 0 (same weight, later in the file), so no line was drawn at all.
+   Here the line is a drawn edge on every row after the first, inset to start
+   at the text like a settings list, and drawn on the row's wrapper when the
+   row sits in a form (Log out). */
+.place-page--settings .place-box > * + * {
+  position: relative;
+  border-top: 0;
+}
+
+.place-page--settings .place-box > * + *::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: var(--space-md);
+  border-top: 1px solid var(--settings-line);
+  pointer-events: none;
+}
+
+.place-page--settings .place-row {
+  padding: var(--space-12) var(--space-md);
+}
+
+.place-page--settings .place-row__sub {
+  color: var(--settings-sub);
+}
+
+/* The current value in the normal text colour, read with the label. */
+.place-page--settings .place-row__value {
+  color: var(--color-text);
+}
+
+.place-page--settings .place-row > .app-icon {
+  color: var(--settings-sub);
+}
+
+/* The destructive row (Log out) in its own group at the end, in the critical
+   colour at weight 600, as UI-SPEC Surface 6 draws a danger row. */
+.place-page--settings .place-row--button .place-row__label {
+  color: var(--color-severity-critical);
+  font-weight: var(--font-weight-semibold);
+}
+
 /* ---- Laptop ---------------------------------------------------------------- */
 
 @media (min-width: 900px) {
@@ -162,10 +254,34 @@
     grid-column: 2;
   }
 
-  /* The Account section is a phone section: the laptop has Log out in the
-     person menu, so the section is not drawn at all. */
-  .place-section--phone {
-    display: none;
+  /* Plan 03.4-43 (owner, 2026-10-21: "I don't see a logout option on my
+     laptop version, so I think we should add that"): the Settings Account
+     section with Log out is drawn on the laptop too, so the phone only hide
+     that stood here (.place-section--phone) is gone with its class. The
+     person menu keeps its own Log out. */
+
+  /* Settings (plan 03.4-43, owner 2026-10-21): the same grouped list as the
+     phone in a centred column of at most 640px, the page heading above the
+     first group. Official alerts keeps the 260px | 1fr grid above. */
+  .place-page--settings {
+    box-sizing: border-box;
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 0 var(--space-lg) 40px;
+  }
+
+  .place-page--settings .place-head {
+    padding: var(--space-lg) 0 0;
+  }
+
+  .place-page--settings .place-section {
+    display: block;
+    padding: var(--space-lg) 0 0;
+    border-top: 0;
+  }
+
+  .place-page--settings .place-section__line {
+    margin: var(--space-xs) 0 var(--space-sm);
   }
 }
 
@@ -173,5 +289,15 @@
   .place-box,
   .place-section {
     border-color: CanvasText;
+  }
+
+  /* The Settings group has a fill and no outline; with forced colours the fill
+     is dropped, so the group gets an outline and the hairlines stay drawn. */
+  .place-page--settings .place-box {
+    border: 1px solid CanvasText;
+  }
+
+  .place-page--settings .place-box > * + *::before {
+    border-top-color: CanvasText;
   }
 }

@@ -351,3 +351,60 @@ func TestSettingsScriptContract(t *testing.T) {
 		}
 	}
 }
+
+// TestSettingsIsAGroupedList pins plan 03.4-43 (owner, 2026-10-21): Settings
+// reads as a grouped settings list. Each group is one rounded filled surface,
+// rows are divided by a hairline that wins over the row's own border: 0 and
+// clears 3 to 1 on the fill, the value is in the text colour, the Log out row
+// is in the critical colour, and the laptop shows the same list in a centred
+// column of at most 640px. It is scoped to the Settings page, so Official
+// alerts keeps its look.
+func TestSettingsIsAGroupedList(t *testing.T) {
+	page := p421ReadTemplate(t, "settings.html.tmpl")
+	if !strings.Contains(page, `<main class="place-page place-page--settings" data-account-id="{{.AccountID}}">`) {
+		t.Errorf("settings.html.tmpl's main lacks the place-page--settings modifier")
+	}
+	if strings.Contains(p421ReadTemplate(t, "alerts.html.tmpl"), "place-page--settings") {
+		t.Errorf("alerts.html.tmpl carries the Settings modifier")
+	}
+	const css = "static/css/places.css"
+	p16MustDecl(t, "settings vars", p31mRule(t, css, "", ".place-page--settings"), map[string]string{
+		"--settings-sub":  "color-mix(in srgb, var(--color-text-muted) 85%, var(--color-text))",
+		"--settings-line": "color-mix(in srgb, var(--color-text-muted) 85%, var(--color-surface))",
+	})
+	p16MustDecl(t, "settings group", p31mRule(t, css, "", ".place-page--settings .place-box"), map[string]string{
+		"border": "0", "border-radius": "12px", "background": "var(--color-surface)",
+	})
+	p16MustDecl(t, "settings hairline", p31mRule(t, css, "", ".place-page--settings .place-box > * + *::before"), map[string]string{
+		"border-top": "1px solid var(--settings-line)", "left": "var(--space-md)", "right": "0", "top": "0",
+	})
+	p16MustDecl(t, "settings value", p31mRule(t, css, "", ".place-page--settings .place-row__value"), map[string]string{
+		"color": "var(--color-text)",
+	})
+	p16MustDecl(t, "settings second line", p31mRule(t, css, "", ".place-page--settings .place-row__sub"), map[string]string{
+		"color": "var(--settings-sub)",
+	})
+	p16MustDecl(t, "settings Log out", p31mRule(t, css, "", ".place-page--settings .place-row--button .place-row__label"), map[string]string{
+		"color": "var(--color-severity-critical)", "font-weight": "var(--font-weight-semibold)",
+	})
+	p16MustDecl(t, "settings laptop column", p31mRule(t, css, "@media (min-width: 900px)", ".place-page--settings"), map[string]string{
+		"max-width": "640px", "margin": "0 auto",
+	})
+	// The owner asked for Log out on the laptop Settings page too (2026-10-21,
+	// "I don't see a logout option on my laptop version, so I think we should
+	// add that"): the Account section is drawn on both sizes, as the last
+	// group, through the same POST /auth/logout form the phone uses, and the
+	// person menu keeps its own Log out (TestPersonMenuItems).
+	if strings.Contains(page, "place-section--phone") || strings.Contains(stripCSSComments(p421ReadStatic(t, "css/places.css")), "place-section--phone") {
+		t.Errorf("the Settings Account section is still phone only; Log out must be a row on the laptop too")
+	}
+	if strings.Count(page, `action="/auth/logout"`) != 1 || strings.Count(page, "place-row--button") != 1 {
+		t.Errorf("settings.html.tmpl must hold exactly one Log out row posting to /auth/logout")
+	}
+	p421InOrder(t, "Account is the last group", page, `id="settings-about-title"`, `id="settings-account-title"`, `action="/auth/logout"`, "</main>")
+	for _, banned := range []string{"opacity", "gradient", "999px", "text-decoration: underline", "!important"} {
+		if strings.Contains(stripCSSComments(p421ReadStatic(t, "css/places.css")), banned) {
+			t.Errorf("places.css holds %q", banned)
+		}
+	}
+}
