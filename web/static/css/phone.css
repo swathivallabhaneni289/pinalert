@@ -1114,6 +1114,17 @@
     border-color: var(--color-border);
   }
 
+  /* Tighter actions on the phone (owner, 2026-10-21: too much space between
+     Mark resolved, Flag and the details): an empty note slot adds no margin,
+     and Flag sits close under Mark resolved. */
+  .leaflet-container .leaflet-detail-pane .popup-card .vote-note:empty {
+    margin-top: 0;
+  }
+
+  .leaflet-container .leaflet-detail-pane .popup-card__actions .flag-control:not([hidden]) {
+    margin-top: 0;
+  }
+
   /* Mark resolved spans both columns as a centred text link. The good tone is
      used where it clears 4.5 to 1 on the sheet tint in both themes: Low,
      Medium and the provisional surface. A Critical sheet keeps the normal
