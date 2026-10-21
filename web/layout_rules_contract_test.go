@@ -511,6 +511,12 @@ var sizeOnlyNamed = map[string]string{
 	".welcome__steps-item[data-state=\"done\"] .welcome__dot-num": "laptop side panel detail: a finished step shows a tick in place of its number; the phone shows the same progress in its progress line.",
 	".welcome__dot-tick": "the tick on a finished step of the laptop side panel, hidden until the step is done and on the phone, which draws the progress line.",
 
+	// Amended 2026-10-21 by plan 43 (owner): the Settings grouped list gives
+	// its sections display block on the laptop, which outweighs the
+	// .place-section--phone rule, so the same section is hidden again under
+	// the page modifier. Same part, same reason, not a new size only element.
+	".place-page--settings .place-section--phone": "phone only: the same Settings Account section with Log out, hidden again under the Settings page modifier on the laptop; the laptop has Log out in the person menu (D-25, plan 03.4-43).",
+
 	// Laptop only, hidden under 900px.
 	"main.profile-page > .activity-heading": "laptop only: the My activity page heading in the left column; the phone has the top bar title and the hub (D-06, D-19).",
 	"main.profile-page > .activity-hub":     "phone only: the My activity hub list of five parts; the laptop stacks the same five parts on one page (D-19, D-21).",
