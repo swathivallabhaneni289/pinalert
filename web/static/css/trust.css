@@ -1693,3 +1693,17 @@
   color: var(--color-text);
   text-decoration: underline;
 }
+
+/* The page level host of the phone report view (map.js), on every size so it
+   never takes part in the page layout: no size, no background and no clipping,
+   so Safari on the iPhone lays the fixed view out against the screen instead
+   of clipping it to the map (2026-10-21). */
+.leaflet-container.report-view-host {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  background: transparent;
+}

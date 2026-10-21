@@ -556,11 +556,22 @@ func TestPhoneDetailSheetStylesheet(t *testing.T) {
 	popup := must(".leaflet-container .leaflet-detail-pane .leaflet-popup")
 	for prop, want := range map[string]string{
 		"position": "fixed", "top": "calc(var(--app-topbar-height) + var(--space-3xl) * 2.5)", "right": "0",
-		"overflow-y": "auto", "overscroll-behavior": "contain", "touch-action": "pan-y",
-		"left": "0 !important", "bottom": "calc(var(--app-bottombar-height) + env(safe-area-inset-bottom)) !important", "transform": "none !important",
+		"overflow": "visible",
+		"left":     "0 !important", "bottom": "calc(var(--app-bottombar-height) + env(safe-area-inset-bottom)) !important", "transform": "none !important",
 	} {
 		if got := declared(popup, prop); got != want {
 			t.Errorf("sheet %s is %q, want %q", prop, got, want)
+		}
+	}
+	// Amended 2026-10-21: Safari on the iPhone clipped Back and Report (fixed
+	// children of the popup) to the popup while it was the scroller, so the
+	// wrapper scrolls instead.
+	wrapper := must(".leaflet-container .leaflet-detail-pane .leaflet-popup-content-wrapper")
+	for prop, want := range map[string]string{
+		"height": "100%", "overflow-x": "hidden", "overflow-y": "auto", "overscroll-behavior": "contain", "touch-action": "pan-y",
+	} {
+		if got := declared(wrapper, prop); got != want {
+			t.Errorf("sheet wrapper %s is %q, want %q", prop, got, want)
 		}
 	}
 
@@ -644,9 +655,12 @@ func TestPhoneDetailMapScript(t *testing.T) {
 	code := p19Code(t, "static/js/map.js")
 
 	initBody := jsFunctionBody(t, code, "init()")
+	// Amended 2026-10-21: the detail pane moved to a page level host, because
+	// Safari on the iPhone clipped the fixed view to the map container.
 	p13Ordered(t, initBody, "init",
 		"map = L.map(container,",
-		"map.createPane('detailPane', container)",
+		"document.body.appendChild(detailHost)",
+		"map.createPane('detailPane', detailHost)",
 		"L.DomEvent.disableClickPropagation(detailPane)",
 		"L.DomEvent.disableScrollPropagation(detailPane)",
 		"if (hasVectorBasemap())")
