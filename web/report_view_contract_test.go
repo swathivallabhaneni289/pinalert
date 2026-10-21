@@ -250,7 +250,7 @@ func TestReportViewStoreEntry(t *testing.T) {
 	app := p19Code(t, "static/js/app.js")
 	body := jsFunctionBody(t, app, "openReport(id)")
 	p13Ordered(t, body, "Pinalert.openReport", "window.PinalertMap.openReport(text)", "setFocusId(text);",
-		"if (state.hasLoaded) {", "fetchReports();")
+		"if (state.hasLoaded || fetchSeq > 0) {", "fetchReports();")
 	p13MustContain(t, "app.js", app, "openReport: openReport")
 
 	feed := p19Code(t, "static/js/feed.js")
