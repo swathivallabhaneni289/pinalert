@@ -226,7 +226,7 @@ func TestReportViewMapScript(t *testing.T) {
 	p13MustContain(t, "map.js", code, "openReport: openReport", "var BACK_LABEL = 'Back';", "var REPORT_TITLE = 'Report';")
 
 	// The laptop paths that must stay as they were.
-	p13MustContain(t, "applyPopupPlacement", jsFunctionBody(t, code, "applyPopupPlacement(popup)"),
+	p13MustContain(t, "applyPopupPlacement", jsFunctionBody(t, code, "applyPopupPlacement(popup, card)"),
 		"popup.options.pane = phone ? 'detailPane' : 'popupPane'")
 	p13MustNotContain(t, "onPopupOpen", open, "pushState", "replaceState")
 }

@@ -665,19 +665,29 @@ func TestPhoneDetailMapScript(t *testing.T) {
 		"L.DomEvent.disableScrollPropagation(detailPane)",
 		"if (hasVectorBasemap())")
 
-	place := jsFunctionBody(t, code, "applyPopupPlacement(popup)")
+	// Amended 2026-10-21: the card comes in too, so the phone puts Confirm and
+	// Dispute above the trust details (owner) and the laptop keeps its order.
+	place := jsFunctionBody(t, code, "applyPopupPlacement(popup, card)")
 	p13MustContain(t, "applyPopupPlacement", place,
 		"popup.options.pane = phone ? 'detailPane' : 'popupPane'",
-		"popup.options.autoPan = !reducedMotion && !phone")
+		"popup.options.autoPan = !reducedMotion && !phone",
+		"arrangeCard(card, phone);")
+	arrange := jsFunctionBody(t, code, "arrangeCard(card, phone)")
+	p13Ordered(t, arrange, "arrangeCard",
+		"if (phone) {",
+		"body.insertBefore(fade, trust);",
+		"body.insertBefore(actions, trust);",
+		"} else {",
+		"body.insertBefore(trust, fade);")
 
 	upsert := jsFunctionBody(t, code, "upsertMarker(report)")
-	p13Ordered(t, upsert, "upsertMarker", "marker.bindPopup(", "applyPopupPlacement(marker.getPopup());", "marker.on('click'")
+	p13Ordered(t, upsert, "upsertMarker", "marker.bindPopup(", "applyPopupPlacement(marker.getPopup(), card);", "marker.on('click'")
 	p13MustContain(t, "upsertMarker bind literal", upsert, "autoPan: !reducedMotion", "keepInView: true")
 
 	resize := jsFunctionBody(t, code, "onMapResize()")
 	p13Ordered(t, resize, "onMapResize",
 		"var narrow = phoneDetail();", "var crossed = narrow !== lastNarrow;", "lastNarrow = narrow;",
-		"map.closePopup();", "applyPopupPlacement(markers[ids[i]].getPopup());")
+		"map.closePopup();", "applyPopupPlacement(markers[ids[i]].getPopup(), cards[ids[i]]);")
 	p13MustContain(t, "onMapResize", resize, "applyPanPadding(markers[ids[i]].getPopup());")
 
 	pan := jsFunctionBody(t, code, "panPopupIntoView(popup)")

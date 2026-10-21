@@ -197,13 +197,40 @@ window.PinalertMap = (function () {
   // the detail pane, which sits outside the map pane's transform and which
   // phone.css lays out as a sheet, so Leaflet's own autopan must be off before
   // the open: it runs inside the open, ahead of the popupopen event.
-  function applyPopupPlacement(popup) {
+  function applyPopupPlacement(popup, card) {
     if (!popup) {
       return;
     }
     var phone = phoneDetail();
     popup.options.pane = phone ? 'detailPane' : 'popupPane';
     popup.options.autoPan = !reducedMotion && !phone;
+    arrangeCard(card, phone);
+  }
+
+  // arrangeCard puts the fade line and the actions (Confirm and Dispute, Mark
+  // resolved, Flag) right under the report's title and meta line on a phone,
+  // before the trust details, so the buttons show without scrolling (owner,
+  // 2026-10-21: "make sure this confirm and dispute buttons are more
+  // visible"). The laptop popup keeps its order (owner: do not disturb the
+  // laptop). The nodes move rather than being reordered by CSS, so the reading
+  // and tab order stay the same as what is seen.
+  function arrangeCard(card, phone) {
+    if (!card || !card.trust || !card.trust.el || !card.fade || !card.actions) {
+      return;
+    }
+    var body = card.fade.parentNode;
+    var trust = card.trust.el;
+    var fade = card.fade;
+    var actions = card.actions;
+    if (!body || trust.parentNode !== body || actions.parentNode !== body) {
+      return;
+    }
+    if (phone) {
+      body.insertBefore(fade, trust);
+      body.insertBefore(actions, trust);
+    } else {
+      body.insertBefore(trust, fade);
+    }
   }
 
   // hasVectorBasemap reports whether this browser can render the
@@ -782,6 +809,7 @@ window.PinalertMap = (function () {
       fade: fade,
       votes: block,
       mute: muteControl,
+      actions: actions,
       flag: flagControl,
       approximate: false,
       observer: null,
@@ -1272,7 +1300,7 @@ window.PinalertMap = (function () {
     var ids = Object.keys(markers);
     for (var i = 0; i < ids.length; i++) {
       applyPanPadding(markers[ids[i]].getPopup());
-      applyPopupPlacement(markers[ids[i]].getPopup());
+      applyPopupPlacement(markers[ids[i]].getPopup(), cards[ids[i]]);
     }
     var el = activePopup ? activePopup.getElement() : null;
     if (el && !el.contains(document.activeElement)) {
@@ -1508,7 +1536,7 @@ window.PinalertMap = (function () {
     var card = buildPopupCard(report);
     cards[report.id] = card;
     marker.bindPopup(card.el, { className: popupStateClasses(report), minWidth: 340, maxWidth: 340, keepInView: true, autoPan: !reducedMotion, autoPanPaddingTopLeft: panPad.topLeft, autoPanPaddingBottomRight: panPad.bottomRight });
-    applyPopupPlacement(marker.getPopup());
+    applyPopupPlacement(marker.getPopup(), card);
     marker.on('click', function () {
       Pinalert.select(report.id, 'map');
     });
