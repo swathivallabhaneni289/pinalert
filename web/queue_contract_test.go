@@ -493,8 +493,18 @@ func TestQueueStripCSS(t *testing.T) {
 		"-webkit-line-clamp": "3",
 		"overflow-wrap":      "anywhere",
 	})
+	// Amended 2026-10-21 by plan 42 (owner: no underlined text): the number
+	// inside the sentence was the text colour and underlined. It is now the
+	// link grey and semibold with no underline at rest; the red error sentence
+	// gives its link --color-link-in-error (3:1 against the red), and hover and
+	// keyboard focus bring the underline back.
 	need(".queue-strip__call, .form-error__call", map[string]string{
-		"color":           "var(--color-text)",
+		"color":           "var(--color-link)",
+		"font-weight":     "var(--font-weight-semibold)",
+		"text-decoration": "none",
+	})
+	need(".form-error__call", map[string]string{"color": "var(--color-link-in-error)"})
+	need(".queue-strip__call:hover, .queue-strip__call:focus-visible, .form-error__call:hover, .form-error__call:focus-visible", map[string]string{
 		"text-decoration": "underline",
 	})
 	need(".low-page__head .queue-strip__heading", map[string]string{"margin": "0"})

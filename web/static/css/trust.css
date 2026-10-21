@@ -76,6 +76,15 @@
   border-color: var(--color-text);
 }
 
+/* At rest Confirm and Dispute are the outlined secondary button: the page
+   colour, the hairline, the text colour (owner, 2026-10-21, plan 42: only a
+   pressed button is filled, so neither looks chosen before the reader picks
+   it). Hover and press keep the fill rules below, which outrank this head. */
+.vote-btn--confirm:not([hidden]):not([aria-pressed="true"]),
+.vote-btn--dispute:not([hidden]):not([aria-pressed="true"]) {
+  background: var(--color-bg);
+}
+
 /* Serves every non-actionable state this block can be in: in flight,
    awaiting a location prompt, or any future non-actionable button. */
 .vote-btn:disabled {
@@ -1689,8 +1698,17 @@
   overflow-wrap: anywhere;
 }
 
+/* The Policy link inside the sentence stays a link (plan 42, owner 2026-10-21:
+   no underlined text at rest): semibold, the link grey, and the underline only
+   on hover and keyboard focus. */
 .report-row__moderation-note a {
-  color: var(--color-text);
+  color: var(--color-link);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+}
+
+.report-row__moderation-note a:hover,
+.report-row__moderation-note a:focus-visible {
   text-decoration: underline;
 }
 

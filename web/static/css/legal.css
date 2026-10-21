@@ -90,8 +90,17 @@
   margin-bottom: 0;
 }
 
+/* A link inside a sentence (the contact address) stays a link (plan 42, owner
+   2026-10-21: no underlined text at rest): semibold, the link grey, and the
+   underline only on hover and keyboard focus. */
 .legal-text a {
-  color: var(--color-text);
+  color: var(--color-link);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+}
+
+.legal-text a:hover,
+.legal-text a:focus-visible {
   text-decoration: underline;
 }
 
@@ -267,19 +276,33 @@
   gap: var(--space-md);
 }
 
+/* Plan 42 (owner, 2026-10-21: no underlined text): the two parts are outlined
+   buttons. The current part takes the chosen look of the map chips (D-04): the
+   soft surface fill, no outline, semibold; never an underline or a dark
+   outline. */
 .legal-parts a:not([hidden]) {
   display: flex;
   align-items: center;
   min-height: var(--touch-target-min);
+  padding: 0 var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
   color: var(--color-text);
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
   text-decoration: none;
 }
 
+.legal-parts a:not([hidden]):not([aria-current="page"]):hover {
+  background: var(--color-border);
+}
+
 .legal-parts a[aria-current="page"] {
+  border-color: transparent;
+  background: var(--color-surface);
   font-weight: var(--font-weight-semibold);
-  text-decoration: underline;
+  text-decoration: none;
 }
 
 /* The grey reader box. It is the one thing that scrolls on this page, so a

@@ -262,11 +262,23 @@
   align-items: center;
   align-self: flex-start;
   min-height: var(--touch-target-min);
+  /* Plan 42 (owner, 2026-10-21: no underlined text): the outlined secondary
+     button, page colour, hairline, 8px corners. */
+  padding: 0 var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text);
-  text-decoration: underline;
+  text-decoration: none;
+}
+
+.login-ways__low:hover,
+.login-ways__off:hover,
+.login-ways__links a:hover {
+  background: var(--color-border);
 }
 
 .login-ways__line {
@@ -292,15 +304,20 @@
   column-gap: var(--space-md);
 }
 
+/* Plan 42: Disclaimer and Policy are outlined buttons too, never underlined. */
 .login-ways__links a {
   display: inline-flex;
   align-items: center;
   min-height: var(--touch-target-min);
+  padding: 0 var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
   font-weight: var(--font-weight-regular);
   color: var(--color-text);
-  text-decoration: underline;
+  text-decoration: none;
 }
 
 /* At 320px the panel is about 240px wide and holds both short links on one
