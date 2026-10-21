@@ -116,13 +116,18 @@ window.PinalertReliable = (function () {
     focusShowButton();
   }
 
-  // Mount. The address is read here, once, and handed to the store before the
-  // first draw (the first request comes from map.js after a position answer,
-  // so this module body runs first). A page without the Show menu mounts
-  // nothing.
+  // Mount. The address is read here, once, and handed to the store. Usually
+  // that is before the first draw, but with a kept fix map.js asks for the
+  // list before this module runs (Phase 3.4 plan 41), so on a slow script load
+  // the first answer can already be drawn: then the store is drawn again under
+  // the tick, or the list would show everyone until the next poll. A page
+  // without the Show menu mounts nothing.
   if (menuEl && window.Pinalert) {
-    Pinalert.setReliable(readFromAddress(window.location ? window.location.search : ''));
+    var changedAtMount = Pinalert.setReliable(readFromAddress(window.location ? window.location.search : ''));
     renderLine();
+    if (changedAtMount && Pinalert.state.hasLoaded === true) {
+      Pinalert.redraw();
+    }
     if (emptyClearEl) {
       emptyClearEl.addEventListener('click', onEveryonePress);
     }
