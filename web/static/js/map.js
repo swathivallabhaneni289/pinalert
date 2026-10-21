@@ -291,12 +291,19 @@ window.PinalertMap = (function () {
       zoomAnimation: !reducedMotion
     });
 
-    // The report detail pane is a child of the map container itself, so it sits
-    // outside the map pane's transform and a fixed position popup inside it is
-    // laid out against the screen. Presses and wheel turns on the sheet stop
-    // here, the same protection Leaflet gives its own popup container, so they
-    // never reach the map under it.
-    var detailPane = map.createPane('detailPane', container);
+    // The report detail pane lives in its own page level host, not inside the
+    // map container: Safari on the iPhone clips a fixed position popup to the
+    // map container's overflow box, which cut the report view off at the map's
+    // bottom edge and hid Back and Report (iPhone 17 Pro simulator, 2026-10-21;
+    // desktop WebKit does not clip). The host keeps the leaflet-container class
+    // so every existing rule still matches, and phone.css gives it no size and
+    // no clipping. Presses and wheel turns on the sheet stop here, the same
+    // protection Leaflet gives its own popup container, so they never reach the
+    // map under it.
+    var detailHost = document.createElement('div');
+    detailHost.className = 'leaflet-container report-view-host';
+    document.body.appendChild(detailHost);
+    var detailPane = map.createPane('detailPane', detailHost);
     L.DomEvent.disableClickPropagation(detailPane);
     L.DomEvent.disableScrollPropagation(detailPane);
     lastNarrow = phoneDetail();

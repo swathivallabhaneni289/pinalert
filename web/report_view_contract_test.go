@@ -70,19 +70,24 @@ func TestReportViewTemplate(t *testing.T) {
 // the same room. Nothing new is drawn at 900px and up.
 func TestReportViewPhoneStylesheet(t *testing.T) {
 	want := map[string]string{
-		"position":            "fixed",
-		"top":                 "calc(var(--app-topbar-height) + var(--space-3xl) * 2.5)",
-		"right":               "0",
-		"overflow-y":          "auto",
-		"overscroll-behavior": "contain",
-		"touch-action":        "pan-y",
-		"left":                "0 !important",
-		"bottom":              "calc(var(--app-bottombar-height) + env(safe-area-inset-bottom)) !important",
-		"transform":           "none !important",
+		"position":  "fixed",
+		"top":       "calc(var(--app-topbar-height) + var(--space-3xl) * 2.5)",
+		"right":     "0",
+		"overflow":  "visible",
+		"left":      "0 !important",
+		"bottom":    "calc(var(--app-bottombar-height) + env(safe-area-inset-bottom)) !important",
+		"transform": "none !important",
 	}
 	for prop, value := range want {
 		if got := p39Decl(t, phoneBlockMedia, p39PopupHead, prop); got != value {
 			t.Errorf("phone report view %s is %q, want %q", prop, got, value)
+		}
+	}
+	// Amended 2026-10-21: the wrapper is the scroller, so Safari on the iPhone
+	// does not clip Back and Report, which sit outside it in the top row.
+	for prop, value := range map[string]string{"height": "100%", "overflow-y": "auto", "overscroll-behavior": "contain", "touch-action": "pan-y"} {
+		if got := p39Decl(t, phoneBlockMedia, ".leaflet-container .leaflet-detail-pane .leaflet-popup-content-wrapper", prop); got != value {
+			t.Errorf("phone report view wrapper %s is %q, want %q", prop, got, value)
 		}
 	}
 
