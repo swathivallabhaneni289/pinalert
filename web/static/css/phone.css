@@ -1122,18 +1122,27 @@
   }
 
   .leaflet-container .leaflet-detail-pane .popup-card__actions .flag-control:not([hidden]) {
-    margin-top: 0;
+    margin-top: var(--space-sm);
+    align-self: flex-start;
+    min-height: var(--touch-target-min);
+    padding: 0 var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-weight: var(--font-weight-semibold);
+    text-decoration: none;
   }
 
-  /* Mark resolved spans both columns as a centred text link. The good tone is
-     used where it clears 4.5 to 1 on the sheet tint in both themes: Low,
-     Medium and the provisional surface. A Critical sheet keeps the normal
-     text colour (4.35 to 1 light). It is still a 44px tall button for touch. */
+  /* Mark resolved spans both columns as an outlined button on the page colour,
+     never an underlined link (owner, 2026-10-21: no underlined text). The good
+     tone clears 4.5 to 1 on the page colour; a Critical report keeps the
+     normal text colour. */
   .leaflet-container .leaflet-detail-pane .vote-btn--resolve:not([hidden]):not([aria-disabled="true"]):not(:disabled) {
-    background: transparent;
-    border-color: transparent;
+    background: var(--color-bg);
+    border-color: var(--color-border);
     color: var(--color-tone-good);
-    text-decoration: underline;
+    text-decoration: none;
   }
 
   .leaflet-container .leaflet-detail-pane .leaflet-popup.sev-critical .vote-btn--resolve:not([hidden]):not([aria-disabled="true"]):not(:disabled) {
@@ -1142,7 +1151,7 @@
 
   .leaflet-container .leaflet-detail-pane .vote-btn--resolve:not([hidden]):not([aria-disabled="true"]):not(:disabled):hover,
   .leaflet-container .leaflet-detail-pane .vote-btn--resolve:not([hidden]):not([aria-disabled="true"]):not(:disabled):active {
-    background: transparent;
+    background: var(--color-bg);
     border-color: currentColor;
   }
 
