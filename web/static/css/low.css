@@ -14,6 +14,68 @@
   padding: var(--space-md) var(--space-md) 0;
 }
 
+/* Top row (plan 44, owner): Back left, Reload right, 44px targets. The right
+   padding clears the account trigger; the arrows are text, not images. */
+.low-topbar:not([hidden]) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-sm) calc(var(--touch-target-min) + var(--space-md) + var(--space-sm)) 0 var(--space-md);
+}
+
+/* From 900px the account trigger is outside the column. */
+@media (min-width: 900px) {
+  .low-topbar:not([hidden]) {
+    padding-right: var(--space-md);
+  }
+}
+
+.low-topbar__btn:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  margin: 0;
+  padding: 0 var(--space-sm);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.low-topbar__icon {
+  font-size: var(--font-size-heading);
+  line-height: 1;
+}
+
+/* Each part is its own block (plan 44, owner). Hairlines use the muted text
+   token: the border token is under 3 to 1. Blocks are not filled, because
+   muted text never sits on --color-surface. */
+.low-block,
+.low-status,
+.low-stale:not([hidden]) {
+  margin: 0 0 var(--space-md);
+  padding: var(--space-12) var(--space-md);
+  border: 1px solid var(--color-text-muted);
+  border-radius: 8px;
+}
+
+.low-block {
+  padding: var(--space-md);
+}
+
+.low-status:has(.low-basis:empty) {
+  display: none;
+}
+
 .low-page__head h1 {
   margin: 0;
   padding-right: calc(var(--touch-target-min) + var(--space-md));
@@ -61,7 +123,7 @@
 }
 
 .low-basis {
-  margin: var(--space-md) 0 0;
+  margin: 0;
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
   color: var(--color-text);
@@ -72,7 +134,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-sm);
-  margin: var(--space-md) 0 0;
+  margin: 0 0 var(--space-md);
 }
 
 .low-stale .low-stale__text {
@@ -81,6 +143,8 @@
 
 .low-page__head h2 {
   margin: var(--space-lg) 0 var(--space-sm);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-text-muted);
   font-size: var(--font-size-heading);
   font-weight: var(--font-weight-semibold);
   line-height: var(--line-height-heading);
@@ -88,11 +152,15 @@
 
 .low-list {
   margin: 0;
-  padding: 0;
+  padding: 0 var(--space-md);
   list-style: none;
 }
 
 .report-row.report-row--low {
+  margin: 0 0 var(--space-sm);
+  border: 1px solid var(--color-text-muted);
+  border-left: 4px solid var(--severity-current, var(--severity-base));
+  border-radius: 8px;
   cursor: default;
 }
 

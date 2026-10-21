@@ -26,20 +26,30 @@
         data-poll-interval-ms="60000"
         data-vote-radius-km="{{.VoteRadiusKm}}"
         data-account-id="{{.AccountID}}">
+    <div class="low-topbar">
+      <a class="low-topbar__btn" id="low-full" href="/?full=1" aria-label="Back to the full version">
+        <span class="low-topbar__icon" aria-hidden="true">&larr;</span>
+        <span>Back</span>
+      </a>
+      <button type="button" class="low-topbar__btn low-topbar__btn--icon" id="low-reload" aria-label="Reload" title="Reload">
+        <span class="low-topbar__icon" aria-hidden="true">&#8635;</span>
+      </button>
+    </div>
     <div class="low-page__head">
-      <h1>Low data view</h1>
-      <p class="low-page__line">Text only, no map</p>
-      <p class="low-page__note">This device opens the Low data view by default.</p>
-      <div class="low-page__actions">
-        <a class="btn" id="low-full" href="/?full=1">Open full version</a>
-        <button type="button" class="btn btn--primary low-page__report" id="low-report">Report an emergency</button>
+      <div class="low-block">
+        <h1>Low data view</h1>
+        <p class="low-page__line">Text only, no map</p>
+        <p class="low-page__note">This device opens the Low data view by default.</p>
+        <div class="low-page__actions">
+          <button type="button" class="btn btn--primary low-page__report" id="low-report">Report an emergency</button>
+        </div>
       </div>
-      <p class="low-basis" id="low-basis" aria-live="polite"></p>
-      <button type="button" class="btn" id="low-retry-position" hidden>Retry position</button>
+      <div class="low-status">
+        <p class="low-basis" id="low-basis" aria-live="polite"></p>
+      </div>
       <div class="queue-strip" id="queue-strip" hidden></div>
       <div class="low-stale" id="low-stale" hidden>
         <p class="inline-note low-stale__text" id="low-stale-text"></p>
-        <button type="button" class="btn" id="low-stale-retry">Retry now</button>
       </div>
       <h2 id="low-list-heading">Active reports</h2>
     </div>
@@ -56,8 +66,7 @@
     </div>
     <div class="error-state" id="low-error" hidden>
       <h2>Couldn't load reports</h2>
-      <p>Check your connection and try again.</p>
-      <button type="button" class="btn" id="low-retry">Retry</button>
+      <p>Check your connection, then use Reload at the top.</p>
     </div>
   </main>
 
