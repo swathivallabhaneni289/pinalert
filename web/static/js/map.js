@@ -225,11 +225,21 @@ window.PinalertMap = (function () {
     if (!body || trust.parentNode !== body || actions.parentNode !== body) {
       return;
     }
+    var flag = card.flag && card.flag.el ? card.flag.el : null;
     if (phone) {
       body.insertBefore(fade, trust);
       body.insertBefore(actions, trust);
+      // Flag goes last, under the trust details (owner, 2026-10-21: "the flag
+      // the report thing can go down").
+      if (flag) {
+        body.appendChild(flag);
+      }
     } else {
       body.insertBefore(trust, fade);
+      // The laptop keeps Flag as the last child of the actions block.
+      if (flag) {
+        actions.appendChild(flag);
+      }
     }
   }
 
