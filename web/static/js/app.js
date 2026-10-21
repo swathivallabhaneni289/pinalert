@@ -416,9 +416,10 @@ window.Pinalert = (function () {
   // browser's back and forward, and by any later caller. A report with a pin
   // opens at once (PinalertMap.openReport). Any other id is kept as a report
   // link and the list is read again, so the server's answer opens it, or says
-  // it cannot be shown; before the first answer the first list request
-  // carries it, as an address on load always did. It returns false for an id
-  // that is not a report id.
+  // it cannot be shown; before any list request has left, the first one
+  // carries it, as an address on load always did. A request already out
+  // without it is followed by a second one that does (plan 41). It returns
+  // false for an id that is not a report id.
   function openReport(id) {
     var text = id === null || id === undefined ? '' : String(id);
     if (!/^[1-9][0-9]{0,17}$/.test(text)) {
@@ -429,7 +430,12 @@ window.Pinalert = (function () {
       return true;
     }
     setFocusId(text);
-    if (state.hasLoaded) {
+    // Ask again when a list request has already left, answered or not. One
+    // that left before this call has no id in it (the map's start can send the
+    // first request before this deferred script has run), so its answer would
+    // carry no report and nothing would open it until the next poll (plan 41).
+    // Before any request has left, the first one carries the id.
+    if (state.hasLoaded || fetchSeq > 0) {
       fetchReports();
     }
     return true;

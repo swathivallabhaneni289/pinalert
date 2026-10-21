@@ -437,6 +437,7 @@ test('app.js exposes Pinalert.openReport and hands it to the map', () => {
   assert.match(fn, /PinalertMap\.openReport\(text\)/);
   assert.match(fn, /setFocusId\(text\);/);
   assert.match(fn, /fetchReports\(\);/);
+  assert.match(fn, /state\.hasLoaded \|\| fetchSeq > 0/);
   assert.match(appSource, /openReport: openReport/);
 });
 

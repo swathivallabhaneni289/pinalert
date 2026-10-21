@@ -1113,6 +1113,12 @@
   // ABOVE this one in the template's script order, that guarantee breaks and
   // this step would need its own fetch. Adding a fetch unconditionally would
   // issue a duplicate request on every single page load.
+  //
+  // The guarantee above is not exact (plan 41): a deferred script runs when
+  // its own download is done, and the event loop may run a task between two of
+  // them, so on a slow load the first request can leave before this line. For
+  // the report id that is covered where it is kept: Pinalert.openReport asks
+  // for the list again when a request is already out without the id.
   Pinalert.setShow(Pinalert.state.show);
   Pinalert.openReport(new URLSearchParams(window.location.search).get(REPORT_PARAM));
 
