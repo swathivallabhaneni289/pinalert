@@ -553,9 +553,12 @@ func TestPhoneDetailSheetStylesheet(t *testing.T) {
 	// strip, was 192px from the top with no top row of its own, and ends on the
 	// bottom bar, which stays shown as in the sketch, where it ran to the
 	// screen bottom over the bar. TestReportViewPhoneStylesheet pins the rest.
+	// Amended 2026-10-21 by plan 40: the top controls float over the strip, so
+	// the strip starts at the top of the page and the report starts 160px down,
+	// where it was calc(var(--app-topbar-height) + var(--space-3xl) * 2.5).
 	popup := must(".leaflet-container .leaflet-detail-pane .leaflet-popup")
 	for prop, want := range map[string]string{
-		"position": "fixed", "top": "calc(var(--app-topbar-height) + var(--space-3xl) * 2.5)", "right": "0",
+		"position": "fixed", "top": "calc(var(--space-3xl) * 2.5)", "right": "0",
 		"overflow": "visible",
 		"left":     "0 !important", "bottom": "calc(var(--app-bottombar-height) + env(safe-area-inset-bottom)) !important", "transform": "none !important",
 	} {
