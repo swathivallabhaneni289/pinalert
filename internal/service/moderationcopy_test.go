@@ -139,8 +139,12 @@ func TestOlderNumbersLabel(t *testing.T) {
 		older []string
 		want  string
 	}{
-		{"default list", []string{"100", "101", "108"}, "Older numbers for police (100), fire (101) and ambulance (108)."},
-		{"police and ambulance", []string{"100", "108"}, "Older numbers for police (100) and ambulance (108)."},
+		// Amended 2026-10-22 by plan 04-30 (owner): 108 carries the note
+		// "or 102 in some states" (04-UAT.md gap, the national portal lists
+		// 102 as the National Ambulance Service).
+		{"default list", []string{"100", "101", "108"}, "Older numbers for police (100), fire (101) and ambulance (108, or 102 in some states)."},
+		{"police and ambulance", []string{"100", "108"}, "Older numbers for police (100) and ambulance (108, or 102 in some states)."},
+		{"ambulance alone", []string{"108"}, "An older number for ambulance (108, or 102 in some states)."},
 		{"police alone", []string{"100"}, "An older number for police (100)."},
 		{"unmapped number", []string{"100", "555"}, service.OlderNumbersGenericLabel},
 		{"only unmapped", []string{"555"}, service.OlderNumbersGenericLabel},

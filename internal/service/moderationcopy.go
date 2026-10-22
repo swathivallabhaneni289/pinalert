@@ -24,10 +24,19 @@ var olderNumberServices = map[string]string{
 	"108": "ambulance",
 }
 
+// olderNumberNotes adds a short note inside the brackets of an older number.
+// The national portal lists 102 as the National Ambulance Service, and 108 is
+// the ambulance number in most states, so 108 reads "108, or 102 in some
+// states" (plan 04-30, owner 2026-10-22: "yes add the 102 note").
+var olderNumberNotes = map[string]string{
+	"108": ", or 102 in some states",
+}
+
 // OlderNumbersLabel returns the sentence that names the older numbers from the
-// one numbers setting. Every number in it comes from the list passed in. An
-// empty list gives an empty string, any number outside 100, 101 and 108 gives
-// OlderNumbersGenericLabel.
+// one numbers setting. Every number in it comes from the list passed in, and
+// the only other number it may name is 102, in the note olderNumberNotes keeps
+// for 108. An empty list gives an empty string, any number outside 100, 101
+// and 108 gives OlderNumbersGenericLabel.
 func OlderNumbersLabel(older []string) string {
 	if len(older) == 0 {
 		return ""
@@ -38,7 +47,7 @@ func OlderNumbersLabel(older []string) string {
 		if !ok {
 			return OlderNumbersGenericLabel
 		}
-		parts = append(parts, svc+" ("+n+")")
+		parts = append(parts, svc+" ("+n+olderNumberNotes[n]+")")
 	}
 	if len(parts) == 1 {
 		return "An older number for " + parts[0] + "."
