@@ -393,8 +393,8 @@ func TestSettingsScriptContract(t *testing.T) {
 // rows are divided by a hairline that wins over the row's own border: 0 and
 // clears 3 to 1 on the fill, the value is in the text colour, the Log out row
 // is in the critical colour. Amended 2026-10-22 (owner): the laptop uses the
-// full width grid of sketch 008 with bordered boxes, and no heading has a
-// line under it. It is scoped to the Settings page, so Official
+// full width grid of sketch 008 with bordered boxes and the line under each
+// heading; the phone shows the headings without it. It is scoped to the Settings page, so Official
 // alerts keeps its look.
 func TestSettingsIsAGroupedList(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
@@ -440,7 +440,7 @@ func TestSettingsIsAGroupedList(t *testing.T) {
 		"--settings-sub": "var(--color-text-muted)", "--settings-line": "var(--color-border)",
 	})
 	p16MustDecl(t, "settings laptop section", p31mRule(t, css, laptop, ".place-page--settings .place-section"), map[string]string{
-		"padding": "var(--space-lg) var(--space-lg) 40px",
+		"padding": "var(--space-lg) var(--space-lg) 40px", "align-items": "start",
 	})
 	p16MustDecl(t, "shared laptop grid", p31mRule(t, css, laptop, ".place-section"), map[string]string{
 		"display": "grid", "grid-template-columns": "260px minmax(0, 1fr)", "border-top": "1px solid var(--color-border)",
@@ -455,10 +455,24 @@ func TestSettingsIsAGroupedList(t *testing.T) {
 		"color": "var(--color-text-muted)",
 	})
 	// Owner, 2026-10-22: "too much details under the heading for each
-	// section": no Settings section has a line under its heading.
-	if strings.Contains(page, "place-section__line") {
-		t.Errorf("settings.html.tmpl still has a line under a section heading")
+	// section" on the phone, then with the sketch 008 picture of the laptop
+	// left column, "stuff like this should also be included": each section
+	// has its line, shown on the laptop only.
+	for _, line := range []string{
+		`<p class="place-section__line">Your name and home area.</p>`,
+		`<p class="place-section__line">The rules, how your data is used, and a lighter version for weak networks.</p>`,
+		`<p class="place-section__line">Sign out, or remove your account and its data.</p>`,
+	} {
+		if !strings.Contains(page, line) {
+			t.Errorf("settings.html.tmpl lacks the section line %s", line)
+		}
 	}
+	p16MustDecl(t, "no section line on the phone", p31mRule(t, css, "", ".place-page--settings .place-section__line"), map[string]string{
+		"display": "none",
+	})
+	p16MustDecl(t, "section line on the laptop", p31mRule(t, css, laptop, ".place-page--settings .place-section__line:not([hidden])"), map[string]string{
+		"display": "block",
+	})
 	// The owner asked for Log out on the laptop Settings page too (2026-10-21,
 	// "I don't see a logout option on my laptop version, so I think we should
 	// add that"): the Account section is drawn on both sizes, as the last
