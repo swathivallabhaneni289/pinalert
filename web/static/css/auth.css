@@ -551,6 +551,56 @@
   margin: 0;
 }
 
+/* Log out asks first (owner, 2026-10-22: "Are you sure?"). A native modal
+   dialog, so it sits in the top layer above the sticky top chrome, the map
+   panes and the phone sheet, with the look of the shared modal: the page
+   colour, an 8px corner, 24px inside and the same dimmed backdrop, with a
+   border so its edge shows on the dark theme. Cancel and Log out share the
+   row equally; Log out is the destructive button. */
+.logout-confirm {
+  box-sizing: border-box;
+  width: min(calc(100% - 2 * var(--space-md)), 360px);
+  max-width: none;
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.logout-confirm::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+.logout-confirm__body {
+  padding: var(--space-lg);
+}
+
+.logout-confirm__title {
+  margin: 0 0 var(--space-lg);
+  color: var(--color-text);
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+}
+
+.logout-confirm__actions:not([hidden]) {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.logout-confirm__actions .btn {
+  flex: 1 1 0;
+  margin: 0;
+}
+
+@media (forced-colors: active) {
+  .logout-confirm {
+    border-color: CanvasText;
+  }
+}
+
 /* Plan 01.1-07: the profile page's own body (web/templates/
    profile.html.tmpl). The shared header above this comment block is
    01.1-06's; nothing here touches it. Styled here rather than in main.css

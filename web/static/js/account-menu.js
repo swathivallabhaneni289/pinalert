@@ -219,4 +219,89 @@
   trigger.addEventListener('click', onTriggerClick);
   panel.addEventListener('keydown', onPanelKeydown);
   panel.addEventListener('focusin', onPanelFocusIn);
+
+  // LOG OUT ASKS FIRST (owner, 2026-10-22: "we should have like a confirm
+  // button before we log out. Are you sure?"). Every Log out form on the page,
+  // the menu's and the Settings row, opens the dialog the header template
+  // renders; its Log out button sends the form that asked. Cancel, Escape or a
+  // press on the backdrop closes it and puts focus back. Without dialog
+  // support the browser's own confirm asks; without script the form logs out
+  // as before.
+  var LOGOUT_ACTION = '/auth/logout';
+  // The question the browser's confirm asks is the dialog's own title.
+  var confirmTitle = document.getElementById('logout-confirm-title');
+  var LOGOUT_QUESTION = confirmTitle && confirmTitle.textContent ? confirmTitle.textContent.trim() : 'Log out?';
+  var confirmDialog = document.getElementById('logout-confirm');
+  var confirmCancel = document.getElementById('logout-confirm-cancel');
+  var confirmYes = document.getElementById('logout-confirm-yes');
+  var pendingLogout = null;
+  var logoutOpener = null;
+
+  function onLogoutSubmit(e) {
+    var form = e.target;
+    if (!form || typeof form.getAttribute !== 'function' || form.getAttribute('action') !== LOGOUT_ACTION) {
+      return;
+    }
+    e.preventDefault();
+    // Safari does not focus a pressed button, so the button that sent the
+    // form is the one to come back to, not whatever holds focus.
+    logoutOpener = e.submitter ||
+      (typeof form.querySelector === 'function' && form.querySelector('button[type="submit"]')) ||
+      document.activeElement;
+    closeMenu(false);
+    if (!confirmDialog || !confirmCancel || !confirmYes || typeof confirmDialog.showModal !== 'function') {
+      if (window.confirm(LOGOUT_QUESTION)) {
+        form.submit();
+      }
+      return;
+    }
+    pendingLogout = form;
+    confirmDialog.showModal();
+    confirmCancel.focus();
+  }
+
+  // onConfirmClose runs however the dialog closes. Focus goes back to the
+  // control that asked, or to the person button when that control sat in the
+  // menu, which is closed by now.
+  function onConfirmClose() {
+    pendingLogout = null;
+    var back = logoutOpener;
+    logoutOpener = null;
+    if (back && panel.contains(back)) {
+      back = trigger;
+    }
+    if (back && typeof back.focus === 'function') {
+      back.focus();
+    }
+  }
+
+  function onConfirmYes() {
+    var form = pendingLogout;
+    if (form) {
+      pendingLogout = null;
+      form.submit();
+    }
+  }
+
+  document.addEventListener('submit', onLogoutSubmit);
+  if (confirmDialog && confirmCancel && confirmYes) {
+    // The dialog is rendered with the menu, which a phone page hides, and a
+    // hidden ancestor gives even an open modal dialog no box. So the
+    // rendered dialog moves to the end of the body once, before any use.
+    if (document.body && confirmDialog.parentNode !== document.body) {
+      document.body.appendChild(confirmDialog);
+    }
+    confirmCancel.addEventListener('click', function () {
+      confirmDialog.close();
+    });
+    confirmYes.addEventListener('click', onConfirmYes);
+    confirmDialog.addEventListener('close', onConfirmClose);
+    // A press on the backdrop lands on the dialog itself; its content is a
+    // padded wrapper, so a press inside never does.
+    confirmDialog.addEventListener('click', function (e) {
+      if (e.target === confirmDialog) {
+        confirmDialog.close();
+      }
+    });
+  }
 }());
