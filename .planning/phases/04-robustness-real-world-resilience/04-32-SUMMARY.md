@@ -119,6 +119,8 @@ About 28 live upstream requests in total, under the cap of 30:
 - 2 for a mistyped scripted search ("after-place");
 - 6 and 11 for two after runs.
 
+These are counted from the search order, not logged one by one. A cold first Photon answer gets one retry, so if any first try was slow, the true number is one higher for each such search.
+
 Every browser check answered `/api/geocode*` from fixed JSON through Playwright `page.route`, so no browser search reached Photon.
 
 ## Verification
@@ -136,6 +138,7 @@ Every browser check answered `/api/geocode*` from fixed JSON through Playwright 
   - A report pin 15 m from the place is the element on top at its point, the mark takes no point, and a click on the pin opens the report.
   - Back to my location takes the mark away.
   - Post a report with location on and off: the right sentence; the pin sent only when there is one; typing clears the line; a pick moves the pin to 16.51734, 80.62542; a tap on the map places the pin there.
+- **Not checked: dark theme.** Every browser run used the default light scheme. In dark mode the mark is `--color-text` (near white) with a 1 to 2 px `--color-bg` halo. How it reads on the dark basemap still needs a look.
 
 ## Amended tests
 
@@ -201,14 +204,26 @@ New tests:
 
 **5. The home area search (kind=area) is exempt.** A home area is often far from where the person stands, and that search has its own typed row and Not found rules.
 
+**6. The mark goes when Back to my location lands, not when it is pressed (truth 4).**
+- It is removed in the same step that drops the place, when the position arrives.
+- During the geolocation wait, which can take up to 8 seconds, the mark stays. So does the place line that still names the place, so the two never disagree.
+- A pick made during the wait replaces the mark.
+
+**Callers covered.** Only `map-tools.js` and `report-form.js` send a position. `settings.js` and `welcome.js` use kind=area, which is exempt, so no other page shows an old empty line for a near only answer.
+
 ## Notes for the orchestrator
 
 - The scratchpad folder is shared with plan 04-31's agent.
   - It overwrote my first `serve.sh` and `signin.sh` at the scratchpad root, so I moved to a `w32/` subfolder for everything after that.
   - Its root files were left alone.
 - While cleaning up a hung browser check, I ran `pkill -f "ms-playwright.*webkit"`. If 04-30 or 04-31 had a WebKit run going at 00:41 IST, it may have been ended and should be rerun.
+- From about 00:10 to 00:21 IST, my first scratch server also wrote to the shared root `server.log`. 04-31's `serve.sh` writes to the same path, so whichever server started second emptied the other's log. If 04-31 had sign in failures in that window, this may be why.
 - `gofmt -l` flags `internal/geocode/photon.go` and `internal/api/handlers/place_test.go`. Both were already flagged on main at 130b134, so they are out of scope and left as they were.
-- STATE.md, ROADMAP.md and REQUIREMENTS.md were not touched. Nothing was pushed.
+- These steps were skipped on purpose, per the caller's rules, and are left to the orchestrator:
+  - STATE.md updates;
+  - the ROADMAP.md progress tick;
+  - requirement marking (the plan lists none).
+- Nothing was pushed.
 
 ## Known Stubs
 
