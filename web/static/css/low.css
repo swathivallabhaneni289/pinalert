@@ -48,6 +48,16 @@
   line-height: 1;
 }
 
+/* Reload (owner, 2026-10-22: the text arrow "looks odd ... it should be the
+   other way around"): the app's own anticlockwise stroke glyph at 20px. */
+.low-topbar__icon--reload {
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask: url("/static/icons/rotate-ccw.svg") center / contain no-repeat;
+  mask: url("/static/icons/rotate-ccw.svg") center / contain no-repeat;
+}
+
 /* Each part is its own block (plan 44, owner). Hairlines use the muted text
    token: the border token is under 3 to 1. Blocks are not filled, because
    muted text never sits on --color-surface. */
@@ -209,6 +219,7 @@
 
 @media (forced-colors: active) {
   .low-page__report::before,
+  .low-topbar__icon--reload,
   .report-row--low .flag-control:not([hidden])::before {
     forced-color-adjust: none;
     background-color: ButtonText;
@@ -240,14 +251,17 @@
     display: flex;
     align-items: flex-start;
     gap: var(--space-md);
-    padding: var(--space-md) 0 var(--space-12);
+    padding: var(--space-12) 0;
     border-bottom: 1px solid var(--color-text-muted);
     background: var(--color-bg);
   }
 
+  /* The 12px top and the 4px here centre the 44px controls and the 52px
+     button on the person button's line. */
   .low-topbar:not([hidden]) {
     flex: none;
     gap: var(--space-xs);
+    margin-top: var(--space-xs);
     padding: 0 var(--space-md) 0 0;
     border-right: 1px solid var(--color-text-muted);
   }
@@ -318,10 +332,12 @@
     order: 8;
   }
 
-  /* The bar's button is the app top bar's Post a report: 44px tall. */
+  /* The bar's button is the phone's (owner, 2026-10-22: "report an emergency
+     could be designed a little better ... I like the phone version"): 52px
+     tall, about the phone button's width. */
   .low-page__actions .low-page__report {
     flex: none;
-    min-height: var(--touch-target-min);
+    min-width: 320px;
   }
 
   .low-reports > h2:not([hidden]) {

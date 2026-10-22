@@ -1,6 +1,9 @@
 package web
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Owner, 2026-10-22, on the Low data view: "align them neatly. Why do we have
 // to stack them up ... the reload button is placed in one corner, and report
@@ -14,8 +17,8 @@ const lowPhone = "@media (max-width: 899.98px)"
 
 // TestLowLaptopTopBar: from 900px one sticky bar on the page colour with a
 // muted hairline under it, Back and Reload in its left corner behind a muted
-// divider, the title first, Report an emergency pushed to the right corner at
-// the app top bar's 44px, and the short lines wrapped under the title.
+// divider, the title first, Report an emergency pushed to the right corner at the
+// phone button's size, and the short lines wrapped under the title.
 func TestLowLaptopTopBar(t *testing.T) {
 	const css = "static/css/low.css"
 	p16MustDecl(t, "bar", p31mRule(t, css, p45Laptop, ".low-side:not([hidden])"), map[string]string{
@@ -24,7 +27,7 @@ func TestLowLaptopTopBar(t *testing.T) {
 		"z-index":       "10",
 		"display":       "flex",
 		"align-items":   "flex-start",
-		"padding":       "var(--space-md) 0 var(--space-12)",
+		"padding":       "var(--space-12) 0",
 		"border-bottom": "1px solid var(--color-text-muted)",
 		"background":    "var(--color-bg)",
 	})
@@ -57,9 +60,14 @@ func TestLowLaptopTopBar(t *testing.T) {
 		"order":      "3",
 		"flex-basis": "100%",
 	})
-	p16MustDecl(t, "button height", p31mRule(t, css, p45Laptop, ".low-page__actions .low-page__report"), map[string]string{
-		"flex":       "none",
-		"min-height": "var(--touch-target-min)",
+	p16MustDecl(t, "left corner centred", p31mRule(t, css, p45Laptop, ".low-topbar:not([hidden])"), map[string]string{
+		"margin-top": "var(--space-xs)",
+	})
+	// The phone's button size (owner, 2026-10-22: "I like the phone version"):
+	// the base rule's 52px height stays, about the phone button's width.
+	p16MustDecl(t, "button size", p31mRule(t, css, p45Laptop, ".low-page__actions .low-page__report"), map[string]string{
+		"flex":      "none",
+		"min-width": "320px",
 	})
 	p16MustDecl(t, "focus clears the bar", p31mRule(t, css, p45Laptop, "html"), map[string]string{
 		"scroll-padding-top": "8rem",
@@ -97,4 +105,25 @@ func TestLowPhoneCard(t *testing.T) {
 		"min-height":  "var(--touch-target-min)",
 		"border-top":  "0",
 	})
+}
+
+// TestLowReloadIcon: Reload draws the app's anticlockwise stroke glyph
+// through a mask (owner, 2026-10-22: the text arrow "looks odd ... it should
+// be the other way around"), not a text character.
+func TestLowReloadIcon(t *testing.T) {
+	p16MustDecl(t, "reload glyph", p31mRule(t, "static/css/low.css", "", ".low-topbar__icon--reload"), map[string]string{
+		"width":            "20px",
+		"height":           "20px",
+		"background-color": "currentColor",
+		"mask":             `url("/static/icons/rotate-ccw.svg") center / contain no-repeat`,
+	})
+	html := p418Template(t)
+	at := strings.Index(html, `id="low-reload"`)
+	end := strings.Index(html[max(at, 0):], `</button>`)
+	if at < 0 || end < 0 || !strings.Contains(html[at:at+end], `<span class="low-topbar__icon low-topbar__icon--reload" aria-hidden="true"></span>`) {
+		t.Errorf("the Reload button must hold the empty masked glyph span")
+	}
+	if strings.Contains(html, "&#8635;") {
+		t.Errorf("the text arrow &#8635; must be gone from low.html.tmpl")
+	}
 }
