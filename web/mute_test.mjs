@@ -7,6 +7,9 @@
 //     who muted or unmuted it on this page; nobody else (Q3, owner confirmed
 //     2026-10-18), and it shows on the reader's own report;
 //   - the label and the accessible name for the muted and not muted states;
+//     Amended 2026-10-22 by plan 04-30 (owner): "Mute this report" became
+//     "Stop updates about this report" and "Turn updates back on" became
+//     "Get updates about this report again" in every assertion here;
 //   - a press posts to /mute or /unmute with a JSON body, flips the label,
 //     keeps focus, speaks through #notice-live and asks the bell to refresh
 //     once;
@@ -149,7 +152,7 @@ test('shouldShow is true for a follower, a muted report and a report muted or un
   assert.equal(m.Mute.shouldShow({ ...other, viewer_follows: false, viewer_muted: false }), true);
 });
 
-test('the control is born hidden, then shown for a follower with the Mute this report words', () => {
+test('the control is born hidden, then shown for a follower with the Stop updates about this report words', () => {
   const m = load();
   const r = report();
   const control = m.Mute.createMuteControl(r);
@@ -164,8 +167,8 @@ test('the control is born hidden, then shown for a follower with the Mute this r
 
   m.Mute.updateMuteControl(control, r);
   assert.equal(control.el.hidden, false);
-  assert.equal(control.el.textContent, 'Mute this report');
-  assert.equal(control.el.getAttribute('aria-label'), 'Mute this report, Flood, 12 min ago');
+  assert.equal(control.el.textContent, 'Stop updates about this report');
+  assert.equal(control.el.getAttribute('aria-label'), 'Stop updates about this report, Flood, 12 min ago');
 });
 
 test('the control shows on the reader\'s own report and hides for a reader who neither follows nor muted', () => {
@@ -176,12 +179,12 @@ test('the control shows on the reader\'s own report and hides for a reader who n
   assert.equal(stranger.el.hidden, true);
 });
 
-test('a muted report reads Turn updates back on', () => {
+test('a muted report reads Get updates about this report again', () => {
   const m = load();
   const control = mounted(m, report({ viewer_muted: true }));
   assert.equal(control.el.hidden, false);
-  assert.equal(control.el.textContent, 'Turn updates back on');
-  assert.equal(control.el.getAttribute('aria-label'), 'Turn updates back on, Flood, 12 min ago');
+  assert.equal(control.el.textContent, 'Get updates about this report again');
+  assert.equal(control.el.getAttribute('aria-label'), 'Get updates about this report again, Flood, 12 min ago');
 });
 
 test('an update writes the label only when it changed and never moves focus', () => {
@@ -211,8 +214,8 @@ test('a press on Mute posts to /mute and flips the label, keeps focus, announces
   req.resolve(answer(204));
   await flush();
 
-  assert.equal(control.el.textContent, 'Turn updates back on');
-  assert.equal(control.el.getAttribute('aria-label'), 'Turn updates back on, Flood, 12 min ago');
+  assert.equal(control.el.textContent, 'Get updates about this report again');
+  assert.equal(control.el.getAttribute('aria-label'), 'Get updates about this report again, Flood, 12 min ago');
   assert.equal(m.doc.activeElement, control.el);
   assert.equal(control.error.hidden, true);
   assert.equal(m.doc.events.length, 1);
@@ -221,7 +224,7 @@ test('a press on Mute posts to /mute and flips the label, keeps focus, announces
   assert.equal(m.live.textContent, 'Updates are off for this report.');
 });
 
-test('a press on Turn updates back on posts to /unmute and mirrors the Mute press', async () => {
+test('a press on Get updates about this report again posts to /unmute and mirrors the Mute press', async () => {
   const m = load();
   const control = mounted(m, report({ viewer_muted: true }));
   control.el.focus();
@@ -232,8 +235,8 @@ test('a press on Turn updates back on posts to /unmute and mirrors the Mute pres
   req.resolve(answer(204));
   await flush();
 
-  assert.equal(control.el.textContent, 'Mute this report');
-  assert.equal(control.el.getAttribute('aria-label'), 'Mute this report, Flood, 12 min ago');
+  assert.equal(control.el.textContent, 'Stop updates about this report');
+  assert.equal(control.el.getAttribute('aria-label'), 'Stop updates about this report, Flood, 12 min ago');
   assert.equal(m.doc.activeElement, control.el);
   assert.equal(m.doc.events.length, 1);
   m.timers.filter((t) => !t.done).forEach((t) => t.fn());
@@ -254,7 +257,7 @@ for (const status of [404, 500, 429]) {
     control.el.fire('click');
     m.fetches[0].resolve(answer(status));
     await flush();
-    assert.equal(control.el.textContent, 'Mute this report');
+    assert.equal(control.el.textContent, 'Stop updates about this report');
     assert.equal(control.error.hidden, false);
     assert.equal(control.error.textContent, "Couldn't change this. Try again.");
     assert.equal(m.doc.events.length, 0);
@@ -271,7 +274,7 @@ test('a request that gets no answer in time leaves the label and shows the same 
   assert.equal(m.timers[0].ms, 10000);
   m.timers[0].fn();
   await flush();
-  assert.equal(control.el.textContent, 'Mute this report');
+  assert.equal(control.el.textContent, 'Stop updates about this report');
   assert.equal(control.error.hidden, false);
   assert.equal(control.error.textContent, "Couldn't change this. Try again.");
   assert.equal(m.doc.events.length, 0);
@@ -283,7 +286,7 @@ test('a dropped request leaves the label and shows the same line', async () => {
   control.el.fire('click');
   m.fetches[0].reject(new TypeError('network'));
   await flush();
-  assert.equal(control.el.textContent, 'Mute this report');
+  assert.equal(control.el.textContent, 'Stop updates about this report');
   assert.equal(control.error.textContent, "Couldn't change this. Try again.");
 });
 
@@ -292,7 +295,7 @@ test('offline sends nothing and shows the offline line', () => {
   const control = mounted(m);
   control.el.fire('click');
   assert.equal(m.fetches.length, 0);
-  assert.equal(control.el.textContent, 'Mute this report');
+  assert.equal(control.el.textContent, 'Stop updates about this report');
   assert.equal(control.error.hidden, false);
   assert.equal(control.error.textContent, "You're offline, so this wasn't saved. Try again when you have a signal.");
 });
@@ -309,7 +312,7 @@ test('the next press clears the old error, and a success hides it', async () => 
   m.fetches[1].resolve(answer(204));
   await flush();
   assert.equal(control.error.hidden, true);
-  assert.equal(control.el.textContent, 'Turn updates back on');
+  assert.equal(control.el.textContent, 'Get updates about this report again');
 });
 
 test('a second press while the first is still running sends nothing more', () => {
@@ -327,19 +330,19 @@ test('a poll with the old server state does not flip the label back, and the ser
   control.el.fire('click');
   m.fetches[0].resolve(answer(204));
   await flush();
-  assert.equal(control.el.textContent, 'Turn updates back on');
+  assert.equal(control.el.textContent, 'Get updates about this report again');
 
   // The poll left before the mute landed: it still says not muted.
   m.Mute.updateMuteControl(control, report({ viewer_muted: false }));
-  assert.equal(control.el.textContent, 'Turn updates back on');
+  assert.equal(control.el.textContent, 'Get updates about this report again');
   assert.equal(control.el.hidden, false);
 
   // The server now agrees; the page's memory is dropped...
   m.Mute.updateMuteControl(control, report({ viewer_muted: true }));
-  assert.equal(control.el.textContent, 'Turn updates back on');
+  assert.equal(control.el.textContent, 'Get updates about this report again');
   // ...so a later change made elsewhere (an Unmute in Settings) shows.
   m.Mute.updateMuteControl(control, report({ viewer_muted: false }));
-  assert.equal(control.el.textContent, 'Mute this report');
+  assert.equal(control.el.textContent, 'Stop updates about this report');
 });
 
 test('an unmute on this page also wins over a stale poll', async () => {
@@ -349,9 +352,9 @@ test('an unmute on this page also wins over a stale poll', async () => {
   m.fetches[0].resolve(answer(204));
   await flush();
   m.Mute.updateMuteControl(control, report({ viewer_muted: true }));
-  assert.equal(control.el.textContent, 'Mute this report');
+  assert.equal(control.el.textContent, 'Stop updates about this report');
   m.Mute.updateMuteControl(control, report({ viewer_muted: false, viewer_follows: false }));
-  assert.equal(control.el.textContent, 'Mute this report');
+  assert.equal(control.el.textContent, 'Stop updates about this report');
   assert.equal(control.el.hidden, true);
 });
 
@@ -363,10 +366,10 @@ test('every control for the report on the page flips, and no other report\'s doe
   a.el.fire('click');
   m.fetches[0].resolve(answer(204));
   await flush();
-  assert.equal(a.el.textContent, 'Turn updates back on');
-  assert.equal(b.el.textContent, 'Turn updates back on');
-  assert.equal(b.el.getAttribute('aria-label'), 'Turn updates back on, Flood, 12 min ago');
-  assert.equal(c.el.textContent, 'Mute this report');
+  assert.equal(a.el.textContent, 'Get updates about this report again');
+  assert.equal(b.el.textContent, 'Get updates about this report again');
+  assert.equal(b.el.getAttribute('aria-label'), 'Get updates about this report again, Flood, 12 min ago');
+  assert.equal(c.el.textContent, 'Stop updates about this report');
 });
 
 test('the click and the Enter, Space and Spacebar keydown stop propagation', () => {
@@ -386,6 +389,6 @@ test('the refresh event is skipped, not thrown, where CustomEvent does not exist
   control.el.fire('click');
   m.fetches[0].resolve(answer(204));
   await flush();
-  assert.equal(control.el.textContent, 'Turn updates back on');
+  assert.equal(control.el.textContent, 'Get updates about this report again');
   assert.equal(m.doc.events.length, 0);
 });

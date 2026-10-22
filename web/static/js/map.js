@@ -226,20 +226,28 @@ window.PinalertMap = (function () {
       return;
     }
     var flag = card.flag && card.flag.el ? card.flag.el : null;
+    // Mute and its error line sit just above Flag at the bottom of the report
+    // on both sizes, two calm rows (plan 04-30, owner, 2026-10-22). Mute
+    // comes before Flag in the tab order wherever they are.
+    var mute = card.mute && card.mute.el ? card.mute : null;
+    var lastParent = phone ? body : actions;
     if (phone) {
       body.insertBefore(fade, trust);
       body.insertBefore(actions, trust);
-      // Flag goes last, under the trust details (owner, 2026-10-21: "the flag
-      // the report thing can go down").
-      if (flag) {
-        body.appendChild(flag);
-      }
     } else {
       body.insertBefore(trust, fade);
-      // The laptop keeps Flag as the last child of the actions block.
-      if (flag) {
-        actions.appendChild(flag);
+    }
+    if (mute) {
+      lastParent.appendChild(mute.el);
+      if (mute.error) {
+        lastParent.appendChild(mute.error);
       }
+    }
+    // Flag goes last: under the trust details on a phone (owner, 2026-10-21:
+    // "the flag the report thing can go down"), and as the last child of the
+    // actions block on a laptop.
+    if (flag) {
+      lastParent.appendChild(flag);
     }
   }
 
@@ -779,7 +787,8 @@ window.PinalertMap = (function () {
     actions.appendChild(block.note);
     actions.appendChild(block.error);
     // The Mute control (Phase 3.2, D-11) comes first, then the Flag control, so
-    // the two sit on one wrapping line with Mute before Flag. It is hidden for
+    // the two are rows with Mute just above Flag (plan 04-30; arrangeCard puts
+    // both at the bottom of the report on a phone). It is hidden for
     // a reader who neither follows the report nor muted it. A failed mute.js
     // load leaves the card without it.
     var muteControl = window.PinalertMute ? PinalertMute.createMuteControl(report) : null;

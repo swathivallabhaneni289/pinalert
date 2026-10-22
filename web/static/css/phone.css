@@ -1144,13 +1144,21 @@
     margin-top: var(--space-lg);
     padding: 0;
     border: 0;
-    border-top: 1px solid var(--color-border);
+    /* Plan 04-30: the hairline is the muted token (3 to 1), as on the Low
+       data row and the laptop popup, so Flag looks the same everywhere. */
+    border-top: 1px solid var(--color-text-muted);
     border-radius: 0;
     background: transparent;
     color: var(--color-text);
     font-weight: var(--font-weight-semibold);
     text-align: left;
     text-decoration: none;
+  }
+
+  /* The Mute row (plan 04-30, updates.css) sits just above Flag at the bottom
+     of the report, so it takes the space Flag took alone. */
+  .leaflet-container .leaflet-detail-pane .popup-card__body > .mute-control:not([hidden]) {
+    margin-top: var(--space-lg);
   }
 
   .leaflet-container .leaflet-detail-pane .popup-card__body > .flag-control:not([hidden])::before {
