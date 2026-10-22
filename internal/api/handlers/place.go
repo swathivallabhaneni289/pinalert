@@ -140,7 +140,8 @@ func placeErrorClass(err error) string {
 // @Description lat and lon (both or neither, the map centre) make Photon prefer nearby places. With lat and lon,
 // @Description only places within 50 km of the map centre are returned, and a city or town named as typed; a
 // @Description search that finds only farther places returns an empty list, except with kind=area, which is never
-// @Description cut by distance. Without them the search covers all of India. When
+// @Description cut by distance; with them a shorter text of one word is not tried. Without them the search covers all
+// @Description of India. When
 // @Description Photon finds nothing it asks Nominatim with the whole text, preferring places near
 // @Description the map centre, then Photon again without the first part and then without the
 // @Description second; matched_query then holds the shorter text that matched. A first Photon

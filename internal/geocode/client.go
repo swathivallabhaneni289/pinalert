@@ -268,7 +268,7 @@ func (c *Client) search(ctx context.Context, q string, near *Point, cache *answe
 		return answer, nil
 	}
 
-	texts := searchTexts(q)
+	texts := textsFor(ctx, q, near)
 	photon, err := c.askPhoton(ctx, texts[0], near, func(ctx context.Context) error { return takePhoton(ctx, 0) }, c.photonTimeout)
 	if err != nil {
 		return Answer{}, err
@@ -537,8 +537,13 @@ func dropMostSpecific(text string) (string, bool) {
 // is a shorter text tried. The list is cut at maxUpstreamPerSearch, so with a
 // position the second shorter text is never reached.
 func searchPlan(q string, near *Point) []attempt {
+	return planFor(searchTexts(q), near)
+}
+
+// planFor is searchPlan for texts already chosen, the whole text first.
+func planFor(texts []string, near *Point) []attempt {
 	var plan []attempt
-	for i, text := range searchTexts(q) {
+	for i, text := range texts {
 		if near != nil {
 			plan = append(plan, attempt{text: text, boxed: true, shortened: i > 0})
 		}
@@ -556,7 +561,7 @@ func searchPlan(q string, near *Point) []attempt {
 // search. maxRequests cuts the plan further when Photon already used one of
 // the search's maxUpstreamPerSearch requests.
 func (c *Client) run(ctx context.Context, q string, near *Point, take func(ctx context.Context, i int) error, maxRequests int) (Answer, error) {
-	plan := searchPlan(q, near)
+	plan := planFor(textsFor(ctx, q, near), near)
 	if len(plan) > maxRequests {
 		plan = plan[:max(maxRequests, 0)]
 	}

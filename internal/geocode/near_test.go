@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -36,16 +37,58 @@ func farMalls() []map[string]any {
 	}
 }
 
-func TestNearOnlyAnswersOnlyNearRowsInPhotonsOrder(t *testing.T) {
+// villageRow is a village as Photon sends one.
+func villageRow(name string, lat, lon float64) map[string]any {
+	return photonFeatureJSON(lon, lat, map[string]any{
+		"name": name, "state": "Andhra Pradesh", "countrycode": "IN",
+		"osm_key": "place", "osm_value": "village", "type": "city",
+	})
+}
+
+func TestNearOnlyRowsPastTheFirstFiveStayHidden(t *testing.T) {
 	for name, search := range lanes {
 		t.Run(name, func(t *testing.T) {
-			// The far rows come first, as Photon put them, and there are more
-			// of them than the five a search shows: the near rows must not be
-			// cut by the ranking before the far ones are dropped.
-			rows := append(farMalls(),
-				poiRow("PVP Square Mall Parking", 16.5034, 80.6458, "Vijayawada"),
-				poiRow("Square Mall Bus Stop", 16.4950, 80.6600, "Vijayawada"),
+			// Live on 2026-10-23: Photon's first five for "PVP Square Mall"
+			// near Benz Circle were the far malls, and its rows six to ten were
+			// near villages whose names only start with "Mall". The ranking's
+			// cut always hid those guesses, and dropping the far rows must not
+			// bring them up: nothing near matches.
+			rows := append(farMalls()[:5],
+				villageRow("Mallapalle", 16.3999213, 80.7839862),
+				villageRow("Mallipoinpalle", 16.7018271, 80.7702398),
+				villageRow("Mallikarjunpet", 16.3129605, 80.4469641),
+				villageRow("Mallavilli", 16.6716871, 80.8881283),
+				villageRow("Mallavaram", 16.3431628, 80.3756936),
 			)
+			ps := newPhotonStub(t, photonAnswers(t, rows...))
+			rs := newRecordingServer(t, nil)
+			c := newDualClient(ps.server.URL, rs.server.URL)
+
+			answer, err := search(c, context.Background(), "PVP Square Mall", benzCircle)
+			if err != nil {
+				t.Fatalf("search returned error: %v", err)
+			}
+			if len(answer.Results) != 0 {
+				t.Fatalf("results = %q, want none: nothing near matches", resultNames(answer))
+			}
+			if len(rs.sent()) != 1 {
+				t.Errorf("nominatim asked %d times, want 1 with the whole text", len(rs.sent()))
+			}
+		})
+	}
+}
+
+func TestNearOnlyKeepsNearRowsOfTheFirstFiveInOrder(t *testing.T) {
+	for name, search := range lanes {
+		t.Run(name, func(t *testing.T) {
+			malls := farMalls()
+			rows := []map[string]any{
+				malls[0],
+				poiRow("PVP Square Mall Parking", 16.5034, 80.6458, "Vijayawada"),
+				malls[1],
+				poiRow("Square Mall Bus Stop", 16.4950, 80.6600, "Vijayawada"),
+				malls[2],
+			}
 			ps := newPhotonStub(t, photonAnswers(t, rows...))
 			rs := newRecordingServer(t, nil)
 			c := newDualClient(ps.server.URL, rs.server.URL)
@@ -212,5 +255,68 @@ func TestNearRadiusIsFiftyKilometres(t *testing.T) {
 	}
 	if nearRadiusKm != 50 {
 		t.Fatalf("nearRadiusKm = %v, want 50 (plan 04-32)", nearRadiusKm)
+	}
+}
+
+func TestTextsForSkipsOneWordShorterTextsNearAPosition(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name string
+		ctx  context.Context
+		q    string
+		near *Point
+		want []string
+	}{
+		{"near: one word left over is not tried", ctx, "PVP Square Mall", benzCircle, []string{"PVP Square Mall", "Square Mall"}},
+		{"near: two words only, nothing shorter", ctx, "PVP Square", benzCircle, []string{"PVP Square"}},
+		{"near: address parts are still tried", ctx, longAddress, benzCircle, searchTexts(longAddress)},
+		{"no position: every shorter text, as before", ctx, "PVP Square Mall", nil, []string{"PVP Square Mall", "Square Mall", "Mall"}},
+		{"home area search: as before", withAreasOnly(ctx), "PVP Square Mall", benzCircle, []string{"PVP Square Mall", "Square Mall", "Mall"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := textsFor(tc.ctx, tc.q, tc.near)
+			if strings.Join(got, "|") != strings.Join(tc.want, "|") {
+				t.Fatalf("textsFor = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPVPSquareMallNearBenzCircleFindsNothing(t *testing.T) {
+	// The live trail of 2026-10-23 once far rows were dropped: Photon's rows
+	// for the whole text and for "Square Mall" are far malls, Nominatim has
+	// nothing, and only "Mall" finds near rows, villages that start with it.
+	far := farMalls()[:5]
+	villages := []map[string]any{
+		villageRow("Mallapalle", 16.3999213, 80.7839862),
+		villageRow("Mallavaram", 16.3431628, 80.3756936),
+	}
+	for name, search := range lanes {
+		t.Run(name, func(t *testing.T) {
+			ps := newPhotonStub(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Query().Get("q") == "Mall" {
+					_, _ = w.Write(photonBody(t, villages...))
+					return
+				}
+				_, _ = w.Write(photonBody(t, far...))
+			})
+			rs := newRecordingServer(t, nil)
+			c := newDualClient(ps.server.URL, rs.server.URL)
+
+			answer, err := search(c, context.Background(), "PVP Square Mall", benzCircle)
+			if err != nil {
+				t.Fatalf("search returned error: %v", err)
+			}
+			if len(answer.Results) != 0 || answer.MatchedQuery != "" {
+				t.Fatalf("answer = %q matched %q, want nothing: nothing near is named so", resultNames(answer), answer.MatchedQuery)
+			}
+			for _, q := range ps.queries {
+				if q.Get("q") == "Mall" {
+					t.Fatalf("Photon was asked for the one word %q", "Mall")
+				}
+			}
+		})
 	}
 }

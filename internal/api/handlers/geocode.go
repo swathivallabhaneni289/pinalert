@@ -130,7 +130,8 @@ func parseGeocodeQuery(w http.ResponseWriter, r *http.Request) (string, bool) {
 // @Description through the magic-link flow. The optional lat and lon (both or neither, the report
 // @Description pin) make Photon prefer nearby places. With lat and lon, only places within 50 km of the pin are
 // @Description returned, and a city or town named as typed; a search that finds only farther places
-// @Description returns an empty list. Without them the search covers all of India. When Photon finds nothing the search asks
+// @Description returns an empty list, and a shorter text of one word is not tried. Without them the search covers all
+// @Description of India. When Photon finds nothing the search asks
 // @Description Nominatim with the whole text, preferring places near the pin, then Photon again
 // @Description without the first part and then without the second; matched_query then holds the
 // @Description shorter text that matched. A first Photon request that takes over 2 seconds is

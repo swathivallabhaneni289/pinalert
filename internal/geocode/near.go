@@ -8,7 +8,32 @@ package geocode
 // with places within nearRadiusKm of that point, and a search that finds only
 // far rows has found nothing, so the page can say so plainly.
 
-import "context"
+import (
+	"context"
+	"strings"
+)
+
+// textsFor is searchTexts for this search. With a position (and outside the
+// home area search), a shorter text of one word is not tried: one word left
+// over from a longer name matches places that merely start with it. Live on
+// 2026-10-23 near Benz Circle, "PVP Square Mall" (not in the map data) went on
+// to "Mall" and was answered with villages named Mallapalle and Mallavaram,
+// where the page should say plainly that nothing near matches. Shorter texts
+// of two or more words, such as an address without its flat number, are still
+// tried, and a search with no position tries every shorter text, as before.
+func textsFor(ctx context.Context, q string, near *Point) []string {
+	texts := searchTexts(q)
+	if near == nil || areasOnly(ctx) {
+		return texts
+	}
+	kept := []string{texts[0]}
+	for _, text := range texts[1:] {
+		if len(strings.Fields(text)) >= 2 {
+			kept = append(kept, text)
+		}
+	}
+	return kept
+}
 
 // answerable reports whether a row at lat, lon named name may be answered for
 // the text q searched around near.
