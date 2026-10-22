@@ -103,3 +103,70 @@ func TestBarTokenFollowsTheRealBar(t *testing.T) {
 		t.Errorf("chrome.css: nothing may use the bar token as its own floor")
 	}
 }
+
+// TestBottomBarTokenFollowsTheRealBar pins plan 04-33. At a large text size
+// the phone bottom bar's labels grow and wrap and the bar grows taller than
+// the 65px --app-bottombar-height states, so the report view, the not
+// available view, the search results and the message that are placed from the
+// token sat behind the bar (390x844 at 200 percent text: the bar was 99.4px).
+// theme.js writes the bar's measured height into the token the way it writes
+// the strip's: once on readystatechange, again from a ResizeObserver whose
+// callback only schedules the write for the next frame, and on window resize.
+// The bar adds the home indicator inset to its own bottom padding and every
+// reader adds that inset again, so the written value leaves it out. A hidden
+// bar (the laptop) writes 0px, the 900px tier's value; a page with no bar
+// writes nothing.
+func TestBottomBarTokenFollowsTheRealBar(t *testing.T) {
+	raw, err := StaticFS.ReadFile(themeJSPath)
+	if err != nil {
+		t.Fatalf("reading %s: %v", themeJSPath, err)
+	}
+	code := stripJSComments(string(raw))
+	if !strings.Contains(code, "var APP_BAR_PROPERTY = '--app-bottombar-height';") {
+		t.Errorf("theme.js does not name the bottom bar token")
+	}
+
+	measure := jsFunctionBody(t, code, "measureAppBar()")
+	zero := strings.Index(measure, "setProperty(APP_BAR_PROPERTY, '0px')")
+	set := strings.LastIndex(measure, "setProperty(APP_BAR_PROPERTY,")
+	read := strings.LastIndex(measure, "getBoundingClientRect().height")
+	if zero < 0 || set < 0 || read < 0 || !(zero < set && set < read) {
+		t.Errorf("measureAppBar must write 0px for a hidden bar, then the bar's measured height, in that order: %q", measure)
+	}
+	if !strings.Contains(measure, "offsetHeight === 0") || !strings.Contains(measure, "document.documentElement.style") {
+		t.Errorf("measureAppBar must treat a bar that is not displayed as 0px and write on the root: %q", measure)
+	}
+	for _, want := range []string{"parseFloat(style.paddingBottom) - parseFloat(style.paddingTop)", "- (inset > 0 ? inset : 0)"} {
+		if !strings.Contains(measure, want) {
+			t.Errorf("measureAppBar must leave the home indicator inset out of the written height (%q): %q", want, measure)
+		}
+	}
+
+	watch := jsFunctionBody(t, code, "watchAppBar()")
+	for _, want := range []string{
+		"querySelector('body > .app-bar')",
+		"new ResizeObserver(scheduleAppBarMeasure).observe(appBarEl)",
+		"window.addEventListener('resize', measureAppBar)",
+	} {
+		if !strings.Contains(watch, want) {
+			t.Errorf("watchAppBar lacks %q: %q", want, watch)
+		}
+	}
+	if strings.Index(watch, "if (!appBarEl)") > strings.Index(watch, "measureAppBar()") {
+		t.Errorf("watchAppBar must return before writing anything on a page with no bar: %q", watch)
+	}
+	schedule := jsFunctionBody(t, code, "scheduleAppBarMeasure()")
+	if !strings.Contains(schedule, "requestAnimationFrame(") || !strings.Contains(schedule, "measureAppBar()") ||
+		strings.Contains(schedule, "setProperty") || strings.Contains(schedule, "getBoundingClientRect") {
+		t.Errorf("scheduleAppBarMeasure must only call measureAppBar from a requestAnimationFrame callback: %q", schedule)
+	}
+	if strings.Count(code, "watchAppBar();") != 2 {
+		t.Errorf("theme.js must start watchAppBar beside watchBar, on readystatechange and when already parsed")
+	}
+
+	// The readers keep adding the inset themselves.
+	phone := stripCSSComments(p16ReadStatic(t, "static/css/phone.css"))
+	if n := strings.Count(phone, "var(--app-bottombar-height) + env(safe-area-inset-bottom)"); n < 5 {
+		t.Errorf("phone.css has %d readers of the bottom bar token that add the inset, want the search results (2), the report view, the not available view and the message", n)
+	}
+}

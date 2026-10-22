@@ -130,11 +130,18 @@ func TestAppBarLabelsNoWrap(t *testing.T) {
 		"flex":          "1 1 0",
 		"min-width":     "0",
 	})
+	// Amended 2026-10-23 by plan 04-33: the narrow item also caps the caption
+	// token at 20px. At 24px (200 percent text) the four longest words and the
+	// paddings needed 344px and a 320px page scrolled sideways (348 on Nearby,
+	// 350 on My activity); at 20px the bar fits (scrollWidth 320, Chromium and
+	// WebKit). Up to 166 percent text the token is the smaller, so nothing
+	// changes there.
 	narrow := p16Rule(t, rules, "(max-width: 380px)", "body > .app-bar > .app-bar__item")
 	p16MustDecl(t, "narrow bottom bar item", narrow, map[string]string{
 		"flex":      "1 1 auto",
 		"min-width": "min-content",
 		"padding":   "0 var(--space-xs)",
+		"font-size": "min(var(--font-size-caption), 20px)",
 	})
 	// Four equal items: three places and Report.
 	bar := p13ReadTemplate(t, appBarTemplate)

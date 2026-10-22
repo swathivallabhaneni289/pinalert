@@ -286,6 +286,55 @@
     window.addEventListener('resize', measureBar);
   }
 
+  // THE PHONE BOTTOM BAR HEIGHT (plan 04-33). The phone report view, the not
+  // available view, the search results and the toast are placed from
+  // --app-bottombar-height, whose CSS value is the bar at the normal text size
+  // (65px). At a large text size the labels grow and wrap and the bar grows
+  // with them, so the bar's real height is written into the token the same
+  // way as the strip above. The bar adds the home indicator inset to its own
+  // bottom padding and every reader adds that inset again, so the value
+  // written leaves it out: the bottom padding is taken as equal to the top
+  // one. A hidden bar (the laptop) writes 0px, which is the 900px tier's
+  // value, and a page with no bar writes nothing and keeps the CSS value.
+  var APP_BAR_PROPERTY = '--app-bottombar-height';
+  var appBarEl = null;
+  var appBarFrame = 0;
+
+  function measureAppBar() {
+    var rootStyle = document.documentElement.style;
+    if (!appBarEl || !appBarEl.isConnected || appBarEl.offsetHeight === 0) {
+      rootStyle.setProperty(APP_BAR_PROPERTY, '0px');
+      return;
+    }
+    var style = window.getComputedStyle(appBarEl);
+    var inset = parseFloat(style.paddingBottom) - parseFloat(style.paddingTop);
+    rootStyle.setProperty(APP_BAR_PROPERTY, (appBarEl.getBoundingClientRect().height - (inset > 0 ? inset : 0)) + 'px');
+  }
+
+  // The observer only asks for a measurement on the next frame, as for the
+  // strip: the bar is a child of the body beside the shell.
+  function scheduleAppBarMeasure() {
+    if (appBarFrame) {
+      return;
+    }
+    appBarFrame = window.requestAnimationFrame(function () {
+      appBarFrame = 0;
+      measureAppBar();
+    });
+  }
+
+  function watchAppBar() {
+    appBarEl = document.querySelector('body > .app-bar');
+    if (!appBarEl) {
+      return;
+    }
+    measureAppBar();
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(scheduleAppBarMeasure).observe(appBarEl);
+    }
+    window.addEventListener('resize', measureAppBar);
+  }
+
   // The bar is measured as soon as the document is parsed, on the
   // readystatechange to interactive, which comes before the deferred scripts
   // run, so the map and the other scripts lay out against the real bar.
@@ -295,11 +344,13 @@
     }
     document.removeEventListener('readystatechange', onReadyState);
     watchBar();
+    watchAppBar();
   }
 
   if (document.readyState === 'loading') {
     document.addEventListener('readystatechange', onReadyState);
   } else {
     watchBar();
+    watchAppBar();
   }
 }());

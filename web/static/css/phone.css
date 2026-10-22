@@ -180,8 +180,11 @@
     outline-offset: -3px;
   }
 
+  /* Plan 04-33: never lower than the top of the bottom bar, whose measured
+     height theme.js writes into the token at a large text size; at the normal
+     text size the first value (68px) is the larger, so the toast stays put. */
   #toast:not([hidden]) {
-    bottom: calc(var(--touch-target-min) + var(--space-sm) + var(--space-md));
+    bottom: max(calc(var(--touch-target-min) + var(--space-sm) + var(--space-md)), calc(var(--app-bottombar-height) + env(safe-area-inset-bottom)));
   }
 
   /* 03.4 nearby list */
@@ -1364,12 +1367,16 @@
    "Official alerts" stays on one line at 320px (D-03). The query keeps the
    899.98px bound so the file's rule holds. Plan 04-30: at a large text size an
    item never gets narrower than its longest word, so a word is never cut or
-   pushed into the next item; the label wraps between words instead. */
+   pushed into the next item; the label wraps between words instead. Plan
+   04-33: the label size stops at 20px here, so the four longest words fit a
+   320px screen at 200 percent text (at 24px they need 344px and the page
+   scrolled sideways). Up to 166 percent text nothing changes. */
 @media (max-width: 899.98px) and (max-width: 380px) {
   body > .app-bar > .app-bar__item {
     flex: 1 1 auto;
     min-width: min-content;
     padding: 0 var(--space-xs);
+    font-size: min(var(--font-size-caption), 20px);
   }
 }
 
