@@ -156,13 +156,18 @@
   padding: var(--space-lg) var(--space-md) 0;
 }
 
-/* A short heading: Body size, semibold, the text colour. It stands alone over
-   its group (owner, 2026-10-22: "too much details under the heading for each
-   section"; the line that was under it is gone). */
+/* A short heading: Body size, semibold, the text colour. On a phone it stands
+   alone over its group (owner, 2026-10-22: "too much details under the heading
+   for each section"), so the line under it shows on the laptop only, where the
+   owner's picture has it in the left column. */
 .place-page--settings .place-section__title {
   margin-bottom: var(--space-sm);
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
+}
+
+.place-page--settings .place-section__line {
+  display: none;
 }
 
 /* One rounded surface per group: a fill and no outline. */
@@ -272,11 +277,19 @@
 
   .place-page--settings .place-section {
     padding: var(--space-lg) var(--space-lg) 40px;
+    align-items: start;
   }
 
   .place-page--settings .place-section__title {
+    margin-bottom: 0;
     font-size: var(--font-size-heading);
     line-height: var(--line-height-heading);
+  }
+
+  /* The owner's picture (2026-10-22, "stuff like this should also be
+     included"): the line under each heading, in the left column. */
+  .place-page--settings .place-section__line:not([hidden]) {
+    display: block;
   }
 
   .place-page--settings .place-box {
