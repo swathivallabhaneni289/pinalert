@@ -368,6 +368,11 @@ func (c *Client) fetchPhoton(parent context.Context, q string, near *Point, limi
 			continue
 		}
 		name := cleanPart(p.Name)
+		if !answerable(parent, q, near, lat, lon, photonIsCityLevel(p), name) {
+			// Dropped before the ranking keeps its five, so a far row whose
+			// name is spelled as typed never pushes a near one out (plan 04-32).
+			continue
+		}
 		candidates = append(candidates, photonCandidate{
 			result: Result{
 				Name: name, DisplayName: label, Lat: lat, Lon: lon, Area: photonArea(p),

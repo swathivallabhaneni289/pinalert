@@ -1136,7 +1136,9 @@ paths:
         Searches Photon first, which matches close spellings and half typed words, and
         returns at most five matches, in India only. Requires a session verified by email
         through the magic-link flow. The optional lat and lon (both or neither, the report
-        pin) make Photon prefer nearby places. When Photon finds nothing the search asks
+        pin) make Photon prefer nearby places. With lat and lon, only places within 50 km of the pin are
+        returned, and a city or town named as typed; a search that finds only farther places
+        returns an empty list. Without them the search covers all of India. When Photon finds nothing the search asks
         Nominatim with the whole text, preferring places near the pin, then Photon again
         without the first part and then without the second; matched_query then holds the
         shorter text that matched. A first Photon request that takes over 2 seconds is
@@ -1193,7 +1195,10 @@ paths:
         never queues ahead of a report search, repeated searches are answered from a cache, and each
         verified account has its own budget of 8 searches at once, then 1 a second. Results are in India only. It asks
         Photon first, which matches close spellings and half typed words; the optional
-        lat and lon (both or neither, the map centre) make Photon prefer nearby places. When
+        lat and lon (both or neither, the map centre) make Photon prefer nearby places. With lat and lon,
+        only places within 50 km of the map centre are returned, and a city or town named as typed; a
+        search that finds only farther places returns an empty list, except with kind=area, which is never
+        cut by distance. Without them the search covers all of India. When
         Photon finds nothing it asks Nominatim with the whole text, preferring places near
         the map centre, then Photon again without the first part and then without the
         second; matched_query then holds the shorter text that matched. A first Photon

@@ -335,7 +335,11 @@ func (c *Client) afterPhotonFoundNothing(ctx context.Context, texts []string, ne
 		}
 		nominatimTries++
 		budget--
-		return c.fetch(ctx, text, nearParams(near))
+		results, err := c.fetch(ctx, text, nearParams(near))
+		if err != nil {
+			return nil, err
+		}
+		return keepNear(ctx, text, near, results), nil
 	}
 
 	if budget <= 0 {
@@ -433,6 +437,13 @@ const (
 	// minShorterRunes is the shortest text a shorter try may send, the same
 	// minimum the handlers apply to what people type.
 	minShorterRunes = 3
+	// nearRadiusKm is how far from a known position a place may lie and still
+	// be answered (plan 04-32): live near Benz Circle, a name missing from the
+	// map data ("PVP Square Mall") was answered with malls of similar names in
+	// Delhi, Bhopal and Mumbai. Rows beyond it are dropped, so a search that
+	// finds only far rows found nothing, and the page says so. A search with
+	// no position stays India wide. See keepNear for the one exception.
+	nearRadiusKm = 50.0
 )
 
 // attempt is one upstream request in a search plan.
@@ -557,6 +568,7 @@ func (c *Client) run(ctx context.Context, q string, near *Point, take func(ctx c
 		if err != nil {
 			return Answer{}, err
 		}
+		results = keepNear(ctx, a.text, near, results)
 		if len(results) > 0 {
 			answer := Answer{Results: results, provider: providerNominatim}
 			if a.shortened {

@@ -137,7 +137,10 @@ func placeErrorClass(err error) string {
 // @Description never queues ahead of a report search, repeated searches are answered from a cache, and each
 // @Description verified account has its own budget of 8 searches at once, then 1 a second. Results are in India only. It asks
 // @Description Photon first, which matches close spellings and half typed words; the optional
-// @Description lat and lon (both or neither, the map centre) make Photon prefer nearby places. When
+// @Description lat and lon (both or neither, the map centre) make Photon prefer nearby places. With lat and lon,
+// @Description only places within 50 km of the map centre are returned, and a city or town named as typed; a
+// @Description search that finds only farther places returns an empty list, except with kind=area, which is never
+// @Description cut by distance. Without them the search covers all of India. When
 // @Description Photon finds nothing it asks Nominatim with the whole text, preferring places near
 // @Description the map centre, then Photon again without the first part and then without the
 // @Description second; matched_query then holds the shorter text that matched. A first Photon
