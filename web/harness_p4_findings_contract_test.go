@@ -244,8 +244,16 @@ func TestHarnessFindingP4_9MessageClearsTheOpenedReport(t *testing.T) {
 	}
 
 	// The phone keeps its own place above the bottom bar.
+	//
+	// Amended 2026-10-23 by plan 04-33: the old 68px place is kept as the
+	// floor, and the message never sits lower than the top of the bottom bar,
+	// whose measured height theme.js writes into --app-bottombar-height at a
+	// large text size (99px at 390 and 200 percent text, where the 68px place
+	// put the message over the bar). The inset is added as every other reader
+	// of the token adds it. At the normal text size the floor is the larger
+	// value, so the message stays at 68px.
 	phone := p31mRule(t, "static/css/phone.css", "@media (max-width: 899.98px)", "#toast:not([hidden])")
-	if p19NoSpace(phone.Decls["bottom"]) != p19NoSpace("calc(var(--touch-target-min) + var(--space-sm) + var(--space-md))") || len(phone.Decls) != 1 {
+	if p19NoSpace(phone.Decls["bottom"]) != p19NoSpace("max(calc(var(--touch-target-min) + var(--space-sm) + var(--space-md)), calc(var(--app-bottombar-height) + env(safe-area-inset-bottom)))") || len(phone.Decls) != 1 {
 		t.Errorf("the phone message rule changed: %v", phone.Decls)
 	}
 }

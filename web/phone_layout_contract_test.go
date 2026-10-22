@@ -173,6 +173,15 @@ func TestPhoneRulesLiveInTheNarrowBlock(t *testing.T) {
 			}
 			switch prop {
 			case "font-size":
+				// Amended 2026-10-23 by plan 04-33: the one exception is the
+				// bottom bar item at 380px and under, whose caption token is
+				// capped at 20px so the four labels fit a 320px screen at 200
+				// percent text. Only that head, that query and that exact
+				// value pass; every other phone rule still names a token.
+				if r.Head == "body > .app-bar > .app-bar__item" && strings.Contains(r.Media, "(max-width: 380px)") &&
+					value == "min(var(--font-size-caption), 20px)" {
+					break
+				}
 				if !strings.HasPrefix(value, "var(--font-size-") {
 					t.Errorf("%q font-size %q is not a type size token", r.Head, value)
 				}
