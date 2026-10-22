@@ -86,10 +86,10 @@ function load({ dialogSupport = true, confirmAnswer = false } = {}) {
     docListeners.filter((l) => l.type === 'submit').forEach((l) => l.fn(e));
     return e;
   };
-  return { trigger, panel, menuButton, cancel, yes, dialog, submit, asked, body };
+  return { trigger, panel, menuButton, cancel, yes, dialog, title, submit, asked, body };
 }
 
-test('a Log out form is held and the dialog opens on Cancel', () => {
+test('a Log out form is held and the dialog opens with the question focused', () => {
   const m = load();
   const settingsButton = fakeEl('settings-logout');
   const form = fakeForm('/auth/logout', settingsButton);
@@ -97,7 +97,9 @@ test('a Log out form is held and the dialog opens on Cancel', () => {
   assert.equal(e.prevented, true, 'the submit is held');
   assert.equal(form.submitted, 0, 'nothing is sent yet');
   assert.equal(m.dialog.open, true, 'the dialog opens');
-  assert.equal(m.cancel.focused, 1, 'Cancel takes focus, the safe choice');
+  assert.equal(m.title.focused, 1, "the question takes focus, as the app's other windows do");
+  assert.equal(m.cancel.focused, 0, 'no button looks chosen (owner, 2026-10-22)');
+  assert.equal(m.yes.focused, 0);
 });
 
 test('Log out in the dialog sends the form that asked', () => {

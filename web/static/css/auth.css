@@ -573,6 +573,11 @@
   background: rgb(0 0 0 / 55%);
 }
 
+/* While it asks, the page behind stays still, like any system alert. */
+html:has(.logout-confirm[open]) {
+  overflow: hidden;
+}
+
 .logout-confirm__body {
   padding: var(--space-lg);
 }
@@ -583,6 +588,12 @@
   font-size: var(--font-size-heading);
   line-height: var(--line-height-heading);
   font-weight: var(--font-weight-semibold);
+}
+
+/* The question takes the first focus (tabindex -1), like the titles of the
+   app's windows, and draws no ring; Cancel and Log out keep theirs. */
+.logout-confirm__title:focus {
+  outline: none;
 }
 
 .logout-confirm__actions:not([hidden]) {

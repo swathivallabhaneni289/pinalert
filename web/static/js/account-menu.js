@@ -259,7 +259,13 @@
     }
     pendingLogout = form;
     confirmDialog.showModal();
-    confirmCancel.focus();
+    // The question takes the first focus, as the app's other windows do, so
+    // a screen reader starts at it and no button looks chosen (owner,
+    // 2026-10-22: "it's pre-selecting Cancel ... I don't want that"). The
+    // buttons keep the keyboard ring.
+    if (confirmTitle && typeof confirmTitle.focus === 'function') {
+      confirmTitle.focus();
+    }
   }
 
   // onConfirmClose runs however the dialog closes. Focus goes back to the
