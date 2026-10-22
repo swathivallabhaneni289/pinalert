@@ -409,7 +409,9 @@ func TestLowDataSearchIgnoresServerText(t *testing.T) {
 		"limit.expired",
 		"formVariant === 'low'", "picker.searchFailureMessage(", "'unavailable'")
 
-	dropdown := jsFunctionBody(t, form, "renderDropdown(results, matched)")
+	// Amended 2026-10-23 by plan 04-32 (owner): renderDropdown takes a third argument,
+	// near, so its signature is located with it.
+	dropdown := jsFunctionBody(t, form, "renderDropdown(results, matched, near)")
 	p419Has(t, "renderDropdown", dropdown, "'no_match'", "'match'")
 	p419Before(t, "renderDropdown", dropdown, "'no_match'", "return")
 

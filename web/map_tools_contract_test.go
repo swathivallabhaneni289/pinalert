@@ -150,7 +150,12 @@ func p31mSearchScript(t *testing.T) {
 		"'Search unavailable. Try again in a moment.'",
 		"'Too many searches. Wait a few seconds and try again.'",
 		"' results.'", "'1 result.'",
-		"var MAX_RESULTS = 5;", "var RESULT_NAME_MAX = 32;", "var RESULT_ZOOM = 13;")
+		"var MAX_RESULTS = 5;", "var RESULT_NAME_MAX = 32;", "var RESULT_ZOOM = 15;")
+	// Amended 2026-10-23 by plan 04-32 (owner): RESULT_ZOOM moved from 13 to 15,
+	// street level, so a picked place is shown close up and not zoomed out.
+	// The nothing near line joins the status words.
+	p13MustContain(t, "map-tools.js", code, "var NEAR_MIN_ZOOM = 8;",
+		"'No place by that name near you. Try another name.'")
 
 	// Type ahead (quick 261016-sfu): the box is read on submit and after a
 	// typing pause, pinned by TestPlaceSearchSuggestsWhileTyping. No other key
@@ -199,19 +204,24 @@ func p31mSearchScript(t *testing.T) {
 
 	// A result is at most five buttons; the name is cut and the full name is
 	// a second line.
-	render := jsFunctionBody(t, code, "renderResults(list, matched)")
+	// Amended 2026-10-23 by plan 04-32 (owner): renderResults takes a third argument,
+	// near, so its signature is located with it.
+	render := jsFunctionBody(t, code, "renderResults(list, matched, near)")
 	p13MustContain(t, "renderResults", render,
 		"MAX_RESULTS", "document.createElement('button')", "'map-search__result'",
 		"map-search__result-name", "map-search__result-full", "cutName(")
 
 	// A pick: the centre is marked as not the reader's, the place is stored,
-	// the map moves to it at zoom 13 and the list is read once. No second
+	// the map moves to it at zoom 15 (amended 2026-10-23 by plan 04-32,
+	// owner: it was 13), the place mark is drawn there and the list is read once. No second
 	// network call and no write to the address.
+	// Amended 2026-10-23 by plan 04-32 (owner): setPlaceMark joins the order.
 	pick := jsFunctionBody(t, code, "pickResult(i)")
 	p13Ordered(t, pick, "pickResult",
 		"Pinalert.setCenter(pick.lat, pick.lon, false);",
 		"Pinalert.setPlace(",
 		"PinalertMap.moveTo(pick.lat, pick.lon, RESULT_ZOOM);",
+		"PinalertMap.setPlaceMark(pick.lat, pick.lon);",
 		"Pinalert.fetchReports();",
 		"closeResults();")
 	p13MustContain(t, "pickResult", pick, "focusSearch()")

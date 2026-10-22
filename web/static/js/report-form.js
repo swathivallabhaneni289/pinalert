@@ -109,6 +109,11 @@
   // produce requests the server refuses with a 400.
   var MIN_QUERY_RUNES = 3;
   var SEARCH_NO_MATCH_MESSAGE = 'No matches found.';
+  // The lines when nothing near the pin matches (plan 04-32): the server then
+  // answers only places near the pin. The form with a map offers a tap on it;
+  // the Low data form has no map, so its line ends at the name.
+  var SEARCH_NO_MATCH_NEAR_MAP_MESSAGE = 'No place by that name near you. Try another name, or tap the map to put the pin there.';
+  var SEARCH_NO_MATCH_NEAR_MESSAGE = 'No place by that name near you. Try another name.';
   // The line above the suggestions when a shorter text found them (quick task
   // 261016-adr). The matched text is what the visitor typed, cut down by the
   // server, so it reaches the page through Pinalert.setText only.
@@ -796,11 +801,12 @@
   // relevance order, and re-sorting client side risks disagreeing with
   // that ranking for no benefit. When matched is set, a shorter text than
   // the one typed found them, and one plain line saying so sits above the
-  // rows; each row still shows its full address.
-  function renderDropdown(results, matched) {
+  // rows; each row still shows its full address. near is true when the search
+  // sent the pin, so an empty list means nothing near it matched (plan 04-32).
+  function renderDropdown(results, matched, near) {
     if (!results || results.length === 0) {
       hideDropdown();
-      showSearchStatus(SEARCH_NO_MATCH_MESSAGE);
+      showSearchStatus(noMatchMessage(near === true));
       noteSearchOutcome('no_match');
       return;
     }
@@ -818,6 +824,22 @@
     locationSearchResults.hidden = false;
     locationSearchInput.setAttribute('aria-expanded', 'true');
     noteSearchOutcome('match');
+  }
+
+  // noMatchMessage is the line for an empty answer: the near lines when the
+  // search sent the pin (the one with a map offers a tap on it), else the plain
+  // one, since "near you" would not be true.
+  function noMatchMessage(near) {
+    if (!near) {
+      return SEARCH_NO_MATCH_MESSAGE;
+    }
+    return formVariant === 'low' ? SEARCH_NO_MATCH_NEAR_MESSAGE : SEARCH_NO_MATCH_NEAR_MAP_MESSAGE;
+  }
+
+  // isNoMatchMessage says whether text is one of the nothing found lines.
+  function isNoMatchMessage(text) {
+    return text === SEARCH_NO_MATCH_MESSAGE || text === SEARCH_NO_MATCH_NEAR_MESSAGE ||
+      text === SEARCH_NO_MATCH_NEAR_MAP_MESSAGE;
   }
 
   // noteSearchOutcome tells the location object how the last search ended
@@ -881,6 +903,11 @@
     // retries.
     window.clearTimeout(searchDebounceTimer);
     searchRetries = 0;
+    // Typing again replaces the nothing found line (plan 04-32): it described
+    // the text before.
+    if (isNoMatchMessage(locationSearchStatus.textContent)) {
+      clearSearchStatus();
+    }
     var query = locationSearchInput.value.trim();
     if (Array.from(query).length < MIN_QUERY_RUNES) {
       hideDropdown();
@@ -933,7 +960,7 @@
     if (searchCache.has(cacheKey)) {
       abortSearchRequest();
       var hit = searchCache.get(cacheKey);
-      renderDropdown(hit.results, hit.matched);
+      renderDropdown(hit.results, hit.matched, !!pin);
       return;
     }
 
@@ -958,7 +985,7 @@
             return;
           }
           searchCache.set(cacheKey, { results: body.results, matched: body.matched_query });
-          renderDropdown(body.results, body.matched_query);
+          renderDropdown(body.results, body.matched_query, !!pin);
         });
       })
       .catch(function (err) {
