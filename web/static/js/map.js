@@ -675,7 +675,7 @@ window.PinalertMap = (function () {
   // closedLineText is the line a finished report shows in place of the fade
   // sentence (C44, C45), or the empty string for a report that is not
   // finished. A Resolved report reads the server's closed words and the time
-  // ("Resolved by the poster, 2 days ago."); an Expired one reads "Faded 3
+  // ("Resolved by the poster, 2 days ago."); an Expired one reads "Expired 3
   // days ago, after 8 hrs.". The words are the server's own (closed_text and
   // lifetime_text); the browser only joins them to the relative time of the
   // server's history time, and compares no date.
@@ -691,7 +691,7 @@ window.PinalertMap = (function () {
     }
     if (history.state === 'expired') {
       var lifetime = typeof history.lifetime_text === 'string' && history.lifetime_text !== '' ? ', ' + history.lifetime_text : '';
-      return 'Faded ' + when + lifetime + '.';
+      return 'Expired ' + when + lifetime + '.';
     }
     return '';
   }

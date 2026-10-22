@@ -205,7 +205,9 @@ func TestMapFollowsFinishedPopup(t *testing.T) {
 	p13MustContain(t, "closedLineText", closed,
 		"report.history", "history.state === 'resolved'", "history.state === 'expired'",
 		"history.closed_text", "history.lifetime_text", "Pinalert.relativeTime(history.at)",
-		"'Faded '", "'Resolved'")
+		// Amended 2026-10-22 by plan 04-30 (owner): an expired report's line
+		// reads "Expired {when}", where it read "Faded {when}" (03.1-UAT gap).
+		"'Expired '", "'Resolved'")
 	p13MustNotContain(t, "closedLineText", closed,
 		"new Date", "Date.now", "getTime", "expires_at", "created_at", "innerHTML")
 

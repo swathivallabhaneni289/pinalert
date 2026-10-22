@@ -96,13 +96,15 @@ func TestPastCardMarkup(t *testing.T) {
 // Amended 2026-10-17 by Phase 3.4 plan 14: the one meta line (category, closed
 // text and time) became the Report, What happened and When cells. Every word
 // assertion is kept at its new place: the closed text and the outcome label are
-// What happened, the relative time, Faded and the lifetime phrase are When.
+// What happened, the relative time, Expired and the lifetime phrase are When.
 func TestPastCardWords(t *testing.T) {
 	ended := pt12Ended(t)
 
 	when := jsFunctionBody(t, ended, "whenWords(report)")
 	p13MustContain(t, "whenWords", when,
-		"Pinalert.relativeTime(history.at)", "'Faded '", "history.lifetime_text",
+		// Amended 2026-10-22 by plan 04-30 (owner): "Expired {when}" in place
+		// of "Faded {when}" (03.1-UAT gap).
+		"Pinalert.relativeTime(history.at)", "'Expired '", "history.lifetime_text",
 		"history.state === 'resolved'", "'Resolved '")
 	p13MustNotContain(t, "whenWords", when, "innerHTML", "Math.", "parseInt(")
 

@@ -6,7 +6,7 @@
 //   - with no kept position nothing is requested and the location state shows;
 //   - with a position one read of the Past answer is sent, with the position,
 //     the page's radius and, for a link to a finished report, the report id;
-//   - the answer is drawn in two groups, Resolved then Faded out, in the
+//   - the answer is drawn in two groups, Resolved then Expired, in the
 //     server's order, with the cut and partial lines and the empty states;
 //   - a partial flag never leaves an empty block (WR-02, handed over by plan 11);
 //   - a failed read shows the error state and Try again sends one new read;
@@ -305,7 +305,8 @@ test('an answer of two resolved and three expired reports draws the groups, newe
   const faded = rowsOf(m, 'ended-faded-list')[0];
   assert.equal(cell(m, faded, 'activity-chip').textContent, 'Expired');
   assert.equal(cell(m, faded, 'activity-card__happened').textContent, 'Expired unconfirmed');
-  assert.match(cell(m, faded, 'activity-card__when').textContent, /^Faded .*, after 6 hrs$/);
+  // Amended 2026-10-22 by plan 04-30 (owner): Expired in place of Faded.
+  assert.match(cell(m, faded, 'activity-card__when').textContent, /^Expired .*, after 6 hrs$/);
   assert.equal(cell(m, faded, 'activity-card__distance').textContent, '14 km');
   assert.ok(faded.classList.contains('vis-expired'));
 
