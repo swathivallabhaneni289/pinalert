@@ -135,10 +135,12 @@ func TestSettingsRows(t *testing.T) {
 		t.Errorf("About you rows are %v, want the Name row then the Home area row and nothing else", buttonIDs)
 	}
 	for _, want := range []string{
-		"About you", "Your name and home area. Shown only on your public profile.",
+		// Amended 2026-10-22 (owner: "too much details under the heading for
+		// each section"): the lines under the section headings are gone.
+		"About you",
 		"Shown only if you let others follow you", "Used for alerts, never your exact spot", "Not set",
 		"About Pinalert", "Disclaimer", "Policy", "Low data view", "Text only, no map",
-		"Account", "Sign out, or remove your account and its data.",
+		"Account",
 		`<form class="place-row-form" method="post" action="/auth/logout">`,
 		// Amended 2026-10-21 by plan 43 (owner, "I don't see a logout option
 		// on my laptop version, so I think we should add that"): the Account
@@ -211,7 +213,7 @@ func TestSettingsAboutYouValues(t *testing.T) {
 
 	_, body := getPlacePage(t, client, srv.URL, "/settings")
 	for _, want := range []string{
-		"About you", "Your name and home area. Shown only on your public profile.",
+		"About you",
 		"Shown only if you let others follow you", "Used for alerts, never your exact spot",
 		`id="settings-name-value">Not set</span>`, `id="settings-home-value">Not set</span>`,
 		`id="settings-name-row" aria-haspopup="dialog" data-value=""`,

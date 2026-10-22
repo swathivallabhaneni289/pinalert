@@ -167,12 +167,15 @@ var waitingSettingsLabels = []string{
 // wait for a later phase, in the page or in the person menu.
 func TestSettingsShowsOnlyExistingRows(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
+	// Amended 2026-10-22 (owner: "too much details under the heading for each
+	// section"): the lines under the section headings are gone, so only the
+	// headings and rows are pinned here.
 	for _, want := range []string{
-		"About Pinalert", "The rules, how your data is used, and a text only version for weak networks.",
+		"About Pinalert",
 		"Disclaimer", "Unofficial service, what it can and cannot promise", `href="/disclaimer"`,
 		"Policy", "Privacy, data kept, reporting rules", `href="/policy#policy"`,
 		"Low data view", "Text only, no map", `href="/low"`,
-		"Account", "Sign out, or remove your account and its data.", `action="/auth/logout"`, "Log out",
+		"Account", `action="/auth/logout"`, "Log out",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("settings.html.tmpl lacks %q", want)
@@ -182,7 +185,7 @@ func TestSettingsShowsOnlyExistingRows(t *testing.T) {
 	// and D-24b): About you is the first section and its two rows open edit
 	// windows, so the order starts with it and five rows draw a chevron.
 	for _, want := range []string{
-		"About you", "Your name and home area. Shown only on your public profile.",
+		"About you",
 		"Shown only if you let others follow you", "Used for alerts, never your exact spot",
 		`id="settings-name-row"`, `id="settings-home-row"`, "Not set",
 	} {
@@ -356,8 +359,9 @@ func TestSettingsScriptContract(t *testing.T) {
 // reads as a grouped settings list. Each group is one rounded filled surface,
 // rows are divided by a hairline that wins over the row's own border: 0 and
 // clears 3 to 1 on the fill, the value is in the text colour, the Log out row
-// is in the critical colour, and the laptop shows the same list in a centred
-// column of at most 640px. It is scoped to the Settings page, so Official
+// is in the critical colour. Amended 2026-10-22 (owner): the laptop uses the
+// full width grid of sketch 008 with bordered boxes, and no heading has a
+// line under it. It is scoped to the Settings page, so Official
 // alerts keeps its look.
 func TestSettingsIsAGroupedList(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
@@ -387,9 +391,41 @@ func TestSettingsIsAGroupedList(t *testing.T) {
 	p16MustDecl(t, "settings Log out", p31mRule(t, css, "", ".place-page--settings .place-row--button .place-row__label"), map[string]string{
 		"color": "var(--color-severity-critical)", "font-weight": "var(--font-weight-semibold)",
 	})
-	p16MustDecl(t, "settings laptop column", p31mRule(t, css, "@media (min-width: 900px)", ".place-page--settings"), map[string]string{
-		"max-width": "640px", "margin": "0 auto",
+	// Amended 2026-10-22 (owner, with the sketch 008 laptop Settings: "i need
+	// this display for settings for laptop"): plan 43's centred 640px column
+	// is gone; the laptop uses the full width 260px | 1fr grid of Official
+	// alerts, each group a bordered page coloured box with full width lines.
+	const laptop = "@media (min-width: 900px)"
+	if got := p31mRules(t, css, ".place-page--settings"); len(got) > 0 {
+		for _, r := range got {
+			if r.Media == laptop && (r.Decls["max-width"] != "" || r.Decls["margin"] != "") {
+				t.Errorf("the laptop Settings page must not be a centred column: %v", r.Decls)
+			}
+		}
+	}
+	p16MustDecl(t, "settings laptop vars", p31mRule(t, css, laptop, ".place-page--settings"), map[string]string{
+		"--settings-sub": "var(--color-text-muted)", "--settings-line": "var(--color-border)",
 	})
+	p16MustDecl(t, "settings laptop section", p31mRule(t, css, laptop, ".place-page--settings .place-section"), map[string]string{
+		"padding": "var(--space-lg) var(--space-lg) 40px",
+	})
+	p16MustDecl(t, "shared laptop grid", p31mRule(t, css, laptop, ".place-section"), map[string]string{
+		"display": "grid", "grid-template-columns": "260px minmax(0, 1fr)", "border-top": "1px solid var(--color-border)",
+	})
+	p16MustDecl(t, "settings laptop box", p31mRule(t, css, laptop, ".place-page--settings .place-box"), map[string]string{
+		"border": "1px solid var(--color-border)", "background": "var(--color-bg)",
+	})
+	p16MustDecl(t, "settings laptop lines", p31mRule(t, css, laptop, ".place-page--settings .place-box > * + *::before"), map[string]string{
+		"left": "0",
+	})
+	p16MustDecl(t, "settings laptop value", p31mRule(t, css, laptop, ".place-page--settings .place-row__value"), map[string]string{
+		"color": "var(--color-text-muted)",
+	})
+	// Owner, 2026-10-22: "too much details under the heading for each
+	// section": no Settings section has a line under its heading.
+	if strings.Contains(page, "place-section__line") {
+		t.Errorf("settings.html.tmpl still has a line under a section heading")
+	}
 	// The owner asked for Log out on the laptop Settings page too (2026-10-21,
 	// "I don't see a logout option on my laptop version, so I think we should
 	// add that"): the Account section is drawn on both sizes, as the last
