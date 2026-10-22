@@ -20,24 +20,28 @@ Owner questions first (each has a recommended answer that stands unless the owne
 
 ### 1. SC7, the bar links Disclaimer only
 expected: The bar sentence stays as the owner approved it, ending with Disclaimer. Recommended: keep it, so the bar stays short on a phone; Policy is one tap away. Keeping it also records an override of roadmap success criterion 7, which said both pages are linked from the bar.
-result: [pending]
+result: pass
+note: Owner, 2026-10-23, on the recommendations: "We already decided about the flag thing. So everything else is fine."
 
 ### 2. The network limit
 expected: Only once CLIENT_IP_HEADER is set on the real host. One network address (many phones on one mobile network can share it) gets its own allowances, on top of each account's limits: posts 2000 at once then 1 a second, votes 2000 then about 7 a second, flags 1000 then 1 every 1.2 seconds. A refusal reads "A lot of requests are coming from your network right now. You can try again in {wait}." Recommended: keep. Trade-off: someone with many accounts on one network can post more before being stopped, and a flood could use up the abuse check's quota, which keeps new reports held until a moderator acts.
-result: [pending]
+result: pass
+note: Owner, 2026-10-23, on the recommendations: "We already decided about the flag thing. So everything else is fine."
 
 ### 3. Low data page size
 expected: The Low data page is about 160 KB as it travels (compressed), under the planned 256 KB, which the UI-SPEC counts compressed; unpacked it is about 536 KB. Measured in the browser check on 2026-10-16: the list shows in about 5 seconds on a slow connection (400 ms delay, 50 KB a second) and about 14 seconds on the slowest setting (Slow 3G). Recommended: keep it as is.
-result: [pending]
+result: pass
+note: Owner, 2026-10-23, on the recommendations: "We already decided about the flag thing. So everything else is fine."
 
 ### 4. The gibberish rule counts letters only (04-02, D-05)
 expected: The "random characters" refusal looks only at runs of letters, so ten exclamation marks, a row of emoji or a phone number are never refused as gibberish. Recommended: keep.
-result: [pending]
+result: pass
+note: Owner, 2026-10-23, on the recommendations: "We already decided about the flag thing. So everything else is fine."
 
 ### 5. Six defaults chosen during planning (04-CONTEXT)
 expected: (a) Flag stays the last control of every Low data row. (b) The vote limits cover all five vote routes; the take back is no longer refused by the 30 second wait, so Undo works (fixed 2026-10-16). (c) A held or removed report drops off other people's My votes list. (d) On the Past tab and on report links, Flag doesn't know you already flagged until you press it. (e) The moderator screen shows Expired or Resolved for reports older than 7 days. (f) "Written 4 hours ago" sits on the same line on the compact row. Recommended: keep all six.
-result: [pending]
-
+result: pass
+note: Owner, 2026-10-23, on the recommendations: "We already decided about the flag thing. So everything else is fine." Item (a) is superseded by the owner's 3.4 and 2026-10-22 decisions: Flag is the calm last row of a card (the phone Low data cards keep it in their corner).
 ### 6. Your own held or removed post on Activity (04-16)
 expected: A post of yours that is held or removed counts under the "Not resolved" tab on Activity, and its card says Held or Removed. Recommended: keep, because it is still your open post.
 result: pass
@@ -52,11 +56,13 @@ note: The recommended change is already made (commit 2204836, 2026-10-16): the p
 
 ### 8. Read the new messages once
 expected: The new messages are in the 04-UI-SPEC copy table (rows added 2026-10-16): the network limit message, "saved under a different account", "can't read the saved reports", the messages after closing the form while it was sending, and "No exact match for the full address". Recommended: keep as written.
-result: [pending]
+result: pass
+note: Owner, 2026-10-23, on the recommendations: "We already decided about the flag thing. So everything else is fine."
 
 ### 9. Small behaviour notes
 expected: Accept unless you disagree. (a) A late removal by the automatic check shows the author "Removed after review", the same as a moderator's; the Policy page now says so. (b) Closing the report form while it is sending closes at once and a message tells the outcome; edits typed after pressing Post are dropped. (c) A report whose check record could not be saved twice stays held with no automatic recovery; moderators can still find it by number. (d) The abuse check's quota errors are not retried. (e) The developer API page (/swagger) has no unofficial bar. (f) A moderator's Keep or Remove and its audit record are now saved together. (g) Right after Undo, marking the same report resolved again waits 30 seconds; the Undo itself never waits.
-result: [pending]
+result: pass
+note: Owner, 2026-10-23, on the recommendations: "We already decided about the flag thing. So everything else is fine."
 
 ### 10. Viewing session: Phase 4 screens
 expected: On a test copy you open on your laptop and phone: the unofficial bar in light and dark; the round account button at the top right of the phone (kept by Phase 4; the 3.2 bell will want that corner too); the phone following its own light or dark setting with no button; the Low data page; the Flag button and dialog; the moderator screen; the "waiting to send" strip on Activity; the Held and Removed labels on Activity (no outline on a phone, outlined on a laptop). Say what to move. Phase 3.1 items 3 and 10 are looked at in the same session.
@@ -92,9 +98,9 @@ result: [pending]
 ## Summary
 
 total: 15
-passed: 2
+passed: 9
 issues: 3
-pending: 10
+pending: 3
 skipped: 0
 blocked: 0
 
