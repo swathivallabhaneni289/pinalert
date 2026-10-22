@@ -107,23 +107,34 @@ func TestAppBarReportNeverCurrent(t *testing.T) {
 }
 
 // TestAppBarLabelsNoWrap pins D-03: the bottom bar labels never break onto two
-// lines at 320, 360 or 390px. The label rule declares white-space nowrap and
+// lines at 320, 360 or 390px at the normal text size. The label rule declares
 // the 12px caption size, and the narrowest phones let the four items share
 // the bar by their own width.
+//
+// Amended 2026-10-22 by plan 04-30 (owner): at 200 percent text "Official
+// alerts" ran into "My activity", so the label rule now lets a label wrap
+// between words inside its own column, centred (white-space normal, no break
+// inside a word), and on the narrowest phones an item is never narrower than
+// its longest word. The normal size keeps one line per label; the browser
+// check in 04-30-SUMMARY.md measured that at 320, 360 and 390px.
 func TestAppBarLabelsNoWrap(t *testing.T) {
 	rules := phoneRules(t)
 	item := p16Rule(t, rules, phoneBlockMedia, "body > .app-bar > .app-bar__item")
 	p16MustDecl(t, "bottom bar item", item, map[string]string{
-		"white-space": "nowrap",
-		"font-size":   "var(--font-size-caption)",
-		"line-height": "var(--line-height-caption)",
-		"flex":        "1 1 0",
-		"min-width":   "0",
+		"white-space":   "normal",
+		"overflow-wrap": "normal",
+		"word-break":    "normal",
+		"text-align":    "center",
+		"font-size":     "var(--font-size-caption)",
+		"line-height":   "var(--line-height-caption)",
+		"flex":          "1 1 0",
+		"min-width":     "0",
 	})
 	narrow := p16Rule(t, rules, "(max-width: 380px)", "body > .app-bar > .app-bar__item")
 	p16MustDecl(t, "narrow bottom bar item", narrow, map[string]string{
-		"flex":    "1 1 auto",
-		"padding": "0 var(--space-xs)",
+		"flex":      "1 1 auto",
+		"min-width": "min-content",
+		"padding":   "0 var(--space-xs)",
 	})
 	// Four equal items: three places and Report.
 	bar := p13ReadTemplate(t, appBarTemplate)

@@ -755,7 +755,19 @@ var nonCategoryIcons = map[string]bool{
 	"static/icons/plus.svg": true,
 	// chevron-right: the hub rows and the bell list rows (plan 04).
 	"static/icons/chevron-right.svg": true,
+	// Plan 04-30 (owner, 2026-10-22): bell-off, the glyph of the Stop updates
+	// about this report row of an opened report, drawn by a literal
+	// url("/static/icons/bell-off.svg") mask rule in updates.css, same
+	// exemption reasoning as search.svg. TestNewIconsAreRegisteredAndUsed
+	// checks it through laterIcons.
+	"static/icons/bell-off.svg": true,
 }
+
+// laterIcons lists the glyphs added after Phase 3.4 (plan 04-30: bell-off).
+// TestNewIconsAreRegisteredAndUsed holds them to the same rules as the ten
+// Phase 3.4 glyphs: registered, the licence line, a plain stroke glyph, and
+// drawn by a literal mask url in some stylesheet.
+var laterIcons = []string{"bell-off.svg"}
 
 // phase34Icons lists the ten Phase 3.4 glyph files, all exempted through
 // nonCategoryIcons above.
@@ -798,7 +810,10 @@ func TestNewIconsAreRegisteredAndUsed(t *testing.T) {
 		t.Fatalf("reading the reference glyph static/icons/search.svg: %v", err)
 	}
 	refFirst, _, _ := strings.Cut(string(ref), "\n")
-	for _, name := range phase34Icons {
+	// Amended 2026-10-22 by plan 04-30 (owner): the glyphs of laterIcons
+	// (bell-off) are checked by the same rules as the ten Phase 3.4 glyphs.
+	checked := append(append([]string{}, phase34Icons...), laterIcons...)
+	for _, name := range checked {
 		path := "static/icons/" + name
 		raw, err := fs.ReadFile(StaticFS, path)
 		if err != nil {
@@ -824,7 +839,7 @@ func TestNewIconsAreRegisteredAndUsed(t *testing.T) {
 	}
 
 	inAll := map[string]bool{}
-	for _, name := range phase34Icons {
+	for _, name := range checked {
 		inAll[name] = true
 	}
 	var sheets []string
@@ -844,7 +859,7 @@ func TestNewIconsAreRegisteredAndUsed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("walking static/css: %v", err)
 	}
-	for _, name := range phase34IconsInUse {
+	for _, name := range append(append([]string{}, phase34IconsInUse...), laterIcons...) {
 		if !inAll[name] {
 			t.Errorf("phase34IconsInUse names %q, which is not one of the ten Phase 3.4 glyphs", name)
 			continue

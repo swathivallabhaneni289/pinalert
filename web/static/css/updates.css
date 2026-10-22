@@ -370,38 +370,64 @@ main.profile-page a.activity-retry {
 
 /* ---- Mute control on an opened report (UI-SPEC Surface C) ---------------- */
 
-/* Exactly the Flag control's look (chrome.css .flag-control), with a small gap
-   to the Flag control that follows it on the laptop. Since Phase 3.4 plan 42
-   (owner, 2026-10-21: no underlined text) that look is an outlined button:
-   page colour, hairline, 8px corners, never underlined. */
+/* Plan 04-30 (owner, 2026-10-22: "why is it just like another button?"): the
+   control is the calm row of Flag this report (low.css .report-row--low
+   .flag-control): full width, a hairline above in the muted token (3 to 1),
+   the bell off glyph at 20px, semibold text in the text colour, 48px tall, no
+   box and no underline, a soft fill on hover. It sits just above Flag at the
+   bottom of the opened report on both sizes (map.js arrangeCard). The focus
+   ring is drawn inside the row, because the popup clips an outset one. */
 .mute-control:not([hidden]) {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  min-height: var(--touch-target-min);
-  padding: 0 var(--space-md);
-  margin-top: var(--space-xs);
-  margin-right: var(--space-xs);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-bg);
+  gap: var(--space-sm);
+  width: 100%;
+  min-height: 48px;
+  margin: var(--space-md) 0 0;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--color-text-muted);
+  border-radius: 0;
+  background: transparent;
   font-family: var(--font-family);
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text);
+  text-align: left;
   text-decoration: none;
   cursor: pointer;
   transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.mute-control:not([hidden])::before {
+  content: "";
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask: url("/static/icons/bell-off.svg") center / contain no-repeat;
+  mask: url("/static/icons/bell-off.svg") center / contain no-repeat;
 }
 
 .mute-control:not([hidden]):not([aria-disabled="true"]):hover {
   background: var(--color-border);
 }
 
-/* In the opened report the Flag control takes one medium space above it
-   (trust.css); the mute control takes the same, so the two sit level. */
+.mute-control:not([hidden]):focus-visible {
+  outline-offset: -2px;
+}
+
+/* In the opened report the first of the two rows takes one medium space above
+   it, as Flag does alone (trust.css). */
 .leaflet-container .popup-card__actions .mute-control:not([hidden]) {
   margin-top: var(--space-md);
+}
+
+/* Flag right under a shown Mute row takes no space above it, so the two read
+   as one short list of rows, each with its own hairline. */
+.leaflet-container .popup-card .mute-control:not([hidden]) ~ .flag-control:not([hidden]) {
+  margin-top: 0;
 }
 
 /* ---- Settings: switch, select, danger label, muted reports (UI-SPEC E) --- */
@@ -501,11 +527,21 @@ main.profile-page a.activity-retry {
     border: 1px solid CanvasText;
   }
 
-  /* The outlined buttons keep their outline in the system button text colour,
-     as Flag does (chrome.css), so they still read as buttons (plan 42). */
-  .mute-control:not([hidden]),
+  /* The outlined button keeps its outline in the system button text colour,
+     as Flag does (chrome.css), so it still reads as a button (plan 42). */
   .bell-list__retry {
     border-color: ButtonText;
+  }
+
+  /* The Mute row (plan 04-30): its hairline and its masked glyph take the
+     system button text colour, as the Low data Flag row's glyph does. */
+  .mute-control:not([hidden]) {
+    border-top-color: ButtonText;
+  }
+
+  .mute-control:not([hidden])::before {
+    forced-color-adjust: none;
+    background-color: ButtonText;
   }
 }
 

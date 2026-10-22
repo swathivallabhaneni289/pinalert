@@ -16,7 +16,7 @@
 //     any centre. The one read then goes out from the page's fallback centre
 //     (nobody's position), only the linked row is drawn, with no distance, and
 //     the location line stays on screen under it (code review part 2, CR-01);
-//   - the answer is drawn in two groups, Resolved then Faded out, each in the
+//   - the answer is drawn in two groups, Resolved then Expired, each in the
 //     server's order (newest first) and with the server's own cut and partial
 //     flags; the rows are built by ended-cards.js;
 //   - the same position fills the hub count and every Distance cell of the other

@@ -413,7 +413,8 @@ func TestLegalPagesNumbersBlock(t *testing.T) {
 	text := legalText(t, def)
 	for _, want := range []string{
 		"India's national emergency number for police, fire and ambulance.",
-		"Older numbers for police (100), fire (101) and ambulance (108).",
+		// Amended 2026-10-22 by plan 04-30 (owner): the 102 note.
+		"Older numbers for police (100), fire (101) and ambulance (108, or 102 in some states).",
 		"Try 112 first.",
 		"1070 and 1077",
 		"many states use 1070 for the state disaster helpline and 1077 for the district control room.",

@@ -312,6 +312,15 @@ body {
   line-height: var(--touch-target-min);
 }
 
+/* The map credit line stays small at a large text size (plan 04-30): Leaflet
+   sizes it in rem, so at 200 percent text it grew to three lines over the
+   bottom of the map. It keeps the caption size up to 12px, which is what it
+   is at the normal text size. Three classes beat Leaflet's own two, whatever
+   the link order. Only the credit line is capped, never the popup text. */
+.leaflet-container .leaflet-control-container .leaflet-control-attribution {
+  font-size: min(var(--font-size-caption), 12px);
+}
+
 /* Placeholder text is real guidance ("For example: Ravi Kumar"), so it takes
    the muted text colour at full opacity: 4.8 to 1 on --color-bg in the light
    theme. The browser default grey is 2.35 to 1 (03.4-29 finding 11). A field
@@ -739,6 +748,14 @@ body {
 
   .app-shell > .pane--list > :not(#report-list) {
     flex: none;
+  }
+
+  /* The place line and the filter lines take the list head's side inset, so
+     their words start under the count instead of at the pane's edge (plan
+     04-30, owner, 2026-10-22). The phone's pane pads its own sides. */
+  .app-shell > .pane--list > .place-line,
+  .app-shell > .pane--list > .filter-line {
+    padding: 0 var(--space-md);
   }
 
   /* The notice rows are strip lines on the laptop too (UI-SPEC 2a): the card

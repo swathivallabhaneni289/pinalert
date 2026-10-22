@@ -1,8 +1,8 @@
-// mute.js owns the Mute this report control of an opened report (Phase 3.2,
+// mute.js owns the Stop updates about this report control of an opened report (Phase 3.2,
 // D-11, UI-SPEC Surface C).
 //
-// The control is one quiet text button, built like the Flag control (flag.js)
-// and mounted beside it in the report card, so the laptop popup and the phone
+// The control is one calm row (plan 04-30), built like the Flag control (flag.js)
+// and mounted just above it in the report card, so the laptop popup and the phone
 // detail pane share one insertion. It shows only to a signed in reader who
 // follows the report (posted it or voted on it) or already muted it, and it
 // shows on the reader's own report (Q3, owner confirmed 2026-10-18; the one
@@ -21,8 +21,8 @@
 window.PinalertMute = (function () {
   'use strict';
 
-  var MUTE_LABEL = 'Mute this report';
-  var UNMUTE_LABEL = 'Turn updates back on';
+  var MUTE_LABEL = 'Stop updates about this report';
+  var UNMUTE_LABEL = 'Get updates about this report again';
   var MUTED_STATUS = 'Updates are off for this report.';
   var UNMUTED_STATUS = 'Updates are on again for this report.';
   var CHANGE_ERROR = "Couldn't change this. Try again.";
@@ -147,8 +147,8 @@ window.PinalertMute = (function () {
     }
   }
 
-  // press sends a mute when the control reads Mute this report and an unmute
-  // when it reads Turn updates back on. Offline it sends nothing.
+  // press sends a mute when the control reads Stop updates about this report and
+  // an unmute when it reads Get updates about this report again. Offline it sends nothing.
   function press(control) {
     var el = control.el;
     var key = el.dataset.muteReportId;

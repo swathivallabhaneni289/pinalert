@@ -153,7 +153,7 @@ window.PinalertEnded = (function () {
     if (history.state === 'resolved') {
       return rel !== '' ? 'Resolved ' + rel : 'Resolved';
     }
-    var text = rel !== '' ? 'Faded ' + rel : 'Faded';
+    var text = rel !== '' ? 'Expired ' + rel : 'Expired';
     if (history.lifetime_text) {
       text += ', ' + history.lifetime_text;
     }

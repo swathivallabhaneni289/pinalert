@@ -651,8 +651,15 @@
     font-size: var(--font-size-caption);
     line-height: var(--line-height-caption);
     font-weight: var(--font-weight-regular);
+    text-align: center;
     text-decoration: none;
-    white-space: nowrap;
+    /* Plan 04-30 (found at 200 percent text): a label that is wider than its
+       column wraps onto a second line inside it, centred, and breaks only
+       between words. At the normal text size every label fits on one line
+       at 320, 360 and 390px, so nothing moves there. */
+    white-space: normal;
+    overflow-wrap: normal;
+    word-break: normal;
   }
 
   /* The current place is the text colour, bold, with a short bar above it. The
@@ -1137,13 +1144,21 @@
     margin-top: var(--space-lg);
     padding: 0;
     border: 0;
-    border-top: 1px solid var(--color-border);
+    /* Plan 04-30: the hairline is the muted token (3 to 1), as on the Low
+       data row and the laptop popup, so Flag looks the same everywhere. */
+    border-top: 1px solid var(--color-text-muted);
     border-radius: 0;
     background: transparent;
     color: var(--color-text);
     font-weight: var(--font-weight-semibold);
     text-align: left;
     text-decoration: none;
+  }
+
+  /* The Mute row (plan 04-30, updates.css) sits just above Flag at the bottom
+     of the report, so it takes the space Flag took alone. */
+  .leaflet-container .leaflet-detail-pane .popup-card__body > .mute-control:not([hidden]) {
+    margin-top: var(--space-lg);
   }
 
   .leaflet-container .leaflet-detail-pane .popup-card__body > .flag-control:not([hidden])::before {
@@ -1346,11 +1361,14 @@
 
 /* 03.4 app bars: the narrowest phones. At 380px and below the four items share
    the bar by their own width instead of equal thirds, with 4px at each side, so
-   "Official alerts" stays on one line at 320px (D-03). Labels are no wrap at
-   every width. The query keeps the 899.98px bound so the file's rule holds. */
+   "Official alerts" stays on one line at 320px (D-03). The query keeps the
+   899.98px bound so the file's rule holds. Plan 04-30: at a large text size an
+   item never gets narrower than its longest word, so a word is never cut or
+   pushed into the next item; the label wraps between words instead. */
 @media (max-width: 899.98px) and (max-width: 380px) {
   body > .app-bar > .app-bar__item {
     flex: 1 1 auto;
+    min-width: min-content;
     padding: 0 var(--space-xs);
   }
 }

@@ -226,20 +226,28 @@ window.PinalertMap = (function () {
       return;
     }
     var flag = card.flag && card.flag.el ? card.flag.el : null;
+    // Mute and its error line sit just above Flag at the bottom of the report
+    // on both sizes, two calm rows (plan 04-30, owner, 2026-10-22). Mute
+    // comes before Flag in the tab order wherever they are.
+    var mute = card.mute && card.mute.el ? card.mute : null;
+    var lastParent = phone ? body : actions;
     if (phone) {
       body.insertBefore(fade, trust);
       body.insertBefore(actions, trust);
-      // Flag goes last, under the trust details (owner, 2026-10-21: "the flag
-      // the report thing can go down").
-      if (flag) {
-        body.appendChild(flag);
-      }
     } else {
       body.insertBefore(trust, fade);
-      // The laptop keeps Flag as the last child of the actions block.
-      if (flag) {
-        actions.appendChild(flag);
+    }
+    if (mute) {
+      lastParent.appendChild(mute.el);
+      if (mute.error) {
+        lastParent.appendChild(mute.error);
       }
+    }
+    // Flag goes last: under the trust details on a phone (owner, 2026-10-21:
+    // "the flag the report thing can go down"), and as the last child of the
+    // actions block on a laptop.
+    if (flag) {
+      lastParent.appendChild(flag);
     }
   }
 
@@ -675,7 +683,7 @@ window.PinalertMap = (function () {
   // closedLineText is the line a finished report shows in place of the fade
   // sentence (C44, C45), or the empty string for a report that is not
   // finished. A Resolved report reads the server's closed words and the time
-  // ("Resolved by the poster, 2 days ago."); an Expired one reads "Faded 3
+  // ("Resolved by the poster, 2 days ago."); an Expired one reads "Expired 3
   // days ago, after 8 hrs.". The words are the server's own (closed_text and
   // lifetime_text); the browser only joins them to the relative time of the
   // server's history time, and compares no date.
@@ -691,7 +699,7 @@ window.PinalertMap = (function () {
     }
     if (history.state === 'expired') {
       var lifetime = typeof history.lifetime_text === 'string' && history.lifetime_text !== '' ? ', ' + history.lifetime_text : '';
-      return 'Faded ' + when + lifetime + '.';
+      return 'Expired ' + when + lifetime + '.';
     }
     return '';
   }
@@ -779,7 +787,8 @@ window.PinalertMap = (function () {
     actions.appendChild(block.note);
     actions.appendChild(block.error);
     // The Mute control (Phase 3.2, D-11) comes first, then the Flag control, so
-    // the two sit on one wrapping line with Mute before Flag. It is hidden for
+    // the two are rows with Mute just above Flag (plan 04-30; arrangeCard puts
+    // both at the bottom of the report on a phone). It is hidden for
     // a reader who neither follows the report nor muted it. A failed mute.js
     // load leaves the card without it.
     var muteControl = window.PinalertMute ? PinalertMute.createMuteControl(report) : null;

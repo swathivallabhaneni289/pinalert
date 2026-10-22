@@ -27,9 +27,14 @@ func TestMuteControlShape(t *testing.T) {
 		"createMuteControl: createMuteControl", "updateMuteControl: updateMuteControl", "shouldShow: shouldShow")
 
 	// Every word of the two controls and the four lines appears once.
+	// Amended 2026-10-22 by plan 04-30 (owner): the two control labels say
+	// plainly what they do, "Stop updates about this report" and "Get updates
+	// about this report again", where they read "Mute this report" and "Turn
+	// updates back on". The old words are gone from the script.
+	p424Lacks(t, "mute.js", mute, "'Mute this report'", "'Turn updates back on'")
 	for _, want := range []string{
-		"'Mute this report'",
-		"'Turn updates back on'",
+		"'Stop updates about this report'",
+		"'Get updates about this report again'",
 		"'Updates are off for this report.'",
 		"'Updates are on again for this report.'",
 		"\"Couldn't change this. Try again.\"",
@@ -144,6 +149,15 @@ func TestMuteMountedBeforeFlag(t *testing.T) {
 			voteAt, muteAt, flagAt)
 	}
 	p424Lacks(t, "updatePopupCard", upd, "createMuteControl(")
+
+	// Plan 04-30 (owner, 2026-10-22): arrangeCard puts Mute, its error line
+	// and then Flag last, on both sizes, in the body on a phone and in the
+	// actions block on a laptop, so Mute is the row just above Flag.
+	arrange := jsFunctionBody(t, mapjs, "arrangeCard(card, phone)")
+	p424Ordered(t, "arrangeCard", arrange,
+		"var lastParent = phone ? body : actions;",
+		"lastParent.appendChild(mute.el);", "lastParent.appendChild(mute.error);",
+		"lastParent.appendChild(flag);")
 
 	// The list rows and the Past cards never build the control: it lives in the
 	// opened report only, as Flag does.

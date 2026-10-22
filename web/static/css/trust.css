@@ -1520,9 +1520,65 @@
    margin (chrome.css) is 4px, which put a destructive style button 4px under
    Mark resolved; in the opened report it takes one medium space (03.4-29
    finding 6). The Low data rows keep the chrome.css margin. Three classes
-   outrank chrome.css's two. */
+   outrank chrome.css's two.
+
+   Plan 04-30 (owner, 2026-10-22: "keep it that way for all of the flagging
+   this report thing"): the laptop popup's Flag is the calm row of the Low
+   data view (low.css .report-row--low .flag-control) in place of a boxed
+   button: full width, a hairline above in the muted token (3 to 1), the alert
+   glyph at 20px, semibold text in the text colour, 48px tall, no box and no
+   underline. The phone's row is phone.css's; the hover fill of both is the
+   rule after the glyph, since the transparent background here outranks
+   chrome.css's own hover rule. */
 .leaflet-container .popup-card__actions .flag-control:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  min-height: 48px;
   margin-top: var(--space-md);
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--color-text-muted);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  text-align: left;
+  text-decoration: none;
+}
+
+.leaflet-container .popup-card__actions .flag-control:not([hidden])::before {
+  content: "";
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask: url("/static/icons/circle-alert.svg") center / contain no-repeat;
+  mask: url("/static/icons/circle-alert.svg") center / contain no-repeat;
+}
+
+/* The soft fill on hover and press, on both sizes, as on the Low data row. */
+.leaflet-container .popup-card .flag-control:not([hidden]):not([aria-disabled="true"]):hover,
+.leaflet-container .popup-card .flag-control:not([hidden]):not([aria-disabled="true"]):active {
+  background: var(--color-border);
+}
+
+/* The focus ring is drawn inside the row on both sizes, because the popup
+   clips an outset one. */
+.leaflet-container .popup-card .flag-control:not([hidden]):focus-visible {
+  outline-offset: -2px;
+}
+
+@media (forced-colors: active) {
+  .leaflet-container .popup-card .flag-control:not([hidden]) {
+    border-top-color: ButtonText;
+  }
+
+  .leaflet-container .popup-card .flag-control:not([hidden])::before {
+    forced-color-adjust: none;
+    background-color: ButtonText;
+  }
 }
 
 .leaflet-container .popup-card .vote-note {
