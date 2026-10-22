@@ -3,20 +3,20 @@ status: testing
 phase: 04-robustness-real-world-resilience
 source: [04-VERIFICATION.md, 04-27-SUMMARY.md, 04-REVIEW-SERVER.md, 04-REVIEW-WEB.md]
 started: 2026-10-16T18:40:00+05:30
-updated: 2026-10-16T17:25:00+05:30
+updated: 2026-10-22T23:45:00+05:30
 ---
 
 ## Current Test
 
-number: 1
-name: SC7, the bar links Disclaimer only
+number: 10
+name: Flag a report, then the moderator screen
 expected: |
-  The bar at the top of every page ends with one link, Disclaimer. Policy is one tap away on the Disclaimer page, in the account menu and on the login page.
+  On the laptop, open any report you did not post (for example "Smoke from a shop on MG Road") and press Flag this report: a small window asks for a reason (Spam, Abusive, False, Dangerous, Other); pick one and send, and it thanks you. Then open http://localhost:8778/moderate (your test account is a moderator): the "Strong wind, loose signboards" report sits under Flagged with its two flags and their reasons, and each report has Keep and Remove. You can try Keep on it. (The rest of this test, the waiting to send strip, the phone following its own light or dark setting and the dark strip in both themes, I check myself.)
 awaiting: user response
 
 ## Tests
 
-Owner questions first (each has a recommended answer that stands unless the owner says otherwise), then one viewing session on laptop and phone, then the checks only a person can do. Automated proof so far: the full Go suite green on a fresh database after every merge (876 tests at 5f1ee0f, the one skip waits for item 12), two deep code reviews (server and web) with every warning fixed, a skeptic check of those fixes (its findings fixed in round 3), the phase check in 04-VERIFICATION.md, and a browser pass in Chromium and WebKit (its rerun on the fixed code is pending).
+Owner questions first (each has a recommended answer that stands unless the owner says otherwise), then one viewing session on laptop and phone, then the checks only a person can do. Resumed 2026-10-22 on the Phase 3.4 layout (test copy port 8778, database p31_4_uat, main 024f94b with Phase 3.2 merged): the screens first (6, 7, 10, 11), then the decisions as one confirmation, then the owner only checks. Automated proof so far: the full Go suite green on a fresh database after every merge (876 tests at 5f1ee0f, the one skip waits for item 12), two deep code reviews (server and web) with every warning fixed, a skeptic check of those fixes (its findings fixed in round 3), the phase check in 04-VERIFICATION.md, and a browser pass in Chromium and WebKit (its rerun on the fixed code is pending).
 
 ### 1. SC7, the bar links Disclaimer only
 expected: The bar sentence stays as the owner approved it, ending with Disclaimer. Recommended: keep it, so the bar stays short on a phone; Policy is one tap away. Keeping it also records an override of roadmap success criterion 7, which said both pages are linked from the bar.
@@ -40,11 +40,14 @@ result: [pending]
 
 ### 6. Your own held or removed post on Activity (04-16)
 expected: A post of yours that is held or removed counts under the "Not resolved" tab on Activity, and its card says Held or Removed. Recommended: keep, because it is still your open post.
-result: [pending]
+result: pass
+note: Owner, 2026-10-22, on the 3.4 layout (My activity, Posted by you): pass. The owner asked why the posts were removed; they were sample posts put in those states by hand for the test (the real check would pass them).
 
 ### 7. Disclaimer: the state helplines line and the Sachet link
 expected: Checked 2026-10-16 against government sites: 112, 100, 101, 108 and 1070 match; 1077 is the district line in some states only (Andhra Pradesh uses 1070 for both). The Disclaimer page's link to NDMA's Sachet help desk lists some numbers that differ from the states' own sites (one looks a digit short). Recommended: say "in many states" for 1070 and 1077, and replace the Sachet link with a sentence telling people their state disaster authority's website lists local numbers.
-result: [pending]
+result: issue
+reported: "Are you sure these helpline numbers are right?" Checked again 2026-10-22 against india.gov.in/directory/helpline, the APSDMA 24x7 portal and district pages: 112, 100, 101, 1070 right; 1077 is district level in many states (not confirmed for Andhra Pradesh, which the page's "many states" and "These vary by state" already cover); 108 is the ambulance number in most states but the national portal lists 102 (National Ambulance Service). Owner: "yes add the 102 note".
+severity: minor
 note: The recommended change is already made (commit 2204836, 2026-10-16): the page says many states use 1070 and 1077 and the SACHET help desk link is gone. Confirm it when you look, or ask to undo it.
 
 ### 8. Read the new messages once
@@ -57,7 +60,10 @@ result: [pending]
 
 ### 10. Viewing session: Phase 4 screens
 expected: On a test copy you open on your laptop and phone: the unofficial bar in light and dark; the round account button at the top right of the phone (kept by Phase 4; the 3.2 bell will want that corner too); the phone following its own light or dark setting with no button; the Low data page; the Flag button and dialog; the moderator screen; the "waiting to send" strip on Activity; the Held and Removed labels on Activity (no outline on a phone, outlined on a laptop). Say what to move. Phase 3.1 items 3 and 10 are looked at in the same session.
-result: [pending]
+result: issue
+reported: "this doesnt makes sense, because like we're giving them options for the first top three, and you're explaining out of nowhere about dispute in the middle, and then you'll only able to select one. I think it should be more like we are asking why do they think it's it's an issue. Maybe we should give them like a text box also to explain what's going on."
+severity: major
+note: The Flag dialog part of test 10 (2026-10-22). Proposed to the owner: title "Why are you flagging this report?", the Dispute line moved under the title, reasons as tick boxes (more than one), an optional "Tell the moderators more" box (300 characters, text checked like reports, shown on the moderator screen). Needs a migration (00010), the flag API, the moderator screen. Moderator screen part of test 10 still to look at.
 
 ### 11. Viewing session: address search and placing the pin (quick tasks 261016-adr, -pho, -sfu, -sne, -tap)
 expected: Type a close spelling or half a name, for example "Banjra Hills" or "Banjara Hi": suggestions appear a moment after you stop typing, the right place shows first, inside India and near you, and typing fast never shows an error. Area names end with the mandal and the state, for example "Gachibowli, Serilingampalle mandal, Telangana". A long address that isn't on the map shows the nearest road and says so. Then a tap anywhere on the report form's small map puts the pin on the exact spot, with location on or off.
@@ -73,7 +79,8 @@ result: [pending]
 
 ### 14. 112.gov.in opens
 expected: The research could not open 112.gov.in from here. Open it in a browser in India and check it still calls 112 the single emergency number.
-result: [pending]
+result: pass
+note: 2026-10-22: the owner could not open 112.gov.in from India either, and the app links to it nowhere. The fact it was to confirm holds from other official sources: india.gov.in/directory/helpline lists 112 as the integrated helpline (ERSS: police, fire and rescue, health), and the PIB releases on the Dial 112 launch (relid 188727) and rollout (PRID 1594669) say the same. No change to the app.
 
 ### 15. Before any wide promotion (not needed before the push)
 expected: A lawyer or mentor reads the Disclaimer and Policy pages. Set CONTACT_EMAIL so both pages say how to complain or ask for removal. Once a host is chosen, send the CLIENT_IP_HEADER canary (04-27-SUMMARY.md item 2). Optional: a fluent reader skims the Hindi, Telugu and Tamil sample texts.
@@ -82,10 +89,32 @@ result: [pending]
 ## Summary
 
 total: 15
-passed: 0
-issues: 0
-pending: 15
+passed: 2
+issues: 2
+pending: 11
 skipped: 0
 blocked: 0
 
 ## Gaps
+
+- truth: "The Disclaimer's ambulance number is right for every state"
+  status: failed
+  reason: "User asked to add the 102 note (2026-10-22): the national portal lists 102 as the National Ambulance Service; 108 is the number in most states"
+  severity: minor
+  test: 7
+  artifacts: [the Disclaimer text (search: Older numbers for police), internal/api/handlers/legal_e2e_test.go pins]
+  missing: ["ambulance (108, or 102 in some states)"]
+- truth: "The Flag window asks why the report is a problem, lets people give every reason that applies and say more in their own words"
+  status: failed
+  reason: "User reported: the Dispute note sits in the middle of the options, only one reason can be picked, and there is no box to explain"
+  severity: major
+  test: 10
+  artifacts: [web/templates/flag_dialog.html.tmpl, web/static/js/flag.js, internal/service/flag.go (one FlagReason), the flags table, the moderator queue (modFlagsJSON)]
+  missing: [title as a why question, the Dispute line under the title, tick boxes, an optional note of up to 300 characters screened like report text and shown to moderators]
+- truth: "Flag this report looks the same everywhere, as the calm row of the laptop Low data view, and Mute (Phase 3.2) says plainly what it does and sits with it"
+  status: failed
+  reason: "User reported (2026-10-22, phone report view): \"why in the phone it's saying mute this report instead of something else, and why is it just like another button? Why is it not like how it is in the laptop version for the low data view. I think we should keep it that way for all of the flagging this report thing.\""
+  severity: minor
+  test: 10
+  artifacts: [the laptop report popup Flag (boxed, border on all sides), the 3.2 mute control (mute.js, updates.css; a small outlined button between Mark resolved and the trust card)]
+  missing: [Flag as the calm full width row on the laptop popup too; Mute as a calm row above Flag with a bell off glyph, reading "Stop updates about this report" and "Get updates about this report again"; proposed to the owner, answer pending]
