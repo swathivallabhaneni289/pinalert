@@ -161,7 +161,10 @@ func p20WantError(t *testing.T, label string, resp *http.Response, want int, fie
 // p20FlagRows maps the account id of every flag on reportID to its reason.
 func p20FlagRows(t *testing.T, pool *pgxpool.Pool, reportID int64) map[int64]string {
 	t.Helper()
-	rows, err := pool.Query(context.Background(), `SELECT account_id, reason FROM report_flags WHERE report_id = $1`, reportID)
+	// Amended 2026-10-22 by plan 04-31 (owner): a flag stores a set of reasons
+	// (migration 00010). The set is read joined by "+", so a flag sent with the
+	// single reason field still reads as that one reason.
+	rows, err := pool.Query(context.Background(), `SELECT account_id, array_to_string(reasons, '+') FROM report_flags WHERE report_id = $1`, reportID)
 	if err != nil {
 		t.Fatalf("reading flags of report %d: %v", reportID, err)
 	}
@@ -407,9 +410,12 @@ func TestFlagOnePerAccount(t *testing.T) {
 	p20WantFlagRows(t, "after the dismissal", pool, r1, map[int64]string{idB: "spam", idC: "false"})
 
 	idURL := srv.URL + "/api/reports/" + strconv.FormatInt(r1, 10) + "/flag"
-	p20WantError(t, "unknown reason", p20Flag(t, d, srv.URL, r1, "hoax", ""), http.StatusBadRequest, "reason", service.FlagReasonMessage)
-	p20WantError(t, "empty object", p20PostFlagRaw(t, d, idURL, `{}`, ""), http.StatusBadRequest, "reason", service.FlagReasonMessage)
-	p20WantError(t, "unknown key", p20PostFlagRaw(t, d, idURL, `{"reason":"spam","note":"x"}`, ""), http.StatusBadRequest, "body", "Request body is missing or malformed.")
+	// Amended 2026-10-22 by plan 04-31 (owner): the reasons are a set on field
+	// reasons, and an unknown one has its own message. note is now a known key,
+	// so the unknown key case sends another one.
+	p20WantError(t, "unknown reason", p20Flag(t, d, srv.URL, r1, "hoax", ""), http.StatusBadRequest, "reasons", service.FlagReasonsBadMessage)
+	p20WantError(t, "empty object", p20PostFlagRaw(t, d, idURL, `{}`, ""), http.StatusBadRequest, "reasons", service.FlagReasonMessage)
+	p20WantError(t, "unknown key", p20PostFlagRaw(t, d, idURL, `{"reason":"spam","comment":"x"}`, ""), http.StatusBadRequest, "body", "Request body is missing or malformed.")
 	p20WantError(t, "not json", p20PostFlagRaw(t, d, idURL, `not json`, ""), http.StatusBadRequest, "body", "Request body is missing or malformed.")
 	p20WantError(t, "bad id", p20PostFlagRaw(t, d, srv.URL+"/api/reports/abc/flag", `{"reason":"spam"}`, ""), http.StatusBadRequest, "id", "Report id must be a number.")
 	p20WantFlagRows(t, "after D's refusals", pool, r1, map[int64]string{idB: "spam", idC: "false"})
@@ -823,8 +829,27 @@ func TestFlagSwaggerCoversRoute(t *testing.T) {
 	}
 
 	reqProps := spec.Definitions["handlers.FlagRequest"].Properties
-	if len(reqProps) != 1 {
-		t.Errorf("FlagRequest has %d properties, want only reason", len(reqProps))
+	// Amended 2026-10-22 by plan 04-31 (owner): the body gained reasons (a set)
+	// and note (up to 300 characters); the single reason field stays for an
+	// older cached page.
+	if len(reqProps) != 3 {
+		t.Errorf("FlagRequest has %d properties, want reasons, note and reason", len(reqProps))
+	}
+	if rs := reqProps["reasons"]; rs["type"] != "array" {
+		t.Errorf("FlagRequest.reasons = %v, want an array", rs)
+	} else if items, _ := rs["items"].(map[string]any); items == nil {
+		t.Errorf("FlagRequest.reasons has no items: %v", rs)
+	} else if enum, _ := items["enum"].([]any); len(enum) != len(service.FlagReasons) {
+		t.Errorf("FlagRequest.reasons items enum = %v, want %v", items["enum"], service.FlagReasons)
+	} else {
+		for i, el := range enum {
+			if s, _ := el.(string); s != string(service.FlagReasons[i]) {
+				t.Errorf("FlagRequest.reasons enum element %d = %#v, want %q", i, el, service.FlagReasons[i])
+			}
+		}
+	}
+	if n := reqProps["note"]; n["type"] != "string" || n["maxLength"] != float64(service.FlagNoteMaxChars) {
+		t.Errorf("FlagRequest.note = %v, want a string of at most %d", n, service.FlagNoteMaxChars)
 	}
 	reason, ok := reqProps["reason"]
 	if !ok || reason["type"] != "string" {

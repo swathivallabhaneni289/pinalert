@@ -1,16 +1,21 @@
 package service
 
 // flag.go is the server half of the Flag control (D-09). A signed in person
-// can flag someone else's report once, with one of five reasons. A flag only
+// can flag someone else's report once, with one or more of five reasons and an
+// optional note for the moderators (plan 04-31, owner 2026-10-22). A flag only
 // queues the report for the moderator screen: it never hides or changes the
 // report, which is why FlagQuerier can read one report row and insert one flag
 // row and nothing else. A report nobody may see (missing or withheld) reads as
-// not found, and the flagger is never exposed to anyone.
+// not found, and the flagger is never exposed to anyone. The note goes through
+// the same text check as a report description (CheckText) and is shown to
+// moderators only.
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 
@@ -29,7 +34,8 @@ const (
 )
 
 // FlagReasons is the closed, ordered list of reasons. The API reference
-// enumerates exactly this list.
+// enumerates exactly this list, and a stored set of reasons is kept in this
+// order.
 var FlagReasons = []FlagReason{FlagSpam, FlagAbusive, FlagFalse, FlagDangerous, FlagOther}
 
 // Valid reports whether r is one of the five reasons. Comparison is exact.
@@ -60,14 +66,35 @@ func FlagReasonLabel(r FlagReason) string {
 	return ""
 }
 
-// The four server messages of the flag route. The first, third and fourth are
-// the dialog's own Validation, Report gone and Already flagged lines.
+// FlagNoteMaxChars is the longest note, counted in characters (Unicode code
+// points) after trimming, the way a report description is counted.
+const FlagNoteMaxChars = 300
+
+// The server messages of the flag route. The first, third and fourth are the
+// dialog's own Validation, Report gone and Already flagged lines.
 const (
 	FlagReasonMessage    = "Choose a reason to continue."
 	FlagOwnReportMessage = "You can't flag your own report."
 	FlagNotFoundMessage  = "This report is no longer available."
 	FlagAlreadyMessage   = "You already flagged this report. Moderators will see it."
+	// FlagReasonsBadMessage answers a reasons list with an unknown or a
+	// repeated reason, which the dialog never sends.
+	FlagReasonsBadMessage = "Choose each reason from the list once."
+	// FlagNoteTooLongMessage answers a note over FlagNoteMaxChars.
+	FlagNoteTooLongMessage = "Keep the note to 300 characters or fewer."
 )
+
+// FlagNoteRejectMessage is the inline message under a note the text check
+// refused. The hateful, harassing and sexual sentences are the report
+// description's own (RejectMessage). The gibberish sentence is the note's own,
+// because the description's asks the author to say what is happening for
+// people nearby, which does not fit a note to moderators.
+func FlagNoteRejectMessage(r RejectReason) string {
+	if r == RejectGibberish {
+		return "Say in a few words what is wrong with this report, or leave this box empty."
+	}
+	return RejectMessage(r)
+}
 
 var (
 	// ErrFlagOwnReport is returned when the flagger is the reporter.
@@ -75,7 +102,25 @@ var (
 	// ErrAlreadyFlagged is returned when this account already flagged this
 	// report, even if a moderator dismissed that flag.
 	ErrAlreadyFlagged = errors.New("service: report already flagged by this account")
+	// ErrFlagNoteRejected is the sentinel a refused note wraps. Nothing was
+	// stored.
+	ErrFlagNoteRejected = errors.New("service: flag note rejected by the text check")
 )
+
+// FlagNoteRejectedError is returned by Flag when the text check refused the
+// note. FlagNoteRejectMessage(Reason) is the message the dialog shows.
+type FlagNoteRejectedError struct {
+	Reason RejectReason
+}
+
+func (e FlagNoteRejectedError) Error() string {
+	return fmt.Sprintf("service: flag note rejected (%s)", e.Reason)
+}
+
+// Unwrap lets errors.Is(err, ErrFlagNoteRejected) match.
+func (e FlagNoteRejectedError) Unwrap() error {
+	return ErrFlagNoteRejected
+}
 
 // FlagQuerier is the narrow store surface of FlagService. It has exactly two
 // methods on purpose: a flag can read the one vote context row and insert one
@@ -87,39 +132,93 @@ type FlagQuerier interface {
 
 // FlagService applies the flag rules.
 type FlagService struct {
-	q FlagQuerier
+	q        FlagQuerier
+	screener TextScreener
+}
+
+// FlagOption configures a FlagService.
+type FlagOption func(*FlagService)
+
+// WithFlagScreener sets the text screener the note goes through. It is the
+// same screener the report description goes through. Without one, the note
+// still goes through the local gibberish rule (CheckText with a nil screener).
+func WithFlagScreener(s TextScreener) FlagOption {
+	return func(fs *FlagService) {
+		fs.screener = s
+	}
 }
 
 // NewFlagService stores the querier. It never dereferences it, so a router
 // built with a nil sessions store still constructs.
-func NewFlagService(q FlagQuerier) *FlagService {
-	return &FlagService{q: q}
+func NewFlagService(q FlagQuerier, opts ...FlagOption) *FlagService {
+	s := &FlagService{q: q}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // FlagInput is one flag attempt. AccountID is the verified account of the
-// caller and nothing else.
+// caller and nothing else. Reasons may be in any order; Note is the raw note
+// and may be empty.
 type FlagInput struct {
 	ReportID  int64
 	AccountID int64
-	Reason    FlagReason
+	Reasons   []FlagReason
+	Note      string
+}
+
+// ValidateFlagInput checks the shape of a flag and returns the reasons in the
+// FlagReasons order with the trimmed note. The rules: at least one reason
+// (FlagReasonMessage), every reason one of the five and none twice
+// (FlagReasonsBadMessage), and a note of at most FlagNoteMaxChars characters
+// after trimming (FlagNoteTooLongMessage). An empty trimmed note means none.
+func ValidateFlagInput(in FlagInput) ([]FlagReason, string, error) {
+	if len(in.Reasons) == 0 {
+		return nil, "", ValidationError{Field: "reasons", Message: FlagReasonMessage}
+	}
+	seen := make(map[FlagReason]bool, len(in.Reasons))
+	for _, r := range in.Reasons {
+		if !r.Valid() || seen[r] {
+			return nil, "", ValidationError{Field: "reasons", Message: FlagReasonsBadMessage}
+		}
+		seen[r] = true
+	}
+	ordered := make([]FlagReason, 0, len(in.Reasons))
+	for _, r := range FlagReasons {
+		if seen[r] {
+			ordered = append(ordered, r)
+		}
+	}
+	note := strings.TrimSpace(in.Note)
+	if utf8.RuneCountInString(note) > FlagNoteMaxChars {
+		return nil, "", ValidationError{Field: "note", Message: FlagNoteTooLongMessage}
+	}
+	return ordered, note, nil
 }
 
 // Flag stores one flag. The order of the checks is part of the specification:
 //
-//  1. The reason must be one of the five (ValidationError on field reason).
+//  1. ValidateFlagInput: the reasons and the note length (ValidationError).
 //  2. The report is read once; a missing report is ErrReportNotFound.
 //  3. A withheld report is ErrReportNotFound (R-01, R-04).
 //  4. The caller's own report is ErrFlagOwnReport.
-//  5. The flag is inserted; no row back means ErrAlreadyFlagged.
+//  5. A non empty note goes through CheckText; a refused note is
+//     FlagNoteRejectedError and nothing is stored. A borderline or unfinished
+//     check still stores the note: only moderators read it, and a provider
+//     outage must not stop a flag, which is a safety action.
+//  6. The flag is inserted; no row back means ErrAlreadyFlagged.
 //
 // Withheld comes before ownership so an author's own held or removed report
 // looks exactly like a missing one and never reveals itself through a 403.
-// There is deliberately no expiry step: a Past report can still be flagged,
-// and 409 is reserved for already flagged because the dialog reads 409 as
-// Flagged. Flag never calls the resolver and builds no VoteTally.
+// The note is checked after the report checks so a 404 or 403 never costs a
+// screener call. There is deliberately no expiry step: a Past report can still
+// be flagged, and 409 is reserved for already flagged because the dialog reads
+// 409 as Flagged. Flag never calls the resolver and builds no VoteTally.
 func (s *FlagService) Flag(ctx context.Context, in FlagInput) error {
-	if !in.Reason.Valid() {
-		return ValidationError{Field: "reason", Message: FlagReasonMessage}
+	reasons, note, err := ValidateFlagInput(in)
+	if err != nil {
+		return err
 	}
 
 	rc, err := s.q.ReportVoteContext(ctx, in.ReportID)
@@ -145,10 +244,24 @@ func (s *FlagService) Flag(ctx context.Context, in FlagInput) error {
 		return ErrFlagOwnReport
 	}
 
+	var notePtr *string
+	if note != "" {
+		check := CheckText(ctx, s.screener, note)
+		if check.Outcome == TextRejected {
+			return FlagNoteRejectedError{Reason: check.Reason}
+		}
+		notePtr = &note
+	}
+
+	slugs := make([]string, len(reasons))
+	for i, r := range reasons {
+		slugs[i] = string(r)
+	}
 	_, err = s.q.InsertReportFlag(ctx, sqlcgen.InsertReportFlagParams{
 		ReportID:  in.ReportID,
 		AccountID: in.AccountID,
-		Reason:    string(in.Reason),
+		Reasons:   slugs,
+		Note:      notePtr,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

@@ -150,9 +150,16 @@ SELECT r.id, r.category, r.severity, r.description, r.created_at, r.expires_at,
        (SELECT count(*) FROM report_flags f
          WHERE f.report_id = r.id AND f.dismissed_at IS NULL)::bigint AS open_flag_total,
        COALESCE((SELECT jsonb_object_agg(x.reason, x.n)
-                   FROM (SELECT f.reason, count(*) AS n FROM report_flags f
+                   FROM (SELECT fr.reason, count(*) AS n
+                           FROM report_flags f, unnest(f.reasons) AS fr(reason)
                           WHERE f.report_id = r.id AND f.dismissed_at IS NULL
-                          GROUP BY f.reason) x), '{}'::jsonb)::jsonb AS flag_counts
+                          GROUP BY fr.reason) x), '{}'::jsonb)::jsonb AS flag_counts,
+       COALESCE((SELECT jsonb_agg(jsonb_build_object('reasons', n.reasons, 'note', n.note)
+                                  ORDER BY n.created_at DESC, n.id DESC)
+                   FROM (SELECT f.id, f.reasons, f.note, f.created_at FROM report_flags f
+                          WHERE f.report_id = r.id AND f.dismissed_at IS NULL AND f.note IS NOT NULL
+                          ORDER BY f.created_at DESC, f.id DESC
+                          LIMIT 20) n), '[]'::jsonb)::jsonb AS flag_notes
 FROM reports r
 LEFT JOIN moderation_checks c ON c.report_id = r.id
 WHERE EXISTS (SELECT 1 FROM report_flags f WHERE f.report_id = r.id AND f.dismissed_at IS NULL)
@@ -177,6 +184,7 @@ type FlagQueueRow struct {
 	NeedsReview     bool
 	OpenFlagTotal   int64
 	FlagCounts      []byte
+	FlagNotes       []byte
 }
 
 // List (b): posts with at least one open flag, most flags first and then
@@ -207,6 +215,7 @@ func (q *Queries) FlagQueue(ctx context.Context) ([]FlagQueueRow, error) {
 			&i.NeedsReview,
 			&i.OpenFlagTotal,
 			&i.FlagCounts,
+			&i.FlagNotes,
 		); err != nil {
 			return nil, err
 		}
@@ -272,7 +281,10 @@ type InsertModerationCheckParams struct {
 //	         AND r.moderation_state <> 'removed' (an expired report drops out)
 //
 // No query here selects a session id, an email or an account id, and no table
-// it writes has a column that holds report text (T-04-04).
+// it writes has a column that holds report text (T-04-04). The flag_notes column
+// of the three lists carries each open flag's reasons and note, the flagger's
+// own words for moderators only, and never who wrote them (plan 04-31). A
+// reason is counted once per flag it appears in (unnest over the set).
 // One statement serves both writers: the pending row that the background
 // worker will pick up (a check that did not finish at submit) and the done
 // borderline row written inline when the check finished at submit and wants a
@@ -292,23 +304,31 @@ func (q *Queries) InsertModerationCheck(ctx context.Context, arg InsertModeratio
 }
 
 const insertReportFlag = `-- name: InsertReportFlag :one
-INSERT INTO report_flags (report_id, account_id, reason)
-VALUES ($1, $2, $3)
+INSERT INTO report_flags (report_id, account_id, reasons, note)
+VALUES ($1, $2, $3::text[], $4)
 ON CONFLICT (report_id, account_id) DO NOTHING RETURNING id
 `
 
 type InsertReportFlagParams struct {
 	ReportID  int64
 	AccountID int64
-	Reason    string
+	Reasons   []string
+	Note      *string
 }
 
 // One flag per account per report. No row back means this account already
 // flagged this report (409). A flag is stored only here; it never changes a
 // column of reports (D-09). The flag upsert lives in this file because
 // votes.sql must stay free of conflict clauses and row locks.
+// The reasons are a set in the dialog's order and the note is trimmed text or
+// NULL (plan 04-31, migration 00010).
 func (q *Queries) InsertReportFlag(ctx context.Context, arg InsertReportFlagParams) (int64, error) {
-	row := q.db.QueryRow(ctx, insertReportFlag, arg.ReportID, arg.AccountID, arg.Reason)
+	row := q.db.QueryRow(ctx, insertReportFlag,
+		arg.ReportID,
+		arg.AccountID,
+		arg.Reasons,
+		arg.Note,
+	)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
@@ -439,9 +459,16 @@ SELECT r.id, r.category, r.severity, r.description, r.created_at, r.expires_at,
        (SELECT count(*) FROM report_flags f
          WHERE f.report_id = r.id AND f.dismissed_at IS NULL)::bigint AS open_flag_total,
        COALESCE((SELECT jsonb_object_agg(x.reason, x.n)
-                   FROM (SELECT f.reason, count(*) AS n FROM report_flags f
+                   FROM (SELECT fr.reason, count(*) AS n
+                           FROM report_flags f, unnest(f.reasons) AS fr(reason)
                           WHERE f.report_id = r.id AND f.dismissed_at IS NULL
-                          GROUP BY f.reason) x), '{}'::jsonb)::jsonb AS flag_counts
+                          GROUP BY fr.reason) x), '{}'::jsonb)::jsonb AS flag_counts,
+       COALESCE((SELECT jsonb_agg(jsonb_build_object('reasons', n.reasons, 'note', n.note)
+                                  ORDER BY n.created_at DESC, n.id DESC)
+                   FROM (SELECT f.id, f.reasons, f.note, f.created_at FROM report_flags f
+                          WHERE f.report_id = r.id AND f.dismissed_at IS NULL AND f.note IS NOT NULL
+                          ORDER BY f.created_at DESC, f.id DESC
+                          LIMIT 20) n), '[]'::jsonb)::jsonb AS flag_notes
 FROM reports r
 JOIN moderation_checks c ON c.report_id = r.id
 WHERE c.status = 'pending' AND r.expires_at > now() AND r.moderation_state <> 'removed'
@@ -465,6 +492,7 @@ type PendingQueueRow struct {
 	NeedsReview     bool
 	OpenFlagTotal   int64
 	FlagCounts      []byte
+	FlagNotes       []byte
 }
 
 // List (c): posts whose text check has not finished and that have not
@@ -495,6 +523,7 @@ func (q *Queries) PendingQueue(ctx context.Context) ([]PendingQueueRow, error) {
 			&i.NeedsReview,
 			&i.OpenFlagTotal,
 			&i.FlagCounts,
+			&i.FlagNotes,
 		); err != nil {
 			return nil, err
 		}
@@ -562,9 +591,16 @@ SELECT r.id, r.category, r.severity, r.description, r.created_at, r.expires_at,
        (SELECT count(*) FROM report_flags f
          WHERE f.report_id = r.id AND f.dismissed_at IS NULL)::bigint AS open_flag_total,
        COALESCE((SELECT jsonb_object_agg(x.reason, x.n)
-                   FROM (SELECT f.reason, count(*) AS n FROM report_flags f
+                   FROM (SELECT fr.reason, count(*) AS n
+                           FROM report_flags f, unnest(f.reasons) AS fr(reason)
                           WHERE f.report_id = r.id AND f.dismissed_at IS NULL
-                          GROUP BY f.reason) x), '{}'::jsonb)::jsonb AS flag_counts
+                          GROUP BY fr.reason) x), '{}'::jsonb)::jsonb AS flag_counts,
+       COALESCE((SELECT jsonb_agg(jsonb_build_object('reasons', n.reasons, 'note', n.note)
+                                  ORDER BY n.created_at DESC, n.id DESC)
+                   FROM (SELECT f.id, f.reasons, f.note, f.created_at FROM report_flags f
+                          WHERE f.report_id = r.id AND f.dismissed_at IS NULL AND f.note IS NOT NULL
+                          ORDER BY f.created_at DESC, f.id DESC
+                          LIMIT 20) n), '[]'::jsonb)::jsonb AS flag_notes
 FROM reports r
 JOIN moderation_checks c ON c.report_id = r.id
 WHERE c.needs_review AND r.moderation_state <> 'removed'
@@ -588,6 +624,7 @@ type ReviewQueueRow struct {
 	NeedsReview     bool
 	OpenFlagTotal   int64
 	FlagCounts      []byte
+	FlagNotes       []byte
 }
 
 // List (a): posts the text check flagged as borderline and a person has not
@@ -618,6 +655,7 @@ func (q *Queries) ReviewQueue(ctx context.Context) ([]ReviewQueueRow, error) {
 			&i.NeedsReview,
 			&i.OpenFlagTotal,
 			&i.FlagCounts,
+			&i.FlagNotes,
 		); err != nil {
 			return nil, err
 		}

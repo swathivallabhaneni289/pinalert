@@ -116,6 +116,46 @@ type ModerationFlagCount struct {
 	Count  int64
 }
 
+// ModerationFlagNote is one open flag that carries a note: the note, trimmed
+// as stored, and the reasons the same flag gave, in the FlagReasons order with
+// their dialog labels. It names nobody (T-04-04, plan 04-31).
+type ModerationFlagNote struct {
+	Reasons []ModerationFlagReason
+	Note    string
+}
+
+// ModerationFlagReason is one reason of a flag with its dialog label.
+type ModerationFlagReason struct {
+	Reason FlagReason
+	Label  string
+}
+
+// decodeFlagNotes reads the flag_notes column. A reason the dialog does not
+// know is skipped rather than shown raw.
+func decodeFlagNotes(raw []byte) ([]ModerationFlagNote, error) {
+	out := []ModerationFlagNote{}
+	if len(raw) == 0 {
+		return out, nil
+	}
+	var stored []struct {
+		Reasons []string `json:"reasons"`
+		Note    string   `json:"note"`
+	}
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		return nil, err
+	}
+	for _, s := range stored {
+		n := ModerationFlagNote{Reasons: []ModerationFlagReason{}, Note: s.Note}
+		for _, r := range s.Reasons {
+			if fr := FlagReason(r); fr.Valid() {
+				n.Reasons = append(n.Reasons, ModerationFlagReason{Reason: fr, Label: FlagReasonLabel(fr)})
+			}
+		}
+		out = append(out, n)
+	}
+	return out, nil
+}
+
 // ModerationRow is one report as the moderator screen shows it. It holds no
 // author, flagger, email, account or session (T-04-04).
 type ModerationRow struct {
@@ -138,6 +178,9 @@ type ModerationRow struct {
 	Model       string
 	FlagTotal   int64
 	FlagReasons []ModerationFlagCount
+	// FlagNotes are the open flags that carry a note, newest first, at most
+	// 20, each with the reasons it came with. Never nil.
+	FlagNotes []ModerationFlagNote
 }
 
 // ModerationQueues is the answer of Queues: the three lists in their SQL order
@@ -297,6 +340,7 @@ type moderationRecord struct {
 	NeedsReview     bool
 	OpenFlagTotal   int64
 	FlagCounts      []byte
+	FlagNotes       []byte
 }
 
 func derefString(p *string) string {
@@ -308,22 +352,22 @@ func derefString(p *string) string {
 
 func recordFromReview(r sqlcgen.ReviewQueueRow) moderationRecord {
 	return moderationRecord{r.ID, r.Category, r.Severity, r.Description, r.CreatedAt, r.ExpiresAt, r.ClientWrittenAt,
-		r.ModerationState, r.CheckStatus, r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts}
+		r.ModerationState, r.CheckStatus, r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes}
 }
 
 func recordFromFlag(r sqlcgen.FlagQueueRow) moderationRecord {
 	return moderationRecord{r.ID, r.Category, r.Severity, r.Description, r.CreatedAt, r.ExpiresAt, r.ClientWrittenAt,
-		r.ModerationState, derefString(r.CheckStatus), r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts}
+		r.ModerationState, derefString(r.CheckStatus), r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes}
 }
 
 func recordFromPending(r sqlcgen.PendingQueueRow) moderationRecord {
 	return moderationRecord{r.ID, r.Category, r.Severity, r.Description, r.CreatedAt, r.ExpiresAt, r.ClientWrittenAt,
-		r.ModerationState, r.CheckStatus, r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts}
+		r.ModerationState, r.CheckStatus, r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes}
 }
 
 func recordFromDetail(r sqlcgen.ReportForModerationRow) moderationRecord {
 	return moderationRecord{r.ID, r.Category, r.Severity, r.Description, r.CreatedAt, r.ExpiresAt, r.ClientWrittenAt,
-		r.ModerationState, derefString(r.CheckStatus), r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts}
+		r.ModerationState, derefString(r.CheckStatus), r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes}
 }
 
 // buildRows turns records into ModerationRows. An empty slice reads nothing.
@@ -384,6 +428,7 @@ func (s *ModerationService) buildRows(ctx context.Context, recs []moderationReco
 			Moderation:  meta.Moderation,
 			FlagTotal:   rec.OpenFlagTotal,
 			FlagReasons: []ModerationFlagCount{},
+			FlagNotes:   []ModerationFlagNote{},
 		}
 		if meta.Withheld() {
 			row.View = ModViewNone
@@ -411,6 +456,11 @@ func (s *ModerationService) buildRows(ctx context.Context, recs []moderationReco
 				row.FlagReasons = append(row.FlagReasons, ModerationFlagCount{Reason: reason, Label: FlagReasonLabel(reason), Count: n})
 			}
 		}
+		notes, err := decodeFlagNotes(rec.FlagNotes)
+		if err != nil {
+			return nil, fmt.Errorf("service: decoding flag notes of report %d: %w", rec.ID, err)
+		}
+		row.FlagNotes = notes
 		rows = append(rows, row)
 	}
 	return rows, nil

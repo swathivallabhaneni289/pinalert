@@ -102,7 +102,9 @@ func modReviewCheck(t *testing.T, q *sqlcgen.Queries, reportID int64) {
 func modFlag(t *testing.T, q *sqlcgen.Queries, reportID, accountID int64, reason string) {
 	t.Helper()
 	if _, err := q.InsertReportFlag(context.Background(), sqlcgen.InsertReportFlagParams{
-		ReportID: reportID, AccountID: accountID, Reason: reason,
+		// Amended 2026-10-22 by plan 04-31 (owner): a flag stores a set of
+		// reasons; this helper stores its one reason as a one element set.
+		ReportID: reportID, AccountID: accountID, Reasons: []string{reason},
 	}); err != nil {
 		t.Fatalf("flagging %d: %v", reportID, err)
 	}
@@ -455,18 +457,20 @@ func TestReportFlagsUniquePerAccount(t *testing.T) {
 	}
 	before := snapshot()
 
-	if id, err := q.InsertReportFlag(ctx, sqlcgen.InsertReportFlagParams{ReportID: r, AccountID: a, Reason: "spam"}); err != nil || id == 0 {
+	// Amended 2026-10-22 by plan 04-31 (owner): the flag rows carry a set of
+	// reasons (migration 00010). The rules pinned here are unchanged.
+	if id, err := q.InsertReportFlag(ctx, sqlcgen.InsertReportFlagParams{ReportID: r, AccountID: a, Reasons: []string{"spam"}}); err != nil || id == 0 {
 		t.Fatalf("A flags: id %d, err %v", id, err)
 	}
-	if _, err := q.InsertReportFlag(ctx, sqlcgen.InsertReportFlagParams{ReportID: r, AccountID: a, Reason: "abusive"}); !errors.Is(err, pgx.ErrNoRows) {
+	if _, err := q.InsertReportFlag(ctx, sqlcgen.InsertReportFlagParams{ReportID: r, AccountID: a, Reasons: []string{"abusive"}}); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("A flags again: want pgx.ErrNoRows, got %v", err)
 	}
-	if id, err := q.InsertReportFlag(ctx, sqlcgen.InsertReportFlagParams{ReportID: r, AccountID: b, Reason: "false"}); err != nil || id == 0 {
+	if id, err := q.InsertReportFlag(ctx, sqlcgen.InsertReportFlagParams{ReportID: r, AccountID: b, Reasons: []string{"false"}}); err != nil || id == 0 {
 		t.Fatalf("B flags: id %d, err %v", id, err)
 	}
 
 	c := seedAccountForVotes(t, pool, "flag-c@example.com")
-	_, err := pool.Exec(ctx, `INSERT INTO report_flags (report_id, account_id, reason) VALUES ($1, $2, 'police')`, r, c)
+	_, err := pool.Exec(ctx, `INSERT INTO report_flags (report_id, account_id, reasons) VALUES ($1, $2, ARRAY['police'])`, r, c)
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
 		t.Errorf("reason police: want SQLSTATE 23514, got %v", err)
@@ -1028,5 +1032,125 @@ func TestModerationRowsCarryNoSessionID(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestReportFlagsReasonsAndNote pins migration 00010 and the queue columns of
+// plan 04-31: the set of reasons and the note are checked by the database, a
+// reason counts once per flag it appears in, and flag_notes holds each open
+// flag with a note, newest first, with its reasons and nothing that names the
+// flagger.
+func TestReportFlagsReasonsAndNote(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+	a := seedAccountForVotes(t, pool, "notes-a@example.com")
+	b := seedAccountForVotes(t, pool, "notes-b@example.com")
+	c := seedAccountForVotes(t, pool, "notes-c@example.com")
+	d := seedAccountForVotes(t, pool, "notes-d@example.com")
+	r := seedReportForVotes(t, pool, "notes target")
+
+	wantCheck := func(label, query string, args ...any) {
+		t.Helper()
+		_, err := pool.Exec(ctx, query, args...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
+			t.Errorf("%s: want SQLSTATE 23514, got %v", label, err)
+		}
+	}
+	wantCheck("no reasons", `INSERT INTO report_flags (report_id, account_id, reasons) VALUES ($1, $2, ARRAY[]::text[])`, r, d)
+	wantCheck("a repeated reason", `INSERT INTO report_flags (report_id, account_id, reasons) VALUES ($1, $2, ARRAY['spam','spam'])`, r, d)
+	wantCheck("a NULL reason", `INSERT INTO report_flags (report_id, account_id, reasons) VALUES ($1, $2, ARRAY['spam',NULL])`, r, d)
+	wantCheck("an unknown reason", `INSERT INTO report_flags (report_id, account_id, reasons) VALUES ($1, $2, ARRAY['spam','police'])`, r, d)
+	wantCheck("a two dimensional set", `INSERT INTO report_flags (report_id, account_id, reasons) VALUES ($1, $2, ARRAY[['spam'],['false']])`, r, d)
+	wantCheck("an empty note", `INSERT INTO report_flags (report_id, account_id, reasons, note) VALUES ($1, $2, ARRAY['spam'], '')`, r, d)
+	wantCheck("a 301 character note", `INSERT INTO report_flags (report_id, account_id, reasons, note) VALUES ($1, $2, ARRAY['spam'], repeat('a', 301))`, r, d)
+	if _, err := pool.Exec(ctx, `INSERT INTO report_flags (report_id, account_id, reasons) VALUES ($1, $2, NULL)`, r, d); err == nil {
+		t.Errorf("a NULL set was stored")
+	}
+
+	note := func(s string) *string { return &s }
+	long := strings.Repeat("అ", 300)
+	for _, f := range []sqlcgen.InsertReportFlagParams{
+		{ReportID: r, AccountID: a, Reasons: []string{"spam", "false"}, Note: note("first <b>note</b>")},
+		{ReportID: r, AccountID: b, Reasons: []string{"false"}},
+		{ReportID: r, AccountID: c, Reasons: []string{"false", "other"}, Note: note(long)},
+	} {
+		if id, err := q.InsertReportFlag(ctx, f); err != nil || id == 0 {
+			t.Fatalf("flag %+v: id %d, err %v", f, id, err)
+		}
+	}
+	if _, err := q.InsertReportFlag(ctx, sqlcgen.InsertReportFlagParams{ReportID: r, AccountID: a, Reasons: []string{"other"}}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("a second flag by the same account: want pgx.ErrNoRows, got %v", err)
+	}
+
+	rows, err := q.FlagQueue(ctx)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("FlagQueue: %d rows, err %v", len(rows), err)
+	}
+	if rows[0].OpenFlagTotal != 3 {
+		t.Errorf("open_flag_total = %d, want 3", rows[0].OpenFlagTotal)
+	}
+	var counts map[string]int
+	if err := json.Unmarshal(rows[0].FlagCounts, &counts); err != nil {
+		t.Fatalf("decoding flag_counts: %v", err)
+	}
+	if len(counts) != 3 || counts["spam"] != 1 || counts["false"] != 3 || counts["other"] != 1 {
+		t.Errorf("flag_counts = %v, want spam 1, false 3, other 1", counts)
+	}
+
+	type storedNote struct {
+		Reasons []string `json:"reasons"`
+		Note    string   `json:"note"`
+	}
+	decode := func(raw []byte) []storedNote {
+		t.Helper()
+		var keys []map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &keys); err != nil {
+			t.Fatalf("decoding flag_notes %s: %v", raw, err)
+		}
+		for _, k := range keys {
+			if len(k) != 2 {
+				t.Errorf("a flag_notes entry has keys %v, want only reasons and note", k)
+			}
+		}
+		var out []storedNote
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatalf("decoding flag_notes: %v", err)
+		}
+		return out
+	}
+	got := decode(rows[0].FlagNotes)
+	want := []storedNote{{Reasons: []string{"false", "other"}, Note: long}, {Reasons: []string{"spam", "false"}, Note: "first <b>note</b>"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("flag_notes = %+v, want %+v", got, want)
+	}
+
+	detail, err := q.ReportForModeration(ctx, r)
+	if err != nil {
+		t.Fatalf("ReportForModeration: %v", err)
+	}
+	if string(detail.FlagNotes) != string(rows[0].FlagNotes) || string(detail.FlagCounts) != string(rows[0].FlagCounts) {
+		t.Errorf("ReportForModeration flag columns differ from FlagQueue: %s %s", detail.FlagNotes, detail.FlagCounts)
+	}
+
+	// A dismissed flag drops out of the notes and the counts.
+	testutil.MustExec(t, pool, `UPDATE report_flags SET dismissed_at = now() WHERE account_id = $1`, c)
+	rows, err = q.FlagQueue(ctx)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("FlagQueue after dismiss: %d rows, err %v", len(rows), err)
+	}
+	if got := decode(rows[0].FlagNotes); len(got) != 1 || got[0].Note != "first <b>note</b>" {
+		t.Errorf("flag_notes after dismiss = %+v, want only the first note", got)
+	}
+
+	// Open flags with no note give an empty list, never null.
+	testutil.MustExec(t, pool, `UPDATE report_flags SET dismissed_at = now() WHERE account_id = $1`, a)
+	rows, err = q.FlagQueue(ctx)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("FlagQueue with no notes: %d rows, err %v", len(rows), err)
+	}
+	if string(rows[0].FlagNotes) != "[]" {
+		t.Errorf("flag_notes with no noted flag = %s, want []", rows[0].FlagNotes)
 	}
 }

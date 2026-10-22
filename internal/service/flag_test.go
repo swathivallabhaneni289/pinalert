@@ -11,11 +11,13 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"pinalert/internal/moderation"
 	"pinalert/internal/service"
 	sqlcgen "pinalert/internal/store/sqlc"
 )
@@ -171,13 +173,27 @@ func TestFlagServiceRules(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			q := &fakeFlagQuerier{row: tc.row, readErr: tc.readErr, insertErr: tc.insertErr}
 			svc := service.NewFlagService(q)
-			err := svc.Flag(context.Background(), service.FlagInput{ReportID: reportID, AccountID: accountID, Reason: tc.reason})
+			// Amended 2026-10-22 by plan 04-31 (owner): a flag carries a set of
+			// reasons. Each case sends its one reason as a one element set, and
+			// the empty case sends no reason at all.
+			var reasons []service.FlagReason
+			if tc.reason != "" {
+				reasons = []service.FlagReason{tc.reason}
+			}
+			err := svc.Flag(context.Background(), service.FlagInput{ReportID: reportID, AccountID: accountID, Reasons: reasons})
 
 			switch {
 			case tc.wantVal:
 				var ve service.ValidationError
-				if !errors.As(err, &ve) || ve.Field != "reason" || ve.Message != service.FlagReasonMessage {
-					t.Errorf("err = %v, want ValidationError on reason with FlagReasonMessage", err)
+				// Amended 2026-10-22 by plan 04-31 (owner): the field is reasons, and
+				// an unknown reason has its own message; no reason at all keeps
+				// FlagReasonMessage.
+				wantMsg := service.FlagReasonsBadMessage
+				if tc.reason == "" {
+					wantMsg = service.FlagReasonMessage
+				}
+				if !errors.As(err, &ve) || ve.Field != "reasons" || ve.Message != wantMsg {
+					t.Errorf("err = %v, want ValidationError on reasons with %q", err, wantMsg)
 				}
 			case tc.wantErr != nil:
 				if !errors.Is(err, tc.wantErr) {
@@ -203,8 +219,8 @@ func TestFlagServiceRules(t *testing.T) {
 				t.Fatalf("inserted %d flags, want %d", len(q.inserted), tc.wantInsert)
 			}
 			if tc.wantInsert == 1 {
-				want := sqlcgen.InsertReportFlagParams{ReportID: reportID, AccountID: accountID, Reason: string(tc.reason)}
-				if q.inserted[0] != want {
+				want := sqlcgen.InsertReportFlagParams{ReportID: reportID, AccountID: accountID, Reasons: []string{string(tc.reason)}}
+				if !reflect.DeepEqual(q.inserted[0], want) {
 					t.Errorf("inserted %+v, want %+v", q.inserted[0], want)
 				}
 			}
@@ -224,5 +240,147 @@ func TestFlagQuerierCannotWriteReports(t *testing.T) {
 	sort.Strings(names)
 	if fmt.Sprint(names) != "[InsertReportFlag ReportVoteContext]" {
 		t.Errorf("FlagQuerier methods = %v, want InsertReportFlag and ReportVoteContext", names)
+	}
+}
+
+// TestValidateFlagInput pins the shape rules of plan 04-31: at least one
+// reason, every reason known and none twice, the set returned in the dialog's
+// order, and a note of at most 300 characters after trimming, where empty
+// means none.
+func TestValidateFlagInput(t *testing.T) {
+	r := func(xs ...service.FlagReason) []service.FlagReason { return xs }
+	long300 := strings.Repeat("అ", 300) // 300 Telugu letters, 900 bytes
+	tests := []struct {
+		name        string
+		in          service.FlagInput
+		wantReasons []service.FlagReason
+		wantNote    string
+		wantField   string
+		wantMsg     string
+	}{
+		{name: "no reasons", in: service.FlagInput{}, wantField: "reasons", wantMsg: service.FlagReasonMessage},
+		{name: "empty list", in: service.FlagInput{Reasons: r()}, wantField: "reasons", wantMsg: service.FlagReasonMessage},
+		{name: "unknown reason", in: service.FlagInput{Reasons: r("spam", "hoax")}, wantField: "reasons", wantMsg: service.FlagReasonsBadMessage},
+		{name: "empty reason", in: service.FlagInput{Reasons: r("")}, wantField: "reasons", wantMsg: service.FlagReasonsBadMessage},
+		{name: "duplicate reason", in: service.FlagInput{Reasons: r("false", "false")}, wantField: "reasons", wantMsg: service.FlagReasonsBadMessage},
+		{name: "one reason", in: service.FlagInput{Reasons: r("other")}, wantReasons: r("other")},
+		{name: "set is put in dialog order", in: service.FlagInput{Reasons: r("other", "spam", "false")}, wantReasons: r("spam", "false", "other")},
+		{name: "all five", in: service.FlagInput{Reasons: r("dangerous", "other", "false", "abusive", "spam")}, wantReasons: r("spam", "abusive", "false", "dangerous", "other")},
+		{name: "note is trimmed", in: service.FlagInput{Reasons: r("false"), Note: "  old photo from 2019 \n"}, wantReasons: r("false"), wantNote: "old photo from 2019"},
+		{name: "blank note means none", in: service.FlagInput{Reasons: r("false"), Note: " \t\n "}, wantReasons: r("false"), wantNote: ""},
+		{name: "300 characters after trimming", in: service.FlagInput{Reasons: r("false"), Note: "  " + long300 + "  "}, wantReasons: r("false"), wantNote: long300},
+		{name: "301 characters", in: service.FlagInput{Reasons: r("false"), Note: long300 + "a"}, wantField: "note", wantMsg: service.FlagNoteTooLongMessage},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			reasons, note, err := service.ValidateFlagInput(tc.in)
+			if tc.wantField != "" {
+				var ve service.ValidationError
+				if !errors.As(err, &ve) || ve.Field != tc.wantField || ve.Message != tc.wantMsg {
+					t.Fatalf("err = %v, want ValidationError on %s with %q", err, tc.wantField, tc.wantMsg)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("err = %v, want nil", err)
+			}
+			if !reflect.DeepEqual(reasons, tc.wantReasons) {
+				t.Errorf("reasons = %v, want %v", reasons, tc.wantReasons)
+			}
+			if note != tc.wantNote {
+				t.Errorf("note = %q, want %q", note, tc.wantNote)
+			}
+		})
+	}
+}
+
+// TestFlagServiceNote pins how the note is stored and screened (plan 04-31):
+// the set and the trimmed note reach the insert, a blank note is NULL and is
+// never screened, a note goes through the same text check as a description
+// (the gibberish rule and the screener), a refused note stores nothing, a note
+// whose check did not finish is still stored, and a 404 or a 403 never costs
+// a screener call.
+func TestFlagServiceNote(t *testing.T) {
+	other := int64(9)
+	self := int64(7)
+	clearRow := sqlcgen.ReportVoteContextRow{Severity: "low", Category: "flood", ModerationState: "clear", ReporterAccountID: &other, ExpiresAt: time.Now().Add(time.Hour)}
+	own := clearRow
+	own.ReporterAccountID = &self
+	hateful := moderation.Result{Model: "m", Scores: map[string]float64{"hate": 0.99}}
+	borderline := moderation.Result{Model: "m", Scores: map[string]float64{"harassment": 0.5}}
+
+	tests := []struct {
+		name        string
+		row         sqlcgen.ReportVoteContextRow
+		readErr     error
+		note        string
+		screen      moderation.Result
+		screenErr   error
+		wantReject  service.RejectReason
+		wantErr     error
+		wantScreens int
+		wantNote    *string
+		wantInsert  int
+	}{
+		{name: "no note is NULL and not screened", row: clearRow, wantInsert: 1},
+		{name: "blank note is NULL and not screened", row: clearRow, note: "   ", wantInsert: 1},
+		{name: "a note is trimmed, screened once and stored", row: clearRow, note: "  The photo is from 2019.  ", wantScreens: 1, wantNote: strPtr("The photo is from 2019."), wantInsert: 1},
+		{name: "a one word note meets the gibberish rule", row: clearRow, note: "fake", wantReject: service.RejectGibberish},
+		{name: "keyboard mashing meets the gibberish rule", row: clearRow, note: "asdfffffffffffff", wantReject: service.RejectGibberish},
+		{name: "a hateful note is refused", row: clearRow, note: "some hateful words here", screen: hateful, wantScreens: 1, wantReject: service.RejectHateful},
+		{name: "a borderline note is stored", row: clearRow, note: "some sharp words here", screen: borderline, wantScreens: 1, wantNote: strPtr("some sharp words here"), wantInsert: 1},
+		{name: "an unfinished check still stores the note", row: clearRow, note: "the water has gone down", screenErr: &moderation.CallError{Transient: true}, wantScreens: 1, wantNote: strPtr("the water has gone down"), wantInsert: 1},
+		{name: "own report is not screened", row: own, note: "some words here", wantErr: service.ErrFlagOwnReport},
+		{name: "missing report is not screened", readErr: pgx.ErrNoRows, note: "some words here", wantErr: service.ErrReportNotFound},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			q := &fakeFlagQuerier{row: tc.row, readErr: tc.readErr}
+			scr := &fakeTextScreener{result: tc.screen, err: tc.screenErr}
+			svc := service.NewFlagService(q, service.WithFlagScreener(scr))
+			err := svc.Flag(context.Background(), service.FlagInput{
+				ReportID: 41, AccountID: self, Reasons: []service.FlagReason{"other", "false"}, Note: tc.note,
+			})
+			switch {
+			case tc.wantReject != "":
+				var nr service.FlagNoteRejectedError
+				if !errors.As(err, &nr) || nr.Reason != tc.wantReject || !errors.Is(err, service.ErrFlagNoteRejected) {
+					t.Errorf("err = %v, want FlagNoteRejectedError %q", err, tc.wantReject)
+				}
+			case tc.wantErr != nil:
+				if !errors.Is(err, tc.wantErr) {
+					t.Errorf("err = %v, want %v", err, tc.wantErr)
+				}
+			default:
+				if err != nil {
+					t.Errorf("err = %v, want nil", err)
+				}
+			}
+			if scr.calls != tc.wantScreens {
+				t.Errorf("screener calls = %d, want %d", scr.calls, tc.wantScreens)
+			}
+			if len(q.inserted) != tc.wantInsert {
+				t.Fatalf("inserted %d flags, want %d", len(q.inserted), tc.wantInsert)
+			}
+			if tc.wantInsert == 1 {
+				want := sqlcgen.InsertReportFlagParams{ReportID: 41, AccountID: self, Reasons: []string{"false", "other"}, Note: tc.wantNote}
+				if !reflect.DeepEqual(q.inserted[0], want) {
+					t.Errorf("inserted %+v, want %+v", q.inserted[0], want)
+				}
+			}
+		})
+	}
+}
+
+// TestFlagNoteRejectMessage pins the note's own gibberish sentence and the
+// description's sentences for the other three reasons.
+func TestFlagNoteRejectMessage(t *testing.T) {
+	if got := service.FlagNoteRejectMessage(service.RejectGibberish); got != "Say in a few words what is wrong with this report, or leave this box empty." {
+		t.Errorf("gibberish message = %q", got)
+	}
+	for _, r := range []service.RejectReason{service.RejectHateful, service.RejectHarassing, service.RejectSexual} {
+		if got := service.FlagNoteRejectMessage(r); got == "" || got != service.RejectMessage(r) {
+			t.Errorf("%s message = %q, want the description's %q", r, got, service.RejectMessage(r))
+		}
 	}
 }
