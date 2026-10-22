@@ -38,7 +38,7 @@ key-files:
 decisions:
   - "Old reason column: migrated into the new reasons set in 00010 and dropped, so a flag has one place that says why; Down restores the first reason of each set"
   - "Old API field: the single reason field is still accepted on its own as a one element set; sent together with reasons it is a 400"
-  - "Flag note: screened by CheckText with the report service's own screener; refused is 422 on field note; borderline or unfinished still stores it (moderators only read it, an outage must not stop a flag)"
+  - "Flag note: screened by ScreenAbuse (the abuse screen of CheckText, no gibberish or minimum length rule, owner follow up 2026-10-23) with the report service's own screener, plus the 300 character limit; refused is 422 on field note with RejectMessage; borderline or unfinished still stores it (moderators only read it, an outage must not stop a flag)"
   - "Flag window: the panel moves Tab focus itself, because Safari's default Tab skips tick boxes and buttons and dropped focus behind the window"
 metrics:
   duration: about 75 minutes
@@ -57,6 +57,8 @@ The Flag window now asks "Why are you flagging this report?", puts the Dispute l
 | f3c02f5 | Migration 00010, sqlc, flag service (set, note, screening), API (reasons, note, old reason), moderator queue JSON (`flags.notes`), swagger, Go tests |
 | 4f14560 | Flag window template, flag.js, dialog CSS, moderator screen notes, MODERATION.md, contract tests, node test |
 | 8523db5 | Rule 1 fix: the panel moves Tab focus itself so Safari cannot drop it behind the window |
+| 8d71b0e, f02fda3 | This summary; MODERATION.md says a refused note still uses a flag token |
+| 19b75f5 | Follow up (owner, 2026-10-23): flag notes skip the gibberish rule; new `ScreenAbuse`; the note's own gibberish sentence removed |
 
 ## What was built
 
@@ -64,7 +66,7 @@ The Flag window now asks "Why are you flagging this report?", puts the Dispute l
 
 **API.** `POST /api/reports/{id}/flag` takes `{"reasons": [...], "note": "..."}`. Validation: at least one reason (`Choose a reason to continue.` on field `reasons`), every reason known and none twice (`Choose each reason from the list once.`), a note of at most 300 characters after trimming (`Keep the note to 300 characters or fewer.` on field `note`). Body cap raised from 1 KiB to 4 KiB (300 four byte characters are about 1200 bytes; tested). Rate limits and every other rule of the flag service are unchanged, and the check order is unchanged except that the note is screened after the report, withheld and own report checks and before the insert, so a 404 or 403 never costs a screener call.
 
-**Screening.** The note goes through `CheckText`, the same function the report description goes through, with the report service's own screener (new `ReportService.Screener()`, passed by the router through `WithFlagScreener`), so the gibberish rule applies too. A refused note is 422 on field `note`. The hateful, harassing and sexual sentences are the description's own (`RejectMessage`); the gibberish sentence is the note's own, "Say in a few words what is wrong with this report, or leave this box empty.", because the description's sentence asks the author to say what is happening for people nearby. A borderline or unfinished check still stores the note: only moderators read it, and a provider outage must not stop a flag, which is a safety action.
+**Screening (changed by the follow up of 2026-10-23).** The note goes through `ScreenAbuse`, the screener half of the report description's `CheckText`, with the report service's own screener (new `ReportService.Screener()`, passed by the router through `WithFlagScreener`). It does not go through the gibberish or minimum length rule: the owner said a one word note such as "fake", "duplicate" or "old" is a perfectly good flag note. `CheckText` itself is unchanged and still runs the gibberish rule first for report descriptions. What stays for a note is the hateful, harassing and sexual reject of the abuse screen, borderline, and the 300 character limit. A refused note is 422 on field `note` with the description's own sentence (`RejectMessage`). The first version's note only gibberish sentence ("Say in a few words what is wrong with this report, or leave this box empty.") and `FlagNoteRejectMessage` are removed, since nothing used them any more. A borderline or unfinished check still stores the note: only moderators read it, and a provider outage must not stop a flag, which is a safety action.
 
 **Moderator screen.** Per reason counts now unnest the set, so each reason counts once per flag it appears in. Every queue row (and Find) gains `flags.notes`: the open flags with a note, newest first, at most 20 per report, each `{reasons: [{reason, label}], note}`, never null, with nothing that names the flagger. The screen shows them under "What people wrote:", each note's reasons in muted text over the note, put on the page only with `Pinalert.setText` (a `<b>` in a note shows as typed). The note never reaches the author or any reader (tested on the feed).
 
@@ -102,14 +104,15 @@ The Flag window now asks "Why are you flagging this report?", puts the Dispute l
 
 ## Tests added
 
-`TestValidateFlagInput`, `TestFlagServiceNote`, `TestFlagNoteRejectMessage` (service); `TestReportFlagsReasonsAndNote`, `TestMigration00010` (store, Up and Down on the scratch database); `TestFlagReasonsAndNoteEndToEnd` (API, screening, old field, queue JSON, no identity, note not in the feed); `TestFlagDialogNoteGeometry`, `TestModerateShowsFlagNotesAsText` (web contract); web/flag_dialog_test.mjs (7 node tests of the real flag.js).
+`TestValidateFlagInput`, `TestFlagServiceNote` (with "fake", " duplicate " and "old" stored, with and without a screener, and a hateful note refused), `TestScreenAbuseSkipsGibberish` (ScreenAbuse clears one word text that CheckText still refuses, and refuses hateful, harassing and sexual scores) (service); `TestReportFlagsReasonsAndNote`, `TestMigration00010` (store, Up and Down on the scratch database); `TestFlagReasonsAndNoteEndToEnd` (API, screening, old field, queue JSON, no identity, note not in the feed, and "fake" and "duplicate" stored as notes); `TestFlagDialogNoteGeometry`, `TestModerateShowsFlagNotesAsText` (web contract); web/flag_dialog_test.mjs (7 node tests of the real flag.js).
 
 ## Verification
 
 - `go build ./...` and `go vet ./...`: pass.
 - `node --test web/*.mjs`: 637 tests, 637 pass, 0 fail.
-- Full suite on p4_w31, `env -i PATH HOME DATABASE_URL=... go test ./... -p 1 -count=1 -v`: 3930 PASS lines (1356 top level), 0 FAIL, 2 SKIP (TestGeocodeLive, TestScreeningFixture, the two allowed). TestCastVoteConcurrentSameAccountKeepsEveryRow passed first time.
-- Browser, Playwright on the 8784 scratch server (env -i, ENV=development, MODERATOR_EMAILS=w31-mod@example.com, p4_w31), Chromium and WebKit, 390x844 and 1470x830, light and dark, keyboard only for the dialog: 8 of 8 runs pass every check (title, Dispute line between title and reasons, five rows of at least 44px, note box 16px text and at least 44px tall, fits the width, Tab to the boxes and Send, none ticked line and focus, Space ticks, refused note line with focus on the box and ticks and text kept, count at 260 characters, Escape closes and focus returns to Flag, no page errors). One real flag sent (201, control reads Flagged), then the moderator screen in all 8 runs shows the note as text with its reasons, no element made from `<b>`, no sideways scroll. Screenshots only in the scratchpad outside the repo. The iPhone simulator check is the orchestrator's.
+- First run, on p4_w31: 3930 PASS lines (1356 top level), 0 FAIL, 2 SKIP.
+- After the follow up, `go build ./...` and `go vet ./...` pass, `node --test web/*.mjs` is 637 of 637, and the full suite on a fresh p4_w31b (`env -i PATH HOME DATABASE_URL=... go test ./... -p 1 -count=1 -v`, created and dropped) gives 3932 PASS lines (1356 top level), 0 FAIL, 2 SKIP (TestGeocodeLive, TestScreeningFixture, the two allowed). TestCastVoteConcurrentSameAccountKeepsEveryRow passed first time in both runs.
+- Browser, Playwright on the 8784 scratch server (env -i, ENV=development, MODERATOR_EMAILS=w31-mod@example.com, p4_w31), Chromium and WebKit, 390x844 and 1470x830, light and dark, keyboard only for the dialog: 8 of 8 runs pass every check (title, Dispute line between title and reasons, five rows of at least 44px, note box 16px text and at least 44px tall, fits the width, Tab to the boxes and Send, none ticked line and focus, Space ticks, refused note line with focus on the box and ticks and text kept, count at 260 characters, Escape closes and focus returns to Flag, no page errors). One real flag sent (201, control reads Flagged), then the moderator screen in all 8 runs shows the note as text with its reasons, no element made from `<b>`, no sideways scroll. Screenshots only in the scratchpad outside the repo. The iPhone simulator check is the orchestrator's. The browser pass ran before the follow up and used "fake" as the refused note; the window's handling of a 422 is unchanged and is covered by the node test, but the browser pass was not rerun.
 - Server stopped and p4_w31 dropped at the end.
 
 ## Known Stubs
@@ -120,7 +123,7 @@ None.
 
 | Flag | File | Description |
 |------|------|-------------|
-| threat_flag: new free text input | internal/api/handlers/flag.go | The flag note is new user text stored server side. Mitigated: 300 character limit in Go and in a CHECK, CheckText screening (gibberish rule and the screener), 4 KiB body cap, shown only to moderators and only through setText, never with a flagger identity. |
+| threat_flag: new free text input | internal/api/handlers/flag.go | The flag note is new user text stored server side. Mitigated: 300 character limit in Go and in a CHECK, the abuse screen (ScreenAbuse), 4 KiB body cap, shown only to moderators and only through setText, never with a flagger identity. |
 
 ## Self-Check: PASSED
 
