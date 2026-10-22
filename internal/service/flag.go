@@ -7,8 +7,10 @@ package service
 // report, which is why FlagQuerier can read one report row and insert one flag
 // row and nothing else. A report nobody may see (missing or withheld) reads as
 // not found, and the flagger is never exposed to anyone. The note goes through
-// the same text check as a report description (CheckText) and is shown to
-// moderators only.
+// the abuse screen of the report description's text check (ScreenAbuse, the
+// screener half of CheckText) and is shown to moderators only. It skips the
+// gibberish and minimum length rule on purpose: a one word note such as
+// "fake" or "duplicate" is a good flag note (owner, 2026-10-23).
 
 import (
 	"context"
@@ -84,18 +86,6 @@ const (
 	FlagNoteTooLongMessage = "Keep the note to 300 characters or fewer."
 )
 
-// FlagNoteRejectMessage is the inline message under a note the text check
-// refused. The hateful, harassing and sexual sentences are the report
-// description's own (RejectMessage). The gibberish sentence is the note's own,
-// because the description's asks the author to say what is happening for
-// people nearby, which does not fit a note to moderators.
-func FlagNoteRejectMessage(r RejectReason) string {
-	if r == RejectGibberish {
-		return "Say in a few words what is wrong with this report, or leave this box empty."
-	}
-	return RejectMessage(r)
-}
-
 var (
 	// ErrFlagOwnReport is returned when the flagger is the reporter.
 	ErrFlagOwnReport = errors.New("service: cannot flag your own report")
@@ -108,7 +98,7 @@ var (
 )
 
 // FlagNoteRejectedError is returned by Flag when the text check refused the
-// note. FlagNoteRejectMessage(Reason) is the message the dialog shows.
+// note. RejectMessage(Reason) is the message the dialog shows.
 type FlagNoteRejectedError struct {
 	Reason RejectReason
 }
@@ -141,7 +131,7 @@ type FlagOption func(*FlagService)
 
 // WithFlagScreener sets the text screener the note goes through. It is the
 // same screener the report description goes through. Without one, the note
-// still goes through the local gibberish rule (CheckText with a nil screener).
+// passes the screen, as a report description does without one.
 func WithFlagScreener(s TextScreener) FlagOption {
 	return func(fs *FlagService) {
 		fs.screener = s
@@ -203,7 +193,7 @@ func ValidateFlagInput(in FlagInput) ([]FlagReason, string, error) {
 //  2. The report is read once; a missing report is ErrReportNotFound.
 //  3. A withheld report is ErrReportNotFound (R-01, R-04).
 //  4. The caller's own report is ErrFlagOwnReport.
-//  5. A non empty note goes through CheckText; a refused note is
+//  5. A non empty note goes through ScreenAbuse; a refused note is
 //     FlagNoteRejectedError and nothing is stored. A borderline or unfinished
 //     check still stores the note: only moderators read it, and a provider
 //     outage must not stop a flag, which is a safety action.
@@ -246,7 +236,7 @@ func (s *FlagService) Flag(ctx context.Context, in FlagInput) error {
 
 	var notePtr *string
 	if note != "" {
-		check := CheckText(ctx, s.screener, note)
+		check := ScreenAbuse(ctx, s.screener, note)
 		if check.Outcome == TextRejected {
 			return FlagNoteRejectedError{Reason: check.Reason}
 		}

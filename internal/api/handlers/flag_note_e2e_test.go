@@ -78,7 +78,7 @@ func TestFlagReasonsAndNoteEndToEnd(t *testing.T) {
 		d.Reports = service.NewReportService(q, service.WithScreener(p431Screener{}))
 	})
 	author := newVerifiedClient(t, srv, mailer, "author@example.com")
-	readers := make([]*http.Client, 6)
+	readers := make([]*http.Client, 7)
 	for i := range readers {
 		readers[i] = newVerifiedClient(t, srv, mailer, "reader-"+strconv.Itoa(i)+"@example.com")
 	}
@@ -111,8 +111,6 @@ func TestFlagReasonsAndNoteEndToEnd(t *testing.T) {
 	p431WantField(t, "old and new field together", st, raw, http.StatusBadRequest, "body", "Request body is missing or malformed.")
 	st, raw = p431Post(t, d, url, `{"reasons":["spam"],"note":"`+strings.Repeat("a", 301)+`"}`)
 	p431WantField(t, "a 301 character note", st, raw, http.StatusBadRequest, "note", service.FlagNoteTooLongMessage)
-	st, raw = p431Post(t, d, url, `{"reasons":["other"],"note":"fake"}`)
-	p431WantField(t, "a one word note", st, raw, http.StatusUnprocessableEntity, "note", service.FlagNoteRejectMessage(service.RejectGibberish))
 	st, raw = p431Post(t, d, url, `{"reasons":["abusive"],"note":"  `+p431HatefulNote+` "}`)
 	p431WantField(t, "a hateful note", st, raw, http.StatusUnprocessableEntity, "note", service.RejectMessage(service.RejectHateful))
 	if got := stored(); got != "" {
@@ -225,5 +223,23 @@ func TestFlagReasonsAndNoteEndToEnd(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode == http.StatusOK {
 		t.Errorf("a reader opened the moderator queue")
+	}
+
+	// A one word note is a good flag note (owner, 2026-10-23): it skips the
+	// gibberish rule that a report description meets, and is stored as sent.
+	// Reader 5 made only refusals above, so it can still flag.
+	for _, f := range []struct {
+		client *http.Client
+		body   string
+	}{
+		{readers[5], `{"reasons":["other"],"note":"fake"}`},
+		{readers[6], `{"reasons":["spam"],"note":" duplicate "}`},
+	} {
+		if st, raw := p431Post(t, f.client, url, f.body); st != http.StatusCreated {
+			t.Errorf("one word note %s: status %d (%s), want 201", f.body, st, raw)
+		}
+	}
+	if got, wantTail := stored(), " | other:fake | spam:duplicate"; !strings.HasSuffix(got, wantTail) {
+		t.Errorf("stored flags end %q, want the suffix %q", got, wantTail)
 	}
 }

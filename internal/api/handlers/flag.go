@@ -127,7 +127,7 @@ func FlagReport(svc *service.FlagService) http.HandlerFunc {
 			}
 			var nr service.FlagNoteRejectedError
 			if errors.As(err, &nr) {
-				writeFieldError(w, http.StatusUnprocessableEntity, "note", service.FlagNoteRejectMessage(nr.Reason))
+				writeFieldError(w, http.StatusUnprocessableEntity, "note", service.RejectMessage(nr.Reason))
 				return
 			}
 			var ve service.ValidationError

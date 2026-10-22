@@ -296,8 +296,9 @@ func TestValidateFlagInput(t *testing.T) {
 
 // TestFlagServiceNote pins how the note is stored and screened (plan 04-31):
 // the set and the trimmed note reach the insert, a blank note is NULL and is
-// never screened, a note goes through the same text check as a description
-// (the gibberish rule and the screener), a refused note stores nothing, a note
+// never screened, a note goes through the description's abuse screen but not
+// its gibberish rule, so a one word note is stored (owner, 2026-10-23), an
+// abusive note is refused and stores nothing, a note
 // whose check did not finish is still stored, and a 404 or a 403 never costs
 // a screener call.
 func TestFlagServiceNote(t *testing.T) {
@@ -316,6 +317,7 @@ func TestFlagServiceNote(t *testing.T) {
 		note        string
 		screen      moderation.Result
 		screenErr   error
+		noScreener  bool
 		wantReject  service.RejectReason
 		wantErr     error
 		wantScreens int
@@ -325,8 +327,10 @@ func TestFlagServiceNote(t *testing.T) {
 		{name: "no note is NULL and not screened", row: clearRow, wantInsert: 1},
 		{name: "blank note is NULL and not screened", row: clearRow, note: "   ", wantInsert: 1},
 		{name: "a note is trimmed, screened once and stored", row: clearRow, note: "  The photo is from 2019.  ", wantScreens: 1, wantNote: strPtr("The photo is from 2019."), wantInsert: 1},
-		{name: "a one word note meets the gibberish rule", row: clearRow, note: "fake", wantReject: service.RejectGibberish},
-		{name: "keyboard mashing meets the gibberish rule", row: clearRow, note: "asdfffffffffffff", wantReject: service.RejectGibberish},
+		{name: "a one word note fake is stored", row: clearRow, note: "fake", wantScreens: 1, wantNote: strPtr("fake"), wantInsert: 1},
+		{name: "a one word note duplicate is stored", row: clearRow, note: " duplicate ", wantScreens: 1, wantNote: strPtr("duplicate"), wantInsert: 1},
+		{name: "a short note old is stored", row: clearRow, note: "old", wantScreens: 1, wantNote: strPtr("old"), wantInsert: 1},
+		{name: "a one word note is stored without a screener", row: clearRow, note: "fake", noScreener: true, wantNote: strPtr("fake"), wantInsert: 1},
 		{name: "a hateful note is refused", row: clearRow, note: "some hateful words here", screen: hateful, wantScreens: 1, wantReject: service.RejectHateful},
 		{name: "a borderline note is stored", row: clearRow, note: "some sharp words here", screen: borderline, wantScreens: 1, wantNote: strPtr("some sharp words here"), wantInsert: 1},
 		{name: "an unfinished check still stores the note", row: clearRow, note: "the water has gone down", screenErr: &moderation.CallError{Transient: true}, wantScreens: 1, wantNote: strPtr("the water has gone down"), wantInsert: 1},
@@ -338,6 +342,9 @@ func TestFlagServiceNote(t *testing.T) {
 			q := &fakeFlagQuerier{row: tc.row, readErr: tc.readErr}
 			scr := &fakeTextScreener{result: tc.screen, err: tc.screenErr}
 			svc := service.NewFlagService(q, service.WithFlagScreener(scr))
+			if tc.noScreener {
+				svc = service.NewFlagService(q)
+			}
 			err := svc.Flag(context.Background(), service.FlagInput{
 				ReportID: 41, AccountID: self, Reasons: []service.FlagReason{"other", "false"}, Note: tc.note,
 			})
@@ -372,15 +379,31 @@ func TestFlagServiceNote(t *testing.T) {
 	}
 }
 
-// TestFlagNoteRejectMessage pins the note's own gibberish sentence and the
-// description's sentences for the other three reasons.
-func TestFlagNoteRejectMessage(t *testing.T) {
-	if got := service.FlagNoteRejectMessage(service.RejectGibberish); got != "Say in a few words what is wrong with this report, or leave this box empty." {
-		t.Errorf("gibberish message = %q", got)
+// TestScreenAbuseSkipsGibberish pins the split of plan 04-31's follow up
+// (owner, 2026-10-23): ScreenAbuse, which the Flag note uses, never applies
+// the gibberish rule, while CheckText, which the report description uses,
+// still does, and both refuse abuse the same way.
+func TestScreenAbuseSkipsGibberish(t *testing.T) {
+	ctx := context.Background()
+	pass := &fakeTextScreener{result: moderation.Result{Model: "m", Scores: map[string]float64{"hate": 0.01}}}
+	for _, text := range []string{"fake", "duplicate", "old", "asdfffffffffffff"} {
+		if got := service.ScreenAbuse(ctx, pass, text); got.Outcome != service.TextClear {
+			t.Errorf("ScreenAbuse(%q) = %+v, want clear", text, got)
+		}
+		if got := service.ScreenAbuse(ctx, nil, text); got.Outcome != service.TextClear {
+			t.Errorf("ScreenAbuse(%q) with no screener = %+v, want clear", text, got)
+		}
+		if got := service.CheckText(ctx, pass, text); got.Outcome != service.TextRejected || got.Reason != service.RejectGibberish {
+			t.Errorf("CheckText(%q) = %+v, want the gibberish reject it always gave", text, got)
+		}
 	}
-	for _, r := range []service.RejectReason{service.RejectHateful, service.RejectHarassing, service.RejectSexual} {
-		if got := service.FlagNoteRejectMessage(r); got == "" || got != service.RejectMessage(r) {
-			t.Errorf("%s message = %q, want the description's %q", r, got, service.RejectMessage(r))
+	for _, tc := range []struct {
+		key  string
+		want service.RejectReason
+	}{{"hate", service.RejectHateful}, {"harassment", service.RejectHarassing}, {"sexual", service.RejectSexual}} {
+		abusive := &fakeTextScreener{result: moderation.Result{Model: "m", Scores: map[string]float64{tc.key: 0.99}}}
+		if got := service.ScreenAbuse(ctx, abusive, "fake"); got.Outcome != service.TextRejected || got.Reason != tc.want {
+			t.Errorf("ScreenAbuse with %s 0.99 = %+v, want rejected %s", tc.key, got, tc.want)
 		}
 	}
 }

@@ -396,9 +396,10 @@ func NewRouter(deps Deps) *chi.Mux {
 	rateGate := handlers.NewRateGate(resolveRateLimits(deps.RateLimits), limiterClock, deps.ClientIPHeader, deps.Chrome)
 	// The flag service has no Deps field: it is built here from the sessions
 	// store, so every harness gets a non nil service (plan 04-20). Its note goes
-	// through the report service's own text screener, so a flag note is checked
-	// exactly like a report description (plan 04-31). Without a report service
-	// the note still meets the gibberish rule.
+	// through the report service's own text screener, so a flag note meets the
+	// same abuse screen as a report description, without the gibberish rule
+	// (plan 04-31). Without a report service the note is not screened, as a
+	// description is not.
 	var flagOpts []service.FlagOption
 	if deps.Reports != nil {
 		flagOpts = append(flagOpts, service.WithFlagScreener(deps.Reports.Screener()))

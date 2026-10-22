@@ -213,9 +213,9 @@ test('a refused note shows the server sentence under the box and keeps the ticks
   t.open();
   t.boxes[1].checked = true;
   t.boxes[3].checked = true;
-  t.text.value = 'fake';
+  t.text.value = 'some hateful words';
   t.send.fire('click');
-  const sentence = 'Say in a few words what is wrong with this report, or leave this box empty.';
+  const sentence = "This text looks hateful, so it can't be posted. Reword it and try again.";
   t.fetches[0].answer(422, { error: { field: 'note', message: sentence } });
   await flush();
   assert.equal(t.backdrop.hidden, false);
@@ -227,7 +227,7 @@ test('a refused note shows the server sentence under the box and keeps the ticks
   assert.equal(t.doc.activeElement, t.text);
   assert.equal(t.error.hidden, true);
   assert.deepEqual(t.boxes.map((b) => b.checked), [false, true, false, true, false]);
-  assert.equal(t.text.value, 'fake');
+  assert.equal(t.text.value, 'some hateful words');
   assert.equal(t.send.disabled, false);
   // Editing the note hides the sentence; the next send carries the edit.
   t.text.value = 'The water went down an hour ago';

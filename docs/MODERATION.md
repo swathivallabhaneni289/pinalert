@@ -174,8 +174,10 @@ is just wrong, and has an optional "Tell the moderators more" box of up to 300 c
 - One flag per account and report. The reasons are stored as a set (migration 00010), each at
   most once; the older single `reason` field of the API is still accepted on its own as a one
   reason flag, for a page cached before the change.
-- The note is trimmed and goes through the same text check as a report description
-  (`CheckText`, so the gibberish rule too). A refused note answers 422 and nothing is stored. A
+- The note is trimmed and goes through the abuse screen of a report description's text check
+  (`ScreenAbuse`, the screener half of `CheckText`), but not the gibberish rule: a one word note
+  such as "fake" or "duplicate" is a good flag note (owner, 2026-10-23). The 300 character limit
+  still applies. A note refused as hateful, harassing or sexual answers 422 and nothing is stored. A
   check that does not finish still stores the note, because only moderators read it and a
   provider outage must not stop a flag.
 - The moderator screen counts each reason once per flag it appears in and lists each open
