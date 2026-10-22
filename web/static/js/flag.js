@@ -24,6 +24,11 @@ window.PinalertFlag = (function () {
   var FLAG_GONE_MESSAGE = 'This report is no longer available.';
   var FLAG_ERROR_MESSAGE = 'Something went wrong. Try again.';
   var FLAG_TIMEOUT_MS = 10000;
+  // The note box takes at most NOTE_MAX characters (its maxlength, counted the
+  // way the browser counts them). The count shows only once NOTE_COUNT_FROM
+  // characters are typed, so a short note shows no extra line (plan 04-31).
+  var NOTE_MAX = 300;
+  var NOTE_COUNT_FROM = 250;
 
   // Report id (as a string) to true, for this page session only. A 201 or a 409
   // fills it, so a poll that left before the flag cannot turn a control back.
@@ -136,8 +141,11 @@ window.PinalertFlag = (function () {
       panel: backdrop.querySelector('.modal-panel'),
       title: document.getElementById('flag-dialog-title'),
       reasons: document.getElementById('flag-dialog-reasons'),
-      radios: backdrop.querySelectorAll('input[name="flag-reason"]'),
-      note: document.getElementById('flag-dialog-note'),
+      boxes: backdrop.querySelectorAll('input[name="flag-reason"]'),
+      choose: document.getElementById('flag-dialog-choose'),
+      text: document.getElementById('flag-dialog-text'),
+      count: document.getElementById('flag-dialog-count'),
+      textError: document.getElementById('flag-dialog-text-error'),
       error: document.getElementById('flag-dialog-error'),
       send: document.getElementById('flag-dialog-send'),
       back: document.getElementById('flag-dialog-back')
@@ -154,7 +162,11 @@ window.PinalertFlag = (function () {
       }
     });
     backdrop.addEventListener('keydown', onDialogKeydown);
-    refs.reasons.addEventListener('change', hideNote);
+    refs.reasons.addEventListener('change', hideChooseReason);
+    refs.text.addEventListener('input', function () {
+      updateCount();
+      hideTextError();
+    });
     return refs;
   }
 
@@ -186,10 +198,15 @@ window.PinalertFlag = (function () {
       current.rowNext = row.nextElementSibling;
       current.rowPrev = row.previousElementSibling;
     }
-    for (var j = 0; j < r.radios.length; j++) {
-      r.radios[j].checked = false;
+    // A fresh dialog for every report: no ticks, an empty note. A refused or
+    // failed send keeps both, because only this function clears them.
+    for (var j = 0; j < r.boxes.length; j++) {
+      r.boxes[j].checked = false;
     }
-    hideNote();
+    r.text.value = '';
+    updateCount();
+    hideChooseReason();
+    hideTextError();
     hideError();
     r.send.hidden = false;
     setSending(false);
@@ -214,14 +231,30 @@ window.PinalertFlag = (function () {
     returnFocus(state);
   }
 
-  // checkedReason reads the slug from the markup, so no reason is typed here.
-  function checkedReason() {
-    for (var i = 0; i < refs.radios.length; i++) {
-      if (refs.radios[i].checked) {
-        return refs.radios[i].value;
+  // checkedReasons reads the ticked slugs from the markup, in the markup's
+  // order, so no reason is typed here.
+  function checkedReasons() {
+    var out = [];
+    for (var i = 0; i < refs.boxes.length; i++) {
+      if (refs.boxes[i].checked) {
+        out.push(refs.boxes[i].value);
       }
     }
-    return '';
+    return out;
+  }
+
+  // updateCount shows how many characters are left once the note is near
+  // NOTE_MAX, and nothing before that.
+  function updateCount() {
+    var used = refs.text.value.length;
+    if (used < NOTE_COUNT_FROM) {
+      refs.count.hidden = true;
+      Pinalert.setText(refs.count, '');
+      return;
+    }
+    var left = Math.max(0, NOTE_MAX - used);
+    Pinalert.setText(refs.count, left === 1 ? '1 character left' : left + ' characters left');
+    refs.count.hidden = false;
   }
 
   function onSendClick() {
@@ -231,9 +264,9 @@ window.PinalertFlag = (function () {
     if (!current) {
       return;
     }
-    var reason = checkedReason();
-    if (reason === '') {
-      showNote();
+    var reasons = checkedReasons();
+    if (reasons.length === 0) {
+      showChooseReason();
       return;
     }
     // A wait the server already announced is respected without a request: the
@@ -242,7 +275,7 @@ window.PinalertFlag = (function () {
       showError(waitMessageNow());
       return;
     }
-    sendFlag(reason);
+    sendFlag(reasons, refs.text.value);
   }
 
   // waitMessageNow is the stored wait message with its wait phrase replaced by
@@ -286,15 +319,16 @@ window.PinalertFlag = (function () {
   // against the post and its body read, so a post whose aborted request never
   // ends (WebKit can leave one unsettled) still shows the offline line at
   // FLAG_TIMEOUT_MS instead of leaving the dialog sending for good. A body
-  // that stalls lands in the body fallback, as an aborted body read did.
-  function sendFlag(reason) {
+  // that stalls lands in the body fallback, as an aborted body read did. The
+  // body is the ticked reasons and the note as typed; the server trims it.
+  function sendFlag(reasons, note) {
     setSending(true);
     var limit = Pinalert.requestTimeout(FLAG_TIMEOUT_MS, 'flag');
     Promise.race([fetch('/api/reports/' + encodeURIComponent(current.reportId) + '/flag', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ reason: reason }),
+      body: JSON.stringify({ reasons: reasons, note: note }),
       signal: limit.signal
     }), limit.expired]).then(function (res) {
       return Promise.race([res.json(), limit.expired]).catch(function () {
@@ -308,6 +342,16 @@ window.PinalertFlag = (function () {
       setSending(false);
       showError(FLAG_OFFLINE_MESSAGE);
     });
+  }
+
+  // serverField returns the field and the message of an error body, or
+  // empty strings.
+  function serverField(body) {
+    var err = body && body.error;
+    if (!err || typeof err.field !== 'string' || typeof err.message !== 'string') {
+      return { field: '', message: '' };
+    }
+    return { field: err.field, message: err.message };
   }
 
   function handleAnswer(status, body, headers) {
@@ -330,6 +374,17 @@ window.PinalertFlag = (function () {
       refs.back.focus();
       return;
     }
+    // A refused or too long note: the server's own sentence under the box,
+    // with the ticks and the text kept for an edit.
+    var fe = serverField(body);
+    if ((status === 422 || status === 400) && fe.field === 'note' && fe.message !== '') {
+      showTextError(fe.message);
+      return;
+    }
+    if (status === 400 && fe.field === 'reasons') {
+      showChooseReason();
+      return;
+    }
     showError(FLAG_ERROR_MESSAGE);
   }
 
@@ -346,23 +401,47 @@ window.PinalertFlag = (function () {
     Pinalert.setText(refs.send, on ? SENDING_LABEL : SEND_LABEL);
     if (on) {
       refs.panel.setAttribute('aria-busy', 'true');
-      hideNote();
+      hideChooseReason();
+      hideTextError();
       hideError();
     } else {
       refs.panel.removeAttribute('aria-busy');
     }
   }
 
-  function showNote() {
-    refs.note.hidden = false;
-    refs.radios[0].setAttribute('aria-describedby', 'flag-dialog-note');
-    announce(refs.note.textContent);
-    refs.radios[0].focus();
+  // showChooseReason shows the Validation line on the group of tick boxes and
+  // moves focus to the first box.
+  function showChooseReason() {
+    refs.choose.hidden = false;
+    refs.reasons.setAttribute('aria-describedby', 'flag-dialog-choose');
+    announce(refs.choose.textContent);
+    refs.boxes[0].focus();
   }
 
-  function hideNote() {
-    refs.note.hidden = true;
-    refs.radios[0].removeAttribute('aria-describedby');
+  function hideChooseReason() {
+    refs.choose.hidden = true;
+    refs.reasons.removeAttribute('aria-describedby');
+  }
+
+  // showTextError shows the server's sentence about the note under the box,
+  // ties it to the box and moves focus there. Nothing is cleared.
+  function showTextError(message) {
+    Pinalert.setText(refs.textError, message);
+    refs.textError.setAttribute('role', 'alert');
+    refs.textError.hidden = false;
+    refs.text.setAttribute('aria-invalid', 'true');
+    refs.text.setAttribute('aria-describedby', 'flag-dialog-text-error');
+    hideChooseReason();
+    hideError();
+    refs.text.focus();
+  }
+
+  function hideTextError() {
+    refs.textError.hidden = true;
+    refs.textError.removeAttribute('role');
+    Pinalert.setText(refs.textError, '');
+    refs.text.removeAttribute('aria-invalid');
+    refs.text.removeAttribute('aria-describedby');
   }
 
   // showError shows one of the failure sentences. The role is set here and
@@ -371,7 +450,7 @@ window.PinalertFlag = (function () {
     Pinalert.setText(refs.error, message);
     refs.error.setAttribute('role', 'alert');
     refs.error.hidden = false;
-    hideNote();
+    hideChooseReason();
     // A button that was disabled while sending can drop focus; keep it inside
     // the panel so Escape and Tab still reach the dialog.
     if (!refs.panel.contains(document.activeElement)) {
@@ -397,16 +476,15 @@ window.PinalertFlag = (function () {
     }, 50);
   }
 
+  // focusableInPanel lists the Tab stops of the panel in order: every tick
+  // box (each is its own stop), the note box, then the shown, enabled
+  // buttons. The trap in onDialogKeydown wraps from the last to the first.
   function focusableInPanel() {
     var list = [];
-    var first = refs.radios[0];
-    for (var i = 0; i < refs.radios.length; i++) {
-      if (refs.radios[i].checked) {
-        first = refs.radios[i];
-        break;
-      }
+    for (var i = 0; i < refs.boxes.length; i++) {
+      list.push(refs.boxes[i]);
     }
-    list.push(first);
+    list.push(refs.text);
     var buttons = refs.panel.querySelectorAll('button');
     for (var j = 0; j < buttons.length; j++) {
       if (!buttons[j].disabled && isShown(buttons[j])) {

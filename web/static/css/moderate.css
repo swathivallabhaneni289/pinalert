@@ -198,6 +198,42 @@
   padding-left: var(--space-md);
 }
 
+/* Plan 04-31: the notes people wrote when they flagged. Each note is a quiet
+   block with a hairline on its left, its reasons in muted label text over
+   the note at body size. */
+.mod-flag-notes__head {
+  margin: var(--space-sm) 0 var(--space-xs) 0;
+  font-weight: var(--font-weight-semibold);
+}
+
+.mod-flag-notes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mod-flag-note {
+  margin: 0 0 var(--space-sm) 0;
+  padding: 0 0 0 var(--space-sm);
+  border-left: 2px solid var(--color-border);
+}
+
+.mod-flag-note__reasons {
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+.mod-flag-note__text {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
 .mod-row__text {
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);

@@ -96,6 +96,8 @@
   var REMOVED_SENTENCE = 'Removed after review.';
   var SCORED_INTRO = 'The check scored this text:';
   var UNFINISHED_INTRO = "The text check hasn't finished.";
+  // The line above the notes people wrote when they flagged (plan 04-31).
+  var NOTES_HEAD = 'What people wrote:';
   var HELD_LINE = "Held. It isn't shown to anyone until the check finishes or you keep it.";
   var SERIOUS_PENDING_LINE = 'Serious report, already published while the check waits.';
   var NOT_LISTED_DOES = 'Remove report hides it from everyone and tells the author.';
@@ -422,7 +424,53 @@
     if (list.firstChild) {
       block.appendChild(list);
     }
+    var notes = buildFlagNotes(flags.notes);
+    if (notes) {
+      block.appendChild(notes);
+    }
     return block;
+  }
+
+  // buildFlagNotes lists the notes people wrote when they flagged (plan
+  // 04-31), newest first, each with the reasons the same flag gave. The note
+  // is the flagger's own text and reaches the page only through setText, so
+  // it is never read as markup. Nothing names who wrote it.
+  function buildFlagNotes(notes) {
+    if (!Array.isArray(notes)) {
+      return null;
+    }
+    var list = makeEl('ul', 'mod-flag-notes');
+    notes.forEach(function (n) {
+      if (!n || typeof n.note !== 'string' || n.note === '') {
+        return;
+      }
+      var labels = [];
+      (Array.isArray(n.reasons) ? n.reasons : []).forEach(function (r) {
+        var label = r && typeof r.label === 'string' ? r.label : '';
+        if (label !== '') {
+          labels.push(label);
+        }
+      });
+      var li = makeEl('li', 'mod-flag-note');
+      if (labels.length) {
+        var reasons = makeEl('p', 'mod-flag-note__reasons');
+        Pinalert.setText(reasons, labels.join(', '));
+        li.appendChild(reasons);
+      }
+      var text = makeEl('p', 'mod-flag-note__text');
+      Pinalert.setText(text, n.note);
+      li.appendChild(text);
+      list.appendChild(li);
+    });
+    if (!list.firstChild) {
+      return null;
+    }
+    var wrap = makeEl('div', 'mod-flag-notes-block');
+    var head = makeEl('p', 'mod-row__why-line mod-flag-notes__head');
+    Pinalert.setText(head, NOTES_HEAD);
+    wrap.appendChild(head);
+    wrap.appendChild(list);
+    return wrap;
   }
 
   function buildUnfinished(report) {

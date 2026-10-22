@@ -156,7 +156,7 @@ The page loads its scripts in this order: `theme.js` in the head, then `app.js`,
 The screen has three lists, each oldest first and capped at 100 rows:
 
 - borderline reports listed for review;
-- reports with open flags, with a count per reason;
+- reports with open flags, with a count per reason and the notes people wrote;
 - reports waiting for a text check.
 
 The heading counts come from one count query and never from the length of a list. Find a report
@@ -165,11 +165,22 @@ one `moderation_actions` row, which holds no report text. No flagger identity is
 
 ## Flag this report
 
-A signed in person can flag a report they did not write, with one of five reasons: Spam or
-gibberish, Abusive or hateful, False or a hoax, Dangerous or illegal, or Something else (the
-labels come from `FlagReasonLabel`). Rules:
+A signed in person can flag a report they did not write, ticking one or more of five reasons:
+Spam or gibberish, Abusive or hateful, False or a hoax, Dangerous or illegal, or Something else
+(the labels come from `FlagReasonLabel`). Since plan 04-31 (owner, 2026-10-22) the window asks
+"Why are you flagging this report?", points to Dispute right under the title for a report that
+is just wrong, and has an optional "Tell the moderators more" box of up to 300 characters. Rules:
 
-- One flag per account and report.
+- One flag per account and report. The reasons are stored as a set (migration 00010), each at
+  most once; the older single `reason` field of the API is still accepted on its own as a one
+  reason flag, for a page cached before the change.
+- The note is trimmed and goes through the same text check as a report description
+  (`CheckText`, so the gibberish rule too). A refused note answers 422 and nothing is stored. A
+  check that does not finish still stores the note, because only moderators read it and a
+  provider outage must not stop a flag.
+- The moderator screen counts each reason once per flag it appears in and lists each open
+  flag's note with its reasons, newest first, at most 20 per report, as text. The note is never
+  shown to the author or any reader, and nothing names who wrote it.
 - A flag never hides or changes a report. Only a moderator's Remove does.
 - Flagging your own report answers 403, a missing or withheld report 404 and a repeat 409.
 - Flags have their own allowance, listed under Limits.

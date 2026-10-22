@@ -607,6 +607,49 @@ html[data-modal-open] .notice-card {
   margin-bottom: 0;
 }
 
+/* Plan 04-31: the Dispute line sits right under the title, before the tick
+   boxes, so it reads as a pointer elsewhere and not as one of the reasons. */
+.modal-panel .flag-dialog__dispute {
+  margin: 0 0 var(--space-sm) 0;
+}
+
+/* The optional note for the moderators: its label, the box, and a count that
+   shows only near the 300 character limit. The box is the report form's
+   Describe it box: page colour, a muted hairline, 8px corners, body size
+   text so a phone does not zoom on focus. */
+.flag-dialog__text-label:not([hidden]) {
+  display: block;
+  margin: var(--space-md) 0 var(--space-xs) 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.flag-dialog__text:not([hidden]) {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--touch-target-min);
+  margin: 0;
+  padding: var(--space-sm) var(--space-12);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-text-muted);
+  border-radius: 8px;
+  resize: vertical;
+}
+
+.flag-dialog__count {
+  margin: var(--space-xs) 0 0 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
 .flag-dialog__actions:not([hidden]) {
   display: flex;
   flex-wrap: wrap;
