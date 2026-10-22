@@ -29,12 +29,19 @@ func settingsSectionRegion(t *testing.T, page, titleID string) string {
 
 // TestPeopleAndReportsSection pins D-23 and UI-SPEC E2: one section with one
 // row, Muted reports, whose value is the count and which opens a dialog.
+//
+// Amended 2026-10-22 when Phase 3.4 met Phase 3.2: the owner said "too much
+// details under the heading for each section", so the line "Reports you have
+// turned updates off for." is gone and the section has no line under its
+// heading.
 func TestPeopleAndReportsSection(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
 	region := settingsSectionRegion(t, page, "settings-people-title")
+	if strings.Contains(region, "place-section__line") {
+		t.Errorf("the People and reports section has a line under its heading")
+	}
 	for _, want := range []string{
 		`id="settings-people-title">People and reports</h2>`,
-		"Reports you have turned updates off for.",
 		`<button type="button" class="place-row" id="settings-muted-row" aria-haspopup="dialog">`,
 		`<span class="place-row__label">Muted reports</span>`,
 		`<span class="place-row__value" id="settings-muted-value">{{.MutedCount}}</span>`,
@@ -60,14 +67,20 @@ func TestPeopleAndReportsSection(t *testing.T) {
 // Log out row on the laptop too ("I don't see a logout option on my laptop
 // version, so I think we should add that"), so Log out is no longer phone
 // only: no place-row-form--phone class in the page, no hide rule in the CSS.
+//
+// Amended 2026-10-22 when Phase 3.4 met Phase 3.2: the owner said "too much
+// details under the heading for each section", so the Account line "Log out
+// everywhere, or delete your account." is gone.
 func TestAccountSectionOnBothSizes(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
 	if strings.Contains(page, "place-section--phone") {
 		t.Errorf("settings.html.tmpl still carries place-section--phone: the Account section draws on both sizes")
 	}
 	region := settingsSectionRegion(t, page, "settings-account-title")
+	if strings.Contains(region, "place-section__line") {
+		t.Errorf("the Account section has a line under its heading")
+	}
 	for _, want := range []string{
-		"Log out everywhere, or delete your account.",
 		`<form class="place-row-form" method="post" action="/auth/logout">`,
 		`<span class="place-row__label">Log out</span>`,
 		`<button type="button" class="place-row" id="settings-logout-all-row" aria-haspopup="dialog">`,
@@ -240,15 +253,22 @@ func TestSettingsAlertsScriptContract(t *testing.T) {
 // Phase 3.2 plan 15: the Notifications section of Settings (NOTIF-05, D-23,
 // D-26, LAYOUT-06, UI-SPEC Surface E1, owner decision Q4 of 2026-10-18).
 
-// TestPhoneNotificationsSection pins the section's title and line, the two
-// rows' exact words (no second line under the switch), the four distances
-// built from the view model, the native switch and the Q4 template comment.
+// TestPhoneNotificationsSection pins the section's title, the two rows' exact
+// words (no second line under the switch), the four distances built from the
+// view model, the native switch and the Q4 template comment.
+//
+// Amended 2026-10-22 when Phase 3.4 met Phase 3.2: the owner said "too much
+// details under the heading for each section", so the line "Hear about
+// Reliable reporters near your home area." is gone and the section has no
+// line under its heading.
 func TestPhoneNotificationsSection(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
 	region := settingsSectionRegion(t, page, "settings-phone-title")
+	if strings.Contains(region, "place-section__line") {
+		t.Errorf("the Notifications section has a line under its heading")
+	}
 	for _, want := range []string{
 		`id="settings-phone-title">Notifications</h2>`,
-		`<p class="place-section__line">Hear about Reliable reporters near your home area.</p>`,
 		`<span class="place-row__label">A Reliable reporter posts near me</span>`,
 		`<span class="place-row__label">How far from my home area</span>`,
 		`<input class="place-switch" type="checkbox" role="switch" id="settings-reliable-switch"`,

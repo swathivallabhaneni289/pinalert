@@ -145,17 +145,21 @@ func TestSettingsRows(t *testing.T) {
 		t.Errorf("Settings button rows are %v, want Name, Home area, the Add a home area first row, Muted reports, Log out of all devices, Delete my account", buttonIDs)
 	}
 	for _, want := range []string{
-		"About you", "Your name and home area. Shown only on your public profile.",
+		// Amended 2026-10-22 (owner: "too much details under the heading for
+		// each section"): the lines under the section headings are gone.
+		"About you",
 		"Shown only if you let others follow you", "Used for alerts, never your exact spot", "Not set",
 		"About Pinalert", "Disclaimer", "Policy", "Low data view", "Text only, no map",
-		// Amended 2026-10-19 by Phase 3.2 plan 12 (D-23, UI-SPEC D3): the Account
-		// line is the new sentence.
-		//
 		// Amended 2026-10-21 when Phase 3.4 plan 43 met Phase 3.2: the owner put
 		// Log out on the laptop too ("I don't see a logout option on my laptop
 		// version, so I think we should add that"), so the Log out form carries
 		// no phone only class and the Account section is pinned by its plain tag.
-		"Account", "Log out everywhere, or delete your account.",
+		//
+		// Amended 2026-10-22 when Phase 3.4 met Phase 3.2: the owner's "too much
+		// details under the heading for each section" also removes the Account
+		// line Phase 3.2 plan 12 wrote, and the 3.2 Notifications and People and
+		// reports lines.
+		"Account",
 		`<form class="place-row-form" method="post" action="/auth/logout">`,
 		`<section class="place-section" aria-labelledby="settings-account-title">`,
 		"People and reports", "Muted reports", "Log out of all devices", "Delete my account",
@@ -226,7 +230,7 @@ func TestSettingsAboutYouValues(t *testing.T) {
 
 	_, body := getPlacePage(t, client, srv.URL, "/settings")
 	for _, want := range []string{
-		"About you", "Your name and home area. Shown only on your public profile.",
+		"About you",
 		"Shown only if you let others follow you", "Used for alerts, never your exact spot",
 		`id="settings-name-value">Not set</span>`, `id="settings-home-value">Not set</span>`,
 		`id="settings-name-row" aria-haspopup="dialog" data-value=""`,
