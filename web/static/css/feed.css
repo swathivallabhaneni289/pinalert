@@ -423,19 +423,31 @@
  * is a 14px sentence followed by one inline text button, wraps between the
  * two, and keeps the 44px target height. Muted text sits on --color-bg only.
  */
+/* Plan 04-30 (owner, 2026-10-22: "too close to the top layer"): each line
+   sits one small space under the list head, and a wrapped button one extra
+   small space under its sentence. Two lines shown together are one small
+   space apart, so the second takes no top margin. The side inset that matches
+   the list head is in main.css (laptop); the phone's list pane pads its own
+   sides already. */
 .place-line,
 .filter-line {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   column-gap: var(--space-sm);
+  row-gap: var(--space-xs);
   min-height: var(--touch-target-min);
-  margin: 0 0 var(--space-sm);
+  margin: var(--space-sm) 0;
   color: var(--color-text-muted);
   font-family: var(--font-family);
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
   font-weight: var(--font-weight-regular);
+}
+
+.place-line:not([hidden]) ~ .filter-line,
+.filter-line:not([hidden]) ~ .filter-line {
+  margin-top: 0;
 }
 
 /*
