@@ -17,6 +17,16 @@
       </button>
     </form>
   </div>
+
+  <dialog id="logout-confirm" class="logout-confirm" aria-labelledby="logout-confirm-title">
+    <div class="logout-confirm__body">
+      <h2 class="logout-confirm__title" id="logout-confirm-title">Log out of Pinalert?</h2>
+      <div class="logout-confirm__actions">
+        <button type="button" class="btn" id="logout-confirm-cancel">Cancel</button>
+        <button type="button" class="btn btn--destructive" id="logout-confirm-yes">Log out</button>
+      </div>
+    </div>
+  </dialog>
 {{end}}
 {{/*
   The person button and its menu. The markup is written once, as
