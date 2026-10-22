@@ -55,8 +55,8 @@ line.
 font size is `min(var(--font-size-caption), 20px)`. At 24px (200 percent) the
 four longest words plus paddings need about 348px; at 20px they need about
 304px, so 320 fits with 16px to spare (room for a wider system font such as
-Roboto). 21px would also fit in Chromium and WebKit but with only about 9px to
-spare. The cap only bites above 166 percent text, so 100 and 150 percent are
+Roboto). By arithmetic from the 24px and 20px runs (not measured), 21px would
+fit with only about 9px to spare. The cap only bites above 166 percent text, so 100 and 150 percent are
 unchanged. At 360 the 200 percent labels also drop from 24px to 20px, because
 a 340px phone would overflow at 24px and the 380px tier is one rule. The line
 height is the unitless 1.3, so it follows the capped size.
@@ -72,7 +72,12 @@ because the bar puts the inset in its own bottom padding and every reader adds
 which is the 900px tier's value; a page with no bar writes nothing.
 
 **Message (toast):** `bottom: max(calc(var(--touch-target-min) + var(--space-sm) + var(--space-md)), calc(var(--app-bottombar-height) + env(safe-area-inset-bottom)))`.
-68px at the normal text size as before; above the bar when the bar is taller.
+68px at the normal text size as before; above the bar when the bar is taller,
+where it sits directly on the bar's top edge with no gap (a gap would have
+moved it up at least 1px at the normal size). The message with an action
+(Undo, `#toast.toast--action`) declares no `bottom` of its own, so it takes
+the same place. No other fixed phone element has a literal bottom offset: the
+report view and the not available view already read the token.
 
 ## Measurements, before and after
 
