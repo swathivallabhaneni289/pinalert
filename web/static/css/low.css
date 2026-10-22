@@ -1,8 +1,7 @@
-/* The Low data view (plan 04-18). One centred text column for the Active list,
-   the position line and the stale line. It uses the shared tokens only and adds
-   no token of its own. It loads after chrome.css so its margin on the stale
-   text wins over the inline note rule. The rows are not interactive, so they
-   override the pointer the feed stylesheet gives every row. */
+/* The Low data view (plan 04-18): one column on a phone, the whole width on a
+   laptop (plan 45) under one top bar (owner, 2026-10-22). Shared tokens only. It loads after chrome.css so its stale
+   text margin wins over the inline note rule. Rows are not interactive, so
+   they override the feed's row pointer. */
 
 .low-page {
   max-width: 640px;
@@ -22,13 +21,6 @@
   justify-content: space-between;
   gap: var(--space-sm);
   padding: var(--space-sm) calc(var(--touch-target-min) + var(--space-md) + var(--space-sm)) 0 var(--space-md);
-}
-
-/* From 900px the account trigger is outside the column. */
-@media (min-width: 900px) {
-  .low-topbar:not([hidden]) {
-    padding-right: var(--space-md);
-  }
 }
 
 .low-topbar__btn:not([hidden]) {
@@ -102,9 +94,7 @@
   margin: var(--space-sm) 0 0;
 }
 
-/* The two buttons under the intro sit 8px apart side by side on a laptop and
-   stacked on a phone; before, only the whitespace between two inline buttons
-   separated them (4px) (03.4-29 finding 16). */
+/* The intro's actions row (03.4-29 finding 16). */
 .low-page__actions:not([hidden]) {
   display: flex;
   flex-wrap: wrap;
@@ -114,6 +104,25 @@
 
 .low-page__head .low-page__actions .btn {
   margin: 0;
+}
+
+/* Plan 45 (owner): the filled button of Post a report, full width, 52px. */
+.low-page__actions .low-page__report {
+  flex: 1 1 100%;
+  gap: var(--space-sm);
+  min-height: 52px;
+  padding: 0 var(--space-md);
+  border-radius: 8px;
+}
+
+.low-page__report::before {
+  content: "";
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask: url("/static/icons/plus.svg") center / contain no-repeat;
+  mask: url("/static/icons/plus.svg") center / contain no-repeat;
 }
 
 /* Tags in this view are 4px cornered boxes, not pills (03.4-29 finding 12). */
@@ -141,8 +150,8 @@
   margin: 0;
 }
 
-.low-page__head h2 {
-  margin: var(--space-lg) 0 var(--space-sm);
+.low-reports > h2 {
+  margin: var(--space-lg) var(--space-md) var(--space-sm);
   padding-top: var(--space-md);
   border-top: 1px solid var(--color-text-muted);
   font-size: var(--font-size-heading);
@@ -162,6 +171,245 @@
   border-left: 4px solid var(--severity-current, var(--severity-base));
   border-radius: 8px;
   cursor: default;
+}
+
+/* Plan 45 (owner): Flag ends each card as the phone report view's calm full
+   width row; the hairline is the muted token (3 to 1). */
+.report-row--low .flag-control:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  min-height: 48px;
+  margin-top: var(--space-lg);
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--color-text-muted);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  text-align: left;
+  text-decoration: none;
+}
+
+.report-row--low .flag-control:not([hidden])::before {
+  content: "";
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask: url("/static/icons/circle-alert.svg") center / contain no-repeat;
+  mask: url("/static/icons/circle-alert.svg") center / contain no-repeat;
+}
+
+.report-row--low .flag-control:not([hidden]):not([aria-disabled="true"]):hover {
+  background: var(--color-border);
+}
+
+@media (forced-colors: active) {
+  .low-page__report::before,
+  .report-row--low .flag-control:not([hidden])::before {
+    forced-color-adjust: none;
+    background-color: ButtonText;
+  }
+}
+
+/* Laptop (plan 45, owner: use the whole screen; owner, 2026-10-22: no
+   stacked boxes). One top bar that stays in view: Back and Reload in the left
+   corner, the title with its short lines under it, Report an emergency in the
+   right corner level with the person button. Under it a grid of equal height
+   cards; the right inset clears the fixed buttons. The blocks of the phone
+   give their children to the bar (display contents; they carry no role). */
+@media (min-width: 900px) {
+  /* A focused card control never lands under the bar. */
+  html {
+    scroll-padding-top: 8rem;
+  }
+
+  .low-page:not([hidden]) {
+    max-width: none;
+    margin: 0;
+    padding: 0 calc(var(--touch-target-min) + var(--space-lg) + var(--space-md)) var(--space-xl) var(--space-xl);
+  }
+
+  .low-side:not([hidden]) {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-md);
+    padding: var(--space-md) 0 var(--space-12);
+    border-bottom: 1px solid var(--color-text-muted);
+    background: var(--color-bg);
+  }
+
+  .low-topbar:not([hidden]) {
+    flex: none;
+    gap: var(--space-xs);
+    padding: 0 var(--space-md) 0 0;
+    border-right: 1px solid var(--color-text-muted);
+  }
+
+  .low-page__head:not([hidden]) {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: var(--space-12);
+    min-width: 0;
+    padding: 0;
+  }
+
+  .low-block:not([hidden]),
+  .low-status:not([hidden]) {
+    display: contents;
+  }
+
+  /* The title and the button take the first line; the rest wrap under. */
+  .low-page__head h1 {
+    order: 1;
+    padding-right: 0;
+  }
+
+  .low-page__actions:not([hidden]) {
+    order: 2;
+    margin: 0 0 0 auto;
+  }
+
+  .low-page__head::before {
+    content: "";
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .low-page__line {
+    order: 4;
+    margin: var(--space-xs) 0 0;
+  }
+
+  .low-page__note {
+    order: 5;
+    margin: var(--space-xs) 0 0;
+    color: var(--color-text-muted);
+  }
+
+  .low-basis {
+    order: 6;
+    margin: var(--space-xs) 0 0;
+  }
+
+  .low-page__note::before,
+  .low-basis::before {
+    content: "\00B7";
+    margin-right: var(--space-12);
+    color: var(--color-text-muted);
+  }
+
+  .queue-strip:not([hidden]),
+  .low-stale:not([hidden]) {
+    order: 7;
+    flex-basis: 100%;
+    margin: var(--space-sm) 0 0;
+  }
+
+  .low-stale:not([hidden]) {
+    order: 8;
+  }
+
+  /* The bar's button is the app top bar's Post a report: 44px tall. */
+  .low-page__actions .low-page__report {
+    flex: none;
+    min-height: var(--touch-target-min);
+  }
+
+  .low-reports > h2:not([hidden]) {
+    margin: var(--space-lg) 0 var(--space-md);
+    padding: 0;
+    border-top: 0;
+  }
+
+  .low-list:not([hidden]),
+  .low-skeleton:not([hidden]) {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 22.5rem), 1fr));
+    /* Rows: this 8px plus each item's own 8px bottom margin. */
+    gap: var(--space-sm) var(--space-md);
+    padding: 0;
+  }
+
+  .report-row--low > .report-row__body:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+  }
+
+  .report-row--low .report-row__body > .severity-label {
+    align-self: flex-start;
+  }
+
+  /* Free height goes above the votes: action rows line up. */
+  .report-row--low .report-row__body > .trust-block {
+    margin-bottom: auto;
+  }
+}
+
+/* Phone (owner, 2026-10-22: the cards are too big): a denser card. The icon
+   and the severity label share the first line with Flag in its right corner,
+   so the text below uses the card's whole width. The body gives its children
+   to the card grid (display contents; it carries no role). */
+@media (max-width: 899.98px) {
+  .report-row.report-row--low:not([hidden]) {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0 var(--space-sm);
+    padding: var(--space-12) var(--space-12) var(--space-12) var(--space-md);
+  }
+
+  .report-row--low > .report-row__body:not([hidden]) {
+    display: contents;
+  }
+
+  .report-row--low > .icon-badge {
+    grid-row: 1;
+    grid-column: 1;
+  }
+
+  .report-row--low .report-row__body > .severity-label {
+    grid-row: 1;
+    grid-column: 2;
+    margin: 0;
+  }
+
+  .report-row--low .report-row__body > * {
+    grid-column: 1 / -1;
+  }
+
+  .report-row--low .report-row__body > .report-row__title {
+    margin: var(--space-sm) 0 var(--space-xs);
+  }
+
+  /* The card is wide enough now; trust.css lets the line reach into the
+     padding under 340px for the narrow Activity body. */
+  .report-row--low .report-row__body > .report-row__stateline:not([hidden]) {
+    margin-right: 0;
+  }
+
+  /* Flag in the first line's right corner: no hairline, no box. */
+  .report-row--low .report-row__body > .flag-control:not([hidden]) {
+    grid-row: 1;
+    grid-column: 4;
+    width: auto;
+    min-height: var(--touch-target-min);
+    margin: calc(-1 * var(--space-sm)) calc(-1 * var(--space-sm)) calc(-1 * var(--space-sm)) 0;
+    padding: 0 var(--space-sm);
+    border-top: 0;
+    border-radius: 8px;
+    font-size: var(--font-size-label);
+    font-weight: var(--font-weight-regular);
+  }
 }
 
 #low-list[hidden], #low-skeleton[hidden], #low-empty[hidden], #low-error[hidden] {

@@ -26,6 +26,7 @@
         data-poll-interval-ms="60000"
         data-vote-radius-km="{{.VoteRadiusKm}}"
         data-account-id="{{.AccountID}}">
+    <div class="low-side">
     <div class="low-topbar">
       <a class="low-topbar__btn" id="low-full" href="/?full=1" aria-label="Back to the full version">
         <span class="low-topbar__icon" aria-hidden="true">&larr;</span>
@@ -51,8 +52,10 @@
       <div class="low-stale" id="low-stale" hidden>
         <p class="inline-note low-stale__text" id="low-stale-text"></p>
       </div>
-      <h2 id="low-list-heading">Active reports</h2>
     </div>
+    </div>
+    <div class="low-reports">
+    <h2 id="low-list-heading">Active reports</h2>
     <ol class="low-list" id="low-list" aria-labelledby="low-list-heading" aria-busy="true"></ol>
     <div class="low-skeleton" id="low-skeleton" hidden>
       <div class="skeleton-row"></div>
@@ -67,6 +70,7 @@
     <div class="error-state" id="low-error" hidden>
       <h2>Couldn't load reports</h2>
       <p>Check your connection, then use Reload at the top.</p>
+    </div>
     </div>
   </main>
 
