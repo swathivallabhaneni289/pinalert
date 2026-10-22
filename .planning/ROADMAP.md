@@ -41,7 +41,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Trust-Model Hardening — Diversity-Weighted Trust** - "Confirmed by N nearby" and the reliability/currency signals reflect distinct nearby corroboration, resistant to trivial gaming. (31 plans, completed 2026-10-13)
 - [ ] **Phase 3.1: Report history views** *(INSERTED 2026-10-03)* - A reader can switch the list and map between Active, Resolved, Disputed and Past reports, search another area, and filter by category and severity.
 - [ ] **Phase 3.2: In-app updates and trusted-reporter alerts** *(INSERTED 2026-10-03)* - A signed-in person is told inside the app when a report they care about changes, and can ask to hear when a Reliable reporter posts nearby.
-- [ ] **Phase 3.4: App layout** *(INSERTED 2026-10-16, runs before 3.2; the 3.1 and 4 hands-on tests wait until it is built (owner, 2026-10-16))* - Every screen rebuilt from the approved clickable mockup (sketch 007): Nearby, Official alerts and My activity as the main places, the phone list as a sheet over the map, one Settings page, a two pane Post a report on the laptop, and a first-time flow with the disclaimer agreed, the same features on phone and laptop.
+- [x] **Phase 3.4: App layout** *(INSERTED 2026-10-16, runs before 3.2; the 3.1 and 4 hands-on tests wait until it is built (owner, 2026-10-16))* - Every screen rebuilt from the approved clickable mockup (sketch 007): Nearby, Official alerts and My activity as the main places, the phone list as a sheet over the map, one Settings page, a two pane Post a report on the laptop, and a first-time flow with the disclaimer agreed, the same features on phone and laptop. (44 plans, completed 2026-10-22)
 - [ ] **Phase 3.3: Installable app and phone alerts** *(INSERTED 2026-10-15)* - The site can be installed to the home screen, and an installed phone can be notified, even with the site closed, for five kinds: critical reports near the person's home area (a town or area the person chose), on by default; severe official alerts for the area, on by default and switched on by Phase 5; and, off by default, changes to reports the person posted or voted on, a Reliable reporter posting near them, and someone they follow posting.
 - [ ] **Phase 4: Robustness — Real-World Resilience** - The app stays usable on degraded networks, under abuse/moderation pressure, and with clear legal footing.
 - [ ] **Phase 5: Official Feed & Demo Mode** - First-time visitors see official alerts (NDMA SACHET, including IMD and CWC) in an Alerts view and banner, GDACS pins on the map, and a working demo immediately, instead of an empty product.
@@ -444,7 +444,7 @@ Plans:
   2. Builds places and empty states only; the bell and Updates (3.2), phone notifications (3.3), Official alerts content and the Demo button (5) and profiles (9) fill them later. This phase also stores the name, the home area and the What is happening pick (03.4-CONTEXT D-24b, 2026-10-16), which 3.3 then uses.
      (Amended 2026-10-16 by Phase 3.4, owner decision, see 03.4-CONTEXT O-1, O-2 and D-24b: O-1 and O-2 were answered on 2026-10-16, so no owner question is open before planning. O-1: the strip is laptop only, on Nearby and Post a report, and the "Not confirmed yet" line under Post report is built on neither size. O-2: the chosen category tile is the soft grey fill with no dark border. The What is happening picks are placed and stored in 3.4 and used in 3.3. Two small owner questions are still pending and are not decided here: whether Earthquake should be a tile in Post a report, and whether a confirmed Critical report belongs in Show: Confirmed.)
 
-**Plans:** 27/27 plans executed (verification and the owner viewing session to come)
+**Plans:** 44/44 plans complete (plan 38 was stopped in favour of plan 39 and never built; the owner closed the phase on 2026-10-22: "we can close it")
 
 Plans:
 **Wave 1**
@@ -512,6 +512,40 @@ Plans:
 **Wave 13** *(skeptic follow up, after Wave 12)*
 
 - [x] 03.4-27-PLAN.md: Skeptic follow up: names with Indic and Persian joiners save, every kept position has an owner, a reopened Settings window shows the saved value
+
+**Waves 14 to 17** *(owner viewing session, 2026-10-17 and 18)*
+
+- [x] 03.4-28-PLAN.md: The owner's Disclaimer and Policy text, step 3 as three cards, home area suggestions while typing (areas only), step 3 fills in the area
+- [x] 03.4-29-PLAN.md: Visual audit fixes (spacing, contrast, sizes, overlaps), Earthquake as the ninth tile, the How serious check mark
+- [x] 03.4-30-PLAN.md: Move back and forth between the first time steps (Back, the step list, browser back)
+- [x] 03.4-31-PLAN.md: A clear look for the Disclaimer and Policy, the numbers card, the Disagree box, step 3 wording
+- [x] 03.4-32-PLAN.md: Keep a neighbourhood the map data lacks as the home area, placed in the right town
+
+**Waves 18 to 24** *(owner's second test pass, 2026-10-18 to 21)*
+
+- [x] 03.4-33-PLAN.md: Step 3 is only Allow location or Not now; the place is typed once in step 4; the map starts at the home area when location is off
+- [x] 03.4-34-PLAN.md: The home area search finds neighbourhoods the map data lacks, with or without a comma, and by PIN code
+- [x] 03.4-35-PLAN.md: A typed neighbourhood survives a slow or failing Photon, with no wrong Not found line
+- [x] 03.4-36-PLAN.md: Location is asked once per account in a browser, then the kept fix is reused; Back to my location asks again
+- [x] 03.4-37-PLAN.md: The phone list sheet steps aside for an opened report
+- 03.4-38-PLAN.md: Stopped on 2026-10-19 in favour of plan 39 and never built
+- [x] 03.4-39-PLAN.md: The locked sketch 008 report view now (phone full screen, laptop beside the map) without the Phase 8 parts, and a tidy phone top row
+- [x] 03.4-40-PLAN.md: The phone top controls float over the map, no white band
+- [x] 03.4-41-PLAN.md: A report address opens the phone report view on a fresh page load (a load order race in app.js)
+
+**Waves 25 and 26** *(owner's second test pass, 2026-10-21 and 22)*
+
+- [x] 03.4-42-PLAN.md: No underlined links or actions anywhere; Confirm and Dispute look the same until one is pressed
+- [x] 03.4-43-PLAN.md: Settings as a grouped list, with Log out on the laptop too
+- [x] 03.4-44-PLAN.md: The Low data view in clear blocks, Back and Reload in a top row
+- [x] 03.4-45-PLAN.md: The Low data view uses the whole laptop screen, a filled Report an emergency button, Flag as a calm last row
+
+**Fixes outside the numbered plans** *(the owner's last looks, 2026-10-21 and 22; each gated on a fresh database, see 03.4-VERIFICATION.md)*
+
+- [x] c6d47af: the Show menu mount asks for the list again when it changes the read after a request has left
+- [x] 66a194a, 7eb5a67: the Low data view's laptop top bar (Back and Reload left, Report an emergency right at the phone button's size), denser phone cards with Flag in the corner, the app's anticlockwise Reload glyph
+- [x] ec54c04, 36e0054: the laptop Settings on the full width grid of sketch 008 with bordered boxes; the line under each section heading on the laptop only
+- [x] ee26d75, 98d22f5, 34b8fae: Log out asks first in a small box that only Cancel or Log out answer, with no button chosen when it opens
 
 ### Phase 03.2: In-app updates and trusted-reporter alerts (INSERTED)
 
@@ -729,7 +763,7 @@ Phases execute in the owner's build order (2026-10-16): 1 → 1.1 → 2 → 3 �
 | 3.1 Report history views | 16/16 | In Progress|  |
 | 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
 | 3.3 Installable app and phone alerts | 0/15 | Planned | - |
-| 3.4 App layout | 27/27 | In Progress|  |
+| 3.4 App layout | 44/44 | Complete | 2026-10-22 |
 | 4. Robustness — Real-World Resilience | 29/29 | In Progress|  |
 | 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
 | 6. Coordination (removed 2026-10-16, share card moved to Phase 8) | - | Removed | - |

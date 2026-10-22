@@ -2,8 +2,9 @@
 // Node sandbox and checks that Log out asks first (owner, 2026-10-22: "we
 // should have like a confirm button before we log out. Are you sure?"). A
 // Log out form's submit is held and opens the dialog; Log out in the dialog
-// sends that form; Cancel, Escape or the backdrop send nothing and put focus
-// back; other forms pass; without dialog support the browser's confirm asks.
+// sends that form; Cancel or Escape send nothing and put focus back; a press
+// anywhere else leaves it open; other forms pass; without dialog support the
+// browser's confirm asks.
 //
 // Run it with: node --test web/logout_confirm_test.mjs
 // CI runs it with the other web/*.mjs files. It is not embedded in the server.
@@ -85,10 +86,10 @@ function load({ dialogSupport = true, confirmAnswer = false } = {}) {
     docListeners.filter((l) => l.type === 'submit').forEach((l) => l.fn(e));
     return e;
   };
-  return { trigger, panel, menuButton, cancel, yes, dialog, submit, asked, body };
+  return { trigger, panel, menuButton, cancel, yes, dialog, title, submit, asked, body };
 }
 
-test('a Log out form is held and the dialog opens on Cancel', () => {
+test('a Log out form is held and the dialog opens with the question focused', () => {
   const m = load();
   const settingsButton = fakeEl('settings-logout');
   const form = fakeForm('/auth/logout', settingsButton);
@@ -96,7 +97,9 @@ test('a Log out form is held and the dialog opens on Cancel', () => {
   assert.equal(e.prevented, true, 'the submit is held');
   assert.equal(form.submitted, 0, 'nothing is sent yet');
   assert.equal(m.dialog.open, true, 'the dialog opens');
-  assert.equal(m.cancel.focused, 1, 'Cancel takes focus, the safe choice');
+  assert.equal(m.title.focused, 1, "the question takes focus, as the app's other windows do");
+  assert.equal(m.cancel.focused, 0, 'no button looks chosen (owner, 2026-10-22)');
+  assert.equal(m.yes.focused, 0);
 });
 
 test('Log out in the dialog sends the form that asked', () => {
@@ -120,20 +123,25 @@ test('Cancel sends nothing and puts focus back on the Settings row', () => {
   assert.equal(form.submitted, 0, 'a later press on the closed dialog sends nothing');
 });
 
-test('Escape or the backdrop also cancel; from the menu, focus goes to the person button', () => {
+test('a press outside the buttons leaves it open (owner, 2026-10-22)', () => {
   const m = load();
   const form = fakeForm('/auth/logout', m.menuButton);
   m.submit(form, m.menuButton);
   m.dialog.fire('click', { target: m.dialog });
-  assert.equal(m.dialog.open, false, 'a press on the backdrop closes it');
-  assert.equal(form.submitted, 0);
-  assert.equal(m.trigger.focused, 1, 'the menu is closed, so the person button takes focus');
+  assert.equal(m.dialog.open, true, 'a press on the backdrop does not close it');
+  m.dialog.fire('click', { target: fakeEl('logout-confirm-title') });
+  assert.equal(m.dialog.open, true, 'a press on the question does not close it');
+  assert.equal(form.submitted, 0, 'and sends nothing');
+});
 
+test('Escape cancels; from the menu, focus goes to the person button', () => {
+  const m = load();
+  const form = fakeForm('/auth/logout', m.menuButton);
   m.submit(form, m.menuButton);
-  m.dialog.fire('click', { target: m.yes });
-  assert.equal(m.dialog.open, true, 'a press inside the dialog does not close it');
   m.dialog.close();
+  assert.equal(m.dialog.open, false);
   assert.equal(form.submitted, 0, 'Escape (the native close) sends nothing');
+  assert.equal(m.trigger.focused, 1, 'the menu is closed, so the person button takes focus');
 });
 
 test('other forms pass untouched', () => {

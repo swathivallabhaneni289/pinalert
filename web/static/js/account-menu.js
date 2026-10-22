@@ -223,10 +223,12 @@
   // LOG OUT ASKS FIRST (owner, 2026-10-22: "we should have like a confirm
   // button before we log out. Are you sure?"). Every Log out form on the page,
   // the menu's and the Settings row, opens the dialog the header template
-  // renders; its Log out button sends the form that asked. Cancel, Escape or a
-  // press on the backdrop closes it and puts focus back. Without dialog
-  // support the browser's own confirm asks; without script the form logs out
-  // as before.
+  // renders; its Log out button sends the form that asked. Cancel (or Escape on
+  // a keyboard) closes it and puts focus back. A press anywhere else leaves it
+  // open (owner, 2026-10-22: "If I try to click anywhere else other than that
+  // cancel or logout. It's just closing"), so only a button answers it.
+  // Without dialog support the browser's own confirm asks; without script the
+  // form logs out as before.
   var LOGOUT_ACTION = '/auth/logout';
   // The question the browser's confirm asks is the dialog's own title.
   var confirmTitle = document.getElementById('logout-confirm-title');
@@ -257,7 +259,13 @@
     }
     pendingLogout = form;
     confirmDialog.showModal();
-    confirmCancel.focus();
+    // The question takes the first focus, as the app's other windows do, so
+    // a screen reader starts at it and no button looks chosen (owner,
+    // 2026-10-22: "it's pre-selecting Cancel ... I don't want that"). The
+    // buttons keep the keyboard ring.
+    if (confirmTitle && typeof confirmTitle.focus === 'function') {
+      confirmTitle.focus();
+    }
   }
 
   // onConfirmClose runs however the dialog closes. Focus goes back to the
@@ -296,12 +304,5 @@
     });
     confirmYes.addEventListener('click', onConfirmYes);
     confirmDialog.addEventListener('close', onConfirmClose);
-    // A press on the backdrop lands on the dialog itself; its content is a
-    // padded wrapper, so a press inside never does.
-    confirmDialog.addEventListener('click', function (e) {
-      if (e.target === confirmDialog) {
-        confirmDialog.close();
-      }
-    });
   }
 }());
