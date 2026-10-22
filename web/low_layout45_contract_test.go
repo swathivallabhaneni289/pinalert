@@ -55,25 +55,22 @@ func TestLowLayout45Grouping(t *testing.T) {
 	}
 }
 
-// TestLowLayout45Laptop: from 900px a 360px sticky left column and a reports
-// grid of cards at least 360px wide (scaled with the text), with a right inset
-// that clears the fixed person and light and dark buttons.
+// TestLowLayout45Laptop: from 900px the page uses the whole width, with a
+// right inset that clears the fixed person and light and dark buttons, and a
+// reports grid of cards at least 360px wide (scaled with the text).
+// Amended 2026-10-22 (owner: no stacked boxes): the 360px sticky left column
+// became one sticky top bar across the page, pinned in
+// TestLowLaptopTopBar; the page is no longer a two column grid.
 func TestLowLayout45Laptop(t *testing.T) {
 	const css = "static/css/low.css"
 	p16MustDecl(t, "laptop page", p31mRule(t, css, p45Laptop, ".low-page:not([hidden])"), map[string]string{
-		"display":               "grid",
-		"grid-template-columns": "360px minmax(0, 1fr)",
-		"column-gap":            "var(--space-xl)",
-		"align-items":           "start",
-		"max-width":             "none",
-		"margin":                "0",
-		"padding":               "0 calc(var(--touch-target-min) + var(--space-lg) + var(--space-md)) var(--space-xl) var(--space-xl)",
+		"max-width": "none",
+		"margin":    "0",
+		"padding":   "0 calc(var(--touch-target-min) + var(--space-lg) + var(--space-md)) var(--space-xl) var(--space-xl)",
 	})
-	p16MustDecl(t, "left column", p31mRule(t, css, p45Laptop, ".low-side"), map[string]string{
-		"position":   "sticky",
-		"top":        "0",
-		"max-height": "100vh",
-		"overflow-y": "auto",
+	p16MustDecl(t, "the bar stays in view", p31mRule(t, css, p45Laptop, ".low-side:not([hidden])"), map[string]string{
+		"position": "sticky",
+		"top":      "0",
 	})
 	p16MustDecl(t, "reports grid", p31mRule(t, css, p45Laptop, ".low-list:not([hidden])"), map[string]string{
 		"display":               "grid",
