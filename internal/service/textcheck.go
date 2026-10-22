@@ -70,6 +70,19 @@ func CheckText(ctx context.Context, s TextScreener, text string) TextCheck {
 	if IsGibberish(trimmed) {
 		return TextCheck{Outcome: TextRejected, Reason: RejectGibberish}
 	}
+	return ScreenAbuse(ctx, s, trimmed)
+}
+
+// ScreenAbuse is CheckText without the gibberish prefilter: only the abuse
+// screen (the hateful, harassing and sexual reject groups of Decide, and
+// borderline). It serves text where a single word or a short phrase is a
+// complete answer, such as a Flag note to moderators (plan 04-31, owner
+// 2026-10-23: "fake" or "duplicate" is a good note). The rules of the call are
+// CheckText's own: the text is trimmed, a nil screener passes everything,
+// exactly one Screen call runs inside InlineScreenTimeout, and an error answers
+// TextUnfinished. It never returns RejectGibberish.
+func ScreenAbuse(ctx context.Context, s TextScreener, text string) TextCheck {
+	trimmed := strings.TrimSpace(text)
 	if s == nil {
 		return TextCheck{Outcome: TextClear}
 	}

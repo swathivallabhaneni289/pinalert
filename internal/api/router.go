@@ -395,8 +395,16 @@ func NewRouter(deps Deps) *chi.Mux {
 	// SubmitReport and plan 04-20 to the flag route.
 	rateGate := handlers.NewRateGate(resolveRateLimits(deps.RateLimits), limiterClock, deps.ClientIPHeader, deps.Chrome)
 	// The flag service has no Deps field: it is built here from the sessions
-	// store, so every harness gets a non nil service (plan 04-20).
-	flags := service.NewFlagService(deps.Sessions)
+	// store, so every harness gets a non nil service (plan 04-20). Its note goes
+	// through the report service's own text screener, so a flag note meets the
+	// same abuse screen as a report description, without the gibberish rule
+	// (plan 04-31). Without a report service the note is not screened, as a
+	// description is not.
+	var flagOpts []service.FlagOption
+	if deps.Reports != nil {
+		flagOpts = append(flagOpts, service.WithFlagScreener(deps.Reports.Screener()))
+	}
+	flags := service.NewFlagService(deps.Sessions, flagOpts...)
 	// Same for the account service behind the /api/me routes (plan 03.4-01).
 	accounts := service.NewAccountService(deps.Sessions)
 	// Phase 3.2 (plan 07): the updates and mute services, built from the same

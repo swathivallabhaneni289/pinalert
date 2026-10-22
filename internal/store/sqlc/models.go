@@ -92,9 +92,10 @@ type ReportFlag struct {
 	ID          int64
 	ReportID    int64
 	AccountID   int64
-	Reason      string
 	CreatedAt   time.Time
 	DismissedAt pgtype.Timestamptz
+	Reasons     []string
+	Note        *string
 }
 
 type ReportMute struct {

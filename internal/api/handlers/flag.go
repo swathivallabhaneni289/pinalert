@@ -16,14 +16,24 @@ import (
 	"pinalert/internal/service"
 )
 
-// maxFlagBodyBytes caps the flag POST body. A flag body is one reason slug, so
-// the cap is tiny, for the same denial of service reason as maxVoteBodyBytes.
-const maxFlagBodyBytes = 1024
+// maxFlagBodyBytes caps the flag POST body, for the same denial of service
+// reason as maxVoteBodyBytes. A flag body is at most five reason slugs and a
+// note of 300 characters; 300 characters of four bytes each, or of six byte
+// JSON escapes, still fit well inside 4 KiB.
+const maxFlagBodyBytes = 4096
 
-// FlagRequest is the flag request body: one of the five reasons. There is no
-// free text field, so nothing unscreened is stored.
+// FlagRequest is the flag request body: one or more of the five reasons and an
+// optional note for the moderators (plan 04-31). The note is screened by the
+// same text check as a report description before it is stored, and only
+// moderators ever see it.
+//
+// Reason is the older single reason field, still accepted so a page cached
+// before plan 04-31 can flag: alone it is read as a one element Reasons. Sent
+// together with Reasons it is a 400, so a body never means two things.
 type FlagRequest struct {
-	Reason string `json:"reason" enums:"spam,abusive,false,dangerous,other" example:"spam"`
+	Reasons []string `json:"reasons" enums:"spam,abusive,false,dangerous,other" example:"spam,false"`
+	Note    string   `json:"note,omitempty" maxLength:"300" example:"The photo is from a flood in 2019."`
+	Reason  string   `json:"reason,omitempty" enums:"spam,abusive,false,dangerous,other" example:"spam"`
 }
 
 // FlagResponse is the answer to a stored flag. It says nothing else: no count
@@ -35,8 +45,11 @@ type FlagResponse struct {
 // FlagReport produces the handler of POST /reports/{id}/flag.
 //
 // @Summary Flag a report for the moderators
-// @Description Sends a report to the moderators with one of five reasons: spam, abusive, false,
-// @Description dangerous or other. A flag never hides or changes the report. Each account can flag
+// @Description Sends a report to the moderators with one or more of five reasons: spam, abusive,
+// @Description false, dangerous or other, each at most once, and an optional note of at most 300
+// @Description characters that only moderators see. The note goes through the same text check as a
+// @Description report description, and a refused note gets 422. The older single reason field is
+// @Description still accepted on its own as a one reason flag. A flag never hides or changes the report. Each account can flag
 // @Description a report once, and a repeat gets 409. Your own report gets 403. A report that does
 // @Description not exist, or that is not shown in any feed, gets 404. Flagging is limited per
 // @Description verified account, and a blocked flag gets 429 with a Retry-After header.
@@ -45,13 +58,14 @@ type FlagResponse struct {
 // @Accept json
 // @Produce json
 // @Param id path int true "Report id"
-// @Param body body FlagRequest true "One of the five reasons"
+// @Param body body FlagRequest true "One or more of the five reasons and an optional note"
 // @Success 201 {object} FlagResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
 // @Failure 403 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
+// @Failure 422 {object} ErrorResponse "The note was refused by the text check"
 // @Failure 429 {object} RateLimitResponse "Blocked by a limit, see Retry-After"
 // @Header 429 {integer} Retry-After "Whole seconds to wait before trying again"
 // @Failure 500 {object} ErrorResponse
@@ -80,10 +94,24 @@ func FlagReport(svc *service.FlagService) http.HandlerFunc {
 			return
 		}
 
+		if req.Reason != "" && req.Reasons != nil {
+			writeFieldError(w, http.StatusBadRequest, "body", "Request body is missing or malformed.")
+			return
+		}
+		raw := req.Reasons
+		if req.Reason != "" {
+			raw = []string{req.Reason}
+		}
+		reasons := make([]service.FlagReason, len(raw))
+		for i, s := range raw {
+			reasons[i] = service.FlagReason(s)
+		}
+
 		err := svc.Flag(r.Context(), service.FlagInput{
 			ReportID:  reportID,
 			AccountID: acc.ID,
-			Reason:    service.FlagReason(req.Reason),
+			Reasons:   reasons,
+			Note:      req.Note,
 		})
 		if err != nil {
 			switch {
@@ -95,6 +123,11 @@ func FlagReport(svc *service.FlagService) http.HandlerFunc {
 				return
 			case errors.Is(err, service.ErrAlreadyFlagged):
 				writeFieldError(w, http.StatusConflict, "report", service.FlagAlreadyMessage)
+				return
+			}
+			var nr service.FlagNoteRejectedError
+			if errors.As(err, &nr) {
+				writeFieldError(w, http.StatusUnprocessableEntity, "note", service.RejectMessage(nr.Reason))
 				return
 			}
 			var ve service.ValidationError

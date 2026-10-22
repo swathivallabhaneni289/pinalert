@@ -66,11 +66,28 @@ type modFlagReasonJSON struct {
 	Count  int64  `json:"count"`
 }
 
+// modFlagNoteReasonJSON is one reason a noted flag gave, with its label.
+type modFlagNoteReasonJSON struct {
+	Reason string `json:"reason"`
+	Label  string `json:"label"`
+}
+
+// modFlagNoteJSON is one open flag that carries a note: the note text and the
+// reasons the same flag gave. It names nobody (T-04-04, plan 04-31). The
+// screen puts the note on the page as text, never as markup.
+type modFlagNoteJSON struct {
+	Reasons []modFlagNoteReasonJSON `json:"reasons"`
+	Note    string                  `json:"note"`
+}
+
 // modFlagsJSON is the open flag total and the per reason counts. Reasons holds
-// only the reasons chosen at least once and is never null.
+// only the reasons chosen at least once and is never null; a reason counts
+// once per flag it appears in. Notes holds the open flags with a note, newest
+// first, at most 20, and is never null.
 type modFlagsJSON struct {
 	Total   int64               `json:"total"`
 	Reasons []modFlagReasonJSON `json:"reasons"`
+	Notes   []modFlagNoteJSON   `json:"notes"`
 }
 
 // modRowJSON is the ModRow of the wire contract. It names no author, flagger,
@@ -120,6 +137,14 @@ func modRowToJSON(r service.ModerationRow) modRowJSON {
 	for _, fr := range r.FlagReasons {
 		reasons = append(reasons, modFlagReasonJSON{Reason: string(fr.Reason), Label: fr.Label, Count: fr.Count})
 	}
+	notes := make([]modFlagNoteJSON, 0, len(r.FlagNotes))
+	for _, fn := range r.FlagNotes {
+		nr := make([]modFlagNoteReasonJSON, 0, len(fn.Reasons))
+		for _, x := range fn.Reasons {
+			nr = append(nr, modFlagNoteReasonJSON{Reason: string(x.Reason), Label: x.Label})
+		}
+		notes = append(notes, modFlagNoteJSON{Reasons: nr, Note: fn.Note})
+	}
 	return modRowJSON{
 		ID:             r.ID,
 		Category:       string(r.Category),
@@ -134,7 +159,7 @@ func modRowToJSON(r service.ModerationRow) modRowJSON {
 		VisibilityWord: r.VisibilityWord,
 		Scores:         r.Scores,
 		Model:          r.Model,
-		Flags:          modFlagsJSON{Total: r.FlagTotal, Reasons: reasons},
+		Flags:          modFlagsJSON{Total: r.FlagTotal, Reasons: reasons, Notes: notes},
 	}
 }
 

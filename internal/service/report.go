@@ -505,6 +505,12 @@ func WithReportClock(fn func() time.Time) ReportOption {
 	}
 }
 
+// Screener returns the text screener the description goes through, nil when
+// none was set. The Flag note goes through the same one (plan 04-31).
+func (s *ReportService) Screener() TextScreener {
+	return s.screener
+}
+
 // WithScreener sets the screener for the inline text check. Without it every
 // text that passes the gibberish prefilter is clear and nothing is sent
 // anywhere, which is what every existing test harness gets.

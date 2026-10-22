@@ -894,7 +894,7 @@ const docTemplate = `{
         },
         "/reports/{id}/flag": {
             "post": {
-                "description": "Sends a report to the moderators with one of five reasons: spam, abusive, false,\ndangerous or other. A flag never hides or changes the report. Each account can flag\na report once, and a repeat gets 409. Your own report gets 403. A report that does\nnot exist, or that is not shown in any feed, gets 404. Flagging is limited per\nverified account, and a blocked flag gets 429 with a Retry-After header.\nRequires a session verified by email; an unverified caller receives 401.",
+                "description": "Sends a report to the moderators with one or more of five reasons: spam, abusive,\nfalse, dangerous or other, each at most once, and an optional note of at most 300\ncharacters that only moderators see. The note goes through the same text check as a\nreport description, and a refused note gets 422. The older single reason field is\nstill accepted on its own as a one reason flag. A flag never hides or changes the report. Each account can flag\na report once, and a repeat gets 409. Your own report gets 403. A report that does\nnot exist, or that is not shown in any feed, gets 404. Flagging is limited per\nverified account, and a blocked flag gets 429 with a Retry-After header.\nRequires a session verified by email; an unverified caller receives 401.",
                 "consumes": [
                     "application/json"
                 ],
@@ -914,7 +914,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "One of the five reasons",
+                        "description": "One or more of the five reasons and an optional note",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -956,6 +956,12 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "The note was refused by the text check",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
@@ -1872,6 +1878,11 @@ const docTemplate = `{
         "handlers.FlagRequest": {
             "type": "object",
             "properties": {
+                "note": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "example": "The photo is from a flood in 2019."
+                },
                 "reason": {
                     "type": "string",
                     "enum": [
@@ -1882,6 +1893,23 @@ const docTemplate = `{
                         "other"
                     ],
                     "example": "spam"
+                },
+                "reasons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "spam",
+                            "abusive",
+                            "false",
+                            "dangerous",
+                            "other"
+                        ]
+                    },
+                    "example": [
+                        "spam",
+                        "false"
+                    ]
                 }
             }
         },

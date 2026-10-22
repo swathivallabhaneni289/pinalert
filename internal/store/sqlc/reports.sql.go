@@ -394,9 +394,16 @@ SELECT r.id, r.category, r.severity, r.description, r.created_at, r.expires_at,
        (SELECT count(*) FROM report_flags f
          WHERE f.report_id = r.id AND f.dismissed_at IS NULL)::bigint AS open_flag_total,
        COALESCE((SELECT jsonb_object_agg(x.reason, x.n)
-                   FROM (SELECT f.reason, count(*) AS n FROM report_flags f
+                   FROM (SELECT fr.reason, count(*) AS n
+                           FROM report_flags f, unnest(f.reasons) AS fr(reason)
                           WHERE f.report_id = r.id AND f.dismissed_at IS NULL
-                          GROUP BY f.reason) x), '{}'::jsonb)::jsonb AS flag_counts
+                          GROUP BY fr.reason) x), '{}'::jsonb)::jsonb AS flag_counts,
+       COALESCE((SELECT jsonb_agg(jsonb_build_object('reasons', n.reasons, 'note', n.note)
+                                  ORDER BY n.created_at DESC, n.id DESC)
+                   FROM (SELECT f.id, f.reasons, f.note, f.created_at FROM report_flags f
+                          WHERE f.report_id = r.id AND f.dismissed_at IS NULL AND f.note IS NOT NULL
+                          ORDER BY f.created_at DESC, f.id DESC
+                          LIMIT 20) n), '[]'::jsonb)::jsonb AS flag_notes
 FROM reports r
 LEFT JOIN moderation_checks c ON c.report_id = r.id
 WHERE r.id = $1
@@ -418,6 +425,7 @@ type ReportForModerationRow struct {
 	NeedsReview     bool
 	OpenFlagTotal   int64
 	FlagCounts      []byte
+	FlagNotes       []byte
 }
 
 // One report in the moderator row shape (the same columns as ReviewQueue,
@@ -444,6 +452,7 @@ func (q *Queries) ReportForModeration(ctx context.Context, reportID int64) (Repo
 		&i.NeedsReview,
 		&i.OpenFlagTotal,
 		&i.FlagCounts,
+		&i.FlagNotes,
 	)
 	return i, err
 }

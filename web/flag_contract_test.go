@@ -236,8 +236,10 @@ func TestFlagScriptLoadOrder(t *testing.T) {
 	}
 }
 
-// p424RadioPattern finds the radio inputs of the Flag dialog partial.
-var p424RadioPattern = regexp.MustCompile(`<input[^>]*type="radio"[^>]*>`)
+// p424RadioPattern finds the reason inputs of the Flag dialog partial.
+// Amended 2026-10-22 by plan 04-31 (owner): the reasons are tick boxes, so
+// more than one can be given; the name is kept for the pattern's callers.
+var p424RadioPattern = regexp.MustCompile(`<input[^>]*type="checkbox"[^>]*>`)
 
 // p424ValuePattern reads the value attribute of a tag.
 var p424ValuePattern = regexp.MustCompile(`value="([^"]*)"`)
@@ -248,54 +250,84 @@ var p424LabelPattern = regexp.MustCompile(`<span class="flag-dialog__label">([^<
 // TestFlagDialogMatchesServerReasons proves that the five reasons in the
 // dialog markup are the server's FlagReasons, in order, with the server's
 // labels (D-09), so the words live once in Go and once in the partial.
+//
+// Amended 2026-10-22 by plan 04-31 (owner, 04-UAT test 10): the reasons are
+// tick boxes in one group named by the title, and the Dispute line no longer
+// sits between False or a hoax and the next reason. It sits right under the
+// title, before the group, and the dialog is described by it.
 func TestFlagDialogMatchesServerReasons(t *testing.T) {
 	partial := p424ReadTemplate(t, "flag_dialog.html.tmpl")
 	radios := p424RadioPattern.FindAllStringIndex(partial, -1)
 	labels := p424LabelPattern.FindAllStringSubmatch(partial, -1)
 	if len(radios) != len(service.FlagReasons) || len(labels) != len(service.FlagReasons) {
-		t.Fatalf("partial holds %d radios and %d labels, want %d of each", len(radios), len(labels), len(service.FlagReasons))
+		t.Fatalf("partial holds %d tick boxes and %d labels, want %d of each", len(radios), len(labels), len(service.FlagReasons))
+	}
+	if strings.Contains(partial, `type="radio"`) || strings.Contains(partial, `role="radiogroup"`) {
+		t.Error("the dialog must hold no radio button and no radio group")
 	}
 	for i, reason := range service.FlagReasons {
 		tag := partial[radios[i][0]:radios[i][1]]
 		if !strings.Contains(tag, `name="flag-reason"`) {
-			t.Errorf("radio %d has no name flag-reason: %s", i, tag)
+			t.Errorf("tick box %d has no name flag-reason: %s", i, tag)
 		}
 		if strings.Contains(tag, "checked") {
-			t.Errorf("radio %d starts checked: %s", i, tag)
+			t.Errorf("tick box %d starts ticked: %s", i, tag)
+		}
+		if strings.Contains(tag, "aria-describedby") {
+			t.Errorf("tick box %d points at a hint; the Dispute line now describes the dialog: %s", i, tag)
 		}
 		value := p424ValuePattern.FindStringSubmatch(tag)
 		if value == nil || value[1] != string(reason) {
-			t.Errorf("radio %d value = %v, want %q", i, value, string(reason))
+			t.Errorf("tick box %d value = %v, want %q", i, value, string(reason))
 		}
 		if labels[i][1] != service.FlagReasonLabel(reason) {
 			t.Errorf("label %d = %q, want %q", i, labels[i][1], service.FlagReasonLabel(reason))
 		}
-		if reason == service.FlagFalse {
-			if !strings.Contains(tag, `aria-describedby="flag-dialog-hint"`) {
-				t.Errorf("the %q radio does not point at the Dispute hint: %s", reason, tag)
-			}
-			labelEnd := strings.Index(partial[radios[i][0]:], "</label>")
-			hintAt := strings.Index(partial, `<p id="flag-dialog-hint"`)
-			next := len(partial)
-			if i+1 < len(radios) {
-				next = radios[i+1][0]
-			}
-			if labelEnd == -1 || hintAt < radios[i][0]+labelEnd || hintAt > next {
-				t.Errorf("the Dispute hint must sit after the %q label and before the next radio", reason)
-			}
+	}
+
+	panelTag := regexp.MustCompile(`<div[^>]*role="dialog"[^>]*>`).FindString(partial)
+	p424Contains(t, "dialog panel tag", panelTag, `aria-describedby="flag-dialog-dispute"`)
+	groupTag := regexp.MustCompile(`<fieldset[^>]*id="flag-dialog-reasons"[^>]*>`).FindString(partial)
+	p424Contains(t, "reason group tag", groupTag, `class="flag-dialog__reasons"`, `aria-labelledby="flag-dialog-title"`)
+	p424Ordered(t, "flag_dialog.html.tmpl", partial,
+		`id="flag-dialog-title"`, `<p id="flag-dialog-dispute"`, `<fieldset id="flag-dialog-reasons"`,
+		`type="checkbox"`, `</fieldset>`, `<p id="flag-dialog-choose"`,
+		`<label for="flag-dialog-text"`, `<textarea id="flag-dialog-text"`, `id="flag-dialog-count"`,
+		`id="flag-dialog-text-error"`, `class="flag-dialog__reassurance"`, `id="flag-dialog-error"`,
+		`id="flag-dialog-send"`, `id="flag-dialog-back"`)
+	if n := strings.Count(partial, `<p id="flag-dialog-dispute"`); n != 1 {
+		t.Errorf("the Dispute line occurs %d times, want 1", n)
+	}
+
+	textTag := regexp.MustCompile(`<textarea[^>]*>`).FindString(partial)
+	p424Contains(t, "note box tag", textTag, `id="flag-dialog-text"`, `class="flag-dialog__text"`,
+		`maxlength="300"`, `rows="3"`)
+	p424Lacks(t, "note box tag", textTag, "placeholder", "aria-describedby", "required")
+	for _, id := range []string{"flag-dialog-choose", "flag-dialog-count", "flag-dialog-text-error", "flag-dialog-error"} {
+		tag := regexp.MustCompile(`<p[^>]*id="` + id + `"[^>]*>`).FindString(partial)
+		if !strings.Contains(tag, " hidden") {
+			t.Errorf("%s must start hidden: %q", id, tag)
 		}
 	}
 }
 
 // TestFlagDialogCopy pins the exact words of the dialog (D-09) and the things
-// it must not hold: no free text, no outside reporting line, no number.
+// it must not hold: no outside reporting line, no number.
+//
+// Amended 2026-10-22 by plan 04-31 (owner, 04-UAT test 10): the title asks
+// why, the Dispute line is the owner's new sentence, and the dialog now holds
+// one free text box for the moderators (screened on the server like a report
+// description), so the "no textarea" pin is replaced by a pin on that one box.
 func TestFlagDialogCopy(t *testing.T) {
 	partial := p424ReadTemplate(t, "flag_dialog.html.tmpl")
 	p424Contains(t, "flag_dialog.html.tmpl", partial,
-		"What is wrong with this report?",
-		"If you only disagree with the facts, use Dispute instead.",
+		">Why are you flagging this report?</h2>",
+		">If the report is just wrong, use Dispute instead.</p>",
+		">Tell the moderators more (optional)</label>",
 		"A flag never hides a post by itself. A moderator reads it. The author isn't told who flagged it.",
 		"Send to moderators", "Go back", "Choose a reason to continue.")
+	p424Lacks(t, "flag_dialog.html.tmpl", partial, "What is wrong with this report?",
+		"If you only disagree with the facts, use Dispute instead.")
 
 	rawJS := p424ReadRaw(t, "static/js/flag.js")
 	flag := stripJSComments(rawJS)
@@ -304,14 +336,18 @@ func TestFlagDialogCopy(t *testing.T) {
 		"'Flag sent. Moderators will see it.'",
 		"'You already flagged this report. Moderators will see it.'",
 		`"You're offline, so this wasn't sent. Flags are never saved for later. Try again when you have a signal."`,
-		"'This report is no longer available.'", "'Something went wrong. Try again.'")
+		"'This report is no longer available.'", "'Something went wrong. Try again.'",
+		"'1 character left'", "' characters left'", "var NOTE_MAX = 300;")
 
 	for label, raw := range map[string]string{"flag.js": rawJS, "flag_dialog.html.tmpl": partial} {
 		p424NoDashes(t, label, raw)
 		lower := strings.ToLower(raw)
 		p424Lacks(t, label, lower, "police", "tel:", "112", "strike", "abuse report")
 	}
-	p424Lacks(t, "flag_dialog.html.tmpl", partial, "<textarea", `type="text"`, "<html")
+	if n := strings.Count(partial, "<textarea"); n != 1 {
+		t.Errorf("flag_dialog.html.tmpl holds %d text boxes, want exactly the one note box", n)
+	}
+	p424Lacks(t, "flag_dialog.html.tmpl", partial, `type="text"`, "<html")
 
 	for _, reason := range service.FlagReasons {
 		p424Lacks(t, "flag.js", flag, service.FlagReasonLabel(reason), "'"+string(reason)+"'", `"`+string(reason)+`"`)
@@ -385,6 +421,11 @@ func p424CheckFlagPartialPlacement(t *testing.T, page string) {
 
 // TestFlagSendOutcomes pins the one request and what each answer does (D-09,
 // D-12): exactly the reason slug, a 10 second bound, nothing saved for later.
+//
+// Amended 2026-10-22 by plan 04-31 (owner): the body is the ticked reasons and
+// the note (sendFlag(reasons, note)); the Validation line is shown on the
+// group by showChooseReason; a refused note shows the server's sentence under
+// the box (showTextError) and keeps the ticks and the text.
 func TestFlagSendOutcomes(t *testing.T) {
 	flag := p424ReadJS(t, "static/js/flag.js")
 	if n := strings.Count(flag, "fetch("); n != 1 {
@@ -393,10 +434,10 @@ func TestFlagSendOutcomes(t *testing.T) {
 	if n := strings.Count(flag, "var FLAG_TIMEOUT_MS = 10000;"); n != 1 {
 		t.Errorf("flag.js declares the timeout %d times, want 1", n)
 	}
-	s := jsFunctionBody(t, flag, "sendFlag(reason)")
+	s := jsFunctionBody(t, flag, "sendFlag(reasons, note)")
 	p424Contains(t, "sendFlag", s,
 		"'/api/reports/' + encodeURIComponent(", "'/flag'", "method: 'POST'", "'Content-Type': 'application/json'",
-		"JSON.stringify({ reason: reason })", "handleAnswer(", "setSending(true)")
+		"JSON.stringify({ reasons: reasons, note: note })", "handleAnswer(", "setSending(true)")
 	// The shared time limit of app.js, raced against the post and its body
 	// read, so a post whose aborted request never ends (WebKit) still shows
 	// the offline line at the limit.
@@ -414,7 +455,17 @@ func TestFlagSendOutcomes(t *testing.T) {
 	p424Contains(t, "setSending", jsFunctionBody(t, flag, "setSending(on)"), "sending = on", ".disabled = on")
 	p424Contains(t, "showError", jsFunctionBody(t, flag, "showError(message)"), "setAttribute('role', 'alert')", "Pinalert.setText(")
 	p424Contains(t, "hideError", jsFunctionBody(t, flag, "hideError()"), "removeAttribute('role')")
-	p424Contains(t, "showNote", jsFunctionBody(t, flag, "showNote()"), "'aria-describedby'", "announce(", ".focus(")
+	p424Contains(t, "showChooseReason", jsFunctionBody(t, flag, "showChooseReason()"),
+		"refs.reasons.setAttribute('aria-describedby', 'flag-dialog-choose')", "announce(", "refs.boxes[0].focus()")
+	p424Contains(t, "hideChooseReason", jsFunctionBody(t, flag, "hideChooseReason()"), "refs.reasons.removeAttribute('aria-describedby')")
+	p424Ordered(t, "showTextError", jsFunctionBody(t, flag, "showTextError(message)"),
+		"Pinalert.setText(refs.textError, message)", "setAttribute('role', 'alert')", "'aria-invalid', 'true'",
+		"'aria-describedby', 'flag-dialog-text-error'", "refs.text.focus()")
+	p424Lacks(t, "showTextError", jsFunctionBody(t, flag, "showTextError(message)"), ".value =", ".checked =")
+	p424Contains(t, "hideTextError", jsFunctionBody(t, flag, "hideTextError()"), "removeAttribute('role')", "removeAttribute('aria-invalid')")
+	p424Ordered(t, "openFlagDialog clears", jsFunctionBody(t, flag, "openFlagDialog(opener)"),
+		".checked = false", "r.text.value = ''", "updateCount()", "hideChooseReason()", "hideTextError()")
+	p424Contains(t, "updateCount", jsFunctionBody(t, flag, "updateCount()"), "refs.text.value.length", "NOTE_COUNT_FROM", "NOTE_MAX", "refs.count.hidden")
 	p424Contains(t, "announce", jsFunctionBody(t, flag, "announce(text)"), "getElementById('notice-live')", "Pinalert.setText(")
 	p424Lacks(t, "flag.js", flag, "indexedDB", "localStorage", "sessionStorage", "PinalertQueue")
 }
@@ -426,12 +477,14 @@ func TestFlagSendOutcomes(t *testing.T) {
 func p424CheckAnswersAndWaits(t *testing.T) {
 	t.Helper()
 	flag := p424ReadJS(t, "static/js/flag.js")
-	p424Contains(t, "sendFlag", jsFunctionBody(t, flag, "sendFlag(reason)"), "FLAG_OFFLINE_MESSAGE")
+	p424Contains(t, "sendFlag", jsFunctionBody(t, flag, "sendFlag(reasons, note)"), "FLAG_OFFLINE_MESSAGE")
 	p424Contains(t, "handleAnswer", jsFunctionBody(t, flag, "handleAnswer(status, body, headers)"),
 		"429", "404", "410", "rememberFlagWait(", "FLAG_GONE_MESSAGE", ".hidden = true",
-		"showError(rememberFlagWait(body, headers))")
+		"showError(rememberFlagWait(body, headers))", "422", "fe.field === 'note'", "showTextError(fe.message)",
+		"fe.field === 'reasons'", "showChooseReason()")
 	p424Ordered(t, "onSendClick", jsFunctionBody(t, flag, "onSendClick()"),
-		"if (sending)", "checkedReason(", "showNote(", "flagWait", "waitMessageNow(", "return", "sendFlag(")
+		"if (sending)", "checkedReasons(", "showChooseReason(", "flagWait", "waitMessageNow(", "return",
+		"sendFlag(reasons, refs.text.value)")
 	p424Contains(t, "waitMessageNow", jsFunctionBody(t, flag, "waitMessageNow()"),
 		"Math.ceil(", "Pinalert.formatWait(", "flagWait.phrase")
 	p424Contains(t, "rememberFlagWait", jsFunctionBody(t, flag, "rememberFlagWait(body, headers)"),
@@ -584,4 +637,47 @@ func TestFlagDialogGeometry(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestFlagDialogNoteGeometry pins the look of plan 04-31's additions: the
+// Dispute line right under the title, the note label, the note box drawn like
+// the report form's Describe it box at body size (so a phone does not zoom on
+// focus) and at least a 44px target, and the muted count.
+func TestFlagDialogNoteGeometry(t *testing.T) {
+	css := p424ReadCSS(t, "static/css/chrome.css")
+	rules := parseCSSRules(css)
+	p424WantDecls(t, "chrome.css", rules, ".modal-panel .flag-dialog__dispute", map[string]string{
+		"margin": "0 0 var(--space-sm) 0",
+	})
+	p424WantDecls(t, "chrome.css", rules, ".flag-dialog__text-label:not([hidden])", map[string]string{
+		"display": "block", "font-size": "var(--font-size-label)", "font-weight": "var(--font-weight-semibold)",
+		"color": "var(--color-text)",
+	})
+	p424WantDecls(t, "chrome.css", rules, ".flag-dialog__text:not([hidden])", map[string]string{
+		"display": "block", "box-sizing": "border-box", "width": "100%", "min-height": "var(--touch-target-min)",
+		"font-family": "var(--font-family)", "font-size": "var(--font-size-body)", "color": "var(--color-text)",
+		"background": "var(--color-bg)", "border": "1px solid var(--color-text-muted)", "border-radius": "8px",
+		"resize": "vertical",
+	})
+	p424WantDecls(t, "chrome.css", rules, ".flag-dialog__count", map[string]string{
+		"font-size": "var(--font-size-label)", "color": "var(--color-text-muted)",
+	})
+}
+
+// TestModerateShowsFlagNotesAsText pins the moderator half of plan 04-31:
+// the notes block reads flags.notes, writes each note and its reason labels
+// only through Pinalert.setText, and builds nothing that names a flagger.
+func TestModerateShowsFlagNotesAsText(t *testing.T) {
+	js := p424ReadJS(t, "static/js/moderate.js")
+	p424Ordered(t, "buildFlags", jsFunctionBody(t, js, "buildFlags(report)"), "buildFlagNotes(flags.notes)", "block.appendChild(notes)")
+	body := jsFunctionBody(t, js, "buildFlagNotes(notes)")
+	p424Contains(t, "buildFlagNotes", body,
+		"typeof n.note !== 'string'", "Pinalert.setText(text, n.note)", "Pinalert.setText(reasons, labels.join(', '))",
+		"Pinalert.setText(head, NOTES_HEAD)", "'mod-flag-note__text'")
+	p424Lacks(t, "buildFlagNotes", body, "innerHTML", "account", "email", "flagger")
+	p424Contains(t, "moderate.js", js, "var NOTES_HEAD = 'What people wrote:';")
+	modCSS := p424ReadCSS(t, "static/css/moderate.css")
+	p424WantDecls(t, "moderate.css", parseCSSRules(modCSS), ".mod-flag-note__text", map[string]string{
+		"overflow-wrap": "anywhere", "white-space": "pre-line", "font-size": "var(--font-size-body)",
+	})
 }

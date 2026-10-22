@@ -740,3 +740,169 @@ func TestMigration00009(t *testing.T) {
 		t.Errorf("after Up again: %d of 4 new tables present", got)
 	}
 }
+
+// TestMigration00010 covers the Flag window migration of plan 04-31: the
+// file carries both goose markers and builds nothing concurrently; Up turns
+// every existing flag's single reason into a one element set and drops the
+// old column; Down brings the single reason back as the first of the set and
+// drops the set, the note and the helper function; Up again restores both
+// columns with every flag keeping its reason.
+func TestMigration00010(t *testing.T) {
+	const name = "00010_add_flag_reasons_and_note.sql"
+	contents, err := MigrationsFS.ReadFile("migrations/" + name)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", name, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", name)
+	}
+	if strings.Contains(strings.ToUpper(text), "CONCURRENTLY") {
+		t.Error("migration 00010 must not use CONCURRENTLY: goose runs it inside a transaction")
+	}
+	for _, want := range []string{"report_flags_reasons_valid", "report_flags_note_length", "UPDATE report_flags SET reasons = ARRAY[reason]", "DROP COLUMN reason;"} {
+		if !strings.Contains(text[:down], want) {
+			t.Errorf("migration 00010 Up must contain %q", want)
+		}
+	}
+	for _, want := range []string{"UPDATE report_flags SET reason = reasons[1]", "DROP COLUMN reasons;", "DROP COLUMN note;", "DROP FUNCTION report_flag_reasons_distinct"} {
+		if !strings.Contains(text[down:], want) {
+			t.Errorf("migration 00010 Down must contain %q", want)
+		}
+	}
+	if !strings.Contains(text[:down], "report_flags_one_per_account") || strings.Contains(text, "DROP CONSTRAINT report_flags_one_per_account") {
+		t.Error("migration 00010 must keep the one flag per account per report constraint")
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00010 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	defer db.Close()
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+	version, err := goose.NumericComponent(name)
+	if err != nil {
+		t.Fatalf("parsing version of %s: %v", name, err)
+	}
+
+	var a1, a2, reportID int64
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		if reportID != 0 {
+			_, _ = db.Exec("DELETE FROM report_flags WHERE report_id = $1", reportID)
+			_, _ = db.Exec("DELETE FROM reports WHERE id = $1", reportID)
+		}
+		for _, id := range []int64{a1, a2} {
+			if id != 0 {
+				_, _ = db.Exec("DELETE FROM accounts WHERE id = $1", id)
+			}
+		}
+	})
+
+	columns := func() string {
+		rows, err := db.Query(`SELECT column_name FROM information_schema.columns
+			WHERE table_schema = 'public' AND table_name = 'report_flags'
+			  AND column_name IN ('reason', 'reasons', 'note') ORDER BY column_name`)
+		if err != nil {
+			t.Fatalf("listing columns: %v", err)
+		}
+		defer rows.Close()
+		var names []string
+		for rows.Next() {
+			var n string
+			if err := rows.Scan(&n); err != nil {
+				t.Fatalf("scanning column: %v", err)
+			}
+			names = append(names, n)
+		}
+		return strings.Join(names, ",")
+	}
+	if got := columns(); got != "note,reasons" {
+		t.Fatalf("after Up: columns %q, want note,reasons", got)
+	}
+
+	// Down to just before 00010, store two flags the old way, then Up.
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down to %d: %v", version-1, err)
+	}
+	if got := columns(); got != "reason" {
+		t.Fatalf("after Down: columns %q, want reason", got)
+	}
+	var fn sql.NullString
+	if err := db.QueryRow(`SELECT to_regproc('report_flag_reasons_distinct')::text`).Scan(&fn); err != nil || fn.Valid {
+		t.Errorf("after Down: the helper function is still there (%v, %v)", fn, err)
+	}
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00010-a@example.com') RETURNING id`).Scan(&a1); err != nil {
+		t.Fatalf("inserting account: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00010-b@example.com') RETURNING id`).Scan(&a2); err != nil {
+		t.Fatalf("inserting account: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO reports (session_id, category, severity, description, latitude, longitude, geohash, expires_at)
+		VALUES ('migration-00010', 'road', 'info', 'for the 00010 test', 12.97, 77.59, 'tdr1w', now() + interval '1 hour')
+		RETURNING id`).Scan(&reportID); err != nil {
+		t.Fatalf("inserting report: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO report_flags (report_id, account_id, reason) VALUES ($1, $2, 'false'), ($1, $3, 'dangerous')`,
+		reportID, a1, a2); err != nil {
+		t.Fatalf("inserting old style flags: %v", err)
+	}
+
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+	if got := columns(); got != "note,reasons" {
+		t.Fatalf("after Up again: columns %q, want note,reasons", got)
+	}
+	readSets := func() string {
+		var s string
+		if err := db.QueryRow(`SELECT string_agg(array_to_string(reasons, '+') || ':' || COALESCE(note, '-'), ' ' ORDER BY account_id)
+			FROM report_flags WHERE report_id = $1`, reportID).Scan(&s); err != nil {
+			t.Fatalf("reading sets: %v", err)
+		}
+		return s
+	}
+	if got := readSets(); got != "false:- dangerous:-" {
+		t.Errorf("after Up: flags %q, want each old reason as a one element set with no note", got)
+	}
+
+	// A flag with two reasons and a note goes back to its first reason.
+	if _, err := db.Exec(`UPDATE report_flags SET reasons = ARRAY['spam','false'], note = 'old photo' WHERE report_id = $1 AND account_id = $2`,
+		reportID, a1); err != nil {
+		t.Fatalf("updating a flag: %v", err)
+	}
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down again: %v", err)
+	}
+	var back string
+	if err := db.QueryRow(`SELECT string_agg(reason, ' ' ORDER BY account_id) FROM report_flags WHERE report_id = $1`, reportID).Scan(&back); err != nil {
+		t.Fatalf("reading reasons after Down: %v", err)
+	}
+	if back != "spam dangerous" {
+		t.Errorf("after Down: reasons %q, want spam dangerous", back)
+	}
+	_, err = db.Exec(`UPDATE report_flags SET reason = 'police' WHERE report_id = $1`, reportID)
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
+		t.Errorf("after Down: reason police: want SQLSTATE 23514, got %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up a third time: %v", err)
+	}
+	if got := readSets(); got != "spam:- dangerous:-" {
+		t.Errorf("after the round trip: flags %q, want spam:- dangerous:-", got)
+	}
+}
