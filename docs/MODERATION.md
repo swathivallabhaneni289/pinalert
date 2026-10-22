@@ -227,7 +227,7 @@ and the backstop block beside it holds 6 more.
 - For a report post, a 400, a text or gibberish reject, any failed post and a replay cost nothing
   from the report allowance, because it is given back. A held post keeps its cost. The submit
   attempt bucket, which protects the provider, is never given back. A flag is different: nothing
-  is given back, so a flag that ends in a 400, 404 or 409 still uses a token.
+  is given back, so a flag that ends in a 400, 404, 409 or 422 (a refused note) still uses a token.
 - Every block is logged with the bucket name, the numeric account id and the wait, and nothing
   else.
 
