@@ -568,46 +568,51 @@ Plans:
   4. Data: an updates table with read state, a mutes table, and hourly cap bookkeeping. Implicit followers are derived from existing tables (the reporter through sessions, voters through votes). On a small deployment most reporters show New reporter (D-13), so the Reliable-only filter and alerts may run on an empty set until Phase 5's demo accounts exist. If the phase runs long, split NOTIF-04 and NOTIF-05 into a later phase.
   5. Settings live on a Settings page of their own, opened from the gear on the phone and from Settings in the laptop person menu (owner decision 2026-10-16, 03.4 D-25), not in the account menu: in-app always on, email and push optional later. The Reliable-reporter alerts use the public tag only and expose no identity. Phase 3 D-14 keeps the tag display only inside Phase 3; here the filter and the alert rule are opt-in user choices and must never hide or reorder a report by default.
 
-**Plans:** 17 plans in 7 waves (planned 2026-10-18; plan check passed)
+**Plans:** 17 plans in 7 waves (planned 2026-10-18; plan check passed), plus gap fixes 18 and 19 after verification. Built 2026-10-19 to 2026-10-21 on a side branch while Phase 3.4 was open, merged to main 2026-10-22 after 3.4 closed (908c84d). VERIFICATION is human_needed: the owner's visual check comes after the Phase 3.1 and 4 hands-on tests.
 
 Plans:
 **Wave 1**
 
-- [ ] 03.2-01-PLAN.md: Storage: migration 00009 with every table and column, the queries, sqlc and store tests
-- [ ] 03.2-02-PLAN.md: The decision core (TDD): DecideUpdate, MayNotifyAboutReport with a kind, the update words
+- [x] 03.2-01-PLAN.md: Storage: migration 00009 with every table and column, the queries, sqlc and store tests
+- [x] 03.2-02-PLAN.md: The decision core (TDD): DecideUpdate, MayNotifyAboutReport with a kind, the update words
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 03.2-03-PLAN.md: UpdatesService: Refresh, List and MarkRead
-- [ ] 03.2-04-PLAN.md: MuteService
-- [ ] 03.2-05-PLAN.md: viewer_follows and viewer_muted on the feed
-- [ ] 03.2-06-PLAN.md: Session revocation and the sign in rotation for Log out of all devices
+- [x] 03.2-03-PLAN.md: UpdatesService: Refresh, List and MarkRead
+- [x] 03.2-04-PLAN.md: MuteService
+- [x] 03.2-05-PLAN.md: viewer_follows and viewer_muted on the feed
+- [x] 03.2-06-PLAN.md: Session revocation and the sign in rotation for Log out of all devices
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 03.2-07-PLAN.md: HTTP for updates, mutes and the muted list; My activity Updates data; the Settings muted count
+- [x] 03.2-07-PLAN.md: HTTP for updates, mutes and the muted list; My activity Updates data; the Settings muted count
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 03.2-08-PLAN.md: The bell count and list, updates.js, updates.css and the Updates part
-- [ ] 03.2-09-PLAN.md: Delete my account on the server (default Option A, pending owner confirmation)
-- [ ] 03.2-10-PLAN.md: kept_by_reliable_filter on the server and the Reliable reporter test seed
+- [x] 03.2-08-PLAN.md: The bell count and list, updates.js, updates.css and the Updates part
+- [x] 03.2-09-PLAN.md: Delete my account on the server (default Option A, pending owner confirmation)
+- [x] 03.2-10-PLAN.md: kept_by_reliable_filter on the server and the Reliable reporter test seed
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 03.2-11-PLAN.md: The Mute control in the opened report
-- [ ] 03.2-16-PLAN.md: The Log out of all devices route and the sign in status line
+- [x] 03.2-11-PLAN.md: The Mute control in the opened report
+- [x] 03.2-16-PLAN.md: The Log out of all devices route and the sign in status line
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 03.2-12-PLAN.md: Settings: People and reports, and the Account rows and windows
-- [ ] 03.2-13-PLAN.md: Reliable reporter alerts on the server: the alert step, alert settings and PATCH /api/me/alerts
-- [ ] 03.2-14-PLAN.md: The Only Reliable reporters tick in the Show menu
+- [x] 03.2-12-PLAN.md: Settings: People and reports, and the Account rows and windows
+- [x] 03.2-13-PLAN.md: Reliable reporter alerts on the server: the alert step, alert settings and PATCH /api/me/alerts
+- [x] 03.2-14-PLAN.md: The Only Reliable reporters tick in the Show menu
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 03.2-15-PLAN.md: Settings Notifications rows
-- [ ] 03.2-17-PLAN.md: Reliable reporter alert end to end test and the trust model note
+- [x] 03.2-15-PLAN.md: Settings Notifications rows
+- [x] 03.2-17-PLAN.md: Reliable reporter alert end to end test and the trust model note
+
+**Gap fixes** *(after verification, 2026-10-21)*
+
+- [x] 03.2-18: Signing in from a logged out browser always gets a fresh session, so a copied cookie stays dead (verification W1)
+- [x] 03.2-19: The Reliable reporter note counts toward the one update per report per hour (verification W3)
 
 ### Phase 03.3: Installable app and phone alerts (INSERTED)
 
@@ -761,7 +766,7 @@ Phases execute in the owner's build order (2026-10-16): 1 → 1.1 → 2 → 3 �
 | 2. Trust Mechanic Core — Confirm/Dispute & Visibility | 15/15 | Complete | 2026-10-07 |
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 31/31 | Complete | 2026-10-13 |
 | 3.1 Report history views | 16/16 | In Progress|  |
-| 3.2 In-app updates and trusted-reporter alerts | 0/TBD | Not started | - |
+| 3.2 In-app updates and trusted-reporter alerts | 19/19 | In Progress|  |
 | 3.3 Installable app and phone alerts | 0/15 | Planned | - |
 | 3.4 App layout | 44/44 | Complete | 2026-10-22 |
 | 4. Robustness — Real-World Resilience | 29/29 | In Progress|  |
