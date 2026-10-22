@@ -1,5 +1,26 @@
 basePath: /api
 definitions:
+  handlers.AlertSettingsRequest:
+    properties:
+      alert_radius_km:
+        example: 5
+        type: integer
+      reliable_alerts:
+        example: true
+        type: boolean
+    type: object
+  handlers.AlertSettingsResponse:
+    properties:
+      alert_radius_km:
+        example: 5
+        type: integer
+      has_home_area:
+        example: true
+        type: boolean
+      reliable_alerts:
+        example: true
+        type: boolean
+    type: object
   handlers.CastVoteRequest:
     properties:
       latitude:
@@ -115,6 +136,12 @@ definitions:
         type: boolean
       resolved_partial:
         example: false
+        type: boolean
+    type: object
+  handlers.DeleteAccountRequest:
+    properties:
+      confirm:
+        example: true
         type: boolean
     type: object
   handlers.ErrorDetail:
@@ -239,6 +266,15 @@ definitions:
           boolean, never an account id or an email (T-01-02).
         example: false
         type: boolean
+      kept_by_reliable_filter:
+        description: |-
+          KeptByReliableFilter is the server authored membership of the opt in Only
+          Reliable reporters tick: true when the reporter's tag is Reliable reporter
+          or the report is serious (critical, or Rescue needed stored before that
+          category was retired). Only the reader's own tick reads it. It never
+          filters, hides or reorders anything by default. Always present.
+        example: false
+        type: boolean
       latitude:
         example: 13.0827
         type: number
@@ -299,6 +335,22 @@ definitions:
           many did, and the author's own feed always reads false unless the author
           flagged it, which the server refuses. It is filled from the one batched
           extras read, so the feed's round trips stay constant.
+        example: false
+        type: boolean
+      viewer_follows:
+        description: |-
+          ViewerFollows is true when the calling account posted this report or voted
+          on it in any way (confirm, dispute, resolve, reopen or unresolve). It is
+          viewer specific like your_vote, so it never says who else follows or how
+          many do. It is computed from the vote rows the read already holds, so the
+          feed's round trips stay constant. Always present.
+        example: true
+        type: boolean
+      viewer_muted:
+        description: |-
+          ViewerMuted is true when the calling account turned updates off for this
+          report. It is viewer specific, never says who else muted, and is filled
+          from the one batched extras read. Always present.
         example: false
         type: boolean
       visibility:
@@ -487,6 +539,47 @@ definitions:
       name:
         example: Indiranagar, Bengaluru
         type: string
+    type: object
+  handlers.MarkReadRequest:
+    properties:
+      up_to:
+        example: 41
+        type: integer
+    type: object
+  handlers.MutedReportWire:
+    properties:
+      available:
+        example: true
+        type: boolean
+      category:
+        example: Flood
+        type: string
+      muted_at:
+        type: string
+      report_id:
+        example: 17
+        type: integer
+      severity:
+        example: Critical
+        type: string
+      severity_level:
+        enum:
+        - low
+        - medium
+        - critical
+        - ''''''
+        example: critical
+        type: string
+      text:
+        example: Water over the bridge
+        type: string
+    type: object
+  handlers.MutedReportsResponse:
+    properties:
+      reports:
+        items:
+          $ref: '#/definitions/handlers.MutedReportWire'
+        type: array
     type: object
   handlers.PlaceResponse:
     properties:
@@ -881,6 +974,105 @@ definitions:
       home_area:
         $ref: '#/definitions/handlers.HomeAreaRequest'
     type: object
+  handlers.UpdateWire:
+    properties:
+      available:
+        description: |-
+          Available is false when the report was held, removed or has gone since the
+          update was made.
+        example: true
+        type: boolean
+      category:
+        description: Category is the page's own category word, empty when unavailable.
+        example: Flood
+        type: string
+      created_at:
+        description: CreatedAt is when the update was written.
+        type: string
+      event:
+        description: 'Event is line 1: the event words, built on the server.'
+        example: Now confirmed
+        type: string
+      id:
+        description: ID orders the list and is what the read mark sends back as up_to.
+        example: 41
+        type: integer
+      kind:
+        description: Kind is the closed kind of the row.
+        enum:
+        - reached_live
+        - hidden
+        - resolved
+        - fading
+        - reliable_nearby
+        - more
+        example: reached_live
+        type: string
+      label:
+        description: Label is the row's accessible name, built whole on the server
+          (UI-SPEC P32-C8).
+        example: New. Now confirmed. Flood, Critical. Confirmed by 3 people at different
+          spots. 12 minutes ago
+        type: string
+      more_count:
+        description: |-
+          MoreCount is how many changes the rolled up row stands for. Only that row
+          carries it.
+        example: 4
+        type: integer
+      report_id:
+        description: |-
+          ReportID is the report the row opens. It is absent for the rolled up row
+          and for a report that is no longer available, so a row never links to a
+          report the reader may not open.
+        example: 17
+        type: integer
+      report_line:
+        description: |-
+          ReportLine is the first line of the report's text (Q1 owner confirmed
+          2026-10-18). It is absent for a finished Rescue report, an unavailable
+          report and the rolled up row. It is never the whole description.
+        example: Water over the bridge
+        type: string
+      severity:
+        description: Severity is the severity word, empty when unavailable.
+        example: Critical
+        type: string
+      severity_level:
+        description: SeverityLevel is the raw closed value for the severity dot colour.
+        enum:
+        - low
+        - medium
+        - critical
+        - ''''''
+        example: critical
+        type: string
+      trust:
+        description: Trust is the trust sentence for the report now, chosen when the
+          list is read.
+        example: Confirmed by 3 people at different spots.
+        type: string
+      unread:
+        description: Unread is true until the reader marks the row read.
+        example: true
+        type: boolean
+      when:
+        description: When is how long ago, in the app's short words.
+        example: 12 min ago
+        type: string
+    type: object
+  handlers.UpdatesResponse:
+    properties:
+      unread:
+        example: 3
+        type: integer
+      updates:
+        items:
+          $ref: '#/definitions/handlers.UpdateWire'
+        type: array
+    type: object
+  handlers.emptyBody:
+    type: object
 info:
   contact:
     name: Pinalert project
@@ -1065,6 +1257,49 @@ paths:
       summary: Search for a place on the reader lane
       tags:
       - geocode
+  /me/alerts:
+    patch:
+      consumes:
+      - application/json
+      description: |-
+        Saves whether the signed in account wants an update when a Reliable reporter posts
+        near its home area, and how far away that may be: 1, 2, 5 or 10 km. A key left out
+        keeps what is stored. The alert is off until turned on and the distance is 5 km until
+        changed. The distance is measured from the middle of the saved home area, which is a
+        cell about 5 km across; no position is ever sent or stored for this. Turning the
+        alert on without a home area is refused with the field reliable_alerts, and removing
+        the home area turns the alert off. Only reports posted after the alert was turned on
+        can raise it. The answer is the settings as stored.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: The settings to change
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.AlertSettingsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.AlertSettingsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Turn the Reliable reporter alert on or off and choose its distance
+      tags:
+      - me
   /me/consent:
     post:
       consumes:
@@ -1092,6 +1327,50 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Agree to the current terms
+      tags:
+      - me
+  /me/delete:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Deletes the signed in account. The sign in address is replaced by one that can never
+        receive mail, the name, home area and consent are cleared, and every session of the
+        account ends, this one included. The updates, muted reports, alert settings and
+        sign in links of the account are deleted. The reports and votes the person made stay,
+        with no name or link to the person, so every count other people see is unchanged. The
+        same address can sign up again as a brand new account with no history. The body must
+        say confirm true; anything else deletes nothing.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Must carry confirm true
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.DeleteAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Delete my account
       tags:
       - me
   /me/first-run-done:
@@ -1125,6 +1404,66 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Mark the first-time flow as finished
+      tags:
+      - me
+  /me/logout-all:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Ends the signed in account's sessions on every device, including this one. Reports and
+        votes keep their author, so nothing other people see changes. Send no body or an empty
+        object. Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: No fields
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/handlers.emptyBody'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Logged out everywhere
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Log out of all devices
+      tags:
+      - me
+  /me/muted-reports:
+    get:
+      description: |-
+        Lists the signed in account's muted reports, newest mute first, for the Muted reports
+        window of Settings. A report that is held, removed or has gone shows available false
+        with no text, category or severity, and still carries report_id so the mute can be
+        undone. A finished Rescue report shows no text. The answer is never cached.
+        Requires a session verified by email; an unverified caller receives 401.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.MutedReportsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: List the reports you muted
       tags:
       - me
   /me/profile:
@@ -1577,6 +1916,46 @@ paths:
       summary: Flag a report for the moderators
       tags:
       - reports
+  /reports/{id}/mute:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Stops updates about one report for the signed in account only. Nobody else is told,
+        and the report itself does not change. Send no body or an empty object. A repeat
+        call changes nothing. A report that does not exist, or that is not shown in any
+        feed, gets 404.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Report id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Updates are off for this report
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Turn updates off for a report
+      tags:
+      - reports
   /reports/{id}/reopen:
     post:
       consumes:
@@ -1741,6 +2120,45 @@ paths:
       summary: Cast a confirm, dispute, resolve, reopen or unresolve vote on a report
       tags:
       - reports
+  /reports/{id}/unmute:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Undoes a mute for the signed in account only. Send no body or an empty object. A
+        repeat call changes nothing. It works for a report that has since been held, removed
+        or gone, so a mute can always be cleared.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Report id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Updates are on again for this report
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Turn updates back on for a report
+      tags:
+      - reports
   /reports/{id}/unresolve:
     post:
       consumes:
@@ -1823,4 +2241,68 @@ paths:
       summary: Cast a confirm, dispute, resolve, reopen or unresolve vote on a report
       tags:
       - reports
+  /updates:
+    get:
+      description: |-
+        Brings the signed in account's updates up to date and answers the unread count,
+        capped at 99, and the latest 10 updates, newest first. The poll itself is what
+        checks the reports you posted or voted on, so the bell polls this route. It takes
+        no parameter and no location. Every sentence is written by the server. A report
+        that was held, removed or has gone reads as an update that is no longer available,
+        with no detail. The answer is never cached.
+        Requires a session verified by email; an unverified caller receives 401.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.UpdatesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: 'Read the bell: the unread count and the latest updates'
+      tags:
+      - updates
+  /updates/read:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Marks the signed in account's own unread updates up to and including up_to as read.
+        Send the id of the newest update shown, so an update that arrived after the list
+        was drawn stays unread. It changes only your own rows. An up_to below 1 gets 400.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: The id of the newest update shown
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.MarkReadRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Marked read
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Mark your updates read up to an id
+      tags:
+      - updates
 swagger: "2.0"

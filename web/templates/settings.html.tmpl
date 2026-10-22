@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="/static/css/places.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/legal.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/window.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/updates.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
   <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
 </head>
@@ -44,6 +45,61 @@
             <span class="place-row__sub">Used for alerts, never your exact spot</span>
           </span>
           <span class="place-row__value" id="settings-home-value">{{if .HomeAreaName}}{{.HomeAreaName}}{{else}}Not set{{end}}</span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </button>
+      </div>
+    </section>
+
+    <section class="place-section" id="settings-alerts-section" aria-labelledby="settings-phone-title">
+      <div class="place-section__intro">
+        <h2 class="place-section__title" id="settings-phone-title">Notifications</h2>
+        {{/* Owner 2026-10-18 (Q4): the section is called Notifications, with no extra line about the app being open; Phase 3.3 adds its phone rows to this same section. */}}
+        <p class="place-section__line">Hear about Reliable reporters near your home area.</p>
+      </div>
+      {{/* One classless wrapper, so on the laptop grid the boxes and the error line are one item beside the title, not three. */}}
+      <div>
+      <div class="place-box" id="settings-alerts-on"{{if not .HasHomeArea}} hidden{{end}}>
+        <label class="place-row place-row--switch" id="settings-reliable-row" for="settings-reliable-switch">
+          <span class="place-row__text">
+            <span class="place-row__label">A Reliable reporter posts near me</span>
+          </span>
+          <input class="place-switch" type="checkbox" role="switch" id="settings-reliable-switch" name="reliable_alerts"{{if .AlertsOn}} checked{{end}}>
+        </label>
+        <div class="place-row" id="settings-radius-row">
+          <label class="place-row__text" for="settings-radius-select">
+            <span class="place-row__label">How far from my home area</span>
+          </label>
+          <select class="place-select" id="settings-radius-select" name="alert_radius_km">
+            {{- range .AlertRadii}}
+            <option value="{{.}}"{{if eq . $.AlertRadiusKm}} selected{{end}}>{{.}} km</option>
+            {{- end}}
+          </select>
+        </div>
+      </div>
+      <div class="place-box" id="settings-alerts-off"{{if .HasHomeArea}} hidden{{end}}>
+        <button type="button" class="place-row" id="settings-reliable-nohome" aria-haspopup="dialog">
+          <span class="place-row__text">
+            <span class="place-row__label">A Reliable reporter posts near me</span>
+            <span class="place-row__sub">Add a home area first</span>
+          </span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </button>
+      </div>
+      <p class="inline-error" id="settings-alerts-error" role="alert" hidden></p>
+      </div>
+    </section>
+
+    <section class="place-section" aria-labelledby="settings-people-title">
+      <div class="place-section__intro">
+        <h2 class="place-section__title" id="settings-people-title">People and reports</h2>
+        <p class="place-section__line">Reports you have turned updates off for.</p>
+      </div>
+      <div class="place-box">
+        <button type="button" class="place-row" id="settings-muted-row" aria-haspopup="dialog">
+          <span class="place-row__text">
+            <span class="place-row__label">Muted reports</span>
+          </span>
+          <span class="place-row__value" id="settings-muted-value">{{.MutedCount}}</span>
           <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
         </button>
       </div>
@@ -92,6 +148,18 @@
             </span>
           </button>
         </form>
+        <button type="button" class="place-row" id="settings-logout-all-row" aria-haspopup="dialog">
+          <span class="place-row__text">
+            <span class="place-row__label">Log out of all devices</span>
+          </span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="place-row" id="settings-delete-row" aria-haspopup="dialog">
+          <span class="place-row__text">
+            <span class="place-row__label place-row__label--danger">Delete my account</span>
+          </span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </button>
       </div>
     </section>
   </main>
@@ -129,9 +197,76 @@
         <p class="app-window__status" id="settings-home-status" role="status" aria-live="polite" hidden></p>
         <ul class="app-window__results" id="settings-home-results" role="listbox" aria-label="Places found" hidden></ul>
         <p class="inline-error" id="settings-home-error" role="alert" hidden></p>
+        <p class="app-window__help" id="settings-home-alerts-note"{{if not .AlertsOn}} hidden{{end}}>Removing it also turns off Reliable reporter alerts.</p>
         <div class="app-window__actions">
           <button type="button" class="btn btn--primary" id="settings-home-save" disabled>Save home area</button>
           <button type="button" class="app-window__quiet" id="settings-home-remove"{{if not .HomeAreaName}} hidden{{end}}>Remove home area</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-window app-window--edit" id="settings-muted-window" hidden>
+    <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-muted-title">
+      <div class="app-window__head">
+        <h2 class="app-window__title" id="settings-muted-title" tabindex="-1">Muted reports</h2>
+        <button type="button" class="app-window__close" id="settings-muted-close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
+      </div>
+      <div class="app-window__body">
+        <div id="settings-muted-loading" aria-hidden="true" hidden>
+          <div class="skeleton-row"></div>
+          <div class="skeleton-row"></div>
+          <div class="skeleton-row"></div>
+          <div class="skeleton-row"></div>
+        </div>
+        <ul class="muted-list" id="settings-muted-list" hidden></ul>
+        <div id="settings-muted-empty" hidden>
+          <div class="empty-state profile-empty-state">
+            <h3 id="settings-muted-empty-title" tabindex="-1">No muted reports</h3>
+            <p>Reports you mute show here, with a way to turn them back on.</p>
+          </div>
+        </div>
+        <div id="settings-muted-error" hidden>
+          <div class="error-state profile-empty-state">
+            <h3>Couldn't load muted reports</h3>
+            <p>Check your connection and try again.</p>
+            <button type="button" class="btn" id="settings-muted-retry">Try again</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-window app-window--edit" id="settings-logout-all-window" hidden>
+    <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-logout-all-title">
+      <div class="app-window__head">
+        <h2 class="app-window__title" id="settings-logout-all-title" tabindex="-1">Log out of all devices</h2>
+        <button type="button" class="app-window__close" id="settings-logout-all-close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
+      </div>
+      <div class="app-window__body">
+        <p>This logs you out of Pinalert on every phone and computer, including this one. You can sign in again any time with your email.</p>
+        <p class="inline-error" id="settings-logout-all-error" role="alert" hidden></p>
+        <div class="app-window__actions">
+          <button type="button" class="btn btn--primary" id="settings-logout-all-go">Log out of all devices</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-window app-window--edit" id="settings-delete-window" hidden>
+    <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-delete-title">
+      <div class="app-window__head">
+        <h2 class="app-window__title" id="settings-delete-title" tabindex="-1">Delete my account</h2>
+        <button type="button" class="app-window__close" id="settings-delete-close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
+      </div>
+      <div class="app-window__body">
+        <p>This cannot be undone.</p>
+        <p>Your email, name, home area, updates, muted reports and settings are deleted, and you are logged out on every device.</p>
+        {{/* Q2 owner confirmed 2026-10-18: Option A. Option B is the one sentence "Reports you posted and votes you made are removed, and reports other people confirmed with you may change." */}}
+        <p id="settings-delete-rule">Reports you posted and votes you made stay, with no name or link to you, so nobody else's report changes.</p>
+        <p class="inline-error" id="settings-delete-error" role="alert" hidden></p>
+        <div class="app-window__actions">
+          <button type="button" class="btn btn--primary" id="settings-delete-go">Delete my account</button>
         </div>
       </div>
     </div>
@@ -143,7 +278,9 @@
 
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/app-bar.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/updates.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/settings.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/settings-alerts.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/reader.js?v={{.AssetVersion}}" defer></script>
 </body>
 </html>

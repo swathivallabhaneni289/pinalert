@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 
 	"pinalert/internal/service"
@@ -134,6 +135,115 @@ type activityPart struct {
 	EmptyTitle string
 	EmptyText  string
 	Current    bool
+	// The next four are filled only for the Updates part, by fillUpdatesPart
+	// (Phase 3.2). Updates are its rows, NewCount is how many are unread (capped
+	// at 99, the hub's "{N} new" tag), UpdatesCut is true when more updates are
+	// kept than are listed (the "Showing the newest 50." line) and UpdatesFailed
+	// is true when the read failed (the part shows its error state).
+	Updates       []activityUpdateRow
+	NewCount      int
+	UpdatesCut    bool
+	UpdatesFailed bool
+}
+
+// activityUpdateRow is one row of the Updates part. Every word is written on the
+// server by the same code the bell reads (D-05), so the page works before any
+// script runs. Href is empty for a row that is not a link: the rolled up row and
+// a report that is no longer available (UI-SPEC A3). It holds no account,
+// session, cell or coordinate.
+type activityUpdateRow struct {
+	ID        int64
+	Href      string
+	Available bool
+	Unread    bool
+	IsMore    bool
+	Event     string
+	// ReportLine is the first line of the report's text under the Rescue rule.
+	ReportLine string
+	Category   string
+	Severity   string
+	// SeverityClass is the closed class of the severity dot, empty when the row
+	// has none.
+	SeverityClass string
+	Trust         string
+	When          string
+	// Label is the row's accessible name (UI-SPEC P32-C8).
+	Label string
+}
+
+// updateSeverityClass is the closed lookup behind the severity dot class: only
+// the three known severities give a class, so no stored value is ever written
+// into a class attribute.
+func updateSeverityClass(s service.Severity) string {
+	switch s {
+	case service.SeverityLow:
+		return "sev-low"
+	case service.SeverityMedium:
+		return "sev-medium"
+	case service.SeverityCritical:
+		return "sev-critical"
+	default:
+		return ""
+	}
+}
+
+// updatesHubSummary is the hub row's one line for the newest update: "{Line 1}
+// · {Category}" for an event row, and the row's own line for the Reliable note,
+// an unavailable report and the rolled up row (UI-SPEC B2).
+func updatesHubSummary(item service.UpdateItem) string {
+	switch {
+	case item.Kind == service.UpdateReliableNearby, !item.Available, item.Kind == service.UpdateMore, item.Category == "":
+		return item.Event
+	default:
+		return item.Event + " · " + updateCategoryWord(item.Category)
+	}
+}
+
+// fillUpdatesPart puts the answer of UpdatesService.List into the Updates part
+// of the view (D-05). It touches no other part. With failed true the part is
+// flagged and shows no rows; the page still renders (UI-SPEC B3 error state).
+// buildActivityPage keeps its signature and its empty Updates part, so the Profile
+// handler calls this after it.
+func fillUpdatesPart(view *activityPageView, page service.UpdatesPage, failed bool, now time.Time) {
+	for i := range view.Parts {
+		p := &view.Parts[i]
+		if p.Key != activityPartUpdates {
+			continue
+		}
+		if failed {
+			p.UpdatesFailed = true
+			return
+		}
+		rows := make([]activityUpdateRow, 0, len(page.Items))
+		for _, item := range page.Items {
+			row := activityUpdateRow{
+				ID:            item.ID,
+				Available:     item.Available,
+				Unread:        item.Unread,
+				IsMore:        item.Kind == service.UpdateMore,
+				Event:         item.Event,
+				ReportLine:    item.ReportLine,
+				Category:      updateCategoryWord(item.Category),
+				Severity:      updateSeverityWord(item.Severity),
+				SeverityClass: updateSeverityClass(item.Severity),
+				Trust:         item.Trust,
+				When:          profileRelativeTime(item.CreatedAt, now),
+				Label:         updateRowLabel(item, now),
+			}
+			if item.Available && item.ReportID != nil && item.Kind != service.UpdateMore {
+				row.Href = "/?report=" + strconv.FormatInt(*item.ReportID, 10)
+			}
+			rows = append(rows, row)
+		}
+		p.Updates = rows
+		p.Count = len(rows)
+		p.NewCount = page.Unread
+		p.UpdatesCut = page.Total > len(rows)
+		if len(page.Items) > 0 {
+			p.Summary = updatesHubSummary(page.Items[0])
+		}
+		return
+	}
 }
 
 // activityPageView is what buildActivityPage hands the Profile handler: the five
@@ -266,8 +376,8 @@ func buildActivityPage(page service.ActivityPage, current string, now time.Time)
 		}
 		switch spec.Key {
 		case activityPartUpdates:
-			// Phase 3.2 fills Updates; until then it shows the number 0 and the
-			// "{N} new" tag is that phase's to add.
+			// Phase 3.2: fillUpdatesPart fills the rows, the count, the "{N} new"
+			// tag and the summary after this; here it starts as the empty part.
 			p.ShowCount = true
 			p.Summary = hubUpdatesNone
 		case activityPartPosted:

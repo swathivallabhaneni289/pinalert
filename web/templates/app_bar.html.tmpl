@@ -33,13 +33,27 @@
   {{if eq .Nav.Current "nearby"}}
   {{template "place_search.html.tmpl" .}}
   {{end}}
-  <button type="button" id="bell-trigger" class="app-topbar__bell" aria-label="Updates" aria-haspopup="dialog" aria-expanded="false" aria-controls="bell-list"><span class="app-icon app-icon--bell" aria-hidden="true"></span></button>
+  <button type="button" id="bell-trigger" class="app-topbar__bell" aria-label="Updates" aria-haspopup="dialog" aria-expanded="false" aria-controls="bell-list" data-poll-interval-ms="30000"><span class="app-icon app-icon--bell" aria-hidden="true"></span><span class="app-topbar__count" id="bell-count" aria-hidden="true" hidden></span></button>
   <div id="bell-list" class="bell-list" role="dialog" aria-label="Updates" hidden>
     <div class="bell-list__head">
       <p class="bell-list__title">Updates</p>
       <button type="button" class="bell-list__close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
     </div>
-    <p class="bell-list__empty">No updates yet</p>
+    <div id="bell-body" class="bell-list__body">
+      <div id="bell-loading" class="bell-list__loading" hidden>
+        <div class="skeleton-row"></div>
+        <div class="skeleton-row"></div>
+        <div class="skeleton-row"></div>
+      </div>
+      <div id="bell-error" class="bell-list__state" hidden>
+        <p class="bell-list__state-title">Couldn't load updates</p>
+        <p>Check your connection and try again.</p>
+        <button type="button" class="bell-list__retry">Try again</button>
+      </div>
+      <p id="bell-stale" class="bell-list__stale" hidden>Couldn't refresh. Showing the last list. <button type="button" class="bell-list__retry">Try again</button></p>
+      <ul id="bell-rows" class="bell-list__rows" hidden></ul>
+      <p class="bell-list__empty">No updates yet</p>
+    </div>
     <a class="bell-list__all" href="/profile?part=updates">See all updates</a>
   </div>
   {{template "theme_toggle.html.tmpl" .}}

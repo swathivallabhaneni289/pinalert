@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/activity.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/app-bar.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/updates.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
   <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
 </head>
@@ -28,7 +29,7 @@
 
     <nav class="activity-hub" aria-label="My activity">
       {{range .Parts}}
-      <a class="activity-hub__row" href="{{.Href}}" data-part-link="{{.Key}}"><span class="activity-hub__tile" aria-hidden="true"><span class="app-icon app-icon--{{.Icon}}"></span></span><span class="activity-hub__text"><span class="activity-hub__name">{{.Name}}</span><span class="activity-hub__summary">{{.Summary}}</span></span>{{if .ShowCount}}<span class="activity-hub__count">{{.Count}}</span>{{else if eq .Key "ended"}}<span class="activity-hub__count" id="ended-hub-count" hidden></span>{{end}}<span class="app-icon app-icon--chevron-right activity-hub__chevron" aria-hidden="true"></span></a>
+      <a class="activity-hub__row" href="{{.Href}}" data-part-link="{{.Key}}"><span class="activity-hub__tile" aria-hidden="true"><span class="app-icon app-icon--{{.Icon}}"></span></span><span class="activity-hub__text"><span class="activity-hub__name">{{.Name}}</span><span class="activity-hub__summary">{{.Summary}}</span></span>{{if .ShowCount}}{{if and (eq .Key "updates") .NewCount}}<span class="activity-hub__new">{{.NewCount}} new</span>{{else}}<span class="activity-hub__count">{{.Count}}</span>{{end}}{{else if eq .Key "ended"}}<span class="activity-hub__count" id="ended-hub-count" hidden></span>{{end}}<span class="app-icon app-icon--chevron-right activity-hub__chevron" aria-hidden="true"></span></a>
       {{end}}
     </nav>
 
@@ -124,6 +125,30 @@
             </li>
             {{end}}
           </ol>
+          {{else if and (eq .Key "updates") .UpdatesFailed}}
+          <div class="error-state activity-empty" id="updates-error">
+            <h3>Couldn't load updates</h3>
+            <p class="activity-empty__text">Check your connection and try again.</p>
+            <a class="activity-retry" href="/profile?part=updates">Try again</a>
+          </div>
+          {{else if and (eq .Key "updates") .Updates}}
+          <ul class="urow-list" id="updates-rows">
+            {{range .Updates}}
+            <li class="urow{{if and .Unread .Href}} urow--new{{end}}{{if not .Href}} urow--plain{{end}}{{if .IsMore}} urow--more{{end}}" data-update-id="{{.ID}}"{{if .Unread}} data-unread="true"{{end}}>
+              {{if .Href}}<a class="urow__link" href="{{.Href}}" aria-label="{{.Label}}">{{else}}<div class="urow__link">{{end}}
+                <span class="urow__dot" aria-hidden="true"></span>
+                <span class="urow__text">
+                  <span class="urow__event">{{.Event}}</span>
+                  {{if .ReportLine}}<span class="urow__line">{{.ReportLine}}</span>{{end}}
+                  {{if .Category}}<span class="urow__what"><span class="urow__sev {{.SeverityClass}}" aria-hidden="true"></span>{{.Category}}{{if .Severity}} &middot; {{.Severity}}{{end}}</span>{{end}}
+                  {{if .Trust}}<span class="urow__trust">{{.Trust}}</span>{{end}}
+                </span>
+                <span class="urow__when">{{.When}}</span>
+              {{if .Href}}</a>{{else}}</div>{{end}}
+            </li>
+            {{end}}
+          </ul>
+          {{if .UpdatesCut}}<p class="urow-cut">Showing the newest 50.</p>{{end}}
           {{else}}
           <div class="empty-state profile-empty-state activity-empty">
             <h3>{{.EmptyTitle}}</h3>
@@ -153,5 +178,6 @@
   <script src="/static/js/activity.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/app-bar.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/updates.js?v={{.AssetVersion}}" defer></script>
 </body>
 </html>

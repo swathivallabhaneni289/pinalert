@@ -125,6 +125,12 @@ type Deps struct {
 	// literal that does not set it gives, runs the same writes without a
 	// transaction.
 	ModerationTx service.ModerationTxFunc
+	// AccountTx runs Delete my account (POST /api/me/delete) inside one
+	// transaction, so the scrub, the deletes and the session revocation commit
+	// together or not at all. cmd/server/main.go sets it from the pool through
+	// service.PgxAccountTx. Additive: nil, which every Deps{} literal that does
+	// not set it gives, runs the same writes without a transaction.
+	AccountTx service.AccountTxFunc
 	// OnboardingGate turns on the first-time flow redirect: an HTML GET from an
 	// account that has not agreed to the current terms version or not finished
 	// the flow goes to /welcome (D-27). Additive, as the fields above were: a
@@ -393,6 +399,21 @@ func NewRouter(deps Deps) *chi.Mux {
 	flags := service.NewFlagService(deps.Sessions)
 	// Same for the account service behind the /api/me routes (plan 03.4-01).
 	accounts := service.NewAccountService(deps.Sessions)
+	// Phase 3.2 (plan 07): the updates and mute services, built from the same
+	// sessions store. The nearby reader is an untyped nil when there is no
+	// ReportService, because a typed nil pointer in the interface is not a nil
+	// interface (the PlaceSearch comment below says the same).
+	var nearbyReader service.NearbyReader
+	if deps.Reports != nil {
+		nearbyReader = deps.Reports
+	}
+	updates := service.NewUpdatesService(deps.Sessions, nearbyReader)
+	mutes := service.NewMuteService(deps.Sessions)
+	// Delete my account (plan 03.2-09): built from the sessions store and the
+	// optional transaction seam.
+	deletions := service.NewAccountDeletionService(deps.Sessions, deps.AccountTx)
+	// Log out of all devices (plan 03.2-16): built from the sessions store.
+	sessionsSvc := service.NewSessionService(deps.Sessions)
 	// Nearby and the Low data view start at the account's home area cell centre
 	// when the device location is not available (plan 03.4-33).
 	page.HomeCentre = accounts
@@ -406,7 +427,7 @@ func NewRouter(deps Deps) *chi.Mux {
 	// consuming a visitor's single-use link before they click it
 	// (threat T-01-62). Left outside the gate — it is how a session becomes
 	// verified in the first place.
-	r.Get("/auth/verify", handlers.Verify(deps.AuthService, deps.Template, auth))
+	r.Get("/auth/verify", handlers.Verify(deps.AuthService, deps.Session, deps.Template, auth))
 	// The public legal pages (D-23, P4-A18): no account data (R-07), cacheable only in the browser.
 	r.Get("/disclaimer", handlers.Legal(deps.Template, auth, handlers.LegalDisclaimerPage))
 	r.Get("/policy", handlers.Legal(deps.Template, auth, handlers.LegalPolicyPage))
@@ -502,6 +523,21 @@ func NewRouter(deps Deps) *chi.Mux {
 		// FlagMiddleware, scoped to this one route with r.With. A cross site
 		// POST carries no session cookie (DEC-L), so no CSRF token is needed.
 		r.With(rateGate.FlagMiddleware()).Post("/api/reports/{id}/flag", handlers.FlagReport(flags))
+		// The five Phase 3.2 routes (plan 07). Flat literal paths like the
+		// others, gated because they act only for the account the gate
+		// resolved. The bell polls every 30 seconds from its own script, so
+		// there is no rate gate here; the per account limiter in
+		// internal/ratelimit can be added later if load shows it is needed.
+		// GET /api/updates refreshes the caller's updates and answers the bell.
+		r.Get("/api/updates", handlers.GetUpdates(updates))
+		// POST /api/updates/read marks the caller's own rows read up to an id.
+		r.Post("/api/updates/read", handlers.MarkUpdatesRead(updates))
+		// POST /api/reports/{id}/mute turns updates off for the caller only.
+		r.Post("/api/reports/{id}/mute", handlers.MuteReport(mutes))
+		// POST /api/reports/{id}/unmute turns them back on, whatever the report is now.
+		r.Post("/api/reports/{id}/unmute", handlers.UnmuteReport(mutes))
+		// GET /api/me/muted-reports lists the caller's mutes for Settings.
+		r.Get("/api/me/muted-reports", handlers.GetMutedReports(mutes))
 		// GET /api/geocode (plan 07-03). Registered as a flat literal path,
 		// not under an r.Route mount — see this router's own doc comments
 		// above for why every /api/* path here is flat, gated or not.
@@ -538,13 +574,13 @@ func NewRouter(deps Deps) *chi.Mux {
 		// profile.html.tmpl includes 01.1-06's account_header.html.tmpl
 		// partial via {{template}}, which html/template only resolves
 		// within the template set it was parsed into (01.1-07-PLAN.md).
-		r.Get("/profile", handlers.Profile(deps.AuthService, deps.Template, auth))
+		r.Get("/profile", handlers.Profile(deps.AuthService, updates, deps.Template, auth))
 		// Phase 3.4 (D-22, D-25): the Official alerts place and the one
 		// Settings page. Both are gated because they belong to the signed in
 		// app, and both pass the onboarding middleware like every page above.
 		// They serve text/html, so they carry no swag annotation.
 		r.Get("/alerts", handlers.AlertsPage(deps.Template, page))
-		r.Get("/settings", handlers.SettingsPage(deps.Template, accounts, page))
+		r.Get("/settings", handlers.SettingsPage(deps.Template, accounts, mutes, page))
 		// Phase 3.4 (D-27, plan 10): the first-time flow. It sits in this gated
 		// group because it belongs to the signed in account, and the onboarding
 		// middleware above lets this exact path through so the redirect to it
@@ -564,8 +600,22 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.Post("/api/me/consent", handlers.AcceptTerms(accounts))
 		// PATCH /api/me/profile saves or clears the optional name and home area.
 		r.Patch("/api/me/profile", handlers.UpdateProfile(accounts))
+		// PATCH /api/me/alerts saves the Reliable reporter alert switch and its
+		// distance from the home area (Phase 3.2, NOTIF-05, D-26). Gated; the
+		// account comes from the gate and the body names nothing else.
+		r.Patch("/api/me/alerts", handlers.UpdateAlertSettings(accounts))
 		// POST /api/me/first-run-done marks the first-time flow finished.
 		r.Post("/api/me/first-run-done", handlers.FirstRunDone(accounts))
+		// POST /api/me/delete deletes the caller's account by anonymising it
+		// (Phase 3.2, D-23). Gated; the strict JSON body must say confirm true
+		// and the session cookie is SameSite Lax, so a cross site form cannot
+		// send it.
+		r.Post("/api/me/delete", handlers.DeleteAccount(deletions, deps.Session))
+		// POST /api/me/logout-all ends every session of the caller's account
+		// on every device, this one included (Phase 3.2, D-23). Gated, JSON
+		// body plus a SameSite Lax cookie as DEC-L. Plain /auth/logout above is
+		// unchanged (orchestrator decision 6).
+		r.Post("/api/me/logout-all", handlers.LogOutAllDevices(sessionsSvc, deps.Session))
 	})
 
 	// --- Moderator group (D-08): outside the access gate, so an unverified

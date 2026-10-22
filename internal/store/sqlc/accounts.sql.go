@@ -36,6 +36,91 @@ func (q *Queries) AcceptTerms(ctx context.Context, arg AcceptTermsParams) error 
 	return err
 }
 
+const accountEmailForDelete = `-- name: AccountEmailForDelete :one
+SELECT email, deleted_at
+FROM accounts
+WHERE id = $1
+`
+
+type AccountEmailForDeleteRow struct {
+	Email     string
+	DeletedAt pgtype.Timestamptz
+}
+
+// Delete my account step 1: reads the real address and the deleted stamp
+// before anything is scrubbed, because the magic link tokens and the resend
+// cooldown of that address are removed by it, and a repeat call must find the
+// account already deleted. Option A, anonymise (owner confirmed 2026-10-18).
+func (q *Queries) AccountEmailForDelete(ctx context.Context, id int64) (AccountEmailForDeleteRow, error) {
+	row := q.db.QueryRow(ctx, accountEmailForDelete, id)
+	var i AccountEmailForDeleteRow
+	err := row.Scan(&i.Email, &i.DeletedAt)
+	return i, err
+}
+
+const deleteAccountAlertSettings = `-- name: DeleteAccountAlertSettings :exec
+DELETE FROM account_alert_settings WHERE account_id = $1
+`
+
+// Delete my account: the person's alert switch and distance.
+func (q *Queries) DeleteAccountAlertSettings(ctx context.Context, accountID int64) error {
+	_, err := q.db.Exec(ctx, deleteAccountAlertSettings, accountID)
+	return err
+}
+
+const deleteAccountCursors = `-- name: DeleteAccountCursors :exec
+DELETE FROM update_cursors WHERE account_id = $1
+`
+
+// Delete my account: the bookkeeping behind the person's bell.
+func (q *Queries) DeleteAccountCursors(ctx context.Context, accountID int64) error {
+	_, err := q.db.Exec(ctx, deleteAccountCursors, accountID)
+	return err
+}
+
+const deleteAccountMutes = `-- name: DeleteAccountMutes :exec
+DELETE FROM report_mutes WHERE account_id = $1
+`
+
+// Delete my account: the person's muted reports.
+func (q *Queries) DeleteAccountMutes(ctx context.Context, accountID int64) error {
+	_, err := q.db.Exec(ctx, deleteAccountMutes, accountID)
+	return err
+}
+
+const deleteAccountUpdates = `-- name: DeleteAccountUpdates :exec
+DELETE FROM updates WHERE account_id = $1
+`
+
+// Delete my account: the person's bell rows. They hold only a kind and a report
+// id and are read by nobody else.
+func (q *Queries) DeleteAccountUpdates(ctx context.Context, accountID int64) error {
+	_, err := q.db.Exec(ctx, deleteAccountUpdates, accountID)
+	return err
+}
+
+const deleteEmailCooldownForEmail = `-- name: DeleteEmailCooldownForEmail :exec
+DELETE FROM email_cooldowns WHERE email = $1
+`
+
+// Delete my account: the resend cooldown of the real address, so the same
+// address can sign up again at once as a brand new account.
+func (q *Queries) DeleteEmailCooldownForEmail(ctx context.Context, email string) error {
+	_, err := q.db.Exec(ctx, deleteEmailCooldownForEmail, email)
+	return err
+}
+
+const deleteMagicLinkTokensForEmail = `-- name: DeleteMagicLinkTokensForEmail :exec
+DELETE FROM magic_link_tokens WHERE email = $1
+`
+
+// Delete my account: the sign in links ever sent to the real address are the
+// person's own rows. Nothing else reads this table for another account.
+func (q *Queries) DeleteMagicLinkTokensForEmail(ctx context.Context, email string) error {
+	_, err := q.db.Exec(ctx, deleteMagicLinkTokensForEmail, email)
+	return err
+}
+
 const getAccountByEmail = `-- name: GetAccountByEmail :one
 SELECT id, email, created_at FROM accounts WHERE email = $1
 `
@@ -51,6 +136,22 @@ func (q *Queries) GetAccountByEmail(ctx context.Context, email string) (GetAccou
 	var i GetAccountByEmailRow
 	err := row.Scan(&i.ID, &i.Email, &i.CreatedAt)
 	return i, err
+}
+
+const getAccountHomeCell = `-- name: GetAccountHomeCell :one
+SELECT home_area_cell
+FROM accounts
+WHERE id = $1
+`
+
+// The stored home area cell (precision 5, about 5 km), the anchor for the
+// trusted reporter alerts. Read only by server code; it is never written into a
+// page or a response. NULL when no home area is set.
+func (q *Queries) GetAccountHomeCell(ctx context.Context, id int64) (*string, error) {
+	row := q.db.QueryRow(ctx, getAccountHomeCell, id)
+	var home_area_cell *string
+	err := row.Scan(&home_area_cell)
+	return home_area_cell, err
 }
 
 const getAccountProfile = `-- name: GetAccountProfile :one
@@ -108,6 +209,43 @@ WHERE id = $1
 func (q *Queries) MarkFirstRunDone(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, markFirstRunDone, id)
 	return err
+}
+
+const scrubDeletedAccount = `-- name: ScrubDeletedAccount :execrows
+UPDATE accounts
+SET email             = $1,
+    display_name      = NULL,
+    home_area_name    = NULL,
+    home_area_cell    = NULL,
+    terms_agreed_at   = NULL,
+    terms_version     = NULL,
+    first_run_done_at = NULL,
+    deleted_at        = $2
+WHERE id = $3
+  AND deleted_at IS NULL
+`
+
+type ScrubDeletedAccountParams struct {
+	ScrubbedEmail string
+	Now           pgtype.Timestamptz
+	ID            int64
+}
+
+// Delete my account, the last step: scrubs the accounts row in place. The row
+// keeps its id, so every foreign key from votes, sessions, report flags and
+// moderation actions stays valid and nobody else's counts move. The email
+// becomes a non deliverable address that keeps the UNIQUE column satisfied, the
+// personal columns are cleared (both pairs together, so the accounts_terms_pair
+// and accounts_home_area_pair checks hold) and deleted_at is stamped. The
+// deleted_at IS NULL guard makes a second call change nothing. Nothing here
+// touches votes, reports or sessions.account_id (Option A, owner confirmed
+// 2026-10-18).
+func (q *Queries) ScrubDeletedAccount(ctx context.Context, arg ScrubDeletedAccountParams) (int64, error) {
+	result, err := q.db.Exec(ctx, scrubDeletedAccount, arg.ScrubbedEmail, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateAccountProfile = `-- name: UpdateAccountProfile :exec

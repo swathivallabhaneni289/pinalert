@@ -71,9 +71,24 @@ type ReportView struct {
 	Trust            Trust
 	WrittenAt        *time.Time
 	ViewerFlagged    bool
+	// ViewerFollows is true when the reader posted this report or holds a vote
+	// row of any kind on it (ViewerFollows in follow.go, D-09, D-10). ViewerMuted
+	// is true when the reader turned updates off for it (D-11). Both are viewer
+	// specific like ViewerVote and never say who else follows or muted. Follows is
+	// filled from the vote rows the read already holds and Muted from the one
+	// batched extras read, so neither adds a round trip. Both stay false on the
+	// finished views of the Past read.
+	ViewerFollows bool
+	ViewerMuted   bool
 	// ConfirmedByPeople is the server authored Show Confirmed membership
 	// (ConfirmedByPeople in confirmed.go). Resolve never reads it.
 	ConfirmedByPeople bool
+	// KeptByReliableFilter is the server authored membership of the opt in Only
+	// Reliable reporters tick (KeptByReliableFilter in reliablefilter.go): true
+	// when the reporter's tag is Reliable reporter or the report is serious.
+	// Only the reader's own tick reads it; nothing is hidden by default and
+	// Resolve never reads it.
+	KeptByReliableFilter bool
 }
 
 // ListableInAll reports whether a report with visibility v belongs in the Show

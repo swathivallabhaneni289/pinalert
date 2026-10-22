@@ -36,6 +36,18 @@ type settingsViewModel struct {
 	// Legal is the text of the in app reader window opened from the About
 	// Pinalert rows (D-31). It holds nothing about the account (R-07).
 	Legal LegalText
+	// MutedCount is how many reports the account muted. It is drawn by plan 12's
+	// Muted reports row in the Notifications section (Phase 3.2).
+	MutedCount int
+	// AlertsOn, AlertRadiusKm, HasHomeArea and AlertRadii are the Reliable
+	// reporter alert of NOTIF-05 (Phase 3.2, plan 13). Plan 15 draws the two
+	// Phone notifications rows from them: the switch, the distance picker over
+	// AlertRadii, and the "Add a home area first." state when HasHomeArea is
+	// false. The home area cell never enters the page, only this boolean.
+	AlertsOn      bool
+	AlertRadiusKm int
+	HasHomeArea   bool
+	AlertRadii    []int
 }
 
 // SettingsPage handles GET /settings: the one Settings page (Phase 3.4, D-25,
@@ -49,7 +61,7 @@ type settingsViewModel struct {
 //
 // Deliberately carries no swag annotation: it serves text/html and lives
 // outside @BasePath /api.
-func SettingsPage(tmpl *template.Template, accounts *service.AccountService, cfg PageConfig) http.HandlerFunc {
+func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mutes *service.MuteService, cfg PageConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acc, ok := account.FromContext(r.Context())
 		if !ok {
@@ -65,14 +77,42 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, cfg
 			return
 		}
 
+		// The muted count for the People and reports row. A failed read is a
+		// logged 500 like the profile read: a row that reads 0 when it is not
+		// would hide a mute the person can no longer find.
+		mutedCount := 0
+		if mutes != nil {
+			mutedCount, err = mutes.MutedCount(r.Context(), acc.ID)
+			if err != nil {
+				log.Printf("handlers: SettingsPage: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		// The alert switch and distance. A failed read is a logged 500 like the
+		// profile read: a switch drawn off when it is on would let the person
+		// believe they are not being alerted.
+		alerts, err := accounts.AlertSettings(r.Context(), acc.ID)
+		if err != nil {
+			log.Printf("handlers: SettingsPage: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
 		chrome := cfg.Chrome.withDefaults()
 		vm := settingsViewModel{
-			AssetVersion: cfg.AssetVersion,
-			Chrome:       chrome,
-			AccountID:    acc.ID,
-			Nav:          navFor(NavSettings, navTitle("Settings"), navBack("/")),
-			Profile:      profile,
-			Legal:        legalTextFor(chrome),
+			AlertsOn:      alerts.ReliableAlertsOn,
+			AlertRadiusKm: alerts.AlertRadiusKm,
+			HasHomeArea:   alerts.HasHomeArea,
+			AlertRadii:    service.AlertRadii,
+			MutedCount:    mutedCount,
+			AssetVersion:  cfg.AssetVersion,
+			Chrome:        chrome,
+			AccountID:     acc.ID,
+			Nav:           navFor(NavSettings, navTitle("Settings"), navBack("/")),
+			Profile:       profile,
+			Legal:         legalTextFor(chrome),
 		}
 		if profile.DisplayName != nil {
 			vm.DisplayName = *profile.DisplayName

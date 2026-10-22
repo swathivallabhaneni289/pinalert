@@ -270,7 +270,7 @@ func p15SecondSession(t *testing.T, baseURL string, pool *pgxpool.Pool, accountI
 	}
 	resp.Body.Close()
 	sid := sessionIDFromJar(t, c, baseURL)
-	err = sqlcgen.New(pool).BindSessionAccount(context.Background(), sqlcgen.BindSessionAccountParams{SessionID: sid, AccountID: &accountID})
+	_, err = sqlcgen.New(pool).BindSessionAccount(context.Background(), sqlcgen.BindSessionAccountParams{SessionID: sid, AccountID: &accountID})
 	if err != nil {
 		t.Fatalf("binding the second session: %v", err)
 	}

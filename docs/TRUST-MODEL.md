@@ -494,6 +494,42 @@ For a report the bypass does not touch, Confirmed is the same thing as the resol
 
 The All choice is a separate read, `view=all`, which returns the active and the disputed reports together, each with its own view word, so the list can put disputed ones last. It never returns a retracted, expired, held or removed report (`TestWithheldReportsInNoFeed` and `TestFeedViewAll`).
 
+## Show menu: Only Reliable reporters
+
+The Show menu also has an Only Reliable reporters tick, for a reader who wants the Nearby list and the alerts to come only from people with a good record. Which reports the tick keeps is decided by the server and sent as the field `kept_by_reliable_filter` on every report in the feed and on a report opened from a link. `KeptByReliableFilter` writes it. The browser reads that field and never holds a tag rule or a threshold.
+
+A report is kept when either of these is true:
+
+- Its reporter's tag is Reliable reporter. The tag is the one on the report's own trust object, so the tick and the reporter line on the card cannot disagree.
+- The report is serious. That is `ReportMeta.Serious`, the one critical rule: a Critical severity, or a report stored with the older rescue needed category. There is no second critical rule in this field, so a Critical report from a brand new reporter stays when the tick is on, and an old rescue needed report stays too.
+
+What the field is not. The tick belongs to the reader's own choice, is not remembered between visits, and nothing reads the field by default. No default view hides, reorders or changes a report because of a reporter tag, so the display only rule for the tag (Phase 3, D-14) holds for every default view. A reader who turns the tick on is choosing to let the tag shape their own list, and only their own. `Resolve` never reads the field and the server still lists every report; the field filters nothing on the server.
+
+Limits worth stating:
+
+- The tag is read for at most `MaxReporterAccountsPerRead` reporter accounts in one read, 200. In a very dense read a far reporter past that count reads none, so a non serious report from a Reliable reporter may be left out of the tick. It errs toward showing fewer reports, never toward calling an unrated reporter reliable.
+- The tag has a price, the same one "Honest limits" gives: extra verified accounts that confirm each other, plus a claimed location for each. A reader who turns the tick on takes that risk with it, which is why the tick is opt in and why Critical reports are kept whatever the tag says.
+
+`TestKeptByReliableFilterGrid` pins the rule over every tag, severity and category. `TestNearbyCarriesKeptByReliableFilter` checks the field on a read, and `TestReliableFilterOnTheWire` checks it on the wire with a seeded Reliable reporter, a new reporter and an old rescue needed report, and that all of them are still listed.
+
+## Reliable reporter alerts
+
+A reader can opt in to a quiet note in the app's bell when a Reliable reporter posts near their home area. This section says who gets one, through which gate, how often, in what words, and what has to exist before the rule is allowed to reach a lock screen or an inbox. It is the Reliable reporter tag acting on other people's screens, so it has to be written down more carefully than the tag on a card.
+
+Who gets one. A signed in reader who has switched the alert on in Settings and has a home area saved. The distance is the reader's own choice of 1, 2, 5 or 10 km, 5 km until they choose (`DefaultAlertRadiusKm`), measured from the middle of the home area's stored cell and not from the feed or from the device. Removing the home area switches the alert off on the server. A report posted before the switch went on never alerts, so turning it on does not replay history. The reporter never hears about their own report. A reader does not hear about a report they follow (that reader already hears about it through the ordinary updates) or one they muted.
+
+The gate. One predicate, `MayNotifyAboutReport`, called with the Reliable alert kind over the resolver's answer for the report. Since the owner amendment of 2026-10-18 a report is eligible from the moment it is posted while it is listable, which is Live or Provisional, critical or not. It is never eligible while Hidden, Withheld, Retracted or expired. This replaced the earlier rule that a non critical report waited until it was Live, and it is safe only because a Provisional report already shows in the feed, dimmed and labelled, so the note never shows a reader more than the feed shows them. The reporter's tag must be Reliable reporter on the report's own trust object, the same tag the Show menu tick reads. The note is a pointer to the report and carries no position, no voter, no account and no place name; the browser sends no position for it either.
+
+The caps. One alert per report per reader, ever (a repeat is a no-op in the database). `ReliableAlertsPerReporterPerHour` alert per reporter per reader per hour, so one reporter posting five reports in a minute gives each reader one note, and the oldest report is the one announced. And the ceiling of `UpdatesHourlyCeiling` updates an hour per person, over which the rest roll up into the "And N more changes" row. The hour is the server's, never the browser's.
+
+The words. The event line is "Reported nearby by a Reliable reporter." The trust line is not stored. It is built from the report's current trust object every time the list is read, so it reads "Not confirmed yet." while people have not confirmed the report and reads the confirmed sentence once they have. The same row changes its words; a confirmation never adds a second row.
+
+The price. The tag is farmable at the price "Honest limits" gives: extra verified accounts that confirm each other, plus a claimed location for each. A Reliable tag therefore grants reach to anyone willing to pay that price, which is why the alert is opt in, capped per reporter, worded as unconfirmed until people confirm it, and limited to the in app bell.
+
+The open dependency. Burst detection (TRUSTX-03) is not built. It is a hard dependency before this rule reaches push or email: the per reporter cap and the "Not confirmed yet." words soften the rule for the bell only, and do not stop several coordinated Reliable accounts from each reaching the same reader. Phase 3.3's Reliable reporter notification kind must record that gap or meet it before it is switched on, and nothing here is evidence that the rule is safe to widen (ROADMAP Phase 3.2 scope note 2).
+
+`TestReliableAlerts` pins the gate and the exclusions over a fake store, `TestReliableAlertsOnRealHistory` runs the rule on a real database with a seeded Reliable reporter, and `TestReliableAlertOverTheBell` shows it over HTTP through the bell's own route, with the owner's at posting case in `TestReliableAlertAtPostingWhenNotCritical`.
+
 ## Where the roadmap words are met
 
 | Roadmap words | What ships | Where in code | Test |

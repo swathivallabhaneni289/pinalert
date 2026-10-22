@@ -2,9 +2,11 @@
 // the Nearby list (Phase 3.4, D-13, UI-SPEC 2c).
 //
 // One button reads "Show: All", "Show: Confirmed" or "Show: Disputed" and opens
-// a menu of three radio choices. Arrow keys move, Enter or Space chooses and
-// closes, Escape closes and returns focus to the button, and a click outside
-// closes. The menu keyboard pattern is account-menu.js's.
+// a menu of three radio choices and, under a hairline, a fourth item, the Only
+// Reliable reporters tick (Phase 3.2, D-26). Arrow keys move through all four,
+// Enter or Space chooses and closes, Escape closes and returns focus to the
+// button, and a click outside closes. The menu keyboard pattern is
+// account-menu.js's.
 //
 // This module decides nothing about trust. A choice goes to Pinalert.setShow,
 // which only assigns; whether a request is needed (All against Disputed read
@@ -12,8 +14,9 @@
 // server's confirmed_by_people) are the store's. Choosing Confirmed against All
 // sends no request, it draws the rows already in the store again.
 //
-// The Only Reliable reporters tick is not drawn until Phase 3.2: the menu
-// leaves room under the three items.
+// The tick is a checkbox item, not a Show choice: it calls
+// PinalertReliable.toggle (reliable.js), which owns its state and its address
+// word, so this file still writes nothing to the address.
 //
 // SECURITY (T-01-03): every word written is a fixed string in this file, and
 // every write goes through Pinalert.setText.
@@ -51,7 +54,7 @@ window.PinalertShowMenu = (function () {
   }
 
   function items() {
-    return menuEl ? menuEl.querySelectorAll('[role="menuitemradio"]') : [];
+    return menuEl ? menuEl.querySelectorAll('[role="menuitemradio"], [role="menuitemcheckbox"]') : [];
   }
 
   function isOpen() {
@@ -68,16 +71,23 @@ window.PinalertShowMenu = (function () {
     if (labelEl) {
       Pinalert.setText(labelEl, BUTTON_WORDS[show]);
     }
+    var reliable = !!(window.Pinalert && Pinalert.state && Pinalert.state.reliable);
     var list = items();
     for (var i = 0; i < list.length; i++) {
-      list[i].setAttribute('aria-checked', list[i].getAttribute('data-show') === show ? 'true' : 'false');
+      if (list[i].getAttribute('data-reliable') !== null) {
+        list[i].setAttribute('aria-checked', reliable ? 'true' : 'false');
+      } else {
+        list[i].setAttribute('aria-checked', list[i].getAttribute('data-show') === show ? 'true' : 'false');
+      }
     }
   }
 
+  // checkedItem is the item that takes focus when the menu opens: the chosen
+  // Show choice. The tick is never it, so opening the menu lands on a radio.
   function checkedItem() {
     var list = items();
     for (var i = 0; i < list.length; i++) {
-      if (list[i].getAttribute('aria-checked') === 'true') {
+      if (list[i].getAttribute('data-show') !== null && list[i].getAttribute('aria-checked') === 'true') {
         return list[i];
       }
     }
@@ -106,6 +116,9 @@ window.PinalertShowMenu = (function () {
     if (!menuEl || !buttonEl || isOpen()) {
       return;
     }
+    // The tick can be turned off outside this menu (the Show everyone buttons
+    // of reliable.js), so the items are brought in step as the menu opens.
+    sync();
     menuEl.hidden = false;
     buttonEl.setAttribute('aria-expanded', 'true');
     if (!outsideBound) {
@@ -157,6 +170,17 @@ window.PinalertShowMenu = (function () {
     }
   }
 
+  // toggleReliable flips the Only Reliable reporters tick through reliable.js,
+  // which changes the store, the line and the address. The menu closes with
+  // focus back on the Show button, like a Show choice.
+  function toggleReliable() {
+    close(true);
+    if (window.PinalertReliable) {
+      window.PinalertReliable.toggle();
+    }
+    sync();
+  }
+
   function move(step) {
     var list = items();
     if (list.length === 0) {
@@ -204,17 +228,22 @@ window.PinalertShowMenu = (function () {
       var target = evt.target;
       if (target && target.getAttribute && target.getAttribute('data-show')) {
         choose(target.getAttribute('data-show'));
+      } else if (target && target.getAttribute && target.getAttribute('data-reliable') !== null) {
+        toggleReliable();
       }
     }
   }
 
   function onMenuClick(evt) {
     var target = evt.target;
-    while (target && target.getAttribute && !target.getAttribute('data-show')) {
+    while (target && target.getAttribute && !target.getAttribute('data-show') &&
+           target.getAttribute('data-reliable') === null) {
       target = target.parentNode;
     }
     if (target && target.getAttribute && target.getAttribute('data-show')) {
       choose(target.getAttribute('data-show'));
+    } else if (target && target.getAttribute && target.getAttribute('data-reliable') !== null) {
+      toggleReliable();
     }
   }
 

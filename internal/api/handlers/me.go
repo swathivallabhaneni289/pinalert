@@ -17,6 +17,7 @@ import (
 
 	"pinalert/internal/account"
 	"pinalert/internal/service"
+	"pinalert/internal/session"
 )
 
 // maxMeBodyBytes caps the bodies of the /api/me routes. A profile body is a
@@ -179,6 +180,83 @@ func UpdateProfile(svc *service.AccountService) http.HandlerFunc {
 	}
 }
 
+// AlertSettingsRequest is the body of PATCH /me/alerts. Each key is optional: a
+// key left out keeps what is stored, and at least one must be sent.
+type AlertSettingsRequest struct {
+	ReliableAlerts *bool `json:"reliable_alerts" example:"true"`
+	AlertRadiusKm  *int  `json:"alert_radius_km" example:"5"`
+}
+
+// AlertSettingsResponse is the caller's alert settings as stored. It carries no
+// position and no home area cell, only whether a home area is saved.
+type AlertSettingsResponse struct {
+	ReliableAlerts bool `json:"reliable_alerts" example:"true"`
+	AlertRadiusKm  int  `json:"alert_radius_km" example:"5"`
+	HasHomeArea    bool `json:"has_home_area" example:"true"`
+}
+
+// UpdateAlertSettings produces the handler of PATCH /me/alerts.
+//
+// @Summary Turn the Reliable reporter alert on or off and choose its distance
+// @Description Saves whether the signed in account wants an update when a Reliable reporter posts
+// @Description near its home area, and how far away that may be: 1, 2, 5 or 10 km. A key left out
+// @Description keeps what is stored. The alert is off until turned on and the distance is 5 km until
+// @Description changed. The distance is measured from the middle of the saved home area, which is a
+// @Description cell about 5 km across; no position is ever sent or stored for this. Turning the
+// @Description alert on without a home area is refused with the field reliable_alerts, and removing
+// @Description the home area turns the alert off. Only reports posted after the alert was turned on
+// @Description can raise it. The answer is the settings as stored.
+// @Description Requires a session verified by email; an unverified caller receives 401.
+// @Tags me
+// @Accept json
+// @Produce json
+// @Param body body AlertSettingsRequest true "The settings to change"
+// @Success 200 {object} AlertSettingsResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /me/alerts [patch]
+func UpdateAlertSettings(accounts *service.AccountService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		acc, ok := account.FromContext(r.Context())
+		if !ok {
+			// A route mounted outside the gated group, a programming error.
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		r.Body = http.MaxBytesReader(w, r.Body, maxMeBodyBytes)
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		var req AlertSettingsRequest
+		if err := dec.Decode(&req); err != nil {
+			writeFieldError(w, http.StatusBadRequest, "body", "Request body is missing or malformed.")
+			return
+		}
+
+		got, err := accounts.UpdateAlertSettings(r.Context(), acc.ID, service.AlertSettingsUpdate{
+			ReliableAlerts: req.ReliableAlerts,
+			AlertRadiusKm:  req.AlertRadiusKm,
+		})
+		if err != nil {
+			var ve service.ValidationError
+			if errors.As(err, &ve) {
+				writeFieldError(w, http.StatusBadRequest, ve.Field, ve.Message)
+				return
+			}
+			log.Printf("handlers: UpdateAlertSettings: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, http.StatusOK, AlertSettingsResponse{
+			ReliableAlerts: got.ReliableAlertsOn,
+			AlertRadiusKm:  got.AlertRadiusKm,
+			HasHomeArea:    got.HasHomeArea,
+		})
+	}
+}
+
 // FirstRunDone produces the handler of POST /me/first-run-done.
 //
 // @Summary Mark the first-time flow as finished
@@ -214,6 +292,71 @@ func FirstRunDone(svc *service.AccountService) http.HandlerFunc {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// DeleteAccountRequest is the body of POST /me/delete. confirm must be true;
+// a missing key, false or any other value deletes nothing.
+type DeleteAccountRequest struct {
+	Confirm *bool `json:"confirm" example:"true"`
+}
+
+// DeleteAccount produces the handler of POST /me/delete.
+//
+// @Summary Delete my account
+// @Description Deletes the signed in account. The sign in address is replaced by one that can never
+// @Description receive mail, the name, home area and consent are cleared, and every session of the
+// @Description account ends, this one included. The updates, muted reports, alert settings and
+// @Description sign in links of the account are deleted. The reports and votes the person made stay,
+// @Description with no name or link to the person, so every count other people see is unchanged. The
+// @Description same address can sign up again as a brand new account with no history. The body must
+// @Description say confirm true; anything else deletes nothing.
+// @Description Requires a session verified by email; an unverified caller receives 401.
+// @Tags me
+// @Accept json
+// @Produce json
+// @Param body body DeleteAccountRequest true "Must carry confirm true"
+// @Success 204 "Deleted"
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /me/delete [post]
+func DeleteAccount(deletions *service.AccountDeletionService, mgr *session.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		acc, ok := account.FromContext(r.Context())
+		if !ok {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		r.Body = http.MaxBytesReader(w, r.Body, maxMeBodyBytes)
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		var req DeleteAccountRequest
+		if err := dec.Decode(&req); err != nil {
+			writeFieldError(w, http.StatusBadRequest, "body", "Request body is missing or malformed.")
+			return
+		}
+		if req.Confirm == nil || !*req.Confirm {
+			writeFieldError(w, http.StatusBadRequest, "confirm", service.DeleteConfirmMessage)
+			return
+		}
+
+		if err := deletions.DeleteAccount(r.Context(), acc.ID); err != nil {
+			if errors.Is(err, service.ErrAccountAlreadyDeleted) {
+				writeFieldError(w, http.StatusNotFound, "account", "This account is already deleted.")
+				return
+			}
+			// The account id only: the address never reaches the log.
+			log.Printf("handlers: DeleteAccount: account %d: %v", acc.ID, err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		mgr.ClearCookie(w)
+		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

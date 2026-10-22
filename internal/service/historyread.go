@@ -162,7 +162,13 @@ func (s *ReportService) historyCandidates(ctx context.Context, lat, lon, radiusK
 // the current votes once over the ids and the history ids, then the signals.
 // Without withSignals only the reporter and vote reads run, which is all a
 // count needs.
-func (s *ReportService) loadReadContext(ctx context.Context, ids []int64, now time.Time, withSignals bool) (readContext, error) {
+//
+// viewerAccountID goes to the one extras read, which answers the viewer's own
+// mute (D-11). Focus passes the reader. History and RecentHistoryCounts pass 0:
+// the Past tab and the counts need only the moderation state, and the Past
+// tab's views carry neither viewer_follows nor viewer_muted (History clears
+// ViewerFollows), so no viewer flag or mute is read for them.
+func (s *ReportService) loadReadContext(ctx context.Context, ids []int64, now time.Time, withSignals bool, viewerAccountID int64) (readContext, error) {
 	reporterRows, err := s.q.ReporterAccountsForReports(ctx, ids)
 	if err != nil {
 		return readContext{}, err
@@ -189,8 +195,9 @@ func (s *ReportService) loadReadContext(ctx context.Context, ids []int64, now ti
 		return readContext{}, err
 	}
 	// One extras read over the candidate ids, never the history ids. The viewer
-	// id is 0 because this path needs only the moderation state (R-01).
-	extraRows, err := s.q.ReportExtrasForReports(ctx, sqlcgen.ReportExtrasForReportsParams{ReportIds: ids, ViewerAccountID: 0})
+	// id is the caller's: 0 for History and the counts, which need only the
+	// moderation state (R-01), and the reader for Focus, for the mute (D-11).
+	extraRows, err := s.q.ReportExtrasForReports(ctx, sqlcgen.ReportExtrasForReportsParams{ReportIds: ids, ViewerAccountID: viewerAccountID})
 	if err != nil {
 		return readContext{}, err
 	}
@@ -278,6 +285,20 @@ func baseView(in viewInput) ReportView {
 	r := in.Report
 	c := in.Class
 	meta := ReportMeta{Severity: r.Severity, Category: r.Category}
+	isOwn := in.ViewerAccountID != 0 && c.reporterID != nil && *c.reporterID == in.ViewerAccountID
+	// Built first so the reliable tick reads the tag from the same trust object
+	// the report carries.
+	trust := BuildTrust(TrustInput{
+		Rows:              c.votes,
+		ReportID:          r.ID,
+		ReporterAccountID: c.reporterID,
+		Meta:              meta,
+		Visibility:        c.visibility,
+		CreatedAt:         r.CreatedAt,
+		ExpiresAt:         r.ExpiresAt,
+		Now:               in.Now,
+		Reporter:          reporterSignalRef(in.Signals, c.reporterID),
+	})
 	return ReportView{
 		Report:           r,
 		Visibility:       c.visibility,
@@ -285,21 +306,18 @@ func baseView(in viewInput) ReportView {
 		View:             c.view,
 		ViewerVote:       ViewerContentVote(c.votes, r.ID, in.ViewerAccountID),
 		ViewerResolution: ViewerResolution(c.votes, r.ID, in.ViewerAccountID),
-		IsOwnReport:      in.ViewerAccountID != 0 && c.reporterID != nil && *c.reporterID == in.ViewerAccountID,
+		IsOwnReport:      isOwn,
+		// The reader's follow state from the vote rows already held (D-09, D-10).
+		// ViewerMuted is set by Focus from its extras read; History leaves both
+		// false.
+		ViewerFollows: ViewerFollows(c.votes, r.ID, in.ViewerAccountID, isOwn),
 		// Server authored Show Confirmed membership, as Nearby fills it. A finished
 		// report is never active, so it is false; a linked active report is exact.
 		ConfirmedByPeople: ConfirmedByPeople(c.visibility, c.view, c.tally),
-		Trust: BuildTrust(TrustInput{
-			Rows:              c.votes,
-			ReportID:          r.ID,
-			ReporterAccountID: c.reporterID,
-			Meta:              meta,
-			Visibility:        c.visibility,
-			CreatedAt:         r.CreatedAt,
-			ExpiresAt:         r.ExpiresAt,
-			Now:               in.Now,
-			Reporter:          reporterSignalRef(in.Signals, c.reporterID),
-		}),
+		Trust:             trust,
+		// Server authored Only Reliable reporters membership, as Nearby fills it
+		// (NOTIF-04, D-26).
+		KeptByReliableFilter: KeptByReliableFilter(trust.Reporter.Tag, meta),
 	}
 }
 
@@ -367,7 +385,7 @@ func (s *ReportService) RecentHistoryCounts(ctx context.Context, q RecentQuery) 
 	for _, c := range cands {
 		ids = append(ids, c.report.ID)
 	}
-	rc, err := s.loadReadContext(ctx, ids, now, false)
+	rc, err := s.loadReadContext(ctx, ids, now, false, 0)
 	if err != nil {
 		return RecentCounts{}, err
 	}
@@ -457,7 +475,7 @@ func (s *ReportService) Focus(ctx context.Context, q FocusQuery) (FocusResult, e
 	}
 
 	r := reportFromFocusRow(row)
-	rc, err := s.loadReadContext(ctx, []int64{r.ID}, now, true)
+	rc, err := s.loadReadContext(ctx, []int64{r.ID}, now, true, q.ViewerAccountID)
 	if err != nil {
 		return FocusResult{}, err
 	}
@@ -486,6 +504,10 @@ func (s *ReportService) Focus(ctx context.Context, q FocusQuery) (FocusResult, e
 	default:
 		return FocusResult{Status: FocusUnavailable}, nil
 	}
+
+	// The reader's own mute, from the one extras read above (D-11). A viewer of 0
+	// reads false, because no mute row can belong to account 0.
+	view.ViewerMuted = rc.extrasByReport[r.ID].ViewerMuted
 
 	one := []ReportView{view}
 	if err := s.attachUndos(ctx, q.ViewerAccountID, one, now); err != nil {
@@ -536,7 +558,7 @@ func (s *ReportService) History(ctx context.Context, q HistoryQuery) (HistoryPag
 	for _, c := range cands {
 		ids = append(ids, c.report.ID)
 	}
-	rc, err := s.loadReadContext(ctx, ids, now, true)
+	rc, err := s.loadReadContext(ctx, ids, now, true, 0)
 	if err != nil {
 		return HistoryPage{}, err
 	}
@@ -596,14 +618,18 @@ func (s *ReportService) History(ctx context.Context, q HistoryQuery) (HistoryPag
 	page.Reports = make([]ReportView, 0, len(resolved)+len(expired))
 	for _, group := range [][]kept{resolved, expired} {
 		for _, k := range group {
-			page.Reports = append(page.Reports, buildFinishedView(viewInput{
+			v := buildFinishedView(viewInput{
 				Report:          k.cand.report,
 				Class:           k.class,
 				Signals:         rc.signals,
 				ViewerAccountID: q.ViewerAccountID,
 				Centre:          centre,
 				Now:             now,
-			}))
+			})
+			// A finished report gets no more updates, so the Past tab carries no
+			// follow state; ViewerMuted is never read here (viewer 0 extras).
+			v.ViewerFollows = false
+			page.Reports = append(page.Reports, v)
 		}
 	}
 	if err := s.attachUndos(ctx, q.ViewerAccountID, page.Reports, now); err != nil {

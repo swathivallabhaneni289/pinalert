@@ -328,9 +328,11 @@ func (q *Queries) ReportByRequest(ctx context.Context, arg ReportByRequestParams
 
 const reportExtrasForReports = `-- name: ReportExtrasForReports :many
 SELECT r.id AS report_id, r.moderation_state, r.client_written_at,
-       (f.id IS NOT NULL)::bool AS viewer_flagged
+       (f.id IS NOT NULL)::bool AS viewer_flagged,
+       (m.account_id IS NOT NULL)::bool AS viewer_muted
 FROM reports r
 LEFT JOIN report_flags f ON f.report_id = r.id AND f.account_id = $1::bigint
+LEFT JOIN report_mutes m ON m.report_id = r.id AND m.account_id = $1::bigint
 WHERE r.id = ANY($2::bigint[])
 `
 
@@ -344,6 +346,7 @@ type ReportExtrasForReportsRow struct {
 	ModerationState string
 	ClientWrittenAt pgtype.Timestamptz
 	ViewerFlagged   bool
+	ViewerMuted     bool
 }
 
 // The moderation state, the display only written time and the viewer's flag
@@ -354,7 +357,9 @@ type ReportExtrasForReportsRow struct {
 // viewer's own flag, and report_flags_one_per_account allows at most one such
 // row, so a report is never duplicated. A dismissed flag still counts as
 // flagged because the same account can never flag that report again
-// (R-01, D-09).
+// (R-01, D-09). The same holds for the viewer's own mute (D-11):
+// report_mutes has its primary key on (account_id, report_id), so it allows at
+// most one such row and a report is never duplicated.
 func (q *Queries) ReportExtrasForReports(ctx context.Context, arg ReportExtrasForReportsParams) ([]ReportExtrasForReportsRow, error) {
 	rows, err := q.db.Query(ctx, reportExtrasForReports, arg.ViewerAccountID, arg.ReportIds)
 	if err != nil {
@@ -369,6 +374,7 @@ func (q *Queries) ReportExtrasForReports(ctx context.Context, arg ReportExtrasFo
 			&i.ModerationState,
 			&i.ClientWrittenAt,
 			&i.ViewerFlagged,
+			&i.ViewerMuted,
 		); err != nil {
 			return nil, err
 		}

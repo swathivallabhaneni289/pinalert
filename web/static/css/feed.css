@@ -38,6 +38,8 @@
 #alert-banner[hidden],
 #place-line[hidden],
 #filter-line[hidden],
+#reliable-line[hidden],
+#reliable-empty[hidden],
 #map-label[hidden],
 #map-search-status[hidden],
 #map-search-results[hidden] {
@@ -63,6 +65,7 @@
 .pane--list[data-loading] #disputed-empty:not([hidden]),
 .pane--list[data-loading] #confirmed-empty:not([hidden]),
 .pane--list[data-loading] #filter-empty:not([hidden]),
+.pane--list[data-loading] #reliable-empty:not([hidden]),
 .pane--list[data-loading] #feed-error:not([hidden]) {
   display: none;
 }
@@ -228,6 +231,14 @@
   box-shadow: var(--shadow-menu);
 }
 
+/* The hairline between the three Show choices and the Only Reliable reporters
+   tick (Phase 3.2, UI-SPEC Surface D). */
+.show-menu__sep {
+  height: 1px;
+  margin: var(--space-xs) 0;
+  background: var(--color-border);
+}
+
 .show-menu__item {
   display: flex;
   align-items: center;
@@ -373,7 +384,8 @@
 /* A button inside an empty block (See past reports, Clear filter) sits one
    step under the text above it. */
 #feed-empty-history .btn,
-#filter-empty .btn {
+#filter-empty .btn,
+#reliable-empty .btn {
   margin-top: var(--space-sm);
 }
 

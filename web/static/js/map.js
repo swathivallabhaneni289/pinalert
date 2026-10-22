@@ -778,6 +778,15 @@ window.PinalertMap = (function () {
     // owned by votes.js.
     actions.appendChild(block.note);
     actions.appendChild(block.error);
+    // The Mute control (Phase 3.2, D-11) comes first, then the Flag control, so
+    // the two sit on one wrapping line with Mute before Flag. It is hidden for
+    // a reader who neither follows the report nor muted it. A failed mute.js
+    // load leaves the card without it.
+    var muteControl = window.PinalertMute ? PinalertMute.createMuteControl(report) : null;
+    if (muteControl) {
+      actions.appendChild(muteControl.el);
+      actions.appendChild(muteControl.error);
+    }
     // The Flag control is the last element of the actions block, outside the
     // vote controls. Phase 3.1 moved it off the list row into the opened report.
     // A failed flag.js load leaves the card without it rather than stopping
@@ -809,6 +818,7 @@ window.PinalertMap = (function () {
       trust: trust,
       fade: fade,
       votes: block,
+      mute: muteControl,
       actions: actions,
       flag: flagControl,
       approximate: false,
@@ -881,6 +891,9 @@ window.PinalertMap = (function () {
 
     PinalertTrust.updateTrustCard(card.trust, report.trust);
     PinalertVotes.updateVoteBlock(card.votes, report);
+    if (card.mute && window.PinalertMute) {
+      PinalertMute.updateMuteControl(card.mute, report);
+    }
     if (card.flag && window.PinalertFlag) {
       PinalertFlag.updateFlagControl(card.flag, report);
     }
@@ -1635,7 +1648,8 @@ window.PinalertMap = (function () {
   // category. The focus object is the newest answer's (CR-01), so the pin and
   // its popup always show the server's current state, and the store drops it
   // when the link ends. The Show rule keeps the pin off a set the report does
-  // not belong to (D-13).
+  // not belong to (D-13), and the Only Reliable reporters tick keeps it off
+  // when the server's word says the tick leaves the report out (3.2 D-26).
   function focusPinReport(state) {
     var focus = state.focus;
     if (!focus || focus.status !== 'ok' || !focus.report) {
@@ -1652,6 +1666,9 @@ window.PinalertMap = (function () {
       }
     }
     if (!belongsToShow(report, state.show)) {
+      return null;
+    }
+    if (!Pinalert.reportKeptByReliable(report, state.reliable)) {
       return null;
     }
     if (state.category !== '' && report.category !== state.category) {

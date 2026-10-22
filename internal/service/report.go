@@ -1043,6 +1043,20 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 			continue
 		}
 
+		isOwn := reporterID != nil && *reporterID == q.ViewerAccountID
+		// Built first so the reliable tick reads the tag from the same trust
+		// object the report carries.
+		trust := BuildTrust(TrustInput{
+			Rows:              reportVotes,
+			ReportID:          r.ID,
+			ReporterAccountID: reporterID,
+			Meta:              meta,
+			Visibility:        vis,
+			CreatedAt:         r.CreatedAt,
+			ExpiresAt:         r.ExpiresAt,
+			Now:               now,
+			Reporter:          reporterSignalRef(signals, reporterID),
+		})
 		views = append(views, ReportView{
 			Report:           r,
 			Visibility:       vis,
@@ -1050,24 +1064,21 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 			View:             view,
 			ViewerVote:       ViewerContentVote(reportVotes, r.ID, q.ViewerAccountID),
 			ViewerResolution: ViewerResolution(reportVotes, r.ID, q.ViewerAccountID),
-			IsOwnReport:      reporterID != nil && *reporterID == q.ViewerAccountID,
-			Trust: BuildTrust(TrustInput{
-				Rows:              reportVotes,
-				ReportID:          r.ID,
-				ReporterAccountID: reporterID,
-				Meta:              meta,
-				Visibility:        vis,
-				CreatedAt:         r.CreatedAt,
-				ExpiresAt:         r.ExpiresAt,
-				Now:               now,
-				Reporter:          reporterSignalRef(signals, reporterID),
-			}),
+			IsOwnReport:      isOwn,
+			// The reader's own follow and mute state, from rows already read
+			// (D-09, D-10, D-11). Never says who else follows or muted.
+			ViewerFollows: ViewerFollows(reportVotes, r.ID, q.ViewerAccountID, isOwn),
+			ViewerMuted:   ex.ViewerMuted,
+			Trust:         trust,
 			// Display only, set after Resolve and never read by it (R-05).
 			WrittenAt:     WrittenAtForDisplay(r.CreatedAt, writtenAtPtr(ex.ClientWrittenAt)),
 			ViewerFlagged: ex.ViewerFlagged,
 			// Server authored Show Confirmed membership, beside ViewOf and from the
 			// same tally. Resolve never reads it (TRUST-02).
 			ConfirmedByPeople: ConfirmedByPeople(vis, view, tally),
+			// Server authored Only Reliable reporters membership, from the tag on
+			// this report's trust object and the same meta (NOTIF-04, D-26).
+			KeptByReliableFilter: KeptByReliableFilter(trust.Reporter.Tag, meta),
 		})
 	}
 	if err := s.attachUndos(ctx, q.ViewerAccountID, views, now); err != nil {

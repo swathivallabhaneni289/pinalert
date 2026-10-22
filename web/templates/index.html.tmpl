@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="/static/css/app-bar.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/legal.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/window.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/updates.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
@@ -88,6 +89,11 @@
               <span class="app-icon app-icon--check show-menu__check" aria-hidden="true"></span>
               <span class="show-menu__word">Disputed</span>
             </button>
+            <div class="show-menu__sep" role="separator"></div>
+            <button type="button" class="show-menu__item" role="menuitemcheckbox" aria-checked="false" data-reliable>
+              <span class="app-icon app-icon--check show-menu__check" aria-hidden="true"></span>
+              <span class="show-menu__word">Only Reliable reporters</span>
+            </button>
           </div>
         </div>
       </div>
@@ -104,6 +110,7 @@
       <p class="visually-hidden" id="feed-status" role="status"></p>
       <p class="place-line" id="place-line" hidden></p>
       <p class="filter-line" id="filter-line" hidden></p>
+      <p class="filter-line" id="reliable-line" hidden></p>
       <div class="queue-strip" id="queue-strip" hidden></div>
       <div class="feed-stale" id="feed-stale" hidden>
         <p class="inline-note feed-stale__text" id="feed-stale-text"></p>
@@ -137,6 +144,11 @@
         <h2>Nothing matches your filters</h2>
         <p>Try another category or clear the filter.</p>
         <button type="button" class="btn" id="filter-empty-clear">Clear filter</button>
+      </div>
+      <div class="empty-state" id="reliable-empty" hidden>
+        <h2>No reports from Reliable reporters nearby</h2>
+        <p>Critical reports still show. Reports from other people are left out.</p>
+        <button type="button" class="btn" id="reliable-empty-clear">Show everyone</button>
       </div>
       <div class="error-state" id="feed-error" hidden>
         <h2>Couldn't load reports</h2>
@@ -223,17 +235,20 @@
   <script src="/static/js/trust.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/queue.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/flag.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/mute.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/report-form.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/position.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/sheet.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/map.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/modal.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/ended-cards.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/reliable.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/show-menu.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/feed.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/map-tools.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/app-bar.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/updates.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/reader.js?v={{.AssetVersion}}" defer></script>
 </body>
 </html>

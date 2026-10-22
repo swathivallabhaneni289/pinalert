@@ -37,6 +37,15 @@ type fakeAuthQuerier struct {
 	byEmailErr    error
 	bindErr       error
 
+	// bindArgs/bindRows/bindings/bindingErr drive BindSessionAccount and
+	// GetSessionBinding (plan 03.2-06): the recorded bind calls, the queued
+	// rows-affected counts, the raw session rows by session id, and a forced
+	// transport error.
+	bindArgs   []sqlcgen.BindSessionAccountParams
+	bindRows   []int64
+	bindings   map[string]sqlcgen.GetSessionBindingRow
+	bindingErr error
+
 	// cooldownClaims/cooldownClaimErr drive RequestLink's cooldown claim.
 	// newFakes seeds an empty cooldownClaims map so every existing
 	// RequestLink test case that never pre-populates it exercises the
@@ -209,9 +218,34 @@ func (f *fakeAuthQuerier) GetAccountBySessionID(ctx context.Context, sessionID s
 	return f.sessionRow, nil
 }
 
-func (f *fakeAuthQuerier) BindSessionAccount(ctx context.Context, arg sqlcgen.BindSessionAccountParams) error {
+// BindSessionAccount records the call and its argument. Unconfigured it
+// reports one row affected; bindRows queues the row counts of successive calls
+// so a test can make the guarded upsert refuse (zero rows) once.
+func (f *fakeAuthQuerier) BindSessionAccount(ctx context.Context, arg sqlcgen.BindSessionAccountParams) (int64, error) {
 	*f.calls = append(*f.calls, "BindSessionAccount")
-	return f.bindErr
+	f.bindArgs = append(f.bindArgs, arg)
+	if f.bindErr != nil {
+		return 0, f.bindErr
+	}
+	if len(f.bindRows) > 0 {
+		n := f.bindRows[0]
+		f.bindRows = f.bindRows[1:]
+		return n, nil
+	}
+	return 1, nil
+}
+
+// GetSessionBinding records the call and returns the configured raw binding
+// of the session, or pgx.ErrNoRows (a session not stored yet) when none is set.
+func (f *fakeAuthQuerier) GetSessionBinding(ctx context.Context, sessionID string) (sqlcgen.GetSessionBindingRow, error) {
+	*f.calls = append(*f.calls, "GetSessionBinding")
+	if f.bindingErr != nil {
+		return sqlcgen.GetSessionBindingRow{}, f.bindingErr
+	}
+	if row, ok := f.bindings[sessionID]; ok {
+		return row, nil
+	}
+	return sqlcgen.GetSessionBindingRow{}, pgx.ErrNoRows
 }
 
 // ClaimEmailCooldown applies the real ClaimEmailCooldown statement's own
@@ -789,6 +823,189 @@ func TestVerifyTokenSameAccountRebindIsNotConflict(t *testing.T) {
 	if email != "same@example.com" {
 		t.Fatalf("email = %q, want same@example.com", email)
 	}
+}
+
+// --- VerifyTokenAndBind: revoked and deleted sessions (plan 03.2-06) ---
+
+// bindTestSetup builds a service over a fake whose token row is for tokenEmail
+// and whose session "session-1" has the given raw binding. The gate query
+// reads as unverified, as it does for a revoked session or a deleted account.
+func bindTestSetup(t *testing.T, tokenEmail string, accountID int64, binding *sqlcgen.GetSessionBindingRow) (*service.AuthService, *fakeAuthQuerier, *[]string) {
+	t.Helper()
+	fixed := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	q, calls := newFakeQuerier()
+	q.tokenRow = sqlcgen.GetMagicLinkTokenByHashRow{Email: tokenEmail, ExpiresAt: fixed.Add(time.Minute)}
+	q.sessionRowErr = pgx.ErrNoRows
+	q.consumeEmail = tokenEmail
+	q.byEmailRow = sqlcgen.GetAccountByEmailRow{ID: accountID, Email: tokenEmail}
+	if binding != nil {
+		q.bindings = map[string]sqlcgen.GetSessionBindingRow{"session-1": *binding}
+	}
+	svc := service.NewAuthService(q, &fakeMailer{calls: &[]string{}}, "https://pinalert.example", service.WithClock(func() time.Time { return fixed }))
+	return svc, q, calls
+}
+
+func ptrInt64(v int64) *int64    { return &v }
+func ptrString(v string) *string { return &v }
+
+// callIndex returns the position of the first call named name, or -1.
+func callIndex(calls []string, name string) int {
+	return slices.Index(calls, name)
+}
+
+// TestVerifyReadsBindingBeforeConsume pins the order the rotation depends on:
+// the token is consumed before the bind, so the decision to rotate has to be
+// made from a read that comes first.
+func TestVerifyReadsBindingBeforeConsume(t *testing.T) {
+	svc, _, calls := bindTestSetup(t, "b@example.com", 2, &sqlcgen.GetSessionBindingRow{
+		AccountID: ptrInt64(1), Revoked: true, AccountEmail: ptrString("a@example.com"),
+	})
+	if _, _, _, err := svc.VerifyTokenAndBind(context.Background(), "session-1", validRawToken(t), func() string { return "fresh-id" }); err != nil {
+		t.Fatalf("VerifyTokenAndBind: %v", err)
+	}
+	read, consume := callIndex(*calls, "GetSessionBinding"), callIndex(*calls, "ConsumeToken")
+	if read == -1 || consume == -1 || read > consume {
+		t.Fatalf("GetSessionBinding must be called before ConsumeToken: %v", *calls)
+	}
+}
+
+// TestVerifyRotatesRevokedSessionForAnotherAccount is the core claim: a
+// revoked session bound to account A, opened with a link for account B, is not
+// rebound. B is bound to a fresh id and A's row is never written.
+func TestVerifyRotatesRevokedSessionForAnotherAccount(t *testing.T) {
+	svc, q, _ := bindTestSetup(t, "b@example.com", 2, &sqlcgen.GetSessionBindingRow{
+		AccountID: ptrInt64(1), Revoked: true, AccountEmail: ptrString("a@example.com"),
+	})
+	outcome, email, boundID, err := svc.VerifyTokenAndBind(context.Background(), "session-1", validRawToken(t), func() string { return "fresh-id" })
+	if err != nil {
+		t.Fatalf("VerifyTokenAndBind: %v", err)
+	}
+	if outcome != service.OutcomeVerified || email != "b@example.com" {
+		t.Fatalf("outcome = %v, email = %q, want verified for b@example.com", outcome, email)
+	}
+	if boundID != "fresh-id" {
+		t.Fatalf("boundID = %q, want fresh-id", boundID)
+	}
+	if len(q.bindArgs) != 1 || q.bindArgs[0].SessionID != "fresh-id" || q.bindArgs[0].AccountID == nil || *q.bindArgs[0].AccountID != 2 {
+		t.Fatalf("bind calls = %+v, want exactly one binding fresh-id to account 2", q.bindArgs)
+	}
+}
+
+// TestVerifyRotatesDeletedAccountSession: a session of a deleted account is
+// never reused, even for the same address, so the old history stays where it is.
+func TestVerifyRotatesDeletedAccountSession(t *testing.T) {
+	svc, q, _ := bindTestSetup(t, "a@example.com", 5, &sqlcgen.GetSessionBindingRow{
+		AccountID: ptrInt64(1), AccountDeleted: true, AccountEmail: ptrString("a@example.com"),
+	})
+	_, _, boundID, err := svc.VerifyTokenAndBind(context.Background(), "session-1", validRawToken(t), func() string { return "fresh-id" })
+	if err != nil {
+		t.Fatalf("VerifyTokenAndBind: %v", err)
+	}
+	if boundID != "fresh-id" || len(q.bindArgs) != 1 || q.bindArgs[0].SessionID != "fresh-id" {
+		t.Fatalf("boundID = %q, bind calls = %+v, want fresh-id only", boundID, q.bindArgs)
+	}
+}
+
+// TestVerifyRotatesRevokedSessionForSameAccount: a device that was logged out
+// of all devices and signs in again as the same address gets a fresh session
+// id. Note 2026-10-19 (W1): this test used to expect the old id to be revived
+// (TestVerifyRevivesRevokedSessionForSameAccount). A revived id brings back
+// every copy of the old cookie, which defeats Log out of all devices, so a
+// revoked row is never reused, whoever signs in.
+func TestVerifyRotatesRevokedSessionForSameAccount(t *testing.T) {
+	svc, q, _ := bindTestSetup(t, "a@example.com", 1, &sqlcgen.GetSessionBindingRow{
+		AccountID: ptrInt64(1), Revoked: true, AccountEmail: ptrString("a@example.com"),
+	})
+	outcome, _, boundID, err := svc.VerifyTokenAndBind(context.Background(), "session-1", validRawToken(t), func() string { return "fresh-id" })
+	if err != nil {
+		t.Fatalf("VerifyTokenAndBind: %v", err)
+	}
+	if outcome != service.OutcomeVerified || boundID != "fresh-id" {
+		t.Fatalf("outcome = %v, boundID = %q, want verified on fresh-id", outcome, boundID)
+	}
+	if len(q.bindArgs) != 1 || q.bindArgs[0].SessionID != "fresh-id" || q.bindArgs[0].AccountID == nil || *q.bindArgs[0].AccountID != 1 {
+		t.Fatalf("bind calls = %+v, want exactly one binding fresh-id to account 1 and none touching session-1", q.bindArgs)
+	}
+}
+
+// TestVerifyUnboundSessionBindsCurrentID covers a stored row with no account
+// and a session not stored at all: both bind the current id.
+func TestVerifyUnboundSessionBindsCurrentID(t *testing.T) {
+	cases := map[string]*sqlcgen.GetSessionBindingRow{
+		"stored without account": {},
+		"not stored":             nil,
+	}
+	for name, binding := range cases {
+		t.Run(name, func(t *testing.T) {
+			svc, q, _ := bindTestSetup(t, "a@example.com", 1, binding)
+			_, _, boundID, err := svc.VerifyTokenAndBind(context.Background(), "session-1", validRawToken(t), func() string { return "fresh-id" })
+			if err != nil {
+				t.Fatalf("VerifyTokenAndBind: %v", err)
+			}
+			if boundID != "session-1" || len(q.bindArgs) != 1 || q.bindArgs[0].SessionID != "session-1" {
+				t.Fatalf("boundID = %q, bind calls = %+v, want session-1", boundID, q.bindArgs)
+			}
+		})
+	}
+}
+
+// TestVerifyLiveSameAccountKeepsID: a live session bound to the same address
+// is the second device or re-click case, unchanged by this plan.
+func TestVerifyLiveSameAccountKeepsID(t *testing.T) {
+	svc, q, _ := bindTestSetup(t, "a@example.com", 1, &sqlcgen.GetSessionBindingRow{
+		AccountID: ptrInt64(1), AccountEmail: ptrString("a@example.com"),
+	})
+	q.sessionRowErr = nil
+	q.sessionRow = sqlcgen.GetAccountBySessionIDRow{ID: 1, Email: "a@example.com"}
+	_, _, boundID, err := svc.VerifyTokenAndBind(context.Background(), "session-1", validRawToken(t), nil)
+	if err != nil {
+		t.Fatalf("VerifyTokenAndBind: %v", err)
+	}
+	if boundID != "session-1" {
+		t.Fatalf("boundID = %q, want session-1", boundID)
+	}
+}
+
+// TestVerifyRotationNeedsAFreshIDGenerator: when the decision is to rotate and
+// the caller gave no generator, the call fails before the token is consumed,
+// so the link still works for a caller that can rotate.
+func TestVerifyRotationNeedsAFreshIDGenerator(t *testing.T) {
+	svc, q, calls := bindTestSetup(t, "b@example.com", 2, &sqlcgen.GetSessionBindingRow{
+		AccountID: ptrInt64(1), Revoked: true, AccountEmail: ptrString("a@example.com"),
+	})
+	_, _, _, err := svc.VerifyTokenAndBind(context.Background(), "session-1", validRawToken(t), nil)
+	if !errors.Is(err, service.ErrSessionNeedsFreshID) {
+		t.Fatalf("err = %v, want ErrSessionNeedsFreshID", err)
+	}
+	if callIndex(*calls, "ConsumeToken") != -1 || len(q.bindArgs) != 0 {
+		t.Fatalf("token consumed or session bound before the refusal: calls %v, binds %+v", *calls, q.bindArgs)
+	}
+}
+
+// TestVerifyBindRefusalFallsBackToFreshID: a guard refusal no earlier read
+// predicted (zero rows) uses a fresh id when the caller can rotate, and fails
+// with ErrSessionNeedsFreshID when it cannot.
+func TestVerifyBindRefusalFallsBackToFreshID(t *testing.T) {
+	binding := &sqlcgen.GetSessionBindingRow{}
+	t.Run("with generator", func(t *testing.T) {
+		svc, q, _ := bindTestSetup(t, "a@example.com", 1, binding)
+		q.bindRows = []int64{0, 1}
+		_, _, boundID, err := svc.VerifyTokenAndBind(context.Background(), "session-1", validRawToken(t), func() string { return "fresh-id" })
+		if err != nil {
+			t.Fatalf("VerifyTokenAndBind: %v", err)
+		}
+		if boundID != "fresh-id" || len(q.bindArgs) != 2 || q.bindArgs[0].SessionID != "session-1" || q.bindArgs[1].SessionID != "fresh-id" {
+			t.Fatalf("boundID = %q, bind calls = %+v, want session-1 refused then fresh-id", boundID, q.bindArgs)
+		}
+	})
+	t.Run("without generator", func(t *testing.T) {
+		svc, q, _ := bindTestSetup(t, "a@example.com", 1, binding)
+		q.bindRows = []int64{0}
+		_, _, _, err := svc.VerifyTokenAndBind(context.Background(), "session-1", validRawToken(t), nil)
+		if !errors.Is(err, service.ErrSessionNeedsFreshID) {
+			t.Fatalf("err = %v, want ErrSessionNeedsFreshID", err)
+		}
+	})
 }
 
 // --- ReportsForAccount ---

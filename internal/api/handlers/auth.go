@@ -56,7 +56,21 @@ type loginGateViewModel struct {
 	// data view; the login panel then shows the "is on" note instead of the
 	// link that turns it on (D-17, P4-A18).
 	LowDataDefault bool
+	// DoneLine is the one status line above the heading after an account action
+	// (Phase 3.2, UI-SPEC E3). It is set only from the closed list of two done
+	// words and is never built from the address value.
+	DoneLine string
 }
+
+// The done words of GET /login?done= and the lines they show (Phase 3.2,
+// P32-C27 and P32-C28). Settings lands on all-devices after Log out of all
+// devices and on deleted after Delete my account.
+const (
+	loginDoneAllDevices     = "all-devices"
+	loginDoneDeleted        = "deleted"
+	loginDoneAllDevicesLine = "You are logged out of all devices."
+	loginDoneDeletedLine    = "Your account has been deleted."
+)
 
 // lowDataChosen reports whether the request carries the remembered choice of
 // the Low data view: the cookie LowDataCookie with the value 1 and nothing else
@@ -93,6 +107,15 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 				vm.Sent = true
 				vm.Email = addr.Address
 			}
+		}
+
+		// The done word is compared exactly with the two fixed words; any other
+		// value sets nothing and is never written into the page (T-03.2-15).
+		switch r.URL.Query().Get("done") {
+		case loginDoneAllDevices:
+			vm.DoneLine = loginDoneAllDevicesLine
+		case loginDoneDeleted:
+			vm.DoneLine = loginDoneDeletedLine
 		}
 
 		vm.LowDataDefault = lowDataChosen(r)
@@ -209,7 +232,8 @@ type verifyOutcomeViewModel struct {
 // Verify handles GET /auth/verify: reads the current session id from
 // context (never from a query parameter — the token names the account, the
 // signed cookie names the browser being bound), delegates the whole
-// decision to svc.VerifyToken, and renders the one shared outcome template.
+// decision to svc.VerifyTokenAndBind (setting a rotated session cookie when
+// sign in drew a fresh id), and renders the one shared outcome template.
 // Only GET is ever registered for this route (see router.go) — chi does
 // not auto-map HEAD onto a GET-only handler the way net/http.ServeMux
 // does, which cheaply sidesteps one class of mail-security-scanner
@@ -223,7 +247,7 @@ type verifyOutcomeViewModel struct {
 // by adding an annotation; TestSwaggerSpecCoversRoutes does not assert its
 // presence, and doing so would misrepresent the operation's shape (it
 // returns text/html, not any of this package's JSON response types).
-func Verify(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
+func Verify(svc *service.AuthService, mgr *session.Manager, tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID, ok := session.FromContext(r.Context())
 		if !ok {
@@ -232,11 +256,17 @@ func Verify(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) h
 		}
 
 		token := r.URL.Query().Get("token")
-		outcome, email, err := svc.VerifyToken(r.Context(), sessionID, token)
+		outcome, email, boundID, err := svc.VerifyTokenAndBind(r.Context(), sessionID, token, mgr.NewID)
 		if err != nil {
 			log.Printf("handlers: Verify: %v", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
+		}
+		// A revoked or deleted session is never rebound to another account
+		// (Phase 3.2): sign in drew a fresh id, so this browser must carry it.
+		// The cookie is the one Middleware writes, set before any body write.
+		if outcome == service.OutcomeVerified && boundID != sessionID {
+			mgr.SetCookie(w, boundID)
 		}
 
 		vm := verifyOutcomeViewModel{
@@ -716,7 +746,7 @@ func newProfileReport(ar service.ActivityReport, now time.Time) (profileReport, 
 // docs/swagger.json, the same reasoning Verify's doc comment above records:
 // this route serves text/html, not a JSON API operation, and lives outside
 // @BasePath /api (see router.go's package-level swag block).
-func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
+func Profile(svc *service.AuthService, updates *service.UpdatesService, tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acc, ok := account.FromContext(r.Context())
 		if !ok {
@@ -738,11 +768,25 @@ func Profile(svc *service.AuthService, tmpl *template.Template, cfg AuthConfig) 
 		// The part and the old tab value only pick which screen renders; both are
 		// matched against constants and never reach a query or a link (T-34-30).
 		part := parseActivityPart(r.URL.Query().Get("part"), r.URL.Query().Get("tab"))
-		view, err := buildActivityPage(activityPage, part, time.Now())
+		now := time.Now()
+		view, err := buildActivityPage(activityPage, part, now)
 		if err != nil {
 			log.Printf("handlers: Profile: %v", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
+		}
+
+		// The Updates part reads the same List the bell reads (Phase 3.2, D-05),
+		// keyed by the gate's account id. There is no Refresh here: the bell poll
+		// is the producer (research Pattern 8). A failed read renders the page
+		// with the part's error state instead of a 500. The read mark stays with
+		// the browser (plan 08).
+		if updates != nil {
+			updatesPage, uerr := updates.List(r.Context(), acc.ID, service.ActivityUpdatesListSize)
+			if uerr != nil {
+				log.Printf("handlers: Profile: updates: %v", uerr)
+			}
+			fillUpdatesPart(&view, updatesPage, uerr != nil, now)
 		}
 
 		// The record card reads the account's own reporter signal from its

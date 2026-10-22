@@ -131,8 +131,18 @@ func TestSettingsRows(t *testing.T) {
 	for _, m := range buttons {
 		buttonIDs = append(buttonIDs, m[1])
 	}
-	if strings.Join(buttonIDs, ",") != "settings-name-row,settings-home-row" {
-		t.Errorf("About you rows are %v, want the Name row then the Home area row and nothing else", buttonIDs)
+	// Amended 2026-10-19 by Phase 3.2 plan 12 (D-23, LAYOUT-06): the Muted reports
+	// row (People and reports) and the Log out of all devices and Delete my
+	// account rows (Account) are buttons that open windows too, so the button
+	// rows are those five in page order.
+	//
+	// Amended 2026-10-19 by Phase 3.2 plan 15 (D-23, D-26, UI-SPEC E1): an
+	// account with no home area gets the Notifications row "A Reliable reporter
+	// posts near me / Add a home area first", a button that opens the Home area
+	// window, so it sits between Home area and Muted reports. The switch and the
+	// distance rows are not buttons and are hidden for this account.
+	if strings.Join(buttonIDs, ",") != "settings-name-row,settings-home-row,settings-reliable-nohome,settings-muted-row,settings-logout-all-row,settings-delete-row" {
+		t.Errorf("Settings button rows are %v, want Name, Home area, the Add a home area first row, Muted reports, Log out of all devices, Delete my account", buttonIDs)
 	}
 	for _, want := range []string{
 		// Amended 2026-10-22 (owner: "too much details under the heading for
@@ -140,14 +150,22 @@ func TestSettingsRows(t *testing.T) {
 		"About you",
 		"Shown only if you let others follow you", "Used for alerts, never your exact spot", "Not set",
 		"About Pinalert", "Disclaimer", "Policy", "Low data view", "Text only, no map",
-		"Account",
+		// Amended 2026-10-21 when Phase 3.4 plan 43 met Phase 3.2: the owner put
+		// Log out on the laptop too ("I don't see a logout option on my laptop
+		// version, so I think we should add that"), so the Log out form carries
+		// no phone only class and the Account section is pinned by its plain tag.
+		//
+		// Amended 2026-10-22 when Phase 3.4 met Phase 3.2: with the owner's
+		// sketch 008 laptop picture each section has its line again, shown on
+		// the laptop only. The Account line is the sketch's; the Notifications
+		// and People and reports lines stay the 3.2 ones.
+		"Account", "Sign out, or remove your account and its data.",
+		"Hear about Reliable reporters near your home area.", "Reports you have turned updates off for.",
 		`<form class="place-row-form" method="post" action="/auth/logout">`,
-		// Amended 2026-10-21 by plan 43 (owner, "I don't see a logout option
-		// on my laptop version, so I think we should add that"): the Account
-		// section was pinned as phone only (place-section--phone). It is now
-		// drawn on both sizes, so the pin moves to the plain section tag, and
-		// the phone only class is checked absent just below.
 		`<section class="place-section" aria-labelledby="settings-account-title">`,
+		"People and reports", "Muted reports", "Log out of all devices", "Delete my account",
+		// Amended 2026-10-19 by Phase 3.2 plan 15: the Notifications section.
+		`id="settings-phone-title">Notifications</h2>`, "A Reliable reporter posts near me", "Add a home area first",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/settings lacks %q", want)
@@ -157,8 +175,8 @@ func TestSettingsRows(t *testing.T) {
 		t.Errorf("/settings still marks a section phone only; the Account section with Log out is drawn on both sizes (plan 43)")
 	}
 	for _, banned := range []string{
-		"View my profile", "My profile", "Phone notifications", "People and reports",
-		"Log out of all devices", "Delete my account", "Let others follow me", email, "disclaimer-bar",
+		"View my profile", "My profile", "Phone notifications",
+		"Let others follow me", "place-section--phone", email, "disclaimer-bar",
 	} {
 		if strings.Contains(body, banned) {
 			t.Errorf("/settings holds %q", banned)

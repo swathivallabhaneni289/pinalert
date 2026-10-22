@@ -74,6 +74,56 @@ func SeedHistoryReport(t *testing.T, pool *pgxpool.Pool, sessionID, severity, ca
 	return id
 }
 
+// The two voter cells SeedReliableReporter writes on its confirming votes. They
+// are distinct precision 7 cells, so each confirmed report has two independent
+// confirmations.
+const (
+	reliableSeedCellA = "tdr1v8y"
+	reliableSeedCellB = "tdr1vc3"
+)
+
+// SeedReliableReporter makes an account that reads Reliable reporter and returns
+// its id. It creates the account and binds sessionID to it (SeedReporterAccount),
+// seeds two voter accounts, and files six reports from sessionID that all expire
+// at now minus one hour, which puts them inside the 90 day window and judges
+// them. Five of the six are confirmed by the two voters from two distinct
+// precision 7 cells, inserted straight into votes; the sixth has no vote.
+//
+// Provenance of the numbers: they are those of the reporter signal test on
+// seeded history (TestReporterSignalFromSeededHistory). Six equal weight
+// outcomes give 5.25 of 6, p = 0.875, a raw score of 78.125 and a rounded score
+// of 78, which is above the Reliable reporter line, and five corroborated
+// reports meet the five report minimum. The voter emails derive from email, so
+// call it once per email.
+func SeedReliableReporter(t *testing.T, pool *pgxpool.Pool, email string, sessionID string, now time.Time) int64 {
+	t.Helper()
+
+	accountID := SeedReporterAccount(t, pool, email, sessionID)
+	voterA := SeedReporterAccount(t, pool, "reliable-voter-a-"+email)
+	voterB := SeedReporterAccount(t, pool, "reliable-voter-b-"+email)
+
+	expiresAt := now.Add(-time.Hour)
+	for i := 0; i < 6; i++ {
+		id := SeedHistoryReport(t, pool, sessionID, "low", "flood", expiresAt)
+		if i == 5 {
+			continue
+		}
+		for _, v := range []struct {
+			account int64
+			cell    string
+		}{{voterA, reliableSeedCellA}, {voterB, reliableSeedCellB}} {
+			if _, err := pool.Exec(context.Background(),
+				`INSERT INTO votes (report_id, account_id, kind, value, geohash_cell, created_at)
+				 VALUES ($1, $2, 'content', 'confirm', $3, $4)`,
+				id, v.account, v.cell, expiresAt.Add(-2*time.Hour),
+			); err != nil {
+				t.Fatalf("seeding a confirming vote on report %d: %v", id, err)
+			}
+		}
+	}
+	return accountID
+}
+
 // SeedReporterHistory bulk seeds accounts, sessions and reports for the
 // index and cap test, and returns the account ids in ascending order. It uses
 // one INSERT for the accounts and one CopyFrom each for the sessions and the

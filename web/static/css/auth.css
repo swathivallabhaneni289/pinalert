@@ -106,6 +106,16 @@
   margin: 0 0 var(--space-md) 0;
 }
 
+/* The one status line after Log out of all devices or Delete my account
+   (Phase 3.2, UI-SPEC E3). It sits above the heading. The extra .login-card
+   keeps it above the .login-card p rule's specificity. */
+.login-card .login-done {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text);
+  margin: 0 0 var(--space-md) 0;
+}
+
 .login-card label {
   display: block;
   font-size: var(--font-size-label);

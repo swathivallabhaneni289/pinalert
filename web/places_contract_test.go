@@ -33,9 +33,9 @@ func TestPersonMenuItems(t *testing.T) {
 }
 
 // TestBellListContract pins D-32 and UI-SPEC Surface 9: the bell is a button
-// named Updates with no count, it opens a dialog list that says there are no
-// updates yet and links to the Updates part of My activity, and the script that
-// runs it builds no markup and makes no request.
+// named Updates with a hidden count span that Phase 3.2 fills, it opens a dialog
+// list that says there are no updates yet and links to the Updates part of My
+// activity, and the script that runs it builds no markup and makes no request.
 func TestBellListContract(t *testing.T) {
 	bar := p421ReadTemplate(t, "app_bar.html.tmpl")
 	trigger := bellTagWith(t, bar, `id="bell-trigger"`)
@@ -58,10 +58,23 @@ func TestBellListContract(t *testing.T) {
 	if strings.Count(bar, "No updates yet") != 1 || strings.Count(bar, "See all updates") != 1 {
 		t.Errorf("the bell list words must each appear once")
 	}
-	// No count: the bell draws no badge while no updates exist.
+	// Amended 2026-10-17 by Phase 3.2 plan 08 (late amendment, red count;
+	// orchestrator decision 3): Phase 3.2 adds the count. The bell holds one
+	// hidden count span the script fills, and its poll interval as a literal.
+	if !strings.Contains(trigger, `data-poll-interval-ms="30000"`) {
+		t.Errorf("the bell button %s lacks data-poll-interval-ms=\"30000\"", trigger)
+	}
+	countTag := bellTagWith(t, bar, `id="bell-count"`)
+	for _, want := range []string{`id="bell-count"`, `aria-hidden="true"`, ` hidden>`} {
+		if !strings.Contains(countTag, want) {
+			t.Errorf("the bell count %s lacks %s", countTag, want)
+		}
+	}
+	p421InOrder(t, "the count sits inside the bell button", bar, `id="bell-trigger"`, `id="bell-count"`, `</button>`, `id="bell-list"`)
+	// The old class names stay banned: the count is app-topbar__count.
 	for _, banned := range []string{"bell-badge", "app-topbar__badge", "data-count"} {
 		if strings.Contains(bar, banned) {
-			t.Errorf("the bell carries %q, but no count exists before Phase 3.2", banned)
+			t.Errorf("the bell carries %q; the count is app-topbar__count", banned)
 		}
 	}
 	// The bell sits left of the gear and before the person menu.
@@ -153,13 +166,22 @@ func TestAlertsNeverSaysNoAlerts(t *testing.T) {
 // later phase (UI-SPEC Surface 6, Rows that wait, and Surface 1c). A row or a
 // control renders only when its feature exists (D-26). About you arrives in
 // plan 06 and is not listed here.
+//
+// Amended 2026-10-19 by Phase 3.2 plan 12 (D-23, LAYOUT-06): People and reports,
+// Muted reports, Log out of all devices and Delete my account left this list,
+// because their features now exist and Settings draws them.
+//
+// Amended 2026-10-19 by Phase 3.2 plan 15 (D-23, D-26, late amendment rows,
+// UI-SPEC E1): "Phone notifications" (the section is now called Notifications),
+// "A Reliable reporter posts near me" and "How far from my home area" left this
+// list, because Settings draws them now. "Critical reports near my home area",
+// "Severe official alerts for my area", "Changes to reports I posted or voted
+// on" and "Someone I follow posts" stay for Phase 3.3 and Phase 9.
 var waitingSettingsLabels = []string{
 	"View my profile", "My profile",
-	"Phone notifications", "Critical reports near my home area", "Severe official alerts for my area",
-	"Changes to reports I posted or voted on", "A Reliable reporter posts near me", "Someone I follow posts",
-	"How far from my home area",
-	"People and reports", "Let others follow me", "Following", "Followers", "Muted reports", "Blocked people",
-	"Log out of all devices", "Delete my account",
+	"Critical reports near my home area", "Severe official alerts for my area",
+	"Changes to reports I posted or voted on", "Someone I follow posts",
+	"Let others follow me", "Following", "Followers", "Blocked people",
 }
 
 // TestSettingsShowsOnlyExistingRows pins D-25 and D-26: Settings holds the
@@ -193,9 +215,20 @@ func TestSettingsShowsOnlyExistingRows(t *testing.T) {
 			t.Errorf("settings.html.tmpl lacks %q", want)
 		}
 	}
-	p421InOrder(t, "section order", page, `id="settings-you-title"`, "About Pinalert", `id="settings-account-title"`)
-	if got := strings.Count(page, "app-icon--chevron-right"); got != 5 {
-		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the five rows that open something", got)
+	// Amended 2026-10-19 by Phase 3.2 plan 12 (D-23, LAYOUT-06, UI-SPEC D3 and D4):
+	// the Account line is the new sentence, the section order is About you,
+	// People and reports, About Pinalert, Account, and eight rows draw a chevron
+	// (Name, Home area, Muted reports, Disclaimer, Policy, Low data view, Log out
+	// of all devices, Delete my account).
+	//
+	// Amended 2026-10-19 by Phase 3.2 plan 15 (D-23, D-26, LAYOUT-06, UI-SPEC E1):
+	// the Notifications section sits after About you, so the order is you,
+	// settings-phone-title, people, About Pinalert, account; and a ninth row
+	// draws a chevron, the "Add a home area first" row that opens the Home area
+	// window.
+	p421InOrder(t, "section order", page, `id="settings-you-title"`, `id="settings-phone-title"`, `id="settings-people-title"`, "About Pinalert", `id="settings-account-title"`)
+	if got := strings.Count(page, "app-icon--chevron-right"); got != 9 {
+		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the nine rows that open something", got)
 	}
 	header := p421ReadTemplate(t, "account_header.html.tmpl")
 	for _, label := range waitingSettingsLabels {

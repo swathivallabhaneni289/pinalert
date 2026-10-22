@@ -53,7 +53,10 @@ func TestShowMenuRadioSemantics(t *testing.T) {
 	menu := p19Code(t, "static/js/show-menu.js")
 	p13MustContain(t, "show-menu.js", menu,
 		"key === 'ArrowDown'", "key === 'ArrowUp'", "key === 'Home'", "key === 'End'", "key === 'Escape'",
-		"key === 'Enter'", "'[role=\"menuitemradio\"]'", "setAttribute('aria-checked'",
+		// Amended 2026-10-19 by Phase 3.2 plan 14 (D-26, 03.4 D-13): items() selects the
+		// three radios and the Only Reliable reporters checkbox in document order, so the
+		// arrow keys, Home and End reach the tick as the fourth item.
+		"key === 'Enter'", "'[role=\"menuitemradio\"], [role=\"menuitemcheckbox\"]'", "setAttribute('aria-checked'",
 		"setAttribute('aria-expanded', 'true')", "setAttribute('aria-expanded', 'false')",
 		// Amended 2026-10-17 by Phase 3.4 plan 25 (code review part 2 WR-04): the outside click
 		// listener is added and removed in the capture phase (the third argument true), so the
@@ -72,10 +75,24 @@ func TestShowMenuRadioSemantics(t *testing.T) {
 	chooseBody := jsFunctionBody(t, menu, "choose(show)")
 	p13MustContain(t, "choose", chooseBody, "SHOW_WORDS.indexOf(show) === -1", "close(true);", "Pinalert.setShow(show);")
 
-	// The Only Reliable reporters tick is Phase 3.2's, not drawn now.
-	p13MustNotContain(t, "index.html.tmpl", index, "Only Reliable reporters", "Reliable reporters")
-	if !regexp.MustCompile(`(?s)id="show-menu".*?</div>`).MatchString(index) {
-		t.Errorf("could not read the Show menu block")
+	// Amended 2026-10-19 by Phase 3.2 plan 14 (D-26, 03.4 D-13): the Only Reliable
+	// reporters tick is drawn now. The menu holds the three radios, then a
+	// hairline, then exactly one checkbox item with the exact words and no
+	// second line. The old ban on the words in index.html.tmpl is gone.
+	menuBlock := regexp.MustCompile(`(?s)id="show-menu".*?<span class="show-menu__word">Only Reliable reporters</span>\s*</button>\s*</div>`).FindString(index)
+	if menuBlock == "" {
+		t.Fatalf("could not read the Show menu block with the Only Reliable reporters item")
+	}
+	if n := strings.Count(index, `role="menuitemcheckbox"`); n != 1 {
+		t.Errorf("index.html.tmpl holds %d menuitemcheckbox items, want 1", n)
+	}
+	tick := regexp.MustCompile(`<button[^>]*role="menuitemcheckbox"[^>]*>`).FindString(index)
+	p13MustContain(t, "the tick", tick, `class="show-menu__item"`, `aria-checked="false"`, "data-reliable", `type="button"`)
+	p13MustNotContain(t, "the tick", tick, "data-show", `aria-checked="true"`)
+	p13Ordered(t, menuBlock, "#show-menu",
+		`data-show="disputed"`, `class="show-menu__sep" role="separator"`, `role="menuitemcheckbox"`, ">Only Reliable reporters<")
+	if n := strings.Count(index, "Only Reliable reporters"); n != 1 {
+		t.Errorf("index.html.tmpl holds the words Only Reliable reporters %d times, want 1", n)
 	}
 }
 

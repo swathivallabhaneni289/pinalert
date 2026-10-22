@@ -278,6 +278,8 @@ func main() {
 		// Keep and Remove lock the check row first inside one transaction,
 		// the order the moderation worker takes (WR-S01).
 		ModerationTx: service.PgxModerationTx(pool),
+		// Delete my account scrubs, deletes and revokes in one transaction.
+		AccountTx: service.PgxAccountTx(pool),
 		Page: handlers.PageConfig{
 			FallbackLat:     fallbackLat,
 			FallbackLon:     fallbackLon,
