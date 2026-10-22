@@ -299,10 +299,26 @@ test('Tab wraps from the last button to the first tick box, Shift Tab back, and 
   const shift = t.boxes[0].fire('keydown', { key: 'Tab', shiftKey: true });
   assert.equal(shift.defaultPrevented, true);
   assert.equal(t.doc.activeElement, t.back);
-  // A Tab from the note box is left to the browser: it is not the last stop.
-  t.text.focus();
+  // The panel moves focus itself through every stop, so a browser whose
+  // default Tab skips tick boxes and buttons (Safari) cannot drop focus on the
+  // page behind: last box, note box, Send, Go back, first box.
+  t.boxes[4].focus();
+  t.boxes[4].fire('keydown', { key: 'Tab', shiftKey: false });
+  assert.equal(t.doc.activeElement, t.text);
   const fromText = t.text.fire('keydown', { key: 'Tab', shiftKey: false });
-  assert.notEqual(fromText.defaultPrevented, true);
+  assert.equal(fromText.defaultPrevented, true);
+  assert.equal(t.doc.activeElement, t.send);
+  t.send.fire('keydown', { key: 'Tab', shiftKey: true });
+  assert.equal(t.doc.activeElement, t.text);
+  t.text.fire('keydown', { key: 'Tab', shiftKey: true });
+  assert.equal(t.doc.activeElement, t.boxes[4]);
+  // From the title, Tab goes to the first box and Shift Tab to the last button.
+  t.doc.byId['flag-dialog-title'].focus();
+  t.doc.byId['flag-dialog-title'].fire('keydown', { key: 'Tab', shiftKey: false });
+  assert.equal(t.doc.activeElement, t.boxes[0]);
+  t.doc.byId['flag-dialog-title'].focus();
+  t.doc.byId['flag-dialog-title'].fire('keydown', { key: 'Tab', shiftKey: true });
+  assert.equal(t.doc.activeElement, t.back);
   // Escape closes.
   t.text.fire('keydown', { key: 'Escape' });
   assert.equal(t.backdrop.hidden, true);

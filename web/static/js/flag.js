@@ -515,14 +515,16 @@ window.PinalertFlag = (function () {
       firstEl.focus();
       return;
     }
+    // The panel moves focus itself, one stop of focusableInPanel at a time.
+    // Safari's default Tab skips tick boxes and buttons, so leaving Tab to the
+    // browser let focus fall from the note box to the locked page behind the
+    // window (plan 04-31); this keeps every stop reachable in every browser.
+    evt.preventDefault();
+    var at = list.indexOf(active);
     if (evt.shiftKey) {
-      if (active === firstEl || active === refs.title) {
-        evt.preventDefault();
-        lastEl.focus();
-      }
-    } else if (active === lastEl) {
-      evt.preventDefault();
-      firstEl.focus();
+      (at <= 0 ? lastEl : list[at - 1]).focus();
+    } else {
+      (at === -1 || at === list.length - 1 ? firstEl : list[at + 1]).focus();
     }
   }
 
