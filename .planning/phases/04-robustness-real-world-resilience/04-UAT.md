@@ -8,10 +8,10 @@ updated: 2026-10-22T23:45:00+05:30
 
 ## Current Test
 
-number: 10
-name: Flag a report, then the moderator screen
+number: 11
+name: Search a place, and tap to place the pin
 expected: |
-  On the laptop, open any report you did not post (for example "Smoke from a shop on MG Road") and press Flag this report: a small window asks for a reason (Spam, Abusive, False, Dangerous, Other); pick one and send, and it thanks you. Then open http://localhost:8778/moderate (your test account is a moderator): the "Strong wind, loose signboards" report sits under Flagged with its two flags and their reasons, and each report has Keep and Remove. You can try Keep on it. (The rest of this test, the waiting to send strip, the phone following its own light or dark setting and the dark strip in both themes, I check myself.)
+  On the laptop, in Search a place at the top, type a near spelling such as "Benz Circl" or "Patamat": suggestions appear a moment after you stop typing, the right place comes first, inside India and near you, and typing fast never shows an error. Area names end with the district and state. Then press Post a report: on the window's small map, one tap (or click) anywhere puts the pin on that exact spot. You do not have to send the report; Close is fine.
 awaiting: user response
 
 ## Tests
@@ -67,7 +67,10 @@ note: The Flag dialog part of test 10 (2026-10-22). Proposed to the owner: title
 
 ### 11. Viewing session: address search and placing the pin (quick tasks 261016-adr, -pho, -sfu, -sne, -tap)
 expected: Type a close spelling or half a name, for example "Banjra Hills" or "Banjara Hi": suggestions appear a moment after you stop typing, the right place shows first, inside India and near you, and typing fast never shows an error. Area names end with the mandal and the state, for example "Gachibowli, Serilingampalle mandal, Telangana". A long address that isn't on the map shows the nearest road and says so. Then a tap anywhere on the report form's small map puts the pin on the exact spot, with location on or off.
-result: [pending]
+result: issue
+reported: "I mean the map is just zooming out. It's not pointing any place on my laptop." then "it's not taking any proper place. If I say like one of the restaurant to like make it as a pinpoint of like a famous place so that people would know, that place is only not available. That should not happen, right? We should make sure it works fine."
+severity: major
+note: Checked 2026-10-23 through /api/geocode/place near Benz Circle: Kanaka Durga Temple, Prakasam Barrage, Babai Hotel and Barbeque Nation are found and placed right; PVP Square is not in the map data and the answer then leads with far places of similar names (Delhi, Bhopal, Mumbai). Picking a place moves and zooms the Nearby map but draws no mark at the place. A tap on the Post a report map places the pin (checked in WebKit, location on and off). Built by plan 04-32.
 
 ### 12. Record the moderation scores
 expected: With your OpenAI key, from the repository: `read -rs OPENAI_API_KEY`, then `MODERATION_LIVE=1 OPENAI_API_KEY="$OPENAI_API_KEY" go run ./cmd/modrecord`, then `unset OPENAI_API_KEY`. Afterwards TestScreeningFixture passes instead of skipping. Full steps: 04-27-SUMMARY.md, "Owner checks" item 1.
@@ -90,8 +93,8 @@ result: [pending]
 
 total: 15
 passed: 2
-issues: 2
-pending: 11
+issues: 3
+pending: 10
 skipped: 0
 blocked: 0
 
@@ -118,3 +121,10 @@ blocked: 0
   test: 10
   artifacts: [the laptop report popup Flag (boxed, border on all sides), the 3.2 mute control (mute.js, updates.css; a small outlined button between Mark resolved and the trust card)]
   missing: [Flag as the calm full width row on the laptop popup too; Mute as a calm row above Flag with a bell off glyph, reading "Stop updates about this report" and "Get updates about this report again"; proposed to the owner, answer pending]
+- truth: "A place search answers with places near the person, says plainly when nothing near matches, and the picked place is marked on the map"
+  status: failed
+  reason: "User reported: the map just zooms out and points at no place; a famous place used as a landmark is not available"
+  severity: major
+  test: 11
+  artifacts: [internal/geocode/photon.go (bbox India, near bias), internal/api/handlers (GeocodePlace), web/static/js/map-tools.js (the Nearby pick), the Post a report location search]
+  missing: [drop far matches when near ones exist and say so when none are near, a mark on the Nearby map at the picked place at street zoom, the tap the map hint when nothing matches]
