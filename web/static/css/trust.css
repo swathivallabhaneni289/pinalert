@@ -1527,7 +1527,9 @@
    data view (low.css .report-row--low .flag-control) in place of a boxed
    button: full width, a hairline above in the muted token (3 to 1), the alert
    glyph at 20px, semibold text in the text colour, 48px tall, no box and no
-   underline. The hover fill is chrome.css's. The phone's row is phone.css's. */
+   underline. The phone's row is phone.css's; the hover fill of both is the
+   rule after the glyph, since the transparent background here outranks
+   chrome.css's own hover rule. */
 .leaflet-container .popup-card__actions .flag-control:not([hidden]) {
   display: flex;
   align-items: center;
@@ -1554,6 +1556,12 @@
   background-color: currentColor;
   -webkit-mask: url("/static/icons/circle-alert.svg") center / contain no-repeat;
   mask: url("/static/icons/circle-alert.svg") center / contain no-repeat;
+}
+
+/* The soft fill on hover and press, on both sizes, as on the Low data row. */
+.leaflet-container .popup-card .flag-control:not([hidden]):not([aria-disabled="true"]):hover,
+.leaflet-container .popup-card .flag-control:not([hidden]):not([aria-disabled="true"]):active {
+  background: var(--color-border);
 }
 
 /* The focus ring is drawn inside the row on both sizes, because the popup
