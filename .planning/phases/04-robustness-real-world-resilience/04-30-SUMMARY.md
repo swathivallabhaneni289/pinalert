@@ -38,7 +38,7 @@ decisions:
 metrics:
   completed: 2026-10-23
   tasks: 6
-  commits: 6
+  commits: 7
 ---
 
 # Phase 4 Plan 30: Design fixes from the 3.1 and Phase 4 retest Summary
@@ -60,6 +60,7 @@ full width rows at the bottom of every opened report.
 | 1, 4 | 56cdfe9 | Laptop context lines take the head's 16px inset; map credit capped at 12px (main.css) |
 | 3 | b33eb50 | Bottom bar labels wrap between words; items never narrower than their longest word at 380px and under |
 | 6, 7 | b5b9a15 | Flag and Stop updates rows, bell-off glyph, arrangeCard order |
+| 6 | ecac372 | Flag row hover fill on both sizes (the row's transparent background had outranked chrome.css's hover rule) |
 
 ## Measurements, before and after
 
@@ -116,6 +117,7 @@ Fades in N hrs on live reports is unchanged ("Fades in 7 hrs." in the popup shot
 | Phone Mute | "Mute this report", boxed 143x44, between Mark resolved and the trust card | the row just above Flag at the bottom of the report (24px above it), Flag directly under it |
 | Order in the DOM | phone: votes, mute, trust, flag | phone: votes, trust, mute, flag; laptop: trust, votes, mute, flag |
 | Keyboard | Mute then Flag | Mute then Flag (Chromium Tab from Mute lands on Flag, ring 2px solid drawn inside, offset -2px). WebKit's Tab skips buttons by Safari default, so its order is proven by the DOM order. |
+| Hover | boxed buttons filled on hover | both rows rest transparent and fill rgb(225, 228, 232) (--color-border) on hover, at 1470 and 390, Chromium and WebKit (after ecac372) |
 | Press (laptop) | | first press: "Get updates about this report again", aria-label "Get updates about this report again, Flood, 17 min ago", data-muted true; second press: back to "Stop updates about this report", data-muted false |
 
 The Settings list keeps its "Unmute this report" button (settings-alerts.js untouched). The Low data view is untouched: the laptop Low data row is the reference look and the phone Low data cards keep Flag in their corner.
@@ -142,7 +144,7 @@ New pin: web/mute_contract_test.go TestMuteMountedBeforeFlag now also checks tha
 
 ## Known limits and deferred items
 
-- **320px wide at 200 percent text:** the labels no longer overlap and none is cut inside a word, but the four longest words ("Nearby", "Official", "activity", "Report") plus each item's 4px side padding and the 4px gaps need 344px, so the bar runs 28px past a 320px screen and the Report item is partly off screen. 360 and 390 fit. Fixing 320 would mean a smaller label or a different bar at that size; not done without the owner.
+- **320px wide at 200 percent text:** the labels no longer overlap and none is cut inside a word, but the four longest words ("Nearby", "Official", "activity", "Report") plus each item's 4px side padding and the 4px gaps need 344px, so the bar runs 28px past a 320px screen and the Report item is partly off screen. The page then scrolls sideways: document scrollWidth 348 on Nearby and 350 on My activity at 320 wide (Chromium and WebKit). Before this plan the labels overlapped there instead, and the Report label ended at 324. 360 and 390 fit with no sideways scroll from the bar. Fixing 320 would mean a smaller label or a different bar at that size; not done without the owner. The plan's own 200 percent check is at 390, which passes.
 - **Bar height at 200 percent text:** the phone detail pane and the toast are placed from the fixed --app-bottombar-height (65px). At 200 percent the bar was already taller than that before this plan (one line of 24px text plus the glyph), and two line labels make it taller still, so the bottom of the open report view can sit behind the bar's top at that size. Not changed here.
 - Not part of this plan and untouched: the Flag window (plan 31), chrome.css.
 
@@ -151,12 +153,12 @@ New pin: web/mute_contract_test.go TestMuteMountedBeforeFlag now also checks tha
 - go build ./...: exit 0
 - go vet ./...: exit 0
 - node --test web/*.mjs: 630 tests, 630 pass, 0 fail
-- Full Go suite on p4_w30 (`env -i PATH HOME DATABASE_URL=... go test ./... -p 1 -count=1 -v`): exit 0; 1348 top level `--- PASS` lines (3901 counting subtests), 0 `--- FAIL`, 2 `--- SKIP` (TestGeocodeLive and TestScreeningFixture, the two allowed). The known flake TestCastVoteConcurrentSameAccountKeepsEveryRow passed on this run, so no rerun was needed. The scratch server was stopped before the suite ran.
+- Full Go suite on p4_w30 (`env -i PATH HOME DATABASE_URL=... go test ./... -p 1 -count=1 -v`): exit 0; 1348 top level `--- PASS` lines (3901 counting subtests), 0 `--- FAIL`, 2 `--- SKIP` (TestGeocodeLive and TestScreeningFixture, the two allowed). The known flake TestCastVoteConcurrentSameAccountKeepsEveryRow passed, so no rerun was needed. The scratch server was stopped before the suite ran. These are the numbers of the final code commit ecac372: the whole gate (build, vet, node, suite) was run again after the hover fix and gave the same counts.
 
 Browser checks: Playwright Chromium and WebKit at 390x844 and 1470x830, light and dark, plus 320, 360 and 390 wide at 100 and 200 percent text and 1470 at 200 percent, on a scratch server (port 8783, database p4_w30). Screenshots stayed in the session scratchpad, outside the repo.
 
 ## Self-Check: PASSED
 
 - FOUND web/static/icons/bell-off.svg
-- FOUND commits 80d1664, 55b9f3d, 6173a61, 56cdfe9, b33eb50, b5b9a15 on worktree-agent-a7337803d23bf630f
+- FOUND commits 80d1664, 55b9f3d, 6173a61, 56cdfe9, b33eb50, b5b9a15, ecac372 on worktree-agent-a7337803d23bf630f
 - No em or en dashes in any added line; STATE.md, ROADMAP.md and REQUIREMENTS.md not touched; nothing pushed.
