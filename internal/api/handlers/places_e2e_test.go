@@ -155,11 +155,12 @@ func TestSettingsRows(t *testing.T) {
 		// version, so I think we should add that"), so the Log out form carries
 		// no phone only class and the Account section is pinned by its plain tag.
 		//
-		// Amended 2026-10-22 when Phase 3.4 met Phase 3.2: the owner's "too much
-		// details under the heading for each section" also removes the Account
-		// line Phase 3.2 plan 12 wrote, and the 3.2 Notifications and People and
-		// reports lines.
-		"Account",
+		// Amended 2026-10-22 when Phase 3.4 met Phase 3.2: with the owner's
+		// sketch 008 laptop picture each section has its line again, shown on
+		// the laptop only. The Account line is the sketch's; the Notifications
+		// and People and reports lines stay the 3.2 ones.
+		"Account", "Sign out, or remove your account and its data.",
+		"Hear about Reliable reporters near your home area.", "Reports you have turned updates off for.",
 		`<form class="place-row-form" method="post" action="/auth/logout">`,
 		`<section class="place-section" aria-labelledby="settings-account-title">`,
 		"People and reports", "Muted reports", "Log out of all devices", "Delete my account",
