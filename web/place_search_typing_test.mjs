@@ -178,9 +178,17 @@ function setup({ abortRejects = true, nativeTimeout = false } = {}) {
     fetchReports: () => {},
     setCategory: () => {}
   };
+  // Amended 2026-10-23 by plan 04-32 (owner): the search reads the map zoom
+  // and a pick draws a place mark, so the fake map has both and records them.
+  const view = { zoom: 13 };
+  const moves = [];
+  const marks = [];
   const PinalertMap = {
     getCenter: () => ({ lat: 17.385, lon: 78.4867 }),
-    moveTo: () => {},
+    getZoom: () => view.zoom,
+    setPlaceMark: (lat, lon) => { marks.push([lat, lon]); },
+    clearPlaceMark: () => {},
+    moveTo: (lat, lon, zoom) => { moves.push([lat, lon, zoom]); },
     recenterOnReader: () => Promise.resolve({ own: true }),
     cancelRecenter: () => {}
   };
@@ -200,7 +208,7 @@ function setup({ abortRejects = true, nativeTimeout = false } = {}) {
   const enter = () => form.dispatch({ type: 'submit', preventDefault() {} });
   const query = (req) => new URL(req.url, 'https://pinalert.example').searchParams.get('q');
   const rows = () => results.querySelectorAll('.map-search__result');
-  return { input, status, results, outside, doc, form, requests, answer, advance, type, enter, query, rows, timers };
+  return { input, status, results, outside, doc, form, requests, answer, advance, type, enter, query, rows, timers, view, moves, marks };
 }
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
@@ -627,3 +635,63 @@ for (const mode of [
     assert.equal(p.status.textContent, '1 result.');
   });
 }
+
+// Plan 04-32 (04-UAT test 11): near only answers, the plain nothing near line,
+// and a mark at the picked place.
+const NO_PLACE_NEAR = 'No place by that name near you. Try another name.';
+const NO_MATCH_ANYWHERE = 'No matches found. Try a nearby town or landmark.';
+const param = (req, name) => new URL(req.url, 'https://pinalert.example').searchParams.get(name);
+
+test('an empty answer near the map centre says so in one plain line', async () => {
+  const p = setup();
+  p.type('PVP Square Mall');
+  p.advance(300);
+  assert.equal(param(p.requests[0], 'lat'), '17.38500', 'the map centre is sent');
+  p.answer(p.requests[0], 200, { results: [] });
+  await settle();
+  assert.equal(p.status.textContent, NO_PLACE_NEAR);
+  assert.equal(p.status.hidden, false);
+  assert.equal(p.status.classList.contains('visually-hidden'), false, 'the line is drawn, not only read');
+  assert.ok(!/tap the map/.test(p.status.textContent), 'Nearby has no pin to place');
+  assert.equal(p.results.hidden, true);
+});
+
+test('typing again replaces the nothing near line', async () => {
+  const p = setup();
+  p.type('PVP Square Mall');
+  p.advance(300);
+  p.answer(p.requests[0], 200, { results: [] });
+  await settle();
+  assert.equal(p.status.textContent, NO_PLACE_NEAR);
+  p.type('PVP Square Mal');
+  assert.equal(p.status.hidden, true, 'the line goes at the first key');
+  p.type('PVP Square Mall');
+  p.advance(300);
+  assert.equal(p.requests.length, 2, 'typing back to the same text asks again');
+  p.answer(p.requests[1], 200, { results: [] });
+  await settle();
+  assert.equal(p.status.textContent, NO_PLACE_NEAR, 'and the line returns');
+});
+
+test('a map zoomed out to the whole country sends no centre and keeps the old line', async () => {
+  const p = setup();
+  p.view.zoom = 5;
+  p.type('PVP Square Mall');
+  p.advance(300);
+  assert.equal(param(p.requests[0], 'lat'), null);
+  assert.equal(param(p.requests[0], 'lon'), null);
+  p.answer(p.requests[0], 200, { results: [] });
+  await settle();
+  assert.equal(p.status.textContent, NO_MATCH_ANYWHERE, '"near you" would not be true');
+});
+
+test('a pick moves the map to street level and marks the place', async () => {
+  const p = setup();
+  p.type('Babai Hotel');
+  p.advance(300);
+  p.answer(p.requests[0], 200, { results: [{ name: 'Babai Hotel', display_name: 'Babai Hotel, Gandhi Nagar, Vijayawada', lat: 16.5173354, lon: 80.6254176 }] });
+  await settle();
+  p.results.dispatch({ type: 'click', target: p.rows()[0] });
+  assert.deepEqual(p.moves.at(-1), [16.5173354, 80.6254176, 15]);
+  assert.deepEqual(p.marks, [[16.5173354, 80.6254176]], 'one mark, at the picked place');
+});

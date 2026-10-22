@@ -118,7 +118,9 @@ class FakeEl {
 // the request's promise, as Chromium does, or leaves it unsettled, as WebKit
 // sometimes does. nativeTimeout takes AbortController away and gives a native
 // timeout signal that never fires, so only the page's own timer is left.
-function setup({ variant, abortRejects = true, nativeTimeout = false } = {}) {
+// Amended 2026-10-23 by plan 04-32 (owner): pin false makes the form have no
+// pin yet, so the search sends no position.
+function setup({ variant, pin = true, abortRejects = true, nativeTimeout = false } = {}) {
   const doc = {
     activeElement: null,
     handlers: {},
@@ -217,7 +219,7 @@ function setup({ variant, abortRejects = true, nativeTimeout = false } = {}) {
     submitReport: () => new Promise(() => {})
   };
   const picker = {
-    current: () => ({ latitude: 17.385, longitude: 78.4867 }),
+    current: () => (pin ? { latitude: 17.385, longitude: 78.4867 } : null),
     choose: () => {},
     isSet: () => true,
     missingMessage: () => 'Set a location.',
@@ -537,3 +539,35 @@ for (const mode of [
     assert.deepEqual(p.failures, []);
   });
 }
+
+// Plan 04-32 (04-UAT test 11): when the pin is sent the server answers only
+// places near it, and an empty answer says so plainly.
+const NEAR_WITH_MAP = 'No place by that name near you. Try another name, or tap the map to put the pin there.';
+const NEAR_NO_MAP = 'No place by that name near you. Try another name.';
+
+for (const c of [
+  { name: 'the form with a map offers a tap on it', opts: {}, line: NEAR_WITH_MAP, lat: '17.38500' },
+  { name: 'the Low data form has no map to tap', opts: { variant: 'low' }, line: NEAR_NO_MAP, lat: '17.38500' },
+  { name: 'with no pin the line does not say near you', opts: { pin: false }, line: 'No matches found.', lat: null }
+]) {
+  test('an empty answer: ' + c.name, async () => {
+    const p = setup(c.opts);
+    await showList(p, 'PVP Square Mall', { results: [] });
+    assert.equal(new URL(p.requests[0].url, 'https://pinalert.example').searchParams.get('lat'), c.lat);
+    assert.equal(p.status.textContent, c.line);
+    assert.equal(p.status.hidden, false);
+    assert.equal(p.outcomes[p.outcomes.length - 1], 'no_match');
+  });
+}
+
+test('typing again replaces the nothing near line, and the same text brings it back', async () => {
+  const p = setup();
+  await showList(p, 'PVP Square Mall', { results: [] });
+  assert.equal(p.status.textContent, NEAR_WITH_MAP);
+  p.type('PVP Square Mal');
+  assert.equal(p.status.hidden, true, 'the line goes at the first key');
+  p.type('PVP Square Mall');
+  p.advance(300);
+  await settle();
+  assert.equal(p.status.textContent, NEAR_WITH_MAP, 'the cached answer reads the same line');
+});

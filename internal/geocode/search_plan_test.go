@@ -185,8 +185,14 @@ func TestBoxFirstThenWidened(t *testing.T) {
 			if sent[0].Get("q") != "Hyderabad" || sent[1].Get("q") != "Hyderabad" {
 				t.Errorf("texts = %q, want the full text twice", rs.texts())
 			}
-			if len(answer.Results) != 1 || answer.MatchedQuery != "" {
-				t.Errorf("answer = %+v, want one result and no matched text", answer)
+			// Amended 2026-10-23 by plan 04-32 (owner): the widened row is
+			// Banjara Hills, a neighbourhood 1,260 km from the Delhi position, so
+			// the near only rule drops it and the answer is empty. It was one
+			// result. The order of the two requests above is unchanged; a far
+			// city named as typed is still answered (TestFarCityNamedAsTypedIsKept
+			// in near_test.go).
+			if len(answer.Results) != 0 || answer.MatchedQuery != "" {
+				t.Errorf("answer = %+v, want no result: the widened row is far from the position", answer)
 			}
 		})
 	}

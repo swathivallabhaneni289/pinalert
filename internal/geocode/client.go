@@ -268,7 +268,7 @@ func (c *Client) search(ctx context.Context, q string, near *Point, cache *answe
 		return answer, nil
 	}
 
-	texts := searchTexts(q)
+	texts := textsFor(ctx, q, near)
 	photon, err := c.askPhoton(ctx, texts[0], near, func(ctx context.Context) error { return takePhoton(ctx, 0) }, c.photonTimeout)
 	if err != nil {
 		return Answer{}, err
@@ -335,7 +335,11 @@ func (c *Client) afterPhotonFoundNothing(ctx context.Context, texts []string, ne
 		}
 		nominatimTries++
 		budget--
-		return c.fetch(ctx, text, nearParams(near))
+		results, err := c.fetch(ctx, text, nearParams(near))
+		if err != nil {
+			return nil, err
+		}
+		return keepNear(ctx, text, near, results), nil
 	}
 
 	if budget <= 0 {
@@ -433,6 +437,13 @@ const (
 	// minShorterRunes is the shortest text a shorter try may send, the same
 	// minimum the handlers apply to what people type.
 	minShorterRunes = 3
+	// nearRadiusKm is how far from a known position a place may lie and still
+	// be answered (plan 04-32): live near Benz Circle, a name missing from the
+	// map data ("PVP Square Mall") was answered with malls of similar names in
+	// Delhi, Bhopal and Mumbai. Rows beyond it are dropped, so a search that
+	// finds only far rows found nothing, and the page says so. A search with
+	// no position stays India wide. See keepNear for the one exception.
+	nearRadiusKm = 50.0
 )
 
 // attempt is one upstream request in a search plan.
@@ -526,8 +537,13 @@ func dropMostSpecific(text string) (string, bool) {
 // is a shorter text tried. The list is cut at maxUpstreamPerSearch, so with a
 // position the second shorter text is never reached.
 func searchPlan(q string, near *Point) []attempt {
+	return planFor(searchTexts(q), near)
+}
+
+// planFor is searchPlan for texts already chosen, the whole text first.
+func planFor(texts []string, near *Point) []attempt {
 	var plan []attempt
-	for i, text := range searchTexts(q) {
+	for i, text := range texts {
 		if near != nil {
 			plan = append(plan, attempt{text: text, boxed: true, shortened: i > 0})
 		}
@@ -545,7 +561,7 @@ func searchPlan(q string, near *Point) []attempt {
 // search. maxRequests cuts the plan further when Photon already used one of
 // the search's maxUpstreamPerSearch requests.
 func (c *Client) run(ctx context.Context, q string, near *Point, take func(ctx context.Context, i int) error, maxRequests int) (Answer, error) {
-	plan := searchPlan(q, near)
+	plan := planFor(textsFor(ctx, q, near), near)
 	if len(plan) > maxRequests {
 		plan = plan[:max(maxRequests, 0)]
 	}
@@ -557,6 +573,7 @@ func (c *Client) run(ctx context.Context, q string, near *Point, take func(ctx c
 		if err != nil {
 			return Answer{}, err
 		}
+		results = keepNear(ctx, a.text, near, results)
 		if len(results) > 0 {
 			answer := Answer{Results: results, provider: providerNominatim}
 			if a.shortened {

@@ -454,7 +454,11 @@ func TestSearchReaderBiasAndBucket(t *testing.T) {
 	}
 
 	// A different bucket is a different entry.
-	if _, err := c.SearchReader(context.Background(), "velachery", &Point{Lat: 12.5, Lon: 80.2707}); err != nil {
+	// Amended 2026-10-23 by plan 04-32 (owner): the other bucket's point moved
+	// from latitude 12.5 to 12.7. At 12.5 the stand in's Velachery row is 54 km
+	// away, past nearRadiusKm, so it is now dropped and the search goes on to
+	// its widened try; at 12.7 it is 31 km away and still a different bucket.
+	if _, err := c.SearchReader(context.Background(), "velachery", &Point{Lat: 12.7, Lon: 80.2707}); err != nil {
 		t.Fatalf("other bucket SearchReader returned error: %v", err)
 	}
 	if got := atomic.LoadInt64(calls); got != 2 {

@@ -25,7 +25,9 @@ func TestPartialMatchLineInBothSearches(t *testing.T) {
 	// Place search: the line is a paragraph at the top of the results, set
 	// through the text sink, built before the first result button, and the
 	// answer's matched_query is what feeds it.
-	render := jsFunctionBody(t, tools, "renderResults(list, matched)")
+	// Amended 2026-10-23 by plan 04-32 (owner): renderResults takes a third argument,
+	// near, so its signature is located with it.
+	render := jsFunctionBody(t, tools, "renderResults(list, matched, near)")
 	p13Ordered(t, render, "renderResults",
 		"resultsEl.textContent = '';",
 		"document.createElement('p')",
@@ -38,7 +40,9 @@ func TestPartialMatchLineInBothSearches(t *testing.T) {
 
 	// Report form: the same, inside the suggestion list, and the cache keeps
 	// the matched text so a repeat search shows the line again.
-	dropdown := jsFunctionBody(t, form, "renderDropdown(results, matched)")
+	// Amended 2026-10-23 by plan 04-32 (owner): renderDropdown takes a third argument,
+	// near, so its signature is located with it.
+	dropdown := jsFunctionBody(t, form, "renderDropdown(results, matched, near)")
 	p13Ordered(t, dropdown, "renderDropdown",
 		"locationSearchResults.textContent = '';",
 		"document.createElement('p')",
@@ -47,8 +51,10 @@ func TestPartialMatchLineInBothSearches(t *testing.T) {
 		"locationSearchResults.appendChild(note)",
 		"renderResultRow(result)")
 	run := jsFunctionBody(t, form, "runSearch(query)")
+	// Amended 2026-10-23 by plan 04-32 (owner): the cached render also passes
+	// whether the pin was sent, so it reads the same line as a fresh answer.
 	p13MustContain(t, "runSearch", run,
-		"body.matched_query", "matched: body.matched_query", "renderDropdown(hit.results, hit.matched)")
+		"body.matched_query", "matched: body.matched_query", "renderDropdown(hit.results, hit.matched, !!pin)")
 
 	// Written as text, never as markup: no parsing sink in either script, and
 	// the matched text never meets a textContent assignment of its own.

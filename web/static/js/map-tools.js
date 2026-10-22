@@ -64,8 +64,15 @@ window.PinalertMapTools = (function () {
   var SEARCH_TIMEOUT_MS = 8000;
   var MAX_RESULTS = 5;
   var RESULT_NAME_MAX = 32;
-  // The zoom a GPS start uses.
-  var RESULT_ZOOM = 13;
+  // The zoom a picked place opens at: street level (plan 04-32). It was 13,
+  // the zoom a GPS start uses, which on a laptop read as the map zooming out
+  // and pointing at no place.
+  var RESULT_ZOOM = 15;
+  // The search sends the map centre, and the server then answers only places
+  // near it, only when the map shows a local area: at least this zoom, about a
+  // 250 km wide view on a phone. A map zoomed out further is centred on no place
+  // anyone is in, so the search stays India wide (plan 04-32).
+  var NEAR_MIN_ZOOM = 8;
   // The session flag welcome.js sets when the first-time flow ends (D-27).
   var FOCUS_SEARCH_KEY = 'pinalert.focusSearch';
 
@@ -73,6 +80,9 @@ window.PinalertMapTools = (function () {
   var MESSAGE_SEARCHING = 'Searching\u2026';
   var MESSAGE_TOO_SHORT = 'Type at least 3 letters.';
   var MESSAGE_NO_MATCH = 'No matches found. Try a nearby town or landmark.';
+  // The line when nothing near the map centre matches (plan 04-32). There is no
+  // pin to place on this map, so it ends at the name.
+  var MESSAGE_NO_MATCH_NEAR = 'No place by that name near you. Try another name.';
   var MESSAGE_UNAVAILABLE = 'Search unavailable. Try again in a moment.';
   var MESSAGE_RATE_LIMITED = 'Too many searches. Wait a few seconds and try again.';
   var MESSAGE_LOCATION_LOST = "Your location isn't available. Showing the default area.";
@@ -111,6 +121,8 @@ window.PinalertMapTools = (function () {
   var backPending = false;
   // True after Back to my location found no position, until the next pick.
   var locationLost = false;
+  // True while the status shows a nothing found line, which typing replaces.
+  var noMatchShown = false;
   // The place line and the filter line are rebuilt only when their content
   // changes, so a store notification never drops focus from their button.
   var placeLineKey = null;
@@ -129,12 +141,14 @@ window.PinalertMapTools = (function () {
   // showStatus writes one status line. A quiet line is announced to a screen
   // reader but not drawn (the result count is redundant next to the list).
   function showStatus(message, quiet) {
+    noMatchShown = false;
     Pinalert.setText(statusEl, message);
     statusEl.hidden = false;
     statusEl.classList.toggle('visually-hidden', quiet === true);
   }
 
   function clearStatus() {
+    noMatchShown = false;
     Pinalert.setText(statusEl, '');
     statusEl.hidden = true;
     statusEl.classList.remove('visually-hidden');
@@ -189,8 +203,10 @@ window.PinalertMapTools = (function () {
   // renderResults draws at most MAX_RESULTS buttons, in the order received.
   // When matched is set, a shorter text than the one typed found them, and one
   // plain line saying so sits above the buttons. It is not a button, so the
-  // click handler's closest('.map-search__result') never picks it.
-  function renderResults(list, matched) {
+  // click handler's closest('.map-search__result') never picks it. near is true
+  // when the search sent the map centre, so an empty list means nothing near
+  // matched (plan 04-32).
+  function renderResults(list, matched, near) {
     resultsEl.textContent = '';
     lastResults = [];
     var partial = '';
@@ -232,7 +248,8 @@ window.PinalertMapTools = (function () {
     if (lastResults.length === 0) {
       resultsEl.textContent = '';
       resultsEl.hidden = true;
-      showStatus(MESSAGE_NO_MATCH, false);
+      showStatus(near === true ? MESSAGE_NO_MATCH_NEAR : MESSAGE_NO_MATCH, false);
+      noMatchShown = true;
       return;
     }
     resultsEl.hidden = false;
@@ -323,7 +340,10 @@ window.PinalertMapTools = (function () {
 
     var url = '/api/geocode/place?q=' + encodeURIComponent(q);
     var centre = PinalertMap.getCenter();
-    if (centre && isFinite(centre.lat) && isFinite(centre.lon)) {
+    var zoom = PinalertMap.getZoom();
+    var near = !!centre && isFinite(centre.lat) && isFinite(centre.lon) &&
+      typeof zoom === 'number' && zoom >= NEAR_MIN_ZOOM;
+    if (near) {
       url += '&lat=' + encodeURIComponent(centre.lat.toFixed(5));
       url += '&lon=' + encodeURIComponent(centre.lon.toFixed(5));
     }
@@ -370,7 +390,7 @@ window.PinalertMapTools = (function () {
             return;
           }
           renderResults(body && Array.isArray(body.results) ? body.results : [],
-            body && body.matched_query);
+            body && body.matched_query, near);
           shownText = q;
         });
       })
@@ -400,6 +420,13 @@ window.PinalertMapTools = (function () {
     // retries.
     cancelTyping();
     quietFailures = 0;
+    // Typing again replaces the nothing found line (plan 04-32): it described
+    // the text before. The text it answered is forgotten too, so typing back to
+    // that text asks again and the line returns.
+    if (noMatchShown) {
+      clearStatus();
+      shownText = '';
+    }
     var q = inputEl.value.trim();
     if (Array.from(q).length < MIN_QUERY_RUNES) {
       abortSearch();
@@ -433,6 +460,8 @@ window.PinalertMapTools = (function () {
     Pinalert.setPlace({ name: name, lat: pick.lat, lon: pick.lon });
     locationLost = false;
     PinalertMap.moveTo(pick.lat, pick.lon, RESULT_ZOOM);
+    // The map points at the place it moved to (plan 04-32).
+    PinalertMap.setPlaceMark(pick.lat, pick.lon);
     Pinalert.fetchReports();
     closeResults();
     renderPlaceLine(Pinalert.state);

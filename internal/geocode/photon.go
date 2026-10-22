@@ -377,7 +377,12 @@ func (c *Client) fetchPhoton(parent context.Context, q string, near *Point, limi
 			name:   name,
 		})
 	}
-	return rankPhoton(q, candidates), nil
+	// Far rows are dropped after the ranking keeps its five, not before (plan
+	// 04-32): Photon's rows six to ten are guesses on a fragment of the text
+	// (villages starting with "Mall" for "PVP Square Mall", live), and the cut
+	// always hid them. A near row Photon ranks below five far ones is not
+	// shown; its position bias makes that rare.
+	return keepNear(parent, q, near, rankPhoton(q, candidates)), nil
 }
 
 // waitForPhotonToken is the report search's turn at Photon's limiter for its

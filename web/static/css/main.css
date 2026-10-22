@@ -462,6 +462,24 @@ body {
   mask-position: center;
 }
 
+/* The place mark (plan 04-32): where a place picked in the place search lies.
+ * The map-pin glyph in the text colour, so no severity colour can be read into
+ * it, with a thin halo in the page colour so it shows on any map tile. It takes
+ * no pointer, so a report pin under or near it keeps its click. */
+.place-mark {
+  pointer-events: none;
+  color: var(--color-text);
+  /* On the box, not the glyph: a mask also clips its own element's filter. */
+  filter: drop-shadow(0 0 1px var(--color-bg)) drop-shadow(0 0 2px var(--color-bg));
+}
+
+.place-mark .place-mark__glyph {
+  width: 36px;
+  height: 36px;
+  -webkit-mask-image: url("/static/icons/map-pin.svg");
+  mask-image: url("/static/icons/map-pin.svg");
+}
+
 .icon-glyph--flood {
   -webkit-mask-image: url("/static/icons/flood.svg");
   mask-image: url("/static/icons/flood.svg");

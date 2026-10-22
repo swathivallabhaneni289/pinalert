@@ -552,6 +552,7 @@ window.PinalertMap = (function () {
           return;
         }
         Pinalert.clearPlace();
+        clearPlaceMark();
         Pinalert.setCenter(lat, lon, own);
         saveReaderFix(lat, lon, own);
         moveTo(lat, lon, zoom);
@@ -572,6 +573,49 @@ window.PinalertMap = (function () {
   // cancelRecenter makes a pending Back to my location ignore its position.
   function cancelRecenter() {
     recenterSeq += 1;
+  }
+
+  // The place mark (plan 04-32): a calm mark at the place picked in the place
+  // search, so the map points at it. It is the map-pin glyph in the text
+  // colour (main.css .place-mark), never a severity colour. It takes no click
+  // and no focus, sits under every report pin, and is read by no screen reader:
+  // the place line already names the place. It goes when Back to my location
+  // lands (recenterOnReader) or another place is picked.
+  var placeMark = null;
+  var PLACE_MARK_Z_OFFSET = -1000;
+
+  // setPlaceMark draws the place mark at lat, lon, taking it off any earlier place.
+  function setPlaceMark(lat, lon) {
+    if (!map) {
+      return;
+    }
+    clearPlaceMark();
+    var glyph = document.createElement('span');
+    glyph.className = 'icon-glyph place-mark__glyph';
+    var icon = L.divIcon({ html: glyph, className: 'place-mark', iconSize: [36, 36], iconAnchor: [18, 34] });
+    placeMark = L.marker([lat, lon], {
+      icon: icon,
+      interactive: false,
+      keyboard: false,
+      zIndexOffset: PLACE_MARK_Z_OFFSET
+    }).addTo(map);
+    var el = placeMark.getElement();
+    if (el) {
+      el.setAttribute('aria-hidden', 'true');
+    }
+  }
+
+  // clearPlaceMark takes the place mark off the map, if one is drawn.
+  function clearPlaceMark() {
+    if (placeMark) {
+      placeMark.remove();
+      placeMark = null;
+    }
+  }
+
+  // getZoom is the map's zoom, or null before the map exists.
+  function getZoom() {
+    return map ? map.getZoom() : null;
   }
 
   // getCenter is the visible centre of the map as { lat, lon }, the bias of a
@@ -2141,6 +2185,9 @@ window.PinalertMap = (function () {
     recenterOnReader: recenterOnReader,
     cancelRecenter: cancelRecenter,
     getCenter: getCenter,
+    getZoom: getZoom,
+    setPlaceMark: setPlaceMark,
+    clearPlaceMark: clearPlaceMark,
     resizeToSheet: resizeToSheet,
     focusOpenPopup: focusOpenPopup,
     takeRemovedPopupFocus: takeRemovedPopupFocus,
