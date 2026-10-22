@@ -2,8 +2,9 @@
 // Node sandbox and checks that Log out asks first (owner, 2026-10-22: "we
 // should have like a confirm button before we log out. Are you sure?"). A
 // Log out form's submit is held and opens the dialog; Log out in the dialog
-// sends that form; Cancel, Escape or the backdrop send nothing and put focus
-// back; other forms pass; without dialog support the browser's confirm asks.
+// sends that form; Cancel or Escape send nothing and put focus back; a press
+// anywhere else leaves it open; other forms pass; without dialog support the
+// browser's confirm asks.
 //
 // Run it with: node --test web/logout_confirm_test.mjs
 // CI runs it with the other web/*.mjs files. It is not embedded in the server.
@@ -120,20 +121,25 @@ test('Cancel sends nothing and puts focus back on the Settings row', () => {
   assert.equal(form.submitted, 0, 'a later press on the closed dialog sends nothing');
 });
 
-test('Escape or the backdrop also cancel; from the menu, focus goes to the person button', () => {
+test('a press outside the buttons leaves it open (owner, 2026-10-22)', () => {
   const m = load();
   const form = fakeForm('/auth/logout', m.menuButton);
   m.submit(form, m.menuButton);
   m.dialog.fire('click', { target: m.dialog });
-  assert.equal(m.dialog.open, false, 'a press on the backdrop closes it');
-  assert.equal(form.submitted, 0);
-  assert.equal(m.trigger.focused, 1, 'the menu is closed, so the person button takes focus');
+  assert.equal(m.dialog.open, true, 'a press on the backdrop does not close it');
+  m.dialog.fire('click', { target: fakeEl('logout-confirm-title') });
+  assert.equal(m.dialog.open, true, 'a press on the question does not close it');
+  assert.equal(form.submitted, 0, 'and sends nothing');
+});
 
+test('Escape cancels; from the menu, focus goes to the person button', () => {
+  const m = load();
+  const form = fakeForm('/auth/logout', m.menuButton);
   m.submit(form, m.menuButton);
-  m.dialog.fire('click', { target: m.yes });
-  assert.equal(m.dialog.open, true, 'a press inside the dialog does not close it');
   m.dialog.close();
+  assert.equal(m.dialog.open, false);
   assert.equal(form.submitted, 0, 'Escape (the native close) sends nothing');
+  assert.equal(m.trigger.focused, 1, 'the menu is closed, so the person button takes focus');
 });
 
 test('other forms pass untouched', () => {
