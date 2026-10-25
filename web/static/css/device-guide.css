@@ -5,11 +5,19 @@
 
    Tokens only: no gradient, no shadow, no animation. */
 
+/* Flex margins do not collapse, so the lead keeps no margin of its own and the
+   container's gap spaces it: step 5's .welcome__alerts-part gap is 16px, which
+   is the contract's lead to steps distance. The Settings window body gap is
+   only 8px, so there the lead adds the other 8px (T-02, 2026-10-25). */
 .device-guide__lead {
-  margin: 0 0 var(--space-12);
+  margin: 0;
   color: var(--color-text);
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
+}
+
+.app-window__body > .device-guide__lead {
+  margin-bottom: var(--space-sm);
 }
 
 /* One box, a hairline between the rows, none above the first. */
