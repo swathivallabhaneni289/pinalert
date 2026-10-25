@@ -526,6 +526,216 @@
                 }
             }
         },
+        "/me/push/status": {
+            "post": {
+                "description": "Answers whether the signed in account has this endpoint registered. The endpoint is\nsent only in the body, because it is a secret address; it is compared and never\nreturned or logged. The body is application/json of at most 4 KB. Each account may ask\n10 times at once and then once every 6 seconds; past that the answer is 429.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Ask whether this device is registered for phone alerts",
+                "parameters": [
+                    {
+                        "description": "The device's endpoint",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.PushEndpointRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.PushStatusResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "415": {
+                        "description": "Unsupported Media Type",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/me/push/subscription": {
+            "post": {
+                "description": "Stores the browser's push subscription for the signed in account and the calling\nsession. The endpoint must be on a known push service and the keys must have the\nright shape, otherwise the answer is 400 with the field endpoint or keys. An endpoint\nalready held by another account moves to this one, so a shared phone never keeps the\nprevious person's alerts. An account keeps at most 8 devices; the oldest is dropped.\nThe endpoint is sent only in the body and is never returned or logged. Answers 503\nwhen the server has no push key. The body is application/json of at most 4 KB. Each\naccount may register 5 devices at once and then one a minute; past that the answer is\n429. Requires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Register this device for phone alerts",
+                "parameters": [
+                    {
+                        "description": "The browser's PushSubscription",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.PushSubscriptionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Registered"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "415": {
+                        "description": "Unsupported Media Type",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/me/push/unsubscribe": {
+            "post": {
+                "description": "Removes this endpoint for the signed in account only; an endpoint that belongs to\nanother account, or to nobody, changes nothing and still answers 204. The endpoint is\nsent only in the body and is never returned or logged. The body is application/json of\nat most 4 KB. Each account may remove 5 devices at once and then one a minute; past\nthat the answer is 429. Requires a session verified by email; an unverified caller\nreceives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Remove this device from phone alerts",
+                "parameters": [
+                    {
+                        "description": "The device's endpoint",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.PushEndpointRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Removed"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "415": {
+                        "description": "Unsupported Media Type",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/reports": {
             "get": {
                 "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance,\nthen resolves each report fresh via the shared resolver. This single endpoint serves\nthe map, the list, the Past tab, the counts for an empty Active tab and a report link;\nthere is no separate route per tab.\nall is the Show menu's All: active and disputed reports in one answer, nearest first. Every\nreport carries its own view word, so a client that groups by it lists disputed ones last.\nA resolved, expired, held or removed report is never in all.\nThe view parameter picks the tab. active (the default) is Live and Provisional reports,\nnearest first. disputed is only reports currently hidden by disputes, replacing the\ndefault view rather than adding to it; a critical or rescue-needed report stays Live\nhowever heavily it is disputed, so it appears only in the active view. past is what was\nresolved and what ran out its time in the last seven days, the resolved group first and\nthen the expired group, each newest first and cut at 25 with the cut object saying so.\nresolved is accepted as a read only alias of past and answered as past. A resolved\n(retracted) report is never returned by the active or the disputed view; it is listed\nonly in the past view, and no past entry changes an active count.\nshow_disputed=true still selects the disputed view so old links keep working; sent with\nanother view it is refused with 400 on the field view.\nThe category parameter keeps one report category in the chosen view and is refused with\n400 when it is not one of the ten known categories. rescue_needed is still accepted here\nso reports stored before 2026-10-16 can be found.\nThe report parameter is a report id from a link. When it is sent the focus object answers\nit: ok with that report even when it lies outside the radius and outside the seven day\nwindow, too_old when it ended more than seven days ago, or unavailable when there is no such\nreport or no tab lists it. Not found and every unlisted state share the one unavailable\nanswer. The reports array still holds the reader's own area.\nrecent ({resolved_24h, expired_24h}) is present only when the view is active or all, no category\nwas sent and there are no reports, so an empty tab can say what happened lately.\nA finished Rescue report never leaves the API exact on the past view or on a link: its\ndescription is empty, its latitude, longitude and geohash are a blurred point,\napproximate is true and distance_km is measured to that point. A live Rescue report and\nfinished Flood, Shelter and Power reports stay exact.\nEvery report carries your_vote, your_resolution, undos_left and is_own_report relative to\nthe calling verified account. Requires a session verified by email through the\nmagic-link flow; an unverified caller receives 401 and no report data.\nEvery report also carries a trust object: how many people at different nearby spots confirmed and disputed it, counted once per spot and not once per vote.\nlat, lon and radius_km must be finite numbers; NaN is refused with 400 and the name of the parameter.",
@@ -2144,6 +2354,52 @@
                 "home_area_name": {
                     "type": "string",
                     "example": "Indiranagar, Bengaluru"
+                }
+            }
+        },
+        "handlers.PushEndpointRequest": {
+            "type": "object",
+            "properties": {
+                "endpoint": {
+                    "type": "string",
+                    "example": "https://fcm.googleapis.com/fcm/send/example"
+                }
+            }
+        },
+        "handlers.PushKeysRequest": {
+            "type": "object",
+            "properties": {
+                "auth": {
+                    "type": "string",
+                    "example": "tBHItJI5svbpez7KI4CCXg"
+                },
+                "p256dh": {
+                    "type": "string",
+                    "example": "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM"
+                }
+            }
+        },
+        "handlers.PushStatusResponse": {
+            "type": "object",
+            "properties": {
+                "registered": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "handlers.PushSubscriptionRequest": {
+            "type": "object",
+            "properties": {
+                "endpoint": {
+                    "type": "string",
+                    "example": "https://fcm.googleapis.com/fcm/send/example"
+                },
+                "expirationTime": {
+                    "type": "number"
+                },
+                "keys": {
+                    "$ref": "#/definitions/handlers.PushKeysRequest"
                 }
             }
         },

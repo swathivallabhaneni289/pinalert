@@ -732,6 +732,10 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		{"/me/delete", "post"},
 		{"/me/logout-all", "post"},
 		{"/me/alerts", "patch"},
+		// 03.3-08: the three phone alert subscription routes.
+		{"/me/push/subscription", "post"},
+		{"/me/push/status", "post"},
+		{"/me/push/unsubscribe", "post"},
 	} {
 		op, ok := spec.Paths[want.path][want.method]
 		if !ok {

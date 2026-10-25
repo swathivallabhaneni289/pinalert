@@ -636,6 +636,37 @@ definitions:
         example: Indiranagar, Bengaluru
         type: string
     type: object
+  handlers.PushEndpointRequest:
+    properties:
+      endpoint:
+        example: https://fcm.googleapis.com/fcm/send/example
+        type: string
+    type: object
+  handlers.PushKeysRequest:
+    properties:
+      auth:
+        example: tBHItJI5svbpez7KI4CCXg
+        type: string
+      p256dh:
+        example: BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM
+        type: string
+    type: object
+  handlers.PushStatusResponse:
+    properties:
+      registered:
+        example: true
+        type: boolean
+    type: object
+  handlers.PushSubscriptionRequest:
+    properties:
+      endpoint:
+        example: https://fcm.googleapis.com/fcm/send/example
+        type: string
+      expirationTime:
+        type: number
+      keys:
+        $ref: '#/definitions/handlers.PushKeysRequest'
+    type: object
   handlers.RateLimitResponse:
     properties:
       emergency_number:
@@ -1528,6 +1559,164 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Save or clear the optional name and home area
+      tags:
+      - me
+  /me/push/status:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Answers whether the signed in account has this endpoint registered. The endpoint is
+        sent only in the body, because it is a secret address; it is compared and never
+        returned or logged. The body is application/json of at most 4 KB. Each account may ask
+        10 times at once and then once every 6 seconds; past that the answer is 429.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: The device's endpoint
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.PushEndpointRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.PushStatusResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Ask whether this device is registered for phone alerts
+      tags:
+      - me
+  /me/push/subscription:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Stores the browser's push subscription for the signed in account and the calling
+        session. The endpoint must be on a known push service and the keys must have the
+        right shape, otherwise the answer is 400 with the field endpoint or keys. An endpoint
+        already held by another account moves to this one, so a shared phone never keeps the
+        previous person's alerts. An account keeps at most 8 devices; the oldest is dropped.
+        The endpoint is sent only in the body and is never returned or logged. Answers 503
+        when the server has no push key. The body is application/json of at most 4 KB. Each
+        account may register 5 devices at once and then one a minute; past that the answer is
+        429. Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: The browser's PushSubscription
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.PushSubscriptionRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Registered
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Register this device for phone alerts
+      tags:
+      - me
+  /me/push/unsubscribe:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Removes this endpoint for the signed in account only; an endpoint that belongs to
+        another account, or to nobody, changes nothing and still answers 204. The endpoint is
+        sent only in the body and is never returned or logged. The body is application/json of
+        at most 4 KB. Each account may remove 5 devices at once and then one a minute; past
+        that the answer is 429. Requires a session verified by email; an unverified caller
+        receives 401.
+      parameters:
+      - description: The device's endpoint
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.PushEndpointRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Removed
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Remove this device from phone alerts
       tags:
       - me
   /reports:
