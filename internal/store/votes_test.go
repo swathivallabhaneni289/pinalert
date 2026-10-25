@@ -205,18 +205,22 @@ func TestCastVoteConcurrentSameAccountKeepsEveryRow(t *testing.T) {
 		t.Fatalf("len(current) = %d, want exactly 1", len(current))
 	}
 
-	// Compare against the independently-read MAX(id) row rather than a
+	// Compare against the independently-read latest row rather than a
 	// hardcoded string, keeping the assertion deterministic regardless of
 	// which goroutine won the race, while proving DISTINCT ON returns the
-	// genuinely latest row rather than an arbitrary one.
+	// genuinely latest row rather than an arbitrary one. "Latest" uses the
+	// query's own order, created_at DESC then id DESC: created_at defaults to
+	// now(), the transaction start time, so with 8 racing inserts a lower id
+	// can carry a later created_at, and a bare MAX(id) oracle disagreed with
+	// the query about 1 run in 60 (fixed 2026-10-25).
 	var latestValue string
 	if err := pool.QueryRow(ctx,
-		`SELECT value FROM votes WHERE report_id = $1 AND account_id = $2 ORDER BY id DESC LIMIT 1`,
+		`SELECT value FROM votes WHERE report_id = $1 AND account_id = $2 ORDER BY created_at DESC, id DESC LIMIT 1`,
 		reportID, accountID).Scan(&latestValue); err != nil {
 		t.Fatalf("reading latest raw value: %v", err)
 	}
 	if current[0].Value != latestValue {
-		t.Fatalf("CurrentVotesForReports value = %q, want %q (the MAX(id) row's value)", current[0].Value, latestValue)
+		t.Fatalf("CurrentVotesForReports value = %q, want %q (the latest row by created_at, then id)", current[0].Value, latestValue)
 	}
 }
 
