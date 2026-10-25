@@ -994,7 +994,7 @@ Plans:
 ### Phase 07.1: Password sign in and usernames (INSERTED)
 
 **Goal:** A person creates an account with an email and a password, types a 6-digit code emailed once to prove the address, and signs in afterwards with the email and password only; a forgotten password is reset with the same kind of typed code, and no link is sent anywhere. Step 4 of the first-time flow (About you) asks for a Username, a Name and a Home area, all three required with no Skip, and accounts made with the old emailed link fill in what is missing, including a password, once at their next sign in. Split out of Phase 8 at planning on 2026-10-25 under 08-CONTEXT D-11, because Phase 8's comments and Phase 9's profiles both need the username, and replacing the whole sign in deserves its own security review. The decisions are 08-CONTEXT D-07 to D-11 and ROADMAP Phase 8 scope notes 5 and 6; nothing new was asked.
-**Requirements**: IDENT-01 and IDENT-04 as amended by 08-CONTEXT D-10 (sign in by password with a typed code, limits on codes and password tries), and the required step 4 of 08-CONTEXT D-08 and D-09
+**Requirements**: IDENT-06, IDENT-07 (IDENT-06 amends IDENT-01 and IDENT-04 under 08-CONTEXT D-10; IDENT-07 is the required step 4 of 08-CONTEXT D-08 and D-09)
 **Depends on:** Phase 3.4 (the first-time flow and step 4), Phase 4 (the screening check and the limiter the username reuses), Phase 5 (the sign in screen's globe and the "Try the demo · Disclaimer · Policy" row, 05-CONTEXT D-03 and D-14, which must survive the new card)
 **UI hint**: yes
 **Success Criteria** (what must be TRUE):

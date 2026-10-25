@@ -32,6 +32,22 @@ Requirements for initial release. Each maps to roadmap phases.
       identity/session carrier — it is now gated behind a verified account rather than usable
       anonymously; Phase 2's votes/reports continue to key off `session_id` as designed
 
+- [ ] **IDENT-06**: A person creates an account with an email and a password, proves the email once
+      by typing a 6-digit code emailed to it, and signs in afterwards with the email and password
+      only; a forgotten password is reset with the same kind of typed code, and no emailed link
+      exists anywhere. Passwords are stored only as a slow hash, codes are short lived, single use
+      and stored hashed, wrong tries are limited per account and per device without locking out a
+      shared carrier address, and no screen or message reveals whether an email has an account.
+      Amends IDENT-01 (the clickable link) and IDENT-04 (the limits) on the owner's decision of
+      2026-10-17 (ROADMAP Phase 8 scope note 6, built in Phase 7.1).
+
+- [ ] **IDENT-07**: Every account has a unique, public Username, a Name and a Home area (a town or
+      area, never a street), all three required in step 4 of the first-time flow with no Skip; the
+      Username is checked as it is typed (available, taken, wrong characters, kept for official
+      use) and screened like other free text, and can be changed in Settings; accounts made with
+      the old link set a password and fill in what is missing once, at their next sign in (owner
+      decision 2026-10-17, 08-CONTEXT D-08 and D-09, built in Phase 7.1).
+
 ### Foundation
 
 - [x] **FOUND-01**: An anonymous session identity is issued to a first-time visitor (cookie/
@@ -494,6 +510,8 @@ Populated during roadmap creation.
 | IDENT-03 | Phase 1.1 | Complete |
 | IDENT-04 | Phase 1.1 | Complete |
 | IDENT-05 | Phase 1.1 | Complete |
+| IDENT-06 | Phase 7.1 | Pending |
+| IDENT-07 | Phase 7.1 | Pending |
 | FOUND-01 | Phase 1 | Complete (superseded by IDENT-01, Phase 1.1) |
 | FOUND-02 | Phase 1 | Complete |
 | FOUND-03 | Phase 1 | Complete |
