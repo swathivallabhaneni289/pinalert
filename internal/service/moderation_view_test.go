@@ -211,6 +211,17 @@ func TestWithheldInNoView(t *testing.T) {
 		if !MayNotifyAboutReport(UpdateReachedLive, VisibilityLive, withheldViewNow.Add(time.Hour), withheldViewNow) {
 			t.Error("a live unexpired report may not notify, so the predicate looks constant false")
 		}
+		// Amended 2026-10-18 by Phase 3.3 plan 03 (decision 12): the push only
+		// kinds go through the same predicate, so a withheld report may not
+		// notify under them either.
+		for _, k := range PushOnlyUpdateKinds {
+			if MayNotifyAboutReport(k, VisibilityWithheld, withheldViewNow.Add(time.Hour), withheldViewNow) {
+				t.Errorf("a withheld report may notify under push only kind %q", k)
+			}
+		}
+		if len(PushOnlyUpdateKinds) == 0 {
+			t.Error("PushOnlyUpdateKinds is empty, so the row above proves nothing")
+		}
 	})
 
 	// Added 2026-10-18 by Phase 3.2 plan 02: UpdateTrustLine names FeedView, so

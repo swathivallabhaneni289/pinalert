@@ -30,6 +30,19 @@ const (
 	UpdateMore UpdateKind = "more"
 )
 
+// UpdateCriticalNearby is a push only kind for the Critical report near the
+// home area (Phase 3.3 kind 1). It needs Live like every kind except
+// UpdateReliableNearby, which a Critical report is through the bypass, so it
+// takes the existing Live branch of MayNotifyAboutReport and no second
+// critical rule exists. It is never written to updates (00009's
+// updates_kind_valid CHECK refuses it), so it is not in UpdateKinds.
+const UpdateCriticalNearby UpdateKind = "critical_nearby"
+
+// PushOnlyUpdateKinds is the kinds that reach MayNotifyAboutReport but are
+// never stored: the phone channel's own kinds. Phase 3.2's UpdateKinds stays
+// at its six stored kinds.
+var PushOnlyUpdateKinds = []UpdateKind{UpdateCriticalNearby}
+
 // UpdateEventKinds is the five kinds that are real events, in display order.
 var UpdateEventKinds = []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby}
 
