@@ -645,7 +645,7 @@ Plans:
   - The Reliable reporter kind is built, not held: a quiet note at posting, marked "Not confirmed yet" and updated in place once people nearby confirm, on Phase 3.2's single rule (03.2 D-29). This settles scope note 4's hold or build choice.
   - "Someone I follow posts" is not a Settings switch: Phase 9 puts a per person Notify me bell on the followed person's profile.
 
-**Plans:** 14/15 plans executed
+**Plans:** 15/15 plans executed
 
 Plans:
 
@@ -677,7 +677,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 03.3-15-PLAN.md: End to end proof, trust model and push docs, the owner's device checks
+- [x] 03.3-15-PLAN.md: End to end proof, trust model and push docs, the owner's device checks
 
 ### Phase 4: Robustness — Real-World Resilience
 
@@ -769,7 +769,7 @@ Phases execute in the owner's build order (2026-10-16): 1 → 1.1 → 2 → 3 �
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 31/31 | Complete | 2026-10-13 |
 | 3.1 Report history views | 16/16 | In Progress|  |
 | 3.2 In-app updates and trusted-reporter alerts | 19/19 | In Progress|  |
-| 3.3 Installable app and phone alerts | 14/15 | In Progress|  |
+| 3.3 Installable app and phone alerts | 15/15 | In Progress|  |
 | 3.4 App layout | 44/44 | Complete | 2026-10-22 |
 | 4. Robustness — Real-World Resilience | 29/29 | In Progress|  |
 | 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
