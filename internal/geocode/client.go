@@ -124,6 +124,11 @@ type Client struct {
 	photonTimeout      time.Duration
 	photonRetryTimeout time.Duration // the first try's one retry (F-P4-11)
 	photon             *answerCache  // Photon answers, shared by both searches
+
+	// The reverse lookup that names a report's area (reverse.go). photonReverse
+	// is empty when photonURL is, so Photon stays off there too.
+	photonReverse    string
+	nominatimReverse string
 }
 
 // NewClient constructs a Client pointed at the real Photon and Nominatim
@@ -149,7 +154,13 @@ func newClientWithBaseURL(baseURL, contactEmail string, every time.Duration, bur
 // newClientWithProviders builds a client with both providers' URLs and
 // limiter rates given. An empty photonURL turns Photon off.
 func newClientWithProviders(photonURL, nominatimURL, contactEmail string, every time.Duration, burst int, photonEvery time.Duration, photonBurst int) *Client {
+	photonReverse := ""
+	if photonURL != "" {
+		photonReverse = photonReverseURL
+	}
 	return &Client{
+		photonReverse:      photonReverse,
+		nominatimReverse:   nominatimReverseURL,
 		httpClient:         &http.Client{Timeout: httpClientTimeout},
 		limiter:            rate.NewLimiter(rate.Every(every), burst),
 		baseURL:            nominatimURL,
@@ -177,6 +188,15 @@ func (c *Client) userAgent() string {
 		return "Pinalert/1.0 (+" + c.contactEmail + ")"
 	}
 	return "Pinalert/1.0 (+https://github.com/swathivallabhaneni289/pinalert)"
+}
+
+// withReverseURLs points the reverse lookup at fake upstreams. It is a test
+// seam only (reverse_test.go); no production code calls it, so the real client
+// only ever uses the constants. An empty photon turns Photon off for reverse.
+func (c *Client) withReverseURLs(photon, nominatim string) *Client {
+	c.photonReverse = photon
+	c.nominatimReverse = nominatim
+	return c
 }
 
 // buildRequest constructs the single outbound GET this package ever issues.
