@@ -123,7 +123,7 @@ func TestSubmitPokesNotifier(t *testing.T) {
 		svc := NewReportService(replay, WithReportChangeNotifier(rec))
 
 		in := pokeSubmitInput()
-		in.RequestID = "poke-request-1"
+		in.RequestID = "poke-request-0001-abcdef"
 		res, err := svc.SubmitChecked(ctx, "sess-1", 7, in)
 		if err != nil {
 			t.Fatalf("SubmitChecked: %v", err)
