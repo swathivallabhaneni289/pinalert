@@ -1536,6 +1536,26 @@ func TestWorkerSweep(t *testing.T) {
 		}
 	})
 
+	t.Run("a shutdown signal mid send does not abort the request, and the row is marked sent once (WR-03)", func(t *testing.T) {
+		r := newPWRig(t)
+		r.q.claimRows = []sqlcgen.ClaimDuePushesRow{pwClaim(1, "critical")}
+		// The fake answers only after a delay, and gives up at once if the context
+		// it was handed is canceled, as a real request would.
+		r.s.delay = 50 * time.Millisecond
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		r.s.hook = func(n int) { cancel() }
+		if err := r.w.SweepOnce(ctx); err != nil {
+			t.Fatalf("SweepOnce: %v", err)
+		}
+		if n := len(r.s.messages()); n != 1 {
+			t.Errorf("sends = %d, want 1", n)
+		}
+		if len(r.q.marks) != 1 || r.q.marks[0].kind != "sent" {
+			t.Errorf("marks = %+v, want the one row marked sent", r.q.marks)
+		}
+	})
+
 	t.Run("rows are worked in claim order and each error names its row", func(t *testing.T) {
 		r := newPWRig(t)
 		r.q.claimRows = []sqlcgen.ClaimDuePushesRow{pwClaim(1, "critical"), pwClaim(2, "critical")}

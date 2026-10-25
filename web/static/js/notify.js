@@ -309,6 +309,12 @@
       }
       return post(STATUS_URL, { endpoint: sub.endpoint }).then(function (answer) {
         if (answer.ok && answer.body && answer.body.registered === true) {
+          // The server still holds the row, but a subscription made with
+          // another key (the operator rotated the pair) can never be sent to.
+          // Read it as off, so one tap runs enable, which drops it.
+          if (!sameKey(sub, key)) {
+            return { state: 'ready', sub: sub, known: true };
+          }
           return { state: 'on', sub: sub };
         }
         return {

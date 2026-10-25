@@ -428,6 +428,10 @@ func main() {
 	// instead of being sent again after a redeploy (review S-05, 2026-10-25).
 	runCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
+	// Once the first signal ends runCtx, give SIGINT and SIGTERM back their
+	// default behaviour, so a second Ctrl-C during the shutdown grace ends the
+	// process at once instead of being swallowed (skeptic IN-01).
+	context.AfterFunc(runCtx, stopSignals)
 	var pushRunners []func(context.Context)
 	if pushOn {
 		pushPolicy := push.DefaultEndpointPolicy()

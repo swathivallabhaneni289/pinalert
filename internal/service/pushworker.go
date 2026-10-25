@@ -603,7 +603,11 @@ func (w *PushWorker) buildMessage(kind PushKind, reportID int64, text PushText, 
 // write happens inside a goroutine. A send error is reduced to a class word at
 // once and the error value is dropped (W3).
 func (w *PushWorker) fanOut(ctx context.Context, devices []pushDevice, msg push.Message) []pushDeviceResult {
-	sendCtx, cancel := context.WithTimeout(ctx, PushSendTimeout)
+	// A shutdown signal must not abort a request already on the wire: the push
+	// service may have accepted it, and the row would be sent again after the
+	// restart. The send is still bounded by PushSendTimeout, which the shutdown
+	// grace covers (skeptic WR-03). Claiming stops on ctx elsewhere.
+	sendCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), PushSendTimeout)
 	defer cancel()
 
 	results := make([]pushDeviceResult, len(devices))

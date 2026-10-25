@@ -631,6 +631,50 @@ test('reconcile: does not re-post a subscription made with another server key (B
   assert.deepEqual(env.requests.map((r) => r.url), [STATUS_URL]);
 });
 
+test('deviceState: a subscription made with another key reads off even when the server still has the row (WR-02)', async () => {
+  const env = makeEnv({
+    permission: 'granted',
+    subscribed: true,
+    subscribedKey: OLD_KEY_BYTES,
+    routes: { [STATUS_URL]: () => ({ status: 200, body: { registered: true } }) }
+  });
+  assert.equal(await env.Notify.deviceState(KEY), 'ready');
+});
+
+test('deviceState: a subscription made with the page key and registered on the server stays on (WR-02)', async () => {
+  const same = makeEnv({
+    permission: 'granted',
+    subscribed: true,
+    subscribedKey: KEY_BYTES,
+    routes: { [STATUS_URL]: () => ({ status: 200, body: { registered: true } }) }
+  });
+  assert.equal(await same.Notify.deviceState(KEY), 'on');
+  const silent = makeEnv({
+    permission: 'granted',
+    subscribed: true,
+    routes: { [STATUS_URL]: () => ({ status: 200, body: { registered: true } }) }
+  });
+  assert.equal(await silent.Notify.deviceState(KEY), 'on');
+});
+
+test('reconcile: a registered row with another key reads ready and posts nothing, then one enable replaces it (WR-02)', async () => {
+  const env = makeEnv({
+    permission: 'granted',
+    subscribed: true,
+    subscribedKey: OLD_KEY_BYTES,
+    stored: { 'pinalert.pushIntent': '7' },
+    routes: {
+      [STATUS_URL]: () => ({ status: 200, body: { registered: true } }),
+      [SUBSCRIPTION_URL]: ok204
+    }
+  });
+  assert.equal(await env.Notify.reconcile(KEY), 'ready');
+  assert.deepEqual(env.requests.map((r) => r.url), [STATUS_URL]);
+  const result = await env.Notify.enable(KEY);
+  assert.equal(result.ok, true);
+  assert.ok(env.calls.indexOf('unsubscribe') !== -1 && env.calls.indexOf('unsubscribe') < env.calls.lastIndexOf('subscribe'));
+});
+
 test('reconcile: re-posts a subscription made with the page key', async () => {
   const env = makeEnv({
     permission: 'granted',
