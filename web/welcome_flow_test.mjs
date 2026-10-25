@@ -1,7 +1,8 @@
 // welcome_flow_test.mjs - runs the real web/static/js/welcome.js in a Node
 // sandbox and checks the first-time flow (Phase 3.4, plan 10, D-27, D-28, D-24b):
 //
-//   - four steps, one at a time, the title takes focus on each, Tab stays
+//   - five steps (Amended 2026-10-18 by Phase 3.3 plan 13: step 5, Alerts, is
+//     tested in welcome_alerts_test.mjs), one at a time, the title takes focus on each, Tab stays
 //     inside, and Escape does nothing because the flow is completed, not closed;
 //   - Disagree shows the calm box (plan 31) and stays on step 2; Read again
 //     scrolls the text box to the top and focuses it; Log out is a plain form;
@@ -14,8 +15,9 @@
 //   - step 4's home area comes only from a picked search result of its own,
 //     never from step 3 and never from the device fix; nothing is saved until
 //     Continue; Skip saves nothing;
-//   - finishing sends the profile (only what the person filled), then
-//     first-run-done, then lands on / with the search focus flag set;
+//   - finishing step 4 sends the profile (only what the person filled) and shows
+//     step 5; step 5 then sends first-run-done and lands on / with the search
+//     focus flag set;
 //   - every string reaches the page through textContent.
 //
 // Run it with: node --test web/welcome_flow_test.mjs
@@ -105,7 +107,12 @@ class FakeEl {
   focus() { this.doc.activeElement = this; }
 }
 
-const STEP_NAMES = ['Welcome', 'Disclaimer and policy', 'Your location', 'About you'];
+// Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): the flow has
+// a fifth step, Alerts. The page below carries its ids, a default fake
+// PinalertNotify answers "ready", and the cases that used to finish from step 4
+// now finish from step 5 (Not now). The step 5 cases themselves are in
+// welcome_alerts_test.mjs.
+const STEP_NAMES = ['Welcome', 'Disclaimer and policy', 'Your location', 'About you', 'Alerts'];
 
 // The markup of welcome.html.tmpl, as the ids and nesting welcome.js reads.
 function buildPage({ start = 1, name = '', home = '' } = {}) {
@@ -144,7 +151,7 @@ function buildPage({ start = 1, name = '', home = '' } = {}) {
   });
 
   const pane = make('div', '', root, 'welcome__pane');
-  const steps = [1, 2, 3, 4].map((n) => {
+  const steps = [1, 2, 3, 4, 5].map((n) => {
     const sec = make('section', 'welcome-step-' + n, pane, 'welcome__step');
     if (n !== start) { sec.hidden = true; }
     const title = make('h1', 'welcome-step-' + n + '-title', sec, 'welcome__title');
@@ -153,7 +160,7 @@ function buildPage({ start = 1, name = '', home = '' } = {}) {
   });
 
   make('button', 'welcome-continue-1', steps[0]);
-  [2, 3, 4].forEach((n) => make('button', 'welcome-back-' + n, steps[n - 1], 'welcome__back'));
+  [2, 3, 4, 5].forEach((n) => make('button', 'welcome-back-' + n, steps[n - 1], 'welcome__back'));
 
   const box = make('div', 'welcome-scrollbox', steps[1], 'welcome__scrollbox');
   box.setAttribute('tabindex', '0');
@@ -181,6 +188,19 @@ function buildPage({ start = 1, name = '', home = '' } = {}) {
   make('p', 'welcome-error-4', steps[3]).hidden = true;
   make('button', 'welcome-continue-4', steps[3]);
   make('button', 'welcome-skip', steps[3]);
+
+  // Step 5, Alerts (Phase 3.3 plan 13).
+  root.setAttribute('data-push-key', 'test-public-key-placeholder');
+  make('div', 'welcome-alerts-ready', steps[4]);
+  make('p', 'welcome-alerts-nohome', doc.byId['welcome-alerts-ready']).hidden = true;
+  make('div', 'welcome-alerts-install', steps[4]).hidden = true;
+  make('p', 'welcome-alerts-blocked', steps[4]).hidden = true;
+  make('p', 'welcome-alerts-unsupported', steps[4]).hidden = true;
+  make('p', 'welcome-alerts-status', steps[4]).hidden = true;
+  make('p', 'welcome-alerts-error', steps[4]).hidden = true;
+  make('button', 'welcome-alerts-allow', steps[4]);
+  make('button', 'welcome-alerts-later', steps[4]);
+  make('button', 'welcome-alerts-continue', steps[4]).hidden = true;
 
   return { doc, root, steps, items, side };
 }
@@ -249,6 +269,13 @@ function load(options) {
       pushState(state, title, address) { pushes.push({ state, address }); },
       replaceState(state, title, address) { stateReplaces.push({ state, address }); }
     },
+    // A device that can show alerts: step 5 draws the ask. The real answers are
+    // tested in welcome_alerts_test.mjs.
+    PinalertNotify: {
+      baseState() { return 'maybe'; },
+      deviceState() { return Promise.resolve('ready'); },
+      enable() { return Promise.resolve({ ok: false, state: 'ready', reason: 'failed' }); }
+    },
     // The side panel is a laptop part: a test sets side.hiddenByCss to play the phone.
     getComputedStyle(node) { return { display: node.hiddenByCss ? 'none' : 'block' }; },
     addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); }
@@ -302,7 +329,8 @@ test('Continue on step 1 shows step 2, focuses its title, and updates the progre
   assert.equal(page.root.getAttribute('data-step'), '2');
   assert.equal(page.root.getAttribute('aria-labelledby'), 'welcome-step-2-title');
   assert.equal(page.doc.activeElement, byId(page, 'welcome-step-2-title'));
-  assert.deepEqual(page.items.map((i) => i.getAttribute('data-state')), ['done', 'current', 'waiting', 'waiting']);
+  // Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): five steps.
+  assert.deepEqual(page.items.map((i) => i.getAttribute('data-state')), ['done', 'current', 'waiting', 'waiting', 'waiting']);
   assert.equal(page.items[1].button.getAttribute('aria-current'), 'step');
   assert.equal(page.items[0].button.getAttribute('aria-current'), null);
   assert.equal(page.requests.length, 0, 'moving through step 1 sends nothing');
@@ -312,7 +340,7 @@ test('the flow starts at the step the server names', () => {
   const page = load({ start: 3 });
   assert.equal(visibleStep(page), 3);
   assert.equal(page.requests.length, 0, 'starting at step 3 does not record anything again');
-  assert.deepEqual(page.items.map((i) => i.getAttribute('data-state')), ['done', 'done', 'current', 'waiting']);
+  assert.deepEqual(page.items.map((i) => i.getAttribute('data-state')), ['done', 'done', 'current', 'waiting', 'waiting']);
 });
 
 // Amended 2026-10-17 by Phase 3.4 plan 31: Disagree no longer shows one line
@@ -503,7 +531,12 @@ test('step 3 never fills or empties step 4: the home area is left as the page dr
   const stored = load({ start: 3, home: 'Whitefield' });
   click(stored, 'welcome-not-now');
   assert.equal(byId(stored, 'welcome-home-input').value, 'Whitefield', 'a stored home area stays');
+  // Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): step 4's
+  // Continue goes to step 5; first-run-done is sent from step 5 (Not now).
   click(stored, 'welcome-continue-4');
+  assert.equal(stored.requests.length, 0);
+  assert.equal(visibleStep(stored), 5);
+  click(stored, 'welcome-alerts-later');
   assert.equal(stored.requests.length, 1);
   assert.equal(stored.requests[0].url, '/api/me/first-run-done', 'a stored home area is not sent again');
 
@@ -560,6 +593,11 @@ test('step 4 Continue sends only the filled fields, then first-run-done, then la
   answer(page.requests[0], 200, { display_name: 'Ravi Kumar', home_area_name: null });
   await flush();
 
+  // Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): the saved
+  // profile leads to step 5, which sends first-run-done (Not now).
+  assert.equal(page.requests.length, 1, 'first-run-done is not sent from step 4');
+  assert.equal(visibleStep(page), 5);
+  click(page, 'welcome-alerts-later');
   assert.equal(page.requests.length, 2);
   assert.equal(page.requests[1].url, '/api/me/first-run-done');
   assert.equal(page.requests[1].init.method, 'POST');
@@ -571,9 +609,14 @@ test('step 4 Continue sends only the filled fields, then first-run-done, then la
   assert.deepEqual(page.replaced, ['/']);
 });
 
+// Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): both ways on
+// from step 4 lead to step 5, which sends first-run-done (Not now).
 test('with both fields empty there is no profile request, and Skip sends only first-run-done', async () => {
   const empty = load({ start: 4 });
   click(empty, 'welcome-continue-4');
+  assert.equal(empty.requests.length, 0);
+  assert.equal(visibleStep(empty), 5);
+  click(empty, 'welcome-alerts-later');
   assert.equal(empty.requests.length, 1);
   assert.equal(empty.requests[0].url, '/api/me/first-run-done');
   answer(empty.requests[0], 204);
@@ -583,6 +626,9 @@ test('with both fields empty there is no profile request, and Skip sends only fi
   const skipped = load({ start: 4 });
   byId(skipped, 'welcome-name-input').value = 'Typed but skipped';
   click(skipped, 'welcome-skip');
+  assert.equal(skipped.requests.length, 0);
+  assert.equal(visibleStep(skipped), 5);
+  click(skipped, 'welcome-alerts-later');
   assert.equal(skipped.requests.length, 1, 'Skip saves nothing the person typed');
   assert.equal(skipped.requests[0].url, '/api/me/first-run-done');
   answer(skipped.requests[0], 204);
@@ -594,6 +640,8 @@ test('with both fields empty there is no profile request, and Skip sends only fi
 test('a stored name and home area left alone are not sent again', async () => {
   const page = load({ start: 4, name: 'Asha', home: 'Whitefield' });
   click(page, 'welcome-continue-4');
+  assert.equal(page.requests.length, 0);
+  click(page, 'welcome-alerts-later');
   assert.equal(page.requests.length, 1);
   assert.equal(page.requests[0].url, '/api/me/first-run-done');
 });
@@ -623,6 +671,8 @@ test('the home area sent is the picked place with its own point, never the devic
   const typed = load({ start: 4 });
   byId(typed, 'welcome-home-input').value = 'Somewhere I typed';
   click(typed, 'welcome-continue-4');
+  assert.equal(typed.requests.length, 0);
+  click(typed, 'welcome-alerts-later');
   assert.equal(typed.requests.length, 1, 'text that was never picked from a search is not a home area');
   assert.equal(typed.requests[0].url, '/api/me/first-run-done');
 });
@@ -653,6 +703,7 @@ test('a refused profile keeps step 4 with the server sentence and does not finis
 test('first-run-done refused for missing consent sends the person back to step 2 and does not leave', async () => {
   const page = load({ start: 4 });
   click(page, 'welcome-skip');
+  click(page, 'welcome-alerts-later');
   answer(page.requests[0], 409, { error: { field: 'terms', message: 'Agree first.' } });
   await flush();
   assert.equal(visibleStep(page), 2);
@@ -974,7 +1025,7 @@ test('Back on steps 2, 3 and 4 shows the previous step and moves focus to its ti
   assert.equal(visibleStep(page), 1);
   assert.equal(page.doc.activeElement, byId(page, 'welcome-step-1-title'));
   assert.equal(page.root.getAttribute('data-step'), '1');
-  assert.deepEqual(stepStates(page), ['current', 'waiting', 'waiting', 'waiting']);
+  assert.deepEqual(stepStates(page), ['current', 'waiting', 'waiting', 'waiting', 'waiting']);
   assert.equal(page.requests.length, 0, 'moving back sends nothing');
 });
 
@@ -985,8 +1036,8 @@ test('a click on any step list button shows that step, in any order, marked aria
     assert.equal(visibleStep(page), n, 'step ' + n);
     assert.equal(page.root.getAttribute('data-step'), String(n));
     assert.equal(page.doc.activeElement, byId(page, 'welcome-step-' + n + '-title'));
-    assert.deepEqual(currentMarks(page), [1, 2, 3, 4].map((k) => (k === n ? 'step' : null)));
-    assert.deepEqual(stepStates(page), [1, 2, 3, 4].map((k) => (k < n ? 'done' : (k === n ? 'current' : 'waiting'))));
+    assert.deepEqual(currentMarks(page), [1, 2, 3, 4, 5].map((k) => (k === n ? 'step' : null)));
+    assert.deepEqual(stepStates(page), [1, 2, 3, 4, 5].map((k) => (k < n ? 'done' : (k === n ? 'current' : 'waiting'))));
   }
   assert.equal(page.requests.length, 0, 'looking at a step records nothing');
 });
@@ -1028,6 +1079,7 @@ test('after Agree, Finish works from step 4 even when the person came back to st
   assert.equal(visibleStep(page), 2);
   fire(listButton(page, 4), 'click');
   click(page, 'welcome-skip');
+  click(page, 'welcome-alerts-later');
   assert.equal(page.requests.length, 2);
   assert.equal(page.requests[1].url, '/api/me/first-run-done');
   answer(page.requests[1], 204);
@@ -1038,6 +1090,7 @@ test('after Agree, Finish works from step 4 even when the person came back to st
 test('the server consent rule still holds: a 409 from first-run-done sends the person back to step 2', async () => {
   const page = load({ start: 4 });
   click(page, 'welcome-skip');
+  click(page, 'welcome-alerts-later');
   answer(page.requests[0], 409, { error: { message: 'agree first' } });
   await flush();
   assert.equal(visibleStep(page), 2);
@@ -1072,7 +1125,7 @@ test('the browser back and forward (popstate) show the step in the entry and pus
   page.popTo({ pinalertStep: 2 });
   assert.equal(visibleStep(page), 2);
   assert.equal(page.doc.activeElement, byId(page, 'welcome-step-2-title'));
-  assert.deepEqual(stepStates(page), ['done', 'current', 'waiting', 'waiting']);
+  assert.deepEqual(stepStates(page), ['done', 'current', 'waiting', 'waiting', 'waiting']);
   page.popTo({ pinalertStep: 1 });
   assert.equal(visibleStep(page), 1);
   page.popTo({ pinalertStep: 3 });

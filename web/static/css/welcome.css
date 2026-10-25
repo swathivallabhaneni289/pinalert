@@ -1,7 +1,8 @@
 /*
  * Pinalert welcome.css (Phase 3.4, plan 10, UI-SPEC Surface 7, D-27, D-28)
  *
- * The first-time flow at /welcome: four steps on a page of their own. Written
+ * The first-time flow at /welcome: five steps on a page of their own (step 5,
+ * Alerts, was added by Phase 3.3 plan 13). Written
  * mobile first. The phone is the base: full screen on --color-bg with a 4px
  * progress bar at the top and stacked full width actions at the bottom. The
  * laptop arrangement sits in the one min-width 900px block at the end: a window
@@ -56,22 +57,28 @@
   overflow: hidden;
 }
 
+/* Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): five even
+   stops, 20, 40, 60, 80 and 100 percent, for the five steps. */
 .welcome__progress-fill {
   height: 100%;
-  width: 25%;
+  width: 20%;
   border-radius: 4px;
   background: var(--color-text);
 }
 
 .welcome[data-step="2"] .welcome__progress-fill {
-  width: 50%;
+  width: 40%;
 }
 
 .welcome[data-step="3"] .welcome__progress-fill {
-  width: 75%;
+  width: 60%;
 }
 
 .welcome[data-step="4"] .welcome__progress-fill {
+  width: 80%;
+}
+
+.welcome[data-step="5"] .welcome__progress-fill {
   width: 100%;
 }
 
@@ -223,6 +230,68 @@
 
 .welcome__card--warning > .app-icon {
   color: var(--color-severity-critical);
+}
+
+/* Step 5 (Phase 3.3 plan 13, UI-SPEC Surface 1): the Alerts step shows one of
+   four parts by device state. A part that is a stack keeps the step's own 16px
+   gap, and every display rule carries :not([hidden]) so the hidden attribute
+   still hides it. The text on the surface takes the normal text colour. */
+.welcome__alerts-part:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.welcome__example {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.welcome__example-mark {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+}
+
+.welcome__example-text {
+  min-width: 0;
+}
+
+.welcome__example-text > p {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.welcome__example-text > .welcome__example-tag {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.welcome__example-text > .welcome__example-title {
+  font-weight: var(--font-weight-semibold);
+}
+
+.welcome__example-text > .welcome__example-body {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+/* The alerts buttons that come and go: .btn sets its own display, which would
+   outrank the native hidden attribute, so the hidden ones are put away here. */
+.welcome__actions .btn[hidden] {
+  display: none;
 }
 
 /* Step 2: the one box that scrolls. */

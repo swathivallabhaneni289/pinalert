@@ -28,9 +28,17 @@ var bannedNoiseWords = []string{
 // add the welcome and Settings files (welcome.html.tmpl, settings.html.tmpl,
 // welcome.js, settings-alerts.js). A listed file that is missing from the
 // embedded trees fails the test; it is never skipped.
+//
+// Amended 2026-10-18 by Phase 3.3 plan 13 (decision 4): the worker, the shared
+// head and the welcome files are listed now. sw.js is scanned by its string
+// literals only, so the worker's option names are not mistaken for copy.
 var noiseCheckedFiles = []string{
 	"templates/device_guide.html.tmpl",
 	"static/js/notify.js",
+	"static/js/sw.js",
+	"templates/app_head.html.tmpl",
+	"templates/welcome.html.tmpl",
+	"static/js/welcome.js",
 }
 
 var (
