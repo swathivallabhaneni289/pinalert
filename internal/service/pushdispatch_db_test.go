@@ -31,7 +31,7 @@ type pushDBRig struct {
 	base    time.Time
 	cur     time.Time
 	updates *UpdatesService
-	namer   *fakeNamer
+	namer   *fakeAreaNamer
 	d       *PushDispatcher
 
 	// The report point is the middle of the home cell numbered 0.
@@ -50,7 +50,7 @@ func newPushDBRig(t *testing.T) *pushDBRig {
 
 	reports := NewReportService(r.q, WithReportClock(clock))
 	r.updates = NewUpdatesService(r.q, reports, WithUpdatesClock(clock))
-	r.namer = &fakeNamer{name: "Central Market"}
+	r.namer = &fakeAreaNamer{name: "Central Market"}
 	r.d = NewPushDispatcher(r.q, r.updates, r.namer, WithDispatchClock(clock))
 
 	r.homeCell0 = geohash.EncodeWithPrecision(12.9716, 77.5946, 5)
@@ -201,7 +201,7 @@ func (r *pushDBRig) progress(reportID int64) (critical, reliable string) {
 	return critical, reliable
 }
 
-func sameKinds(got []string, want ...string) bool {
+func outboxKindsEqual(got []string, want ...string) bool {
 	if len(got) != len(want) {
 		return false
 	}
@@ -269,7 +269,7 @@ func TestPushRecipients(t *testing.T) {
 		}
 		critical := rd.name != "here-off"
 		want := critical && r.distKm(r.cell(rd.cell)) <= float64(radius)
-		has := sameKinds(got[rd.id], "critical")
+		has := outboxKindsEqual(got[rd.id], "critical")
 		if want {
 			inRange++
 		} else {
@@ -329,13 +329,13 @@ func TestPushDispatchResolver(t *testing.T) {
 		r.eval(id, 0)
 	}
 
-	if !sameKinds(r.outbox(live)[reader], "critical") {
+	if !outboxKindsEqual(r.outbox(live)[reader], "critical") {
 		t.Errorf("a listed critical report queued %v", r.outbox(live)[reader])
 	}
 	if got := r.outbox(removed)[reader]; len(got) != 0 {
 		t.Errorf("a removed critical report queued %v", got)
 	}
-	if !sameKinds(r.outbox(pendingCritical)[reader], "critical") {
+	if !outboxKindsEqual(r.outbox(pendingCritical)[reader], "critical") {
 		t.Errorf("a pending critical report queued %v: the lock screen carries none of the reporter's words", r.outbox(pendingCritical)[reader])
 	}
 	if got := r.outbox(pendingLow)[reader]; len(got) != 0 {
@@ -368,7 +368,7 @@ func TestPushReliable(t *testing.T) {
 	r.eval(low, 0)
 
 	got := r.outbox(low)
-	if !sameKinds(got[r1], "reliable") {
+	if !outboxKindsEqual(got[r1], "reliable") {
 		t.Fatalf("R1 holds %v, want one reliable row", got[r1])
 	}
 	if len(got[r3]) != 0 {
@@ -380,7 +380,7 @@ func TestPushReliable(t *testing.T) {
 	}
 	// R2 has Critical on and the report is not Critical: it is a Reliable report
 	// for R2 too.
-	if !sameKinds(got[r2], "reliable") {
+	if !outboxKindsEqual(got[r2], "reliable") {
 		t.Errorf("R2 holds %v, want one reliable row", got[r2])
 	}
 
@@ -406,7 +406,7 @@ func TestPushReliable(t *testing.T) {
 	}
 	r.eval(critical, 41)
 	got = r.outbox(critical)
-	if !sameKinds(got[r2], "critical") {
+	if !outboxKindsEqual(got[r2], "critical") {
 		t.Errorf("R2 holds %v for a Critical report, want exactly one critical row and no reliable row", got[r2])
 	}
 	if len(got[r3]) != 1 || got[r3][0] != "critical" {
@@ -508,7 +508,7 @@ func TestPushCaps(t *testing.T) {
 			id := r.report(reporterSession, SeverityCritical, r.base.Add(offset), "clear")
 			r.eval(id, 0)
 			ids = append(ids, id)
-			if !sameKinds(r.outbox(id)[x], "critical") {
+			if !outboxKindsEqual(r.outbox(id)[x], "critical") {
 				t.Fatalf("report %d queued %v for X, want one critical row", i+1, r.outbox(id)[x])
 			}
 			if c, _ := r.progress(id); c != "fanned" {
@@ -526,7 +526,7 @@ func TestPushCaps(t *testing.T) {
 
 		// N4: a report fanned under Critical takes no Reliable slot.
 		n, err := r.q.CountReporterFanouts(context.Background(), sqlcgen.CountReporterFanoutsParams{
-			ReporterAccountID: reporterAccount(t, r, reporterSession),
+			ReporterAccountID: pushDBReporterAccount(t, r, reporterSession),
 			ExcludeReportID:   0,
 			Kind:              "reliable",
 			Since:             r.base.Add(-time.Hour),
@@ -654,7 +654,7 @@ func TestPushCaps(t *testing.T) {
 
 		got := r.outbox(id)
 		for name, acct := range map[string]int64{"X": x, "W": w, "the late reader": late} {
-			if !sameKinds(got[acct], "critical") {
+			if !outboxKindsEqual(got[acct], "critical") {
 				t.Errorf("%s holds %v, want exactly one critical row", name, got[acct])
 			}
 		}
@@ -664,8 +664,8 @@ func TestPushCaps(t *testing.T) {
 	})
 }
 
-// reporterAccount returns the account bound to a session.
-func reporterAccount(t *testing.T, r *pushDBRig, session string) int64 {
+// pushDBReporterAccount returns the account bound to a session.
+func pushDBReporterAccount(t *testing.T, r *pushDBRig, session string) int64 {
 	t.Helper()
 	var id int64
 	if err := r.pool.QueryRow(context.Background(), "SELECT account_id FROM sessions WHERE session_id = $1", session).Scan(&id); err != nil {

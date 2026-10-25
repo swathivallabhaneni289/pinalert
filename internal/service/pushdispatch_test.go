@@ -325,16 +325,16 @@ func (f *dispatchFake) addReliableHistory(account int64) {
 	}
 }
 
-func strPtr(s string) *string { return &s }
+func dispatchStrPtr(s string) *string { return &s }
 
 func (f *dispatchFake) setProgress(id int64, critical, reliable string) {
 	p := f.prog(id)
 	if critical != "" {
-		p.CriticalState = strPtr(critical)
+		p.CriticalState = dispatchStrPtr(critical)
 		p.CriticalAt = pgtype.Timestamptz{Time: pushFactsNow.Add(-5 * time.Minute), Valid: true}
 	}
 	if reliable != "" {
-		p.ReliableState = strPtr(reliable)
+		p.ReliableState = dispatchStrPtr(reliable)
 		p.ReliableAt = pgtype.Timestamptz{Time: pushFactsNow.Add(-5 * time.Minute), Valid: true}
 	}
 }
@@ -347,15 +347,15 @@ func (f *dispatchFake) initialAccounts() []int64 {
 	return out
 }
 
-// fakeRefresher records which accounts the 3.2 rule was asked to refresh.
-type fakeRefresher struct {
+// fakeUpdatesRefresher records which accounts the 3.2 rule was asked to refresh.
+type fakeUpdatesRefresher struct {
 	mu        sync.Mutex
 	log       func(string)
 	refreshed []int64
 	errFor    map[int64]error
 }
 
-func (r *fakeRefresher) Refresh(_ context.Context, id int64) error {
+func (r *fakeUpdatesRefresher) Refresh(_ context.Context, id int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.log != nil {
@@ -365,8 +365,8 @@ func (r *fakeRefresher) Refresh(_ context.Context, id int64) error {
 	return r.errFor[id]
 }
 
-// fakeNamer is the reverse area lookup.
-type fakeNamer struct {
+// fakeAreaNamer is the reverse area lookup.
+type fakeAreaNamer struct {
 	mu       sync.Mutex
 	name     string
 	err      error
@@ -374,7 +374,7 @@ type fakeNamer struct {
 	deadline []time.Duration
 }
 
-func (n *fakeNamer) ReverseArea(ctx context.Context, lat, lon float64) (string, error) {
+func (n *fakeAreaNamer) ReverseArea(ctx context.Context, lat, lon float64) (string, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.calls++
@@ -386,16 +386,16 @@ func (n *fakeNamer) ReverseArea(ctx context.Context, lat, lon float64) (string, 
 
 type dispatchRig struct {
 	f *dispatchFake
-	u *fakeRefresher
-	n *fakeNamer
+	u *fakeUpdatesRefresher
+	n *fakeAreaNamer
 	d *PushDispatcher
 }
 
-func newRig(opts ...DispatchOption) *dispatchRig {
+func newDispatchRig(opts ...DispatchOption) *dispatchRig {
 	f := newDispatchFake()
-	u := &fakeRefresher{errFor: map[int64]error{}}
+	u := &fakeUpdatesRefresher{errFor: map[int64]error{}}
 	u.log = func(s string) { f.mu.Lock(); f.rec(s); f.mu.Unlock() }
-	n := &fakeNamer{name: "Central Market"}
+	n := &fakeAreaNamer{name: "Central Market"}
 	all := append([]DispatchOption{WithDispatchClock(func() time.Time { return pushFactsNow })}, opts...)
 	return &dispatchRig{f: f, u: u, n: n, d: NewPushDispatcher(f, u, n, all...)}
 }
@@ -417,7 +417,7 @@ func (r *dispatchRig) eval(t *testing.T, id, actor int64) {
 	}
 }
 
-func int64sEqual(a, b []int64) bool {
+func dispatchInt64sEqual(a, b []int64) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -430,7 +430,7 @@ func int64sEqual(a, b []int64) bool {
 }
 
 func TestDispatchCriticalThroughResolve(t *testing.T) {
-	rig := newRig()
+	rig := newDispatchRig()
 	rig.critical42()
 	// Account 11 in range, 12 in range, 13 too far, 14 is the author, 15 has the
 	// switch off.
@@ -443,7 +443,7 @@ func TestDispatchCriticalThroughResolve(t *testing.T) {
 	}
 	rig.eval(t, 42, 0)
 
-	if got := rig.f.initialAccounts(); !int64sEqual(got, []int64{11, 12}) {
+	if got := rig.f.initialAccounts(); !dispatchInt64sEqual(got, []int64{11, 12}) {
 		t.Fatalf("queued accounts = %v, want [11 12]", got)
 	}
 	for _, c := range rig.f.initialCalls {
@@ -475,7 +475,7 @@ func TestDispatchCriticalThroughResolve(t *testing.T) {
 	}
 
 	t.Run("a report that expires within the window keeps its own expiry", func(t *testing.T) {
-		r := newRig()
+		r := newDispatchRig()
 		r.critical42()
 		row := r.f.facts[42]
 		row.ExpiresAt = pushFactsNow.Add(20 * time.Minute)
@@ -527,7 +527,7 @@ func TestDispatchCriticalThroughResolve(t *testing.T) {
 	}
 	for _, c := range silent {
 		t.Run("queues nothing when "+c.name, func(t *testing.T) {
-			r := newRig()
+			r := newDispatchRig()
 			r.critical42()
 			c.setup(r)
 			r.eval(t, 42, 0)
@@ -545,11 +545,11 @@ func TestDispatchCriticalThroughResolve(t *testing.T) {
 }
 
 func TestDispatchCriticalPendingTextCheck(t *testing.T) {
-	rig := newRig()
+	rig := newDispatchRig()
 	rig.critical42()
 	rig.f.facts[42] = dispatchReport("critical", "pending")
 	rig.eval(t, 42, 0)
-	if got := rig.f.initialAccounts(); !int64sEqual(got, []int64{11, 12}) {
+	if got := rig.f.initialAccounts(); !dispatchInt64sEqual(got, []int64{11, 12}) {
 		t.Fatalf("a pending critical report queued %v, want [11 12]: the lock screen carries none of the reporter's words", got)
 	}
 	if rig.f.initialCalls[0].Kind != string(PushKindCritical) {
@@ -557,7 +557,7 @@ func TestDispatchCriticalPendingTextCheck(t *testing.T) {
 	}
 
 	// A pending report that is not serious is held, so nothing is queued.
-	held := newRig()
+	held := newDispatchRig()
 	held.critical42()
 	held.f.facts[42] = dispatchReport("medium", "pending")
 	held.eval(t, 42, 0)
@@ -568,7 +568,7 @@ func TestDispatchCriticalPendingTextCheck(t *testing.T) {
 
 func TestDispatchCriticalCapPerReporter(t *testing.T) {
 	t.Run("the fourth report in an hour is capped for good", func(t *testing.T) {
-		rig := newRig()
+		rig := newDispatchRig()
 		rig.critical42()
 		rig.f.counts["critical"] = PushCriticalReportsPerReporterPerHour
 		rig.eval(t, 42, 0)
@@ -601,7 +601,7 @@ func TestDispatchCriticalCapPerReporter(t *testing.T) {
 	})
 
 	t.Run("two other reports leave room", func(t *testing.T) {
-		rig := newRig()
+		rig := newDispatchRig()
 		rig.critical42()
 		rig.f.counts["critical"] = PushCriticalReportsPerReporterPerHour - 1
 		rig.eval(t, 42, 0)
@@ -611,7 +611,7 @@ func TestDispatchCriticalCapPerReporter(t *testing.T) {
 	})
 
 	t.Run("N2 a re run serves a new reader and never turns fanned into capped", func(t *testing.T) {
-		rig := newRig()
+		rig := newDispatchRig()
 		rig.critical42()
 		rig.eval(t, 42, 0)
 		if len(rig.f.initialCalls) != 2 {
@@ -662,7 +662,7 @@ func TestDispatchCriticalCapPerReporter(t *testing.T) {
 	})
 
 	t.Run("no readers in range does not use up a slot", func(t *testing.T) {
-		rig := newRig()
+		rig := newDispatchRig()
 		rig.critical42()
 		rig.f.candidates = nil
 		rig.eval(t, 42, 0)
@@ -676,7 +676,7 @@ func TestDispatchCriticalCapPerReporter(t *testing.T) {
 }
 
 func TestDispatchCriticalBeforeReliable(t *testing.T) {
-	rig := newRig()
+	rig := newDispatchRig()
 	rig.f.addReliableHistory(900)
 	rig.f.facts[42] = dispatchReport("critical", "clear")
 	rig.f.candidates = []sqlcgen.PushHomeCandidatesRow{
@@ -687,13 +687,13 @@ func TestDispatchCriticalBeforeReliable(t *testing.T) {
 	}
 	rig.eval(t, 42, 0)
 
-	if got := rig.f.initialAccounts(); !int64sEqual(got, []int64{11}) {
+	if got := rig.f.initialAccounts(); !dispatchInt64sEqual(got, []int64{11}) {
 		t.Fatalf("critical rows = %v, want [11]", got)
 	}
 	if rig.f.initialCalls[0].Kind != "critical" {
 		t.Errorf("kind = %q", rig.f.initialCalls[0].Kind)
 	}
-	if !int64sEqual(rig.u.refreshed, []int64{12}) {
+	if !dispatchInt64sEqual(rig.u.refreshed, []int64{12}) {
 		t.Errorf("refreshed = %v, want only the Critical-off Reliable-on reader [12]", rig.u.refreshed)
 	}
 	if len(rig.f.reliableCalls) != 1 || rig.f.reliableCalls[0].ReportID != 42 {
@@ -712,7 +712,7 @@ func TestDispatchCriticalBeforeReliable(t *testing.T) {
 
 func TestDispatchReliableUsesRefreshRows(t *testing.T) {
 	setup := func() *dispatchRig {
-		rig := newRig()
+		rig := newDispatchRig()
 		rig.f.addReliableHistory(900)
 		rig.f.facts[42] = dispatchReport("low", "clear")
 		rig.f.candidates = []sqlcgen.PushHomeCandidatesRow{
@@ -728,7 +728,7 @@ func TestDispatchReliableUsesRefreshRows(t *testing.T) {
 	t.Run("refreshes each reader in range and pushes the rows the rule wrote", func(t *testing.T) {
 		rig := setup()
 		rig.eval(t, 42, 0)
-		if !int64sEqual(rig.u.refreshed, []int64{11, 12}) {
+		if !dispatchInt64sEqual(rig.u.refreshed, []int64{11, 12}) {
 			t.Errorf("refreshed = %v, want [11 12] nearest first", rig.u.refreshed)
 		}
 		if len(rig.f.reliableCalls) != 1 {
@@ -791,7 +791,7 @@ func TestDispatchReliableUsesRefreshRows(t *testing.T) {
 		rig := setup()
 		rig.u.errFor[11] = errors.New("boom")
 		rig.eval(t, 42, 0)
-		if !int64sEqual(rig.u.refreshed, []int64{11, 12}) {
+		if !dispatchInt64sEqual(rig.u.refreshed, []int64{11, 12}) {
 			t.Errorf("refreshed = %v, want both tried", rig.u.refreshed)
 		}
 		if len(rig.f.reliableCalls) != 1 {
@@ -810,7 +810,7 @@ func TestDispatchReliableUsesRefreshRows(t *testing.T) {
 			t.Error("the sweep read the reporter history again")
 		}
 		rig.eval(t, 42, 77)
-		if !int64sEqual(rig.u.refreshed, []int64{11, 12}) || len(rig.f.reliableCalls) != 1 {
+		if !dispatchInt64sEqual(rig.u.refreshed, []int64{11, 12}) || len(rig.f.reliableCalls) != 1 {
 			t.Errorf("a poke did not serve the readers again: refreshed %v", rig.u.refreshed)
 		}
 	})
@@ -826,7 +826,7 @@ func TestDispatchReliableUsesRefreshRows(t *testing.T) {
 }
 
 func TestDispatchChangesSkipsVoter(t *testing.T) {
-	rig := newRig()
+	rig := newDispatchRig()
 	rig.f.facts[42] = dispatchReport("low", "clear")
 	rig.f.followers = []int64{77, 78, 79, 80}
 	rig.f.settings[78] = sqlcgen.GetPushKindSettingsRow{ChangesPushOn: true,
@@ -837,10 +837,10 @@ func TestDispatchChangesSkipsVoter(t *testing.T) {
 
 	rig.eval(t, 42, 77)
 
-	if !int64sEqual(rig.f.followerCalls, []int64{42}) {
+	if !dispatchInt64sEqual(rig.f.followerCalls, []int64{42}) {
 		t.Fatalf("follower reads = %v", rig.f.followerCalls)
 	}
-	if !int64sEqual(rig.u.refreshed, []int64{78, 79, 80}) {
+	if !dispatchInt64sEqual(rig.u.refreshed, []int64{78, 79, 80}) {
 		t.Errorf("refreshed = %v, want every follower except the voter", rig.u.refreshed)
 	}
 	if len(rig.f.changedCalls) != 3 {
@@ -861,7 +861,7 @@ func TestDispatchChangesSkipsVoter(t *testing.T) {
 	}
 
 	t.Run("a sweep poke with no actor reads no followers", func(t *testing.T) {
-		r := newRig()
+		r := newDispatchRig()
 		r.f.facts[42] = dispatchReport("low", "clear")
 		r.f.followers = []int64{78}
 		r.eval(t, 42, 0)
@@ -871,7 +871,7 @@ func TestDispatchChangesSkipsVoter(t *testing.T) {
 	})
 
 	t.Run("a withheld report queues no change", func(t *testing.T) {
-		r := newRig()
+		r := newDispatchRig()
 		r.f.facts[42] = dispatchReport("critical", "removed")
 		r.f.followers = []int64{78}
 		r.eval(t, 42, 5)
@@ -881,12 +881,12 @@ func TestDispatchChangesSkipsVoter(t *testing.T) {
 	})
 
 	t.Run("a refresh error for one follower does not stop the others", func(t *testing.T) {
-		r := newRig()
+		r := newDispatchRig()
 		r.f.facts[42] = dispatchReport("low", "clear")
 		r.f.followers = []int64{78, 79}
 		r.u.errFor[78] = errors.New("boom")
 		r.eval(t, 42, 5)
-		if !int64sEqual(r.u.refreshed, []int64{78, 79}) {
+		if !dispatchInt64sEqual(r.u.refreshed, []int64{78, 79}) {
 			t.Errorf("refreshed = %v", r.u.refreshed)
 		}
 		if len(r.f.changedCalls) == 0 {
@@ -902,7 +902,7 @@ func TestDispatchConfirmedUpdate(t *testing.T) {
 	}
 
 	t.Run("queued once the report is confirmed by people", func(t *testing.T) {
-		rig := newRig()
+		rig := newDispatchRig()
 		rig.critical42()
 		rig.f.votes = confirmVotes
 		rig.eval(t, 42, 0)
@@ -916,7 +916,7 @@ func TestDispatchConfirmedUpdate(t *testing.T) {
 	})
 
 	t.Run("not queued while the report is unconfirmed", func(t *testing.T) {
-		rig := newRig()
+		rig := newDispatchRig()
 		rig.critical42()
 		rig.f.votes = confirmVotes[:1]
 		rig.eval(t, 42, 0)
@@ -926,7 +926,7 @@ func TestDispatchConfirmedUpdate(t *testing.T) {
 	})
 
 	t.Run("still queued long after the first hour", func(t *testing.T) {
-		rig := newRig()
+		rig := newDispatchRig()
 		rig.critical42()
 		row := rig.f.facts[42]
 		row.CreatedAt = pushFactsNow.Add(-3 * time.Hour)
@@ -942,7 +942,7 @@ func TestDispatchConfirmedUpdate(t *testing.T) {
 	})
 
 	t.Run("never for a report that is not shown", func(t *testing.T) {
-		rig := newRig()
+		rig := newDispatchRig()
 		rig.critical42()
 		rig.f.facts[42] = dispatchReport("critical", "removed")
 		rig.f.votes = confirmVotes
@@ -958,7 +958,7 @@ func TestDispatchConfirmedUpdate(t *testing.T) {
 // cannot hide a Critical report, so its push follows the feed, and the confirmed
 // update stays out because ConfirmedByPeople is false under a dispute majority.
 func TestDispatchDisputedCriticalStaysUnconfirmed(t *testing.T) {
-	rig := newRig()
+	rig := newDispatchRig()
 	rig.critical42()
 	rig.f.votes = []sqlcgen.CurrentVotesForReportsRow{
 		pushVote(42, 101, "content", "confirm", "tdr1v8y"),
@@ -967,7 +967,7 @@ func TestDispatchDisputedCriticalStaysUnconfirmed(t *testing.T) {
 		pushVote(42, 203, "content", "dispute", "tdr1w03"),
 	}
 	rig.eval(t, 42, 0)
-	if got := rig.f.initialAccounts(); !int64sEqual(got, []int64{11, 12}) {
+	if got := rig.f.initialAccounts(); !dispatchInt64sEqual(got, []int64{11, 12}) {
 		t.Errorf("a disputed fresh Critical report queued %v, want [11 12]: its push follows the feed", got)
 	}
 	if len(rig.f.confirmedCalls) != 0 {
@@ -975,7 +975,7 @@ func TestDispatchDisputedCriticalStaysUnconfirmed(t *testing.T) {
 	}
 
 	// Two confirming cells do not rescue it while the disputes outweigh them.
-	rig2 := newRig()
+	rig2 := newDispatchRig()
 	rig2.critical42()
 	rig2.f.votes = append([]sqlcgen.CurrentVotesForReportsRow{
 		pushVote(42, 101, "content", "confirm", "tdr1v8y"),
@@ -996,7 +996,7 @@ func TestDispatchOneFanoutPerReport(t *testing.T) {
 	}
 
 	t.Run("capped under Critical never goes through the Reliable branch", func(t *testing.T) {
-		rig := newRig()
+		rig := newDispatchRig()
 		rig.f.addReliableHistory(900)
 		rig.f.facts[42] = dispatchReport("critical", "clear")
 		reliableReader(rig)
@@ -1019,7 +1019,7 @@ func TestDispatchOneFanoutPerReport(t *testing.T) {
 	})
 
 	t.Run("a stored critical capped state ends the Reliable branch too", func(t *testing.T) {
-		rig := newRig()
+		rig := newDispatchRig()
 		rig.f.addReliableHistory(900)
 		rig.f.facts[42] = dispatchReport("critical", "clear")
 		reliableReader(rig)
@@ -1031,13 +1031,13 @@ func TestDispatchOneFanoutPerReport(t *testing.T) {
 	})
 
 	t.Run("fanned under Critical takes no Reliable slot", func(t *testing.T) {
-		rig := newRig()
+		rig := newDispatchRig()
 		rig.f.addReliableHistory(900)
 		rig.f.facts[42] = dispatchReport("critical", "clear")
 		reliableReader(rig)
 		rig.f.counts["reliable"] = PushReliableReportsPerReporterPerHour // would block if it were counted
 		rig.eval(t, 42, 0)
-		if !int64sEqual(rig.u.refreshed, []int64{12}) {
+		if !dispatchInt64sEqual(rig.u.refreshed, []int64{12}) {
 			t.Errorf("refreshed = %v, want the Critical-off reader still served", rig.u.refreshed)
 		}
 		for _, c := range rig.f.countCalls {
@@ -1048,7 +1048,7 @@ func TestDispatchOneFanoutPerReport(t *testing.T) {
 	})
 
 	t.Run("a non serious report uses the Reliable count", func(t *testing.T) {
-		rig := newRig()
+		rig := newDispatchRig()
 		rig.f.addReliableHistory(900)
 		rig.f.facts[42] = dispatchReport("low", "clear")
 		reliableReader(rig)
@@ -1070,7 +1070,7 @@ func TestDispatchOneFanoutPerReport(t *testing.T) {
 
 func TestDispatchAreaLookupOnce(t *testing.T) {
 	t.Run("looked up once per report with the cap, stored and not repeated", func(t *testing.T) {
-		rig := newRig()
+		rig := newDispatchRig()
 		rig.critical42()
 		row := rig.f.facts[42]
 		row.AreaName = nil
@@ -1093,7 +1093,7 @@ func TestDispatchAreaLookupOnce(t *testing.T) {
 	})
 
 	t.Run("a failure leaves the name empty and the pushes still queue", func(t *testing.T) {
-		rig := newRig()
+		rig := newDispatchRig()
 		rig.critical42()
 		row := rig.f.facts[42]
 		row.AreaName = nil
@@ -1114,7 +1114,7 @@ func TestDispatchAreaLookupOnce(t *testing.T) {
 	})
 
 	t.Run("an empty answer stores nothing", func(t *testing.T) {
-		rig := newRig()
+		rig := newDispatchRig()
 		rig.critical42()
 		row := rig.f.facts[42]
 		row.AreaName = nil
@@ -1127,7 +1127,7 @@ func TestDispatchAreaLookupOnce(t *testing.T) {
 	})
 
 	t.Run("a name already stored is never looked up again", func(t *testing.T) {
-		rig := newRig()
+		rig := newDispatchRig()
 		rig.critical42() // the fixture row already has an area name
 		rig.eval(t, 42, 0)
 		if rig.n.calls != 0 {
@@ -1136,7 +1136,7 @@ func TestDispatchAreaLookupOnce(t *testing.T) {
 	})
 
 	t.Run("a lookup already tried is never repeated", func(t *testing.T) {
-		rig := newRig()
+		rig := newDispatchRig()
 		rig.critical42()
 		row := rig.f.facts[42]
 		row.AreaName = nil
@@ -1152,7 +1152,7 @@ func TestDispatchAreaLookupOnce(t *testing.T) {
 		f := newDispatchFake()
 		f.facts[42] = dispatchReport("critical", "clear")
 		f.candidates = []sqlcgen.PushHomeCandidatesRow{homeRowAt(11, dispLat, dispLon, 0, 5, true, false)}
-		d := NewPushDispatcher(f, &fakeRefresher{}, nil, WithDispatchClock(func() time.Time { return pushFactsNow }))
+		d := NewPushDispatcher(f, &fakeUpdatesRefresher{}, nil, WithDispatchClock(func() time.Time { return pushFactsNow }))
 		if err := d.EvaluateReport(context.Background(), 42, 0); err != nil {
 			t.Fatalf("EvaluateReport: %v", err)
 		}
@@ -1163,7 +1163,7 @@ func TestDispatchAreaLookupOnce(t *testing.T) {
 }
 
 func TestReportChangedNeverBlocks(t *testing.T) {
-	rig := newRig()
+	rig := newDispatchRig()
 	done := make(chan struct{})
 	go func() {
 		for i := 0; i < PushPokeBuffer*3; i++ {
@@ -1179,7 +1179,7 @@ func TestReportChangedNeverBlocks(t *testing.T) {
 }
 
 func TestDispatchSweeps(t *testing.T) {
-	rig := newRig()
+	rig := newDispatchRig()
 	rig.critical42()
 	rig.f.recent = []int64{42, 43}
 	rig.f.facts[43] = dispatchReport("low", "clear")
@@ -1202,7 +1202,7 @@ func TestDispatchSweeps(t *testing.T) {
 	}
 
 	t.Run("one report failing does not stop the rest", func(t *testing.T) {
-		r := newRig()
+		r := newDispatchRig()
 		r.critical42()
 		r.f.recent = []int64{42, 43}
 		r.f.facts[43] = dispatchReport("critical", "clear")
@@ -1220,14 +1220,14 @@ func TestDispatchSweeps(t *testing.T) {
 	})
 
 	t.Run("the changes sweep refreshes and queues for each account", func(t *testing.T) {
-		r := newRig()
+		r := newDispatchRig()
 		r.f.changeAccts = []int64{78, 79}
 		r.f.settings[78] = sqlcgen.GetPushKindSettingsRow{ChangesPushOn: true,
 			ChangesEnabledAt: pgtype.Timestamptz{Time: pushFactsNow.Add(-10 * time.Minute), Valid: true}}
 		if err := r.d.ChangesSweepOnce(context.Background()); err != nil {
 			t.Fatalf("ChangesSweepOnce: %v", err)
 		}
-		if !int64sEqual(r.u.refreshed, []int64{78, 79}) || len(r.f.changedCalls) != 2 {
+		if !dispatchInt64sEqual(r.u.refreshed, []int64{78, 79}) || len(r.f.changedCalls) != 2 {
 			t.Errorf("refreshed %v, changed enqueues %d", r.u.refreshed, len(r.f.changedCalls))
 		}
 		if !r.f.changedCalls[0].Since.Equal(pushFactsNow.Add(-10 * time.Minute)) {
@@ -1236,7 +1236,7 @@ func TestDispatchSweeps(t *testing.T) {
 	})
 }
 
-func waitFor(t *testing.T, what string, cond func() bool) {
+func waitForDispatch(t *testing.T, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
@@ -1249,7 +1249,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 }
 
 func TestDispatchRunSweepsAndHandlesPokes(t *testing.T) {
-	rig := newRig(WithDispatchSweepInterval(10 * time.Millisecond))
+	rig := newDispatchRig(WithDispatchSweepInterval(10 * time.Millisecond))
 	rig.critical42()
 	rig.f.recent = []int64{42}
 
@@ -1260,7 +1260,7 @@ func TestDispatchRunSweepsAndHandlesPokes(t *testing.T) {
 		close(done)
 	}()
 
-	waitFor(t, "the boot sweep and a ticker sweep", func() bool {
+	waitForDispatch(t, "the boot sweep and a ticker sweep", func() bool {
 		rig.f.mu.Lock()
 		defer rig.f.mu.Unlock()
 		return len(rig.f.recentCalls) >= 2
@@ -1269,7 +1269,7 @@ func TestDispatchRunSweepsAndHandlesPokes(t *testing.T) {
 	rig.f.followers = []int64{78}
 	rig.f.mu.Unlock()
 	rig.d.ReportChanged(42, 5)
-	waitFor(t, "the poke to be evaluated with its actor", func() bool {
+	waitForDispatch(t, "the poke to be evaluated with its actor", func() bool {
 		rig.f.mu.Lock()
 		defer rig.f.mu.Unlock()
 		return len(rig.f.followerCalls) > 0
@@ -1296,7 +1296,7 @@ func TestDispatchNeverLogsPlaces(t *testing.T) {
 	log.SetFlags(0)
 	t.Cleanup(func() { log.SetOutput(prevOut); log.SetFlags(prevFlags) })
 
-	rig := newRig(WithDispatchSweepInterval(10 * time.Millisecond))
+	rig := newDispatchRig(WithDispatchSweepInterval(10 * time.Millisecond))
 	rig.f.addReliableHistory(900)
 	rig.critical42()
 	rig.f.recent = []int64{42}
@@ -1318,13 +1318,13 @@ func TestDispatchNeverLogsPlaces(t *testing.T) {
 		rig.d.Run(ctx)
 		close(done)
 	}()
-	waitFor(t, "a sweep to run", func() bool {
+	waitForDispatch(t, "a sweep to run", func() bool {
 		rig.f.mu.Lock()
 		defer rig.f.mu.Unlock()
 		return len(rig.f.recentCalls) >= 2
 	})
 	rig.d.ReportChanged(42, 5)
-	waitFor(t, "the poke", func() bool {
+	waitForDispatch(t, "the poke", func() bool {
 		rig.f.mu.Lock()
 		defer rig.f.mu.Unlock()
 		return len(rig.f.followerCalls) > 0

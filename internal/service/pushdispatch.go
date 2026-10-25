@@ -368,8 +368,8 @@ func (d *PushDispatcher) candidates(ctx context.Context, run *evalRun) ([]sqlcge
 	return rows, nil
 }
 
-// earlier returns the earlier of two times.
-func earlier(a, b time.Time) time.Time {
+// pushEarlier returns the earlier of two times.
+func pushEarlier(a, b time.Time) time.Time {
 	if b.Before(a) {
 		return b
 	}
@@ -428,7 +428,7 @@ func (d *PushDispatcher) criticalBranch(ctx context.Context, run *evalRun) error
 	}
 	d.ensureAreaName(ctx, run)
 
-	expires := earlier(f.ExpiresAt, run.now.Add(PushInitialWindow))
+	expires := pushEarlier(f.ExpiresAt, run.now.Add(PushInitialWindow))
 	for _, r := range recipients {
 		_, err := d.q.EnqueueInitialPush(ctx, sqlcgen.EnqueueInitialPushParams{
 			AccountID: r.AccountID,
@@ -541,7 +541,7 @@ func (d *PushDispatcher) reliableBranch(ctx context.Context, run *evalRun) error
 		}
 	}
 	if _, err := d.q.EnqueueReliableFromUpdates(ctx, sqlcgen.EnqueueReliableFromUpdatesParams{
-		ExpiresAt: earlier(f.ExpiresAt, run.now.Add(PushOtherTTL)),
+		ExpiresAt: pushEarlier(f.ExpiresAt, run.now.Add(PushOtherTTL)),
 		Now:       run.now,
 		ReportID:  f.ID,
 	}); err != nil {
@@ -615,7 +615,7 @@ func (d *PushDispatcher) confirmedBranch(ctx context.Context, run *evalRun) erro
 		return nil
 	}
 	_, err := d.q.EnqueueConfirmedUpdates(ctx, sqlcgen.EnqueueConfirmedUpdatesParams{
-		ExpiresAt: earlier(run.facts.ExpiresAt, run.now.Add(PushOtherTTL)),
+		ExpiresAt: pushEarlier(run.facts.ExpiresAt, run.now.Add(PushOtherTTL)),
 		Now:       run.now,
 		ReportID:  run.facts.ID,
 	})
