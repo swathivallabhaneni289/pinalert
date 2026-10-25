@@ -1,0 +1,69 @@
+/* device-guide.css: the iPhone install guide (Phase 3.3, plan 06, UI-SPEC
+   Surface 4a). One partial (device_guide.html.tmpl), shown in step 5 of the
+   first-time flow and in the Settings guide window. Plans 13 and 14 link this
+   file from those pages. The glyph base (.app-icon) comes from app-bar.css.
+
+   Tokens only: no gradient, no shadow, no animation. */
+
+.device-guide__lead {
+  margin: 0 0 var(--space-12);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+/* One box, a hairline between the rows, none above the first. */
+.device-guide__steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.device-guide__step + .device-guide__step {
+  border-top: 1px solid var(--color-border);
+}
+
+.device-guide__step:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-md);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.device-guide__step strong {
+  font-weight: var(--font-weight-semibold);
+}
+
+.device-guide__tile {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--space-xl) + var(--space-sm));
+  height: calc(var(--space-xl) + var(--space-sm));
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.device-guide__tile .app-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--color-text);
+}
+
+.app-icon--share {
+  -webkit-mask-image: url("/static/icons/share.svg");
+  mask-image: url("/static/icons/share.svg");
+}
+
+.app-icon--square-plus {
+  -webkit-mask-image: url("/static/icons/square-plus.svg");
+  mask-image: url("/static/icons/square-plus.svg");
+}

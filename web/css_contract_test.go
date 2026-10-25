@@ -761,6 +761,13 @@ var nonCategoryIcons = map[string]bool{
 	// exemption reasoning as search.svg. TestNewIconsAreRegisteredAndUsed
 	// checks it through laterIcons.
 	"static/icons/bell-off.svg": true,
+	// Phase 3.3 install guide (plan 03.3-06, UI-SPEC Surface 4): share and
+	// square-plus, the glyphs of the first two steps of device_guide.html.tmpl,
+	// drawn by literal url("/static/icons/<name>") mask rules in
+	// device-guide.css, same exemption reasoning as search.svg.
+	// TestPhase33IconsRegisteredAndUsed proves the files and the rules line up.
+	"static/icons/share.svg":       true,
+	"static/icons/square-plus.svg": true,
 }
 
 // laterIcons lists the glyphs added after Phase 3.4 (plan 04-30: bell-off).
@@ -863,6 +870,79 @@ func TestNewIconsAreRegisteredAndUsed(t *testing.T) {
 		if !inAll[name] {
 			t.Errorf("phase34IconsInUse names %q, which is not one of the ten Phase 3.4 glyphs", name)
 			continue
+		}
+		want := `url("/static/icons/` + name + `")`
+		found := false
+		for _, css := range sheets {
+			if strings.Contains(css, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("no stylesheet masks %s with the literal %s", name, want)
+		}
+	}
+}
+
+// phase33Icons lists the two glyph files Phase 3.3 adds for the iPhone install
+// guide (plan 03.3-06, UI-SPEC Surface 4), both exempted through
+// nonCategoryIcons above.
+var phase33Icons = []string{"share.svg", "square-plus.svg"}
+
+// TestPhase33IconsRegisteredAndUsed (plan 03.3-06) holds the two install guide
+// glyphs to the rules of TestNewIconsAreRegisteredAndUsed: each file exists, is
+// registered in nonCategoryIcons, has the licence line of search.svg, is a plain
+// stroke glyph and is drawn by a literal url("/static/icons/<name>") mask rule
+// in some stylesheet, so the exemption cannot hide an orphan.
+func TestPhase33IconsRegisteredAndUsed(t *testing.T) {
+	if len(phase33Icons) != 2 {
+		t.Fatalf("phase33Icons holds %d names, want share and square-plus", len(phase33Icons))
+	}
+	ref, err := fs.ReadFile(StaticFS, "static/icons/search.svg")
+	if err != nil {
+		t.Fatalf("reading the reference glyph static/icons/search.svg: %v", err)
+	}
+	refFirst, _, _ := strings.Cut(string(ref), "\n")
+	var sheets []string
+	err = fs.WalkDir(StaticFS, "static/css", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && strings.HasSuffix(path, ".css") {
+			raw, readErr := fs.ReadFile(StaticFS, path)
+			if readErr != nil {
+				return readErr
+			}
+			sheets = append(sheets, string(raw))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking static/css: %v", err)
+	}
+	for _, name := range phase33Icons {
+		path := "static/icons/" + name
+		raw, err := fs.ReadFile(StaticFS, path)
+		if err != nil {
+			t.Errorf("%s is missing from the embedded tree: %v", path, err)
+			continue
+		}
+		if !nonCategoryIcons[path] {
+			t.Errorf("%s is not registered in nonCategoryIcons", path)
+		}
+		text := string(raw)
+		first, _, _ := strings.Cut(text, "\n")
+		if first != refFirst {
+			t.Errorf("%s first line %q differs from search.svg's licence line %q", path, first, refFirst)
+		}
+		for _, want := range []string{`viewBox="0 0 24 24"`, `stroke="currentColor"`, `stroke-width="2"`} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s lacks %s", path, want)
+			}
+		}
+		if strings.Contains(text, "<script") || strings.Contains(text, "href") || strings.Contains(text, "<text") {
+			t.Errorf("%s holds a script, a link or text, which a mask glyph never carries (T-03-06)", path)
 		}
 		want := `url("/static/icons/` + name + `")`
 		found := false
