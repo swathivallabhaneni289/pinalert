@@ -1,7 +1,6 @@
 package web
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -33,4 +32,21 @@ func TestDeviceGuideLeadSpacing(t *testing.T) {
 	}
 }
 
-var _ = strings.Contains
+// TestPlainSettingsRowsHaveNoPointerCursor pins T-03. The blocked and
+// unsupported On this device rows are plain div rows (not a control), so the
+// bare .place-row rule must not set the pointer cursor; only the rows that act
+// (button and anchor rows here, the switch label rows in updates.css) get it.
+func TestPlainSettingsRowsHaveNoPointerCursor(t *testing.T) {
+	const places = "static/css/places.css"
+	if got := p31mRule(t, places, "", ".place-row").Decls["cursor"]; got == "pointer" {
+		t.Errorf("the bare .place-row rule sets cursor: pointer, so the blocked and unsupported div rows show a hand")
+	}
+	for _, head := range []string{"button.place-row", "a.place-row"} {
+		if got := p31mRule(t, places, "", head).Decls["cursor"]; got != "pointer" {
+			t.Errorf("%s cursor is %q, want pointer (the row acts)", head, got)
+		}
+	}
+	if got := p31mRule(t, "static/css/updates.css", "", ".place-row--switch").Decls["cursor"]; got != "pointer" {
+		t.Errorf(".place-row--switch cursor is %q, want pointer (the whole label is the target)", got)
+	}
+}
