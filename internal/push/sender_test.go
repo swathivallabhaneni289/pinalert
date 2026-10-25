@@ -300,8 +300,9 @@ func TestSenderRetryAfter(t *testing.T) {
 
 func TestSenderNeverLogsEndpoint(t *testing.T) {
 	var buf bytes.Buffer
+	prev := log.Writer()
 	log.SetOutput(&buf)
-	defer log.SetOutput(io.Discard)
+	defer log.SetOutput(prev)
 
 	sub := testSubscription(t)
 	msg := testMessage()
