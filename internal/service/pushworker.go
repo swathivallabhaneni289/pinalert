@@ -473,13 +473,18 @@ func (w *PushWorker) stillHolds(run *pushRowRun) bool {
 // eventStillHolds says whether a report still shows the event a changed row
 // announces (review W4): a row queued for "is now confirmed" must not go out
 // once the report became Hidden or Retracted. A Withheld report holds no event.
+//
+// The confirmation words follow ConfirmedByPeople, the same rule that decides
+// Not confirmed yet, and not Live alone: a Critical report stays Live through a
+// dispute majority, so Live would let "is now confirmed" reach a lock screen for
+// a report the feed does not list as confirmed (repo rule 15).
 func (w *PushWorker) eventStillHolds(event UpdateKind, f pushReportFacts) bool {
 	if f.Vis == VisibilityWithheld {
 		return false
 	}
 	switch event {
 	case UpdateReachedLive:
-		return f.Vis == VisibilityLive && f.View == FeedViewActive
+		return f.Confirmed
 	case UpdateHidden:
 		return f.Vis == VisibilityHidden
 	case UpdateResolved:

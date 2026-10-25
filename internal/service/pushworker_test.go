@@ -603,6 +603,9 @@ func TestWorkerSkipsWhenNoLongerEligible(t *testing.T) {
 
 		// Changed rows follow their event (W4).
 		lowLive("reached_live, still live", "changed", "reached_live", "sent"),
+		{name: "reached_live, critical report still confirmed", kind: "changed", event: "reached_live", severity: "critical", votes: pwConfirm(2), wantVis: VisibilityLive, want: "sent"},
+		{name: "reached_live, critical report disputed by most since (still Live, no longer confirmed)", kind: "changed", event: "reached_live", severity: "critical", votes: append(pwConfirm(2), pwDispute(3)...), wantVis: VisibilityLive, want: "not_eligible"},
+		{name: "reached_live, critical report with no confirmations", kind: "changed", event: "reached_live", severity: "critical", wantVis: VisibilityLive, want: "not_eligible"},
 		{name: "reached_live, hidden since", kind: "changed", event: "reached_live", severity: "low", votes: pwDispute(3), wantVis: VisibilityHidden, want: "not_eligible"},
 		{name: "reached_live, retracted since", kind: "changed", event: "reached_live", severity: "low", votes: append(pwConfirm(2), pwReporterResolved()...), wantVis: VisibilityRetracted, want: "not_eligible"},
 		{name: "reached_live, provisional again", kind: "changed", event: "reached_live", severity: "low", wantVis: VisibilityProvisional, want: "not_eligible"},
