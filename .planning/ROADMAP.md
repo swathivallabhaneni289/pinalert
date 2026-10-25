@@ -643,19 +643,19 @@ Plans:
   - The Reliable reporter kind is built, not held: a quiet note at posting, marked "Not confirmed yet" and updated in place once people nearby confirm, on Phase 3.2's single rule (03.2 D-29). This settles scope note 4's hold or build choice.
   - "Someone I follow posts" is not a Settings switch: Phase 9 puts a per person Notify me bell on the followed person's profile.
 
-**Plans:** 15 plans (planned 2026-10-19; executes only after Phase 3.2 is merged to main)
+**Plans:** 7/15 plans executed
 
 Plans:
 
 **Wave 1**
 
-- [ ] 03.3-01-PLAN.md: Storage, migration 00011 (push subscriptions, outbox, report area name, the two new switches, home cell index), queries and sqlc
-- [ ] 03.3-02-PLAN.md: Push transport, endpoint allowlist, guarded client, webpush-go wrapper, VAPID keys from env
-- [ ] 03.3-03-PLAN.md: Notification kinds, caps and every lock screen word in one Go builder (test first)
-- [ ] 03.3-04-PLAN.md: Installable app, icon drawn in Go, manifest, service worker, public routes
-- [ ] 03.3-05-PLAN.md: The shared head block on every page
-- [ ] 03.3-06-PLAN.md: notify.js (device state, turn on and off) and the Install to get alerts guide
-- [ ] 03.3-07-PLAN.md: Reverse lookup of a report's area name, never blocking a post
+- [x] 03.3-01-PLAN.md: Storage, migration 00011 (push subscriptions, outbox, report area name, the two new switches, home cell index), queries and sqlc
+- [x] 03.3-02-PLAN.md: Push transport, endpoint allowlist, guarded client, webpush-go wrapper, VAPID keys from env
+- [x] 03.3-03-PLAN.md: Notification kinds, caps and every lock screen word in one Go builder (test first)
+- [x] 03.3-04-PLAN.md: Installable app, icon drawn in Go, manifest, service worker, public routes
+- [x] 03.3-05-PLAN.md: The shared head block on every page
+- [x] 03.3-06-PLAN.md: notify.js (device state, turn on and off) and the Install to get alerts guide
+- [x] 03.3-07-PLAN.md: Reverse lookup of a report's area name, never blocking a post
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -767,7 +767,7 @@ Phases execute in the owner's build order (2026-10-16): 1 → 1.1 → 2 → 3 �
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 31/31 | Complete | 2026-10-13 |
 | 3.1 Report history views | 16/16 | In Progress|  |
 | 3.2 In-app updates and trusted-reporter alerts | 19/19 | In Progress|  |
-| 3.3 Installable app and phone alerts | 0/15 | Planned | - |
+| 3.3 Installable app and phone alerts | 7/15 | In Progress|  |
 | 3.4 App layout | 44/44 | Complete | 2026-10-22 |
 | 4. Robustness — Real-World Resilience | 29/29 | In Progress|  |
 | 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
