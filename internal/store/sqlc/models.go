@@ -29,6 +29,9 @@ type AccountAlertSetting struct {
 	AlertRadiusKm    int16
 	EnabledAt        pgtype.Timestamptz
 	UpdatedAt        time.Time
+	CriticalPushOn   bool
+	ChangesPushOn    bool
+	ChangesEnabledAt pgtype.Timestamptz
 }
 
 type EmailCooldown struct {
@@ -68,6 +71,46 @@ type ModerationCheck struct {
 	CreatedAt     time.Time
 }
 
+type PushOutbox struct {
+	ID              int64
+	AccountID       int64
+	ReportID        int64
+	Kind            string
+	UpdateID        *int64
+	State           string
+	SkipReason      *string
+	Attempts        int32
+	NextAttemptAt   time.Time
+	LeaseUntil      pgtype.Timestamptz
+	CreatedAt       time.Time
+	ExpiresAt       time.Time
+	SentAt          pgtype.Timestamptz
+	SentUnconfirmed bool
+}
+
+type PushReportProgress struct {
+	ReportID      int64
+	CriticalState *string
+	CriticalAt    pgtype.Timestamptz
+	ReliableState *string
+	ReliableAt    pgtype.Timestamptz
+	AreaLookupAt  pgtype.Timestamptz
+	EvaluatedAt   pgtype.Timestamptz
+}
+
+type PushSubscription struct {
+	ID           int64
+	AccountID    int64
+	SessionID    string
+	Endpoint     string
+	EndpointHost string
+	P256dh       string
+	Auth         string
+	CreatedAt    time.Time
+	LastOkAt     pgtype.Timestamptz
+	Failures     int32
+}
+
 type Report struct {
 	ID                    int64
 	SessionID             string
@@ -86,6 +129,7 @@ type Report struct {
 	RequestAccountID      *int64
 	ClientWrittenAt       pgtype.Timestamptz
 	Happening             *string
+	AreaName              *string
 }
 
 type ReportFlag struct {
