@@ -55,9 +55,16 @@ func TestPlaceMarkIsCalmAndTakesNoClick(t *testing.T) {
 	mapJS := p421ReadStatic(t, "js/map.js")
 	set := jsFunctionBody(t, mapJS, "setPlaceMark(lat, lon)")
 	p13Ordered(t, set, "setPlaceMark", "clearPlaceMark();", "L.divIcon(", "L.marker(", ".addTo(map)")
+	// Amended 2026-10-25 (owner): "the pin point on the map looks odd". The
+	// outline glyph became a solid pin drawn by buildPlaceMarkPin, whose tip
+	// at (16, 41) is the iconAnchor.
 	p13MustContain(t, "setPlaceMark", set,
 		"interactive: false", "keyboard: false", "zIndexOffset: PLACE_MARK_Z_OFFSET",
-		"'icon-glyph place-mark__glyph'", "className: 'place-mark'", "setAttribute('aria-hidden', 'true')")
+		"html: buildPlaceMarkPin()", "className: 'place-mark'", "iconSize: [32, 42], iconAnchor: [16, 41]",
+		"setAttribute('aria-hidden', 'true')")
+	pin := jsFunctionBody(t, mapJS, "buildPlaceMarkPin()")
+	p13MustContain(t, "buildPlaceMarkPin", pin, "createElementNS(ns, 'svg')", "'0 0 32 42'",
+		"'place-mark__body'", "'M16 41C", "'place-mark__dot'")
 	p13MustContain(t, "map.js", mapJS, "var PLACE_MARK_Z_OFFSET = -1000;",
 		"setPlaceMark: setPlaceMark", "clearPlaceMark: clearPlaceMark", "getZoom: getZoom")
 	// The mark goes when Back to my location lands, with the place.
@@ -71,8 +78,10 @@ func TestPlaceMarkIsCalmAndTakesNoClick(t *testing.T) {
 		t.Fatal("main.css: the .place-mark rules are missing or out of place")
 	}
 	rules := css[start:end]
-	p13MustContain(t, ".place-mark", rules, "pointer-events: none;", "color: var(--color-text);",
-		`url("/static/icons/map-pin.svg")`)
+	// Amended 2026-10-25 (owner): the solid pin's fill, edge and shadow, the
+	// same in both themes, in place of the masked glyph in the text colour.
+	p13MustContain(t, ".place-mark", rules, "pointer-events: none;", "filter: drop-shadow(var(--shadow-popup));",
+		"fill: var(--color-notice-bg);", "stroke: var(--color-pin-edge);", "fill: var(--color-pin-edge);")
 	// No severity colour can be read into the mark.
 	p13MustNotContain(t, ".place-mark", rules, "--color-sev", "--sev-", "#")
 }

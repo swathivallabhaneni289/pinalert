@@ -463,21 +463,31 @@ body {
 }
 
 /* The place mark (plan 04-32): where a place picked in the place search lies.
- * The map-pin glyph in the text colour, so no severity colour can be read into
- * it, with a thin halo in the page colour so it shows on any map tile. It takes
- * no pointer, so a report pin under or near it keeps its click. */
+ * A solid pin (map.js buildPlaceMarkPin) in the dark notice colour with a white
+ * edge and a white centre dot, so no severity colour can be read into it. It is
+ * drawn the same in both themes because the basemap is light in both, the
+ * chosen pin precedent. Redrawn 2026-10-25 for the owner: the outline glyph
+ * "looks odd". It takes no pointer, so a report pin under or near it keeps its
+ * click. */
 .place-mark {
   pointer-events: none;
-  color: var(--color-text);
-  /* On the box, not the glyph: a mask also clips its own element's filter. */
-  filter: drop-shadow(0 0 1px var(--color-bg)) drop-shadow(0 0 2px var(--color-bg));
+  filter: drop-shadow(var(--shadow-popup));
 }
 
-.place-mark .place-mark__glyph {
-  width: 36px;
-  height: 36px;
-  -webkit-mask-image: url("/static/icons/map-pin.svg");
-  mask-image: url("/static/icons/map-pin.svg");
+.place-mark svg {
+  display: block;
+  overflow: visible;
+}
+
+.place-mark .place-mark__body {
+  fill: var(--color-notice-bg);
+  stroke: var(--color-pin-edge);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.place-mark .place-mark__dot {
+  fill: var(--color-pin-edge);
 }
 
 .icon-glyph--flood {

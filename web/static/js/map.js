@@ -576,8 +576,8 @@ window.PinalertMap = (function () {
   }
 
   // The place mark (plan 04-32): a calm mark at the place picked in the place
-  // search, so the map points at it. It is the map-pin glyph in the text
-  // colour (main.css .place-mark), never a severity colour. It takes no click
+  // search, so the map points at it. It is a solid pin in a dark neutral with a
+  // white edge (main.css .place-mark), never a severity colour. It takes no click
   // and no focus, sits under every report pin, and is read by no screen reader:
   // the place line already names the place. It goes when Back to my location
   // lands (recenterOnReader) or another place is picked.
@@ -590,9 +590,7 @@ window.PinalertMap = (function () {
       return;
     }
     clearPlaceMark();
-    var glyph = document.createElement('span');
-    glyph.className = 'icon-glyph place-mark__glyph';
-    var icon = L.divIcon({ html: glyph, className: 'place-mark', iconSize: [36, 36], iconAnchor: [18, 34] });
+    var icon = L.divIcon({ html: buildPlaceMarkPin(), className: 'place-mark', iconSize: [32, 42], iconAnchor: [16, 41] });
     placeMark = L.marker([lat, lon], {
       icon: icon,
       interactive: false,
@@ -603,6 +601,30 @@ window.PinalertMap = (function () {
     if (el) {
       el.setAttribute('aria-hidden', 'true');
     }
+  }
+
+  // buildPlaceMarkPin draws the pin of the place mark (owner 2026-10-25, the
+  // outline glyph "looks odd"): a teardrop in a 32 by 42 box with a round head
+  // and a centre dot. Its tip, at (16, 41), is the iconAnchor, so the tip sits
+  // on the place.
+  function buildPlaceMarkPin() {
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 32 42');
+    svg.setAttribute('width', '32');
+    svg.setAttribute('height', '42');
+    svg.setAttribute('focusable', 'false');
+    var body = document.createElementNS(ns, 'path');
+    body.setAttribute('class', 'place-mark__body');
+    body.setAttribute('d', 'M16 41C11 34 2 24.5 2 15A14 14 0 1 1 30 15C30 24.5 21 34 16 41Z');
+    var dot = document.createElementNS(ns, 'circle');
+    dot.setAttribute('class', 'place-mark__dot');
+    dot.setAttribute('cx', '16');
+    dot.setAttribute('cy', '15');
+    dot.setAttribute('r', '5');
+    svg.appendChild(body);
+    svg.appendChild(dot);
+    return svg;
   }
 
   // clearPlaceMark takes the place mark off the map, if one is drawn.
