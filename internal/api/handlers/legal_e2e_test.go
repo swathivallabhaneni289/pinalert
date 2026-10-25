@@ -148,8 +148,11 @@ func TestLegalPagesRender(t *testing.T) {
 	}
 	// Amended 2026-10-17 by Phase 3.4 plan 08 (D-31): reader.js is the second
 	// script (the X goes back, /policy opens at the Policy part).
-	if n := strings.Count(body, "<script"); n != 2 || strings.Count(body, "/static/js/reader.js?v=test") != 1 {
-		t.Errorf("<script appears %d times, want 2 (theme.js and reader.js)", n)
+	//
+	// Amended 2026-10-18 by Phase 3.3 plan 05 (UI-SPEC 5a): the shared app_head
+	// partial adds a deferred notify.js, so the page has three scripts.
+	if n := strings.Count(body, "<script"); n != 3 || strings.Count(body, "/static/js/reader.js?v=test") != 1 || strings.Count(body, "/static/js/notify.js?v=test") != 1 {
+		t.Errorf("<script appears %d times, want 3 (notify.js, theme.js and reader.js)", n)
 	}
 	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-29, D-30,
 	// D-31): the bar on every page is replaced by the laptop strip on Nearby and
@@ -215,8 +218,10 @@ func TestLegalPagesRender(t *testing.T) {
 			t.Errorf("policy %s appears %d times, want 1", href, n)
 		}
 	}
-	if n := strings.Count(pb, "<script"); n != 2 {
-		t.Errorf("policy <script appears %d times, want 2 (theme.js and reader.js)", n)
+	// Amended 2026-10-18 by Phase 3.3 plan 05 (UI-SPEC 5a): the shared app_head
+	// partial adds a deferred notify.js, so the page has three scripts.
+	if n := strings.Count(pb, "<script"); n != 3 {
+		t.Errorf("policy <script appears %d times, want 3 (notify.js, theme.js and reader.js)", n)
 	}
 	// Amended 2026-10-17 by Phase 3.4 plan 08 (D-31): the Policy part link is
 	// the current one on /policy and the part heading carries id policy.

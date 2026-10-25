@@ -155,6 +155,11 @@ func TestLowDataAssetPolicy(t *testing.T) {
 		}
 	}
 
+	// Amended 2026-10-18 by Phase 3.3 plan 05 (UI-SPEC 5a): the shared app_head
+	// partial adds a deferred /static/js/notify.js to the rendered head. This
+	// check reads the raw template, where that script is an include line and not
+	// a tag, so the pin below stays on theme.js alone; the rendered page is
+	// covered by TestLowDataByteBudget, which counts notify.js.
 	if len(headScripts) != 1 || headScripts[0] != "/static/js/theme.js" {
 		t.Errorf("head scripts = %v, want only /static/js/theme.js", headScripts)
 	}
