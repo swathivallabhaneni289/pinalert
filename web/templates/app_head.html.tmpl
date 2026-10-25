@@ -1,0 +1,9 @@
+{{/* Phase 3.3 (UI-SPEC 5a, 5c): one head block for the installable app on every page, the sign in page included; the manifest and icons are public routes; notify.js registers /sw.js with no query string. */}}
+{{define "app_head"}}<link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0B0D10">
+  <link rel="icon" href="/icons/app.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-title" content="Pinalert">
+  <meta name="mobile-web-app-capable" content="yes">
+  <script src="/static/js/notify.js?v={{.}}" defer></script>{{end}}
