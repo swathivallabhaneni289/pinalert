@@ -118,14 +118,17 @@ func loadSubject(getenv func(string) string) (string, error) {
 }
 
 // normalizeSubject returns a bare email address (any "mailto:" prefix is
-// dropped, because webpush-go adds its own) or an https URL as given.
+// dropped, because webpush-go adds its own) or an https URL with its scheme
+// lower cased. webpush-go checks for "https:" case sensitively and prepends
+// "mailto:" to anything else, so "HTTPS://..." must not reach it as given
+// (review S-02, 2026-10-25).
 func normalizeSubject(s string) (string, error) {
 	if strings.HasPrefix(strings.ToLower(s), "https:") {
 		u, err := url.Parse(s)
 		if err != nil || !strings.EqualFold(u.Scheme, "https") || u.Hostname() == "" || u.User != nil {
 			return "", errors.New("bad https subject")
 		}
-		return s, nil
+		return "https:" + s[len("https:"):], nil
 	}
 	if len(s) >= len("mailto:") && strings.EqualFold(s[:len("mailto:")], "mailto:") {
 		s = strings.TrimSpace(s[len("mailto:"):])
