@@ -847,8 +847,22 @@ func Profile(svc *service.AuthService, updates *service.UpdatesService, tmpl *te
 // (see profile.html.tmpl) — the control and the CSRF property DEC-L
 // records (SameSite=Lax withholding the session cookie from a cross-site
 // POST) both live with 01.1-06's shared header, not here.
-func Logout(mgr *session.Manager) http.HandlerFunc {
+//
+// Phase 3.3, decision 11 and UI-SPEC O-3: before the cookie is cleared the
+// push subscriptions this session registered are deleted, so the next person
+// who signs in on a shared phone never receives the previous person's alerts.
+// A failure to delete is logged without any endpoint and never blocks the log
+// out: the session's own revocation path and the send path's live-session join
+// are the backstops. DEC-K still holds, the session row stays bound to its
+// account. Amended 2026-10-18 by Phase 3.3 plan 10 (decision 11, UI-SPEC O-3):
+// plain Log out is no longer free of side effects for the push subscription.
+func Logout(mgr *session.Manager, subs *service.PushSubscriptionService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if sessionID, ok := session.FromContext(r.Context()); ok && sessionID != "" && subs != nil {
+			if err := subs.DeleteForSession(r.Context(), sessionID); err != nil {
+				log.Printf("handlers: Logout: deleting this device's push subscriptions: %v", err)
+			}
+		}
 		mgr.ClearCookie(w)
 		w.Header().Set("Cache-Control", "no-store")
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
