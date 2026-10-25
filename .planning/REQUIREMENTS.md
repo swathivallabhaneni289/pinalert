@@ -391,7 +391,8 @@ Deferred to future release. Tracked but not in current roadmap.
   location (Web Push/VAPID)
   (Amended 2026-10-16, owner decision: Phase 3.3 builds it; the saved location is the person's
   home area, and critical reports near it are on by default once phone notifications
-  are on; severe official alerts also buzz the phone, see PWA-06)
+  are on; severe official alerts also reach the phone as a notification, see PWA-06;
+  amended 2026-10-18, owner: every phone notification is silent, no sound and no vibration)
 
 - **PWA-04**: A retraction pushes a proactive notification to every session that viewed/confirmed
   the report while it was live (needs a `report_views` table)
@@ -402,7 +403,7 @@ Deferred to future release. Tracked but not in current roadmap.
 - **PWA-06**: Phase 3.2's updates and Severe or Extreme official alerts for the reader's district are
   delivered as Web Push to installed PWAs
   (Amended 2026-10-16, owner decision: Phase 3.3 builds the updates part; Severe or Extreme
-  official alerts covering the home area buzz the phone, on by default with a Settings switch,
+  official alerts covering the home area reach the phone as a silent notification, on by default with a Settings switch,
   using 3.3's push plumbing and turned on in Phase 5)
 
 - **PWA-07**: Opt-in email digests of updates (needs a DNS verified sending domain)
