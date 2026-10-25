@@ -834,6 +834,7 @@ jobs:
    - What we know: 45 of 100 current items are AP SDMA lightning alerts, severity Severe, with no district codes. If they count as "covering the reader's area", the banner is on for almost every Andhra Pradesh reader almost all the time, and D-11 pushes would be constant.
    - What's unclear: the owner's intent for D-07 and D-11 on state only alerts. D-09 only says they are listed under "Across <state>".
    - Recommendation (default until the viewing session): banner and push only for **district level** Severe or Extreme alerts, plus **state level Extreme**; state only Severe alerts appear in the Across group on Official alerts, Extreme first. Needs the owner's nod, in plain words, at the viewing session.
+   - **ANSWERED 2026-10-25 (owner, "yeah do what you suggested"): the recommendation stands. Recorded as 05-CONTEXT D-16.**
 2. **Can the feed show a cancelled alert?** What we know: one Update seen, no Cancel. What's unclear: real NDMA Cancel behaviour. Recommendation: build per CAP 1.2, add a live smoke test that logs unknown `msgType` values, review after a week of real traffic.
 3. **Is the owner content with an always awake host?** The 10 minute cron uses 744 of 750 free hours. Recommendation: yes, because push needs it; offer the 30 minute cron as the cheap alternative.
 4. **Server copy of the NASA tiles, or direct?** Recommendation: server copy (G6); the plan may choose direct if it wants less code.
