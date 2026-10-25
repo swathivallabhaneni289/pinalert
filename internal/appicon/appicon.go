@@ -317,13 +317,13 @@ func Render() (*Set, error) {
 			return nil, err
 		}
 		*j.bytes = b
-		*j.etag = etagOf(b)
+		*j.etag = ETag(b)
 	}
 	return s, nil
 }
 
-// etagOf is a quoted strong ETag: a prefix of the hex sha256 of the bytes.
-func etagOf(b []byte) string {
+// ETag is a quoted strong ETag: a prefix of the hex sha256 of the bytes.
+func ETag(b []byte) string {
 	sum := sha256.Sum256(b)
 	return `"` + hex.EncodeToString(sum[:8]) + `"`
 }

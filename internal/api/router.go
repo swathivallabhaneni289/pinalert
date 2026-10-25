@@ -319,7 +319,10 @@ const compressionLevel = 5
 // shipped icons are SVG mask files. text/plain is left out on purpose, so error
 // bodies such as the one http.NotFound writes stay byte for byte unchanged. The
 // Low data byte budget is still measured in raw bytes (04-27).
-var compressibleContentTypes = []string{"text/html", "text/css", "text/javascript", "application/javascript", "application/json", "image/svg+xml"}
+//
+// Phase 3.3 (plan 04) adds application/manifest+json, the type of the web app
+// manifest, which is small but is plain text like the rest.
+var compressibleContentTypes = []string{"text/html", "text/css", "text/javascript", "application/javascript", "application/json", "application/manifest+json", "image/svg+xml"}
 
 // NewRouter builds the chi router: request-id/client-ip-resolution/
 // recoverer/logger middleware, then the session middleware (issuing or verifying the
@@ -342,6 +345,15 @@ var compressibleContentTypes = []string{"text/html", "text/css", "text/javascrip
 // P4-A18), readable without logging in like the API reference above; they
 // render no account data (R-07) and are cacheable only in the browser.
 //
+// Amended 2026-10-18 by Phase 3.3 plan 04 (DEC-G, Phase 1.1 D-05, decision 13):
+// ten more exact GET paths join the exempt set, listed once in
+// handlers.PWAPublicPaths: /manifest.webmanifest, /sw.js, the five app icons
+// under /icons, the SVG mark /icons/app.svg, and the two root apple touch icon
+// addresses iOS asks for by itself. They carry nothing sensitive and a browser
+// fetches them without the session cookie, so an install would fail on a
+// redirect to /login. They also skip the session middleware (skipSessionFor),
+// so a cookieless fetch neither sets a cookie nor writes a sessions row.
+//
 // The route table has a third part, the moderator group (D-08), which is the
 // one exception to "every other route" above. It sits outside the access gate
 // and answers a plain 404 that is byte equal to an unknown route to everyone
@@ -350,6 +362,13 @@ var compressibleContentTypes = []string{"text/html", "text/css", "text/javascrip
 // let chi answer a wrong method with a 405 and an Allow header, which would
 // tell a stranger the path exists (correction 2).
 func NewRouter(deps Deps) *chi.Mux {
+	// The manifest, the worker and the icons are built once, here. Building can
+	// only fail on a build defect (a missing embedded file), so it panics.
+	assets, err := handlers.NewPWAAssets(web.StaticFS)
+	if err != nil {
+		panic("api: building the installable app assets: " + err.Error())
+	}
+
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -375,7 +394,10 @@ func NewRouter(deps Deps) *chi.Mux {
 	r.Use(requestLogger(deps.RequestLog))
 	// Gzip for HTML, CSS, JavaScript, JSON and SVG when the client accepts it (D-14).
 	r.Use(middleware.Compress(compressionLevel, compressibleContentTypes...))
-	r.Use(deps.Session.Middleware(deps.persistSession))
+	// The session middleware runs for every request except a GET of one of the
+	// exact public app asset paths (plan 03.3-04): a launcher or manifest fetch
+	// without a cookie must not create a session.
+	r.Use(skipSessionFor(pwaSkipSet(), deps.Session.Middleware(deps.persistSession)))
 
 	// Local copies of the page and auth configs that carry the shared Chrome
 	// data, so the four page routes below render the unofficial bar without
@@ -439,6 +461,20 @@ func NewRouter(deps Deps) *chi.Mux {
 	// The public legal pages (D-23, P4-A18): no account data (R-07), cacheable only in the browser.
 	r.Get("/disclaimer", handlers.Legal(deps.Template, auth, handlers.LegalDisclaimerPage))
 	r.Get("/policy", handlers.Legal(deps.Template, auth, handlers.LegalPolicyPage))
+	// The installable app assets (plan 03.3-04, T-03.3-05): the manifest, the
+	// service worker and the icons. Each is an exact GET path, never a prefix,
+	// taken from the one list handlers.PWAPublicPaths, which is also what builds
+	// the session bypass above, so the routes and the bypass are the same set by
+	// construction. They are public because the browser fetches them without the
+	// session cookie and an install would fail on a redirect to /login; none of
+	// them reads or writes an account.
+	for _, path := range handlers.PWAPublicPaths {
+		h, ok := assets.Handler(path)
+		if !ok {
+			panic("api: no handler for the public app asset " + path)
+		}
+		r.Method(http.MethodGet, path, h)
+	}
 	r.Handle("/static/*", http.StripPrefix("/static/", staticFileServer(deps.Dev)))
 	// Left publicly reachable: this is a public read-only API with no
 	// privileged operations to hide, and OPS-01 asks for a stable,
@@ -681,6 +717,37 @@ func staticFileServer(dev bool) http.Handler {
 		w.Header().Set("Cache-Control", cacheControl)
 		fileServer.ServeHTTP(w, r)
 	})
+}
+
+// pwaSkipSet is the set of paths that skip the session middleware: exactly the
+// entries of handlers.PWAPublicPaths, the same slice the routes are registered
+// from.
+func pwaSkipSet() map[string]bool {
+	set := make(map[string]bool, len(handlers.PWAPublicPaths))
+	for _, path := range handlers.PWAPublicPaths {
+		set[path] = true
+	}
+	return set
+}
+
+// skipSessionFor wraps the session middleware so a request goes straight to the
+// next handler, without a cookie and without a sessions row, only when all
+// three hold: the method is GET, the URL carries no encoded form (RawPath is
+// empty, so an encoded spelling of a path never matches) and the path is
+// exactly a key of the set. Every other request, a HEAD or a near miss such as
+// a trailing slash or a .map suffix included, goes through the session
+// middleware as before (T-03.3-14).
+func skipSessionFor(paths map[string]bool, next func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+	return func(h http.Handler) http.Handler {
+		withSession := next(h)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet && r.URL.RawPath == "" && paths[r.URL.Path] {
+				h.ServeHTTP(w, r)
+				return
+			}
+			withSession.ServeHTTP(w, r)
+		})
+	}
 }
 
 // persistSession is the session Manager's persist callback: it writes the

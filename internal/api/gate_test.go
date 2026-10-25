@@ -305,10 +305,36 @@ func TestAccessGateAllowsVerified(t *testing.T) {
 }
 
 // TestAccessGateExemptRoutes is a table-driven check over DEC-G's exempt
-// list: an unverified session must reach every one of these seven routes and
-// get neither a redirect nor a 401.
+// list: an unverified session must reach every one of these seventeen routes
+// and get neither a redirect nor a 401. The first seven are the login surface,
+// the static files, the API reference and the two legal pages; the last ten
+// are the installable app assets.
+//
+// Amended 2026-10-18 by Phase 3.3 plan 04 (DEC-G, Phase 1.1 D-05, decision 13):
+// ten rows were added for the manifest, the service worker and the icons
+// (nothing sensitive, fetched by the browser before sign in), each of which
+// must answer 200, and a second test below proves the near misses stay gated.
+// These rows run only on a database: newGateTestServer skips without
+// DATABASE_URL.
 func TestAccessGateExemptRoutes(t *testing.T) {
 	srv, _, _ := newGateTestServer(t)
+
+	appAssets := []string{
+		"/manifest.webmanifest",
+		"/sw.js",
+		"/icons/app.svg",
+		"/icons/app-192.png",
+		"/icons/app-512.png",
+		"/icons/app-maskable-512.png",
+		"/icons/apple-touch-icon.png",
+		"/icons/badge-96.png",
+		"/apple-touch-icon.png",
+		"/apple-touch-icon-precomposed.png",
+	}
+	mustBeOK := map[string]bool{"/disclaimer": true, "/policy": true}
+	for _, p := range appAssets {
+		mustBeOK[p] = true
+	}
 
 	cases := []struct {
 		name   string
@@ -323,6 +349,14 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 		{"swagger ui", http.MethodGet, "/swagger/index.html", ""},
 		{"disclaimer page", http.MethodGet, "/disclaimer", ""},
 		{"policy page", http.MethodGet, "/policy", ""},
+	}
+	for _, p := range appAssets {
+		cases = append(cases, struct {
+			name   string
+			method string
+			path   string
+			body   string
+		}{"app asset " + p, http.MethodGet, p, ""})
 	}
 
 	for _, tc := range cases {
@@ -353,8 +387,24 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 			if resp.StatusCode == http.StatusUnauthorized {
 				t.Fatalf("%s %s returned 401 — this route must be reachable without verification", tc.method, tc.path)
 			}
-			if (tc.path == "/disclaimer" || tc.path == "/policy") && resp.StatusCode != http.StatusOK {
-				t.Fatalf("%s %s returned %d: the public legal page must answer 200 without verification", tc.method, tc.path, resp.StatusCode)
+			if mustBeOK[tc.path] && resp.StatusCode != http.StatusOK {
+				t.Fatalf("%s %s returned %d: this public page or app asset must answer 200 without verification", tc.method, tc.path, resp.StatusCode)
+			}
+		})
+	}
+
+	// Near misses of the app asset paths are not exempt: no prefix or suffix
+	// match opens a hole in the gate. They are not routes at all, so the answer
+	// is never a 200 from the asset handlers.
+	for _, p := range []string{"/icons/other.png", "/sw.js.map", "/sw.js/", "/icons/"} {
+		t.Run("near miss "+p, func(t *testing.T) {
+			resp, err := newGateJarClient(t).Get(srv.URL + p)
+			if err != nil {
+				t.Fatalf("GET %s: %v", p, err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				t.Fatalf("GET %s returned 200: only the ten listed app asset paths are public", p)
 			}
 		})
 	}
