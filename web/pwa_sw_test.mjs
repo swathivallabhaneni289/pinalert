@@ -66,7 +66,19 @@ function loadWorker(opts = {}) {
       openWindow: (target) => { calls.opened.push(target); return Promise.resolve({}); }
     },
     location: { origin: ORIGIN },
-    fetch: (target, init) => { calls.fetched.push({ target, init }); return Promise.resolve({ ok: true, status: 200 }); },
+    fetch: (target, init) => {
+      calls.fetched.push({ target, init });
+      if (target === '/api/me/push/status') {
+        // opts.status: a registered answer (default), 'not-registered', 'http-error', 'bad-json' or 'network'.
+        const mode = opts.status || 'registered';
+        if (mode === 'network') return Promise.reject(new Error('offline'));
+        if (mode === 'http-error') return Promise.resolve({ ok: false, status: 503, json: () => Promise.resolve({}) });
+        if (mode === 'bad-json') return Promise.resolve({ ok: true, status: 200, json: () => Promise.reject(new Error('not json')) });
+        const registered = mode === 'registered';
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ registered }) });
+      }
+      return Promise.resolve({ ok: true, status: 200 });
+    },
     console
   };
   sandbox.self = sandbox;
@@ -241,24 +253,56 @@ test('a tap falls back to a new window when the open one cannot be navigated', a
   assert.deepEqual([...w.calls.opened], ['/?report=3']);
 });
 
-test('pushsubscriptionchange subscribes again with the old key and posts the new subscription', async () => {
+const OLD_ENDPOINT = 'https://push.example/old';
+
+function changeEvent(key) {
+  return { oldSubscription: { endpoint: OLD_ENDPOINT, options: { applicationServerKey: key } } };
+}
+
+test('pushsubscriptionchange asks the server about the old endpoint, then subscribes again and posts the new one when it is registered', async () => {
   const w = loadWorker();
   const key = new Uint8Array([1, 2, 3]);
-  const { waits } = dispatch(w, 'pushsubscriptionchange', {
-    oldSubscription: { options: { applicationServerKey: key } }
-  });
+  const { waits } = dispatch(w, 'pushsubscriptionchange', changeEvent(key));
   assert.equal(waits.length, 1);
   await Promise.all(waits);
   assert.equal(w.calls.subscribed.length, 1);
   assert.equal(w.calls.subscribed[0].userVisibleOnly, true);
   assert.equal(w.calls.subscribed[0].applicationServerKey, key);
-  assert.equal(w.calls.fetched.length, 1);
-  const { target, init } = w.calls.fetched[0];
+  assert.equal(w.calls.fetched.length, 2);
+  const status = w.calls.fetched[0];
+  assert.equal(status.target, '/api/me/push/status');
+  assert.equal(status.init.method, 'POST');
+  assert.equal(status.init.credentials, 'same-origin');
+  assert.equal(status.init.headers['Content-Type'], 'application/json');
+  assert.deepEqual(JSON.parse(status.init.body), { endpoint: OLD_ENDPOINT });
+  const { target, init } = w.calls.fetched[1];
   assert.equal(target, '/api/me/push/subscription');
   assert.equal(init.method, 'POST');
   assert.equal(init.credentials, 'same-origin');
   assert.equal(init.headers['Content-Type'], 'application/json');
   assert.deepEqual(JSON.parse(init.body), { endpoint: 'https://push.example/new', keys: { p256dh: 'p', auth: 'a' } });
+});
+
+for (const mode of ['not-registered', 'http-error', 'bad-json', 'network']) {
+  test('pushsubscriptionchange posts nothing when the status answer is ' + mode + ' (shared device, B-01)', async () => {
+    const w = loadWorker({ status: mode });
+    const { waits } = dispatch(w, 'pushsubscriptionchange', changeEvent(new Uint8Array([1, 2, 3])));
+    await Promise.all(waits);
+    assert.equal(w.calls.subscribed.length, 0);
+    assert.equal(w.calls.fetched.filter((f) => f.target === '/api/me/push/subscription').length, 0);
+    assert.equal(w.calls.fetched.length, 1);
+    assert.equal(w.calls.fetched[0].target, '/api/me/push/status');
+  });
+}
+
+test('pushsubscriptionchange with an old subscription that has no endpoint asks and posts nothing', async () => {
+  const w = loadWorker();
+  const { waits } = dispatch(w, 'pushsubscriptionchange', {
+    oldSubscription: { options: { applicationServerKey: new Uint8Array([1]) } }
+  });
+  await Promise.all(waits);
+  assert.equal(w.calls.subscribed.length, 0);
+  assert.equal(w.calls.fetched.length, 0);
 });
 
 test('pushsubscriptionchange with no old subscription does nothing', async () => {
