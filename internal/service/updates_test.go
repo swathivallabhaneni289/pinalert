@@ -458,3 +458,106 @@ func TestMayNotifyMatchesResolve(t *testing.T) {
 		t.Errorf("pending plain report: vis=%q, want withheld", vis)
 	}
 }
+
+// TestCriticalNearbyNeedsLive was added 2026-10-18 by Phase 3.3 plan 03
+// (decision 12, D-07, D-29 of 3.2). The Critical phone alert is a push only
+// kind that goes through the one 3.2 predicate: it needs Live like every kind
+// but UpdateReliableNearby, over the same severity, category, moderation and
+// tally grid as TestMayNotifyMatchesResolve. The grid includes rescue_needed
+// and traffic, so no category changes the answer.
+func TestCriticalNearbyNeedsLive(t *testing.T) {
+	now := updatesNow
+	tallies := []VoteTally{
+		{},
+		{ConfirmCells: 1},
+		{ConfirmCells: 2},
+		{ConfirmCells: 2, DisputeCells: 2},
+		{DisputeCells: 2},
+		{ConfirmCells: 1, DisputeCells: 2},
+		{ConfirmCells: 2, ReporterResolved: true},
+		{ConfirmCells: 2, ResolveCells: 2},
+		{DisputeCells: 2, ReporterResolved: true, ReporterReopened: true},
+	}
+	expiries := []time.Time{now.Add(time.Hour), now, now.Add(-time.Hour)}
+	categories := []Category{CategoryFlood, CategoryRescueNeeded, CategoryTraffic}
+	sawLive, sawProvisional, sawWithheld, sawHidden, sawRetracted := false, false, false, false, false
+	for _, sev := range Severities {
+		for _, cat := range categories {
+			for _, mod := range ModerationStates {
+				meta := ReportMeta{Severity: sev, Category: cat, Moderation: mod}
+				for _, tally := range tallies {
+					vis, _ := Resolve(meta, tally, now)
+					for _, exp := range expiries {
+						want := vis == VisibilityLive && exp.After(now)
+						if got := MayNotifyAboutReport(UpdateCriticalNearby, vis, exp, now); got != want {
+							t.Errorf("critical nearby: meta=%+v tally=%+v vis=%q exp=%v: got %v, want %v", meta, tally, vis, exp, got, want)
+						}
+						switch vis {
+						case VisibilityLive:
+							sawLive = true
+						case VisibilityProvisional:
+							sawProvisional = true
+						case VisibilityWithheld:
+							sawWithheld = true
+						case VisibilityHidden:
+							sawHidden = true
+						case VisibilityRetracted:
+							sawRetracted = true
+						}
+					}
+				}
+			}
+		}
+	}
+	if !sawLive || !sawProvisional || !sawWithheld || !sawHidden || !sawRetracted {
+		t.Errorf("grid missed a visibility: live=%v provisional=%v withheld=%v hidden=%v retracted=%v", sawLive, sawProvisional, sawWithheld, sawHidden, sawRetracted)
+	}
+
+	future := now.Add(time.Hour)
+	for _, vis := range []Visibility{VisibilityWithheld, VisibilityHidden, VisibilityRetracted, VisibilityProvisional, "mystery"} {
+		if MayNotifyAboutReport(UpdateCriticalNearby, vis, future, now) {
+			t.Errorf("critical nearby notifies for %q", vis)
+		}
+	}
+	if MayNotifyAboutReport(UpdateCriticalNearby, VisibilityLive, now, now) {
+		t.Error("critical nearby notifies for a live report that expires at now")
+	}
+	if !MayNotifyAboutReport(UpdateCriticalNearby, VisibilityLive, future, now) {
+		t.Error("critical nearby does not notify for a live unexpired report, so the predicate looks constant false")
+	}
+}
+
+// TestCriticalNearbyNeverStored was added 2026-10-18 by Phase 3.3 plan 03: the
+// Critical phone alert is push only, so it is in no stored list and is not a
+// valid stored kind (00009's updates_kind_valid CHECK would refuse it).
+func TestCriticalNearbyNeverStored(t *testing.T) {
+	if UpdateCriticalNearby != UpdateKind("critical_nearby") {
+		t.Errorf("UpdateCriticalNearby = %q", UpdateCriticalNearby)
+	}
+	if UpdateKind("critical_nearby").Valid() {
+		t.Error("critical_nearby is a valid stored kind")
+	}
+	if UpdateCriticalNearby.IsEvent() {
+		t.Error("critical_nearby is an event kind")
+	}
+	for _, k := range UpdateKinds {
+		if k == UpdateCriticalNearby {
+			t.Error("critical_nearby is in UpdateKinds")
+		}
+	}
+	for _, k := range UpdateEventKinds {
+		if k == UpdateCriticalNearby {
+			t.Error("critical_nearby is in UpdateEventKinds")
+		}
+	}
+	if len(PushOnlyUpdateKinds) != 1 || PushOnlyUpdateKinds[0] != UpdateCriticalNearby {
+		t.Errorf("PushOnlyUpdateKinds = %v, want [critical_nearby]", PushOnlyUpdateKinds)
+	}
+	for _, p := range PushOnlyUpdateKinds {
+		for _, k := range UpdateKinds {
+			if p == k {
+				t.Errorf("push only kind %q is also a stored kind", p)
+			}
+		}
+	}
+}
