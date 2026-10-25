@@ -23,6 +23,7 @@
 // fields, never into markup.
 
 const SUBSCRIPTION_URL = '/api/me/push/subscription';
+const STATUS_URL = '/api/me/push/status';
 const ICON_URL = '/icons/app-192.png';
 const BADGE_URL = '/icons/badge-96.png';
 
@@ -116,22 +117,38 @@ self.addEventListener('notificationclick', function (event) {
   );
 });
 
+// postJSON sends one JSON POST under the browser's session cookie. Endpoints and
+// keys travel only in the body.
+function postJSON(url, body) {
+  return self.fetch(url, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+}
+
 // The browser replaced the push subscription: subscribe again with the same
-// server key and tell the server. The page also reconciles on Settings load,
-// because this event is not reliable in every browser.
+// server key and tell the server, but only for the account that had the old
+// endpoint registered. A worker cannot read the intent flag the page keeps, and
+// the person signed in now may not be the one who turned alerts on here (a shared
+// device), so the worker asks the server first. With no old subscription, an
+// answer that is not "registered", or any failure, it does nothing. The page
+// also reconciles on Settings load, because this event is not reliable in every
+// browser.
 self.addEventListener('pushsubscriptionchange', function (event) {
   var old = event.oldSubscription;
-  if (!old || !old.options || !old.options.applicationServerKey) return;
+  if (!old || !old.endpoint || !old.options || !old.options.applicationServerKey) return;
   event.waitUntil(
-    self.registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: old.options.applicationServerKey
-    }).then(function (sub) {
-      return self.fetch(SUBSCRIPTION_URL, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sub)
+    postJSON(STATUS_URL, { endpoint: old.endpoint }).then(function (res) {
+      return res && res.ok ? res.json() : null;
+    }).then(function (answer) {
+      if (!answer || answer.registered !== true) return null;
+      return self.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: old.options.applicationServerKey
+      }).then(function (sub) {
+        return postJSON(SUBSCRIPTION_URL, sub);
       });
     }).catch(function () {
       // Settings load reconciles the subscription later.

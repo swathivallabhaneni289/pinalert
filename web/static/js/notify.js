@@ -161,6 +161,40 @@
     return out;
   }
 
+  // asBytes reads an ArrayBuffer or a typed array as a Uint8Array, or null.
+  function asBytes(value) {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+    if (ArrayBuffer.isView(value)) {
+      return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    }
+    if (Object.prototype.toString.call(value) === '[object ArrayBuffer]') {
+      return new Uint8Array(value);
+    }
+    return null;
+  }
+
+  // sameKey says whether a browser subscription was made with the page's server
+  // key. A subscription that does not report its key counts as the same, so only
+  // a key that is known to differ is ever dropped or left alone.
+  function sameKey(subscription, key) {
+    var have = asBytes(subscription && subscription.options && subscription.options.applicationServerKey);
+    if (have === null) {
+      return true;
+    }
+    var want = keyBytes(key);
+    if (have.length !== want.length) {
+      return false;
+    }
+    for (var i = 0; i < have.length; i++) {
+      if (have[i] !== want[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   // withTimeout ends a wait that never settles (for example a worker that never
   // became ready) after REQUEST_TIMEOUT_MS.
   function withTimeout(promise) {
@@ -356,9 +390,18 @@
         return { ok: false, state: 'ready', reason: 'refused' };
       }
       return readyRegistration().then(function (registration) {
-        return registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: keyBytes(key)
+        // A subscription made with another server key (the operator changed
+        // the key pair) makes subscribe fail for good, so drop it first.
+        return Promise.resolve(registration.pushManager.getSubscription()).then(function (existing) {
+          if (existing && !sameKey(existing, key)) {
+            return existing.unsubscribe();
+          }
+          return null;
+        }).then(function () {
+          return registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: keyBytes(key)
+          });
         });
       }).then(function (subscription) {
         return post(SUBSCRIPTION_URL, subscription.toJSON());
@@ -419,6 +462,10 @@
   function reconcile(key) {
     return inspect(key).then(function (found) {
       if (found.state !== 'ready' || !found.sub || found.known !== true || !intentIsSet()) {
+        return found.state;
+      }
+      // A subscription made with another server key could never be sent to.
+      if (!sameKey(found.sub, key)) {
         return found.state;
       }
       return post(SUBSCRIPTION_URL, found.sub.toJSON()).then(function (answer) {
