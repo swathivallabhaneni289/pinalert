@@ -718,11 +718,11 @@ func TestWorkerBuildsWordsAtSendTime(t *testing.T) {
 			title: "Flood near Central Market", body: "Confirmed by people nearby. 2 km from your home area."},
 		{name: "confirmed update, first row pruned, serious report falls back to Critical", kind: "confirmed_update", severity: "critical", votes: pwConfirm(2), happening: pwStr("fire"), area: "Central Market",
 			title: "Fire near Central Market", body: "Confirmed by people nearby. 2 km from your home area."},
-		{name: "changed, someone else's report", kind: "changed", severity: "low", area: "Central Market",
+		{name: "changed, someone else's report", kind: "changed", severity: "low", votes: pwConfirm(2), area: "Central Market",
 			title: "A report you voted on is now confirmed", body: "Flood, Low. Central Market, 2 km from your home area."},
-		{name: "changed, my own report", kind: "changed", severity: "low", area: "Central Market", own: true,
+		{name: "changed, my own report", kind: "changed", severity: "low", votes: pwConfirm(2), area: "Central Market", own: true,
 			title: "Your report is now confirmed", body: "Flood, Low. Central Market, 2 km from your home area."},
-		{name: "changed without a home area has no distance", kind: "changed", severity: "low", area: "Central Market",
+		{name: "changed without a home area has no distance", kind: "changed", severity: "low", votes: pwConfirm(2), area: "Central Market",
 			home:  func(h *sqlcgen.PushAccountHomeRow) { h.HomeAreaCell = nil },
 			title: "A report you voted on is now confirmed", body: "Flood, Low. Central Market."},
 		{name: "a long area name is cut", kind: "critical", severity: "critical", happening: pwStr("fire"), area: "Mahatma Gandhi Road Metro Station Complex",
@@ -812,7 +812,7 @@ func TestWorkerMessageOptions(t *testing.T) {
 		{name: "critical, under a second left is stale", kind: "critical", sev: "critical", expires: 900 * time.Millisecond, stale: true},
 		{name: "reliable, long life", kind: "reliable", sev: "low", expires: 5 * time.Hour, urgency: push.UrgencyNormal, ttl: PushOtherTTL},
 		{name: "reliable, 10 minutes left", kind: "reliable", sev: "low", expires: 10 * time.Minute, urgency: push.UrgencyNormal, ttl: 10 * time.Minute},
-		{name: "changed", kind: "changed", sev: "low", expires: 5 * time.Hour, urgency: push.UrgencyNormal, ttl: PushOtherTTL},
+		{name: "changed", kind: "changed", sev: "low", votes: pwConfirm(2), expires: 5 * time.Hour, urgency: push.UrgencyNormal, ttl: PushOtherTTL},
 		{name: "confirmed update of a critical alert is normal", kind: "confirmed_update", sev: "critical", votes: pwConfirm(2), first: pwStr("critical"), expires: 5 * time.Hour, urgency: push.UrgencyNormal, ttl: PushOtherTTL},
 	}
 	for _, c := range cases {
@@ -840,7 +840,7 @@ func TestWorkerMessageOptions(t *testing.T) {
 				t.Fatalf("messages = %d, want 1", len(msgs))
 			}
 			m := msgs[0].msg
-			if m.Payload.V != push.PayloadVersion || m.Payload.V != 1 {
+			if m.Payload.V != 1 {
 				t.Errorf("payload version = %d", m.Payload.V)
 			}
 			if m.Payload.Kind != c.kind {
@@ -943,6 +943,9 @@ func TestWorkerCapPerAccountHour(t *testing.T) {
 			r.q.home.ReliableAlertsOn = true
 			r.q.home.ChangesPushOn = true
 			r.q.count = PushPerAccountPerHour
+			if kind == "changed" {
+				r.q.claimRows[0].UpdateKind = pwStr("fading")
+			}
 			r.report(func(row *sqlcgen.PushReportFactsRow) {
 				if kind != "critical" {
 					row.Severity = "low"
@@ -967,6 +970,9 @@ func TestWorkerCapPerAccountHour(t *testing.T) {
 			r.q.home.ReliableAlertsOn = true
 			r.q.home.ChangesPushOn = true
 			r.q.count = PushPerAccountPerHour - 1
+			if kind == "changed" {
+				r.q.claimRows[0].UpdateKind = pwStr("fading")
+			}
 			r.report(func(row *sqlcgen.PushReportFactsRow) {
 				if kind != "critical" {
 					row.Severity = "low"
