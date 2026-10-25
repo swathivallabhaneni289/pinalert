@@ -747,6 +747,28 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		}
 	}
 
+	// 03.3-12: PATCH /me/alerts takes and answers the two phone switches next to
+	// 3.2's keys, and still carries no position or home area cell.
+	for def, want := range map[string][]string{
+		"handlers.AlertSettingsRequest":  {"reliable_alerts", "alert_radius_km", "critical_push", "changes_push"},
+		"handlers.AlertSettingsResponse": {"reliable_alerts", "alert_radius_km", "has_home_area", "critical_push", "changes_push"},
+	} {
+		var d struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		}
+		if err := json.Unmarshal(defSpec.Definitions[def], &d); err != nil {
+			t.Fatalf("parsing %s: %v", def, err)
+		}
+		if len(d.Properties) != len(want) {
+			t.Errorf("%s has %d properties, want %d", def, len(d.Properties), len(want))
+		}
+		for _, key := range want {
+			if _, ok := d.Properties[key]; !ok {
+				t.Errorf("%s is missing property %q", def, key)
+			}
+		}
+	}
+
 	// The published-schema counterpart to the runtime information-disclosure
 	// control (T-01-02): a session identifier must never be advertised as
 	// part of the contract, because a documented field is an invitation for

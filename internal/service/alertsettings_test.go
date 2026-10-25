@@ -9,6 +9,9 @@ package service_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,10 +29,29 @@ type fakeProfileQ struct {
 	alert    *sqlcgen.GetAlertSettingsRow
 	homeCell *string
 	profile  sqlcgen.GetAccountProfileRow
+	// Amended 2026-10-18 by Phase 3.3 plan 12 (decision 12): the fake gained the
+	// two push switch methods. push nil means the account has no push switch
+	// values saved, which the real query answers with the defaults (Critical on,
+	// Changes off).
+	push *sqlcgen.GetPushKindSettingsRow
 
-	upserts  []sqlcgen.UpsertAlertSettingsParams
-	disables []sqlcgen.DisableReliableAlertsParams
-	profiles []sqlcgen.UpdateAccountProfileParams
+	upserts     []sqlcgen.UpsertAlertSettingsParams
+	pushUpserts []sqlcgen.UpsertPushKindSettingsParams
+	disables    []sqlcgen.DisableReliableAlertsParams
+	profiles    []sqlcgen.UpdateAccountProfileParams
+}
+
+func (f *fakeProfileQ) GetPushKindSettings(context.Context, int64) (sqlcgen.GetPushKindSettingsRow, error) {
+	if f.push == nil {
+		return sqlcgen.GetPushKindSettingsRow{CriticalPushOn: true}, nil
+	}
+	return *f.push, nil
+}
+
+func (f *fakeProfileQ) UpsertPushKindSettings(_ context.Context, a sqlcgen.UpsertPushKindSettingsParams) (sqlcgen.UpsertPushKindSettingsRow, error) {
+	f.pushUpserts = append(f.pushUpserts, a)
+	f.push = &sqlcgen.GetPushKindSettingsRow{CriticalPushOn: a.CriticalPushOn, ChangesPushOn: a.ChangesPushOn}
+	return sqlcgen.UpsertPushKindSettingsRow{CriticalPushOn: a.CriticalPushOn, ChangesPushOn: a.ChangesPushOn}, nil
 }
 
 func (f *fakeProfileQ) AcceptTerms(context.Context, sqlcgen.AcceptTermsParams) error { return nil }
@@ -270,5 +292,185 @@ func TestHomeAreaCellReadsTheStoredCell(t *testing.T) {
 	got, ok, err = newAlertAccounts(f).HomeAreaCell(ctx, 7)
 	if err != nil || ok || got != "" {
 		t.Errorf("HomeAreaCell without a home area = %q, %v, %v; want empty, false", got, ok, err)
+	}
+}
+
+// The tests below belong to plan 03.3-12 (PWA-03, PWA-06, decision 12): the
+// Critical and Changes phone switches that sit next to 3.2's Reliable switch.
+
+// pushRow builds the stored push switch row the fake answers.
+func pushRow(critical, changes bool) *sqlcgen.GetPushKindSettingsRow {
+	return &sqlcgen.GetPushKindSettingsRow{CriticalPushOn: critical, ChangesPushOn: changes}
+}
+
+func TestAlertSettingsPushKindDefaults(t *testing.T) {
+	cell := "tdr1v"
+	f := &fakeProfileQ{homeCell: &cell}
+	got, err := newAlertAccounts(f).AlertSettings(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("AlertSettings: %v", err)
+	}
+	if !got.CriticalPushOn || got.ChangesPushOn {
+		t.Errorf("no settings row: Critical %v, Changes %v; want Critical on, Changes off", got.CriticalPushOn, got.ChangesPushOn)
+	}
+	if got.ReliableAlertsOn || got.AlertRadiusKm != service.DefaultAlertRadiusKm || !got.HasHomeArea {
+		t.Errorf("3.2 values changed: %+v", got)
+	}
+
+	// Stored values read back as stored.
+	f.push = pushRow(false, true)
+	got, err = newAlertAccounts(f).AlertSettings(context.Background(), 7)
+	if err != nil || got.CriticalPushOn || !got.ChangesPushOn {
+		t.Errorf("stored values: %+v, %v; want Critical off, Changes on", got, err)
+	}
+}
+
+func TestUpdateAlertSettingsPushKinds(t *testing.T) {
+	ctx := context.Background()
+	cell := "tdr1v"
+
+	t.Run("critical off alone writes only the push row", func(t *testing.T) {
+		f := &fakeProfileQ{homeCell: &cell, push: pushRow(true, true)}
+		got, err := newAlertAccounts(f).UpdateAlertSettings(ctx, 7, service.AlertSettingsUpdate{CriticalPush: boolPtr(false)})
+		if err != nil {
+			t.Fatalf("UpdateAlertSettings: %v", err)
+		}
+		if len(f.upserts) != 0 {
+			t.Errorf("a push only edit wrote 3.2's row: %+v", f.upserts)
+		}
+		if len(f.pushUpserts) != 1 {
+			t.Fatalf("push upserts = %+v, want one", f.pushUpserts)
+		}
+		if p := f.pushUpserts[0]; p.AccountID != 7 || p.CriticalPushOn || !p.ChangesPushOn || !p.Now.Equal(alertsNow) {
+			t.Errorf("push upsert = %+v, want account 7, Critical off, stored Changes kept on, clock time", p)
+		}
+		if got.CriticalPushOn || !got.ChangesPushOn || got.ReliableAlertsOn || got.AlertRadiusKm != service.DefaultAlertRadiusKm {
+			t.Errorf("answer = %+v, want all four values as stored", got)
+		}
+	})
+	t.Run("changes on needs no home area", func(t *testing.T) {
+		f := &fakeProfileQ{}
+		got, err := newAlertAccounts(f).UpdateAlertSettings(ctx, 7, service.AlertSettingsUpdate{ChangesPush: boolPtr(true)})
+		if err != nil {
+			t.Fatalf("UpdateAlertSettings: %v", err)
+		}
+		if !got.ChangesPushOn || !got.CriticalPushOn || got.HasHomeArea {
+			t.Errorf("answer = %+v, want Changes on, Critical at its default, no home area", got)
+		}
+		if len(f.pushUpserts) != 1 || !f.pushUpserts[0].CriticalPushOn || !f.pushUpserts[0].ChangesPushOn {
+			t.Errorf("push upserts = %+v, want one with the default Critical kept and Changes on", f.pushUpserts)
+		}
+	})
+	t.Run("critical on without a home area is refused", func(t *testing.T) {
+		f := &fakeProfileQ{push: pushRow(false, false)}
+		_, err := newAlertAccounts(f).UpdateAlertSettings(ctx, 7, service.AlertSettingsUpdate{CriticalPush: boolPtr(true)})
+		wantValidation(t, err, "critical_push", service.AlertsNeedHomeAreaMessage)
+		if len(f.pushUpserts) != 0 || len(f.upserts) != 0 {
+			t.Error("a refused update wrote")
+		}
+	})
+	t.Run("critical on with a home area is saved", func(t *testing.T) {
+		f := &fakeProfileQ{homeCell: &cell, push: pushRow(false, false)}
+		got, err := newAlertAccounts(f).UpdateAlertSettings(ctx, 7, service.AlertSettingsUpdate{CriticalPush: boolPtr(true)})
+		if err != nil || !got.CriticalPushOn {
+			t.Errorf("turning on: %+v, %v", got, err)
+		}
+	})
+	t.Run("critical off without a home area is allowed", func(t *testing.T) {
+		f := &fakeProfileQ{}
+		got, err := newAlertAccounts(f).UpdateAlertSettings(ctx, 7, service.AlertSettingsUpdate{CriticalPush: boolPtr(false)})
+		if err != nil || got.CriticalPushOn {
+			t.Errorf("turning off: %+v, %v", got, err)
+		}
+	})
+	t.Run("a refused field blocks the whole edit", func(t *testing.T) {
+		f := &fakeProfileQ{}
+		_, err := newAlertAccounts(f).UpdateAlertSettings(ctx, 7, service.AlertSettingsUpdate{CriticalPush: boolPtr(true), ChangesPush: boolPtr(true), AlertRadiusKm: intPtr(2)})
+		wantValidation(t, err, "critical_push", service.AlertsNeedHomeAreaMessage)
+		if len(f.pushUpserts) != 0 || len(f.upserts) != 0 {
+			t.Error("a refused update wrote one of its parts")
+		}
+	})
+	t.Run("a mixed edit writes both rows", func(t *testing.T) {
+		f := &fakeProfileQ{homeCell: &cell}
+		got, err := newAlertAccounts(f).UpdateAlertSettings(ctx, 7, service.AlertSettingsUpdate{ReliableAlerts: boolPtr(true), ChangesPush: boolPtr(true)})
+		if err != nil {
+			t.Fatalf("UpdateAlertSettings: %v", err)
+		}
+		if len(f.upserts) != 1 || len(f.pushUpserts) != 1 {
+			t.Errorf("writes: %d and %d, want one each", len(f.upserts), len(f.pushUpserts))
+		}
+		if !got.ReliableAlertsOn || !got.ChangesPushOn || !got.CriticalPushOn || got.EnabledAt == nil {
+			t.Errorf("answer = %+v", got)
+		}
+	})
+	t.Run("a 3.2 only edit leaves the push row alone", func(t *testing.T) {
+		f := &fakeProfileQ{homeCell: &cell, push: pushRow(false, true)}
+		got, err := newAlertAccounts(f).UpdateAlertSettings(ctx, 7, service.AlertSettingsUpdate{AlertRadiusKm: intPtr(10)})
+		if err != nil {
+			t.Fatalf("UpdateAlertSettings: %v", err)
+		}
+		if len(f.pushUpserts) != 0 {
+			t.Errorf("a radius edit wrote the push row: %+v", f.pushUpserts)
+		}
+		if got.CriticalPushOn || !got.ChangesPushOn || got.AlertRadiusKm != 10 {
+			t.Errorf("answer = %+v, want stored push values and 10 km", got)
+		}
+	})
+	t.Run("nothing to save still holds", func(t *testing.T) {
+		f := &fakeProfileQ{homeCell: &cell}
+		_, err := newAlertAccounts(f).UpdateAlertSettings(ctx, 7, service.AlertSettingsUpdate{})
+		wantValidation(t, err, "body", service.AlertsNothingToSaveMessage)
+	})
+}
+
+// TestCriticalDefaultMatchesSQL pins decision 12: an account with no settings
+// row is Critical on and Changes off, and the SQL and the Go constants say the
+// same thing. If one moves without the other this fails.
+func TestCriticalDefaultMatchesSQL(t *testing.T) {
+	sql, err := os.ReadFile(filepath.Join("..", "store", "queries", "push.sql"))
+	if err != nil {
+		t.Fatalf("reading push.sql: %v", err)
+	}
+	for _, want := range []string{"COALESCE(s.critical_push_on, true)", "COALESCE(s.changes_push_on, false)"} {
+		if !strings.Contains(string(sql), want) {
+			t.Errorf("push.sql does not hold %q", want)
+		}
+	}
+	if !service.DefaultCriticalPushOn || service.DefaultChangesPushOn {
+		t.Errorf("Go defaults: Critical %v, Changes %v; want true and false", service.DefaultCriticalPushOn, service.DefaultChangesPushOn)
+	}
+	// The service default for an account with no row is the Go constant.
+	f := &fakeProfileQ{}
+	got, err := newAlertAccounts(f).AlertSettings(context.Background(), 7)
+	if err != nil || got.CriticalPushOn != service.DefaultCriticalPushOn || got.ChangesPushOn != service.DefaultChangesPushOn {
+		t.Errorf("AlertSettings with no row = %+v, %v; want the Go defaults", got, err)
+	}
+}
+
+// TestClearingHomeAreaKeepsCritical pins D-21 and UI-SPEC 2b: removing the home
+// area turns 3.2's Reliable switch off but leaves the stored Critical value, so
+// setting an area again brings Critical back as it was.
+func TestClearingHomeAreaKeepsCritical(t *testing.T) {
+	ctx := context.Background()
+	cell := "tdr1v"
+	f := &fakeProfileQ{homeCell: &cell, push: pushRow(true, true)}
+	svc := newAlertAccounts(f)
+	_, err := svc.UpdateProfile(ctx, 7, service.ProfileUpdate{HomeArea: service.HomeAreaChange{Action: service.HomeAreaClear}})
+	if err != nil {
+		t.Fatalf("UpdateProfile: %v", err)
+	}
+	if len(f.disables) != 1 {
+		t.Errorf("DisableReliableAlerts calls = %d, want 1 (3.2 still turns Reliable off)", len(f.disables))
+	}
+	if len(f.pushUpserts) != 0 {
+		t.Errorf("clearing the area wrote the push row: %+v", f.pushUpserts)
+	}
+	got, err := svc.AlertSettings(ctx, 7)
+	if err != nil {
+		t.Fatalf("AlertSettings: %v", err)
+	}
+	if !got.CriticalPushOn || !got.ChangesPushOn || got.HasHomeArea {
+		t.Errorf("after clearing = %+v, want Critical and Changes kept, no home area", got)
 	}
 }
