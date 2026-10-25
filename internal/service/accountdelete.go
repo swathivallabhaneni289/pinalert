@@ -36,6 +36,11 @@ type AccountDeleteQuerier interface {
 	DeleteAccountCursors(ctx context.Context, accountID int64) error
 	DeleteAccountMutes(ctx context.Context, accountID int64) error
 	DeleteAccountAlertSettings(ctx context.Context, accountID int64) error
+	// DeleteAccountPushOutbox and DeleteAccountPushSubscriptions remove the
+	// phone alert rows (Phase 3.3, decision 11): the account's subscriptions
+	// are personal rows like its updates and mutes.
+	DeleteAccountPushOutbox(ctx context.Context, accountID int64) (int64, error)
+	DeleteAccountPushSubscriptions(ctx context.Context, accountID int64) (int64, error)
 	RevokeAccountSessions(ctx context.Context, arg sqlcgen.RevokeAccountSessionsParams) (int64, error)
 	ScrubDeletedAccount(ctx context.Context, arg sqlcgen.ScrubDeletedAccountParams) (int64, error)
 }
@@ -99,8 +104,9 @@ func DeletedEmailFor(accountID int64) string {
 // email becomes DeletedEmailFor(id) and its name, home area, terms consent and
 // first run mark are cleared, and deleted_at is set. Every session of the
 // account is revoked. The person's own rows are deleted: updates, update
-// cursors, mutes, alert settings, and the magic link tokens and resend
-// cooldown of the real address.
+// cursors, mutes, alert settings, the queued phone alerts and phone alert
+// subscriptions (Phase 3.3), and the magic link tokens and resend cooldown of
+// the real address.
 //
 // Its effect on other people: none. Reports and votes are not touched, so they
 // stay attributed to a row nobody can identify. Every confirmed count, every
@@ -143,6 +149,15 @@ func (s *AccountDeletionService) DeleteAccount(ctx context.Context, accountID in
 		}
 		if err := q.DeleteAccountAlertSettings(ctx, accountID); err != nil {
 			return fmt.Errorf("service: DeleteAccount: account %d: deleting alert settings: %w", accountID, err)
+		}
+		// Phase 3.3, decision 11: the account's phone alert rows are personal
+		// rows like its updates and mutes. The outbox goes first, then the
+		// subscriptions, inside the same transaction and before the scrub.
+		if _, err := q.DeleteAccountPushOutbox(ctx, accountID); err != nil {
+			return fmt.Errorf("service: DeleteAccount: account %d: deleting queued phone alerts: %w", accountID, err)
+		}
+		if _, err := q.DeleteAccountPushSubscriptions(ctx, accountID); err != nil {
+			return fmt.Errorf("service: DeleteAccount: account %d: deleting push subscriptions: %w", accountID, err)
 		}
 		now := pgtype.Timestamptz{Time: s.now(), Valid: true}
 		if _, err := q.RevokeAccountSessions(ctx, sqlcgen.RevokeAccountSessionsParams{Now: now, AccountID: &accountID}); err != nil {

@@ -16,6 +16,9 @@ type SessionQuerier interface {
 	// RevokeAccountSessions marks every live session of one account revoked
 	// and returns how many it changed.
 	RevokeAccountSessions(ctx context.Context, arg sqlcgen.RevokeAccountSessionsParams) (int64, error)
+	// DeleteAccountPushSubscriptions removes every phone alert device of the
+	// account (Phase 3.3, decision 11).
+	DeleteAccountPushSubscriptions(ctx context.Context, accountID int64) (int64, error)
 }
 
 var _ SessionQuerier = (*sqlcgen.Queries)(nil)
@@ -56,6 +59,13 @@ func NewSessionService(q SessionQuerier, opts ...SessionOption) *SessionService 
 // the account id passed in and reads nothing from a request, so Delete my
 // account can call it too. It is safe to call twice: the second call changes
 // no rows and returns zero.
+//
+// Phase 3.3, decision 11 and UI-SPEC O-3: right after the revoke it deletes
+// every push subscription of the account. The account's subscriptions are
+// personal rows like its updates and mutes. The revoke alone already stops
+// every send (a send reads only subscriptions whose session is live), so a
+// failed delete returns a wrapped error after the sessions are already ended.
+// The outbox rows are kept on this path: queued rows simply find no live device.
 func (s *SessionService) LogOutAllDevices(ctx context.Context, accountID int64) (int64, error) {
 	n, err := s.q.RevokeAccountSessions(ctx, sqlcgen.RevokeAccountSessionsParams{
 		Now:       pgtype.Timestamptz{Time: s.now(), Valid: true},
@@ -64,6 +74,11 @@ func (s *SessionService) LogOutAllDevices(ctx context.Context, accountID int64) 
 	if err != nil {
 		// The account id only: no address may reach the server log.
 		return 0, fmt.Errorf("service: revoking sessions of account %d: %w", accountID, err)
+	}
+	if _, err := s.q.DeleteAccountPushSubscriptions(ctx, accountID); err != nil {
+		// The sessions are already revoked, which alone stops every send. The
+		// account id only: never an endpoint.
+		return n, fmt.Errorf("service: deleting push subscriptions of account %d: %w", accountID, err)
 	}
 	return n, nil
 }
