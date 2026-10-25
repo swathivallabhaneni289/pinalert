@@ -37,7 +37,8 @@ const KEY = Buffer.from(KEY_BYTES).toString('base64url');
 //   secure, userAgent, maxTouchPoints, standalone, displayStandalone, online,
 //   serviceWorker (false removes it), pushManager (false removes it),
 //   notification (false removes it), permission, nextPermission,
-//   subscribed (an existing browser subscription), account (data-account-id),
+//   subscribed (an existing browser subscription), subscribedKey (the bytes it
+//   was made with; omitted means it does not report a key), account (data-account-id),
 //   stored (initial local storage), routes (url -> function(body) -> {status, body}).
 function makeEnv(options = {}) {
   const o = {
@@ -69,8 +70,14 @@ function makeEnv(options = {}) {
     listeners: []
   };
 
-  function makeSub() {
-    return {
+  // keyOf turns bytes into the ArrayBuffer a real subscription reports in
+  // options.applicationServerKey.
+  function keyOf(bytes) {
+    return Uint8Array.from(bytes).buffer;
+  }
+
+  function makeSub(keyBytesOfSub) {
+    const sub = {
       endpoint: ENDPOINT,
       toJSON() {
         return { endpoint: ENDPOINT, expirationTime: null, keys: { p256dh: 'p256dh-value', auth: 'auth-value' } };
@@ -81,9 +88,13 @@ function makeEnv(options = {}) {
         return Promise.resolve(true);
       }
     };
+    if (keyBytesOfSub) {
+      sub.options = { applicationServerKey: keyOf(keyBytesOfSub) };
+    }
+    return sub;
   }
   if (o.subscribed) {
-    env.sub = makeSub();
+    env.sub = makeSub(o.subscribedKey);
   }
 
   const registration = {
@@ -91,7 +102,15 @@ function makeEnv(options = {}) {
       subscribe(opts) {
         env.calls.push('subscribe');
         env.subscribeOptions.push(opts);
-        env.sub = makeSub();
+        // Like Chrome and Firefox: a subscription made with another key makes
+        // subscribe fail until it is dropped.
+        if (env.sub && env.sub.options && env.sub.options.applicationServerKey) {
+          const have = Array.from(new Uint8Array(env.sub.options.applicationServerKey));
+          if (have.join(',') !== Array.from(opts.applicationServerKey).join(',')) {
+            return Promise.reject(new Error('InvalidStateError: a subscription with a different key exists'));
+          }
+        }
+        env.sub = makeSub(Array.from(opts.applicationServerKey));
         return Promise.resolve(env.sub);
       },
       getSubscription() {
@@ -548,6 +567,83 @@ test('reconcile: a failed quiet post leaves the device ready', async () => {
     }
   });
   assert.equal(await env.Notify.reconcile(KEY), 'ready');
+});
+
+const OLD_KEY_BYTES = KEY_BYTES.map((b) => (b + 1) % 256);
+
+test('enable: drops a browser subscription made with another server key, then subscribes with the page key (B-02)', async () => {
+  const env = makeEnv({
+    permission: 'granted',
+    subscribed: true,
+    subscribedKey: OLD_KEY_BYTES,
+    routes: { [SUBSCRIPTION_URL]: ok204 }
+  });
+  const result = await env.Notify.enable(KEY);
+  assert.equal(result.ok, true);
+  assert.equal(result.state, 'on');
+  assert.ok(env.calls.indexOf('unsubscribe') !== -1, 'the old key subscription is dropped');
+  assert.ok(env.calls.indexOf('unsubscribe') < env.calls.indexOf('subscribe'), 'dropped before subscribing again');
+  assert.deepEqual(Array.from(env.subscribeOptions[0].applicationServerKey), KEY_BYTES);
+  assert.deepEqual(env.requests.map((r) => r.url), [SUBSCRIPTION_URL]);
+  assert.equal(env.store.get('pinalert.pushIntent'), '7');
+  assertEndpointOnlyInBodies(env);
+});
+
+test('enable: a subscription made with the page key, or one that reports no key, is left alone', async () => {
+  const same = makeEnv({
+    permission: 'granted',
+    subscribed: true,
+    subscribedKey: KEY_BYTES,
+    routes: { [SUBSCRIPTION_URL]: ok204 }
+  });
+  assert.equal((await same.Notify.enable(KEY)).ok, true);
+  assert.ok(!same.calls.includes('unsubscribe'));
+  const silent = makeEnv({ permission: 'granted', subscribed: true, routes: { [SUBSCRIPTION_URL]: ok204 } });
+  assert.equal((await silent.Notify.enable(KEY)).ok, true);
+  assert.ok(!silent.calls.includes('unsubscribe'));
+});
+
+test('enable: a prompt is still the first and only call before it returns, with the key check after it (B-02)', async () => {
+  const env = makeEnv({
+    permission: 'default',
+    nextPermission: 'granted',
+    subscribed: true,
+    subscribedKey: OLD_KEY_BYTES,
+    routes: { [SUBSCRIPTION_URL]: ok204 }
+  });
+  const pending = env.Notify.enable(KEY);
+  assert.deepEqual(env.calls, ['requestPermission']);
+  assert.equal((await pending).ok, true);
+});
+
+test('reconcile: does not re-post a subscription made with another server key (B-02)', async () => {
+  const env = makeEnv({
+    permission: 'granted',
+    subscribed: true,
+    subscribedKey: OLD_KEY_BYTES,
+    stored: { 'pinalert.pushIntent': '7' },
+    routes: {
+      [STATUS_URL]: () => ({ status: 200, body: { registered: false } }),
+      [SUBSCRIPTION_URL]: ok204
+    }
+  });
+  assert.equal(await env.Notify.reconcile(KEY), 'ready');
+  assert.deepEqual(env.requests.map((r) => r.url), [STATUS_URL]);
+});
+
+test('reconcile: re-posts a subscription made with the page key', async () => {
+  const env = makeEnv({
+    permission: 'granted',
+    subscribed: true,
+    subscribedKey: KEY_BYTES,
+    stored: { 'pinalert.pushIntent': '7' },
+    routes: {
+      [STATUS_URL]: () => ({ status: 200, body: { registered: false } }),
+      [SUBSCRIPTION_URL]: ok204
+    }
+  });
+  assert.equal(await env.Notify.reconcile(KEY), 'on');
+  assert.deepEqual(env.requests.map((r) => r.url), [STATUS_URL, SUBSCRIPTION_URL]);
 });
 
 test('keyBytes decodes base64url, with or without padding', () => {
