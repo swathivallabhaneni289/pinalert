@@ -649,7 +649,7 @@ Plans:
 
 **Wave 1**
 
-- [ ] 03.3-01-PLAN.md: Storage, migration 00010 (push subscriptions, outbox, report area name, the two new switches, home cell index), queries and sqlc
+- [ ] 03.3-01-PLAN.md: Storage, migration 00011 (push subscriptions, outbox, report area name, the two new switches, home cell index), queries and sqlc
 - [ ] 03.3-02-PLAN.md: Push transport, endpoint allowlist, guarded client, webpush-go wrapper, VAPID keys from env
 - [ ] 03.3-03-PLAN.md: Notification kinds, caps and every lock screen word in one Go builder (test first)
 - [ ] 03.3-04-PLAN.md: Installable app, icon drawn in Go, manifest, service worker, public routes
