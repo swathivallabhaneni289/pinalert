@@ -141,8 +141,13 @@ func TestSettingsRows(t *testing.T) {
 	// posts near me / Add a home area first", a button that opens the Home area
 	// window, so it sits between Home area and Muted reports. The switch and the
 	// distance rows are not buttons and are hidden for this account.
-	if strings.Join(buttonIDs, ",") != "settings-name-row,settings-home-row,settings-reliable-nohome,settings-muted-row,settings-logout-all-row,settings-delete-row" {
-		t.Errorf("Settings button rows are %v, want Name, Home area, the Add a home area first row, Muted reports, Log out of all devices, Delete my account", buttonIDs)
+	//
+	// Amended 2026-10-18 by Phase 3.3 plan 14 (D-12, UI-SPEC Surface 2): the
+	// Notifications box also holds the On this device install row (a button the
+	// script shows on an iPhone tab, rendered hidden) and the Critical reports
+	// "Add a home area first" row, both before the Reliable one.
+	if strings.Join(buttonIDs, ",") != "settings-name-row,settings-home-row,settings-device-install,settings-critical-nohome,settings-reliable-nohome,settings-muted-row,settings-logout-all-row,settings-delete-row" {
+		t.Errorf("Settings button rows are %v, want Name, Home area, the On this device install row, the two Add a home area first rows, Muted reports, Log out of all devices, Delete my account", buttonIDs)
 	}
 	for _, want := range []string{
 		// Amended 2026-10-22 (owner: "too much details under the heading for
@@ -160,7 +165,9 @@ func TestSettingsRows(t *testing.T) {
 		// the laptop only. The Account line is the sketch's; the Notifications
 		// and People and reports lines stay the 3.2 ones.
 		"Account", "Sign out, or remove your account and its data.",
-		"Hear about Reliable reporters near your home area.", "Reports you have turned updates off for.",
+		// Amended 2026-10-18 by Phase 3.3 plan 14 (UI-SPEC N1): the Notifications
+		// line is "Choose what Pinalert tells you about."
+		"Choose what Pinalert tells you about.", "Reports you have turned updates off for.",
 		`<form class="place-row-form" method="post" action="/auth/logout">`,
 		`<section class="place-section" aria-labelledby="settings-account-title">`,
 		"People and reports", "Muted reports", "Log out of all devices", "Delete my account",

@@ -4,6 +4,16 @@
 // and the Notifications rows: the Reliable reporter switch and the distance
 // select, saved at once (Phase 3.2 plan 15, NOTIF-05, UI-SPEC E1).
 //
+// Phase 3.3 plan 14 adds the phone rows to the same section (PWA-03, PWA-06,
+// UI-SPEC Surface 2): the On this device row with its four variants and the
+// install guide window, and the Critical and Changes switches, each saved at
+// once through the same route. The device row only asks notify.js (plan 06) what
+// this device can do and tells it to turn on or off. It never reads a position,
+// never decides a word outside the UI-SPEC strings below, and shows the switch
+// on only when notify.js reports that the server confirmed this endpoint for
+// this account. It does not clear the intent flag when a person logs out: that
+// flag lives in notify.js, and this file stores nothing in the browser.
+//
 // A separate file from settings.js on purpose, so settings.js and its contract
 // stay as built. It is self contained like settings.js: it needs no other
 // script of the app, only the ids settings.html.tmpl renders, and it leaves
@@ -587,62 +597,92 @@
   var ALERTS_URL = '/api/me/alerts';
   var MESSAGE_ALERTS_FAILED = 'Couldn\'t save that. Try again.';
   var MESSAGE_ALERTS_OFFLINE = 'You\'re offline, so this wasn\'t saved. Try again when you have a signal.';
-  var MESSAGE_HOME_REMOVED = 'Home area removed. Reliable reporter alerts are off.';
+  // Amended 2026-10-18 by Phase 3.3 plan 14 (UI-SPEC W2): the status after the
+  // home area is removed, in place of P32-C23's second string.
+  var MESSAGE_HOME_REMOVED = 'Home area removed. Alerts near your home area are off.';
   var RADIUS_PATTERN = /^[1-9][0-9]{0,2}$/;
 
-  var alertsOnBox = el('settings-alerts-on');
-  var alertsOffBox = el('settings-alerts-off');
+  // Amended 2026-10-18 by Phase 3.3 plan 14 (D-12): the section is one box of
+  // rows, each with its own variants, in place of 3.2's two boxes. A row hides
+  // itself with the hidden attribute, which places.css respects.
+  var reliableRow = el('settings-reliable-row');
   var reliableSwitch = el('settings-reliable-switch');
-  var radiusSelect = el('settings-radius-select');
   var noHomeRow = el('settings-reliable-nohome');
+  var radiusRow = el('settings-radius-row');
+  var radiusSelect = el('settings-radius-select');
+  var criticalRow = el('settings-critical-on');
+  var criticalSwitch = el('settings-critical-switch');
+  var criticalNoHome = el('settings-critical-nohome');
+  var changesSwitch = el('settings-changes-switch');
   var alertsError = el('settings-alerts-error');
+  var deviceError = el('settings-device-error');
   var homeRowNode = el('settings-home-row');
   var homeWindow = el('settings-home-window');
   var homeNote = el('settings-home-alerts-note');
-  var alertsReady = !!(alertsOnBox && alertsOffBox && reliableSwitch && radiusSelect && noHomeRow &&
-    alertsError && homeRowNode && homeWindow && homeNote);
+  var alertsReady = !!(reliableRow && reliableSwitch && noHomeRow && radiusRow && radiusSelect &&
+    criticalRow && criticalSwitch && criticalNoHome && changesSwitch &&
+    alertsError && deviceError && homeRowNode && homeWindow && homeNote);
 
-  // savedOn and savedRadius are the last values the server confirmed, which is
-  // what a failed save puts back.
-  var savedOn = alertsReady ? reliableSwitch.checked === true : false;
-  var savedRadius = alertsReady ? String(radiusSelect.value) : '';
+  // The four fields the alert route takes from this page, with the control that
+  // sends each. A switch holds a boolean, the select holds the option text.
+  var CONTROLS = alertsReady ? {
+    reliable_alerts: reliableSwitch,
+    alert_radius_km: radiusSelect,
+    critical_push: criticalSwitch,
+    changes_push: changesSwitch
+  } : {};
+
+  // saved holds the last values the server confirmed, which is what a failed
+  // save puts back.
+  var saved = {};
+  if (alertsReady) {
+    saved.reliable_alerts = reliableSwitch.checked === true;
+    saved.alert_radius_km = String(radiusSelect.value);
+    saved.critical_push = criticalSwitch.checked === true;
+    saved.changes_push = changesSwitch.checked === true;
+  }
   var homeIsSet = alertsReady ? (homeRowNode.getAttribute('data-value') || '') !== '' : false;
-  var openedFromAlerts = false;
+  // openedFromAlerts is the Reliable or the Critical no home row that opened the
+  // Home area window, so focus goes back to the matching control, or '' when the
+  // window was not opened from the Notifications section.
+  var openedFromAlerts = '';
 
-  // The Home area window says the alert goes with the home area only while the
-  // alert is on.
+  // The Home area window says the alerts go with the home area only while
+  // Critical or Reliable is on (UI-SPEC W1). A stored Critical value without a
+  // home area does not count: there is nothing to remove then.
   function syncNote() {
-    homeNote.hidden = reliableSwitch.checked !== true;
+    homeNote.hidden = !(homeIsSet && (reliableSwitch.checked === true || criticalSwitch.checked === true));
   }
 
   function putBack(field) {
-    if (field === 'reliable_alerts') {
-      reliableSwitch.checked = savedOn;
+    if (field === 'alert_radius_km') {
+      radiusSelect.value = saved.alert_radius_km;
     } else {
-      radiusSelect.value = savedRadius;
+      CONTROLS[field].checked = saved[field];
     }
   }
 
-  // saveAlerts sends one change ({reliable_alerts} or {alert_radius_km}) and
-  // resolves to true when the server kept it. The control that sent it is
-  // disabled until the answer. Offline, nothing is sent.
+  // saveAlerts sends one change ({reliable_alerts}, {alert_radius_km},
+  // {critical_push} or {changes_push}) and resolves to true when the server kept
+  // it. The control that sent it is disabled until the answer. Offline, nothing
+  // is sent. The device error line and this one never show together.
   function saveAlerts(body) {
     if (!alertsReady || !body || typeof body !== 'object') {
       return Promise.resolve(false);
     }
     var fields = [];
-    if (Object.prototype.hasOwnProperty.call(body, 'reliable_alerts')) {
-      fields.push('reliable_alerts');
-    }
-    if (Object.prototype.hasOwnProperty.call(body, 'alert_radius_km')) {
-      fields.push('alert_radius_km');
+    var names = ['reliable_alerts', 'alert_radius_km', 'critical_push', 'changes_push'];
+    for (var n = 0; n < names.length; n++) {
+      if (Object.prototype.hasOwnProperty.call(body, names[n])) {
+        fields.push(names[n]);
+      }
     }
     if (fields.length === 0) {
       return Promise.resolve(false);
     }
     function senders(disabled) {
       for (var i = 0; i < fields.length; i++) {
-        (fields[i] === 'reliable_alerts' ? reliableSwitch : radiusSelect).disabled = disabled;
+        CONTROLS[fields[i]].disabled = disabled;
       }
     }
     function fail(message) {
@@ -655,6 +695,7 @@
       return false;
     }
     hideLine(alertsError);
+    hideLine(deviceError);
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       return Promise.resolve(fail(MESSAGE_ALERTS_OFFLINE));
     }
@@ -670,13 +711,17 @@
         return fail(MESSAGE_ALERTS_FAILED);
       }
       senders(false);
-      if (fields.indexOf('reliable_alerts') !== -1) {
-        savedOn = answer.body.reliable_alerts === true;
-        reliableSwitch.checked = savedOn;
-      }
-      if (fields.indexOf('alert_radius_km') !== -1 && typeof answer.body.alert_radius_km === 'number') {
-        savedRadius = String(answer.body.alert_radius_km);
-        radiusSelect.value = savedRadius;
+      for (var i = 0; i < fields.length; i++) {
+        var field = fields[i];
+        if (field === 'alert_radius_km') {
+          if (typeof answer.body.alert_radius_km === 'number') {
+            saved.alert_radius_km = String(answer.body.alert_radius_km);
+            radiusSelect.value = saved.alert_radius_km;
+          }
+        } else {
+          saved[field] = answer.body[field] === true;
+          CONTROLS[field].checked = saved[field];
+        }
       }
       syncNote();
       return true;
@@ -685,20 +730,38 @@
     });
   }
 
+  // saveKind saves one kind switch (critical_push or changes_push). The switch
+  // is the control that sent it, so it is the one disabled while the save is in
+  // flight; the field decides which control that is.
+  function saveKind(field, value, input) {
+    if (field !== 'critical_push' && field !== 'changes_push') {
+      return Promise.resolve(false);
+    }
+    var body = {};
+    body[field] = value === true;
+    return saveAlerts(body);
+  }
+
   // redrawAlerts draws the section for a person with or without a home area.
-  // Without one the switch is off (the server turned it off) and, if it was on,
-  // the polite status says so.
+  // Reliable and Critical show their switch or their Add a home area first row,
+  // and the distance row is drawn only with a home area. Without one Reliable is
+  // off (the server turned it off) and Critical keeps its stored value; if either
+  // was on, the polite status says so (UI-SPEC W2). Changes is never touched.
   function redrawAlerts(hasHome) {
     if (!alertsReady) {
       return;
     }
     homeIsSet = hasHome === true;
-    alertsOnBox.hidden = !homeIsSet;
-    alertsOffBox.hidden = homeIsSet;
+    reliableRow.hidden = !homeIsSet;
+    noHomeRow.hidden = homeIsSet;
+    criticalRow.hidden = !homeIsSet;
+    criticalNoHome.hidden = homeIsSet;
+    radiusRow.hidden = !homeIsSet;
     if (!homeIsSet) {
-      var wasOn = reliableSwitch.checked === true || savedOn;
+      var wasOn = reliableSwitch.checked === true || saved.reliable_alerts === true ||
+        criticalSwitch.checked === true || saved.critical_push === true;
       reliableSwitch.checked = false;
-      savedOn = false;
+      saved.reliable_alerts = false;
       if (wasOn) {
         say(MESSAGE_HOME_REMOVED);
       }
@@ -715,34 +778,51 @@
     }
   }
 
+  // openHomeFrom opens the Home area window from one of the two no home rows
+  // and remembers which, so focus can go back to the matching control.
+  function openHomeFrom(which) {
+    if (window.PinalertSettings && typeof window.PinalertSettings.openWindow === 'function') {
+      openedFromAlerts = which;
+      window.PinalertSettings.openWindow('home');
+    }
+  }
+
   function wireAlerts() {
     syncNote();
     reliableSwitch.addEventListener('change', function () {
       syncNote();
       saveAlerts({ reliable_alerts: reliableSwitch.checked === true });
     });
+    criticalSwitch.addEventListener('change', function () {
+      syncNote();
+      saveKind('critical_push', criticalSwitch.checked === true, criticalSwitch);
+    });
+    changesSwitch.addEventListener('change', function () {
+      saveKind('changes_push', changesSwitch.checked === true, changesSwitch);
+    });
     radiusSelect.addEventListener('change', function () {
       if (!RADIUS_PATTERN.test(String(radiusSelect.value))) {
-        radiusSelect.value = savedRadius;
+        radiusSelect.value = saved.alert_radius_km;
         return;
       }
       saveAlerts({ alert_radius_km: parseInt(radiusSelect.value, 10) });
     });
-    noHomeRow.addEventListener('click', function () {
-      if (window.PinalertSettings && typeof window.PinalertSettings.openWindow === 'function') {
-        openedFromAlerts = true;
-        window.PinalertSettings.openWindow('home');
-      }
-    });
+    noHomeRow.addEventListener('click', function () { openHomeFrom('reliable'); });
+    criticalNoHome.addEventListener('click', function () { openHomeFrom('critical'); });
     if (typeof MutationObserver === 'function') {
       new MutationObserver(syncHome).observe(homeRowNode, { attributes: true, attributeFilter: ['data-value'] });
-      // When the Home area window opened from the no home row closes, focus
-      // goes to the switch if a home area now exists, or back to that row.
+      // When the Home area window opened from a no home row closes, focus goes
+      // to that row's switch if a home area now exists, or back to that row.
       new MutationObserver(function () {
         syncHome();
-        if (homeWindow.hidden && openedFromAlerts) {
-          openedFromAlerts = false;
-          (homeIsSet ? reliableSwitch : noHomeRow).focus();
+        if (homeWindow.hidden && openedFromAlerts !== '') {
+          var which = openedFromAlerts;
+          openedFromAlerts = '';
+          if (which === 'critical') {
+            (homeIsSet ? criticalSwitch : criticalNoHome).focus();
+          } else {
+            (homeIsSet ? reliableSwitch : noHomeRow).focus();
+          }
         }
       }).observe(homeWindow, { attributes: true, attributeFilter: ['hidden'] });
     }
@@ -750,6 +830,179 @@
 
   if (alertsReady) {
     wireAlerts();
+  }
+
+  // ---- On this device (Phase 3.3 plan 14, PWA-03, D-10 to D-12, UI-SPEC 2a) ----
+  //
+  // One row for this device, drawn in one of four variants: the switch (ready or
+  // on), the install row (an iPhone tab, opens the guide window), and two plain
+  // sentences (blocked, unsupported). notify.js decides the state and does the
+  // work; every word on screen is here. The switch shows on only when notify.js
+  // says the server confirmed this endpoint for this account. A tap on the
+  // switch calls notify.js from the change handler itself, with nothing awaited
+  // first, because the browser's prompt needs the tap. Turning it on or off
+  // changes nothing else in the section: the kind switches belong to the account.
+
+  var MESSAGE_DEVICE_ON = 'Alerts are on for this device.';
+  var MESSAGE_DEVICE_OFF = 'Alerts are off for this device.';
+  var MESSAGE_TURN_ON_FAILED = 'Couldn\'t turn this on. Try again.';
+  var MESSAGE_TURN_OFF_FAILED = 'Couldn\'t turn this off. Try again.';
+
+  var deviceOnRow = el('settings-device-on');
+  var deviceSwitch = el('settings-device-switch');
+  var installRow = el('settings-device-install');
+  var blockedRow = el('settings-device-blocked');
+  var unsupportedRow = el('settings-device-unsupported');
+  var guideWin = el('device-guide-window');
+  var guideClose = el('device-guide-close');
+  var guideTitle = el('device-guide-title');
+  var deviceReady = !!(deviceOnRow && deviceSwitch && installRow && blockedRow && unsupportedRow &&
+    deviceError && guideWin && guideClose && guideTitle);
+
+  var deviceKey = '';
+  // deviceOn is what the server confirmed. deviceBusy is true while a tap works.
+  // deviceSeq counts the taps, so a late answer from the load check is dropped.
+  var deviceOn = false;
+  var deviceBusy = false;
+  var deviceWant = false;
+  var deviceSeq = 0;
+
+  // drawDevice shows one variant of the row. 'ready' and 'on' are the switch;
+  // an unknown state is drawn as unsupported, never as a broken switch.
+  function drawDevice(state) {
+    if (!deviceReady) {
+      return;
+    }
+    var variant = state === 'maybe' || state === 'busy' ? 'ready' : state;
+    if (['ready', 'on', 'needs-install', 'blocked', 'unsupported'].indexOf(variant) === -1) {
+      variant = 'unsupported';
+    }
+    deviceOnRow.hidden = !(variant === 'ready' || variant === 'on');
+    installRow.hidden = variant !== 'needs-install';
+    blockedRow.hidden = variant !== 'blocked';
+    unsupportedRow.hidden = variant !== 'unsupported';
+    deviceOn = variant === 'on';
+    deviceSwitch.checked = deviceOn;
+    deviceSwitch.disabled = false;
+    deviceSwitch.removeAttribute('aria-busy');
+  }
+
+  // readPushKey reads the public key the page carries. An empty key means the
+  // server cannot send, so the device is drawn as unsupported.
+  function readPushKey() {
+    var node = typeof document.querySelector === 'function' ? document.querySelector('[data-push-key]') : null;
+    var raw = node ? node.getAttribute('data-push-key') : '';
+    return typeof raw === 'string' ? raw : '';
+  }
+
+  function hasNotify() {
+    return !!window.PinalertNotify && typeof window.PinalertNotify.baseState === 'function';
+  }
+
+  // finishDevice draws what a settled tap ended in. want is what the person
+  // asked for (true is on).
+  function finishDevice(want, result) {
+    if (want) {
+      if (result.ok === true) {
+        drawDevice('on');
+        say(MESSAGE_DEVICE_ON);
+        return;
+      }
+      if (result.reason === 'refused') {
+        // Blocked only when the browser itself now blocks; a dismissed prompt
+        // leaves the switch, since the browser will ask again.
+        drawDevice(result.state === 'blocked' ? 'blocked' : 'ready');
+        say(MESSAGE_DEVICE_OFF);
+        return;
+      }
+      if (result.reason === 'unsupported') {
+        drawDevice(result.state);
+        return;
+      }
+      drawDevice('ready');
+      showLine(deviceError, result.reason === 'offline' ? MESSAGE_ALERTS_OFFLINE : MESSAGE_TURN_ON_FAILED);
+      return;
+    }
+    if (result.ok === true) {
+      drawDevice('ready');
+      say(MESSAGE_DEVICE_OFF);
+      return;
+    }
+    drawDevice('on');
+    showLine(deviceError, result.reason === 'offline' ? MESSAGE_ALERTS_OFFLINE : MESSAGE_TURN_OFF_FAILED);
+  }
+
+  // onDeviceSwitch runs from the switch's change event, which is the tap.
+  function onDeviceSwitch() {
+    if (deviceBusy) {
+      deviceSwitch.checked = deviceWant;
+      return;
+    }
+    if (!hasNotify()) {
+      drawDevice('unsupported');
+      return;
+    }
+    var want = deviceSwitch.checked === true;
+    deviceBusy = true;
+    deviceWant = want;
+    deviceSeq += 1;
+    hideLine(deviceError);
+    hideLine(alertsError);
+    deviceSwitch.disabled = true;
+    deviceSwitch.setAttribute('aria-busy', 'true');
+    var work;
+    try {
+      if (want) {
+        work = window.PinalertNotify.enable(deviceKey);
+      } else {
+        work = window.PinalertNotify.disable();
+      }
+    } catch (err) {
+      work = Promise.reject(err);
+    }
+    Promise.resolve(work).then(function (result) {
+      deviceBusy = false;
+      finishDevice(want, result && typeof result === 'object' ? result : {});
+    }, function () {
+      deviceBusy = false;
+      finishDevice(want, { ok: false, reason: 'failed' });
+    });
+  }
+
+  // reconcileDevice draws the base state at once, then the server's word. When
+  // permission was given and the server lost the registration, notify.js
+  // registers it again quietly. An answer that comes after a tap is dropped.
+  function reconcileDevice() {
+    deviceKey = readPushKey();
+    if (!hasNotify() || deviceKey === '') {
+      drawDevice('unsupported');
+      return;
+    }
+    var base = window.PinalertNotify.baseState();
+    if (base !== 'maybe') {
+      drawDevice(base);
+      return;
+    }
+    drawDevice('ready');
+    var seq = deviceSeq;
+    var asked = window.PinalertNotify.reconcile(deviceKey);
+    Promise.resolve(asked).then(function (state) {
+      if (deviceBusy || seq !== deviceSeq) {
+        return;
+      }
+      drawDevice(state);
+    }, function () {
+      // The row keeps the switch it has; nothing is said about a failed check.
+    });
+  }
+
+  if (deviceReady) {
+    windows.guide = { win: guideWin, row: installRow, close: guideClose, title: guideTitle };
+    deviceSwitch.addEventListener('change', onDeviceSwitch);
+    installRow.addEventListener('click', function () { openWindow('guide'); });
+    guideClose.addEventListener('click', function () { closeWindow('guide', true); });
+    guideWin.addEventListener('keydown', function (e) { onWindowKeydown('guide', e); });
+    reconcileDevice();
   }
 
   // ---- Wiring ---------------------------------------------------------------
@@ -789,6 +1042,8 @@
     openDeleteConfirm: openDeleteConfirm,
     deleteAccount: deleteAccount,
     saveAlerts: saveAlerts,
-    redrawAlerts: redrawAlerts
+    redrawAlerts: redrawAlerts,
+    drawDevice: drawDevice,
+    saveKind: saveKind
   };
 }());

@@ -32,6 +32,9 @@ var bannedNoiseWords = []string{
 // Amended 2026-10-18 by Phase 3.3 plan 13 (decision 4): the worker, the shared
 // head and the welcome files are listed now. sw.js is scanned by its string
 // literals only, so the worker's option names are not mistaken for copy.
+//
+// Amended 2026-10-18 by Phase 3.3 plan 14 (decision 4): the Settings template
+// and settings-alerts.js are listed now.
 var noiseCheckedFiles = []string{
 	"templates/device_guide.html.tmpl",
 	"static/js/notify.js",
@@ -39,6 +42,8 @@ var noiseCheckedFiles = []string{
 	"templates/app_head.html.tmpl",
 	"templates/welcome.html.tmpl",
 	"static/js/welcome.js",
+	"templates/settings.html.tmpl",
+	"static/js/settings-alerts.js",
 }
 
 var (

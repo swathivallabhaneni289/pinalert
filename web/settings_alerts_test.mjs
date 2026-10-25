@@ -108,11 +108,15 @@ class FakeEl {
 
 // The markup of settings.html.tmpl, as the ids and nesting settings-alerts.js
 // reads. withMarkup false builds a page that has none of the new rows.
-function buildPage({ count = 0, withMarkup = true, home = true, on = false, radius = 5, dialog = true } = {}) {
+function buildPage({ count = 0, withMarkup = true, home = true, on = false, radius = 5, dialog = true, critical = false, changes = false, key = 'BPUBLICKEY' } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
     observers: [],
+    mainNode: null,
+    // Phase 3.3 plan 14: the page root carries data-push-key, which the script
+    // reads with one attribute selector.
+    querySelector(selector) { return selector === '[data-push-key]' ? doc.mainNode : null; },
     // changed tells every fake MutationObserver watching el that an attribute
     // moved, as a microtask, the way a browser delivers the records.
     changed(el, name) {
@@ -139,6 +143,8 @@ function buildPage({ count = 0, withMarkup = true, home = true, on = false, radi
   const bar = make('div', 'top-chrome', doc.body);
   make('div', 'notice-live', doc.body);
   const main = make('div', 'app-content', doc.body);
+  main.setAttribute('data-push-key', key);
+  doc.mainNode = main;
   const bottom = make('nav', 'bottom-bar', doc.body);
   if (!withMarkup) { return { doc, bar, main, bottom }; }
 
@@ -192,23 +198,86 @@ function buildPage({ count = 0, withMarkup = true, home = true, on = false, radi
   }
 
   // Plan 15: the Notifications section, the Home area row and window.
-  const alertsOn = make('div', 'settings-alerts-on', main);
+  //
+  // Amended 2026-10-18 by Phase 3.3 plan 14 (D-12): the two boxes
+  // settings-alerts-on and settings-alerts-off are gone. The section is one box
+  // of rows, and each row has its own variants. page.alertsOn and page.alertsOff
+  // now name the Reliable row's switch variant and its no home variant, which
+  // are what the old boxes drew for that row, so the plan 15 cases below keep
+  // their meaning. The distance row is page.radiusRow.
+  const device = make('div', 'settings-device-row', main);
+  const deviceOn = make('label', 'settings-device-on', device);
+  const deviceSwitch = make('input', 'settings-device-switch', deviceOn);
+  const deviceInstall = make('button', 'settings-device-install', device);
+  deviceInstall.hidden = true;
+  const deviceBlocked = make('div', 'settings-device-blocked', device);
+  deviceBlocked.hidden = true;
+  const deviceUnsupported = make('div', 'settings-device-unsupported', device);
+  deviceUnsupported.hidden = true;
+  const criticalRow = make('div', 'settings-critical-row', main);
+  const criticalOn = make('label', 'settings-critical-on', criticalRow);
+  criticalOn.hidden = !home;
+  const criticalSwitch = make('input', 'settings-critical-switch', criticalOn);
+  criticalSwitch.checked = critical;
+  const criticalNoHome = make('button', 'settings-critical-nohome', criticalRow);
+  criticalNoHome.hidden = home;
+  const changesRow = make('label', 'settings-changes-row', main);
+  const changesSwitch = make('input', 'settings-changes-switch', changesRow);
+  changesSwitch.checked = changes;
+  const reliableWrap = make('div', 'settings-reliable-wrap', main);
+  const alertsOn = make('label', 'settings-reliable-row', reliableWrap);
   alertsOn.hidden = !home;
   const sw = make('input', 'settings-reliable-switch', alertsOn);
   sw.checked = on;
-  const select = make('select', 'settings-radius-select', alertsOn);
-  select.value = String(radius);
-  const alertsOff = make('div', 'settings-alerts-off', main);
+  const alertsOff = make('button', 'settings-reliable-nohome', reliableWrap);
   alertsOff.hidden = home;
-  make('button', 'settings-reliable-nohome', alertsOff);
+  const radiusRow = make('div', 'settings-radius-row', main);
+  radiusRow.hidden = !home;
+  const select = make('select', 'settings-radius-select', radiusRow);
+  select.value = String(radius);
+  make('p', 'settings-device-error', main).hidden = true;
   make('p', 'settings-alerts-error', main).hidden = true;
   const homeRow = make('button', 'settings-home-row', main);
   homeRow.setAttribute('data-value', home ? 'Kochi' : '');
   const homeWin = make('div', 'settings-home-window', doc.body);
   homeWin.hidden = true;
-  make('p', 'settings-home-alerts-note', homeWin).hidden = !on;
+  make('p', 'settings-home-alerts-note', homeWin).hidden = !(home && (on || critical));
 
-  return { doc, bar, main, bottom, muted, logout, del, alertsOn, alertsOff, sw, select, homeRow, homeWin };
+  // Phase 3.3 plan 14: the install guide window.
+  const guide = make('div', 'device-guide-window', doc.body);
+  guide.hidden = true;
+  const guidePanel = make('div', '', guide);
+  const guideHead = make('div', '', guidePanel);
+  make('h2', 'device-guide-title', guideHead);
+  make('button', 'device-guide-close', guideHead);
+
+  return {
+    doc, bar, main, bottom, muted, logout, del, alertsOn, alertsOff, sw, select, homeRow, homeWin,
+    radiusRow, criticalOn, criticalNoHome, criticalSwitch, changesSwitch, deviceOn, deviceSwitch,
+    deviceInstall, deviceBlocked, deviceUnsupported, guide
+  };
+}
+
+// fakeNotify stands in for notify.js (Phase 3.3 plan 06). Each of enable,
+// disable and reconcile is answered by hand: enables, disables and reconciles
+// hold the pending calls, and every call is kept in calls.
+function fakeNotify({ base = 'maybe' } = {}) {
+  const api = { calls: [], enables: [], disables: [], reconciles: [], base };
+  api.baseState = () => { api.calls.push(['baseState']); return api.base; };
+  api.deviceState = (key) => { api.calls.push(['deviceState', key]); return Promise.resolve('ready'); };
+  api.enable = (key) => {
+    api.calls.push(['enable', key]);
+    return new Promise((resolve, reject) => { api.enables.push({ resolve, reject }); });
+  };
+  api.disable = () => {
+    api.calls.push(['disable']);
+    return new Promise((resolve, reject) => { api.disables.push({ resolve, reject }); });
+  };
+  api.reconcile = (key) => {
+    api.calls.push(['reconcile', key]);
+    return new Promise((resolve, reject) => { api.reconciles.push({ resolve, reject }); });
+  };
+  return api;
 }
 
 // loadAlerts evaluates settings-alerts.js against a page. fetch keeps every
@@ -246,11 +315,15 @@ function loadAlerts(options = {}) {
     disconnect() {}
   }
   const opened = [];
+  // Phase 3.3 plan 14: notify.js is a separate script. By default the page has a
+  // fake one that can prompt; notify: null leaves it out; an object is used as is.
+  const notify = options.notify === undefined ? fakeNotify(options.notifyOptions) : options.notify;
 
   const sandbox = {
     console,
     document: page.doc,
     MutationObserver: FakeMutationObserver,
+    PinalertNotify: notify === null ? undefined : notify,
     PinalertSettings: { openWindow(which) { opened.push(which); } },
     fetch(target, init) {
       return new Promise((resolve, reject) => {
@@ -271,7 +344,7 @@ function loadAlerts(options = {}) {
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'settings-alerts.js' });
-  return { ...page, api: sandbox.PinalertSettingsAlerts, requests, assigned, advance, sandbox, opened, asked, alerted };
+  return { ...page, api: sandbox.PinalertSettingsAlerts, requests, assigned, advance, sandbox, opened, asked, alerted, notify };
 }
 
 const flush = async () => { for (let i = 0; i < 8; i++) { await new Promise((r) => setImmediate(r)); } };
@@ -738,7 +811,9 @@ test('Tab stays inside an open window', async () => {
 
 test('the script never asks for the device position and exposes its handles', () => {
   const page = loadAlerts();
-  for (const name of ['openWindow', 'closeWindow', 'loadMuted', 'unmute', 'logOutAll', 'openDeleteConfirm', 'deleteAccount', 'saveAlerts', 'redrawAlerts']) {
+  // Amended 2026-10-18 by Phase 3.3 plan 14 (D-12): drawDevice and saveKind are
+  // exported too.
+  for (const name of ['openWindow', 'closeWindow', 'loadMuted', 'unmute', 'logOutAll', 'openDeleteConfirm', 'deleteAccount', 'saveAlerts', 'redrawAlerts', 'drawDevice', 'saveKind']) {
     assert.equal(typeof page.api[name], 'function', name);
   }
 });
@@ -747,7 +822,10 @@ test('the script never asks for the device position and exposes its handles', ()
 
 const SAVE_FAILED = 'Couldn\'t save that. Try again.';
 const OFFLINE = 'You\'re offline, so this wasn\'t saved. Try again when you have a signal.';
-const HOME_REMOVED = 'Home area removed. Reliable reporter alerts are off.';
+// Amended 2026-10-18 by Phase 3.3 plan 14 (UI-SPEC W2, D-12): the status after
+// the home area is removed is "Home area removed. Alerts near your home area
+// are off.", replacing P32-C23's second string.
+const HOME_REMOVED = 'Home area removed. Alerts near your home area are off.';
 
 const ok = (reliable, km) => ({ reliable_alerts: reliable, alert_radius_km: km, has_home_area: true });
 const errorLine = (page) => byId(page, 'settings-alerts-error');
@@ -1043,4 +1121,445 @@ test('every alert string reaches the page as text', async () => {
   answer(page.requests[0], 500, { error: '<b>bad</b>' });
   await flush();
   assert.equal(errorLine(page).textContent, SAVE_FAILED);
+});
+
+// ---- Phase 3.3 plan 14: the device row and the kind switches (PWA-03, PWA-06) ----
+//
+// The UI-SPEC strings, written out here so a change to the script's words fails.
+const DEVICE_ON = 'Alerts are on for this device.';
+const DEVICE_OFF = 'Alerts are off for this device.';
+const TURN_ON_FAILED = 'Couldn\'t turn this on. Try again.';
+const TURN_OFF_FAILED = 'Couldn\'t turn this off. Try again.';
+
+const deviceError = (page) => byId(page, 'settings-device-error');
+const shownVariant = (page) => ['deviceOn', 'deviceInstall', 'deviceBlocked', 'deviceUnsupported'].filter((n) => page[n].hidden === false);
+const kinds = (page) => ({
+  critical: { saved: page.criticalSwitch, field: 'critical_push' },
+  changes: { saved: page.changesSwitch, field: 'changes_push' }
+});
+
+// tapDevice flips the device switch the way a tap does: the checkbox changes,
+// then the change event fires, with nothing awaited in between.
+const tapDevice = (page, state) => {
+  page.deviceSwitch.checked = state;
+  fire(page.deviceSwitch, 'change');
+};
+
+test('a page without notify.js draws the unsupported variant', () => {
+  const page = loadAlerts({ notify: null });
+  assert.deepEqual(shownVariant(page), ['deviceUnsupported']);
+});
+
+test('an empty push key draws the unsupported variant and asks nothing', () => {
+  const page = loadAlerts({ key: '' });
+  assert.deepEqual(shownVariant(page), ['deviceUnsupported']);
+  assert.equal(page.notify.calls.filter((c) => c[0] === 'reconcile').length, 0);
+});
+
+for (const [base, variant] of [['needs-install', 'deviceInstall'], ['blocked', 'deviceBlocked'], ['unsupported', 'deviceUnsupported']]) {
+  test('the base state ' + base + ' draws its variant at once and asks the server nothing', async () => {
+    const page = loadAlerts({ notifyOptions: { base } });
+    assert.deepEqual(shownVariant(page), [variant]);
+    await flush();
+    assert.equal(page.notify.calls.filter((c) => c[0] === 'reconcile' || c[0] === 'enable').length, 0);
+    assert.equal(page.requests.length, 0);
+  });
+}
+
+test('a device that may work shows the unchecked switch at once, then follows the server', async () => {
+  const page = loadAlerts();
+  assert.deepEqual(shownVariant(page), ['deviceOn']);
+  assert.equal(page.deviceSwitch.checked, false);
+  assert.deepEqual(page.notify.calls.filter((c) => c[0] === 'reconcile'), [['reconcile', 'BPUBLICKEY']]);
+  page.notify.reconciles[0].resolve('on');
+  await flush();
+  assert.equal(page.deviceSwitch.checked, true);
+  assert.deepEqual(shownVariant(page), ['deviceOn']);
+});
+
+test('a server that does not know this endpoint leaves the switch off', async () => {
+  const page = loadAlerts();
+  page.notify.reconciles[0].resolve('ready');
+  await flush();
+  assert.equal(page.deviceSwitch.checked, false);
+});
+
+test('the server word blocked on load draws the blocked row', async () => {
+  const page = loadAlerts();
+  page.notify.reconciles[0].resolve('blocked');
+  await flush();
+  assert.deepEqual(shownVariant(page), ['deviceBlocked']);
+});
+
+test('a failed check on load leaves the unchecked switch and shows no error', async () => {
+  const page = loadAlerts();
+  page.notify.reconciles[0].reject(new Error('down'));
+  await flush();
+  assert.deepEqual(shownVariant(page), ['deviceOn']);
+  assert.equal(page.deviceSwitch.checked, false);
+  assert.equal(deviceError(page).hidden, true);
+});
+
+test('a late answer on load never undoes a tap on the switch', async () => {
+  const page = loadAlerts();
+  tapDevice(page, true);
+  page.notify.reconciles[0].resolve('ready');
+  await flush();
+  assert.equal(page.deviceSwitch.checked, true, 'the tap stands while it works');
+  assert.equal(page.deviceSwitch.disabled, true);
+});
+
+test('turning On this device on calls enable from the tap itself and holds the switch busy', async () => {
+  const page = loadAlerts();
+  tapDevice(page, true);
+  // No await between the tap and the check: the browser prompt needs the tap.
+  assert.deepEqual(page.notify.calls.filter((c) => c[0] === 'enable'), [['enable', 'BPUBLICKEY']]);
+  assert.equal(page.deviceSwitch.disabled, true);
+  assert.equal(page.deviceSwitch.getAttribute('aria-busy'), 'true');
+  page.notify.enables[0].resolve({ ok: true, state: 'on' });
+  await flush();
+  assert.equal(page.deviceSwitch.checked, true);
+  assert.equal(page.deviceSwitch.disabled, false);
+  assert.equal(page.deviceSwitch.getAttribute('aria-busy'), null);
+  assert.equal(live(page).textContent, DEVICE_ON);
+  assert.equal(deviceError(page).hidden, true);
+});
+
+test('a second tap while the first works does nothing', async () => {
+  const page = loadAlerts();
+  tapDevice(page, true);
+  tapDevice(page, false);
+  assert.equal(page.notify.enables.length, 1);
+  assert.equal(page.notify.disables.length, 0);
+});
+
+test('a refused prompt that blocks the browser draws the blocked row and says off', async () => {
+  const page = loadAlerts();
+  tapDevice(page, true);
+  page.notify.enables[0].resolve({ ok: false, state: 'blocked', reason: 'refused' });
+  await flush();
+  assert.deepEqual(shownVariant(page), ['deviceBlocked']);
+  assert.equal(live(page).textContent, DEVICE_OFF);
+  assert.equal(deviceError(page).hidden, true);
+});
+
+test('a dismissed prompt keeps the switch, unchecked, and says off', async () => {
+  const page = loadAlerts();
+  tapDevice(page, true);
+  page.notify.enables[0].resolve({ ok: false, state: 'ready', reason: 'refused' });
+  await flush();
+  assert.deepEqual(shownVariant(page), ['deviceOn']);
+  assert.equal(page.deviceSwitch.checked, false);
+  assert.equal(page.deviceSwitch.disabled, false);
+  assert.equal(live(page).textContent, DEVICE_OFF);
+});
+
+test('turning on offline unchecks the switch and shows the offline sentence', async () => {
+  const page = loadAlerts();
+  tapDevice(page, true);
+  page.notify.enables[0].resolve({ ok: false, state: 'ready', reason: 'offline' });
+  await flush();
+  assert.equal(page.deviceSwitch.checked, false);
+  assert.equal(page.deviceSwitch.disabled, false);
+  assert.equal(deviceError(page).hidden, false);
+  assert.equal(deviceError(page).textContent, OFFLINE);
+});
+
+for (const reason of ['failed', 'session']) {
+  test('turning on that ends in ' + reason + ' unchecks the switch and says it could not', async () => {
+    const page = loadAlerts();
+    tapDevice(page, true);
+    page.notify.enables[0].resolve({ ok: false, state: 'ready', reason });
+    await flush();
+    assert.equal(page.deviceSwitch.checked, false);
+    assert.equal(deviceError(page).textContent, TURN_ON_FAILED);
+    assert.equal(deviceError(page).hidden, false);
+  });
+}
+
+test('turning on that throws unchecks the switch and says it could not', async () => {
+  const page = loadAlerts();
+  tapDevice(page, true);
+  page.notify.enables[0].reject(new Error('boom'));
+  await flush();
+  assert.equal(page.deviceSwitch.checked, false);
+  assert.equal(page.deviceSwitch.disabled, false);
+  assert.equal(deviceError(page).textContent, TURN_ON_FAILED);
+});
+
+test('a device the answer calls unsupported or needing install draws that variant', async () => {
+  const page = loadAlerts();
+  tapDevice(page, true);
+  page.notify.enables[0].resolve({ ok: false, state: 'needs-install', reason: 'unsupported' });
+  await flush();
+  assert.deepEqual(shownVariant(page), ['deviceInstall']);
+});
+
+test('turning On this device off calls disable, says off and keeps every other row', async () => {
+  const page = loadAlerts();
+  page.notify.reconciles[0].resolve('on');
+  await flush();
+  tapDevice(page, false);
+  assert.equal(page.notify.disables.length, 1);
+  assert.equal(page.deviceSwitch.disabled, true);
+  page.notify.disables[0].resolve({ ok: true, state: 'ready' });
+  await flush();
+  assert.equal(page.deviceSwitch.checked, false);
+  assert.equal(page.deviceSwitch.disabled, false);
+  assert.equal(live(page).textContent, DEVICE_OFF);
+  // Nothing is hidden or greyed when the device is off (ROADMAP criterion 5).
+  for (const el of [page.criticalOn, byId(page, 'settings-changes-row'), page.alertsOn, page.radiusRow]) {
+    assert.equal(el.hidden, false);
+  }
+  for (const el of [page.criticalSwitch, page.changesSwitch, page.sw, page.select]) {
+    assert.equal(el.disabled, false);
+  }
+});
+
+test('a failed turn off puts the switch back on with its sentence', async () => {
+  const page = loadAlerts();
+  page.notify.reconciles[0].resolve('on');
+  await flush();
+  tapDevice(page, false);
+  page.notify.disables[0].resolve({ ok: false, state: 'on', reason: 'failed' });
+  await flush();
+  assert.equal(page.deviceSwitch.checked, true);
+  assert.equal(deviceError(page).textContent, TURN_OFF_FAILED);
+});
+
+test('a turn off that throws puts the switch back on with its sentence', async () => {
+  const page = loadAlerts();
+  page.notify.reconciles[0].resolve('on');
+  await flush();
+  tapDevice(page, false);
+  page.notify.disables[0].reject(new Error('boom'));
+  await flush();
+  assert.equal(page.deviceSwitch.checked, true);
+  assert.equal(deviceError(page).textContent, TURN_OFF_FAILED);
+});
+
+test('turning off offline puts the switch back on with the offline sentence, not the turn off one', async () => {
+  const page = loadAlerts();
+  page.notify.reconciles[0].resolve('on');
+  await flush();
+  tapDevice(page, false);
+  page.notify.disables[0].resolve({ ok: false, state: 'on', reason: 'offline' });
+  await flush();
+  assert.equal(page.deviceSwitch.checked, true);
+  assert.equal(deviceError(page).textContent, OFFLINE);
+});
+
+test('the next device action clears the earlier device error', async () => {
+  const page = loadAlerts();
+  tapDevice(page, true);
+  page.notify.enables[0].resolve({ ok: false, state: 'ready', reason: 'failed' });
+  await flush();
+  assert.equal(deviceError(page).hidden, false);
+  tapDevice(page, true);
+  assert.equal(deviceError(page).hidden, true);
+});
+
+test('the needs install row opens the guide window, focus on its title, and the X returns focus to the row', async () => {
+  const page = loadAlerts({ notifyOptions: { base: 'needs-install' } });
+  fire(page.deviceInstall, 'click');
+  assert.equal(page.guide.hidden, false);
+  assert.equal(page.doc.activeElement, byId(page, 'device-guide-title'));
+  assert.equal(page.main.inert, true);
+  fire(byId(page, 'device-guide-close'), 'click');
+  assert.equal(page.guide.hidden, true);
+  assert.equal(page.main.inert, false);
+  assert.equal(page.doc.activeElement, page.deviceInstall);
+});
+
+test('Escape closes the guide window and a click on the window itself closes nothing', async () => {
+  const page = loadAlerts({ notifyOptions: { base: 'needs-install' } });
+  fire(page.deviceInstall, 'click');
+  assert.equal((page.guide.handlers.click || []).length, 0, 'no click handler on the window');
+  fire(page.guide, 'keydown', { key: 'Escape' });
+  assert.equal(page.guide.hidden, true);
+  assert.equal(page.doc.activeElement, page.deviceInstall);
+});
+
+test('the Critical switch sends critical_push, locks itself and keeps the answer', async () => {
+  const page = loadAlerts();
+  page.criticalSwitch.checked = true;
+  fire(page.criticalSwitch, 'change');
+  await flush();
+  assert.equal(page.requests.length, 1);
+  assert.match(page.requests[0].url, /\/api\/me\/alerts$/);
+  assert.equal(page.requests[0].init.method, 'PATCH');
+  assert.equal(page.requests[0].init.body, '{"critical_push":true}');
+  assert.equal(page.criticalSwitch.disabled, true);
+  assert.equal(page.changesSwitch.disabled, false);
+  answer(page.requests[0], 200, { ...ok(false, 5), critical_push: true, changes_push: false });
+  await flush();
+  assert.equal(page.criticalSwitch.checked, true);
+  assert.equal(page.criticalSwitch.disabled, false);
+  assert.equal(errorLine(page).hidden, true);
+});
+
+test('the Changes switch sends changes_push and works without a home area', async () => {
+  const page = loadAlerts({ home: false });
+  page.changesSwitch.checked = true;
+  fire(page.changesSwitch, 'change');
+  await flush();
+  assert.equal(page.requests[0].init.body, '{"changes_push":true}');
+  answer(page.requests[0], 200, { reliable_alerts: false, alert_radius_km: 5, has_home_area: false, critical_push: true, changes_push: true });
+  await flush();
+  assert.equal(page.changesSwitch.checked, true);
+});
+
+for (const kind of ['critical', 'changes']) {
+  test('a failed ' + kind + ' save puts the old value back with the save sentence', async () => {
+    const page = loadAlerts({ critical: true, changes: true });
+    const sw = kinds(page)[kind].saved;
+    sw.checked = false;
+    fire(sw, 'change');
+    await flush();
+    answer(page.requests[0], 500, {});
+    await flush();
+    assert.equal(sw.checked, true);
+    assert.equal(sw.disabled, false);
+    assert.equal(errorLine(page).textContent, SAVE_FAILED);
+  });
+
+  test('a ' + kind + ' save that is refused with a 400 puts the old value back', async () => {
+    const page = loadAlerts();
+    const sw = kinds(page)[kind].saved;
+    sw.checked = true;
+    fire(sw, 'change');
+    await flush();
+    answer(page.requests[0], 400, { field: kinds(page)[kind].field, error: 'Add a home area first.' });
+    await flush();
+    assert.equal(sw.checked, false);
+    assert.equal(errorLine(page).textContent, SAVE_FAILED);
+  });
+
+  test('a ' + kind + ' save offline sends nothing and shows the offline sentence', async () => {
+    const page = loadAlerts();
+    page.sandbox.navigator.onLine = false;
+    const sw = kinds(page)[kind].saved;
+    sw.checked = true;
+    fire(sw, 'change');
+    await flush();
+    assert.equal(page.requests.length, 0);
+    assert.equal(sw.checked, false);
+    assert.equal(errorLine(page).textContent, OFFLINE);
+  });
+}
+
+test('saveKind is the path the kind switches use', async () => {
+  const page = loadAlerts();
+  const pending = page.api.saveKind('critical_push', true, page.criticalSwitch);
+  await flush();
+  assert.equal(page.requests[0].init.body, '{"critical_push":true}');
+  answer(page.requests[0], 200, { ...ok(false, 5), critical_push: true, changes_push: false });
+  assert.equal(await pending, true);
+});
+
+test('drawDevice draws each variant', () => {
+  const page = loadAlerts();
+  for (const [state, variant] of [['needs-install', 'deviceInstall'], ['blocked', 'deviceBlocked'], ['unsupported', 'deviceUnsupported'], ['ready', 'deviceOn'], ['on', 'deviceOn']]) {
+    page.api.drawDevice(state);
+    assert.deepEqual(shownVariant(page), [variant], state);
+    assert.equal(page.deviceSwitch.checked, state === 'on', state);
+  }
+});
+
+test('the Critical no home row opens the Home area window, and a saved area shows the switch with its stored value', async () => {
+  const page = loadAlerts({ home: false, critical: true });
+  assert.equal(page.criticalOn.hidden, true);
+  assert.equal(page.criticalNoHome.hidden, false);
+  fire(page.criticalNoHome, 'click');
+  assert.deepEqual(page.opened, ['home']);
+  page.homeWin.hidden = false;
+  await flush();
+  page.homeRow.setAttribute('data-value', 'Kochi');
+  page.homeWin.hidden = true;
+  page.homeRow.focus();
+  await flush();
+  assert.equal(page.criticalOn.hidden, false);
+  assert.equal(page.criticalNoHome.hidden, true);
+  assert.equal(page.criticalSwitch.checked, true, 'the stored value comes back');
+  assert.equal(page.doc.activeElement, page.criticalSwitch);
+  assert.equal(page.requests.length, 0);
+});
+
+test('closing the Home area window opened from the Critical row with no area puts focus back on that row', async () => {
+  const page = loadAlerts({ home: false });
+  fire(page.criticalNoHome, 'click');
+  page.homeWin.hidden = false;
+  await flush();
+  page.homeWin.hidden = true;
+  await flush();
+  assert.equal(page.doc.activeElement, page.criticalNoHome);
+});
+
+test('removing the home area keeps the Critical value, shows the no home rows and says so once', async () => {
+  const page = loadAlerts({ home: true, critical: true, on: true });
+  page.homeRow.setAttribute('data-value', '');
+  await flush();
+  assert.equal(page.criticalOn.hidden, true);
+  assert.equal(page.criticalNoHome.hidden, false);
+  assert.equal(page.alertsOn.hidden, true);
+  assert.equal(page.alertsOff.hidden, false);
+  assert.equal(page.radiusRow.hidden, true);
+  assert.equal(page.criticalSwitch.checked, true, 'the stored Critical value is not touched');
+  assert.equal(page.sw.checked, false, 'Reliable turns off');
+  assert.equal(live(page).textContent, HOME_REMOVED);
+  assert.equal(page.requests.length, 0);
+});
+
+test('removing the home area with only Critical on still says so', async () => {
+  const page = loadAlerts({ home: true, critical: true, on: false });
+  page.homeRow.setAttribute('data-value', '');
+  await flush();
+  assert.equal(live(page).textContent, HOME_REMOVED);
+});
+
+test('removing the home area with Critical and Reliable off says nothing', async () => {
+  const page = loadAlerts({ home: true, critical: false, on: false });
+  page.homeRow.setAttribute('data-value', '');
+  await flush();
+  assert.equal(live(page).textContent, '');
+});
+
+test('the Changes switch is never hidden by the home area', async () => {
+  const page = loadAlerts({ home: true, changes: true });
+  page.homeRow.setAttribute('data-value', '');
+  await flush();
+  assert.equal(byId(page, 'settings-changes-row').hidden, false);
+  assert.equal(page.changesSwitch.checked, true);
+});
+
+test('the Home area note shows while Critical or Reliable is on and a home area exists', async () => {
+  const page = loadAlerts({ home: true, critical: false, on: false });
+  assert.equal(note(page).hidden, true);
+  page.criticalSwitch.checked = true;
+  fire(page.criticalSwitch, 'change');
+  await flush();
+  assert.equal(note(page).hidden, false);
+  answer(page.requests[0], 200, { ...ok(false, 5), critical_push: true, changes_push: false });
+  await flush();
+  assert.equal(note(page).hidden, false);
+  page.criticalSwitch.checked = false;
+  fire(page.criticalSwitch, 'change');
+  await flush();
+  assert.equal(note(page).hidden, true);
+  answer(page.requests[1], 200, { ...ok(false, 5), critical_push: false, changes_push: false });
+  await flush();
+  assert.equal(note(page).hidden, true);
+});
+
+test('the Home area note stays hidden without a home area even when Critical reads on', () => {
+  const page = loadAlerts({ home: false, critical: true });
+  assert.equal(note(page).hidden, true);
+});
+
+test('every device string reaches the page as text', async () => {
+  const page = loadAlerts();
+  tapDevice(page, true);
+  page.notify.enables[0].resolve({ ok: false, state: 'ready', reason: 'failed', message: '<b>bad</b>' });
+  await flush();
+  assert.equal(deviceError(page).textContent, TURN_ON_FAILED);
 });
