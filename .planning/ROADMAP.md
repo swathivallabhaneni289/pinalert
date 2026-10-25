@@ -742,8 +742,61 @@ Plans:
   - The official alert banner stays at the top of the Nearby list as one slim still line (level icon, "Cyclone warning · Krishna district", chevron), not over the map.
   - Official alert phone notifications are silent.
 
-**Plans**: TBD
+**Plans**: 0/22 plans complete (planned 2026-10-25; research, UI-SPEC and two plan check rounds passed; execution starts after Phase 3.3 is merged)
 **UI hint**: yes
+
+Plans:
+**Wave 1**
+
+- [ ] 05-01-PLAN.md: District and state lookup for any point in India, from embedded LGD boundary data (wave 1)
+- [ ] 05-02-PLAN.md: The NDMA SACHET reader, RSS list plus each CAP message, normalised and size guarded (wave 1)
+- [ ] 05-03-PLAN.md: The Demo sandbox, a per visit in memory world running the real report and voting services (wave 1)
+- [ ] 05-04-PLAN.md: The globe pictures served from memory, and one session skip rule set for sessionless routes (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 05-05-PLAN.md: Official alerts fetched, placed on districts or a state, and stored with honest freshness (wave 2)
+- [ ] 05-06-PLAN.md: The Vijayawada flood sample and the pretend neighbours voting through the real rules (wave 2)
+- [ ] 05-07-PLAN.md: The turning Earth behind the sign in card, and Try the demo in the sign in links row (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 05-08-PLAN.md: The gated official alerts API with its freshness states and the D-16 banner rule (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 05-09-PLAN.md: The Official alerts page filled, with every honest state and the details disclosure (wave 4)
+- [ ] 05-10-PLAN.md: The Demo API for visitors with no account, writing nothing (wave 4)
+- [ ] 05-11-PLAN.md: Official phone alert storage and queuing, with the D-16 rule and the home area match (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 05-12-PLAN.md: The protected refresh endpoint, the ticker and the GitHub cron (wave 5)
+- [ ] 05-13-PLAN.md: Demo Nearby: browse, confirm, dispute and the Too far to vote message (wave 5)
+- [ ] 05-14-PLAN.md: The Severe official alerts switch in Settings and on the step 5 card (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 05-15-PLAN.md: The one line Nearby banner, silent when the feed cannot vouch for it (wave 6)
+- [ ] 05-16-PLAN.md: The official push worker, silent, and the /alerts tap target (wave 6)
+- [ ] 05-17-PLAN.md: The practice report climbing to Confirmed as pretend neighbours vote (wave 6)
+- [ ] 05-18-PLAN.md: The Demo in the first-time flow, beside Continue and in the Disagree box (wave 6)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 05-19-PLAN.md: The Demo's Official alerts, sample banner and My activity (wave 7)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 05-20-PLAN.md: End to end proof, docs, Policy credits and the final browser pass (wave 8)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 05-21-PLAN.md: GDACS on the server: fetch, store, freshness and the pins API (wave 9)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [ ] 05-22-PLAN.md: GDACS pins and their read only card on the map, and the GDACS last checked line (wave 10)
 
 ### Phase 6 (REMOVED 2026-10-16): Coordination, Safety, Needs, and Response
 
@@ -772,7 +825,7 @@ Phases execute in the owner's build order (2026-10-16): 1 → 1.1 → 2 → 3 �
 | 3.3 Installable app and phone alerts | 15/15 | In Progress|  |
 | 3.4 App layout | 44/44 | Complete | 2026-10-22 |
 | 4. Robustness — Real-World Resilience | 29/29 | In Progress|  |
-| 5. Official Feed & Demo Mode | 0/TBD | Not started | - |
+| 5. Official Feed & Demo Mode | 0/22 | Planned | - |
 | 6. Coordination (removed 2026-10-16, share card moved to Phase 8) | - | Removed | - |
 | 7. Address search box for report location | 4/4 | Complete | 2026-09-29 |
 | 8. Report page and comments | 0/TBD | Not started | - |
