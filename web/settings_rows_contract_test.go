@@ -467,6 +467,11 @@ func TestPhoneNotificationsRowsNeedAHomeArea(t *testing.T) {
 // field names the route takes, a failure puts the old value back with the fixed
 // sentences, the section follows the Home area row through a MutationObserver
 // (settings.js is not edited), and every string is written as text.
+//
+// Amended 2026-10-18 by Phase 3.3 plan 14 (D-12, UI-SPEC 2a, 2e, W2): the file
+// also saves critical_push and changes_push, calls notify.js to turn this device
+// on and off, says the two device sentences and the two turn failed sentences,
+// and its home removed status is W2 in place of P32-C23's second string.
 func TestSettingsAlertsSavesAtOnce(t *testing.T) {
 	raw := p421ReadStatic(t, "js/settings-alerts.js")
 	js := stripJSComments(raw)
@@ -476,11 +481,17 @@ func TestSettingsAlertsSavesAtOnce(t *testing.T) {
 		// P32-C22
 		`Couldn\'t save that. Try again.`,
 		`You\'re offline, so this wasn\'t saved. Try again when you have a signal.`,
-		// P32-C23
-		"Home area removed. Reliable reporter alerts are off.",
+		// W2, replacing P32-C23's second string
+		"Home area removed. Alerts near your home area are off.",
 		"navigator.onLine === false",
 		"saveAlerts: saveAlerts", "redrawAlerts: redrawAlerts",
 		"openWindow('home')",
+		// Phase 3.3 plan 14
+		"critical_push", "changes_push", "saveKind: saveKind", "drawDevice: drawDevice",
+		"PinalertNotify.enable(", "PinalertNotify.disable(", "PinalertNotify.reconcile(", "PinalertNotify.baseState(",
+		"Alerts are on for this device.", "Alerts are off for this device.",
+		`Couldn\'t turn this on. Try again.`, `Couldn\'t turn this off. Try again.`,
+		"data-push-key", "openWindow('guide')",
 	} {
 		if !strings.Contains(js, want) {
 			t.Errorf("settings-alerts.js lacks %q", want)
