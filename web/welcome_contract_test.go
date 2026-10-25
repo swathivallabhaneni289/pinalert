@@ -507,7 +507,7 @@ func TestWelcomeAlertsStep(t *testing.T) {
 	if got := noiseWordsIn(htmlTagPattern.ReplaceAllString(templateCopy(stripReadTemplate(t, "welcome.html.tmpl")), " ")); len(got) != 0 {
 		t.Errorf("welcome.html.tmpl holds the noise words %v", got)
 	}
-	for _, dash := range []string{"–", "—"} {
+	for _, dash := range []string{string(rune(0x2013)), string(rune(0x2014))} {
 		if strings.Contains(stripReadTemplate(t, "welcome.html.tmpl"), dash) {
 			t.Errorf("welcome.html.tmpl holds the long dash U+%04X", []rune(dash)[0])
 		}
