@@ -48,6 +48,16 @@ type settingsViewModel struct {
 	AlertRadiusKm int
 	HasHomeArea   bool
 	AlertRadii    []int
+	// CriticalPushOn and ChangesPushOn are the two phone switches of Phase 3.3
+	// (PWA-03, PWA-06): Critical reports near the home area (on by default) and
+	// changes to reports the person posted or voted on (off by default). PushPublicKey
+	// is the VAPID public key. Plan 14 draws the rows from these and renders the key
+	// as data-push-key. The key is public by design; the home cell and every
+	// coordinate stay out of this model (T-03.2-14). There is no value here for
+	// Severe official alerts (Phase 5) or Someone I follow posts (Phase 9).
+	CriticalPushOn bool
+	ChangesPushOn  bool
+	PushPublicKey  string
 }
 
 // SettingsPage handles GET /settings: the one Settings page (Phase 3.4, D-25,
@@ -107,12 +117,17 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mut
 			HasHomeArea:   alerts.HasHomeArea,
 			AlertRadii:    service.AlertRadii,
 			MutedCount:    mutedCount,
-			AssetVersion:  cfg.AssetVersion,
-			Chrome:        chrome,
-			AccountID:     acc.ID,
-			Nav:           navFor(NavSettings, navTitle("Settings"), navBack("/")),
-			Profile:       profile,
-			Legal:         legalTextFor(chrome),
+			// Plan 14 draws these; see the field comments. Booleans and the public
+			// key only.
+			CriticalPushOn: alerts.CriticalPushOn,
+			ChangesPushOn:  alerts.ChangesPushOn,
+			PushPublicKey:  cfg.PushPublicKey,
+			AssetVersion:   cfg.AssetVersion,
+			Chrome:         chrome,
+			AccountID:      acc.ID,
+			Nav:            navFor(NavSettings, navTitle("Settings"), navBack("/")),
+			Profile:        profile,
+			Legal:          legalTextFor(chrome),
 		}
 		if profile.DisplayName != nil {
 			vm.DisplayName = *profile.DisplayName

@@ -5,6 +5,12 @@ definitions:
       alert_radius_km:
         example: 5
         type: integer
+      changes_push:
+        example: false
+        type: boolean
+      critical_push:
+        example: true
+        type: boolean
       reliable_alerts:
         example: true
         type: boolean
@@ -14,6 +20,12 @@ definitions:
       alert_radius_km:
         example: 5
         type: integer
+      changes_push:
+        example: false
+        type: boolean
+      critical_push:
+        example: true
+        type: boolean
       has_home_area:
         example: true
         type: boolean
@@ -645,10 +657,10 @@ definitions:
   handlers.PushKeysRequest:
     properties:
       auth:
-        example: tBHItJI5svbpez7KI4CCXg
+        example: base64url of the 16 byte secret
         type: string
       p256dh:
-        example: BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM
+        example: base64url of the 65 byte public key
         type: string
     type: object
   handlers.PushStatusResponse:
@@ -1324,7 +1336,14 @@ paths:
         cell about 5 km across; no position is ever sent or stored for this. Turning the
         alert on without a home area is refused with the field reliable_alerts, and removing
         the home area turns the alert off. Only reports posted after the alert was turned on
-        can raise it. The answer is the settings as stored.
+        can raise it.
+        Two more keys control the phone notifications: critical_push (Critical reports near the
+        home area, on until turned off, even for an account that never saved a choice) and
+        changes_push (changes to reports the account posted or voted on, off until turned on).
+        Turning critical_push on without a home area is refused with the field critical_push;
+        changes_push needs no home area, and turning either off never does. Removing the home
+        area keeps the stored critical_push value. No position is ever sent. The answer is all
+        the settings as stored.
         Requires a session verified by email; an unverified caller receives 401.
       parameters:
       - description: The settings to change

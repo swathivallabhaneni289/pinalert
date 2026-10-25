@@ -182,9 +182,14 @@ func UpdateProfile(svc *service.AccountService) http.HandlerFunc {
 
 // AlertSettingsRequest is the body of PATCH /me/alerts. Each key is optional: a
 // key left out keeps what is stored, and at least one must be sent.
+//
+// Phase 3.3 (PWA-03, PWA-06) adds the two phone switches critical_push and
+// changes_push next to 3.2's two keys.
 type AlertSettingsRequest struct {
 	ReliableAlerts *bool `json:"reliable_alerts" example:"true"`
 	AlertRadiusKm  *int  `json:"alert_radius_km" example:"5"`
+	CriticalPush   *bool `json:"critical_push" example:"true"`
+	ChangesPush    *bool `json:"changes_push" example:"false"`
 }
 
 // AlertSettingsResponse is the caller's alert settings as stored. It carries no
@@ -193,6 +198,8 @@ type AlertSettingsResponse struct {
 	ReliableAlerts bool `json:"reliable_alerts" example:"true"`
 	AlertRadiusKm  int  `json:"alert_radius_km" example:"5"`
 	HasHomeArea    bool `json:"has_home_area" example:"true"`
+	CriticalPush   bool `json:"critical_push" example:"true"`
+	ChangesPush    bool `json:"changes_push" example:"false"`
 }
 
 // UpdateAlertSettings produces the handler of PATCH /me/alerts.
@@ -205,7 +212,14 @@ type AlertSettingsResponse struct {
 // @Description cell about 5 km across; no position is ever sent or stored for this. Turning the
 // @Description alert on without a home area is refused with the field reliable_alerts, and removing
 // @Description the home area turns the alert off. Only reports posted after the alert was turned on
-// @Description can raise it. The answer is the settings as stored.
+// @Description can raise it.
+// @Description Two more keys control the phone notifications: critical_push (Critical reports near the
+// @Description home area, on until turned off, even for an account that never saved a choice) and
+// @Description changes_push (changes to reports the account posted or voted on, off until turned on).
+// @Description Turning critical_push on without a home area is refused with the field critical_push;
+// @Description changes_push needs no home area, and turning either off never does. Removing the home
+// @Description area keeps the stored critical_push value. No position is ever sent. The answer is all
+// @Description the settings as stored.
 // @Description Requires a session verified by email; an unverified caller receives 401.
 // @Tags me
 // @Accept json
@@ -237,6 +251,8 @@ func UpdateAlertSettings(accounts *service.AccountService) http.HandlerFunc {
 		got, err := accounts.UpdateAlertSettings(r.Context(), acc.ID, service.AlertSettingsUpdate{
 			ReliableAlerts: req.ReliableAlerts,
 			AlertRadiusKm:  req.AlertRadiusKm,
+			CriticalPush:   req.CriticalPush,
+			ChangesPush:    req.ChangesPush,
 		})
 		if err != nil {
 			var ve service.ValidationError
@@ -253,6 +269,8 @@ func UpdateAlertSettings(accounts *service.AccountService) http.HandlerFunc {
 			ReliableAlerts: got.ReliableAlertsOn,
 			AlertRadiusKm:  got.AlertRadiusKm,
 			HasHomeArea:    got.HasHomeArea,
+			CriticalPush:   got.CriticalPushOn,
+			ChangesPush:    got.ChangesPushOn,
 		})
 	}
 }
