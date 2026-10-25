@@ -174,6 +174,9 @@ func TestMainStopsOnSignals(t *testing.T) {
 		"pushDispatcher.Run,",
 		"pushWorker.Run,",
 		"serveUntilDone(runCtx,",
+		// IN-01: the signal hook is released once the first signal arrives, so a
+		// second Ctrl-C during the grace period is not swallowed.
+		"context.AfterFunc(runCtx, stopSignals)",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("main.go does not contain %q", want)
