@@ -494,7 +494,9 @@ func TestCompressionMiddleware(t *testing.T) {
 	})
 
 	t.Run("settings and position in the router", func(t *testing.T) {
-		want := []string{"text/html", "text/css", "text/javascript", "application/javascript", "application/json", "image/svg+xml"}
+		// Amended 2026-10-18 by Phase 3.3 plan 04 (DEC-G, Phase 1.1 D-05, decision 13):
+		// application/manifest+json joined the list for the web app manifest.
+		want := []string{"text/html", "text/css", "text/javascript", "application/javascript", "application/json", "application/manifest+json", "image/svg+xml"}
 		if !reflect.DeepEqual(compressibleContentTypes, want) {
 			t.Errorf("compressibleContentTypes = %v, want %v", compressibleContentTypes, want)
 		}
