@@ -652,7 +652,9 @@ func NewRouter(deps Deps) *chi.Mux {
 		// this path (DEC-L: SameSite=Lax withholds the session cookie from
 		// a cross-site POST, so a forged logout carries no authenticated
 		// session — the same property would not hold for GET).
-		r.Post("/auth/logout", handlers.Logout(deps.Session))
+		// Phase 3.3 plan 10 (decision 11, UI-SPEC O-3): it also deletes the push
+		// subscriptions this session registered, before the cookie is cleared.
+		r.Post("/auth/logout", handlers.Logout(deps.Session, pushSubs))
 		// The three /api/me routes (plan 03.4-01, D-24b, D-27). Flat literal
 		// paths like the others. They are gated because they change the
 		// caller's own account and act only on the account the gate resolved;
