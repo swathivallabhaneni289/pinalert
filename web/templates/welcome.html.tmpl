@@ -192,7 +192,8 @@
         </div>
         <p class="welcome__lead" id="welcome-alerts-blocked" hidden>Notifications are blocked for Pinalert in this browser. Allow them in your browser settings, then turn on On this device in Settings.</p>
         <p class="welcome__lead" id="welcome-alerts-unsupported" hidden>This browser can't show notifications. Updates still show in the bell.</p>
-        <p class="welcome__lead" id="welcome-alerts-status" role="status" hidden></p>
+        {{/* Review T-04: an always-present live region, never hidden. It is empty (and clipped by :empty in welcome.css) until welcome.js writes the refusal sentence into it, so a screen reader announces the text. */}}
+        <p class="welcome__lead welcome__status" id="welcome-alerts-status" role="status"></p>
         <p class="inline-error" id="welcome-alerts-error" role="alert" hidden></p>
         <div class="welcome__actions">
           <button type="button" class="btn btn--primary" id="welcome-alerts-allow">Allow alerts</button>

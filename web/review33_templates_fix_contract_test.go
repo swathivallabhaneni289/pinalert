@@ -1,6 +1,8 @@
 package web
 
 import (
+	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -29,6 +31,38 @@ func TestDeviceGuideLeadSpacing(t *testing.T) {
 	body := p31mRule(t, "static/css/window.css", "", ".app-window__body")
 	if body.Decls["gap"] != "var(--space-sm)" {
 		t.Errorf(".app-window__body gap is %q, want var(--space-sm); the window lead margin assumes it", body.Decls["gap"])
+	}
+}
+
+// TestWelcomeStatusIsAlwaysPresentLiveRegion pins T-04. The step 5 refusal line
+// is a role="status" element that is in the page from the start, never hidden
+// (a region unhidden in the same moment as its text may not be announced by
+// VoiceOver). While empty, welcome.css clips it out of the flow so it takes no
+// gap; welcome.js only writes its text.
+func TestWelcomeStatusIsAlwaysPresentLiveRegion(t *testing.T) {
+	page := p421ReadTemplate(t, "welcome.html.tmpl")
+	at := strings.Index(page, `id="welcome-alerts-status"`)
+	if at == -1 {
+		t.Fatal("welcome.html.tmpl has no welcome-alerts-status")
+	}
+	start := strings.LastIndex(page[:at], "<")
+	tag := page[start : at+strings.Index(page[at:], "</p>")+len("</p>")]
+	if !strings.Contains(tag, `role="status"`) {
+		t.Errorf("the status line is not role=status: %s", tag)
+	}
+	if strings.Contains(tag, "hidden") {
+		t.Errorf("the status line carries hidden, so it is not an always-present live region: %s", tag)
+	}
+	if !strings.HasSuffix(tag, "></p>") {
+		t.Errorf("the status line is not empty in the template (a space would defeat :empty): %s", tag)
+	}
+	empty := p31mRule(t, "static/css/welcome.css", "", ".welcome__status:empty")
+	if empty.Decls["position"] != "absolute" || empty.Decls["clip"] != "rect(0, 0, 0, 0)" {
+		t.Errorf("an empty status line is not clipped out of the flow: %v", empty.Decls)
+	}
+	js := p16ReadStatic(t, "static/js/welcome.js")
+	if regexp.MustCompile(`(?:hideLine|showLine)\(alertsStatus`).MatchString(js) {
+		t.Errorf("welcome.js hides or shows the status line; it must only write its text")
 	}
 }
 

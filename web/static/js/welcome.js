@@ -1018,7 +1018,7 @@
     alertsSeq += 1;
     var mine = alertsSeq;
     alertsRefused = false;
-    hideLine(alertsStatus);
+    setText(alertsStatus, '');
     hideLine(alertsError);
     var notify = window.PinalertNotify;
     if (!notify || typeof notify.baseState !== 'function' || pushKey === '') {
@@ -1074,7 +1074,7 @@
       return;
     }
     hideLine(alertsError);
-    hideLine(alertsStatus);
+    setText(alertsStatus, '');
     var pending = window.PinalertNotify.enable(pushKey);
     setAlertsBusy(true);
     Promise.resolve(pending).then(function (result) {
@@ -1098,7 +1098,9 @@
       alertsAllow.hidden = true;
       alertsLater.hidden = true;
       alertsContinue.hidden = false;
-      showLine(alertsStatus, MESSAGE_ALERTS_OFF);
+      // The status line is an always-present live region (never hidden), so the
+      // screen reader announces the text written into it (review T-04).
+      setText(alertsStatus, MESSAGE_ALERTS_OFF);
       alertsContinue.focus();
       return;
     }

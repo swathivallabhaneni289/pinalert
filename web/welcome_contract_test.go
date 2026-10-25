@@ -483,7 +483,9 @@ func TestWelcomeAlertsStep(t *testing.T) {
 	p13Ordered(t, step5, "step 5 buttons", `id="welcome-alerts-allow"`, `id="welcome-alerts-later"`, `id="welcome-alerts-continue"`)
 	// The status line is a status region and the error line an alert.
 	p13MustContain(t, "step 5 lines", step5,
-		`id="welcome-alerts-status" role="status" hidden>`,
+		// Amended 2026-10-25 (review T-04): the status line is an always-present
+		// live region, never hidden; welcome.js writes the sentence into it.
+		`id="welcome-alerts-status" role="status"></p>`,
 		`<p class="inline-error" id="welcome-alerts-error" role="alert" hidden>`)
 	// Only the ready part shows from the start: the other three parts are hidden
 	// until the script picks one.

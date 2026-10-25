@@ -183,6 +183,23 @@
   line-height: var(--line-height-body);
 }
 
+/* The step 5 status line is a live region that is always in the page (never
+   hidden, which would drop it from the accessibility tree), so while it is
+   empty it is clipped to nothing and out of the flow, and takes no gap. It
+   shows as an ordinary lead the moment welcome.js writes its text (review T-04,
+   2026-10-25). */
+.welcome__status:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Step 1: three cards. */
 .welcome__cards {
   display: flex;

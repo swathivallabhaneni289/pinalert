@@ -196,7 +196,7 @@ function buildPage({ start = 1, name = '', home = '' } = {}) {
   make('div', 'welcome-alerts-install', steps[4]).hidden = true;
   make('p', 'welcome-alerts-blocked', steps[4]).hidden = true;
   make('p', 'welcome-alerts-unsupported', steps[4]).hidden = true;
-  make('p', 'welcome-alerts-status', steps[4]).hidden = true;
+  make('p', 'welcome-alerts-status', steps[4]); // amended 2026-10-25 (review T-04): an always-present live region, never hidden
   make('p', 'welcome-alerts-error', steps[4]).hidden = true;
   make('button', 'welcome-alerts-allow', steps[4]);
   make('button', 'welcome-alerts-later', steps[4]);

@@ -177,7 +177,9 @@ function buildPage({ start = 1, name = '', home = '', key = KEY, hasHome = false
   make('div', 'welcome-alerts-install', s5, 'welcome__alerts-part').hidden = true;
   make('p', 'welcome-alerts-blocked', s5).hidden = true;
   make('p', 'welcome-alerts-unsupported', s5).hidden = true;
-  make('p', 'welcome-alerts-status', s5).hidden = true;
+  // Amended 2026-10-25 (review T-04): the status line is an always-present live
+  // region, never hidden, empty until the script writes the sentence into it.
+  make('p', 'welcome-alerts-status', s5);
   make('p', 'welcome-alerts-error', s5).hidden = true;
   make('button', 'welcome-alerts-allow', s5);
   make('button', 'welcome-alerts-later', s5);
@@ -459,7 +461,8 @@ test('a refusal shows Alerts are off on this device. and one Continue, then Cont
   page.notify.waiting.enable.resolve({ ok: false, state: 'blocked', reason: 'refused' });
   await flush();
 
-  assert.equal(shown(page, 'welcome-alerts-status'), true);
+  // Amended 2026-10-25 (review T-04): the status line is shown by its text, the
+  // node itself is always present and never hidden.
   assert.equal(text(page, 'welcome-alerts-status'), 'Alerts are off on this device.');
   assert.equal(shown(page, 'welcome-alerts-allow'), false);
   assert.equal(shown(page, 'welcome-alerts-later'), false);
@@ -601,6 +604,27 @@ test('step 5 actions need the agreement, like every way to finish', () => {
   assert.equal(page.requests.length, 0);
 });
 
+// T-04 (review 2026-10-25): VoiceOver may miss a live region that is unhidden in
+// the same moment its text is set, so the status line is always present and the
+// script only ever writes its text. The spy counts every write to hidden.
+test('the refusal line is an always-present live region: only its text is written, never hidden', async () => {
+  const page = load({ start: 3 });
+  const status = byId(page, 'welcome-alerts-status');
+  let hiddenWrites = 0;
+  Object.defineProperty(status, 'hidden', { get: () => false, set: () => { hiddenWrites += 1; } });
+  page.api.goTo(5);
+  assert.equal(text(page, 'welcome-alerts-status'), '', 'empty until a refusal');
+  click(page, 'welcome-alerts-allow');
+  page.notify.waiting.enable.resolve({ ok: false, state: 'blocked', reason: 'refused' });
+  await flush();
+  assert.equal(text(page, 'welcome-alerts-status'), 'Alerts are off on this device.');
+  click(page, 'welcome-back-5');
+  page.notify.baseState = () => 'blocked';
+  page.api.goTo(5);
+  assert.equal(text(page, 'welcome-alerts-status'), '');
+  assert.equal(hiddenWrites, 0, 'the status line was hidden or unhidden; only its text may change');
+});
+
 test('coming back to step 5 after a refusal draws it fresh', async () => {
   const page = atStep5();
   click(page, 'welcome-alerts-allow');
@@ -609,7 +633,7 @@ test('coming back to step 5 after a refusal draws it fresh', async () => {
   click(page, 'welcome-back-5');
   page.notify.baseState = () => 'blocked';
   page.api.goTo(5);
-  assert.equal(shown(page, 'welcome-alerts-status'), false, 'the old status line is gone');
+  assert.equal(text(page, 'welcome-alerts-status'), '', 'the old status line is gone (T-04: emptied, not hidden)');
   assert.equal(page.steps[4].getAttribute('data-device-state'), 'blocked');
   assert.equal(shown(page, 'welcome-alerts-blocked'), true);
 });
