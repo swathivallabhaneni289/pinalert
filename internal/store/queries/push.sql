@@ -228,7 +228,9 @@ ORDER BY a.id;
 
 -- name: AccountsWithChangesPush :many
 -- Every account that wants change pushes and has a live subscription, for the
--- sweep that turns 3.2 updates rows into outbox rows. Bounded by row_cap.
+-- sweep that turns 3.2 updates rows into outbox rows. Bounded by row_cap and
+-- served from after_id on, so the caller can rotate through every account a
+-- page at a time instead of always taking the same first row_cap (review S-04).
 SELECT a.id AS account_id
 FROM accounts a
 JOIN account_alert_settings st ON st.account_id = a.id AND st.changes_push_on
@@ -240,6 +242,7 @@ WHERE a.deleted_at IS NULL
       WHERE p.account_id = a.id
         AND ps.revoked_at IS NULL
   )
+  AND a.id > sqlc.arg(after_id)::bigint
 ORDER BY a.id
 LIMIT sqlc.arg(row_cap)::int;
 
@@ -258,12 +261,16 @@ WHERE r.id = sqlc.arg(report_id)::bigint;
 
 -- name: RecentReportsForPush :many
 -- The sweep that recovers a lost poke: ids of reports created after since and
--- not yet expired at now, newest first, at most row_cap.
-SELECT id
-FROM reports
-WHERE created_at > sqlc.arg(since)::timestamptz
-  AND expires_at > sqlc.arg(now)::timestamptz
-ORDER BY created_at DESC, id DESC
+-- not yet expired at now, at most row_cap. A report never evaluated comes
+-- first, then the one evaluated longest ago, then the newest, so a cap smaller
+-- than the window still reaches every report over a few sweeps instead of
+-- always taking the same newest row_cap (review S-04).
+SELECT r.id
+FROM reports r
+LEFT JOIN push_report_progress p ON p.report_id = r.id
+WHERE r.created_at > sqlc.arg(since)::timestamptz
+  AND r.expires_at > sqlc.arg(now)::timestamptz
+ORDER BY p.evaluated_at ASC NULLS FIRST, r.created_at DESC, r.id DESC
 LIMIT sqlc.arg(row_cap)::int;
 
 -- name: SetReportAreaName :exec

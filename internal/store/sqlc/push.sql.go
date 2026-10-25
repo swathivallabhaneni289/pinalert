@@ -24,14 +24,22 @@ WHERE a.deleted_at IS NULL
       WHERE p.account_id = a.id
         AND ps.revoked_at IS NULL
   )
+  AND a.id > $1::bigint
 ORDER BY a.id
-LIMIT $1::int
+LIMIT $2::int
 `
 
+type AccountsWithChangesPushParams struct {
+	AfterID int64
+	RowCap  int32
+}
+
 // Every account that wants change pushes and has a live subscription, for the
-// sweep that turns 3.2 updates rows into outbox rows. Bounded by row_cap.
-func (q *Queries) AccountsWithChangesPush(ctx context.Context, rowCap int32) ([]int64, error) {
-	rows, err := q.db.Query(ctx, accountsWithChangesPush, rowCap)
+// sweep that turns 3.2 updates rows into outbox rows. Bounded by row_cap and
+// served from after_id on, so the caller can rotate through every account a
+// page at a time instead of always taking the same first row_cap (review S-04).
+func (q *Queries) AccountsWithChangesPush(ctx context.Context, arg AccountsWithChangesPushParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, accountsWithChangesPush, arg.AfterID, arg.RowCap)
 	if err != nil {
 		return nil, err
 	}
@@ -1056,11 +1064,12 @@ func (q *Queries) PushSubscriptionsForAccount(ctx context.Context, accountID int
 }
 
 const recentReportsForPush = `-- name: RecentReportsForPush :many
-SELECT id
-FROM reports
-WHERE created_at > $1::timestamptz
-  AND expires_at > $2::timestamptz
-ORDER BY created_at DESC, id DESC
+SELECT r.id
+FROM reports r
+LEFT JOIN push_report_progress p ON p.report_id = r.id
+WHERE r.created_at > $1::timestamptz
+  AND r.expires_at > $2::timestamptz
+ORDER BY p.evaluated_at ASC NULLS FIRST, r.created_at DESC, r.id DESC
 LIMIT $3::int
 `
 
@@ -1071,7 +1080,10 @@ type RecentReportsForPushParams struct {
 }
 
 // The sweep that recovers a lost poke: ids of reports created after since and
-// not yet expired at now, newest first, at most row_cap.
+// not yet expired at now, at most row_cap. A report never evaluated comes
+// first, then the one evaluated longest ago, then the newest, so a cap smaller
+// than the window still reaches every report over a few sweeps instead of
+// always taking the same newest row_cap (review S-04).
 func (q *Queries) RecentReportsForPush(ctx context.Context, arg RecentReportsForPushParams) ([]int64, error) {
 	rows, err := q.db.Query(ctx, recentReportsForPush, arg.Since, arg.Now, arg.RowCap)
 	if err != nil {

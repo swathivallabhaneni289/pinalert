@@ -57,6 +57,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -127,7 +128,7 @@ type PushDispatchQuerier interface {
 	EnqueueChangedFromUpdates(ctx context.Context, arg sqlcgen.EnqueueChangedFromUpdatesParams) (int64, error)
 	EnqueueConfirmedUpdates(ctx context.Context, arg sqlcgen.EnqueueConfirmedUpdatesParams) (int64, error)
 	FollowersWithChangesPush(ctx context.Context, reportID int64) ([]int64, error)
-	AccountsWithChangesPush(ctx context.Context, rowCap int32) ([]int64, error)
+	AccountsWithChangesPush(ctx context.Context, arg sqlcgen.AccountsWithChangesPushParams) ([]int64, error)
 	RecentReportsForPush(ctx context.Context, arg sqlcgen.RecentReportsForPushParams) ([]int64, error)
 	GetPushKindSettings(ctx context.Context, accountID int64) (sqlcgen.GetPushKindSettingsRow, error)
 }
@@ -150,6 +151,12 @@ type PushDispatcher struct {
 	now        func() time.Time
 	sweepEvery time.Duration
 	pokes      chan pushPoke
+
+	// changesMu guards changesAfter, the last account id the changes sweep
+	// served when its page was full. The next sweep starts after it, and a short
+	// page wraps it back to 0, so every account is reached in turn (review S-04).
+	changesMu    sync.Mutex
+	changesAfter int64
 }
 
 // DispatchOption adjusts a PushDispatcher at construction.
@@ -244,7 +251,8 @@ func (d *PushDispatcher) changesSweepAndLog(ctx context.Context) {
 	}
 }
 
-// SweepOnce evaluates the recent reports with no actor, newest first. A failure
+// SweepOnce evaluates the recent reports with no actor, the never evaluated and
+// least recently evaluated first, then the newest (review S-04). A failure
 // on one report does not stop the rest; the errors come back joined.
 func (d *PushDispatcher) SweepOnce(ctx context.Context) error {
 	now := d.now().UTC()
@@ -271,10 +279,25 @@ func (d *PushDispatcher) SweepOnce(ctx context.Context) error {
 // ChangesSweepOnce turns the 3.2 event rows of every account that wants change
 // pushes into outbox rows. It catches fading reports and rows a bell poll wrote
 // first; the unique index makes it idempotent.
+//
+// It serves at most PushChangesSweepAccountCap accounts, starting after the
+// last account the previous full page served, and wraps to the start after a
+// short page, so an account past the cap is reached on a later sweep instead
+// of never (review S-04).
 func (d *PushDispatcher) ChangesSweepOnce(ctx context.Context) error {
-	accounts, err := d.q.AccountsWithChangesPush(ctx, PushChangesSweepAccountCap)
+	d.changesMu.Lock()
+	defer d.changesMu.Unlock()
+	accounts, err := d.q.AccountsWithChangesPush(ctx, sqlcgen.AccountsWithChangesPushParams{
+		AfterID: d.changesAfter,
+		RowCap:  PushChangesSweepAccountCap,
+	})
 	if err != nil {
 		return err
+	}
+	if len(accounts) >= PushChangesSweepAccountCap {
+		d.changesAfter = accounts[len(accounts)-1]
+	} else {
+		d.changesAfter = 0
 	}
 	now := d.now().UTC()
 	var errs []error
