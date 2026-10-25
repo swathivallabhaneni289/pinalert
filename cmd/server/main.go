@@ -14,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"pinalert/internal/api"
@@ -21,6 +22,7 @@ import (
 	"pinalert/internal/geocode"
 	"pinalert/internal/mailer"
 	"pinalert/internal/moderation"
+	"pinalert/internal/push"
 	"pinalert/internal/service"
 	"pinalert/internal/session"
 	"pinalert/internal/store"
@@ -28,6 +30,31 @@ import (
 )
 
 const devInsecureSecret = "dev-only-insecure-secret-do-not-use-in-production"
+
+// lateUpdates lets the phone alert dispatcher hold the updates service before it
+// exists. The updates service needs the report service as its nearby reader,
+// and the report service needs the dispatcher as its change notifier, so one of
+// the three has to be filled in last. Until it is set, Refresh does nothing.
+type lateUpdates struct {
+	mu    sync.Mutex
+	inner service.UpdatesRefresher
+}
+
+func (l *lateUpdates) set(u service.UpdatesRefresher) {
+	l.mu.Lock()
+	l.inner = u
+	l.mu.Unlock()
+}
+
+func (l *lateUpdates) Refresh(ctx context.Context, accountID int64) error {
+	l.mu.Lock()
+	inner := l.inner
+	l.mu.Unlock()
+	if inner == nil {
+		return nil
+	}
+	return inner.Refresh(ctx, accountID)
+}
 
 // Fallback map centre for visitors who deny geolocation (Bengaluru), and the
 // default nearby-reports search radius. Configurable here rather than
@@ -262,11 +289,44 @@ func main() {
 	geocodeClient := geocode.NewClient(nominatimContactEmail)
 
 	queries := sqlcgen.New(pool)
+
+	// The VAPID identity for phone notifications comes from the environment
+	// only. Both keys unset leaves push off: the server runs as before and every
+	// device reads unsupported. One key, a malformed key or a mismatched pair
+	// stops startup, with a message that never holds a key (research Pitfall 15).
+	pushCfg, pushOn, err := push.LoadConfig(os.Getenv)
+	if err != nil {
+		log.Fatalf("loading the VAPID configuration: %v", err)
+	}
+	if !pushOn {
+		log.Println("WARNING: VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY unset; phone notifications are off")
+	}
+
+	// Posting and voting poke the dispatcher only when push is on. A nil
+	// *PushDispatcher stored in the notifier interface would not be a nil
+	// interface, so the options are added only inside this branch.
+	reportOpts := []service.ReportOption{service.WithScreener(screener)}
+	var voteOpts []service.VotingOption
+	var pushDispatcher *service.PushDispatcher
+	var pushUpdates *lateUpdates
+	if pushOn {
+		pushUpdates = &lateUpdates{}
+		// The one geocode client is also the dispatcher's area namer (T-07-01).
+		pushDispatcher = service.NewPushDispatcher(queries, pushUpdates, geocodeClient)
+		reportOpts = append(reportOpts, service.WithReportChangeNotifier(pushDispatcher))
+		voteOpts = append(voteOpts, service.WithVoteChangeNotifier(pushDispatcher))
+	}
+	reportService := service.NewReportService(queries, reportOpts...)
+	voteService := service.NewVotingService(queries, voteOpts...)
+	if pushOn {
+		pushUpdates.set(service.NewUpdatesService(queries, reportService))
+	}
+
 	deps := api.Deps{
 		Session:     sessionMgr,
 		Sessions:    queries,
-		Reports:     service.NewReportService(queries, service.WithScreener(screener)),
-		Votes:       service.NewVotingService(queries),
+		Reports:     reportService,
+		Votes:       voteService,
 		AuthService: service.NewAuthService(queries, mail, baseURL),
 		Auth: handlers.AuthConfig{
 			AssetVersion: assetVersion,
@@ -286,6 +346,9 @@ func main() {
 			DefaultRadiusKm: defaultRadiusKm,
 			VoteRadiusKm:    service.MaxVoteDistanceKm,
 			AssetVersion:    assetVersion,
+			// The VAPID public key, empty when push is off. The pages and the
+			// subscription route both read it from here.
+			PushPublicKey: pushCfg.PublicKey,
 		},
 		Dev: env == "development",
 		// DEC-I: burst 5, one token refilled per 60 seconds, applied only to
@@ -344,6 +407,23 @@ func main() {
 	// claim's row lock and lease keep a second instance from double screening.
 	moderationWorker := service.NewModerationWorker(queries, screener)
 	go moderationWorker.Run(context.Background())
+
+	// The phone alert dispatcher queues notifications and the worker sends them.
+	// Each sweeps once at boot because the free host cold starts. The claim
+	// lease, renewed just before each row, and the lease conditional marks keep a
+	// second instance from sending or marking a row the first one is working.
+	// Delivery is still at least once: a crash after a push service accepted a
+	// message and before the mark sends it again once the lease passes. A
+	// sleeping host sends nothing until a request wakes it (decision 9, review
+	// W2 and N5). One endpoint policy value is shared by the sender and the
+	// worker, so both read a device's host the same way.
+	if pushOn {
+		pushPolicy := push.DefaultEndpointPolicy()
+		pushSender := push.NewWebPushSender(pushCfg, push.NewGuardedClient(), pushPolicy)
+		pushWorker := service.NewPushWorker(queries, pushSender, service.WithPushWorkerPolicy(pushPolicy))
+		go pushDispatcher.Run(context.Background())
+		go pushWorker.Run(context.Background())
+	}
 
 	srv := &http.Server{
 		Addr:         ":" + port,

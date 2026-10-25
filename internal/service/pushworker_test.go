@@ -28,6 +28,7 @@ import (
 
 	"pinalert/internal/push"
 	sqlcgen "pinalert/internal/store/sqlc"
+	"pinalert/internal/testutil"
 )
 
 const (
@@ -1555,4 +1556,287 @@ func TestWorkerSweep(t *testing.T) {
 			t.Fatal("Run did not stop")
 		}
 	})
+}
+
+// pwOutboxRow reads the state of the one row of an account, report and kind.
+func pwOutboxRow(t *testing.T, r *pushDBRig, account, reportID int64, kind string) (state, skip string, unconfirmed bool) {
+	t.Helper()
+	var skipReason *string
+	err := r.pool.QueryRow(context.Background(),
+		`SELECT state, skip_reason, sent_unconfirmed FROM push_outbox WHERE account_id = $1 AND report_id = $2 AND kind = $3`,
+		account, reportID, kind).Scan(&state, &skipReason, &unconfirmed)
+	if err != nil {
+		t.Fatalf("reading the %s row of account %d: %v", kind, account, err)
+	}
+	if skipReason != nil {
+		skip = *skipReason
+	}
+	return state, skip, unconfirmed
+}
+
+// pwDBWorker builds a worker on the rig's own clock, which runs behind wall time
+// (the dispatcher wrote the rows with it). A worker on wall time would find
+// every row stale.
+func pwDBWorker(r *pushDBRig, sender push.Sender) *PushWorker {
+	return NewPushWorker(r.q, sender,
+		WithPushWorkerClock(func() time.Time { return r.cur }),
+		WithPushWorkerJitter(func() float64 { return 0.5 }))
+}
+
+// TestWorkerOnRealOutbox runs the real dispatcher and the real worker on a real
+// database with a fake push service: the words, the options, the in place
+// confirmed update, and the Apple rule, which reads the endpoint and not the
+// stored host column (the seed helper always stores fcm.googleapis.com there).
+func TestWorkerOnRealOutbox(t *testing.T) {
+	r := newPushDBRig(t)
+	ctx := context.Background()
+
+	const reporterSession = "p33-11-real-reporter"
+	reporter := testutil.SeedReporterAccount(t, r.pool, r.email("reporter"), reporterSession)
+	readerID, _ := r.reader("reader", 1, 0, true, false, false)
+
+	// A second reader whose only device is on an Apple endpoint.
+	const appleSession = "p33-11-real-apple"
+	appleID := testutil.SeedReporterAccount(t, r.pool, r.email("apple"), appleSession)
+	testutil.SetHomeCell(t, r.pool, appleID, "Home", r.cell(1))
+	const appleEndpoint = "https://web.push.apple.com/p33-11-apple-token"
+	testutil.SeedPushSubscription(t, r.pool, appleID, appleSession, appleEndpoint)
+
+	v1 := testutil.SeedReporterAccount(t, r.pool, r.email("v1"), "p33-11-real-v1")
+	v2 := testutil.SeedReporterAccount(t, r.pool, r.email("v2"), "p33-11-real-v2")
+
+	r.cur = r.base.Add(10 * time.Minute)
+	reportID := r.report(reporterSession, SeverityCritical, r.base.Add(5*time.Minute), "clear")
+	testutil.MustExec(t, r.pool, `UPDATE reports SET happening = 'fire' WHERE id = $1`, reportID)
+	r.eval(reportID, 0)
+	if got := r.outbox(reportID); len(got[readerID]) != 1 || len(got[appleID]) != 1 || len(got[reporter]) != 0 {
+		t.Fatalf("outbox = %v, want one critical row for each reader and none for the reporter", got)
+	}
+
+	sender := &pwSender{answers: map[string]pwAnswer{}}
+	worker := pwDBWorker(r, sender)
+
+	wantDistance := DistanceWords(r.distKm(r.cell(1))) + " from your home area."
+	var readerEndpoint string
+	if err := r.pool.QueryRow(ctx, `SELECT endpoint FROM push_subscriptions WHERE account_id = $1`, readerID).Scan(&readerEndpoint); err != nil {
+		t.Fatalf("reading the reader's endpoint: %v", err)
+	}
+	messageTo := func(msgs []pwSentMessage, endpoint string) *pwSentMessage {
+		for i := range msgs {
+			if msgs[i].sub.Endpoint == endpoint {
+				return &msgs[i]
+			}
+		}
+		return nil
+	}
+
+	// 1. The first sweep sends the initial alert to both readers.
+	if err := worker.SweepOnce(ctx); err != nil {
+		t.Fatalf("first sweep: %v", err)
+	}
+	msgs := sender.messages()
+	if len(msgs) != 2 {
+		t.Fatalf("messages after the first sweep = %d, want 2", len(msgs))
+	}
+	first := messageTo(msgs, readerEndpoint)
+	if first == nil {
+		t.Fatal("the reader's device got nothing")
+	}
+	p := first.msg.Payload
+	wantTag := fmt.Sprintf("report-%d", reportID)
+	if p.Title != "Fire near Central Market" || p.Body != wantDistance+" Not confirmed yet." {
+		t.Errorf("words = %q / %q", p.Title, p.Body)
+	}
+	if p.Kind != "critical" || p.Tag != wantTag || p.URL != fmt.Sprintf("/?report=%d", reportID) || first.msg.Topic != fmt.Sprintf("r%d", reportID) {
+		t.Errorf("envelope = %+v topic %q", p, first.msg.Topic)
+	}
+	if first.msg.Urgency != push.UrgencyHigh || first.msg.TTL <= 0 || first.msg.TTL > PushCriticalTTLMax {
+		t.Errorf("urgency %q ttl %s", first.msg.Urgency, first.msg.TTL)
+	}
+	for _, id := range []int64{readerID, appleID} {
+		state, _, unconfirmed := pwOutboxRow(t, r, id, reportID, "critical")
+		if state != "sent" || !unconfirmed {
+			t.Errorf("account %d: critical row state %q, sent_unconfirmed %v, want sent and true", id, state, unconfirmed)
+		}
+	}
+	if messageTo(msgs, appleEndpoint) == nil {
+		t.Error("the Apple device should get the first alert")
+	}
+
+	// 2. A second sweep sends nothing.
+	if err := worker.SweepOnce(ctx); err != nil {
+		t.Fatalf("second sweep: %v", err)
+	}
+	if n := len(sender.messages()); n != 2 {
+		t.Fatalf("messages after the second sweep = %d, want still 2", n)
+	}
+
+	// 3. Two cells confirm the report; the dispatcher queues the in place
+	// confirmed update and the worker sends one, to the Google device only.
+	r.vote(reportID, v1, "content", "confirm", "tdr1v8y", r.cur)
+	r.vote(reportID, v2, "content", "confirm", "tdr1vc3", r.cur)
+	r.eval(reportID, v1)
+	r.eval(reportID, v2)
+	r.eval(reportID, 0)
+	if err := worker.SweepOnce(ctx); err != nil {
+		t.Fatalf("third sweep: %v", err)
+	}
+	msgs = sender.messages()
+	if len(msgs) != 3 {
+		t.Fatalf("messages after the confirmation = %d, want 3", len(msgs))
+	}
+	update := msgs[2]
+	if update.sub.Endpoint != readerEndpoint {
+		t.Errorf("the confirmed update went to the wrong device")
+	}
+	up := update.msg.Payload
+	if up.Kind != "confirmed_update" || up.Tag != wantTag {
+		t.Errorf("update envelope = %+v, want the same tag %q", up, wantTag)
+	}
+	if up.Title != "Fire near Central Market" || up.Body != "Confirmed by people nearby. "+wantDistance {
+		t.Errorf("update words = %q / %q", up.Title, up.Body)
+	}
+	if update.msg.Urgency != push.UrgencyNormal {
+		t.Errorf("update urgency = %q", update.msg.Urgency)
+	}
+	if state, _, _ := pwOutboxRow(t, r, readerID, reportID, "confirmed_update"); state != "sent" {
+		t.Errorf("the reader's confirmed update is %q, want sent", state)
+	}
+	if state, skip, _ := pwOutboxRow(t, r, appleID, reportID, "confirmed_update"); state != "skipped" || skip != "no_device" {
+		t.Errorf("the Apple reader's confirmed update is %q (%q), want skipped as no_device", state, skip)
+	}
+	if err := worker.SweepOnce(ctx); err != nil {
+		t.Fatalf("fourth sweep: %v", err)
+	}
+	if n := len(sender.messages()); n != 3 {
+		t.Errorf("messages after the fourth sweep = %d, want still 3", n)
+	}
+	// The stored columns that held words: none of the outbox holds a title.
+	var holdsWords int
+	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM push_outbox WHERE row_to_json(push_outbox)::text ILIKE '%Central Market%'`).Scan(&holdsWords); err != nil {
+		t.Fatal(err)
+	}
+	if holdsWords != 0 {
+		t.Errorf("%d outbox rows store words", holdsWords)
+	}
+}
+
+// TestWorkerLeaseNeverDoubleSends proves, on a real database, that a second
+// claimer never takes a row the first worker is sending, and that a worker whose
+// claim lease has passed and been taken over sends nothing and marks nothing
+// (review W2).
+func TestWorkerLeaseNeverDoubleSends(t *testing.T) {
+	r := newPushDBRig(t)
+	ctx := context.Background()
+
+	const reporterSession = "p33-11-lease-reporter"
+	testutil.SeedReporterAccount(t, r.pool, r.email("reporter"), reporterSession)
+	for _, name := range []string{"a", "b", "c"} {
+		r.reader(name, 1, 0, true, false, false)
+	}
+
+	r.cur = r.base.Add(10 * time.Minute)
+	reportID := r.report(reporterSession, SeverityCritical, r.base.Add(5*time.Minute), "clear")
+	r.eval(reportID, 0)
+
+	var ordered []int64
+	rows, err := r.pool.Query(ctx, `SELECT id, account_id FROM push_outbox WHERE report_id = $1 ORDER BY id`, reportID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var id, acct int64
+		if err := rows.Scan(&id, &acct); err != nil {
+			t.Fatal(err)
+		}
+		ordered = append(ordered, id)
+	}
+	rows.Close()
+	if len(ordered) != 3 {
+		t.Fatalf("queued rows = %d, want 3", len(ordered))
+	}
+
+	leaseOf := func(id int64) time.Time {
+		var lease *time.Time
+		if err := r.pool.QueryRow(ctx, `SELECT lease_until FROM push_outbox WHERE id = $1`, id).Scan(&lease); err != nil {
+			t.Fatal(err)
+		}
+		if lease == nil {
+			return time.Time{}
+		}
+		return *lease
+	}
+
+	var oldLease2 time.Time
+	var secondClaim []sqlcgen.ClaimDuePushesRow
+	sender := &pwSender{answers: map[string]pwAnswer{}}
+	sender.hook = func(n int) {
+		if n != 1 {
+			return
+		}
+		// The slow send. A second worker claims now.
+		got, err := r.q.ClaimDuePushes(ctx, sqlcgen.ClaimDuePushesParams{BatchLimit: PushClaimBatch, LeaseSeconds: PushLeaseSeconds})
+		if err != nil {
+			t.Errorf("second claim: %v", err)
+			return
+		}
+		if len(got) != 0 {
+			t.Errorf("a second claimer took %d rows while the first worker holds them", len(got))
+		}
+		// A batch that outlived its lease: rows 2 and 3 lapse.
+		oldLease2 = leaseOf(ordered[1])
+		if _, err := r.pool.Exec(ctx, `UPDATE push_outbox SET lease_until = now() - interval '1 minute' WHERE id = ANY($1)`, []int64{ordered[1], ordered[2]}); err != nil {
+			t.Errorf("aging the leases: %v", err)
+			return
+		}
+		secondClaim, err = r.q.ClaimDuePushes(ctx, sqlcgen.ClaimDuePushesParams{BatchLimit: PushClaimBatch, LeaseSeconds: PushLeaseSeconds})
+		if err != nil {
+			t.Errorf("second claim after the lapse: %v", err)
+			return
+		}
+		if len(secondClaim) != 2 || secondClaim[0].ID != ordered[1] || secondClaim[1].ID != ordered[2] {
+			t.Errorf("the second claim got %+v, want rows %d and %d", secondClaim, ordered[1], ordered[2])
+		}
+	}
+
+	worker := pwDBWorker(r, sender)
+	if err := worker.SweepOnce(ctx); err != nil {
+		t.Fatalf("SweepOnce: %v", err)
+	}
+
+	if n := len(sender.messages()); n != 1 {
+		t.Fatalf("messages sent = %d, want exactly 1", n)
+	}
+	state := func(id int64) string {
+		var s string
+		if err := r.pool.QueryRow(ctx, `SELECT state FROM push_outbox WHERE id = $1`, id).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	if s := state(ordered[0]); s != "sent" {
+		t.Errorf("row 1 is %q, want sent", s)
+	}
+	for i, id := range ordered[1:] {
+		if s := state(id); s != "queued" {
+			t.Errorf("row %d is %q, want still queued for the second claimer", i+2, s)
+		}
+		if len(secondClaim) == 2 {
+			if got := leaseOf(id); !got.Equal(secondClaim[i].LeaseUntil) {
+				t.Errorf("row %d lease = %v, want the second claimer's %v", i+2, got, secondClaim[i].LeaseUntil)
+			}
+		}
+	}
+
+	// The first worker's old lease no longer marks anything.
+	n, err := r.q.MarkPushSent(ctx, sqlcgen.MarkPushSentParams{Now: r.cur, ID: ordered[1], HeldLease: oldLease2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("MarkPushSent with the lapsed lease changed %d rows", n)
+	}
+	if s := state(ordered[1]); s != "queued" {
+		t.Errorf("row 2 is %q after the stale mark", s)
+	}
 }
