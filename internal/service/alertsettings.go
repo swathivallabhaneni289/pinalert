@@ -40,17 +40,25 @@ const (
 // AlertSettings is one account's alert switch and distance as stored, with
 // whether a home area exists. EnabledAt is when the switch last went on, nil
 // while it is off. It never carries the home area cell or any coordinate.
+//
+// CriticalPushOn and ChangesPushOn are the two phone switches of Phase 3.3
+// (PWA-03, PWA-06) that sit next to the Reliable switch. The Reliable switch and
+// the distance stay 3.2's and are not duplicated.
 type AlertSettings struct {
 	ReliableAlertsOn bool
 	AlertRadiusKm    int
 	EnabledAt        *time.Time
 	HasHomeArea      bool
+	CriticalPushOn   bool
+	ChangesPushOn    bool
 }
 
 // AlertSettingsUpdate is one edit. A nil field leaves that part as stored.
 type AlertSettingsUpdate struct {
 	ReliableAlerts *bool
 	AlertRadiusKm  *int
+	CriticalPush   *bool
+	ChangesPush    *bool
 }
 
 // HomeAreaAnchor decodes a stored home area cell into the point a distance is
@@ -102,9 +110,25 @@ func (s *AccountService) HomeAreaCell(ctx context.Context, accountID int64) (cel
 }
 
 // AlertSettings reads the account's alert switch and distance. An account that
-// never saved a choice reads off and DefaultAlertRadiusKm.
+// never saved a choice reads off and DefaultAlertRadiusKm, with Critical on and
+// Changes off (decision 12: an account with no row counts as Critical on, the
+// same constant in the SQL COALESCE and in Go, pinned by
+// TestCriticalDefaultMatchesSQL).
 func (s *AccountService) AlertSettings(ctx context.Context, accountID int64) (AlertSettings, error) {
-	out := AlertSettings{AlertRadiusKm: DefaultAlertRadiusKm}
+	out := AlertSettings{
+		AlertRadiusKm:  DefaultAlertRadiusKm,
+		CriticalPushOn: DefaultCriticalPushOn,
+		ChangesPushOn:  DefaultChangesPushOn,
+	}
+	switch push, err := s.q.GetPushKindSettings(ctx, accountID); {
+	case err == nil:
+		out.CriticalPushOn = push.CriticalPushOn
+		out.ChangesPushOn = push.ChangesPushOn
+	case errors.Is(err, pgx.ErrNoRows):
+		// No such account row: the defaults.
+	default:
+		return AlertSettings{}, fmt.Errorf("service: reading push switches: %w", err)
+	}
 	row, err := s.q.GetAlertSettings(ctx, accountID)
 	switch {
 	case err == nil:
@@ -128,11 +152,20 @@ func (s *AccountService) AlertSettings(ctx context.Context, accountID int64) (Al
 }
 
 // UpdateAlertSettings merges the update over the stored state, validates the
-// result and saves it. The distance must be one of AlertRadii, and the switch
-// cannot be on without a home area. The answer is the state as stored, so a
-// switch that goes on carries the time the database stamped.
+// result and saves it. The distance must be one of AlertRadii, and the Reliable
+// switch cannot be on without a home area. The answer is the state as stored, so
+// a switch that goes on carries the time the database stamped.
+//
+// Phase 3.3 adds the two phone switches (decision 12). D-08: asking for Critical
+// on needs a home area, because Critical reports are measured from it; Changes
+// to reports I posted or voted on needs none, and turning either off never does.
+// UI-SPEC 2b: the stored Critical value is kept while the home area is missing,
+// so UpdateProfile's clear path does not touch it and setting an area again
+// brings Critical back as it was. Every part is checked before anything is
+// written; 3.2's row is written only when one of its fields is set and the push
+// row only when one of its two fields is set.
 func (s *AccountService) UpdateAlertSettings(ctx context.Context, accountID int64, u AlertSettingsUpdate) (AlertSettings, error) {
-	if u.ReliableAlerts == nil && u.AlertRadiusKm == nil {
+	if u.ReliableAlerts == nil && u.AlertRadiusKm == nil && u.CriticalPush == nil && u.ChangesPush == nil {
 		return AlertSettings{}, ValidationError{Field: "body", Message: AlertsNothingToSaveMessage}
 	}
 	if u.AlertRadiusKm != nil && !validAlertRadius(*u.AlertRadiusKm) {
@@ -150,27 +183,51 @@ func (s *AccountService) UpdateAlertSettings(ctx context.Context, accountID int6
 	if u.AlertRadiusKm != nil {
 		radius = *u.AlertRadiusKm
 	}
+	critical, changes := cur.CriticalPushOn, cur.ChangesPushOn
+	if u.CriticalPush != nil {
+		critical = *u.CriticalPush
+	}
+	if u.ChangesPush != nil {
+		changes = *u.ChangesPush
+	}
 	if on && !cur.HasHomeArea {
 		return AlertSettings{}, ValidationError{Field: "reliable_alerts", Message: AlertsNeedHomeAreaMessage}
 	}
+	if u.CriticalPush != nil && *u.CriticalPush && !cur.HasHomeArea {
+		return AlertSettings{}, ValidationError{Field: "critical_push", Message: AlertsNeedHomeAreaMessage}
+	}
 
-	row, err := s.q.UpsertAlertSettings(ctx, sqlcgen.UpsertAlertSettingsParams{
-		AccountID:        accountID,
-		ReliableAlertsOn: on,
-		AlertRadiusKm:    int16(radius),
-		Now:              s.now().UTC(),
-	})
-	if err != nil {
-		return AlertSettings{}, fmt.Errorf("service: saving alert settings: %w", err)
+	out := cur
+	if u.ReliableAlerts != nil || u.AlertRadiusKm != nil {
+		row, err := s.q.UpsertAlertSettings(ctx, sqlcgen.UpsertAlertSettingsParams{
+			AccountID:        accountID,
+			ReliableAlertsOn: on,
+			AlertRadiusKm:    int16(radius),
+			Now:              s.now().UTC(),
+		})
+		if err != nil {
+			return AlertSettings{}, fmt.Errorf("service: saving alert settings: %w", err)
+		}
+		out.ReliableAlertsOn = row.ReliableAlertsOn
+		out.AlertRadiusKm = int(row.AlertRadiusKm)
+		out.EnabledAt = nil
+		if row.EnabledAt.Valid {
+			at := row.EnabledAt.Time
+			out.EnabledAt = &at
+		}
 	}
-	out := AlertSettings{
-		ReliableAlertsOn: row.ReliableAlertsOn,
-		AlertRadiusKm:    int(row.AlertRadiusKm),
-		HasHomeArea:      cur.HasHomeArea,
-	}
-	if row.EnabledAt.Valid {
-		at := row.EnabledAt.Time
-		out.EnabledAt = &at
+	if u.CriticalPush != nil || u.ChangesPush != nil {
+		row, err := s.q.UpsertPushKindSettings(ctx, sqlcgen.UpsertPushKindSettingsParams{
+			AccountID:      accountID,
+			CriticalPushOn: critical,
+			ChangesPushOn:  changes,
+			Now:            s.now().UTC(),
+		})
+		if err != nil {
+			return AlertSettings{}, fmt.Errorf("service: saving push switches: %w", err)
+		}
+		out.CriticalPushOn = row.CriticalPushOn
+		out.ChangesPushOn = row.ChangesPushOn
 	}
 	return out, nil
 }

@@ -261,6 +261,10 @@ type ProfileQuerier interface {
 	UpsertAlertSettings(ctx context.Context, arg sqlcgen.UpsertAlertSettingsParams) (sqlcgen.UpsertAlertSettingsRow, error)
 	DisableReliableAlerts(ctx context.Context, arg sqlcgen.DisableReliableAlertsParams) error
 	GetAccountHomeCell(ctx context.Context, id int64) (*string, error)
+	// The two methods below belong to the Critical and Changes phone switches of
+	// plan 03.3-12 (PWA-03, PWA-06).
+	GetPushKindSettings(ctx context.Context, accountID int64) (sqlcgen.GetPushKindSettingsRow, error)
+	UpsertPushKindSettings(ctx context.Context, arg sqlcgen.UpsertPushKindSettingsParams) (sqlcgen.UpsertPushKindSettingsRow, error)
 }
 
 // AccountService reads and writes the caller's own profile rows. Every method
