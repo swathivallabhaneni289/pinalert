@@ -47,10 +47,12 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 5: Official Feed & Demo Mode** - First-time visitors see official alerts (NDMA SACHET, including IMD and CWC) in an Alerts view and banner, GDACS pins on the map, and a working demo immediately, instead of an empty product.
 - **Phase 6 (REMOVED 2026-10-16): Coordination** - Removed by the owner: Pinalert informs people that a situation is happening, it does not arrange help. Safety check-ins, needs and offers, the rescue team list, responder claims and the receipt code are dropped; the shareable card moved to Phase 8. The number is kept as a gap so Phases 7, 8 and 9 keep theirs.
 - [x] **Phase 7: Address search box for report location** - A reporter can type an address to place the report pin, alongside the draggable pin. (4 of 4 plans complete, UAT 6 of 6 passed, security review closed) (completed 2026-09-29)
+- [ ] **Phase 7.1: Password sign in and usernames** *(INSERTED 2026-10-25, split out of Phase 8 at planning)* - A person signs up with an email, a password and one typed 6-digit code, signs in with the password, and gives a required Username, Name and Home area in step 4; builds after Phase 5 and before Phase 8.
 - [ ] **Phase 8: Report page and comments** - A reader can open any report into its own page with the trust block and a history timeline, and later read and add moderated comments.
 - [ ] **Phase 9: Followable reporter profiles** - Reporters who opt in and have earned the Reliable tag can be followed (their Followers and Following lists are public, owner decision 2026-10-16), and followers are told when they post. First to cut if time runs short.
 
 Build order (owner, 2026-10-16): sign off 3.1 and 4, then 3.4, 3.2, 3.3, 5, 8, 6, 9; the explainer video last.
+Planning note, 2026-10-25: Phase 6 is removed, and Phase 7.1 (split out of Phase 8 under 08-CONTEXT D-11) builds right after 5 and before 8, so the order after 3.3 is 5, 7.1, 8, 9.
 
 ## Phase Details
 
@@ -989,11 +991,32 @@ Plans:
 
 - [x] 07-04-PLAN.md — debounced client-side search wiring, suggestion-to-pin placement, and the teardown and sink contract tests (wave 3)
 
+### Phase 07.1: Password sign in and usernames (INSERTED)
+
+**Goal:** A person creates an account with an email and a password, types a 6-digit code emailed once to prove the address, and signs in afterwards with the email and password only; a forgotten password is reset with the same kind of typed code, and no link is sent anywhere. Step 4 of the first-time flow (About you) asks for a Username, a Name and a Home area, all three required with no Skip, and accounts made with the old emailed link fill in what is missing, including a password, once at their next sign in. Split out of Phase 8 at planning on 2026-10-25 under 08-CONTEXT D-11, because Phase 8's comments and Phase 9's profiles both need the username, and replacing the whole sign in deserves its own security review. The decisions are 08-CONTEXT D-07 to D-11 and ROADMAP Phase 8 scope notes 5 and 6; nothing new was asked.
+**Requirements**: IDENT-01 and IDENT-04 as amended by 08-CONTEXT D-10 (sign in by password with a typed code, limits on codes and password tries), and the required step 4 of 08-CONTEXT D-08 and D-09
+**Depends on:** Phase 3.4 (the first-time flow and step 4), Phase 4 (the screening check and the limiter the username reuses), Phase 5 (the sign in screen's globe and the "Try the demo · Disclaimer · Policy" row, 05-CONTEXT D-03 and D-14, which must survive the new card)
+**UI hint**: yes
+**Success Criteria** (what must be TRUE):
+
+  1. The sign in page offers Create account and Sign in. Create account takes an email and a password, emails a 6-digit code once, and the person types it in; Sign in takes the email and the password only. No email link exists anywhere, and the email never appears in a page address.
+  2. Passwords are stored with a slow hash; codes are short lived, single use and stored hashed; wrong tries are limited per account and per device in a way that does not lock out everyone behind one shared carrier address (CGNAT); a wrong email or password both say "Email or password is wrong", and a known email gets the same "we sent a code" screen as an unknown one.
+  3. A forgotten password is reset with a typed code of the same kind.
+  4. Step 4 requires Username (unique, public, checked live for available, taken, wrong characters or kept for official use such as police, ndma, imd, govt, and screened like other free text), Name and Home area (a town or area, never a street), with no Skip; the Username can be changed later in Settings with the same live check.
+  5. An account made with the old link sets a password and fills in any missing step 4 field once, at its next sign in, in a single pass, so nobody is stopped twice.
+  6. The Phase 5 globe, the Low data panel and the "Try the demo · Disclaimer · Policy" row keep working on the new sign in card.
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 07.1 to break down)
+
 ### Phase 8: Report page and comments
 
 **Goal:** A reader can open any report from the map popup or the feed into its own page, see the same trust block, and see how the report's trust changed over time. Once Phase 4's moderation and rate limiting exist, they can also read and add short comments, so the discussion about a situation stays inside the verified feed. Raised by the owner during Phase 1.1 and again after the Phase 3 popup sketch, and was deferred in PROJECT.md until moderation and free text abuse were scoped, so that scoping is the first job of this phase's discussion. The page ships first with a history timeline built from the vote log (posted, confirmed from N places, disputed, resolved), which has no free text. Comments follow.
 **Requirements**: PAGE-01, PAGE-02, COORD-08 (the shareable card, moved here from the removed Phase 6 on 2026-10-16)
-**Depends on:** Phase 3 (page and timeline), Phase 4 (comments only)
+**Depends on:** Phase 3 (page and timeline), Phase 4 (comments only), Phase 7.1 (the username shown on comments; the password sign in, the required step 4 and the username moved there at planning on 2026-10-25 under 08-CONTEXT D-11, so this phase no longer builds them)
 **UI hint**: yes
 **Success Criteria** (what must be TRUE):
 
