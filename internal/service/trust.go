@@ -274,8 +274,9 @@ type VotingQuerier interface {
 // VotingService authorizes, records, and resolves confirm/dispute/
 // resolve/reopen votes.
 type VotingService struct {
-	q   VotingQuerier
-	now func() time.Time
+	q        VotingQuerier
+	now      func() time.Time
+	notifier ReportChangeNotifier
 }
 
 // VotingOption configures a VotingService at construction time.
@@ -287,6 +288,15 @@ type VotingOption func(*VotingService)
 func WithVotingClock(fn func() time.Time) VotingOption {
 	return func(s *VotingService) {
 		s.now = fn
+	}
+}
+
+// WithVoteChangeNotifier sets the notifier CastVote pokes after the vote row is
+// written. The poke carries the report id and the voter and decides nothing; the
+// phone alert dispatcher reads the report fresh. Without it nothing is poked.
+func WithVoteChangeNotifier(n ReportChangeNotifier) VotingOption {
+	return func(s *VotingService) {
+		s.notifier = n
 	}
 }
 
@@ -559,6 +569,13 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 		GeohashCell: cell,
 	}); err != nil {
 		return CastVoteResult{}, err
+	}
+
+	// A poke carries no decision: the phone alert dispatcher reads the report
+	// fresh through the resolver (D-07: never notify from CastVote). It does not
+	// block and cannot fail the vote.
+	if s.notifier != nil {
+		s.notifier.ReportChanged(in.ReportID, in.AccountID)
 	}
 
 	// Read the current votes back. This must come after the insert: the

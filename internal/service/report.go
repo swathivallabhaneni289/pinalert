@@ -489,6 +489,7 @@ type ReportService struct {
 	q        Querier
 	now      func() time.Time
 	screener TextScreener
+	notifier ReportChangeNotifier
 }
 
 // ReportOption configures a ReportService at construction time.
@@ -517,6 +518,15 @@ func (s *ReportService) Screener() TextScreener {
 func WithScreener(s TextScreener) ReportOption {
 	return func(rs *ReportService) {
 		rs.screener = s
+	}
+}
+
+// WithReportChangeNotifier sets the notifier SubmitChecked pokes after a report
+// is saved. The poke carries the report id and actor 0 and decides nothing; the
+// phone alert dispatcher reads the report fresh. Without it nothing is poked.
+func WithReportChangeNotifier(n ReportChangeNotifier) ReportOption {
+	return func(s *ReportService) {
+		s.notifier = n
 	}
 }
 
@@ -792,6 +802,13 @@ func (s *ReportService) SubmitChecked(ctx context.Context, sessionID string, acc
 		if checkErr != nil {
 			log.Printf("service: SubmitChecked: recording the text check for report %d: %v", created.ID, checkErr)
 		}
+	}
+
+	// A poke carries no decision: the phone alert dispatcher reads the report
+	// fresh through the resolver (D-07: never notify from Submit). It does not
+	// block and cannot fail the post.
+	if s.notifier != nil {
+		s.notifier.ReportChanged(created.ID, 0)
 	}
 
 	held := ReportMeta{Severity: created.Severity, Category: created.Category, Moderation: created.Moderation}.Withheld()
