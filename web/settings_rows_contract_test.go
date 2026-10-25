@@ -7,8 +7,8 @@ import (
 )
 
 // Phase 3.2 plan 12: the People and reports and Account sections of Settings
-// and the three windows they open (D-11, D-23, LAYOUT-06, UI-SPEC Surface E2 and
-// E3). The markup is pinned here; the script is pinned in the same file below.
+// and the two windows and the Delete box they open (D-11, D-23, LAYOUT-06,
+// UI-SPEC Surface E2 and E3). The markup is pinned here; the script is pinned in the same file below.
 
 // settingsSectionRegion returns the markup of the section labelled by titleID,
 // up to the next section or the end of main.
@@ -104,9 +104,10 @@ func TestAccountSectionOnBothSizes(t *testing.T) {
 	}
 }
 
-// TestAccountConfirmWindows pins UI-SPEC E2 and E3 for the three new windows:
-// each is a modal dialog with the X as the only way out, the exact words, and
-// in the two confirm windows exactly one filled button.
+// TestAccountConfirmWindows pins UI-SPEC E2 and E3 for the two windows, Muted
+// reports and Log out of all devices: each is a modal dialog with the X as the
+// only way out, the exact words, and in the confirm window exactly one filled
+// button. The Delete box is pinned by TestDeleteAccountConfirmBox.
 func TestAccountConfirmWindows(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
 	windows := []struct {
@@ -124,11 +125,6 @@ func TestAccountConfirmWindows(t *testing.T) {
 		{"settings-logout-all-window", "Log out of all devices", []string{
 			"This logs you out of Pinalert on every phone and computer, including this one. You can sign in again any time with your email.",
 			`id="settings-logout-all-go"`, `<p class="inline-error" id="settings-logout-all-error" role="alert" hidden></p>`,
-		}, 1},
-		{"settings-delete-window", "Delete my account", []string{
-			"<p>This cannot be undone.</p>",
-			"Your email, name, home area, updates, muted reports and settings are deleted, and you are logged out on every device.",
-			`id="settings-delete-go"`, `<p class="inline-error" id="settings-delete-error" role="alert" hidden></p>`,
 		}, 1},
 	}
 	for _, w := range windows {
@@ -164,11 +160,6 @@ func TestAccountConfirmWindows(t *testing.T) {
 			t.Errorf("%s is not hidden at load", w.id)
 		}
 	}
-	// The Delete button is the dark filled one; the red lives on the row label only.
-	del := settingsWindowRegion(t, page, "settings-delete-window")
-	if strings.Contains(del, "critical") || strings.Contains(del, "danger") {
-		t.Errorf("the Delete window button or text carries the destructive colour; the red is on the row label only")
-	}
 	for _, dash := range []rune{0x2013, 0x2014} {
 		if strings.ContainsRune(page, dash) {
 			t.Errorf("settings.html.tmpl holds the dash character U+%04X", dash)
@@ -176,6 +167,60 @@ func TestAccountConfirmWindows(t *testing.T) {
 	}
 	p421InOrder(t, "script order", page,
 		`/static/js/settings.js?v={{.AssetVersion}}`, `/static/js/settings-alerts.js?v={{.AssetVersion}}`)
+}
+
+// TestDeleteAccountConfirmBox pins the Delete my account box: a native dialog
+// that looks like the Log out box, with the exact words and its place in the page.
+//
+// Amended 2026-10-25, the owner said "yes exactly how the logout option is
+// looking and it should work like any delete my account thing work", so Delete
+// my account asks in a native dialog with the Log out box classes, Cancel and a
+// red Delete; this replaces UI-SPEC E3's X only window and its dark filled
+// button.
+func TestDeleteAccountConfirmBox(t *testing.T) {
+	page := p421ReadTemplate(t, "settings.html.tmpl")
+	const open = `<dialog id="settings-delete-confirm" class="logout-confirm" aria-labelledby="settings-delete-title" aria-describedby="settings-delete-text">`
+	at := strings.Index(page, open)
+	if at == -1 {
+		t.Fatalf("settings.html.tmpl lacks the exact opening tag %s", open)
+	}
+	end := strings.Index(page[at:], "</dialog>")
+	if end == -1 {
+		t.Fatalf("the Delete box has no closing dialog tag")
+	}
+	region := page[at : at+end]
+	for _, want := range []string{
+		`class="logout-confirm__body"`,
+		`<h2 class="logout-confirm__title" id="settings-delete-title" tabindex="-1">Delete your account?</h2>`,
+		`<div class="logout-confirm__text" id="settings-delete-text">`,
+		`<p>This cannot be undone.</p>`,
+		`<p>Your email, name, home area, updates, muted reports and settings are deleted, and you are logged out on every device.</p>`,
+		`<p id="settings-delete-rule">`,
+		`<p class="inline-error" id="settings-delete-error" role="alert" hidden></p>`,
+		`<div class="logout-confirm__actions">`,
+		`<button type="button" class="btn" id="settings-delete-cancel">Cancel</button>`,
+		`<button type="button" class="btn btn--destructive" id="settings-delete-go">Delete</button>`,
+	} {
+		if !strings.Contains(region, want) {
+			t.Errorf("the Delete box lacks %q", want)
+		}
+	}
+	p421InOrder(t, "Delete box order", region,
+		"This cannot be undone.", "Your email", `id="settings-delete-rule"`,
+		`id="settings-delete-error"`, `id="settings-delete-cancel"`, `id="settings-delete-go"`)
+	for _, banned := range []string{`aria-label="Close"`, "app-icon--x", "autofocus", "btn--primary"} {
+		if strings.Contains(region, banned) {
+			t.Errorf("the Delete box holds %q", banned)
+		}
+	}
+	for _, old := range []string{"settings-delete-window", "settings-delete-close"} {
+		if strings.Contains(page, old) {
+			t.Errorf("settings.html.tmpl still holds %q: the old Delete window is gone", old)
+		}
+	}
+	// A direct child of the body: after main, before the first window, so it is
+	// never inside a hidden ancestor and never inside a window's region.
+	p421InOrder(t, "Delete box position", page, "</main>", open, `id="settings-name-window"`)
 }
 
 // TestDeleteRuleSentenceIsOneString pins the owner's answer to Q2 (2026-10-18):
