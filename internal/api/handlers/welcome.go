@@ -21,11 +21,11 @@ const welcomeTemplateName = "welcome.html.tmpl"
 // sent. It is a constant, so no part of a request can build the target.
 const welcomeRedirectTarget = "/"
 
-// welcomeSteps are the names of the steps that render in Phase 3.4, in order.
-// The laptop step list is drawn from them and the count shown as "Step n of 4"
-// is their number. The Alerts step waits for Phase 3.3; when it adds a step it
-// adds a name here and a section to the template, and the count follows.
-var welcomeSteps = []string{"Welcome", "Disclaimer and policy", "Your location", "About you"}
+// welcomeSteps are the names of the steps of the first-time flow, in order.
+// The laptop step list is drawn from them and the count shown as "Step n of 5"
+// is their number. Phase 3.3 (plan 13) added the fifth step, Alerts; a later
+// step adds a name here and a section to the template.
+var welcomeSteps = []string{"Welcome", "Disclaimer and policy", "Your location", "About you", "Alerts"}
 
 // welcomeStepView is one entry of the laptop step list.
 type welcomeStepView struct {
@@ -53,6 +53,17 @@ type welcomeViewModel struct {
 	// data-account-id on the flow root so the position saved in step 3 has an
 	// owner (skeptic S-2). It is a number, never the address.
 	AccountID int64
+	// PushPublicKey is the public VAPID key, rendered as data-push-key on the
+	// flow root so step 5 can turn alerts on (Phase 3.3). It is public by design
+	// and empty when push is off, which step 5 shows as an unsupported device.
+	PushPublicKey string
+	// HasHomeArea says whether the account has a stored home area, so step 5
+	// shows "Set your home area to get these." only when it has none.
+	HasHomeArea bool
+	// AlertExample is the example notification of step 5, built by the same Go
+	// function as real notifications (service.AlertExample), so the words can
+	// never drift from what a real notification says.
+	AlertExample service.PushText
 }
 
 // welcomeStartStep is the step a person lands on. Agreement is to a text, so
@@ -104,6 +115,9 @@ func WelcomePage(tmpl *template.Template, accounts *service.AccountService, cfg 
 			Legal:        legalTextFor(chrome),
 			StartStep:    welcomeStartStep(acc),
 			AccountID:    acc.ID,
+
+			PushPublicKey: cfg.PushPublicKey,
+			AlertExample:  service.AlertExample(),
 		}
 		for i, name := range welcomeSteps {
 			vm.Steps = append(vm.Steps, welcomeStepView{Number: i + 1, Name: name})
@@ -113,6 +127,7 @@ func WelcomePage(tmpl *template.Template, accounts *service.AccountService, cfg 
 		}
 		if profile.HomeAreaName != nil {
 			vm.HomeAreaName = *profile.HomeAreaName
+			vm.HasHomeArea = vm.HomeAreaName != ""
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

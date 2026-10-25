@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"pinalert/internal/api"
+	"pinalert/internal/service"
 	sqlcgen "pinalert/internal/store/sqlc"
 )
 
@@ -22,8 +23,17 @@ import (
 // cmd/server/main.go does.
 func welcomeServer(t *testing.T) (srvURL string, newClient func(email string) (*http.Client, *http.Client), pool *pgxpool.Pool) {
 	t.Helper()
+	return welcomeServerWithKey(t, "")
+}
+
+// welcomeServerWithKey is welcomeServer with the page config's public push key
+// set (Phase 3.3 plan 13), so a test can read it back as data-push-key. The key
+// is a plain placeholder word, never key material.
+func welcomeServerWithKey(t *testing.T, pushKey string) (srvURL string, newClient func(email string) (*http.Client, *http.Client), pool *pgxpool.Pool) {
+	t.Helper()
 	srv, mailer, pool := newE2EServerWith(t, func(d *api.Deps, _ *sqlcgen.Queries) {
 		d.OnboardingGate = true
+		d.Page.PushPublicKey = pushKey
 	})
 	return srv.URL, func(email string) (*http.Client, *http.Client) {
 		follow := newJarClient(t)
@@ -105,8 +115,11 @@ func TestOnboardingFlowEndToEnd(t *testing.T) {
 		t.Errorf("Content-Type = %q", got)
 	}
 	for _, want := range []string{
-		`data-start-step="1"`, "Step 1 of 4", "Step 2 of 4", "Step 3 of 4", "Step 4 of 4",
+		// Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): the
+		// flow has five steps, so every label reads "of 5" and step 5 renders.
+		`data-start-step="1"`, "Step 1 of 5", "Step 2 of 5", "Step 3 of 5", "Step 4 of 5", "Step 5 of 5",
 		"Welcome to Pinalert", "Disclaimer and policy", "Show what is happening near you", "About you",
+		"Get alerts when it matters",
 		"call 112 first.", "Please read this before you use Pinalert. Tap Agree to continue.",
 		// Plan 33: step 3 holds only Allow location and Not now, and the Disagree
 		// box is drawn with the existing log out form.
@@ -119,9 +132,11 @@ func TestOnboardingFlowEndToEnd(t *testing.T) {
 		`id="welcome-logout">Log out</button>`,
 		// Plan 30: free movement between the steps. Back on steps 2 to 4, and
 		// each name in the step list is a button; the current one is marked.
-		`id="welcome-back-2"`, `id="welcome-back-3"`, `id="welcome-back-4"`,
+		`id="welcome-back-2"`, `id="welcome-back-3"`, `id="welcome-back-4"`, `id="welcome-back-5"`,
 		`<button type="button" class="welcome__steps-button" data-step="1" aria-current="step">`,
 		`<button type="button" class="welcome__steps-button" data-step="4">`,
+		`<button type="button" class="welcome__steps-button" data-step="5">`,
+		`<span class="welcome__steps-name">Alerts</span>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/welcome lacks %q", want)
@@ -135,7 +150,9 @@ func TestOnboardingFlowEndToEnd(t *testing.T) {
 			t.Errorf("the scroll box lacks %q", want)
 		}
 	}
-	for _, banned := range []string{"Get alerts when it matters", "Demo", "welcome-flow@example.com"} {
+	// Amended 2026-10-18 by Phase 3.3 plan 13: "Get alerts when it matters" is
+	// step 5's own title now and left this list.
+	for _, banned := range []string{"Demo", "welcome-flow@example.com"} {
 		if strings.Contains(body, banned) {
 			t.Errorf("/welcome holds %q", banned)
 		}
@@ -148,6 +165,10 @@ func TestOnboardingFlowEndToEnd(t *testing.T) {
 		if !strings.Contains(body, `id="welcome-step-`+n+`" aria-labelledby="welcome-step-`+n+`-title" hidden`) {
 			t.Errorf("step %s does not start hidden", n)
 		}
+	}
+	// Step 5 carries its device state between the label and hidden.
+	if !strings.Contains(body, `id="welcome-step-5" aria-labelledby="welcome-step-5-title" data-device-state="ready" hidden`) {
+		t.Errorf("step 5 does not start hidden")
 	}
 
 	// Done before consent is refused and changes nothing.
@@ -389,6 +410,86 @@ func TestWelcomeEscapesStoredValues(t *testing.T) {
 			t.Errorf("/welcome still holds %q: step 3 no longer fills the home area", banned)
 		}
 	}
+}
+
+// TestWelcomeStepFiveRendersForNewAccount pins Phase 3.3 plan 13: a new account
+// gets step 5 on /welcome, with the example notification printed from the Go
+// builder and the configured public key on the flow root. A device that has no
+// key gets an empty attribute, which step 5 shows as an unsupported device.
+func TestWelcomeStepFiveRendersForNewAccount(t *testing.T) {
+	const key = "test-public-key-placeholder"
+	base, newClient, pool := welcomeServerWithKey(t, key)
+	const email = "welcome-step5@example.com"
+	client, still := newClient(email)
+
+	resp, body := welcomeGet(t, still, base, "/welcome")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /welcome: %d", resp.StatusCode)
+	}
+	example := service.AlertExample()
+	if example.Title != "Water rising near Central Market" {
+		t.Fatalf("the Go example title is %q, want the UI-SPEC sample", example.Title)
+	}
+	for _, want := range []string{
+		`id="welcome-step-5"`, "Step 5 of 5", "Get alerts when it matters",
+		"Critical reports near your home area.", "Set your home area to get these.",
+		`<p class="welcome__example-title">` + example.Title + `</p>`,
+		`<p class="welcome__example-body">` + example.Body + `</p>`,
+		`id="welcome-alerts-allow">Allow alerts</button>`, `id="welcome-alerts-later">Not now</button>`,
+		`<span class="welcome__steps-name">Alerts</span>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/welcome lacks %q", want)
+		}
+	}
+	// No home area: the card shows its second line.
+	if strings.Contains(body, `id="welcome-alerts-nohome" hidden`) {
+		t.Errorf("an account with no home area must see the Set your home area line")
+	}
+	tag := p25OpeningTag(t, body, `<div class="welcome" id="welcome"`)
+	if !strings.Contains(tag, `data-push-key="`+key+`"`) {
+		t.Errorf("the flow root %q does not carry data-push-key=%q", tag, key)
+	}
+
+	// A stored home area hides the line.
+	meWant(t, "profile", meSend(t, client, http.MethodPatch, base+"/api/me/profile",
+		`{"home_area":{"name":"Central Market","lat":12.9,"lon":77.6}}`), http.StatusOK)
+	_, body = welcomeGet(t, still, base, "/welcome")
+	if !strings.Contains(body, `id="welcome-alerts-nohome" hidden`) {
+		t.Errorf("an account with a home area must not see the Set your home area line")
+	}
+	_ = pool
+}
+
+// TestWelcomeIsNotDoneBeforeStepFive pins decision 15: the flow is recorded as
+// done only from step 5. A person who agreed and saved the profile of step 4 but
+// never touched step 5 still has first_run_done_at NULL, and /welcome shows the
+// flow again.
+func TestWelcomeIsNotDoneBeforeStepFive(t *testing.T) {
+	base, newClient, pool := welcomeServer(t)
+	const email = "welcome-notdone@example.com"
+	client, still := newClient(email)
+
+	meWant(t, "consent", meSend(t, client, http.MethodPost, base+"/api/me/consent", ""), http.StatusNoContent)
+	meWant(t, "profile", meSend(t, client, http.MethodPatch, base+"/api/me/profile", `{"display_name":"Asha"}`), http.StatusOK)
+
+	var done bool
+	if err := pool.QueryRow(context.Background(),
+		`SELECT first_run_done_at IS NOT NULL FROM accounts WHERE email = $1`, email).Scan(&done); err != nil {
+		t.Fatalf("reading first_run_done_at: %v", err)
+	}
+	if done {
+		t.Errorf("first_run_done_at is set after step 4 alone: the flow is done only from step 5")
+	}
+	resp, _ := welcomeGet(t, still, base, "/welcome")
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET /welcome before step 5 is done: %d, want the flow (200)", resp.StatusCode)
+	}
+	welcomeWantRedirect(t, still, base, "/", http.StatusFound, "/welcome")
+
+	// Step 5's own call finishes it.
+	meWant(t, "done", meSend(t, client, http.MethodPost, base+"/api/me/first-run-done", ""), http.StatusNoContent)
+	welcomeWantRedirect(t, still, base, "/welcome", http.StatusSeeOther, "/")
 }
 
 // TestWelcomeRendersOwnAccountID pins skeptic S-2 (Phase 3.4 plan 27): the

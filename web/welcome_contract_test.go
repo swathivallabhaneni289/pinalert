@@ -30,10 +30,14 @@ func w10Count(t *testing.T, label, text, needle string, want int) {
 	}
 }
 
-// TestWelcomeFourStepsInOrder pins the four step titles and their order, the
-// "Step n of 4" line above each, and the absence of the Alerts step, which
-// waits for Phase 3.3 (D-28).
-func TestWelcomeFourStepsInOrder(t *testing.T) {
+// TestWelcomeFiveStepsInOrder pins the five step titles and their order and the
+// "Step n of 5" line above each (D-28).
+//
+// Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): the flow has
+// a fifth step, Alerts, so every label reads "of 5" and the test carries the
+// fifth title; the old absence check for the Alerts step is gone. The function
+// was TestWelcomeFourStepsInOrder.
+func TestWelcomeFiveStepsInOrder(t *testing.T) {
 	page := w10Template(t)
 
 	titles := []string{
@@ -41,6 +45,7 @@ func TestWelcomeFourStepsInOrder(t *testing.T) {
 		"Disclaimer and policy",
 		"Show what is happening near you",
 		"About you",
+		"Get alerts when it matters",
 	}
 	pos := 0
 	for i, title := range titles {
@@ -52,22 +57,27 @@ func TestWelcomeFourStepsInOrder(t *testing.T) {
 			continue
 		}
 		pos += at + len(want)
-		label := `<p class="welcome__label">Step ` + string(rune('0'+n)) + ` of 4</p>`
+		label := `<p class="welcome__label">Step ` + string(rune('0'+n)) + ` of 5</p>`
 		w10Count(t, "welcome.html.tmpl", page, label, 1)
 		w10Count(t, "welcome.html.tmpl", page, `<section class="welcome__step" id="welcome-step-`+string(rune('0'+n))+`"`, 1)
 	}
-	if strings.Contains(page, "Step 5") || strings.Contains(page, "of 5") {
-		t.Errorf("the flow has four steps in Phase 3.4, a fifth is Phase 3.3's")
+	if strings.Contains(page, " of 4") || strings.Contains(page, "Step 6") {
+		t.Errorf("the flow has exactly five steps, every one counted of 5")
 	}
 
 	// The laptop step list is drawn from the steps the handler passes.
 	p13MustContain(t, "step list", page, `<ol class="welcome__steps"`, `{{range .Steps}}`, `data-step="{{.Number}}"`)
 
-	// The Alerts step and its sentences are not rendered, and neither is the
-	// second Disagree sentence that Phase 5 adds with the Demo.
+	// Phase 5's sentences are not rendered: the second official alerts card and
+	// the Demo, with the second Disagree sentence it adds.
+	//
+	// Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): the
+	// Alerts sentences ("Get alerts when it matters", "Allow alerts", "Critical
+	// reports near your home area") are step 5's own words now and left this
+	// list; the obsolete "Share, then Add to Home Screen" ban is gone because
+	// the guide's real wording lives in device_guide.html.tmpl.
 	for _, banned := range []string{
-		"Get alerts when it matters", "Allow alerts", "Critical reports near your home area",
-		"Severe official alerts", "Share, then Add to Home Screen", "Demo", "look around", "looking around",
+		"Severe official alerts", "Demo", "look around", "looking around",
 	} {
 		if strings.Contains(page, banned) {
 			t.Errorf("welcome.html.tmpl holds %q, which belongs to a later phase", banned)
@@ -89,7 +99,9 @@ func TestWelcomeFourStepsInOrder(t *testing.T) {
 		"Live emergency updates from people nearby, confirmed by others who are there.")
 	// Amended 2026-10-17 by Phase 3.4 plan 28: step 3 shows three cards of its
 	// own (the viewing session), so the page holds six in all.
-	w10Count(t, "welcome.html.tmpl", page, `<li class="welcome__card`, 6)
+	// Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): step 5
+	// holds one card of its own (Critical reports), so the page holds seven.
+	w10Count(t, "welcome.html.tmpl", page, `<li class="welcome__card`, 7)
 }
 
 // TestWelcomeStep2ReadsTheSharedText pins step 2: the scroll box holds the two
@@ -133,12 +145,16 @@ func TestWelcomeStep2ReadsTheSharedText(t *testing.T) {
 	w10Count(t, "welcome.html.tmpl", page, `action="/auth/logout"`, 1)
 	w10Count(t, "welcome.html.tmpl", page, `id="welcome-disagree-message"`, 1)
 	w10Count(t, "welcome.html.tmpl", page, "Sorry, you need to agree before you can continue.", 1)
-	p13MustNotContain(t, "disagree box", page, `role="status" hidden>`, "keep everyone safe", "Read it again", "In danger?", "welcome__notice-call", "welcome__notice-danger")
+	p13MustNotContain(t, "disagree box", page, "keep everyone safe", "Read it again", "In danger?", "welcome__notice-call", "welcome__notice-danger")
 	// The box sits under the buttons it answers, and its own buttons come in
 	// the order Read again, Log out.
 	p13Ordered(t, page, "step 2", `id="welcome-agree"`, `id="welcome-disagree-message"`, `id="welcome-reread"`, `id="welcome-logout"`, `id="welcome-error-2"`)
 	// The box holds no number and no call link, typed or built.
 	boxHTML := page[strings.Index(page, `id="welcome-disagree-message"`):strings.Index(page, `id="welcome-error-2"`)]
+	// Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): step 5
+	// has a real status line (role="status" hidden), so the ban on a status
+	// region now covers the Disagree box only, which is a group that takes focus.
+	p13MustNotContain(t, "disagree box", boxHTML, `role="status"`)
 	for _, banned := range []string{"112", "tel:", "CallHref", "Numbers", "<a "} {
 		if strings.Contains(boxHTML, banned) {
 			t.Errorf("the Disagree box holds %q; the owner dropped the call line", banned)
@@ -326,16 +342,18 @@ func TestWelcomeStep3And4Privacy(t *testing.T) {
 func TestWelcomeStepsAreFreelyNavigable(t *testing.T) {
 	page := w10Template(t)
 
-	// Back on steps 2 to 4 only, in the head line with the step label.
-	for n := 2; n <= 4; n++ {
+	// Back on steps 2 to 5 only, in the head line with the step label.
+	// Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): the loop
+	// runs to step 5 and every label reads "of 5"; the Back count is four.
+	for n := 2; n <= 5; n++ {
 		d := string(rune('0' + n))
 		p13MustContain(t, "step "+d, page,
 			`<button type="button" class="welcome__back" id="welcome-back-`+d+`"><span class="app-icon app-icon--arrow-left" aria-hidden="true"></span><span class="welcome__back-label">Back</span></button>`)
-		p13Ordered(t, page, "step "+d+" head", `id="welcome-back-`+d+`"`, `<p class="welcome__label">Step `+d+` of 4</p>`, `id="welcome-step-`+d+`-title"`)
+		p13Ordered(t, page, "step "+d+" head", `id="welcome-back-`+d+`"`, `<p class="welcome__label">Step `+d+` of 5</p>`, `id="welcome-step-`+d+`-title"`)
 	}
 	p13MustNotContain(t, "step 1", page, `id="welcome-back-1"`)
-	w10Count(t, "welcome.html.tmpl", page, `class="welcome__head"`, 3)
-	w10Count(t, "welcome.html.tmpl", page, `class="welcome__back"`, 3)
+	w10Count(t, "welcome.html.tmpl", page, `class="welcome__head"`, 4)
+	w10Count(t, "welcome.html.tmpl", page, `class="welcome__back"`, 4)
 
 	// Each name in the step list is a button; the current one is marked on it.
 	p13MustContain(t, "step list", page,
@@ -417,4 +435,98 @@ func TestWelcomeScriptsAndStyles(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestWelcomeAlertsStep pins step 5 of the first-time flow (Phase 3.3 plan 13,
+// UI-SPEC Surface 1, P33-C2 to P33-C12): the section and its four device parts,
+// the three buttons, the Back control, the status and error lines, the key on
+// the flow root, the one install guide, and not a word about noise.
+func TestWelcomeAlertsStep(t *testing.T) {
+	page := w10Template(t)
+
+	step5 := regexp.MustCompile(`(?s)<section class="welcome__step" id="welcome-step-5".*?</section>`).FindString(page)
+	if step5 == "" {
+		t.Fatalf("no step 5 section in welcome.html.tmpl")
+	}
+	p13MustContain(t, "step 5", step5,
+		`data-device-state="ready"`,
+		`<p class="welcome__label">Step 5 of 5</p>`,
+		`<button type="button" class="welcome__back" id="welcome-back-5">`,
+		`<h1 class="welcome__title" id="welcome-step-5-title" tabindex="-1">Get alerts when it matters</h1>`,
+		// P33-C3, P33-C4, P33-C6
+		"Pinalert can notify you on this device, even when it is closed, about:",
+		"Critical reports near your home area.",
+		"Set your home area to get these.",
+		"You can change this any time in Settings.",
+		// P33-C12
+		"Notifications are blocked for Pinalert in this browser. Allow them in your browser settings, then turn on On this device in Settings.",
+		"This browser can't show notifications. Updates still show in the bell.",
+		// P33-C18
+		`role="group" aria-label="Example notification"`,
+		`src="/icons/app.svg" width="40" height="40" alt=""`,
+		">Example</p>",
+		// the one install guide
+		`{{template "device_guide"}}`)
+
+	// The four parts, the lines and the three buttons, each id once.
+	for _, id := range []string{
+		"welcome-alerts-ready", "welcome-alerts-card", "welcome-alerts-nohome", "welcome-alerts-install",
+		"welcome-alerts-blocked", "welcome-alerts-unsupported", "welcome-alerts-status", "welcome-alerts-error",
+		"welcome-alerts-allow", "welcome-alerts-later", "welcome-alerts-continue", "welcome-back-5",
+	} {
+		w10Count(t, "welcome.html.tmpl", page, `id="`+id+`"`, 1)
+	}
+	p13MustContain(t, "step 5 buttons", step5,
+		`<button type="button" class="btn btn--primary" id="welcome-alerts-allow">Allow alerts</button>`,
+		`<button type="button" class="btn" id="welcome-alerts-later">Not now</button>`,
+		`<button type="button" class="btn btn--primary" id="welcome-alerts-continue" hidden>Continue</button>`)
+	p13Ordered(t, step5, "step 5 buttons", `id="welcome-alerts-allow"`, `id="welcome-alerts-later"`, `id="welcome-alerts-continue"`)
+	// The status line is a status region and the error line an alert.
+	p13MustContain(t, "step 5 lines", step5,
+		`id="welcome-alerts-status" role="status" hidden>`,
+		`<p class="inline-error" id="welcome-alerts-error" role="alert" hidden>`)
+	// Only the ready part shows from the start: the other three parts are hidden
+	// until the script picks one.
+	for _, id := range []string{"welcome-alerts-install", "welcome-alerts-blocked", "welcome-alerts-unsupported"} {
+		if !regexp.MustCompile(`id="` + id + `"[^>]*\shidden`).MatchString(step5) {
+			t.Errorf("%s does not start hidden", id)
+		}
+	}
+	// The key rides on the flow root, and the install guide has no second copy.
+	root := regexp.MustCompile(`<div class="welcome" id="welcome"[^>]*>`).FindString(page)
+	p13MustContain(t, "flow root", root, `data-push-key="{{.PushPublicKey}}"`)
+	w10Count(t, "welcome.html.tmpl", page, `{{template "device_guide"}}`, 1)
+	w10Count(t, "welcome.html.tmpl", page, "/static/css/device-guide.css?v={{.AssetVersion}}", 1)
+	p13MustContain(t, "step 5 home area", step5, `id="welcome-alerts-nohome"{{if .HasHomeArea}} hidden{{end}}>`)
+
+	// The install title lives in welcome.js, so it has one source.
+	if strings.Contains(page, "Install to get alerts") {
+		t.Errorf("the install title lives in welcome.js, not in the template, so it has one source")
+	}
+	// Nothing in step 5 promises a sound, and no long dash is written.
+	if got := noiseWordsIn(htmlTagPattern.ReplaceAllString(templateCopy(stripReadTemplate(t, "welcome.html.tmpl")), " ")); len(got) != 0 {
+		t.Errorf("welcome.html.tmpl holds the noise words %v", got)
+	}
+	for _, dash := range []string{"–", "—"} {
+		if strings.Contains(stripReadTemplate(t, "welcome.html.tmpl"), dash) {
+			t.Errorf("welcome.html.tmpl holds the long dash U+%04X", []rune(dash)[0])
+		}
+	}
+}
+
+// TestWelcomeAlertsExampleFromGo pins that the example notification of step 5
+// is printed from the Go builder (service.AlertExample) and the template holds no
+// copy of its sentences, so the example can never drift from a real
+// notification (UI-SPEC P33-C5, Surface 3).
+func TestWelcomeAlertsExampleFromGo(t *testing.T) {
+	page := w10Template(t)
+	p13MustContain(t, "example", page,
+		`<p class="welcome__example-title">{{.AlertExample.Title}}</p>`,
+		`<p class="welcome__example-body">{{.AlertExample.Body}}</p>`)
+	w10Count(t, "welcome.html.tmpl", page, "{{.AlertExample.Title}}", 1)
+	w10Count(t, "welcome.html.tmpl", page, "{{.AlertExample.Body}}", 1)
+	p13MustNotContain(t, "welcome.html.tmpl", page,
+		"Water rising", "Central Market", "Not confirmed yet", "from your home area.")
+	js := p421ReadStatic(t, "js/welcome.js")
+	p13MustNotContain(t, "welcome.js", js, "Water rising", "Central Market", "Not confirmed yet")
 }
