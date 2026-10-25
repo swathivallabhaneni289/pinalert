@@ -181,7 +181,9 @@ func TestDeviceGuideCopy(t *testing.T) {
 	for _, want := range []string{
 		`{{define "device_guide"}}`,
 		`<p class="device-guide__lead">On this device, alerts work once Pinalert is on your Home Screen.</p>`,
-		`<ol class="device-guide__steps">`,
+		// T-01 (2026-10-25): list-style none drops the list role in Safari, so the
+		// ol carries role="list" and VoiceOver keeps "1 of 3".
+		`<ol class="device-guide__steps" role="list">`,
 		`<span class="app-icon app-icon--share" aria-hidden="true"></span>`,
 		`<span class="app-icon app-icon--square-plus" aria-hidden="true"></span>`,
 		`<span class="app-icon app-icon--bell" aria-hidden="true"></span>`,

@@ -75,6 +75,13 @@
   font-weight: var(--font-weight-regular);
   text-align: left;
   text-decoration: none;
+}
+
+/* Only a row that acts shows the hand. The blocked and unsupported On this
+   device rows are plain divs, not controls, and keep the default cursor
+   (T-03, 2026-10-25). The switch label rows set theirs in updates.css. */
+button.place-row,
+a.place-row {
   cursor: pointer;
 }
 
