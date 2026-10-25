@@ -530,3 +530,49 @@ func TestWelcomeAlertsExampleFromGo(t *testing.T) {
 	js := p421ReadStatic(t, "js/welcome.js")
 	p13MustNotContain(t, "welcome.js", js, "Water rising", "Central Market", "Not confirmed yet")
 }
+
+// TestWelcomeAlertsScript pins how welcome.js runs step 5 (Phase 3.3 plan 13,
+// T-03.3-25, T-03.3-15, decision 15): the browser's prompt runs only from the
+// Allow alerts tap, Not now and the Continue buttons never reach it, the flow is
+// recorded as done only from step 5, and each sentence the script writes has one
+// source.
+func TestWelcomeAlertsScript(t *testing.T) {
+	raw := p421ReadStatic(t, "js/welcome.js")
+	js := stripJSComments(raw)
+
+	// The sentences the script writes (the others are in the template).
+	for _, sentence := range []string{
+		`'Install to get alerts'`,
+		`'Alerts are off on this device.'`,
+		`'Couldn\'t turn alerts on. Try again.'`,
+		`'You\'re offline, so this wasn\'t saved. Try again when you have a signal.'`,
+	} {
+		w10Count(t, "welcome.js", js, sentence, 1)
+	}
+
+	// The browser prompt: one call to enable, inside the Allow alerts handler,
+	// before anything is awaited; the script never names the prompt itself.
+	w10Count(t, "welcome.js", js, "PinalertNotify.enable(", 1)
+	p13MustNotContain(t, "welcome.js", js, "requestPermission", "Notification.", "serviceWorker", "pushManager")
+	allow := jsFunctionBody(t, js, "onAllowAlerts()")
+	p13Ordered(t, allow, "onAllowAlerts", "if (alertsBusy || needAgreement()) {", "window.PinalertNotify.enable(pushKey)", ".then(")
+	p13MustContain(t, "wiring", js, "alertsAllow.addEventListener('click', onAllowAlerts);",
+		"alertsLater.addEventListener('click', onNotNow);", "alertsContinue.addEventListener('click', onAlertsContinue);")
+	for _, name := range []string{"onNotNow()", "onAlertsContinue()", "alertsDone()"} {
+		body := jsFunctionBody(t, js, name)
+		p13MustNotContain(t, name, body, "enable(", "requestPermission", "PinalertNotify")
+	}
+
+	// The flow is recorded as done from step 5 only: postDone has one caller.
+	w10Count(t, "welcome.js", js, "postDone()", 2) // its definition and its one call
+	p13MustContain(t, "alertsDone", jsFunctionBody(t, js, "alertsDone()"), "return postDone();")
+	for _, name := range []string{"finish(save)", "toAlerts()"} {
+		p13MustNotContain(t, name, jsFunctionBody(t, js, name), "postDone(")
+	}
+	p13MustContain(t, "toAlerts", jsFunctionBody(t, js, "toAlerts()"), "setFinishing(false);", "goTo(5);")
+
+	// The device states come from notify.js and go through the one drawing
+	// function; the guide title is the script's own and set with textContent.
+	p13MustContain(t, "welcome.js", js, "window.PinalertNotify", ".baseState()", ".deviceState(pushKey)", "data-push-key", "setText(alertsTitle,")
+	p13MustContain(t, "enterAlerts", jsFunctionBody(t, js, "enterAlerts()"), "drawAlerts(", "alertsSeq")
+}
