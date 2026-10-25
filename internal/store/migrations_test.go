@@ -906,3 +906,239 @@ func TestMigration00010(t *testing.T) {
 		t.Errorf("after the round trip: flags %q, want spam:- dangerous:-", got)
 	}
 }
+
+// TestMigration00011 covers the Phase 3.3 migration: the file carries both
+// goose markers, builds nothing concurrently and names every constraint where
+// it adds it; on a database it adds the three push tables and the four new
+// columns, the CHECK lists and partial unique indexes refuse what they must,
+// an alert settings row with only an account id reads Critical on and Changes
+// off, Down removes everything again and Up applies again.
+func TestMigration00011(t *testing.T) {
+	const file = "migrations/00011_add_push.sql"
+	contents, err := MigrationsFS.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", file, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", file)
+	}
+	var code []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		code = append(code, line)
+	}
+	if strings.Contains(strings.ToUpper(strings.Join(code, "\n")), "CONCURRENTLY") {
+		t.Error("migration 00011 must not use CONCURRENTLY: goose runs it inside a transaction")
+	}
+	for _, name := range []string{
+		"push_subscriptions_endpoint_shape", "push_subscriptions_key_len",
+		"push_outbox_kind_valid", "push_outbox_state_valid", "push_outbox_skip_reason_valid",
+		"push_outbox_update_shape", "push_report_progress_state_valid", "reports_area_name_len",
+		"uq_push_outbox_first", "uq_push_outbox_confirmed", "uq_push_outbox_changed",
+		"idx_push_outbox_due", "idx_push_outbox_account_sent", "idx_push_subscriptions_account",
+		"idx_push_subscriptions_session", "idx_accounts_home_area_cell",
+	} {
+		if !strings.Contains(text[:down], name) {
+			t.Errorf("migration 00011 Up must add %s", name)
+		}
+	}
+	for _, table := range []string{"push_subscriptions", "push_outbox", "push_report_progress"} {
+		if !strings.Contains(text[down:], "DROP TABLE "+table+";") {
+			t.Errorf("migration 00011 Down must drop table %s", table)
+		}
+	}
+	for _, col := range []string{"area_name", "critical_push_on", "changes_push_on", "changes_enabled_at"} {
+		if !strings.Contains(text[down:], "DROP COLUMN "+col) {
+			t.Errorf("migration 00011 Down must drop column %s", col)
+		}
+	}
+	if !strings.Contains(text[down:], "DROP INDEX idx_accounts_home_area_cell") {
+		t.Error("migration 00011 Down must drop idx_accounts_home_area_cell")
+	}
+	if strings.Contains(strings.Join(code, "\n"), "'more'") {
+		t.Error("migration 00011 must not list a rolled up kind (decision 6)")
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00011 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	defer db.Close()
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+
+	var accountID, otherID, reportID int64
+	const sessionID = "migration-00011-session"
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		_, _ = db.Exec("DELETE FROM push_outbox WHERE report_id = $1", reportID)
+		_, _ = db.Exec("DELETE FROM push_subscriptions WHERE session_id = $1", sessionID)
+		for _, id := range []int64{accountID, otherID} {
+			if id != 0 {
+				_, _ = db.Exec("DELETE FROM account_alert_settings WHERE account_id = $1", id)
+			}
+		}
+		if reportID != 0 {
+			_, _ = db.Exec("DELETE FROM reports WHERE id = $1", reportID)
+		}
+		_, _ = db.Exec("DELETE FROM sessions WHERE session_id = $1", sessionID)
+		for _, id := range []int64{accountID, otherID} {
+			if id != 0 {
+				_, _ = db.Exec("DELETE FROM accounts WHERE id = $1", id)
+			}
+		}
+	})
+
+	tableCount := func() int {
+		var n int
+		err := db.QueryRow(`SELECT count(*) FROM information_schema.tables
+			WHERE table_schema = 'public'
+			  AND table_name IN ('push_subscriptions', 'push_outbox', 'push_report_progress')`).Scan(&n)
+		if err != nil {
+			t.Fatalf("counting tables: %v", err)
+		}
+		return n
+	}
+	columnCount := func() int {
+		var n int
+		err := db.QueryRow(`SELECT count(*) FROM information_schema.columns
+			WHERE table_schema = 'public'
+			  AND ((table_name = 'reports' AND column_name = 'area_name')
+			    OR (table_name = 'account_alert_settings'
+			        AND column_name IN ('critical_push_on', 'changes_push_on', 'changes_enabled_at')))`).Scan(&n)
+		if err != nil {
+			t.Fatalf("counting columns: %v", err)
+		}
+		return n
+	}
+	if got := tableCount(); got != 3 {
+		t.Errorf("after Up: %d of 3 new tables present", got)
+	}
+	if got := columnCount(); got != 4 {
+		t.Errorf("after Up: %d of 4 new columns present", got)
+	}
+	var idx int
+	if err := db.QueryRow(`SELECT count(*) FROM pg_indexes WHERE indexname = 'idx_accounts_home_area_cell'`).Scan(&idx); err != nil || idx != 1 {
+		t.Errorf("after Up: home cell index count %d (%v), want 1", idx, err)
+	}
+
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00011-a@example.com') RETURNING id`).Scan(&accountID); err != nil {
+		t.Fatalf("inserting account: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00011-b@example.com') RETURNING id`).Scan(&otherID); err != nil {
+		t.Fatalf("inserting second account: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO sessions (session_id, account_id) VALUES ($1, $2)`, sessionID, accountID); err != nil {
+		t.Fatalf("inserting session: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO reports (session_id, category, severity, description, latitude, longitude, geohash, expires_at)
+		VALUES ($1, 'road', 'info', 'for the 00011 test', 12.97, 77.59, 'tdr1w', now() + interval '1 hour')
+		RETURNING id`, sessionID).Scan(&reportID); err != nil {
+		t.Fatalf("inserting report: %v", err)
+	}
+
+	wantCode := func(label, code, query string, args ...any) {
+		t.Helper()
+		_, err := db.Exec(query, args...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != code {
+			t.Errorf("%s: want SQLSTATE %s, got %v", label, code, err)
+		}
+	}
+	wantCode("an outbox kind of more", "23514",
+		`INSERT INTO push_outbox (account_id, report_id, kind, expires_at) VALUES ($1, $2, 'more', now() + interval '1 hour')`,
+		accountID, reportID)
+	wantCode("a changed row without an update id", "23514",
+		`INSERT INTO push_outbox (account_id, report_id, kind, expires_at) VALUES ($1, $2, 'changed', now() + interval '1 hour')`,
+		accountID, reportID)
+	wantCode("a critical row with an update id", "23514",
+		`INSERT INTO push_outbox (account_id, report_id, kind, update_id, expires_at) VALUES ($1, $2, 'critical', 7, now() + interval '1 hour')`,
+		accountID, reportID)
+	wantCode("an unknown outbox state", "23514",
+		`INSERT INTO push_outbox (account_id, report_id, kind, state, expires_at) VALUES ($1, $2, 'critical', 'sending', now() + interval '1 hour')`,
+		accountID, reportID)
+	wantCode("an unknown skip reason", "23514",
+		`INSERT INTO push_outbox (account_id, report_id, kind, state, skip_reason, expires_at) VALUES ($1, $2, 'critical', 'skipped', 'because', now() + interval '1 hour')`,
+		accountID, reportID)
+	wantCode("an http endpoint", "23514",
+		`INSERT INTO push_subscriptions (account_id, session_id, endpoint, endpoint_host, p256dh, auth) VALUES ($1, $2, 'http://fcm.googleapis.com/x', 'fcm.googleapis.com', 'k', 'a')`,
+		accountID, sessionID)
+	wantCode("an unknown progress state", "23514",
+		`INSERT INTO push_report_progress (report_id, critical_state) VALUES ($1, 'sent')`, reportID)
+	wantCode("an empty area name", "23514", `UPDATE reports SET area_name = '' WHERE id = $1`, reportID)
+
+	if _, err := db.Exec(`INSERT INTO push_subscriptions (account_id, session_id, endpoint, endpoint_host, p256dh, auth)
+		VALUES ($1, $2, 'https://fcm.googleapis.com/fcm/send/abc', 'fcm.googleapis.com', 'k', 'a')`, accountID, sessionID); err != nil {
+		t.Fatalf("inserting a subscription: %v", err)
+	}
+	wantCode("a second subscription with the same endpoint", "23505",
+		`INSERT INTO push_subscriptions (account_id, session_id, endpoint, endpoint_host, p256dh, auth) VALUES ($1, $2, 'https://fcm.googleapis.com/fcm/send/abc', 'fcm.googleapis.com', 'k', 'a')`,
+		otherID, sessionID)
+
+	if _, err := db.Exec(`INSERT INTO push_outbox (account_id, report_id, kind, expires_at) VALUES ($1, $2, 'critical', now() + interval '1 hour')`,
+		accountID, reportID); err != nil {
+		t.Fatalf("inserting a critical row: %v", err)
+	}
+	wantCode("a second critical row for one account and report", "23505",
+		`INSERT INTO push_outbox (account_id, report_id, kind, expires_at) VALUES ($1, $2, 'critical', now() + interval '1 hour')`,
+		accountID, reportID)
+	wantCode("a reliable row beside the critical row", "23505",
+		`INSERT INTO push_outbox (account_id, report_id, kind, expires_at) VALUES ($1, $2, 'reliable', now() + interval '1 hour')`,
+		accountID, reportID)
+
+	if _, err := db.Exec(`INSERT INTO account_alert_settings (account_id) VALUES ($1)`, accountID); err != nil {
+		t.Fatalf("inserting default alert settings: %v", err)
+	}
+	var critical, changes bool
+	var enabledAt sql.NullTime
+	if err := db.QueryRow(`SELECT critical_push_on, changes_push_on, changes_enabled_at FROM account_alert_settings WHERE account_id = $1`,
+		accountID).Scan(&critical, &changes, &enabledAt); err != nil {
+		t.Fatalf("reading alert settings: %v", err)
+	}
+	if !critical || changes || enabledAt.Valid {
+		t.Errorf("defaults = critical %v changes %v enabled %v, want true, false, NULL", critical, changes, enabledAt.Valid)
+	}
+
+	name := "00011_add_push.sql"
+	version, err := goose.NumericComponent(name)
+	if err != nil {
+		t.Fatalf("parsing version of %s: %v", name, err)
+	}
+	// Down drops the push tables whole, so their rows need no clean up first.
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down to %d: %v", version-1, err)
+	}
+	if got := tableCount(); got != 0 {
+		t.Errorf("after Down: %d new tables still present", got)
+	}
+	if got := columnCount(); got != 0 {
+		t.Errorf("after Down: %d new columns still present", got)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM pg_indexes WHERE indexname = 'idx_accounts_home_area_cell'`).Scan(&idx); err != nil || idx != 0 {
+		t.Errorf("after Down: home cell index count %d (%v), want 0", idx, err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+	if got := tableCount(); got != 3 {
+		t.Errorf("after Up again: %d of 3 new tables present", got)
+	}
+	if got := columnCount(); got != 4 {
+		t.Errorf("after Up again: %d of 4 new columns present", got)
+	}
+}
