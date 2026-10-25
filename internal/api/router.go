@@ -18,6 +18,7 @@ import (
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 
 	"pinalert/internal/api/handlers"
+	"pinalert/internal/push"
 	"pinalert/internal/ratelimit"
 	"pinalert/internal/service"
 	"pinalert/internal/session"
@@ -247,6 +248,20 @@ type PlaceRateLimit struct {
 // internal/geocode, so a larger budget here costs a reporter nothing.
 var PlaceRateLimitDefault = PlaceRateLimit{Burst: 8, Every: time.Second}
 
+// The budgets of the three phone alert subscription routes (Phase 3.3, D-03).
+// Both are per account, keyed by the verified account id and never the client
+// address, so many phones behind one carrier NAT address do not share them.
+// Registering and removing a device are rare, so 5 at once and then one a
+// minute leaves room for one person setting up a few devices and stops a loop.
+// The status question runs each time Settings opens, so it gets 10 at once and
+// then one every 6 seconds.
+const (
+	pushWriteBurst  = 5
+	pushWriteEvery  = time.Minute
+	pushStatusBurst = 10
+	pushStatusEvery = 6 * time.Second
+)
+
 // BucketLimit and RateLimits are aliases of the handlers types, the same types
 // under a second name. Package api imports handlers, so the gate in handlers
 // cannot take a type declared here; the struct bodies live beside the gate and
@@ -429,6 +444,9 @@ func NewRouter(deps Deps) *chi.Mux {
 	flags := service.NewFlagService(deps.Sessions, flagOpts...)
 	// Same for the account service behind the /api/me routes (plan 03.4-01).
 	accounts := service.NewAccountService(deps.Sessions)
+	// Phase 3.3 (plan 08): the phone alert subscription service, from the same
+	// sessions store and the push service allowlist.
+	pushSubs := service.NewPushSubscriptionService(deps.Sessions, push.DefaultEndpointPolicy())
 	// Phase 3.2 (plan 07): the updates and mute services, built from the same
 	// sessions store. The nearby reader is an untyped nil when there is no
 	// ReportService, because a typed nil pointer in the interface is not a nil
@@ -660,6 +678,20 @@ func NewRouter(deps Deps) *chi.Mux {
 		// body plus a SameSite Lax cookie as DEC-L. Plain /auth/logout above is
 		// unchanged (orchestrator decision 6).
 		r.Post("/api/me/logout-all", handlers.LogOutAllDevices(sessionsSvc, deps.Session))
+		// The three phone alert subscription routes (Phase 3.3, D-03, D-13,
+		// plan 08). Gated, strict application/json bodies of at most 4 KB, and
+		// a SameSite Lax cookie as DEC-L. The endpoint is a secret address, so
+		// it travels only in the body, never in a URL, and every answer leaves
+		// it out. The budgets are per account (CGNAT safe), not per IP. Plans
+		// 10 and 11 delete subscriptions on logout and account deletion.
+		// POST /api/me/push/subscription registers this device.
+		pushWriteLimiter := ratelimit.NewPerIP(pushWriteEvery, pushWriteBurst)
+		pushStatusLimiter := ratelimit.NewPerIP(pushStatusEvery, pushStatusBurst)
+		r.Post("/api/me/push/subscription", handlers.RegisterPushSubscription(pushSubs, deps.Page.PushPublicKey, pushWriteLimiter))
+		// POST /api/me/push/status says whether this device is registered.
+		r.Post("/api/me/push/status", handlers.PushSubscriptionStatus(pushSubs, pushStatusLimiter))
+		// POST /api/me/push/unsubscribe removes this device for the caller only.
+		r.Post("/api/me/push/unsubscribe", handlers.UnregisterPushSubscription(pushSubs, pushWriteLimiter))
 	})
 
 	// --- Moderator group (D-08): outside the access gate, so an unverified

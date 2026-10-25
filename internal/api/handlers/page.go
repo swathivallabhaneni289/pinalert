@@ -28,6 +28,11 @@ type PageConfig struct {
 	// the too far sentence from the server's own number (D-22). The server
 	// still refuses far votes on its own (D-01); this only feeds a hint.
 	VoteRadiusKm float64
+	// PushPublicKey is the VAPID public key, set once in cmd/server/main.go
+	// (plan 11). It is empty when push is off. It is public by design and is
+	// rendered by the welcome and settings templates as data-push-key (plans
+	// 13 and 14); it is never served by a route.
+	PushPublicKey string
 	// AssetVersion is appended as a "?v=" query string to every local
 	// static asset the template links (CSS, JS — not the third-party CDN
 	// tags, which are already content-hashed by their pinned version and
