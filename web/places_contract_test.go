@@ -177,10 +177,16 @@ func TestAlertsNeverSaysNoAlerts(t *testing.T) {
 // list, because Settings draws them now. "Critical reports near my home area",
 // "Severe official alerts for my area", "Changes to reports I posted or voted
 // on" and "Someone I follow posts" stay for Phase 3.3 and Phase 9.
+//
+// Amended 2026-10-18 by Phase 3.3 plan 14 (D-12, decision 12, UI-SPEC Surface 2):
+// "Critical reports near my home area" and "Changes to reports I posted or voted
+// on" left this list, because Settings draws them now. "Someone I follow posts"
+// left it too: the owner moved that choice to Phase 9's per person Notify me
+// bell on 2026-10-18, so it never comes to Settings (TestNotificationsNoFollowOrOfficialRow
+// pins its absence). "Severe official alerts for my area" stays for Phase 5.
 var waitingSettingsLabels = []string{
 	"View my profile", "My profile",
-	"Critical reports near my home area", "Severe official alerts for my area",
-	"Changes to reports I posted or voted on", "Someone I follow posts",
+	"Severe official alerts for my area",
 	"Let others follow me", "Following", "Followers", "Blocked people",
 }
 
@@ -227,8 +233,12 @@ func TestSettingsShowsOnlyExistingRows(t *testing.T) {
 	// draws a chevron, the "Add a home area first" row that opens the Home area
 	// window.
 	p421InOrder(t, "section order", page, `id="settings-you-title"`, `id="settings-phone-title"`, `id="settings-people-title"`, "About Pinalert", `id="settings-account-title"`)
-	if got := strings.Count(page, "app-icon--chevron-right"); got != 9 {
-		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the nine rows that open something", got)
+	//
+	// Amended 2026-10-18 by Phase 3.3 plan 14 (D-12, UI-SPEC Surface 2): two more
+	// rows draw a chevron, the On this device row that opens the install guide
+	// and the Critical reports "Add a home area first" row, so eleven.
+	if got := strings.Count(page, "app-icon--chevron-right"); got != 11 {
+		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the eleven rows that open something", got)
 	}
 	header := p421ReadTemplate(t, "account_header.html.tmpl")
 	for _, label := range waitingSettingsLabels {
@@ -398,7 +408,9 @@ func TestSettingsScriptContract(t *testing.T) {
 // alerts keeps its look.
 func TestSettingsIsAGroupedList(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
-	if !strings.Contains(page, `<main class="place-page place-page--settings" data-account-id="{{.AccountID}}">`) {
+	// Amended 2026-10-18 by Phase 3.3 plan 14 (D-12): the main element also
+	// carries data-push-key, the public key settings-alerts.js hands to notify.js.
+	if !strings.Contains(page, `<main class="place-page place-page--settings" data-account-id="{{.AccountID}}" data-push-key="{{.PushPublicKey}}">`) {
 		t.Errorf("settings.html.tmpl's main lacks the place-page--settings modifier")
 	}
 	if strings.Contains(p421ReadTemplate(t, "alerts.html.tmpl"), "place-page--settings") {
