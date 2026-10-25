@@ -91,6 +91,16 @@ func (f *fakeDeleteQuerier) DeleteAccountAlertSettings(ctx context.Context, acco
 	return f.step("DeleteAccountAlertSettings")
 }
 
+func (f *fakeDeleteQuerier) DeleteAccountPushOutbox(ctx context.Context, accountID int64) (int64, error) {
+	f.accountIDs["DeleteAccountPushOutbox"] = accountID
+	return 0, f.step("DeleteAccountPushOutbox")
+}
+
+func (f *fakeDeleteQuerier) DeleteAccountPushSubscriptions(ctx context.Context, accountID int64) (int64, error) {
+	f.accountIDs["DeleteAccountPushSubscriptions"] = accountID
+	return 0, f.step("DeleteAccountPushSubscriptions")
+}
+
 func (f *fakeDeleteQuerier) RevokeAccountSessions(ctx context.Context, arg sqlcgen.RevokeAccountSessionsParams) (int64, error) {
 	f.revokeArg = arg
 	return 2, f.step("RevokeAccountSessions")
@@ -104,6 +114,10 @@ func (f *fakeDeleteQuerier) ScrubDeletedAccount(ctx context.Context, arg sqlcgen
 	return f.scrubRows, nil
 }
 
+// wantDeleteOrder is the documented step order. Amended 2026-10-18 by Phase 3.3
+// plan 10 (decision 11, UI-SPEC O-3): DeleteAccountPushOutbox and
+// DeleteAccountPushSubscriptions now run after the four personal row deletes
+// and before RevokeAccountSessions, so the nine steps became eleven.
 var wantDeleteOrder = []string{
 	"AccountEmailForDelete",
 	"DeleteMagicLinkTokensForEmail",
@@ -112,11 +126,13 @@ var wantDeleteOrder = []string{
 	"DeleteAccountCursors",
 	"DeleteAccountMutes",
 	"DeleteAccountAlertSettings",
+	"DeleteAccountPushOutbox",
+	"DeleteAccountPushSubscriptions",
 	"RevokeAccountSessions",
 	"ScrubDeletedAccount",
 }
 
-// TestDeleteAccountOrder: the nine steps run in the documented order, the
+// TestDeleteAccountOrder: the eleven steps run in the documented order, the
 // scrub last, each keyed by the account id (or the real address) it needs.
 func TestDeleteAccountOrder(t *testing.T) {
 	fixed := time.Date(2026, 10, 19, 8, 0, 0, 0, time.UTC)
