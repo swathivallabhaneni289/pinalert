@@ -1108,8 +1108,8 @@ func TestDispatchAreaLookupOnce(t *testing.T) {
 		if len(rig.f.areaSets) != 0 {
 			t.Errorf("a failed lookup stored %+v", rig.f.areaSets)
 		}
-		if len(rig.f.initialCalls) != 2 {
-			t.Errorf("queued %v, want both readers", rig.f.initialAccounts())
+		if len(rig.f.queued) != 2 {
+			t.Errorf("queued %d accounts, want both readers", len(rig.f.queued))
 		}
 	})
 
