@@ -851,16 +851,25 @@ func Profile(svc *service.AuthService, updates *service.UpdatesService, tmpl *te
 // Phase 3.3, decision 11 and UI-SPEC O-3: before the cookie is cleared the
 // push subscriptions this session registered are deleted, so the next person
 // who signs in on a shared phone never receives the previous person's alerts.
-// A failure to delete is logged without any endpoint and never blocks the log
-// out: the session's own revocation path and the send path's live-session join
-// are the backstops. DEC-K still holds, the session row stays bound to its
-// account. Amended 2026-10-18 by Phase 3.3 plan 10 (decision 11, UI-SPEC O-3):
-// plain Log out is no longer free of side effects for the push subscription.
+// DEC-K still holds, the session row stays bound to its account. Amended
+// 2026-10-18 by Phase 3.3 plan 10 (decision 11, UI-SPEC O-3): plain Log out is
+// no longer free of side effects for the push subscription.
+//
+// A failure to delete is logged without any endpoint and stops the log out
+// with the usual 500, keeping the cookie, so the person can press Log out
+// again. There is no backstop to lean on: plain Log out never revokes the
+// session row (DEC-K), so the send path's live-session join would still match
+// and the device would keep receiving this account's alerts. Amended
+// 2026-10-25 (review S-03); before, the failure was logged and the person was
+// signed out anyway.
 func Logout(mgr *session.Manager, subs *service.PushSubscriptionService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if sessionID, ok := session.FromContext(r.Context()); ok && sessionID != "" && subs != nil {
 			if err := subs.DeleteForSession(r.Context(), sessionID); err != nil {
 				log.Printf("handlers: Logout: deleting this device's push subscriptions: %v", err)
+				w.Header().Set("Cache-Control", "no-store")
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
 			}
 		}
 		mgr.ClearCookie(w)

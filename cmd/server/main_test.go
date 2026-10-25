@@ -1,9 +1,14 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"pinalert/internal/api"
 )
@@ -33,5 +38,148 @@ func TestOnboardingGateIsSwitchedOn(t *testing.T) {
 	}
 	if n := strings.Count(string(raw), "OnboardingGate: true,"); n != 1 {
 		t.Errorf("main.go sets OnboardingGate: true %d times, want exactly 1", n)
+	}
+}
+
+// fakeServer stands in for http.Server in the serveUntilDone tests: serve
+// blocks until shutdown is called, like ListenAndServe, and then returns
+// http.ErrServerClosed.
+type fakeServer struct {
+	closed   chan struct{}
+	shutdown atomic.Int32
+}
+
+func newFakeServer() *fakeServer { return &fakeServer{closed: make(chan struct{})} }
+
+func (s *fakeServer) serve() error {
+	<-s.closed
+	return http.ErrServerClosed
+}
+
+func (s *fakeServer) stop(context.Context) error {
+	if s.shutdown.Add(1) == 1 {
+		close(s.closed)
+	}
+	return nil
+}
+
+// runUntilDone runs serveUntilDone in the background and returns its result
+// channel.
+func runUntilDone(ctx context.Context, s *fakeServer, grace time.Duration, runners ...func(context.Context)) <-chan error {
+	out := make(chan error, 1)
+	go func() { out <- serveUntilDone(ctx, s.serve, s.stop, grace, runners...) }()
+	return out
+}
+
+// TestServeUntilDoneWaitsForTheWorkerMark (review S-05, 2026-10-25): on SIGINT
+// or SIGTERM the push worker's context ends, and the process waits for the
+// worker to return, so a row whose send a push service accepted is still
+// marked on its WithoutCancel context instead of being sent again after a
+// redeploy. Before the fix main ran the workers on context.Background and had
+// no shutdown at all.
+func TestServeUntilDoneWaitsForTheWorkerMark(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := newFakeServer()
+	var marked atomic.Bool
+	worker := func(ctx context.Context) {
+		<-ctx.Done()
+		// The in flight row settles after its context ended.
+		time.Sleep(50 * time.Millisecond)
+		marked.Store(true)
+	}
+	out := runUntilDone(ctx, s, 5*time.Second, worker)
+	cancel()
+	select {
+	case err := <-out:
+		if err != nil {
+			t.Fatalf("serveUntilDone: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("serveUntilDone did not return")
+	}
+	if !marked.Load() {
+		t.Error("serveUntilDone returned before the worker finished its row")
+	}
+	if n := s.shutdown.Load(); n != 1 {
+		t.Errorf("Shutdown called %d times, want 1", n)
+	}
+}
+
+// TestServeUntilDoneWithoutPushRunners: with VAPID unset there are no push
+// runners, and the server still starts and stops normally.
+func TestServeUntilDoneWithoutPushRunners(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := newFakeServer()
+	out := runUntilDone(ctx, s, 5*time.Second)
+	cancel()
+	select {
+	case err := <-out:
+		if err != nil {
+			t.Fatalf("serveUntilDone: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("serveUntilDone did not return")
+	}
+	if n := s.shutdown.Load(); n != 1 {
+		t.Errorf("Shutdown called %d times, want 1", n)
+	}
+}
+
+// TestServeUntilDoneBoundsTheWait: a runner that never returns cannot hold the
+// process past the grace period.
+func TestServeUntilDoneBoundsTheWait(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := newFakeServer()
+	stuck := make(chan struct{})
+	t.Cleanup(func() { close(stuck) })
+	out := runUntilDone(ctx, s, 50*time.Millisecond, func(context.Context) { <-stuck })
+	cancel()
+	select {
+	case err := <-out:
+		if err == nil {
+			t.Error("want an error naming the runners that did not stop")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("serveUntilDone waited past its grace period")
+	}
+}
+
+// TestServeUntilDoneReturnsAServeError: a server that fails on its own (a busy
+// port) returns its error, and the runners are told to stop.
+func TestServeUntilDoneReturnsAServeError(t *testing.T) {
+	boom := errors.New("listen failed")
+	var stopped atomic.Bool
+	runner := func(ctx context.Context) { <-ctx.Done(); stopped.Store(true) }
+	err := serveUntilDone(context.Background(), func() error { return boom },
+		func(context.Context) error { return nil }, 5*time.Second, runner)
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want %v", err, boom)
+	}
+	if !stopped.Load() {
+		t.Error("the runners were not stopped after the server failed")
+	}
+}
+
+// TestMainStopsOnSignals pins the wiring that the tests above cannot reach,
+// the same way TestOnboardingGateIsSwitchedOn reads the source: main listens
+// for SIGINT and SIGTERM and hands that context to both push loops.
+func TestMainStopsOnSignals(t *testing.T) {
+	raw, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("reading main.go: %v", err)
+	}
+	src := string(raw)
+	for _, want := range []string{
+		"signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)",
+		"pushDispatcher.Run,",
+		"pushWorker.Run,",
+		"serveUntilDone(runCtx,",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("main.go does not contain %q", want)
+		}
+	}
+	if strings.Contains(src, "go pushWorker.Run(context.Background())") || strings.Contains(src, "go pushDispatcher.Run(context.Background())") {
+		t.Error("a push loop still runs on context.Background, which no signal can end")
 	}
 }

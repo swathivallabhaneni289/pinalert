@@ -59,6 +59,7 @@ type dispatchFake struct {
 	followers     []int64
 	followerCalls []int64
 	changeAccts   []int64
+	changeAfter   []int64 // the after_id of each AccountsWithChangesPush call
 	recent        []int64
 	recentCalls   []sqlcgen.RecentReportsForPushParams
 	settings      map[int64]sqlcgen.GetPushKindSettingsRow
@@ -270,14 +271,22 @@ func (f *dispatchFake) FollowersWithChangesPush(_ context.Context, reportID int6
 	return f.followers, nil
 }
 
-func (f *dispatchFake) AccountsWithChangesPush(_ context.Context, rowCap int32) ([]int64, error) {
+func (f *dispatchFake) AccountsWithChangesPush(_ context.Context, a sqlcgen.AccountsWithChangesPushParams) ([]int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.rec("AccountsWithChangesPush")
-	if rowCap != PushChangesSweepAccountCap {
+	if a.RowCap != PushChangesSweepAccountCap {
 		return nil, errors.New("unexpected row cap")
 	}
-	return f.changeAccts, nil
+	f.changeAfter = append(f.changeAfter, a.AfterID)
+	// Like the query: ids above after_id, in order, at most row_cap.
+	var out []int64
+	for _, id := range f.changeAccts {
+		if id > a.AfterID && len(out) < int(a.RowCap) {
+			out = append(out, id)
+		}
+	}
+	return out, nil
 }
 
 func (f *dispatchFake) RecentReportsForPush(_ context.Context, a sqlcgen.RecentReportsForPushParams) ([]int64, error) {
@@ -1232,6 +1241,39 @@ func TestDispatchSweeps(t *testing.T) {
 		}
 		if !r.f.changedCalls[0].Since.Equal(pushFactsNow.Add(-10 * time.Minute)) {
 			t.Errorf("since = %v", r.f.changedCalls[0].Since)
+		}
+	})
+
+	// Review S-04 (2026-10-25): with more accounts than the cap, the sweep used
+	// to take the same first page every time, so the account past the cap was
+	// never served. The cursor moves on after a full page and wraps after a
+	// short one.
+	t.Run("the changes sweep rotates past the account cap", func(t *testing.T) {
+		r := newDispatchRig()
+		for id := int64(1); id <= PushChangesSweepAccountCap+1; id++ {
+			r.f.changeAccts = append(r.f.changeAccts, id)
+		}
+		last := int64(PushChangesSweepAccountCap + 1)
+		for i := 0; i < 3; i++ {
+			if err := r.d.ChangesSweepOnce(context.Background()); err != nil {
+				t.Fatalf("ChangesSweepOnce %d: %v", i+1, err)
+			}
+		}
+		want := []int64{0, PushChangesSweepAccountCap, 0}
+		if !dispatchInt64sEqual(r.f.changeAfter, want) {
+			t.Errorf("after ids = %v, want %v", r.f.changeAfter, want)
+		}
+		served := false
+		for _, id := range r.u.refreshed {
+			if id == last {
+				served = true
+			}
+		}
+		if !served {
+			t.Errorf("account %d past the cap was never served", last)
+		}
+		if n := len(r.u.refreshed); n != 2*PushChangesSweepAccountCap+1 {
+			t.Errorf("refreshed %d accounts over three sweeps, want %d", n, 2*PushChangesSweepAccountCap+1)
 		}
 	})
 }

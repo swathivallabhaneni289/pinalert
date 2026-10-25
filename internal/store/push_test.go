@@ -467,13 +467,23 @@ func TestAccountsWithChangesPush(t *testing.T) {
 			t.Fatalf("settings: %v", err)
 		}
 	}
-	got, err := q.AccountsWithChangesPush(ctx, 10)
+	got, err := q.AccountsWithChangesPush(ctx, sqlcgen.AccountsWithChangesPushParams{RowCap: 10})
 	if err != nil || !reflect.DeepEqual(got, []int64{a, b}) {
 		t.Errorf("accounts = %v (%v), want %v", got, err, []int64{a, b})
 	}
-	got, err = q.AccountsWithChangesPush(ctx, 1)
+	got, err = q.AccountsWithChangesPush(ctx, sqlcgen.AccountsWithChangesPushParams{RowCap: 1})
 	if err != nil || !reflect.DeepEqual(got, []int64{a}) {
 		t.Errorf("capped accounts = %v (%v), want %v", got, err, []int64{a})
+	}
+	// Review S-04 (2026-10-25): the next page starts after the given id, so a
+	// caller can rotate past the cap instead of always taking the same first rows.
+	got, err = q.AccountsWithChangesPush(ctx, sqlcgen.AccountsWithChangesPushParams{AfterID: a, RowCap: 1})
+	if err != nil || !reflect.DeepEqual(got, []int64{b}) {
+		t.Errorf("accounts after %d = %v (%v), want %v", a, got, err, []int64{b})
+	}
+	got, err = q.AccountsWithChangesPush(ctx, sqlcgen.AccountsWithChangesPushParams{AfterID: b, RowCap: 10})
+	if err != nil || len(got) != 0 {
+		t.Errorf("accounts after the last = %v (%v), want none", got, err)
 	}
 }
 
@@ -912,6 +922,63 @@ func TestPushReportProgressAndRecent(t *testing.T) {
 		Since: pushNow.Add(-24 * time.Hour), Now: pushNow, RowCap: 10})
 	if err != nil || !reflect.DeepEqual(ids, []int64{live}) {
 		t.Errorf("recent reports = %v (%v), want only %d (not the expired %d)", ids, err, live, expired)
+	}
+}
+
+// TestRecentReportsForPushServesTheLeastRecentlyEvaluated (review S-04,
+// 2026-10-25): the recovery sweep used to take the same newest row_cap reports
+// every time, so an older report past the cap was never evaluated. A report
+// never evaluated now comes first, then the one evaluated longest ago, then
+// the newest.
+func TestRecentReportsForPushServesTheLeastRecentlyEvaluated(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	q := sqlcgen.New(pool)
+	ctx := context.Background()
+
+	testutil.SeedReporterAccount(t, pool, "rot@example.com", "rot-sess")
+	oldest := pushReport(t, pool, "rot-sess", pushFar)
+	middle := pushReport(t, pool, "rot-sess", pushFar)
+	newest := pushReport(t, pool, "rot-sess", pushFar)
+	for i, id := range []int64{oldest, middle, newest} {
+		testutil.MustExec(t, pool, `UPDATE reports SET created_at = $1 WHERE id = $2`,
+			pushNow.Add(time.Duration(i-3)*time.Minute), id)
+	}
+	recent := func(rowCap int32) []int64 {
+		t.Helper()
+		ids, err := q.RecentReportsForPush(ctx, sqlcgen.RecentReportsForPushParams{
+			Since: pushNow.Add(-time.Hour), Now: pushNow, RowCap: rowCap})
+		if err != nil {
+			t.Fatalf("recent reports: %v", err)
+		}
+		return ids
+	}
+	evaluated := func(id int64, at time.Time) {
+		t.Helper()
+		if err := q.MarkReportEvaluated(ctx, sqlcgen.MarkReportEvaluatedParams{ReportID: id, Now: at}); err != nil {
+			t.Fatalf("evaluated mark: %v", err)
+		}
+	}
+
+	// Nothing evaluated yet: newest first, as before.
+	if got, want := recent(10), []int64{newest, middle, oldest}; !reflect.DeepEqual(got, want) {
+		t.Errorf("unevaluated order = %v, want %v", got, want)
+	}
+	// The two newest were evaluated by a capped sweep: the oldest, never
+	// evaluated, now comes first and fits under a cap of 1.
+	evaluated(newest, pushNow.Add(-2*time.Minute))
+	evaluated(middle, pushNow.Add(-2*time.Minute))
+	if got, want := recent(1), []int64{oldest}; !reflect.DeepEqual(got, want) {
+		t.Errorf("capped at 1 = %v, want the never evaluated %v", got, want)
+	}
+	// Once every report has been evaluated, the one evaluated longest ago leads,
+	// and a tie falls back to newest first.
+	evaluated(oldest, pushNow.Add(-time.Minute))
+	if got, want := recent(10), []int64{newest, middle, oldest}; !reflect.DeepEqual(got, want) {
+		t.Errorf("all evaluated order = %v, want %v", got, want)
+	}
+	evaluated(newest, pushNow)
+	if got, want := recent(2), []int64{middle, oldest}; !reflect.DeepEqual(got, want) {
+		t.Errorf("capped at 2 after newest re-evaluated = %v, want %v", got, want)
 	}
 }
 

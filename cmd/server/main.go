@@ -8,13 +8,17 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	netmail "net/mail"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"pinalert/internal/api"
@@ -417,12 +421,22 @@ func main() {
 	// sleeping host sends nothing until a request wakes it (decision 9, review
 	// W2 and N5). One endpoint policy value is shared by the sender and the
 	// worker, so both read a device's host the same way.
+	//
+	// Both loops run on runCtx, which SIGINT and SIGTERM end, and the process
+	// waits for them before it exits, so a row whose send a push service
+	// accepted reaches its mark on the worker's WithoutCancel write context
+	// instead of being sent again after a redeploy (review S-05, 2026-10-25).
+	runCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	var pushRunners []func(context.Context)
 	if pushOn {
 		pushPolicy := push.DefaultEndpointPolicy()
 		pushSender := push.NewWebPushSender(pushCfg, push.NewGuardedClient(), pushPolicy)
 		pushWorker := service.NewPushWorker(queries, pushSender, service.WithPushWorkerPolicy(pushPolicy))
-		go pushDispatcher.Run(context.Background())
-		go pushWorker.Run(context.Background())
+		pushRunners = append(pushRunners,
+			pushDispatcher.Run,
+			pushWorker.Run,
+		)
 	}
 
 	srv := &http.Server{
@@ -434,9 +448,65 @@ func main() {
 	}
 
 	log.Printf("pinalert listening on :%s", port)
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := serveUntilDone(runCtx, srv.ListenAndServe, srv.Shutdown, shutdownGrace, pushRunners...); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
+	log.Printf("pinalert stopped")
+}
+
+// shutdownGrace bounds how long the process waits after SIGINT or SIGTERM for
+// requests in flight and for the push worker's current row: one fan out
+// (service.PushSendTimeout), then its marks (the worker's own write timeout,
+// also 10 seconds), with a little room to spare.
+const shutdownGrace = service.PushSendTimeout + 15*time.Second
+
+// serveUntilDone starts each runner on a context that ends with ctx, runs
+// serve, and when ctx ends calls shutdown and waits for the runners to return,
+// all within grace. A serve error other than http.ErrServerClosed stops the
+// runners too and comes back. A runner still busy after grace is reported as
+// an error rather than waited for. Returns nil after a clean stop.
+func serveUntilDone(ctx context.Context, serve func() error, shutdown func(context.Context) error, grace time.Duration, runners ...func(context.Context)) error {
+	runCtx, stopRunners := context.WithCancel(ctx)
+	defer stopRunners()
+	var wg sync.WaitGroup
+	for _, run := range runners {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			run(runCtx)
+		}()
+	}
+
+	served := make(chan error, 1)
+	go func() { served <- serve() }()
+
+	var errs []error
+	select {
+	case err := <-served:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errs = append(errs, err)
+		}
+	case <-ctx.Done():
+		log.Printf("pinalert stopping")
+	}
+	stopRunners()
+
+	graceCtx, cancel := context.WithTimeout(context.Background(), grace)
+	defer cancel()
+	if err := shutdown(graceCtx); err != nil {
+		errs = append(errs, fmt.Errorf("shutting down: %w", err))
+	}
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-graceCtx.Done():
+		errs = append(errs, errors.New("background loops still busy after the shutdown grace period"))
+	}
+	return errors.Join(errs...)
 }
 
 // loadSessionSecret reads SESSION_SECRET, failing fast unless env is

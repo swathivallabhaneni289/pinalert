@@ -465,7 +465,7 @@ func (w *PushWorker) stillHolds(run *pushRowRun) bool {
 	case PushKindConfirmedUpdate:
 		return f.Confirmed && f.View == FeedViewActive
 	case PushKindChanged:
-		return run.claim.UpdateKind != nil && w.eventStillHolds(UpdateKind(*run.claim.UpdateKind), f)
+		return run.claim.UpdateKind != nil && w.eventStillHolds(UpdateKind(*run.claim.UpdateKind), f, run.now)
 	}
 	return false
 }
@@ -478,7 +478,14 @@ func (w *PushWorker) stillHolds(run *pushRowRun) bool {
 // Not confirmed yet, and not Live alone: a Critical report stays Live through a
 // dispute majority, so Live would let "is now confirmed" reach a lock screen for
 // a report the feed does not list as confirmed (repo rule 15).
-func (w *PushWorker) eventStillHolds(event UpdateKind, f pushReportFacts) bool {
+//
+// The fading note goes through MayNotifyAboutReport, the one predicate, so it
+// needs a Live report like every kind except the Reliable one (D-07, review
+// S-01, 2026-10-25): a Provisional report's fading row stays in the bell and
+// never reaches a lock screen. The hidden and resolved notes announce a report
+// leaving the feed and cannot use the predicate, whose view check is false for
+// them by design.
+func (w *PushWorker) eventStillHolds(event UpdateKind, f pushReportFacts, now time.Time) bool {
 	if f.Vis == VisibilityWithheld {
 		return false
 	}
@@ -490,7 +497,7 @@ func (w *PushWorker) eventStillHolds(event UpdateKind, f pushReportFacts) bool {
 	case UpdateResolved:
 		return f.Vis == VisibilityRetracted
 	case UpdateFading:
-		return f.View == FeedViewActive
+		return MayNotifyAboutReport(UpdateFading, f.Vis, f.ExpiresAt, now)
 	}
 	return false
 }

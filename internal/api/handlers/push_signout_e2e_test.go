@@ -167,8 +167,15 @@ func (f *signoutFailingQuerier) DeletePushSubscriptionsForSession(ctx context.Co
 }
 
 // TestLogoutStillWorksWhenDeleteFails: a subscription service whose store fails
-// does not stop the log out. The cookie is cleared and the answer is the usual
-// 303 to /login. It needs no database.
+// stops the log out instead of hiding the failure.
+//
+// Changed 2026-10-25 (review S-03): this test used to expect the usual 303 to
+// /login with the cookie cleared. Plain Log out never revokes the session row
+// (DEC-K), so a subscription left behind would keep sending the previous
+// person's alerts to a shared phone with nothing else to stop it. The handler
+// now answers the app's usual 500 and keeps the cookie, so the person can press
+// Log out again. The name is kept so the history stays easy to follow. It needs
+// no database.
 func TestLogoutStillWorksWhenDeleteFails(t *testing.T) {
 	mgr, err := session.NewManager([]byte("signout-test-secret-not-for-production"), false)
 	if err != nil {
@@ -186,17 +193,19 @@ func TestLogoutStillWorksWhenDeleteFails(t *testing.T) {
 	if q.tried != 1 {
 		t.Fatalf("the delete was tried %d times, want 1", q.tried)
 	}
-	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/login" {
-		t.Fatalf("status %d location %q, want 303 to /login", rec.Code, rec.Header().Get("Location"))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status %d, want 500", rec.Code)
 	}
-	cleared := false
+	if loc := rec.Header().Get("Location"); loc != "" {
+		t.Errorf("Location %q, want none: the person stays to try again", loc)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control %q, want no-store", cc)
+	}
 	for _, c := range rec.Result().Cookies() {
 		if c.Name == "pinalert_session" && c.MaxAge < 0 {
-			cleared = true
+			t.Errorf("the cookie was cleared although this device's alerts are still on: %v", c)
 		}
-	}
-	if !cleared {
-		t.Errorf("the cookie was not cleared: %v", rec.Result().Cookies())
 	}
 }
 

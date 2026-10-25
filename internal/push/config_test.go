@@ -54,6 +54,11 @@ func TestLoadConfig(t *testing.T) {
 		{name: "good pair with a bare address", env: good(nil), wantOK: true, wantSubject: "ops@example.com"},
 		{name: "mailto prefix is stripped", env: good(map[string]string{"VAPID_SUBJECT": "mailto:ops@example.com"}), wantOK: true, wantSubject: "ops@example.com"},
 		{name: "https url kept as is", env: good(map[string]string{"VAPID_SUBJECT": "https://pinalert.example"}), wantOK: true, wantSubject: "https://pinalert.example"},
+		// 2026-10-25 (review S-02): webpush-go checks the "https:" prefix case
+		// sensitively and would send "mailto:HTTPS://...", so the scheme is lower cased.
+		{name: "upper case HTTPS scheme is lower cased", env: good(map[string]string{"VAPID_SUBJECT": "HTTPS://pinalert.example"}), wantOK: true, wantSubject: "https://pinalert.example"},
+		{name: "mixed case Https scheme is lower cased", env: good(map[string]string{"VAPID_SUBJECT": "Https://pinalert.example/contact"}), wantOK: true, wantSubject: "https://pinalert.example/contact"},
+		{name: "upper case HTTPS BASE_URL fallback is lower cased", env: good(map[string]string{"VAPID_SUBJECT": "", "BASE_URL": "HTTPS://pinalert.example"}), wantOK: true, wantSubject: "https://pinalert.example"},
 		{name: "surrounding spaces are trimmed", env: good(map[string]string{"VAPID_SUBJECT": "  ops@example.com "}), wantOK: true, wantSubject: "ops@example.com"},
 		{name: "http url refused", env: good(map[string]string{"VAPID_SUBJECT": "http://x"}), wantErr: "VAPID_SUBJECT"},
 		{name: "not an address refused", env: good(map[string]string{"VAPID_SUBJECT": "not an address"}), wantErr: "VAPID_SUBJECT"},

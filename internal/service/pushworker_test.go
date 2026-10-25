@@ -614,7 +614,11 @@ func TestWorkerSkipsWhenNoLongerEligible(t *testing.T) {
 		{name: "hidden, retracted since", kind: "changed", event: "hidden", severity: "low", votes: append(pwDispute(3), pwReporterResolved()...), wantVis: VisibilityRetracted, want: "not_eligible"},
 		{name: "resolved, still retracted", kind: "changed", event: "resolved", severity: "low", votes: pwReporterResolved(), wantVis: VisibilityRetracted, want: "sent"},
 		{name: "resolved, reopened", kind: "changed", event: "resolved", severity: "low", votes: pwConfirm(2), wantVis: VisibilityLive, want: "not_eligible"},
-		{name: "fading, still active", kind: "changed", event: "fading", severity: "low", wantVis: VisibilityProvisional, want: "sent"},
+		// 2026-10-25 (review S-01, D-07): a fading note follows MayNotifyAboutReport
+		// like every non Reliable kind, so it needs a Live report. A Provisional
+		// report's fading row stays in the bell and is skipped for the phone.
+		lowLive("fading, live", "changed", "fading", "sent"),
+		{name: "fading, still active but provisional", kind: "changed", event: "fading", severity: "low", wantVis: VisibilityProvisional, want: "not_eligible"},
 		{name: "fading, hidden since", kind: "changed", event: "fading", severity: "low", votes: pwDispute(3), wantVis: VisibilityHidden, want: "not_eligible"},
 		{name: "fading, retracted since", kind: "changed", event: "fading", severity: "low", votes: pwReporterResolved(), wantVis: VisibilityRetracted, want: "not_eligible"},
 		{name: "fading, withheld since", kind: "changed", event: "fading", severity: "low", moderate: "removed", wantVis: VisibilityWithheld, want: "not_eligible"},
@@ -624,9 +628,9 @@ func TestWorkerSkipsWhenNoLongerEligible(t *testing.T) {
 			}},
 		{name: "changed, update row pruned", kind: "changed", event: "none", severity: "low", wantVis: VisibilityProvisional, want: "not_eligible"},
 		{name: "changed, update row of another kind", kind: "changed", event: "reliable_nearby", severity: "low", wantVis: VisibilityProvisional, want: "not_eligible"},
-		{name: "changed, the Changes switch is off now", kind: "changed", event: "fading", severity: "low", wantVis: VisibilityProvisional, want: "not_eligible",
+		{name: "changed, the Changes switch is off now", kind: "changed", event: "fading", severity: "low", votes: pwConfirm(2), wantVis: VisibilityLive, want: "not_eligible",
 			mutate: off(func(h *sqlcgen.PushAccountHomeRow) { h.ChangesPushOn = false })},
-		{name: "changed, muted", kind: "changed", event: "fading", severity: "low", wantVis: VisibilityProvisional, want: "not_eligible",
+		{name: "changed, muted", kind: "changed", event: "fading", severity: "low", votes: pwConfirm(2), wantVis: VisibilityLive, want: "not_eligible",
 			mutate: off(func(h *sqlcgen.PushAccountHomeRow) { h.Muted = true })},
 	}
 
@@ -949,6 +953,7 @@ func TestWorkerCapPerAccountHour(t *testing.T) {
 			r.q.count = PushPerAccountPerHour
 			if kind == "changed" {
 				r.q.claimRows[0].UpdateKind = pwStr("fading")
+				r.q.votes = pwConfirm(2) // a fading note needs a Live report (S-01)
 			}
 			r.report(func(row *sqlcgen.PushReportFactsRow) {
 				if kind != "critical" {
@@ -976,6 +981,7 @@ func TestWorkerCapPerAccountHour(t *testing.T) {
 			r.q.count = PushPerAccountPerHour - 1
 			if kind == "changed" {
 				r.q.claimRows[0].UpdateKind = pwStr("fading")
+				r.q.votes = pwConfirm(2) // a fading note needs a Live report (S-01)
 			}
 			r.report(func(row *sqlcgen.PushReportFactsRow) {
 				if kind != "critical" {
