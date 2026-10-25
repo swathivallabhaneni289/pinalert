@@ -579,6 +579,8 @@ Populated during roadmap creation.
 | PROF-01 | Phase 9 | Pending |
 | PROF-02 | Phase 9 | Pending |
 | PROF-03 | Phase 9 | Pending |
+| PWA-03 | Phase 3.3 | Built 2026-10-25, owner device checks pending (03.3-UAT.md) |
+| PWA-06 | Phase 3.3 (updates part), Phase 5 (official alerts) | Updates part built 2026-10-25, owner device checks pending; official alerts with Phase 5 |
 
 **Coverage:**
 
