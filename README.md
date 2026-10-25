@@ -42,6 +42,9 @@ How confirmations are counted, why a place is a precision 7 geohash cell, the 1 
    # export EMERGENCY_STATE_LINES="1070,1077"        # optional, this is the default; set but empty drops the state helpline row
    # export CLIENT_IP_HEADER="Header-Your-Host-Sets" # optional, unset skips the network address backstop; use the header your host sets, only after the host canary in the checklist below
    # export MODERATOR_EMAILS="you@example.com"       # optional, comma separated verified emails; unset means no moderator; a malformed entry stops startup
+   # export VAPID_PUBLIC_KEY="..."                   # optional, phone notifications; make the pair once with: go run ./cmd/vapidkeys, and keep it as host secrets
+   # export VAPID_PRIVATE_KEY="..."                  # optional, set both or neither; one alone stops startup
+   # export VAPID_SUBJECT="you@example.com"          # optional, an email or https address for the push services; falls back to CONTACT_EMAIL, then an https BASE_URL
    ```
    The server refuses to start without `SESSION_SECRET` unless `ENV=development` is also set —
    never let a missing secret silently fall back to an auto-generated one, which would invalidate
@@ -134,6 +137,18 @@ Resend's free tier is also quota-limited (roughly 100 sends/day at the time this
 re-check the current figure in your own Resend dashboard rather than trusting this document). The
 per-email resend cooldown and per-IP rate limiter shipping in plan `01.1-05` exist specifically to
 protect that quota from being exhausted by repeated requests.
+
+## Phone notifications
+
+Pinalert can send a short, silent note to a person's lock screen when a Critical report is posted near
+their home area, and when a report they posted or voted on changes. It is off until both
+`VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` are set; with neither set the app works as before. People
+switch it on in Settings, under Notifications. [docs/PUSH.md](./docs/PUSH.md) covers making the keys,
+https, the push services the server accepts, what a lock screen shows, what the site cannot promise
+(an iPhone follows its own sound settings, and a sleeping host sends nothing) and the steps for
+checking it on real devices. [docs/TRUST-MODEL.md](./docs/TRUST-MODEL.md) says who gets which note.
+Never commit the keys. Phone notifications need migration 00011, so run `make migrate` once on an
+existing database after pulling.
 
 ## Account access and logout
 
