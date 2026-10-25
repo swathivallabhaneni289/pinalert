@@ -1,6 +1,7 @@
 // settings_alerts_test.mjs - runs the real web/static/js/settings-alerts.js in a
-// Node sandbox and checks the Muted reports window and the two account confirm
-// windows of the Settings page (Phase 3.2 plan 12, D-11, D-23, UI-SPEC E2, E3):
+// Node sandbox and checks the Muted reports window, the Log out of all devices
+// window and the Delete my account box of the Settings page (Phase 3.2 plan 12,
+// D-11, D-23, UI-SPEC E2, E3):
 //
 //   - Muted reports loads GET /api/me/muted-reports, lists each report with its
 //     text, category and severity or "This report is no longer available", and
@@ -10,8 +11,13 @@
 //   - Log out of all devices and Delete my account each post once, show their
 //     busy word, go to their fixed sign in address on success and show their
 //     sentence on failure;
-//   - every window opens with focus on its title, locks the page, keeps Tab
-//     inside and closes with the X or Escape only;
+//   - every window (Muted reports, Log out of all devices) opens with focus on
+//     its title, locks the page, keeps Tab inside and closes with the X or
+//     Escape only;
+//   - Delete my account is not a window: it is a small native box like Log out
+//     (owner, 2026-10-25), answered by Cancel, Delete or Escape. Focus starts on
+//     the question, a tap on the dim page does nothing, and Escape is refused
+//     while the delete is being sent;
 //   - every string reaches the page through textContent.
 //
 // Run it with: node --test web/settings_alerts_test.mjs
@@ -52,6 +58,7 @@ class FakeEl {
   }
   set innerHTML(v) { throw new Error('innerHTML must never be used: ' + v); }
   set outerHTML(v) { throw new Error('outerHTML must never be used: ' + v); }
+  get open() { return Object.hasOwn(this.attrs, 'open'); }
   get hidden() { return Object.hasOwn(this.attrs, 'hidden'); }
   set hidden(v) {
     if (v) { this.attrs.hidden = ''; } else { delete this.attrs.hidden; }
@@ -101,7 +108,7 @@ class FakeEl {
 
 // The markup of settings.html.tmpl, as the ids and nesting settings-alerts.js
 // reads. withMarkup false builds a page that has none of the new rows.
-function buildPage({ count = 0, withMarkup = true, home = true, on = false, radius = 5 } = {}) {
+function buildPage({ count = 0, withMarkup = true, home = true, on = false, radius = 5, dialog = true } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -165,14 +172,24 @@ function buildPage({ count = 0, withMarkup = true, home = true, on = false, radi
   make('p', 'settings-logout-all-error', logoutPanel).hidden = true;
   make('button', 'settings-logout-all-go', logoutPanel).textContent = 'Log out of all devices';
 
-  const del = make('div', 'settings-delete-window', doc.body);
-  del.hidden = true;
-  const delPanel = make('div', '', del);
-  const delHead = make('div', '', delPanel);
-  make('h2', 'settings-delete-title', delHead);
-  make('button', 'settings-delete-close', delHead);
-  make('p', 'settings-delete-error', delPanel).hidden = true;
-  make('button', 'settings-delete-go', delPanel).textContent = 'Delete my account';
+  // The Delete box is a dialog element (owner, 2026-10-25). Only this element
+  // gets showModal and close, and only when the page is built with a dialog.
+  const del = make('dialog', 'settings-delete-confirm', doc.body);
+  const delBody = make('div', '', del);
+  make('h2', 'settings-delete-title', delBody).textContent = 'Delete your account?';
+  make('div', 'settings-delete-text', delBody);
+  make('p', 'settings-delete-error', delBody).hidden = true;
+  const delActions = make('div', '', delBody);
+  make('button', 'settings-delete-cancel', delActions).textContent = 'Cancel';
+  make('button', 'settings-delete-go', delActions).textContent = 'Delete';
+  if (dialog) {
+    del.showModal = function showModal() { del.setAttribute('open', ''); };
+    del.close = function close() {
+      if (!del.open) { return; }
+      del.removeAttribute('open');
+      (del.handlers.close || []).forEach((h) => h({ type: 'close', target: del }));
+    };
+  }
 
   // Plan 15: the Notifications section, the Home area row and window.
   const alertsOn = make('div', 'settings-alerts-on', main);
@@ -196,10 +213,12 @@ function buildPage({ count = 0, withMarkup = true, home = true, on = false, radi
 
 // loadAlerts evaluates settings-alerts.js against a page. fetch keeps every
 // call for the test to answer. Any use of the device position throws.
-function loadAlerts(options) {
+function loadAlerts(options = {}) {
   const page = buildPage(options);
   const requests = [];
   const assigned = [];
+  const asked = [];
+  const alerted = [];
   let now = 0;
   let nextId = 1;
   const timers = new Map();
@@ -245,12 +264,14 @@ function loadAlerts(options) {
       onLine: true,
       get geolocation() { throw new Error('settings-alerts.js asked for the device position'); }
     },
-    location: { assign(target) { assigned.push(String(target)); } }
+    location: { assign(target) { assigned.push(String(target)); } },
+    confirm(question) { asked.push(String(question)); return options.confirmAnswer; },
+    alert(message) { alerted.push(String(message)); }
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'settings-alerts.js' });
-  return { ...page, api: sandbox.PinalertSettingsAlerts, requests, assigned, advance, sandbox, opened };
+  return { ...page, api: sandbox.PinalertSettingsAlerts, requests, assigned, advance, sandbox, opened, asked, alerted };
 }
 
 const flush = async () => { for (let i = 0; i < 8; i++) { await new Promise((r) => setImmediate(r)); } };
@@ -265,6 +286,14 @@ const byId = (page, id) => page.doc.byId[id];
 const fire = (el, type, extra) => {
   const event = { type, target: el, key: '', shiftKey: false, prevented: false, preventDefault() { this.prevented = true; }, ...extra };
   (el.handlers[type] || []).forEach((h) => h(event));
+  return event;
+};
+
+// pressEscape does what a browser does with Escape on an open modal dialog: a
+// cancelable cancel event, then the close unless the page refused it.
+const pressEscape = (page) => {
+  const event = fire(page.del, 'cancel', { cancelable: true });
+  if (!event.prevented) { page.del.close(); }
   return event;
 };
 
@@ -493,12 +522,65 @@ test('a failed Log out of all devices shows its sentence and gives the button ba
   assert.deepEqual(page.assigned, []);
 });
 
-test('Delete my account sends confirm true, shows Deleting and goes to the deleted sign in page', async () => {
+// ---- The Delete my account box (owner, 2026-10-25) --------------------------
+
+const DELETE_FAILED = 'Couldn\'t delete your account. Try again.';
+
+test('Delete my account opens the box with focus on the question and sends nothing', async () => {
   const page = loadAlerts();
   fire(byId(page, 'settings-delete-row'), 'click');
   await flush();
+  assert.equal(page.del.open, true);
   assert.equal(page.doc.activeElement, byId(page, 'settings-delete-title'));
+  assert.equal(page.requests.length, 0);
+  assert.equal(page.main.inert, false, 'the native modal makes the page inert, not lockPage');
+  assert.equal(page.doc.documentElement.getAttribute('data-modal-open'), null);
+  assert.equal(byId(page, 'settings-delete-error').hidden, true);
+});
 
+test('Cancel closes the Delete box, sends nothing and puts focus back on the row', async () => {
+  const page = loadAlerts();
+  const row = byId(page, 'settings-delete-row');
+  fire(row, 'click');
+  await flush();
+  fire(byId(page, 'settings-delete-cancel'), 'click');
+  assert.equal(page.del.open, false);
+  assert.equal(page.doc.activeElement, row);
+  assert.equal(page.requests.length, 0);
+});
+
+test('Escape on the idle Delete box is not refused, closes it and puts focus back on the row', async () => {
+  const page = loadAlerts();
+  const row = byId(page, 'settings-delete-row');
+  fire(row, 'click');
+  await flush();
+  const event = pressEscape(page);
+  assert.equal(event.prevented, false);
+  assert.equal(page.del.open, false);
+  assert.equal(page.doc.activeElement, row);
+  assert.equal(page.requests.length, 0);
+});
+
+test('while the delete is being sent Escape is refused and both buttons are disabled', async () => {
+  const page = loadAlerts();
+  fire(byId(page, 'settings-delete-row'), 'click');
+  await flush();
+  fire(byId(page, 'settings-delete-go'), 'click');
+  await flush();
+  const event = pressEscape(page);
+  assert.equal(event.prevented, true);
+  assert.equal(page.del.open, true);
+  assert.equal(byId(page, 'settings-delete-cancel').disabled, true);
+  assert.equal(byId(page, 'settings-delete-go').disabled, true);
+  // A press on Cancel that still reaches the script changes nothing.
+  fire(byId(page, 'settings-delete-cancel'), 'click');
+  assert.equal(page.del.open, true);
+});
+
+test('Delete my account sends confirm true once, shows Deleting and goes to the deleted sign in page', async () => {
+  const page = loadAlerts();
+  fire(byId(page, 'settings-delete-row'), 'click');
+  await flush();
   const go = byId(page, 'settings-delete-go');
   fire(go, 'click');
   fire(go, 'click');
@@ -515,40 +597,110 @@ test('Delete my account sends confirm true, shows Deleting and goes to the delet
   assert.deepEqual(page.assigned, ['/login?done=deleted']);
 });
 
-test('a failed Delete my account shows its sentence and gives the button back', async () => {
+test('a failed delete shows its sentence inside the open box and gives both buttons back', async () => {
   const page = loadAlerts();
   fire(byId(page, 'settings-delete-row'), 'click');
   const go = byId(page, 'settings-delete-go');
+  const cancel = byId(page, 'settings-delete-cancel');
   fire(go, 'click');
   await flush();
   answer(page.requests[0], 500, {});
   await flush();
   const error = byId(page, 'settings-delete-error');
   assert.equal(error.hidden, false);
-  assert.equal(error.textContent, 'Couldn\'t delete your account. Try again.');
+  assert.equal(error.textContent, DELETE_FAILED);
+  assert.equal(page.del.open, true);
   assert.equal(go.disabled, false);
-  assert.equal(go.textContent, 'Delete my account');
+  assert.equal(go.textContent, 'Delete');
+  assert.equal(cancel.disabled, false);
+  assert.equal(page.doc.activeElement, byId(page, 'settings-delete-title'));
   assert.deepEqual(page.assigned, []);
+
+  // Escape works again once the failure is shown.
+  const event = pressEscape(page);
+  assert.equal(event.prevented, false);
+  assert.equal(page.del.open, false);
 });
 
-test('a network failure on Delete my account shows the same sentence', async () => {
+test('a network failure on Delete shows the same sentence in the open box', async () => {
   const page = loadAlerts();
   fire(byId(page, 'settings-delete-row'), 'click');
   fire(byId(page, 'settings-delete-go'), 'click');
   await flush();
   page.requests[0].reject(new Error('offline'));
   await flush();
-  assert.equal(byId(page, 'settings-delete-error').textContent, 'Couldn\'t delete your account. Try again.');
+  assert.equal(byId(page, 'settings-delete-error').textContent, DELETE_FAILED);
+  assert.equal(byId(page, 'settings-delete-error').hidden, false);
+  assert.equal(page.del.open, true);
+  assert.equal(byId(page, 'settings-delete-go').disabled, false);
+  assert.equal(byId(page, 'settings-delete-go').textContent, 'Delete');
+  assert.deepEqual(page.assigned, []);
+});
+
+test('a failure that lands after the browser shut the box opens it again with the sentence', async () => {
+  const page = loadAlerts();
+  fire(byId(page, 'settings-delete-row'), 'click');
+  await flush();
+  fire(byId(page, 'settings-delete-go'), 'click');
+  await flush();
+  page.del.close();
+  assert.equal(page.del.open, false);
+  assert.equal(page.doc.activeElement, byId(page, 'settings-delete-row'));
+  answer(page.requests[0], 500, {});
+  await flush();
+  assert.equal(page.del.open, true);
+  assert.equal(byId(page, 'settings-delete-error').hidden, false);
+  assert.equal(byId(page, 'settings-delete-error').textContent, DELETE_FAILED);
+  assert.equal(page.doc.activeElement, byId(page, 'settings-delete-title'));
+});
+
+test('the Delete box has no click handler and a click on it leaves it open', async () => {
+  const page = loadAlerts();
+  fire(byId(page, 'settings-delete-row'), 'click');
+  await flush();
+  assert.equal((page.del.handlers.click || []).length, 0, 'no click handler on the dialog');
+  fire(page.del, 'click');
+  fire(byId(page, 'settings-delete-title'), 'click');
+  assert.equal(page.del.open, true);
+  assert.equal(page.requests.length, 0);
+});
+
+test('without dialog support a refused confirm sends nothing and asks the question', async () => {
+  const page = loadAlerts({ dialog: false, confirmAnswer: false });
+  fire(byId(page, 'settings-delete-row'), 'click');
+  await flush();
+  assert.deepEqual(page.asked, ['Delete your account?']);
+  assert.equal(page.requests.length, 0);
+});
+
+test('without dialog support an accepted confirm sends once and goes to the deleted sign in page', async () => {
+  const page = loadAlerts({ dialog: false, confirmAnswer: true });
+  fire(byId(page, 'settings-delete-row'), 'click');
+  await flush();
+  assert.equal(page.requests.length, 1);
+  assert.match(page.requests[0].url, /\/api\/me\/delete$/);
+  answer(page.requests[0], 204);
+  await flush();
+  assert.deepEqual(page.assigned, ['/login?done=deleted']);
+});
+
+test('without dialog support a failed delete is told with an alert', async () => {
+  const page = loadAlerts({ dialog: false, confirmAnswer: true });
+  fire(byId(page, 'settings-delete-row'), 'click');
+  await flush();
+  answer(page.requests[0], 500, {});
+  await flush();
+  assert.deepEqual(page.alerted, [DELETE_FAILED]);
   assert.deepEqual(page.assigned, []);
 });
 
 test('the X closes a window and returns focus to the row that opened it', async () => {
   const page = loadAlerts();
-  const row = byId(page, 'settings-delete-row');
+  const row = byId(page, 'settings-logout-all-row');
   fire(row, 'click');
   await flush();
-  fire(byId(page, 'settings-delete-close'), 'click');
-  assert.equal(page.del.hidden, true);
+  fire(byId(page, 'settings-logout-all-close'), 'click');
+  assert.equal(page.logout.hidden, true);
   assert.equal(page.main.inert, false);
   assert.equal(page.doc.documentElement.getAttribute('data-modal-open'), null);
   assert.equal(page.doc.activeElement, row);
@@ -571,22 +723,22 @@ test('Escape closes a window; a click on the window itself closes nothing', asyn
 
 test('Tab stays inside an open window', async () => {
   const page = loadAlerts();
-  fire(byId(page, 'settings-delete-row'), 'click');
+  fire(byId(page, 'settings-logout-all-row'), 'click');
   await flush();
-  const close = byId(page, 'settings-delete-close');
-  const go = byId(page, 'settings-delete-go');
+  const close = byId(page, 'settings-logout-all-close');
+  const go = byId(page, 'settings-logout-all-go');
   go.focus();
-  const forward = fire(page.del, 'keydown', { key: 'Tab' });
+  const forward = fire(page.logout, 'keydown', { key: 'Tab' });
   assert.equal(forward.prevented, true);
   assert.equal(page.doc.activeElement, close);
-  const back = fire(page.del, 'keydown', { key: 'Tab', shiftKey: true });
+  const back = fire(page.logout, 'keydown', { key: 'Tab', shiftKey: true });
   assert.equal(back.prevented, true);
   assert.equal(page.doc.activeElement, go);
 });
 
 test('the script never asks for the device position and exposes its handles', () => {
   const page = loadAlerts();
-  for (const name of ['openWindow', 'closeWindow', 'loadMuted', 'unmute', 'logOutAll', 'deleteAccount', 'saveAlerts', 'redrawAlerts']) {
+  for (const name of ['openWindow', 'closeWindow', 'loadMuted', 'unmute', 'logOutAll', 'openDeleteConfirm', 'deleteAccount', 'saveAlerts', 'redrawAlerts']) {
     assert.equal(typeof page.api[name], 'function', name);
   }
 });

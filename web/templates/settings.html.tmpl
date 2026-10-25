@@ -166,6 +166,24 @@
   </main>
   </div>
 
+  {{/* Owner 2026-10-25, "yes exactly how the logout option is looking and it should work like any delete my account thing work", so Delete my account asks in the same small box as Log out: a native dialog with the Log out box classes, Cancel and a red Delete. It sits here, outside every window, as a direct child of the body. */}}
+  <dialog id="settings-delete-confirm" class="logout-confirm" aria-labelledby="settings-delete-title" aria-describedby="settings-delete-text">
+    <div class="logout-confirm__body">
+      <h2 class="logout-confirm__title" id="settings-delete-title" tabindex="-1">Delete your account?</h2>
+      <div class="logout-confirm__text" id="settings-delete-text">
+        <p>This cannot be undone.</p>
+        <p>Your email, name, home area, updates, muted reports and settings are deleted, and you are logged out on every device.</p>
+        {{/* Q2 owner confirmed 2026-10-18: Option A. Option B is the one sentence "Reports you posted and votes you made are removed, and reports other people confirmed with you may change." */}}
+        <p id="settings-delete-rule">Reports you posted and votes you made stay, with no name or link to you, so nobody else's report changes.</p>
+      </div>
+      <p class="inline-error" id="settings-delete-error" role="alert" hidden></p>
+      <div class="logout-confirm__actions">
+        <button type="button" class="btn" id="settings-delete-cancel">Cancel</button>
+        <button type="button" class="btn btn--destructive" id="settings-delete-go">Delete</button>
+      </div>
+    </div>
+  </dialog>
+
   <div class="app-window app-window--edit" id="settings-name-window" hidden>
     <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-name-title">
       <div class="app-window__head">
@@ -249,25 +267,6 @@
         <p class="inline-error" id="settings-logout-all-error" role="alert" hidden></p>
         <div class="app-window__actions">
           <button type="button" class="btn btn--primary" id="settings-logout-all-go">Log out of all devices</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="app-window app-window--edit" id="settings-delete-window" hidden>
-    <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-delete-title">
-      <div class="app-window__head">
-        <h2 class="app-window__title" id="settings-delete-title" tabindex="-1">Delete my account</h2>
-        <button type="button" class="app-window__close" id="settings-delete-close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
-      </div>
-      <div class="app-window__body">
-        <p>This cannot be undone.</p>
-        <p>Your email, name, home area, updates, muted reports and settings are deleted, and you are logged out on every device.</p>
-        {{/* Q2 owner confirmed 2026-10-18: Option A. Option B is the one sentence "Reports you posted and votes you made are removed, and reports other people confirmed with you may change." */}}
-        <p id="settings-delete-rule">Reports you posted and votes you made stay, with no name or link to you, so nobody else's report changes.</p>
-        <p class="inline-error" id="settings-delete-error" role="alert" hidden></p>
-        <div class="app-window__actions">
-          <button type="button" class="btn btn--primary" id="settings-delete-go">Delete my account</button>
         </div>
       </div>
     </div>

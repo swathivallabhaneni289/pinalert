@@ -1,5 +1,6 @@
-// settings-alerts.js: the Muted reports window and the two account confirm
-// windows of the Settings page (Phase 3.2 plan 12, D-11, D-23, UI-SPEC E2, E3),
+// settings-alerts.js: the Muted reports window, the Log out of all devices
+// window and the Delete my account box of the Settings page (Phase 3.2 plan 12,
+// D-11, D-23, UI-SPEC E2, E3),
 // and the Notifications rows: the Reliable reporter switch and the distance
 // select, saved at once (Phase 3.2 plan 15, NOTIF-05, UI-SPEC E1).
 //
@@ -17,7 +18,13 @@
 //     the only thing from a response that reaches a URL is a report id that was
 //     checked to be digits (T-03.2-22).
 //   - It never closes a window except through the X or Escape: there is no
-//     handler on a window itself, no Cancel and no Done (D-02).
+//     handler on a window itself, no Cancel and no Done (D-02). The one
+//     exception is the Delete box (owner, 2026-10-25: "yes exactly how the
+//     logout option is looking and it should work like any delete my account
+//     thing work"): a native dialog like Log out, answered by its Cancel and
+//     Delete buttons, with Escape the same as Cancel except while the delete is
+//     being sent. It still has no handler on the dialog itself for a click, so
+//     a tap on the dim page does nothing.
 //   - The Delete rule sentence is not here. It lives in the template only, so
 //     the owner's answer to Q2 is a one sentence change.
 (function () {
@@ -25,8 +32,8 @@
 
   var mutedWin = document.getElementById('settings-muted-window');
   var logoutWin = document.getElementById('settings-logout-all-window');
-  var deleteWin = document.getElementById('settings-delete-window');
-  if (!mutedWin || !logoutWin || !deleteWin) {
+  var deleteBox = document.getElementById('settings-delete-confirm');
+  if (!mutedWin || !logoutWin || !deleteBox) {
     return;
   }
 
@@ -48,7 +55,7 @@
   var LABEL_UNMUTE = 'Unmute this report';
   var LABEL_LOGOUT = 'Log out of all devices';
   var LABEL_LOGOUT_BUSY = 'Logging out…';
-  var LABEL_DELETE = 'Delete my account';
+  var LABEL_DELETE = 'Delete';
   var LABEL_DELETE_BUSY = 'Deleting…';
   var MIDDLE_DOT = ' · ';
 
@@ -70,14 +77,20 @@
   var logoutError = el('settings-logout-all-error');
   var logoutGo = el('settings-logout-all-go');
   var deleteRow = el('settings-delete-row');
+  var deleteTitle = el('settings-delete-title');
   var deleteError = el('settings-delete-error');
+  var deleteCancel = el('settings-delete-cancel');
   var deleteGo = el('settings-delete-go');
   var live = el('notice-live');
 
+  // canAskInBox is true when the browser can show the Delete box as a native
+  // modal. Without it the browser's own confirm asks the same question.
+  var canAskInBox = typeof deleteBox.showModal === 'function';
+  var DELETE_QUESTION = deleteTitle && deleteTitle.textContent ? deleteTitle.textContent.trim() : 'Delete your account?';
+
   var windows = {
     muted: { win: mutedWin, row: mutedRow, close: el('settings-muted-close'), title: el('settings-muted-title') },
-    logout: { win: logoutWin, row: logoutRow, close: el('settings-logout-all-close'), title: el('settings-logout-all-title') },
-    del: { win: deleteWin, row: deleteRow, close: el('settings-delete-close'), title: el('settings-delete-title') }
+    logout: { win: logoutWin, row: logoutRow, close: el('settings-logout-all-close'), title: el('settings-logout-all-title') }
   };
 
   var current = null;
@@ -257,8 +270,6 @@
     current = which;
     if (which === 'logout') {
       hideLine(logoutError);
-    } else if (which === 'del') {
-      hideLine(deleteError);
     }
     target.win.hidden = false;
     lockPage(target.win);
@@ -472,7 +483,7 @@
     });
   }
 
-  // ---- The two confirm windows ----------------------------------------------
+  // ---- The Log out of all devices window and the Delete box -------------------
 
   function logOutAll() {
     if (loggingOut) {
@@ -497,6 +508,28 @@
     }, fail);
   }
 
+  // openDeleteConfirm asks the Delete question. The native box opens with focus
+  // on the question, so no button looks chosen and nothing is sent until Delete
+  // is pressed. The page is inert behind a native modal and auth.css stops it
+  // scrolling, so lockPage is not used.
+  function openDeleteConfirm() {
+    if (deleting) {
+      return;
+    }
+    if (!canAskInBox) {
+      if (window.confirm(DELETE_QUESTION)) {
+        deleteAccount();
+      }
+      return;
+    }
+    if (current !== null) {
+      closeWindow(current, false);
+    }
+    hideLine(deleteError);
+    deleteBox.showModal();
+    deleteTitle.focus();
+  }
+
   function deleteAccount() {
     if (deleting) {
       return Promise.resolve();
@@ -504,12 +537,27 @@
     deleting = true;
     hideLine(deleteError);
     deleteGo.disabled = true;
+    deleteCancel.disabled = true;
     setText(deleteGo, LABEL_DELETE_BUSY);
     function fail() {
       deleting = false;
       deleteGo.disabled = false;
+      deleteCancel.disabled = false;
       setText(deleteGo, LABEL_DELETE);
+      if (!canAskInBox) {
+        window.alert(MESSAGE_DELETE_FAILED);
+        return;
+      }
+      // A browser may force the box shut on a second Escape even though the
+      // cancel was refused, so it opens again before the sentence shows.
+      if (!deleteBox.open) {
+        deleteBox.showModal();
+      }
       showLine(deleteError, MESSAGE_DELETE_FAILED);
+      // showModal runs the browser's own focusing steps, which can land on
+      // Cancel, and a disabled Delete drops focus to the body. The question
+      // takes it back, as when the box first opened.
+      deleteTitle.focus();
     }
     return request(DELETE_URL, {
       method: 'POST',
@@ -708,16 +756,29 @@
 
   mutedRow.addEventListener('click', function () { openWindow('muted'); });
   logoutRow.addEventListener('click', function () { openWindow('logout'); });
-  deleteRow.addEventListener('click', function () { openWindow('del'); });
+  deleteRow.addEventListener('click', function () { openDeleteConfirm(); });
   windows.muted.close.addEventListener('click', function () { closeWindow('muted', true); });
   windows.logout.close.addEventListener('click', function () { closeWindow('logout', true); });
-  windows.del.close.addEventListener('click', function () { closeWindow('del', true); });
   mutedWin.addEventListener('keydown', function (e) { onWindowKeydown('muted', e); });
   logoutWin.addEventListener('keydown', function (e) { onWindowKeydown('logout', e); });
-  deleteWin.addEventListener('keydown', function (e) { onWindowKeydown('del', e); });
   mutedRetry.addEventListener('click', function () { loadMuted(); });
   logoutGo.addEventListener('click', function () { logOutAll(); });
+  // The Delete box: Cancel and Delete answer it, and Escape (the browser's
+  // cancel event) is the same as Cancel except while the delete is being sent.
+  // There is no click handler on the dialog, so a tap on the dim page does
+  // nothing.
+  deleteCancel.addEventListener('click', function () {
+    if (!deleting) {
+      deleteBox.close();
+    }
+  });
   deleteGo.addEventListener('click', function () { deleteAccount(); });
+  deleteBox.addEventListener('cancel', function (e) {
+    if (deleting) {
+      e.preventDefault();
+    }
+  });
+  deleteBox.addEventListener('close', function () { deleteRow.focus(); });
 
   window.PinalertSettingsAlerts = {
     openWindow: openWindow,
@@ -725,6 +786,7 @@
     loadMuted: loadMuted,
     unmute: unmute,
     logOutAll: logOutAll,
+    openDeleteConfirm: openDeleteConfirm,
     deleteAccount: deleteAccount,
     saveAlerts: saveAlerts,
     redrawAlerts: redrawAlerts

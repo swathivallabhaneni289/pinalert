@@ -577,6 +577,13 @@
   border-radius: 8px;
   background: var(--color-bg);
   color: var(--color-text);
+  /* 2026-10-25: the Delete box carries three paragraphs, so at 320px with 200
+     percent text it scrolls inside itself. The percentage is measured against
+     the viewport because a modal dialog sits in the top layer, and a vh unit is
+     avoided because the iPhone toolbar would cover the buttons. The Log out box
+     is short, so it never reaches the cap. */
+  max-height: calc(100% - 2 * var(--space-md));
+  overflow-y: auto;
 }
 
 .logout-confirm::backdrop {
@@ -608,12 +615,46 @@ html:has(.logout-confirm[open]) {
 
 .logout-confirm__actions:not([hidden]) {
   display: flex;
+  /* At normal text both buttons fit on one row, so neither box changes; at 200
+     percent text the two buttons stack instead of running out of the box. */
+  flex-wrap: wrap;
   gap: var(--space-sm);
 }
 
 .logout-confirm__actions .btn {
   flex: 1 1 0;
   margin: 0;
+}
+
+/* Owner 2026-10-25, "yes exactly how the logout option is looking and it
+   should work like any delete my account thing work": the Delete box reuses
+   the Log out box. These rules serve its sentences and leave the Log out box
+   as it is. */
+.logout-confirm__title:has(+ .logout-confirm__text) {
+  margin-bottom: var(--space-sm);
+}
+
+.logout-confirm__text p {
+  margin: 0 0 var(--space-sm);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.logout-confirm__text p:last-child {
+  margin-bottom: 0;
+}
+
+/* Three classes outrank chrome.css's .inline-error:not([hidden]), which loads
+   after this file. */
+.logout-confirm .inline-error:not([hidden]) {
+  margin: var(--space-md) 0 0;
+}
+
+/* Only a box with sentences gets the extra space above its buttons; the Log
+   out box keeps the title's own margin. */
+.logout-confirm__text ~ .logout-confirm__actions {
+  margin-top: var(--space-lg);
 }
 
 @media (forced-colors: active) {
