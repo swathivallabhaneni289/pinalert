@@ -829,7 +829,7 @@ Phases execute in the owner's build order (2026-10-16): 1 → 1.1 → 2 → 3 �
 | 6. Coordination (removed 2026-10-16, share card moved to Phase 8) | - | Removed | - |
 | 7. Address search box for report location | 4/4 | Complete | 2026-09-29 |
 | 7.1 Password sign in and usernames | 0/21 | Planned | - |
-| 8. Report page and comments | 0/TBD | Not started | - |
+| 8. Report page and comments | 0/20 | Planned | - |
 | 9. Followable reporter profiles | 0/29 | Planned | - |
 
 ## Backlog
@@ -1145,11 +1145,46 @@ Plans:
   - A shared link opens a small public page for that one report with no sign in: what it is, the rough area, whether it is still happening, confirmed, disputed or over, how many nearby confirmed it and when; never comments, names or the exact spot; "Sign in to see more" at the bottom.
   - Step 4 requirement confirmed: Username, Name and Home area are all required with no Skip (the owner kept Name required, Instagram style), and an account stays required to use the site.
 
-**Plans:** 0 plans
+**Plans:** 20 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 8 to break down)
+**Execution waits for:** Phases 5 and 7.1 merged on main. The laptop uses default A (08-CONTEXT D-18): the popup as built plus an Open report row; option B is plan 08-07 alone. Waves 1 to 4 alone deliver PAGE-01 and COORD-08; comments start at wave 5 (D-17).
+
+**Wave 1**
+
+- [ ] 08-01-PLAN.md: The history timeline, replayed from the vote log with no names or places (wave 1)
+- [ ] 08-02-PLAN.md: The share token and the share and public page service (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 08-03-PLAN.md: The Share route, its limit and the public base address from config (wave 2)
+- [ ] 08-05-PLAN.md: The report page builder, mounted on the phone (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 08-04-PLAN.md: The public status page at /r/{token}, with no session and no cookie (wave 3)
+- [ ] 08-06-PLAN.md: The Share window and phone sheet (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 08-07-PLAN.md: The laptop host, default A: the popup's Open report row and the panel beside the map (wave 4)
+
+**Waves 5 to 12: comments** *(each blocked on the wave before)*
+
+- [ ] 08-08-PLAN.md: Comments data: comments, likes, flags and the one visibility query (wave 5)
+- [ ] 08-09-PLAN.md: The comment service: text rules, screening, replies, closed state, delete, likes, flags (wave 6)
+- [ ] 08-10-PLAN.md: Comment counts on every feed and history read (wave 7)
+- [ ] 08-11-PLAN.md: Comment and reply rows in the in app updates (wave 7)
+- [ ] 08-12-PLAN.md: The comment routes and their limits (wave 7)
+- [ ] 08-13-PLAN.md: Comment moderation: Keep and Remove (wave 8)
+- [ ] 08-15-PLAN.md: Silent phone notes for comments and replies (wave 8)
+- [ ] 08-16-PLAN.md: The comments list and box on the page (wave 8)
+- [ ] 08-14-PLAN.md: The worker for comments whose check did not finish (wave 9)
+- [ ] 08-18-PLAN.md: Flag for comments and the moderator Comments section (wave 9)
+- [ ] 08-17-PLAN.md: Thumbs up, Delete and Flag on each comment (wave 10)
+- [ ] 08-19-PLAN.md: Docs (wave 11)
+- [ ] 08-20-PLAN.md: The final gate and the owner's viewing (wave 12)
 
 ### Phase 9: Followable reporter profiles
 

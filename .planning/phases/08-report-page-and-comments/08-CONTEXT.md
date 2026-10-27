@@ -47,8 +47,13 @@ Requirements: PAGE-01, PAGE-02, COORD-08, and the IDENT-01 change (sign in by pa
 - **D-16 [CLAUDE'S DISCRETION]:** A reply to you and a new comment on your own report appear in your in-app updates (Phase 3.2 bell). Likes never notify. Phone notifications for these use the existing "changes to reports I posted or voted on" kind (off by default) and, like every phone notification, are silent (owner, 2026-10-18: no buzzes anywhere).
 - **D-17 [CLAUDE'S DISCRETION]:** Ship order inside the phase: the page, the timeline and Share first; then comments (they need the moderation hook and limiter).
 
+### Decisions at planning (2026-10-27, CLAUDE'S DISCRETION, confirm at the viewing session)
+- **D-18 [default A, owner asked twice, no answer yet]:** The laptop host. D-01 (2026-10-17) locked the report beside the map on a pin tap; on 2026-10-19 the owner said "the laptop ver looks good i dont want you to disturb that" and plan 03.4-39 dropped that layout. Default A follows the later words: on the laptop a pin tap still opens the popup exactly as built, and one new "Open report" row at the bottom of the popup (with the real comment count, SC4) opens the full report beside the map in place of the Nearby list, with Back to the list. Option B (D-01 as locked: a pin tap opens the full report beside the map at once) stays one plan away: the report page is built once, independent of where it is mounted, and the laptop placement is its own small plan, so switching to B changes only that plan. The phone opens its full screen report page either way.
+- **D-19:** Research open questions 1b to 7 take the research's recommended defaults, each listed under "Defaults to confirm at the viewing session": the shipped phone order (fade line and actions above the trust block, owner 2026-10-21) stays as a recorded deviation from D-01; the comment count shows in the Comments heading and the popup row, not on list rows; only `removed` says "This report was removed" on the public page; "Sign in to see more" is a plain `/login` link unless Phase 7.1 offers a safe return path; anyone signed in may comment; the Low data view gets no report page, comments, timeline or Share; a moderator removal reads "Comment removed".
+- **D-20:** Phase 7.1 decided (its D-16) that a username the screen could not judge is saved as pending; comments show only usernames that passed, and a pending one shows a neutral placeholder until it clears.
+
 ### Claude's Discretion (summary)
-D-06, D-11 to D-17.
+D-06, D-11 to D-20.
 
 </decisions>
 
