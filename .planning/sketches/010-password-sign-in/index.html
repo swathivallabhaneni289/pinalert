@@ -1,0 +1,2183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pinalert password sign in</title>
+<script>
+/* Mockup only: the Light and Dark switch, applied before the first paint. */
+(function () {
+  var t = new URLSearchParams(location.search).get('theme');
+  if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+<style>
+/* Tokens copied from web/static/css/main.css: light values, then the two dark sources. */
+:root {
+  color-scheme: light;
+  --space-xs: 4px; --space-sm: 8px; --space-12: 12px; --space-md: 16px; --space-lg: 24px; --space-xl: 32px; --space-2xl: 48px;
+  --touch-target-min: 44px;
+  --shadow-window: 0 12px 40px rgb(0 0 0 / 30%);
+  --color-notice-bg: #1A1D21; --color-notice-text: #FFFFFF; --color-notice-sub: #C9CDD1;
+  --color-notice-dim: #9CA3AF; --color-notice-outline: #4B4F55;
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-size-caption: 0.75rem; --line-height-caption: 1.3;
+  --font-size-label: 0.875rem; --line-height-label: 1.4;
+  --font-size-body: 1rem; --line-height-body: 1.5;
+  --font-size-heading: 1.125rem; --line-height-heading: 1.3;
+  --font-size-display: 1.5rem; --line-height-display: 1.2;
+  --font-weight-regular: 400; --font-weight-semibold: 600;
+  --color-bg: #FFFFFF; --color-surface: #F1F3F4; --color-border: #E1E4E8;
+  --color-text: #1A1D21; --color-text-muted: #6B7280; --color-focus-ring: #1A1D21;
+  --color-severity-low: #2F9E64; --color-severity-critical: #C0392B; --color-severity-critical-bg: #FBE9E7;
+  --color-tone-good: #3A7B4D; --color-tone-bad: var(--color-severity-critical);
+  /* Sketch 009: how strongly the globe shows. Set on the wrapper only. */
+  --globe-dim: 0.5;
+  --icon-mail: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7'/%3E%3Crect x='2' y='4' width='20' height='16' rx='2'/%3E%3C/svg%3E");
+  --icon-shield-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E");
+  --icon-circle-x: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='m15 9-6 6'/%3E%3Cpath d='m9 9 6 6'/%3E%3C/svg%3E");
+  --icon-circle-alert: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='12' x2='12' y1='8' y2='12'/%3E%3Cline x1='12' x2='12.01' y1='16' y2='16'/%3E%3C/svg%3E");
+  --icon-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+  --icon-arrow-left: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m12 19-7-7 7-7'/%3E%3Cpath d='M19 12H5'/%3E%3C/svg%3E");
+  --icon-chevron-right: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E");
+  --icon-x: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18'/%3E%3Cpath d='m6 6 12 12'/%3E%3C/svg%3E");
+  --icon-bell: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.268 21a2 2 0 0 0 3.464 0'/%3E%3Cpath d='M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326'/%3E%3C/svg%3E");
+  --icon-user: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E");
+  --icon-plus: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14'/%3E%3Cpath d='M12 5v14'/%3E%3C/svg%3E");
+  --icon-lock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='18' height='11' x='3' y='11' rx='2' ry='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --color-bg: #0B0D10; --color-surface: #16181C; --color-border: #2A2D31;
+    --color-text: #F3F4F6; --color-text-muted: #9CA3AF; --color-focus-ring: #F3F4F6;
+    --color-severity-low: #34D399; --color-severity-critical: #E5695C; --color-severity-critical-bg: #3A1512;
+    --color-tone-good: #34D399;
+    --globe-dim: 0.4;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bg: #0B0D10; --color-surface: #16181C; --color-border: #2A2D31;
+  --color-text: #F3F4F6; --color-text-muted: #9CA3AF; --color-focus-ring: #F3F4F6;
+  --color-severity-low: #34D399; --color-severity-critical: #E5695C; --color-severity-critical-bg: #3A1512;
+  --color-tone-good: #34D399;
+  --globe-dim: 0.4;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { background: var(--color-bg); }
+body {
+  margin: 0; font-family: var(--font-family); font-size: var(--font-size-body); line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular); color: var(--color-text); background: var(--color-bg);
+}
+:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
+::placeholder { color: var(--color-text-muted); opacity: 1; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* ---- Icons: the project's mask icons, drawn from data URIs so the file stands alone ---- */
+.auth-icon, .app-icon, .ui-icon { display: inline-block; flex-shrink: 0; width: 24px; height: 24px; background-color: currentColor;
+  -webkit-mask-size: contain; mask-size: contain; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center; mask-position: center; }
+.auth-icon { color: var(--color-text-muted); }
+.ic-mail { -webkit-mask-image: var(--icon-mail); mask-image: var(--icon-mail); }
+.ic-lock { -webkit-mask-image: var(--icon-lock); mask-image: var(--icon-lock); }
+.ic-shield-check { -webkit-mask-image: var(--icon-shield-check); mask-image: var(--icon-shield-check); }
+.ic-circle-x { -webkit-mask-image: var(--icon-circle-x); mask-image: var(--icon-circle-x); }
+.ic-circle-alert { -webkit-mask-image: var(--icon-circle-alert); mask-image: var(--icon-circle-alert); }
+.ic-check { -webkit-mask-image: var(--icon-check); mask-image: var(--icon-check); }
+.ic-arrow-left { -webkit-mask-image: var(--icon-arrow-left); mask-image: var(--icon-arrow-left); }
+.ic-chevron-right { -webkit-mask-image: var(--icon-chevron-right); mask-image: var(--icon-chevron-right); }
+.ic-x { -webkit-mask-image: var(--icon-x); mask-image: var(--icon-x); }
+.ic-bell { -webkit-mask-image: var(--icon-bell); mask-image: var(--icon-bell); }
+.ic-user { -webkit-mask-image: var(--icon-user); mask-image: var(--icon-user); }
+.ic-plus { -webkit-mask-image: var(--icon-plus); mask-image: var(--icon-plus); }
+
+/* ---- Buttons: main.css .btn with the chrome.css states ---- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-sm); min-height: var(--touch-target-min);
+  padding: var(--space-sm) var(--space-lg); border: 1px solid var(--color-border); border-radius: 6px;
+  background: var(--color-bg); color: var(--color-text); font-family: var(--font-family);
+  font-size: var(--font-size-body); font-weight: var(--font-weight-semibold); text-decoration: none; cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease; }
+.btn[hidden] { display: none; }
+.btn--primary { background: var(--color-text); color: var(--color-bg); border-color: var(--color-text); }
+.btn:not(.btn--primary):not([aria-disabled="true"]):hover { background: var(--color-border); border-color: var(--color-border); }
+.btn:not(.btn--primary):not([aria-disabled="true"]):active { background: var(--color-border); border-color: var(--color-border);
+  box-shadow: inset 0 0 0 1px var(--color-text-muted); }
+.btn--primary:not([aria-disabled="true"]):hover { background: var(--color-text-muted); border-color: var(--color-text-muted); }
+.btn--primary:not([aria-disabled="true"]):active { background: var(--color-text-muted); border-color: var(--color-text-muted);
+  box-shadow: inset 0 0 0 1px var(--color-bg); }
+/* Switched off (aria-disabled, so it stays reachable): full contrast text on the surface fill, a hairline. */
+.btn[aria-disabled="true"] { background: var(--color-surface); color: var(--color-text); border-color: var(--color-border);
+  cursor: not-allowed; }
+.btn[aria-busy="true"] { cursor: progress; }
+.btn .ui-icon { width: 20px; height: 20px; }
+@media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
+
+/* ---- Messages: chrome.css .inline-error (icon as an inline mask) ---- */
+.inline-error:not([hidden]) { display: flex; gap: var(--space-sm); margin: var(--space-xs) 0 0; padding-left: var(--space-sm);
+  border-left: 4px solid var(--color-severity-critical); color: var(--color-text); font-size: var(--font-size-body);
+  line-height: var(--line-height-body); font-weight: var(--font-weight-regular); }
+.inline-error::before { content: ""; flex-shrink: 0; width: var(--space-md); height: var(--space-md); margin-top: var(--space-xs);
+  background-color: currentColor; -webkit-mask-image: var(--icon-circle-alert); mask-image: var(--icon-circle-alert);
+  -webkit-mask-size: contain; mask-size: contain; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center; mask-position: center; }
+
+/* ---- The sign in page: web/static/css/auth.css as built, then the Phase 7.1 parts ---- */
+.login-gate:not([hidden]) { position: relative; min-height: 100vh; min-height: 100dvh; display: flex; align-items: center;
+  justify-content: center; overflow: hidden; background: var(--color-bg); padding: var(--space-lg); }
+.login-column { position: relative; z-index: 1; display: flex; flex-direction: column; gap: var(--space-md);
+  width: 100%; max-width: 420px; }
+.login-card { position: relative; z-index: 1; width: 100%; max-width: 420px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: 8px; padding: var(--space-lg); }
+.login-card h1 { font-size: var(--font-size-display); line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold); color: var(--color-text); margin: 0 0 var(--space-md) 0; }
+.login-card h1:focus { outline: none; }
+.login-card p { font-size: var(--font-size-body); line-height: var(--line-height-body); font-weight: var(--font-weight-regular);
+  color: var(--color-text); margin: 0 0 var(--space-md) 0; }
+.login-card .login-done { font-size: var(--font-size-label); line-height: var(--line-height-label); color: var(--color-text);
+  margin: 0 0 var(--space-md) 0; }
+.login-card label { display: block; font-size: var(--font-size-label); line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular); color: var(--color-text); margin-bottom: var(--space-xs); }
+.login-field { display: flex; align-items: center; gap: var(--space-sm); min-height: var(--touch-target-min);
+  border: 1px solid var(--color-text-muted); border-radius: 6px; padding: 0 var(--space-sm); background: var(--color-bg);
+  margin-bottom: var(--space-md); }
+.login-field:focus-within { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
+.login-field input { flex: 1; min-width: 0; min-height: var(--touch-target-min); border: none; background: transparent;
+  font-family: var(--font-family); font-size: var(--font-size-body); color: var(--color-text); }
+.login-field input:focus { outline: none; }
+.login-field--rule { margin-bottom: 0; }
+/* The code field: Display size digits in one real input. 0.25em is the one named letter spacing literal. */
+.login-field--code input { font-size: var(--font-size-display); line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold); letter-spacing: 0.25em; }
+/* Show and Hide: a text button at the right end of the password field, 44px high, no border of its own. */
+.login-show { flex-shrink: 0; min-height: var(--touch-target-min); margin: 0;
+  padding: 0 var(--space-sm); border: 0; border-radius: 4px; background: transparent; color: var(--color-text);
+  font-family: var(--font-family); font-size: var(--font-size-body); line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold); cursor: pointer; }
+.login-show:hover { background: var(--color-border); }
+.login-card .login-rule { font-size: var(--font-size-label); line-height: var(--line-height-label); margin: var(--space-xs) 0 var(--space-md); }
+.login-card .login-status { font-size: var(--font-size-label); line-height: var(--line-height-label); margin: 0 0 var(--space-md); }
+.login-card .login-status[hidden] { display: none; }
+.login-card .inline-error:not([hidden]) { margin: 0 0 var(--space-md); font-size: var(--font-size-label); line-height: var(--line-height-label); }
+.login-card .inline-error::before { margin-top: 2px; }
+.login-card .inline-error__text > span:not([hidden]) { display: block; }
+.login-card .inline-error__text > span + span { margin-top: var(--space-xs); }
+.login-email { overflow-wrap: anywhere; }
+.login-actions { display: flex; flex-direction: column; gap: var(--space-sm); }
+.login-actions .btn { width: 100%; }
+.login-actions .btn--primary[aria-disabled="true"], .login-card .btn[aria-disabled="true"] { background: var(--color-bg); }
+
+/* The two choices: a track on the card surface, the chosen segment filled with the page colour. */
+.login-choice:not([hidden]) { display: flex; gap: 0; padding: var(--space-xs); margin: 0 0 var(--space-md);
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; }
+.login-choice__tab { flex: 1 1 0; min-height: var(--touch-target-min); padding: 0 var(--space-xs); border: 0; border-radius: 4px;
+  background: transparent; color: var(--color-text); font-family: var(--font-family); font-size: var(--font-size-label);
+  line-height: var(--line-height-label); font-weight: var(--font-weight-regular); white-space: nowrap; cursor: pointer;
+  transition: background-color 150ms ease; }
+.login-choice__tab[aria-selected="true"] { background: var(--color-bg); font-weight: var(--font-weight-semibold); }
+.login-choice__tab[aria-selected="false"]:hover { background: var(--color-border); }
+@media (prefers-reduced-motion: reduce) { .login-choice__tab { transition: none; } }
+@media (forced-colors: active) { .login-choice__tab[aria-selected="true"] { border: 1px solid Highlight; } }
+
+/* Under the card: one row of four outlined buttons (07.1-UI-SPEC 1e). No box, no background, no border round the row.
+   Phone: two by two, equal width, as wide as the card. Laptop: one centred row that may be wider than the card. */
+.login-ways { display: flex; flex-direction: column; gap: var(--space-sm); color: var(--color-text); }
+.login-ways__note { margin: 0; font-size: var(--font-size-label); line-height: var(--line-height-label); color: var(--color-text); }
+.login-ways__note[hidden] { display: none; }
+.login-ways__row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-sm); }
+.login-ways__btn { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: var(--touch-target-min);
+  padding: 0 var(--space-12); border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-bg);
+  font-family: var(--font-family); font-size: var(--font-size-label); line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular); color: var(--color-text); text-align: center; text-decoration: none; cursor: pointer;
+  transition: background-color 150ms ease; }
+.login-ways__btn:hover { background: var(--color-border); }
+@media (prefers-reduced-motion: reduce) { .login-ways__btn { transition: none; } }
+@media (min-width: 900px) {
+  .login-ways { align-self: center; width: max-content; max-width: calc(100vw - 2 * var(--space-lg)); }
+  .login-ways__row { display: flex; flex-wrap: wrap; justify-content: center; }
+  .login-ways__btn { padding: 0 var(--space-12); }
+  .login-ways__note { text-align: center; }
+}
+@media (max-width: 359.98px) {
+  .login-gate:not([hidden]) { padding: var(--space-md); }
+  .login-card { padding: var(--space-md); }
+}
+
+/* ---- Sketch 009, placement A: the real globe behind the card ---- */
+.globe-area { pointer-events: none; }
+.globe-bg { visibility: hidden; }
+.globe-box { width: var(--globe-w, 0px); height: var(--globe-h, 0px); }
+.globe-map { width: 100%; height: 100%; }
+.globe-map, .globe-map canvas { background: transparent; }
+.globe-area.is-ready .globe-bg { visibility: visible; animation: globe-in 600ms ease-out both; }
+@keyframes globe-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .globe-area.is-ready .globe-bg { animation: none; } }
+.globe-credit { visibility: hidden; pointer-events: auto; margin: 0; font-size: var(--font-size-label);
+  line-height: var(--line-height-label); color: var(--color-text); }
+.globe-area.is-ready .globe-credit { visibility: visible; }
+.globe-credit a { display: inline-flex; align-items: center; min-height: var(--touch-target-min); color: var(--color-text);
+  font-weight: var(--font-weight-semibold); text-decoration: none; }
+.globe-credit a:hover, .globe-credit a:focus-visible { text-decoration: underline; }
+.globe-area:not([hidden]) { position: absolute; inset: 0; z-index: 0; }
+.globe-bg { position: absolute; inset: 0; opacity: var(--globe-dim); }
+.globe-box { position: absolute; left: var(--globe-x, 0px); top: var(--globe-y, 0px); }
+.globe-credit { position: absolute; right: var(--space-sm); bottom: var(--space-sm); background: var(--color-bg);
+  padding: 0 var(--space-sm); border-radius: 6px; }
+@media (max-width: 899.98px), (max-width: 1199.98px) and (max-height: 799.98px) {
+  .login-gate.has-globe:not([hidden]) { flex-direction: column; gap: var(--space-sm); }
+  .login-gate.has-globe .globe-area:not([hidden]) { position: static; align-self: center; width: 100%; max-width: 420px;
+    display: flex; justify-content: flex-end; }
+  .login-gate.has-globe .globe-credit { position: relative; z-index: 1; right: auto; bottom: auto; }
+}
+
+/* ---- The first-time flow, step 4: web/static/css/welcome.css and window.css ---- */
+.welcome-page:not([hidden]) { display: block; background: var(--color-bg); }
+.welcome { display: flex; flex-direction: column; gap: var(--space-md); height: 100vh; height: 100dvh;
+  padding: 20px 20px 24px; background: var(--color-bg); color: var(--color-text); font-family: var(--font-family); }
+.welcome__progress { flex: none; height: 4px; border-radius: 4px; background: var(--color-surface); overflow: hidden; }
+.welcome__progress-fill { height: 100%; width: 80%; border-radius: 4px; background: var(--color-text); }
+.welcome__side { display: none; }
+.welcome__pane { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; margin: calc(-1 * var(--space-xs));
+  padding: var(--space-xs); overflow-y: auto; overscroll-behavior: contain; }
+.welcome__step { display: flex; flex: 1 1 auto; flex-direction: column; gap: var(--space-md); min-height: 0; }
+.welcome__label { margin: 0; color: var(--color-text-muted); font-size: var(--font-size-label); line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold); text-transform: uppercase; }
+.welcome__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); }
+.welcome__back { display: inline-flex; align-items: center; gap: var(--space-xs); min-height: 44px; margin: 0;
+  padding: 0 var(--space-md) 0 0; border: 0; border-radius: 8px; background: transparent; color: var(--color-text);
+  font-family: inherit; font-size: var(--font-size-body); line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold); cursor: pointer; }
+.welcome__back .app-icon { width: 20px; height: 20px; }
+.welcome__back:hover { background: var(--color-surface); }
+.welcome__title { margin: 0; color: var(--color-text); font-size: var(--font-size-display); line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold); }
+.welcome__title:focus { outline: none; }
+.welcome__lead { margin: 0; color: var(--color-text); font-size: var(--font-size-body); line-height: var(--line-height-body); }
+.welcome__field { display: flex; flex-direction: column; gap: var(--space-xs); }
+.welcome__actions { display: flex; flex-direction: column; gap: var(--space-sm); margin-top: auto; padding-top: var(--space-sm); }
+.welcome__actions .btn { width: 100%; min-height: 48px; padding: 0 var(--space-lg); font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold); }
+.welcome .inline-error:not([hidden]) { margin: 0; }
+
+.app-window__label { display: block; color: var(--color-text); font-size: var(--font-size-label);
+  line-height: var(--line-height-label); font-weight: var(--font-weight-semibold); }
+.app-window__field { display: flex; align-items: center; gap: var(--space-xs); width: 100%; min-height: var(--touch-target-min);
+  margin-top: var(--space-xs); padding: var(--space-sm) var(--space-12); border: 1px solid var(--color-text-muted);
+  border-radius: 6px; background: var(--color-bg); color: var(--color-text); font-family: var(--font-family);
+  font-size: var(--font-size-body); line-height: var(--line-height-body); }
+input.app-window__field { display: block; }
+.app-window__field:focus-within { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
+.app-window__field > input { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit;
+  font: inherit; }
+.app-window__field > input:focus { outline: none; }
+/* The Username field is a box holding the @ and the input, so the input itself fills the 44px height. */
+div.app-window__field { padding-top: 0; padding-bottom: 0; }
+div.app-window__field { cursor: text; }
+div.app-window__field > input { min-height: calc(var(--touch-target-min) - 2px); }
+.app-window__at { flex-shrink: 0; color: var(--color-text-muted); }
+.app-window__help, .app-window__status { margin: 0; color: var(--color-text-muted); font-size: var(--font-size-label);
+  line-height: var(--line-height-label); }
+.app-window__help[hidden], .app-window__status[hidden] { display: none; }
+.app-window__results:not([hidden]) { display: block; margin: 0; padding: 0; list-style: none; border: 1px solid var(--color-border);
+  border-radius: 8px; overflow: hidden; }
+.app-window__results > li + li { border-top: 1px solid var(--color-border); }
+.app-window__option { display: flex; flex-direction: column; box-sizing: border-box; width: 100%; min-height: var(--touch-target-min);
+  padding: var(--space-sm) var(--space-12); border: 0; background: none; color: var(--color-text);
+  font-family: var(--font-family); font-size: var(--font-size-body); line-height: var(--line-height-body);
+  text-align: left; cursor: pointer; }
+.app-window__option:hover { background: var(--color-surface); }
+.app-window__option:focus-visible { outline-offset: -2px; }
+.app-window__option-sub { color: var(--color-text-muted); font-size: var(--font-size-label); line-height: var(--line-height-label); }
+
+/* The Username live check line, shared by step 4 and Settings. */
+.username-line { display: flex; align-items: center; gap: var(--space-xs); min-height: 20px; margin: var(--space-xs) 0 0;
+  color: var(--color-text); font-size: var(--font-size-label); line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold); }
+.username-line.inline-error { margin: var(--space-xs) 0 0; font-weight: var(--font-weight-semibold); }
+.username-line.inline-error:not([hidden]) { font-size: var(--font-size-label); line-height: var(--line-height-label); }
+.username-line::before { content: none; }
+.username-line--good::before, .username-line--bad::before, .username-line--warn::before { content: ""; flex-shrink: 0; width: 16px; height: 16px;
+  background-color: currentColor; -webkit-mask-size: contain; mask-size: contain; -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat; -webkit-mask-position: center; mask-position: center; }
+.username-line.inline-error::before { content: ""; }
+.username-line--good { color: var(--color-tone-good); }
+.username-line--good::before { -webkit-mask-image: var(--icon-check); mask-image: var(--icon-check); }
+.username-line--bad { color: var(--color-tone-bad); }
+.username-line--bad::before { -webkit-mask-image: var(--icon-circle-x); mask-image: var(--icon-circle-x); }
+.username-line--warn::before { -webkit-mask-image: var(--icon-circle-alert); mask-image: var(--icon-circle-alert); }
+
+/* The edit windows of Settings: window.css. */
+.app-window:not([hidden]) { position: fixed; inset: 0; z-index: 1100; display: flex; align-items: stretch;
+  justify-content: stretch; background: rgb(0 0 0 / 45%); }
+.app-window__panel { display: flex; flex-direction: column; box-sizing: border-box; width: 100%; height: 100%; overflow-y: auto;
+  overscroll-behavior: contain; background: var(--color-bg); color: var(--color-text); font-family: var(--font-family); }
+.app-window__head { display: flex; flex: none; align-items: center; justify-content: space-between; gap: var(--space-md);
+  padding: 20px var(--space-md) var(--space-md); border-bottom: 1px solid var(--color-border); }
+.app-window__title { margin: 0; color: var(--color-text); font-size: var(--font-size-display); line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold); }
+.app-window__title:focus { outline: none; }
+.app-window__close { display: flex; flex: none; align-items: center; justify-content: center; width: var(--touch-target-min);
+  height: var(--touch-target-min); padding: 0; border: 0; border-radius: 8px; background: none; color: var(--color-text); cursor: pointer; }
+.app-window__close:hover { background: var(--color-surface); }
+.app-window__close .app-icon { width: 20px; height: 20px; }
+.app-window__body { display: flex; flex: 1 1 auto; flex-direction: column; gap: var(--space-sm); box-sizing: border-box;
+  margin: 0; padding: var(--space-md); }
+.app-window__actions { display: flex; flex-direction: column; gap: var(--space-sm); margin-top: var(--space-sm); }
+.app-window__actions .btn { width: 100%; }
+.app-window .inline-error:not([hidden]) { margin: 0; }
+
+/* ---- Settings: app-bar.css, places.css (the grouped list on the phone, the grid on the laptop) ---- */
+.settings-screen:not([hidden]) { display: block; min-height: 100vh; min-height: 100dvh; background: var(--color-bg); }
+.app-topbar { position: relative; display: flex; align-items: center; gap: var(--space-xs); min-height: calc(var(--touch-target-min) + var(--space-md));
+  padding: var(--space-sm) var(--space-sm) var(--space-sm) var(--space-12); background: var(--color-bg); }
+.app-topbar__brand, .app-topbar__nav, .app-topbar__post, .app-topbar__bell, .app-topbar__person, .app-topbar__spacer { display: none; }
+.app-topbar__back { display: flex; flex: none; align-items: center; justify-content: center; width: var(--touch-target-min);
+  height: var(--touch-target-min); border: 0; border-radius: 8px; background: none; color: var(--color-text); cursor: pointer; }
+.app-topbar__back:hover { background: var(--color-surface); }
+.app-topbar__title { margin: 0; color: var(--color-text); font-size: var(--font-size-heading); line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold); }
+.place-head { display: none; }
+.place-page--settings { padding-bottom: var(--space-lg); }
+.place-section { padding: var(--space-lg) var(--space-md) 0; }
+.place-section__title { margin: 0 0 var(--space-sm); color: var(--color-text); font-size: var(--font-size-body);
+  line-height: var(--line-height-body); font-weight: var(--font-weight-semibold); }
+.place-section__line { display: none; margin: var(--space-xs) 0 0; color: var(--color-text-muted); font-size: var(--font-size-label);
+  line-height: var(--line-height-label); }
+.place-box { border: 0; border-radius: 12px; background: var(--color-surface); overflow: hidden; }
+.place-box > * + * { position: relative; }
+.place-box > * + *::before { content: ""; position: absolute; top: 0; right: 0; left: var(--space-md); pointer-events: none;
+  border-top: 1px solid color-mix(in srgb, var(--color-text-muted) 85%, var(--color-surface)); }
+.place-row { display: flex; align-items: center; gap: var(--space-12); box-sizing: border-box; width: 100%; min-height: 52px;
+  padding: var(--space-12) var(--space-md); border: 0; background: none; color: var(--color-text); font-family: var(--font-family);
+  font-size: var(--font-size-body); line-height: var(--line-height-body); font-weight: var(--font-weight-regular);
+  text-align: left; cursor: pointer; }
+.place-row:focus-visible { outline-offset: -2px; }
+.place-row__text { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; }
+.place-row__label { color: var(--color-text); }
+.place-row__sub { color: color-mix(in srgb, var(--color-text-muted) 85%, var(--color-text)); font-size: var(--font-size-label);
+  line-height: var(--line-height-label); }
+.place-row__value { flex: 0 0 auto; max-width: 50%; color: var(--color-text); font-size: var(--font-size-body);
+  line-height: var(--line-height-body); text-align: right; overflow-wrap: anywhere; }
+.place-row > .app-icon { width: 20px; height: 20px; color: color-mix(in srgb, var(--color-text-muted) 85%, var(--color-text)); }
+
+@media (min-width: 900px) {
+  /* Laptop: step 4 sits in a window beside the dark step panel. */
+  .welcome-page:not([hidden]) { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: var(--color-surface); }
+  .welcome { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 0; width: min(980px, 94%); height: min(680px, 92vh);
+    padding: 0; overflow: hidden; border-radius: 12px; box-shadow: var(--shadow-window); }
+  .welcome__progress { display: none; }
+  .welcome__side { display: flex; flex-direction: column; gap: var(--space-md); padding: var(--space-xl) 28px; overflow-y: auto;
+    background: var(--color-notice-bg); }
+  .welcome__wordmark { margin: 0; color: var(--color-notice-text); font-size: var(--font-size-display);
+    line-height: var(--line-height-display); font-weight: var(--font-weight-semibold); }
+  .welcome__steps { display: flex; flex-direction: column; gap: var(--space-12); margin: var(--space-md) 0 0; padding: 0; list-style: none; }
+  .welcome__steps-item { display: flex; align-items: center; gap: var(--space-12); min-height: 44px; color: var(--color-notice-dim);
+    font-size: var(--font-size-body); line-height: var(--line-height-body); font-weight: var(--font-weight-regular); }
+  .welcome__dot { display: flex; flex: none; align-items: center; justify-content: center; width: 28px; height: 28px;
+    border: 1px solid var(--color-notice-outline); border-radius: 50%; font-size: var(--font-size-caption);
+    line-height: var(--line-height-caption); font-weight: var(--font-weight-semibold); }
+  .welcome__dot .app-icon { display: none; width: 16px; height: 16px; }
+  .welcome__steps-item[data-state="current"] { color: var(--color-notice-text); font-weight: var(--font-weight-semibold); }
+  .welcome__steps-item[data-state="current"] .welcome__dot { border-color: var(--color-notice-text);
+    background: var(--color-notice-text); color: var(--color-notice-bg); }
+  .welcome__steps-item[data-state="done"] { color: var(--color-notice-sub); }
+  .welcome__steps-item[data-state="done"] .welcome__dot { border-color: var(--color-notice-sub); }
+  .welcome__steps-item[data-state="done"] .welcome__dot-num { display: none; }
+  .welcome__steps-item[data-state="done"] .welcome__dot .app-icon { display: block; }
+  .welcome__pane { margin: 0; padding: var(--space-xl) 40px; background: var(--color-bg); }
+  .welcome__actions { flex-direction: row; flex-wrap: wrap; gap: var(--space-sm); }
+  .welcome__actions .btn { width: auto; }
+
+  .app-window:not([hidden]) { align-items: center; justify-content: center; }
+  .app-window__panel { width: min(480px, 92%); height: auto; max-height: 92%; border-radius: 12px; box-shadow: var(--shadow-window); }
+  .app-window__head { padding: 20px var(--space-lg) var(--space-md); }
+  .app-window__body { padding: var(--space-lg); }
+  .app-window__actions { align-items: flex-start; }
+  .app-window__actions .btn { width: auto; }
+
+  .app-topbar { gap: var(--space-sm); padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--color-border);
+    min-height: calc(var(--touch-target-min) + var(--space-md) + 1px); }
+  .app-topbar__back, .app-topbar__title { display: none; }
+  .app-topbar__brand { display: inline-flex; align-items: center; min-height: var(--touch-target-min); margin-right: var(--space-lg);
+    color: var(--color-text); font-size: var(--font-size-heading); line-height: var(--line-height-heading);
+    font-weight: var(--font-weight-semibold); }
+  .app-topbar__nav { display: flex; align-items: center; }
+  .app-topbar__link { display: inline-flex; align-items: center; min-height: var(--touch-target-min); padding: 0 var(--space-12);
+    border: 0; border-bottom: 2px solid transparent; background: none; color: var(--color-text-muted);
+    font-family: var(--font-family); font-size: var(--font-size-body); line-height: var(--line-height-body); cursor: pointer; white-space: nowrap; }
+  .app-topbar__spacer { display: block; flex: 1 1 auto; }
+  .app-topbar__post { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-sm); min-width: 160px;
+    min-height: var(--touch-target-min); padding: 0 var(--space-md); border: 0; border-radius: 8px; background: var(--color-text);
+    color: var(--color-bg); font-family: var(--font-family); font-size: var(--font-size-body); line-height: var(--line-height-body);
+    font-weight: var(--font-weight-semibold); white-space: nowrap; cursor: pointer; }
+  .app-topbar__post .app-icon { width: 20px; height: 20px; }
+  .app-topbar__bell { display: flex; align-items: center; justify-content: center; width: var(--touch-target-min); height: var(--touch-target-min);
+    border: 0; border-radius: 8px; background: none; color: var(--color-text); cursor: pointer; }
+  .app-topbar__person { display: flex; align-items: center; justify-content: center; width: var(--touch-target-min); height: var(--touch-target-min);
+    border: 1px solid var(--color-border); border-radius: 50%; background: var(--color-bg); color: var(--color-text); cursor: pointer;
+    box-shadow: 0 2px 8px rgb(0 0 0 / 20%); }
+
+  .place-head { display: block; margin: 0; padding: var(--space-lg) var(--space-lg) var(--space-sm); color: var(--color-text);
+    font-size: var(--font-size-display); line-height: var(--line-height-display); font-weight: var(--font-weight-semibold); }
+  .place-section { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 40px; align-items: start;
+    padding: var(--space-lg) var(--space-lg) 40px; border-top: 1px solid var(--color-border); }
+  .place-section__title { margin-bottom: 0; font-size: var(--font-size-heading); line-height: var(--line-height-heading); }
+  .place-section__line:not([hidden]) { display: block; }
+  .place-box { border: 1px solid var(--color-border); background: var(--color-bg); }
+  .place-box > * + *::before { left: 0; border-top-color: var(--color-border); }
+  .place-row { padding: var(--space-sm) var(--space-md); }
+  .place-row__sub, .place-row > .app-icon { color: var(--color-text-muted); }
+  .place-row__value { color: var(--color-text-muted); }
+}
+@media (forced-colors: active) {
+  .app-window__panel, .app-window__field, .app-window__results { border: 1px solid CanvasText; }
+  .place-box { border: 1px solid CanvasText; }
+}
+
+/* The four emails: system font, the code in a bordered box at 24px/600, no image, no button, no link. */
+.mail-screen:not([hidden]) { display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; min-height: 100dvh;
+  padding: var(--space-lg); background: var(--color-surface); }
+.mail { display: flex; flex-direction: column; gap: var(--space-md); width: 100%; max-width: 560px; padding: var(--space-lg);
+  background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 8px; }
+.mail p, .mail h1 { margin: 0; }
+.mail__meta { font-size: var(--font-size-label); line-height: var(--line-height-label); color: var(--color-text-muted); }
+.mail__subject { font-size: var(--font-size-body); line-height: var(--line-height-body); font-weight: var(--font-weight-semibold); }
+.mail__body { display: flex; flex-direction: column; gap: var(--space-md); }
+.mail__code { display: inline-block; padding: var(--space-xs) var(--space-sm); border: 1px solid var(--color-border); border-radius: 6px;
+  font-size: var(--font-size-display); line-height: var(--line-height-display); font-weight: var(--font-weight-semibold); }
+.mail .btn { align-self: flex-start; }
+
+/* A plain page for where the real app takes over (not part of this sketch). */
+.stub:not([hidden]) { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: var(--space-md);
+  min-height: 100vh; min-height: 100dvh; padding: var(--space-lg); max-width: 420px; margin: 0 auto; }
+.stub p { margin: 0; }
+
+/* ---- Mockup chrome: the panel and the stage. Not part of the app. ---- */
+.mbtn { display: inline-flex; align-items: center; justify-content: center; min-height: var(--touch-target-min); padding: var(--space-sm) var(--space-12);
+  border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-bg); color: var(--color-text);
+  font-family: var(--font-family); font-size: var(--font-size-label); line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular); text-align: center; cursor: pointer; }
+.mbtn:hover { background: var(--color-border); }
+.mbtn[aria-pressed="true"] { background: var(--color-surface); border-color: var(--color-text-muted); font-weight: var(--font-weight-semibold); }
+.mock__head { display: flex; flex-direction: column; gap: var(--space-sm); align-items: flex-start; }
+.mock__title { margin: 0; font-size: var(--font-size-heading); line-height: var(--line-height-heading); font-weight: var(--font-weight-semibold); }
+.mock__note, .mock__line { margin: var(--space-sm) 0 0; font-size: var(--font-size-label); line-height: var(--line-height-label); color: var(--color-text); }
+.mgroup { margin: var(--space-md) 0 0; padding: 0; border: 0; }
+.mgroup h3 { margin: 0 0 var(--space-xs); font-size: var(--font-size-label); line-height: var(--line-height-label); font-weight: var(--font-weight-semibold); }
+.mgroup h4 { margin: var(--space-sm) 0 var(--space-xs); font-size: var(--font-size-label); line-height: var(--line-height-label); font-weight: var(--font-weight-regular); }
+.mrow { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-sm); }
+.mrow--3 { grid-template-columns: 1fr 1fr 1fr; }
+.mock details { margin: var(--space-md) 0 0; }
+.mock summary { display: flex; align-items: center; min-height: var(--touch-target-min); font-size: var(--font-size-label);
+  font-weight: var(--font-weight-semibold); cursor: pointer; }
+.mock ul { margin: 0; padding-left: var(--space-md); font-size: var(--font-size-label); line-height: var(--line-height-label); }
+.mock li + li { margin-top: var(--space-xs); }
+.mock code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--font-size-label); }
+.mock-show { position: fixed; top: var(--space-sm); left: var(--space-sm); z-index: 5; }
+.mock-show[hidden] { display: none; }
+
+body.mode-outer { display: grid; grid-template-columns: 320px minmax(0, 1fr); height: 100vh; height: 100dvh; overflow: hidden; }
+body.mode-outer.mock-closed { grid-template-columns: minmax(0, 1fr); }
+body.mode-outer .mock { overflow-y: auto; padding: var(--space-md); border-right: 1px solid var(--color-border); background: var(--color-bg); }
+body.mode-outer.mock-closed .mock { display: none; }
+body.mode-outer .stage { min-width: 0; overflow: auto; background: var(--color-surface); display: flex; justify-content: center; }
+body.mode-outer[data-view="phone"] .stage { align-items: flex-start; padding: var(--space-lg) 0; }
+body.mode-outer[data-view="laptop"] .stage { align-items: stretch; padding: 0; }
+.stage iframe { display: block; border: 0; background: var(--color-bg); }
+body[data-view="phone"] .stage iframe { box-sizing: content-box; width: 390px; height: 844px; border: 10px solid #1A1D21; border-radius: 36px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) body[data-view="phone"] .stage iframe { border-color: #3A3E44; } }
+:root[data-theme="dark"] body[data-view="phone"] .stage iframe { border-color: #3A3E44; }
+body[data-view="laptop"] .stage iframe { width: 100%; height: 100%; }
+body.mode-outer #app, body.mode-app .mock, body.mode-app .stage, body.mode-app .mock-show { display: none; }
+body.mode-direct .stage { display: none; }
+body.mode-direct .mock { padding: var(--space-md); border-bottom: 1px solid var(--color-border); background: var(--color-bg); }
+body.mode-direct .mock__body[hidden] { display: none; }
+body.mode-direct .mock-show { display: none; }
+</style>
+</head>
+<body>
+<button type="button" id="mock-show" class="mbtn mock-show" hidden>Mockup controls</button>
+
+<aside class="mock" id="mock" aria-label="Mockup controls">
+  <div class="mock__head">
+    <h2 class="mock__title">Sketch 010: password sign in</h2>
+    <button type="button" id="mock-toggle" class="mbtn" aria-expanded="true" aria-controls="mock-body">Hide controls</button>
+  </div>
+  <div id="mock-body" class="mock__body">
+    <p class="mock__note">This panel belongs to the mockup, not to the app. The page being judged is next to it.</p>
+    <p class="mock__line" id="mock-state" role="status"></p>
+    <p class="mock__line" id="mock-note-live" role="status"></p>
+    <p class="mock__line" id="mock-globe"></p>
+
+    <section class="mgroup" id="mg-view" aria-labelledby="mg-view-h">
+      <h3 id="mg-view-h">Width</h3>
+      <div class="mrow">
+        <button type="button" class="mbtn" data-cmd="view" data-arg="phone" data-group="view" aria-pressed="true">Phone, 390px</button>
+        <button type="button" class="mbtn" data-cmd="view" data-arg="laptop" data-group="view" aria-pressed="false">Laptop</button>
+      </div>
+    </section>
+
+    <section class="mgroup" aria-labelledby="mg-theme-h">
+      <h3 id="mg-theme-h">Theme</h3>
+      <div class="mrow mrow--3">
+        <button type="button" class="mbtn" data-cmd="theme" data-arg="light" data-group="theme" aria-pressed="false">Light</button>
+        <button type="button" class="mbtn" data-cmd="theme" data-arg="dark" data-group="theme" aria-pressed="false">Dark</button>
+        <button type="button" class="mbtn" data-cmd="theme" data-arg="device" data-group="theme" aria-pressed="true">Device</button>
+      </div>
+    </section>
+
+    <section class="mgroup" aria-labelledby="mg-show-h">
+      <h3 id="mg-show-h">Jump to a screen</h3>
+      <h4>Sign in page</h4>
+      <div class="mrow">
+        <button type="button" class="mbtn" data-cmd="go" data-arg="create">Create account</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="signin">Sign in</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="forgot">Forgot password</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="reset-done">After a reset</button>
+      </div>
+      <h4>Sign in answers</h4>
+      <div class="mrow">
+        <button type="button" class="mbtn" data-cmd="go" data-arg="signin-wrong">Wrong email or password</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="signin-locked">Locked account</button>
+      </div>
+      <h4>Code screen</h4>
+      <div class="mrow">
+        <button type="button" class="mbtn" data-cmd="go" data-arg="code-create">New account</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="code-reset">Reset password</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="code-wrong">Wrong code</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="code-expired">Expired code</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="code-tries">Too many tries</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="code-refused">Resend refused</button>
+      </div>
+      <h4>Lines above the title</h4>
+      <div class="mrow">
+        <button type="button" class="mbtn" data-cmd="go" data-arg="done-oldlink">Old emailed link</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="done-switch">Signed out by the switch</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="done-alldevices">Logged out everywhere</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="done-deleted">Account deleted</button>
+      </div>
+      <h4>First time flow, step 4</h4>
+      <div class="mrow">
+        <button type="button" class="mbtn" data-cmd="go" data-arg="step4-new">New person</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="step4-empty">Nothing filled in</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="step4-old">Old account filling in</button>
+      </div>
+      <h4>Settings</h4>
+      <div class="mrow">
+        <button type="button" class="mbtn" data-cmd="go" data-arg="settings">Settings</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="settings-username">Username window</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="settings-wait">Changed 3 days ago</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="settings-name">Name window</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="settings-home">Home area window</button>
+      </div>
+      <h4>The four emails</h4>
+      <div class="mrow">
+        <button type="button" class="mbtn" data-cmd="go" data-arg="email-signup">Code to create</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="email-reset">Code to reset</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="email-exists">Account exists</button>
+        <button type="button" class="mbtn" data-cmd="go" data-arg="email-noaccount">No account</button>
+      </div>
+    </section>
+
+    <section class="mgroup" aria-labelledby="mg-time-h">
+      <h3 id="mg-time-h">Time</h3>
+      <div class="mrow">
+        <button type="button" class="mbtn" data-cmd="skipWait">Skip the resend wait</button>
+        <button type="button" class="mbtn" data-cmd="expireCode">Expire the code now</button>
+      </div>
+    </section>
+
+    <section class="mgroup" aria-labelledby="mg-force-h">
+      <h3 id="mg-force-h">Next answer from the server</h3>
+      <div class="mrow">
+        <button type="button" class="mbtn" data-cmd="force" data-arg="none" data-group="force" aria-pressed="true">Normal</button>
+        <button type="button" class="mbtn" data-cmd="force" data-arg="offline" data-group="force" aria-pressed="false">Offline</button>
+        <button type="button" class="mbtn" data-cmd="force" data-arg="server" data-group="force" aria-pressed="false">Server problem</button>
+        <button type="button" class="mbtn" data-cmd="force" data-arg="device" data-group="force" aria-pressed="false">Device limit</button>
+        <button type="button" class="mbtn" data-cmd="force" data-arg="account" data-group="force" aria-pressed="false">Account locked</button>
+        <button type="button" class="mbtn" data-cmd="force" data-arg="hour" data-group="force" aria-pressed="false">Code cap, hour</button>
+      </div>
+    </section>
+
+    <section class="mgroup" aria-labelledby="mg-low-h">
+      <h3 id="mg-low-h">Low data view already on for this device</h3>
+      <div class="mrow">
+        <button type="button" class="mbtn" data-cmd="low" data-arg="off" data-group="low" aria-pressed="true">Off</button>
+        <button type="button" class="mbtn" data-cmd="low" data-arg="on" data-group="low" aria-pressed="false">On</button>
+      </div>
+    </section>
+
+    <section class="mgroup" aria-labelledby="mg-checks-h">
+      <h3 id="mg-checks-h">Browser checks before sending</h3>
+      <div class="mrow">
+        <button type="button" class="mbtn" data-cmd="checks" data-arg="on" data-group="checks" aria-pressed="true">On</button>
+        <button type="button" class="mbtn" data-cmd="checks" data-arg="off" data-group="checks" aria-pressed="false">Off, show the server's words</button>
+      </div>
+    </section>
+
+    <details>
+      <summary>Fake server rules</summary>
+      <ul>
+        <li>Code: <code>123456</code> works. Any other code is wrong. Five wrong in a row lock the code until a new one is sent.</li>
+        <li>Sign in: <code>priya@example.com</code> with <code>pinalert-demo</code>. An account you create here works too. Five wrong tries lock an email. An email starting with <code>locked</code> is locked at once.</li>
+        <li>Old link account: an email starting with <code>old</code> opens step 4 as an old account (name and home area filled in).</li>
+        <li>Passwords: a common one (password, 12345678, qwerty123) or the email itself is refused.</li>
+        <li>Usernames: <code>ravi</code>, <code>ravi.k</code>, <code>anjali.r</code> and <code>kiran_77</code> are taken. <code>police</code>, <code>p0lice</code>, <code>police.help</code>, <code>ndma</code>, <code>imd</code>, <code>govt</code>, <code>admin</code> and similar are kept for official use. <code>rude.name</code> is refused on save. <code>justtaken</code> shows available, then is taken on save.</li>
+        <li>Home area search: Benz Circle, Indiranagar, Andheri, T Nagar, Salt Lake, Banjara Hills, Gayathri Nagar, Koramangala.</li>
+        <li>Not simulated: the real server sends no usable code to an address that has no account or already has a password. The screen is the same, and here code <code>123456</code> works for any address.</li>
+      </ul>
+    </details>
+    <details>
+      <summary>About the globe</summary>
+      <p class="mock__note">The Phase 5 globe (sketch 009, placement A) turns behind the card. It needs a network connection. Without one, or with Low data view on, the page keeps its plain background.</p>
+    </details>
+  </div>
+</aside>
+
+<main class="stage" id="stage"><iframe id="frame" title="The page being judged"></iframe></main>
+
+<div id="app" class="app">
+
+<!-- ============ Screen: the sign in page ============ -->
+<div class="login-gate" id="login-gate" hidden>
+  <div class="login-column">
+    <div class="login-card" id="login-form-panel">
+      <p class="login-done" id="login-done" role="status" hidden></p>
+      <h1 id="login-title" tabindex="-1">Pinalert</h1>
+
+      <div class="login-choice" id="login-choice" role="tablist" aria-label="Account">
+        <button type="button" class="login-choice__tab" role="tab" id="login-tab-create" aria-selected="true" aria-controls="auth-panel-create" tabindex="0">Create account</button>
+        <button type="button" class="login-choice__tab" role="tab" id="login-tab-signin" aria-selected="false" aria-controls="auth-panel-signin" tabindex="-1">Sign in</button>
+      </div>
+
+      <section id="auth-panel-create" role="tabpanel" aria-labelledby="login-tab-create">
+        <form id="auth-form-create" method="post" action="/login">
+          <label for="create-email">Email address</label>
+          <div class="login-field">
+            <span class="auth-icon ic-mail" aria-hidden="true"></span>
+            <input type="email" id="create-email" name="email" placeholder="you@example.com" autocomplete="username" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+          </div>
+          <label for="create-password">Password</label>
+          <div class="login-field login-field--rule">
+            <span class="auth-icon ic-lock" aria-hidden="true"></span>
+            <input type="password" id="create-password" name="new-password" autocomplete="new-password" minlength="8" maxlength="128" autocapitalize="none" autocorrect="off" spellcheck="false" required aria-describedby="create-rule">
+            <button type="button" class="login-show" id="create-show" data-show-for="create-password" aria-label="Show password">Show</button>
+          </div>
+          <p class="login-rule" id="create-rule">At least 8 characters.</p>
+          <p class="inline-error" id="create-error" role="alert" hidden></p>
+          <div class="login-actions">
+            <button type="submit" class="btn btn--primary" id="create-submit">Email me a code</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="auth-panel-signin" role="tabpanel" aria-labelledby="login-tab-signin" hidden>
+        <form id="auth-form-signin" method="post" action="/login">
+          <p class="login-status" id="signin-status" role="status" hidden></p>
+          <label for="signin-email">Email address</label>
+          <div class="login-field">
+            <span class="auth-icon ic-mail" aria-hidden="true"></span>
+            <input type="email" id="signin-email" name="email" placeholder="you@example.com" autocomplete="username" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+          </div>
+          <label for="signin-password">Password</label>
+          <div class="login-field">
+            <span class="auth-icon ic-lock" aria-hidden="true"></span>
+            <input type="password" id="signin-password" name="password" autocomplete="current-password" maxlength="128" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+            <button type="button" class="login-show" id="signin-show" data-show-for="signin-password" aria-label="Show password">Show</button>
+          </div>
+          <p class="inline-error" id="signin-error" role="alert" hidden><span class="inline-error__text"><span id="signin-error-line"></span><span id="signin-error-more" hidden></span></span></p>
+          <div class="login-actions">
+            <button type="submit" class="btn btn--primary" id="signin-submit">Sign in</button>
+            <button type="button" class="btn" id="signin-forgot">Forgot password</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="auth-panel-code" aria-labelledby="login-title" hidden>
+        <form id="auth-form-code" method="post" action="/login">
+          <p id="code-lead">We emailed <span class="login-email" id="code-email"></span>. Type the 6 digit code from that email.</p>
+          <label for="code-input">6 digit code</label>
+          <div class="login-field login-field--code">
+            <span class="auth-icon ic-shield-check" aria-hidden="true"></span>
+            <input type="text" id="code-input" name="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="6" enterkeyhint="done" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+          </div>
+          <div id="code-new-wrap" hidden>
+            <label for="code-new-password">New password</label>
+            <div class="login-field login-field--rule">
+              <span class="auth-icon ic-lock" aria-hidden="true"></span>
+              <input type="password" id="code-new-password" name="new-password" autocomplete="new-password" minlength="8" maxlength="128" autocapitalize="none" autocorrect="off" spellcheck="false" aria-describedby="code-new-rule">
+              <button type="button" class="login-show" id="code-new-show" data-show-for="code-new-password" aria-label="Show password">Show</button>
+            </div>
+            <p class="login-rule" id="code-new-rule">At least 8 characters.</p>
+          </div>
+          <p class="login-status" id="code-status" role="status" hidden></p>
+          <p class="inline-error" id="code-error" role="alert" hidden></p>
+          <div class="login-actions">
+            <button type="submit" class="btn btn--primary" id="code-submit">Create account</button>
+            <button type="button" class="btn" id="code-resend" aria-disabled="true">Resend in 45s</button>
+            <button type="button" class="btn" id="code-change-email"><span class="ui-icon ic-arrow-left" aria-hidden="true"></span>Change email</button>
+          </div>
+          <span class="visually-hidden" id="code-ready-live" role="status"></span>
+        </form>
+      </section>
+
+      <section id="auth-panel-forgot" aria-labelledby="login-title" hidden>
+        <form id="auth-form-forgot" method="post" action="/login">
+          <p>We will email you a 6 digit code.</p>
+          <label for="forgot-email">Email address</label>
+          <div class="login-field">
+            <span class="auth-icon ic-mail" aria-hidden="true"></span>
+            <input type="email" id="forgot-email" name="email" placeholder="you@example.com" autocomplete="username" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+          </div>
+          <p class="inline-error" id="forgot-error" role="alert" hidden></p>
+          <div class="login-actions">
+            <button type="submit" class="btn btn--primary" id="forgot-submit">Email me a code</button>
+            <button type="button" class="btn" id="forgot-back"><span class="ui-icon ic-arrow-left" aria-hidden="true"></span>Back to sign in</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="login-ways" id="login-ways">
+      <p class="login-ways__note" id="ways-note" role="status" hidden>Low data view is on. It opens after you sign in.</p>
+      <div class="login-ways__row">
+        <a href="#" class="login-ways__btn" data-inert>Try the demo</a>
+        <button type="button" class="login-ways__btn" id="ways-low">Low data view</button>
+        <a href="#" class="login-ways__btn" data-inert>Disclaimer</a>
+        <a href="#" class="login-ways__btn" data-inert>Policy</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="globe-area" id="globe-area" hidden>
+    <div class="globe-bg" aria-hidden="true">
+      <div class="globe-box"><div class="globe-map" id="globe-map"></div></div>
+    </div>
+    <p class="globe-credit" id="globe-credit"></p>
+  </div>
+</div>
+
+<!-- ============ Screen: first-time flow, step 4 ============ -->
+<div class="welcome-page" id="screen-welcome" hidden>
+  <div class="welcome" id="welcome" role="dialog" aria-modal="true" aria-labelledby="welcome-step-4-title" data-step="4">
+    <div class="welcome__progress" aria-hidden="true"><div class="welcome__progress-fill"></div></div>
+    <aside class="welcome__side">
+      <p class="welcome__wordmark">Pinalert</p>
+      <ol class="welcome__steps" aria-label="Steps">
+        <li class="welcome__steps-item" data-state="done"><span class="welcome__dot"><span class="welcome__dot-num">1</span><span class="app-icon ic-check" aria-hidden="true"></span></span><span>Welcome</span></li>
+        <li class="welcome__steps-item" data-state="done"><span class="welcome__dot"><span class="welcome__dot-num">2</span><span class="app-icon ic-check" aria-hidden="true"></span></span><span>Disclaimer and policy</span></li>
+        <li class="welcome__steps-item" data-state="done"><span class="welcome__dot"><span class="welcome__dot-num">3</span><span class="app-icon ic-check" aria-hidden="true"></span></span><span>Your location</span></li>
+        <li class="welcome__steps-item" data-state="current" aria-current="step"><span class="welcome__dot"><span class="welcome__dot-num">4</span><span class="app-icon ic-check" aria-hidden="true"></span></span><span>About you</span></li>
+        <li class="welcome__steps-item" data-state="waiting"><span class="welcome__dot"><span class="welcome__dot-num">5</span><span class="app-icon ic-check" aria-hidden="true"></span></span><span>Alerts</span></li>
+      </ol>
+    </aside>
+    <div class="welcome__pane">
+      <section class="welcome__step" id="welcome-step-4" aria-labelledby="welcome-step-4-title">
+        <div class="welcome__head">
+          <button type="button" class="welcome__back" id="welcome-back-4"><span class="app-icon ic-arrow-left" aria-hidden="true"></span><span>Back</span></button>
+          <p class="welcome__label">Step 4 of 5</p>
+        </div>
+        <h1 class="welcome__title" id="welcome-step-4-title" tabindex="-1">About you</h1>
+        <p class="welcome__lead" id="welcome-lead">All three are needed to finish signing up. You can change them later in Settings.</p>
+        <div class="welcome__field">
+          <label class="app-window__label" for="welcome-username-input">Username</label>
+          <div class="app-window__field">
+            <span class="app-window__at" aria-hidden="true">@</span>
+            <input type="text" id="welcome-username-input" name="username" maxlength="20" placeholder="For example: ravi.k" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="next" aria-describedby="welcome-username-line welcome-username-help">
+          </div>
+          <p class="username-line" id="welcome-username-line" role="status" aria-live="polite"></p>
+          <p class="app-window__help" id="welcome-username-help">Shown on your comments, to everyone.</p>
+        </div>
+        <div class="welcome__field">
+          <label class="app-window__label" for="welcome-name-input">Name</label>
+          <input class="app-window__field" type="text" id="welcome-name-input" name="display_name" maxlength="60" autocomplete="name" placeholder="For example: Ravi Kumar" enterkeyhint="next" aria-describedby="welcome-name-help">
+          <p class="app-window__help" id="welcome-name-help">Shown only if you let others follow you.</p>
+        </div>
+        <div class="welcome__field">
+          <form id="welcome-home-form" novalidate>
+            <label class="app-window__label" for="welcome-home-input">Home area</label>
+            <input class="app-window__field" type="search" id="welcome-home-input" name="q" maxlength="200" autocomplete="off" enterkeyhint="search" placeholder="For example: Indiranagar, Bengaluru" aria-describedby="welcome-home-help welcome-home-status">
+          </form>
+          <p class="app-window__help" id="welcome-home-help">Filled in from your location. A town or area, never your street. Used for alerts.</p>
+          <p class="app-window__status" id="welcome-home-status" role="status" aria-live="polite" hidden></p>
+          <ul class="app-window__results" id="welcome-home-results" role="listbox" aria-label="Places found" hidden></ul>
+        </div>
+        <p class="inline-error" id="welcome-error-4" role="alert" hidden></p>
+        <div class="welcome__actions">
+          <button type="button" class="btn btn--primary" id="welcome-continue-4" aria-disabled="true">Continue</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Screen: Settings, About you ============ -->
+<div class="settings-screen" id="screen-settings" hidden>
+  <div id="settings-chrome">
+    <header class="app-topbar">
+      <span class="app-topbar__brand">Pinalert</span>
+      <nav class="app-topbar__nav" aria-label="Main">
+        <button type="button" class="app-topbar__link" data-inert>Nearby</button>
+        <button type="button" class="app-topbar__link" data-inert>Official alerts</button>
+        <button type="button" class="app-topbar__link" data-inert>My activity</button>
+      </nav>
+      <button type="button" class="app-topbar__back" aria-label="Back" data-inert><span class="app-icon ic-arrow-left" aria-hidden="true"></span></button>
+      <h1 class="app-topbar__title">Settings</h1>
+      <span class="app-topbar__spacer"></span>
+      <button type="button" class="app-topbar__post" data-inert><span class="app-icon ic-plus" aria-hidden="true"></span><span>Post a report</span></button>
+      <button type="button" class="app-topbar__bell" aria-label="Updates" data-inert><span class="app-icon ic-bell" aria-hidden="true"></span></button>
+      <button type="button" class="app-topbar__person" aria-label="Account" data-inert><span class="app-icon ic-user" aria-hidden="true"></span></button>
+    </header>
+  </div>
+  <main class="place-page place-page--settings" id="settings-main">
+    <h1 class="place-head">Settings</h1>
+    <section class="place-section" aria-labelledby="settings-you-title">
+      <div class="place-section__intro">
+        <h2 class="place-section__title" id="settings-you-title">About you</h2>
+        <p class="place-section__line">Your username, name and home area.</p>
+      </div>
+      <div class="place-box">
+        <button type="button" class="place-row" id="settings-username-row" aria-haspopup="dialog">
+          <span class="place-row__text"><span class="place-row__label">Username</span><span class="place-row__sub">Shown on your comments, to everyone</span></span>
+          <span class="place-row__value" id="settings-username-value"></span>
+          <span class="app-icon ic-chevron-right" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="place-row" id="settings-name-row" aria-haspopup="dialog">
+          <span class="place-row__text"><span class="place-row__label">Name</span><span class="place-row__sub">Shown only if you let others follow you</span></span>
+          <span class="place-row__value" id="settings-name-value"></span>
+          <span class="app-icon ic-chevron-right" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="place-row" id="settings-home-row" aria-haspopup="dialog">
+          <span class="place-row__text"><span class="place-row__label">Home area</span><span class="place-row__sub">Used for alerts, never your exact spot</span></span>
+          <span class="place-row__value" id="settings-home-value"></span>
+          <span class="app-icon ic-chevron-right" aria-hidden="true"></span>
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <div class="app-window" id="settings-username-window" hidden>
+    <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-username-title">
+      <div class="app-window__head">
+        <h2 class="app-window__title" id="settings-username-title" tabindex="-1">Username</h2>
+        <button type="button" class="app-window__close" aria-label="Close" data-close-window><span class="app-icon ic-x" aria-hidden="true"></span></button>
+      </div>
+      <form class="app-window__body" id="settings-username-form" novalidate>
+        <label class="app-window__label" for="settings-username-input">Username</label>
+        <div class="app-window__field">
+          <span class="app-window__at" aria-hidden="true">@</span>
+          <input type="text" id="settings-username-input" name="username" maxlength="20" placeholder="For example: ravi.k" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" aria-describedby="settings-username-line settings-username-help">
+        </div>
+        <p class="username-line" id="settings-username-line" role="status" aria-live="polite"></p>
+        <p class="app-window__help" id="settings-username-help">Shown on your comments, to everyone.</p>
+        <div class="app-window__actions">
+          <button type="submit" class="btn btn--primary" id="settings-username-save" aria-disabled="true">Save username</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="app-window" id="settings-name-window" hidden>
+    <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-name-title">
+      <div class="app-window__head">
+        <h2 class="app-window__title" id="settings-name-title" tabindex="-1">Name</h2>
+        <button type="button" class="app-window__close" aria-label="Close" data-close-window><span class="app-icon ic-x" aria-hidden="true"></span></button>
+      </div>
+      <form class="app-window__body" id="settings-name-form" novalidate>
+        <label class="app-window__label" for="settings-name-input">Name</label>
+        <input class="app-window__field" type="text" id="settings-name-input" name="display_name" maxlength="60" autocomplete="name" placeholder="For example: Ravi Kumar">
+        <p class="inline-error" id="settings-name-error" role="alert" hidden></p>
+        <div class="app-window__actions">
+          <button type="submit" class="btn btn--primary" id="settings-name-save">Save name</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="app-window" id="settings-home-window" hidden>
+    <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-home-title">
+      <div class="app-window__head">
+        <h2 class="app-window__title" id="settings-home-title" tabindex="-1">Home area</h2>
+        <button type="button" class="app-window__close" aria-label="Close" data-close-window><span class="app-icon ic-x" aria-hidden="true"></span></button>
+      </div>
+      <div class="app-window__body">
+        <form id="settings-home-form" novalidate>
+          <label class="app-window__label" for="settings-home-input">Home area</label>
+          <input class="app-window__field" type="search" id="settings-home-input" name="q" maxlength="200" autocomplete="off" enterkeyhint="search" placeholder="Search a place" aria-describedby="settings-home-help settings-home-status">
+        </form>
+        <p class="app-window__help" id="settings-home-help">A town or area, never your street. Used for alerts.</p>
+        <p class="app-window__status" id="settings-home-status" role="status" aria-live="polite" hidden></p>
+        <ul class="app-window__results" id="settings-home-results" role="listbox" aria-label="Places found" hidden></ul>
+        <p class="inline-error" id="settings-home-error" role="alert" hidden></p>
+        <div class="app-window__actions">
+          <button type="button" class="btn btn--primary" id="settings-home-save">Save home area</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Screen: the four emails, as a mail reader would show them ============ -->
+<div class="mail-screen" id="screen-email" hidden>
+  <article class="mail" aria-labelledby="mail-subject">
+    <p class="mail__meta">From: Pinalert</p>
+    <h1 class="mail__subject" id="mail-subject"></h1>
+    <div class="mail__body" id="mail-body"></div>
+    <button type="button" class="btn" id="mail-close">Close the email</button>
+  </article>
+</div>
+
+<!-- ============ Screen: where the real app takes over ============ -->
+<div class="stub" id="screen-stub" hidden>
+  <p id="stub-text"></p>
+  <button type="button" class="btn" id="stub-restart">Start the mockup again</button>
+</div>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- What kind of page this is ----------
+     outer:  the mockup panel and a frame holding this same file (a wide window).
+     app:    this file inside that frame, the page being judged.
+     direct: a narrow window (a real phone): the panel on top, the page below, no frame. */
+  var params = new URLSearchParams(location.search);
+  var inFrame = params.get('frame') === '1';
+  var wide = window.matchMedia('(min-width: 900px)').matches;
+  var mode = inFrame ? 'app' : (wide ? 'outer' : 'direct');
+  var root = document.documentElement;
+  var body = document.body;
+  body.classList.add('mode-' + mode);
+
+  function $(id) { return document.getElementById(id); }
+  function setText(el, v) { if (el) el.textContent = v == null ? '' : String(v); }
+
+  var api = {};          /* commands the page understands */
+  var panelEvents = [];  /* filled for the panel */
+
+  /* ---------- Messages between the panel and the framed page ---------- */
+  function toPanel(ev) {
+    ev.pinalertMock = 1;
+    if (mode === 'app') { try { window.parent.postMessage(ev, '*'); } catch (e) { /* no parent */ } }
+    else if (mode === 'direct') { handlePanelEvent(ev); }
+  }
+  var handlePanelEvent = function () {};
+
+  if (mode === 'app') {
+    window.addEventListener('message', function (e) {
+      if (e.source !== window.parent) return;
+      var d = e.data;
+      if (d && d.pinalertMock && d.cmd && typeof api[d.cmd] === 'function') api[d.cmd](d.arg);
+    });
+  }
+
+  /* ================== The mockup panel (outer and direct) ================== */
+  if (mode === 'outer' || mode === 'direct') {
+    var mock = $('mock');
+    var frameEl = $('frame');
+    var view = params.get('view') === 'laptop' ? 'laptop' : 'phone';
+    var theme = params.get('theme') === 'light' || params.get('theme') === 'dark' ? params.get('theme') : 'device';
+    var currentGo = params.get('go') || '';
+    var panelOpen = mode === 'outer';
+
+    var sendCmd = function (cmd, arg) {
+      if (mode === 'outer') {
+        var w = frameEl.contentWindow;
+        if (w) w.postMessage({ pinalertMock: 1, cmd: cmd, arg: arg }, '*');
+      } else if (typeof api[cmd] === 'function') {
+        api[cmd](arg);
+      }
+    };
+    var pressed = function (group, arg) {
+      Array.prototype.forEach.call(mock.querySelectorAll('[data-group="' + group + '"]'), function (b) {
+        b.setAttribute('aria-pressed', b.getAttribute('data-arg') === arg ? 'true' : 'false');
+      });
+    };
+    var syncUrl = function () {
+      var p = new URLSearchParams();
+      if (mode === 'outer' && view !== 'phone') p.set('view', view);
+      if (theme !== 'device') p.set('theme', theme);
+      if (currentGo && currentGo !== 'create') p.set('go', currentGo);
+      var s = p.toString();
+      try { history.replaceState(null, '', location.pathname + (s ? '?' + s : '')); } catch (e) { /* file pages may refuse */ }
+    };
+    var applyTheme = function (t) {
+      if (t === 'light' || t === 'dark') root.setAttribute('data-theme', t); else root.removeAttribute('data-theme');
+    };
+    var setView = function (v) {
+      view = v;
+      body.setAttribute('data-view', v);
+      pressed('view', v);
+      syncUrl();
+    };
+    var setPanel = function (open) {
+      panelOpen = open;
+      var toggle = $('mock-toggle');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (mode === 'outer') {
+        body.classList.toggle('mock-closed', !open);
+        toggle.textContent = 'Hide controls';
+        $('mock-show').hidden = open;
+      } else {
+        $('mock-body').hidden = !open;
+        toggle.textContent = open ? 'Hide controls' : 'Show controls';
+      }
+    };
+
+    handlePanelEvent = function (ev) {
+      if (ev.event === 'state') setText($('mock-state'), 'Showing: ' + ev.text);
+      else if (ev.event === 'note') setText($('mock-note-live'), ev.text);
+      else if (ev.event === 'globe') setText($('mock-globe'), 'Globe: ' + ev.text);
+      else if (ev.event === 'force') pressed('force', ev.value);
+      else if (ev.event === 'low') pressed('low', ev.value);
+    };
+
+    mock.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-cmd]');
+      if (!b) return;
+      var cmd = b.getAttribute('data-cmd');
+      var arg = b.getAttribute('data-arg');
+      if (cmd === 'view') { setView(arg); return; }
+      if (cmd === 'theme') { theme = arg; applyTheme(arg); pressed('theme', arg); syncUrl(); sendCmd('theme', arg); return; }
+      if (cmd === 'go') { currentGo = arg; syncUrl(); setText($('mock-note-live'), ''); sendCmd('go', arg); return; }
+      if (b.hasAttribute('data-group')) pressed(b.getAttribute('data-group'), arg);
+      sendCmd(cmd, arg);
+    });
+    $('mock-toggle').addEventListener('click', function () { setPanel(!panelOpen); });
+    $('mock-show').addEventListener('click', function () { setPanel(true); });
+
+    if (mode === 'outer') {
+      body.setAttribute('data-view', view);
+      pressed('view', view);
+      var fp = new URLSearchParams();
+      fp.set('frame', '1');
+      if (theme !== 'device') fp.set('theme', theme);
+      if (currentGo) fp.set('go', currentGo);
+      frameEl.src = location.href.split('#')[0].split('?')[0] + '?' + fp.toString();
+      window.addEventListener('message', function (e) {
+        if (e.source !== frameEl.contentWindow) return;
+        if (e.data && e.data.pinalertMock) handlePanelEvent(e.data);
+      });
+      document.title = 'Pinalert password sign in';
+    } else {
+      $('mg-view').hidden = true;
+      setPanel(false);
+    }
+    pressed('theme', theme);
+    if (mode === 'outer') {
+      var rm = $('app'); if (rm && rm.parentNode) rm.parentNode.removeChild(rm);
+      return;
+    }
+  } else {
+    var m = $('mock'); if (m && m.parentNode) m.parentNode.removeChild(m);
+    var st = $('stage'); if (st && st.parentNode) st.parentNode.removeChild(st);
+    var ms = $('mock-show'); if (ms && ms.parentNode) ms.parentNode.removeChild(ms);
+  }
+  if (mode === 'direct') { var st2 = $('stage'); if (st2 && st2.parentNode) st2.parentNode.removeChild(st2); }
+
+  /* ================== The page being judged ================== */
+
+  /* ---------- Numbers named in the UI-SPEC ---------- */
+  var RESEND_SECONDS = 45;       /* data-resend-seconds */
+  var CODE_TTL_SECONDS = 600;    /* data-code-ttl-seconds, 10 minutes */
+  var MAX_CODE_TRIES = 5;
+  var FREE_WRONG_PASSWORDS = 5;
+  var LOCK_MINUTES = 5;
+  var GOOD_CODE = '123456';
+  var SAMPLE_EMAIL = 'priya@example.com';
+  var SAMPLE_PASSWORD = 'pinalert-demo';
+
+  /* ---------- The fake server's data ---------- */
+  var TAKEN = ['ravi', 'ravi.k', 'anjali.r', 'kiran_77', 'meena.s'];
+  var OFFICIAL_START = ['police', 'ndma', 'ndrf', 'sdma', 'sdrf', 'govt', 'government', 'official', 'pinalert', 'moderator',
+    'administrator', 'emergency', 'fire', 'ambulance'];
+  var OFFICIAL_EXACT = ['imd', 'gov', 'mod', 'admin', 'help', 'support', '100', '112'];
+  var COMMON_PASSWORDS = ['password', 'password1', 'password123', '12345678', '123456789', '1234567890', 'qwerty123', 'qwertyuiop',
+    'iloveyou', '11111111', '00000000', 'abcd1234', 'letmein123', 'welcome123', 'admin123', 'pinalert1'];
+  var PLACES = [
+    { name: 'Benz Circle, Vijayawada', sub: 'Andhra Pradesh' },
+    { name: 'Gayathri Nagar, Vijayawada', sub: 'Andhra Pradesh' },
+    { name: 'Indiranagar, Bengaluru', sub: 'Karnataka' },
+    { name: 'Koramangala, Bengaluru', sub: 'Karnataka' },
+    { name: 'Andheri West, Mumbai', sub: 'Maharashtra' },
+    { name: 'T Nagar, Chennai', sub: 'Tamil Nadu' },
+    { name: 'Salt Lake, Kolkata', sub: 'West Bengal' },
+    { name: 'Banjara Hills, Hyderabad', sub: 'Telangana' }
+  ];
+
+  var S = {
+    force: 'none',
+    checks: true,
+    accounts: {},
+    wrong: {},
+    low: false,
+    mode: 'create',      /* code panel mode: create or reset */
+    from: 'create',      /* where Change email returns: create or forgot */
+    email: '',
+    tries: 0,
+    expired: false,
+    resendLeft: 0,
+    ttlLeft: 0,
+    resendBusy: false,
+    tick: 0,
+    screen: '',
+    stored: { username: 'priya.vja', name: 'Priya Varma', home: PLACES[0].name, wait: 0 }
+  };
+  S.accounts[SAMPLE_EMAIL] = SAMPLE_PASSWORD;
+
+  /* ---------- Small helpers ---------- */
+  function norm(v) { return String(v || '').trim().toLowerCase(); }
+  function validEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
+  function report(text) { toPanel({ event: 'state', text: text }); }
+  function note(text) { toPanel({ event: 'note', text: text }); }
+  function showErr(el, text) { setText(el, text); el.hidden = false; }
+  function clearErr(el) { el.hidden = true; setText(el, ''); }
+  function isOn(btn) { return btn.getAttribute('aria-disabled') !== 'true'; }
+  function busyOn(btn, label) {
+    btn.setAttribute('data-label', btn.textContent);
+    btn.textContent = label;
+    btn.setAttribute('aria-busy', 'true');
+  }
+  function busyOff(btn) {
+    btn.textContent = btn.getAttribute('data-label') || btn.textContent;
+    btn.removeAttribute('aria-busy');
+  }
+  function isBusy(btn) { return btn.getAttribute('aria-busy') === 'true'; }
+
+  Array.prototype.forEach.call(document.querySelectorAll('#app [data-inert]'), function (a) {
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      note('That control is built already and goes nowhere in this mockup.');
+    });
+  });
+
+  /* One shot of a forced server answer, from the panel. */
+  function takeForce(kind) {
+    var f = S.force;
+    if (f === 'none') return null;
+    if (f === 'account' && kind !== 'signin') return null;
+    if (f === 'hour' && kind !== 'send') return null;
+    S.force = 'none';
+    toPanel({ event: 'force', value: 'none' });
+    return f;
+  }
+  function net(kind, ms, run) {
+    return new Promise(function (resolve) {
+      var f = takeForce(kind);
+      setTimeout(function () { resolve(f ? { fate: f } : run()); }, ms);
+    });
+  }
+  var LOGIN_FATES = {
+    offline: "You're offline. Try again when you have a signal.",
+    server: 'Something went wrong. Try again.',
+    device: 'Too many requests. Try again in a minute.',
+    account: 'Too many tries. Wait ' + LOCK_MINUTES + ' minutes, or reset your password.',
+    hour: 'Too many codes for this email. Try again in an hour.'
+  };
+  var SAVE_FATES = {
+    offline: "You're offline, so this wasn't saved. Try again when you have a signal.",
+    server: 'Could not save. Try again in a moment.',
+    device: 'Too many requests. Try again in a minute.'
+  };
+
+  function passwordProblem(pw, email) {
+    if (pw.length < 8) return 'Use at least 8 characters.';
+    if (pw.length > 128) return 'Use 128 characters or fewer.';
+    if (pw.toLowerCase() === email) return "Don't use your email address as your password.";
+    if (COMMON_PASSWORDS.indexOf(pw.toLowerCase()) >= 0) return 'That password is too common. Choose another.';
+    return '';
+  }
+
+  /* ---------- Screens ---------- */
+  var gate = $('login-gate');
+  var screens = { login: gate, welcome: $('screen-welcome'), settings: $('screen-settings'), email: $('screen-email'), stub: $('screen-stub') };
+  function showScreen(name) {
+    S.screen = name;
+    Object.keys(screens).forEach(function (k) { screens[k].hidden = k !== name; });
+    window.scrollTo(0, 0);
+    if (name === 'login') globeShown(); else globeHidden();
+  }
+
+  /* ---------- The sign in card ---------- */
+  var title = $('login-title');
+  var choice = $('login-choice');
+  var tabCreate = $('login-tab-create');
+  var tabSignin = $('login-tab-signin');
+  var done = $('login-done');
+  var panels = { create: $('auth-panel-create'), signin: $('auth-panel-signin'), code: $('auth-panel-code'), forgot: $('auth-panel-forgot') };
+  var createEmail = $('create-email'), createPw = $('create-password'), createErr = $('create-error'), createBtn = $('create-submit');
+  var signinEmail = $('signin-email'), signinPw = $('signin-password'), signinErr = $('signin-error'), signinBtn = $('signin-submit');
+  var signinStatus = $('signin-status');
+  var forgotEmail = $('forgot-email'), forgotErr = $('forgot-error'), forgotBtn = $('forgot-submit');
+  var codeInput = $('code-input'), codeNewPw = $('code-new-password'), codeErr = $('code-error'), codeStatus = $('code-status');
+  var codeBtn = $('code-submit'), resendBtn = $('code-resend');
+
+  function resetShow() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-show-for]'), function (b) {
+      var input = $(b.getAttribute('data-show-for'));
+      input.type = 'password';
+      b.textContent = 'Show';
+      b.setAttribute('aria-label', 'Show password');
+    });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('[data-show-for]'), function (b) {
+    b.addEventListener('click', function () {
+      var input = $(b.getAttribute('data-show-for'));
+      var showing = input.type === 'text';
+      input.type = showing ? 'password' : 'text';
+      b.textContent = showing ? 'Show' : 'Hide';
+      b.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+    });
+  });
+
+  function setTab(which) {
+    var create = which === 'create';
+    tabCreate.setAttribute('aria-selected', create ? 'true' : 'false');
+    tabSignin.setAttribute('aria-selected', create ? 'false' : 'true');
+    tabCreate.tabIndex = create ? 0 : -1;
+    tabSignin.tabIndex = create ? -1 : 0;
+  }
+  var panelNames = { create: 'Create account', signin: 'Sign in', code: 'the code screen', forgot: 'Forgot password' };
+  function showPanel(name, opts) {
+    opts = opts || {};
+    resetShow();
+    Object.keys(panels).forEach(function (k) { panels[k].hidden = k !== name; });
+    var entry = name === 'create' || name === 'signin';
+    choice.hidden = !entry;
+    if (entry) {
+      setTab(name);
+      setText(title, 'Pinalert');
+    } else {
+      done.hidden = true;
+      if (name === 'code') setText(title, S.mode === 'reset' ? 'Reset your password' : 'Check your email');
+      else setText(title, 'Reset your password');
+      title.focus();
+    }
+    S.panel = name;
+    var shown = name === 'code' ? (S.mode === 'reset' ? 'The code screen, reset mode' : 'The code screen, create mode') : 'Sign in page, ' + panelNames[name];
+    report(shown);
+    if (opts.focus && !entry) title.focus();
+  }
+
+  var DONE_LINES = {
+    'old-link': 'That sign in link no longer works. Choose Create account with the same email to set a password.',
+    'switch': 'Pinalert now uses passwords. Choose Create account with the same email to set yours. Your reports stay with you.',
+    'all-devices': 'You are logged out of all devices.',
+    'deleted': 'Your account has been deleted.'
+  };
+  function showDone(word) {
+    if (word && DONE_LINES[word]) { setText(done, DONE_LINES[word]); done.hidden = false; }
+    else { done.hidden = true; setText(done, ''); }
+  }
+
+  /* Tabs: click, Left and Right, Home and End. */
+  function chooseTab(which, moveFocus) {
+    showPanel(which);
+    showDone(null);
+    clearErr(createErr); signinErr.hidden = true; signinStatus.hidden = true;
+    if (moveFocus) (which === 'create' ? tabCreate : tabSignin).focus();
+  }
+  tabCreate.addEventListener('click', function () { chooseTab('create', false); });
+  tabSignin.addEventListener('click', function () { chooseTab('signin', false); });
+  choice.addEventListener('keydown', function (e) {
+    var k = e.key;
+    if (k !== 'ArrowLeft' && k !== 'ArrowRight' && k !== 'Home' && k !== 'End') return;
+    e.preventDefault();
+    var target;
+    if (k === 'Home') target = 'create';
+    else if (k === 'End') target = 'signin';
+    else target = S.panel === 'create' ? 'signin' : 'create';
+    chooseTab(target, true);
+  });
+
+  /* The field marked wrong keeps its words with it. */
+  function markInvalid(input, errEl, on) {
+    if (on) { input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', errEl.id); }
+    else { input.removeAttribute('aria-invalid'); }
+  }
+
+  /* Browser checks on or off. */
+  function applyChecks() {
+    ['auth-form-create', 'auth-form-signin', 'auth-form-code', 'auth-form-forgot'].forEach(function (id) {
+      var f = $(id);
+      if (S.checks) f.removeAttribute('novalidate'); else f.setAttribute('novalidate', '');
+    });
+  }
+
+  /* ---- Create account ---- */
+  $('auth-form-create').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (isBusy(createBtn)) return;
+    var email = norm(createEmail.value), pw = createPw.value;
+    clearErr(createErr); markInvalid(createEmail, createErr, false); markInvalid(createPw, createErr, false);
+    busyOn(createBtn, 'Sending…');
+    net('send', 700, function () {
+      if (!validEmail(email)) return { field: createEmail, text: 'Enter a valid email address.' };
+      var problem = passwordProblem(pw, email);
+      if (problem) return { field: createPw, text: problem };
+      return { ok: true };
+    }).then(function (r) {
+      busyOff(createBtn);
+      resetShow();
+      if (r.fate) { showErr(createErr, LOGIN_FATES[r.fate]); return; }
+      if (r.field) { showErr(createErr, r.text); markInvalid(r.field, createErr, true); r.field.focus(); return; }
+      S.pendingPassword = pw;
+      openCode('create', email, 'create');
+    });
+  });
+
+  /* ---- Sign in ---- */
+  var signinMore = $('signin-error-more'), signinLine = $('signin-error-line');
+  function signinFail(first, more) {
+    setText(signinLine, first);
+    setText(signinMore, more || '');
+    signinMore.hidden = !more;
+    signinErr.hidden = false;
+  }
+  var OLD_ACCOUNT_LINE = 'Had an account before passwords? Choose Create account with the same email. Your reports stay with you.';
+  $('auth-form-signin').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (isBusy(signinBtn)) return;
+    var email = norm(signinEmail.value), pw = signinPw.value;
+    signinErr.hidden = true; signinStatus.hidden = true;
+    busyOn(signinBtn, 'Signing in…');
+    net('signin', 700, function () {
+      if (/^locked/.test(email) || (S.wrong[email] || 0) >= FREE_WRONG_PASSWORDS) return { locked: true };
+      if (S.accounts[email] && S.accounts[email] === pw) return { ok: true };
+      S.wrong[email] = (S.wrong[email] || 0) + 1;
+      return { wrong: true };
+    }).then(function (r) {
+      busyOff(signinBtn);
+      resetShow();
+      if (r.fate) { signinFail(LOGIN_FATES[r.fate]); return; }
+      if (r.locked) { signinFail(LOGIN_FATES.account); return; }
+      if (r.wrong) { signinFail('Email or password is wrong.', OLD_ACCOUNT_LINE); signinPw.focus(); return; }
+      S.wrong[email] = 0;
+      toStub('You are signed in on a fresh session. The real app opens here, on the map.');
+    });
+  });
+  $('signin-forgot').addEventListener('click', function () {
+    forgotEmail.value = signinEmail.value;
+    clearErr(forgotErr);
+    showPanel('forgot');
+    forgotEmail.focus();
+  });
+
+  /* ---- Forgot password ---- */
+  $('auth-form-forgot').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (isBusy(forgotBtn)) return;
+    var email = norm(forgotEmail.value);
+    clearErr(forgotErr);
+    busyOn(forgotBtn, 'Sending…');
+    net('send', 700, function () {
+      if (!validEmail(email)) return { text: 'Enter a valid email address.' };
+      return { ok: true };
+    }).then(function (r) {
+      busyOff(forgotBtn);
+      if (r.fate) { showErr(forgotErr, LOGIN_FATES[r.fate]); return; }
+      if (r.text) { showErr(forgotErr, r.text); forgotEmail.focus(); return; }
+      openCode('reset', email, 'forgot');
+    });
+  });
+  $('forgot-back').addEventListener('click', function () {
+    signinEmail.value = forgotEmail.value;
+    showPanel('signin');
+    signinEmail.focus();
+  });
+
+  /* ---- The code screen ---- */
+  function renderResend() {
+    if (S.resendBusy) {
+      setText(resendBtn, 'Sending…');
+      resendBtn.setAttribute('aria-busy', 'true');
+      resendBtn.setAttribute('aria-disabled', 'true');
+      return;
+    }
+    resendBtn.removeAttribute('aria-busy');
+    if (S.resendLeft > 0) {
+      setText(resendBtn, 'Resend in ' + S.resendLeft + 's');
+      resendBtn.setAttribute('aria-disabled', 'true');
+    } else {
+      setText(resendBtn, 'Resend code');
+      resendBtn.removeAttribute('aria-disabled');
+    }
+  }
+  function expireNow() {
+    if (S.expired) return;
+    S.expired = true;
+    S.ttlLeft = 0;
+    setText(codeStatus, 'The code has expired. Get a new one.');
+    codeStatus.hidden = false;
+  }
+  function startTick() {
+    clearInterval(S.tick);
+    S.tick = setInterval(function () {
+      if (S.resendLeft > 0) {
+        S.resendLeft -= 1;
+        renderResend();
+        if (S.resendLeft === 0) setText($('code-ready-live'), 'Resend code');
+      }
+      if (!S.expired && S.ttlLeft > 0) {
+        S.ttlLeft -= 1;
+        if (S.ttlLeft === 0) expireNow();
+      }
+    }, 1000);
+  }
+  function lockCodeButton(on) {
+    if (on) codeBtn.setAttribute('aria-disabled', 'true'); else codeBtn.removeAttribute('aria-disabled');
+  }
+  function openCode(modeName, email, from) {
+    S.mode = modeName; S.from = from; S.email = email;
+    S.tries = 0; S.expired = false;
+    S.resendLeft = RESEND_SECONDS; S.ttlLeft = CODE_TTL_SECONDS; S.resendBusy = false;
+    setText($('code-email'), email);
+    codeInput.value = ''; codeNewPw.value = '';
+    clearErr(codeErr); codeStatus.hidden = true; setText(codeStatus, ''); setText($('code-ready-live'), '');
+    markInvalid(codeNewPw, codeErr, false); markInvalid(codeInput, codeErr, false);
+    lockCodeButton(false);
+    var reset = modeName === 'reset';
+    $('code-new-wrap').hidden = !reset;
+    codeNewPw.required = reset;
+    setText(codeBtn, reset ? 'Set new password' : 'Create account');
+    codeBtn.removeAttribute('aria-busy');
+    renderResend();
+    startTick();
+    showPanel('code');
+  }
+  codeInput.addEventListener('input', function () {
+    var v = codeInput.value.replace(/\D/g, '').slice(0, 6);
+    if (v !== codeInput.value) codeInput.value = v;
+  });
+  /* maxlength cuts a pasted "482 913" to six characters before the digits are picked out,
+     so a paste is cleaned first and then put in. */
+  codeInput.addEventListener('paste', function (e) {
+    var text = e.clipboardData ? e.clipboardData.getData('text') : '';
+    if (!text) return;
+    e.preventDefault();
+    codeInput.value = text.replace(/\D/g, '').slice(0, 6);
+    codeInput.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+
+  function refuseCode() {
+    S.tries += 1;
+    markInvalid(codeInput, codeErr, true);
+    if (S.tries >= MAX_CODE_TRIES) {
+      showErr(codeErr, 'Too many wrong tries. Get a new code.');
+      lockCodeButton(true);
+      codeInput.value = '';
+      if (resendBtn.getAttribute('aria-disabled') !== 'true') resendBtn.focus(); else title.focus();
+      return;
+    }
+    showErr(codeErr, 'That code is wrong or has expired.');
+    codeInput.focus();
+    codeInput.select();
+  }
+  $('auth-form-code').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (isBusy(codeBtn) || !isOn(codeBtn)) return;
+    var code = codeInput.value, newPw = codeNewPw.value;
+    clearErr(codeErr); markInvalid(codeInput, codeErr, false); markInvalid(codeNewPw, codeErr, false);
+    busyOn(codeBtn, 'Checking…');
+    net('code', 700, function () {
+      if (S.expired || code !== GOOD_CODE) return { refused: true };
+      if (S.mode === 'reset') {
+        var problem = passwordProblem(newPw, S.email);
+        if (problem) return { pwText: problem };
+      }
+      return { ok: true };
+    }).then(function (r) {
+      busyOff(codeBtn);
+      resetShow();
+      if (r.fate) { showErr(codeErr, LOGIN_FATES[r.fate]); return; }
+      if (r.refused) { refuseCode(); return; }
+      if (r.pwText) { showErr(codeErr, r.pwText); markInvalid(codeNewPw, codeErr, true); codeNewPw.focus(); return; }
+      clearInterval(S.tick);
+      if (S.mode === 'create') {
+        S.accounts[S.email] = S.pendingPassword || SAMPLE_PASSWORD;
+        S.wrong[S.email] = 0;
+        report('Signed in. The first-time flow starts');
+        startStep4(/^old/.test(S.email) ? 'old' : 'new');
+      } else {
+        S.accounts[S.email] = newPw;
+        S.wrong[S.email] = 0;
+        signinEmail.value = S.email; signinPw.value = '';
+        signinErr.hidden = true;
+        showPanel('signin');
+        setText(signinStatus, 'Password set. Sign in to continue.');
+        signinStatus.hidden = false;
+        signinPw.focus();
+      }
+    });
+  });
+
+  resendBtn.addEventListener('click', function () {
+    if (S.resendBusy || !isOn(resendBtn)) return;
+    clearErr(codeErr);
+    S.resendBusy = true;
+    renderResend();
+    net('send', 700, function () { return { ok: true }; }).then(function (r) {
+      S.resendBusy = false;
+      if (r.fate) { renderResend(); showErr(codeErr, LOGIN_FATES[r.fate]); return; }
+      S.resendLeft = RESEND_SECONDS; S.ttlLeft = CODE_TTL_SECONDS; S.expired = false; S.tries = 0;
+      lockCodeButton(false);
+      markInvalid(codeInput, codeErr, false);
+      renderResend();
+      setText(codeStatus, 'A new code is on its way.');
+      codeStatus.hidden = false;
+      setText($('code-ready-live'), '');
+    });
+  });
+  $('code-change-email').addEventListener('click', function () {
+    clearErr(codeErr);
+    if (S.from === 'forgot') {
+      forgotEmail.value = S.email;
+      showPanel('forgot');
+      forgotEmail.focus();
+    } else {
+      createEmail.value = S.email;
+      showPanel('create');
+      createEmail.focus();
+    }
+  });
+
+  /* ---------- The row of four buttons under the card ---------- */
+  function setLow(on, fromPanel) {
+    S.low = on;
+    setText($('ways-low'), on ? 'Turn off low data view' : 'Low data view');
+    $('ways-note').hidden = !on;
+    if (!fromPanel) toPanel({ event: 'low', value: on ? 'on' : 'off' });
+    if (on) teardownGlobe('off, Low data view is on (nothing downloaded)');
+    else if (S.screen === 'login') globeShown();
+  }
+  $('ways-low').addEventListener('click', function () { setLow(!S.low); });
+
+  /* ---------- Username live check (step 4 and Settings) ---------- */
+  var RULE = 'Use 3 to 20 letters, numbers, dots or underscores.';
+  function shapeOk(v) {
+    return /^[a-z0-9._]{3,20}$/.test(v) && /[a-z]/.test(v) && !/^\./.test(v) && !/\.$/.test(v) && !/\.\./.test(v);
+  }
+  function isOfficial(v) {
+    var variants = [v.replace(/0/g, 'o').replace(/3/g, 'e').replace(/4/g, 'a').replace(/5/g, 's').replace(/7/g, 't').replace(/1/g, 'l'),
+      v.replace(/0/g, 'o').replace(/3/g, 'e').replace(/4/g, 'a').replace(/5/g, 's').replace(/7/g, 't').replace(/1/g, 'i'), v];
+    for (var i = 0; i < variants.length; i++) {
+      var n = variants[i];
+      var words = n.split(/[._]/);
+      if (OFFICIAL_EXACT.indexOf(n) >= 0) return true;
+      for (var j = 0; j < OFFICIAL_START.length; j++) {
+        var t = OFFICIAL_START[j];
+        if (n.indexOf(t) === 0 || words.indexOf(t) >= 0) return true;
+      }
+    }
+    return false;
+  }
+  function makeUsername(o) {
+    var input = o.input, line = o.line;
+    var kind = 'empty', timer = 0, token = 0, lastName = '';
+    function render(k, name, extra) {
+      kind = k; lastName = name || '';
+      var text = '', cls = 'plain';
+      if (k === 'empty') text = RULE;
+      else if (k === 'shape') { text = RULE; cls = 'bad'; }
+      else if (k === 'checking') text = 'Checking…';
+      else if (k === 'available') { text = name + ' is available.'; cls = 'good'; }
+      else if (k === 'taken') { text = name + ' is taken. Try another.'; cls = 'bad'; }
+      else if (k === 'official') { text = 'That name is kept for official use.'; cls = 'bad'; }
+      else if (k === 'own') text = 'This is your username now.';
+      else if (k === 'wait') { text = 'You can change your username again in ' + extra + (extra === 1 ? ' day.' : ' days.'); cls = 'warn'; }
+      else if (k === 'refused') { text = "That username can't be used. Try another."; cls = 'err'; }
+      else if (k === 'unavailable') { text = "Couldn't check that username. Try again."; cls = 'err'; }
+      else if (k === 'limit') { text = 'Too many requests. Try again in a minute.'; cls = 'err'; }
+      line.className = 'username-line' + (cls === 'err' ? ' inline-error' : ' username-line--' + cls);
+      setText(line, text);
+      o.onChange(k);
+    }
+    function evaluate() {
+      clearTimeout(timer); token += 1;
+      var v = input.value;
+      if (v === '') { render('empty'); return; }
+      if (!shapeOk(v)) { render('shape'); return; }
+      if (o.settings && v === S.stored.username) { render('own', v); return; }
+      render('checking');
+      var mine = token;
+      timer = setTimeout(function () {
+        net('check', 400, function () {
+          if (isOfficial(v)) return { kind: 'official' };
+          if (TAKEN.indexOf(v) >= 0) return { kind: 'taken' };
+          if (o.settings && S.stored.wait > 0) return { kind: 'wait' };
+          return { kind: 'available' };
+        }).then(function (r) {
+          if (mine !== token) return;
+          if (r.fate) { render(r.fate === 'device' ? 'limit' : 'unavailable'); return; }
+          render(r.kind, v, S.stored.wait);
+        });
+      }, 300);
+    }
+    input.addEventListener('input', function () {
+      var raw = input.value;
+      var v = raw.replace(/^@+/, '').toLowerCase();
+      if (v !== raw) {
+        var pos = input.selectionStart;
+        input.value = v;
+        try { input.setSelectionRange(Math.max(0, pos - (raw.length - v.length)), Math.max(0, pos - (raw.length - v.length))); } catch (e) { /* not supported */ }
+      }
+      evaluate();
+    });
+    return {
+      evaluate: evaluate,
+      good: function () { return kind === 'available'; },
+      kind: function () { return kind; },
+      render: render,
+      setValue: function (v) { input.value = v; evaluate(); }
+    };
+  }
+
+  /* ---------- Search a place (Home area) ---------- */
+  function makePlaceSearch(o) {
+    var input = o.input, status = o.status, results = o.results;
+    var timer = 0;
+    function clearResults() {
+      while (results.firstChild) results.removeChild(results.firstChild);
+      results.hidden = true;
+    }
+    function say(text) { setText(status, text); status.hidden = !text; }
+    function pick(p) {
+      input.value = p.name;
+      clearResults(); say('');
+      o.onPick(p);
+    }
+    function search() {
+      var q = input.value.trim().toLowerCase();
+      clearResults();
+      if (q === '') { say(''); return; }
+      if (q.length < 3) { say('Type at least 3 letters.'); return; }
+      var words = q.split(/[\s,]+/).filter(Boolean);
+      var found = PLACES.filter(function (p) {
+        var n = p.name.toLowerCase();
+        return words.every(function (w) { return n.indexOf(w) >= 0; });
+      });
+      if (!found.length) { say('Not found. Add your town, for example: Gayathri Nagar, Vijayawada'); return; }
+      say('');
+      found.forEach(function (p) {
+        var li = document.createElement('li');
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'app-window__option'; b.setAttribute('role', 'option'); b.setAttribute('aria-selected', 'false');
+        var a = document.createElement('span'); a.textContent = p.name;
+        var s = document.createElement('span'); s.className = 'app-window__option-sub'; s.textContent = p.sub;
+        b.appendChild(a); b.appendChild(s);
+        b.addEventListener('click', function () { pick(p); });
+        li.appendChild(b); results.appendChild(li);
+      });
+      results.hidden = false;
+    }
+    input.addEventListener('input', function () {
+      o.onEdit();
+      clearTimeout(timer);
+      timer = setTimeout(search, 400);
+    });
+    o.form.addEventListener('submit', function (e) { e.preventDefault(); clearTimeout(timer); search(); });
+    return { reset: function () { clearTimeout(timer); clearResults(); say(''); } };
+  }
+
+  /* ---------- Step 4, About you ---------- */
+  var s4 = { variant: 'new', pick: null };
+  var s4User = $('welcome-username-input'), s4Name = $('welcome-name-input'), s4Home = $('welcome-home-input');
+  var s4Cont = $('welcome-continue-4'), s4Err = $('welcome-error-4');
+  var s4Uname = makeUsername({ input: s4User, line: $('welcome-username-line'), settings: false, onChange: function () { s4Update(); } });
+  var s4Places = makePlaceSearch({ input: s4Home, status: $('welcome-home-status'), results: $('welcome-home-results'),
+    form: $('welcome-home-form'), onPick: function (p) { s4.pick = p; s4Update(); }, onEdit: function () { s4.pick = null; s4Update(); } });
+  function s4Update() {
+    var good = s4Uname.good() && s4Name.value.trim() !== '' && !!s4.pick;
+    if (good) { s4Cont.removeAttribute('aria-disabled'); clearErr(s4Err); } else s4Cont.setAttribute('aria-disabled', 'true');
+  }
+  function startStep4(variant) {
+    s4.variant = variant;
+    var old = variant === 'old';
+    setText($('welcome-lead'), old
+      ? 'Pinalert now asks everyone for a username, a name and a home area. Fill in what is missing.'
+      : 'All three are needed to finish signing up. You can change them later in Settings.');
+    s4Name.value = old ? 'Priya Varma' : '';
+    if (variant === 'empty') { s4Home.value = ''; s4.pick = null; } else { s4Home.value = PLACES[0].name; s4.pick = PLACES[0]; }
+    s4Places.reset();
+    clearErr(s4Err);
+    s4User.value = '';
+    s4Uname.evaluate();
+    showScreen('welcome');
+    s4Update();
+    $('welcome-step-4-title').focus();
+    report('Step 4, About you' + (old ? ', an old account filling in' : (variant === 'empty' ? ', nothing filled in' : '')));
+  }
+  [s4User, s4Name].forEach(function (inp) {
+    inp.addEventListener('input', s4Update);
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); s4Cont.click(); } });
+  });
+  $('welcome-back-4').addEventListener('click', function () { note('Step 3 is built already and is not redrawn in this mockup.'); });
+  s4Cont.addEventListener('click', function () {
+    if (isBusy(s4Cont)) return;
+    if (!isOn(s4Cont)) {
+      var first = !s4Uname.good() ? s4User : (s4Name.value.trim() === '' ? s4Name : s4Home);
+      first.focus();
+      showErr(s4Err, 'Add your username, name and home area.');
+      return;
+    }
+    clearErr(s4Err);
+    var name = s4User.value;
+    s4Cont.setAttribute('aria-busy', 'true');
+    net('save', 600, function () {
+      if (name.indexOf('rude') >= 0) return { kind: 'refused' };
+      if (name === 'justtaken') return { kind: 'taken' };
+      return { ok: true };
+    }).then(function (r) {
+      s4Cont.removeAttribute('aria-busy');
+      if (r.fate) { showErr(s4Err, SAVE_FATES[r.fate] || SAVE_FATES.server); return; }
+      if (r.kind) { s4Uname.render(r.kind, name); s4User.focus(); s4Update(); return; }
+      toStub('Step 5 of 5, Alerts, follows here. It is built already and is not redrawn in this mockup.');
+    });
+  });
+
+  /* ---------- Settings ---------- */
+  var setUser = $('settings-username-input'), setUserLine = $('settings-username-line'), setUserSave = $('settings-username-save');
+  var setName = $('settings-name-input'), setNameErr = $('settings-name-error');
+  var setHome = $('settings-home-input'), setHomeErr = $('settings-home-error');
+  var setPick = null;
+  var openWin = null, openFrom = null;
+  var setUname = makeUsername({ input: setUser, line: setUserLine, settings: true, onChange: function (k) {
+    if (k === 'available') setUserSave.removeAttribute('aria-disabled'); else setUserSave.setAttribute('aria-disabled', 'true');
+  } });
+  var setPlaces = makePlaceSearch({ input: setHome, status: $('settings-home-status'), results: $('settings-home-results'),
+    form: $('settings-home-form'), onPick: function (p) { setPick = p; clearErr(setHomeErr); }, onEdit: function () { setPick = null; } });
+  function renderRows() {
+    setText($('settings-username-value'), S.stored.username);
+    setText($('settings-name-value'), S.stored.name);
+    setText($('settings-home-value'), S.stored.home);
+  }
+  function openWindow(id, focusEl, opener) {
+    closeWindow(true);
+    var w = $(id);
+    w.hidden = false;
+    openWin = w; openFrom = opener || null;
+    $('settings-main').setAttribute('inert', '');
+    $('settings-chrome').setAttribute('inert', '');
+    focusEl.focus();
+    if (focusEl.select) { try { focusEl.select(); } catch (e) { /* not selectable */ } }
+  }
+  function closeWindow(quiet) {
+    if (!openWin) return;
+    openWin.hidden = true;
+    openWin = null;
+    $('settings-main').removeAttribute('inert');
+    $('settings-chrome').removeAttribute('inert');
+    if (!quiet && openFrom) openFrom.focus();
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('[data-close-window]'), function (b) {
+    b.addEventListener('click', function () { closeWindow(); });
+  });
+  document.addEventListener('keydown', function (e) {
+    if (!openWin) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeWindow(); return; }
+    if (e.key === 'Tab') {
+      var items = Array.prototype.filter.call(openWin.querySelectorAll('button, input, [tabindex="0"]'), function (el) { return !el.disabled && el.offsetParent !== null; });
+      if (!items.length) return;
+      var first = items[0], last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  });
+  function openUsername() {
+    openWindow('settings-username-window', setUser, $('settings-username-row'));
+    setUname.setValue(S.stored.username);
+    setUser.select();
+  }
+  $('settings-username-row').addEventListener('click', openUsername);
+  $('settings-name-row').addEventListener('click', function () {
+    setName.value = S.stored.name; clearErr(setNameErr);
+    openWindow('settings-name-window', setName, $('settings-name-row'));
+  });
+  $('settings-home-row').addEventListener('click', function () {
+    setHome.value = ''; setPick = null; setPlaces.reset(); clearErr(setHomeErr);
+    openWindow('settings-home-window', setHome, $('settings-home-row'));
+  });
+  $('settings-username-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (isBusy(setUserSave)) return;
+    if (!isOn(setUserSave)) { setUser.focus(); return; }
+    var name = setUser.value;
+    setUserSave.setAttribute('aria-busy', 'true');
+    net('save', 500, function () {
+      if (name.indexOf('rude') >= 0) return { kind: 'refused' };
+      if (name === 'justtaken') return { kind: 'taken' };
+      return { ok: true };
+    }).then(function (r) {
+      setUserSave.removeAttribute('aria-busy');
+      if (r.fate) { setUname.render(r.fate === 'device' ? 'limit' : 'unavailable'); setUserSave.setAttribute('aria-disabled', 'true'); return; }
+      if (r.kind) { setUname.render(r.kind, name); setUserSave.setAttribute('aria-disabled', 'true'); setUser.focus(); return; }
+      S.stored.username = name;
+      S.stored.wait = 7;
+      renderRows();
+      closeWindow();
+      note('Saved. The next change is possible in 7 days.');
+    });
+  });
+  $('settings-name-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var v = setName.value.trim();
+    if (v === '') { showErr(setNameErr, "Your name can't be empty."); setName.focus(); return; }
+    S.stored.name = v; renderRows(); closeWindow();
+  });
+  $('settings-home-save').addEventListener('click', function () {
+    if (!setPick) { showErr(setHomeErr, 'Choose a home area.'); setHome.focus(); return; }
+    S.stored.home = setPick.name; renderRows(); closeWindow();
+  });
+  setName.addEventListener('input', function () { clearErr(setNameErr); });
+  setHome.addEventListener('input', function () { clearErr(setHomeErr); });
+
+  function startSettings(wait) {
+    S.stored = { username: 'priya.vja', name: 'Priya Varma', home: PLACES[0].name, wait: wait || 0 };
+    closeWindow(true);
+    renderRows();
+    showScreen('settings');
+    report('Settings, About you');
+  }
+
+  /* ---------- The four emails (UI-SPEC "Emails"). The code is the one the fake server accepts. ---------- */
+  var MAILS = {
+    signup: { subject: 'Your Pinalert code', back: 'code-create', lines: [
+      ['Your Pinalert code is ', 'code', '.'],
+      ['Type it in the browser where you asked for it, within 10 minutes.'],
+      ['If you did not ask for it, ignore this email. Nothing happens until the code is typed.']] },
+    reset: { subject: 'Your Pinalert code', back: 'code-reset', lines: [
+      ['Your Pinalert password reset code is ', 'code', '.'],
+      ['Type it in the browser where you asked for it, within 10 minutes.'],
+      ['If you did not ask for it, ignore this email. Your password has not changed.']] },
+    exists: { subject: 'Your Pinalert account', back: 'code-create', lines: [
+      ['Someone asked to create a Pinalert account with this email, but you already have one.'],
+      ['Sign in with your email and password. If you forgot your password, choose Forgot password on the sign in page.'],
+      ['If this was not you, ignore this email.']] },
+    noaccount: { subject: 'Your Pinalert password reset', back: 'code-reset', lines: [
+      ['Someone asked to reset the password for this email, but there is no Pinalert account with it.'],
+      ['To make one, choose Create account on the Pinalert sign in page.'],
+      ['If this was not you, ignore this email.']] }
+  };
+  var mailBack = 'create';
+  function showMail(kind) {
+    var m = MAILS[kind];
+    mailBack = m.back;
+    setText($('mail-subject'), 'Subject: ' + m.subject);
+    var bodyEl = $('mail-body');
+    while (bodyEl.firstChild) bodyEl.removeChild(bodyEl.firstChild);
+    m.lines.forEach(function (parts) {
+      var p = document.createElement('p');
+      p.appendChild(document.createTextNode(parts[0]));
+      if (parts[1] === 'code') {
+        var box = document.createElement('span');
+        box.className = 'mail__code';
+        box.textContent = GOOD_CODE;
+        p.appendChild(box);
+        p.appendChild(document.createTextNode(parts[2]));
+      }
+      bodyEl.appendChild(p);
+    });
+    showScreen('email');
+    report('An email: ' + m.subject);
+  }
+  $('mail-close').addEventListener('click', function () { api.go(mailBack); });
+
+  /* ---------- The stub ---------- */
+  function toStub(text) {
+    setText($('stub-text'), text);
+    showScreen('stub');
+    report('Where the real app takes over');
+  }
+  $('stub-restart').addEventListener('click', function () { api.go('create'); });
+
+  /* ---------- Jumps from the panel ---------- */
+  function fillSample() {
+    createEmail.value = SAMPLE_EMAIL; signinEmail.value = SAMPLE_EMAIL; forgotEmail.value = SAMPLE_EMAIL;
+  }
+  function entry(which, word) {
+    showScreen('login');
+    clearErr(createErr); signinErr.hidden = true; clearErr(forgotErr); signinStatus.hidden = true;
+    showPanel(which);
+    showDone(word);
+    if (word) report('Sign in page, ' + panelNames[which] + ', with the line above the title');
+  }
+  api.go = function (id) {
+    clearInterval(S.tick);
+    closeWindow(true);
+    switch (id) {
+      case 'create': entry('create'); break;
+      case 'signin': entry('signin'); break;
+      case 'forgot': entry('signin'); forgotEmail.value = ''; clearErr(forgotErr); showPanel('forgot'); break;
+      case 'reset-done':
+        entry('signin'); signinEmail.value = SAMPLE_EMAIL;
+        setText(signinStatus, 'Password set. Sign in to continue.'); signinStatus.hidden = false;
+        break;
+      case 'signin-wrong':
+        entry('signin'); signinEmail.value = SAMPLE_EMAIL; signinPw.value = 'not-the-password';
+        signinFail('Email or password is wrong.', OLD_ACCOUNT_LINE);
+        break;
+      case 'signin-locked':
+        entry('signin'); signinEmail.value = 'locked@example.com'; signinPw.value = 'not-the-password';
+        signinFail(LOGIN_FATES.account);
+        break;
+      case 'code-create': entry('create'); fillSample(); S.pendingPassword = SAMPLE_PASSWORD; openCode('create', SAMPLE_EMAIL, 'create'); break;
+      case 'code-reset': entry('signin'); fillSample(); openCode('reset', SAMPLE_EMAIL, 'forgot'); break;
+      case 'code-wrong':
+        entry('create'); fillSample(); openCode('create', SAMPLE_EMAIL, 'create');
+        codeInput.value = '482913'; refuseCode();
+        break;
+      case 'code-expired':
+        entry('create'); fillSample(); openCode('create', SAMPLE_EMAIL, 'create');
+        expireNow();
+        break;
+      case 'code-tries':
+        entry('create'); fillSample(); openCode('create', SAMPLE_EMAIL, 'create');
+        S.tries = MAX_CODE_TRIES - 1; codeInput.value = '000000'; refuseCode();
+        break;
+      case 'code-refused':
+        entry('create'); fillSample(); openCode('create', SAMPLE_EMAIL, 'create');
+        S.resendLeft = 0; renderResend(); showErr(codeErr, LOGIN_FATES.device);
+        break;
+      case 'done-oldlink': entry('create', 'old-link'); break;
+      case 'done-switch': entry('create', 'switch'); break;
+      case 'done-alldevices': entry('signin', 'all-devices'); break;
+      case 'done-deleted': entry('create', 'deleted'); break;
+      case 'step4-new': startStep4('new'); break;
+      case 'step4-empty': startStep4('empty'); break;
+      case 'step4-old': startStep4('old'); break;
+      case 'settings': startSettings(); break;
+      case 'settings-username': startSettings(); openUsername(); break;
+      case 'settings-wait':
+        startSettings(4);
+        openUsername(); setUname.setValue('priya.floods');
+        break;
+      case 'settings-name': startSettings(); $('settings-name-row').click(); break;
+      case 'settings-home': startSettings(); $('settings-home-row').click(); break;
+      case 'email-signup': showMail('signup'); break;
+      case 'email-reset': showMail('reset'); break;
+      case 'email-exists': showMail('exists'); break;
+      case 'email-noaccount': showMail('noaccount'); break;
+      default: entry('create');
+    }
+  };
+  api.theme = function (t) {
+    if (t === 'light' || t === 'dark') root.setAttribute('data-theme', t); else root.removeAttribute('data-theme');
+  };
+  api.skipWait = function () {
+    if (S.panel !== 'code') { note('Open the code screen first.'); return; }
+    S.resendLeft = 0; renderResend(); setText($('code-ready-live'), 'Resend code');
+  };
+  api.expireCode = function () {
+    if (S.panel !== 'code') { note('Open the code screen first.'); return; }
+    expireNow();
+  };
+  api.force = function (v) { S.force = v; };
+  api.low = function (v) { setLow(v === 'on', true); };
+  api.checks = function (v) { S.checks = v !== 'off'; applyChecks(); };
+  api.view = function () {};
+
+  /* ================== The globe (sketch 009, placement A, the realistic Earth) ================== */
+  var LIB_CSS = 'https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css';
+  var LIB_CSS_SRI = 'sha256-qx5w1Z7EBGW65+cDDaLzzPKBM/1QLmK9WY7vut/XpzI=';
+  var LIB_JS = 'https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js';
+  var LIB_JS_SRI = 'sha256-RamwepGJzlYFTGIKlHzPQeKR5YyV6bYVM7dAqqZe5cs=';
+  var REAL_TILES = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_NextGeneration/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg';
+  var REAL_MAX_ZOOM = 3;
+  var START_LNG = 80, LAT = 18, DEG_PER_SEC = 3, FRAME_MS = 33, BOX = 1.06, GIVE_UP_MS = 10000;
+
+  var globeArea = $('globe-area'), mapEl = $('globe-map'), credit = $('globe-credit');
+  var map = null, raf = 0, loaded = false, failed = false, lng = START_LNG;
+  var diameter = 0, boxH = 0, giveUp = 0, started = false, libs = null, globeStatus = 'waiting';
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  function setStatus(s) { globeStatus = s; toPanel({ event: 'globe', text: s }); }
+  function hasWebGL2() {
+    try {
+      var gl = document.createElement('canvas').getContext('webgl2');
+      if (!gl) return false;
+      var lose = gl.getExtension('WEBGL_lose_context');
+      if (lose) lose.loseContext();
+      return true;
+    } catch (e) { return false; }
+  }
+  function zoomFor(d, canvasH) {
+    var ra = d / 2, cam = 1.5 * canvasH;
+    var r = (ra * ra + ra * Math.sqrt(ra * ra + cam * cam)) / cam;
+    return Math.log2(r * 2 * Math.PI * Math.cos(LAT * Math.PI / 180) / 512);
+  }
+  function layout() {
+    var w = gate.clientWidth;
+    if (!w || gate.hidden) return;
+    var h = Math.max(240, window.innerHeight - gate.offsetTop);
+    var laptop = w >= 900;
+    diameter = laptop ? Math.min(h * 0.92, 900) : Math.min(w * 2, h * 0.92);
+    var bw = Math.min(diameter * BOX, w), bh = Math.min(diameter * BOX, h);
+    gate.style.setProperty('--globe-x', Math.round((w - bw) / 2) + 'px');
+    gate.style.setProperty('--globe-y', Math.round((h - bh) / 2) + 'px');
+    boxH = Math.round(bh);
+    gate.style.setProperty('--globe-w', Math.round(bw) + 'px');
+    gate.style.setProperty('--globe-h', boxH + 'px');
+    if (map) map.setZoom(zoomFor(diameter, boxH));
+  }
+  function frame(t) {
+    raf = requestAnimationFrame(frame);
+    if (!frame.last) { frame.last = t; return; }
+    var dt = t - frame.last;
+    if (dt < FRAME_MS) return;
+    frame.last = t;
+    lng -= DEG_PER_SEC * Math.min(dt, 100) / 1000;
+    if (lng < -180) lng += 360;
+    map.jumpTo({ center: [lng, LAT] });
+  }
+  function startLoop() { if (raf) return; frame.last = 0; raf = requestAnimationFrame(frame); }
+  function stopLoop() { if (raf) cancelAnimationFrame(raf); raf = 0; }
+  function updateLoop() {
+    if (!map || !loaded) return;
+    if (S.screen !== 'login' || gate.hidden) { stopLoop(); setStatus('paused, the sign in page is not showing'); return; }
+    if (reduce.matches) { stopLoop(); setStatus('still, reduce motion is on'); return; }
+    if (document.hidden) { stopLoop(); setStatus('paused while the tab is hidden'); return; }
+    startLoop();
+    setStatus('turning, one turn every 2 minutes');
+  }
+  function teardownGlobe(reason) {
+    stopLoop(); clearTimeout(giveUp); giveUp = 0;
+    if (map) { try { map.remove(); } catch (e) { /* already gone */ } }
+    map = null; loaded = false; failed = false; started = false;
+    globeArea.classList.remove('is-ready');
+    globeArea.hidden = true;
+    gate.classList.remove('has-globe');
+    setStatus(reason);
+  }
+  function failGlobe(err) {
+    if (failed) return;
+    failed = true;
+    clearTimeout(giveUp);
+    var msg = err && err.message ? err.message : String(err);
+    stopLoop();
+    if (map) { try { map.remove(); } catch (e) { /* already gone */ } }
+    map = null; loaded = false;
+    globeArea.classList.remove('is-ready');
+    setStatus('off, it could not start (' + msg + ')');
+  }
+  function buildCredit() {
+    function link(href, text) {
+      var a = document.createElement('a');
+      a.href = href; a.target = '_blank'; a.rel = 'noopener'; a.textContent = text;
+      return a;
+    }
+    credit.appendChild(document.createTextNode('Earth pictures: '));
+    credit.appendChild(link('https://visibleearth.nasa.gov/collection/1484/blue-marble', 'NASA Blue Marble'));
+    credit.appendChild(document.createTextNode(' via '));
+    credit.appendChild(link('https://www.earthdata.nasa.gov/gibs', 'NASA GIBS'));
+  }
+  function addStylesheet(href, sri) {
+    return new Promise(function (resolve, reject) {
+      var l = document.createElement('link');
+      l.rel = 'stylesheet'; l.integrity = sri; l.crossOrigin = 'anonymous'; l.referrerPolicy = 'no-referrer';
+      l.onload = resolve; l.onerror = function () { reject(new Error('map stylesheet did not load')); };
+      l.href = href; document.head.appendChild(l);
+    });
+  }
+  function addScript(src, sri) {
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.async = true; s.integrity = sri; s.crossOrigin = 'anonymous'; s.referrerPolicy = 'no-referrer';
+      s.onload = resolve; s.onerror = function () { reject(new Error('map library did not load')); };
+      s.src = src; document.head.appendChild(s);
+    });
+  }
+  function realStyle() {
+    return {
+      version: 8,
+      projection: { type: 'globe' },
+      sources: { earth: { type: 'raster', tiles: [REAL_TILES], tileSize: 256, minzoom: 0, maxzoom: REAL_MAX_ZOOM } },
+      layers: [{ id: 'earth', type: 'raster', source: 'earth', paint: { 'raster-fade-duration': 0 } }]
+    };
+  }
+  function createMap() {
+    layout();
+    map = new maplibregl.Map({
+      container: mapEl, style: realStyle(), center: [lng, LAT], zoom: zoomFor(diameter, boxH), interactive: false,
+      attributionControl: false, pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+      canvasContextAttributes: { contextType: 'webgl2', antialias: true, powerPreference: 'low-power' },
+      fadeDuration: 0, refreshExpiredTiles: false
+    });
+    map.on('error', function (e) {
+      var msg = e && e.error && e.error.message ? e.error.message : 'map error';
+      if (!loaded) failGlobe(new Error(msg));
+    });
+    map.on('load', function () {
+      if (failed) return;
+      loaded = true; clearTimeout(giveUp);
+      globeArea.classList.add('is-ready');
+      updateLoop();
+    });
+    map.on('webglcontextlost', function () { stopLoop(); setStatus('paused, the WebGL context was lost'); });
+    map.on('webglcontextrestored', updateLoop);
+  }
+  function armGiveUp() {
+    clearTimeout(giveUp);
+    giveUp = setTimeout(function () {
+      giveUp = 0;
+      if (loaded || failed || document.hidden) return;
+      failGlobe(new Error('nothing drew within 10 seconds'));
+    }, GIVE_UP_MS);
+  }
+  function loadGlobe() {
+    if (!started || S.low) return;
+    setStatus('loading');
+    armGiveUp();
+    libs = libs || Promise.all([addStylesheet(LIB_CSS, LIB_CSS_SRI), addScript(LIB_JS, LIB_JS_SRI)]);
+    libs.then(function () {
+      if (failed || !started || S.low || map) return;
+      if (typeof maplibregl === 'undefined') throw new Error('maplibregl is missing');
+      createMap();
+    }).catch(function (err) { libs = null; failGlobe(err); });
+  }
+  function globeShown() {
+    if (S.low) { setStatus('off, Low data view is on (nothing downloaded)'); return; }
+    if (started) { layout(); updateLoop(); return; }
+    if (!hasWebGL2()) { setStatus('off, no WebGL2 (nothing downloaded)'); return; }
+    started = true; failed = false;
+    globeArea.hidden = false;
+    gate.classList.add('has-globe');
+    if (!credit.firstChild) buildCredit();
+    layout();
+    setStatus('waiting for the page to finish loading');
+    var later = function () {
+      if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(loadGlobe, { timeout: 1500 });
+      else setTimeout(loadGlobe, 200);
+    };
+    if (document.readyState === 'complete') later(); else window.addEventListener('load', later, { once: true });
+  }
+  function globeHidden() { if (started) { stopLoop(); setStatus('paused, the sign in page is not showing'); } }
+  if (window.ResizeObserver) new ResizeObserver(function () { layout(); }).observe(gate);
+  window.addEventListener('resize', layout);
+  reduce.addEventListener('change', updateLoop);
+  document.addEventListener('visibilitychange', function () {
+    if (!loaded && !failed && started && !document.hidden) armGiveUp();
+    updateLoop();
+  });
+
+  /* A press anywhere in the Username box, the @ included, puts the cursor in the input. */
+  Array.prototype.forEach.call(document.querySelectorAll('div.app-window__field'), function (box) {
+    box.addEventListener('click', function (e) {
+      var input = box.querySelector('input');
+      if (e.target !== input) input.focus();
+    });
+  });
+
+  /* ---------- Start ---------- */
+  applyChecks();
+  renderRows();
+  var first = params.get('go') || 'create';
+  api.go(first);
+  toPanel({ event: 'ready' });
+})();
+</script>
+</body>
+</html>
