@@ -270,27 +270,28 @@ Requirements for initial release. Each maps to roadmap phases.
       then the same note reads as confirmed; this replaces "non-critical reports notify only once
       Live"; see the owner amendment at the top of 03.2-CONTEXT.md)
 
-- [ ] **PROF-01**: A user can opt in to a public reporter profile with a nickname (never the
-      email); it is off by default and available only to Reliable reporters, and nicknames are unique,
-      screened and exclude reserved words such as agency names
-      (Amended 2026-10-16, owner decision: the name given in the first-time flow replaces the
-      nickname and keeps the reserved word screening; the profile is still opt in)
+- [ ] **PROF-01**: A user can switch on "Let others follow me" (off by default); only a person
+      with the Reliable reporter tag (3.5 combined stars, score 70) can be followed. People appear by
+      their public Username (Phase 7.1); the Name and Home area show only on an opted in profile, and
+      the Name is screened and refused if it uses reserved official words
+      (Refreshed at planning 2026-10-27 from 09-CONTEXT D-01, D-05, D-15; replaces the nickname text
+      of 2026-10-16)
 
-- [ ] **PROF-02**: A profile shows the reliability tag with its counts, member since, and recent
-      finished reports at a coarse location, with no email and no follower counts
-      (Amended 2026-10-16, owner decision: readers also tap one to five stars, with guard rails,
-      and from 5 raters on the stars are half report outcomes and half the tapped average, see
-      ROADMAP Phase 9; the public Followers and Following lists in PROF-03's note replace "no
-      follower counts")
+- [ ] **PROF-02**: A profile shows the username, name, home area, stars with both parts from 5
+      raters (half report outcomes, half the tapped average, raters counted by distinct place), the
+      reporter tag with its counts, member since, Followers and Following counts, and the reports
+      posted in the last 30 days with their distance (live ones as on the map, finished ones at a
+      coarse location with the date only and no link to the exact report). Readers who voted on one of
+      the reporter's reports tap one to five stars, one rating per account, changeable, never their own
+      (Refreshed at planning 2026-10-27 from 09-CONTEXT D-02, D-06, D-07, D-13, D-20, D-21)
 
-- [ ] **PROF-03**: A user can follow and unfollow opted-in reporters privately, mute or block,
-      see their reports in a Following view (Amended 2026-10-16, owner decision: following is public, not private, through the Followers and Following lists; no Following main tab in the Phase 3.4 layout, where followed reporters' reports show is settled in Phase 9's discuss) and get updates when they post (non-critical only once
-      Live, no coordinates or address in the text); switching the profile off, or losing the Reliable
-      tag, ends all follows and pending alerts, and a reporter can remove all followers without
-      seeing who they are
-      (Amended 2026-10-16, owner decision: the Followers and Following lists are public on the
-      profile, and anyone without their own opted in profile shows only as a number, never by name,
-      so "remove all followers without seeing who they are" no longer holds, see ROADMAP Phase 9)
+- [ ] **PROF-03**: A user can follow and unfollow, mute or block; the Followers and Following lists
+      are public, and anyone without their own opted in profile shows only as a number. A Notify me
+      bell (off by default) on a followed profile sends one silent note per post, marked "Not
+      confirmed yet" until people nearby confirm it, with no coordinates or address in the text.
+      Switching the profile off, or the Reliable tag falling away, ends all follows and pending notes
+      at once, and a reporter can remove all followers in one step
+      (Refreshed at planning 2026-10-27 from 09-CONTEXT D-03, D-08 to D-12, D-24 and ROADMAP SC5)
 
 ### Report Page & Comments
 
