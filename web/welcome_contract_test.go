@@ -596,7 +596,7 @@ func TestWelcomeAlertsScript(t *testing.T) {
 	p13Ordered(t, allow, "onAskAllow", "if (askBusy) {", "window.PinalertNotify.enable(pushKey)", "askBusy = true;", ".then(")
 	p13MustNotContain(t, "onAskAllow", allow, "await ", "setTimeout(")
 	// Not now and Escape never reach enable.
-	for _, name := range []string{"onAskLater()", "onAskCancel(e)", "endFlow(opener)", "openAsk(opener)", "canAsk()"} {
+	for _, name := range []string{"onAskLater()", "onAskCancel(e)", "endFlow()", "openAsk()", "canAsk()"} {
 		p13MustNotContain(t, name, jsFunctionBody(t, js, name), "enable(", "requestPermission")
 	}
 	p13MustContain(t, "wiring", js,
@@ -611,9 +611,9 @@ func TestWelcomeAlertsScript(t *testing.T) {
 	can := jsFunctionBody(t, js, "canAsk()")
 	p13MustContain(t, "canAsk", can, "askDialog", "showModal", "pushKey", "baseState()", "'maybe'", "'ready'")
 	p13MustMatch(t, "canAsk", can, `(?s)try \{.*baseState\(\).*\} catch`)
-	end := jsFunctionBody(t, js, "endFlow(opener)")
-	p13Ordered(t, end, "endFlow", "canAsk()", "openAsk(opener)", "postDone()")
-	p13MustContain(t, "openAsk", jsFunctionBody(t, js, "openAsk(opener)"), "showModal()", "askTitle.focus()", "postDone()")
+	end := jsFunctionBody(t, js, "endFlow()")
+	p13Ordered(t, end, "endFlow", "canAsk()", "openAsk()", "postDone()")
+	p13MustContain(t, "openAsk", jsFunctionBody(t, js, "openAsk()"), "showModal()", "askTitle.focus()", "postDone()")
 
 	// The flow is recorded as done from one sender, and a finish attempt reaches
 	// it once: finish only ends through endFlow.
@@ -621,7 +621,7 @@ func TestWelcomeAlertsScript(t *testing.T) {
 	p13MustNotContain(t, "finish", jsFunctionBody(t, js, "finish(save)"), "postDone(")
 	p13MustContain(t, "finish", jsFunctionBody(t, js, "finish(save)"), "endFlow(")
 	post := jsFunctionBody(t, js, "postDone()")
-	p13MustContain(t, "postDone", post, "answer.status === 409", "goTo(2);", "MESSAGE_AGREE_FIRST", "setFinishing(false);", "profileError")
+	p13MustContain(t, "postDone", post, "answer.status === 409", "goTo(2);", "MESSAGE_AGREE_FIRST", "doneFailed();", "profileError")
 
 	// The needs-install title and every step 5 helper are gone.
 	p13MustNotContain(t, "welcome.js", js,

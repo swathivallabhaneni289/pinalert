@@ -571,12 +571,12 @@ test('the flow has four steps: ?step=5 falls back to the start step and Back exi
   const page = load({ start: 3, search: '?step=5' });
   assert.equal(visibleStep(page), 3);
   assert.equal(page.steps.length, 4);
-  assert.equal(byId(page, 'welcome-step-5'), null);
-  assert.equal(byId(page, 'welcome-back-1'), null);
+  assert.equal(byId(page, 'welcome-step-5'), undefined);
+  assert.equal(byId(page, 'welcome-back-1'), undefined);
   for (const n of [2, 3, 4]) {
     assert.ok(byId(page, 'welcome-back-' + n), 'Back on step ' + n);
   }
-  assert.equal(byId(page, 'welcome-back-5'), null);
+  assert.equal(byId(page, 'welcome-back-5'), undefined);
   page.api.goTo(5);
   assert.equal(visibleStep(page), 3, 'a step that does not exist is refused');
 
