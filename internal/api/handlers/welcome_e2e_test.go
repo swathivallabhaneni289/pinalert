@@ -120,7 +120,7 @@ func TestOnboardingFlowEndToEnd(t *testing.T) {
 		`data-start-step="1"`, "Step 1 of 5", "Step 2 of 5", "Step 3 of 5", "Step 4 of 5", "Step 5 of 5",
 		"Welcome to Pinalert", "Disclaimer and policy", "Show what is happening near you", "About you",
 		"Get alerts when it matters",
-		"call 112 first.", "Please read this before you use Pinalert. Tap Agree to continue.",
+		"call 112 first.", "Please read this to the end before you use Pinalert.",
 		// Plan 33: step 3 holds only Allow location and Not now, and the Disagree
 		// box is drawn with the existing log out form.
 		`id="welcome-allow-location">Allow location</button>`, `id="welcome-not-now">Not now</button>`,

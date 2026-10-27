@@ -121,7 +121,7 @@ func TestWelcomeStep2ReadsTheSharedText(t *testing.T) {
 	// right after the policy partial, so it sits under the last line of the text
 	// ("Last updated ..."), and Agree and Disagree come after the marker.
 	p13Ordered(t, page, "step 2", `{{template "legal_disclaimer_body" .Legal}}`, `{{template "legal_policy_body" .Legal}}`, `id="welcome-scrollbox-end"`, `id="welcome-disagree"`, `id="welcome-agree"`)
-	p13MustContain(t, "step 2", page, "Please read this before you use Pinalert. Tap Agree to continue.")
+	p13MustContain(t, "step 2", page, "Please read this to the end before you use Pinalert.")
 	p13MustMatch(t, "step 2 scroll box", page,
 		`(?s)<div class="welcome__scrollbox legal-text"[^>]*>\s*\{\{template "legal_disclaimer_body" \.Legal\}\}\s*\{\{template "legal_policy_body" \.Legal\}\}\s*<div class="welcome__scrollbox-end" id="welcome-scrollbox-end" aria-hidden="true"></div>\s*</div>`)
 	w10Count(t, "welcome.html.tmpl", page, `id="welcome-scrollbox-end"`, 1)
