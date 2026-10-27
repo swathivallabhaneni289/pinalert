@@ -1,9 +1,10 @@
 // welcome_flow_test.mjs - runs the real web/static/js/welcome.js in a Node
 // sandbox and checks the first-time flow (Phase 3.4, plan 10, D-27, D-28, D-24b):
 //
-//   - five steps (Amended 2026-10-18 by Phase 3.3 plan 13: step 5, Alerts, is
-//     tested in welcome_alerts_test.mjs), one at a time, the title takes focus on each, Tab stays
-//     inside, and Escape does nothing because the flow is completed, not closed;
+//   - four steps (amended 2026-10-27 by quick 261027-t5w, owner: the alerts ask
+//     is a pop-up after step 4, tested in welcome_alerts_test.mjs), one at a
+//     time, the title takes focus on each, Tab stays inside, and Escape does
+//     nothing because the flow is completed, not closed;
 //   - Disagree shows the calm box (plan 31) and stays on step 2; Read again
 //     scrolls the text box to the top and focuses it; Log out is a plain form;
 //     only Agree records the agreement (POST /api/me/consent) and moves on, and
@@ -15,9 +16,10 @@
 //   - step 4's home area comes only from a picked search result of its own,
 //     never from step 3 and never from the device fix; nothing is saved until
 //     Continue; Skip saves nothing;
-//   - finishing step 4 sends the profile (only what the person filled) and shows
-//     step 5; step 5 then sends first-run-done and lands on / with the search
-//     focus flag set;
+//   - finishing step 4 sends the profile (only what the person filled), then opens
+//     the alerts pop-up (the default fake device can show alerts); Not now in
+//     the pop-up sends first-run-done and lands on / with the search focus flag
+//     set;
 //   - every string reaches the page through textContent.
 //
 // Run it with: node --test web/welcome_flow_test.mjs
@@ -107,12 +109,12 @@ class FakeEl {
   focus() { this.doc.activeElement = this; }
 }
 
-// Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): the flow has
-// a fifth step, Alerts. The page below carries its ids, a default fake
-// PinalertNotify answers "ready", and the cases that used to finish from step 4
-// now finish from step 5 (Not now). The step 5 cases themselves are in
-// welcome_alerts_test.mjs.
-const STEP_NAMES = ['Welcome', 'Disclaimer and policy', 'Your location', 'About you', 'Alerts'];
+// Amended 2026-10-27 by quick 261027-t5w (owner): the flow has four steps. The
+// alerts ask is a pop-up (a native dialog outside the flow root) that opens
+// after step 4. The page below carries its ids, a default fake PinalertNotify
+// answers "maybe", and the cases that finish the flow press Not now in the
+// pop-up. The pop-up cases themselves are in welcome_alerts_test.mjs.
+const STEP_NAMES = ['Welcome', 'Disclaimer and policy', 'Your location', 'About you'];
 
 // The markup of welcome.html.tmpl, as the ids and nesting welcome.js reads.
 function buildPage({ start = 1, name = '', home = '', marker = true } = {}) {
@@ -151,7 +153,7 @@ function buildPage({ start = 1, name = '', home = '', marker = true } = {}) {
   });
 
   const pane = make('div', '', root, 'welcome__pane');
-  const steps = [1, 2, 3, 4, 5].map((n) => {
+  const steps = [1, 2, 3, 4].map((n) => {
     const sec = make('section', 'welcome-step-' + n, pane, 'welcome__step');
     if (n !== start) { sec.hidden = true; }
     const title = make('h1', 'welcome-step-' + n + '-title', sec, 'welcome__title');
@@ -160,7 +162,7 @@ function buildPage({ start = 1, name = '', home = '', marker = true } = {}) {
   });
 
   make('button', 'welcome-continue-1', steps[0]);
-  [2, 3, 4, 5].forEach((n) => make('button', 'welcome-back-' + n, steps[n - 1], 'welcome__back'));
+  [2, 3, 4].forEach((n) => make('button', 'welcome-back-' + n, steps[n - 1], 'welcome__back'));
 
   const box = make('div', 'welcome-scrollbox', steps[1], 'welcome__scrollbox');
   box.setAttribute('tabindex', '0');
@@ -197,20 +199,20 @@ function buildPage({ start = 1, name = '', home = '', marker = true } = {}) {
   make('button', 'welcome-continue-4', steps[3]);
   make('button', 'welcome-skip', steps[3]);
 
-  // Step 5, Alerts (Phase 3.3 plan 13).
+  // The alerts pop-up (quick 261027-t5w): a native dialog that is a direct child
+  // of body and a sibling of the flow root, shaped like the one in
+  // logout_confirm_test.mjs.
   root.setAttribute('data-push-key', 'test-public-key-placeholder');
-  make('div', 'welcome-alerts-ready', steps[4]);
-  make('p', 'welcome-alerts-nohome', doc.byId['welcome-alerts-ready']).hidden = true;
-  make('div', 'welcome-alerts-install', steps[4]).hidden = true;
-  make('p', 'welcome-alerts-blocked', steps[4]).hidden = true;
-  make('p', 'welcome-alerts-unsupported', steps[4]).hidden = true;
-  make('p', 'welcome-alerts-status', steps[4]); // amended 2026-10-25 (review T-04): an always-present live region, never hidden
-  make('p', 'welcome-alerts-error', steps[4]).hidden = true;
-  make('button', 'welcome-alerts-allow', steps[4]);
-  make('button', 'welcome-alerts-later', steps[4]);
-  make('button', 'welcome-alerts-continue', steps[4]).hidden = true;
+  const dialog = make('dialog', 'welcome-alerts-ask', doc.body);
+  dialog.open = false;
+  dialog.showCalls = 0;
+  dialog.showModal = function () { this.showCalls += 1; this.open = true; };
+  dialog.close = function () { this.open = false; };
+  make('h2', 'welcome-alerts-ask-title', dialog, 'logout-confirm__title').setAttribute('tabindex', '-1');
+  make('button', 'welcome-alerts-later', dialog);
+  make('button', 'welcome-alerts-allow', dialog);
 
-  return { doc, root, steps, items, side };
+  return { doc, root, steps, items, side, dialog };
 }
 
 // load evaluates welcome.js against a page. fetch keeps every call for the test
@@ -292,8 +294,8 @@ function load(options) {
       pushState(state, title, address) { pushes.push({ state, address }); },
       replaceState(state, title, address) { stateReplaces.push({ state, address }); }
     },
-    // A device that can show alerts: step 5 draws the ask. The real answers are
-    // tested in welcome_alerts_test.mjs.
+    // A device that can show alerts: finishing step 4 opens the pop-up. The real
+    // answers are tested in welcome_alerts_test.mjs.
     PinalertNotify: {
       baseState() { return 'maybe'; },
       deviceState() { return Promise.resolve('ready'); },
@@ -360,8 +362,8 @@ test('Continue on step 1 shows step 2, focuses its title, and updates the progre
   assert.equal(page.root.getAttribute('data-step'), '2');
   assert.equal(page.root.getAttribute('aria-labelledby'), 'welcome-step-2-title');
   assert.equal(page.doc.activeElement, byId(page, 'welcome-step-2-title'));
-  // Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): five steps.
-  assert.deepEqual(page.items.map((i) => i.getAttribute('data-state')), ['done', 'current', 'waiting', 'waiting', 'waiting']);
+  // Amended 2026-10-27 by quick 261027-t5w: four steps.
+  assert.deepEqual(page.items.map((i) => i.getAttribute('data-state')), ['done', 'current', 'waiting', 'waiting']);
   assert.equal(page.items[1].button.getAttribute('aria-current'), 'step');
   assert.equal(page.items[0].button.getAttribute('aria-current'), null);
   assert.equal(page.requests.length, 0, 'moving through step 1 sends nothing');
@@ -371,7 +373,7 @@ test('the flow starts at the step the server names', () => {
   const page = load({ start: 3 });
   assert.equal(visibleStep(page), 3);
   assert.equal(page.requests.length, 0, 'starting at step 3 does not record anything again');
-  assert.deepEqual(page.items.map((i) => i.getAttribute('data-state')), ['done', 'done', 'current', 'waiting', 'waiting']);
+  assert.deepEqual(page.items.map((i) => i.getAttribute('data-state')), ['done', 'done', 'current', 'waiting']);
 });
 
 // Amended 2026-10-17 by Phase 3.4 plan 31: Disagree no longer shows one line
@@ -562,11 +564,12 @@ test('step 3 never fills or empties step 4: the home area is left as the page dr
   const stored = load({ start: 3, home: 'Whitefield' });
   click(stored, 'welcome-not-now');
   assert.equal(byId(stored, 'welcome-home-input').value, 'Whitefield', 'a stored home area stays');
-  // Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): step 4's
-  // Continue goes to step 5; first-run-done is sent from step 5 (Not now).
+  // Amended 2026-10-27 by quick 261027-t5w: step 4's Continue opens the alerts
+  // pop-up; first-run-done is sent by its Not now.
   click(stored, 'welcome-continue-4');
   assert.equal(stored.requests.length, 0);
-  assert.equal(visibleStep(stored), 5);
+  assert.equal(visibleStep(stored), 4);
+  assert.equal(stored.dialog.open, true);
   click(stored, 'welcome-alerts-later');
   assert.equal(stored.requests.length, 1);
   assert.equal(stored.requests[0].url, '/api/me/first-run-done', 'a stored home area is not sent again');
@@ -624,10 +627,11 @@ test('step 4 Continue sends only the filled fields, then first-run-done, then la
   answer(page.requests[0], 200, { display_name: 'Ravi Kumar', home_area_name: null });
   await flush();
 
-  // Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): the saved
-  // profile leads to step 5, which sends first-run-done (Not now).
-  assert.equal(page.requests.length, 1, 'first-run-done is not sent from step 4');
-  assert.equal(visibleStep(page), 5);
+  // Amended 2026-10-27 by quick 261027-t5w: the saved profile opens the alerts
+  // pop-up, whose Not now sends first-run-done.
+  assert.equal(page.requests.length, 1, 'first-run-done is not sent before the pop-up is answered');
+  assert.equal(visibleStep(page), 4);
+  assert.equal(page.dialog.open, true);
   click(page, 'welcome-alerts-later');
   assert.equal(page.requests.length, 2);
   assert.equal(page.requests[1].url, '/api/me/first-run-done');
@@ -640,13 +644,13 @@ test('step 4 Continue sends only the filled fields, then first-run-done, then la
   assert.deepEqual(page.replaced, ['/']);
 });
 
-// Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): both ways on
-// from step 4 lead to step 5, which sends first-run-done (Not now).
+// Amended 2026-10-27 by quick 261027-t5w: both ways on from step 4 open the
+// alerts pop-up, whose Not now sends first-run-done.
 test('with both fields empty there is no profile request, and Skip sends only first-run-done', async () => {
   const empty = load({ start: 4 });
   click(empty, 'welcome-continue-4');
   assert.equal(empty.requests.length, 0);
-  assert.equal(visibleStep(empty), 5);
+  assert.equal(empty.dialog.open, true);
   click(empty, 'welcome-alerts-later');
   assert.equal(empty.requests.length, 1);
   assert.equal(empty.requests[0].url, '/api/me/first-run-done');
@@ -658,7 +662,7 @@ test('with both fields empty there is no profile request, and Skip sends only fi
   byId(skipped, 'welcome-name-input').value = 'Typed but skipped';
   click(skipped, 'welcome-skip');
   assert.equal(skipped.requests.length, 0);
-  assert.equal(visibleStep(skipped), 5);
+  assert.equal(skipped.dialog.open, true);
   click(skipped, 'welcome-alerts-later');
   assert.equal(skipped.requests.length, 1, 'Skip saves nothing the person typed');
   assert.equal(skipped.requests[0].url, '/api/me/first-run-done');
@@ -1056,7 +1060,7 @@ test('Back on steps 2, 3 and 4 shows the previous step and moves focus to its ti
   assert.equal(visibleStep(page), 1);
   assert.equal(page.doc.activeElement, byId(page, 'welcome-step-1-title'));
   assert.equal(page.root.getAttribute('data-step'), '1');
-  assert.deepEqual(stepStates(page), ['current', 'waiting', 'waiting', 'waiting', 'waiting']);
+  assert.deepEqual(stepStates(page), ['current', 'waiting', 'waiting', 'waiting']);
   assert.equal(page.requests.length, 0, 'moving back sends nothing');
 });
 
@@ -1067,8 +1071,8 @@ test('a click on any step list button shows that step, in any order, marked aria
     assert.equal(visibleStep(page), n, 'step ' + n);
     assert.equal(page.root.getAttribute('data-step'), String(n));
     assert.equal(page.doc.activeElement, byId(page, 'welcome-step-' + n + '-title'));
-    assert.deepEqual(currentMarks(page), [1, 2, 3, 4, 5].map((k) => (k === n ? 'step' : null)));
-    assert.deepEqual(stepStates(page), [1, 2, 3, 4, 5].map((k) => (k < n ? 'done' : (k === n ? 'current' : 'waiting'))));
+    assert.deepEqual(currentMarks(page), [1, 2, 3, 4].map((k) => (k === n ? 'step' : null)));
+    assert.deepEqual(stepStates(page), [1, 2, 3, 4].map((k) => (k < n ? 'done' : (k === n ? 'current' : 'waiting'))));
   }
   assert.equal(page.requests.length, 0, 'looking at a step records nothing');
 });
@@ -1156,7 +1160,7 @@ test('the browser back and forward (popstate) show the step in the entry and pus
   page.popTo({ pinalertStep: 2 });
   assert.equal(visibleStep(page), 2);
   assert.equal(page.doc.activeElement, byId(page, 'welcome-step-2-title'));
-  assert.deepEqual(stepStates(page), ['done', 'current', 'waiting', 'waiting', 'waiting']);
+  assert.deepEqual(stepStates(page), ['done', 'current', 'waiting', 'waiting']);
   page.popTo({ pinalertStep: 1 });
   assert.equal(visibleStep(page), 1);
   page.popTo({ pinalertStep: 3 });
@@ -1184,6 +1188,9 @@ test('an address step is honoured only when the account may see it', () => {
   assert.equal(visibleStep(load({ start: 3, search: '?step=4' })), 4);
   assert.equal(visibleStep(load({ start: 3, search: '?a=1&step=4' })), 4);
   assert.equal(visibleStep(load({ start: 3, search: '?step=9' })), 3);
+  // Quick 261027-t5w: there is no step 5 any more, so its address falls back.
+  assert.equal(visibleStep(load({ start: 3, search: '?step=5' })), 3);
+  assert.equal(visibleStep(load({ start: 4, search: '?step=5' })), 4);
   assert.equal(visibleStep(load({ start: 3, search: '' })), 3);
   const loaded = load({ start: 3, search: '?step=4' });
   assert.equal(loaded.stateReplaces[0].address, '?step=4', 'the entry names the step actually shown');

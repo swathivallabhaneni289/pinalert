@@ -6,6 +6,7 @@
   {{template "app_head" .AssetVersion}}
   <title>Pinalert: Welcome</title>
   <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/app-bar.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/legal.css?v={{.AssetVersion}}">
@@ -20,15 +21,18 @@
   an account here before any app page. There is no close control, because the
   flow is completed and not closed. The Disclaimer and Policy text in step 2 is
   the same two partials the reader shows (legal_body.html.tmpl), never a copy.
-  Every step counts "of 5". Phase 3.3 (plan 13, 03.4 D-27, decision 15) added
-  step 5, Alerts, and its name in welcomeSteps. Step 5 shows one of four parts
-  by device state; its example notification is built in Go
-  (service.AlertExample), never typed here.
+  Every step counts "of 4". Quick 261027-t5w (owner, 2026-10-27) turned the
+  alerts step (Phase 3.3 plan 13, once step 5) into a small pop-up that opens
+  after step 4: the native dialog below the flow root, which reuses the Log out
+  box (auth.css .logout-confirm). It sits outside #welcome on purpose: the
+  welcome Tab trap listens on #welcome and must not see keys pressed in the
+  pop-up, and the native modal makes #welcome inert while it is open. welcome.js
+  opens it only where alerts can be turned on; the flow is recorded as done
+  after step 4 or after its answer.
   Quick 261027-jhd (owner, 2026-10-27) makes step 2's Agree and Disagree wait
   until the end of the text has been seen, which welcome.js does (the marker is
-  the last child of the text box; the hold is never written here). It also makes
-  step 5 on an iPhone tab show one line instead of the install guide, which now
-  lives only in Settings (the device guide partial, shown in its window).
+  the last child of the text box; the hold is never written here). The install
+  guide lives only in Settings (the device guide partial, shown in its window).
 */}}
   <div class="welcome" id="welcome" role="dialog" aria-modal="true" aria-labelledby="welcome-step-{{.StartStep}}-title" data-start-step="{{.StartStep}}" data-step="{{.StartStep}}" data-account-id="{{.AccountID}}" data-push-key="{{.PushPublicKey}}">
     <div class="welcome__progress" aria-hidden="true"><div class="welcome__progress-fill"></div></div>
@@ -45,7 +49,7 @@
     <div class="welcome__pane">
 
       <section class="welcome__step" id="welcome-step-1" aria-labelledby="welcome-step-1-title"{{if ne .StartStep 1}} hidden{{end}}>
-        <p class="welcome__label">Step 1 of 5</p>
+        <p class="welcome__label">Step 1 of 4</p>
         <h1 class="welcome__title" id="welcome-step-1-title" tabindex="-1">Welcome to Pinalert</h1>
         <ul class="welcome__cards">
           <li class="welcome__card">
@@ -78,7 +82,7 @@
       <section class="welcome__step" id="welcome-step-2" aria-labelledby="welcome-step-2-title"{{if ne .StartStep 2}} hidden{{end}}>
         <div class="welcome__head">
           <button type="button" class="welcome__back" id="welcome-back-2"><span class="app-icon app-icon--arrow-left" aria-hidden="true"></span><span class="welcome__back-label">Back</span></button>
-          <p class="welcome__label">Step 2 of 5</p>
+          <p class="welcome__label">Step 2 of 4</p>
         </div>
         <h1 class="welcome__title" id="welcome-step-2-title" tabindex="-1">Disclaimer and policy</h1>
         <p class="welcome__lead">Please read this to the end before you use Pinalert.</p>
@@ -106,7 +110,7 @@
       <section class="welcome__step" id="welcome-step-3" aria-labelledby="welcome-step-3-title"{{if ne .StartStep 3}} hidden{{end}}>
         <div class="welcome__head">
           <button type="button" class="welcome__back" id="welcome-back-3"><span class="app-icon app-icon--arrow-left" aria-hidden="true"></span><span class="welcome__back-label">Back</span></button>
-          <p class="welcome__label">Step 3 of 5</p>
+          <p class="welcome__label">Step 3 of 4</p>
         </div>
         <h1 class="welcome__title" id="welcome-step-3-title" tabindex="-1">Show what is happening near you</h1>
         <ul class="welcome__cards">
@@ -141,7 +145,7 @@
       <section class="welcome__step" id="welcome-step-4" aria-labelledby="welcome-step-4-title"{{if ne .StartStep 4}} hidden{{end}}>
         <div class="welcome__head">
           <button type="button" class="welcome__back" id="welcome-back-4"><span class="app-icon app-icon--arrow-left" aria-hidden="true"></span><span class="welcome__back-label">Back</span></button>
-          <p class="welcome__label">Step 4 of 5</p>
+          <p class="welcome__label">Step 4 of 4</p>
         </div>
         <h1 class="welcome__title" id="welcome-step-4-title" tabindex="-1">About you</h1>
         <p class="welcome__lead">Both are optional. They show only if you later let others follow you.</p>
@@ -165,48 +169,18 @@
         </div>
       </section>
 
-      <section class="welcome__step" id="welcome-step-5" aria-labelledby="welcome-step-5-title" data-device-state="ready"{{if ne .StartStep 5}} hidden{{end}}>
-        <div class="welcome__head">
-          <button type="button" class="welcome__back" id="welcome-back-5"><span class="app-icon app-icon--arrow-left" aria-hidden="true"></span><span class="welcome__back-label">Back</span></button>
-          <p class="welcome__label">Step 5 of 5</p>
-        </div>
-        <h1 class="welcome__title" id="welcome-step-5-title" tabindex="-1">Get alerts when it matters</h1>
-        <div class="welcome__alerts-part" id="welcome-alerts-ready">
-          <p class="welcome__lead">Pinalert can notify you on this device, even when it is closed, about:</p>
-          <ul class="welcome__cards">
-            <li class="welcome__card" id="welcome-alerts-card">
-              <span class="app-icon app-icon--bell" aria-hidden="true"></span>
-              <div class="welcome__card-text">
-                <h2 class="welcome__card-title">Critical reports near your home area.</h2>
-                <p class="welcome__card-body" id="welcome-alerts-nohome"{{if .HasHomeArea}} hidden{{end}}>Set your home area to get these.</p>
-              </div>
-            </li>
-          </ul>
-          <div class="welcome__example" role="group" aria-label="Example notification">
-            <img class="welcome__example-mark" src="/icons/app.svg" width="40" height="40" alt="">
-            <div class="welcome__example-text">
-              <p class="welcome__example-tag">Example</p>
-              <p class="welcome__example-title">{{.AlertExample.Title}}</p>
-              <p class="welcome__example-body">{{.AlertExample.Body}}</p>
-            </div>
-          </div>
-          <p class="welcome__lead">You can change this any time in Settings.</p>
-        </div>
-        <p class="welcome__lead" id="welcome-alerts-install" hidden>You can turn on alerts later in Settings.</p>
-        <p class="welcome__lead" id="welcome-alerts-blocked" hidden>Notifications are blocked for Pinalert in this browser. Allow them in your browser settings, then turn on On this device in Settings.</p>
-        <p class="welcome__lead" id="welcome-alerts-unsupported" hidden>This browser can't show notifications. Updates still show in the bell.</p>
-        {{/* Review T-04: an always-present live region, never hidden. It is empty (and clipped by :empty in welcome.css) until welcome.js writes the refusal sentence into it, so a screen reader announces the text. */}}
-        <p class="welcome__lead welcome__status" id="welcome-alerts-status" role="status"></p>
-        <p class="inline-error" id="welcome-alerts-error" role="alert" hidden></p>
-        <div class="welcome__actions">
-          <button type="button" class="btn btn--primary" id="welcome-alerts-allow">Allow alerts</button>
-          <button type="button" class="btn" id="welcome-alerts-later">Not now</button>
-          <button type="button" class="btn btn--primary" id="welcome-alerts-continue" hidden>Continue</button>
-        </div>
-      </section>
-
     </div>
   </div>
+
+  <dialog id="welcome-alerts-ask" class="logout-confirm" aria-labelledby="welcome-alerts-ask-title">
+    <div class="logout-confirm__body">
+      <h2 class="logout-confirm__title" id="welcome-alerts-ask-title" tabindex="-1">Get alerts for critical reports near you?</h2>
+      <div class="logout-confirm__actions">
+        <button type="button" class="btn" id="welcome-alerts-later">Not now</button>
+        <button type="button" class="btn btn--primary" id="welcome-alerts-allow">Allow</button>
+      </div>
+    </div>
+  </dialog>
   <script src="/static/js/position.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/welcome.js?v={{.AssetVersion}}" defer></script>
 </body>

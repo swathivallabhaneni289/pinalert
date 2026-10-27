@@ -35,6 +35,10 @@ var bannedNoiseWords = []string{
 //
 // Amended 2026-10-18 by Phase 3.3 plan 14 (decision 4): the Settings template
 // and settings-alerts.js are listed now.
+//
+// Amended 2026-10-27 by quick 261027-t5w (owner): the welcome copy now includes
+// the alerts pop-up after step 4 (it replaced step 5), so welcome.html.tmpl and
+// welcome.js stay listed and the pop-up's words are scanned too.
 var noiseCheckedFiles = []string{
 	"templates/device_guide.html.tmpl",
 	"static/js/notify.js",

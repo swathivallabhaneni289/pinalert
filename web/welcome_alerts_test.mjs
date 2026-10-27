@@ -1,18 +1,24 @@
 // welcome_alerts_test.mjs - runs the real web/static/js/welcome.js in a Node
-// sandbox and checks step 5 of the first-time flow, Alerts (Phase 3.3, plan 13,
-// 03.4 D-27, decision 15, UI-SPEC Surface 1):
+// sandbox and checks the alerts pop-up that opens after step 4 of the
+// first-time flow (quick 261027-t5w, owner, 2026-10-27). It replaced step 5,
+// Alerts, which was a whole page (Phase 3.3, plan 13); the flow has four steps.
 //
-//   - step 4's Continue saves the profile and Skip saves nothing, and both go to
-//     step 5; first-run-done is sent only from step 5;
-//   - step 5 reads PinalertNotify.baseState() at once and deviceState(key) after,
-//     and shows one of four parts by device state: ready, needs-install, blocked,
-//     unsupported (an empty key is unsupported). Amended 2026-10-27 by quick
-//     261027-jhd (owner): the needs-install part is one line under the title
-//     Alerts, with Continue and Back, and no install guide;
-//   - Allow alerts calls PinalertNotify.enable(key) inside the click, so the
-//     browser prompt keeps its tap; Not now never asks the browser anything;
-//   - a refusal, an offline answer and a failure each show their own line;
-//   - every string reaches the page through textContent.
+//   - step 4 finishing (Continue with a saved profile, Continue with nothing to
+//     save, and Skip) opens a small native modal dialog when notify.js baseState
+//     is maybe or ready and the page has a push key; the dialog title takes
+//     focus so no button looks chosen;
+//   - Allow calls PinalertNotify.enable(key) inside the click, before anything
+//     is awaited, so the browser's own permission popup keeps the tap; Not now
+//     and Escape never reach enable or Notification.requestPermission;
+//   - whatever the answer (Allow with any enable outcome, a rejection or a
+//     throw, Not now, Escape), POST /api/me/first-run-done is sent exactly once
+//     and a 204 lands the person on Nearby;
+//   - an iPhone Safari tab (needs-install), blocked or unsupported devices, no
+//     push key, no PinalertNotify and a dialog without showModal get no pop-up:
+//     step 4 finishing sends first-run-done directly;
+//   - a 409 goes back to step 2; any other failure closes the pop-up, shows the
+//     step 4 save line, and a second Continue finishes without asking again;
+//   - the flow counts four steps.
 //
 // Run it with: node --test web/welcome_alerts_test.mjs
 // It carries its own copy of the small fake page of welcome_flow_test.mjs,
@@ -28,13 +34,9 @@ import vm from 'node:vm';
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(here, 'static', 'js', 'welcome.js'), 'utf8');
 
-const READY_TITLE = 'Get alerts when it matters';
-// Amended 2026-10-27 by quick 261027-jhd (owner, "yes make it gentler"): the
-// needs-install variant (an iPhone Safari tab) shows the step's own name above
-// one line, "You can turn on alerts later in Settings.", instead of the install
-// guide, which now lives only in Settings.
-const LATER_TITLE = 'Alerts';
 const KEY = 'test-public-key-placeholder';
+const AGREE_FIRST = 'Please agree to the Disclaimer and policy to continue.';
+const SAVE_FAILED = 'Could not save. Try again in a moment.';
 
 class FakeEl {
   constructor(doc, tag, id) {
@@ -106,10 +108,13 @@ class FakeEl {
   focus() { this.doc.activeElement = this; }
 }
 
-const STEP_NAMES = ['Welcome', 'Disclaimer and policy', 'Your location', 'About you', 'Alerts'];
+const STEP_NAMES = ['Welcome', 'Disclaimer and policy', 'Your location', 'About you'];
 
-// The markup of welcome.html.tmpl, as the ids and nesting welcome.js reads.
-function buildPage({ start = 1, name = '', home = '', key = KEY, hasHome = false } = {}) {
+// The markup of welcome.html.tmpl, as the ids and nesting welcome.js reads. The
+// pop-up is a native dialog shaped like the one in logout_confirm_test.mjs, and
+// it sits outside the flow root, as in the template. Its close() does not fire a
+// close event, so nothing here depends on when that event would arrive.
+function buildPage({ start = 1, name = '', home = '', key = KEY, dialogSupport = true } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -142,17 +147,16 @@ function buildPage({ start = 1, name = '', home = '', key = KEY, hasHome = false
   });
 
   const pane = make('div', '', root, 'welcome__pane');
-  const steps = [1, 2, 3, 4, 5].map((n) => {
+  const steps = [1, 2, 3, 4].map((n) => {
     const sec = make('section', 'welcome-step-' + n, pane, 'welcome__step');
     if (n !== start) { sec.hidden = true; }
     const title = make('h1', 'welcome-step-' + n + '-title', sec, 'welcome__title');
     title.setAttribute('tabindex', '-1');
-    if (n === 5) { title.own = READY_TITLE; }
     return sec;
   });
 
   make('button', 'welcome-continue-1', steps[0]);
-  [2, 3, 4, 5].forEach((n) => make('button', 'welcome-back-' + n, steps[n - 1], 'welcome__back'));
+  [2, 3, 4].forEach((n) => make('button', 'welcome-back-' + n, steps[n - 1], 'welcome__back'));
 
   make('div', 'welcome-scrollbox', steps[1]).setAttribute('tabindex', '0');
   make('button', 'welcome-disagree', steps[1]);
@@ -176,48 +180,53 @@ function buildPage({ start = 1, name = '', home = '', key = KEY, hasHome = false
   make('button', 'welcome-continue-4', steps[3]);
   make('button', 'welcome-skip', steps[3]);
 
-  const s5 = steps[4];
-  s5.setAttribute('data-device-state', 'ready');
-  make('div', 'welcome-alerts-ready', s5, 'welcome__alerts-part');
-  const nohome = make('p', 'welcome-alerts-nohome', doc.byId['welcome-alerts-ready']);
-  nohome.hidden = hasHome;
-  make('div', 'welcome-alerts-install', s5, 'welcome__alerts-part').hidden = true;
-  make('p', 'welcome-alerts-blocked', s5).hidden = true;
-  make('p', 'welcome-alerts-unsupported', s5).hidden = true;
-  // Amended 2026-10-25 (review T-04): the status line is an always-present live
-  // region, never hidden, empty until the script writes the sentence into it.
-  make('p', 'welcome-alerts-status', s5);
-  make('p', 'welcome-alerts-error', s5).hidden = true;
-  make('button', 'welcome-alerts-allow', s5);
-  make('button', 'welcome-alerts-later', s5);
-  make('button', 'welcome-alerts-continue', s5).hidden = true;
+  const dialog = make('dialog', 'welcome-alerts-ask', doc.body);
+  dialog.open = false;
+  dialog.showCalls = 0;
+  dialog.closeCalls = 0;
+  dialog.throwOnShow = false;
+  if (dialogSupport) {
+    dialog.showModal = function () {
+      this.showCalls += 1;
+      if (this.throwOnShow) { throw new Error('InvalidStateError'); }
+      this.open = true;
+    };
+    dialog.close = function () { this.closeCalls += 1; this.open = false; };
+  }
+  make('h2', 'welcome-alerts-ask-title', dialog, 'logout-confirm__title').setAttribute('tabindex', '-1');
+  make('button', 'welcome-alerts-later', dialog);
+  make('button', 'welcome-alerts-allow', dialog);
 
-  return { doc, root, steps };
+  return { doc, root, steps, dialog };
 }
 
-// A fake PinalertNotify. enable and deviceState answer when the test says so.
-function makeNotify({ base = 'maybe', device = 'ready', now = false } = {}) {
+// A fake PinalertNotify. enable answers as the mode says: 'pending' waits for
+// the test, 'ok', 'refused', 'offline', 'failed' resolve at once, 'reject'
+// returns a rejected promise, 'throw' throws before returning anything.
+function makeNotify({ base = 'maybe', mode = 'ok' } = {}) {
   const calls = { enable: [], deviceState: [], baseState: 0 };
-  const waiting = { enable: null, device: null };
+  const waiting = { enable: null };
   return {
     calls,
     waiting,
     baseState() { calls.baseState += 1; return base; },
-    deviceState(key) {
-      calls.deviceState.push(key);
-      if (now) { return Promise.resolve(device); }
-      return new Promise((resolve) => { waiting.device = resolve; });
-    },
+    deviceState(key) { calls.deviceState.push(key); return Promise.resolve('ready'); },
     enable(key) {
       calls.enable.push(key);
-      return new Promise((resolve, reject) => { waiting.enable = { resolve, reject }; });
+      if (mode === 'throw') { throw new Error('enable blew up'); }
+      if (mode === 'reject') { return Promise.reject(new Error('enable rejected')); }
+      if (mode === 'pending') {
+        return new Promise((resolve, reject) => { waiting.enable = { resolve, reject }; });
+      }
+      if (mode === 'ok') { return Promise.resolve({ ok: true, state: 'on' }); }
+      return Promise.resolve({ ok: false, state: 'ready', reason: mode });
     }
   };
 }
 
 function load(options = {}) {
   const page = buildPage(options);
-  const notify = options.notify === undefined ? makeNotify({ now: true }) : options.notify;
+  const notify = options.notify === undefined ? makeNotify() : options.notify;
   const requests = [];
   const replaced = [];
   const session = {};
@@ -235,7 +244,7 @@ function load(options = {}) {
     AbortController: class { constructor() { this.signal = { aborted: false }; } abort() { this.signal.aborted = true; } },
     navigator: { geolocation: { getCurrentPosition() {} } },
     PinalertPosition: { markAsked() { return true; }, save() { return true; }, read() { return null; } },
-    // The browser's own prompt: Not now must never reach it.
+    // The browser's own prompt: only the Allow click, through enable, may reach it.
     Notification: { permission: 'default', requestPermission() { permissionCalls.push(true); return Promise.resolve('granted'); } },
     sessionStorage: {
       setItem(k, v) { session[k] = String(v); },
@@ -263,384 +272,317 @@ const answer = (req, status, body) => req.resolve({
 
 const byId = (page, id) => page.doc.byId[id];
 const fire = (el, type) => {
-  const event = { type, target: el, key: '', shiftKey: false, preventDefault() {} };
+  const event = { type, target: el, key: '', shiftKey: false, prevented: false, preventDefault() { this.prevented = true; } };
   (el.handlers[type] || []).forEach((h) => h(event));
   return event;
 };
 const click = (page, id) => fire(byId(page, id), 'click');
 const visibleStep = (page) => page.steps.findIndex((s) => !s.hidden) + 1;
-const shown = (page, id) => !byId(page, id).hidden;
-const text = (page, id) => byId(page, id).textContent;
+const doneRequests = (page) => page.requests.filter((r) => r.url === '/api/me/first-run-done');
 
-// An agreed account at step 5, the usual place to test the step itself.
-function atStep5(options = {}) {
-  const page = load({ start: 3, ...options });
-  page.api.goTo(5);
-  return page;
-}
+// An agreed account at step 4 with nothing filled in, so Continue saves nothing.
+const atStep4 = (options = {}) => load({ start: 4, ...options });
 
-test('step 4 Continue saves the profile, then goes to step 5 and sends no first-run-done', async () => {
-  const page = load({ start: 4 });
+// Step 4 Continue with a changed name: the profile PATCH is answered 200, which
+// leads to the pop-up.
+async function continueWithProfile(page) {
   byId(page, 'welcome-name-input').value = 'Asha';
   click(page, 'welcome-continue-4');
-  assert.equal(page.requests.length, 1);
   assert.equal(page.requests[0].url, '/api/me/profile');
-  assert.equal(page.requests[0].init.method, 'PATCH');
-  assert.equal(visibleStep(page), 4, 'no move before the profile is saved');
   answer(page.requests[0], 200);
   await flush();
+}
 
-  assert.equal(visibleStep(page), 5);
-  assert.equal(page.requests.length, 1, 'first-run-done is not sent from step 4');
-  assert.deepEqual(page.replaced, []);
-  assert.ok(page.doc.activeElement === byId(page, 'welcome-step-5-title'), 'focus moves to the step 5 title');
-  assert.equal(page.root.getAttribute('data-step'), '5');
-  assert.equal(byId(page, 'welcome-continue-4').disabled, false, 'step 4 buttons are free again when the person comes back');
-  assert.equal(byId(page, 'welcome-skip').disabled, false);
-});
+function assertAskOpen(page) {
+  assert.equal(page.dialog.showCalls, 1, 'showModal is called once');
+  assert.equal(page.dialog.open, true);
+  assert.ok(page.doc.activeElement === byId(page, 'welcome-alerts-ask-title'), 'the title takes focus so no button looks chosen');
+  assert.equal(doneRequests(page).length, 0, 'first-run-done waits for the answer');
+}
 
-test('step 4 Skip goes to step 5 with nothing saved and nothing sent', () => {
-  const page = load({ start: 4 });
-  click(page, 'welcome-skip');
-  assert.equal(visibleStep(page), 5);
-  assert.equal(page.requests.length, 0);
-});
+for (const base of ['maybe', 'ready']) {
+  test('base state ' + base + ': Continue after a saved profile opens the pop-up and sends no first-run-done', async () => {
+    const page = atStep4({ notify: makeNotify({ base }) });
+    await continueWithProfile(page);
+    assertAskOpen(page);
+    assert.equal(page.requests.length, 1, 'only the profile request so far');
+    assert.equal(visibleStep(page), 4, 'the flow stays on step 4 behind the pop-up');
+    assert.equal(page.notify.calls.enable.length, 0);
+    assert.equal(page.notify.calls.deviceState.length, 0, 'the decision reads baseState only, no device request');
+    assert.equal(page.permissionCalls.length, 0);
+  });
 
-test('?step=5 opens step 5 for an account that has agreed, and Back goes to step 4', () => {
-  const page = load({ start: 3, search: '?step=5' });
-  assert.equal(visibleStep(page), 5);
-  assert.ok(page.doc.activeElement === byId(page, 'welcome-step-5-title'));
-  click(page, 'welcome-back-5');
-  assert.equal(visibleStep(page), 4);
-  assert.equal(page.requests.length, 0, 'looking at a step records nothing');
-});
+  test('base state ' + base + ': Continue with nothing to save and Skip each open the pop-up', () => {
+    const cont = atStep4({ notify: makeNotify({ base }) });
+    click(cont, 'welcome-continue-4');
+    assertAskOpen(cont);
+    assert.equal(cont.requests.length, 0);
 
-test('ready: shows the ask with Allow alerts and Not now, reads the base state at once and the device state with the key', async () => {
-  const notify = makeNotify({ base: 'maybe', device: 'on', now: false });
-  const page = load({ start: 3, notify });
-  page.api.goTo(5);
-  assert.equal(notify.calls.baseState, 1, 'the base state is read on arrival, synchronously');
-  assert.deepEqual(notify.calls.deviceState, [KEY]);
-  assert.equal(page.steps[4].getAttribute('data-device-state'), 'ready');
-  assert.equal(shown(page, 'welcome-alerts-ready'), true);
-  assert.equal(shown(page, 'welcome-alerts-install'), false);
-  assert.equal(shown(page, 'welcome-alerts-allow'), true);
-  assert.equal(shown(page, 'welcome-alerts-later'), true);
-  assert.equal(shown(page, 'welcome-alerts-continue'), false);
-  assert.equal(text(page, 'welcome-step-5-title'), READY_TITLE);
+    const skipped = atStep4({ notify: makeNotify({ base }) });
+    byId(skipped, 'welcome-name-input').value = 'Typed but skipped';
+    click(skipped, 'welcome-skip');
+    assertAskOpen(skipped);
+    assert.equal(skipped.requests.length, 0, 'Skip saves nothing');
+  });
+}
 
-  // on also shows the ask, as ready does.
-  notify.waiting.device('on');
-  await flush();
-  assert.equal(page.steps[4].getAttribute('data-device-state'), 'ready');
-  assert.equal(shown(page, 'welcome-alerts-ready'), true);
-  assert.equal(shown(page, 'welcome-alerts-allow'), true);
-});
-
-test('needs-install: one line, the title Alerts, and one Continue with no Allow alerts', () => {
-  const page = load({ start: 3, notify: makeNotify({ base: 'needs-install', now: true }) });
-  page.api.goTo(5);
-  assert.equal(page.steps[4].getAttribute('data-device-state'), 'needs-install');
-  assert.equal(shown(page, 'welcome-alerts-install'), true);
-  assert.equal(shown(page, 'welcome-alerts-ready'), false);
-  assert.equal(text(page, 'welcome-step-5-title'), LATER_TITLE);
-  assert.ok(page.doc.activeElement === byId(page, 'welcome-step-5-title'));
-  assert.equal(text(page, 'welcome-step-5-title'), LATER_TITLE, 'the title is right when the screen reader lands on it');
-  assert.equal(shown(page, 'welcome-alerts-allow'), false);
-  assert.equal(shown(page, 'welcome-alerts-later'), false);
-  assert.equal(shown(page, 'welcome-alerts-continue'), true);
-});
-
-test('leaving the install variant gives the ready title back', () => {
-  const page = load({ start: 3, notify: makeNotify({ base: 'needs-install', now: true }) });
-  page.api.goTo(5);
-  page.notify.baseState = () => 'maybe';
-  click(page, 'welcome-back-5');
-  page.api.goTo(5);
-  assert.equal(text(page, 'welcome-step-5-title'), READY_TITLE);
-  assert.equal(shown(page, 'welcome-alerts-install'), false);
-});
-
-test('blocked and unsupported each show their sentence and one Continue', () => {
-  for (const state of ['blocked', 'unsupported']) {
-    const page = load({ start: 3, notify: makeNotify({ base: state, now: true }) });
-    page.api.goTo(5);
-    assert.equal(page.steps[4].getAttribute('data-device-state'), state);
-    assert.equal(shown(page, 'welcome-alerts-' + state), true);
-    assert.equal(shown(page, 'welcome-alerts-ready'), false);
-    assert.equal(text(page, 'welcome-step-5-title'), READY_TITLE);
-    assert.equal(shown(page, 'welcome-alerts-allow'), false);
-    assert.equal(shown(page, 'welcome-alerts-later'), false);
-    assert.equal(shown(page, 'welcome-alerts-continue'), true);
-  }
-});
-
-test('an empty key is an unsupported device and the server is not asked', () => {
-  const notify = makeNotify({ base: 'maybe', now: true });
-  const page = load({ start: 3, notify, key: '' });
-  page.api.goTo(5);
-  assert.equal(page.steps[4].getAttribute('data-device-state'), 'unsupported');
-  assert.equal(shown(page, 'welcome-alerts-unsupported'), true);
-  assert.equal(notify.calls.deviceState.length, 0);
-  assert.equal(shown(page, 'welcome-alerts-allow'), false);
-});
-
-test('a page with no PinalertNotify at all is an unsupported device', () => {
-  const page = load({ start: 3, notify: null });
-  page.api.goTo(5);
-  assert.equal(page.steps[4].getAttribute('data-device-state'), 'unsupported');
-  assert.equal(shown(page, 'welcome-alerts-continue'), true);
-});
-
-test('a late device answer does not redraw after the person left step 5 or while busy', async () => {
-  const notify = makeNotify({ base: 'maybe', device: 'blocked', now: false });
-  const page = load({ start: 3, notify });
-  page.api.goTo(5);
-  click(page, 'welcome-back-5');
-  notify.waiting.device('blocked');
-  await flush();
-  assert.equal(page.steps[4].getAttribute('data-device-state'), 'ready', 'a stale answer is dropped');
-
-  const busy = makeNotify({ base: 'maybe', now: false });
-  const second = load({ start: 3, notify: busy });
-  second.api.goTo(5);
-  click(second, 'welcome-alerts-allow');
-  busy.waiting.device('unsupported');
-  await flush();
-  assert.equal(second.steps[4].getAttribute('data-device-state'), 'ready', 'a busy step is not redrawn');
-});
-
-test('the home area line shows only when there is no home area', async () => {
-  const stored = atStep5({ hasHome: true });
-  assert.equal(shown(stored, 'welcome-alerts-nohome'), false, 'a stored home area hides the line');
-
-  const none = atStep5({ hasHome: false });
-  assert.equal(shown(none, 'welcome-alerts-nohome'), true, 'skipping step 4 with no stored area shows the line');
-
-  const saved = load({ start: 4, hasHome: false });
-  // A home area saved in step 4 hides the line on step 5.
-  const input = byId(saved, 'welcome-home-input');
-  input.value = 'Indiranagar';
-  assert.ok(input);
-  // Pick through the search: type, search, pick the first row.
-  fire(byId(saved, 'welcome-home-form'), 'submit');
-  answer(saved.requests[0], 200, { results: [{ name: 'Indiranagar', display_name: 'Indiranagar, Bengaluru', lat: 12.9784, lon: 77.6408, area: 'Indiranagar' }] });
-  await flush();
-  const option = byId(saved, 'welcome-home-results').querySelectorAll('button')[0];
-  fire(option, 'click');
-  click(saved, 'welcome-continue-4');
-  answer(saved.requests[1], 200);
-  await flush();
-  assert.equal(visibleStep(saved), 5);
-  assert.equal(shown(saved, 'welcome-alerts-nohome'), false, 'a home area saved in step 4 hides the line');
-});
-
-test('Allow alerts calls enable(key) inside the click, disables both buttons and marks the step busy', () => {
-  const page = atStep5();
+test('Allow calls enable in the same tick, before anything is awaited, and the pop-up shows it is busy', async () => {
+  const notify = makeNotify({ mode: 'pending' });
+  const page = atStep4({ notify });
+  click(page, 'welcome-continue-4');
   click(page, 'welcome-alerts-allow');
-  // Nothing was awaited: the call is already recorded when the click returns.
-  assert.deepEqual(page.notify.calls.enable, [KEY]);
+  // No await since the click returned.
+  assert.deepEqual(notify.calls.enable, [KEY]);
   assert.equal(byId(page, 'welcome-alerts-allow').disabled, true);
   assert.equal(byId(page, 'welcome-alerts-later').disabled, true);
-  assert.equal(page.steps[4].getAttribute('aria-busy'), 'true');
-  click(page, 'welcome-alerts-allow');
-  assert.equal(page.notify.calls.enable.length, 1, 'a second tap while it runs does nothing');
+  assert.equal(page.dialog.getAttribute('aria-busy'), 'true');
+  assert.equal(page.requests.length, 0, 'no first-run-done while the browser prompt is open');
+  await flush();
+  assert.equal(page.requests.length, 0, 'still waiting for the browser');
+  assert.equal(page.dialog.open, true, 'the pop-up stays open while the answer is handled');
+
+  notify.waiting.enable.resolve({ ok: true, state: 'on' });
+  await flush();
+  assert.equal(doneRequests(page).length, 1);
+  assert.equal(page.permissionCalls.length, 0, 'welcome.js never asks the browser for permission itself');
 });
 
-test('Allow alerts, then ok true: first-run-done is sent and the person lands on Nearby with the search focus flag', async () => {
-  const page = atStep5();
-  click(page, 'welcome-alerts-allow');
-  page.notify.waiting.enable.resolve({ ok: true, state: 'on' });
-  await flush();
-  assert.equal(page.requests.length, 1);
-  assert.equal(page.requests[0].url, '/api/me/first-run-done');
-  assert.equal(page.requests[0].init.method, 'POST');
-  assert.deepEqual(page.replaced, [], 'no move before first-run-done answers');
-  answer(page.requests[0], 204);
-  await flush();
-  assert.deepEqual(page.replaced, ['/']);
-  assert.equal(page.session['pinalert.focusSearch'], '1');
-});
-
-test('a refusal shows Alerts are off on this device. and one Continue, then Continue ends the flow', async () => {
-  const page = atStep5();
-  click(page, 'welcome-alerts-allow');
-  page.notify.waiting.enable.resolve({ ok: false, state: 'blocked', reason: 'refused' });
-  await flush();
-
-  // Amended 2026-10-25 (review T-04): the status line is shown by its text, the
-  // node itself is always present and never hidden.
-  assert.equal(text(page, 'welcome-alerts-status'), 'Alerts are off on this device.');
-  assert.equal(shown(page, 'welcome-alerts-allow'), false);
-  assert.equal(shown(page, 'welcome-alerts-later'), false);
-  assert.equal(shown(page, 'welcome-alerts-continue'), true);
-  assert.equal(byId(page, 'welcome-alerts-continue').disabled, false);
-  assert.equal(page.steps[4].getAttribute('aria-busy'), null);
-  assert.equal(page.requests.length, 0, 'a refusal alone does not finish the flow');
-
-  click(page, 'welcome-alerts-continue');
-  assert.equal(page.requests[0].url, '/api/me/first-run-done');
-  answer(page.requests[0], 204);
-  await flush();
-  assert.deepEqual(page.replaced, ['/']);
-});
-
-test('an offline answer shows the offline line and brings both buttons back', async () => {
-  const page = atStep5();
-  click(page, 'welcome-alerts-allow');
-  page.notify.waiting.enable.resolve({ ok: false, state: 'ready', reason: 'offline' });
-  await flush();
-  assert.equal(text(page, 'welcome-alerts-error'), "You're offline, so this wasn't saved. Try again when you have a signal.");
-  assert.equal(shown(page, 'welcome-alerts-error'), true);
-  assert.equal(shown(page, 'welcome-alerts-allow'), true);
-  assert.equal(shown(page, 'welcome-alerts-later'), true);
-  assert.equal(shown(page, 'welcome-alerts-continue'), false);
-  assert.equal(byId(page, 'welcome-alerts-allow').disabled, false);
-  assert.equal(byId(page, 'welcome-alerts-later').disabled, false);
-  assert.equal(page.steps[4].getAttribute('aria-busy'), null);
-  assert.equal(page.requests.length, 0);
-});
-
-test('a failed or ended session shows Couldn\'t turn alerts on. Try again. and both buttons come back', async () => {
-  for (const reason of ['failed', 'session', 'something-new']) {
-    const page = atStep5();
+const ENABLE_MODES = ['ok', 'refused', 'offline', 'failed', 'reject', 'throw'];
+for (const mode of ENABLE_MODES) {
+  test('Allow with enable ' + mode + ' still sends first-run-done once and leaves on a 204', async () => {
+    const notify = makeNotify({ mode });
+    const page = atStep4({ notify });
+    click(page, 'welcome-continue-4');
     click(page, 'welcome-alerts-allow');
-    page.notify.waiting.enable.resolve({ ok: false, state: 'ready', reason });
     await flush();
-    assert.equal(text(page, 'welcome-alerts-error'), "Couldn't turn alerts on. Try again.", reason);
-    assert.equal(shown(page, 'welcome-alerts-allow'), true);
-    assert.equal(shown(page, 'welcome-alerts-later'), true);
-    assert.equal(page.steps[4].getAttribute('aria-busy'), null);
-  }
-});
 
-test('a rejected enable is a failure too, and the server sentence of a 400 is shown when there is one', async () => {
-  const page = atStep5();
-  click(page, 'welcome-alerts-allow');
-  page.notify.waiting.enable.reject(new Error('boom'));
-  await flush();
-  assert.equal(text(page, 'welcome-alerts-error'), "Couldn't turn alerts on. Try again.");
+    assert.equal(notify.calls.enable.length, 1);
+    assert.equal(doneRequests(page).length, 1);
+    assert.equal(page.requests.length, 1);
+    assert.equal(page.requests[0].init.method, 'POST');
+    assert.deepEqual(page.replaced, [], 'no move before first-run-done answers');
+    answer(page.requests[0], 204);
+    await flush();
+    assert.deepEqual(page.replaced, ['/']);
+    assert.equal(page.session['pinalert.focusSearch'], '1');
+  });
+}
 
-  const sentence = atStep5();
-  click(sentence, 'welcome-alerts-allow');
-  sentence.notify.waiting.enable.resolve({ ok: false, state: 'ready', reason: 'failed', message: 'That notification service is not supported.' });
-  await flush();
-  assert.equal(text(sentence, 'welcome-alerts-error'), 'That notification service is not supported.');
-
-  // A try again clears the old line.
-  click(sentence, 'welcome-alerts-allow');
-  assert.equal(shown(sentence, 'welcome-alerts-error'), false);
-});
-
-test('Allow alerts on a device that turns out unsupported redraws that variant', async () => {
-  const page = atStep5();
-  click(page, 'welcome-alerts-allow');
-  page.notify.waiting.enable.resolve({ ok: false, state: 'needs-install', reason: 'unsupported' });
-  await flush();
-  assert.equal(page.steps[4].getAttribute('data-device-state'), 'needs-install');
-  assert.equal(text(page, 'welcome-step-5-title'), LATER_TITLE);
-  assert.equal(shown(page, 'welcome-alerts-continue'), true);
-  assert.equal(shown(page, 'welcome-alerts-allow'), false);
-});
-
-test('Not now sends first-run-done and leaves, and never calls enable or the browser prompt', async () => {
-  const page = atStep5();
+test('Not now sends first-run-done once, never calls enable or requestPermission, and leaves on a 204', async () => {
+  const notify = makeNotify();
+  const page = atStep4({ notify });
+  click(page, 'welcome-continue-4');
   click(page, 'welcome-alerts-later');
-  assert.equal(page.notify.calls.enable.length, 0, 'enable is never called');
-  assert.equal(page.permissionCalls.length, 0, 'Notification.requestPermission is never called');
-  assert.equal(page.requests.length, 1);
-  assert.equal(page.requests[0].url, '/api/me/first-run-done');
+  assert.equal(byId(page, 'welcome-alerts-allow').disabled, true);
+  assert.equal(byId(page, 'welcome-alerts-later').disabled, true);
+  assert.equal(page.dialog.getAttribute('aria-busy'), 'true');
+  assert.equal(doneRequests(page).length, 1);
   answer(page.requests[0], 204);
   await flush();
+
   assert.deepEqual(page.replaced, ['/']);
   assert.equal(page.session['pinalert.focusSearch'], '1');
-  assert.equal(page.notify.calls.enable.length, 0);
+  assert.equal(notify.calls.enable.length, 0);
   assert.equal(page.permissionCalls.length, 0);
 });
 
-test('Continue in the blocked, unsupported and install variants sends first-run-done and leaves', async () => {
-  for (const base of ['blocked', 'unsupported', 'needs-install']) {
-    const page = load({ start: 3, notify: makeNotify({ base, now: true }) });
-    page.api.goTo(5);
-    click(page, 'welcome-alerts-continue');
-    assert.equal(page.requests[0].url, '/api/me/first-run-done', base);
+test('Escape is Not now: the cancel event is prevented, one first-run-done goes out, enable is never called', async () => {
+  const notify = makeNotify();
+  const page = atStep4({ notify });
+  click(page, 'welcome-continue-4');
+  const event = fire(page.dialog, 'cancel');
+  assert.equal(event.prevented, true, 'the browser does not close the pop-up by itself');
+  assert.equal(doneRequests(page).length, 1);
+  assert.equal(notify.calls.enable.length, 0);
+  assert.equal(page.permissionCalls.length, 0);
+  answer(page.requests[0], 204);
+  await flush();
+  assert.deepEqual(page.replaced, ['/']);
+});
+
+test('Escape while the pop-up is busy sends nothing more and is still prevented', async () => {
+  const notify = makeNotify({ mode: 'pending' });
+  const page = atStep4({ notify });
+  click(page, 'welcome-continue-4');
+  click(page, 'welcome-alerts-allow');
+  const event = fire(page.dialog, 'cancel');
+  assert.equal(event.prevented, true);
+  notify.waiting.enable.resolve({ ok: false, reason: 'refused' });
+  await flush();
+  assert.equal(page.requests.length, 1, 'one first-run-done, from the Allow answer');
+  assert.equal(notify.calls.enable.length, 1);
+});
+
+const NO_POPUP = [
+  ['needs-install (an iPhone Safari tab)', { notify: makeNotify({ base: 'needs-install' }) }],
+  ['blocked', { notify: makeNotify({ base: 'blocked' }) }],
+  ['unsupported', { notify: makeNotify({ base: 'unsupported' }) }],
+  ['an unknown base state', { notify: makeNotify({ base: 'something-new' }) }],
+  ['an empty push key', { key: '' }],
+  ['no PinalertNotify at all', { notify: null }],
+  ['a dialog without showModal', { dialogSupport: false }]
+];
+for (const [label, options] of NO_POPUP) {
+  test('no pop-up for ' + label + ': step 4 finishing sends first-run-done directly', async () => {
+    const page = atStep4(options);
+    click(page, 'welcome-continue-4');
+    assert.equal(page.dialog.showCalls, 0, 'showModal is never called');
+    assert.equal(page.dialog.open, false);
+    assert.equal(doneRequests(page).length, 1, 'first-run-done goes straight out');
+    assert.equal(page.requests[0].init.method, 'POST');
+    if (page.notify) {
+      assert.equal(page.notify.calls.enable.length, 0);
+    }
+    assert.equal(page.permissionCalls.length, 0);
     answer(page.requests[0], 204);
     await flush();
-    assert.deepEqual(page.replaced, ['/'], base);
-    assert.equal(page.permissionCalls.length, 0, base);
-    assert.equal(page.notify.calls.enable.length, 0, base);
-  }
+    assert.deepEqual(page.replaced, ['/']);
+    assert.equal(page.session['pinalert.focusSearch'], '1');
+
+    const skipped = load({ start: 4, ...options });
+    click(skipped, 'welcome-skip');
+    assert.equal(skipped.dialog.showCalls, 0);
+    assert.equal(doneRequests(skipped).length, 1);
+  });
+}
+
+test('a showModal that throws sends first-run-done directly', async () => {
+  const page = atStep4();
+  page.dialog.throwOnShow = true;
+  click(page, 'welcome-continue-4');
+  assert.equal(page.dialog.open, false);
+  assert.equal(doneRequests(page).length, 1);
+  assert.equal(page.notify.calls.enable.length, 0);
 });
 
-test('a first-run-done failure keeps the person on step 5 with the save failed message and the buttons back', async () => {
-  const page = atStep5();
-  click(page, 'welcome-alerts-later');
-  assert.equal(byId(page, 'welcome-alerts-later').disabled, true);
-  answer(page.requests[0], 500, {});
+test('exactly one first-run-done: a double Allow, Allow then Escape, and Not now then Allow', async () => {
+  const doubled = atStep4({ notify: makeNotify({ mode: 'pending' }) });
+  click(doubled, 'welcome-continue-4');
+  click(doubled, 'welcome-alerts-allow');
+  click(doubled, 'welcome-alerts-allow');
+  doubled.notify.waiting.enable.resolve({ ok: true });
   await flush();
-  assert.equal(visibleStep(page), 5);
-  assert.deepEqual(page.replaced, []);
-  assert.equal(text(page, 'welcome-alerts-error'), 'Could not save. Try again in a moment.');
-  assert.equal(shown(page, 'welcome-alerts-error'), true);
-  assert.equal(byId(page, 'welcome-alerts-later').disabled, false);
-  assert.equal(byId(page, 'welcome-alerts-allow').disabled, false);
-  assert.equal(page.steps[4].getAttribute('aria-busy'), null);
-  assert.equal(shown(page, 'welcome-error-4'), false, 'the step 4 line is not used');
+  assert.equal(doubled.notify.calls.enable.length, 1);
+  assert.equal(doneRequests(doubled).length, 1);
+
+  const escaped = atStep4();
+  click(escaped, 'welcome-continue-4');
+  click(escaped, 'welcome-alerts-allow');
+  fire(escaped.dialog, 'cancel');
+  await flush();
+  assert.equal(doneRequests(escaped).length, 1);
+
+  const laterThenAllow = atStep4();
+  click(laterThenAllow, 'welcome-continue-4');
+  click(laterThenAllow, 'welcome-alerts-later');
+  click(laterThenAllow, 'welcome-alerts-allow');
+  await flush();
+  assert.equal(laterThenAllow.notify.calls.enable.length, 0);
+  assert.equal(doneRequests(laterThenAllow).length, 1);
 });
 
-test('a 409 from first-run-done goes back to step 2 as before', async () => {
-  const page = atStep5();
+test('a 409 closes the pop-up and sends the person back to step 2 with the agree line', async () => {
+  const page = atStep4();
+  click(page, 'welcome-continue-4');
   click(page, 'welcome-alerts-later');
-  answer(page.requests[0], 409, {});
+  answer(page.requests[0], 409, { error: { field: 'terms', message: 'Agree first.' } });
   await flush();
+  assert.equal(page.dialog.open, false, 'the pop-up is closed');
   assert.equal(visibleStep(page), 2);
-  assert.equal(text(page, 'welcome-error-2'), 'Please agree to the Disclaimer and policy to continue.');
+  assert.equal(byId(page, 'welcome-error-2').textContent, AGREE_FIRST);
   assert.deepEqual(page.replaced, []);
+  assert.equal(page.session['pinalert.focusSearch'], undefined);
 });
 
-test('step 5 actions need the agreement, like every way to finish', () => {
+for (const [label, fail, opener] of [
+  ['a 500 after Continue', (req) => answer(req, 500), 'welcome-continue-4'],
+  ['a network failure after Skip', (req) => req.reject(new Error('offline')), 'welcome-skip']
+]) {
+  test(label + ' closes the pop-up, shows the step 4 line, and a second Continue finishes without asking again', async () => {
+    const page = atStep4();
+    click(page, opener);
+    assertAskOpen(page);
+    click(page, 'welcome-alerts-allow');
+    await flush();
+    assert.equal(doneRequests(page).length, 1);
+    fail(page.requests[0]);
+    await flush();
+
+    assert.equal(page.dialog.open, false, 'the pop-up is closed');
+    assert.equal(page.dialog.getAttribute('aria-busy'), null);
+    assert.equal(byId(page, 'welcome-alerts-allow').disabled, false);
+    assert.equal(byId(page, 'welcome-alerts-later').disabled, false);
+    assert.equal(visibleStep(page), 4);
+    assert.equal(byId(page, 'welcome-error-4').hidden, false);
+    assert.equal(byId(page, 'welcome-error-4').textContent, SAVE_FAILED);
+    assert.equal(byId(page, 'welcome-continue-4').disabled, false);
+    assert.equal(byId(page, 'welcome-skip').disabled, false);
+    assert.ok(page.doc.activeElement === byId(page, opener), 'focus goes back to the button that was pressed');
+    assert.deepEqual(page.replaced, []);
+
+    click(page, 'welcome-continue-4');
+    assert.equal(page.dialog.showCalls, 1, 'the pop-up is not shown again');
+    assert.equal(page.notify.calls.enable.length, 1, 'enable is not called again');
+    assert.equal(doneRequests(page).length, 2, 'a second first-run-done goes out directly');
+    answer(page.requests[1], 204);
+    await flush();
+    assert.deepEqual(page.replaced, ['/']);
+  });
+}
+
+test('an account that has not agreed goes to step 2 and never sees the pop-up', () => {
   const page = load({ start: 1 });
-  page.api.goTo(5);
-  click(page, 'welcome-alerts-allow');
-  assert.equal(page.notify.calls.enable.length, 0, 'the browser prompt is not run before the agreement');
+  page.api.goTo(4);
+  click(page, 'welcome-continue-4');
   assert.equal(visibleStep(page), 2);
+  assert.equal(byId(page, 'welcome-error-2').textContent, AGREE_FIRST);
+  assert.equal(page.dialog.showCalls, 0);
   assert.equal(page.requests.length, 0);
-  page.api.goTo(5);
-  click(page, 'welcome-alerts-later');
-  assert.equal(visibleStep(page), 2);
+
+  page.api.goTo(4);
+  click(page, 'welcome-skip');
+  assert.equal(page.dialog.showCalls, 0);
   assert.equal(page.requests.length, 0);
 });
 
-// T-04 (review 2026-10-25): VoiceOver may miss a live region that is unhidden in
-// the same moment its text is set, so the status line is always present and the
-// script only ever writes its text. The spy counts every write to hidden.
-test('the refusal line is an always-present live region: only its text is written, never hidden', async () => {
-  const page = load({ start: 3 });
-  const status = byId(page, 'welcome-alerts-status');
-  let hiddenWrites = 0;
-  Object.defineProperty(status, 'hidden', { get: () => false, set: () => { hiddenWrites += 1; } });
-  page.api.goTo(5);
-  assert.equal(text(page, 'welcome-alerts-status'), '', 'empty until a refusal');
-  click(page, 'welcome-alerts-allow');
-  page.notify.waiting.enable.resolve({ ok: false, state: 'blocked', reason: 'refused' });
-  await flush();
-  assert.equal(text(page, 'welcome-alerts-status'), 'Alerts are off on this device.');
-  click(page, 'welcome-back-5');
-  page.notify.baseState = () => 'blocked';
-  page.api.goTo(5);
-  assert.equal(text(page, 'welcome-alerts-status'), '');
-  assert.equal(hiddenWrites, 0, 'the status line was hidden or unhidden; only its text may change');
+test('changing step while the pop-up is open closes it without answering, and the next Continue asks again', () => {
+  const page = atStep4();
+  click(page, 'welcome-continue-4');
+  assert.equal(page.dialog.open, true);
+  page.api.goTo(3);
+  assert.equal(page.dialog.open, false);
+  assert.equal(page.requests.length, 0, 'nothing was answered, so nothing is sent');
+  assert.equal(byId(page, 'welcome-continue-4').disabled, false);
+  assert.equal(byId(page, 'welcome-skip').disabled, false);
+
+  page.api.goTo(4);
+  click(page, 'welcome-continue-4');
+  assert.equal(page.dialog.showCalls, 2, 'the person is asked again');
+  assert.equal(page.dialog.open, true);
 });
 
-test('coming back to step 5 after a refusal draws it fresh', async () => {
-  const page = atStep5();
-  click(page, 'welcome-alerts-allow');
-  page.notify.waiting.enable.resolve({ ok: false, state: 'blocked', reason: 'refused' });
-  await flush();
-  click(page, 'welcome-back-5');
-  page.notify.baseState = () => 'blocked';
+test('the pop-up lives outside the flow root, so its keys never reach the step Tab trap', () => {
+  const page = atStep4();
+  assert.equal(page.root.contains(page.dialog), false);
+  assert.equal(page.doc.body.contains(page.dialog), true);
+});
+
+test('the flow has four steps: ?step=5 falls back to the start step and Back exists on steps 2 to 4 only', () => {
+  const page = load({ start: 3, search: '?step=5' });
+  assert.equal(visibleStep(page), 3);
+  assert.equal(page.steps.length, 4);
+  assert.equal(byId(page, 'welcome-step-5'), undefined);
+  assert.equal(byId(page, 'welcome-back-1'), undefined);
+  for (const n of [2, 3, 4]) {
+    assert.ok(byId(page, 'welcome-back-' + n), 'Back on step ' + n);
+  }
+  assert.equal(byId(page, 'welcome-back-5'), undefined);
   page.api.goTo(5);
-  assert.equal(text(page, 'welcome-alerts-status'), '', 'the old status line is gone (T-04: emptied, not hidden)');
-  assert.equal(page.steps[4].getAttribute('data-device-state'), 'blocked');
-  assert.equal(shown(page, 'welcome-alerts-blocked'), true);
+  assert.equal(visibleStep(page), 3, 'a step that does not exist is refused');
+
+  const agreed = load({ start: 4, search: '?step=5' });
+  assert.equal(visibleStep(agreed), 4);
+  click(agreed, 'welcome-back-4');
+  assert.equal(visibleStep(agreed), 3);
+  assert.equal(agreed.requests.length, 0, 'looking at a step records nothing');
 });

@@ -30,14 +30,14 @@ func w10Count(t *testing.T, label, text, needle string, want int) {
 	}
 }
 
-// TestWelcomeFiveStepsInOrder pins the five step titles and their order and the
-// "Step n of 5" line above each (D-28).
+// TestWelcomeFourStepsInOrder pins the four step titles and their order and the
+// "Step n of 4" line above each (D-28).
 //
-// Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): the flow has
-// a fifth step, Alerts, so every label reads "of 5" and the test carries the
-// fifth title; the old absence check for the Alerts step is gone. The function
-// was TestWelcomeFourStepsInOrder.
-func TestWelcomeFiveStepsInOrder(t *testing.T) {
+// Amended 2026-10-27 by quick 261027-t5w (owner): the alerts ask became a pop-up
+// after step 4, so the flow has four steps again and every label reads "of 4".
+// The fifth section (Phase 3.3 plan 13, "of 5") is gone; the pop-up is pinned in
+// TestWelcomeAlertsAsk. The function was TestWelcomeFiveStepsInOrder.
+func TestWelcomeFourStepsInOrder(t *testing.T) {
 	page := w10Template(t)
 
 	titles := []string{
@@ -45,7 +45,6 @@ func TestWelcomeFiveStepsInOrder(t *testing.T) {
 		"Disclaimer and policy",
 		"Show what is happening near you",
 		"About you",
-		"Get alerts when it matters",
 	}
 	pos := 0
 	for i, title := range titles {
@@ -57,12 +56,13 @@ func TestWelcomeFiveStepsInOrder(t *testing.T) {
 			continue
 		}
 		pos += at + len(want)
-		label := `<p class="welcome__label">Step ` + string(rune('0'+n)) + ` of 5</p>`
+		label := `<p class="welcome__label">Step ` + string(rune('0'+n)) + ` of 4</p>`
 		w10Count(t, "welcome.html.tmpl", page, label, 1)
 		w10Count(t, "welcome.html.tmpl", page, `<section class="welcome__step" id="welcome-step-`+string(rune('0'+n))+`"`, 1)
 	}
-	if strings.Contains(page, " of 4") || strings.Contains(page, "Step 6") {
-		t.Errorf("the flow has exactly five steps, every one counted of 5")
+	w10Count(t, "welcome.html.tmpl", page, `<section class="welcome__step"`, 4)
+	if strings.Contains(page, " of 5") || strings.Contains(page, "Step 5") || strings.Contains(page, `id="welcome-step-5`) {
+		t.Errorf("the flow has exactly four steps, every one counted of 4, and no fifth section")
 	}
 
 	// The laptop step list is drawn from the steps the handler passes.
@@ -99,9 +99,9 @@ func TestWelcomeFiveStepsInOrder(t *testing.T) {
 		"Live emergency updates from people nearby, confirmed by others who are there.")
 	// Amended 2026-10-17 by Phase 3.4 plan 28: step 3 shows three cards of its
 	// own (the viewing session), so the page holds six in all.
-	// Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): step 5
-	// holds one card of its own (Critical reports), so the page holds seven.
-	w10Count(t, "welcome.html.tmpl", page, `<li class="welcome__card`, 7)
+	// Amended 2026-10-27 by quick 261027-t5w: step 5 (and its one card) became
+	// the pop-up, so the page holds six cards again.
+	w10Count(t, "welcome.html.tmpl", page, `<li class="welcome__card`, 6)
 }
 
 // TestWelcomeStep2ReadsTheSharedText pins step 2: the scroll box holds the two
@@ -390,18 +390,18 @@ func TestWelcomeStep3And4Privacy(t *testing.T) {
 func TestWelcomeStepsAreFreelyNavigable(t *testing.T) {
 	page := w10Template(t)
 
-	// Back on steps 2 to 5 only, in the head line with the step label.
-	// Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): the loop
-	// runs to step 5 and every label reads "of 5"; the Back count is four.
-	for n := 2; n <= 5; n++ {
+	// Back on steps 2 to 4 only, in the head line with the step label.
+	// Amended 2026-10-27 by quick 261027-t5w: the loop runs to step 4 and every
+	// label reads "of 4"; the Back count is three.
+	for n := 2; n <= 4; n++ {
 		d := string(rune('0' + n))
 		p13MustContain(t, "step "+d, page,
 			`<button type="button" class="welcome__back" id="welcome-back-`+d+`"><span class="app-icon app-icon--arrow-left" aria-hidden="true"></span><span class="welcome__back-label">Back</span></button>`)
-		p13Ordered(t, page, "step "+d+" head", `id="welcome-back-`+d+`"`, `<p class="welcome__label">Step `+d+` of 5</p>`, `id="welcome-step-`+d+`-title"`)
+		p13Ordered(t, page, "step "+d+" head", `id="welcome-back-`+d+`"`, `<p class="welcome__label">Step `+d+` of 4</p>`, `id="welcome-step-`+d+`-title"`)
 	}
-	p13MustNotContain(t, "step 1", page, `id="welcome-back-1"`)
-	w10Count(t, "welcome.html.tmpl", page, `class="welcome__head"`, 4)
-	w10Count(t, "welcome.html.tmpl", page, `class="welcome__back"`, 4)
+	p13MustNotContain(t, "step 1", page, `id="welcome-back-1"`, `id="welcome-back-5"`)
+	w10Count(t, "welcome.html.tmpl", page, `class="welcome__head"`, 3)
+	w10Count(t, "welcome.html.tmpl", page, `class="welcome__back"`, 3)
 
 	// Each name in the step list is a button; the current one is marked on it.
 	p13MustContain(t, "step list", page,
@@ -439,7 +439,9 @@ func TestWelcomeScriptsAndStyles(t *testing.T) {
 	// The theme script is in the head, the two scripts load deferred in order.
 	p13Ordered(t, page, "scripts", `/static/js/theme.js?v={{.AssetVersion}}"></script>`, "</head>",
 		`/static/js/position.js?v={{.AssetVersion}}" defer></script>`, `/static/js/welcome.js?v={{.AssetVersion}}" defer></script>`)
-	p13Ordered(t, page, "stylesheets", "/static/css/main.css", "/static/css/chrome.css", "/static/css/app-bar.css", "/static/css/legal.css", "/static/css/window.css", "/static/css/welcome.css")
+	// Amended 2026-10-27 by quick 261027-t5w: auth.css comes second, as in
+	// settings.html.tmpl, because the alerts pop-up reuses the Log out box rules.
+	p13Ordered(t, page, "stylesheets", "/static/css/main.css", "/static/css/auth.css", "/static/css/chrome.css", "/static/css/app-bar.css", "/static/css/legal.css", "/static/css/window.css", "/static/css/welcome.css")
 
 	for _, name := range []string{"js/welcome.js", "js/position.js"} {
 		js := stripJSComments(p421ReadStatic(t, name))
@@ -485,83 +487,61 @@ func TestWelcomeScriptsAndStyles(t *testing.T) {
 	}
 }
 
-// TestWelcomeAlertsStep pins step 5 of the first-time flow (Phase 3.3 plan 13,
-// UI-SPEC Surface 1, P33-C2 to P33-C12): the section and its four device parts,
-// the three buttons, the Back control, the status and error lines, the key on
-// the flow root, the one install guide, and not a word about noise.
-func TestWelcomeAlertsStep(t *testing.T) {
+// TestWelcomeAlertsAsk pins the alerts pop-up that opens after step 4 (quick
+// 261027-t5w, owner, 2026-10-27, which replaced step 5, Alerts, of Phase 3.3
+// plan 13): a native modal dialog that is a direct child of body after the flow
+// root, with the Log out box markup, the title, no supporting line, Not now then
+// Allow, the key on the flow root, and not a trace of the removed step 5 page.
+func TestWelcomeAlertsAsk(t *testing.T) {
 	page := w10Template(t)
 
-	step5 := regexp.MustCompile(`(?s)<section class="welcome__step" id="welcome-step-5".*?</section>`).FindString(page)
-	if step5 == "" {
-		t.Fatalf("no step 5 section in welcome.html.tmpl")
-	}
-	p13MustContain(t, "step 5", step5,
-		`data-device-state="ready"`,
-		`<p class="welcome__label">Step 5 of 5</p>`,
-		`<button type="button" class="welcome__back" id="welcome-back-5">`,
-		`<h1 class="welcome__title" id="welcome-step-5-title" tabindex="-1">Get alerts when it matters</h1>`,
-		// P33-C3, P33-C4, P33-C6
-		"Pinalert can notify you on this device, even when it is closed, about:",
-		"Critical reports near your home area.",
-		"Set your home area to get these.",
-		"You can change this any time in Settings.",
-		// P33-C12
-		"Notifications are blocked for Pinalert in this browser. Allow them in your browser settings, then turn on On this device in Settings.",
-		"This browser can't show notifications. Updates still show in the bell.",
-		// P33-C18
-		`role="group" aria-label="Example notification"`,
-		`src="/icons/app.svg" width="40" height="40" alt=""`,
-		">Example</p>",
-		// Amended 2026-10-27 by quick 261027-jhd (owner, "yes make it gentler"):
-		// the needs-install part is one line instead of the install guide. The
-		// guide now lives only in the Settings window.
-		`<p class="welcome__lead" id="welcome-alerts-install" hidden>You can turn on alerts later in Settings.</p>`)
+	const open = `<dialog id="welcome-alerts-ask" class="logout-confirm" aria-labelledby="welcome-alerts-ask-title">`
+	w10Count(t, "welcome.html.tmpl", page, open, 1)
+	w10Count(t, "welcome.html.tmpl", page, "<dialog", 1)
+	// A direct child of body: it comes right after the closing of the #welcome
+	// root (the last step section, the pane and the root) and before the scripts,
+	// so the welcome Tab trap never sees its keys and the native modal can make
+	// #welcome inert.
+	p13MustMatch(t, "alerts pop-up position", page, `(?s)</section>\s*</div>\s*</div>\s*`+regexp.QuoteMeta(open))
+	p13MustMatch(t, "alerts pop-up position", page, `(?s)</dialog>\s*<script src="/static/js/position\.js`)
 
-	// The four parts, the lines and the three buttons, each id once.
-	for _, id := range []string{
-		"welcome-alerts-ready", "welcome-alerts-card", "welcome-alerts-nohome", "welcome-alerts-install",
-		"welcome-alerts-blocked", "welcome-alerts-unsupported", "welcome-alerts-status", "welcome-alerts-error",
-		"welcome-alerts-allow", "welcome-alerts-later", "welcome-alerts-continue", "welcome-back-5",
-	} {
+	ask := regexp.MustCompile(`(?s)<dialog id="welcome-alerts-ask".*?</dialog>`).FindString(page)
+	if ask == "" {
+		t.Fatalf("no alerts pop-up in welcome.html.tmpl")
+	}
+	p13MustContain(t, "alerts pop-up", ask,
+		`<div class="logout-confirm__body">`,
+		`<h2 class="logout-confirm__title" id="welcome-alerts-ask-title" tabindex="-1">Get alerts for critical reports near you?</h2>`,
+		`<div class="logout-confirm__actions">`,
+		`<button type="button" class="btn" id="welcome-alerts-later">Not now</button>`,
+		`<button type="button" class="btn btn--primary" id="welcome-alerts-allow">Allow</button>`)
+	p13Ordered(t, ask, "alerts pop-up", `id="welcome-alerts-ask-title"`, `class="logout-confirm__actions"`, `id="welcome-alerts-later"`, `id="welcome-alerts-allow"`)
+	// D-A: the Log out box is a title and buttons, so there is no supporting line,
+	// and nothing is chosen on open.
+	p13MustNotContain(t, "alerts pop-up", ask, "autofocus", "<p", "<form", "<a ", "<input")
+	w10Count(t, "alerts pop-up", ask, "<button", 2)
+	for _, id := range []string{"welcome-alerts-ask", "welcome-alerts-ask-title", "welcome-alerts-later", "welcome-alerts-allow"} {
 		w10Count(t, "welcome.html.tmpl", page, `id="`+id+`"`, 1)
 	}
-	p13MustContain(t, "step 5 buttons", step5,
-		`<button type="button" class="btn btn--primary" id="welcome-alerts-allow">Allow alerts</button>`,
-		`<button type="button" class="btn" id="welcome-alerts-later">Not now</button>`,
-		`<button type="button" class="btn btn--primary" id="welcome-alerts-continue" hidden>Continue</button>`)
-	p13Ordered(t, step5, "step 5 buttons", `id="welcome-alerts-allow"`, `id="welcome-alerts-later"`, `id="welcome-alerts-continue"`)
-	// The status line is a status region and the error line an alert.
-	p13MustContain(t, "step 5 lines", step5,
-		// Amended 2026-10-25 (review T-04): the status line is an always-present
-		// live region, never hidden; welcome.js writes the sentence into it.
-		`id="welcome-alerts-status" role="status"></p>`,
-		`<p class="inline-error" id="welcome-alerts-error" role="alert" hidden>`)
-	// Only the ready part shows from the start: the other three parts are hidden
-	// until the script picks one.
-	for _, id := range []string{"welcome-alerts-install", "welcome-alerts-blocked", "welcome-alerts-unsupported"} {
-		if !regexp.MustCompile(`id="` + id + `"[^>]*\shidden`).MatchString(step5) {
-			t.Errorf("%s does not start hidden", id)
-		}
-	}
-	// The key rides on the flow root, and the install guide has no second copy.
+
+	// The key rides on the flow root: an empty key means no pop-up (welcome.js).
 	root := regexp.MustCompile(`<div class="welcome" id="welcome"[^>]*>`).FindString(page)
 	p13MustContain(t, "flow root", root, `data-push-key="{{.PushPublicKey}}"`)
-	// Amended 2026-10-27 by quick 261027-jhd (owner): the install guide now lives
-	// only in the Settings window, so this page neither includes it nor links its
-	// stylesheet, and it says nothing about the Home Screen.
+
+	// The page holds none of the removed step 5 parts.
+	p13MustNotContain(t, "welcome.html.tmpl", page,
+		`id="welcome-step-5`, `id="welcome-back-5"`,
+		"welcome__example", "welcome__alerts-part",
+		`id="welcome-alerts-install"`, `id="welcome-alerts-blocked"`, `id="welcome-alerts-unsupported"`,
+		`id="welcome-alerts-status"`, `id="welcome-alerts-continue"`, `id="welcome-alerts-error"`,
+		`id="welcome-alerts-ready"`, `id="welcome-alerts-card"`, `id="welcome-alerts-nohome"`,
+		".AlertExample", ".HasHomeArea", "Get alerts when it matters", "Allow alerts")
+	// The install guide lives only in Settings, as before.
 	w10Count(t, "welcome.html.tmpl", page, `{{template "device_guide"}}`, 0)
 	w10Count(t, "welcome.html.tmpl", page, "/static/css/device-guide.css?v={{.AssetVersion}}", 0)
-	w10Count(t, "welcome.html.tmpl", page, "You can turn on alerts later in Settings.", 1)
-	p13MustNotContain(t, "welcome.html.tmpl", page, "Home Screen")
-	p13MustContain(t, "step 5 home area", step5, `id="welcome-alerts-nohome"{{if .HasHomeArea}} hidden{{end}}>`)
+	p13MustNotContain(t, "welcome.html.tmpl", page, "Home Screen", "Install to get alerts")
 
-	// The needs-install title lives in welcome.js (now Alerts, and the old install
-	// title only in Settings), so it has one source.
-	if strings.Contains(page, "Install to get alerts") {
-		t.Errorf("the install title lives in welcome.js, not in the template, so it has one source")
-	}
-	// Nothing in step 5 promises a sound, and no long dash is written.
+	// Nothing in the page promises a sound, and no long dash is written.
 	if got := noiseWordsIn(htmlTagPattern.ReplaceAllString(templateCopy(stripReadTemplate(t, "welcome.html.tmpl")), " ")); len(got) != 0 {
 		t.Errorf("welcome.html.tmpl holds the noise words %v", got)
 	}
@@ -570,72 +550,82 @@ func TestWelcomeAlertsStep(t *testing.T) {
 			t.Errorf("welcome.html.tmpl holds the long dash U+%04X", []rune(dash)[0])
 		}
 	}
+
+	// The progress bar has four even stops and none of the step 5 rules are left.
+	css := stripCSSComments(p421ReadStatic(t, "css/welcome.css"))
+	rules := parseCSSRules(css)
+	for sel, want := range map[string]string{
+		`.welcome__progress-fill`:                         "25%",
+		`.welcome[data-step="2"] .welcome__progress-fill`: "50%",
+		`.welcome[data-step="3"] .welcome__progress-fill`: "75%",
+		`.welcome[data-step="4"] .welcome__progress-fill`: "100%",
+	} {
+		r, ok := ruleBySelector(rules, sel)
+		if !ok {
+			t.Errorf("welcome.css has no %s rule", sel)
+			continue
+		}
+		if got := declsOf(r.declBody)["width"]; got != want {
+			t.Errorf("%s is %q wide, want %q", sel, got, want)
+		}
+	}
+	p13MustNotContain(t, "welcome.css", css,
+		`data-step="5"`, ".welcome__example", ".welcome__alerts-part", ".welcome__status", ".btn[hidden]")
+	// auth.css carries the whole look of the pop-up, so welcome.css adds nothing.
+	p13MustNotContain(t, "welcome.css", css, "logout-confirm")
 }
 
-// TestWelcomeAlertsExampleFromGo pins that the example notification of step 5
-// is printed from the Go builder (service.AlertExample) and the template holds no
-// copy of its sentences, so the example can never drift from a real
-// notification (UI-SPEC P33-C5, Surface 3).
-func TestWelcomeAlertsExampleFromGo(t *testing.T) {
-	page := w10Template(t)
-	p13MustContain(t, "example", page,
-		`<p class="welcome__example-title">{{.AlertExample.Title}}</p>`,
-		`<p class="welcome__example-body">{{.AlertExample.Body}}</p>`)
-	w10Count(t, "welcome.html.tmpl", page, "{{.AlertExample.Title}}", 1)
-	w10Count(t, "welcome.html.tmpl", page, "{{.AlertExample.Body}}", 1)
-	p13MustNotContain(t, "welcome.html.tmpl", page,
-		"Water rising", "Central Market", "Not confirmed yet", "from your home area.")
-	js := p421ReadStatic(t, "js/welcome.js")
-	p13MustNotContain(t, "welcome.js", js, "Water rising", "Central Market", "Not confirmed yet")
-}
-
-// TestWelcomeAlertsScript pins how welcome.js runs step 5 (Phase 3.3 plan 13,
-// T-03.3-25, T-03.3-15, decision 15): the browser's prompt runs only from the
-// Allow alerts tap, Not now and the Continue buttons never reach it, the flow is
-// recorded as done only from step 5, and each sentence the script writes has one
-// source.
+// TestWelcomeAlertsScript pins how welcome.js runs the alerts pop-up (quick
+// 261027-t5w; before it, Phase 3.3 plan 13, T-03.3-25, T-03.3-15, decision 15):
+// the browser's prompt runs only from the Allow tap, through the one enable
+// call, inside the click and before anything is awaited; Not now and Escape never
+// reach it; first-run-done has one sender; and nothing of step 5 is left.
 func TestWelcomeAlertsScript(t *testing.T) {
 	raw := p421ReadStatic(t, "js/welcome.js")
 	js := stripJSComments(raw)
 
-	// The sentences the script writes (the others are in the template).
-	//
-	// Amended 2026-10-27 by quick 261027-jhd (owner): the needs-install title is
-	// now 'Alerts'. The old install title lives only in settings.html.tmpl, so the
-	// script holds it zero times.
-	for _, sentence := range []string{
-		`'Alerts'`,
-		`'Alerts are off on this device.'`,
-		`'Couldn\'t turn alerts on. Try again.'`,
-		`'You\'re offline, so this wasn\'t saved. Try again when you have a signal.'`,
-	} {
-		w10Count(t, "welcome.js", js, sentence, 1)
-	}
-	w10Count(t, "welcome.js", js, `'Install to get alerts'`, 0)
+	// One call to enable, with the page's key; the script never names the prompt
+	// itself, never asks the device state (a request) and has no confirm box.
+	w10Count(t, "welcome.js", js, "PinalertNotify.enable(pushKey)", 1)
+	p13MustNotContain(t, "welcome.js", js, "requestPermission", "Notification.", "serviceWorker", "pushManager", "deviceState", "confirm(")
+	w10Count(t, "welcome.js", js, "'welcome-alerts-ask'", 1)
 
-	// The browser prompt: one call to enable, inside the Allow alerts handler,
-	// before anything is awaited; the script never names the prompt itself.
-	w10Count(t, "welcome.js", js, "PinalertNotify.enable(", 1)
-	p13MustNotContain(t, "welcome.js", js, "requestPermission", "Notification.", "serviceWorker", "pushManager")
-	allow := jsFunctionBody(t, js, "onAllowAlerts()")
-	p13Ordered(t, allow, "onAllowAlerts", "if (alertsBusy || needAgreement()) {", "window.PinalertNotify.enable(pushKey)", ".then(")
-	p13MustContain(t, "wiring", js, "alertsAllow.addEventListener('click', onAllowAlerts);",
-		"alertsLater.addEventListener('click', onNotNow);", "alertsContinue.addEventListener('click', onAlertsContinue);")
-	for _, name := range []string{"onNotNow()", "onAlertsContinue()", "alertsDone()"} {
-		body := jsFunctionBody(t, js, name)
-		p13MustNotContain(t, name, body, "enable(", "requestPermission", "PinalertNotify")
+	// The Allow handler: busy check, then enable as the first real statement,
+	// then the busy flags. Nothing is awaited before enable.
+	allow := jsFunctionBody(t, js, "onAskAllow()")
+	p13Ordered(t, allow, "onAskAllow", "if (askBusy) {", "window.PinalertNotify.enable(pushKey)", "askBusy = true;", ".then(")
+	p13MustNotContain(t, "onAskAllow", allow, "await ", "setTimeout(")
+	// Not now and Escape never reach enable.
+	for _, name := range []string{"onAskLater()", "onAskCancel(e)", "endFlow()", "openAsk()", "canAsk()"} {
+		p13MustNotContain(t, name, jsFunctionBody(t, js, name), "enable(", "requestPermission")
 	}
+	p13MustContain(t, "wiring", js,
+		"askAllow.addEventListener('click', onAskAllow);",
+		"askLater.addEventListener('click', onAskLater);",
+		"askDialog.addEventListener('cancel', onAskCancel);")
+	// Escape is the cancel event, handled there and never from a close event.
+	p13MustContain(t, "onAskCancel", jsFunctionBody(t, js, "onAskCancel(e)"), "e.preventDefault();", "onAskLater()")
+	p13MustNotContain(t, "welcome.js", js, "addEventListener('close'", "'Escape'")
 
-	// The flow is recorded as done from step 5 only: postDone has one caller.
-	w10Count(t, "welcome.js", js, "postDone()", 2) // its definition and its one call
-	p13MustContain(t, "alertsDone", jsFunctionBody(t, js, "alertsDone()"), "return postDone();")
-	for _, name := range []string{"finish(save)", "toAlerts()"} {
-		p13MustNotContain(t, name, jsFunctionBody(t, js, name), "postDone(")
-	}
-	p13MustContain(t, "toAlerts", jsFunctionBody(t, js, "toAlerts()"), "setFinishing(false);", "goTo(5);")
+	// The decision to ask reads the base state only, once, when step 4 finishes.
+	can := jsFunctionBody(t, js, "canAsk()")
+	p13MustContain(t, "canAsk", can, "askDialog", "showModal", "pushKey", "baseState()", "'maybe'", "'ready'")
+	p13MustMatch(t, "canAsk", can, `(?s)try \{.*baseState\(\).*\} catch`)
+	end := jsFunctionBody(t, js, "endFlow()")
+	p13Ordered(t, end, "endFlow", "canAsk()", "openAsk()", "postDone()")
+	p13MustContain(t, "openAsk", jsFunctionBody(t, js, "openAsk()"), "showModal()", "askTitle.focus()", "postDone()")
 
-	// The device states come from notify.js and go through the one drawing
-	// function; the guide title is the script's own and set with textContent.
-	p13MustContain(t, "welcome.js", js, "window.PinalertNotify", ".baseState()", ".deviceState(pushKey)", "data-push-key", "setText(alertsTitle,")
-	p13MustContain(t, "enterAlerts", jsFunctionBody(t, js, "enterAlerts()"), "drawAlerts(", "alertsSeq")
+	// The flow is recorded as done from one sender, and a finish attempt reaches
+	// it once: finish only ends through endFlow.
+	w10Count(t, "welcome.js", js, "request(DONE_URL", 1)
+	p13MustNotContain(t, "finish", jsFunctionBody(t, js, "finish(save)"), "postDone(")
+	p13MustContain(t, "finish", jsFunctionBody(t, js, "finish(save)"), "endFlow(")
+	post := jsFunctionBody(t, js, "postDone()")
+	p13MustContain(t, "postDone", post, "answer.status === 409", "goTo(2);", "MESSAGE_AGREE_FIRST", "doneFailed();", "profileError")
+
+	// The needs-install title and every step 5 helper are gone.
+	p13MustNotContain(t, "welcome.js", js,
+		"'Alerts'", "TITLE_LATER", "ALERTS_STEP", "alertsStep", "alertsSeq", "setAlertsBusy", "drawAlerts", "enterAlerts",
+		"toAlerts", "alertsDone", "welcome-step-5", "welcome-alerts-status", "welcome-alerts-nohome", "hasHomeArea", "doneErrorLine",
+		"'Install to get alerts'", "MESSAGE_ALERTS_")
 }
