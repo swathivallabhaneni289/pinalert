@@ -65,3 +65,7 @@ Phase 8 was planned after Phase 9 (commit 2d2f10b). All ten assumptions A-P8-1 t
 | M6 | 17 | Star box host under default A not stated. | Mount inside the card node after the resolve controls, so it moves with the card into the laptop panel; two new test cases. |
 | M7 | 25 | The 08-15 `u.kind IN` list must stay. | Assert it unchanged. |
 | M8, M9 | 01, 11 | Wording. | Correct A-P8-9's description; spell out bubble on the laptop under default A, page on the phone. |
+
+# Execution notes added after planning
+
+- **2026-10-27, a 3.3 fix is agreed but not yet built** (03.3-UAT.md gap for test 4): the first post or vote opens a small "Tell you when this report changes?" pop-up (likely in votes.js and report-form.js), and the sign up pop-up gains an unticked tick box for Reliable reporter alerts. Plan 09-17's star box after "Yes, mark resolved" also lives in votes.js: re-read votes.js on top of that fix, and make sure the two never open at once (the star box waits until the changes pop-up is answered or closed). Plan 09-12's Settings rows stay "only for changing your mind later", per the owner principle.
